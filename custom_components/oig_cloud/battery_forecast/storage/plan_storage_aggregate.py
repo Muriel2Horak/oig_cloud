@@ -126,16 +126,7 @@ async def aggregate_weekly(
         data = await sensor._plans_store.async_load() or {}
         daily_plans = data.get("daily", {})
 
-        start = datetime.strptime(start_date, DATE_FMT).date()
-        end = datetime.strptime(end_date, DATE_FMT).date()
-
-        week_days = []
-        current = start
-        while current <= end:
-            day_str = current.strftime(DATE_FMT)
-            if day_str in daily_plans:
-                week_days.append(daily_plans[day_str])
-            current += timedelta(days=1)
+        week_days = _collect_week_days(daily_plans, start_date, end_date)
 
         if not week_days:
             _LOGGER.warning(
@@ -143,39 +134,10 @@ async def aggregate_weekly(
             )
             return False
 
-        total_cost = sum(
-            safe_nested_get(day, "planned", "total_cost", default=0)
-            for day in week_days
+        totals = _sum_weekly_totals(week_days)
+        weekly_aggregate = _build_weekly_aggregate(
+            start_date, end_date, week_days, totals
         )
-        total_solar = sum(
-            safe_nested_get(day, "planned", "total_solar", default=0)
-            for day in week_days
-        )
-        total_consumption = sum(
-            safe_nested_get(day, "planned", "total_consumption", default=0)
-            for day in week_days
-        )
-        total_grid_import = sum(
-            safe_nested_get(day, "planned", "total_grid_import", default=0)
-            for day in week_days
-        )
-        total_grid_export = sum(
-            safe_nested_get(day, "planned", "total_grid_export", default=0)
-            for day in week_days
-        )
-
-        weekly_aggregate = {
-            "start_date": start_date,
-            "end_date": end_date,
-            "days_count": len(week_days),
-            "planned": {
-                "total_cost": round(total_cost, 2),
-                "total_solar": round(total_solar, 2),
-                "total_consumption": round(total_consumption, 2),
-                "total_grid_import": round(total_grid_import, 2),
-                "total_grid_export": round(total_grid_export, 2),
-            },
-        }
 
         if "weekly" not in data:
             data["weekly"] = {}
@@ -186,49 +148,13 @@ async def aggregate_weekly(
         _LOGGER.info(
             "Weekly aggregate saved for %s: cost=%.2f CZK, solar=%.2f kWh, %s days",
             week_str,
-            total_cost,
-            total_solar,
+            totals["total_cost"],
+            totals["total_solar"],
             len(week_days),
         )
 
-        cutoff_daily = (
-            datetime.strptime(end_date, DATE_FMT).date() - timedelta(days=30)
-        ).strftime(DATE_FMT)
-
-        daily_to_delete = [d for d in daily_plans.keys() if d < cutoff_daily]
-
-        if daily_to_delete:
-            for old_date in daily_to_delete:
-                del data["daily"][old_date]
-                _LOGGER.debug("Deleted daily plan for %s (>30 days old)", old_date)
-
-            _LOGGER.info("Cleaned up %s old daily plans", len(daily_to_delete))
-
-        weekly_plans = data.get("weekly", {})
-        current_year_week = datetime.now().isocalendar()[:2]
-        cutoff_week_number = current_year_week[1] - 52
-        cutoff_year = (
-            current_year_week[0] if cutoff_week_number > 0 else current_year_week[0] - 1
-        )
-
-        weekly_to_delete = []
-        for week_key in weekly_plans.keys():
-            try:
-                year, week = week_key.split("-W")
-                year, week = int(year), int(week)
-                if year < cutoff_year or (
-                    year == cutoff_year and week < cutoff_week_number
-                ):
-                    weekly_to_delete.append(week_key)
-            except Exception:  # nosec B112
-                continue
-
-        if weekly_to_delete:
-            for old_week in weekly_to_delete:
-                del data["weekly"][old_week]
-                _LOGGER.debug("Deleted weekly plan for %s (>52 weeks old)", old_week)
-
-            _LOGGER.info("Cleaned up %s old weekly plans", len(weekly_to_delete))
+        daily_to_delete = _cleanup_old_daily(data, end_date)
+        weekly_to_delete = _cleanup_old_weekly(data)
 
         if daily_to_delete or weekly_to_delete:
             await sensor._plans_store.async_save(data)
@@ -243,6 +169,107 @@ async def aggregate_weekly(
             exc_info=True,
         )
         return False
+
+
+def _collect_week_days(
+    daily_plans: Dict[str, Any], start_date: str, end_date: str
+) -> List[Dict[str, Any]]:
+    start = datetime.strptime(start_date, DATE_FMT).date()
+    end = datetime.strptime(end_date, DATE_FMT).date()
+    week_days = []
+    current = start
+    while current <= end:
+        day_str = current.strftime(DATE_FMT)
+        if day_str in daily_plans:
+            week_days.append(daily_plans[day_str])
+        current += timedelta(days=1)
+    return week_days
+
+
+def _sum_weekly_totals(week_days: List[Dict[str, Any]]) -> Dict[str, float]:
+    return {
+        "total_cost": sum(
+            safe_nested_get(day, "planned", "total_cost", default=0)
+            for day in week_days
+        ),
+        "total_solar": sum(
+            safe_nested_get(day, "planned", "total_solar", default=0)
+            for day in week_days
+        ),
+        "total_consumption": sum(
+            safe_nested_get(day, "planned", "total_consumption", default=0)
+            for day in week_days
+        ),
+        "total_grid_import": sum(
+            safe_nested_get(day, "planned", "total_grid_import", default=0)
+            for day in week_days
+        ),
+        "total_grid_export": sum(
+            safe_nested_get(day, "planned", "total_grid_export", default=0)
+            for day in week_days
+        ),
+    }
+
+
+def _build_weekly_aggregate(
+    start_date: str,
+    end_date: str,
+    week_days: List[Dict[str, Any]],
+    totals: Dict[str, float],
+) -> Dict[str, Any]:
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "days_count": len(week_days),
+        "planned": {
+            "total_cost": round(totals["total_cost"], 2),
+            "total_solar": round(totals["total_solar"], 2),
+            "total_consumption": round(totals["total_consumption"], 2),
+            "total_grid_import": round(totals["total_grid_import"], 2),
+            "total_grid_export": round(totals["total_grid_export"], 2),
+        },
+    }
+
+
+def _cleanup_old_daily(data: Dict[str, Any], end_date: str) -> List[str]:
+    daily_plans = data.get("daily", {})
+    cutoff_daily = (
+        datetime.strptime(end_date, DATE_FMT).date() - timedelta(days=30)
+    ).strftime(DATE_FMT)
+    daily_to_delete = [d for d in daily_plans.keys() if d < cutoff_daily]
+    if daily_to_delete:
+        for old_date in daily_to_delete:
+            del data["daily"][old_date]
+            _LOGGER.debug("Deleted daily plan for %s (>30 days old)", old_date)
+        _LOGGER.info("Cleaned up %s old daily plans", len(daily_to_delete))
+    return daily_to_delete
+
+
+def _cleanup_old_weekly(data: Dict[str, Any]) -> List[str]:
+    weekly_plans = data.get("weekly", {})
+    current_year_week = datetime.now().isocalendar()[:2]
+    cutoff_week_number = current_year_week[1] - 52
+    cutoff_year = (
+        current_year_week[0] if cutoff_week_number > 0 else current_year_week[0] - 1
+    )
+
+    weekly_to_delete = []
+    for week_key in weekly_plans:
+        try:
+            year, week = week_key.split("-W")
+            year, week = int(year), int(week)
+            if year < cutoff_year or (year == cutoff_year and week < cutoff_week_number):
+                weekly_to_delete.append(week_key)
+        except Exception:  # nosec B112
+            continue
+
+    if weekly_to_delete:
+        for old_week in weekly_to_delete:
+            del data["weekly"][old_week]
+            _LOGGER.debug("Deleted weekly plan for %s (>52 weeks old)", old_week)
+        _LOGGER.info("Cleaned up %s old weekly plans", len(weekly_to_delete))
+
+    return weekly_to_delete
 
 
 async def backfill_daily_archive_from_storage(sensor: Any) -> None:

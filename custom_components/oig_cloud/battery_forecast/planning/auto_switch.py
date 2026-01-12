@@ -465,10 +465,7 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
     """Sync scheduled set_box_mode calls with planned timeline."""
     cancel_auto_switch_schedule(sensor)
 
-    if not sensor._hass or not auto_mode_switch_enabled(
-        sensor
-    ):  # pylint: disable=protected-access
-        _LOGGER.debug("[AutoModeSwitch] Auto mode switching disabled")
+    if not _auto_switch_is_ready(sensor):
         stop_auto_switch_watchdog(sensor)
         return
 
@@ -479,21 +476,9 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
             "[AutoModeSwitch] Last mode change at %s",
             last_mode_change.isoformat(),
         )
-    wait_seconds = _startup_delay_seconds(sensor, now)
-    if wait_seconds is not None:
-        log_rl = getattr(sensor, "_log_rate_limited", None)
-        if log_rl:
-            log_rl(
-                "auto_mode_switch_startup_delay",
-                "debug",
-                "[AutoModeSwitch] Startup delay active (%.0fs remaining)",
-                wait_seconds,
-                cooldown_s=60.0,
-            )
-        schedule_auto_switch_retry(sensor, wait_seconds)
+
+    if _handle_startup_delay(sensor, now):
         return
-    sensor._auto_switch_ready_at = None  # pylint: disable=protected-access
-    clear_auto_switch_retry(sensor)
 
     timeline, timeline_source = get_mode_switch_timeline(sensor)
     if not timeline:
@@ -515,11 +500,44 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
         start_auto_switch_watchdog(sensor)
         return
 
-    for when, mode, prev_mode in scheduled_events:
-        _ = prev_mode
-        adjusted_when = when
-        if adjusted_when <= now:
-            adjusted_when = now + timedelta(seconds=1)
+    _schedule_auto_switch_events(sensor, scheduled_events, now)
+    start_auto_switch_watchdog(sensor)
+
+
+def _auto_switch_is_ready(sensor: Any) -> bool:
+    if not sensor._hass or not auto_mode_switch_enabled(sensor):
+        _LOGGER.debug("[AutoModeSwitch] Auto mode switching disabled")
+        return False
+    return True
+
+
+def _handle_startup_delay(sensor: Any, now: datetime) -> bool:
+    wait_seconds = _startup_delay_seconds(sensor, now)
+    if wait_seconds is None:
+        sensor._auto_switch_ready_at = None  # pylint: disable=protected-access
+        clear_auto_switch_retry(sensor)
+        return False
+
+    log_rl = getattr(sensor, "_log_rate_limited", None)
+    if log_rl:
+        log_rl(
+            "auto_mode_switch_startup_delay",
+            "debug",
+            "[AutoModeSwitch] Startup delay active (%.0fs remaining)",
+            wait_seconds,
+            cooldown_s=60.0,
+        )
+    schedule_auto_switch_retry(sensor, wait_seconds)
+    return True
+
+
+def _schedule_auto_switch_events(
+    sensor: Any,
+    scheduled_events: list[tuple[datetime, str, Optional[str]]],
+    now: datetime,
+) -> None:
+    for when, mode, _prev_mode in scheduled_events:
+        adjusted_when = when if when > now else now + timedelta(seconds=1)
 
         async def _callback(event_time: datetime, desired_mode: str = mode) -> None:
             await execute_mode_change(
@@ -535,5 +553,3 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
             mode,
             adjusted_when.isoformat(),
         )
-
-    start_auto_switch_watchdog(sensor)

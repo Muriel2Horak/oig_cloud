@@ -292,74 +292,84 @@ class BalancingManager:
         if await self._handle_recent_balancing():
             return None
 
-        # 0.5 CRITICAL FIX: If we already have an ACTIVE plan, DO NOT create a new one!
-        # This prevents deadline from shifting every 30 minutes
-        # EXCEPTION: If deadline (holding_start) is in the past, we missed it -> create new plan
-        # BUT: If we're DURING holding period, keep the plan active!
         active_plan = await self._handle_active_plan()
         if active_plan is not None:
             return active_plan
 
-        # FORCE MODE: Skip all checks and create forced plan immediately
         if force:
             _LOGGER.warning("🔴 FORCE MODE enabled - creating forced balancing plan!")
             return await self._handle_forced_plan(manual_trigger=True)
 
-        # Calculate days since last balancing
         days_since_last = self._get_days_since_last_balancing()
         cycle_days = self._get_cycle_days()
         cooldown_hours = self._get_cooldown_hours()
 
         _LOGGER.info(f"📊 Balancing check: {days_since_last:.1f} days since last")
 
-        # Check in order: Natural → Opportunistic → Forced
-
-        # 1. Natural: Check if HYBRID already reaches 100% naturally
-        _LOGGER.debug("Checking Natural balancing...")
-        natural_plan = await self._check_natural_balancing()
+        natural_plan = await self._maybe_apply_natural_plan()
         if natural_plan:
-            _LOGGER.info("✓ Natural balancing detected in HYBRID forecast")
-            completion_time = self._normalize_plan_datetime(natural_plan.holding_end)
-            await self._activate_plan(
-                natural_plan, last_balancing_ts=completion_time
-            )
             return natural_plan
 
-        # 2. Forced: cycle_days passed, charge ASAP regardless of cost
-        if days_since_last >= cycle_days:
-            forced_plan = await self._handle_forced_plan(manual_trigger=False)
-            if forced_plan:
-                _LOGGER.warning(
-                    "🔴 FORCED balancing after %.1f days! Health priority over cost.",
-                    days_since_last,
-                )
-                return forced_plan
+        forced_plan = await self._maybe_force_plan(days_since_last, cycle_days)
+        if forced_plan:
+            return forced_plan
 
-        # 3. Opportunistic: SoC ≥ threshold AND cooldown passed
-        hours_since_last = self._get_hours_since_last_balancing()
-        if hours_since_last >= cooldown_hours:
-            _LOGGER.debug(
-                f"Checking Opportunistic balancing (hours={hours_since_last:.1f})..."
-            )
-            if self._is_plan_cooldown_active(cooldown_hours):
-                _LOGGER.info(
-                    "Opportunistic balancing cooldown active (last_plan=%s, %sh)",
-                    self._last_plan_mode or "unknown",
-                    cooldown_hours,
-                )
-                opportunistic_plan = None
-            else:
-                opportunistic_plan = await self._create_opportunistic_plan()
-            if opportunistic_plan:
-                _LOGGER.info(
-                    "⚡ Opportunistic balancing planned after %.1f hours",
-                    hours_since_last,
-                )
-                await self._activate_plan(opportunistic_plan)
-                return opportunistic_plan
+        opportunistic_plan = await self._maybe_opportunistic_plan(cooldown_hours)
+        if opportunistic_plan:
+            return opportunistic_plan
 
         _LOGGER.info("No balancing needed yet (%.1f days)", days_since_last)
         return None
+
+    async def _maybe_apply_natural_plan(self) -> Optional[BalancingPlan]:
+        _LOGGER.debug("Checking Natural balancing...")
+        natural_plan = await self._check_natural_balancing()
+        if not natural_plan:
+            return None
+        _LOGGER.info("✓ Natural balancing detected in HYBRID forecast")
+        completion_time = self._normalize_plan_datetime(natural_plan.holding_end)
+        await self._activate_plan(natural_plan, last_balancing_ts=completion_time)
+        return natural_plan
+
+    async def _maybe_force_plan(
+        self, days_since_last: float, cycle_days: int
+    ) -> Optional[BalancingPlan]:
+        if days_since_last < cycle_days:
+            return None
+        forced_plan = await self._handle_forced_plan(manual_trigger=False)
+        if forced_plan:
+            _LOGGER.warning(
+                "🔴 FORCED balancing after %.1f days! Health priority over cost.",
+                days_since_last,
+            )
+        return forced_plan
+
+    async def _maybe_opportunistic_plan(
+        self, cooldown_hours: float
+    ) -> Optional[BalancingPlan]:
+        hours_since_last = self._get_hours_since_last_balancing()
+        if hours_since_last < cooldown_hours:
+            return None
+        _LOGGER.debug(
+            "Checking Opportunistic balancing (hours=%.1f)...",
+            hours_since_last,
+        )
+        if self._is_plan_cooldown_active(cooldown_hours):
+            _LOGGER.info(
+                "Opportunistic balancing cooldown active (last_plan=%s, %sh)",
+                self._last_plan_mode or "unknown",
+                cooldown_hours,
+            )
+            return None
+
+        opportunistic_plan = await self._create_opportunistic_plan()
+        if opportunistic_plan:
+            _LOGGER.info(
+                "⚡ Opportunistic balancing planned after %.1f hours",
+                hours_since_last,
+            )
+            await self._activate_plan(opportunistic_plan)
+        return opportunistic_plan
 
     async def _handle_recent_balancing(self) -> bool:
         balancing_occurred, completion_time = await self._check_if_balancing_occurred()

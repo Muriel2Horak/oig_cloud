@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, List
+from typing import Any, List, Optional
 
 from homeassistant.util import dt as dt_util
 
@@ -143,56 +143,115 @@ async def _build_load_forecast(
     load_forecast: list[float] = []
     today = dt_util.now().date()
     for sp in spot_prices:
-        try:
-            timestamp = datetime.fromisoformat(sp["time"])
-            if timestamp.tzinfo is None:
-                timestamp = dt_util.as_local(timestamp)
-
-            if adaptive_profiles:
-                if timestamp.date() == today:
-                    profile = adaptive_profiles["today_profile"]
-                else:
-                    profile = adaptive_profiles.get(
-                        "tomorrow_profile", adaptive_profiles["today_profile"]
-                    )
-                hour = timestamp.hour
-                start_hour = profile.get("start_hour", 0)
-                index = hour - start_hour
-                if 0 <= index < len(profile["hourly_consumption"]):
-                    hourly_kwh = profile["hourly_consumption"][index]
-                else:
-                    sensor._log_rate_limited(
-                        "adaptive_profile_oob",
-                        "debug",
-                        "Adaptive profile hour out of range: hour=%s start=%s len=%s (using avg)",
-                        hour,
-                        start_hour,
-                        len(profile.get("hourly_consumption", []) or []),
-                        cooldown_s=900.0,
-                    )
-                    hourly_kwh = profile.get("avg_kwh_h", 0.5)
-                load_kwh = hourly_kwh / 4.0
-            else:
-                load_kwh = get_load_avg_for_timestamp(
-                    timestamp,
-                    load_avg_sensors,
-                    state=sensor,
-                )
-
-            load_forecast.append(load_kwh)
-        except Exception as exc:
-            _LOGGER.warning("Failed to get load for %s: %s", sp.get("time"), exc)
-            load_forecast.append(0.125)
-
-    if adaptive_profiles:
-        recent_ratio = await adaptive_helper.calculate_recent_consumption_ratio(
-            adaptive_profiles
+        _append_load_for_price(
+            sensor,
+            sp,
+            adaptive_profiles=adaptive_profiles,
+            load_avg_sensors=load_avg_sensors,
+            today=today,
+            load_forecast=load_forecast,
         )
-        if recent_ratio and recent_ratio > 1.1:
-            adaptive_helper.apply_consumption_boost_to_forecast(
-                load_forecast, recent_ratio
-            )
+
+    await _maybe_apply_consumption_boost(
+        adaptive_helper, adaptive_profiles, load_forecast
+    )
     return load_forecast
+
+
+def _append_load_for_price(
+    sensor: Any,
+    spot_price: dict[str, Any],
+    *,
+    adaptive_profiles: dict[str, Any] | None,
+    load_avg_sensors: Any,
+    today: datetime.date,
+    load_forecast: list[float],
+) -> None:
+    try:
+        timestamp = datetime.fromisoformat(spot_price["time"])
+        if timestamp.tzinfo is None:
+            timestamp = dt_util.as_local(timestamp)
+
+        load_kwh = _resolve_load_kwh(
+            sensor,
+            timestamp,
+            adaptive_profiles,
+            load_avg_sensors,
+            today=today,
+        )
+
+        load_forecast.append(load_kwh)
+    except Exception as exc:
+        _LOGGER.warning(
+            "Failed to get load for %s: %s", spot_price.get("time"), exc
+        )
+        load_forecast.append(0.125)
+
+
+async def _maybe_apply_consumption_boost(
+    adaptive_helper: AdaptiveConsumptionHelper,
+    adaptive_profiles: dict[str, Any] | None,
+    load_forecast: list[float],
+) -> None:
+    if not adaptive_profiles:
+        return
+    recent_ratio = await adaptive_helper.calculate_recent_consumption_ratio(
+        adaptive_profiles
+    )
+    if recent_ratio and recent_ratio > 1.1:
+        adaptive_helper.apply_consumption_boost_to_forecast(load_forecast, recent_ratio)
+
+
+def _resolve_load_kwh(
+    sensor: Any,
+    timestamp: datetime,
+    adaptive_profiles: dict[str, Any] | None,
+    load_avg_sensors: Any,
+    *,
+    today: datetime.date,
+) -> float:
+    if not adaptive_profiles:
+        return get_load_avg_for_timestamp(
+            timestamp,
+            load_avg_sensors,
+            state=sensor,
+        )
+
+    profile = _select_adaptive_profile(adaptive_profiles, timestamp, today)
+    hourly_kwh = _hourly_kwh_from_profile(sensor, profile, timestamp)
+    return hourly_kwh / 4.0
+
+
+def _select_adaptive_profile(
+    adaptive_profiles: dict[str, Any],
+    timestamp: datetime,
+    today: datetime.date,
+) -> dict[str, Any]:
+    if timestamp.date() == today:
+        return adaptive_profiles["today_profile"]
+    return adaptive_profiles.get("tomorrow_profile", adaptive_profiles["today_profile"])
+
+
+def _hourly_kwh_from_profile(
+    sensor: Any, profile: dict[str, Any], timestamp: datetime
+) -> float:
+    hour = timestamp.hour
+    start_hour = profile.get("start_hour", 0)
+    index = hour - start_hour
+    hourly_consumption = profile.get("hourly_consumption", []) or []
+    if 0 <= index < len(hourly_consumption):
+        return hourly_consumption[index]
+
+    sensor._log_rate_limited(
+        "adaptive_profile_oob",
+        "debug",
+        "Adaptive profile hour out of range: hour=%s start=%s len=%s (using avg)",
+        hour,
+        start_hour,
+        len(hourly_consumption),
+        cooldown_s=900.0,
+    )
+    return profile.get("avg_kwh_h", 0.5)
 
 
 def _build_solar_kwh_list(
@@ -416,6 +475,184 @@ def _dispatch_forecast_updated(sensor: Any) -> None:
     _LOGGER.debug(" Sending signal: %s", signal_name)
     async_dispatcher_send(sensor.hass, signal_name)
 
+
+def _resolve_target_and_soc(
+    sensor: Any,
+    current_capacity: float,
+    max_capacity: float,
+    min_capacity: float,
+) -> tuple[float, Optional[float]]:
+    target_capacity = sensor._get_target_battery_capacity()
+    current_soc_percent = sensor._get_current_battery_soc_percent()
+
+    if target_capacity is None:
+        target_capacity = max_capacity
+    if current_soc_percent is None and max_capacity > 0:
+        current_soc_percent = (current_capacity / max_capacity) * 100.0
+
+    sensor._log_rate_limited(
+        "battery_state_summary",
+        "debug",
+        "Battery state: current=%.2f kWh (%.1f%%), total=%.2f kWh, min=%.2f kWh, target=%.2f kWh",
+        current_capacity,
+        float(current_soc_percent or 0.0),
+        max_capacity,
+        min_capacity,
+        target_capacity,
+        cooldown_s=600.0,
+    )
+    return target_capacity, current_soc_percent
+
+
+def _update_consumption_summary(
+    sensor: Any, adaptive_profiles: Any, adaptive_helper: AdaptiveConsumptionHelper
+) -> None:
+    if adaptive_profiles and isinstance(adaptive_profiles, dict):
+        sensor._consumption_summary = adaptive_helper.calculate_consumption_summary(
+            adaptive_profiles
+        )
+    else:
+        sensor._consumption_summary = {}
+
+
+def _schedule_auto_switch(sensor: Any) -> None:
+    if sensor._side_effects_enabled:
+        sensor._create_task_threadsafe(
+            auto_switch_module.update_auto_switch_schedule, sensor
+        )
+
+
+def _maybe_write_state(sensor: Any) -> None:
+    if not sensor.hass:
+        _LOGGER.debug("Sensor not yet added to HA, skipping state write")
+        return
+    sensor._log_rate_limited(
+        "write_state_consumption_summary",
+        "debug",
+        " Writing HA state with consumption_summary: %s",
+        sensor._consumption_summary,
+        cooldown_s=900.0,
+    )
+    sensor.async_write_ha_state()
+
+
+def _schedule_precompute(sensor: Any) -> None:
+    hash_changed = sensor._data_hash != sensor._last_precompute_hash
+    sensor._schedule_precompute(
+        force=sensor._last_precompute_at is None or hash_changed
+    )
+
+
+def _apply_planner_results(
+    sensor: Any,
+    timeline: list[dict[str, Any]],
+    mode_result: Any,
+    recommendations: Any,
+) -> None:
+    sensor._timeline_data = timeline
+    sensor._hybrid_timeline = timeline
+    sensor._mode_optimization_result = mode_result
+    sensor._mode_recommendations = recommendations
+    sensor._baseline_timeline = []
+    _update_timeline_hash(sensor, sensor._timeline_data)
+    sensor._last_update = datetime.now()
+    _LOGGER.debug(
+        "Battery forecast updated: %s timeline points",
+        len(sensor._timeline_data),
+    )
+
+
+def _maybe_mark_first_update(sensor: Any) -> None:
+    if sensor._first_update:
+        sensor._first_update = False
+
+
+def _maybe_update_history_stub() -> None:
+    # Placeholder for historical updates (kept for future re-enable).
+    return
+
+
+def _post_update_housekeeping(
+    sensor: Any, adaptive_profiles: Any, adaptive_helper: AdaptiveConsumptionHelper
+) -> None:
+    _update_consumption_summary(sensor, adaptive_profiles, adaptive_helper)
+    _maybe_mark_first_update(sensor)
+    _save_forecast_to_coordinator(sensor)
+    _schedule_auto_switch(sensor)
+
+    now = dt_util.now()
+    if now.minute in [0, 15, 30, 45]:
+        _maybe_update_history_stub()
+
+    _maybe_write_state(sensor)
+    _schedule_precompute(sensor)
+
+
+async def _prepare_forecast_inputs(
+    sensor: Any, bucket_start: datetime
+) -> Optional[
+    tuple[
+        float,
+        float,
+        float,
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        Any,
+        Any,
+        AdaptiveConsumptionHelper,
+        Any,
+        list[float],
+    ]
+]:
+    capacity = _ensure_capacity(sensor)
+    if not capacity:
+        return None
+    current_capacity, max_capacity, min_capacity = capacity
+
+    _LOGGER.debug(
+        "Battery capacities: current=%.2f kWh, max=%.2f kWh, min=%.2f kWh",
+        current_capacity,
+        max_capacity,
+        min_capacity,
+    )
+
+    current_interval_naive = bucket_start.replace(tzinfo=None)
+    spot_prices, export_prices = await _fetch_prices(sensor, current_interval_naive)
+
+    solar_forecast = sensor._get_solar_forecast()
+    load_avg_sensors = sensor._get_load_avg_sensors()
+
+    adaptive_helper = AdaptiveConsumptionHelper(
+        sensor.hass or sensor._hass,
+        sensor._box_id,
+        ISO_TZ_OFFSET,
+    )
+    adaptive_profiles = await adaptive_helper.get_adaptive_load_prediction()
+
+    if not spot_prices:
+        _LOGGER.warning("No spot prices available - forecast will use fallback prices")
+
+    load_forecast = await _build_load_forecast(
+        sensor,
+        spot_prices,
+        adaptive_helper,
+        adaptive_profiles,
+        load_avg_sensors,
+    )
+
+    return (
+        current_capacity,
+        max_capacity,
+        min_capacity,
+        spot_prices,
+        export_prices,
+        solar_forecast,
+        adaptive_profiles,
+        adaptive_helper,
+        load_forecast,
+    )
+
+
 async def async_update(sensor: Any) -> None:  # noqa: C901
     """Update sensor data."""
 
@@ -437,72 +674,30 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             "Battery forecast async_update() tick",
             cooldown_s=300.0,
         )
-        capacity = _ensure_capacity(sensor)
-        if not capacity:
+        prepared = await _prepare_forecast_inputs(sensor, bucket_start)
+        if not prepared:
             return
-        current_capacity, max_capacity, min_capacity = capacity
-        mark_bucket_done = True
-
-        _LOGGER.debug(
-            "Battery capacities: current=%.2f kWh, max=%.2f kWh, min=%.2f kWh",
+        (
             current_capacity,
             max_capacity,
             min_capacity,
-        )
-
-        current_interval_naive = bucket_start.replace(tzinfo=None)
-        spot_prices, export_prices = await _fetch_prices(
-            sensor, current_interval_naive
-        )
-
-        solar_forecast = sensor._get_solar_forecast()
-        load_avg_sensors = sensor._get_load_avg_sensors()
-
-        adaptive_helper = AdaptiveConsumptionHelper(
-            sensor.hass or sensor._hass,
-            sensor._box_id,
-            ISO_TZ_OFFSET,
-        )
-        adaptive_profiles = await adaptive_helper.get_adaptive_load_prediction()
-
-        if not spot_prices:
-            _LOGGER.warning(
-                "No spot prices available - forecast will use fallback prices"
-            )
-            # Continue anyway - forecast can run with fallback prices
+            spot_prices,
+            export_prices,
+            solar_forecast,
+            adaptive_profiles,
+            adaptive_helper,
+            load_forecast,
+        ) = prepared
+        mark_bucket_done = True
 
         # ONE PLANNER: single planning pipeline.
 
         # PHASE 2.8 + REFACTORING: Get target from new getter
-        target_capacity = sensor._get_target_battery_capacity()
-        current_soc_percent = sensor._get_current_battery_soc_percent()
-
-        if target_capacity is None:
-            target_capacity = max_capacity
-        if current_soc_percent is None and max_capacity > 0:
-            current_soc_percent = (current_capacity / max_capacity) * 100.0
-
-        sensor._log_rate_limited(
-            "battery_state_summary",
-            "debug",
-            "Battery state: current=%.2f kWh (%.1f%%), total=%.2f kWh, min=%.2f kWh, target=%.2f kWh",
-            current_capacity,
-            float(current_soc_percent or 0.0),
-            max_capacity,
-            min_capacity,
-            target_capacity,
-            cooldown_s=600.0,
+        _resolve_target_and_soc(
+            sensor, current_capacity, max_capacity, min_capacity
         )
 
         # Build load forecast list (kWh/15min for each interval)
-        load_forecast = await _build_load_forecast(
-            sensor,
-            spot_prices,
-            adaptive_helper,
-            adaptive_profiles,
-            load_avg_sensors,
-        )
-
         # PLANNER: build plan timeline with HybridStrategy.
         solar_kwh_list = _build_solar_kwh_list(sensor, spot_prices, solar_forecast)
         timeline, mode_result, recommendations = _run_planner(
@@ -514,90 +709,12 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             current_capacity,
             max_capacity,
         )
-        sensor._timeline_data = timeline
-        sensor._hybrid_timeline = timeline
-        sensor._mode_optimization_result = mode_result
-        sensor._mode_recommendations = recommendations
+        _apply_planner_results(sensor, timeline, mode_result, recommendations)
 
         # PHASE 2.9: Fix daily plan at midnight for tracking (AFTER _timeline_data is set)
         await sensor._maybe_fix_daily_plan()
 
-        # Baseline timeline (legacy) is no longer computed.
-        # Keeping attribute for backwards compatibility only.
-        sensor._baseline_timeline = []
-
-        _update_timeline_hash(sensor, sensor._timeline_data)
-
-        sensor._last_update = datetime.now()
-        _LOGGER.debug(
-            "Battery forecast updated: %s timeline points",
-            len(sensor._timeline_data),
-        )
-
-        # Vypocitat consumption summary pro dashboard
-        if adaptive_profiles and isinstance(adaptive_profiles, dict):
-            sensor._consumption_summary = adaptive_helper.calculate_consumption_summary(
-                adaptive_profiles
-            )
-        else:
-            sensor._consumption_summary = {}
-
-        # Oznacit ze prvni update probehl
-        if sensor._first_update:
-            sensor._first_update = False
-
-        # KRITICKE: Ulozit timeline zpet do coordinator.data aby grid_charging_planned sensor videl aktualni data
-        _save_forecast_to_coordinator(sensor)
-
-        # Data jsou uz v coordinator.battery_forecast_data
-        # Grid charging sensor je zavisly na coordinator update cycle
-        # NEMENIME coordinator.data - jen pridavame battery_forecast_data
-
-        # Keep auto mode switching schedule in sync with the latest timeline.
-        # This also cancels any previously scheduled events when switching is disabled.
-        if sensor._side_effects_enabled:
-            sensor._create_task_threadsafe(
-                auto_switch_module.update_auto_switch_schedule, sensor
-            )
-
-        # SIMPLE STORAGE: Update actual values kazdych 15 minut
-        now = dt_util.now()
-        current_minute = now.minute
-
-        # Spustit update kazdych 15 minut (v 0, 15, 30, 45)
-        should_update = current_minute in [0, 15, 30, 45]
-
-        if should_update:
-            # PHASE 3.0: DISABLED - Historical data loading moved to on-demand (API only)
-            # Nacitani z Recorderu kazdych 15 min je POMALE!
-            # Nove: build_timeline_extended() nacita on-demand pri API volani.
-            # NOTE: Historically skipped until initial history update; kept for future re-enable.
-            pass
-
-        # CRITICAL FIX: Write state after every update to publish consumption_summary
-        # Check if sensor is already added to HA (sensor.hass is set by framework)
-        if not sensor.hass:
-            _LOGGER.debug("Sensor not yet added to HA, skipping state write")
-            return
-
-        sensor._log_rate_limited(
-            "write_state_consumption_summary",
-            "debug",
-            " Writing HA state with consumption_summary: %s",
-            sensor._consumption_summary,
-            cooldown_s=900.0,
-        )
-        sensor.async_write_ha_state()
-
-        # NOTE: Single planner only.
-
-        # PHASE 3.5: Precompute UI data for instant API responses
-        # Build timeline_extended + unified_cost_tile and save to storage
-        # This runs every 15 min after forecast update
-        hash_changed = sensor._data_hash != sensor._last_precompute_hash
-        sensor._schedule_precompute(
-            force=sensor._last_precompute_at is None or hash_changed
-        )
+        _post_update_housekeeping(sensor, adaptive_profiles, adaptive_helper)
 
         # Notify dependent sensors (BatteryBalancing) that forecast is ready
         _dispatch_forecast_updated(sensor)

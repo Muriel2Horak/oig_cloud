@@ -42,12 +42,6 @@ def simulate_interval(
     hw_min_capacity_kwh = max(0.0, float(hw_min_capacity_kwh))
 
     soc = max(0.0, min(capacity_kwh, float(battery_soc_kwh)))
-    grid_import = 0.0
-    grid_export = 0.0
-    battery_charge = 0.0
-    battery_discharge = 0.0
-    grid_charge_raw = 0.0
-    solar_charge_raw = 0.0
 
     # Night optimization: HOME I/II/III behave identically when solar is zero.
     if solar_kwh < 0.001 and mode in (HOME_I, HOME_II, HOME_III):

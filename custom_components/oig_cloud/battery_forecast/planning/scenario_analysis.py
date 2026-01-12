@@ -357,7 +357,7 @@ def calculate_full_ups_cost(
             continue
 
     night_sorted = sorted(night_intervals, key=lambda x: x[1])
-    cheapest_intervals = set([idx for idx, _price in night_sorted[:intervals_needed]])
+    cheapest_intervals = {idx for idx, _price in night_sorted[:intervals_needed]}
 
     if cheapest_intervals:
         _LOGGER.debug(

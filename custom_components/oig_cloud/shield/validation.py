@@ -10,6 +10,13 @@ from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 HOME_5_LABEL = "Home 5"
+HOME_1_LABEL = "Home 1"
+HOME_2_LABEL = "Home 2"
+HOME_3_LABEL = "Home 3"
+HOME_UPS_LABEL = "Home UPS"
+HOME_6_LABEL = "Home 6"
+MANUAL_LABEL = "Manuální"
+API_ENDPOINT_SET_VALUE = "Device.Set.Value.php"
 
 SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
 
@@ -65,7 +72,7 @@ def extract_api_info(service_name: str, params: Dict[str, Any]) -> Dict[str, Any
         mode = params.get("mode")
         mode_key = str(mode or "").strip().lower()
         api_info = {
-            "api_endpoint": "Device.Set.Value.php",
+            "api_endpoint": API_ENDPOINT_SET_VALUE,
             "api_table": "boiler_prms",
             "api_column": "manual",
             "api_value": 1 if mode_key in {"manual", "manuální"} else 0,
@@ -74,7 +81,7 @@ def extract_api_info(service_name: str, params: Dict[str, Any]) -> Dict[str, Any
     elif service_name == SERVICE_SET_BOX_MODE:
         mode = params.get("mode")
         api_info = {
-            "api_endpoint": "Device.Set.Value.php",
+            "api_endpoint": API_ENDPOINT_SET_VALUE,
             "api_table": "box_prms",
             "api_column": "mode",
             "api_value": mode,
@@ -83,7 +90,7 @@ def extract_api_info(service_name: str, params: Dict[str, Any]) -> Dict[str, Any
     elif service_name == "oig_cloud.set_grid_delivery":
         if "limit" in params:
             api_info = {
-                "api_endpoint": "Device.Set.Value.php",
+                "api_endpoint": API_ENDPOINT_SET_VALUE,
                 "api_table": "invertor_prm1",
                 "api_column": "p_max_feed_grid",
                 "api_value": params["limit"],
@@ -91,7 +98,7 @@ def extract_api_info(service_name: str, params: Dict[str, Any]) -> Dict[str, Any
             }
         elif "mode" in params:
             api_info = {
-                "api_endpoint": "Device.Set.Value.php",
+                "api_endpoint": API_ENDPOINT_SET_VALUE,
                 "api_table": "invertor_prms",
                 "api_column": "to_grid",
                 "api_value": params["mode"],
@@ -133,156 +140,179 @@ def extract_expected_entities(
         return None
 
     if service_name == "oig_cloud.set_formating_mode":
-        fake_entity_id = f"fake_formating_mode_{int(datetime.now().timestamp())}"
-        _LOGGER.info(
-            "[OIG Shield] Formating mode - vytváří fiktivní entitu pro 2min sledování: %s",
-            fake_entity_id,
-        )
-        return {fake_entity_id: "completed_after_timeout"}
-
+        return _expected_formating_mode()
     if service_name == SERVICE_SET_BOX_MODE:
-        mode_raw = str(data.get("mode") or "").strip()
-        expected_value = mode_raw
-        if not expected_value or expected_value.lower() == "none":
-            return {}
-        mode_key = normalize_value(mode_raw)
-        mode_mapping = {
-            "home1": "Home 1",
-            "home2": "Home 2",
-            "home3": "Home 3",
-            "homeups": "Home UPS",
-            "home5": HOME_5_LABEL,
-            "home6": "Home 6",
-            "0": "Home 1",
-            "1": "Home 2",
-            "2": "Home 3",
-            "3": "Home UPS",
-            "4": HOME_5_LABEL,
-            "5": "Home 6",
-        }
-        expected_value = mode_mapping.get(mode_key, mode_raw)
-        entity_id = find_entity("_box_prms_mode")
-        if entity_id:
-            shield.last_checked_entity_id = entity_id
-            state = shield.hass.states.get(entity_id)
-            current = normalize_value(state.state if state else None)
-            expected = normalize_value(expected_value)
-            _LOGGER.debug(
-                "[extract] box_mode | current='%s' expected='%s'", current, expected
-            )
-            if current != expected:
-                return {entity_id: expected_value}
-        return {}
-
+        return _expected_box_mode(shield, data, find_entity)
     if service_name == "oig_cloud.set_boiler_mode":
-        mode = str(data.get("mode") or "").strip()
-        boiler_mode_mapping = {
-            "CBB": "CBB",
-            "Manual": "Manuální",
-            "cbb": "CBB",
-            "manual": "Manuální",
-        }
-        expected_value = boiler_mode_mapping.get(mode)
-        if not expected_value:
-            _LOGGER.warning("[extract] Unknown boiler mode: %s", mode)
-            return {}
-
-        entity_id = find_entity("_boiler_manual_mode")
-        if entity_id:
-            shield.last_checked_entity_id = entity_id
-            state = shield.hass.states.get(entity_id)
-            current = normalize_value(state.state if state else None)
-            expected = normalize_value(expected_value)
-            _LOGGER.debug(
-                "[extract] boiler_mode | current='%s' expected='%s' (input='%s')",
-                current,
-                expected,
-                mode,
-            )
-            if current != expected:
-                return {entity_id: expected_value}
-        return {}
-
+        return _expected_boiler_mode(shield, data, find_entity)
     if service_name == "oig_cloud.set_grid_delivery":
-        if "limit" in data and "mode" not in data:
-            try:
-                expected_value = round(float(data["limit"]))
-            except (ValueError, TypeError):
-                expected_value = None
+        return _expected_grid_delivery(shield, data, find_entity)
 
-            if expected_value is not None:
-                entity_id = find_entity("_invertor_prm1_p_max_feed_grid")
-                if entity_id:
-                    shield.last_checked_entity_id = entity_id
-                    state = shield.hass.states.get(entity_id)
+    return {}
 
-                    try:
-                        current_value = round(float(state.state))
-                    except (ValueError, TypeError, AttributeError):
-                        current_value = None
 
-                    _LOGGER.debug(
-                        "[extract] grid_delivery.limit ONLY | current=%s expected=%s",
-                        current_value,
-                        expected_value,
-                    )
+def _expected_formating_mode() -> Dict[str, str]:
+    fake_entity_id = f"fake_formating_mode_{int(datetime.now().timestamp())}"
+    _LOGGER.info(
+        "[OIG Shield] Formating mode - vytváří fiktivní entitu pro 2min sledování: %s",
+        fake_entity_id,
+    )
+    return {fake_entity_id: "completed_after_timeout"}
 
-                    if current_value != expected_value:
-                        return {entity_id: str(expected_value)}
 
-                    _LOGGER.info(
-                        "[extract] Limit již je %sW - přeskakuji", expected_value
-                    )
-                    return {}
+def _expected_box_mode(
+    shield: Any, data: Dict[str, Any], find_entity: Callable[[str], Optional[str]]
+) -> Dict[str, str]:
+    mode_raw = str(data.get("mode") or "").strip()
+    if not mode_raw or mode_raw.lower() == "none":
+        return {}
+    mode_key = normalize_value(mode_raw)
+    mode_mapping = {
+        "home1": HOME_1_LABEL,
+        "home2": HOME_2_LABEL,
+        "home3": HOME_3_LABEL,
+        "homeups": HOME_UPS_LABEL,
+        "home5": HOME_5_LABEL,
+        "home6": HOME_6_LABEL,
+        "0": HOME_1_LABEL,
+        "1": HOME_2_LABEL,
+        "2": HOME_3_LABEL,
+        "3": HOME_UPS_LABEL,
+        "4": HOME_5_LABEL,
+        "5": HOME_6_LABEL,
+    }
+    expected_value = mode_mapping.get(mode_key, mode_raw)
+    entity_id = find_entity("_box_prms_mode")
+    if entity_id:
+        shield.last_checked_entity_id = entity_id
+        state = shield.hass.states.get(entity_id)
+        current = normalize_value(state.state if state else None)
+        expected = normalize_value(expected_value)
+        _LOGGER.debug("[extract] box_mode | current='%s' expected='%s'", current, expected)
+        if current != expected:
+            return {entity_id: expected_value}
+    return {}
 
-        if "mode" in data and "limit" not in data:
-            mode_string = str(data["mode"]).strip()
-            mode_mapping = {
-                "Vypnuto / Off": "Vypnuto",
-                "Zapnuto / On": "Zapnuto",
-                "S omezením / Limited": "Omezeno",
-                "vypnuto / off": "Vypnuto",
-                "zapnuto / on": "Zapnuto",
-                "s omezením / limited": "Omezeno",
-                "off": "Vypnuto",
-                "on": "Zapnuto",
-                "limited": "Omezeno",
-            }
 
-            expected_text = mode_mapping.get(mode_string) or mode_mapping.get(
-                mode_string.lower()
-            )
-            if not expected_text:
-                _LOGGER.warning("[extract] Unknown grid delivery mode: %s", mode_string)
-                return {}
-
-            entity_id = find_entity("_invertor_prms_to_grid")
-            if entity_id:
-                shield.last_checked_entity_id = entity_id
-                state = shield.hass.states.get(entity_id)
-                current_text = state.state if state else None
-
-                _LOGGER.debug(
-                    "[extract] grid_delivery.mode ONLY | current='%s' expected='%s' (mode_string='%s')",
-                    current_text,
-                    expected_text,
-                    mode_string,
-                )
-
-                if current_text != expected_text:
-                    return {entity_id: expected_text}
-
-                _LOGGER.info("[extract] Mode již je %s - přeskakuji", current_text)
-                return {}
-
-        if "mode" in data and "limit" in data:
-            _LOGGER.error(
-                "[extract] CHYBA: grid_delivery dostalo mode + limit současně! Wrapper měl rozdělit!"
-            )
-            return {}
-
+def _expected_boiler_mode(
+    shield: Any, data: Dict[str, Any], find_entity: Callable[[str], Optional[str]]
+) -> Dict[str, str]:
+    mode = str(data.get("mode") or "").strip()
+    boiler_mode_mapping = {
+        "CBB": "CBB",
+        "Manual": MANUAL_LABEL,
+        "cbb": "CBB",
+        "manual": MANUAL_LABEL,
+    }
+    expected_value = boiler_mode_mapping.get(mode)
+    if not expected_value:
+        _LOGGER.warning("[extract] Unknown boiler mode: %s", mode)
         return {}
 
+    entity_id = find_entity("_boiler_manual_mode")
+    if entity_id:
+        shield.last_checked_entity_id = entity_id
+        state = shield.hass.states.get(entity_id)
+        current = normalize_value(state.state if state else None)
+        expected = normalize_value(expected_value)
+        _LOGGER.debug(
+            "[extract] boiler_mode | current='%s' expected='%s' (input='%s')",
+            current,
+            expected,
+            mode,
+        )
+        if current != expected:
+            return {entity_id: expected_value}
+    return {}
+
+
+def _expected_grid_delivery(
+    shield: Any, data: Dict[str, Any], find_entity: Callable[[str], Optional[str]]
+) -> Dict[str, str]:
+    if "limit" in data and "mode" not in data:
+        return _expected_grid_delivery_limit(shield, data, find_entity)
+    if "mode" in data and "limit" not in data:
+        return _expected_grid_delivery_mode(shield, data, find_entity)
+    if "mode" in data and "limit" in data:
+        _LOGGER.error(
+            "[extract] CHYBA: grid_delivery dostalo mode + limit současně! Wrapper měl rozdělit!"
+        )
+    return {}
+
+
+def _expected_grid_delivery_limit(
+    shield: Any, data: Dict[str, Any], find_entity: Callable[[str], Optional[str]]
+) -> Dict[str, str]:
+    try:
+        expected_value = round(float(data["limit"]))
+    except (ValueError, TypeError):
+        expected_value = None
+
+    if expected_value is None:
+        return {}
+
+    entity_id = find_entity("_invertor_prm1_p_max_feed_grid")
+    if entity_id:
+        shield.last_checked_entity_id = entity_id
+        state = shield.hass.states.get(entity_id)
+        try:
+            current_value = round(float(state.state))
+        except (ValueError, TypeError, AttributeError):
+            current_value = None
+
+        _LOGGER.debug(
+            "[extract] grid_delivery.limit ONLY | current=%s expected=%s",
+            current_value,
+            expected_value,
+        )
+
+        if current_value != expected_value:
+            return {entity_id: str(expected_value)}
+
+        _LOGGER.info("[extract] Limit již je %sW - přeskakuji", expected_value)
+    return {}
+
+
+def _expected_grid_delivery_mode(
+    shield: Any, data: Dict[str, Any], find_entity: Callable[[str], Optional[str]]
+) -> Dict[str, str]:
+    mode_string = str(data["mode"]).strip()
+    mode_mapping = {
+        "Vypnuto / Off": "Vypnuto",
+        "Zapnuto / On": "Zapnuto",
+        "S omezením / Limited": "Omezeno",
+        "vypnuto / off": "Vypnuto",
+        "zapnuto / on": "Zapnuto",
+        "s omezením / limited": "Omezeno",
+        "off": "Vypnuto",
+        "on": "Zapnuto",
+        "limited": "Omezeno",
+    }
+
+    expected_text = mode_mapping.get(mode_string) or mode_mapping.get(
+        mode_string.lower()
+    )
+    if not expected_text:
+        _LOGGER.warning("[extract] Unknown grid delivery mode: %s", mode_string)
+        return {}
+
+    entity_id = find_entity("_invertor_prms_to_grid")
+    if entity_id:
+        shield.last_checked_entity_id = entity_id
+        state = shield.hass.states.get(entity_id)
+        current_text = state.state if state else None
+
+        _LOGGER.debug(
+            "[extract] grid_delivery.mode ONLY | current='%s' expected='%s' (mode_string='%s')",
+            current_text,
+            expected_text,
+            mode_string,
+        )
+
+        if current_text != expected_text:
+            return {entity_id: expected_text}
+
+        _LOGGER.info("[extract] Mode již je %s - přeskakuji", current_text)
     return {}
 
 
@@ -374,7 +404,7 @@ def _wrap_matcher(
 
 def _matches_boiler_mode(expected_value: Any, current_value: Any) -> bool:
     return (expected_value == 0 and current_value == "CBB") or (
-        expected_value == 1 and current_value == "Manuální"
+        expected_value == 1 and current_value == MANUAL_LABEL
     )
 
 
@@ -388,12 +418,12 @@ def _matches_ssr_mode(expected_value: Any, current_value: Any) -> bool:
 
 def _matches_box_mode(expected_value: Any, current_value: Any) -> bool:
     mode_mapping = {
-        0: "Home 1",
-        1: "Home 2",
-        2: "Home 3",
-        3: "Home UPS",
+        0: HOME_1_LABEL,
+        1: HOME_2_LABEL,
+        2: HOME_3_LABEL,
+        3: HOME_UPS_LABEL,
         4: HOME_5_LABEL,
-        5: "Home 6",
+        5: HOME_6_LABEL,
     }
     if isinstance(expected_value, str):
         if normalize_value(current_value) == normalize_value(expected_value):

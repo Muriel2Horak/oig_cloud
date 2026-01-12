@@ -58,68 +58,98 @@ class WizardMixin:
             return data
 
         migrated = dict(data)
-
-        # Migrace IMPORT (nákup)
-        old_model = data.get("spot_pricing_model", "percentage")
         dual_tariff = data.get("dual_tariff_enabled", False)
+        WizardMixin._migrate_import_pricing(data, migrated, dual_tariff)
+        WizardMixin._migrate_export_pricing(data, migrated, dual_tariff)
+        if dual_tariff:
+            WizardMixin._apply_dual_tariff_defaults(migrated, data)
 
-        if old_model == "percentage":
-            scenario = (
-                "spot_percentage_2tariff" if dual_tariff else "spot_percentage_1tariff"
+        return migrated
+
+    @staticmethod
+    def _migrate_import_pricing(
+        data: Dict[str, Any], migrated: Dict[str, Any], dual_tariff: bool
+    ) -> None:
+        old_model = data.get("spot_pricing_model", "percentage")
+        migration_map = {
+            "percentage": WizardMixin._migrate_import_percentage,
+            "fixed": WizardMixin._migrate_import_fixed,
+            "fixed_prices": WizardMixin._migrate_import_fixed_prices,
+        }
+        handler = migration_map.get(old_model)
+        if handler:
+            handler(data, migrated, dual_tariff)
+
+    @staticmethod
+    def _migrate_import_percentage(
+        data: Dict[str, Any], migrated: Dict[str, Any], dual_tariff: bool
+    ) -> None:
+        scenario = (
+            "spot_percentage_2tariff" if dual_tariff else "spot_percentage_1tariff"
+        )
+        migrated["import_pricing_scenario"] = scenario
+        if dual_tariff:
+            migrated["import_spot_positive_fee_percent_vt"] = data.get(
+                "spot_positive_fee_percent", 15.0
             )
-            migrated["import_pricing_scenario"] = scenario
-            if dual_tariff:
-                migrated["import_spot_positive_fee_percent_vt"] = data.get(
-                    "spot_positive_fee_percent", 15.0
-                )
-                migrated["import_spot_negative_fee_percent_vt"] = data.get(
-                    "spot_negative_fee_percent", 9.0
-                )
-                migrated["import_spot_positive_fee_percent_nt"] = data.get(
-                    "spot_positive_fee_percent", 13.0
-                )
-                migrated["import_spot_negative_fee_percent_nt"] = data.get(
-                    "spot_negative_fee_percent", 7.0
-                )
-            else:
-                migrated["import_spot_positive_fee_percent"] = data.get(
-                    "spot_positive_fee_percent", 15.0
-                )
-                migrated["import_spot_negative_fee_percent"] = data.get(
-                    "spot_negative_fee_percent", 9.0
-                )
-        elif old_model == "fixed":
-            scenario = "spot_fixed_2tariff" if dual_tariff else "spot_fixed_1tariff"
-            migrated["import_pricing_scenario"] = scenario
-            if dual_tariff:
-                migrated["import_spot_fixed_fee_mwh_vt"] = data.get(
-                    "spot_fixed_fee_mwh", 500.0
-                )
-                migrated["import_spot_fixed_fee_mwh_nt"] = data.get(
-                    "spot_fixed_fee_mwh", 400.0
-                )
-            else:
-                migrated["import_spot_fixed_fee_mwh"] = data.get(
-                    "spot_fixed_fee_mwh", 500.0
-                )
-        elif old_model == "fixed_prices":
-            scenario = "fix_2tariff" if dual_tariff else "fix_1tariff"
-            migrated["import_pricing_scenario"] = scenario
-            if dual_tariff:
-                migrated["import_fixed_price_vt"] = data.get(
-                    "fixed_commercial_price_vt", 4.50
-                )
-                migrated["import_fixed_price_nt"] = data.get(
-                    "fixed_commercial_price_nt", 3.20
-                )
-            else:
-                migrated["import_fixed_price"] = data.get(
-                    "fixed_commercial_price_vt", 4.50
-                )
+            migrated["import_spot_negative_fee_percent_vt"] = data.get(
+                "spot_negative_fee_percent", 9.0
+            )
+            migrated["import_spot_positive_fee_percent_nt"] = data.get(
+                "spot_positive_fee_percent", 13.0
+            )
+            migrated["import_spot_negative_fee_percent_nt"] = data.get(
+                "spot_negative_fee_percent", 7.0
+            )
+        else:
+            migrated["import_spot_positive_fee_percent"] = data.get(
+                "spot_positive_fee_percent", 15.0
+            )
+            migrated["import_spot_negative_fee_percent"] = data.get(
+                "spot_negative_fee_percent", 9.0
+            )
 
-        # Migrace EXPORT (prodej)
+    @staticmethod
+    def _migrate_import_fixed(
+        data: Dict[str, Any], migrated: Dict[str, Any], dual_tariff: bool
+    ) -> None:
+        scenario = "spot_fixed_2tariff" if dual_tariff else "spot_fixed_1tariff"
+        migrated["import_pricing_scenario"] = scenario
+        if dual_tariff:
+            migrated["import_spot_fixed_fee_mwh_vt"] = data.get(
+                "spot_fixed_fee_mwh", 500.0
+            )
+            migrated["import_spot_fixed_fee_mwh_nt"] = data.get(
+                "spot_fixed_fee_mwh", 400.0
+            )
+        else:
+            migrated["import_spot_fixed_fee_mwh"] = data.get(
+                "spot_fixed_fee_mwh", 500.0
+            )
+
+    @staticmethod
+    def _migrate_import_fixed_prices(
+        data: Dict[str, Any], migrated: Dict[str, Any], dual_tariff: bool
+    ) -> None:
+        scenario = "fix_2tariff" if dual_tariff else "fix_1tariff"
+        migrated["import_pricing_scenario"] = scenario
+        if dual_tariff:
+            migrated["import_fixed_price_vt"] = data.get(
+                "fixed_commercial_price_vt", 4.50
+            )
+            migrated["import_fixed_price_nt"] = data.get(
+                "fixed_commercial_price_nt", 3.20
+            )
+        else:
+            migrated["import_fixed_price"] = data.get(
+                "fixed_commercial_price_vt", 4.50
+            )
+
+    @staticmethod
+    def _migrate_export_pricing(
+        data: Dict[str, Any], migrated: Dict[str, Any], dual_tariff: bool
+    ) -> None:
         old_export_model = data.get("export_pricing_model", "percentage")
-
         if old_export_model == "percentage":
             scenario = (
                 "spot_percentage_2tariff" if dual_tariff else "spot_percentage_1tariff"
@@ -136,26 +166,20 @@ class WizardMixin:
                 migrated["export_spot_fee_percent"] = data.get(
                     "export_fee_percent", 15.0
                 )
-        else:  # fixed
-            scenario = "spot_fixed_2tariff" if dual_tariff else "spot_fixed_1tariff"
-            migrated["export_pricing_scenario"] = scenario
-            if dual_tariff:
-                migrated["export_spot_fixed_fee_czk_vt"] = data.get(
-                    "export_fixed_fee_czk", 0.20
-                )
-                migrated["export_spot_fixed_fee_czk_nt"] = data.get(
-                    "export_fixed_fee_czk", 0.15
-                )
-            else:
-                migrated["export_spot_fixed_fee_czk"] = data.get(
-                    "export_fixed_fee_czk", 0.20
-                )
-
-        # VT/NT hodiny (pokud je dvoutarif)
+            return
+        scenario = "spot_fixed_2tariff" if dual_tariff else "spot_fixed_1tariff"
+        migrated["export_pricing_scenario"] = scenario
         if dual_tariff:
-            WizardMixin._apply_dual_tariff_defaults(migrated, data)
-
-        return migrated
+            migrated["export_spot_fixed_fee_czk_vt"] = data.get(
+                "export_fixed_fee_czk", 0.20
+            )
+            migrated["export_spot_fixed_fee_czk_nt"] = data.get(
+                "export_fixed_fee_czk", 0.15
+            )
+        else:
+            migrated["export_spot_fixed_fee_czk"] = data.get(
+                "export_fixed_fee_czk", 0.20
+            )
 
     @staticmethod
     def _apply_dual_tariff_defaults(
@@ -683,26 +707,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_credentials")
 
-            errors = {}
-
-            # Validace povinných polí (pouze když NEjdeme zpět)
-            if not user_input.get(CONF_USERNAME, "").strip():
-                errors[CONF_USERNAME] = "required"
-            if not user_input.get(CONF_PASSWORD, ""):
-                errors[CONF_PASSWORD] = "required"
-
-            if not user_input.get("live_data_enabled", False):
-                errors["live_data_enabled"] = "live_data_not_confirmed"
-
+            errors = self._validate_credentials_input(user_input)
             if errors:
-                return self.async_show_form(
-                    step_id="wizard_credentials",
-                    data_schema=self._get_credentials_schema(),
-                    errors=errors,
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_credentials"
-                    ),
-                )
+                return self._show_credentials_form(errors)
 
             try:
                 await validate_input(self.hass, user_input)
@@ -720,20 +727,28 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
 
-            return self.async_show_form(
-                step_id="wizard_credentials",
-                data_schema=self._get_credentials_schema(),
-                errors=errors,
-                description_placeholders=self._get_step_placeholders(
-                    "wizard_credentials"
-                ),
-            )
+            return self._show_credentials_form(errors)
 
+        return self._show_credentials_form()
+
+    def _show_credentials_form(self, errors: Optional[Dict[str, str]] = None) -> FlowResult:
         return self.async_show_form(
             step_id="wizard_credentials",
             data_schema=self._get_credentials_schema(),
+            errors=errors,
             description_placeholders=self._get_step_placeholders("wizard_credentials"),
         )
+
+    @staticmethod
+    def _validate_credentials_input(user_input: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        if not user_input.get(CONF_USERNAME, "").strip():
+            errors[CONF_USERNAME] = "required"
+        if not user_input.get(CONF_PASSWORD, ""):
+            errors[CONF_PASSWORD] = "required"
+        if not user_input.get("live_data_enabled", False):
+            errors["live_data_enabled"] = "live_data_not_confirmed"
+        return errors
 
     async def async_step_wizard_modules(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -744,40 +759,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_modules")
 
-            errors = {}
-
-            if user_input.get("enable_battery_prediction"):
-                if not user_input.get("enable_solar_forecast"):
-                    errors["enable_battery_prediction"] = "requires_solar_forecast"
-                if not user_input.get("enable_extended_sensors"):
-                    errors["enable_extended_sensors"] = "required_for_battery"
-
-            if user_input.get("enable_dashboard"):
-                missing = []
-                if not user_input.get("enable_statistics"):
-                    missing.append("Statistiky")
-                if not user_input.get("enable_solar_forecast"):
-                    missing.append("Solární předpověď")
-                if not user_input.get("enable_battery_prediction"):
-                    missing.append("Predikce baterie")
-                if not user_input.get("enable_pricing"):
-                    missing.append("Cenové senzory a spotové ceny")
-                if not user_input.get("enable_extended_sensors"):
-                    missing.append("Rozšířené senzory")
-
-                if missing:
-                    errors["enable_dashboard"] = "dashboard_requires_all"
-                    self._wizard_data["_missing_for_dashboard"] = missing
-
+            errors = self._validate_modules_selection(user_input)
             if errors:
-                return self.async_show_form(
-                    step_id="wizard_modules",
-                    data_schema=self._get_modules_schema(user_input),
-                    errors=errors,
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_modules"
-                    ),
-                )
+                return self._show_modules_form(user_input, errors)
 
             self._wizard_data.update(user_input)
             self._step_history.append("wizard_modules")
@@ -793,11 +777,50 @@ Kliknutím na "Odeslat" spustíte průvodce.
             next_step = self._get_next_step("wizard_modules")
             return await getattr(self, f"async_step_{next_step}")()
 
+        return self._show_modules_form()
+
+    def _show_modules_form(
+        self,
+        defaults: Optional[Dict[str, Any]] = None,
+        errors: Optional[Dict[str, str]] = None,
+    ) -> FlowResult:
         return self.async_show_form(
             step_id="wizard_modules",
-            data_schema=self._get_modules_schema(),
+            data_schema=self._get_modules_schema(defaults),
+            errors=errors,
             description_placeholders=self._get_step_placeholders("wizard_modules"),
         )
+
+    def _validate_modules_selection(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        if user_input.get("enable_battery_prediction"):
+            if not user_input.get("enable_solar_forecast"):
+                errors["enable_battery_prediction"] = "requires_solar_forecast"
+            if not user_input.get("enable_extended_sensors"):
+                errors["enable_extended_sensors"] = "required_for_battery"
+
+        if user_input.get("enable_dashboard"):
+            missing = self._missing_dashboard_requirements(user_input)
+            if missing:
+                errors["enable_dashboard"] = "dashboard_requires_all"
+                self._wizard_data["_missing_for_dashboard"] = missing
+
+        return errors
+
+    @staticmethod
+    def _missing_dashboard_requirements(user_input: Dict[str, Any]) -> list[str]:
+        missing = []
+        if not user_input.get("enable_statistics"):
+            missing.append("Statistiky")
+        if not user_input.get("enable_solar_forecast"):
+            missing.append("Solární předpověď")
+        if not user_input.get("enable_battery_prediction"):
+            missing.append("Predikce baterie")
+        if not user_input.get("enable_pricing"):
+            missing.append("Cenové senzory a spotové ceny")
+        if not user_input.get("enable_extended_sensors"):
+            missing.append("Rozšířené senzory")
+        return missing
 
     def _get_modules_schema(
         self, defaults: Optional[Dict[str, Any]] = None
@@ -1006,28 +1029,27 @@ Kliknutím na "Odeslat" spustíte průvodce.
         for step in all_steps[current_idx + 1 :]:
             if step == "wizard_summary":
                 return step
-
-            if step == "wizard_solar" and not self._wizard_data.get(
-                "enable_solar_forecast"
-            ):
-                continue
-            if step == "wizard_battery" and not self._wizard_data.get(
-                "enable_battery_prediction"
-            ):
-                continue
-            # Všechny 3 pricing kroky se přeskakují, pokud není enable_pricing
-            if step in [
-                "wizard_pricing_import",
-                "wizard_pricing_export",
-                "wizard_pricing_distribution",
-            ] and not self._wizard_data.get("enable_pricing"):
-                continue
-            if step == "wizard_boiler" and not self._wizard_data.get("enable_boiler"):
+            if self._should_skip_step(step):
                 continue
 
             return step
 
         return "wizard_summary"
+
+    def _should_skip_step(self, step: str) -> bool:
+        if step == "wizard_solar":
+            return not self._wizard_data.get("enable_solar_forecast")
+        if step == "wizard_battery":
+            return not self._wizard_data.get("enable_battery_prediction")
+        if step in {
+            "wizard_pricing_import",
+            "wizard_pricing_export",
+            "wizard_pricing_distribution",
+        }:
+            return not self._wizard_data.get("enable_pricing")
+        if step == "wizard_boiler":
+            return not self._wizard_data.get("enable_boiler")
+        return False
 
     async def async_step_wizard_intervals(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -1038,109 +1060,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_intervals")
 
-            errors = {}
-
-            # Validace intervalů s českými zprávami
-            standard = user_input.get("standard_scan_interval", 30)
-            extended = user_input.get("extended_scan_interval", 300)
-            data_source_mode = self._sanitize_data_source_mode(
-                user_input.get(
-                    "data_source_mode",
-                    self._wizard_data.get("data_source_mode", "cloud_only"),
-                )
-            )
-            proxy_stale = user_input.get(
-                "local_proxy_stale_minutes",
-                self._wizard_data.get("local_proxy_stale_minutes", 10),
-            )
-            debounce_ms = user_input.get(
-                "local_event_debounce_ms",
-                self._wizard_data.get("local_event_debounce_ms", 300),
-            )
-
-            if standard < 30:
-                errors["standard_scan_interval"] = "interval_too_short"
-            elif standard > 300:
-                errors["standard_scan_interval"] = "interval_too_long"
-
-            if extended < 300:
-                errors["extended_scan_interval"] = "extended_interval_too_short"
-            elif extended > 3600:
-                errors["extended_scan_interval"] = "extended_interval_too_long"
-
-            if proxy_stale < 1:
-                errors["local_proxy_stale_minutes"] = "interval_too_short"
-            elif proxy_stale > 120:
-                errors["local_proxy_stale_minutes"] = "interval_too_long"
-
-            if debounce_ms < 0:
-                errors["local_event_debounce_ms"] = "interval_too_short"
-            elif debounce_ms > 5000:
-                errors["local_event_debounce_ms"] = "interval_too_long"
-
-            if data_source_mode == "local_only":
-                proxy_state = (
-                    self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
-                    if self.hass
-                    else None
-                )
-                if proxy_state is None or proxy_state.state in (
-                    STATE_UNAVAILABLE,
-                    STATE_UNKNOWN,
-                ):
-                    errors["data_source_mode"] = "local_proxy_missing"
-                proxy_box = (
-                    self.hass.states.get(PROXY_BOX_ID_ENTITY_ID) if self.hass else None
-                )
-                if proxy_box is None or not (
-                    isinstance(proxy_box.state, str) and proxy_box.state.isdigit()
-                ):
-                    errors["data_source_mode"] = "local_proxy_missing"
-
+            values = self._collect_interval_values(user_input)
+            errors = self._validate_interval_values(values)
             if errors:
-                return self.async_show_form(
-                    step_id="wizard_intervals",
-                    data_schema=vol.Schema(
-                        {
-                            vol.Optional(
-                                "standard_scan_interval", default=standard
-                            ): int,
-                            vol.Optional(
-                                "extended_scan_interval", default=extended
-                            ): int,
-                            vol.Optional(
-                                "data_source_mode", default=data_source_mode
-                            ): selector.SelectSelector(
-                                selector.SelectSelectorConfig(
-                                    options=[
-                                        {
-                                            "value": "cloud_only",
-                                            "label": "☁️ Cloud only",
-                                        },
-                                        {
-                                            "value": "local_only",
-                                            "label": "🏠 Local only (fallback na cloud při výpadku)",
-                                        },
-                                    ],
-                                    mode=selector.SelectSelectorMode.DROPDOWN,
-                                )
-                            ),
-                            vol.Optional(
-                                "local_proxy_stale_minutes",
-                                default=proxy_stale,
-                            ): int,
-                            vol.Optional(
-                                "local_event_debounce_ms",
-                                default=debounce_ms,
-                            ): int,
-                            vol.Optional("go_back", default=False): bool,
-                        }
-                    ),
-                    errors=errors,
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_intervals"
-                    ),
-                )
+                return self._show_intervals_form(values, errors)
 
             self._wizard_data.update(user_input)
             self._step_history.append("wizard_intervals")
@@ -1148,13 +1071,87 @@ Kliknutím na "Odeslat" spustíte průvodce.
             next_step = self._get_next_step("wizard_intervals")
             return await getattr(self, f"async_step_{next_step}")()
 
-        data_source_mode = self._sanitize_data_source_mode(
-            self._wizard_data.get("data_source_mode", "cloud_only")
+        return self._show_intervals_form()
+
+    def _collect_interval_values(self, user_input: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "standard": user_input.get("standard_scan_interval", 30),
+            "extended": user_input.get("extended_scan_interval", 300),
+            "data_source_mode": self._sanitize_data_source_mode(
+                user_input.get(
+                    "data_source_mode",
+                    self._wizard_data.get("data_source_mode", "cloud_only"),
+                )
+            ),
+            "proxy_stale": user_input.get(
+                "local_proxy_stale_minutes",
+                self._wizard_data.get("local_proxy_stale_minutes", 10),
+            ),
+            "debounce_ms": user_input.get(
+                "local_event_debounce_ms",
+                self._wizard_data.get("local_event_debounce_ms", 300),
+            ),
+        }
+
+    def _validate_interval_values(self, values: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        standard = values["standard"]
+        extended = values["extended"]
+        proxy_stale = values["proxy_stale"]
+        debounce_ms = values["debounce_ms"]
+        data_source_mode = values["data_source_mode"]
+
+        if standard < 30:
+            errors["standard_scan_interval"] = "interval_too_short"
+        elif standard > 300:
+            errors["standard_scan_interval"] = "interval_too_long"
+
+        if extended < 300:
+            errors["extended_scan_interval"] = "extended_interval_too_short"
+        elif extended > 3600:
+            errors["extended_scan_interval"] = "extended_interval_too_long"
+
+        if proxy_stale < 1:
+            errors["local_proxy_stale_minutes"] = "interval_too_short"
+        elif proxy_stale > 120:
+            errors["local_proxy_stale_minutes"] = "interval_too_long"
+
+        if debounce_ms < 0:
+            errors["local_event_debounce_ms"] = "interval_too_short"
+        elif debounce_ms > 5000:
+            errors["local_event_debounce_ms"] = "interval_too_long"
+
+        if data_source_mode == "local_only" and not self._proxy_ready():
+            errors["data_source_mode"] = "local_proxy_missing"
+
+        return errors
+
+    def _proxy_ready(self) -> bool:
+        if not self.hass:
+            return False
+        proxy_state = self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
+        if proxy_state is None or proxy_state.state in (
+            STATE_UNAVAILABLE,
+            STATE_UNKNOWN,
+        ):
+            return False
+        proxy_box = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
+        return bool(
+            proxy_box is not None
+            and isinstance(proxy_box.state, str)
+            and proxy_box.state.isdigit()
         )
 
-        return self.async_show_form(
-            step_id="wizard_intervals",
-            data_schema=vol.Schema(
+    def _show_intervals_form(
+        self,
+        values: Optional[Dict[str, Any]] = None,
+        errors: Optional[Dict[str, str]] = None,
+    ) -> FlowResult:
+        if values is None:
+            data_source_mode = self._sanitize_data_source_mode(
+                self._wizard_data.get("data_source_mode", "cloud_only")
+            )
+            data_schema = vol.Schema(
                 {
                     vol.Optional("standard_scan_interval", default=30): int,
                     vol.Optional("extended_scan_interval", default=300): int,
@@ -1182,7 +1179,45 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ): int,
                     vol.Optional("go_back", default=False): bool,
                 }
-            ),
+            )
+        else:
+            data_schema = vol.Schema(
+                {
+                    vol.Optional(
+                        "standard_scan_interval", default=values["standard"]
+                    ): int,
+                    vol.Optional(
+                        "extended_scan_interval", default=values["extended"]
+                    ): int,
+                    vol.Optional(
+                        "data_source_mode", default=values["data_source_mode"]
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": "cloud_only", "label": "☁️ Cloud only"},
+                                {
+                                    "value": "local_only",
+                                    "label": "🏠 Local only (fallback na cloud při výpadku)",
+                                },
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional(
+                        "local_proxy_stale_minutes",
+                        default=values["proxy_stale"],
+                    ): int,
+                    vol.Optional(
+                        "local_event_debounce_ms",
+                        default=values["debounce_ms"],
+                    ): int,
+                    vol.Optional("go_back", default=False): bool,
+                }
+            )
+        return self.async_show_form(
+            step_id="wizard_intervals",
+            data_schema=data_schema,
+            errors=errors,
             description_placeholders=self._get_step_placeholders("wizard_intervals"),
         )
 
@@ -1802,11 +1837,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_pricing_distribution")
 
-            # Detekce změny tariff_count - pokud se změnil, znovu zobrazit formulář
-            old_tariff_count = self._wizard_data.get("tariff_count", "single")
-            new_tariff_count = user_input.get("tariff_count", "single")
-
-            if old_tariff_count != new_tariff_count:
+            if self._should_refresh_distribution_form(user_input):
                 self._wizard_data.update(user_input)
                 return self.async_show_form(
                     step_id="wizard_pricing_distribution",
@@ -1816,70 +1847,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ),
                 )
 
-            # Detekce změny víkendového nastavení - přepnout zobrazení polí
-            old_weekend_same = self._wizard_data.get(
-                "tariff_weekend_same_as_weekday", True
-            )
-            new_weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
-            if new_tariff_count == "dual" and old_weekend_same != new_weekend_same:
-                self._wizard_data.update(user_input)
-                return self.async_show_form(
-                    step_id="wizard_pricing_distribution",
-                    data_schema=self._get_pricing_distribution_schema(user_input),
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_pricing_distribution"
-                    ),
-                )
-
-            errors = {}
-
-            # Validace distribučních poplatků
-            dist_vt = user_input.get("distribution_fee_vt_kwh", 1.42)
-            if dist_vt < 0 or dist_vt > 10:
-                errors["distribution_fee_vt_kwh"] = "invalid_distribution_fee"
-
-            # Pokud je dual tariff, validovat NT a hodiny
-            tariff_count = user_input.get("tariff_count", "single")
-            if tariff_count == "dual":
-                dist_nt = user_input.get("distribution_fee_nt_kwh", 0.91)
-                if dist_nt < 0 or dist_nt > 10:
-                    errors["distribution_fee_nt_kwh"] = "invalid_distribution_fee"
-
-                if self._wizard_data.get("import_pricing_scenario") == "fix_price":
-                    fixed_vt = user_input.get(
-                        "fixed_price_vt_kwh", self._wizard_data.get("fixed_price_kwh")
-                    )
-                    fixed_nt = user_input.get(
-                        "fixed_price_nt_kwh", self._wizard_data.get("fixed_price_kwh")
-                    )
-                    if fixed_vt is None or fixed_vt < 0.1 or fixed_vt > 20:
-                        errors["fixed_price_vt_kwh"] = "invalid_price"
-                    if fixed_nt is None or fixed_nt < 0.1 or fixed_nt > 20:
-                        errors["fixed_price_nt_kwh"] = "invalid_price"
-
-                # Validace VT/NT hodin na mezery a překryvy
-                vt_starts = user_input.get("tariff_vt_start_weekday", "6")
-                nt_starts = user_input.get("tariff_nt_start_weekday", "22,2")
-
-                is_valid, error_key = validate_tariff_hours(vt_starts, nt_starts)
-                if not is_valid:
-                    errors["tariff_vt_start_weekday"] = error_key
-
-                weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
-                if not weekend_same:
-                    vt_weekend = user_input.get("tariff_vt_start_weekend", "")
-                    nt_weekend = user_input.get("tariff_nt_start_weekend", "0")
-                    is_valid, error_key = validate_tariff_hours(
-                        vt_weekend, nt_weekend, allow_single_tariff=True
-                    )
-                    if not is_valid:
-                        errors["tariff_vt_start_weekend"] = error_key
-
-            # Validace VAT
-            vat = user_input.get("vat_rate", 21.0)
-            if vat < 0 or vat > 30:
-                errors["vat_rate"] = "invalid_vat"
-
+            errors = self._validate_pricing_distribution(user_input)
             if errors:
                 return self.async_show_form(
                     step_id="wizard_pricing_distribution",
@@ -1903,6 +1871,70 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 "wizard_pricing_distribution"
             ),
         )
+
+    def _should_refresh_distribution_form(self, user_input: Dict[str, Any]) -> bool:
+        old_tariff_count = self._wizard_data.get("tariff_count", "single")
+        new_tariff_count = user_input.get("tariff_count", "single")
+        if old_tariff_count != new_tariff_count:
+            return True
+
+        old_weekend_same = self._wizard_data.get(
+            "tariff_weekend_same_as_weekday", True
+        )
+        new_weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
+        return new_tariff_count == "dual" and old_weekend_same != new_weekend_same
+
+    def _validate_pricing_distribution(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+
+        dist_vt = user_input.get("distribution_fee_vt_kwh", 1.42)
+        if dist_vt < 0 or dist_vt > 10:
+            errors["distribution_fee_vt_kwh"] = "invalid_distribution_fee"
+
+        tariff_count = user_input.get("tariff_count", "single")
+        if tariff_count == "dual":
+            self._validate_dual_tariff_distribution(user_input, errors)
+
+        vat = user_input.get("vat_rate", 21.0)
+        if vat < 0 or vat > 30:
+            errors["vat_rate"] = "invalid_vat"
+
+        return errors
+
+    def _validate_dual_tariff_distribution(
+        self, user_input: Dict[str, Any], errors: Dict[str, str]
+    ) -> None:
+        dist_nt = user_input.get("distribution_fee_nt_kwh", 0.91)
+        if dist_nt < 0 or dist_nt > 10:
+            errors["distribution_fee_nt_kwh"] = "invalid_distribution_fee"
+
+        if self._wizard_data.get("import_pricing_scenario") == "fix_price":
+            fixed_vt = user_input.get(
+                "fixed_price_vt_kwh", self._wizard_data.get("fixed_price_kwh")
+            )
+            fixed_nt = user_input.get(
+                "fixed_price_nt_kwh", self._wizard_data.get("fixed_price_kwh")
+            )
+            if fixed_vt is None or fixed_vt < 0.1 or fixed_vt > 20:
+                errors["fixed_price_vt_kwh"] = "invalid_price"
+            if fixed_nt is None or fixed_nt < 0.1 or fixed_nt > 20:
+                errors["fixed_price_nt_kwh"] = "invalid_price"
+
+        vt_starts = user_input.get("tariff_vt_start_weekday", "6")
+        nt_starts = user_input.get("tariff_nt_start_weekday", "22,2")
+        is_valid, error_key = validate_tariff_hours(vt_starts, nt_starts)
+        if not is_valid:
+            errors["tariff_vt_start_weekday"] = error_key
+
+        weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
+        if not weekend_same:
+            vt_weekend = user_input.get("tariff_vt_start_weekend", "")
+            nt_weekend = user_input.get("tariff_nt_start_weekend", "0")
+            is_valid, error_key = validate_tariff_hours(
+                vt_weekend, nt_weekend, allow_single_tariff=True
+            )
+            if not is_valid:
+                errors["tariff_vt_start_weekend"] = error_key
 
     def _get_pricing_distribution_schema(
         self, defaults: Optional[Dict[str, Any]] = None

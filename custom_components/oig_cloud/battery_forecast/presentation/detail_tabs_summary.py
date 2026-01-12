@@ -54,6 +54,33 @@ def aggregate_interval_metrics(
             )
         return (import_val or 0.0) - (export_val or 0.0)
 
+    def _accumulate_metric(
+        metrics_map: Dict[str, Dict[str, Any]],
+        metric_key: str,
+        plan_value: float,
+        actual_value: Optional[float],
+    ) -> None:
+        metrics_map[metric_key]["plan"] += plan_value
+        if actual_value is not None:
+            metrics_map[metric_key]["actual"] += actual_value
+            metrics_map[metric_key]["actual_samples"] += 1
+        else:
+            metrics_map[metric_key]["actual"] += plan_value
+
+    def _get_actual_grid(interval: Dict[str, Any]) -> Optional[float]:
+        actual_payload = interval.get("actual")
+        if not actual_payload:
+            return None
+        return (
+            actual_payload.get("grid_import")
+            or actual_payload.get("grid_import_kwh")
+            or 0.0
+        ) - (
+            actual_payload.get("grid_export")
+            or actual_payload.get("grid_export_kwh")
+            or 0.0
+        )
+
     metrics_template = {
         "plan": 0.0,
         "actual": 0.0,
@@ -70,50 +97,19 @@ def aggregate_interval_metrics(
     for interval in intervals or []:
         plan_cost = _get_plan_value(interval, "net_cost")
         actual_cost = _get_actual_value(interval, "net_cost")
-        metrics["cost"]["plan"] += plan_cost
-        if actual_cost is not None:
-            metrics["cost"]["actual"] += actual_cost
-            metrics["cost"]["actual_samples"] += 1
-        else:
-            metrics["cost"]["actual"] += plan_cost
+        _accumulate_metric(metrics, "cost", plan_cost, actual_cost)
 
         plan_solar = _get_plan_value(interval, "solar_kwh")
         actual_solar = _get_actual_value(interval, "solar_kwh")
-        metrics["solar"]["plan"] += plan_solar
-        if actual_solar is not None:
-            metrics["solar"]["actual"] += actual_solar
-            metrics["solar"]["actual_samples"] += 1
-        else:
-            metrics["solar"]["actual"] += plan_solar
+        _accumulate_metric(metrics, "solar", plan_solar, actual_solar)
 
         plan_consumption = _get_plan_value(interval, "consumption_kwh")
         actual_consumption = _get_actual_value(interval, "consumption_kwh")
-        metrics["consumption"]["plan"] += plan_consumption
-        if actual_consumption is not None:
-            metrics["consumption"]["actual"] += actual_consumption
-            metrics["consumption"]["actual_samples"] += 1
-        else:
-            metrics["consumption"]["actual"] += plan_consumption
+        _accumulate_metric(metrics, "consumption", plan_consumption, actual_consumption)
 
         plan_grid = _get_grid_net(interval, "planned")
-        actual_grid = None
-        actual_payload = interval.get("actual")
-        if actual_payload:
-            actual_grid = (
-                actual_payload.get("grid_import")
-                or actual_payload.get("grid_import_kwh")
-                or 0.0
-            ) - (
-                actual_payload.get("grid_export")
-                or actual_payload.get("grid_export_kwh")
-                or 0.0
-            )
-        metrics["grid"]["plan"] += plan_grid
-        if actual_grid is not None:
-            metrics["grid"]["actual"] += actual_grid
-            metrics["grid"]["actual_samples"] += 1
-        else:
-            metrics["grid"]["actual"] += plan_grid
+        actual_grid = _get_actual_grid(interval)
+        _accumulate_metric(metrics, "grid", plan_grid, actual_grid)
 
     formatted_metrics: Dict[str, Dict[str, Any]] = {}
     metric_units = {

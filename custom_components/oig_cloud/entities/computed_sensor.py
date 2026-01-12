@@ -111,9 +111,24 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             dt = st.last_changed
             if dt is None:
                 return None
-            return dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+            return self._normalize_timestamp(dt)
         except Exception:
             return None
+
+    @staticmethod
+    def _normalize_timestamp(dt: datetime) -> datetime:
+        return dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+
+    def _parse_state_timestamp(self, state_value: str) -> Optional[datetime]:
+        try:
+            parsed = dt_util.parse_datetime(state_value) or datetime.fromisoformat(
+                state_value
+            )
+        except Exception:
+            return None
+        if parsed is None:
+            return None
+        return self._normalize_timestamp(parsed)
 
     def _get_entity_timestamp(self, entity_id: str) -> Optional[datetime]:
         if not getattr(self, "hass", None):
@@ -122,25 +137,29 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if not st or st.state in (None, "unknown", "unavailable", ""):
             return None
         if isinstance(st.state, str):
-            try:
-                parsed = dt_util.parse_datetime(st.state) or datetime.fromisoformat(
-                    st.state
-                )
-                if parsed is not None:
-                    return (
-                        dt_util.as_utc(parsed)
-                        if parsed.tzinfo
-                        else parsed.replace(tzinfo=dt_util.UTC)
-                    )
-            except Exception:
-                pass
+            parsed = self._parse_state_timestamp(st.state)
+            if parsed is not None:
+                return parsed
         try:
             dt = st.last_updated or st.last_changed
             if dt is None:
                 return None
-            return dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+            return self._normalize_timestamp(dt)
         except Exception:
             return None
+
+    def _iter_oig_states(self, domain: str, box: str):
+        states_obj = getattr(self.hass, "states", None)
+        async_all = getattr(states_obj, "async_all", None)
+        if not callable(async_all):
+            return []
+        prefix = f"{domain}.oig_{box}_"
+        return [
+            st
+            for st in async_all(domain)
+            if getattr(st, "entity_id", "").startswith(prefix)
+            and st.state not in (None, "unknown", "unavailable", "")
+        ]
 
     def _get_latest_oig_entity_update(self) -> Optional[datetime]:
         if not getattr(self, "hass", None):
@@ -148,22 +167,13 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         box = self._box_id
         if not (isinstance(box, str) and box.isdigit()):
             return None
-        states_obj = getattr(self.hass, "states", None)
-        async_all = getattr(states_obj, "async_all", None)
-        if not callable(async_all):
-            return None
         latest: Optional[datetime] = None
         for domain in ("sensor", "binary_sensor"):
-            prefix = f"{domain}.oig_{box}_"
-            for st in async_all(domain):
-                if not getattr(st, "entity_id", "").startswith(prefix):
-                    continue
-                if st.state in (None, "unknown", "unavailable", ""):
-                    continue
+            for st in self._iter_oig_states(domain, box):
                 dt = st.last_changed
                 if dt is None:
                     continue
-                dt_utc = dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+                dt_utc = self._normalize_timestamp(dt)
                 latest = dt_utc if latest is None else max(latest, dt_utc)
         return latest
 
@@ -516,24 +526,23 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if now is None:
             now = dt_util.now()
         _LOGGER.debug(f"[{self.entity_id}] Resetting daily energy")
-        for key in self._energy:
-            if key.endswith("today"):
-                self._energy[key] = 0.0
+        self._reset_energy_by_suffix("today")
 
         if now.day == 1:
             _LOGGER.debug(f"[{self.entity_id}] Resetting monthly energy")
-            for key in self._energy:
-                if key.endswith("month"):
-                    self._energy[key] = 0.0
+            self._reset_energy_by_suffix("month")
 
         if now.month == 1 and now.day == 1:
             _LOGGER.debug(f"[{self.entity_id}] Resetting yearly energy")
-            for key in self._energy:
-                if key.endswith("year"):
-                    self._energy[key] = 0.0
+            self._reset_energy_by_suffix("year")
 
         # Force save after reset
         await self._save_energy_to_storage(force=True)
+
+    def _reset_energy_by_suffix(self, suffix: str) -> None:
+        for key in self._energy:
+            if key.endswith(suffix):
+                self._energy[key] = 0.0
 
     @property
     def state(self) -> Optional[Union[float, str]]:  # noqa: C901

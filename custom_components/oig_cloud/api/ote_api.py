@@ -470,44 +470,21 @@ class OteApi:
         - Po 13:00 bere včera/dnes/zítra.
         """
         now = datetime.now(tz=self.timezone)
-        if date is None:
-            date = now
+        date = date or now
 
-        # Pokud máme validní cache (dnešek + případně zítřek po 13h), použij ji
-        if self._is_cache_valid():
-            _LOGGER.debug(
-                "Using cached spot prices (valid for today%s)",
-                " and tomorrow" if now.hour >= 13 else "",
-            )
-            return self._last_data
+        cached = self._get_cached_spot_prices(now)
+        if cached is not None:
+            return cached
 
-        # Cache není validní - chybí data, musíme stáhnout z OTE
         _LOGGER.info(
             "Cache missing required data - fetching from OTE (hour=%d)",
             now.hour,
         )
 
         try:
-            eur_czk_rate = await self._resolve_eur_czk_rate()
-            start_date, end_date = self._resolve_date_range(
-                date, now, force_today_only
+            data = await self._fetch_spot_data(
+                date=date, now=now, force_today_only=force_today_only
             )
-            qh_eur_kwh = await self._get_dam_period_prices(start_date, end_date)
-            if not qh_eur_kwh:
-                return self._fallback_cached_prices()
-
-            data = await self._build_spot_data(
-                qh_eur_kwh,
-                eur_czk_rate,
-                date,
-            )
-            if not data:
-                return self._fallback_cached_prices()
-
-            if not force_today_only and now.hour >= 13:
-                data = await self._ensure_tomorrow_data(
-                    data, date, qh_eur_kwh, eur_czk_rate
-                )
             if data:
                 await self._persist_spot_cache(data)
                 return data
@@ -518,6 +495,44 @@ class OteApi:
             return self._fallback_cached_prices()
 
         return {}
+
+    def _get_cached_spot_prices(self, now: datetime) -> Optional[Dict[str, Any]]:
+        if not self._is_cache_valid():
+            return None
+        _LOGGER.debug(
+            "Using cached spot prices (valid for today%s)",
+            " and tomorrow" if now.hour >= 13 else "",
+        )
+        return self._last_data
+
+    async def _fetch_spot_data(
+        self,
+        *,
+        date: datetime,
+        now: datetime,
+        force_today_only: bool,
+    ) -> Optional[Dict[str, Any]]:
+        eur_czk_rate = await self._resolve_eur_czk_rate()
+        start_date, end_date = self._resolve_date_range(
+            date, now, force_today_only
+        )
+        qh_eur_kwh = await self._get_dam_period_prices(start_date, end_date)
+        if not qh_eur_kwh:
+            return self._fallback_cached_prices()
+
+        data = await self._build_spot_data(
+            qh_eur_kwh,
+            eur_czk_rate,
+            date,
+        )
+        if not data:
+            return self._fallback_cached_prices()
+
+        if not force_today_only and now.hour >= 13:
+            data = await self._ensure_tomorrow_data(
+                data, date, qh_eur_kwh, eur_czk_rate
+            )
+        return data
 
     async def _resolve_eur_czk_rate(self) -> float:
         eur_czk_rate = await self.get_cnb_exchange_rate()

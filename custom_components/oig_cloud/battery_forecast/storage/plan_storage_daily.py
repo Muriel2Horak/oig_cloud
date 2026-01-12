@@ -129,12 +129,7 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
 
     await _ensure_baseline(sensor, today_str, now)
 
-    if (
-        sensor._daily_plan_state
-        and sensor._daily_plan_state.get("date") == today_str
-        and len(sensor._daily_plan_state.get("plan", [])) > 0
-        and sensor._daily_plan_state.get("locked", False)
-    ):
+    if _should_keep_locked_plan(sensor._daily_plan_state, today_str):
         _LOGGER.debug(
             "Daily plan for %s already locked with %s intervals, keeping it",
             today_str,
@@ -142,72 +137,97 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
         )
         return
 
-    if (
-        sensor._daily_plan_state is None
-        or sensor._daily_plan_state.get("date") != today_str
-        or not sensor._daily_plan_state.get("plan", [])
-    ):
+    if _should_rebuild_plan(sensor._daily_plan_state, today_str):
         if sensor._daily_plan_state:
             await _archive_daily_plan(sensor, now)
 
-        if (
-            hasattr(sensor, "_mode_optimization_result")
-            and sensor._mode_optimization_result
-        ):
-            optimal_timeline = getattr(sensor, "_timeline_data", [])
-            if not optimal_timeline:
-                optimal_timeline = sensor._mode_optimization_result.get(
-                    "optimal_timeline", []
-                )
-
-            today_start = datetime.combine(now.date(), datetime.min.time())
-            today_start = dt_util.as_local(today_start)
-            today_end = datetime.combine(now.date(), datetime.max.time())
-            today_end = dt_util.as_local(today_end)
-
-            today_timeline = _collect_today_timeline(
-                optimal_timeline, today_start, today_end
-            )
-            expected_total_cost = sum(i.get("net_cost", 0) for i in today_timeline)
-
-            plan_intervals = _build_plan_intervals(today_timeline)
-
-            existing_actual = []
-            if (
-                hasattr(sensor, "_daily_plan_state")
-                and sensor._daily_plan_state
-                and sensor._daily_plan_state.get("date") == today_str
-            ):
-                existing_actual = sensor._daily_plan_state.get("actual", [])
-                _LOGGER.debug(
-                    "[Fix Plan] Preserving %s existing actual intervals",
-                    len(existing_actual),
-                )
-
-            sensor._daily_plan_state = {
-                "date": today_str,
-                "created_at": now.isoformat(),
-                "plan": plan_intervals,
-                "actual": existing_actual,
-                "locked": True,
-            }
-
-            _LOGGER.info(
-                "Fixed daily plan for %s: %s plan intervals, %s existing actual, "
-                "expected_cost=%.2f CZK",
-                today_str,
-                len(plan_intervals),
-                len(existing_actual),
-                expected_total_cost,
-            )
-        else:
+        if not _has_optimization_result(sensor):
             _LOGGER.warning(
                 "No HYBRID optimization result available to fix daily plan for %s",
                 today_str,
             )
-            sensor._daily_plan_state = {
-                "date": today_str,
-                "created_at": now.isoformat(),
-                "plan": [],
-                "actual": [],
-            }
+            sensor._daily_plan_state = _empty_daily_plan(today_str, now)
+            return
+
+        plan_intervals, expected_total_cost = _build_daily_plan(sensor, now)
+        existing_actual = _get_existing_actual(sensor._daily_plan_state, today_str)
+
+        sensor._daily_plan_state = {
+            "date": today_str,
+            "created_at": now.isoformat(),
+            "plan": plan_intervals,
+            "actual": existing_actual,
+            "locked": True,
+        }
+
+        _LOGGER.info(
+            "Fixed daily plan for %s: %s plan intervals, %s existing actual, "
+            "expected_cost=%.2f CZK",
+            today_str,
+            len(plan_intervals),
+            len(existing_actual),
+            expected_total_cost,
+        )
+
+
+def _should_keep_locked_plan(
+    plan_state: Optional[dict[str, Any]], today_str: str
+) -> bool:
+    return bool(
+        plan_state
+        and plan_state.get("date") == today_str
+        and len(plan_state.get("plan", [])) > 0
+        and plan_state.get("locked", False)
+    )
+
+
+def _should_rebuild_plan(
+    plan_state: Optional[dict[str, Any]], today_str: str
+) -> bool:
+    return bool(
+        plan_state is None
+        or plan_state.get("date") != today_str
+        or not plan_state.get("plan", [])
+    )
+
+
+def _has_optimization_result(sensor: Any) -> bool:
+    return bool(
+        hasattr(sensor, "_mode_optimization_result") and sensor._mode_optimization_result
+    )
+
+
+def _build_daily_plan(sensor: Any, now: datetime) -> tuple[list[dict[str, Any]], float]:
+    optimal_timeline = getattr(sensor, "_timeline_data", [])
+    if not optimal_timeline:
+        optimal_timeline = sensor._mode_optimization_result.get("optimal_timeline", [])
+
+    today_start = dt_util.as_local(datetime.combine(now.date(), datetime.min.time()))
+    today_end = dt_util.as_local(datetime.combine(now.date(), datetime.max.time()))
+
+    today_timeline = _collect_today_timeline(optimal_timeline, today_start, today_end)
+    expected_total_cost = sum(i.get("net_cost", 0) for i in today_timeline)
+    plan_intervals = _build_plan_intervals(today_timeline)
+    return plan_intervals, expected_total_cost
+
+
+def _get_existing_actual(
+    plan_state: Optional[dict[str, Any]], today_str: str
+) -> list[dict[str, Any]]:
+    if plan_state and plan_state.get("date") == today_str:
+        existing_actual = plan_state.get("actual", [])
+        _LOGGER.debug(
+            "[Fix Plan] Preserving %s existing actual intervals",
+            len(existing_actual),
+        )
+        return existing_actual
+    return []
+
+
+def _empty_daily_plan(today_str: str, now: datetime) -> dict[str, Any]:
+    return {
+        "date": today_str,
+        "created_at": now.isoformat(),
+        "plan": [],
+        "actual": [],
+    }

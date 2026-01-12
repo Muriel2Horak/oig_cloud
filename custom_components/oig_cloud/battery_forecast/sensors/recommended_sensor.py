@@ -21,6 +21,7 @@ from ...const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 MIN_RECOMMENDED_INTERVAL_MINUTES = 30
+MODE_LABEL_HOME_UPS = "Home UPS"
 
 
 class OigCloudPlannerRecommendedModeSensor(
@@ -138,26 +139,28 @@ class OigCloudPlannerRecommendedModeSensor(
     ) -> Optional[str]:
         if mode_name:
             upper = str(mode_name).strip().upper()
+            label_map = {
+                "HOME I": "Home 1",
+                "HOME II": "Home 2",
+                "HOME III": "Home 3",
+                "HOME UPS": MODE_LABEL_HOME_UPS,
+            }
+            for key, label in label_map.items():
+                if key in upper:
+                    return label
             if "UPS" in upper:
-                return "Home UPS"
-            if "HOME III" in upper:
-                return "Home 3"
-            if "HOME II" in upper:
-                return "Home 2"
-            if "HOME I" in upper:
-                return "Home 1"
-            if upper in {"HOME 1", "HOME 2", "HOME 3", "HOME UPS"}:
-                return str(mode_name).title()
+                return MODE_LABEL_HOME_UPS
+            if upper in label_map:
+                return label_map[upper]
 
         if isinstance(mode_code, int):
-            if mode_code == 0:
-                return "Home 1"
-            if mode_code == 1:
-                return "Home 2"
-            if mode_code == 2:
-                return "Home 3"
-            if mode_code == 3:
-                return "Home UPS"
+            code_map = {
+                0: "Home 1",
+                1: "Home 2",
+                2: "Home 3",
+                3: MODE_LABEL_HOME_UPS,
+            }
+            return code_map.get(mode_code)
         return None
 
     def _planned_mode_from_interval(
@@ -179,6 +182,14 @@ class OigCloudPlannerRecommendedModeSensor(
         mode_code = interval.get("mode") if isinstance(interval.get("mode"), int) else None
         return mode_label, mode_code
 
+    def _parse_interval_start(
+        self, item: Dict[str, Any], date_hint: Optional[str], *, planned: bool
+    ) -> Optional[datetime]:
+        time_value = item.get("time") or item.get("timestamp")
+        if planned:
+            return self._parse_interval_time(time_value, date_hint)
+        return self._parse_local_start(time_value)
+
     def _find_current_interval(
         self,
         intervals: list[Dict[str, Any]],
@@ -193,32 +204,67 @@ class OigCloudPlannerRecommendedModeSensor(
         current_start: Optional[datetime] = None
 
         for i, item in enumerate(intervals):
-            start = (
-                self._parse_interval_time(item.get("time") or item.get("timestamp"), date_hint)
-                if planned
-                else self._parse_local_start(item.get("time") or item.get("timestamp"))
-            )
+            start = self._parse_interval_start(item, date_hint, planned=planned)
             if not start:
                 continue
-            end = start + timedelta(minutes=15)
-            mode_label, mode_code = (
-                self._planned_mode_from_interval(item)
-                if planned
-                else self._mode_from_interval(item)
-            )
+
+            mode_label, mode_code = self._interval_mode(item, planned=planned)
             if planned and not mode_label:
                 continue
-            if start <= now < end:
-                return i, start, mode_label, mode_code
-            if start <= now:
-                current_idx = i
-                current_start = start
-                current_mode = mode_label
-                current_mode_code = mode_code
+
+            match, current_idx, current_start, current_mode, current_mode_code = (
+                self._update_current_candidate(
+                    now=now,
+                    index=i,
+                    start=start,
+                    mode_label=mode_label,
+                    mode_code=mode_code,
+                    current_idx=current_idx,
+                    current_start=current_start,
+                    current_mode=current_mode,
+                    current_mode_code=current_mode_code,
+                )
+            )
+            if match:
+                return current_idx, current_start, current_mode, current_mode_code
             if start > now and current_idx is not None:
                 break
 
         return current_idx, current_start, current_mode, current_mode_code
+
+    def _interval_mode(
+        self, item: Dict[str, Any], *, planned: bool
+    ) -> tuple[Optional[str], Optional[int]]:
+        return (
+            self._planned_mode_from_interval(item)
+            if planned
+            else self._mode_from_interval(item)
+        )
+    def _update_current_candidate(
+        self,
+        *,
+        now: datetime,
+        index: int,
+        start: datetime,
+        mode_label: Optional[str],
+        mode_code: Optional[int],
+        current_idx: Optional[int],
+        current_start: Optional[datetime],
+        current_mode: Optional[str],
+        current_mode_code: Optional[int],
+    ) -> tuple[
+        bool,
+        Optional[int],
+        Optional[datetime],
+        Optional[str],
+        Optional[int],
+    ]:
+        end = start + timedelta(minutes=15)
+        if start <= now < end:
+            return True, index, start, mode_label, mode_code
+        if start <= now:
+            return False, index, start, mode_label, mode_code
+        return False, current_idx, current_start, current_mode, current_mode_code
 
     def _find_next_change(
         self,
@@ -231,16 +277,10 @@ class OigCloudPlannerRecommendedModeSensor(
         planned: bool,
     ) -> tuple[Optional[datetime], Optional[str], Optional[int]]:
         for item in intervals[current_idx + 1 :]:
-            start = (
-                self._parse_interval_time(item.get("time") or item.get("timestamp"), date_hint)
-                if planned
-                else self._parse_local_start(item.get("time") or item.get("timestamp"))
-            )
+            start = self._parse_interval_start(item, date_hint, planned=planned)
             if not start:
                 continue
-            if start < current_start + timedelta(
-                minutes=MIN_RECOMMENDED_INTERVAL_MINUTES
-            ):
+            if not self._interval_after_min_gap(start, current_start):
                 continue
             mode_label, mode_code = (
                 self._planned_mode_from_interval(item)
@@ -250,6 +290,10 @@ class OigCloudPlannerRecommendedModeSensor(
             if mode_label and mode_label != current_mode:
                 return start, mode_label, mode_code
         return None, None, None
+
+    @staticmethod
+    def _interval_after_min_gap(start: datetime, current_start: datetime) -> bool:
+        return start >= current_start + timedelta(minutes=MIN_RECOMMENDED_INTERVAL_MINUTES)
 
     def _get_auto_switch_lead_seconds(
         self, from_mode: Optional[str], to_mode: Optional[str]
@@ -283,23 +327,11 @@ class OigCloudPlannerRecommendedModeSensor(
         """Compute recommended mode + attributes and return signature for change detection."""
         attrs: Dict[str, Any] = {}
         payload = self._get_forecast_payload() or {}
-        detail_tabs = (
-            payload.get("detail_tabs")
-            if isinstance(payload.get("detail_tabs"), dict)
-            else None
-        )
-        timeline = payload.get("timeline_data")
+        detail_intervals, detail_date, timeline = self._extract_payload_intervals(payload)
         attrs["last_update"] = payload.get("calculation_time")
-        detail_intervals: Optional[list[Dict[str, Any]]] = None
-        detail_date: Optional[str] = None
-        if isinstance(detail_tabs, dict):
-            today_tab = detail_tabs.get("today") or {}
-            if isinstance(today_tab, dict):
-                detail_intervals = today_tab.get("intervals")
-                detail_date = today_tab.get("date")
 
-        source_intervals = (
-            detail_intervals if isinstance(detail_intervals, list) else timeline
+        source_intervals, planned_detail = self._resolve_source_intervals(
+            detail_intervals, timeline
         )
         attrs["points_count"] = (
             len(source_intervals) if isinstance(source_intervals, list) else 0
@@ -310,65 +342,30 @@ class OigCloudPlannerRecommendedModeSensor(
             return None, attrs, sig
 
         now = dt_util.now()
-        current_idx: Optional[int]
-        current_start: Optional[datetime]
-        current_mode: Optional[str]
-        current_mode_code: Optional[int]
-        planned_detail = bool(detail_intervals and isinstance(detail_intervals, list))
-        if planned_detail:
-            current_idx, current_start, current_mode, current_mode_code = (
-                self._find_current_interval(
-                    detail_intervals or [],
-                    now,
-                    detail_date,
-                    planned=True,
-                )
+        current_idx, current_start, current_mode, current_mode_code = (
+            self._resolve_current_interval(
+                source_intervals=source_intervals,
+                detail_intervals=detail_intervals or [],
+                detail_date=detail_date,
+                now=now,
+                planned_detail=planned_detail,
+                timeline=timeline,
             )
-            if current_mode is None and isinstance(timeline, list):
-                current_idx, current_start, current_mode, current_mode_code = (
-                    self._find_current_interval(
-                        timeline,
-                        now,
-                        detail_date,
-                        planned=False,
-                    )
-                )
-        else:
-            current_idx, current_start, current_mode, current_mode_code = (
-                self._find_current_interval(
-                    source_intervals,
-                    now,
-                    None,
-                    planned=False,
-                )
-            )
+        )
 
         attrs["recommended_interval_start"] = (
             current_start.isoformat() if isinstance(current_start, datetime) else None
         )
 
-        next_change_at: Optional[datetime] = None
-        next_mode: Optional[str] = None
-        next_mode_code: Optional[int] = None
-        if current_idx is not None and current_mode and isinstance(current_start, datetime):
-            if planned_detail:
-                next_change_at, next_mode, next_mode_code = self._find_next_change(
-                    detail_intervals or [],
-                    current_idx,
-                    current_mode,
-                    current_start,
-                    detail_date,
-                    planned=True,
-                )
-            else:
-                next_change_at, next_mode, next_mode_code = self._find_next_change(
-                    source_intervals,
-                    current_idx,
-                    current_mode,
-                    current_start,
-                    None,
-                    planned=False,
-                )
+        next_change_at, next_mode, next_mode_code = self._compute_next_change(
+            source_intervals=source_intervals,
+            detail_intervals=detail_intervals or [],
+            detail_date=detail_date,
+            planned_detail=planned_detail,
+            current_idx=current_idx,
+            current_mode=current_mode,
+            current_start=current_start,
+        )
 
         attrs["next_mode_change_at"] = (
             next_change_at.isoformat() if next_change_at else None
@@ -396,25 +393,165 @@ class OigCloudPlannerRecommendedModeSensor(
         )
         attrs["auto_switch_lead_seconds"] = lead_seconds
 
-        sig = json.dumps(
-            {
-                "v": effective_mode,
-                "c": effective_mode_code,
-                "cv": current_mode,
-                "cc": current_mode_code,
-                "s": attrs.get("recommended_interval_start"),
-                "n": attrs.get("next_mode_change_at"),
-                "nv": next_mode,
-                "nc": next_mode_code,
-                "ef": attrs.get("recommended_effective_from"),
-                "ls": lead_seconds,
-                "lu": attrs.get("last_update"),
-                "pc": attrs.get("points_count"),
-            },
-            sort_keys=True,
-            default=str,
+        sig = self._build_signature(
+            effective_mode,
+            effective_mode_code,
+            current_mode,
+            current_mode_code,
+            attrs,
+            next_mode,
+            next_mode_code,
+            lead_seconds,
         )
         return effective_mode, attrs, sig
+
+    def _compute_next_change(
+        self,
+        *,
+        source_intervals: list[Dict[str, Any]],
+        detail_intervals: list[Dict[str, Any]],
+        detail_date: Optional[str],
+        planned_detail: bool,
+        current_idx: Optional[int],
+        current_mode: Optional[str],
+        current_start: Optional[datetime],
+    ) -> tuple[Optional[datetime], Optional[str], Optional[int]]:
+        if (
+            current_idx is None
+            or not current_mode
+            or not isinstance(current_start, datetime)
+        ):
+            return None, None, None
+
+        return self._resolve_next_change(
+            source_intervals=source_intervals,
+            detail_intervals=detail_intervals,
+            detail_date=detail_date,
+            planned_detail=planned_detail,
+            current_idx=current_idx,
+            current_mode=current_mode,
+            current_start=current_start,
+        )
+
+    def _build_signature(
+        self,
+        effective_mode: Optional[str],
+        effective_mode_code: Optional[int],
+        current_mode: Optional[str],
+        current_mode_code: Optional[int],
+        attrs: Dict[str, Any],
+        next_mode: Optional[str],
+        next_mode_code: Optional[int],
+        lead_seconds: Optional[float],
+    ) -> str:
+        payload = {
+            "v": effective_mode,
+            "c": effective_mode_code,
+            "cv": current_mode,
+            "cc": current_mode_code,
+            "s": attrs.get("recommended_interval_start"),
+            "n": attrs.get("next_mode_change_at"),
+            "nv": next_mode,
+            "nc": next_mode_code,
+            "ef": attrs.get("recommended_effective_from"),
+            "ls": lead_seconds,
+            "lu": attrs.get("last_update"),
+            "pc": attrs.get("points_count"),
+        }
+        return json.dumps(payload, sort_keys=True, default=str)
+
+    def _extract_payload_intervals(
+        self, payload: Dict[str, Any]
+    ) -> tuple[Optional[list[Dict[str, Any]]], Optional[str], Any]:
+        detail_tabs = (
+            payload.get("detail_tabs")
+            if isinstance(payload.get("detail_tabs"), dict)
+            else None
+        )
+        timeline = payload.get("timeline_data")
+        detail_intervals: Optional[list[Dict[str, Any]]] = None
+        detail_date: Optional[str] = None
+        if isinstance(detail_tabs, dict):
+            today_tab = detail_tabs.get("today") or {}
+            if isinstance(today_tab, dict):
+                detail_intervals = today_tab.get("intervals")
+                detail_date = today_tab.get("date")
+        return detail_intervals, detail_date, timeline
+
+    def _resolve_source_intervals(
+        self,
+        detail_intervals: Optional[list[Dict[str, Any]]],
+        timeline: Any,
+    ) -> tuple[Any, bool]:
+        planned_detail = bool(detail_intervals and isinstance(detail_intervals, list))
+        if planned_detail:
+            return detail_intervals, True
+        return timeline, False
+
+    def _resolve_current_interval(
+        self,
+        *,
+        source_intervals: list[Dict[str, Any]],
+        detail_intervals: list[Dict[str, Any]],
+        detail_date: Optional[str],
+        now: datetime,
+        planned_detail: bool,
+        timeline: Any,
+    ) -> tuple[Optional[int], Optional[datetime], Optional[str], Optional[int]]:
+        if planned_detail:
+            current_idx, current_start, current_mode, current_mode_code = (
+                self._find_current_interval(
+                    detail_intervals,
+                    now,
+                    detail_date,
+                    planned=True,
+                )
+            )
+            if current_mode is None and isinstance(timeline, list):
+                return self._find_current_interval(
+                    timeline,
+                    now,
+                    detail_date,
+                    planned=False,
+                )
+            return current_idx, current_start, current_mode, current_mode_code
+
+        return self._find_current_interval(
+            source_intervals,
+            now,
+            None,
+            planned=False,
+        )
+
+    def _resolve_next_change(
+        self,
+        *,
+        source_intervals: list[Dict[str, Any]],
+        detail_intervals: list[Dict[str, Any]],
+        detail_date: Optional[str],
+        planned_detail: bool,
+        current_idx: int,
+        current_mode: str,
+        current_start: datetime,
+    ) -> tuple[Optional[datetime], Optional[str], Optional[int]]:
+        if planned_detail:
+            return self._find_next_change(
+                detail_intervals,
+                current_idx,
+                current_mode,
+                current_start,
+                detail_date,
+                planned=True,
+            )
+
+        return self._find_next_change(
+            source_intervals,
+            current_idx,
+            current_mode,
+            current_start,
+            None,
+            planned=False,
+        )
 
     async def _async_recompute(self) -> None:
         try:

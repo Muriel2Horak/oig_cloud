@@ -131,20 +131,53 @@ def select_best_mode(
     future_info: Optional[Dict[str, float]] = None,
 ) -> Tuple[int, str, Dict[int, float]]:
     """Select best mode based on scoring."""
-    scores: Dict[int, float] = {}
+    future_info = future_info or {}
+    scores = _score_modes(
+        strategy,
+        battery=battery,
+        solar=solar,
+        load=load,
+        price=price,
+        export_price=export_price,
+        cheap_threshold=cheap_threshold,
+        future_info=future_info,
+    )
+    best_mode = max(scores, key=lambda m: scores[m])
+    reason = _select_mode_reason(
+        strategy,
+        best_mode=best_mode,
+        battery=battery,
+        solar=solar,
+        load=load,
+        price=price,
+        expensive_threshold=expensive_threshold,
+        very_cheap=very_cheap,
+    )
+    return best_mode, reason, scores
 
-    if future_info is None:
-        future_info = {}
+
+def _score_modes(
+    strategy,
+    *,
+    battery: float,
+    solar: float,
+    load: float,
+    price: float,
+    export_price: float,
+    cheap_threshold: float,
+    future_info: Dict[str, float],
+) -> Dict[int, float]:
+    scores: Dict[int, float] = {}
     is_relatively_cheap = future_info.get("is_relatively_cheap", False)
     expected_saving = future_info.get("expected_saving", 0.0)
 
-    for mode in [
+    for mode in (
         CBB_MODE_HOME_I,
         CBB_MODE_HOME_II,
         CBB_MODE_HOME_III,
         CBB_MODE_HOME_UPS,
-    ]:
-        score = score_mode(
+    ):
+        scores[mode] = score_mode(
             strategy,
             mode=mode,
             battery=battery,
@@ -156,31 +189,31 @@ def select_best_mode(
             expected_saving=expected_saving,
             is_relatively_cheap=is_relatively_cheap,
         )
-        scores[mode] = score
+    return scores
 
-    best_mode = max(scores, key=lambda m: scores[m])
 
+def _select_mode_reason(
+    strategy,
+    *,
+    best_mode: int,
+    battery: float,
+    solar: float,
+    load: float,
+    price: float,
+    expensive_threshold: float,
+    very_cheap: float,
+) -> str:
     if best_mode == CBB_MODE_HOME_UPS:
         if price <= very_cheap:
-            reason = "very_cheap_grid_charge"
-        elif battery < strategy._planning_min:
-            reason = "low_battery_charge"
-        else:
-            reason = "opportunistic_charge"
-    elif best_mode == CBB_MODE_HOME_III:
-        if solar > load:
-            reason = "maximize_solar_storage"
-        else:
-            reason = "preserve_battery_high_solar"
-    elif best_mode == CBB_MODE_HOME_II:
-        reason = "preserve_battery_day"
-    else:
-        if price >= expensive_threshold:
-            reason = "expensive_use_battery"
-        else:
-            reason = "normal_operation"
-
-    return best_mode, reason, scores
+            return "very_cheap_grid_charge"
+        if battery < strategy._planning_min:
+            return "low_battery_charge"
+        return "opportunistic_charge"
+    if best_mode == CBB_MODE_HOME_III:
+        return "maximize_solar_storage" if solar > load else "preserve_battery_high_solar"
+    if best_mode == CBB_MODE_HOME_II:
+        return "preserve_battery_day"
+    return "expensive_use_battery" if price >= expensive_threshold else "normal_operation"
 
 
 def score_mode(
@@ -284,29 +317,44 @@ def apply_smoothing(
 
     min_duration = strategy.config.min_mode_duration_intervals
 
+    for run_start, run_end, _mode in _iter_mode_runs(decisions):
+        run_length = run_end - run_start
+        if run_length >= min_duration:
+            continue
+        if _run_is_protected(decisions, run_start, run_end):
+            continue
+        _merge_run_with_previous(decisions, run_start, run_end)
+
+    return decisions
+
+
+def _iter_mode_runs(decisions: List[Any]):
     i = 0
     while i < len(decisions):
         mode = decisions[i].mode
         run_start = i
         while i < len(decisions) and decisions[i].mode == mode:
             i += 1
-        run_end = i
-        run_length = run_end - run_start
+        yield run_start, i, mode
 
-        if run_length < min_duration:
-            protected = any(
-                decisions[j].is_balancing or decisions[j].is_holding
-                for j in range(run_start, run_end)
-            )
 
-            if not protected and run_start > 0:
-                prev_mode = decisions[run_start - 1].mode
-                for j in range(run_start, run_end):
-                    decisions[j].mode = prev_mode
-                    decisions[j].mode_name = CBB_MODE_NAMES.get(prev_mode, "UNKNOWN")
-                    decisions[j].reason = "smoothing_merged"
+def _run_is_protected(decisions: List[Any], run_start: int, run_end: int) -> bool:
+    return any(
+        decisions[j].is_balancing or decisions[j].is_holding
+        for j in range(run_start, run_end)
+    )
 
-    return decisions
+
+def _merge_run_with_previous(
+    decisions: List[Any], run_start: int, run_end: int
+) -> None:
+    if run_start <= 0:
+        return
+    prev_mode = decisions[run_start - 1].mode
+    for j in range(run_start, run_end):
+        decisions[j].mode = prev_mode
+        decisions[j].mode_name = CBB_MODE_NAMES.get(prev_mode, "UNKNOWN")
+        decisions[j].reason = "smoothing_merged"
 
 
 def calculate_baseline_cost(

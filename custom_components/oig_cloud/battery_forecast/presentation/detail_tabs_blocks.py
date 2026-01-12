@@ -321,6 +321,138 @@ def _calc_delta(actual_val: Optional[float], planned_val: float) -> Optional[flo
 def summarize_block_reason(
     sensor: Any, group_intervals: List[Dict[str, Any]], block: Dict[str, Any]
 ) -> Optional[str]:
+    planned_entries, _, entries_source = _select_block_entries(group_intervals)
+    if not entries_source:
+        return None
+
+    metrics_list = _extract_metrics(planned_entries)
+    guard_reason = _resolve_guard_reason(metrics_list, block)
+    if guard_reason:
+        return guard_reason
+
+    (
+        dominant_code,
+        avg_data,
+        delta_kwh,
+        max_ups_price,
+        band_pct,
+        mode_upper,
+    ) = _prepare_block_reason_inputs(sensor, entries_source, metrics_list, block)
+
+    return _resolve_block_reason(
+        dominant_code,
+        avg_data,
+        delta_kwh,
+        max_ups_price,
+        band_pct,
+        mode_upper,
+        entries_source,
+    )
+
+
+def _resolve_block_reason(
+    dominant_code: str,
+    avg_data: Dict[str, Any],
+    delta_kwh: Optional[float],
+    max_ups_price: Optional[float],
+    band_pct: Optional[float],
+    mode_upper: str,
+    entries_source: List[Dict[str, Any]],
+) -> Optional[str]:
+    reason_text = _resolve_reason_from_code(
+        dominant_code, avg_data["avg_price"], avg_data["avg_future_ups"], band_pct
+    )
+    if reason_text:
+        return reason_text
+
+    reason_text = _resolve_reason_from_mode(
+        mode_upper,
+        avg_data,
+        delta_kwh,
+        max_ups_price,
+    )
+    if reason_text:
+        return reason_text
+
+    return _resolve_fallback_reason(entries_source)
+
+
+def _prepare_block_reason_inputs(
+    sensor: Any,
+    entries_source: List[Dict[str, Any]],
+    metrics_list: List[Dict[str, Any]],
+    block: Dict[str, Any],
+) -> tuple[
+    Optional[str],
+    Dict[str, Optional[float]],
+    Optional[float],
+    float,
+    float,
+    str,
+]:
+    dominant_code = _dominant_reason_code(metrics_list)
+    avg_data = _compute_block_averages(entries_source, metrics_list)
+    delta_kwh = _delta_kwh(block)
+    max_ups_price, band_pct = _resolve_price_band(sensor)
+    mode_upper = _resolve_mode_upper(block)
+    return dominant_code, avg_data, delta_kwh, max_ups_price, band_pct, mode_upper
+
+
+def _resolve_reason_from_code(
+    dominant_code: Optional[str],
+    avg_price: Optional[float],
+    avg_future_ups: Optional[float],
+    band_pct: float,
+) -> Optional[str]:
+    if not dominant_code:
+        return None
+    return _summarize_dominant_code(dominant_code, avg_price, avg_future_ups, band_pct)
+
+
+def _resolve_reason_from_mode(
+    mode_upper: str,
+    avg_data: Dict[str, Optional[float]],
+    delta_kwh: Optional[float],
+    max_ups_price: float,
+) -> Optional[str]:
+    if "UPS" in mode_upper:
+        charge_kwh = _resolve_charge_kwh(avg_data["avg_grid_charge"], delta_kwh)
+        return _summarize_ups_mode(
+            avg_data["avg_price"],
+            max_ups_price,
+            charge_kwh,
+            avg_data["avg_future_ups"],
+        )
+    if "HOME II" in mode_upper or "HOME 2" in mode_upper:
+        return _summarize_home2_mode(
+            avg_data["avg_home1_saving"], avg_data["avg_recharge_cost"]
+        )
+    if "HOME III" in mode_upper or "HOME 3" in mode_upper:
+        return _summarize_home3_mode(avg_data["avg_solar"], avg_data["avg_load"])
+    if "HOME I" in mode_upper or "HOME 1" in mode_upper:
+        return _summarize_home1_mode(
+            delta_kwh,
+            avg_data["avg_price"],
+            avg_data["avg_future_ups"],
+            max_ups_price,
+            avg_data["avg_solar"],
+            avg_data["avg_load"],
+        )
+    return None
+
+
+def _resolve_fallback_reason(entries_source: List[Dict[str, Any]]) -> Optional[str]:
+    reasons = [
+        p.get("decision_reason") for p in entries_source if p.get("decision_reason")
+    ]
+    if reasons:
+        return Counter(reasons).most_common(1)[0][0]
+    return None
+
+
+def _select_block_entries(
+    group_intervals: List[Dict[str, Any]]
+) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]], list[Dict[str, Any]]]:
     planned_entries = [
         iv.get("planned")
         for iv in group_intervals
@@ -330,43 +462,51 @@ def summarize_block_reason(
         iv.get("actual") for iv in group_intervals if isinstance(iv.get("actual"), dict)
     ]
     entries_source = planned_entries if planned_entries else actual_entries
-    if not entries_source:
+    return planned_entries, actual_entries, entries_source
+
+
+def _extract_metrics(planned_entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [p.get("decision_metrics") or {} for p in planned_entries] if planned_entries else []
+
+
+def _resolve_guard_reason(
+    metrics_list: List[Dict[str, Any]], block: Dict[str, Any]
+) -> Optional[str]:
+    if not metrics_list:
         return None
-
-    metrics_list = (
-        [p.get("decision_metrics") or {} for p in planned_entries]
-        if planned_entries
-        else []
-    )
-
-    guard_metrics = next(
-        (m for m in metrics_list if m.get("guard_active")), None
-    ) if metrics_list else None
+    guard_metrics = next((m for m in metrics_list if m.get("guard_active")), None)
     if guard_metrics:
-        guard_reason = _summarize_guard_reason(guard_metrics, block)
-        if guard_reason:
-            return guard_reason
+        return _summarize_guard_reason(guard_metrics, block)
+    return None
 
+
+def _dominant_reason_code(metrics_list: List[Dict[str, Any]]) -> Optional[str]:
     reason_codes = [
         m.get("planner_reason_code")
         for m in metrics_list
         if m.get("planner_reason_code")
     ]
-    dominant_code = Counter(reason_codes).most_common(1)[0][0] if reason_codes else None
+    return Counter(reason_codes).most_common(1)[0][0] if reason_codes else None
 
-    def _mean(values: List[Optional[float]]) -> Optional[float]:
-        vals = [v for v in values if isinstance(v, (int, float)) and not math.isnan(v)]
-        if not vals:
-            return None
-        return sum(vals) / len(vals)
 
+def _mean_values(values: List[Optional[float]]) -> Optional[float]:
+    vals = [v for v in values if isinstance(v, (int, float)) and not math.isnan(v)]
+    if not vals:
+        return None
+    return sum(vals) / len(vals)
+
+
+def _compute_block_averages(
+    entries_source: List[Dict[str, Any]],
+    metrics_list: List[Dict[str, Any]],
+) -> Dict[str, Optional[float]]:
     def _avg_from_metrics(key: str) -> Optional[float]:
         if not metrics_list:
             return None
-        return _mean([m.get(key) for m in metrics_list if m.get(key) is not None])
+        return _mean_values([m.get(key) for m in metrics_list if m.get(key) is not None])
 
     def _avg_from_entries(key: str) -> Optional[float]:
-        return _mean(
+        return _mean_values(
             [
                 entry.get(key)
                 for entry in entries_source
@@ -382,23 +522,27 @@ def summarize_block_reason(
         if price is None:
             price = (entry.get("decision_metrics") or {}).get("spot_price_czk")
         prices.append(price)
-    avg_price = _mean(prices)
 
-    avg_future_ups = _avg_from_metrics("future_ups_avg_price_czk")
-    avg_grid_charge = _avg_from_metrics("grid_charge_kwh")
-    avg_home1_saving = _avg_from_metrics("home1_saving_czk")
-    avg_recharge_cost = _avg_from_metrics("recharge_cost_czk")
-    avg_solar = _avg_from_entries("solar_kwh")
-    avg_load = _avg_from_entries("consumption_kwh")
+    return {
+        "avg_price": _mean_values(prices),
+        "avg_future_ups": _avg_from_metrics("future_ups_avg_price_czk"),
+        "avg_grid_charge": _avg_from_metrics("grid_charge_kwh"),
+        "avg_home1_saving": _avg_from_metrics("home1_saving_czk"),
+        "avg_recharge_cost": _avg_from_metrics("recharge_cost_czk"),
+        "avg_solar": _avg_from_entries("solar_kwh"),
+        "avg_load": _avg_from_entries("consumption_kwh"),
+    }
 
+
+def _delta_kwh(block: Dict[str, Any]) -> Optional[float]:
     start_kwh = block.get("battery_kwh_start")
     end_kwh = block.get("battery_kwh_end")
-    delta_kwh = (
-        (end_kwh - start_kwh)
-        if isinstance(start_kwh, (int, float)) and isinstance(end_kwh, (int, float))
-        else None
-    )
+    if isinstance(start_kwh, (int, float)) and isinstance(end_kwh, (int, float)):
+        return end_kwh - start_kwh
+    return None
 
+
+def _resolve_price_band(sensor: Any) -> tuple[float, float]:
     opts = (
         sensor._config_entry.options if getattr(sensor, "_config_entry", None) else {}
     )
@@ -408,49 +552,12 @@ def summarize_block_reason(
         band_pct = max(0.08, (1.0 / efficiency) - 1.0)
     else:
         band_pct = 0.08
+    return max_ups_price, band_pct
 
+
+def _resolve_mode_upper(block: Dict[str, Any]) -> str:
     mode_label = block.get("mode_planned") or block.get("mode_historical") or ""
-    mode_upper = str(mode_label).upper()
-
-    if dominant_code:
-        reason_text = _summarize_dominant_code(
-            dominant_code, avg_price, avg_future_ups, band_pct
-        )
-        if reason_text:
-            return reason_text
-
-    if "UPS" in mode_upper:
-        charge_kwh = _resolve_charge_kwh(avg_grid_charge, delta_kwh)
-        ups_reason = _summarize_ups_mode(
-            avg_price, max_ups_price, charge_kwh, avg_future_ups
-        )
-        if ups_reason:
-            return ups_reason
-
-    if "HOME II" in mode_upper or "HOME 2" in mode_upper:
-        reason = _summarize_home2_mode(avg_home1_saving, avg_recharge_cost)
-        if reason:
-            return reason
-
-    if "HOME III" in mode_upper or "HOME 3" in mode_upper:
-        reason = _summarize_home3_mode(avg_solar, avg_load)
-        if reason:
-            return reason
-
-    if "HOME I" in mode_upper or "HOME 1" in mode_upper:
-        reason = _summarize_home1_mode(
-            delta_kwh, avg_price, avg_future_ups, max_ups_price, avg_solar, avg_load
-        )
-        if reason:
-            return reason
-
-    reasons = [
-        p.get("decision_reason") for p in entries_source if p.get("decision_reason")
-    ]
-    if reasons:
-        return Counter(reasons).most_common(1)[0][0]
-
-    return None
+    return str(mode_label).upper()
 
 
 def build_mode_blocks_for_tab(  # noqa: C901
@@ -486,189 +593,242 @@ def build_mode_blocks_for_tab(  # noqa: C901
 
     mode_blocks = []
     for group in mode_groups:
-        group_intervals = group.get("intervals", [])
-        if not group_intervals:
-            continue
-
-        block = {
-            "mode_historical": group.get("mode", "Unknown"),
-            "mode_planned": group.get("mode", "Unknown"),
-            "mode_match": True,
-            "status": determine_block_status(
-                group_intervals[0], group_intervals[-1], tab_name, now
-            ),
-            "start_time": group.get("start_time", ""),
-            "end_time": group.get("end_time", ""),
-            "interval_count": group.get("interval_count", 0),
-        }
-
-        duration_hours = block["interval_count"] * 0.25
-        block["duration_hours"] = round(duration_hours, 2)
-
-        if data_type in ["completed", "both"]:
-            block["cost_historical"] = group.get("actual_cost", 0.0)
-            block["cost_planned"] = group.get("planned_cost", 0.0)
-            block["cost_delta"] = group.get("delta", 0.0)
-
-            historical_mode = get_mode_from_intervals(
-                group_intervals, "actual", mode_names
-            )
-            planned_mode = get_mode_from_intervals(
-                group_intervals, "planned", mode_names
-            )
-            block["mode_historical"] = historical_mode or "Unknown"
-            block["mode_planned"] = planned_mode or "Unknown"
-            block["mode_match"] = historical_mode == planned_mode
-        else:
-            block["cost_planned"] = group.get("planned_cost", 0.0)
-            block["cost_historical"] = None
-            block["cost_delta"] = None
-
-        first_interval = group_intervals[0]
-        last_interval = group_intervals[-1]
-
-        if data_type in ["completed", "both"]:
-            start_soc_pct, start_soc_kwh = _extract_soc_payload(
-                first_interval, "actual", total_capacity
-            )
-            end_soc_pct, end_soc_kwh = _extract_soc_payload(
-                last_interval, "actual", total_capacity
-            )
-        else:
-            start_soc_pct, start_soc_kwh = _extract_soc_payload(
-                first_interval, "planned", total_capacity
-            )
-            end_soc_pct, end_soc_kwh = _extract_soc_payload(
-                last_interval, "planned", total_capacity
-            )
-
-        block["battery_soc_start"] = start_soc_pct
-        block["battery_soc_end"] = end_soc_pct
-        block["battery_kwh_start"] = start_soc_kwh
-        block["battery_kwh_end"] = end_soc_kwh
-
-        solar_plan_total = 0.0
-        solar_actual_total = 0.0
-        solar_actual_samples = 0
-
-        consumption_plan_total = 0.0
-        consumption_actual_total = 0.0
-        consumption_actual_samples = 0
-
-        grid_plan_net_total = 0.0
-        grid_actual_net_total = 0.0
-        grid_actual_samples = 0
-
-        grid_plan_export_total = 0.0
-        grid_actual_export_total = 0.0
-        grid_export_actual_samples = 0
-
-        for iv in group_intervals:
-            solar_plan_total += safe_nested_get(iv, "planned", "solar_kwh", default=0)
-            consumption_plan_total += safe_nested_get(
-                iv, "planned", "consumption_kwh", default=0
-            )
-            grid_plan_net_total += _interval_net(iv, "planned") or 0.0
-            grid_plan_export_total += safe_nested_get(
-                iv, "planned", "grid_export", default=0
-            ) or safe_nested_get(iv, "planned", "grid_export_kwh", default=0)
-
-            actual_solar = safe_nested_get(iv, "actual", "solar_kwh", default=None)
-            if actual_solar is not None:
-                solar_actual_total += actual_solar
-                solar_actual_samples += 1
-
-            actual_consumption = safe_nested_get(
-                iv, "actual", "consumption_kwh", default=None
-            )
-            if actual_consumption is not None:
-                consumption_actual_total += actual_consumption
-                consumption_actual_samples += 1
-
-            actual_net = _interval_net(iv, "actual")
-            if actual_net is not None:
-                grid_actual_net_total += actual_net
-                grid_actual_samples += 1
-
-            actual_export = safe_nested_get(iv, "actual", "grid_export", default=None)
-            if actual_export is None:
-                actual_export = safe_nested_get(
-                    iv, "actual", "grid_export_kwh", default=None
-                )
-            if actual_export is not None:
-                grid_actual_export_total += actual_export
-                grid_export_actual_samples += 1
-
-        block["solar_planned_kwh"] = round(solar_plan_total, 2)
-        block["solar_actual_kwh"] = _round_or_none(
-            solar_actual_total, solar_actual_samples
+        block = _build_mode_block(
+            sensor=sensor,
+            group=group,
+            tab_name=tab_name,
+            now=now,
+            data_type=data_type,
+            mode_names=mode_names,
+            total_capacity=total_capacity,
         )
-
-        block["consumption_planned_kwh"] = round(consumption_plan_total, 2)
-        block["consumption_actual_kwh"] = _round_or_none(
-            consumption_actual_total, consumption_actual_samples
-        )
-
-        block["grid_import_planned_kwh"] = round(grid_plan_net_total, 2)
-        block["grid_import_actual_kwh"] = _round_or_none(
-            grid_actual_net_total, grid_actual_samples
-        )
-
-        block["grid_export_planned_kwh"] = round(grid_plan_export_total, 2)
-        block["grid_export_actual_kwh"] = _round_or_none(
-            grid_actual_export_total, grid_export_actual_samples
-        )
-
-        block["solar_total_kwh"] = (
-            block["solar_actual_kwh"]
-            if block["solar_actual_kwh"] is not None
-            else block["solar_planned_kwh"]
-        )
-        block["consumption_total_kwh"] = (
-            block["consumption_actual_kwh"]
-            if block["consumption_actual_kwh"] is not None
-            else block["consumption_planned_kwh"]
-        )
-        block["grid_import_total_kwh"] = (
-            block["grid_import_actual_kwh"]
-            if block["grid_import_actual_kwh"] is not None
-            else block["grid_import_planned_kwh"]
-        )
-        block["grid_export_total_kwh"] = (
-            block["grid_export_actual_kwh"]
-            if block["grid_export_actual_kwh"] is not None
-            else block["grid_export_planned_kwh"]
-        )
-
-        block["solar_delta_kwh"] = _calc_delta(
-            block["solar_actual_kwh"], block["solar_planned_kwh"]
-        )
-        block["consumption_delta_kwh"] = _calc_delta(
-            block["consumption_actual_kwh"], block["consumption_planned_kwh"]
-        )
-        block["grid_import_delta_kwh"] = _calc_delta(
-            block["grid_import_actual_kwh"], block["grid_import_planned_kwh"]
-        )
-        block["grid_export_delta_kwh"] = _calc_delta(
-            block["grid_export_actual_kwh"], block["grid_export_planned_kwh"]
-        )
-
-        block_reason = summarize_block_reason(sensor, group_intervals, block)
-        if block_reason:
-            block["interval_reasons"] = [
-                {
-                    "time": block.get("start_time", ""),
-                    "reason": block_reason,
-                }
-            ]
-
-        if data_type in ["completed", "both"] and block["mode_match"]:
-            block["adherence_pct"] = 100
-        elif data_type in ["completed", "both"]:
-            block["adherence_pct"] = 0
-        else:
-            block["adherence_pct"] = None
-
-        mode_blocks.append(block)
+        if block:
+            mode_blocks.append(block)
 
     return mode_blocks
+
+
+def _build_mode_block(
+    *,
+    sensor: Any,
+    group: Dict[str, Any],
+    tab_name: str,
+    now: datetime,
+    data_type: str,
+    mode_names: Dict[int, str],
+    total_capacity: float,
+) -> Optional[Dict[str, Any]]:
+    group_intervals = group.get("intervals", [])
+    if not group_intervals:
+        return None
+
+    block = _init_mode_block(group, group_intervals, tab_name, now)
+    _populate_mode_costs(block, group, group_intervals, data_type, mode_names)
+    _populate_soc_fields(
+        block, group_intervals, data_type, total_capacity
+    )
+    stats = _accumulate_energy_stats(group_intervals)
+    _apply_energy_stats(block, stats)
+    _apply_block_reason(sensor, group_intervals, block)
+    _apply_adherence(block, data_type)
+    return block
+
+
+def _init_mode_block(
+    group: Dict[str, Any],
+    group_intervals: List[Dict[str, Any]],
+    tab_name: str,
+    now: datetime,
+) -> Dict[str, Any]:
+    block = {
+        "mode_historical": group.get("mode", "Unknown"),
+        "mode_planned": group.get("mode", "Unknown"),
+        "mode_match": True,
+        "status": determine_block_status(
+            group_intervals[0], group_intervals[-1], tab_name, now
+        ),
+        "start_time": group.get("start_time", ""),
+        "end_time": group.get("end_time", ""),
+        "interval_count": group.get("interval_count", 0),
+    }
+    duration_hours = block["interval_count"] * 0.25
+    block["duration_hours"] = round(duration_hours, 2)
+    return block
+
+
+def _populate_mode_costs(
+    block: Dict[str, Any],
+    group: Dict[str, Any],
+    group_intervals: List[Dict[str, Any]],
+    data_type: str,
+    mode_names: Dict[int, str],
+) -> None:
+    if data_type in ["completed", "both"]:
+        block["cost_historical"] = group.get("actual_cost", 0.0)
+        block["cost_planned"] = group.get("planned_cost", 0.0)
+        block["cost_delta"] = group.get("delta", 0.0)
+
+        historical_mode = get_mode_from_intervals(group_intervals, "actual", mode_names)
+        planned_mode = get_mode_from_intervals(group_intervals, "planned", mode_names)
+        block["mode_historical"] = historical_mode or "Unknown"
+        block["mode_planned"] = planned_mode or "Unknown"
+        block["mode_match"] = historical_mode == planned_mode
+    else:
+        block["cost_planned"] = group.get("planned_cost", 0.0)
+        block["cost_historical"] = None
+        block["cost_delta"] = None
+
+
+def _populate_soc_fields(
+    block: Dict[str, Any],
+    group_intervals: List[Dict[str, Any]],
+    data_type: str,
+    total_capacity: float,
+) -> None:
+    first_interval = group_intervals[0]
+    last_interval = group_intervals[-1]
+    branch = "actual" if data_type in ["completed", "both"] else "planned"
+    start_soc_pct, start_soc_kwh = _extract_soc_payload(
+        first_interval, branch, total_capacity
+    )
+    end_soc_pct, end_soc_kwh = _extract_soc_payload(
+        last_interval, branch, total_capacity
+    )
+    block["battery_soc_start"] = start_soc_pct
+    block["battery_soc_end"] = end_soc_pct
+    block["battery_kwh_start"] = start_soc_kwh
+    block["battery_kwh_end"] = end_soc_kwh
+
+
+def _accumulate_energy_stats(group_intervals: List[Dict[str, Any]]) -> Dict[str, Any]:
+    stats = {
+        "solar_plan_total": 0.0,
+        "solar_actual_total": 0.0,
+        "solar_actual_samples": 0,
+        "consumption_plan_total": 0.0,
+        "consumption_actual_total": 0.0,
+        "consumption_actual_samples": 0,
+        "grid_plan_net_total": 0.0,
+        "grid_actual_net_total": 0.0,
+        "grid_actual_samples": 0,
+        "grid_plan_export_total": 0.0,
+        "grid_actual_export_total": 0.0,
+        "grid_export_actual_samples": 0,
+    }
+    for iv in group_intervals:
+        stats["solar_plan_total"] += safe_nested_get(
+            iv, "planned", "solar_kwh", default=0
+        )
+        stats["consumption_plan_total"] += safe_nested_get(
+            iv, "planned", "consumption_kwh", default=0
+        )
+        stats["grid_plan_net_total"] += _interval_net(iv, "planned") or 0.0
+        stats["grid_plan_export_total"] += safe_nested_get(
+            iv, "planned", "grid_export", default=0
+        ) or safe_nested_get(iv, "planned", "grid_export_kwh", default=0)
+
+        actual_solar = safe_nested_get(iv, "actual", "solar_kwh", default=None)
+        if actual_solar is not None:
+            stats["solar_actual_total"] += actual_solar
+            stats["solar_actual_samples"] += 1
+
+        actual_consumption = safe_nested_get(
+            iv, "actual", "consumption_kwh", default=None
+        )
+        if actual_consumption is not None:
+            stats["consumption_actual_total"] += actual_consumption
+            stats["consumption_actual_samples"] += 1
+
+        actual_net = _interval_net(iv, "actual")
+        if actual_net is not None:
+            stats["grid_actual_net_total"] += actual_net
+            stats["grid_actual_samples"] += 1
+
+        actual_export = safe_nested_get(iv, "actual", "grid_export", default=None)
+        if actual_export is None:
+            actual_export = safe_nested_get(
+                iv, "actual", "grid_export_kwh", default=None
+            )
+        if actual_export is not None:
+            stats["grid_actual_export_total"] += actual_export
+            stats["grid_export_actual_samples"] += 1
+
+    return stats
+
+
+def _apply_energy_stats(block: Dict[str, Any], stats: Dict[str, Any]) -> None:
+    block["solar_planned_kwh"] = round(stats["solar_plan_total"], 2)
+    block["solar_actual_kwh"] = _round_or_none(
+        stats["solar_actual_total"], stats["solar_actual_samples"]
+    )
+
+    block["consumption_planned_kwh"] = round(stats["consumption_plan_total"], 2)
+    block["consumption_actual_kwh"] = _round_or_none(
+        stats["consumption_actual_total"], stats["consumption_actual_samples"]
+    )
+
+    block["grid_import_planned_kwh"] = round(stats["grid_plan_net_total"], 2)
+    block["grid_import_actual_kwh"] = _round_or_none(
+        stats["grid_actual_net_total"], stats["grid_actual_samples"]
+    )
+
+    block["grid_export_planned_kwh"] = round(stats["grid_plan_export_total"], 2)
+    block["grid_export_actual_kwh"] = _round_or_none(
+        stats["grid_actual_export_total"], stats["grid_export_actual_samples"]
+    )
+
+    block["solar_total_kwh"] = (
+        block["solar_actual_kwh"]
+        if block["solar_actual_kwh"] is not None
+        else block["solar_planned_kwh"]
+    )
+    block["consumption_total_kwh"] = (
+        block["consumption_actual_kwh"]
+        if block["consumption_actual_kwh"] is not None
+        else block["consumption_planned_kwh"]
+    )
+    block["grid_import_total_kwh"] = (
+        block["grid_import_actual_kwh"]
+        if block["grid_import_actual_kwh"] is not None
+        else block["grid_import_planned_kwh"]
+    )
+    block["grid_export_total_kwh"] = (
+        block["grid_export_actual_kwh"]
+        if block["grid_export_actual_kwh"] is not None
+        else block["grid_export_planned_kwh"]
+    )
+
+    block["solar_delta_kwh"] = _calc_delta(
+        block["solar_actual_kwh"], block["solar_planned_kwh"]
+    )
+    block["consumption_delta_kwh"] = _calc_delta(
+        block["consumption_actual_kwh"], block["consumption_planned_kwh"]
+    )
+    block["grid_import_delta_kwh"] = _calc_delta(
+        block["grid_import_actual_kwh"], block["grid_import_planned_kwh"]
+    )
+    block["grid_export_delta_kwh"] = _calc_delta(
+        block["grid_export_actual_kwh"], block["grid_export_planned_kwh"]
+    )
+
+
+def _apply_block_reason(
+    sensor: Any, group_intervals: List[Dict[str, Any]], block: Dict[str, Any]
+) -> None:
+    block_reason = summarize_block_reason(sensor, group_intervals, block)
+    if block_reason:
+        block["interval_reasons"] = [
+            {
+                "time": block.get("start_time", ""),
+                "reason": block_reason,
+            }
+        ]
+
+
+def _apply_adherence(block: Dict[str, Any], data_type: str) -> None:
+    if data_type in ["completed", "both"] and block["mode_match"]:
+        block["adherence_pct"] = 100
+    elif data_type in ["completed", "both"]:
+        block["adherence_pct"] = 0
+    else:
+        block["adherence_pct"] = None

@@ -223,101 +223,18 @@ class HybridStrategy:
             sorted(charging_intervals)[:10],
         )
 
-        # Step 2: Final pass - generate decisions with planned charging
-        decisions: List[IntervalDecision] = []
-        battery = initial_battery_kwh
-        total_cost = 0.0
-        total_import = 0.0
-        total_export = 0.0
-        mode_counts: Dict[str, int] = {
-            "HOME I": 0,
-            "HOME II": 0,
-            HOME_III_LABEL: 0,
-            HOME_UPS_LABEL: 0,
-        }
-
-        for i in range(n_intervals):
-            solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
-            load = consumption_forecast[i] if i < len(consumption_forecast) else 0.125
-            price = prices[i]
-            export_price = exports[i]
-
-            # Check constraints
-            is_balancing = balancing_plan and i in balancing_plan.charging_intervals
-            is_holding = balancing_plan and i in balancing_plan.holding_intervals
-            is_charging = i in charging_intervals
-            is_price_band = i in price_band_intervals
-            is_negative = price < 0
-            override_mode = (
-                balancing_plan.mode_overrides.get(i)
-                if balancing_plan and balancing_plan.mode_overrides
-                else None
-            )
-
-            # Determine mode based on planning
-            if override_mode is not None:
-                mode = override_mode
-                if is_holding:
-                    reason = "holding_period"
-                elif is_balancing:
-                    reason = "balancing_charge"
-                else:
-                    reason = "balancing_override"
-            elif is_holding:
-                mode = CBB_MODE_HOME_UPS
-                reason = "holding_period"
-            elif is_balancing:
-                mode = CBB_MODE_HOME_UPS
-                reason = "balancing_charge"
-            elif is_negative:
-                mode, reason = self._handle_negative_price(
-                    battery, solar, load, price, export_price
-                )
-            elif is_charging:
-                mode = CBB_MODE_HOME_UPS
-                if is_price_band:
-                    reason = "price_band_hold"
-                else:
-                    reason = f"planned_charge_{price:.2f}CZK"
-            else:
-                # Default: HOME I (discharge battery when needed)
-                mode = CBB_MODE_HOME_I
-                reason = "default_discharge"
-
-            # Simulate selected mode
-            result = self.simulator.simulate(
-                battery_start=battery,
-                mode=mode,
-                solar_kwh=solar,
-                load_kwh=load,
-                force_charge=(mode == CBB_MODE_HOME_UPS)
-                and (is_balancing or is_charging),
-            )
-
-            # Calculate cost
-            cost = self.simulator.calculate_cost(result, price, export_price)
-
-            # Record decision
-            decision = IntervalDecision(
-                mode=mode,
-                mode_name=CBB_MODE_NAMES.get(mode, "UNKNOWN"),
-                reason=reason,
-                battery_end=result.battery_end,
-                grid_import=result.grid_import,
-                grid_export=result.grid_export,
-                cost_czk=cost,
-                is_balancing=is_balancing,
-                is_holding=is_holding,
-                is_negative_price=is_negative,
-            )
-            decisions.append(decision)
-
-            # Update state
-            battery = result.battery_end
-            total_cost += cost
-            total_import += result.grid_import
-            total_export += result.grid_export
-            mode_counts[CBB_MODE_NAMES.get(mode, HOME_III_LABEL)] += 1
+        # Step 2: Final pass - generate decisions with planned charging.
+        decisions = self._build_decisions(
+            n_intervals=n_intervals,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            prices=prices,
+            exports=exports,
+            charging_intervals=charging_intervals,
+            price_band_intervals=price_band_intervals,
+            balancing_plan=balancing_plan,
+        )
 
         # Apply smoothing to avoid rapid mode changes (recompute outputs after changes).
         smoothed = self._apply_smoothing(
@@ -331,43 +248,14 @@ class HybridStrategy:
         if smoothed is not decisions:
             decisions = smoothed
 
-        # Recompute totals with smoothed modes to keep metrics consistent.
-        battery = initial_battery_kwh
-        total_cost = 0.0
-        total_import = 0.0
-        total_export = 0.0
-        mode_counts = {
-            "HOME I": 0,
-            "HOME II": 0,
-            HOME_III_LABEL: 0,
-            HOME_UPS_LABEL: 0,
-        }
-        for i, decision in enumerate(decisions):
-            solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
-            load = consumption_forecast[i] if i < len(consumption_forecast) else 0.125
-            price = prices[i]
-            export_price = exports[i]
-
-            result = self.simulator.simulate(
-                battery_start=battery,
-                mode=decision.mode,
-                solar_kwh=solar,
-                load_kwh=load,
-                force_charge=(decision.mode == CBB_MODE_HOME_UPS)
-                and (decision.is_balancing or decision.is_holding),
-            )
-            cost = self.simulator.calculate_cost(result, price, export_price)
-
-            decision.battery_end = result.battery_end
-            decision.grid_import = result.grid_import
-            decision.grid_export = result.grid_export
-            decision.cost_czk = cost
-
-            battery = result.battery_end
-            total_cost += cost
-            total_import += result.grid_import
-            total_export += result.grid_export
-            mode_counts[CBB_MODE_NAMES.get(decision.mode, HOME_III_LABEL)] += 1
+        battery, totals, mode_counts = self._recompute_totals(
+            decisions=decisions,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            prices=prices,
+            exports=exports,
+        )
 
         # Calculate baseline (HOME I only)
         baseline_cost = self._calculate_baseline_cost(
@@ -378,11 +266,11 @@ class HybridStrategy:
 
         return HybridResult(
             decisions=decisions,
-            total_cost_czk=total_cost,
+            total_cost_czk=totals["cost"],
             baseline_cost_czk=baseline_cost,
-            savings_czk=baseline_cost - total_cost,
-            total_grid_import_kwh=total_import,
-            total_grid_export_kwh=total_export,
+            savings_czk=baseline_cost - totals["cost"],
+            total_grid_import_kwh=totals["import"],
+            total_grid_export_kwh=totals["export"],
             final_battery_kwh=battery,
             mode_counts=mode_counts,
             ups_intervals=mode_counts[HOME_UPS_LABEL],
@@ -392,6 +280,193 @@ class HybridStrategy:
             infeasible=infeasible,
             infeasible_reason=infeasible_reason,
         )
+
+    def _build_decisions(
+        self,
+        *,
+        n_intervals: int,
+        initial_battery_kwh: float,
+        solar_forecast: List[float],
+        consumption_forecast: List[float],
+        prices: List[float],
+        exports: List[float],
+        charging_intervals: set[int],
+        price_band_intervals: set[int],
+        balancing_plan: Optional[StrategyBalancingPlan],
+    ) -> List[IntervalDecision]:
+        decisions: List[IntervalDecision] = []
+        battery = initial_battery_kwh
+        for i in range(n_intervals):
+            solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
+            load = consumption_forecast[i] if i < len(consumption_forecast) else 0.125
+            price = prices[i]
+            export_price = exports[i]
+
+            is_balancing = balancing_plan and i in balancing_plan.charging_intervals
+            is_holding = balancing_plan and i in balancing_plan.holding_intervals
+            is_charging = i in charging_intervals
+            is_price_band = i in price_band_intervals
+            is_negative = price < 0
+            override_mode = (
+                balancing_plan.mode_overrides.get(i)
+                if balancing_plan and balancing_plan.mode_overrides
+                else None
+            )
+
+            mode, reason = self._determine_mode(
+                battery=battery,
+                solar=solar,
+                load=load,
+                price=price,
+                export_price=export_price,
+                is_balancing=bool(is_balancing),
+                is_holding=bool(is_holding),
+                is_charging=is_charging,
+                is_price_band=is_price_band,
+                is_negative=is_negative,
+                override_mode=override_mode,
+            )
+
+            result = self.simulator.simulate(
+                battery_start=battery,
+                mode=mode,
+                solar_kwh=solar,
+                load_kwh=load,
+                force_charge=(mode == CBB_MODE_HOME_UPS)
+                and (is_balancing or is_charging),
+            )
+            cost = self.simulator.calculate_cost(result, price, export_price)
+
+            decisions.append(
+                IntervalDecision(
+                    mode=mode,
+                    mode_name=CBB_MODE_NAMES.get(mode, "UNKNOWN"),
+                    reason=reason,
+                    battery_end=result.battery_end,
+                    grid_import=result.grid_import,
+                    grid_export=result.grid_export,
+                    cost_czk=cost,
+                    is_balancing=is_balancing,
+                    is_holding=is_holding,
+                    is_negative_price=is_negative,
+                )
+            )
+
+            battery = result.battery_end
+
+        return decisions
+
+    def _recompute_totals(
+        self,
+        *,
+        decisions: List[IntervalDecision],
+        initial_battery_kwh: float,
+        solar_forecast: List[float],
+        consumption_forecast: List[float],
+        prices: List[float],
+        exports: List[float],
+    ) -> tuple[float, Dict[str, float], Dict[str, int]]:
+        totals = {"cost": 0.0, "import": 0.0, "export": 0.0}
+        mode_counts = {
+            "HOME I": 0,
+            "HOME II": 0,
+            HOME_III_LABEL: 0,
+            HOME_UPS_LABEL: 0,
+        }
+        battery = initial_battery_kwh
+        for i, decision in enumerate(decisions):
+            battery = self._recompute_decision_metrics(
+                decision,
+                index=i,
+                battery=battery,
+                solar_forecast=solar_forecast,
+                consumption_forecast=consumption_forecast,
+                prices=prices,
+                exports=exports,
+                totals=totals,
+                mode_counts=mode_counts,
+            )
+        return battery, totals, mode_counts
+
+    def _determine_mode(
+        self,
+        *,
+        battery: float,
+        solar: float,
+        load: float,
+        price: float,
+        export_price: float,
+        is_balancing: bool,
+        is_holding: bool,
+        is_charging: bool,
+        is_price_band: bool,
+        is_negative: bool,
+        override_mode: Optional[int],
+    ) -> tuple[int, str]:
+        if override_mode is not None:
+            if is_holding:
+                return override_mode, "holding_period"
+            if is_balancing:
+                return override_mode, "balancing_charge"
+            return override_mode, "balancing_override"
+
+        if is_holding:
+            return CBB_MODE_HOME_UPS, "holding_period"
+        if is_balancing:
+            return CBB_MODE_HOME_UPS, "balancing_charge"
+        if is_negative:
+            return self._handle_negative_price(
+                battery, solar, load, price, export_price
+            )
+        if is_charging:
+            if is_price_band:
+                return CBB_MODE_HOME_UPS, "price_band_hold"
+            return CBB_MODE_HOME_UPS, f"planned_charge_{price:.2f}CZK"
+        return CBB_MODE_HOME_I, "default_discharge"
+
+    def _recompute_decision_metrics(
+        self,
+        decision: IntervalDecision,
+        *,
+        index: int,
+        battery: float,
+        solar_forecast: List[float],
+        consumption_forecast: List[float],
+        prices: List[float],
+        exports: List[float],
+        totals: Dict[str, float],
+        mode_counts: Dict[str, int],
+    ) -> float:
+        solar = solar_forecast[index] if index < len(solar_forecast) else 0.0
+        load = (
+            consumption_forecast[index]
+            if index < len(consumption_forecast)
+            else 0.125
+        )
+        price = prices[index]
+        export_price = exports[index]
+
+        result = self.simulator.simulate(
+            battery_start=battery,
+            mode=decision.mode,
+            solar_kwh=solar,
+            load_kwh=load,
+            force_charge=(decision.mode == CBB_MODE_HOME_UPS)
+            and (decision.is_balancing or decision.is_holding),
+        )
+        cost = self.simulator.calculate_cost(result, price, export_price)
+
+        decision.battery_end = result.battery_end
+        decision.grid_import = result.grid_import
+        decision.grid_export = result.grid_export
+        decision.cost_czk = cost
+
+        totals["cost"] += cost
+        totals["import"] += result.grid_import
+        totals["export"] += result.grid_export
+        mode_counts[CBB_MODE_NAMES.get(decision.mode, HOME_III_LABEL)] += 1
+
+        return result.battery_end
 
     def _plan_charging_intervals(
         self,

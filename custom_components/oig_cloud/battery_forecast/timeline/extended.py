@@ -55,58 +55,16 @@ async def _build_planned_intervals_map(
     if not storage_plans:
         return planned_intervals_map
 
-    planned_intervals_list: List[Dict[str, Any]] = []
-    yesterday_plan = storage_plans.get("detailed", {}).get(date_str, {})
-    if yesterday_plan and not sensor._is_baseline_plan_invalid(yesterday_plan):
-        planned_intervals_list = yesterday_plan.get("intervals", [])
-    else:
-        archive_day = storage_plans.get("daily_archive", {}).get(date_str, {})
-        if archive_day and archive_day.get("plan"):
-            planned_intervals_list = archive_day.get("plan", [])
-            archive_plan = {
-                "intervals": planned_intervals_list,
-                "filled_intervals": None,
-            }
-            if sensor._plans_store and not sensor._is_baseline_plan_invalid(
-                archive_plan
-            ):
-                try:
-                    await sensor._save_plan_to_storage(
-                        date_str,
-                        planned_intervals_list,
-                        {"baseline": True, "filled_intervals": None},
-                    )
-                    _LOGGER.info(
-                        "Rebuilt baseline plan for %s from daily archive",
-                        date_str,
-                    )
-                except Exception as err:
-                    _LOGGER.debug(
-                        "Failed to persist archive baseline for %s: %s",
-                        date_str,
-                        err,
-                    )
-            else:
-                _LOGGER.info(
-                    "Using daily archive plan for %s (baseline invalid)",
-                    date_str,
-                )
-        else:
-            planned_intervals_list = yesterday_plan.get("intervals", [])
+    planned_intervals_list = await _load_planned_intervals_list(
+        sensor, storage_plans, date_str
+    )
 
     for planned_entry in planned_intervals_list:
-        time_key = planned_entry.get("time", "")
-        if not time_key:
-            continue
-        try:
-            planned_dt = _parse_planned_time(time_key, day, date_str)
-            if not planned_dt:
-                continue
-            planned_dt = dt_util.as_local(planned_dt)
-            time_str = planned_dt.strftime(DATETIME_FMT)
-            planned_intervals_map[time_str] = planned_entry
-        except Exception:  # nosec B112
-            continue
+        _add_planned_interval(
+            planned_intervals_map,
+            planned_entry,
+            day,
+        )
 
     _LOGGER.debug(
         "📊 Loaded %s planned intervals from Storage for %s",
@@ -114,6 +72,74 @@ async def _build_planned_intervals_map(
         date_str,
     )
     return planned_intervals_map
+
+
+def _add_planned_interval(
+    planned_intervals_map: Dict[str, Dict[str, Any]],
+    planned_entry: Dict[str, Any],
+    day: date,
+) -> None:
+    time_key = planned_entry.get("time", "")
+    if not time_key:
+        return
+    try:
+        planned_dt = _parse_planned_time(time_key, day)
+        if not planned_dt:
+            return
+        planned_dt = dt_util.as_local(planned_dt)
+        time_str = planned_dt.strftime(DATETIME_FMT)
+        planned_intervals_map[time_str] = planned_entry
+    except Exception:  # nosec B112
+        return
+
+
+async def _load_planned_intervals_list(
+    sensor: Any, storage_plans: Dict[str, Any], date_str: str
+) -> List[Dict[str, Any]]:
+    planned_intervals_list: List[Dict[str, Any]] = []
+    yesterday_plan = storage_plans.get("detailed", {}).get(date_str, {})
+    if yesterday_plan and not sensor._is_baseline_plan_invalid(yesterday_plan):
+        return yesterday_plan.get("intervals", [])
+
+    archive_day = storage_plans.get("daily_archive", {}).get(date_str, {})
+    if archive_day and archive_day.get("plan"):
+        planned_intervals_list = archive_day.get("plan", [])
+        await _maybe_persist_archive_plan(sensor, date_str, planned_intervals_list)
+        return planned_intervals_list
+
+    return yesterday_plan.get("intervals", [])
+
+
+async def _maybe_persist_archive_plan(
+    sensor: Any, date_str: str, planned_intervals_list: List[Dict[str, Any]]
+) -> None:
+    archive_plan = {
+        "intervals": planned_intervals_list,
+        "filled_intervals": None,
+    }
+    if sensor._plans_store and not sensor._is_baseline_plan_invalid(archive_plan):
+        try:
+            await sensor._save_plan_to_storage(
+                date_str,
+                planned_intervals_list,
+                {"baseline": True, "filled_intervals": None},
+            )
+            _LOGGER.info(
+                "Rebuilt baseline plan for %s from daily archive",
+                date_str,
+            )
+        except Exception as err:
+            _LOGGER.debug(
+                "Failed to persist archive baseline for %s: %s",
+                date_str,
+                err,
+            )
+        return
+
+    _LOGGER.info(
+        "Using daily archive plan for %s (baseline invalid)",
+        date_str,
+    )
 
 
 async def _build_historical_actual_data(
@@ -160,9 +186,7 @@ def _parse_iso_datetime(time_str: str) -> Optional[datetime]:
         return None
 
 
-def _parse_planned_time(
-    time_str: str, day: date, date_str: str
-) -> Optional[datetime]:
+def _parse_planned_time(time_str: str, day: date) -> Optional[datetime]:
     if not time_str:
         return None
     if "T" in time_str:
@@ -388,6 +412,28 @@ def _build_planned_lookup(
     current_interval_naive: datetime,
 ) -> Dict[str, Dict[str, Any]]:
     planned_lookup: Dict[str, Dict[str, Any]] = {}
+    _add_past_planned_entries(
+        planned_lookup, past_planned, date_str, current_interval_naive
+    )
+    added_future, skipped_future = _add_future_planned_entries(
+        planned_lookup, future_planned, current_interval_naive
+    )
+
+    _LOGGER.debug(
+        "📋 Merge stats: added_future=%s, skipped_future=%s, current_interval=%s",
+        added_future,
+        skipped_future,
+        current_interval_naive,
+    )
+    return planned_lookup
+
+
+def _add_past_planned_entries(
+    planned_lookup: Dict[str, Dict[str, Any]],
+    past_planned: List[Dict[str, Any]],
+    date_str: str,
+    current_interval_naive: datetime,
+) -> None:
     for planned in past_planned:
         time_str = planned.get("time")
         if not time_str:
@@ -398,10 +444,18 @@ def _build_planned_lookup(
         if not interval_dt:
             _LOGGER.warning("Failed to parse time_str: %s", time_str)
             continue
-        interval_dt_naive = interval_dt.replace(tzinfo=None) if interval_dt.tzinfo else interval_dt
+        interval_dt_naive = (
+            interval_dt.replace(tzinfo=None) if interval_dt.tzinfo else interval_dt
+        )
         if interval_dt_naive < current_interval_naive:
             planned_lookup[interval_dt.strftime(DATETIME_FMT)] = planned
 
+
+def _add_future_planned_entries(
+    planned_lookup: Dict[str, Dict[str, Any]],
+    future_planned: List[Dict[str, Any]],
+    current_interval_naive: datetime,
+) -> tuple[int, int]:
     added_future = 0
     skipped_future = 0
     for planned in future_planned:
@@ -420,14 +474,7 @@ def _build_planned_lookup(
             added_future += 1
         else:
             skipped_future += 1
-
-    _LOGGER.debug(
-        "📋 Merge stats: added_future=%s, skipped_future=%s, current_interval=%s",
-        added_future,
-        skipped_future,
-        current_interval_naive,
-    )
-    return planned_lookup
+    return added_future, skipped_future
 
 
 def _interval_status(
@@ -522,6 +569,40 @@ async def _build_mixed_intervals(
     mode_names: Dict[int, str],
     historical_modes_lookup: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
+    past_planned, future_planned = await _resolve_mixed_planned(
+        sensor, storage_plans, date_str, day
+    )
+
+    current_minute = (now.minute // 15) * 15
+    current_interval = now.replace(minute=current_minute, second=0, microsecond=0)
+    current_interval_naive = current_interval.replace(tzinfo=None)
+
+    planned_lookup = _build_planned_lookup(
+        past_planned, future_planned, date_str, current_interval_naive
+    )
+    _LOGGER.debug(
+        "📋 Combined planned lookup: %s total intervals for %s",
+        len(planned_lookup),
+        day,
+    )
+
+    return await _build_mixed_interval_entries(
+        sensor,
+        day,
+        day_start,
+        current_interval_naive,
+        planned_lookup,
+        historical_modes_lookup,
+        mode_names,
+    )
+
+
+async def _resolve_mixed_planned(
+    sensor: Any,
+    storage_plans: Dict[str, Any],
+    date_str: str,
+    day: date,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     past_planned, storage_missing, storage_invalid = _load_past_planned_from_storage(
         sensor, storage_plans, date_str, day
     )
@@ -529,7 +610,9 @@ async def _build_mixed_intervals(
     if sensor._plans_store and (storage_missing or storage_invalid):
         storage_plans = await _maybe_repair_baseline(sensor, storage_plans, date_str)
         storage_day = storage_plans.get("detailed", {}).get(date_str)
-        storage_invalid = sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
+        storage_invalid = (
+            sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
+        )
         if storage_day and storage_day.get("intervals") and not storage_invalid:
             past_planned = storage_day["intervals"]
     if not past_planned:
@@ -551,84 +634,109 @@ async def _build_mixed_intervals(
         len(past_planned),
         len(future_planned),
     )
+    return past_planned, future_planned
 
-    current_minute = (now.minute // 15) * 15
-    current_interval = now.replace(minute=current_minute, second=0, microsecond=0)
-    current_interval_naive = current_interval.replace(tzinfo=None)
 
-    planned_lookup = _build_planned_lookup(
-        past_planned, future_planned, date_str, current_interval_naive
-    )
-    _LOGGER.debug(
-        "📋 Combined planned lookup: %s total intervals for %s",
-        len(planned_lookup),
-        day,
-    )
-
+async def _build_mixed_interval_entries(
+    sensor: Any,
+    day: date,
+    day_start: datetime,
+    current_interval_naive: datetime,
+    planned_lookup: Dict[str, Dict[str, Any]],
+    historical_modes_lookup: Dict[str, Any],
+    mode_names: Dict[int, str],
+) -> List[Dict[str, Any]]:
     intervals: List[Dict[str, Any]] = []
     interval_time = day_start
     while interval_time.date() == day:
-        interval_time_str = interval_time.strftime(DATETIME_FMT)
-        status = _interval_status(interval_time, current_interval_naive)
-
-        planned_entry = planned_lookup.get(interval_time_str)
-        planned_data = format_planned_data(planned_entry) if planned_entry else {}
-
-        actual_data = await _build_actual_data(
+        interval_entry = await _build_interval_entry(
             sensor,
             interval_time,
-            interval_time_str,
-            status,
-            planned_data,
+            current_interval_naive,
+            planned_lookup,
             historical_modes_lookup,
+            mode_names,
         )
-
-        if status == "current":
-            actual_data = _apply_current_interval_data(sensor, actual_data, mode_names)
-
-        if actual_data or planned_data:
-            intervals.append(
-                {
-                    "time": interval_time_str,
-                    "status": status,
-                    "planned": planned_data,
-                    "actual": actual_data,
-                    "delta": None,
-                }
-            )
+        if interval_entry:
+            intervals.append(interval_entry)
 
         interval_time += timedelta(minutes=15)
 
     return intervals
 
 
+async def _build_interval_entry(
+    sensor: Any,
+    interval_time: datetime,
+    current_interval_naive: datetime,
+    planned_lookup: Dict[str, Dict[str, Any]],
+    historical_modes_lookup: Dict[str, Any],
+    mode_names: Dict[int, str],
+) -> Optional[Dict[str, Any]]:
+    interval_time_str = interval_time.strftime(DATETIME_FMT)
+    status = _interval_status(interval_time, current_interval_naive)
+
+    planned_entry = planned_lookup.get(interval_time_str)
+    planned_data = format_planned_data(planned_entry) if planned_entry else {}
+
+    actual_data = await _build_actual_data(
+        sensor,
+        interval_time,
+        interval_time_str,
+        status,
+        planned_data,
+        historical_modes_lookup,
+    )
+
+    if status == "current":
+        actual_data = _apply_current_interval_data(sensor, actual_data, mode_names)
+
+    if not actual_data and not planned_data:
+        return None
+
+    return {
+        "time": interval_time_str,
+        "status": status,
+        "planned": planned_data,
+        "actual": actual_data,
+        "delta": None,
+    }
+
+
 def _build_planned_only_intervals(
-    sensor: Any, day: date, day_start: datetime, day_end: datetime
+    sensor: Any, day_start: datetime, day_end: datetime
 ) -> List[Dict[str, Any]]:
     intervals: List[Dict[str, Any]] = []
     if not (getattr(sensor, "_mode_optimization_result", None)):
         return intervals
     optimal_timeline = sensor._mode_optimization_result.get("optimal_timeline", [])
     for interval in optimal_timeline:
-        interval_time_str = interval.get("time", "")
-        if not interval_time_str:
-            continue
-        interval_time = _parse_iso_datetime(interval_time_str)
-        if not interval_time:
-            continue
-        if interval_time.tzinfo is None:
-            interval_time = dt_util.as_local(interval_time)
-        if day_start <= interval_time <= day_end:
-            intervals.append(
-                {
-                    "time": interval_time_str,
-                    "status": "planned",
-                    "planned": format_planned_data(interval),
-                    "actual": None,
-                    "delta": None,
-                }
-            )
+        planned_entry = _build_planned_only_entry(interval, day_start, day_end)
+        if planned_entry:
+            intervals.append(planned_entry)
     return intervals
+
+
+def _build_planned_only_entry(
+    interval: Dict[str, Any], day_start: datetime, day_end: datetime
+) -> Optional[Dict[str, Any]]:
+    interval_time_str = interval.get("time", "")
+    if not interval_time_str:
+        return None
+    interval_time = _parse_iso_datetime(interval_time_str)
+    if not interval_time:
+        return None
+    if interval_time.tzinfo is None:
+        interval_time = dt_util.as_local(interval_time)
+    if not (day_start <= interval_time <= day_end):
+        return None
+    return {
+        "time": interval_time_str,
+        "status": "planned",
+        "planned": format_planned_data(interval),
+        "actual": None,
+        "delta": None,
+    }
 
 async def build_timeline_extended(
     sensor: Any, *, mode_names: Optional[Dict[int, str]] = None
@@ -637,21 +745,16 @@ async def build_timeline_extended(
     self = sensor
     mode_names = mode_names or {}
 
-    now = dt_util.now()
-    today = now.date()
-    yesterday = today - timedelta(days=1)
-    tomorrow = today + timedelta(days=1)
-
+    now, yesterday, today, tomorrow = _timeline_dates()
     storage_plans = await _load_storage_plans(self)
 
-    yesterday_data = await build_day_timeline(
-        self, yesterday, storage_plans, mode_names=mode_names
-    )
-    today_data = await build_day_timeline(
-        self, today, storage_plans, mode_names=mode_names
-    )
-    tomorrow_data = await build_day_timeline(
-        self, tomorrow, storage_plans, mode_names=mode_names
+    yesterday_data, today_data, tomorrow_data = await _build_day_summaries(
+        self,
+        yesterday=yesterday,
+        today=today,
+        tomorrow=tomorrow,
+        storage_plans=storage_plans,
+        mode_names=mode_names,
     )
 
     today_tile_summary = build_today_tile_summary(
@@ -666,6 +769,33 @@ async def build_timeline_extended(
     }
 
 
+def _timeline_dates() -> tuple[datetime, date, date, date]:
+    now = dt_util.now()
+    today = now.date()
+    return now, today - timedelta(days=1), today, today + timedelta(days=1)
+
+
+async def _build_day_summaries(
+    sensor: Any,
+    *,
+    yesterday: date,
+    today: date,
+    tomorrow: date,
+    storage_plans: Dict[str, Any],
+    mode_names: Dict[int, str],
+) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    yesterday_data = await build_day_timeline(
+        sensor, yesterday, storage_plans, mode_names=mode_names
+    )
+    today_data = await build_day_timeline(
+        sensor, today, storage_plans, mode_names=mode_names
+    )
+    tomorrow_data = await build_day_timeline(
+        sensor, tomorrow, storage_plans, mode_names=mode_names
+    )
+    return yesterday_data, today_data, tomorrow_data
+
+
 async def build_day_timeline(  # noqa: C901
     sensor: Any,
     day: date,
@@ -677,28 +807,68 @@ async def build_day_timeline(  # noqa: C901
     self = sensor
     mode_names = mode_names or {}
 
-    now = dt_util.now()
-    today = now.date()
-
-    day_start = dt_util.as_local(datetime.combine(day, datetime.min.time()))
-    day_end = dt_util.as_local(datetime.combine(day, datetime.max.time()))
-
-    intervals: List[Dict[str, Any]] = []
-    date_str = day.strftime(DATE_FMT)
-
-    source = _get_day_source(day, today)
+    now, day_start, day_end, date_str, source = _build_day_context(day)
 
     historical_modes_lookup = await _load_historical_modes(
         self, source, day_start, day_end, now, date_str
     )
 
+    intervals = await _select_day_intervals(
+        sensor=self,
+        source=source,
+        day=day,
+        day_start=day_start,
+        day_end=day_end,
+        storage_plans=storage_plans,
+        date_str=date_str,
+        now=now,
+        mode_names=mode_names,
+        historical_modes_lookup=historical_modes_lookup,
+    )
+
+    return _build_day_result(day, intervals)
+
+
+def _build_day_context(
+    day: date,
+) -> tuple[datetime, datetime, datetime, str, str]:
+    now = dt_util.now()
+    today = now.date()
+    day_start = dt_util.as_local(datetime.combine(day, datetime.min.time()))
+    day_end = dt_util.as_local(datetime.combine(day, datetime.max.time()))
+    date_str = day.strftime(DATE_FMT)
+    source = _get_day_source(day, today)
+    return now, day_start, day_end, date_str, source
+
+
+def _build_day_result(day: date, intervals: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "date": day.strftime(DATE_FMT),
+        "intervals": intervals,
+        "summary": calculate_day_summary(intervals),
+    }
+
+
+async def _select_day_intervals(
+    *,
+    sensor: Any,
+    source: str,
+    day: date,
+    day_start: datetime,
+    day_end: datetime,
+    storage_plans: Optional[Dict[str, Any]],
+    date_str: str,
+    now: datetime,
+    mode_names: Dict[int, str],
+    historical_modes_lookup: Dict[str, Any],
+) -> List[Dict[str, Any]]:
     if source == "historical_only":
-        intervals = await _build_historical_only_intervals(
-            self, day, day_start, storage_plans, date_str, historical_modes_lookup
+        return await _build_historical_only_intervals(
+            sensor, day, day_start, storage_plans, date_str, historical_modes_lookup
         )
-    elif source == "mixed":
-        intervals = await _build_mixed_intervals(
-            self,
+    if source == "mixed":
+        return await _build_mixed_intervals(
+            sensor,
             day,
             day_start,
             storage_plans,
@@ -707,13 +877,4 @@ async def build_day_timeline(  # noqa: C901
             mode_names,
             historical_modes_lookup,
         )
-    else:
-        intervals = _build_planned_only_intervals(self, day, day_start, day_end)
-
-    summary = calculate_day_summary(intervals)
-
-    return {
-        "date": day.strftime(DATE_FMT),
-        "intervals": intervals,
-        "summary": summary,
-    }
+    return _build_planned_only_intervals(sensor, day_start, day_end)

@@ -24,164 +24,222 @@ def create_mode_recommendations(
         return []
 
     try:
-        _ = hours_ahead
         current_time = now or datetime.now()
-
-        # Mode recommendations: only future intervals (today from now, tomorrow full day).
-        tomorrow_end = datetime.combine(
-            current_time.date() + timedelta(days=1), datetime.max.time()
+        future_intervals = _filter_future_intervals(
+            optimal_timeline, current_time=current_time, hours_ahead=hours_ahead
         )
-
-        future_intervals = [
-            interval
-            for interval in optimal_timeline
-            if interval.get("time")
-            and current_time <= datetime.fromisoformat(interval["time"]) <= tomorrow_end
-        ]
-
         if not future_intervals:
             return []
 
-        recommendations: List[Dict[str, Any]] = []
-        current_block: Optional[Dict[str, Any]] = None
-        block_intervals: List[Dict[str, Any]] = []
+        recommendations = _build_recommendation_blocks(
+            future_intervals,
+            mode_home_i=mode_home_i,
+            mode_home_ii=mode_home_ii,
+            mode_home_iii=mode_home_iii,
+            mode_home_ups=mode_home_ups,
+        )
+        return _split_blocks_by_midnight(
+            recommendations,
+            mode_home_i=mode_home_i,
+            mode_home_ii=mode_home_ii,
+            mode_home_iii=mode_home_iii,
+            mode_home_ups=mode_home_ups,
+        )
+    except Exception as exc:
+        _LOGGER.error("Failed to create mode recommendations: %s", exc)
+        return []
 
-        for interval in future_intervals:
-            mode = interval.get("mode")
-            mode_name = interval.get("mode_name", f"MODE_{mode}")
-            time_str = interval.get("time", "")
 
-            if current_block is None:
-                current_block = {
-                    "mode": mode,
-                    "mode_name": mode_name,
-                    "from_time": time_str,
-                    "to_time": None,
-                    "intervals_count": 1,
-                }
-                block_intervals = [interval]
-            elif current_block["mode"] == mode:
-                current_block["intervals_count"] += 1
-                block_intervals.append(interval)
-            else:
-                if block_intervals:
-                    last_interval_time = block_intervals[-1].get("time", "")
-                    try:
-                        last_dt = datetime.fromisoformat(last_interval_time)
-                        end_dt = last_dt + timedelta(minutes=15)
-                        current_block["to_time"] = end_dt.isoformat()
-                    except Exception:
-                        current_block["to_time"] = last_interval_time
+def _filter_future_intervals(
+    optimal_timeline: List[Dict[str, Any]],
+    *,
+    current_time: datetime,
+    hours_ahead: int,
+) -> List[Dict[str, Any]]:
+    tomorrow_end = datetime.combine(
+        current_time.date() + timedelta(days=1), datetime.max.time()
+    )
+    if hours_ahead > 0:
+        end_time = min(
+            tomorrow_end, current_time + timedelta(hours=hours_ahead)
+        )
+    else:
+        end_time = tomorrow_end
 
-                add_block_details(
-                    current_block,
-                    block_intervals,
-                    mode_home_i=mode_home_i,
-                    mode_home_ii=mode_home_ii,
-                    mode_home_iii=mode_home_iii,
-                    mode_home_ups=mode_home_ups,
-                )
-                current_block["_intervals"] = block_intervals
-                recommendations.append(current_block)
+    return [
+        interval
+        for interval in optimal_timeline
+        if interval.get("time")
+        and current_time <= datetime.fromisoformat(interval["time"]) <= end_time
+    ]
 
-                current_block = {
-                    "mode": mode,
-                    "mode_name": mode_name,
-                    "from_time": time_str,
-                    "to_time": None,
-                    "intervals_count": 1,
-                }
-                block_intervals = [interval]
 
-        if current_block and block_intervals:
-            last_interval_time = block_intervals[-1].get("time", "")
-            try:
-                last_dt = datetime.fromisoformat(last_interval_time)
-                end_dt = last_dt + timedelta(minutes=15)
-                current_block["to_time"] = end_dt.isoformat()
-            except Exception:
-                current_block["to_time"] = last_interval_time
+def _build_recommendation_blocks(
+    future_intervals: List[Dict[str, Any]],
+    *,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> List[Dict[str, Any]]:
+    recommendations: List[Dict[str, Any]] = []
+    current_block: Optional[Dict[str, Any]] = None
+    block_intervals: List[Dict[str, Any]] = []
 
+    for interval in future_intervals:
+        mode = interval.get("mode")
+        mode_name = interval.get("mode_name", f"MODE_{mode}")
+        time_str = interval.get("time", "")
+
+        if current_block is None:
+            current_block = _new_block(mode, mode_name, time_str)
+            block_intervals = [interval]
+            continue
+
+        if current_block["mode"] == mode:
+            current_block["intervals_count"] += 1
+            block_intervals.append(interval)
+            continue
+
+        _finalize_block(
+            current_block,
+            block_intervals,
+            mode_home_i=mode_home_i,
+            mode_home_ii=mode_home_ii,
+            mode_home_iii=mode_home_iii,
+            mode_home_ups=mode_home_ups,
+        )
+        recommendations.append(current_block)
+        current_block = _new_block(mode, mode_name, time_str)
+        block_intervals = [interval]
+
+    if current_block and block_intervals:
+        _finalize_block(
+            current_block,
+            block_intervals,
+            mode_home_i=mode_home_i,
+            mode_home_ii=mode_home_ii,
+            mode_home_iii=mode_home_iii,
+            mode_home_ups=mode_home_ups,
+        )
+        recommendations.append(current_block)
+
+    return recommendations
+
+
+def _new_block(mode: Any, mode_name: str, time_str: str) -> Dict[str, Any]:
+    return {
+        "mode": mode,
+        "mode_name": mode_name,
+        "from_time": time_str,
+        "to_time": None,
+        "intervals_count": 1,
+    }
+
+
+def _finalize_block(
+    block: Dict[str, Any],
+    block_intervals: List[Dict[str, Any]],
+    *,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> None:
+    last_interval_time = block_intervals[-1].get("time", "")
+    try:
+        last_dt = datetime.fromisoformat(last_interval_time)
+        end_dt = last_dt + timedelta(minutes=15)
+        block["to_time"] = end_dt.isoformat()
+    except Exception:
+        block["to_time"] = last_interval_time
+
+    add_block_details(
+        block,
+        block_intervals,
+        mode_home_i=mode_home_i,
+        mode_home_ii=mode_home_ii,
+        mode_home_iii=mode_home_iii,
+        mode_home_ups=mode_home_ups,
+    )
+    block["_intervals"] = block_intervals
+
+
+def _split_blocks_by_midnight(
+    recommendations: List[Dict[str, Any]],
+    *,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> List[Dict[str, Any]]:
+    split_recommendations: List[Dict[str, Any]] = []
+    for block in recommendations:
+        from_dt = datetime.fromisoformat(block["from_time"])
+        to_dt = datetime.fromisoformat(block["to_time"])
+
+        if from_dt.date() == to_dt.date():
+            block.pop("_intervals", None)
+            split_recommendations.append(block)
+            continue
+
+        midnight = datetime.combine(
+            from_dt.date() + timedelta(days=1), datetime.min.time()
+        )
+
+        intervals = block.get("_intervals", [])
+        intervals1 = [
+            i
+            for i in intervals
+            if datetime.fromisoformat(i.get("time", "")) < midnight
+        ]
+        intervals2 = [
+            i
+            for i in intervals
+            if datetime.fromisoformat(i.get("time", "")) >= midnight
+        ]
+
+        block1 = {
+            "mode": block["mode"],
+            "mode_name": block["mode_name"],
+            "from_time": block["from_time"],
+            "to_time": midnight.isoformat(),
+            "intervals_count": len(intervals1),
+        }
+        duration1 = (midnight - from_dt).total_seconds() / 3600
+        block1["duration_hours"] = round(duration1, 2)
+        if intervals1:
             add_block_details(
-                current_block,
-                block_intervals,
+                block1,
+                intervals1,
                 mode_home_i=mode_home_i,
                 mode_home_ii=mode_home_ii,
                 mode_home_iii=mode_home_iii,
                 mode_home_ups=mode_home_ups,
             )
-            current_block["_intervals"] = block_intervals
-            recommendations.append(current_block)
+        split_recommendations.append(block1)
 
-        split_recommendations: List[Dict[str, Any]] = []
-        for block in recommendations:
-            from_dt = datetime.fromisoformat(block["from_time"])
-            to_dt = datetime.fromisoformat(block["to_time"])
+        block2 = {
+            "mode": block["mode"],
+            "mode_name": block["mode_name"],
+            "from_time": midnight.isoformat(),
+            "to_time": block["to_time"],
+            "intervals_count": len(intervals2),
+        }
+        duration2 = (to_dt - midnight).total_seconds() / 3600
+        block2["duration_hours"] = round(duration2, 2)
+        if intervals2:
+            add_block_details(
+                block2,
+                intervals2,
+                mode_home_i=mode_home_i,
+                mode_home_ii=mode_home_ii,
+                mode_home_iii=mode_home_iii,
+                mode_home_ups=mode_home_ups,
+            )
+        split_recommendations.append(block2)
 
-            if from_dt.date() == to_dt.date():
-                block.pop("_intervals", None)
-                split_recommendations.append(block)
-            else:
-                midnight = datetime.combine(
-                    from_dt.date() + timedelta(days=1), datetime.min.time()
-                )
-
-                intervals = block.get("_intervals", [])
-                intervals1 = [
-                    i
-                    for i in intervals
-                    if datetime.fromisoformat(i.get("time", "")) < midnight
-                ]
-                intervals2 = [
-                    i
-                    for i in intervals
-                    if datetime.fromisoformat(i.get("time", "")) >= midnight
-                ]
-
-                block1 = {
-                    "mode": block["mode"],
-                    "mode_name": block["mode_name"],
-                    "from_time": block["from_time"],
-                    "to_time": midnight.isoformat(),
-                    "intervals_count": len(intervals1),
-                }
-                duration1 = (midnight - from_dt).total_seconds() / 3600
-                block1["duration_hours"] = round(duration1, 2)
-                if intervals1:
-                    add_block_details(
-                        block1,
-                        intervals1,
-                        mode_home_i=mode_home_i,
-                        mode_home_ii=mode_home_ii,
-                        mode_home_iii=mode_home_iii,
-                        mode_home_ups=mode_home_ups,
-                    )
-                split_recommendations.append(block1)
-
-                block2 = {
-                    "mode": block["mode"],
-                    "mode_name": block["mode_name"],
-                    "from_time": midnight.isoformat(),
-                    "to_time": block["to_time"],
-                    "intervals_count": len(intervals2),
-                }
-                duration2 = (to_dt - midnight).total_seconds() / 3600
-                block2["duration_hours"] = round(duration2, 2)
-                if intervals2:
-                    add_block_details(
-                        block2,
-                        intervals2,
-                        mode_home_i=mode_home_i,
-                        mode_home_ii=mode_home_ii,
-                        mode_home_iii=mode_home_iii,
-                        mode_home_ups=mode_home_ups,
-                    )
-                split_recommendations.append(block2)
-
-        return split_recommendations
-    except Exception as exc:
-        _LOGGER.error("Failed to create mode recommendations: %s", exc)
-        return []
+    return split_recommendations
 
 
 def add_block_details(

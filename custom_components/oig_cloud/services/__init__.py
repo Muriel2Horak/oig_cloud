@@ -629,31 +629,16 @@ async def async_setup_entry_services_with_shield(
         return
 
     _LOGGER.debug("Registering all entry services with shield protection")
-    service_actions = [
-        ("set_box_mode", _shield_set_box_mode, SET_BOX_MODE_SCHEMA),
-        ("set_grid_delivery", _shield_set_grid_delivery, SET_GRID_DELIVERY_SCHEMA),
-        ("set_boiler_mode", _shield_set_boiler_mode, SET_BOILER_MODE_SCHEMA),
-        ("set_formating_mode", _shield_set_formating_mode, SET_FORMATING_MODE_SCHEMA),
-    ]
-
-    for service_name, action, schema in service_actions:
-        hass.services.async_register(
-            DOMAIN,
-            service_name,
-            _wrap_with_shield(hass, entry, shield, service_name, action),
-            schema=schema,
-        )
-        _LOGGER.debug("Registered %s", service_name)
-
-    boiler_coordinator = hass.data[DOMAIN].get(entry.entry_id, {}).get("boiler_coordinator")
-    if boiler_coordinator:
-        try:
-            from .boiler import setup_boiler_services
-
-            setup_boiler_services(hass, boiler_coordinator)
-            _LOGGER.info("Boiler services registered")
-        except Exception as exc:
-            _LOGGER.error("Failed to register boiler services: %s", exc, exc_info=True)
+    service_actions = _entry_service_actions(shielded=True)
+    _register_entry_services(
+        hass,
+        entry,
+        service_actions,
+        lambda service_name, action: _wrap_with_shield(
+            hass, entry, shield, service_name, action
+        ),
+    )
+    _register_boiler_services(hass, entry)
 
     _LOGGER.info("All entry services registered with shield protection")
 
@@ -682,22 +667,66 @@ async def async_setup_entry_services_fallback(
         return
 
     _LOGGER.info("No existing services found, registering all fallback services")
-    services_to_register = [
+    services_to_register = _entry_service_actions(shielded=False)
+    _register_entry_services(
+        hass,
+        entry,
+        services_to_register,
+        lambda _service_name, action: _make_fallback_handler(hass, entry, action),
+    )
+
+    _LOGGER.info("All fallback services registration completed")
+
+
+def _entry_service_actions(
+    *, shielded: bool
+) -> list[tuple[str, Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]], vol.Schema]]:
+    if shielded:
+        return [
+            ("set_box_mode", _shield_set_box_mode, SET_BOX_MODE_SCHEMA),
+            ("set_grid_delivery", _shield_set_grid_delivery, SET_GRID_DELIVERY_SCHEMA),
+            ("set_boiler_mode", _shield_set_boiler_mode, SET_BOILER_MODE_SCHEMA),
+            ("set_formating_mode", _shield_set_formating_mode, SET_FORMATING_MODE_SCHEMA),
+        ]
+    return [
         ("set_box_mode", _fallback_set_box_mode, SET_BOX_MODE_SCHEMA),
         ("set_boiler_mode", _fallback_set_boiler_mode, SET_BOILER_MODE_SCHEMA),
         ("set_grid_delivery", _fallback_set_grid_delivery, SET_GRID_DELIVERY_SCHEMA),
         ("set_formating_mode", _fallback_set_formating_mode, SET_FORMATING_MODE_SCHEMA),
     ]
 
-    for service_name, action, schema in services_to_register:
-        handler = _make_fallback_handler(hass, entry, action)
+
+def _register_entry_services(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    services: Iterable[
+        tuple[str, Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]], vol.Schema]
+    ],
+    handler_factory: Callable[
+        [str, Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]]],
+        Callable[[ServiceCall], Awaitable[Any]],
+    ],
+) -> None:
+    for service_name, action, schema in services:
+        handler = handler_factory(service_name, action)
         try:
             hass.services.async_register(DOMAIN, service_name, handler, schema=schema)
-            _LOGGER.info("Successfully registered fallback service: %s", service_name)
+            _LOGGER.info("Successfully registered %s service: %s", entry.entry_id, service_name)
         except Exception as exc:
             _LOGGER.error("Failed to register service %s: %s", service_name, exc)
 
-    _LOGGER.info("All fallback services registration completed")
+
+def _register_boiler_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    boiler_coordinator = hass.data[DOMAIN].get(entry.entry_id, {}).get("boiler_coordinator")
+    if not boiler_coordinator:
+        return
+    try:
+        from .boiler import setup_boiler_services
+
+        setup_boiler_services(hass, boiler_coordinator)
+        _LOGGER.info("Boiler services registered")
+    except Exception as exc:
+        _LOGGER.error("Failed to register boiler services: %s", exc, exc_info=True)
 
 
 async def _save_dashboard_tiles_config(

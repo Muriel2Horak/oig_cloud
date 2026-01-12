@@ -212,33 +212,41 @@ def get_queue_info(shield: Any) -> Dict[str, Any]:
 
 def has_pending_mode_change(shield: Any, target_mode: Optional[str] = None) -> bool:
     """Return True if pending/queued mode change already exists."""
+    if _pending_has_box_mode(shield, target_mode):
+        return True
+    if _queue_has_box_mode(shield, target_mode):
+        return True
+    return shield.running == SERVICE_SET_BOX_MODE
 
-    def _matches_target(entities: Dict[str, str]) -> bool:
-        if not entities:
-            return False
-        if not target_mode:
-            return True
 
-        normalized_target = shield._normalize_value(target_mode)
-        for value in entities.values():
-            if shield._normalize_value(value) == normalized_target:
-                return True
+def _matches_target_mode(
+    shield: Any, entities: Dict[str, str], target_mode: Optional[str]
+) -> bool:
+    if not entities:
         return False
-
-    for service_name, info in shield.pending.items():
-        if service_name == SERVICE_SET_BOX_MODE and _matches_target(
-            info.get("entities", {})
-        ):
-            return True
-
-    for service_name, _params, expected_entities, *_ in shield.queue:
-        if service_name == SERVICE_SET_BOX_MODE and _matches_target(expected_entities):
-            return True
-
-    if shield.running == SERVICE_SET_BOX_MODE:
+    if not target_mode:
         return True
 
-    return False
+    normalized_target = shield._normalize_value(target_mode)
+    return any(
+        shield._normalize_value(value) == normalized_target for value in entities.values()
+    )
+
+
+def _pending_has_box_mode(shield: Any, target_mode: Optional[str]) -> bool:
+    return any(
+        _matches_target_mode(shield, info.get("entities", {}), target_mode)
+        for service_name, info in shield.pending.items()
+        if service_name == SERVICE_SET_BOX_MODE
+    )
+
+
+def _queue_has_box_mode(shield: Any, target_mode: Optional[str]) -> bool:
+    return any(
+        _matches_target_mode(shield, expected_entities, target_mode)
+        for service_name, _params, expected_entities, *_ in shield.queue
+        if service_name == SERVICE_SET_BOX_MODE
+    )
 
 
 @callback
@@ -250,57 +258,75 @@ async def check_loop(shield: Any, _now: datetime) -> None:  # noqa: C901
 
     shield._is_checking = True
     try:
-        _LOGGER.debug(
-            "[OIG Shield] Check loop tick - pending: %s, queue: %s, running: %s",
-            len(shield.pending),
-            len(shield.queue),
-            shield.running,
-        )
-
-        if not shield.pending and not shield.queue and not shield.running:
+        _log_check_loop_state(shield)
+        if _is_queue_idle(shield):
             _LOGGER.debug("[OIG Shield] Check loop - vše prázdné, žádná akce")
             _clear_state_listener(shield)
             return
 
-        finished = []
-
-        for service_name, info in shield.pending.items():
-            _LOGGER.debug("[OIG Shield] Kontroluji pending službu: %s", service_name)
-            if await _process_pending_service(shield, service_name, info):
-                finished.append(service_name)
-
-        for service_name in finished:
-            shield.pending.pop(service_name, None)
-            if shield.running == service_name:
-                shield.running = None
-
-        if not shield.running and shield.queue:
-            (
-                service_name,
-                params,
-                expected_entities,
-                original_call,
-                domain,
-                service,
-                blocking,
-                context,
-            ) = shield.queue.pop(0)
-            await shield._start_call(
-                service_name,
-                params,
-                expected_entities,
-                original_call,
-                domain,
-                service,
-                blocking,
-                context,
-            )
+        finished = await _collect_finished_pending(shield)
+        _clear_finished_pending(shield, finished)
+        await _maybe_start_next_call(shield)
 
         if finished:
             shield._notify_state_change()
 
     finally:
         shield._is_checking = False
+
+
+def _log_check_loop_state(shield: Any) -> None:
+    _LOGGER.debug(
+        "[OIG Shield] Check loop tick - pending: %s, queue: %s, running: %s",
+        len(shield.pending),
+        len(shield.queue),
+        shield.running,
+    )
+
+
+def _is_queue_idle(shield: Any) -> bool:
+    return not shield.pending and not shield.queue and not shield.running
+
+
+async def _collect_finished_pending(shield: Any) -> list[str]:
+    finished = []
+    for service_name, info in shield.pending.items():
+        _LOGGER.debug("[OIG Shield] Kontroluji pending službu: %s", service_name)
+        if await _process_pending_service(shield, service_name, info):
+            finished.append(service_name)
+    return finished
+
+
+def _clear_finished_pending(shield: Any, finished: list[str]) -> None:
+    for service_name in finished:
+        shield.pending.pop(service_name, None)
+        if shield.running == service_name:
+            shield.running = None
+
+
+async def _maybe_start_next_call(shield: Any) -> None:
+    if shield.running or not shield.queue:
+        return
+    (
+        service_name,
+        params,
+        expected_entities,
+        original_call,
+        domain,
+        service,
+        blocking,
+        context,
+    ) = shield.queue.pop(0)
+    await shield._start_call(
+        service_name,
+        params,
+        expected_entities,
+        original_call,
+        domain,
+        service,
+        blocking,
+        context,
+    )
 
 
 async def _process_pending_service(

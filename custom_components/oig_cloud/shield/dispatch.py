@@ -286,11 +286,10 @@ async def intercept_service_call(
     params = data["params"]
     trace_id = str(uuid.uuid4())[:8]
 
-    if service_name == "oig_cloud.set_grid_delivery":
-        if await _handle_split_grid_delivery(
-            shield, domain, service, params, original_call, blocking, context
-        ):
-            return
+    if service_name == "oig_cloud.set_grid_delivery" and await _handle_split_grid_delivery(
+        shield, domain, service, params, original_call, blocking, context
+    ):
+        return
 
     expected_entities = shield.extract_expected_entities(service_name, params)
     api_info = shield._extract_api_info(service_name, params)
@@ -396,70 +395,8 @@ async def start_call(
     context: Optional[Context],
 ) -> None:
     """Start a call and register pending state."""
-    original_states = {}
-    for entity_id in expected_entities.keys():
-        state = shield.hass.states.get(entity_id)
-        original_states[entity_id] = state.state if state else None
-
-    power_monitor = None
-    if service_name == SERVICE_SET_BOX_MODE:
-        box_id = None
-        if shield.hass.data.get("oig_cloud"):
-            for entry_id, entry_data in shield.hass.data["oig_cloud"].items():
-                if entry_data.get("service_shield") == shield:
-                    coordinator = entry_data.get("coordinator")
-                    if coordinator:
-                        try:
-                            from ..entities.base_sensor import resolve_box_id
-
-                            box_id = resolve_box_id(coordinator)
-                        except Exception:
-                            box_id = None
-                        break
-
-        if not box_id:
-            _LOGGER.warning("[OIG Shield] Power monitor: box_id nenalezen!")
-        else:
-            power_entity = f"sensor.oig_{box_id}_actual_aci_wtotal"
-            power_state = shield.hass.states.get(power_entity)
-
-            if not power_state:
-                _LOGGER.warning(
-                    "[OIG Shield] Power monitor: entita %s neexistuje!",
-                    power_entity,
-                )
-            elif power_state.state in ["unknown", "unavailable"]:
-                _LOGGER.warning(
-                    "[OIG Shield] Power monitor: entita %s je %s",
-                    power_entity,
-                    power_state.state,
-                )
-            else:
-                try:
-                    current_power = float(power_state.state)
-                    target_mode = data.get("value", "").upper()
-
-                    power_monitor = {
-                        "entity_id": power_entity,
-                        "baseline_power": current_power,
-                        "last_power": current_power,
-                        "target_mode": target_mode,
-                        "is_going_to_home_ups": "HOME UPS" in target_mode,
-                        "threshold_kw": 2.5,
-                        "started_at": datetime.now(),
-                    }
-                    _LOGGER.info(
-                        "[OIG Shield] Power monitor aktivní pro %s: baseline=%sW, target=%s, going_to_ups=%s",
-                        service_name,
-                        current_power,
-                        target_mode,
-                        power_monitor["is_going_to_home_ups"],
-                    )
-                except (ValueError, TypeError) as err:
-                    _LOGGER.warning(
-                        "[OIG Shield] Nelze inicializovat power monitor: %s",
-                        err,
-                    )
+    original_states = _capture_original_states(shield, expected_entities)
+    power_monitor = _init_power_monitor(shield, service_name, data)
 
     shield.pending[service_name] = {
         "entities": expected_entities,
@@ -472,39 +409,16 @@ async def start_call(
     shield.running = service_name
     shield.queue_metadata.pop((service_name, str(data)), None)
 
-    shield.hass.bus.async_fire(
-        "oig_cloud_shield_queue_info",
-        {
-            "running": shield.running,
-            "queue_length": len(shield.queue),
-            "pending_count": len(shield.pending),
-            "queue_services": [item[0] for item in shield.queue],
-            "timestamp": dt_now().isoformat(),
-        },
-    )
+    _fire_queue_info_event(shield)
 
     shield._notify_state_change()
 
-    await shield._log_event(
-        "change_requested",
+    await _log_start_events(
+        shield,
         service_name,
-        {
-            "params": data,
-            "entities": expected_entities,
-            "original_states": original_states,
-        },
-        reason="Požadavek odeslán do API",
-        context=context,
-    )
-
-    await shield._log_event(
-        "started",
-        service_name,
-        {
-            "params": data,
-            "entities": expected_entities,
-            "original_states": original_states,
-        },
+        data=data,
+        expected_entities=expected_entities,
+        original_states=original_states,
         context=context,
     )
 
@@ -512,33 +426,7 @@ async def start_call(
         domain, service, service_data=data, blocking=blocking, context=context
     )
 
-    try:
-        from ..const import DOMAIN
-
-        coordinator = (
-            shield.hass.data.get(DOMAIN, {})
-            .get(shield.entry.entry_id, {})
-            .get("coordinator")
-        )
-        if coordinator:
-            _LOGGER.debug(
-                "[OIG Shield] Vynucuji okamžitou aktualizaci coordinatoru po API volání pro %s",
-                service_name,
-            )
-            await coordinator.async_request_refresh()
-            _LOGGER.debug(
-                "[OIG Shield] Coordinator refreshnut - entity by měly být aktuální"
-            )
-        else:
-            _LOGGER.warning(
-                "[OIG Shield] Coordinator nenalezen - entity se aktualizují až při příštím scheduled update!"
-            )
-    except Exception as err:
-        _LOGGER.error(
-            "[OIG Shield] Chyba při refreshu coordinatoru: %s",
-            err,
-            exc_info=True,
-        )
+    await _refresh_coordinator_after_call(shield, service_name)
 
     shield._setup_state_listener()
 
@@ -548,40 +436,38 @@ async def safe_call_service(
 ) -> bool:
     """Safely call service with state verification."""
     try:
-        original_states = {}
-        if "entity_id" in service_data:
-            entity_id = service_data["entity_id"]
-            original_states[entity_id] = shield.hass.states.get(entity_id)
-
         await shield.hass.services.async_call("oig_cloud", service_name, service_data)
 
         await asyncio.sleep(2)
 
-        if "entity_id" in service_data:
-            entity_id = service_data["entity_id"]
+        entity_id = service_data.get("entity_id")
+        if not entity_id:
+            return True
 
-            if service_name == "set_boiler_mode":
-                mode_value = service_data.get("mode", "CBB")
-                expected_value = 1 if mode_value == "Manual" else 0
+        if service_name == "set_boiler_mode":
+            mode_value = service_data.get("mode", "CBB")
+            expected_value = 1 if mode_value == "Manual" else 0
 
-                boiler_entities = [
-                    entity_id
-                    for entity_id in shield.hass.states.async_entity_ids()
-                    if "boiler_manual_mode" in entity_id
-                ]
+            boiler_entities = [
+                entity_id
+                for entity_id in shield.hass.states.async_entity_ids()
+                if "boiler_manual_mode" in entity_id
+            ]
 
-                for boiler_entity in boiler_entities:
-                    if shield._check_entity_state_change(boiler_entity, expected_value):
-                        shield._logger.info("✅ Boiler mode změněn na %s", mode_value)
-                        return True
-
-            elif "mode" in service_data:
-                expected_value = service_data["mode"]
-                if shield._check_entity_state_change(entity_id, expected_value):
-                    shield._logger.info(
-                        "✅ Entita %s změněna na %s", entity_id, expected_value
-                    )
+            for boiler_entity in boiler_entities:
+                if shield._check_entity_state_change(boiler_entity, expected_value):
+                    shield._logger.info("✅ Boiler mode změněn na %s", mode_value)
                     return True
+            return False
+
+        if "mode" in service_data:
+            expected_value = service_data["mode"]
+            if shield._check_entity_state_change(entity_id, expected_value):
+                shield._logger.info(
+                    "✅ Entita %s změněna na %s", entity_id, expected_value
+                )
+                return True
+            return False
 
         return True
 
@@ -621,35 +507,15 @@ async def log_event(
         if state and state.attributes.get("friendly_name"):
             friendly_name = state.attributes.get("friendly_name")
 
-    message = None
-
     is_limit_change = entity_id and entity_id.endswith("_invertor_prm1_p_max_feed_grid")
-
-    if event_type == "queued":
-        message = f"Zařazeno do fronty – {friendly_name}: čeká na změnu"
-    elif event_type == "started":
-        message = f"Spuštěno – {friendly_name}: zahajuji změnu"
-    elif event_type == "completed":
-        if is_limit_change:
-            message = (
-                f"Dokončeno – {friendly_name}: limit nastaven na {expected_value}W"
-            )
-        else:
-            message = f"Dokončeno – {friendly_name}: změna na '{expected_value}'"
-    elif event_type == "timeout":
-        if is_limit_change:
-            message = f"Časový limit vypršel – {friendly_name}: limit stále není {expected_value}W"
-        else:
-            message = (
-                f"Časový limit vypršel – {friendly_name} stále není '{expected_value}' "
-                f"(aktuální: '{from_value}')"
-            )
-    elif event_type == "released":
-        message = f"Semafor uvolněn – služba {service} dokončena"
-    elif event_type == "cancelled":
-        message = f"Zrušeno uživatelem – {friendly_name}: očekávaná změna na '{expected_value}' nebyla provedena"
-    else:
-        message = f"{event_type} – {service}"
+    message = _build_log_message(
+        event_type,
+        service,
+        friendly_name,
+        expected_value,
+        from_value,
+        is_limit_change,
+    )
 
     shield.hass.bus.async_fire(
         "logbook_entry",
@@ -664,6 +530,222 @@ async def log_event(
         },
         context=context,
     )
+
+
+def _capture_original_states(
+    shield: Any, expected_entities: Dict[str, str]
+) -> Dict[str, Optional[str]]:
+    original_states: Dict[str, Optional[str]] = {}
+    for entity_id in expected_entities.keys():
+        state = shield.hass.states.get(entity_id)
+        original_states[entity_id] = state.state if state else None
+    return original_states
+
+
+def _init_power_monitor(
+    shield: Any, service_name: str, data: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    if service_name != SERVICE_SET_BOX_MODE:
+        return None
+    box_id = _resolve_box_id_for_power_monitor(shield)
+    if not box_id:
+        _LOGGER.warning("[OIG Shield] Power monitor: box_id nenalezen!")
+        return None
+
+    power_entity = _build_power_entity(box_id)
+    current_power = _read_power_state(shield, power_entity)
+    if current_power is None:
+        return None
+
+    target_mode = _normalize_target_mode(data)
+    if target_mode is None:
+        return None
+
+    power_monitor = _build_power_monitor(power_entity, current_power, target_mode)
+    _LOGGER.info(
+        "[OIG Shield] Power monitor aktivní pro %s: baseline=%sW, target=%s, going_to_ups=%s",
+        service_name,
+        current_power,
+        target_mode,
+        power_monitor["is_going_to_home_ups"],
+    )
+    return power_monitor
+
+
+def _build_power_entity(box_id: str) -> str:
+    return f"sensor.oig_{box_id}_actual_aci_wtotal"
+
+
+def _read_power_state(shield: Any, power_entity: str) -> Optional[float]:
+    power_state = shield.hass.states.get(power_entity)
+    if not power_state:
+        _LOGGER.warning(
+            "[OIG Shield] Power monitor: entita %s neexistuje!",
+            power_entity,
+        )
+        return None
+    if power_state.state in ["unknown", "unavailable"]:
+        _LOGGER.warning(
+            "[OIG Shield] Power monitor: entita %s je %s",
+            power_entity,
+            power_state.state,
+        )
+        return None
+    try:
+        return float(power_state.state)
+    except (ValueError, TypeError) as err:
+        _LOGGER.warning("[OIG Shield] Nelze inicializovat power monitor: %s", err)
+        return None
+
+
+def _normalize_target_mode(data: Dict[str, Any]) -> Optional[str]:
+    target_mode = data.get("value", "")
+    if not isinstance(target_mode, str):
+        return None
+    return target_mode.upper()
+
+
+def _build_power_monitor(
+    power_entity: str, current_power: float, target_mode: str
+) -> Dict[str, Any]:
+    return {
+        "entity_id": power_entity,
+        "baseline_power": current_power,
+        "last_power": current_power,
+        "target_mode": target_mode,
+        "is_going_to_home_ups": "HOME UPS" in target_mode,
+        "threshold_kw": 2.5,
+        "started_at": datetime.now(),
+    }
+
+
+def _resolve_box_id_for_power_monitor(shield: Any) -> Optional[str]:
+    if not shield.hass.data.get("oig_cloud"):
+        return None
+    for _entry_id, entry_data in shield.hass.data["oig_cloud"].items():
+        if entry_data.get("service_shield") != shield:
+            continue
+        coordinator = entry_data.get("coordinator")
+        if coordinator:
+            try:
+                from ..entities.base_sensor import resolve_box_id
+
+                return resolve_box_id(coordinator)
+            except Exception:
+                return None
+    return None
+
+
+def _fire_queue_info_event(shield: Any) -> None:
+    shield.hass.bus.async_fire(
+        "oig_cloud_shield_queue_info",
+        {
+            "running": shield.running,
+            "queue_length": len(shield.queue),
+            "pending_count": len(shield.pending),
+            "queue_services": [item[0] for item in shield.queue],
+            "timestamp": dt_now().isoformat(),
+        },
+    )
+
+
+async def _log_start_events(
+    shield: Any,
+    service_name: str,
+    *,
+    data: Dict[str, Any],
+    expected_entities: Dict[str, str],
+    original_states: Dict[str, Optional[str]],
+    context: Optional[Context],
+) -> None:
+    await shield._log_event(
+        "change_requested",
+        service_name,
+        {
+            "params": data,
+            "entities": expected_entities,
+            "original_states": original_states,
+        },
+        reason="Požadavek odeslán do API",
+        context=context,
+    )
+
+    await shield._log_event(
+        "started",
+        service_name,
+        {
+            "params": data,
+            "entities": expected_entities,
+            "original_states": original_states,
+        },
+        context=context,
+    )
+
+
+async def _refresh_coordinator_after_call(shield: Any, service_name: str) -> None:
+    try:
+        from ..const import DOMAIN
+
+        coordinator = (
+            shield.hass.data.get(DOMAIN, {})
+            .get(shield.entry.entry_id, {})
+            .get("coordinator")
+        )
+        if coordinator:
+            _LOGGER.debug(
+                "[OIG Shield] Vynucuji okamžitou aktualizaci coordinatoru po API volání pro %s",
+                service_name,
+            )
+            await coordinator.async_request_refresh()
+            _LOGGER.debug(
+                "[OIG Shield] Coordinator refreshnut - entity by měly být aktuální"
+            )
+        else:
+            _LOGGER.warning(
+                "[OIG Shield] Coordinator nenalezen - entity se aktualizují až při příštím scheduled update!"
+            )
+    except Exception as err:
+        _LOGGER.error(
+            "[OIG Shield] Chyba při refreshu coordinatoru: %s",
+            err,
+            exc_info=True,
+        )
+
+
+def _build_log_message(
+    event_type: str,
+    service: str,
+    friendly_name: Optional[str],
+    expected_value: Optional[str],
+    from_value: Optional[str],
+    is_limit_change: bool,
+) -> str:
+    if event_type == "queued":
+        return f"Zařazeno do fronty – {friendly_name}: čeká na změnu"
+    if event_type == "started":
+        return f"Spuštěno – {friendly_name}: zahajuji změnu"
+    if event_type == "completed":
+        if is_limit_change:
+            return (
+                f"Dokončeno – {friendly_name}: limit nastaven na {expected_value}W"
+            )
+        return f"Dokončeno – {friendly_name}: změna na '{expected_value}'"
+    if event_type == "timeout":
+        if is_limit_change:
+            return (
+                f"Časový limit vypršel – {friendly_name}: limit stále není {expected_value}W"
+            )
+        return (
+            f"Časový limit vypršel – {friendly_name} stále není '{expected_value}' "
+            f"(aktuální: '{from_value}')"
+        )
+    if event_type == "released":
+        return f"Semafor uvolněn – služba {service} dokončena"
+    if event_type == "cancelled":
+        return (
+            f"Zrušeno uživatelem – {friendly_name}: očekávaná změna na '{expected_value}' nebyla provedena"
+        )
+    return f"{event_type} – {service}"
 
     shield.hass.bus.async_fire(
         "oig_cloud_service_shield_event",

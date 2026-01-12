@@ -593,11 +593,11 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         day_datetime = datetime.combine(day_date, datetime.min.time())
         is_weekend = day_datetime.weekday() >= 5
 
-        if hasattr(self, "_day_type"):
-            if (self._day_type == "weekend" and not is_weekend) or (
-                self._day_type == "weekday" and is_weekend
-            ):
-                return False
+        if hasattr(self, "_day_type") and (
+            (self._day_type == "weekend" and not is_weekend)
+            or (self._day_type == "weekday" and is_weekend)
+        ):
+            return False
         return True
 
     def _extract_day_values(

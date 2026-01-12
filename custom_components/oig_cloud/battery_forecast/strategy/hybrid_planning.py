@@ -38,22 +38,13 @@ def plan_charging_intervals(
         blocked_indices=blocked_indices,
         n=n,
     )
-
-    def add_ups_interval(idx: int, *, allow_expensive: bool = False) -> None:
-        if idx in blocked_indices:
-            return
-        charging_intervals.add(idx)
-        min_len = max(1, strategy.config.min_ups_duration_intervals)
-        if min_len <= 1:
-            return
-        for offset in range(1, min_len):
-            next_idx = idx + offset
-            if next_idx >= n:
-                break
-            if next_idx in blocked_indices or next_idx in charging_intervals:
-                continue
-            if allow_expensive or prices[next_idx] <= strategy.config.max_ups_price_czk:
-                charging_intervals.add(next_idx)
+    add_ups_interval = _build_add_ups_interval(
+        strategy,
+        charging_intervals=charging_intervals,
+        prices=prices,
+        blocked_indices=blocked_indices,
+        n=n,
+    )
 
     recovery_index = 0
     if recovery_mode:
@@ -69,9 +60,7 @@ def plan_charging_intervals(
         if not recovered:
             return charging_intervals, infeasible_reason, price_band_intervals
 
-    # Repair loop: add UPS intervals before first violation.
-    buffer = 0.5
-    infeasible_reason = _repair_plan_before_min(
+    infeasible_reason = _apply_repair_and_target(
         strategy,
         initial_battery_kwh=initial_battery_kwh,
         solar_forecast=solar_forecast,
@@ -80,22 +69,9 @@ def plan_charging_intervals(
         blocked_indices=blocked_indices,
         prices=prices,
         recovery_index=recovery_index,
-        buffer=buffer,
         add_ups_interval=add_ups_interval,
         infeasible_reason=infeasible_reason,
         n=n,
-    )
-
-    # Target fill: add cheapest UPS intervals until target SoC is reachable.
-    _reach_target_soc(
-        strategy,
-        initial_battery_kwh=initial_battery_kwh,
-        solar_forecast=solar_forecast,
-        consumption_forecast=consumption_forecast,
-        charging_intervals=charging_intervals,
-        blocked_indices=blocked_indices,
-        prices=prices,
-        add_ups_interval=add_ups_interval,
         eps_kwh=eps_kwh,
     )
 
@@ -119,6 +95,79 @@ def plan_charging_intervals(
         )
 
     return charging_intervals, infeasible_reason, price_band_intervals
+
+
+def _build_add_ups_interval(
+    strategy,
+    *,
+    charging_intervals: set[int],
+    prices: List[float],
+    blocked_indices: set[int],
+    n: int,
+):
+    def add_ups_interval(idx: int, *, allow_expensive: bool = False) -> None:
+        if idx in blocked_indices:
+            return
+        charging_intervals.add(idx)
+        min_len = max(1, strategy.config.min_ups_duration_intervals)
+        if min_len <= 1:
+            return
+        max_price = strategy.config.max_ups_price_czk
+        for offset in range(1, min_len):
+            next_idx = idx + offset
+            if next_idx >= n:
+                break
+            if next_idx in blocked_indices or next_idx in charging_intervals:
+                continue
+            if allow_expensive or prices[next_idx] <= max_price:
+                charging_intervals.add(next_idx)
+
+    return add_ups_interval
+
+
+def _apply_repair_and_target(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    prices: List[float],
+    recovery_index: int,
+    add_ups_interval,
+    infeasible_reason: Optional[str],
+    n: int,
+    eps_kwh: float,
+) -> Optional[str]:
+    buffer = 0.5
+    infeasible_reason = _repair_plan_before_min(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        charging_intervals=charging_intervals,
+        blocked_indices=blocked_indices,
+        prices=prices,
+        recovery_index=recovery_index,
+        buffer=buffer,
+        add_ups_interval=add_ups_interval,
+        infeasible_reason=infeasible_reason,
+        n=n,
+    )
+
+    _reach_target_soc(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        charging_intervals=charging_intervals,
+        blocked_indices=blocked_indices,
+        prices=prices,
+        add_ups_interval=add_ups_interval,
+        eps_kwh=eps_kwh,
+    )
+    return infeasible_reason
 
 
 def _build_blocked_indices(
@@ -224,44 +273,123 @@ def _repair_plan_before_min(
     n: int,
 ) -> Optional[str]:
     for _ in range(strategy.MAX_ITERATIONS):
-        battery_trajectory = simulate_trajectory(
+        infeasible_reason, should_stop = _repair_iteration(
             strategy,
             initial_battery_kwh=initial_battery_kwh,
             solar_forecast=solar_forecast,
             consumption_forecast=consumption_forecast,
             charging_intervals=charging_intervals,
-        )
-
-        violation_idx = None
-        for i in range(recovery_index + 1, len(battery_trajectory)):
-            if battery_trajectory[i] < strategy._planning_min + buffer:
-                violation_idx = i
-                break
-
-        if violation_idx is None:
-            break
-
-        candidate = _find_cheapest_candidate(
-            prices=prices,
-            charging_intervals=charging_intervals,
             blocked_indices=blocked_indices,
-            max_price=strategy.config.max_ups_price_czk,
-            limit=violation_idx + 1,
+            prices=prices,
+            recovery_index=recovery_index,
+            buffer=buffer,
+            add_ups_interval=add_ups_interval,
+            infeasible_reason=infeasible_reason,
+            n=n,
         )
-
-        if candidate is None:
-            if infeasible_reason is None:
-                infeasible_reason = (
-                    f"No UPS interval <= max_ups_price_czk={strategy.config.max_ups_price_czk} "
-                    f"available before violation index {violation_idx}"
-                )
-            for idx in range(0, min(n, violation_idx + 1)):
-                add_ups_interval(idx, allow_expensive=True)
+        if should_stop:
             break
-
-        add_ups_interval(candidate)
 
     return infeasible_reason
+
+
+def _repair_iteration(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    prices: List[float],
+    recovery_index: int,
+    buffer: float,
+    add_ups_interval,
+    infeasible_reason: Optional[str],
+    n: int,
+) -> tuple[Optional[str], bool]:
+    battery_trajectory = simulate_trajectory(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        charging_intervals=charging_intervals,
+    )
+
+    violation_idx = _find_violation_idx(
+        battery_trajectory,
+        recovery_index=recovery_index,
+        min_level=strategy._planning_min + buffer,
+    )
+    if violation_idx is None:
+        return infeasible_reason, True
+
+    candidate = _pick_repair_candidate(
+        strategy,
+        prices=prices,
+        charging_intervals=charging_intervals,
+        blocked_indices=blocked_indices,
+        violation_idx=violation_idx,
+    )
+    if candidate is None:
+        infeasible_reason = _mark_infeasible_before_violation(
+            strategy,
+            infeasible_reason=infeasible_reason,
+            violation_idx=violation_idx,
+            add_ups_interval=add_ups_interval,
+            n=n,
+        )
+        return infeasible_reason, True
+
+    add_ups_interval(candidate)
+    return infeasible_reason, False
+
+
+def _find_violation_idx(
+    battery_trajectory: List[float],
+    *,
+    recovery_index: int,
+    min_level: float,
+) -> Optional[int]:
+    for i in range(recovery_index + 1, len(battery_trajectory)):
+        if battery_trajectory[i] < min_level:
+            return i
+    return None
+
+
+def _mark_infeasible_before_violation(
+    strategy,
+    *,
+    infeasible_reason: Optional[str],
+    violation_idx: int,
+    add_ups_interval,
+    n: int,
+) -> Optional[str]:
+    if infeasible_reason is None:
+        infeasible_reason = (
+            f"No UPS interval <= max_ups_price_czk={strategy.config.max_ups_price_czk} "
+            f"available before violation index {violation_idx}"
+        )
+    for idx in range(0, min(n, violation_idx + 1)):
+        add_ups_interval(idx, allow_expensive=True)
+    return infeasible_reason
+
+
+def _pick_repair_candidate(
+    strategy,
+    *,
+    prices: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    violation_idx: int,
+) -> Optional[int]:
+    return _find_cheapest_candidate(
+        prices=prices,
+        charging_intervals=charging_intervals,
+        blocked_indices=blocked_indices,
+        max_price=strategy.config.max_ups_price_czk,
+        limit=violation_idx + 1,
+    )
 
 
 def _reach_target_soc(
@@ -416,7 +544,48 @@ def extend_ups_blocks_by_price_band(
             ups_flags[idx] = True
 
     lookahead = 4  # 1h window (4x 15min) to avoid holding through a price drop.
+    can_extend = _build_can_extend(
+        prices=prices,
+        blocked_indices=blocked_indices,
+        max_price=max_price,
+        delta_pct=delta_pct,
+        lookahead=lookahead,
+        n=n,
+    )
 
+    extended: set[int] = set()
+
+    _extend_forward(
+        ups_flags,
+        charging_intervals=charging_intervals,
+        extended=extended,
+        can_extend=can_extend,
+    )
+    _fill_single_gaps(
+        ups_flags,
+        charging_intervals=charging_intervals,
+        extended=extended,
+        can_extend=can_extend,
+    )
+    _extend_forward(
+        ups_flags,
+        charging_intervals=charging_intervals,
+        extended=extended,
+        can_extend=can_extend,
+    )
+
+    return extended
+
+
+def _build_can_extend(
+    *,
+    prices: List[float],
+    blocked_indices: set[int],
+    max_price: float,
+    delta_pct: float,
+    lookahead: int,
+    n: int,
+):
     def _has_cheaper_ahead(current_idx: int) -> bool:
         current_price = prices[current_idx]
         limit = min(n, current_idx + lookahead + 1)
@@ -438,31 +607,36 @@ def extend_ups_blocks_by_price_band(
             return False
         return price <= prev_price * (1.0 + delta_pct)
 
-    extended: set[int] = set()
+    return _can_extend
 
-    # Forward hysteresis: keep UPS if price stays within band.
-    for i in range(1, n):
-        if ups_flags[i - 1] and not ups_flags[i] and _can_extend(i - 1, i):
+
+def _extend_forward(
+    ups_flags: list[bool],
+    *,
+    charging_intervals: set[int],
+    extended: set[int],
+    can_extend,
+) -> None:
+    for i in range(1, len(ups_flags)):
+        if ups_flags[i - 1] and not ups_flags[i] and can_extend(i - 1, i):
             ups_flags[i] = True
             if i not in charging_intervals:
                 extended.add(i)
 
-    # Fill single-slot gaps between UPS blocks.
-    for i in range(1, n - 1):
+
+def _fill_single_gaps(
+    ups_flags: list[bool],
+    *,
+    charging_intervals: set[int],
+    extended: set[int],
+    can_extend,
+) -> None:
+    for i in range(1, len(ups_flags) - 1):
         if ups_flags[i - 1] and (not ups_flags[i]) and ups_flags[i + 1]:
-            if _can_extend(i - 1, i):
+            if can_extend(i - 1, i):
                 ups_flags[i] = True
                 if i not in charging_intervals:
                     extended.add(i)
-
-    # One more forward pass to connect newly filled gaps.
-    for i in range(1, n):
-        if ups_flags[i - 1] and not ups_flags[i] and _can_extend(i - 1, i):
-            ups_flags[i] = True
-            if i not in charging_intervals:
-                extended.add(i)
-
-    return extended
 
 
 def simulate_trajectory(
