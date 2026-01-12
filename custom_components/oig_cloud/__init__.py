@@ -994,7 +994,7 @@ def _build_analytics_device_info(
     }
 
 
-async def _init_ote_api(entry: ConfigEntry) -> Any | None:
+def _init_ote_api(entry: ConfigEntry) -> Any | None:
     if not entry.options.get("enable_pricing", False):
         _LOGGER.debug("Pricing disabled - skipping OTE API initialization")
         return None
@@ -1211,7 +1211,7 @@ async def async_setup_entry(
 
         analytics_device_info = _build_analytics_device_info(entry, coordinator)
 
-        ote_api = await _init_ote_api(entry)
+        ote_api = _init_ote_api(entry)
         boiler_coordinator = await _init_boiler_coordinator(hass, entry)
 
         # NOVÉ: Podmíněné nastavení dashboard podle konfigurace
