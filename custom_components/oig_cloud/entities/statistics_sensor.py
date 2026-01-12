@@ -178,43 +178,11 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
             data = await store.async_load()
 
             if data:
-                # Načtení základních sampling dat
-                if "sampling_data" in data:
-                    sampling_list = data["sampling_data"]
-                    self._sampling_data = self._load_sampling_data(
-                        sampling_list, self._max_sampling_size
-                    )
-
-                # Načtení intervalových dat
-                if "interval_data" in data:
-                    self._interval_data = data["interval_data"]
-
-                # Načtení hodinových dat s bezpečným parsing
-                if "hourly_data" in data:
-                    self._hourly_data = self._load_hourly_data(data["hourly_data"])
-
-                # Načtení aktuální hodinové hodnoty
-                if "current_hourly_value" in data:
-                    self._current_hourly_value = data["current_hourly_value"]
-
-                # Načtení posledních hodnot pro hodinové senzory
-                if "last_source_value" in data:
-                    self._last_source_value = data["last_source_value"]
-
-                if "last_hour_reset" in data and data["last_hour_reset"]:
-                    try:
-                        self._last_hour_reset = datetime.fromisoformat(
-                            data["last_hour_reset"]
-                        )
-                        if self._last_hour_reset.tzinfo is not None:
-                            self._last_hour_reset = self._last_hour_reset.replace(
-                                tzinfo=None
-                            )
-                    except (ValueError, TypeError) as e:
-                        _LOGGER.warning(
-                            f"[{self.entity_id}] Invalid last_hour_reset format: {e}"
-                        )
-                        self._last_hour_reset = None
+                self._restore_sampling_data(data)
+                self._restore_interval_data(data)
+                self._restore_hourly_data(data)
+                self._restore_hourly_state(data)
+                self._restore_last_hour_reset(data)
 
                 # Vyčištění starých dat po načtení
                 await self._cleanup_old_data()
@@ -244,6 +212,40 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
         except Exception as e:
             _LOGGER.warning(f"[{self.entity_id}] Failed to load statistics data: {e}")
+
+    def _restore_sampling_data(self, data: Dict[str, Any]) -> None:
+        if "sampling_data" in data:
+            sampling_list = data["sampling_data"]
+            self._sampling_data = self._load_sampling_data(
+                sampling_list, self._max_sampling_size
+            )
+
+    def _restore_interval_data(self, data: Dict[str, Any]) -> None:
+        if "interval_data" in data:
+            self._interval_data = data["interval_data"]
+
+    def _restore_hourly_data(self, data: Dict[str, Any]) -> None:
+        if "hourly_data" in data:
+            self._hourly_data = self._load_hourly_data(data["hourly_data"])
+
+    def _restore_hourly_state(self, data: Dict[str, Any]) -> None:
+        if "current_hourly_value" in data:
+            self._current_hourly_value = data["current_hourly_value"]
+        if "last_source_value" in data:
+            self._last_source_value = data["last_source_value"]
+
+    def _restore_last_hour_reset(self, data: Dict[str, Any]) -> None:
+        if not data.get("last_hour_reset"):
+            return
+        try:
+            self._last_hour_reset = datetime.fromisoformat(data["last_hour_reset"])
+            if self._last_hour_reset.tzinfo is not None:
+                self._last_hour_reset = self._last_hour_reset.replace(tzinfo=None)
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning(
+                f"[{self.entity_id}] Invalid last_hour_reset format: {e}"
+            )
+            self._last_hour_reset = None
 
     async def _save_statistics_data(self) -> None:
         """Uloží statistická data do persistentního úložiště."""
