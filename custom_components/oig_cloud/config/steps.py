@@ -280,30 +280,39 @@ class WizardMixin:
 
     def _build_options_payload(self, wizard_data: Dict[str, Any]) -> Dict[str, Any]:
         """Build shared options payload for config and options flows."""
-        pricing_backend = self._map_pricing_to_backend(wizard_data)
+        payload: Dict[str, Any] = {}
+        payload.update(self._build_base_options(wizard_data))
+        payload.update(self._build_solar_options(wizard_data))
+        payload.update(self._build_battery_options(wizard_data))
+        payload.update(self._map_pricing_to_backend(wizard_data))
+        payload.update(self._build_boiler_options(wizard_data))
+        payload.update(self._build_auto_options(wizard_data))
+        return payload
+
+    @staticmethod
+    def _build_base_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
         return {
-            # Intervaly
             "standard_scan_interval": wizard_data.get("standard_scan_interval", 30),
             "extended_scan_interval": wizard_data.get("extended_scan_interval", 300),
-            # Data source (cloud vs local with fallback)
-            "data_source_mode": self._sanitize_data_source_mode(
+            "data_source_mode": WizardMixin._sanitize_data_source_mode(
                 wizard_data.get("data_source_mode", "cloud_only")
             ),
             "local_proxy_stale_minutes": wizard_data.get("local_proxy_stale_minutes", 10),
             "local_event_debounce_ms": wizard_data.get("local_event_debounce_ms", 300),
-            # Moduly
             "enable_statistics": wizard_data.get("enable_statistics", True),
             "enable_solar_forecast": wizard_data.get("enable_solar_forecast", False),
             "enable_battery_prediction": wizard_data.get(
                 "enable_battery_prediction", False
             ),
             "enable_pricing": wizard_data.get("enable_pricing", False),
-            "enable_extended_sensors": wizard_data.get(
-                "enable_extended_sensors", True
-            ),
+            "enable_extended_sensors": wizard_data.get("enable_extended_sensors", True),
             "enable_chmu_warnings": wizard_data.get("enable_chmu_warnings", False),
             "enable_dashboard": wizard_data.get("enable_dashboard", False),
-            # Solar forecast - použít všechny parametry stejně jako v OptionsFlow
+        }
+
+    @staticmethod
+    def _build_solar_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        return {
             CONF_SOLAR_FORECAST_PROVIDER: wizard_data.get(
                 CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
             ),
@@ -320,7 +329,6 @@ class WizardMixin:
             CONF_SOLAR_FORECAST_LONGITUDE: wizard_data.get(
                 CONF_SOLAR_FORECAST_LONGITUDE, 14.0
             ),
-            # String 1
             CONF_SOLAR_FORECAST_STRING1_ENABLED: wizard_data.get(
                 CONF_SOLAR_FORECAST_STRING1_ENABLED, True
             ),
@@ -333,7 +341,6 @@ class WizardMixin:
             CONF_SOLAR_FORECAST_STRING1_KWP: wizard_data.get(
                 CONF_SOLAR_FORECAST_STRING1_KWP, 5.0
             ),
-            # String 2
             "solar_forecast_string2_enabled": wizard_data.get(
                 "solar_forecast_string2_enabled", False
             ),
@@ -346,7 +353,11 @@ class WizardMixin:
             "solar_forecast_string2_kwp": wizard_data.get(
                 "solar_forecast_string2_kwp", 5.0
             ),
-            # Battery prediction - všechny parametry
+        }
+
+    @staticmethod
+    def _build_battery_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        return {
             "min_capacity_percent": wizard_data.get("min_capacity_percent", 20.0),
             "target_capacity_percent": wizard_data.get("target_capacity_percent", 80.0),
             "home_charge_rate": wizard_data.get("home_charge_rate", 2.8),
@@ -354,9 +365,7 @@ class WizardMixin:
             "disable_planning_min_guard": wizard_data.get(
                 "disable_planning_min_guard", False
             ),
-            # Planner safety limit (CZK/kWh)
             "max_ups_price_czk": wizard_data.get("max_ups_price_czk", 10.0),
-            # Battery balancing
             "balancing_enabled": wizard_data.get("balancing_enabled", True),
             "balancing_interval_days": wizard_data.get("balancing_interval_days", 7),
             "balancing_hold_hours": wizard_data.get("balancing_hold_hours", 3),
@@ -366,11 +375,12 @@ class WizardMixin:
             "balancing_economic_threshold": wizard_data.get(
                 "balancing_economic_threshold", 2.5
             ),
-            # Used by balancer window selection
             "cheap_window_percentile": wizard_data.get("cheap_window_percentile", 30),
-            # Pricing - použít mapované backend atributy
-            **pricing_backend,
-            # Boiler module
+        }
+
+    @staticmethod
+    def _build_boiler_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        return {
             "enable_boiler": wizard_data.get("enable_boiler", False),
             "boiler_volume_l": wizard_data.get("boiler_volume_l", 120),
             "boiler_target_temp_c": wizard_data.get("boiler_target_temp_c", 60.0),
@@ -417,9 +427,11 @@ class WizardMixin:
             "boiler_plan_slot_minutes": wizard_data.get(
                 "boiler_plan_slot_minutes", 30
             ),
-            # Auto module
-            "enable_auto": wizard_data.get("enable_auto", False),
         }
+
+    @staticmethod
+    def _build_auto_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        return {"enable_auto": wizard_data.get("enable_auto", False)}
 
     @staticmethod
     def _map_backend_to_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
