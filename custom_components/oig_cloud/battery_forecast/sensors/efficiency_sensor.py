@@ -313,6 +313,22 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
 
         self.async_write_ha_state()
 
+    def _get_sensor(self, sensor_type: str) -> Optional[float]:
+        """Získat hodnotu z existujícího sensoru."""
+        if not self._hass:
+            return None
+
+        sensor_id = f"sensor.oig_{self._box_id}_{sensor_type}"
+        state = self._hass.states.get(sensor_id)
+
+        if not state or state.state in ["unknown", "unavailable"]:
+            return None
+
+        try:
+            return float(state.state)
+        except (ValueError, TypeError):
+            return None
+
     def _update_extra_state_attributes(self) -> None:
         """Update extra state attributes with current data."""
         now = datetime.now()
@@ -418,190 +434,52 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
         _LOGGER.info("🔋 Attempting to load last month efficiency from history...")
 
         try:
-            # Zjistit datum minulého měsíce
-            now = datetime.now()
-            if now.month == 1:
-                last_month_year = now.year - 1
-                last_month = 12
-            else:
-                last_month_year = now.year
-                last_month = now.month - 1
-
-            # Poslední den minulého měsíce v 23:59
-            import calendar
-            from datetime import timezone
-
-            last_day = calendar.monthrange(last_month_year, last_month)[1]
-            end_time = datetime(
-                last_month_year, last_month, last_day, 23, 59, 59, tzinfo=timezone.utc
-            )
-
-            # První den minulého měsíce v 00:00
-            start_time = datetime(
-                last_month_year, last_month, 1, 0, 0, 0, tzinfo=timezone.utc
-            )
-
+            last_month_year, last_month, start_time, end_time = _last_month_range()
             _LOGGER.debug(
                 "🔋 Looking for history between %s and %s", start_time, end_time
             )
 
-            # Načíst historii pro monthly sensors
-            charge_sensor = (
-                f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month"
+            charge_sensor, discharge_sensor, battery_sensor = _monthly_sensor_ids(
+                self._box_id
             )
-            discharge_sensor = (
-                f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_month"
-            )
-            battery_sensor = f"sensor.oig_{self._box_id}_remaining_usable_capacity"
-
-            # Získat stavy na konci měsíce
-            history = await self.hass.async_add_executor_job(
-                get_significant_states,
+            history = await _load_history_states(
                 self.hass,
+                get_significant_states,
                 end_time - timedelta(hours=1),
                 end_time,
                 [charge_sensor, discharge_sensor, battery_sensor],
             )
-
-            _LOGGER.debug(
-                "🔋 History result type: %s, keys: %s",
-                type(history),
-                history.keys() if history else "None",
-            )
-            if history:
-                for key, values in history.items():
-                    _LOGGER.debug("🔋 History[%s]: %s entries", key, len(values))
-
+            _log_history_debug(history)
             if not history:
                 _LOGGER.warning(
                     "🔋 No history found for %s/%s", last_month, last_month_year
                 )
                 return
 
-            # Parse hodnoty
-            charge_wh = None
-            discharge_wh = None
-            battery_end = None
+            charge_wh = _extract_latest_numeric(history, charge_sensor)
+            discharge_wh = _extract_latest_numeric(history, discharge_sensor)
+            battery_end = _extract_latest_numeric(history, battery_sensor)
 
-            if charge_sensor in history and history[charge_sensor]:
-                for item in reversed(history[charge_sensor]):
-                    if isinstance(item, dict):
-                        state_value = item.get("state")
-                    else:
-                        state_value = item.state
-                    if state_value not in ["unknown", "unavailable", None]:
-                        try:
-                            charge_wh = float(state_value)
-                            break
-                        except (ValueError, TypeError):
-                            continue
-
-            if discharge_sensor in history and history[discharge_sensor]:
-                for item in reversed(history[discharge_sensor]):
-                    if isinstance(item, dict):
-                        state_value = item.get("state")
-                    else:
-                        state_value = item.state
-                    if state_value not in ["unknown", "unavailable", None]:
-                        try:
-                            discharge_wh = float(state_value)
-                            break
-                        except (ValueError, TypeError):
-                            continue
-
-            if battery_sensor in history and history[battery_sensor]:
-                for item in reversed(history[battery_sensor]):
-                    if isinstance(item, dict):
-                        state_value = item.get("state")
-                    else:
-                        state_value = item.state
-                    if state_value not in ["unknown", "unavailable", None]:
-                        try:
-                            battery_end = float(state_value)
-                            break
-                        except (ValueError, TypeError):
-                            continue
-
-            # Načíst stav baterie na začátku měsíce
-            history_start = await self.hass.async_add_executor_job(
-                get_significant_states,
-                self.hass,
-                start_time,
-                start_time + timedelta(hours=1),
-                [battery_sensor],
+            battery_start = await _load_battery_start(
+                self.hass, get_significant_states, battery_sensor, start_time
             )
 
-            battery_start = None
-            if battery_sensor in history_start and history_start[battery_sensor]:
-                for item in history_start[battery_sensor]:
-                    if isinstance(item, dict):
-                        state_value = item.get("state")
-                    else:
-                        state_value = item.state
-                    if state_value not in ["unknown", "unavailable", None]:
-                        try:
-                            battery_start = float(state_value)
-                            break
-                        except (ValueError, TypeError):
-                            continue
-
-            # Vypočítat efficiency
-            if (
-                charge_wh
-                and discharge_wh
-                and battery_start is not None
-                and battery_end is not None
-            ):
-                charge_kwh = charge_wh / 1000
-                discharge_kwh = discharge_wh / 1000
-                delta_kwh = battery_end - battery_start
-                effective_discharge = discharge_kwh - delta_kwh
-
-                if effective_discharge > 0 and charge_kwh > 0:
-                    efficiency = (effective_discharge / charge_kwh) * 100
-                    losses_kwh = charge_kwh - effective_discharge
-                    losses_pct = (losses_kwh / charge_kwh) * 100
-
-                    self._efficiency_last_month = round(efficiency, 1)
-                    self._last_month_data = {
-                        "efficiency_pct": round(efficiency, 1),
-                        "losses_kwh": round(losses_kwh, 2),
-                        "losses_pct": round(losses_pct, 1),
-                        "charge_kwh": round(charge_kwh, 2),
-                        "discharge_kwh": round(discharge_kwh, 2),
-                        "effective_discharge_kwh": round(effective_discharge, 2),
-                        "delta_kwh": round(delta_kwh, 2),
-                        "battery_start_kwh": round(battery_start, 2),
-                        "battery_end_kwh": round(battery_end, 2),
-                    }
-
-                    _LOGGER.info(
-                        "🔋 Loaded %s/%s from history: efficiency=%.1f%%, charge=%.2f kWh, "
-                        "discharge=%.2f kWh, delta=%.2f kWh",
-                        last_month,
-                        last_month_year,
-                        efficiency,
-                        charge_kwh,
-                        discharge_kwh,
-                        delta_kwh,
-                    )
-
-                    # Uložit state do HA aby přežil restart
-                    self._update_extra_state_attributes()
-                    self.async_write_ha_state()
-                    _LOGGER.info("🔋 Last month data saved to state storage")
-                else:
-                    _LOGGER.warning(
-                        "🔋 Invalid data for %s/%s: effective_discharge=%.2f, charge=%.2f",
-                        last_month,
-                        last_month_year,
-                        effective_discharge,
-                        charge_kwh,
-                    )
+            metrics = _compute_last_month_metrics(
+                charge_wh, discharge_wh, battery_start, battery_end
+            )
+            if metrics:
+                self._efficiency_last_month = metrics["efficiency_pct"]
+                self._last_month_data = metrics
+                _log_last_month_success(
+                    last_month,
+                    last_month_year,
+                    metrics,
+                )
+                self._update_extra_state_attributes()
+                self.async_write_ha_state()
+                _LOGGER.info("🔋 Last month data saved to state storage")
             else:
-                _LOGGER.warning(
-                    "🔋 Incomplete data for %s/%s: charge=%s, discharge=%s, "
-                    "battery_start=%s, battery_end=%s",
+                _log_last_month_failure(
                     last_month,
                     last_month_year,
                     charge_wh,
@@ -616,18 +494,159 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
             # Vždy resetovat flag aby se mohl zkusit loading znovu při dalším update
             self._loading_history = False
 
-    def _get_sensor(self, sensor_type: str) -> Optional[float]:
-        """Získat hodnotu z existujícího sensoru."""
-        if not self._hass:
-            return None
 
-        sensor_id = f"sensor.oig_{self._box_id}_{sensor_type}"
-        state = self._hass.states.get(sensor_id)
+def _last_month_range() -> tuple[int, int, datetime, datetime]:
+    now = datetime.now()
+    if now.month == 1:
+        last_month_year = now.year - 1
+        last_month = 12
+    else:
+        last_month_year = now.year
+        last_month = now.month - 1
 
-        if not state or state.state in ["unknown", "unavailable"]:
-            return None
+    import calendar
+    from datetime import timezone
 
+    last_day = calendar.monthrange(last_month_year, last_month)[1]
+    end_time = datetime(
+        last_month_year, last_month, last_day, 23, 59, 59, tzinfo=timezone.utc
+    )
+    start_time = datetime(
+        last_month_year, last_month, 1, 0, 0, 0, tzinfo=timezone.utc
+    )
+    return last_month_year, last_month, start_time, end_time
+
+
+def _monthly_sensor_ids(box_id: str) -> tuple[str, str, str]:
+    charge_sensor = f"sensor.oig_{box_id}_computed_batt_charge_energy_month"
+    discharge_sensor = f"sensor.oig_{box_id}_computed_batt_discharge_energy_month"
+    battery_sensor = f"sensor.oig_{box_id}_remaining_usable_capacity"
+    return charge_sensor, discharge_sensor, battery_sensor
+
+
+async def _load_history_states(
+    hass: Any,
+    history_fn: Any,
+    start_time: datetime,
+    end_time: datetime,
+    entity_ids: list[str],
+) -> Optional[Dict[str, Any]]:
+    return await hass.async_add_executor_job(
+        history_fn,
+        hass,
+        start_time,
+        end_time,
+        entity_ids,
+    )
+
+
+def _log_history_debug(history: Optional[Dict[str, Any]]) -> None:
+    _LOGGER.debug(
+        "🔋 History result type: %s, keys: %s",
+        type(history),
+        history.keys() if history else "None",
+    )
+    if history:
+        for key, values in history.items():
+            _LOGGER.debug("🔋 History[%s]: %s entries", key, len(values))
+
+
+def _extract_latest_numeric(
+    history: Optional[Dict[str, Any]], entity_id: str
+) -> Optional[float]:
+    if not history or entity_id not in history or not history[entity_id]:
+        return None
+    for item in reversed(history[entity_id]):
+        state_value = item.get("state") if isinstance(item, dict) else item.state
+        if state_value in ["unknown", "unavailable", None]:
+            continue
         try:
-            return float(state.state)
+            return float(state_value)
         except (ValueError, TypeError):
-            return None
+            continue
+    return None
+
+
+async def _load_battery_start(
+    hass: Any, history_fn: Any, battery_sensor: str, start_time: datetime
+) -> Optional[float]:
+    history_start = await hass.async_add_executor_job(
+        history_fn,
+        hass,
+        start_time,
+        start_time + timedelta(hours=1),
+        [battery_sensor],
+    )
+    return _extract_latest_numeric(history_start, battery_sensor)
+
+
+def _compute_last_month_metrics(
+    charge_wh: Optional[float],
+    discharge_wh: Optional[float],
+    battery_start: Optional[float],
+    battery_end: Optional[float],
+) -> Optional[Dict[str, float]]:
+    if (
+        charge_wh is None
+        or discharge_wh is None
+        or battery_start is None
+        or battery_end is None
+    ):
+        return None
+
+    charge_kwh = charge_wh / 1000
+    discharge_kwh = discharge_wh / 1000
+    delta_kwh = battery_end - battery_start
+    effective_discharge = discharge_kwh - delta_kwh
+    if effective_discharge <= 0 or charge_kwh <= 0:
+        return None
+
+    efficiency = (effective_discharge / charge_kwh) * 100
+    losses_kwh = charge_kwh - effective_discharge
+    losses_pct = (losses_kwh / charge_kwh) * 100
+    return {
+        "efficiency_pct": round(efficiency, 1),
+        "losses_kwh": round(losses_kwh, 2),
+        "losses_pct": round(losses_pct, 1),
+        "charge_kwh": round(charge_kwh, 2),
+        "discharge_kwh": round(discharge_kwh, 2),
+        "effective_discharge_kwh": round(effective_discharge, 2),
+        "delta_kwh": round(delta_kwh, 2),
+        "battery_start_kwh": round(battery_start, 2),
+        "battery_end_kwh": round(battery_end, 2),
+    }
+
+
+def _log_last_month_success(
+    last_month: int, last_month_year: int, metrics: Dict[str, float]
+) -> None:
+    _LOGGER.info(
+        "🔋 Loaded %s/%s from history: efficiency=%.1f%%, charge=%.2f kWh, "
+        "discharge=%.2f kWh, delta=%.2f kWh",
+        last_month,
+        last_month_year,
+        metrics["efficiency_pct"],
+        metrics["charge_kwh"],
+        metrics["discharge_kwh"],
+        metrics["delta_kwh"],
+    )
+
+
+def _log_last_month_failure(
+    last_month: int,
+    last_month_year: int,
+    charge_wh: Optional[float],
+    discharge_wh: Optional[float],
+    battery_start: Optional[float],
+    battery_end: Optional[float],
+) -> None:
+    _LOGGER.warning(
+        "🔋 Incomplete data for %s/%s: charge=%s, discharge=%s, "
+        "battery_start=%s, battery_end=%s",
+        last_month,
+        last_month_year,
+        charge_wh,
+        discharge_wh,
+        battery_start,
+        battery_end,
+    )

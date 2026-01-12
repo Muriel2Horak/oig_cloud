@@ -420,109 +420,19 @@ def generate_alternatives(  # noqa: C901
     home_i_timeline_cache = []
 
     def simulate_mode(mode: int) -> float:
-        battery = current_capacity
-        total_cost = 0.0
-
-        for i, price_data in enumerate(spot_prices):
-            timestamp_str = price_data.get("time", "")
-            if not timestamp_str:
-                continue
-
-            try:
-                timestamp = datetime.fromisoformat(timestamp_str)
-                if timestamp.tzinfo is None:
-                    timestamp = dt_util.as_local(timestamp)
-                if not (today_start <= timestamp < tomorrow_end):
-                    continue
-            except Exception:  # nosec B112
-                continue
-
-            try:
-                solar_kwh = get_solar_for_timestamp(
-                    timestamp,
-                    solar_forecast,
-                    log_rate_limited=sensor._log_rate_limited,
-                )
-            except Exception:
-                solar_kwh = 0.0
-
-            load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-            price = price_data.get("price", 0)
-
-            grid_import = 0.0
-            grid_export = 0.0
-            net_cost = 0.0
-
-            if mode == 0:
-                if solar_kwh >= load_kwh:
-                    surplus = solar_kwh - load_kwh
-                    battery += surplus
-                    if battery > max_capacity:
-                        grid_export = battery - max_capacity
-                        battery = max_capacity
-                        net_cost = -grid_export * price
-                        total_cost += net_cost
-                else:
-                    deficit = load_kwh - solar_kwh
-                    battery -= deficit / efficiency
-                    if battery < 0:
-                        grid_import = -battery * efficiency
-                        battery = 0
-                        net_cost = grid_import * price
-                        total_cost += net_cost
-
-                home_i_timeline_cache.append(
-                    {"time": timestamp_str, "net_cost": net_cost}
-                )
-
-            elif mode == 1:
-                if solar_kwh >= load_kwh:
-                    surplus = solar_kwh - load_kwh
-                    battery += surplus
-                    if battery > max_capacity:
-                        grid_export = battery - max_capacity
-                        battery = max_capacity
-                        total_cost -= grid_export * price
-                else:
-                    grid_import = load_kwh - solar_kwh
-                    total_cost += grid_import * price
-
-            elif mode == 2:
-                battery += solar_kwh
-                if battery > max_capacity:
-                    grid_export = battery - max_capacity
-                    battery = max_capacity
-                    total_cost -= grid_export * price
-                grid_import = load_kwh
-                total_cost += grid_import * price
-
-            elif mode == 3:
-                if price < 1.5:
-                    charge_amount = min(2.8 / 4.0, max_capacity - battery)
-                    if charge_amount > 0:
-                        grid_import += charge_amount
-                        total_cost += charge_amount * price
-                        battery += charge_amount * efficiency
-
-                if solar_kwh >= load_kwh:
-                    surplus = solar_kwh - load_kwh
-                    battery += surplus
-                    if battery > max_capacity:
-                        grid_export = battery - max_capacity
-                        battery = max_capacity
-                        total_cost -= grid_export * price
-                else:
-                    deficit = load_kwh - solar_kwh
-                    battery -= deficit / efficiency
-                    if battery < 0:
-                        extra_import = -battery * efficiency
-                        battery = 0
-                        grid_import += extra_import
-                        total_cost += extra_import * price
-
-            battery = max(0, min(battery, max_capacity))
-
-        return total_cost
+        return _simulate_mode_cost(
+            sensor,
+            mode=mode,
+            spot_prices=spot_prices,
+            solar_forecast=solar_forecast,
+            load_forecast=load_forecast,
+            today_start=today_start,
+            tomorrow_end=tomorrow_end,
+            current_capacity=current_capacity,
+            max_capacity=max_capacity,
+            efficiency=efficiency,
+            home_i_timeline_cache=home_i_timeline_cache,
+        )
 
     alternatives: Dict[str, Dict[str, Any]] = {}
     mode_names = {
@@ -547,3 +457,209 @@ def generate_alternatives(  # noqa: C901
     }
 
     return alternatives
+
+
+def _simulate_mode_cost(
+    sensor: Any,
+    *,
+    mode: int,
+    spot_prices: List[Dict[str, Any]],
+    solar_forecast: Dict[str, Any],
+    load_forecast: List[float],
+    today_start: datetime,
+    tomorrow_end: datetime,
+    current_capacity: float,
+    max_capacity: float,
+    efficiency: float,
+    home_i_timeline_cache: List[Dict[str, Any]],
+) -> float:
+    battery = current_capacity
+    total_cost = 0.0
+
+    for i, price_data, timestamp, timestamp_str in _iter_price_window(
+        spot_prices, today_start, tomorrow_end
+    ):
+        solar_kwh = _safe_solar_for_timestamp(
+            sensor, timestamp, solar_forecast
+        )
+        load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
+        price = price_data.get("price", 0)
+
+        if mode == 0:
+            net_cost, battery = _simulate_home_i(
+                battery,
+                load_kwh=load_kwh,
+                solar_kwh=solar_kwh,
+                price=price,
+                max_capacity=max_capacity,
+                efficiency=efficiency,
+            )
+            total_cost += net_cost
+            home_i_timeline_cache.append(
+                {"time": timestamp_str, "net_cost": net_cost}
+            )
+        elif mode == 1:
+            total_cost, battery = _simulate_home_ii(
+                total_cost,
+                battery=battery,
+                load_kwh=load_kwh,
+                solar_kwh=solar_kwh,
+                price=price,
+                max_capacity=max_capacity,
+            )
+        elif mode == 2:
+            total_cost, battery = _simulate_home_iii(
+                total_cost,
+                battery=battery,
+                load_kwh=load_kwh,
+                solar_kwh=solar_kwh,
+                price=price,
+                max_capacity=max_capacity,
+            )
+        elif mode == 3:
+            total_cost, battery = _simulate_home_ups(
+                total_cost,
+                battery=battery,
+                load_kwh=load_kwh,
+                solar_kwh=solar_kwh,
+                price=price,
+                max_capacity=max_capacity,
+                efficiency=efficiency,
+            )
+
+        battery = max(0, min(battery, max_capacity))
+
+    return total_cost
+
+
+def _iter_price_window(
+    spot_prices: List[Dict[str, Any]],
+    today_start: datetime,
+    tomorrow_end: datetime,
+) -> Any:
+    for i, price_data in enumerate(spot_prices):
+        timestamp_str = price_data.get("time", "")
+        if not timestamp_str:
+            continue
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str)
+            if timestamp.tzinfo is None:
+                timestamp = dt_util.as_local(timestamp)
+            if not (today_start <= timestamp < tomorrow_end):
+                continue
+        except Exception:  # nosec B112
+            continue
+        yield i, price_data, timestamp, timestamp_str
+
+
+def _safe_solar_for_timestamp(
+    sensor: Any, timestamp: datetime, solar_forecast: Dict[str, Any]
+) -> float:
+    try:
+        return get_solar_for_timestamp(
+            timestamp,
+            solar_forecast,
+            log_rate_limited=sensor._log_rate_limited,
+        )
+    except Exception:
+        return 0.0
+
+
+def _simulate_home_i(
+    battery: float,
+    *,
+    load_kwh: float,
+    solar_kwh: float,
+    price: float,
+    max_capacity: float,
+    efficiency: float,
+) -> tuple[float, float]:
+    net_cost = 0.0
+    if solar_kwh >= load_kwh:
+        surplus = solar_kwh - load_kwh
+        battery += surplus
+        if battery > max_capacity:
+            grid_export = battery - max_capacity
+            battery = max_capacity
+            net_cost = -grid_export * price
+    else:
+        deficit = load_kwh - solar_kwh
+        battery -= deficit / efficiency
+        if battery < 0:
+            grid_import = -battery * efficiency
+            battery = 0
+            net_cost = grid_import * price
+    return net_cost, battery
+
+
+def _simulate_home_ii(
+    total_cost: float,
+    *,
+    battery: float,
+    load_kwh: float,
+    solar_kwh: float,
+    price: float,
+    max_capacity: float,
+) -> tuple[float, float]:
+    if solar_kwh >= load_kwh:
+        surplus = solar_kwh - load_kwh
+        battery += surplus
+        if battery > max_capacity:
+            grid_export = battery - max_capacity
+            battery = max_capacity
+            total_cost -= grid_export * price
+    else:
+        grid_import = load_kwh - solar_kwh
+        total_cost += grid_import * price
+    return total_cost, battery
+
+
+def _simulate_home_iii(
+    total_cost: float,
+    *,
+    battery: float,
+    load_kwh: float,
+    solar_kwh: float,
+    price: float,
+    max_capacity: float,
+) -> tuple[float, float]:
+    battery += solar_kwh
+    if battery > max_capacity:
+        grid_export = battery - max_capacity
+        battery = max_capacity
+        total_cost -= grid_export * price
+    total_cost += load_kwh * price
+    return total_cost, battery
+
+
+def _simulate_home_ups(
+    total_cost: float,
+    *,
+    battery: float,
+    load_kwh: float,
+    solar_kwh: float,
+    price: float,
+    max_capacity: float,
+    efficiency: float,
+) -> tuple[float, float]:
+    if price < 1.5:
+        charge_amount = min(2.8 / 4.0, max_capacity - battery)
+        if charge_amount > 0:
+            total_cost += charge_amount * price
+            battery += charge_amount * efficiency
+
+    if solar_kwh >= load_kwh:
+        surplus = solar_kwh - load_kwh
+        battery += surplus
+        if battery > max_capacity:
+            grid_export = battery - max_capacity
+            battery = max_capacity
+            total_cost -= grid_export * price
+    else:
+        deficit = load_kwh - solar_kwh
+        battery -= deficit / efficiency
+        if battery < 0:
+            extra_import = -battery * efficiency
+            battery = 0
+            total_cost += extra_import * price
+    return total_cost, battery

@@ -817,46 +817,30 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         try:
             self._last_profile_reason = None
             now = dt_util.now()
-            current_hour = now.hour
-            match_hours = current_hour + 24 if current_hour > 0 else 24
-            predict_hours = PROFILE_HOURS - match_hours
-
+            window = _resolve_profile_window(now)
             _LOGGER.debug(
                 "Profiling window: time=%02d:00, matching=%sh, prediction=%sh",
-                current_hour,
-                match_hours,
-                predict_hours,
+                window["current_hour"],
+                window["match_hours"],
+                window["predict_hours"],
             )
 
-            end_time = now
-            history_label = "all"
-            start_time = None
-            if days_back is None:
-                start_time = await self._get_earliest_statistics_start(sensor_entity_id)
-                if not start_time:
-                    days_back = DEFAULT_DAYS_BACK
-                    history_label = f"{days_back}d (fallback)"
-            if start_time is None:
-                days_back = days_back or DEFAULT_DAYS_BACK
-                history_label = f"{days_back}d"
-                start_day = (end_time - timedelta(days=days_back)).date()
-                start_time = dt_util.as_local(
-                    datetime.combine(start_day, datetime.min.time())
-                )
-
+            start_time, end_time, history_label = await _resolve_history_window(
+                self, sensor_entity_id, now, days_back
+            )
             _LOGGER.debug(
                 "Profiling history window: %s → %s (%s)",
                 start_time.date().isoformat(),
                 end_time.date().isoformat(),
                 history_label,
             )
+
             hourly_series = await self._load_hourly_series(
                 sensor_entity_id,
                 start_time,
                 end_time,
                 value_field=value_field,
             )
-
             if not hourly_series:
                 self._last_profile_reason = "no_hourly_stats"
                 _LOGGER.debug("No hourly statistics data for %s", sensor_entity_id)
@@ -865,33 +849,13 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             daily_profiles, hour_medians, interpolated = self._build_daily_profiles(
                 hourly_series
             )
-
-            if len(daily_profiles) < 3:
-                self._last_profile_reason = (
-                    f"not_enough_daily_profiles_{len(daily_profiles)}"
-                )
-                _LOGGER.debug(
-                    "Not enough daily profiles (need >=3, got %s)",
-                    len(daily_profiles),
-                )
+            if not _has_enough_daily_profiles(self, daily_profiles):
                 return None
 
-            if interpolated:
-                _LOGGER.debug(
-                    "Daily profiles: %s days, interpolated %s hours",
-                    len(daily_profiles),
-                    sum(interpolated.values()),
-                )
-
             current_match = self._build_current_match(hourly_series, hour_medians)
-            if not current_match or len(current_match) < match_hours:
-                current_len = len(current_match) if current_match else 0
-                self._last_profile_reason = f"not_enough_current_data_{current_len}"
-                _LOGGER.debug(
-                    "Not enough current data for matching (need %s, got %s)",
-                    match_hours,
-                    current_len,
-                )
+            if not _has_enough_current_match(
+                self, current_match, window["match_hours"]
+            ):
                 return None
 
             profiles = self._build_72h_profiles(daily_profiles)
@@ -900,57 +864,29 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 _LOGGER.debug("No historical 72h profiles available for matching")
                 return None
 
-            scored_profiles: List[Tuple[float, Dict[str, Any]]] = []
-            for profile in profiles:
-                profile_data = profile.get("consumption_kwh", [])
-                if len(profile_data) != PROFILE_HOURS:
-                    continue
-                profile_match = profile_data[:match_hours]
-                score = self._calculate_profile_similarity(current_match, profile_match)
-                scored_profiles.append((score, profile))
-
-            if not scored_profiles:
+            selected = _select_top_matches(
+                self, profiles, current_match, window["match_hours"]
+            )
+            if not selected:
                 self._last_profile_reason = "no_matching_profiles"
                 _LOGGER.debug("No matching profile found")
                 return None
 
-            scored_profiles.sort(key=lambda item: item[0], reverse=True)
-            sample_count = min(TOP_MATCHES, len(scored_profiles))
-            selected = scored_profiles[:sample_count]
-
-            avg_score = float(np.mean([s for s, _ in selected])) if selected else 0.0
-
-            avg_profile_full: List[float] = []
-            for idx in range(PROFILE_HOURS):
-                values = [p["consumption_kwh"][idx] for _, p in selected]
-                avg_profile_full.append(float(np.mean(values)))
-
-            predicted = avg_profile_full[match_hours : match_hours + predict_hours]
-            predicted, floor_applied = self._apply_floor_to_prediction(
-                predicted, current_hour, hour_medians, current_match
+            result = _build_profile_prediction(
+                selected,
+                window=window,
+                hour_medians=hour_medians,
+                current_match=current_match,
+                sensor_entity_id=sensor_entity_id,
+                interpolated=interpolated,
+                apply_floor=self._apply_floor_to_prediction,
             )
-
-            result = {
-                "similarity_score": avg_score,
-                "predicted_consumption": predicted,
-                "predicted_total_kwh": float(np.sum(predicted)),
-                "predicted_avg_kwh": float(np.mean(predicted)) if predicted else 0.0,
-                "matched_profile_total": float(np.sum(avg_profile_full)),
-                "matched_profile_full": avg_profile_full,
-                "match_hours": match_hours,
-                "predict_hours": predict_hours,
-                "sample_count": sample_count,
-                "matched_profile_sources": [p.get("start_date") for _, p in selected],
-                "floor_applied": floor_applied,
-                "data_source": sensor_entity_id,
-                "interpolated_hours": sum(interpolated.values()) if interpolated else 0,
-            }
 
             _LOGGER.info(
                 "🎯 Profile match: score=%.3f, samples=%s, predicted_%sh=%.2f kWh",
-                avg_score,
-                sample_count,
-                predict_hours,
+                result["similarity_score"],
+                result["sample_count"],
+                window["predict_hours"],
                 result["predicted_total_kwh"],
             )
 
@@ -960,6 +896,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.error(f"Failed to find matching profile: {e}", exc_info=True)
             self._last_profile_reason = "error"
             return None
+
 
     @property
     def native_value(self) -> Optional[str]:
@@ -1148,3 +1085,155 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> Dict[str, Any]:
         """Return device info."""
         return self._device_info
+
+
+def _resolve_profile_window(now: datetime) -> Dict[str, int]:
+    """Resolve matching/prediction window sizes based on current hour."""
+    current_hour = now.hour
+    match_hours = 24 + current_hour
+    predict_hours = PROFILE_HOURS - match_hours
+    return {
+        "current_hour": current_hour,
+        "match_hours": match_hours,
+        "predict_hours": predict_hours,
+    }
+
+
+async def _resolve_history_window(
+    sensor: OigCloudAdaptiveLoadProfilesSensor,
+    sensor_entity_id: str,
+    now: datetime,
+    days_back: Optional[int],
+) -> Tuple[datetime, datetime, str]:
+    """Resolve history window boundaries for profiling."""
+    if days_back is not None:
+        start_time = now - timedelta(days=days_back)
+        label = f"{days_back}d"
+        return start_time, now, label
+
+    earliest = await sensor._get_earliest_statistics_start(sensor_entity_id)
+    if earliest:
+        return earliest, now, "earliest_stats"
+
+    fallback = now - timedelta(days=DEFAULT_DAYS_BACK)
+    return fallback, now, f"fallback_{DEFAULT_DAYS_BACK}d"
+
+
+def _has_enough_daily_profiles(
+    sensor: OigCloudAdaptiveLoadProfilesSensor,
+    daily_profiles: Dict[datetime.date, List[float]],
+) -> bool:
+    """Verify we have at least three days of daily profiles."""
+    if len(daily_profiles) >= 3:
+        return True
+    sensor._last_profile_reason = f"not_enough_daily_profiles_{len(daily_profiles)}"
+    _LOGGER.debug(
+        "Not enough daily profiles (%s) for 72h matching", len(daily_profiles)
+    )
+    return False
+
+
+def _has_enough_current_match(
+    sensor: OigCloudAdaptiveLoadProfilesSensor,
+    current_match: Optional[List[float]],
+    match_hours: int,
+) -> bool:
+    """Check if we have enough current data for matching."""
+    if current_match and len(current_match) >= match_hours:
+        return True
+    current_len = len(current_match) if current_match else 0
+    sensor._last_profile_reason = f"not_enough_current_data_{current_len}"
+    _LOGGER.debug(
+        "Not enough current match data (%s/%s)", current_len, match_hours
+    )
+    return False
+
+
+def _select_top_matches(
+    sensor: OigCloudAdaptiveLoadProfilesSensor,
+    profiles: List[Dict[str, Any]],
+    current_match: List[float],
+    match_hours: int,
+) -> List[Dict[str, Any]]:
+    """Score profiles and select top matches."""
+    scored: List[Dict[str, Any]] = []
+    for profile in profiles:
+        data = profile.get("consumption_kwh") or []
+        if len(data) < match_hours:
+            continue
+        segment = data[:match_hours]
+        score = sensor._calculate_profile_similarity(current_match, segment)
+        profile_with_score = dict(profile)
+        profile_with_score["similarity_score"] = score
+        scored.append(profile_with_score)
+
+    if not scored:
+        sensor._last_profile_reason = "no_matching_profiles"
+        _LOGGER.debug("No matching profiles after scoring")
+        return []
+
+    scored.sort(key=lambda item: item.get("similarity_score", 0.0), reverse=True)
+    return scored[:TOP_MATCHES]
+
+
+def _average_profiles(profiles: List[Dict[str, Any]]) -> List[float]:
+    """Average consumption profiles element-wise."""
+    if not profiles:
+        return []
+    lengths = [len(profile.get("consumption_kwh") or []) for profile in profiles]
+    length = min(lengths) if lengths else 0
+    if length == 0:
+        return []
+
+    total = np.zeros(length, dtype=float)
+    for profile in profiles:
+        data = profile.get("consumption_kwh") or []
+        total += np.array(data[:length], dtype=float)
+    avg = total / len(profiles)
+    return [float(value) for value in avg.tolist()]
+
+
+def _build_profile_prediction(
+    selected: List[Dict[str, Any]],
+    *,
+    window: Dict[str, int],
+    hour_medians: Dict[int, float],
+    current_match: List[float],
+    sensor_entity_id: str,
+    interpolated: Dict[datetime.date, int],
+    apply_floor,
+) -> Dict[str, Any]:
+    """Build prediction payload from selected profiles."""
+    averaged = _average_profiles(selected)
+    match_hours = window["match_hours"]
+    predict_hours = window["predict_hours"]
+    predicted = averaged[match_hours : match_hours + predict_hours] if averaged else []
+
+    floor_applied = 0
+    if predicted:
+        predicted, floor_applied = apply_floor(
+            predicted, window["current_hour"], hour_medians, current_match
+        )
+
+    predicted_total = float(np.sum(predicted)) if predicted else 0.0
+    predicted_avg = float(np.mean(predicted)) if predicted else 0.0
+
+    scores = [profile.get("similarity_score", 0.0) for profile in selected]
+    similarity_score = float(np.mean(scores)) if scores else 0.0
+    best_profile = max(
+        selected, key=lambda item: item.get("similarity_score", 0.0), default={}
+    )
+
+    return {
+        "predicted_consumption": predicted,
+        "predicted_total_kwh": predicted_total,
+        "predicted_avg_kwh": predicted_avg,
+        "sample_count": len(selected),
+        "match_hours": match_hours,
+        "predict_hours": predict_hours,
+        "similarity_score": similarity_score,
+        "data_source": sensor_entity_id,
+        "floor_applied": floor_applied,
+        "interpolated_hours": int(sum(interpolated.values())) if interpolated else 0,
+        "matched_profile_full": best_profile.get("consumption_kwh", []),
+    }

@@ -2,9 +2,10 @@ import asyncio
 import logging
 import random
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo  # Nahradit pytz import
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.storage import Store
@@ -824,70 +825,26 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     async def _maybe_fill_config_nodes_from_cloud(self, stats: Dict[str, Any]) -> None:
         """In local effective mode, backfill missing configuration nodes from cloud (throttled)."""
         now = self._utcnow()
-        last = getattr(self, "_last_cloud_config_fill_ts", None)
-        if isinstance(last, datetime):
-            if (now - last).total_seconds() < 900:
-                return
-
-        box_id: Optional[str] = None
-        try:
-            entry = self.config_entry
-            if entry:
-                opt = getattr(entry, "options", {}) or {}
-                for key in ("box_id", "inverter_sn"):
-                    val = opt.get(key)
-                    if isinstance(val, str) and val.isdigit():
-                        box_id = val
-                        break
-        except Exception:
-            box_id = None
-        if not (isinstance(box_id, str) and box_id.isdigit()):
-            try:
-                box_id = next((str(k) for k in stats.keys() if str(k).isdigit()), None)
-            except Exception:
-                box_id = None
-        if not (isinstance(box_id, str) and box_id.isdigit()):
+        if _should_skip_cloud_fill(now, getattr(self, "_last_cloud_config_fill_ts", None)):
             return
 
-        box = stats.get(box_id)
-        if not isinstance(box, dict):
+        box_id = _resolve_box_id(self.config_entry, stats)
+        if not box_id:
             return
 
-        config_nodes = (
-            "box_prms",
-            "batt_prms",
-            "invertor_prm1",
-            "invertor_prms",
-            "boiler_prms",
-        )
-        missing_nodes = [
-            n
-            for n in config_nodes
-            if not isinstance(box.get(n), dict) or not box.get(n)
-        ]
+        box = _get_box_stats(stats, box_id)
+        if box is None:
+            return
+
+        missing_nodes = _get_missing_config_nodes(box)
         if not missing_nodes:
             return
 
-        cloud = None
-        try:
-            cloud = await self.api.get_stats()
-        except Exception as err:
-            _LOGGER.debug("Local mode: config backfill cloud fetch failed: %s", err)
-            return
-        if not isinstance(cloud, dict):
-            return
-        cloud_box = cloud.get(box_id)
-        if not isinstance(cloud_box, dict):
+        cloud_box = await _fetch_cloud_box(self.api, box_id)
+        if cloud_box is None:
             return
 
-        did = False
-        for node_id in missing_nodes:
-            node = cloud_box.get(node_id)
-            if isinstance(node, dict) and node:
-                box[node_id] = node
-                did = True
-
-        if did:
+        if _backfill_missing_nodes(box, cloud_box, missing_nodes):
             self._last_cloud_config_fill_ts = now
             _LOGGER.info(
                 "Local mode: backfilled config nodes from cloud: %s",
@@ -1046,3 +1003,83 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             "forecast_available": False,
             "simple_forecast": True,
         }
+
+
+def _should_skip_cloud_fill(now: datetime, last: Optional[datetime]) -> bool:
+    if isinstance(last, datetime) and (now - last).total_seconds() < 900:
+        return True
+    return False
+
+
+def _resolve_box_id(entry: Optional[ConfigEntry], stats: Dict[str, Any]) -> Optional[str]:
+    box_id = _box_id_from_entry(entry)
+    if box_id:
+        return box_id
+    try:
+        return next((str(k) for k in stats.keys() if str(k).isdigit()), None)
+    except Exception:
+        return None
+
+
+def _box_id_from_entry(entry: Optional[ConfigEntry]) -> Optional[str]:
+    if not entry:
+        return None
+    opt = getattr(entry, "options", {}) or {}
+    for key in ("box_id", "inverter_sn"):
+        try:
+            val = opt.get(key)
+        except Exception:
+            continue
+        if isinstance(val, str) and val.isdigit():
+            return val
+    return None
+
+
+def _get_box_stats(stats: Dict[str, Any], box_id: str) -> Optional[Dict[str, Any]]:
+    box = stats.get(box_id)
+    if isinstance(box, dict):
+        return box
+    return None
+
+
+def _get_missing_config_nodes(box: Dict[str, Any]) -> List[str]:
+    config_nodes = (
+        "box_prms",
+        "batt_prms",
+        "invertor_prm1",
+        "invertor_prms",
+        "boiler_prms",
+    )
+    return [
+        node_id
+        for node_id in config_nodes
+        if not isinstance(box.get(node_id), dict) or not box.get(node_id)
+    ]
+
+
+async def _fetch_cloud_box(api: Any, box_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        cloud = await api.get_stats()
+    except Exception as err:
+        _LOGGER.debug("Local mode: config backfill cloud fetch failed: %s", err)
+        return None
+    if not isinstance(cloud, dict):
+        return None
+    cloud_box = cloud.get(box_id)
+    if isinstance(cloud_box, dict):
+        return cloud_box
+    return None
+
+
+def _backfill_missing_nodes(
+    box: Dict[str, Any],
+    cloud_box: Dict[str, Any],
+    missing_nodes: List[str],
+) -> bool:
+    did = False
+    for node_id in missing_nodes:
+        node = cloud_box.get(node_id)
+        if isinstance(node, dict) and node:
+            box[node_id] = node
+            did = True
+    return did

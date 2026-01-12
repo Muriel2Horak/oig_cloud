@@ -71,6 +71,18 @@ def _normalize_mode_from_code(mode_code: Optional[int]) -> Optional[str]:
     return code_map.get(mode_code)
 
 
+def _build_precomputed_payload(precomputed: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    timeline = precomputed.get("timeline") or precomputed.get("timeline_hybrid")
+    if not isinstance(timeline, list) or not timeline:
+        return None
+    detail_tabs = precomputed.get("detail_tabs") or precomputed.get("detail_tabs_hybrid")
+    return {
+        "timeline_data": timeline,
+        "calculation_time": precomputed.get("last_update"),
+        "detail_tabs": detail_tabs if isinstance(detail_tabs, dict) else None,
+    }
+
+
 class OigCloudPlannerRecommendedModeSensor(
     RestoreEntity, CoordinatorEntity, SensorEntity
 ):
@@ -131,25 +143,23 @@ class OigCloudPlannerRecommendedModeSensor(
         self._unsubs: list[callable] = []
 
     async def _async_refresh_precomputed_payload(self) -> None:
-        if not self._precomputed_store:
+        precomputed = await self._load_precomputed()
+        if not precomputed:
             return
+        payload = _build_precomputed_payload(precomputed)
+        if payload:
+            self._precomputed_payload = payload
+
+    async def _load_precomputed(self) -> Optional[Dict[str, Any]]:
+        if not self._precomputed_store:
+            return None
         try:
             precomputed = await self._precomputed_store.async_load()
         except Exception:
-            return
+            return None
         if not isinstance(precomputed, dict):
-            return
-        timeline = precomputed.get("timeline") or precomputed.get("timeline_hybrid")
-        detail_tabs = precomputed.get("detail_tabs") or precomputed.get(
-            "detail_tabs_hybrid"
-        )
-        if not isinstance(timeline, list) or not timeline:
-            return
-        self._precomputed_payload = {
-            "timeline_data": timeline,
-            "calculation_time": precomputed.get("last_update"),
-            "detail_tabs": detail_tabs if isinstance(detail_tabs, dict) else None,
-        }
+            return None
+        return precomputed
 
     def _get_forecast_payload(self) -> Optional[Dict[str, Any]]:
         # Prefer precomputed payload to stay aligned with detail_tabs output.

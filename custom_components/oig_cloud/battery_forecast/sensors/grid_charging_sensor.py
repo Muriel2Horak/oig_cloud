@@ -121,7 +121,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     async def _get_home_ups_blocks_from_detail_tabs(
         self, plan: str = "hybrid"
     ) -> List[Dict[str, Any]]:
-        """Načte HOME UPS bloky z precomputed storage."""
+        """Načte UPS bloky z precomputed storage."""
         try:
             if not self.hass:
                 return []
@@ -165,86 +165,6 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     def _get_active_plan_key(self) -> str:
         """Return active plan key (single-planner)."""
         return "hybrid"
-
-
-def _find_battery_forecast_sensor(hass: Any, box_id: str) -> Optional[Any]:
-    component = hass.data.get("entity_components", {}).get("sensor")
-    if not component:
-        return None
-    for entity in component.entities:
-        if (
-            hasattr(entity, "_precomputed_store")
-            and box_id in entity.entity_id
-            and "battery_forecast" in entity.entity_id
-        ):
-            return entity
-    return None
-
-
-def _get_detail_tabs(precomputed: Dict[str, Any]) -> Dict[str, Any]:
-    return precomputed.get("detail_tabs", {}) or precomputed.get(
-        "detail_tabs_hybrid", {}
-    )
-
-
-def _collect_today_blocks(
-    today: Dict[str, Any], current_time: str
-) -> List[Dict[str, Any]]:
-    ups_blocks = []
-    for block in today.get("mode_blocks", []):
-        if not _is_home_ups_mode(
-            block.get("mode_historical", ""),
-            block.get("mode_planned", ""),
-        ):
-            continue
-
-        status = block.get("status", "")
-        end_time = block.get("end_time", "")
-        if status == "completed" and end_time < current_time:
-            continue
-
-        cost_key = "cost_historical" if status == "completed" else "cost_planned"
-        ups_blocks.append(
-            _build_ups_block(block, "today", status, cost_key, end_time)
-        )
-    return ups_blocks
-
-
-def _collect_tomorrow_blocks(tomorrow: Dict[str, Any]) -> List[Dict[str, Any]]:
-    ups_blocks = []
-    for block in tomorrow.get("mode_blocks", []):
-        if not _is_home_ups_mode(block.get("mode_planned", "")):
-            continue
-        ups_blocks.append(
-            _build_ups_block(block, "tomorrow", "planned", "cost_planned")
-        )
-    return ups_blocks
-
-
-def _is_home_ups_mode(*modes: str) -> bool:
-    return any(HOME_UPS_LABEL in (mode or "") for mode in modes)
-
-
-def _build_ups_block(
-    block: Dict[str, Any],
-    day: str,
-    status: str,
-    cost_key: str,
-    end_time_override: Optional[str] = None,
-) -> Dict[str, Any]:
-    return {
-        "time_from": block.get("start_time", ""),
-        "time_to": end_time_override or block.get("end_time", ""),
-        "day": day,
-        "mode": MODE_LABEL_HOME_UPS,
-        "status": status,
-        "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
-        "cost_czk": block.get(cost_key, 0.0),
-        "battery_start_kwh": block.get("battery_soc_start", 0.0),
-        "battery_end_kwh": block.get("battery_soc_end", 0.0),
-        "interval_count": block.get("interval_count", 0),
-        "duration_hours": block.get("duration_hours", 0.0),
-    }
 
     def _calculate_charging_intervals(
         self,
@@ -348,7 +268,7 @@ def _build_ups_block(
 
     @property
     def native_value(self) -> str:
-        """Vrátí ON pokud právě běží nebo brzy začne HOME UPS (s offsetem)."""
+        """Vrátí ON pokud právě běží nebo brzy začne UPS (s offsetem)."""
         charging_intervals, _, _ = self._calculate_charging_intervals()
 
         if not charging_intervals:
@@ -536,3 +456,83 @@ def _build_ups_block(
             "next_charging_duration": next_charging_duration,
             "is_charging_planned": len(charging_blocks) > 0,
         }
+
+
+def _find_battery_forecast_sensor(hass: Any, box_id: str) -> Optional[Any]:
+    component = hass.data.get("entity_components", {}).get("sensor")
+    if not component:
+        return None
+    for entity in component.entities:
+        if (
+            hasattr(entity, "_precomputed_store")
+            and box_id in entity.entity_id
+            and "battery_forecast" in entity.entity_id
+        ):
+            return entity
+    return None
+
+
+def _get_detail_tabs(precomputed: Dict[str, Any]) -> Dict[str, Any]:
+    return precomputed.get("detail_tabs", {}) or precomputed.get(
+        "detail_tabs_hybrid", {}
+    )
+
+
+def _collect_today_blocks(
+    today: Dict[str, Any], current_time: str
+) -> List[Dict[str, Any]]:
+    ups_blocks = []
+    for block in today.get("mode_blocks", []):
+        if not _is_home_ups_mode(
+            block.get("mode_historical", ""),
+            block.get("mode_planned", ""),
+        ):
+            continue
+
+        status = block.get("status", "")
+        end_time = block.get("end_time", "")
+        if status == "completed" and end_time < current_time:
+            continue
+
+        cost_key = "cost_historical" if status == "completed" else "cost_planned"
+        ups_blocks.append(
+            _build_ups_block(block, "today", status, cost_key, end_time)
+        )
+    return ups_blocks
+
+
+def _collect_tomorrow_blocks(tomorrow: Dict[str, Any]) -> List[Dict[str, Any]]:
+    ups_blocks = []
+    for block in tomorrow.get("mode_blocks", []):
+        if not _is_home_ups_mode(block.get("mode_planned", "")):
+            continue
+        ups_blocks.append(
+            _build_ups_block(block, "tomorrow", "planned", "cost_planned")
+        )
+    return ups_blocks
+
+
+def _is_home_ups_mode(*modes: str) -> bool:
+    return any(HOME_UPS_LABEL in (mode or "") for mode in modes)
+
+
+def _build_ups_block(
+    block: Dict[str, Any],
+    day: str,
+    status: str,
+    cost_key: str,
+    end_time_override: Optional[str] = None,
+) -> Dict[str, Any]:
+    return {
+        "time_from": block.get("start_time", ""),
+        "time_to": end_time_override or block.get("end_time", ""),
+        "day": day,
+        "mode": MODE_LABEL_HOME_UPS,
+        "status": status,
+        "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
+        "cost_czk": block.get(cost_key, 0.0),
+        "battery_start_kwh": block.get("battery_soc_start", 0.0),
+        "battery_end_kwh": block.get("battery_soc_end", 0.0),
+        "interval_count": block.get("interval_count", 0),
+        "duration_hours": block.get("duration_hours", 0.0),
+    }

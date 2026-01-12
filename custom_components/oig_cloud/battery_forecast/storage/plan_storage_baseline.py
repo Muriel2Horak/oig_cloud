@@ -114,12 +114,12 @@ async def _fallback_from_storage(
 ) -> List[Dict[str, Any]]:
     try:
         storage_plans = await sensor._plans_store.async_load() or {}
-        archive_day = storage_plans.get("daily_archive", {}).get(date_str, {}) or {}
-        if archive_day.get("plan"):
-            return archive_day.get("plan") or []
-        detailed_day = storage_plans.get("detailed", {}).get(date_str, {})
-        if detailed_day.get("intervals"):
-            return detailed_day.get("intervals") or []
+        archive_plan = _extract_archive_plan(storage_plans, date_str)
+        if archive_plan:
+            return archive_plan
+        detailed_plan = _extract_detailed_plan(storage_plans, date_str)
+        if detailed_plan:
+            return detailed_plan
     except Exception as err:
         _LOGGER.debug(
             "Failed to load fallback plans for %s: %s",
@@ -127,6 +127,20 @@ async def _fallback_from_storage(
             err,
         )
     return []
+
+
+def _extract_archive_plan(
+    storage_plans: Dict[str, Any], date_str: str
+) -> List[Dict[str, Any]]:
+    archive_day = storage_plans.get("daily_archive", {}).get(date_str, {}) or {}
+    return archive_day.get("plan") or []
+
+
+def _extract_detailed_plan(
+    storage_plans: Dict[str, Any], date_str: str
+) -> List[Dict[str, Any]]:
+    detailed_day = storage_plans.get("detailed", {}).get(date_str, {})
+    return detailed_day.get("intervals") or []
 
 
 def _fallback_from_daily_state(sensor: Any, date_str: str) -> List[Dict[str, Any]]:

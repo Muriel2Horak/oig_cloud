@@ -681,100 +681,37 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
         mode = "hybrid"
 
         try:
-            # PERFORMANCE FIX: Try precomputed storage FIRST before looking for entity
-            # This avoids entity lookup issues and is much faster
-            from homeassistant.helpers.storage import Store
-
-            store = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
-
-            try:
-                precomputed_data = await store.async_load()
-            except Exception:
-                precomputed_data = None
-
-            # Single-planner: serve unified cost tile.
-            tile_key = "unified_cost_tile"
-            if precomputed_data and not precomputed_data.get(tile_key):
-                tile_key = "unified_cost_tile_hybrid"  # legacy alias
-
-            # If we have precomputed data, serve it directly (fastest path)
-            if precomputed_data and precomputed_data.get(tile_key):
-                response_payload = dict(precomputed_data.get(tile_key))
-                comparison_summary = precomputed_data.get("cost_comparison")
-                if comparison_summary and isinstance(response_payload, dict):
-                    response_payload["comparison"] = comparison_summary
-                _LOGGER.debug(
-                    "API: Serving %s unified cost tile from precomputed storage",
-                    mode,
-                )
+            precomputed_data = await _load_precomputed_data(hass, box_id)
+            response_payload = _build_precomputed_tile_payload(
+                precomputed_data, mode
+            )
+            if response_payload is not None:
                 return web.json_response(response_payload)
 
-            # Fallback: If no precomputed data, try to build on-demand (slow)
-            # Find sensor entity
-            sensor_id = f"sensor.oig_{box_id}_battery_forecast"
-            component = _get_sensor_component(hass)
-
-            if not component:
-                return web.json_response(
-                    {
-                        "error": "Sensor component not found, and no precomputed data available"
-                    },
+            entity_obj = _resolve_battery_forecast_entity(hass, box_id)
+            if entity_obj is None:
+                return _json_error(
+                    "Sensor component not found, and no precomputed data available",
                     status=503,
                 )
 
-            entity_obj = _find_entity(component, sensor_id)
-
-            if not entity_obj:
-                return web.json_response(
-                    {
-                        "error": f"Sensor {sensor_id} not found, and no precomputed data available"
-                    },
-                    status=503,
-                )
-
-            # If we get here, entity exists but no precomputed data - build on demand
-            # (This is the slow fallback path - should rarely happen in production)
-            tile_data = None
             comparison_summary = (
                 precomputed_data.get("cost_comparison") if precomputed_data else None
             )
-
-            if hasattr(entity_obj, "build_unified_cost_tile"):
-                try:
-                    _LOGGER.info("API: Building unified cost tile for %s...", box_id)
-                    tile_data = await entity_obj.build_unified_cost_tile()
-                    _LOGGER.info(
-                        "API: Unified cost tile built successfully: %s",
-                        (
-                            list(tile_data.keys())
-                            if isinstance(tile_data, dict)
-                            else type(tile_data)
-                        ),
-                    )
-                except Exception as build_error:
-                    _LOGGER.error(
-                        "API: Error in build_unified_cost_tile() for %s: %s",
-                        box_id,
-                        build_error,
-                        exc_info=True,
-                    )
-                    return web.json_response(
-                        {"error": f"Failed to build tile: {str(build_error)}"},
-                        status=500,
-                    )
-            else:
-                return web.json_response(
-                    {"error": "build_unified_cost_tile method not found"},
-                    status=500,
-                )
+            tile_data = await _build_unified_cost_tile_on_demand(
+                entity_obj, box_id
+            )
+            if tile_data is None:
+                return _json_error("Failed to build unified cost tile data", status=500)
 
             if comparison_summary and isinstance(tile_data, dict):
                 tile_data = dict(tile_data)
                 tile_data["comparison"] = comparison_summary
 
             _LOGGER.debug(
-                f"API: Serving unified cost tile for {box_id}, "
-                f"today_delta={tile_data.get('today', {}).get('delta', 0):.2f} Kč"
+                "API: Serving unified cost tile for %s, today_delta=%.2f Kč",
+                box_id,
+                tile_data.get("today", {}).get("delta", 0),
             )
 
             return web.json_response(tile_data)
@@ -782,6 +719,84 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
         except Exception as e:
             _LOGGER.error(f"Error serving unified cost tile API: {e}", exc_info=True)
             return web.json_response({"error": str(e)}, status=500)
+
+
+async def _load_precomputed_data(
+    hass: HomeAssistant, box_id: str
+) -> Optional[Dict[str, Any]]:
+    from homeassistant.helpers.storage import Store
+
+    store = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
+    try:
+        return await store.async_load()
+    except Exception:
+        return None
+
+
+def _build_precomputed_tile_payload(
+    precomputed_data: Optional[Dict[str, Any]], mode: str
+) -> Optional[Dict[str, Any]]:
+    if not precomputed_data:
+        return None
+    tile_key = _pick_unified_cost_tile_key(precomputed_data)
+    tile_payload = precomputed_data.get(tile_key)
+    if not tile_payload:
+        return None
+    response_payload = dict(tile_payload)
+    comparison_summary = precomputed_data.get("cost_comparison")
+    if comparison_summary and isinstance(response_payload, dict):
+        response_payload["comparison"] = comparison_summary
+    _LOGGER.debug(
+        "API: Serving %s unified cost tile from precomputed storage",
+        mode,
+    )
+    return response_payload
+
+
+def _pick_unified_cost_tile_key(precomputed_data: Dict[str, Any]) -> str:
+    if precomputed_data.get("unified_cost_tile"):
+        return "unified_cost_tile"
+    return "unified_cost_tile_hybrid"
+
+
+def _resolve_battery_forecast_entity(
+    hass: HomeAssistant, box_id: str
+) -> Optional[Any]:
+    sensor_id = f"sensor.oig_{box_id}_battery_forecast"
+    component = _get_sensor_component(hass)
+    if not component:
+        return None
+    return _find_entity(component, sensor_id)
+
+
+async def _build_unified_cost_tile_on_demand(
+    entity_obj: Any, box_id: str
+) -> Optional[Dict[str, Any]]:
+    if not hasattr(entity_obj, "build_unified_cost_tile"):
+        _LOGGER.error("API: build_unified_cost_tile method not found for %s", box_id)
+        raise AttributeError(
+            f"build_unified_cost_tile method not found for {box_id}"
+        )
+    try:
+        _LOGGER.info("API: Building unified cost tile for %s...", box_id)
+        tile_data = await entity_obj.build_unified_cost_tile()
+        _LOGGER.info(
+            "API: Unified cost tile built successfully: %s",
+            list(tile_data.keys()) if isinstance(tile_data, dict) else type(tile_data),
+        )
+        return tile_data
+    except Exception as build_error:
+        _LOGGER.error(
+            "API: Error in build_unified_cost_tile() for %s: %s",
+            box_id,
+            build_error,
+            exc_info=True,
+        )
+        return None
+
+
+def _json_error(message: str, *, status: int) -> web.Response:
+    return web.json_response({"error": message}, status=status)
 
 
 class OIGCloudDetailTabsView(HomeAssistantView):

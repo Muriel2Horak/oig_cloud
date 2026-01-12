@@ -136,82 +136,9 @@ class BoilerProfiler:
             _LOGGER.warning("Nedostatek dat pro profilování")
             return
 
-        # Seskupit data po dnech
-        daily_data: dict[str, list[dict]] = defaultdict(list)
-        for entry in history_data:
-            day_key = entry["timestamp"].strftime("%Y-%m-%d")
-            daily_data[day_key].append(entry)
-
-        # Kategorizované hodinové spotřeby
-        # {kategorie: {hodina: [spotřeby_kWh]}}
-        categorized_hourly: dict[str, dict[int, list[float]]] = defaultdict(
-            lambda: defaultdict(list)
-        )
-
-        # Projít každý den
-        for day_key, day_entries in daily_data.items():
-            if len(day_entries) < 2:
-                continue
-
-            # Seřadit podle času
-            day_entries.sort(key=lambda x: x["timestamp"])
-
-            # Určit kategorii
-            first_timestamp = day_entries[0]["timestamp"]
-            category = _get_profile_category(first_timestamp)
-
-            # Vypočítat hodinové spotřeby (delta mezi záznamy)
-            for i in range(1, len(day_entries)):
-                prev_entry = day_entries[i - 1]
-                curr_entry = day_entries[i]
-
-                time_diff_hours = (
-                    curr_entry["timestamp"] - prev_entry["timestamp"]
-                ).total_seconds() / 3600.0
-
-                if time_diff_hours <= 0 or time_diff_hours > 2:
-                    # Přeskočit neplatné intervaly
-                    continue
-
-                energy_diff_wh = curr_entry["value_wh"] - prev_entry["value_wh"]
-                if energy_diff_wh < 0:
-                    # Reset čítače (nový den)
-                    energy_diff_wh = curr_entry["value_wh"]
-
-                # Normalizovat na kWh/hod
-                consumption_kwh = (energy_diff_wh / 1000.0) / time_diff_hours
-
-                # Hodina záznamu
-                hour = curr_entry["timestamp"].hour
-
-                categorized_hourly[category][hour].append(consumption_kwh)
-
-        # Vypočítat průměry a confidence
-        for category, hourly_data in categorized_hourly.items():
-            profile = self._profiles[category]
-
-            for hour, consumptions in hourly_data.items():
-                if not consumptions:
-                    continue
-
-                avg_kwh = sum(consumptions) / len(consumptions)
-                count = len(consumptions)
-
-                # Confidence: min(1.0, počet_vzorků / 10)
-                confidence = min(1.0, count / 10.0)
-
-                profile.hourly_avg[hour] = avg_kwh
-                profile.confidence[hour] = confidence
-                profile.sample_count[hour] = count
-
-            profile.last_updated = dt_util.now()
-
-            _LOGGER.debug(
-                "Profil %s: %s hodin s daty, průměrná confidence %.2f",
-                category,
-                len(profile.hourly_avg),
-                sum(profile.confidence.values()) / max(len(profile.confidence), 1),
-            )
+        daily_data = _group_history_by_day(history_data)
+        categorized_hourly = _build_categorized_hourly(daily_data)
+        _update_profiles(self._profiles, categorized_hourly)
 
     def get_profile_for_datetime(self, dt: datetime) -> Optional[BoilerProfile]:
         """
@@ -251,3 +178,70 @@ class BoilerProfiler:
     def get_all_profiles(self) -> dict[str, BoilerProfile]:
         """Vrátí všechny profily."""
         return self._profiles
+
+
+def _group_history_by_day(history_data: list[dict]) -> dict[str, list[dict]]:
+    daily_data: dict[str, list[dict]] = defaultdict(list)
+    for entry in history_data:
+        day_key = entry["timestamp"].strftime("%Y-%m-%d")
+        daily_data[day_key].append(entry)
+    return daily_data
+
+
+def _build_categorized_hourly(
+    daily_data: dict[str, list[dict]]
+) -> dict[str, dict[int, list[float]]]:
+    categorized_hourly: dict[str, dict[int, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for _day_key, day_entries in daily_data.items():
+        if len(day_entries) < 2:
+            continue
+        day_entries.sort(key=lambda x: x["timestamp"])
+        category = _get_profile_category(day_entries[0]["timestamp"])
+        for hour, consumption_kwh in _iter_hourly_consumptions(day_entries):
+            categorized_hourly[category][hour].append(consumption_kwh)
+    return categorized_hourly
+
+
+def _iter_hourly_consumptions(day_entries: list[dict]) -> list[tuple[int, float]]:
+    results: list[tuple[int, float]] = []
+    for i in range(1, len(day_entries)):
+        prev_entry = day_entries[i - 1]
+        curr_entry = day_entries[i]
+        time_diff_hours = (
+            curr_entry["timestamp"] - prev_entry["timestamp"]
+        ).total_seconds() / 3600.0
+        if time_diff_hours <= 0 or time_diff_hours > 2:
+            continue
+        energy_diff_wh = curr_entry["value_wh"] - prev_entry["value_wh"]
+        if energy_diff_wh < 0:
+            energy_diff_wh = curr_entry["value_wh"]
+        consumption_kwh = (energy_diff_wh / 1000.0) / time_diff_hours
+        hour = curr_entry["timestamp"].hour
+        results.append((hour, consumption_kwh))
+    return results
+
+
+def _update_profiles(
+    profiles: dict[str, BoilerProfile],
+    categorized_hourly: dict[str, dict[int, list[float]]],
+) -> None:
+    for category, hourly_data in categorized_hourly.items():
+        profile = profiles[category]
+        for hour, consumptions in hourly_data.items():
+            if not consumptions:
+                continue
+            avg_kwh = sum(consumptions) / len(consumptions)
+            count = len(consumptions)
+            confidence = min(1.0, count / 10.0)
+            profile.hourly_avg[hour] = avg_kwh
+            profile.confidence[hour] = confidence
+            profile.sample_count[hour] = count
+        profile.last_updated = dt_util.now()
+        _LOGGER.debug(
+            "Profil %s: %s hodin s daty, průměrná confidence %.2f",
+            category,
+            len(profile.hourly_avg),
+            sum(profile.confidence.values()) / max(len(profile.confidence), 1),
+        )

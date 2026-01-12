@@ -363,31 +363,19 @@ class OigNotificationParser:
         escape = False
 
         for idx, ch in enumerate(payload):
-            if string_quote:
-                if escape:
-                    escape = False
-                elif ch == "\\":
-                    escape = True
-                elif ch == string_quote:
-                    string_quote = None
-                continue
-
-            if ch in ('"', "'"):
-                string_quote = ch
+            string_quote, escape, should_continue = _update_string_state(
+                ch, string_quote, escape
+            )
+            if should_continue:
                 continue
 
             if ch == "{":
-                if depth == 0:
-                    start = idx
-                depth += 1
+                depth, start = _open_brace(depth, start, idx)
             elif ch == "}":
-                if depth:
-                    depth -= 1
-                    if depth == 0 and start is not None:
-                        objects.append(payload[start : idx + 1])
-                        start = None
+                depth, start = _close_brace(depth, start, idx, payload, objects)
 
         return objects
+
 
     def _parse_single_notification(self, json_str: str) -> Optional[OigNotification]:
         """Parse single notification from JSON string."""
@@ -420,6 +408,115 @@ class OigNotificationParser:
                 read=False,
                 raw_data=notif_data,
             )
+
+    def _determine_notification_type(
+        self, message: str, severity_level: str = "1"
+    ) -> str:
+        """Determine notification type from message content and CSS severity level."""
+        message_lower = message.lower()
+
+        try:
+            css_level = int(severity_level)
+        except (ValueError, TypeError):
+            css_level = 1
+
+        # Nejdřív kontrola podle CSS level
+        if css_level >= 3:
+            return "error"
+        elif css_level == 2:
+            return "warning"
+
+        # Pak kontrola podle obsahu zprávy
+        error_keywords = ["chyba", "error", "failed", "neúspěšný", "problém"]
+        warning_keywords = ["varování", "warning", "pozor", "upozornění", "bypass"]
+        info_keywords = ["stav", "info", "baterii", "nabití", "dobrý den"]
+
+        # Bypass notifikace považujeme za warning
+        if "bypass" in message_lower:
+            return "warning"
+
+        for keyword in error_keywords:
+            if keyword in message_lower:
+                return "error"
+
+        for keyword in warning_keywords:
+            if keyword in message_lower:
+                return "warning"
+
+        for keyword in info_keywords:
+            if keyword in message_lower:
+                return "info"
+
+        # Fallback podle CSS level
+        if css_level == 1:
+            return "info"
+        else:
+            return "warning"
+
+    def _clean_json_string(self, json_str: str) -> str:
+        """Clean and fix common JSON formatting issues."""
+        # Odstranit JavaScript komentáře
+        json_str = re.sub(r"//.*$", "", json_str, flags=re.MULTILINE)
+
+        # Opravit apostrofy na uvozovky
+        json_str = re.sub(r"'([^']*)':", r'"\1":', json_str)
+        json_str = re.sub(r":\s*'([^']*)'", r': "\1"', json_str)
+
+        # Odstranit trailing commas
+        json_str = re.sub(r",\s*}", "}", json_str)
+        json_str = re.sub(r",\s*]", "]", json_str)
+
+        return json_str.strip()
+
+    def _create_notification_from_json(
+        self, data: Dict[str, Any]
+    ) -> Optional[OigNotification]:
+        """Create notification object from JSON data."""
+        try:
+            notification_type = data.get("type", "info")
+            message = data.get("message", data.get("text", "Unknown notification"))
+
+            # Generovat ID z obsahu nebo použít timestamp
+            notification_id = data.get("id")
+            if not notification_id:
+                notification_id = f"{notification_type}_{hash(message)}_{int(datetime.now().timestamp())}"
+
+            # Parsovat timestamp
+            timestamp = datetime.now()
+            if "timestamp" in data:
+                try:
+                    timestamp = datetime.fromisoformat(str(data["timestamp"]))
+                except (ValueError, TypeError):
+                    pass
+            elif "time" in data:
+                try:
+                    timestamp = datetime.fromisoformat(str(data["time"]))
+                except (ValueError, TypeError):
+                    pass
+
+            # Určit závažnost
+            severity_map = {"error": 3, "warning": 2, "info": 1, "debug": 0}
+            severity = severity_map.get(notification_type.lower(), 1)
+
+            return OigNotification(
+                id=str(notification_id),
+                type=notification_type.lower(),
+                message=str(message),
+                timestamp=timestamp,
+                device_id=data.get("device_id"),
+                severity=severity,
+                read=data.get("read", False),
+                raw_data=data,
+            )
+
+        except Exception as e:
+            _LOGGER.warning(f"Error creating notification from data {data}: {e}")
+            return None
+
+    def _get_priority_name(self, priority: int) -> str:
+        """Get priority name from level number."""
+        priority_names = {1: "info", 2: "warning", 3: "error", 4: "critical"}
+        return priority_names.get(priority, "info")
 
     def _get_notification_severity(self, css_level: str) -> Tuple[str, int]:
         """Parse severity level from CSS class and return type and numeric severity."""
@@ -550,49 +647,9 @@ class OigNotificationParser:
         try:
             normalized = " ".join(content.lower().split())
             compact = normalized.replace(" ", "")
-
-            def _find_positions(text: str, phrase: str) -> List[int]:
-                positions: List[int] = []
-                start = text.find(phrase)
-                while start != -1:
-                    positions.append(start)
-                    start = text.find(phrase, start + 1)
-                return positions
-
-            on_phrases = [
-                "automatický bypass - zapnut",
-                "automatic bypass - on",
-            ]
-            off_phrases = [
-                "automatický bypass - vypnut",
-                "automatic bypass - off",
-            ]
-
-            matches: List[Tuple[int, bool]] = []
-            for phrase in on_phrases:
-                for pos in _find_positions(normalized, phrase):
-                    matches.append((pos, True))
-            for phrase in off_phrases:
-                for pos in _find_positions(normalized, phrase):
-                    matches.append((pos, False))
-
-            on_tokens = ["zapnut", "enabled", "active", "on"]
-            off_tokens = ["vypnut", "disabled", "inactive", "off"]
-
-            search_index = 0
-            while True:
-                pos = normalized.find("bypass", search_index)
-                if pos == -1:
-                    break
-                window = normalized[pos : pos + 80]
-                if any(token in window for token in on_tokens):
-                    matches.append((pos, True))
-                elif any(token in window for token in off_tokens):
-                    matches.append((pos, False))
-                search_index = pos + len("bypass")
-
+            matches = _collect_bypass_matches(normalized, compact)
             if matches:
-                last_status = max(matches, key=lambda item: item[0])[1]
+                last_status = _latest_bypass_status(matches)
                 _LOGGER.info(
                     "Bypass status from LATEST message: %s (found %s total bypass messages)",
                     "ON" if last_status else "OFF",
@@ -600,36 +657,13 @@ class OigNotificationParser:
                 )
                 return last_status
 
-            positive_indicators = [
-                '"bypass":true',
-                '"bypass":1',
-                '"bypass":"on"',
-                '"bypass":"active"',
-                '"manual_mode":true',
-                '"manual_mode":"on"',
-                "bypassenabledtrue",
-                "bypass_activetrue",
-                "ismanualmodetrue",
-            ]
-
-            if any(indicator in compact for indicator in positive_indicators):
-                _LOGGER.debug("Bypass detected as ON from indicators")
-                return True
-
-            negative_indicators = [
-                '"bypass":false',
-                '"bypass":0',
-                '"bypass":"off"',
-                '"bypass":"inactive"',
-                '"manual_mode":false',
-                "bypassenabledfalse",
-                "bypass_activefalse",
-                "ismanualmodefalse",
-            ]
-
-            if any(indicator in compact for indicator in negative_indicators):
-                _LOGGER.debug("Bypass detected as OFF from indicators")
-                return False
+            indicator_status = _indicator_status(compact)
+            if indicator_status is not None:
+                _LOGGER.debug(
+                    "Bypass detected as %s from indicators",
+                    "ON" if indicator_status else "OFF",
+                )
+                return indicator_status
 
             _LOGGER.debug("No bypass indicators found, assuming OFF")
             return False
@@ -638,114 +672,142 @@ class OigNotificationParser:
             _LOGGER.error(f"Error detecting bypass status: {e}")
             return False
 
-    def _determine_notification_type(
-        self, message: str, severity_level: str = "1"
-    ) -> str:
-        """Determine notification type from message content and CSS severity level."""
-        message_lower = message.lower()
 
-        try:
-            css_level = int(severity_level)
-        except (ValueError, TypeError):
-            css_level = 1
+def _collect_bypass_matches(
+    normalized: str, compact: str
+) -> List[Tuple[int, bool]]:
+    matches: List[Tuple[int, bool]] = []
+    matches.extend(_phrase_matches(normalized))
+    matches.extend(_window_matches(normalized))
+    matches.extend(_compact_matches(compact))
+    return matches
 
-        # Nejdřív kontrola podle CSS level
-        if css_level >= 3:
-            return "error"
-        elif css_level == 2:
-            return "warning"
 
-        # Pak kontrola podle obsahu zprávy
-        error_keywords = ["chyba", "error", "failed", "neúspěšný", "problém"]
-        warning_keywords = ["varování", "warning", "pozor", "upozornění", "bypass"]
-        info_keywords = ["stav", "info", "baterii", "nabití", "dobrý den"]
+def _phrase_matches(text: str) -> List[Tuple[int, bool]]:
+    on_phrases = [
+        "automatický bypass - zapnut",
+        "automatic bypass - on",
+    ]
+    off_phrases = [
+        "automatický bypass - vypnut",
+        "automatic bypass - off",
+    ]
+    matches: List[Tuple[int, bool]] = []
+    for phrase in on_phrases:
+        matches.extend((pos, True) for pos in _find_positions(text, phrase))
+    for phrase in off_phrases:
+        matches.extend((pos, False) for pos in _find_positions(text, phrase))
+    return matches
 
-        # Bypass notifikace považujeme za warning
-        if "bypass" in message_lower:
-            return "warning"
 
-        for keyword in error_keywords:
-            if keyword in message_lower:
-                return "error"
+def _window_matches(text: str) -> List[Tuple[int, bool]]:
+    on_tokens = ["zapnut", "enabled", "active", "on"]
+    off_tokens = ["vypnut", "disabled", "inactive", "off"]
+    matches: List[Tuple[int, bool]] = []
+    search_index = 0
+    while True:
+        pos = text.find("bypass", search_index)
+        if pos == -1:
+            break
+        window = text[pos : pos + 80]
+        if any(token in window for token in on_tokens):
+            matches.append((pos, True))
+        elif any(token in window for token in off_tokens):
+            matches.append((pos, False))
+        search_index = pos + len("bypass")
+    return matches
 
-        for keyword in warning_keywords:
-            if keyword in message_lower:
-                return "warning"
 
-        for keyword in info_keywords:
-            if keyword in message_lower:
-                return "info"
+def _compact_matches(text: str) -> List[Tuple[int, bool]]:
+    matches: List[Tuple[int, bool]] = []
+    if "bypasson" in text:
+        matches.append((text.find("bypasson"), True))
+    if "bypassoff" in text:
+        matches.append((text.find("bypassoff"), False))
+    return matches
 
-        # Fallback podle CSS level
-        if css_level == 1:
-            return "info"
-        else:
-            return "warning"
 
-    def _clean_json_string(self, json_str: str) -> str:
-        """Clean and fix common JSON formatting issues."""
-        # Odstranit JavaScript komentáře
-        json_str = re.sub(r"//.*$", "", json_str, flags=re.MULTILINE)
+def _latest_bypass_status(matches: List[Tuple[int, bool]]) -> bool:
+    return max(matches, key=lambda item: item[0])[1]
 
-        # Opravit apostrofy na uvozovky
-        json_str = re.sub(r"'([^']*)':", r'"\1":', json_str)
-        json_str = re.sub(r":\s*'([^']*)'", r': "\1"', json_str)
 
-        # Odstranit trailing commas
-        json_str = re.sub(r",\s*}", "}", json_str)
-        json_str = re.sub(r",\s*]", "]", json_str)
+def _indicator_status(compact: str) -> Optional[bool]:
+    positive_indicators = [
+        '"bypass":true',
+        '"bypass":1',
+        '"bypass":"on"',
+        '"bypass":"active"',
+        '"manual_mode":true',
+        '"manual_mode":"on"',
+        "bypassenabledtrue",
+        "bypass_activetrue",
+        "ismanualmodetrue",
+    ]
+    if any(indicator in compact for indicator in positive_indicators):
+        return True
 
-        return json_str.strip()
+    negative_indicators = [
+        '"bypass":false',
+        '"bypass":0',
+        '"bypass":"off"',
+        '"bypass":"inactive"',
+        '"manual_mode":false',
+        "bypassenabledfalse",
+        "bypass_activefalse",
+        "ismanualmodefalse",
+    ]
+    if any(indicator in compact for indicator in negative_indicators):
+        return False
+    return None
 
-    def _create_notification_from_json(
-        self, data: Dict[str, Any]
-    ) -> Optional[OigNotification]:
-        """Create notification object from JSON data."""
-        try:
-            notification_type = data.get("type", "info")
-            message = data.get("message", data.get("text", "Unknown notification"))
 
-            # Generovat ID z obsahu nebo použít timestamp
-            notification_id = data.get("id")
-            if not notification_id:
-                notification_id = f"{notification_type}_{hash(message)}_{int(datetime.now().timestamp())}"
+def _find_positions(text: str, phrase: str) -> List[int]:
+    positions: List[int] = []
+    start = text.find(phrase)
+    while start != -1:
+        positions.append(start)
+        start = text.find(phrase, start + 1)
+    return positions
 
-            # Parsovat timestamp
-            timestamp = datetime.now()
-            if "timestamp" in data:
-                try:
-                    timestamp = datetime.fromisoformat(str(data["timestamp"]))
-                except (ValueError, TypeError):
-                    pass
-            elif "time" in data:
-                try:
-                    timestamp = datetime.fromisoformat(str(data["time"]))
-                except (ValueError, TypeError):
-                    pass
 
-            # Určit závažnost
-            severity_map = {"error": 3, "warning": 2, "info": 1, "debug": 0}
-            severity = severity_map.get(notification_type.lower(), 1)
+def _update_string_state(
+    ch: str, string_quote: Optional[str], escape: bool
+) -> tuple[Optional[str], bool, bool]:
+    if string_quote:
+        if escape:
+            return string_quote, False, True
+        if ch == "\\":
+            return string_quote, True, True
+        if ch == string_quote:
+            return None, False, True
+        return string_quote, False, True
+    if ch in ('"', "'"):
+        return ch, False, True
+    return string_quote, escape, False
 
-            return OigNotification(
-                id=str(notification_id),
-                type=notification_type.lower(),
-                message=str(message),
-                timestamp=timestamp,
-                device_id=data.get("device_id"),
-                severity=severity,
-                read=data.get("read", False),
-                raw_data=data,
-            )
 
-        except Exception as e:
-            _LOGGER.warning(f"Error creating notification from data {data}: {e}")
-            return None
+def _open_brace(
+    depth: int, start: Optional[int], idx: int
+) -> tuple[int, Optional[int]]:
+    if depth == 0:
+        start = idx
+    return depth + 1, start
 
-    def _get_priority_name(self, priority: int) -> str:
-        """Get priority name from level number."""
-        priority_names = {1: "info", 2: "warning", 3: "error", 4: "critical"}
-        return priority_names.get(priority, "info")
+
+def _close_brace(
+    depth: int,
+    start: Optional[int],
+    idx: int,
+    payload: str,
+    objects: List[str],
+) -> tuple[int, Optional[int]]:
+    if not depth:
+        return depth, start
+    depth -= 1
+    if depth == 0 and start is not None:
+        objects.append(payload[start : idx + 1])
+        start = None
+    return depth, start
 
 
 class OigNotificationManager:

@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -116,7 +116,6 @@ async def _cleanup_renamed_sensors(
     await asyncio.sleep(0)
     removed = 0
 
-    # Známé přejmenování a deprecated senzory
     deprecated_patterns = [
         "_battery_prediction_",  # nahrazeno battery_forecast
         "_old_",  # obecný pattern pro staré
@@ -127,53 +126,67 @@ async def _cleanup_renamed_sensors(
     entries = er.async_entries_for_config_entry(entity_reg, entry.entry_id)
 
     for entity_entry in entries:
-        # Extrahuj sensor_type z entity_id
-        # Formát: sensor.oig_{box_id}_{sensor_type}
-        parts = entity_entry.entity_id.split("_")
-        if len(parts) < 3 or not entity_entry.entity_id.startswith("sensor.oig_"):
+        entity_id = entity_entry.entity_id
+        if not _is_oig_sensor_entity(entity_id):
             continue
-
-        # SKIP bojler senzory - ty mají vlastní životní cyklus
-        # Format: sensor.oig_bojler_{sensor_type}
-        if "_bojler_" in entity_entry.entity_id or entity_entry.entity_id.startswith(
-            "sensor.oig_bojler"
-        ):
+        if _is_boiler_entity(entity_id):
             _LOGGER.debug(f"Skipping boiler sensor cleanup: {entity_entry.entity_id}")
             continue
 
-        # Sensor type je vše po box_id
-        # sensor.oig_{box_id}_{zbytek} -> zbytek je sensor_type
-        # Najdeme index za "sensor.oig_" a box_id
-        prefix = "sensor.oig_"
-        if entity_entry.entity_id.startswith(prefix):
-            after_prefix = entity_entry.entity_id[len(prefix) :]
-            parts_after = after_prefix.split("_", 1)  # Split pouze na box_id a zbytek
-            if len(parts_after) > 1:
-                sensor_type = parts_after[1]  # Vše za box_id
-            else:
-                continue
-        else:
+        sensor_type = _extract_sensor_type(entity_id)
+        if not sensor_type:
             continue
 
-        # Check deprecated patterns
-        is_deprecated = any(
-            pattern in entity_entry.entity_id for pattern in deprecated_patterns
-        )
-
-        # Check if sensor_type is expected
-        is_expected = sensor_type in expected_sensor_types
-
-        if is_deprecated or not is_expected:
-            try:
-                _LOGGER.info(
-                    f"🗑️ Removing deprecated/renamed sensor: {entity_entry.entity_id} (type: {sensor_type})"
-                )
-                entity_reg.async_remove(entity_entry.entity_id)
-                removed += 1
-            except Exception as e:
-                _LOGGER.error(f"Failed to remove sensor {entity_entry.entity_id}: {e}")
+        if _should_remove_sensor(
+            entity_id, sensor_type, expected_sensor_types, deprecated_patterns
+        ):
+            removed += _remove_entity_entry(entity_reg, entity_entry, sensor_type)
 
     return removed
+
+
+def _is_oig_sensor_entity(entity_id: str) -> bool:
+    return entity_id.startswith("sensor.oig_") and len(entity_id.split("_")) >= 3
+
+
+def _is_boiler_entity(entity_id: str) -> bool:
+    return "_bojler_" in entity_id or entity_id.startswith("sensor.oig_bojler")
+
+
+def _extract_sensor_type(entity_id: str) -> Optional[str]:
+    prefix = "sensor.oig_"
+    if not entity_id.startswith(prefix):
+        return None
+    after_prefix = entity_id[len(prefix) :]
+    parts_after = after_prefix.split("_", 1)
+    if len(parts_after) > 1:
+        return parts_after[1]
+    return None
+
+
+def _should_remove_sensor(
+    entity_id: str,
+    sensor_type: str,
+    expected_sensor_types: set[str],
+    deprecated_patterns: List[str],
+) -> bool:
+    is_deprecated = any(pattern in entity_id for pattern in deprecated_patterns)
+    is_expected = sensor_type in expected_sensor_types
+    return is_deprecated or not is_expected
+
+
+def _remove_entity_entry(entity_reg, entity_entry, sensor_type: str) -> int:
+    try:
+        _LOGGER.info(
+            "🗑️ Removing deprecated/renamed sensor: %s (type: %s)",
+            entity_entry.entity_id,
+            sensor_type,
+        )
+        entity_reg.async_remove(entity_entry.entity_id)
+        return 1
+    except Exception as e:
+        _LOGGER.error("Failed to remove sensor %s: %s", entity_entry.entity_id, e)
+        return 0
 
 
 async def _cleanup_removed_devices(

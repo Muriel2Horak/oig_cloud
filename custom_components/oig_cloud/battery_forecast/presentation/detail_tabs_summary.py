@@ -137,71 +137,120 @@ def calculate_tab_summary(
     """Calculate summary for a tab."""
     _ = sensor
     if not mode_blocks:
-        return {
-            "total_cost": 0.0,
-            "overall_adherence": 100,
-            "mode_switches": 0,
-            "metrics": default_metrics_summary(),
-        }
+        return _default_tab_summary()
 
+    totals, completed_blocks, planned_blocks = _summarize_blocks(mode_blocks)
+    overall_adherence = _calculate_overall_adherence(
+        totals["adherent_blocks"], totals["total_blocks"]
+    )
+    summary = _build_base_summary(
+        total_cost=totals["total_cost"],
+        overall_adherence=overall_adherence,
+        total_blocks=totals["total_blocks"],
+        intervals=intervals,
+    )
+    _attach_completed_planned_summary(summary, completed_blocks, planned_blocks)
+    return summary
+
+
+def _default_tab_summary() -> Dict[str, Any]:
+    return {
+        "total_cost": 0.0,
+        "overall_adherence": 100,
+        "mode_switches": 0,
+        "metrics": default_metrics_summary(),
+    }
+
+
+def _summarize_blocks(
+    mode_blocks: List[Dict[str, Any]]
+) -> tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
     total_cost = 0.0
     adherent_blocks = 0
-    total_blocks = len(mode_blocks)
-
-    completed_blocks = []
-    planned_blocks = []
+    completed_blocks: List[Dict[str, Any]] = []
+    planned_blocks: List[Dict[str, Any]] = []
 
     for block in mode_blocks:
-        cost = block.get("cost_historical")
-        if cost is not None:
-            total_cost += cost
-        else:
-            total_cost += block.get("cost_planned", 0.0)
-
+        total_cost += _resolve_block_cost(block)
         if block.get("adherence_pct") == 100:
             adherent_blocks += 1
-
-        if block.get("status") == "completed":
+        status = block.get("status")
+        if status == "completed":
             completed_blocks.append(block)
-        elif block.get("status") in ("current", "planned"):
+        elif status in ("current", "planned"):
             planned_blocks.append(block)
 
-    overall_adherence = (
-        round((adherent_blocks / total_blocks) * 100, 1) if total_blocks > 0 else 100
+    return (
+        {
+            "total_cost": total_cost,
+            "adherent_blocks": adherent_blocks,
+            "total_blocks": len(mode_blocks),
+        },
+        completed_blocks,
+        planned_blocks,
     )
 
-    mode_switches = max(0, total_blocks - 1)
 
+def _resolve_block_cost(block: Dict[str, Any]) -> float:
+    cost = block.get("cost_historical")
+    if cost is not None:
+        return float(cost)
+    return float(block.get("cost_planned", 0.0))
+
+
+def _calculate_overall_adherence(adherent_blocks: int, total_blocks: int) -> float:
+    if total_blocks <= 0:
+        return 100
+    return round((adherent_blocks / total_blocks) * 100, 1)
+
+
+def _build_base_summary(
+    *,
+    total_cost: float,
+    overall_adherence: float,
+    total_blocks: int,
+    intervals: List[Dict[str, Any]],
+) -> Dict[str, Any]:
     metrics = aggregate_interval_metrics(intervals)
-
-    summary = {
+    return {
         "total_cost": round(total_cost, 2),
         "overall_adherence": overall_adherence,
-        "mode_switches": mode_switches,
+        "mode_switches": max(0, total_blocks - 1),
         "metrics": metrics,
     }
 
-    if completed_blocks and planned_blocks:
-        completed_cost = sum(b.get("cost_historical", 0) for b in completed_blocks)
-        completed_adherent = sum(
-            1 for b in completed_blocks if b.get("adherence_pct") == 100
-        )
 
-        summary["completed_summary"] = {
-            "count": len(completed_blocks),
-            "total_cost": round(completed_cost, 2),
-            "adherence_pct": (
-                round((completed_adherent / len(completed_blocks)) * 100, 1)
-                if completed_blocks
-                else 100
-            ),
-        }
+def _attach_completed_planned_summary(
+    summary: Dict[str, Any],
+    completed_blocks: List[Dict[str, Any]],
+    planned_blocks: List[Dict[str, Any]],
+) -> None:
+    if not completed_blocks or not planned_blocks:
+        return
+    summary["completed_summary"] = _build_completed_summary(completed_blocks)
+    summary["planned_summary"] = _build_planned_summary(planned_blocks)
 
-        planned_cost = sum(b.get("cost_planned", 0) for b in planned_blocks)
 
-        summary["planned_summary"] = {
-            "count": len(planned_blocks),
-            "total_cost": round(planned_cost, 2),
-        }
+def _build_completed_summary(completed_blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    completed_cost = sum(b.get("cost_historical", 0) for b in completed_blocks)
+    completed_adherent = sum(
+        1 for b in completed_blocks if b.get("adherence_pct") == 100
+    )
+    adherence_pct = (
+        round((completed_adherent / len(completed_blocks)) * 100, 1)
+        if completed_blocks
+        else 100
+    )
+    return {
+        "count": len(completed_blocks),
+        "total_cost": round(completed_cost, 2),
+        "adherence_pct": adherence_pct,
+    }
 
-    return summary
+
+def _build_planned_summary(planned_blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    planned_cost = sum(b.get("cost_planned", 0) for b in planned_blocks)
+    return {
+        "count": len(planned_blocks),
+        "total_cost": round(planned_cost, 2),
+    }

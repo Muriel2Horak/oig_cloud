@@ -308,148 +308,18 @@ class OigCloudChmuSensor(OigCloudSensor):
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Vrátí atributy senzoru."""
         if not self._get_warning_data():
-            return {
-                "warnings_count": 0,
-                "last_update": None,
-                "source": CHMU_CAP_FEED_SOURCE,
-                "all_warnings_details": [],
-            }
+            return _empty_warning_attrs()
 
-        # Global sensor - všechna varování pro ČR
+        severity_distribution = self._get_severity_distribution()
+
         if self._sensor_type == "chmu_warning_level_global":
-            # OPRAVA: Omezit velikost atributů aby nepřekročilo 16KB limit
-            all_warnings_raw = self._last_warning_data.get("all_warnings", [])
-            # Limitovat na max 5 varování a zkrátit description
-            all_warnings_limited = []
-            for w in all_warnings_raw[:5]:  # Max 5 varování
-                warning_short = {
-                    "event": w.get("event", ""),
-                    "severity": w.get("severity", 0),
-                    "onset": w.get("onset", ""),
-                    "expires": w.get("expires", ""),
-                }
-                # Zkrátit description na max 120 znaků
-                desc = w.get("description", "")
-                if len(desc) > 120:
-                    warning_short["description"] = desc[:117] + "..."
-                else:
-                    warning_short["description"] = desc
-                all_warnings_limited.append(warning_short)
+            return _build_global_warning_attrs(
+                self._last_warning_data, severity_distribution
+            )
 
-            attrs = {
-                "warnings_count": self._last_warning_data.get("all_warnings_count", 0),
-                "all_warnings": all_warnings_limited,
-                "all_warnings_details": all_warnings_limited,
-                "warnings_truncated": len(all_warnings_raw) > 5,
-                "highest_severity": self._last_warning_data.get(
-                    "highest_severity_cz", 0
-                ),
-                "severity_distribution": self._get_severity_distribution(),
-                "last_update": self._last_warning_data.get("last_update"),
-                "source": self._last_warning_data.get("source", CHMU_CAP_FEED_SOURCE),
-            }
-            return attrs
-
-        # Local sensor - varování pro lokalitu
-        top_warning = self._last_warning_data.get("top_local_warning")
-
-        # Základní atributy z top_local_warning pro snadný přístup
-        if top_warning:
-
-            def _regions_from_warning(w: Dict[str, Any]) -> list[str]:
-                regions: list[str] = []
-                try:
-                    for area in w.get("areas") or []:
-                        desc = (area or {}).get("description")
-                        if isinstance(desc, str) and desc.strip():
-                            regions.append(desc.strip())
-                except Exception:
-                    regions = []
-                # unique + limit
-                out: list[str] = []
-                for r in regions:
-                    if r not in out:
-                        out.append(r)
-                    if len(out) >= 8:
-                        break
-                return out
-
-            def _trim_text(value: Any, limit: int = 220) -> str:
-                s = value if isinstance(value, str) else ""
-                s = s.strip()
-                if len(s) > limit:
-                    return s[: limit - 3] + "..."
-                return s
-
-            # Seznam všech reálných varování (bez "Žádná..." a "Žádný výhled")
-            all_local_events = []
-            all_warnings_details: list[dict[str, Any]] = []
-
-            for w in self._last_warning_data.get("local_warnings", []):
-                event = w.get("event", "")
-                # Filtrovat negativní hlášky
-                if event.startswith("Žádná") or event.startswith("Žádný"):
-                    continue
-
-                all_local_events.append(event)
-                # Provide compact details for the dashboard modal (limited to avoid 16KB attribute cap).
-                if len(all_warnings_details) < 5:
-                    all_warnings_details.append(
-                        {
-                            "event": event,
-                            "severity": w.get("severity", ""),
-                            "onset": w.get("onset"),
-                            "expires": w.get("expires"),
-                            "regions": _regions_from_warning(w),
-                            "description": _trim_text(w.get("description", "")),
-                            "instruction": _trim_text(w.get("instruction", "")),
-                        }
-                    )
-
-            # Trim potentially large fields to stay below HA recorder attribute limits.
-            desc = top_warning.get("description", "") or ""
-            instr = top_warning.get("instruction", "") or ""
-            if len(desc) > 300:
-                desc = desc[:297] + "..."
-            if len(instr) > 300:
-                instr = instr[:297] + "..."
-
-            attrs = {
-                # Hlavní informace z nejdůležitějšího varování (TOP priority)
-                "event_type": top_warning.get("event", CHMU_NONE_LABEL),
-                "severity": top_warning.get("severity", CHMU_NONE_LABEL),
-                "onset": top_warning.get("onset"),  # Začátek TOP varování
-                "expires": top_warning.get("expires"),  # Konec TOP varování
-                "eta_hours": top_warning.get("eta_hours", 0),
-                "description": desc,  # Popis TOP varování (truncated)
-                "instruction": instr,  # Pokyny pro TOP varování (truncated)
-                # Počty a přehled všech aktivních varování
-                "warnings_count": len(all_local_events),  # Jen reálné výstrahy
-                "all_warnings": all_local_events[:5],  # Max 5 názvů výstrah
-                # Structured detail list for dashboard modal
-                "all_warnings_details": all_warnings_details,
-                # Meta
-                "last_update": self._last_warning_data.get("last_update"),
-                "source": self._last_warning_data.get("source", CHMU_CAP_FEED_SOURCE),
-            }
-        else:
-            # Žádné lokální varování
-            attrs = {
-                "event_type": CHMU_NONE_LABEL,
-                "severity": CHMU_NONE_LABEL,
-                "onset": None,
-                "expires": None,
-                "eta_hours": 0,
-                "description": "",
-                "instruction": "",
-                "warnings_count": 0,
-                "all_warnings": [],
-                "all_warnings_details": [],
-                "last_update": self._last_warning_data.get("last_update"),
-                "source": self._last_warning_data.get("source", CHMU_CAP_FEED_SOURCE),
-            }
-
-        return attrs
+        return _build_local_warning_attrs(
+            self._last_warning_data, severity_distribution
+        )
 
     def _get_severity_distribution(self) -> Dict[str, int]:
         """Vrátí rozdělení severity pro všechna varování."""
@@ -486,3 +356,136 @@ class OigCloudChmuSensor(OigCloudSensor):
     def device_info(self) -> Dict[str, Any]:
         """Vrátí device info."""
         return self._device_info
+
+
+def _empty_warning_attrs() -> Dict[str, Any]:
+    return {
+        "warnings_count": 0,
+        "last_update": None,
+        "source": CHMU_CAP_FEED_SOURCE,
+        "all_warnings_details": [],
+    }
+
+
+def _build_global_warning_attrs(
+    data: Dict[str, Any], severity_distribution: Dict[str, int]
+) -> Dict[str, Any]:
+    all_warnings_raw = data.get("all_warnings", [])
+    all_warnings_limited = [_short_warning(w) for w in all_warnings_raw[:5]]
+    return {
+        "warnings_count": data.get("all_warnings_count", 0),
+        "all_warnings": all_warnings_limited,
+        "all_warnings_details": all_warnings_limited,
+        "warnings_truncated": len(all_warnings_raw) > 5,
+        "highest_severity": data.get("highest_severity_cz", 0),
+        "severity_distribution": severity_distribution,
+        "last_update": data.get("last_update"),
+        "source": data.get("source", CHMU_CAP_FEED_SOURCE),
+    }
+
+
+def _short_warning(warning: Dict[str, Any]) -> Dict[str, Any]:
+    desc = warning.get("description", "")
+    return {
+        "event": warning.get("event", ""),
+        "severity": warning.get("severity", 0),
+        "onset": warning.get("onset", ""),
+        "expires": warning.get("expires", ""),
+        "description": desc[:117] + "..." if len(desc) > 120 else desc,
+    }
+
+
+def _build_local_warning_attrs(
+    data: Dict[str, Any], severity_distribution: Dict[str, int]
+) -> Dict[str, Any]:
+    top_warning = data.get("top_local_warning")
+    if not top_warning:
+        return _no_local_warning_attrs(data)
+
+    all_local_events, all_warnings_details = _collect_local_warning_details(data)
+    desc = _trim_text(top_warning.get("description", ""), limit=300)
+    instr = _trim_text(top_warning.get("instruction", ""), limit=300)
+
+    return {
+        "event_type": top_warning.get("event", CHMU_NONE_LABEL),
+        "severity": top_warning.get("severity", CHMU_NONE_LABEL),
+        "onset": top_warning.get("onset"),
+        "expires": top_warning.get("expires"),
+        "eta_hours": top_warning.get("eta_hours", 0),
+        "description": desc,
+        "instruction": instr,
+        "warnings_count": len(all_local_events),
+        "all_warnings": all_local_events[:5],
+        "all_warnings_details": all_warnings_details,
+        "last_update": data.get("last_update"),
+        "severity_distribution": severity_distribution,
+        "source": data.get("source", CHMU_CAP_FEED_SOURCE),
+    }
+
+
+def _no_local_warning_attrs(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "event_type": CHMU_NONE_LABEL,
+        "severity": CHMU_NONE_LABEL,
+        "onset": None,
+        "expires": None,
+        "eta_hours": 0,
+        "description": "",
+        "instruction": "",
+        "warnings_count": 0,
+        "all_warnings": [],
+        "all_warnings_details": [],
+        "last_update": data.get("last_update"),
+        "source": data.get("source", CHMU_CAP_FEED_SOURCE),
+    }
+
+
+def _collect_local_warning_details(
+    data: Dict[str, Any],
+) -> tuple[list[str], list[dict[str, Any]]]:
+    all_local_events: list[str] = []
+    all_warnings_details: list[dict[str, Any]] = []
+    for warning in data.get("local_warnings", []):
+        event = warning.get("event", "")
+        if event.startswith("Žádná") or event.startswith("Žádný"):
+            continue
+        all_local_events.append(event)
+        if len(all_warnings_details) < 5:
+            all_warnings_details.append(
+                {
+                    "event": event,
+                    "severity": warning.get("severity", ""),
+                    "onset": warning.get("onset"),
+                    "expires": warning.get("expires"),
+                    "regions": _regions_from_warning(warning),
+                    "description": _trim_text(warning.get("description", "")),
+                    "instruction": _trim_text(warning.get("instruction", "")),
+                }
+            )
+    return all_local_events, all_warnings_details
+
+
+def _regions_from_warning(warning: Dict[str, Any]) -> list[str]:
+    regions: list[str] = []
+    try:
+        for area in warning.get("areas") or []:
+            desc = (area or {}).get("description")
+            if isinstance(desc, str) and desc.strip():
+                regions.append(desc.strip())
+    except Exception:
+        regions = []
+    out: list[str] = []
+    for region in regions:
+        if region not in out:
+            out.append(region)
+        if len(out) >= 8:
+            break
+    return out
+
+
+def _trim_text(value: Any, limit: int = 220) -> str:
+    text = value if isinstance(value, str) else ""
+    text = text.strip()
+    if len(text) > limit:
+        return text[: limit - 3] + "..."
+    return text

@@ -179,17 +179,67 @@ def apply_mode_guard(
     for i, planned_mode in enumerate(modes):
         if i >= len(spot_prices):
             break
-        guard_ctx = _resolve_guard_context(
-            spot_prices, i, now, guard_until, lock_modes
-        )
+        guard_ctx = _resolve_guard_context(spot_prices, i, now, guard_until, lock_modes)
         if guard_ctx is None:
             break
         ts_value, locked_mode = guard_ctx
 
-        solar_kwh, load_kwh = _resolve_interval_loads(
-            i, solar_kwh_list, load_forecast
+        forced_mode, next_soc, override = _apply_guard_interval(
+            idx=i,
+            planned_mode=planned_mode,
+            locked_mode=locked_mode,
+            soc=soc,
+            solar_kwh_list=solar_kwh_list,
+            load_forecast=load_forecast,
+            max_capacity=max_capacity,
+            hw_min_capacity=hw_min_capacity,
+            efficiency=efficiency,
+            charge_rate_kwh_15min=charge_rate_kwh_15min,
+            planning_min_kwh=planning_min_kwh,
         )
-        forced_mode = locked_mode if locked_mode is not None else planned_mode
+        if override:
+            overrides.append(override)
+        if planned_mode != forced_mode:
+            guarded_modes[i] = forced_mode
+
+        soc = next_soc
+
+    _log_guard_summary(overrides, guard_until, log_rate_limited)
+
+    return guarded_modes, overrides, guard_until
+
+
+def _apply_guard_interval(
+    *,
+    idx: int,
+    planned_mode: int,
+    locked_mode: Optional[int],
+    soc: float,
+    solar_kwh_list: List[float],
+    load_forecast: List[float],
+    max_capacity: float,
+    hw_min_capacity: float,
+    efficiency: float,
+    charge_rate_kwh_15min: float,
+    planning_min_kwh: float,
+) -> tuple[int, float, Optional[Dict[str, Any]]]:
+    solar_kwh, load_kwh = _resolve_interval_loads(
+        idx, solar_kwh_list, load_forecast
+    )
+    forced_mode = locked_mode if locked_mode is not None else planned_mode
+    next_soc = _simulate_guard_interval(
+        forced_mode,
+        solar_kwh,
+        load_kwh,
+        soc,
+        max_capacity,
+        hw_min_capacity,
+        efficiency,
+        charge_rate_kwh_15min,
+    )
+
+    if next_soc < planning_min_kwh:
+        forced_mode = planned_mode
         next_soc = _simulate_guard_interval(
             forced_mode,
             solar_kwh,
@@ -200,51 +250,45 @@ def apply_mode_guard(
             efficiency,
             charge_rate_kwh_15min,
         )
+        return forced_mode, next_soc, {
+            "idx": idx,
+            "type": "guard_exception_soc",
+            "planned_mode": planned_mode,
+            "forced_mode": planned_mode,
+        }
 
-        if next_soc < planning_min_kwh:
-            _record_guard_override(overrides, i, planned_mode, forced_mode)
-            forced_mode = planned_mode
-            next_soc = _simulate_guard_interval(
-                forced_mode,
-                solar_kwh,
-                load_kwh,
-                soc,
-                max_capacity,
-                hw_min_capacity,
-                efficiency,
-                charge_rate_kwh_15min,
-            )
-        elif planned_mode != forced_mode:
-            guarded_modes[i] = forced_mode
-            overrides.append(
-                {
-                    "idx": i,
-                    "type": "guard_locked_plan",
-                    "planned_mode": planned_mode,
-                    "forced_mode": forced_mode,
-                }
-            )
+    if planned_mode != forced_mode:
+        return forced_mode, next_soc, {
+            "idx": idx,
+            "type": "guard_locked_plan",
+            "planned_mode": planned_mode,
+            "forced_mode": forced_mode,
+        }
+    return forced_mode, next_soc, None
 
-        soc = next_soc
 
-    if overrides:
-        if log_rate_limited:
-            log_rate_limited(
-                "mode_guard_applied",
-                "info",
-                "🛡️ Guard aktivní: zamknuto %s intervalů (do %s)",
-                len(overrides),
-                guard_until.isoformat(),
-                cooldown_s=900.0,
-            )
-        else:
-            _LOGGER.info(
-                "🛡️ Guard aktivní: zamknuto %s intervalů (do %s)",
-                len(overrides),
-                guard_until.isoformat(),
-            )
-
-    return guarded_modes, overrides, guard_until
+def _log_guard_summary(
+    overrides: List[Dict[str, Any]],
+    guard_until: Optional[datetime],
+    log_rate_limited: Optional[Callable[..., None]],
+) -> None:
+    if not overrides or not guard_until:
+        return
+    if log_rate_limited:
+        log_rate_limited(
+            "mode_guard_applied",
+            "info",
+            "🛡️ Guard aktivní: zamknuto %s intervalů (do %s)",
+            len(overrides),
+            guard_until.isoformat(),
+            cooldown_s=900.0,
+        )
+    else:
+        _LOGGER.info(
+            "🛡️ Guard aktivní: zamknuto %s intervalů (do %s)",
+            len(overrides),
+            guard_until.isoformat(),
+        )
 
 
 def _resolve_guard_context(
@@ -293,23 +337,6 @@ def _simulate_guard_interval(
         home_charge_rate_kwh_15min=charge_rate_kwh_15min,
     )
     return res.new_soc_kwh
-
-
-def _record_guard_override(
-    overrides: List[Dict[str, Any]],
-    idx: int,
-    planned_mode: int,
-    forced_mode: int,
-) -> None:
-    if planned_mode != forced_mode:
-        overrides.append(
-            {
-                "idx": idx,
-                "type": "guard_exception_soc",
-                "planned_mode": planned_mode,
-                "forced_mode": planned_mode,
-            }
-        )
 
 
 def apply_guard_reasons_to_timeline(

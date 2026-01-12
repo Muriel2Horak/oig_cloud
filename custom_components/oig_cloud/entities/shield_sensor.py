@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ..const import DOMAIN
 from .base_sensor import OigCloudSensor, _get_sensor_definition, resolve_box_id
@@ -172,51 +172,7 @@ class OigCloudShieldSensor(OigCloudSensor):
             shield = self.hass.data[DOMAIN].get("shield")
             if not shield:
                 return translate_shield_state("unavailable")
-
-            if self._sensor_type == "service_shield_status":
-                return translate_shield_state("active")
-            elif self._sensor_type == "service_shield_queue":
-                # Celkový počet: čekající ve frontě + všechny pending služby
-                queue = getattr(shield, "queue", [])
-                pending = getattr(shield, "pending", {})
-                return len(queue) + len(pending)
-            elif self._sensor_type == "mode_reaction_time":
-                # Průměrná doba reakce napříč všemi scénáři
-                if shield.mode_tracker:
-                    stats = shield.mode_tracker.get_statistics()
-                    if stats:
-                        # Spočítat průměrný medián ze všech scénářů
-                        medians = [
-                            s["median_seconds"]
-                            for s in stats.values()
-                            if "median_seconds" in s
-                        ]
-                        if medians:
-                            return round(sum(medians) / len(medians), 1)
-                return None
-            elif self._sensor_type == "service_shield_activity":
-                running = getattr(shield, "running", None)
-                if running:
-                    # OPRAVA: Vrátit formát "service: target" pro frontend parsing
-                    # Frontend parseShieldActivity() očekává: "set_box_mode: Home 5"
-                    service_short = running.replace("oig_cloud.", "")
-
-                    # Získáme target hodnotu z pending
-                    pending = getattr(shield, "pending", {})
-                    pending_info = pending.get(running)
-
-                    if pending_info:
-                        entities = pending_info.get("entities", {})
-                        # Vezmeme první expected_value jako target
-                        if entities:
-                            target_value = next(iter(entities.values()), None)
-                            if target_value:
-                                return f"{service_short}: {target_value}"
-
-                    # Fallback - jen název služby
-                    return service_short
-                else:
-                    return translate_shield_state("idle")
+            return _get_shield_state(self._sensor_type, shield)
 
         except Exception as e:
             _LOGGER.error(f"Error getting shield sensor state: {e}")
@@ -232,204 +188,11 @@ class OigCloudShieldSensor(OigCloudSensor):
         try:
             shield = self.hass.data[DOMAIN].get("shield")
             if shield:
-                queue = getattr(shield, "queue", [])
-                running = getattr(shield, "running", None)
-                pending = getattr(shield, "pending", {})
-
-                # Všechny běžící služby (všechno v pending)
-                running_requests = []
-                for svc_name, svc_info in pending.items():
-                    # OPRAVA: Strukturovaný targets output pro Frontend
-                    targets = []
-
-                    for entity_id, expected_value in svc_info.get(
-                        "entities", {}
-                    ).items():
-                        current_state = self.hass.states.get(entity_id)
-                        current_value = (
-                            current_state.state if current_state else "unknown"
-                        )
-                        original_value = svc_info.get("original_states", {}).get(
-                            entity_id, "unknown"
-                        )
-
-                        # Strukturovaný target objekt
-                        targets.append(
-                            {
-                                "param": _extract_param_type(
-                                    entity_id
-                                ),  # "mode", "limit", "level"
-                                "value": expected_value,  # Cílová hodnota (vždy česky ze senzoru)
-                                "entity_id": entity_id,  # Pro identifikaci
-                                "from": original_value,  # Odkud
-                                "to": expected_value,  # Kam (stejné jako value)
-                                "current": current_value,  # Aktuální stav
-                            }
-                        )
-
-                    # Legacy: Zachovat changes pro zpětnou kompatibilitu
-                    changes = []
-                    for target in targets:
-                        # OPRAVA: Pro grid limit potřebujeme více částí entity_id
-                        entity_parts = target["entity_id"].split("_")
-                        if "p_max_feed_grid" in target["entity_id"]:
-                            # Pro grid limit: vezmi posledních 5 částí = "prm1_p_max_feed_grid"
-                            entity_display = "_".join(entity_parts[-5:])
-                        else:
-                            # Pro ostatní: vezmi poslední 2 části
-                            entity_display = (
-                                "_".join(entity_parts[-2:])
-                                if "_" in target["entity_id"]
-                                else target["entity_id"]
-                            )
-
-                        changes.append(
-                            f"{entity_display}: '{target['from']}' → '{target['to']}' (nyní: '{target['current']}')"
-                        )
-
-                    # Description pro frontend parsing (backward compatible)
-                    service_short = svc_name.replace("oig_cloud.", "")
-                    target_value = targets[0]["value"] if targets else None
-                    if target_value:
-                        description = f"{service_short}: {target_value}"
-                    else:
-                        # Fallback pokud není target (např. formating_mode)
-                        description = f"Změna {service_short.replace('_', ' ')}"
-
-                    running_requests.append(
-                        {
-                            "service": service_short,
-                            "description": description,
-                            "targets": targets,  # ← NOVÝ: Strukturovaná data pro Frontend!
-                            "changes": changes,  # ← LEGACY: Zachovat pro kompatibilitu
-                            "started_at": (
-                                svc_info.get("called_at").isoformat()
-                                if svc_info.get("called_at")
-                                else None
-                            ),
-                            "duration_seconds": (
-                                (
-                                    datetime.now() - svc_info.get("called_at")
-                                ).total_seconds()
-                                if svc_info.get("called_at")
-                                else None
-                            ),
-                            "is_primary": svc_name
-                            == running,  # Označíme hlavní běžící službu
-                        }
+                attrs.update(
+                    _build_shield_attrs(
+                        self.hass, shield, sensor_type=self._sensor_type
                     )
-
-                # Čekající ve frontě
-                queue_items = []
-                for i, q in enumerate(queue):
-                    service_name = q[0].replace("oig_cloud.", "")
-                    params = q[1]
-                    expected_entities = q[2]
-
-                    # OPRAVA: Strukturovaný targets output pro Frontend
-                    targets = []
-
-                    for entity_id, expected_value in expected_entities.items():
-                        current_state = self.hass.states.get(entity_id)
-                        current_value = (
-                            current_state.state if current_state else "unknown"
-                        )
-
-                        # Strukturovaný target objekt (pro queue nemáme original_states)
-                        targets.append(
-                            {
-                                "param": _extract_param_type(
-                                    entity_id
-                                ),  # "mode", "limit", "level"
-                                "value": expected_value,  # Cílová hodnota (vždy česky)
-                                "entity_id": entity_id,  # Pro identifikaci
-                                "from": current_value,  # Pro queue = current
-                                "to": expected_value,  # Kam
-                                "current": current_value,  # Aktuální stav
-                            }
-                        )
-
-                    # Legacy: Zachovat changes pro zpětnou kompatibilitu
-                    changes = []
-                    for target in targets:
-                        # OPRAVA: Pro grid limit potřebujeme více částí entity_id
-                        entity_parts = target["entity_id"].split("_")
-                        if "p_max_feed_grid" in target["entity_id"]:
-                            # Pro grid limit: vezmi posledních 5 částí = "prm1_p_max_feed_grid"
-                            entity_display = "_".join(entity_parts[-5:])
-                        else:
-                            # Pro ostatní: vezmi poslední 2 části
-                            entity_display = (
-                                "_".join(entity_parts[-2:])
-                                if "_" in target["entity_id"]
-                                else target["entity_id"]
-                            )
-
-                        changes.append(
-                            f"{entity_display}: '{target['current']}' → '{target['to']}'"
-                        )
-
-                    # Čas zařazení z queue_metadata (nyní slovník s trace_id a queued_at)
-                    queue_meta = getattr(shield, "queue_metadata", {}).get(
-                        (q[0], str(params))
-                    )
-
-                    # Zpětná kompatibilita: queue_meta může být string (starý formát) nebo dict (nový)
-                    if isinstance(queue_meta, dict):
-                        queued_at = queue_meta.get("queued_at")
-                        trace_id = queue_meta.get("trace_id")
-                    else:
-                        # Starý formát - jen trace_id jako string
-                        queued_at = None
-                        trace_id = queue_meta
-
-                    # Vypočítáme duration pokud máme queued_at
-                    duration_seconds = None
-                    if queued_at:
-                        duration_seconds = (datetime.now() - queued_at).total_seconds()
-
-                    # Description pro frontend parsing (backward compatible)
-                    target_value = targets[0]["value"] if targets else None
-                    if target_value:
-                        description = f"{service_name}: {target_value}"
-                    else:
-                        description = f"Změna {service_name.replace('_', ' ')}"
-
-                    queue_items.append(
-                        {
-                            "position": i + 1,
-                            "service": service_name,
-                            "description": description,
-                            "targets": targets,  # ← NOVÝ: Strukturovaná data!
-                            "changes": changes,  # ← LEGACY: Kompatibilita
-                            "queued_at": queued_at.isoformat() if queued_at else None,
-                            "duration_seconds": duration_seconds,
-                            "trace_id": trace_id,
-                            "params": params,
-                        }
-                    )
-
-                base_attrs = {
-                    "total_requests": len(queue) + len(pending),
-                    "running_requests": running_requests,  # Všechny běžící (může být více)
-                    "primary_running": (
-                        running.replace("oig_cloud.", "") if running else None
-                    ),
-                    "queued_requests": queue_items,
-                    "queue_length": len(queue),
-                    "running_count": len(pending),
-                }
-
-                # Speciální atributy pro mode_reaction_time
-                if self._sensor_type == "mode_reaction_time" and shield.mode_tracker:
-                    stats = shield.mode_tracker.get_statistics()
-                    base_attrs["scenarios"] = stats
-                    base_attrs["total_samples"] = sum(
-                        s.get("samples", 0) for s in stats.values()
-                    )
-                    base_attrs["tracked_scenarios"] = len(stats)
-
-                attrs.update(base_attrs)
+                )
 
         except Exception as e:
             _LOGGER.error(f"Error getting shield attributes: {e}")
@@ -484,3 +247,210 @@ class OigCloudShieldSensor(OigCloudSensor):
         # ServiceShield senzory jsou dostupné pokud existuje shield objekt
         shield = self.hass.data[DOMAIN].get("shield")
         return shield is not None
+
+
+def _get_shield_state(sensor_type: str, shield: Any) -> Optional[Union[str, int, datetime]]:
+    if sensor_type == "service_shield_status":
+        return translate_shield_state("active")
+    if sensor_type == "service_shield_queue":
+        queue = getattr(shield, "queue", [])
+        pending = getattr(shield, "pending", {})
+        return len(queue) + len(pending)
+    if sensor_type == "mode_reaction_time":
+        return _compute_mode_reaction_time(shield)
+    if sensor_type == "service_shield_activity":
+        return _compute_shield_activity(shield)
+    return translate_shield_state("unknown")
+
+
+def _compute_mode_reaction_time(shield: Any) -> Optional[float]:
+    if not shield.mode_tracker:
+        return None
+    stats = shield.mode_tracker.get_statistics()
+    if not stats:
+        return None
+    medians = [s["median_seconds"] for s in stats.values() if "median_seconds" in s]
+    if not medians:
+        return None
+    return round(sum(medians) / len(medians), 1)
+
+
+def _compute_shield_activity(shield: Any) -> str:
+    running = getattr(shield, "running", None)
+    if not running:
+        return translate_shield_state("idle")
+
+    service_short = running.replace("oig_cloud.", "")
+    pending = getattr(shield, "pending", {})
+    pending_info = pending.get(running)
+    if pending_info:
+        entities = pending_info.get("entities", {})
+        target_value = next(iter(entities.values()), None) if entities else None
+        if target_value:
+            return f"{service_short}: {target_value}"
+    return service_short
+
+
+def _build_shield_attrs(
+    hass: Any, shield: Any, *, sensor_type: str
+) -> Dict[str, Any]:
+    queue = getattr(shield, "queue", [])
+    running = getattr(shield, "running", None)
+    pending = getattr(shield, "pending", {})
+
+    running_requests = _build_running_requests(hass, pending, running)
+    queue_items = _build_queue_items(hass, queue, getattr(shield, "queue_metadata", {}))
+
+    base_attrs = {
+        "total_requests": len(queue) + len(pending),
+        "running_requests": running_requests,
+        "primary_running": running.replace("oig_cloud.", "") if running else None,
+        "queued_requests": queue_items,
+        "queue_length": len(queue),
+        "running_count": len(pending),
+    }
+
+    if sensor_type == "mode_reaction_time" and shield.mode_tracker:
+        stats = shield.mode_tracker.get_statistics()
+        base_attrs["scenarios"] = stats
+        base_attrs["total_samples"] = sum(
+            s.get("samples", 0) for s in stats.values()
+        )
+        base_attrs["tracked_scenarios"] = len(stats)
+
+    return base_attrs
+
+
+def _build_running_requests(
+    hass: Any, pending: Dict[str, Any], running: Optional[str]
+) -> List[Dict[str, Any]]:
+    running_requests = []
+    for svc_name, svc_info in pending.items():
+        targets = _build_targets(
+            hass,
+            svc_info.get("entities", {}),
+            original_states=svc_info.get("original_states", {}),
+        )
+        changes = _build_changes(targets, include_current=True)
+        service_short = svc_name.replace("oig_cloud.", "")
+        description = _build_description(service_short, targets)
+
+        running_requests.append(
+            {
+                "service": service_short,
+                "description": description,
+                "targets": targets,
+                "changes": changes,
+                "started_at": (
+                    svc_info.get("called_at").isoformat()
+                    if svc_info.get("called_at")
+                    else None
+                ),
+                "duration_seconds": (
+                    (datetime.now() - svc_info.get("called_at")).total_seconds()
+                    if svc_info.get("called_at")
+                    else None
+                ),
+                "is_primary": svc_name == running,
+            }
+        )
+    return running_requests
+
+
+def _build_queue_items(
+    hass: Any, queue: List[Any], queue_metadata: Dict[Any, Any]
+) -> List[Dict[str, Any]]:
+    queue_items = []
+    for i, q in enumerate(queue):
+        service_name = q[0].replace("oig_cloud.", "")
+        params = q[1]
+        expected_entities = q[2]
+        targets = _build_targets(hass, expected_entities, original_states=None)
+        changes = _build_changes(targets, include_current=False)
+
+        queued_at, trace_id = _resolve_queue_meta(queue_metadata, q[0], params)
+        duration_seconds = (
+            (datetime.now() - queued_at).total_seconds() if queued_at else None
+        )
+        description = _build_description(service_name, targets)
+
+        queue_items.append(
+            {
+                "position": i + 1,
+                "service": service_name,
+                "description": description,
+                "targets": targets,
+                "changes": changes,
+                "queued_at": queued_at.isoformat() if queued_at else None,
+                "duration_seconds": duration_seconds,
+                "trace_id": trace_id,
+                "params": params,
+            }
+        )
+    return queue_items
+
+
+def _build_targets(
+    hass: Any,
+    entities: Dict[str, Any],
+    *,
+    original_states: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    targets = []
+    for entity_id, expected_value in entities.items():
+        current_state = hass.states.get(entity_id)
+        current_value = current_state.state if current_state else "unknown"
+        original_value = (
+            original_states.get(entity_id, "unknown") if original_states else current_value
+        )
+        targets.append(
+            {
+                "param": _extract_param_type(entity_id),
+                "value": expected_value,
+                "entity_id": entity_id,
+                "from": original_value,
+                "to": expected_value,
+                "current": current_value,
+            }
+        )
+    return targets
+
+
+def _build_changes(targets: List[Dict[str, Any]], *, include_current: bool) -> List[str]:
+    changes = []
+    for target in targets:
+        entity_display = _format_entity_display(target["entity_id"])
+        if include_current:
+            changes.append(
+                f"{entity_display}: '{target['from']}' → '{target['to']}' (nyní: '{target['current']}')"
+            )
+        else:
+            changes.append(
+                f"{entity_display}: '{target['current']}' → '{target['to']}'"
+            )
+    return changes
+
+
+def _format_entity_display(entity_id: str) -> str:
+    entity_parts = entity_id.split("_")
+    if "p_max_feed_grid" in entity_id:
+        return "_".join(entity_parts[-5:])
+    if "_" in entity_id:
+        return "_".join(entity_parts[-2:])
+    return entity_id
+
+
+def _build_description(service_short: str, targets: List[Dict[str, Any]]) -> str:
+    target_value = targets[0]["value"] if targets else None
+    if target_value:
+        return f"{service_short}: {target_value}"
+    return f"Změna {service_short.replace('_', ' ')}"
+
+
+def _resolve_queue_meta(
+    queue_metadata: Dict[Any, Any], service_name: str, params: Any
+) -> tuple[Optional[datetime], Optional[str]]:
+    queue_meta = queue_metadata.get((service_name, str(params)))
+    if isinstance(queue_meta, dict):
+        return queue_meta.get("queued_at"), queue_meta.get("trace_id")
+    return None, queue_meta

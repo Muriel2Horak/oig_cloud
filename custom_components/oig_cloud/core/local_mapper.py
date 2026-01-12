@@ -171,42 +171,10 @@ def _build_suffix_updates() -> Dict[str, _SuffixConfig]:
         suffix = cfg.get("local_entity_suffix")
         if not isinstance(suffix, str) or not suffix:
             continue
-        entry = raw.setdefault(
-            suffix,
-            {
-                "updates": [],
-                "domains": [],
-                "value_map": None,
-            },
-        )
-
-        domains = _normalize_domains(cfg.get("local_entity_domains"))
-        for domain in domains:
-            if domain not in entry["domains"]:
-                entry["domains"].append(domain)
-
-        value_map = _normalize_value_map(cfg.get("local_value_map"))
-        if value_map:
-            if entry["value_map"] is None:
-                entry["value_map"] = {}
-            entry["value_map"].update(value_map)
-
-        updates: List[LocalUpdate] = entry["updates"]
-
-        node_id = cfg.get("node_id")
-        node_key = cfg.get("node_key")
-        if (
-            isinstance(node_id, str)
-            and isinstance(node_key, str)
-            and node_id
-            and node_key
-        ):
-            updates.append(_NodeUpdate(node_id=node_id, node_key=node_key))
-
-        ext = _EXTENDED_INDEX_BY_SENSOR_TYPE.get(sensor_type)
-        if ext is not None:
-            group, index = ext
-            updates.append(_ExtendedUpdate(group=group, index=index))
+        entry = _get_suffix_entry(raw, suffix)
+        _merge_domains(entry, cfg.get("local_entity_domains"))
+        _merge_value_map(entry, cfg.get("local_value_map"))
+        _append_updates(entry, cfg, sensor_type)
 
     out: Dict[str, _SuffixConfig] = {}
     for suffix, entry in raw.items():
@@ -217,6 +185,57 @@ def _build_suffix_updates() -> Dict[str, _SuffixConfig]:
             value_map=entry["value_map"],
         )
     return out
+
+
+def _get_suffix_entry(raw: Dict[str, Dict[str, Any]], suffix: str) -> Dict[str, Any]:
+    return raw.setdefault(
+        suffix,
+        {
+            "updates": [],
+            "domains": [],
+            "value_map": None,
+        },
+    )
+
+
+def _merge_domains(entry: Dict[str, Any], raw_domains: Any) -> None:
+    domains = _normalize_domains(raw_domains)
+    for domain in domains:
+        if domain not in entry["domains"]:
+            entry["domains"].append(domain)
+
+
+def _merge_value_map(entry: Dict[str, Any], raw_value_map: Any) -> None:
+    value_map = _normalize_value_map(raw_value_map)
+    if not value_map:
+        return
+    if entry["value_map"] is None:
+        entry["value_map"] = {}
+    entry["value_map"].update(value_map)
+
+
+def _append_updates(
+    entry: Dict[str, Any], cfg: Dict[str, Any], sensor_type: str
+) -> None:
+    updates: List[LocalUpdate] = entry["updates"]
+    node_id = cfg.get("node_id")
+    node_key = cfg.get("node_key")
+    if _is_valid_node_pair(node_id, node_key):
+        updates.append(_NodeUpdate(node_id=node_id, node_key=node_key))
+
+    ext = _EXTENDED_INDEX_BY_SENSOR_TYPE.get(sensor_type)
+    if ext is not None:
+        group, index = ext
+        updates.append(_ExtendedUpdate(group=group, index=index))
+
+
+def _is_valid_node_pair(node_id: Any, node_key: Any) -> bool:
+    return (
+        isinstance(node_id, str)
+        and isinstance(node_key, str)
+        and node_id
+        and node_key
+    )
 
 
 _SUFFIX_UPDATES: Dict[str, _SuffixConfig] = _build_suffix_updates()

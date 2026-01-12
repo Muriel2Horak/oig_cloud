@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -762,98 +762,25 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         data_string2: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Zpracuje data z forecast.solar API."""
-        result = {
-            "response_time": datetime.now().isoformat(),
-        }
+        result = {"response_time": datetime.now().isoformat()}
 
-        _LOGGER.info(f"🌞 PROCESS DEBUG: String1 has data: {data_string1 is not None}")
-        _LOGGER.info(f"🌞 PROCESS DEBUG: String2 has data: {data_string2 is not None}")
+        _LOGGER.info("🌞 PROCESS DEBUG: String1 has data: %s", data_string1 is not None)
+        _LOGGER.info("🌞 PROCESS DEBUG: String2 has data: %s", data_string2 is not None)
 
         try:
-            # Inicializace prázdných hodnot
-            total_hourly: Dict[str, float] = {}
-            total_daily: Dict[str, float] = {}
+            string1_data = _extract_string_data(
+                data_string1, self._convert_to_hourly, label="String1"
+            )
+            string2_data = _extract_string_data(
+                data_string2, self._convert_to_hourly, label="String2"
+            )
 
-            # Zpracování String 1 dat (pouze pokud existují)
-            if data_string1 and "result" in data_string1:
-                string1_watts = data_string1.get("result", {}).get("watts", {})
-                string1_wh_day = data_string1.get("result", {}).get(
-                    "watt_hours_day", {}
-                )
+            result.update(_build_string_payload("string1", data_string1, string1_data))
+            result.update(_build_string_payload("string2", data_string2, string2_data))
 
-                _LOGGER.info(
-                    f"🌞 PROCESS DEBUG: String1 watts has {len(string1_watts)} timestamps"
-                )
-
-                # Převod na hodinová data pro String 1
-                string1_hourly = self._convert_to_hourly(string1_watts)
-                string1_daily = {
-                    k: v / 1000 for k, v in string1_wh_day.items()
-                }  # Převod na kWh
-
-                result.update(
-                    {
-                        "string1_hourly": string1_hourly,
-                        "string1_daily": string1_daily,
-                        "string1_today_kwh": next(iter(string1_daily.values()), 0),
-                        "string1_raw_data": data_string1,
-                    }
-                )
-
-                # Inicializace celkových dat s String 1
-                total_hourly = string1_hourly.copy()
-                total_daily = string1_daily.copy()
-            else:
-                # String 1 není nakonfigurován - prázdné hodnoty
-                result.update(
-                    {
-                        "string1_hourly": {},
-                        "string1_daily": {},
-                        "string1_today_kwh": 0,
-                    }
-                )
-
-            # Zpracování String 2 dat (pokud existují)
-            if data_string2 and "result" in data_string2:
-                string2_watts = data_string2.get("result", {}).get("watts", {})
-                string2_wh_day = data_string2.get("result", {}).get(
-                    "watt_hours_day", {}
-                )
-
-                string2_hourly = self._convert_to_hourly(string2_watts)
-                string2_daily = {k: v / 1000 for k, v in string2_wh_day.items()}
-
-                result.update(
-                    {
-                        "string2_hourly": string2_hourly,
-                        "string2_daily": string2_daily,
-                        "string2_today_kwh": next(iter(string2_daily.values()), 0),
-                        "string2_raw_data": data_string2,
-                    }
-                )
-
-                # Pokud nemáme String 1 data, inicializujeme celkové hodnoty s String 2
-                if not total_hourly:
-                    total_hourly = string2_hourly.copy()
-                    total_daily = string2_daily.copy()
-                else:
-                    # Sečtení obou stringů pro celkové hodnoty
-                    for hour, power in string2_hourly.items():
-                        total_hourly[hour] = total_hourly.get(hour, 0) + power
-
-                    for day, energy in string2_daily.items():
-                        total_daily[day] = total_daily.get(day, 0) + energy
-            else:
-                # String 2 není nakonfigurován - prázdné hodnoty
-                result.update(
-                    {
-                        "string2_hourly": {},
-                        "string2_daily": {},
-                        "string2_today_kwh": 0,
-                    }
-                )
-
-            # Celkové hodnoty
+            total_hourly, total_daily = _merge_totals(
+                string1_data, string2_data
+            )
             result.update(
                 {
                     "total_hourly": total_hourly,
@@ -863,13 +790,14 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             )
 
             _LOGGER.debug(
-                f"Processed forecast data: String1 today: {result['string1_today_kwh']:.1f}kWh, "
-                f"String2 today: {result['string2_today_kwh']:.1f}kWh, "
-                f"Total today: {result['total_today_kwh']:.1f}kWh"
+                "Processed forecast data: String1 today: %.1fkWh, String2 today: %.1fkWh, Total today: %.1fkWh",
+                result.get("string1_today_kwh", 0.0),
+                result.get("string2_today_kwh", 0.0),
+                result.get("total_today_kwh", 0.0),
             )
 
         except Exception as e:
-            _LOGGER.error(f"Error processing forecast data: {e}", exc_info=True)
+            _LOGGER.error("Error processing forecast data: %s", e, exc_info=True)
             result["error"] = str(e)
 
         return result
@@ -1060,3 +988,50 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                 tomorrow_sum += power_kw
 
         return today_hours, tomorrow_hours, today_sum, tomorrow_sum
+
+
+def _extract_string_data(
+    data: Optional[Dict[str, Any]],
+    convert_to_hourly: Callable[[Dict[str, float]], Dict[str, float]],
+    *,
+    label: str,
+) -> Dict[str, Dict[str, float]]:
+    if not data or "result" not in data:
+        return {"hourly": {}, "daily": {}}
+    result = data.get("result", {})
+    watts = result.get("watts", {}) or {}
+    wh_day = result.get("watt_hours_day", {}) or {}
+    _LOGGER.info("🌞 PROCESS DEBUG: %s watts has %s timestamps", label, len(watts))
+    hourly = convert_to_hourly(watts)
+    daily = {k: v / 1000 for k, v in wh_day.items()}
+    return {"hourly": hourly, "daily": daily}
+
+
+def _build_string_payload(
+    prefix: str,
+    raw_data: Optional[Dict[str, Any]],
+    string_data: Dict[str, Dict[str, float]],
+) -> Dict[str, Any]:
+    hourly = string_data["hourly"]
+    daily = string_data["daily"]
+    payload = {
+        f"{prefix}_hourly": hourly,
+        f"{prefix}_daily": daily,
+        f"{prefix}_today_kwh": next(iter(daily.values()), 0),
+    }
+    if raw_data is not None:
+        payload[f"{prefix}_raw_data"] = raw_data
+    return payload
+
+
+def _merge_totals(
+    string1_data: Dict[str, Dict[str, float]],
+    string2_data: Dict[str, Dict[str, float]],
+) -> tuple[Dict[str, float], Dict[str, float]]:
+    total_hourly = string1_data["hourly"].copy()
+    total_daily = string1_data["daily"].copy()
+    for hour, power in string2_data["hourly"].items():
+        total_hourly[hour] = total_hourly.get(hour, 0) + power
+    for day, energy in string2_data["daily"].items():
+        total_daily[day] = total_daily.get(day, 0) + energy
+    return total_hourly, total_daily
