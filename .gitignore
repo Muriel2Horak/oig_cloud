@@ -203,6 +203,7 @@ debug_*.sh
 quick_*.sh
 test_*.py
 !tests/test_*.py
+!tests/e2e/test_*.py
 scripts/cleanup_oig_cloud_devices.py
 scripts/cleanup_oig_cloud.sh
 backups/
