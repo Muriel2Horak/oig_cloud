@@ -99,36 +99,24 @@ def plan_charging_intervals(
         eps_kwh=eps_kwh,
     )
 
-    # Final validation: flag infeasible if still under planning minimum.
-    final_trajectory = simulate_trajectory(
+    infeasible_reason = _finalize_infeasible_reason(
         strategy,
         initial_battery_kwh=initial_battery_kwh,
         solar_forecast=solar_forecast,
         consumption_forecast=consumption_forecast,
         charging_intervals=charging_intervals,
+        recovery_index=recovery_index,
+        eps_kwh=eps_kwh,
+        infeasible_reason=infeasible_reason,
     )
-    start_idx = recovery_index + 1 if recovery_index is not None else 0
-    for i in range(start_idx, len(final_trajectory)):
-        if final_trajectory[i] < strategy._planning_min - eps_kwh:
-            if infeasible_reason is None:
-                infeasible_reason = f"Planner could not satisfy planning minimum (first violation at index {i})"
-            break
 
     if not recovery_mode:
-        original_charging = set(charging_intervals)
-        price_band_intervals = extend_ups_blocks_by_price_band(
+        price_band_intervals = _apply_price_band_extension(
             strategy,
-            charging_intervals=original_charging,
+            charging_intervals=charging_intervals,
             prices=prices,
             blocked_indices=blocked_indices,
         )
-        if price_band_intervals:
-            charging_intervals |= price_band_intervals
-            _LOGGER.debug(
-                "Price-band UPS extension added %d intervals (delta=%.1f%%)",
-                len(price_band_intervals),
-                get_price_band_delta_pct(strategy) * 100,
-            )
 
     return charging_intervals, infeasible_reason, price_band_intervals
 
@@ -314,6 +302,60 @@ def _reach_target_soc(
             break
 
         add_ups_interval(candidate)
+
+
+def _finalize_infeasible_reason(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    recovery_index: int,
+    eps_kwh: float,
+    infeasible_reason: Optional[str],
+) -> Optional[str]:
+    final_trajectory = simulate_trajectory(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        charging_intervals=charging_intervals,
+    )
+    start_idx = recovery_index + 1 if recovery_index is not None else 0
+    for i in range(start_idx, len(final_trajectory)):
+        if final_trajectory[i] < strategy._planning_min - eps_kwh:
+            if infeasible_reason is None:
+                infeasible_reason = (
+                    "Planner could not satisfy planning minimum "
+                    f"(first violation at index {i})"
+                )
+            break
+    return infeasible_reason
+
+
+def _apply_price_band_extension(
+    strategy,
+    *,
+    charging_intervals: set[int],
+    prices: List[float],
+    blocked_indices: set[int],
+) -> set[int]:
+    original_charging = set(charging_intervals)
+    price_band_intervals = extend_ups_blocks_by_price_band(
+        strategy,
+        charging_intervals=original_charging,
+        prices=prices,
+        blocked_indices=blocked_indices,
+    )
+    if price_band_intervals:
+        charging_intervals |= price_band_intervals
+        _LOGGER.debug(
+            "Price-band UPS extension added %d intervals (delta=%.1f%%)",
+            len(price_band_intervals),
+            get_price_band_delta_pct(strategy) * 100,
+        )
+    return price_band_intervals
 
 
 def _find_cheapest_candidate(

@@ -92,6 +92,98 @@ def _find_entry_for_box(hass: HomeAssistant, box_id: str) -> Optional[ConfigEntr
     return None
 
 
+async def _load_precomputed_timeline(
+    hass: HomeAssistant, box_id: str
+) -> Optional[Dict[str, Any]]:
+    from homeassistant.helpers.storage import Store
+
+    store: Store = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
+    try:
+        loaded: Optional[Dict[str, Any]] = await store.async_load()
+        return loaded if isinstance(loaded, dict) else None
+    except Exception as storage_error:
+        _LOGGER.warning(
+            "Failed to read precomputed timeline data (fast path): %s",
+            storage_error,
+        )
+        return None
+
+
+def _build_precomputed_response(
+    precomputed_data: Dict[str, Any], timeline_type: str, box_id: str
+) -> Optional[web.Response]:
+    last_update: Optional[str] = (precomputed_data or {}).get("last_update")
+    stored_hybrid: Optional[list[Any]] = (precomputed_data or {}).get("timeline")
+    if not stored_hybrid:
+        stored_hybrid = (precomputed_data or {}).get("timeline_hybrid")
+    if not stored_hybrid:
+        return None
+    metadata = {
+        "box_id": box_id,
+        "last_update": last_update,
+        "points_count": len(stored_hybrid),
+        "size_kb": round(sys.getsizeof(str(stored_hybrid)) / 1024, 1),
+    }
+    response_data = {
+        "plan": "hybrid",
+        "active": stored_hybrid,
+        "timeline": stored_hybrid,
+        "metadata": metadata,
+    }
+    if timeline_type in ("baseline", "both"):
+        response_data["baseline"] = []
+    return web.json_response(response_data)
+
+
+def _find_entity(component: EntityComponent, entity_id: str) -> Optional[Any]:
+    for entity in component.entities:
+        if entity.entity_id == entity_id:
+            return entity
+    return None
+
+
+def _get_sensor_component(hass: HomeAssistant) -> Optional[EntityComponent]:
+    entity_components = hass.data.get("entity_components")
+    if isinstance(entity_components, dict):
+        component = entity_components.get("sensor")
+        if component:
+            return component
+    return hass.data.get("sensor")
+
+
+async def _load_entity_precomputed(entity_obj: Any) -> Optional[Dict[str, Any]]:
+    if not getattr(entity_obj, "_precomputed_store", None):
+        return None
+    try:
+        return await entity_obj._precomputed_store.async_load() or {}
+    except Exception as storage_error:
+        _LOGGER.warning(
+            "Failed to read precomputed timeline data: %s", storage_error
+        )
+        return None
+
+
+def _build_timeline_response(
+    *,
+    timeline_type: str,
+    box_id: str,
+    active_timeline: list[Any],
+    last_update: Any,
+) -> web.Response:
+    response_data: Dict[str, Any] = {}
+    if timeline_type in ("active", "both"):
+        response_data["active"] = active_timeline
+    if timeline_type in ("baseline", "both"):
+        response_data["baseline"] = []
+    response_data["metadata"] = {
+        "box_id": box_id,
+        "last_update": str(last_update) if last_update else None,
+        "points_count": len(active_timeline),
+        "size_kb": round(sys.getsizeof(str(response_data)) / 1024, 1),
+    }
+    return web.json_response(response_data)
+
+
 class OIGCloudBatteryTimelineView(HomeAssistantView):
     """API endpoint for battery forecast timeline data."""
 
@@ -130,46 +222,14 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
         _ = request.query.get("plan", "hybrid").lower()  # legacy (single-planner)
 
         try:
-            # STORAGE-FIRST: Serve from precomputed storage if available (fast path)
-            from homeassistant.helpers.storage import Store
-
-            store: Store = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
-            precomputed_data: Optional[Dict[str, Any]] = None
-            try:
-                loaded: Optional[Dict[str, Any]] = await store.async_load()
-                if isinstance(loaded, dict):
-                    precomputed_data = loaded
-            except Exception as storage_error:
-                _LOGGER.warning(
-                    f"Failed to read precomputed timeline data (fast path): {storage_error}"
-                )
-
+            precomputed_data = await _load_precomputed_timeline(hass, box_id)
             if precomputed_data:
-                last_update: Optional[str] = (precomputed_data or {}).get("last_update")
+                response = _build_precomputed_response(
+                    precomputed_data, timeline_type, box_id
+                )
+                if response is not None:
+                    return response
 
-                stored_hybrid: Optional[list[Any]] = (precomputed_data or {}).get("timeline")  # type: ignore[assignment]
-                if not stored_hybrid:
-                    stored_hybrid = (precomputed_data or {}).get("timeline_hybrid")  # type: ignore[assignment]
-                if stored_hybrid:
-                    metadata = {
-                        "box_id": box_id,
-                        "last_update": last_update,
-                        "points_count": len(stored_hybrid),
-                        "size_kb": round(sys.getsizeof(str(stored_hybrid)) / 1024, 1),
-                    }
-                    # Return in the same shape as the live path so the dashboard
-                    # can always consume `active` (and keep `timeline` for backward compatibility).
-                    response_data = {
-                        "plan": "hybrid",
-                        "active": stored_hybrid,
-                        "timeline": stored_hybrid,
-                        "metadata": metadata,
-                    }
-                    if timeline_type in ("baseline", "both"):
-                        response_data["baseline"] = []  # baseline removed
-                    return web.json_response(response_data)
-
-            # FALLBACK: Find sensor entity and attempt to serve from its data
             sensor_id = f"sensor.oig_{box_id}_battery_forecast"
             component: EntityComponent = hass.data.get("sensor")  # type: ignore
 
@@ -179,39 +239,19 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
                     status=503,
                 )
 
-            # Find entity by entity_id
-            entity_obj = None
-            for entity in component.entities:
-                if entity.entity_id == sensor_id:
-                    entity_obj = entity
-                    break
-
+            entity_obj = _find_entity(component, sensor_id)
             if not entity_obj:
                 return web.json_response(
                     {"error": f"Sensor {sensor_id} not found and no precomputed data"},
                     status=503,
                 )
 
-            # Attempt reading precomputed from entity (secondary path)
-            precomputed_data = None
-            if hasattr(entity_obj, "_precomputed_store") and getattr(
-                entity_obj, "_precomputed_store"
-            ):
-                try:
-                    precomputed_data = (
-                        await entity_obj._precomputed_store.async_load() or {}
-                    )
-                except Exception as storage_error:
-                    _LOGGER.warning(
-                        f"Failed to read precomputed timeline data: {storage_error}"
-                    )
-
-            # Get timeline data from storage or sensor's internal variables
+            entity_precomputed = await _load_entity_precomputed(entity_obj)
             stored_active = None
-            if precomputed_data:
-                stored_active = precomputed_data.get(
+            if entity_precomputed:
+                stored_active = entity_precomputed.get(
                     "timeline"
-                ) or precomputed_data.get("timeline_hybrid")
+                ) or entity_precomputed.get("timeline_hybrid")
                 if stored_active:
                     _LOGGER.debug(
                         "API: Serving hybrid timeline from precomputed storage for %s",
@@ -220,36 +260,25 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
 
             active_timeline = stored_active or getattr(entity_obj, "_timeline_data", [])
             last_update = getattr(entity_obj, "_last_update", None)
-            if stored_active and precomputed_data:
-                last_update = precomputed_data.get("last_update", last_update)
-
-            # Build response based on requested type
-            response_data: Dict[str, Any] = {}
-
-            if timeline_type in ("active", "both"):
-                response_data["active"] = active_timeline
-
-            if timeline_type in ("baseline", "both"):
-                response_data["baseline"] = []  # baseline removed
-
-            # Add metadata
-            response_data["metadata"] = {
-                "box_id": box_id,
-                "last_update": str(last_update) if last_update else None,
-                "points_count": len(active_timeline),
-                "size_kb": round(sys.getsizeof(str(response_data)) / 1024, 1),
-            }
+            if stored_active and entity_precomputed:
+                last_update = entity_precomputed.get("last_update", last_update)
 
             _LOGGER.debug(
-                f"API: Serving battery timeline for {box_id}, "
-                f"type={timeline_type}, points={len(active_timeline)}"
+                "API: Serving battery timeline for %s, type=%s, points=%s",
+                box_id,
+                timeline_type,
+                len(active_timeline),
+            )
+            return _build_timeline_response(
+                timeline_type=timeline_type,
+                box_id=box_id,
+                active_timeline=active_timeline,
+                last_update=last_update,
             )
 
-            return web.json_response(response_data)
-
-        except Exception as e:
-            _LOGGER.error(f"Error serving battery timeline API: {e}")
-            return web.json_response({"error": str(e)}, status=500)
+        except Exception as err:
+            _LOGGER.error("Error serving battery timeline API: %s", err)
+            return web.json_response({"error": str(err)}, status=500)
 
 
 class OIGCloudSpotPricesView(HomeAssistantView):
@@ -306,19 +335,14 @@ class OIGCloudSpotPricesView(HomeAssistantView):
                     status=400,
                 )
 
-            component: EntityComponent = hass.data.get("sensor")  # type: ignore
+            component = _get_sensor_component(hass)
 
             if not component:
                 return web.json_response(
                     {"error": SENSOR_COMPONENT_NOT_FOUND}, status=500
                 )
 
-            # Find entity
-            entity_obj = None
-            for entity in component.entities:
-                if entity.entity_id == sensor_id:
-                    entity_obj = entity
-                    break
+            entity_obj = _find_entity(component, sensor_id)
 
             if not entity_obj:
                 return web.json_response(
@@ -398,19 +422,14 @@ class OIGCloudAnalyticsView(HomeAssistantView):
         try:
             # Find analytics sensor
             sensor_id = f"sensor.oig_{box_id}_hourly_analytics"
-            component: EntityComponent = hass.data.get("sensor")  # type: ignore
+            component = _get_sensor_component(hass)
 
             if not component:
                 return web.json_response(
                     {"error": SENSOR_COMPONENT_NOT_FOUND}, status=500
                 )
 
-            # Find entity
-            entity_obj = None
-            for entity in component.entities:
-                if entity.entity_id == sensor_id:
-                    entity_obj = entity
-                    break
+            entity_obj = _find_entity(component, sensor_id)
 
             if not entity_obj:
                 return web.json_response(
@@ -482,19 +501,14 @@ class OIGCloudConsumptionProfilesView(HomeAssistantView):
         try:
             # Find sensor entity
             sensor_id = f"sensor.oig_{box_id}_adaptive_load_profiles"
-            component: EntityComponent = hass.data.get("sensor")  # type: ignore
+            component = _get_sensor_component(hass)
 
             if not component:
                 return web.json_response(
                     {"error": SENSOR_COMPONENT_NOT_FOUND}, status=500
                 )
 
-            # Find entity by entity_id
-            entity_obj = None
-            for entity in component.entities:
-                if entity.entity_id == sensor_id:
-                    entity_obj = entity
-                    break
+            entity_obj = _find_entity(component, sensor_id)
 
             if not entity_obj:
                 return web.json_response(
@@ -562,19 +576,14 @@ class OIGCloudBalancingDecisionsView(HomeAssistantView):
         try:
             # Find battery_balancing sensor entity
             entity_id = f"sensor.oig_{box_id}_battery_balancing"
-            entity_component: EntityComponent = self.hass.data.get("entity_components", {}).get("sensor")  # type: ignore
+            entity_component = _get_sensor_component(self.hass)
 
             if not entity_component:
                 return web.json_response(
                     {"error": SENSOR_COMPONENT_NOT_FOUND}, status=404
                 )
 
-            # Get entity object
-            entity_obj = None
-            for entity in entity_component.entities:
-                if entity.entity_id == entity_id:
-                    entity_obj = entity
-                    break
+            entity_obj = _find_entity(entity_component, entity_id)
 
             if not entity_obj:
                 return web.json_response(
@@ -701,7 +710,7 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
             # Fallback: If no precomputed data, try to build on-demand (slow)
             # Find sensor entity
             sensor_id = f"sensor.oig_{box_id}_battery_forecast"
-            component: EntityComponent = hass.data.get("sensor")  # type: ignore
+            component = _get_sensor_component(hass)
 
             if not component:
                 return web.json_response(
@@ -711,11 +720,7 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
                     status=503,
                 )
 
-            entity_obj = None
-            for entity in component.entities:
-                if entity.entity_id == sensor_id:
-                    entity_obj = entity
-                    break
+            entity_obj = _find_entity(component, sensor_id)
 
             if not entity_obj:
                 return web.json_response(
@@ -874,25 +879,14 @@ class OIGCloudDetailTabsView(HomeAssistantView):
 
             # FALLBACK: Find sensor entity
             sensor_id = f"sensor.oig_{box_id}_battery_forecast"
-            component: Optional[EntityComponent] = (
-                hass.data.get("entity_components", {}).get("sensor")  # type: ignore[assignment]
-                if isinstance(hass.data.get("entity_components"), dict)
-                else None
-            )
-            if component is None:
-                component = hass.data.get("sensor")  # type: ignore[assignment]
+            component = _get_sensor_component(hass)
 
             if not component:
                 return web.json_response(
                     {"error": SENSOR_COMPONENT_NOT_FOUND}, status=503
                 )
 
-            # Find entity by entity_id
-            entity_obj = None
-            for entity in component.entities:
-                if entity.entity_id == sensor_id:
-                    entity_obj = entity
-                    break
+            entity_obj = _find_entity(component, sensor_id)
 
             if not entity_obj:
                 return web.json_response(

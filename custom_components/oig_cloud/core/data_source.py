@@ -156,38 +156,49 @@ def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
     if value in (None, "", "unknown", "unavailable"):
         return None
     if isinstance(value, (int, float)):
+        return _parse_timestamp(value)
+    if isinstance(value, dt_util.dt.datetime):
+        return _normalize_datetime(value)
+    if isinstance(value, str):
+        return _parse_datetime_str(value)
+    return None
+
+
+def _parse_timestamp(value: float | int) -> Optional[dt_util.dt.datetime]:
+    try:
         ts = float(value)
-        if ts > 1_000_000_000_000:  # ms epoch
-            ts = ts / 1000.0
+    except (TypeError, ValueError):
+        return None
+    if ts > 1_000_000_000_000:  # ms epoch
+        ts = ts / 1000.0
+    try:
+        return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
+    except Exception:
+        return None
+
+
+def _normalize_datetime(value: dt_util.dt.datetime) -> dt_util.dt.datetime:
+    return dt_util.as_utc(value) if value.tzinfo else value.replace(tzinfo=dt_util.UTC)
+
+
+def _parse_datetime_str(value: str) -> Optional[dt_util.dt.datetime]:
+    value = value.strip()
+    if value.isdigit():
         try:
-            return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
+            return _parse_timestamp(float(value))
+        except Exception as err:
+            _LOGGER.debug("Failed to parse numeric timestamp '%s': %s", value, err)
+            return None
+    dt = dt_util.parse_datetime(value)
+    if dt is None:
+        try:
+            dt = dt_util.dt.datetime.fromisoformat(value)
         except Exception:
             return None
-    if isinstance(value, dt_util.dt.datetime):
-        return (
-            dt_util.as_utc(value) if value.tzinfo else value.replace(tzinfo=dt_util.UTC)
-        )
-    if isinstance(value, str):
-        value = value.strip()
-        if value.isdigit():
-            try:
-                ts = float(value)
-                if ts > 1_000_000_000_000:  # ms epoch
-                    ts = ts / 1000.0
-                return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
-            except Exception as err:
-                _LOGGER.debug("Failed to parse numeric timestamp '%s': %s", value, err)
-        dt = dt_util.parse_datetime(value)
-        if dt is None:
-            try:
-                dt = dt_util.dt.datetime.fromisoformat(value)
-            except Exception:
-                return None
-        if dt.tzinfo is None:
-            # Proxy často posílá lokální čas bez timezone → interpretuj jako lokální TZ HA, ne UTC.
-            dt = dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
-        return dt_util.as_utc(dt)
-    return None
+    if dt.tzinfo is None:
+        # Proxy často posílá lokální čas bez timezone → interpretuj jako lokální TZ HA, ne UTC.
+        dt = dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return dt_util.as_utc(dt)
 
 
 def _coerce_box_id(value: Any) -> Optional[str]:

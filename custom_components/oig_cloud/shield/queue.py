@@ -266,181 +266,7 @@ async def check_loop(shield: Any, _now: datetime) -> None:  # noqa: C901
 
         for service_name, info in shield.pending.items():
             _LOGGER.debug("[OIG Shield] Kontroluji pending službu: %s", service_name)
-
-            timeout_minutes = _get_timeout_minutes(service_name)
-
-            if datetime.now() - info["called_at"] > timedelta(minutes=timeout_minutes):
-                await _handle_timeout(shield, service_name, info)
-                finished.append(service_name)
-                continue
-
-            power_completed = False
-            power_monitor = info.get("power_monitor")
-            if power_monitor:
-                current_power = _get_power_monitor_state(shield, power_monitor)
-                if current_power is not None:
-                    try:
-                        last_power = power_monitor["last_power"]
-                        is_going_to_home_ups = power_monitor["is_going_to_home_ups"]
-                        threshold_w = power_monitor["threshold_kw"] * 1000
-
-                        power_delta = current_power - last_power
-
-                        _LOGGER.info(
-                            "[OIG Shield] Power monitor check: current=%sW, last=%sW, delta=%sW, threshold=±%sW, going_to_ups=%s",
-                            current_power,
-                            last_power,
-                            power_delta,
-                            threshold_w,
-                            is_going_to_home_ups,
-                        )
-
-                        power_monitor["last_power"] = current_power
-
-                        if is_going_to_home_ups and power_delta >= threshold_w:
-                            _LOGGER.info(
-                                "[OIG Shield] ✅ POWER JUMP DETECTED! Nárůst %sW (>= %sW) → HOME UPS aktivní",
-                                power_delta,
-                                threshold_w,
-                            )
-                            power_completed = True
-                        elif not is_going_to_home_ups and power_delta <= -threshold_w:
-                            _LOGGER.info(
-                                "[OIG Shield] ✅ POWER DROP DETECTED! Pokles %sW (<= -%sW) → HOME UPS vypnutý",
-                                power_delta,
-                                threshold_w,
-                            )
-                            power_completed = True
-                    except (ValueError, TypeError) as err:
-                        _LOGGER.warning(
-                            "[OIG Shield] Chyba při parsování power hodnoty: %s", err
-                        )
-
-            if power_completed:
-                _LOGGER.info(
-                    "[SHIELD CHECK] ✅✅✅ Služba %s dokončena pomocí POWER MONITOR!",
-                    service_name,
-                )
-                await shield._log_event(
-                    "completed",
-                    service_name,
-                    {
-                        "params": info["params"],
-                        "entities": info["entities"],
-                        "original_states": info.get("original_states", {}),
-                    },
-                    reason="Detekován skok výkonu (power monitor)",
-                )
-                await shield._log_telemetry(
-                    "completed",
-                    service_name,
-                    {
-                        "params": info["params"],
-                        "entities": info["entities"],
-                        "completion_method": "power_monitor",
-                    },
-                )
-                await shield._log_event(
-                    "released",
-                    service_name,
-                    {
-                        "params": info["params"],
-                        "entities": info["entities"],
-                        "original_states": info.get("original_states", {}),
-                    },
-                    reason="Semafor uvolněn – služba dokončena (power monitor)",
-                )
-                finished.append(service_name)
-                continue
-
-            all_ok = True
-            _LOGGER.info(
-                "[SHIELD CHECK] Služba: %s, entities: %s",
-                service_name,
-                info["entities"],
-            )
-            for entity_id, expected_value in info["entities"].items():
-                if entity_id.startswith("fake_formating_mode_"):
-                    all_ok = False
-                    _LOGGER.debug(
-                        "[OIG Shield] Formating mode - čekám na timeout (zbývá %.1f min)",
-                        timeout_minutes
-                        - (datetime.now() - info["called_at"]).total_seconds() / 60,
-                    )
-                    break
-
-                state = shield.hass.states.get(entity_id)
-                current_value = state.state if state else None
-
-                if entity_id and entity_id.endswith("_invertor_prm1_p_max_feed_grid"):
-                    try:
-                        norm_expected = str(round(float(expected_value)))
-                        norm_current = str(round(float(current_value)))
-                    except (ValueError, TypeError):
-                        norm_expected = str(expected_value)
-                        norm_current = str(current_value or "")
-                elif entity_id and entity_id.endswith("_invertor_prms_to_grid"):
-                    norm_expected = shield._normalize_value(expected_value)
-                    norm_current = shield._normalize_value(current_value)
-                    if (
-                        entity_id.startswith("binary_sensor.")
-                        and norm_expected == "omezeno"
-                    ):
-                        norm_expected = "zapnuto"
-                else:
-                    norm_expected = shield._normalize_value(expected_value)
-                    norm_current = shield._normalize_value(current_value)
-
-                _LOGGER.info(
-                    "[SHIELD CHECK] Kontrola %s: aktuální='%s', očekávaná='%s' (normalizace: '%s' vs '%s') → MATCH: %s",
-                    entity_id,
-                    current_value,
-                    expected_value,
-                    norm_current,
-                    norm_expected,
-                    norm_current == norm_expected,
-                )
-
-                if norm_current != norm_expected:
-                    all_ok = False
-                    _LOGGER.debug(
-                        "[SHIELD CHECK] ❌ Entity %s NENÍ v požadovaném stavu! Očekáváno '%s', je '%s'",
-                        entity_id,
-                        norm_expected,
-                        norm_current,
-                    )
-                    break
-
-            if all_ok:
-                _LOGGER.info(
-                    "[SHIELD CHECK] ✅ Service %s completed - all entities match",
-                    service_name,
-                )
-                await shield._log_event(
-                    "completed",
-                    service_name,
-                    {
-                        "params": info["params"],
-                        "entities": info["entities"],
-                        "original_states": info.get("original_states", {}),
-                    },
-                    reason="Všechny entity mají očekávané hodnoty",
-                )
-                await shield._log_telemetry(
-                    "completed",
-                    service_name,
-                    {"params": info["params"], "entities": info["entities"]},
-                )
-                await shield._log_event(
-                    "released",
-                    service_name,
-                    {
-                        "params": info["params"],
-                        "entities": info["entities"],
-                        "original_states": info.get("original_states", {}),
-                    },
-                    reason="Semafor uvolněn – služba dokončena",
-                )
+            if await _process_pending_service(shield, service_name, info):
                 finished.append(service_name)
 
         for service_name in finished:
@@ -475,6 +301,216 @@ async def check_loop(shield: Any, _now: datetime) -> None:  # noqa: C901
 
     finally:
         shield._is_checking = False
+
+
+async def _process_pending_service(
+    shield: Any, service_name: str, info: Dict[str, Any]
+) -> bool:
+    timeout_minutes = _get_timeout_minutes(service_name)
+
+    if datetime.now() - info["called_at"] > timedelta(minutes=timeout_minutes):
+        await _handle_timeout(shield, service_name, info)
+        return True
+
+    if _check_power_monitor(shield, info):
+        await _handle_power_monitor_completion(shield, service_name, info)
+        return True
+
+    if _entities_match(shield, service_name, info, timeout_minutes):
+        await _handle_entity_completion(shield, service_name, info)
+        return True
+
+    return False
+
+
+def _check_power_monitor(shield: Any, info: Dict[str, Any]) -> bool:
+    power_monitor = info.get("power_monitor")
+    if not power_monitor:
+        return False
+
+    current_power = _get_power_monitor_state(shield, power_monitor)
+    if current_power is None:
+        return False
+
+    try:
+        last_power = power_monitor["last_power"]
+        is_going_to_home_ups = power_monitor["is_going_to_home_ups"]
+        threshold_w = power_monitor["threshold_kw"] * 1000
+        power_delta = current_power - last_power
+
+        _LOGGER.info(
+            "[OIG Shield] Power monitor check: current=%sW, last=%sW, delta=%sW, threshold=±%sW, going_to_ups=%s",
+            current_power,
+            last_power,
+            power_delta,
+            threshold_w,
+            is_going_to_home_ups,
+        )
+
+        power_monitor["last_power"] = current_power
+
+        if is_going_to_home_ups and power_delta >= threshold_w:
+            _LOGGER.info(
+                "[OIG Shield] ✅ POWER JUMP DETECTED! Nárůst %sW (>= %sW) → HOME UPS aktivní",
+                power_delta,
+                threshold_w,
+            )
+            return True
+
+        if not is_going_to_home_ups and power_delta <= -threshold_w:
+            _LOGGER.info(
+                "[OIG Shield] ✅ POWER DROP DETECTED! Pokles %sW (<= -%sW) → HOME UPS vypnutý",
+                power_delta,
+                threshold_w,
+            )
+            return True
+
+    except (ValueError, TypeError) as err:
+        _LOGGER.warning("[OIG Shield] Chyba při parsování power hodnoty: %s", err)
+
+    return False
+
+
+async def _handle_power_monitor_completion(
+    shield: Any, service_name: str, info: Dict[str, Any]
+) -> None:
+    _LOGGER.info(
+        "[SHIELD CHECK] ✅✅✅ Služba %s dokončena pomocí POWER MONITOR!", service_name
+    )
+    await shield._log_event(
+        "completed",
+        service_name,
+        {
+            "params": info["params"],
+            "entities": info["entities"],
+            "original_states": info.get("original_states", {}),
+        },
+        reason="Detekován skok výkonu (power monitor)",
+    )
+    await shield._log_telemetry(
+        "completed",
+        service_name,
+        {
+            "params": info["params"],
+            "entities": info["entities"],
+            "completion_method": "power_monitor",
+        },
+    )
+    await shield._log_event(
+        "released",
+        service_name,
+        {
+            "params": info["params"],
+            "entities": info["entities"],
+            "original_states": info.get("original_states", {}),
+        },
+        reason="Semafor uvolněn – služba dokončena (power monitor)",
+    )
+
+
+def _entities_match(
+    shield: Any, service_name: str, info: Dict[str, Any], timeout_minutes: int
+) -> bool:
+    _LOGGER.info(
+        "[SHIELD CHECK] Služba: %s, entities: %s",
+        service_name,
+        info["entities"],
+    )
+
+    for entity_id, expected_value in info["entities"].items():
+        if entity_id.startswith("fake_formating_mode_"):
+            _LOGGER.debug(
+                "[OIG Shield] Formating mode - čekám na timeout (zbývá %.1f min)",
+                timeout_minutes
+                - (datetime.now() - info["called_at"]).total_seconds() / 60,
+            )
+            return False
+
+        state = shield.hass.states.get(entity_id)
+        current_value = state.state if state else None
+
+        norm_expected, norm_current = _normalize_entity_values(
+            shield, entity_id, expected_value, current_value
+        )
+
+        _LOGGER.info(
+            "[SHIELD CHECK] Kontrola %s: aktuální='%s', očekávaná='%s' (normalizace: '%s' vs '%s') → MATCH: %s",
+            entity_id,
+            current_value,
+            expected_value,
+            norm_current,
+            norm_expected,
+            norm_current == norm_expected,
+        )
+
+        if norm_current != norm_expected:
+            _LOGGER.debug(
+                "[SHIELD CHECK] ❌ Entity %s NENÍ v požadovaném stavu! Očekáváno '%s', je '%s'",
+                entity_id,
+                norm_expected,
+                norm_current,
+            )
+            return False
+
+    return True
+
+
+def _normalize_entity_values(
+    shield: Any,
+    entity_id: str,
+    expected_value: Any,
+    current_value: Any,
+) -> tuple[str, str]:
+    if entity_id and entity_id.endswith("_invertor_prm1_p_max_feed_grid"):
+        try:
+            return (
+                str(round(float(expected_value))),
+                str(round(float(current_value))),
+            )
+        except (ValueError, TypeError):
+            return (str(expected_value), str(current_value or ""))
+
+    norm_expected = shield._normalize_value(expected_value)
+    norm_current = shield._normalize_value(current_value)
+
+    if entity_id and entity_id.endswith("_invertor_prms_to_grid"):
+        if entity_id.startswith("binary_sensor.") and norm_expected == "omezeno":
+            norm_expected = "zapnuto"
+
+    return norm_expected, norm_current
+
+
+async def _handle_entity_completion(
+    shield: Any, service_name: str, info: Dict[str, Any]
+) -> None:
+    _LOGGER.info(
+        "[SHIELD CHECK] ✅ Service %s completed - all entities match", service_name
+    )
+    await shield._log_event(
+        "completed",
+        service_name,
+        {
+            "params": info["params"],
+            "entities": info["entities"],
+            "original_states": info.get("original_states", {}),
+        },
+        reason="Všechny entity mají očekávané hodnoty",
+    )
+    await shield._log_telemetry(
+        "completed",
+        service_name,
+        {"params": info["params"], "entities": info["entities"]},
+    )
+    await shield._log_event(
+        "released",
+        service_name,
+        {
+            "params": info["params"],
+            "entities": info["entities"],
+            "original_states": info.get("original_states", {}),
+        },
+        reason="Semafor uvolněn – služba dokončena",
+    )
 
 
 def start_monitoring_task(

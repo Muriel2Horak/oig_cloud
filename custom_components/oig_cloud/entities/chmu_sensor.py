@@ -16,6 +16,7 @@ from .base_sensor import OigCloudSensor
 _LOGGER = logging.getLogger(__name__)
 
 CHMU_CAP_FEED_SOURCE = "ČHMÚ CAP Feed"
+CHMU_NONE_LABEL = "Žádné"
 
 
 class OigCloudChmuSensor(OigCloudSensor):
@@ -415,8 +416,8 @@ class OigCloudChmuSensor(OigCloudSensor):
 
             attrs = {
                 # Hlavní informace z nejdůležitějšího varování (TOP priority)
-                "event_type": top_warning.get("event", "Žádné"),
-                "severity": top_warning.get("severity", "Žádné"),
+                "event_type": top_warning.get("event", CHMU_NONE_LABEL),
+                "severity": top_warning.get("severity", CHMU_NONE_LABEL),
                 "onset": top_warning.get("onset"),  # Začátek TOP varování
                 "expires": top_warning.get("expires"),  # Konec TOP varování
                 "eta_hours": top_warning.get("eta_hours", 0),
@@ -434,8 +435,8 @@ class OigCloudChmuSensor(OigCloudSensor):
         else:
             # Žádné lokální varování
             attrs = {
-                "event_type": "Žádné",
-                "severity": "Žádné",
+                "event_type": CHMU_NONE_LABEL,
+                "severity": CHMU_NONE_LABEL,
                 "onset": None,
                 "expires": None,
                 "eta_hours": 0,

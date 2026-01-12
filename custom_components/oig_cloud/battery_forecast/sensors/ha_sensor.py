@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .. import storage as plan_storage_module
 from .. import task_utils as task_utils_module
@@ -63,6 +64,78 @@ MODE_GUARD_MINUTES = 60
 # Debug options - Phase 1.5: API Optimization
 # Set to False for LEAN attributes (96% memory reduction)
 DEBUG_EXPOSE_BASELINE_TIMELINE = False  # Expose baseline timeline in sensor attributes
+
+
+def _plan_get_value(obj: Any, key: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _parse_plan_ts(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(value))
+    except Exception:
+        return None
+    return dt_util.as_local(ts)
+
+
+def _build_spot_index(
+    spot_prices: List[Dict[str, Any]]
+) -> tuple[List[Optional[datetime]], Dict[int, int]]:
+    spot_times: List[Optional[datetime]] = []
+    index_by_minute: Dict[int, int] = {}
+    for idx, sp in enumerate(spot_prices):
+        ts = _parse_plan_ts(sp.get("time"))
+        spot_times.append(ts)
+        if ts:
+            index_by_minute[int(ts.timestamp() // 60)] = idx
+    return spot_times, index_by_minute
+
+
+def _normalize_plan_intervals(plan: Any) -> List[Dict[str, Any]]:
+    intervals = _plan_get_value(plan, "intervals", None)
+    if intervals:
+        return intervals
+    legacy = _plan_get_value(plan, "charging_intervals", []) or []
+    return [{"ts": ts, "mode": CBB_MODE_HOME_UPS} for ts in legacy]
+
+
+def _collect_mode_overrides(
+    intervals: List[Any], index_by_minute: Dict[int, int]
+) -> tuple[set[int], Dict[int, int]]:
+    charging_intervals: set[int] = set()
+    mode_overrides: Dict[int, int] = {}
+    for interval in intervals:
+        ts_raw = interval.get("ts") if isinstance(interval, dict) else getattr(interval, "ts", None)
+        mode_raw = interval.get("mode") if isinstance(interval, dict) else getattr(interval, "mode", None)
+        ts = _parse_plan_ts(ts_raw)
+        if ts is None or mode_raw is None:
+            continue
+        idx = index_by_minute.get(int(ts.timestamp() // 60))
+        if idx is None:
+            continue
+        mode = int(mode_raw)
+        mode_overrides[idx] = mode
+        if mode == CBB_MODE_HOME_UPS:
+            charging_intervals.add(idx)
+    return charging_intervals, mode_overrides
+
+
+def _collect_holding_intervals(
+    plan: Any, spot_times: List[Optional[datetime]]
+) -> set[int]:
+    holding_intervals: set[int] = set()
+    holding_start = _parse_plan_ts(_plan_get_value(plan, "holding_start"))
+    holding_end = _parse_plan_ts(_plan_get_value(plan, "holding_end"))
+    if not (holding_start and holding_end):
+        return holding_intervals
+    for idx, ts in enumerate(spot_times):
+        if ts and holding_start <= ts < holding_end:
+            holding_intervals.add(idx)
+    return holding_intervals
 
 
 class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
@@ -617,78 +690,18 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             return None
 
         try:
-            from datetime import datetime
-
-            from homeassistant.util import dt as dt_util
-
             from ..strategy.balancing import StrategyBalancingPlan
 
-            def _get_plan_value(obj: Any, key: str, default: Any = None) -> Any:
-                if isinstance(obj, dict):
-                    return obj.get(key, default)
-                return getattr(obj, key, default)
-
-            def _parse_ts(value: Any) -> Optional[datetime]:
-                if not value:
-                    return None
-                try:
-                    ts = datetime.fromisoformat(str(value))
-                except Exception:
-                    return None
-                return dt_util.as_local(ts)
-
-            spot_times: List[Optional[datetime]] = []
-            index_by_minute: Dict[int, int] = {}
-            for idx, sp in enumerate(spot_prices):
-                ts = _parse_ts(sp.get("time"))
-                spot_times.append(ts)
-                if ts:
-                    index_by_minute[int(ts.timestamp() // 60)] = idx
-
-            def _find_index(ts: datetime) -> Optional[int]:
-                return index_by_minute.get(int(ts.timestamp() // 60))
-
-            is_active = bool(_get_plan_value(plan, "active", True))
+            is_active = bool(_plan_get_value(plan, "active", True))
             if not is_active:
                 return None
 
-            charging_intervals: set[int] = set()
-            holding_intervals: set[int] = set()
-            mode_overrides: Dict[int, int] = {}
-
-            intervals = _get_plan_value(plan, "intervals", None)
-            if not intervals:
-                legacy = _get_plan_value(plan, "charging_intervals", []) or []
-                intervals = [{"ts": ts, "mode": CBB_MODE_HOME_UPS} for ts in legacy]
-
-            for interval in intervals:
-                ts_raw = (
-                    interval.get("ts")
-                    if isinstance(interval, dict)
-                    else getattr(interval, "ts", None)
-                )
-                mode_raw = (
-                    interval.get("mode")
-                    if isinstance(interval, dict)
-                    else getattr(interval, "mode", None)
-                )
-                ts = _parse_ts(ts_raw)
-                if ts is None or mode_raw is None:
-                    continue
-                idx = _find_index(ts)
-                if idx is None:
-                    continue
-                mode = int(mode_raw)
-                mode_overrides[idx] = mode
-                if mode == CBB_MODE_HOME_UPS:
-                    charging_intervals.add(idx)
-
-            holding_start = _parse_ts(_get_plan_value(plan, "holding_start"))
-            holding_end = _parse_ts(_get_plan_value(plan, "holding_end"))
-            if holding_start and holding_end:
-                for idx, ts in enumerate(spot_times):
-                    if ts and holding_start <= ts < holding_end:
-                        holding_intervals.add(idx)
+            spot_times, index_by_minute = _build_spot_index(spot_prices)
+            intervals = _normalize_plan_intervals(plan)
+            charging_intervals, mode_overrides = _collect_mode_overrides(
+                intervals, index_by_minute
+            )
+            holding_intervals = _collect_holding_intervals(plan, spot_times)
 
             return StrategyBalancingPlan(
                 charging_intervals=charging_intervals,

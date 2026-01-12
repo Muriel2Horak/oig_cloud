@@ -316,48 +316,11 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
     def _update_extra_state_attributes(self) -> None:
         """Update extra state attributes with current data."""
         now = datetime.now()
+        self._ensure_history_task()
 
-        # Pokud nemáme kompletní data za minulý měsíc (chybí kWh hodnoty), zkusit načíst z historie
-        # Kontrolujeme charge_kwh protože to je klíčová hodnota pro zobrazení v dashboardu
-        # A ZÁROVEŇ kontrolujeme flag aby se načítání neopakovalo
-        if (
-            not self._last_month_data or not self._last_month_data.get("charge_kwh")
-        ) and not self._loading_history:
-            # Nastavit flag aby se loading neopakoval
-            self._loading_history = True
-            # Asynchronně spustit načtení (ale nevyčkávat na výsledek)
-            self.hass.async_create_task(self._try_load_last_month_from_history())
-
-        # Průběžná data tohoto měsíce
-        current_efficiency = self._current_month_partial.get("efficiency")
-        current_charge = self._current_month_partial.get("charge")
-        current_discharge = self._current_month_partial.get("discharge")
-        current_delta = self._current_month_partial.get("delta")
-        current_effective_discharge = self._current_month_partial.get(
-            "effective_discharge"
-        )
-
-        # Výpočet ztrát pro aktuální měsíc
-        current_losses_kwh = None
-        current_losses_pct = None
-        if current_charge and current_effective_discharge:
-            current_losses_kwh = round(current_charge - current_effective_discharge, 2)
-            current_losses_pct = round((current_losses_kwh / current_charge) * 100, 1)
-
-        # Výpočet ztrát pro minulý měsíc (z uložených dat nebo z efficiency)
-        last_month_losses_kwh = self._last_month_data.get("losses_kwh")
-        last_month_losses_pct = self._last_month_data.get("losses_pct")
-        if last_month_losses_pct is None and self._efficiency_last_month is not None:
-            # Fallback pokud nemáme uložená data (starší verze)
-            last_month_losses_pct = round(100 - self._efficiency_last_month, 1)
-
-        # Status podle stavu inicializace
-        if self._battery_kwh_month_start is None:
-            current_month_status = (
-                f"not initialized (day {now.day}) - waiting for next month"
-            )
-        else:
-            current_month_status = f"partial ({now.day} days)"
+        current_metrics = self._current_month_metrics()
+        last_month_losses_kwh, last_month_losses_pct = self._last_month_losses()
+        current_month_status = self._current_month_status(now)
 
         self._attr_extra_state_attributes = {
             # Minulý měsíc (kompletní) - to je STATE
@@ -368,12 +331,12 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
             "last_month_discharge_kwh": self._last_month_data.get("discharge_kwh"),
             "last_month_status": "complete",
             # Tento měsíc (průběžné)
-            "efficiency_current_month_pct": current_efficiency,
-            "losses_current_month_kwh": current_losses_kwh,
-            "losses_current_month_pct": current_losses_pct,
-            "current_month_charge_kwh": current_charge,
-            "current_month_discharge_kwh": current_discharge,
-            "current_month_delta_kwh": current_delta,
+            "efficiency_current_month_pct": current_metrics["efficiency"],
+            "losses_current_month_kwh": current_metrics["losses_kwh"],
+            "losses_current_month_pct": current_metrics["losses_pct"],
+            "current_month_charge_kwh": current_metrics["charge"],
+            "current_month_discharge_kwh": current_metrics["discharge"],
+            "current_month_delta_kwh": current_metrics["delta"],
             "current_month_days": now.day,
             "current_month_status": current_month_status,
             # Battery tracking
@@ -397,6 +360,49 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
             "_current_month_partial": self._current_month_partial,
             "_last_month_data": self._last_month_data,
         }
+
+    def _ensure_history_task(self) -> None:
+        if (
+            not self._last_month_data or not self._last_month_data.get("charge_kwh")
+        ) and not self._loading_history:
+            self._loading_history = True
+            self.hass.async_create_task(self._try_load_last_month_from_history())
+
+    def _current_month_metrics(self) -> Dict[str, Optional[float]]:
+        current_efficiency = self._current_month_partial.get("efficiency")
+        current_charge = self._current_month_partial.get("charge")
+        current_discharge = self._current_month_partial.get("discharge")
+        current_delta = self._current_month_partial.get("delta")
+        current_effective_discharge = self._current_month_partial.get(
+            "effective_discharge"
+        )
+
+        losses_kwh = None
+        losses_pct = None
+        if current_charge and current_effective_discharge:
+            losses_kwh = round(current_charge - current_effective_discharge, 2)
+            losses_pct = round((losses_kwh / current_charge) * 100, 1)
+
+        return {
+            "efficiency": current_efficiency,
+            "charge": current_charge,
+            "discharge": current_discharge,
+            "delta": current_delta,
+            "losses_kwh": losses_kwh,
+            "losses_pct": losses_pct,
+        }
+
+    def _last_month_losses(self) -> tuple[Optional[float], Optional[float]]:
+        losses_kwh = self._last_month_data.get("losses_kwh")
+        losses_pct = self._last_month_data.get("losses_pct")
+        if losses_pct is None and self._efficiency_last_month is not None:
+            losses_pct = round(100 - self._efficiency_last_month, 1)
+        return losses_kwh, losses_pct
+
+    def _current_month_status(self, now: datetime) -> str:
+        if self._battery_kwh_month_start is None:
+            return f"not initialized (day {now.day}) - waiting for next month"
+        return f"partial ({now.day} days)"
 
     async def _try_load_last_month_from_history(self) -> None:  # noqa: C901
         """

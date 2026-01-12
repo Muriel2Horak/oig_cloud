@@ -20,6 +20,7 @@ from homeassistant.util import dt as dt_util
 from ...const import DOMAIN
 
 MODE_LABEL_HOME_UPS = "Home UPS"
+MODE_LABEL_HOME_I = "HOME I"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -427,10 +428,10 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     def _get_current_mode(self) -> str:
         """Získá aktuální režim z coordinator data."""
         if not self.coordinator or not self.coordinator.data:
-            return "HOME I"
+            return MODE_LABEL_HOME_I
 
         box_data = self.coordinator.data.get(self._box_id, {})
-        current_mode = box_data.get("current_mode", "HOME I")
+        current_mode = box_data.get("current_mode", MODE_LABEL_HOME_I)
         return current_mode
 
     def _get_next_mode_after_ups(
@@ -439,11 +440,11 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         """Získá režim následující po UPS bloku."""
         if current_idx + 1 < len(all_blocks):
             next_block = all_blocks[current_idx + 1]
-            next_mode = next_block.get("mode_planned", "HOME I")
+            next_mode = next_block.get("mode_planned", MODE_LABEL_HOME_I)
             if "HOME UPS" not in next_mode:
                 return next_mode
 
-        return "HOME I"
+        return MODE_LABEL_HOME_I
 
     def _parse_time_to_datetime(self, time_str: str, day: str) -> datetime:
         """Parse time string to datetime."""

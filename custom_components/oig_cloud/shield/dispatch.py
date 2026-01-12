@@ -131,15 +131,7 @@ async def _handle_missing_expected(
     context: Optional[Context],
 ) -> bool:
     if not getattr(shield, "_expected_entity_missing", False):
-        _LOGGER.debug("Intercept: no expected entities; returning early")
-        await shield._log_event(
-            "skipped",
-            service_name,
-            {"params": params, "entities": {}},
-            reason="Není co měnit – požadované hodnoty již nastaveny",
-            context=context,
-        )
-        return True
+        return False
     _LOGGER.debug(
         "Intercept: expected entities missing; calling original service without state verification"
     )

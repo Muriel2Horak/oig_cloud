@@ -440,78 +440,77 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
         # Priority 2: Fallback to restore_state if storage was empty
         if not loaded_from_storage:
-            old_state = await self.async_get_last_state()
-            if old_state and old_state.attributes:
-                # Restore if any of the tracked keys has a non-zero value.
-                max_val = 0.0
-                for key in self._energy:
-                    try:
-                        v = float(old_state.attributes.get(key, 0.0))
-                        if v > max_val:
-                            max_val = v
-                    except (TypeError, ValueError):
-                        continue
-
-                # Fallback: some previous versions didn't persist the full energy dict in attributes.
-                # If attributes look empty but the entity state is numeric, restore that into the right key.
-                if max_val <= 0.0:
-                    sensor_map = {
-                        "computed_batt_charge_energy_today": "charge_today",
-                        "computed_batt_discharge_energy_today": "discharge_today",
-                        "computed_batt_charge_energy_month": "charge_month",
-                        "computed_batt_discharge_energy_month": "discharge_month",
-                        "computed_batt_charge_energy_year": "charge_year",
-                        "computed_batt_discharge_energy_year": "discharge_year",
-                        "computed_batt_charge_fve_energy_today": "charge_fve_today",
-                        "computed_batt_charge_fve_energy_month": "charge_fve_month",
-                        "computed_batt_charge_fve_energy_year": "charge_fve_year",
-                        "computed_batt_charge_grid_energy_today": "charge_grid_today",
-                        "computed_batt_charge_grid_energy_month": "charge_grid_month",
-                        "computed_batt_charge_grid_energy_year": "charge_grid_year",
-                    }
-                    key = sensor_map.get(self._sensor_type)
-                    if key:
-                        try:
-                            v = float(old_state.state)
-                            if v > 0.0:
-                                self._energy[key] = v
-                                max_val = v
-                        except (TypeError, ValueError):
-                            pass
-
-                if max_val > 0.0:
-                    _LOGGER.info(
-                        f"[{self.entity_id}] 📥 Restoring from HA state (storage empty): max={max_val}"
-                    )
-
-                    # Ensure we're writing into the shared per-box dict (if available).
-                    if self._box_id and self._box_id != "unknown":
-                        energy = _energy_data_cache.get(self._box_id)
-                        if not isinstance(energy, dict):
-                            _energy_data_cache[self._box_id] = self._energy
-                            energy = self._energy
-                        self._energy = energy
-
-                    for key in self._energy:
-                        try:
-                            if key in old_state.attributes:
-                                self._energy[key] = float(old_state.attributes[key])
-                        except (TypeError, ValueError):
-                            continue
-
-                    if self._box_id and self._box_id != "unknown":
-                        _energy_cache_loaded[self._box_id] = True
-                    # Save to storage for future
-                    await self._save_energy_to_storage(force=True)
-                else:
-                    _LOGGER.warning(
-                        f"[{self.entity_id}] ⚠️ Restore state has zeroed/invalid data "
-                        f"(max={max_val}), keeping defaults"
-                    )
+            await self._restore_energy_from_state()
 
         # Po inicializaci (load/restore + dependency listeners) hned přepiš stav,
         # aby se uživatelům neukazovala dočasná nula po restartu.
         self.async_write_ha_state()
+
+    async def _restore_energy_from_state(self) -> None:
+        old_state = await self.async_get_last_state()
+        if not old_state or not old_state.attributes:
+            return
+
+        max_val = self._max_energy_attribute(old_state.attributes)
+        if max_val <= 0.0:
+            max_val = self._restore_from_entity_state(old_state)
+
+        if max_val <= 0.0:
+            _LOGGER.warning(
+                "[%s] ⚠️ Restore state has zeroed/invalid data (max=%s), keeping defaults",
+                self.entity_id,
+                max_val,
+            )
+            return
+
+        _LOGGER.info(
+            "[%s] 📥 Restoring from HA state (storage empty): max=%s",
+            self.entity_id,
+            max_val,
+        )
+        self._apply_restored_energy(old_state.attributes)
+        if self._box_id and self._box_id != "unknown":
+            _energy_cache_loaded[self._box_id] = True
+        await self._save_energy_to_storage(force=True)
+
+    def _max_energy_attribute(self, attributes: Dict[str, Any]) -> float:
+        max_val = 0.0
+        for key in self._energy:
+            try:
+                value = float(attributes.get(key, 0.0))
+            except (TypeError, ValueError):
+                continue
+            if value > max_val:
+                max_val = value
+        return max_val
+
+    def _restore_from_entity_state(self, old_state: Any) -> float:
+        key = self._get_energy_value_key()
+        if not key:
+            return 0.0
+        try:
+            value = float(old_state.state)
+        except (TypeError, ValueError):
+            return 0.0
+        if value <= 0.0:
+            return 0.0
+        self._energy[key] = value
+        return value
+
+    def _apply_restored_energy(self, attributes: Dict[str, Any]) -> None:
+        if self._box_id and self._box_id != "unknown":
+            energy = _energy_data_cache.get(self._box_id)
+            if not isinstance(energy, dict):
+                _energy_data_cache[self._box_id] = self._energy
+                energy = self._energy
+            self._energy = energy
+
+        for key in self._energy:
+            try:
+                if key in attributes:
+                    self._energy[key] = float(attributes[key])
+            except (TypeError, ValueError):
+                continue
 
     async def _reset_daily(self, now: Optional[datetime] = None, *_: Any) -> None:
         if now is None:
@@ -668,49 +667,66 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 self._get_oig_number("actual_fv_p2") or 0.0
             )
             load_power = float(self._get_oig_number("actual_aco_p") or 0.0)
-            grid_p1 = float(self._get_oig_number("actual_aci_wr") or 0.0)
-            grid_p2 = float(self._get_oig_number("actual_aci_ws") or 0.0)
-            grid_p3 = float(self._get_oig_number("actual_aci_wt") or 0.0)
-            export_power = grid_p1 + grid_p2 + grid_p3
-
+            export_power = self._grid_export_power()
             boiler_p_set = float(self._get_oig_number("boiler_install_power") or 0.0)
             bat_power = float(self._get_oig_number("batt_batt_comp_p") or 0.0)
 
-            manual_state = None
-            if (
-                getattr(self, "hass", None)
-                and self._box_id
-                and self._box_id != "unknown"
-            ):
-                st = self.hass.states.get(
-                    f"sensor.oig_{self._box_id}_boiler_manual_mode"
-                )
-                manual_state = st.state if st else None
-            manual_s = (
-                str(manual_state).strip().lower() if manual_state is not None else ""
+            boiler_power = self._compute_boiler_power(
+                boiler_p_set=boiler_p_set,
+                fv_power=fv_power,
+                load_power=load_power,
+                export_power=export_power,
+                bat_power=bat_power,
             )
-            boiler_manual = manual_s in {
-                "1",
-                "on",
-                "zapnuto",
-                "manual",
-                "manuální",
-                "manualni",
-            } or manual_s.startswith("manu")
-
-            if boiler_manual:
-                boiler_power = boiler_p_set
-            else:
-                if bat_power <= 0:
-                    available_power = fv_power - load_power - export_power
-                    boiler_power = min(max(available_power, 0), boiler_p_set)
-                else:
-                    boiler_power = 0.0
 
             return round(float(max(boiler_power, 0.0)), 2)
         except Exception as e:
             _LOGGER.debug("Error calculating boiler consumption: %s", e)
             return None
+
+    def _grid_export_power(self) -> float:
+        grid_p1 = float(self._get_oig_number("actual_aci_wr") or 0.0)
+        grid_p2 = float(self._get_oig_number("actual_aci_ws") or 0.0)
+        grid_p3 = float(self._get_oig_number("actual_aci_wt") or 0.0)
+        return grid_p1 + grid_p2 + grid_p3
+
+    def _compute_boiler_power(
+        self,
+        *,
+        boiler_p_set: float,
+        fv_power: float,
+        load_power: float,
+        export_power: float,
+        bat_power: float,
+    ) -> float:
+        if self._is_boiler_manual():
+            return boiler_p_set
+
+        if bat_power <= 0:
+            available_power = fv_power - load_power - export_power
+            return min(max(available_power, 0), boiler_p_set)
+
+        return 0.0
+
+    def _is_boiler_manual(self) -> bool:
+        if (
+            not getattr(self, "hass", None)
+            or not self._box_id
+            or self._box_id == "unknown"
+        ):
+            return False
+
+        st = self.hass.states.get(f"sensor.oig_{self._box_id}_boiler_manual_mode")
+        manual_state = st.state if st else None
+        manual_s = str(manual_state).strip().lower() if manual_state is not None else ""
+        return manual_s in {
+            "1",
+            "on",
+            "zapnuto",
+            "manual",
+            "manuální",
+            "manualni",
+        } or manual_s.startswith("manu")
 
     def _get_boiler_consumption(self, pv_data: Dict[str, Any]) -> Optional[float]:
         """Backward-compatible wrapper (legacy call sites)."""

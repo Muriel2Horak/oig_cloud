@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, Optional
 from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+HOME_5_LABEL = "Home 5"
 
 SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
 
@@ -150,13 +151,13 @@ def extract_expected_entities(
             "home2": "Home 2",
             "home3": "Home 3",
             "homeups": "Home UPS",
-            "home5": "Home 5",
+            "home5": HOME_5_LABEL,
             "home6": "Home 6",
             "0": "Home 1",
             "1": "Home 2",
             "2": "Home 3",
             "3": "Home UPS",
-            "4": "Home 5",
+            "4": HOME_5_LABEL,
             "5": "Home 6",
         }
         expected_value = mode_mapping.get(mode_key, mode_raw)
@@ -391,7 +392,7 @@ def _matches_box_mode(expected_value: Any, current_value: Any) -> bool:
         1: "Home 2",
         2: "Home 3",
         3: "Home UPS",
-        4: "Home 5",
+        4: HOME_5_LABEL,
         5: "Home 6",
     }
     if isinstance(expected_value, str):

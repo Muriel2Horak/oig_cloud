@@ -253,53 +253,20 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # User alternativní senzor
         alt_energy_sensor = self.config.get(CONF_BOILER_ALT_ENERGY_SENSOR)
 
-        # Načíst stavy
-        manual_mode_state = self.hass.states.get(manual_mode_entity)
-        current_cbb_state = self.hass.states.get(current_cbb_entity)
-        day_energy_state = self.hass.states.get(day_energy_entity)
-
-        # Detekce zdroje
-        current_source = EnergySource.GRID  # default
-
-        if manual_mode_state and manual_mode_state.state == "Zapnuto":
-            current_source = EnergySource.FVE
-        elif current_cbb_state:
-            try:
-                cbb_w = float(current_cbb_state.state)
-                if cbb_w > 0:
-                    current_source = EnergySource.FVE
-            except ValueError:
-                pass
-
-        # Celková energie dnes
-        total_energy_wh = 0.0
-        if day_energy_state:
-            try:
-                total_energy_wh = float(day_energy_state.state)
-            except ValueError:
-                pass
-
-        total_energy_kwh = total_energy_wh / 1000.0
+        manual_mode_state, current_cbb_state, day_energy_state = self._get_energy_states(
+            manual_mode_entity, current_cbb_entity, day_energy_entity
+        )
+        current_source = self._detect_energy_source(
+            manual_mode_state, current_cbb_state
+        )
+        total_energy_kwh = self._read_total_energy_kwh(day_energy_state)
 
         # FVE a Grid energie (placeholder - potřeba trackování v čase)
         fve_kwh = 0.0
         grid_kwh = 0.0
 
-        # Alternativní energie
-        alt_kwh = 0.0
-        if alt_energy_sensor:
-            alt_state = self.hass.states.get(alt_energy_sensor)
-            if alt_state:
-                try:
-                    alt_kwh = float(alt_state.state)
-                    # Konverze Wh → kWh pokud potřeba
-                    if alt_state.attributes.get("unit_of_measurement") == "Wh":
-                        alt_kwh /= 1000.0
-                except ValueError:
-                    pass
-
-        # Residuální výpočet (pokud není user senzor)
-        if not alt_energy_sensor:
+        alt_kwh = self._read_alt_energy_kwh(alt_energy_sensor)
+        if alt_kwh is None:
             alt_kwh = estimate_residual_energy(total_energy_kwh, fve_kwh, grid_kwh)
 
         return {
@@ -309,6 +276,47 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "grid_kwh": grid_kwh,
             "alt_kwh": alt_kwh,
         }
+
+    def _get_energy_states(
+        self, manual_mode_entity: str, current_cbb_entity: str, day_energy_entity: str
+    ):
+        manual_mode_state = self.hass.states.get(manual_mode_entity)
+        current_cbb_state = self.hass.states.get(current_cbb_entity)
+        day_energy_state = self.hass.states.get(day_energy_entity)
+        return manual_mode_state, current_cbb_state, day_energy_state
+
+    def _detect_energy_source(self, manual_mode_state, current_cbb_state) -> EnergySource:
+        if manual_mode_state and manual_mode_state.state == "Zapnuto":
+            return EnergySource.FVE
+        if current_cbb_state:
+            try:
+                if float(current_cbb_state.state) > 0:
+                    return EnergySource.FVE
+            except ValueError:
+                pass
+        return EnergySource.GRID
+
+    def _read_total_energy_kwh(self, day_energy_state) -> float:
+        if not day_energy_state:
+            return 0.0
+        try:
+            return float(day_energy_state.state) / 1000.0
+        except ValueError:
+            return 0.0
+
+    def _read_alt_energy_kwh(self, alt_energy_sensor: Optional[str]) -> Optional[float]:
+        if not alt_energy_sensor:
+            return None
+        alt_state = self.hass.states.get(alt_energy_sensor)
+        if not alt_state:
+            return None
+        try:
+            alt_kwh = float(alt_state.state)
+            if alt_state.attributes.get("unit_of_measurement") == "Wh":
+                alt_kwh /= 1000.0
+            return alt_kwh
+        except ValueError:
+            return None
 
     async def _update_plan(self) -> None:
         """Aktualizuje plán ohřevu."""

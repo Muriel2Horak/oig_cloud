@@ -952,209 +952,111 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         return None
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:  # noqa: C901
+    def extra_state_attributes(self) -> Dict[str, Any]:
         """Dodatečné atributy s hodinovými výkony a aktuální hodinovou prognózou."""
         if not self._last_forecast_data:
             return {}
 
-        attrs = {}
+        attrs: Dict[str, Any] = {}
 
         try:
-            # Základní informace
             attrs["response_time"] = self._last_forecast_data.get("response_time")
 
-            # Aktuální hodinová prognóza jako atribut
-            current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
-
             if self._sensor_type == "solar_forecast":
-                # Hlavní senzor - celkové hodnoty + detaily obou stringů
-                attrs.update(
-                    {
-                        "today_total_kwh": self._last_forecast_data.get(
-                            "total_today_kwh", 0
-                        ),
-                        "string1_today_kwh": self._last_forecast_data.get(
-                            "string1_today_kwh", 0
-                        ),
-                        "string2_today_kwh": self._last_forecast_data.get(
-                            "string2_today_kwh", 0
-                        ),
-                    }
-                )
-
-                # Aktuální hodinová prognóza
-                total_hourly = self._last_forecast_data.get("total_hourly", {})
-                current_hour_watts = total_hourly.get(current_hour.isoformat(), 0)
-                attrs["current_hour_kw"] = round(current_hour_watts / 1000, 2)
-
-                # Hodinové výkony pro dnes a zítra - s timestamp
-                string1_hourly = self._last_forecast_data.get("string1_hourly", {})
-                string2_hourly = self._last_forecast_data.get("string2_hourly", {})
-
-                # Rozdělíme na dnes a zítra - ponecháme timestamp
-                today = datetime.now().date()
-                tomorrow = today + timedelta(days=1)
-
-                today_total = {}
-                tomorrow_total = {}
-                today_string1 = {}
-                tomorrow_string1 = {}
-                today_string2 = {}
-                tomorrow_string2 = {}
-
-                # Sumy pro dnes a zítra
-                today_total_sum = 0
-                tomorrow_total_sum = 0
-                today_string1_sum = 0
-                tomorrow_string1_sum = 0
-                today_string2_sum = 0
-                tomorrow_string2_sum = 0
-
-                for hour_str, power in total_hourly.items():
-                    hour_dt = _parse_forecast_hour(hour_str)
-                    if hour_dt is None:
-                        continue
-                    power_kw = round(power / 1000, 2)
-
-                    if hour_dt.date() == today:
-                        today_total[hour_str] = power_kw
-                        today_total_sum += power_kw
-                    elif hour_dt.date() == tomorrow:
-                        tomorrow_total[hour_str] = power_kw
-                        tomorrow_total_sum += power_kw
-
-                for hour_str, power in string1_hourly.items():
-                    hour_dt = _parse_forecast_hour(hour_str)
-                    if hour_dt is None:
-                        continue
-                    power_kw = round(power / 1000, 2)
-
-                    if hour_dt.date() == today:
-                        today_string1[hour_str] = power_kw
-                        today_string1_sum += power_kw
-                    elif hour_dt.date() == tomorrow:
-                        tomorrow_string1[hour_str] = power_kw
-                        tomorrow_string1_sum += power_kw
-
-                for hour_str, power in string2_hourly.items():
-                    hour_dt = _parse_forecast_hour(hour_str)
-                    if hour_dt is None:
-                        continue
-                    power_kw = round(power / 1000, 2)
-
-                    if hour_dt.date() == today:
-                        today_string2[hour_str] = power_kw
-                        today_string2_sum += power_kw
-                    elif hour_dt.date() == tomorrow:
-                        tomorrow_string2[hour_str] = power_kw
-                        tomorrow_string2_sum += power_kw
-
-                attrs.update(
-                    {
-                        "today_hourly_total_kw": today_total,
-                        "tomorrow_hourly_total_kw": tomorrow_total,
-                        "today_hourly_string1_kw": today_string1,
-                        "tomorrow_hourly_string1_kw": tomorrow_string1,
-                        "today_hourly_string2_kw": today_string2,
-                        "tomorrow_hourly_string2_kw": tomorrow_string2,
-                        # Sumy hodinových výkonů
-                        "today_total_sum_kw": round(today_total_sum, 2),
-                        "tomorrow_total_sum_kw": round(tomorrow_total_sum, 2),
-                        "today_string1_sum_kw": round(today_string1_sum, 2),
-                        "tomorrow_string1_sum_kw": round(tomorrow_string1_sum, 2),
-                        "today_string2_sum_kw": round(today_string2_sum, 2),
-                        "tomorrow_string2_sum_kw": round(tomorrow_string2_sum, 2),
-                    }
-                )
-
+                attrs.update(self._build_main_attrs())
             elif self._sensor_type == "solar_forecast_string1":
-                # String 1 senzor
-                attrs["today_kwh"] = self._last_forecast_data.get(
-                    "string1_today_kwh", 0
-                )
-
-                # Aktuální hodinová prognóza
-                string1_hourly = self._last_forecast_data.get("string1_hourly", {})
-                current_hour_watts = string1_hourly.get(current_hour.isoformat(), 0)
-                attrs["current_hour_kw"] = round(current_hour_watts / 1000, 2)
-
-                # OPRAVA: Použít správnou proměnnou pro iteraci
-                today = datetime.now().date()
-                tomorrow = today + timedelta(days=1)
-
-                today_hours = {}
-                tomorrow_hours = {}
-                today_sum = 0
-                tomorrow_sum = 0
-
-                # OPRAVA: Iterovat přes string1_hourly místo today_hours
-                for hour_str, power in string1_hourly.items():
-                    hour_dt = _parse_forecast_hour(hour_str)
-                    if hour_dt is None:
-                        continue
-                    power_kw = round(power / 1000, 2)
-
-                    if hour_dt.date() == today:
-                        today_hours[hour_str] = power_kw
-                        today_sum += power_kw
-                    elif hour_dt.date() == tomorrow:
-                        tomorrow_hours[hour_str] = power_kw
-                        tomorrow_sum += power_kw
-
-                attrs.update(
-                    {
-                        "today_hourly_kw": today_hours,
-                        "tomorrow_hourly_kw": tomorrow_hours,
-                        "today_sum_kw": round(today_sum, 2),
-                        "tomorrow_sum_kw": round(tomorrow_sum, 2),
-                    }
-                )
-
+                attrs.update(self._build_string_attrs("string1"))
             elif self._sensor_type == "solar_forecast_string2":
-                # String 2 senzor
-                attrs["today_kwh"] = self._last_forecast_data.get(
-                    "string2_today_kwh", 0
-                )
-
-                # Aktuální hodinová prognóza
-                string2_hourly = self._last_forecast_data.get("string2_hourly", {})
-                current_hour_watts = string2_hourly.get(current_hour.isoformat(), 0)
-                attrs["current_hour_kw"] = round(current_hour_watts / 1000, 2)
-
-                # OPRAVA: Použít správnou proměnnou pro iteraci
-                today = datetime.now().date()
-                tomorrow = today + timedelta(days=1)
-
-                today_hours = {}
-                tomorrow_hours = {}
-                today_sum = 0
-                tomorrow_sum = 0
-
-                # OPRAVA: Iterovat přes string2_hourly místo today_hours
-                for hour_str, power in string2_hourly.items():
-                    hour_dt = _parse_forecast_hour(hour_str)
-                    if hour_dt is None:
-                        continue
-                    power_kw = round(power / 1000, 2)
-
-                    if hour_dt.date() == today:
-                        today_hours[hour_str] = power_kw
-                        today_sum += power_kw
-                    elif hour_dt.date() == tomorrow:
-                        tomorrow_hours[hour_str] = power_kw
-                        tomorrow_sum += power_kw
-
-                attrs.update(
-                    {
-                        "today_hourly_kw": today_hours,
-                        "tomorrow_hourly_kw": tomorrow_hours,
-                        "today_sum_kw": round(today_sum, 2),
-                        "tomorrow_sum_kw": round(tomorrow_sum, 2),
-                    }
-                )
+                attrs.update(self._build_string_attrs("string2"))
 
         except Exception as e:
             _LOGGER.error(f"Error creating solar forecast attributes: {e}")
             attrs["error"] = str(e)
 
         return attrs
+
+    def _build_main_attrs(self) -> Dict[str, Any]:
+        current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
+        total_hourly = self._last_forecast_data.get("total_hourly", {})
+        string1_hourly = self._last_forecast_data.get("string1_hourly", {})
+        string2_hourly = self._last_forecast_data.get("string2_hourly", {})
+
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+
+        today_total, tomorrow_total, today_total_sum, tomorrow_total_sum = (
+            self._split_hourly(total_hourly, today, tomorrow)
+        )
+        today_string1, tomorrow_string1, today_string1_sum, tomorrow_string1_sum = (
+            self._split_hourly(string1_hourly, today, tomorrow)
+        )
+        today_string2, tomorrow_string2, today_string2_sum, tomorrow_string2_sum = (
+            self._split_hourly(string2_hourly, today, tomorrow)
+        )
+
+        return {
+            "today_total_kwh": self._last_forecast_data.get("total_today_kwh", 0),
+            "string1_today_kwh": self._last_forecast_data.get("string1_today_kwh", 0),
+            "string2_today_kwh": self._last_forecast_data.get("string2_today_kwh", 0),
+            "current_hour_kw": self._current_hour_kw(total_hourly, current_hour),
+            "today_hourly_total_kw": today_total,
+            "tomorrow_hourly_total_kw": tomorrow_total,
+            "today_hourly_string1_kw": today_string1,
+            "tomorrow_hourly_string1_kw": tomorrow_string1,
+            "today_hourly_string2_kw": today_string2,
+            "tomorrow_hourly_string2_kw": tomorrow_string2,
+            "today_total_sum_kw": round(today_total_sum, 2),
+            "tomorrow_total_sum_kw": round(tomorrow_total_sum, 2),
+            "today_string1_sum_kw": round(today_string1_sum, 2),
+            "tomorrow_string1_sum_kw": round(tomorrow_string1_sum, 2),
+            "today_string2_sum_kw": round(today_string2_sum, 2),
+            "tomorrow_string2_sum_kw": round(tomorrow_string2_sum, 2),
+        }
+
+    def _build_string_attrs(self, key: str) -> Dict[str, Any]:
+        current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
+        hourly = self._last_forecast_data.get(f"{key}_hourly", {})
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+
+        today_hours, tomorrow_hours, today_sum, tomorrow_sum = self._split_hourly(
+            hourly, today, tomorrow
+        )
+
+        return {
+            "today_kwh": self._last_forecast_data.get(f"{key}_today_kwh", 0),
+            "current_hour_kw": self._current_hour_kw(hourly, current_hour),
+            "today_hourly_kw": today_hours,
+            "tomorrow_hourly_kw": tomorrow_hours,
+            "today_sum_kw": round(today_sum, 2),
+            "tomorrow_sum_kw": round(tomorrow_sum, 2),
+        }
+
+    @staticmethod
+    def _current_hour_kw(hourly: Dict[str, Any], current_hour: datetime) -> float:
+        current_hour_watts = hourly.get(current_hour.isoformat(), 0)
+        return round(current_hour_watts / 1000, 2)
+
+    @staticmethod
+    def _split_hourly(
+        hourly: Dict[str, Any], today: datetime.date, tomorrow: datetime.date
+    ) -> tuple[Dict[str, float], Dict[str, float], float, float]:
+        today_hours: Dict[str, float] = {}
+        tomorrow_hours: Dict[str, float] = {}
+        today_sum = 0.0
+        tomorrow_sum = 0.0
+
+        for hour_str, power in hourly.items():
+            hour_dt = _parse_forecast_hour(hour_str)
+            if hour_dt is None:
+                continue
+            power_kw = round(power / 1000, 2)
+
+            if hour_dt.date() == today:
+                today_hours[hour_str] = power_kw
+                today_sum += power_kw
+            elif hour_dt.date() == tomorrow:
+                tomorrow_hours[hour_str] = power_kw
+                tomorrow_sum += power_kw
+
+        return today_hours, tomorrow_hours, today_sum, tomorrow_sum

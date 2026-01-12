@@ -892,75 +892,68 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     def _get_current_step_number(self, step_id: str) -> int:
         """Get current step number based on step_id and enabled modules."""
-        # Detekce, zda běžíme v Options Flow (má welcome_reconfigure místo credentials)
-        is_options_flow = (
+        is_options_flow = self._is_options_flow(step_id)
+        steps = self._build_step_sequence(is_options_flow)
+        if step_id in steps:
+            return steps.index(step_id) + 1
+
+        return self._base_step_map(is_options_flow).get(step_id, 1)
+
+    def _is_options_flow(self, step_id: str) -> bool:
+        """Return True when running inside Options Flow."""
+        return (
             "wizard_welcome_reconfigure" in self._step_history
             or step_id == "wizard_welcome_reconfigure"
         )
 
-        # Mapování kroků na čísla
+    def _base_step_map(self, is_options_flow: bool) -> dict[str, int]:
+        """Return step mapping for base flow."""
         if is_options_flow:
-            # Options Flow: welcome_reconfigure, modules, intervals (bez credentials)
-            step_map = {
+            return {
                 "wizard_welcome_reconfigure": 1,
                 "wizard_modules": 2,
                 "wizard_intervals": 3,
             }
-            current = 4  # Začínáme od 4 (po intervals)
+        return {
+            "wizard_welcome": 1,
+            "wizard_credentials": 2,
+            "wizard_modules": 3,
+            "wizard_intervals": 4,
+        }
+
+    def _build_step_sequence(self, is_options_flow: bool) -> list[str]:
+        """Build ordered list of steps for progress calculation."""
+        if is_options_flow:
+            steps = [
+                "wizard_welcome_reconfigure",
+                "wizard_modules",
+                "wizard_intervals",
+            ]
         else:
-            # Config Flow: welcome, credentials, modules, intervals
-            step_map = {
-                "wizard_welcome": 1,
-                "wizard_credentials": 2,
-                "wizard_modules": 3,
-                "wizard_intervals": 4,
-            }
-            current = 5  # Začínáme od 5 (po intervals)
+            steps = [
+                "wizard_welcome",
+                "wizard_credentials",
+                "wizard_modules",
+                "wizard_intervals",
+            ]
 
-        # Dynamické kroky - musíme spočítat podle toho, co je zapnuté
-        # Solar
-        if step_id == "wizard_solar":
-            return current
         if self._wizard_data.get("enable_solar_forecast", False):
-            current += 1
-
-        # Battery + Planner settings
-        battery_enabled = self._wizard_data.get("enable_battery_prediction", False)
-        if step_id == "wizard_battery":
-            return current
-        if battery_enabled:
-            current += 1
-
-        # Pricing - 3 kroky (import, export, distribution)
-        if step_id == "wizard_pricing_import":
-            return current
-        if step_id == "wizard_pricing_export":
-            return (
-                current + 1
-                if self._wizard_data.get("enable_pricing", False)
-                else current
-            )
-        if step_id == "wizard_pricing_distribution":
-            return (
-                current + 2
-                if self._wizard_data.get("enable_pricing", False)
-                else current
-            )
+            steps.append("wizard_solar")
+        if self._wizard_data.get("enable_battery_prediction", False):
+            steps.append("wizard_battery")
         if self._wizard_data.get("enable_pricing", False):
-            current += 3
-
-        # Boiler
-        if step_id == "wizard_boiler":
-            return current
+            steps.extend(
+                [
+                    "wizard_pricing_import",
+                    "wizard_pricing_export",
+                    "wizard_pricing_distribution",
+                ]
+            )
         if self._wizard_data.get("enable_boiler", False):
-            current += 1
+            steps.append("wizard_boiler")
 
-        # Summary
-        if step_id == "wizard_summary":
-            return current
-
-        # Pro základní kroky použij pevnou mapu
-        return step_map.get(step_id, 1)
+        steps.append("wizard_summary")
+        return steps
 
     def _get_step_placeholders(self, step_id: str = None, **kwargs) -> dict[str, str]:
         """Get placeholders for step description.
