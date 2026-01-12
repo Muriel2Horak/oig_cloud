@@ -16,6 +16,161 @@ from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
 
+HOME_1 = "Home 1"
+HOME_2 = "Home 2"
+HOME_3 = "Home 3"
+HOME_UPS = "Home UPS"
+HOME_5 = "Home 5"
+HOME_6 = "Home 6"
+HOME_MODE_LABELS = (HOME_1, HOME_2, HOME_3, HOME_UPS, HOME_5, HOME_6)
+
+GRID_OFF_LABEL = "Vypnuto / Off"
+GRID_ON_LABEL = "Zapnuto / On"
+GRID_LIMITED_LABEL = "S omezením / Limited"
+GRID_DELIVERY_LABELS = (GRID_OFF_LABEL, GRID_ON_LABEL, GRID_LIMITED_LABEL)
+
+BOILER_CBB_LABEL = "CBB"
+BOILER_MANUAL_LABEL = "Manual"
+BOILER_MODE_LABELS = (BOILER_CBB_LABEL, BOILER_MANUAL_LABEL)
+
+FORMAT_NO_CHARGE_LABEL = "Nenabíjet"
+FORMAT_CHARGE_LABEL = "Nabíjet"
+FORMAT_BATTERY_LABELS = (FORMAT_NO_CHARGE_LABEL, FORMAT_CHARGE_LABEL)
+
+SET_BOX_MODE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("device_id"): cv.string,
+        vol.Required("mode"): vol.In(HOME_MODE_LABELS),
+        vol.Required("acknowledgement"): vol.In([True]),
+    }
+)
+SET_GRID_DELIVERY_SCHEMA = vol.Schema(
+    {
+        vol.Optional("device_id"): cv.string,
+        "mode": vol.Any(None, vol.In(GRID_DELIVERY_LABELS)),
+        "limit": vol.Any(None, vol.Coerce(int)),
+        vol.Required("acknowledgement"): vol.In([True]),
+        vol.Required("warning"): vol.In([True]),
+    }
+)
+SET_BOILER_MODE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("device_id"): cv.string,
+        vol.Required("mode"): vol.In(BOILER_MODE_LABELS),
+        vol.Required("acknowledgement"): vol.In([True]),
+    }
+)
+SET_FORMATING_MODE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("device_id"): cv.string,
+        vol.Required("mode"): vol.In(FORMAT_BATTERY_LABELS),
+        vol.Required("acknowledgement"): vol.In([True]),
+        "limit": vol.Any(None, vol.Coerce(int)),
+    }
+)
+
+
+def _box_id_from_entry(
+    hass: HomeAssistant, coordinator: Any, entry_id: str
+) -> Optional[str]:
+    try:
+        entry = getattr(coordinator, "config_entry", None) or hass.config_entries.async_get_entry(
+            entry_id
+        )
+        if not entry:
+            return None
+        val = (
+            entry.options.get("box_id")
+            or entry.data.get("box_id")
+            or entry.data.get("inverter_sn")
+        )
+        if isinstance(val, str) and val.isdigit():
+            return val
+    except Exception:
+        return None
+    return None
+
+
+def _box_id_from_coordinator(coordinator: Any) -> Optional[str]:
+    try:
+        data = getattr(coordinator, "data", None)
+        if isinstance(data, dict) and data:
+            return next((str(k) for k in data.keys() if str(k).isdigit()), None)
+    except Exception:
+        return None
+    return None
+
+
+def _strip_identifier_suffix(identifier_value: str) -> str:
+    return identifier_value.replace("_shield", "").replace("_analytics", "")
+
+
+def _extract_box_id_from_device(device: dr.DeviceEntry, device_id: str) -> Optional[str]:
+    for identifier in device.identifiers:
+        if identifier[0] != DOMAIN:
+            continue
+        identifier_value = identifier[1]
+        box_id = _strip_identifier_suffix(identifier_value)
+        if isinstance(box_id, str) and box_id.isdigit():
+            _LOGGER.debug(
+                "Found box_id %s from device %s (identifier: %s)",
+                box_id,
+                device_id,
+                identifier_value,
+            )
+            return box_id
+    return None
+
+
+def _register_service_if_missing(
+    hass: HomeAssistant,
+    name: str,
+    handler: Callable[[ServiceCall], Awaitable[Any]],
+    schema: vol.Schema,
+    supports_response: bool = False,
+) -> bool:
+    if hass.services.has_service(DOMAIN, name):
+        return False
+    hass.services.async_register(
+        DOMAIN, name, handler, schema=schema, supports_response=supports_response
+    )
+    return True
+
+
+def _get_entry_client(hass: HomeAssistant, entry: ConfigEntry) -> OigCloudApi:
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    return coordinator.api
+
+
+def _resolve_box_id_from_service(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    service_data: Dict[str, Any],
+    service_name: str,
+) -> Optional[str]:
+    device_id: Optional[str] = service_data.get("device_id")
+    box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
+    if not box_id:
+        _LOGGER.error("Cannot determine box_id for %s", service_name)
+        return None
+    return box_id
+
+
+def _validate_grid_delivery_inputs(grid_mode: Optional[str], limit: Optional[int]) -> None:
+    if (grid_mode is None and limit is None) or (
+        grid_mode is not None and limit is not None
+    ):
+        raise vol.Invalid("Musí být nastaven právě jeden parametr (Režim nebo Limit)")
+    if limit is not None and (limit > 9999 or limit < 1):
+        raise vol.Invalid("Limit musí být v rozmezí 1–9999")
+
+
+def _acknowledged(service_data: Dict[str, Any], service_name: str) -> bool:
+    if service_data.get("acknowledgement", False):
+        return True
+    _LOGGER.error("Služba %s vyžaduje potvrzení (acknowledgement)", service_name)
+    return False
+
 
 def get_box_id_from_device(
     hass: HomeAssistant, device_id: Optional[str], entry_id: str
@@ -33,40 +188,14 @@ def get_box_id_from_device(
     """
     coordinator = hass.data[DOMAIN][entry_id]["coordinator"]
 
-    def _box_id_from_entry() -> Optional[str]:
-        try:
-            entry = getattr(
-                coordinator, "config_entry", None
-            ) or hass.config_entries.async_get_entry(entry_id)
-            if entry:
-                val = (
-                    entry.options.get("box_id")
-                    or entry.data.get("box_id")
-                    or entry.data.get("inverter_sn")
-                )
-                if isinstance(val, str) and val.isdigit():
-                    return val
-        except Exception:
-            return None
-        return None
-
-    def _box_id_from_coordinator() -> Optional[str]:
-        try:
-            data = getattr(coordinator, "data", None)
-            if isinstance(data, dict) and data:
-                return next((str(k) for k in data.keys() if str(k).isdigit()), None)
-        except Exception:
-            return None
-        return None
-
     # Pokud není device_id, použij první dostupný box_id
     if not device_id:
         # Preferovat persistované box_id z config entry (funguje i v local_only režimu)
-        if entry_box_id := _box_id_from_entry():
+        if entry_box_id := _box_id_from_entry(hass, coordinator, entry_id):
             return entry_box_id
 
         # Fallback: numerický klíč v coordinator.data (cloud režim)
-        if coord_box_id := _box_id_from_coordinator():
+        if coord_box_id := _box_id_from_coordinator(coordinator):
             return coord_box_id
 
         _LOGGER.warning("No device_id provided and no box_id could be resolved")
@@ -77,8 +206,10 @@ def get_box_id_from_device(
     device = device_registry.async_get(device_id)
 
     if not device:
-        _LOGGER.warning(f"Device {device_id} not found in registry")
-        return _box_id_from_entry() or _box_id_from_coordinator()
+        _LOGGER.warning("Device %s not found in registry", device_id)
+        return _box_id_from_entry(hass, coordinator, entry_id) or _box_id_from_coordinator(
+            coordinator
+        )
 
     # Extrahuj box_id z device identifiers
     # Identifiers mají formát: {(DOMAIN, identifier_value), ...}
@@ -86,24 +217,13 @@ def get_box_id_from_device(
     #   - "2206237016" (hlavní zařízení)
     #   - "2206237016_shield" (shield)
     #   - "2206237016_analytics" (analytics)
-    for identifier in device.identifiers:
-        if identifier[0] == DOMAIN:
-            identifier_value = identifier[1]
+    if device_box_id := _extract_box_id_from_device(device, device_id):
+        return device_box_id
 
-            # Odstraň suffix _shield nebo _analytics pokud existuje
-            box_id = identifier_value.replace("_shield", "").replace("_analytics", "")
-
-            if isinstance(box_id, str) and box_id.isdigit():
-                _LOGGER.debug(
-                    "Found box_id %s from device %s (identifier: %s)",
-                    box_id,
-                    device_id,
-                    identifier_value,
-                )
-                return box_id
-
-    _LOGGER.warning(f"Could not extract box_id from device {device_id}")
-    return _box_id_from_entry() or _box_id_from_coordinator()
+    _LOGGER.warning("Could not extract box_id from device %s", device_id)
+    return _box_id_from_entry(hass, coordinator, entry_id) or _box_id_from_coordinator(
+        coordinator
+    )
 
 
 # Schema pro update solární předpovědi
@@ -131,12 +251,12 @@ MODES: Dict[str, str] = {
     "home5": "4",
     "home6": "5",
     # Backward-compatible labels (legacy automations)
-    "Home 1": "0",
-    "Home 2": "1",
-    "Home 3": "2",
-    "Home UPS": "3",
-    "Home 5": "4",
-    "Home 6": "5",
+    HOME_1: "0",
+    HOME_2: "1",
+    HOME_3: "2",
+    HOME_UPS: "3",
+    HOME_5: "4",
+    HOME_6: "5",
 }
 
 GRID_DELIVERY = {
@@ -144,23 +264,23 @@ GRID_DELIVERY = {
     "on": 1,
     "limited": 1,
     # Backward-compatible labels
-    "Vypnuto / Off": 0,
-    "Zapnuto / On": 1,
-    "S omezením / Limited": 1,
+    GRID_OFF_LABEL: 0,
+    GRID_ON_LABEL: 1,
+    GRID_LIMITED_LABEL: 1,
 }
 BOILER_MODE = {
     "cbb": 0,
     "manual": 1,
     # Backward-compatible labels
-    "CBB": 0,
-    "Manual": 1,
+    BOILER_CBB_LABEL: 0,
+    BOILER_MANUAL_LABEL: 1,
 }
 FORMAT_BATTERY = {
     "no_charge": 0,
     "charge": 1,
     # Backward-compatible labels
-    "Nenabíjet": 0,
-    "Nabíjet": 1,
+    FORMAT_NO_CHARGE_LABEL: 0,
+    FORMAT_CHARGE_LABEL: 1,
 }
 
 tracer = trace.get_tracer(__name__)
@@ -209,43 +329,38 @@ async def async_setup_services(hass: HomeAssistant) -> None:  # noqa: C901
         """Manuálně spustí balancing kontrolu přes BalancingManager."""
         return await _run_manual_balancing_checks(hass, call)
 
-    # Registrace služby pouze pokud ještě není registrovaná
-    if not hass.services.has_service(DOMAIN, "update_solar_forecast"):
-        hass.services.async_register(
-            DOMAIN,
-            "update_solar_forecast",
-            handle_update_solar_forecast,
-            schema=SOLAR_FORECAST_UPDATE_SCHEMA,
-        )
-        _LOGGER.debug(f"Zaregistrovány základní služby pro {DOMAIN}")
+    if _register_service_if_missing(
+        hass,
+        "update_solar_forecast",
+        handle_update_solar_forecast,
+        SOLAR_FORECAST_UPDATE_SCHEMA,
+    ):
+        _LOGGER.debug("Zaregistrovány základní služby pro %s", DOMAIN)
 
-    if not hass.services.has_service(DOMAIN, "save_dashboard_tiles"):
-        hass.services.async_register(
-            DOMAIN,
-            "save_dashboard_tiles",
-            handle_save_dashboard_tiles,
-            schema=vol.Schema({vol.Required("config"): cv.string}),
-        )
+    if _register_service_if_missing(
+        hass,
+        "save_dashboard_tiles",
+        handle_save_dashboard_tiles,
+        vol.Schema({vol.Required("config"): cv.string}),
+    ):
         _LOGGER.debug("Registered save_dashboard_tiles service")
 
-    if not hass.services.has_service(DOMAIN, "get_dashboard_tiles"):
-        hass.services.async_register(
-            DOMAIN,
-            "get_dashboard_tiles",
-            handle_get_dashboard_tiles,
-            schema=vol.Schema({}),
-            supports_response=True,
-        )
+    if _register_service_if_missing(
+        hass,
+        "get_dashboard_tiles",
+        handle_get_dashboard_tiles,
+        vol.Schema({}),
+        supports_response=True,
+    ):
         _LOGGER.debug("Registered get_dashboard_tiles service")
 
-    if not hass.services.has_service(DOMAIN, "check_balancing"):
-        hass.services.async_register(
-            DOMAIN,
-            "check_balancing",
-            handle_check_balancing,
-            schema=CHECK_BALANCING_SCHEMA,
-            supports_response=True,
-        )
+    if _register_service_if_missing(
+        hass,
+        "check_balancing",
+        handle_check_balancing,
+        CHECK_BALANCING_SCHEMA,
+        supports_response=True,
+    ):
         _LOGGER.debug("Registered check_balancing service")
 
 
@@ -290,15 +405,11 @@ async def async_setup_entry_services_with_shield(
         context: Optional[Context],
     ) -> None:
         with tracer.start_as_current_span("async_set_box_mode"):
-            coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-            client: OigCloudApi = coordinator.api
-
-            # Extrahuj box_id z device_id nebo použij první dostupný
-            device_id: Optional[str] = service_data.get("device_id")
-            box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
-
+            client = _get_entry_client(hass, entry)
+            box_id = _resolve_box_id_from_service(
+                hass, entry, service_data, "set_box_mode"
+            )
             if not box_id:
-                _LOGGER.error("Cannot determine box_id for set_box_mode")
                 return
 
             mode: Optional[str] = service_data.get("mode")
@@ -318,30 +429,17 @@ async def async_setup_entry_services_with_shield(
         blocking: bool,
         context: Optional[Context],
     ) -> None:
-        # Extrahuj box_id z device_id nebo použij první dostupný
-        device_id: Optional[str] = service_data.get("device_id")
-        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
-
-        if not box_id:
-            _LOGGER.error("Cannot determine box_id for set_grid_delivery")
-            return
-
         grid_mode: Optional[str] = service_data.get("mode")
         limit: Optional[int] = service_data.get("limit")
-
-        if (grid_mode is None and limit is None) or (
-            grid_mode is not None and limit is not None
-        ):
-            raise vol.Invalid(
-                "Musí být nastaven právě jeden parametr (Režim nebo Limit)"
-            )
-
-        if limit is not None and (limit > 9999 or limit < 1):
-            raise vol.Invalid("Limit musí být v rozmezí 1–9999")
+        _validate_grid_delivery_inputs(grid_mode, limit)
 
         with tracer.start_as_current_span("async_set_grid_delivery"):
-            coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-            client: OigCloudApi = coordinator.api
+            client = _get_entry_client(hass, entry)
+            box_id = _resolve_box_id_from_service(
+                hass, entry, service_data, "set_grid_delivery"
+            )
+            if not box_id:
+                return
 
             _LOGGER.info(
                 f"[SHIELD] Setting grid delivery for device {box_id}: mode={grid_mode}, limit={limit}"
@@ -364,15 +462,11 @@ async def async_setup_entry_services_with_shield(
         context: Optional[Context],
     ) -> None:
         with tracer.start_as_current_span("async_set_boiler_mode"):
-            coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-            client: OigCloudApi = coordinator.api
-
-            # Extrahuj box_id z device_id nebo použij první dostupný
-            device_id: Optional[str] = service_data.get("device_id")
-            box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
-
+            client = _get_entry_client(hass, entry)
+            box_id = _resolve_box_id_from_service(
+                hass, entry, service_data, "set_boiler_mode"
+            )
             if not box_id:
-                _LOGGER.error("Cannot determine box_id for set_boiler_mode")
                 return
 
             mode: Optional[str] = service_data.get("mode")
@@ -393,30 +487,21 @@ async def async_setup_entry_services_with_shield(
         context: Optional[Context],
     ) -> None:
         with tracer.start_as_current_span("async_set_formating_mode"):
-            coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-            client: OigCloudApi = coordinator.api
-
-            # Extrahuj box_id z device_id nebo použij první dostupný
-            device_id: Optional[str] = service_data.get("device_id")
-            box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
-
+            client = _get_entry_client(hass, entry)
+            box_id = _resolve_box_id_from_service(
+                hass, entry, service_data, "set_formating_mode"
+            )
             if not box_id:
-                _LOGGER.error("Cannot determine box_id for set_formating_mode")
                 return
 
             mode: Optional[str] = service_data.get("mode")
             limit: Optional[int] = service_data.get("limit")
-            acknowledgement: bool = service_data.get("acknowledgement", False)
 
             _LOGGER.info(
                 f"[SHIELD] Setting formating mode for device {box_id}: mode={mode}, limit={limit}"
             )
 
-            # Kontrola acknowledgement (required v schema)
-            if not acknowledgement:
-                _LOGGER.error(
-                    "Služba set_formating_mode vyžaduje potvrzení (acknowledgement)"
-                )
+            if not _acknowledged(service_data, "set_formating_mode"):
                 return
 
             # OPRAVA: Podle původní logiky - použij limit pokud je zadán, jinak mode_value
@@ -436,15 +521,7 @@ async def async_setup_entry_services_with_shield(
             DOMAIN,
             "set_box_mode",
             wrap_with_shield("set_box_mode", real_call_set_box_mode),
-            schema=vol.Schema(
-                {
-                    vol.Optional("device_id"): cv.string,
-                    vol.Required("mode"): vol.In(
-                        ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
-                    ),
-                    vol.Required("acknowledgement"): vol.In([True]),
-                }
-            ),
+            schema=SET_BOX_MODE_SCHEMA,
         )
         _LOGGER.debug("Registered set_box_mode")
 
@@ -452,20 +529,7 @@ async def async_setup_entry_services_with_shield(
             DOMAIN,
             "set_grid_delivery",
             wrap_with_shield("set_grid_delivery", real_call_set_grid_delivery),
-            schema=vol.Schema(
-                {
-                    vol.Optional("device_id"): cv.string,
-                    "mode": vol.Any(
-                        None,
-                        vol.In(
-                            ["Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"]
-                        ),
-                    ),
-                    "limit": vol.Any(None, vol.Coerce(int)),
-                    vol.Required("acknowledgement"): vol.In([True]),
-                    vol.Required("warning"): vol.In([True]),
-                }
-            ),
+            schema=SET_GRID_DELIVERY_SCHEMA,
         )
         _LOGGER.debug("Registered set_grid_delivery")
 
@@ -473,13 +537,7 @@ async def async_setup_entry_services_with_shield(
             DOMAIN,
             "set_boiler_mode",
             wrap_with_shield("set_boiler_mode", real_call_set_boiler_mode),
-            schema=vol.Schema(
-                {
-                    vol.Optional("device_id"): cv.string,
-                    vol.Required("mode"): vol.In(["CBB", "Manual"]),
-                    vol.Required("acknowledgement"): vol.In([True]),
-                }
-            ),
+            schema=SET_BOILER_MODE_SCHEMA,
         )
         _LOGGER.debug("Registered set_boiler_mode")
 
@@ -487,14 +545,7 @@ async def async_setup_entry_services_with_shield(
             DOMAIN,
             "set_formating_mode",
             wrap_with_shield("set_formating_mode", real_call_set_formating_mode),
-            schema=vol.Schema(
-                {
-                    vol.Optional("device_id"): cv.string,
-                    vol.Required("mode"): vol.In(["Nenabíjet", "Nabíjet"]),
-                    vol.Required("acknowledgement"): vol.In([True]),
-                    "limit": vol.Any(None, vol.Coerce(int)),
-                }
-            ),
+            schema=SET_FORMATING_MODE_SCHEMA,
         )
         _LOGGER.debug("Registered set_formating_mode")
 
@@ -537,15 +588,11 @@ async def async_setup_entry_services_fallback(
     _LOGGER.info(f"Registering fallback services for entry {entry.entry_id}")
 
     async def handle_set_box_mode(call: ServiceCall) -> None:
-        coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-        client: OigCloudApi = coordinator.api
-
-        # Extrahuj box_id z device_id nebo použij první dostupný
-        device_id: Optional[str] = call.data.get("device_id")
-        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
-
+        client = _get_entry_client(hass, entry)
+        box_id = _resolve_box_id_from_service(
+            hass, entry, call.data, "set_box_mode"
+        )
         if not box_id:
-            _LOGGER.error("Cannot determine box_id for set_box_mode")
             return
 
         mode: Optional[str] = call.data.get("mode")
@@ -560,15 +607,11 @@ async def async_setup_entry_services_fallback(
         await client.set_box_mode(mode_value)
 
     async def handle_set_boiler_mode(call: ServiceCall) -> None:
-        coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-        client: OigCloudApi = coordinator.api
-
-        # Extrahuj box_id z device_id nebo použij první dostupný
-        device_id: Optional[str] = call.data.get("device_id")
-        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
-
+        client = _get_entry_client(hass, entry)
+        box_id = _resolve_box_id_from_service(
+            hass, entry, call.data, "set_boiler_mode"
+        )
         if not box_id:
-            _LOGGER.error("Cannot determine box_id for set_boiler_mode")
             return
 
         mode: Optional[str] = call.data.get("mode")
@@ -582,19 +625,16 @@ async def async_setup_entry_services_fallback(
         await client.set_boiler_mode(mode_value)
 
     async def handle_set_grid_delivery(call: ServiceCall) -> None:
-        coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-        client: OigCloudApi = coordinator.api
-
-        # Extrahuj box_id z device_id nebo použij první dostupný
-        device_id: Optional[str] = call.data.get("device_id")
-        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
-
-        if not box_id:
-            _LOGGER.error("Cannot determine box_id for set_grid_delivery")
-            return
-
         grid_mode: Optional[str] = call.data.get("mode")
         limit: Optional[int] = call.data.get("limit")
+        _validate_grid_delivery_inputs(grid_mode, limit)
+
+        client = _get_entry_client(hass, entry)
+        box_id = _resolve_box_id_from_service(
+            hass, entry, call.data, "set_grid_delivery"
+        )
+        if not box_id:
+            return
 
         _LOGGER.info(
             f"Setting grid delivery for device {box_id}: mode={grid_mode}, limit={limit}"
@@ -607,30 +647,21 @@ async def async_setup_entry_services_fallback(
             await client.set_grid_delivery_limit(int(limit))
 
     async def handle_set_formating_mode(call: ServiceCall) -> None:
-        coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-        client: OigCloudApi = coordinator.api
-
-        # Extrahuj box_id z device_id nebo použij první dostupný
-        device_id: Optional[str] = call.data.get("device_id")
-        box_id = get_box_id_from_device(hass, device_id, entry.entry_id)
-
+        client = _get_entry_client(hass, entry)
+        box_id = _resolve_box_id_from_service(
+            hass, entry, call.data, "set_formating_mode"
+        )
         if not box_id:
-            _LOGGER.error("Cannot determine box_id for set_formating_mode")
             return
 
         mode: Optional[str] = call.data.get("mode")
         limit: Optional[int] = call.data.get("limit")
-        acknowledgement: bool = call.data.get("acknowledgement", False)
 
         _LOGGER.info(
             f"Setting formating mode for device {box_id}: mode={mode}, limit={limit}"
         )
 
-        # Kontrola acknowledgement (required v schema)
-        if not acknowledgement:
-            _LOGGER.error(
-                "Služba set_formating_mode vyžaduje potvrzení (acknowledgement)"
-            )
+        if not _acknowledged(call.data, "set_formating_mode"):
             return
 
         # OPRAVA: Podle původní logiky - použij limit pokud je zadán, jinak mode_value
@@ -647,58 +678,16 @@ async def async_setup_entry_services_fallback(
 
         # Registrace bez shield ochrany
         services_to_register = [
-            (
-                "set_box_mode",
-                handle_set_box_mode,
-                {
-                    vol.Optional("device_id"): cv.string,
-                    vol.Required("mode"): vol.In(
-                        ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
-                    ),
-                    vol.Required("acknowledgement"): vol.In([True]),
-                },
-            ),
-            (
-                "set_boiler_mode",
-                handle_set_boiler_mode,
-                {
-                    vol.Optional("device_id"): cv.string,
-                    vol.Required("mode"): vol.In(["CBB", "Manual"]),
-                    vol.Required("acknowledgement"): vol.In([True]),
-                },
-            ),
-            (
-                "set_grid_delivery",
-                handle_set_grid_delivery,
-                {
-                    vol.Optional("device_id"): cv.string,
-                    "mode": vol.Any(
-                        None,
-                        vol.In(
-                            ["Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"]
-                        ),
-                    ),
-                    "limit": vol.Any(None, vol.Coerce(int)),
-                    vol.Required("acknowledgement"): vol.In([True]),
-                    vol.Required("warning"): vol.In([True]),
-                },
-            ),
-            (
-                "set_formating_mode",
-                handle_set_formating_mode,
-                {
-                    vol.Optional("device_id"): cv.string,
-                    vol.Required("mode"): vol.In(["Nenabíjet", "Nabíjet"]),
-                    vol.Required("acknowledgement"): vol.In([True]),
-                    "limit": vol.Any(None, vol.Coerce(int)),
-                },
-            ),
+            ("set_box_mode", handle_set_box_mode, SET_BOX_MODE_SCHEMA),
+            ("set_boiler_mode", handle_set_boiler_mode, SET_BOILER_MODE_SCHEMA),
+            ("set_grid_delivery", handle_set_grid_delivery, SET_GRID_DELIVERY_SCHEMA),
+            ("set_formating_mode", handle_set_formating_mode, SET_FORMATING_MODE_SCHEMA),
         ]
 
         for service_name, handler, schema in services_to_register:
             try:
                 hass.services.async_register(
-                    DOMAIN, service_name, handler, schema=vol.Schema(schema)
+                    DOMAIN, service_name, handler, schema=schema
                 )
                 _LOGGER.info(
                     f"Successfully registered fallback service: {service_name}"
@@ -769,49 +758,82 @@ def _validate_dashboard_tiles_config(config: Any) -> None:
             raise ValueError(f"Missing required key: {key}")
 
 
-async def _run_manual_balancing_checks(
-    hass: HomeAssistant, call: ServiceCall
-) -> dict:
-    def _serialize_dt(value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            return value
-        if hasattr(value, "isoformat"):
-            return value.isoformat()
-        return str(value)
+def _serialize_dt(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
-    requested_box = call.data.get("box_id")
-    force_balancing = call.data.get("force", False)
-    results: List[Dict[str, Any]] = []
+
+def _iter_balancing_managers(
+    hass: HomeAssistant, requested_box: Optional[str]
+) -> List[tuple[str, Any, Optional[str]]]:
+    managers: List[tuple[str, Any, Optional[str]]] = []
     domain_data = hass.data.get(DOMAIN, {})
 
     for entry_id, entry_data in domain_data.items():
         if not isinstance(entry_data, dict) or entry_id == "shield":
             continue
-
         balancing_manager = entry_data.get("balancing_manager")
         if not balancing_manager:
             continue
-
         manager_box_id = getattr(balancing_manager, "box_id", None)
         if requested_box and manager_box_id != requested_box:
             continue
+        managers.append((entry_id, balancing_manager, manager_box_id))
+    return managers
 
+
+def _build_balancing_plan_result(
+    entry_id: str, manager_box_id: Optional[str], plan: Any
+) -> Dict[str, Any]:
+    return {
+        "entry_id": entry_id,
+        "box_id": manager_box_id,
+        "plan_mode": plan.mode.value,
+        "reason": plan.reason,
+        "holding_start": _serialize_dt(plan.holding_start),
+        "holding_end": _serialize_dt(plan.holding_end),
+        "priority": plan.priority.value,
+    }
+
+
+def _build_no_plan_result(entry_id: str, manager_box_id: Optional[str]) -> Dict[str, Any]:
+    return {
+        "entry_id": entry_id,
+        "box_id": manager_box_id,
+        "plan_mode": None,
+        "reason": "no_plan_needed",
+    }
+
+
+def _build_error_result(
+    entry_id: str, manager_box_id: Optional[str], err: Exception
+) -> Dict[str, Any]:
+    return {
+        "entry_id": entry_id,
+        "box_id": manager_box_id,
+        "error": str(err),
+    }
+
+
+async def _run_manual_balancing_checks(
+    hass: HomeAssistant, call: ServiceCall
+) -> dict:
+    requested_box = call.data.get("box_id")
+    force_balancing = call.data.get("force", False)
+    results: List[Dict[str, Any]] = []
+
+    for entry_id, balancing_manager, manager_box_id in _iter_balancing_managers(
+        hass, requested_box
+    ):
         try:
             plan = await balancing_manager.check_balancing(force=force_balancing)
             if plan:
-                results.append(
-                    {
-                        "entry_id": entry_id,
-                        "box_id": manager_box_id,
-                        "plan_mode": plan.mode.value,
-                        "reason": plan.reason,
-                        "holding_start": _serialize_dt(plan.holding_start),
-                        "holding_end": _serialize_dt(plan.holding_end),
-                        "priority": plan.priority.value,
-                    }
-                )
+                results.append(_build_balancing_plan_result(entry_id, manager_box_id, plan))
                 _LOGGER.info(
                     "Manual balancing check created %s plan for box %s (%s)",
                     plan.mode.value,
@@ -819,14 +841,7 @@ async def _run_manual_balancing_checks(
                     plan.reason,
                 )
             else:
-                results.append(
-                    {
-                        "entry_id": entry_id,
-                        "box_id": manager_box_id,
-                        "plan_mode": None,
-                        "reason": "no_plan_needed",
-                    }
-                )
+                results.append(_build_no_plan_result(entry_id, manager_box_id))
                 _LOGGER.info(
                     "Manual balancing check executed for box %s - no plan needed",
                     manager_box_id,
@@ -838,13 +853,7 @@ async def _run_manual_balancing_checks(
                 err,
                 exc_info=True,
             )
-            results.append(
-                {
-                    "entry_id": entry_id,
-                    "box_id": manager_box_id,
-                    "error": str(err),
-                }
-            )
+            results.append(_build_error_result(entry_id, manager_box_id, err))
 
     if not results:
         _LOGGER.warning(

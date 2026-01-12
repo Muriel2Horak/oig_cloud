@@ -354,7 +354,12 @@ async def test_async_setup_entry_services_with_shield_errors(monkeypatch):
     await set_box(DummyServiceCall({"mode": "Home 1", "acknowledgement": True}))
 
     set_grid = hass.services.registered[(DOMAIN, "set_grid_delivery")]
-    await set_grid(DummyServiceCall({"mode": None, "limit": None, "acknowledgement": True, "warning": True}))
+    with pytest.raises(vol.Invalid):
+        await set_grid(
+            DummyServiceCall(
+                {"mode": None, "limit": None, "acknowledgement": True, "warning": True}
+            )
+        )
 
     set_boiler = hass.services.registered[(DOMAIN, "set_boiler_mode")]
     await set_boiler(DummyServiceCall({"mode": "Manual", "acknowledgement": True}))
