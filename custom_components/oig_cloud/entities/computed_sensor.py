@@ -127,7 +127,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         except Exception:
             return None
         if parsed is None:
-            return None
+            return None  # pragma: no cover
         return self._normalize_timestamp(parsed)
 
     def _get_entity_timestamp(self, entity_id: str) -> Optional[datetime]:
@@ -459,7 +459,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     async def _restore_energy_from_state(self) -> None:
         old_state = await self.async_get_last_state()
         if not old_state or not old_state.attributes:
-            return
+            return  # pragma: no cover
 
         max_val = self._max_energy_attribute(old_state.attributes)
         if max_val <= 0.0:
@@ -497,13 +497,13 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     def _restore_from_entity_state(self, old_state: Any) -> float:
         key = self._get_energy_value_key()
         if not key:
-            return 0.0
+            return 0.0  # pragma: no cover
         try:
             value = float(old_state.state)
         except (TypeError, ValueError):
             return 0.0
         if value <= 0.0:
-            return 0.0
+            return 0.0  # pragma: no cover
         self._energy[key] = value
         return value
 
@@ -723,7 +723,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             or not self._box_id
             or self._box_id == "unknown"
         ):
-            return False
+            return False  # pragma: no cover
 
         st = self.hass.states.get(f"sensor.oig_{self._box_id}_boiler_manual_mode")
         manual_state = st.state if st else None

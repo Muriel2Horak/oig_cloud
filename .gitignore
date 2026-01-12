@@ -232,6 +232,7 @@ docs/**
 config/
 !custom_components/oig_cloud/config/
 !custom_components/oig_cloud/config/**
+custom_components/oig_cloud/config/**/__pycache__/
 
 # Legacy config flow (backup)
 custom_components/oig_cloud/config_flow_legacy.py

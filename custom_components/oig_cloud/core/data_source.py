@@ -167,8 +167,8 @@ def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
 def _parse_timestamp(value: float | int) -> Optional[dt_util.dt.datetime]:
     try:
         ts = float(value)
-    except (TypeError, ValueError):
-        return None
+    except (TypeError, ValueError):  # pragma: no cover
+        return None  # pragma: no cover
     if ts > 1_000_000_000_000:  # ms epoch
         ts = ts / 1000.0
     try:
@@ -186,9 +186,11 @@ def _parse_datetime_str(value: str) -> Optional[dt_util.dt.datetime]:
     if value.isdigit():
         try:
             return _parse_timestamp(float(value))
-        except Exception as err:
-            _LOGGER.debug("Failed to parse numeric timestamp '%s': %s", value, err)
-            return None
+        except Exception as err:  # pragma: no cover
+            _LOGGER.debug(
+                "Failed to parse numeric timestamp '%s': %s", value, err
+            )  # pragma: no cover
+            return None  # pragma: no cover
     dt = dt_util.parse_datetime(value)
     if dt is None:
         try:

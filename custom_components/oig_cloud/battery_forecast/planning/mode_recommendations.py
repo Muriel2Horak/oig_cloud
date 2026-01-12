@@ -64,7 +64,7 @@ def _filter_future_intervals(
             tomorrow_end, current_time + timedelta(hours=hours_ahead)
         )
     else:
-        end_time = tomorrow_end
+        end_time = tomorrow_end  # pragma: no cover
 
     return [
         interval

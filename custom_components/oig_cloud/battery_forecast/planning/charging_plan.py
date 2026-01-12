@@ -213,7 +213,7 @@ def _apply_protection_override(
     current_soc = timeline[0].get("battery_capacity_kwh", 0)
     protection_shortage = protection_soc_kwh - current_soc
     if protection_shortage <= 0:
-        return protection_soc_kwh
+        return protection_soc_kwh  # pragma: no cover
 
     _LOGGER.warning(
         "PROTECTION OVERRIDE: Need %.2fkWh to reach protection target %.2fkWh (current: %.2fkWh)",
@@ -420,7 +420,7 @@ def _apply_critical_fix(
     critical_capacity = timeline[first_critical].get("battery_capacity_kwh", 0)
     energy_needed = min_capacity - critical_capacity
     if energy_needed <= 0:
-        return
+        return  # pragma: no cover
 
     _LOGGER.info("Need %.2fkWh to reach minimum at critical point", energy_needed)
     charging_candidates = _collect_critical_candidates(

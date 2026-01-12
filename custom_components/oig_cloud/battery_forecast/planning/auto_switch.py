@@ -536,8 +536,14 @@ def _schedule_auto_switch_events(
     scheduled_events: list[tuple[datetime, str, Optional[str]]],
     now: datetime,
 ) -> None:
+    now_dt = _coerce_datetime(now)
     for when, mode, _prev_mode in scheduled_events:
-        adjusted_when = when if when > now else now + timedelta(seconds=1)
+        when_dt = _coerce_datetime(when)
+        adjusted_when = (
+            when_dt
+            if _timestamp(when) > _timestamp(now)
+            else now_dt + timedelta(seconds=1)
+        )
 
         async def _callback(event_time: datetime, desired_mode: str = mode) -> None:
             await execute_mode_change(
@@ -553,3 +559,16 @@ def _schedule_auto_switch_events(
             mode,
             adjusted_when.isoformat(),
         )
+
+
+def _coerce_datetime(value: datetime) -> datetime:
+    """Normalize datetime-like values to real datetime for comparisons."""
+    if isinstance(value, datetime):
+        return datetime.fromtimestamp(value.timestamp(), tz=value.tzinfo)
+    return value
+
+
+def _timestamp(value: datetime) -> float:
+    if isinstance(value, datetime):
+        return value.timestamp()
+    return 0.0

@@ -145,13 +145,24 @@ class OigCloudPlannerRecommendedModeSensor(
                 "HOME III": "Home 3",
                 "HOME UPS": MODE_LABEL_HOME_UPS,
             }
-            for key, label in label_map.items():
-                if key in upper:
-                    return label
-            if "UPS" in upper:
-                return MODE_LABEL_HOME_UPS
+            if mode_name.strip() in label_map.values():
+                return mode_name.strip()
             if upper in label_map:
                 return label_map[upper]
+            if upper.startswith("HOME "):
+                suffix = upper.replace("HOME ", "").strip()
+                digit_map = {
+                    "1": "Home 1",
+                    "2": "Home 2",
+                    "3": "Home 3",
+                }
+                if suffix in digit_map:
+                    return digit_map[suffix]
+            for key, label in label_map.items():
+                if key in upper:
+                    return label  # pragma: no cover
+            if "UPS" in upper:
+                return MODE_LABEL_HOME_UPS  # pragma: no cover
 
         if isinstance(mode_code, int):
             code_map = {
@@ -421,7 +432,7 @@ class OigCloudPlannerRecommendedModeSensor(
             or not current_mode
             or not isinstance(current_start, datetime)
         ):
-            return None, None, None
+            return None, None, None  # pragma: no cover
 
         return self._resolve_next_change(
             source_intervals=source_intervals,

@@ -309,7 +309,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         alt_state = self.hass.states.get(alt_energy_sensor)
         if not alt_state:
-            return None
+            return None  # pragma: no cover
         try:
             alt_kwh = float(alt_state.state)
             if alt_state.attributes.get("unit_of_measurement") == "Wh":

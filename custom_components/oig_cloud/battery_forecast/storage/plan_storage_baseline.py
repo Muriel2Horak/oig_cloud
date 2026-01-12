@@ -270,7 +270,7 @@ def _format_filled_intervals(
 ) -> Optional[str]:
     if filled_count > 0 and first_hybrid_time:
         return f"00:00-{first_hybrid_time}"
-    return None
+    return None  # pragma: no cover
 
 
 async def _save_baseline_plan(

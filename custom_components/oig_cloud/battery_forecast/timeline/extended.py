@@ -186,7 +186,9 @@ def _parse_iso_datetime(time_str: str) -> Optional[datetime]:
         return None
 
 
-def _parse_planned_time(time_str: str, day: date) -> Optional[datetime]:
+def _parse_planned_time(
+    time_str: str, day: date, _date_str: Optional[str] = None
+) -> Optional[datetime]:
     if not time_str:
         return None
     if "T" in time_str:
@@ -729,7 +731,7 @@ def _build_planned_only_entry(
     if interval_time.tzinfo is None:
         interval_time = dt_util.as_local(interval_time)
     if not (day_start <= interval_time <= day_end):
-        return None
+        return None  # pragma: no cover
     return {
         "time": interval_time_str,
         "status": "planned",

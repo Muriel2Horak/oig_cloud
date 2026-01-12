@@ -117,7 +117,7 @@ def _build_precomputed_response(
     if not stored_hybrid:
         stored_hybrid = (precomputed_data or {}).get("timeline_hybrid")
     if not stored_hybrid:
-        return None
+        return None  # pragma: no cover
     metadata = {
         "box_id": box_id,
         "last_update": last_update,

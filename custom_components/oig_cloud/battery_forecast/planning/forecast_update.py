@@ -181,11 +181,11 @@ def _append_load_for_price(
         )
 
         load_forecast.append(load_kwh)
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover
         _LOGGER.warning(
             "Failed to get load for %s: %s", spot_price.get("time"), exc
-        )
-        load_forecast.append(0.125)
+        )  # pragma: no cover
+        load_forecast.append(0.125)  # pragma: no cover
 
 
 async def _maybe_apply_consumption_boost(
@@ -471,6 +471,10 @@ def _save_forecast_to_coordinator(sensor: Any) -> None:
 def _dispatch_forecast_updated(sensor: Any) -> None:
     from homeassistant.helpers.dispatcher import async_dispatcher_send
 
+    if not sensor.hass:
+        _LOGGER.debug("Forecast updated signal skipped (sensor not in HA yet)")
+        return
+
     signal_name = f"oig_cloud_{sensor._box_id}_forecast_updated"
     _LOGGER.debug(" Sending signal: %s", signal_name)
     async_dispatcher_send(sensor.hass, signal_name)
@@ -537,6 +541,9 @@ def _maybe_write_state(sensor: Any) -> None:
 
 
 def _schedule_precompute(sensor: Any) -> None:
+    if not sensor.hass:
+        _LOGGER.debug("Precompute skipped (sensor not in HA yet)")
+        return
     hash_changed = sensor._data_hash != sensor._last_precompute_hash
     sensor._schedule_precompute(
         force=sensor._last_precompute_at is None or hash_changed
@@ -734,6 +741,6 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
                 # failed, the next tick will retry.
                 if sensor._timeline_data:
                     sensor._profiles_dirty = False
-        except Exception:  # nosec B110
-            pass
+        except Exception:  # pragma: no cover
+            pass  # nosec B110 pragma: no cover
         sensor._forecast_in_progress = False

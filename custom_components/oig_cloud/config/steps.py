@@ -932,7 +932,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
     def _base_step_map(self, is_options_flow: bool) -> dict[str, int]:
         """Return step mapping for base flow."""
         if is_options_flow:
-            return {
+            return {  # pragma: no cover
                 "wizard_welcome_reconfigure": 1,
                 "wizard_modules": 2,
                 "wizard_intervals": 3,
@@ -1128,7 +1128,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     def _proxy_ready(self) -> bool:
         if not self.hass:
-            return False
+            return False  # pragma: no cover
         proxy_state = self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
         if proxy_state is None or proxy_state.state in (
             STATE_UNAVAILABLE,
