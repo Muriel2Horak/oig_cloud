@@ -1670,12 +1670,20 @@ def _keep_device_patterns() -> list[str]:
 def _device_matches_keep_patterns(device_name: str, keep_patterns: list[str]) -> bool:
     if not device_name:
         return False
+    return any(pattern in device_name for pattern in keep_patterns)
+
+
+def _device_matches_remove_regex(device_name: str, keep_patterns: list[str]) -> bool:
+    if not device_name:
+        return False
     return any(re.search(pattern, device_name) for pattern in keep_patterns)
 
 
 def _should_keep_device(device: Any, entity_registry: Any, keep_patterns: list[str]) -> bool:
     if _device_matches_keep_patterns(device.name or "", keep_patterns):
         return True
+    if _device_matches_remove_regex(device.name or "", keep_patterns):
+        return False
     return _device_has_entities(entity_registry, device.id)
 
 
