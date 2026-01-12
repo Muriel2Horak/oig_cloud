@@ -448,34 +448,15 @@ class OigNotificationParser:
     ) -> Optional[OigNotification]:
         """Create notification object from HTML data."""
         try:
-            # NOVÉ: Vyčistit HTML tagy z plné zprávy a device_id
-            import html
-
-            # Unescape HTML entities
-            clean_message = html.unescape(full_message)
-            clean_message = (
-                clean_message.replace("<br />", "\n")
-                .replace("<br/>", "\n")
-                .replace("<br>", "\n")
-            )
-            clean_message = "\n".join(
-                part.strip() for part in clean_message.replace("\r", "").split("\n")
-            ).strip()
-
-            # Extrahovat device ID z formátu "Box #2206237016"
-            extracted_device_id = device_id.strip()
-            marker = "Box #"
-            if marker in device_id:
-                extracted_device_id = (
-                    device_id.split(marker, 1)[1].strip().split()[0].strip()
-                )
+            clean_message = self._clean_html_message(full_message)
+            extracted_device_id = self._extract_device_id(device_id)
 
             # Parsovat datum - formát "28. 6. 2025 | 13:05"
             timestamp = self._parse_czech_datetime(date_str)
 
-            # Vytvořit unikátní ID z kombinace času, zařízení a obsahu
-            content_hash = hash(f"{extracted_device_id}_{clean_message}_{date_str}")
-            notification_id = f"html_{abs(content_hash)}_{int(timestamp.timestamp())}"
+            notification_id = self._build_html_notification_id(
+                extracted_device_id, clean_message, date_str, timestamp
+            )
 
             # Určit typ notifikace a severitu podle CSS level
             notification_type, severity = self._get_notification_severity(
@@ -508,6 +489,38 @@ class OigNotificationParser:
         except Exception as e:
             _LOGGER.warning(f"Error creating HTML notification: {e}")
             return None
+
+    def _clean_html_message(self, full_message: str) -> str:
+        import html
+
+        clean_message = html.unescape(full_message)
+        clean_message = (
+            clean_message.replace("<br />", "\n")
+            .replace("<br/>", "\n")
+            .replace("<br>", "\n")
+        )
+        return "\n".join(
+            part.strip() for part in clean_message.replace("\r", "").split("\n")
+        ).strip()
+
+    def _extract_device_id(self, device_id: str) -> str:
+        extracted_device_id = device_id.strip()
+        marker = "Box #"
+        if marker in device_id:
+            extracted_device_id = (
+                device_id.split(marker, 1)[1].strip().split()[0].strip()
+            )
+        return extracted_device_id
+
+    def _build_html_notification_id(
+        self,
+        device_id: str,
+        clean_message: str,
+        date_str: str,
+        timestamp: datetime,
+    ) -> str:
+        content_hash = hash(f"{device_id}_{clean_message}_{date_str}")
+        return f"html_{abs(content_hash)}_{int(timestamp.timestamp())}"
 
     def _parse_czech_datetime(self, date_str: str) -> datetime:
         """Parse Czech datetime format '25. 6. 2025 | 8:13'."""
