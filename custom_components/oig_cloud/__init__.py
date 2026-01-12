@@ -820,7 +820,7 @@ async def _init_session_manager_and_coordinator(
     no_telemetry: bool,
     standard_scan_interval: int,
     extended_scan_interval: int,
-) -> tuple[OigCloudCoordinator, Any, OigCloudApi]:
+) -> tuple[OigCloudCoordinator, Any]:
     oig_api = OigCloudApi(username, password, no_telemetry)
 
     from .api.oig_cloud_session_manager import OigCloudSessionManager
@@ -864,7 +864,7 @@ async def _init_session_manager_and_coordinator(
     except Exception as err:
         _LOGGER.debug("Persisting box_id failed (non-critical): %s", err)
 
-    return coordinator, session_manager, oig_api
+    return coordinator, session_manager
 
 
 def _resolve_entry_box_id(entry: ConfigEntry, coordinator: OigCloudCoordinator | None) -> str | None:
@@ -881,6 +881,264 @@ def _resolve_entry_box_id(entry: ConfigEntry, coordinator: OigCloudCoordinator |
             None,
         )
     return None
+
+
+async def _init_notification_manager(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: OigCloudCoordinator,
+    session_manager: Any,
+    service_shield: Any,
+) -> Any | None:
+    enable_cloud_notifications = entry.options.get("enable_cloud_notifications", True)
+    cloud_active = (
+        get_data_source_state(hass, entry.entry_id).effective_mode
+        == DATA_SOURCE_CLOUD_ONLY
+    )
+    if not enable_cloud_notifications or not cloud_active:
+        _LOGGER.debug(
+            "Cloud notifications disabled or cloud not active - skipping notification manager"
+        )
+        return None
+
+    try:
+        _LOGGER.debug("Initializing notification manager...")
+        from .core.oig_cloud_notification import OigNotificationManager
+
+        _LOGGER.debug("Using API object: %s", type(session_manager.api))
+        _LOGGER.debug(
+            "API has get_notifications: %s",
+            hasattr(session_manager.api, "get_notifications"),
+        )
+
+        manager = OigNotificationManager(
+            hass, session_manager.api, "https://www.oigpower.cz/cez/"
+        )
+
+        device_id = _resolve_entry_box_id(entry, coordinator)
+        if not device_id:
+            _LOGGER.warning(
+                "No device data available, notification manager not initialized"
+            )
+            return None
+
+        manager.set_device_id(device_id)
+        _LOGGER.debug("Set notification manager device_id to: %s", device_id)
+
+        if service_shield:
+            try:
+                from .shield.core import ModeTransitionTracker
+
+                service_shield.mode_tracker = ModeTransitionTracker(hass, device_id)
+                await service_shield.mode_tracker.async_setup()
+                _LOGGER.info(
+                    "Mode Transition Tracker inicializován pro box %s", device_id
+                )
+            except Exception as tracker_error:
+                _LOGGER.warning(
+                    "Failed to initialize Mode Transition Tracker: %s", tracker_error
+                )
+
+        try:
+            await manager.update_from_api()
+            _LOGGER.debug("Initial notification data loaded successfully")
+        except Exception as fetch_error:
+            _LOGGER.warning(
+                "Failed to fetch initial notifications (API endpoint may not exist): %s",
+                fetch_error,
+            )
+
+        coordinator.notification_manager = manager
+        _LOGGER.info(
+            "Notification manager created and attached to coordinator (may not have data yet)"
+        )
+        return manager
+    except Exception as err:
+        _LOGGER.warning(
+            "Failed to setup notification manager (API may not be available): %s", err
+        )
+        return None
+
+
+def _init_solar_forecast(entry: ConfigEntry) -> Any | None:
+    if not entry.options.get("enable_solar_forecast", False):
+        return None
+
+    try:
+        _LOGGER.debug("Initializing solar forecast functionality")
+        return {"enabled": True, "config": entry.options}
+    except Exception as err:
+        _LOGGER.error("Chyba při inicializaci solární předpovědi: %s", err)
+        return {"enabled": False, "error": str(err)}
+
+
+def _build_analytics_device_info(
+    entry: ConfigEntry, coordinator: OigCloudCoordinator
+) -> Dict[str, Any]:
+    try:
+        from .entities.base_sensor import resolve_box_id
+
+        box_id_for_devices = resolve_box_id(coordinator)
+    except Exception:
+        box_id_for_devices = entry.options.get("box_id")
+    if not (isinstance(box_id_for_devices, str) and box_id_for_devices.isdigit()):
+        box_id_for_devices = "unknown"
+
+    return {
+        "identifiers": {(DOMAIN, f"{box_id_for_devices}_analytics")},
+        "name": f"Analytics & Predictions {box_id_for_devices}",
+        "manufacturer": "OIG",
+        "model": "Analytics Module",
+        "via_device": (DOMAIN, box_id_for_devices),
+        "entry_type": "service",
+    }
+
+
+async def _init_ote_api(entry: ConfigEntry) -> Any | None:
+    if not entry.options.get("enable_pricing", False):
+        _LOGGER.debug("Pricing disabled - skipping OTE API initialization")
+        return None
+
+    try:
+        _LOGGER.debug("Initializing OTE API for spot prices")
+        from .api.ote_api import OteApi
+
+        ote_api = OteApi()
+        _LOGGER.info("OTE API successfully initialized")
+        return ote_api
+    except Exception as err:
+        _LOGGER.error("Failed to initialize OTE API: %s", err)
+        return None
+
+
+async def _init_boiler_coordinator(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> Any | None:
+    if not entry.options.get("enable_boiler", False):
+        _LOGGER.debug("Boiler module disabled")
+        return None
+
+    try:
+        _LOGGER.debug("Initializing Boiler module")
+        from .boiler.coordinator import BoilerCoordinator
+
+        boiler_config = {**entry.data, **entry.options}
+        coordinator = BoilerCoordinator(hass, boiler_config)
+        await coordinator.async_config_entry_first_refresh()
+        _LOGGER.info("Boiler coordinator successfully initialized")
+        return coordinator
+    except Exception as err:
+        _LOGGER.error("Failed to initialize Boiler coordinator: %s", err)
+        return None
+
+
+async def _init_balancing_manager(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: OigCloudCoordinator,
+    battery_prediction_enabled: bool,
+) -> Any | None:
+    balancing_enabled = entry.options.get("balancing_enabled", True)
+    if balancing_enabled and not battery_prediction_enabled:
+        _LOGGER.info("oig_cloud: balancing disabled because battery prediction is off")
+        balancing_enabled = False
+    _LOGGER.info("oig_cloud: balancing_enabled=%s", balancing_enabled)
+
+    if not balancing_enabled:
+        _LOGGER.info("oig_cloud: BalancingManager disabled via config options")
+        return None
+    if BalancingManager is None:
+        _LOGGER.warning("oig_cloud: BalancingManager not available (import failed)")
+        return None
+
+    try:
+        _LOGGER.info("oig_cloud: Initializing BalancingManager")
+        box_id = _resolve_entry_box_id(entry, coordinator)
+        if not box_id:
+            _LOGGER.warning("oig_cloud: No box_id available for BalancingManager")
+
+        storage_path = hass.config.path(".storage")
+        balancing_manager = BalancingManager(hass, box_id, storage_path, entry)
+        await balancing_manager.async_setup()
+        _LOGGER.info("oig_cloud: BalancingManager successfully initialized")
+
+        from datetime import timedelta
+        from homeassistant.helpers.event import async_call_later, async_track_time_interval
+
+        async def update_balancing(_now: Any) -> None:
+            _LOGGER.debug("BalancingManager: periodic check_balancing()")
+            try:
+                await balancing_manager.check_balancing()
+            except Exception as err:
+                _LOGGER.error("Error checking balancing: %s", err, exc_info=True)
+
+        entry.async_on_unload(
+            async_track_time_interval(
+                hass, update_balancing, timedelta(minutes=30)
+            )
+        )
+
+        async def initial_balancing_check(_now: Any) -> None:
+            _LOGGER.debug("BalancingManager: initial check_balancing()")
+            try:
+                result = await balancing_manager.check_balancing()
+                if result:
+                    _LOGGER.info("✅ Initial check created plan: %s", result.mode.name)
+                else:
+                    _LOGGER.debug("Initial check: no plan needed yet")
+            except Exception as err:
+                _LOGGER.error(
+                    "Error in initial balancing check: %s", err, exc_info=True
+                )
+
+        async_call_later(hass, 120, initial_balancing_check)
+        return balancing_manager
+    except Exception as err:
+        _LOGGER.error(
+            "oig_cloud: Failed to initialize BalancingManager: %s",
+            err,
+            exc_info=True,
+        )
+        return None
+
+
+def _init_telemetry_store(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: OigCloudCoordinator
+) -> Any | None:
+    try:
+        from .core.telemetry_store import TelemetryStore
+        from .entities.base_sensor import resolve_box_id
+
+        store_box_id = entry.options.get("box_id") or entry.data.get("box_id")
+        if not (isinstance(store_box_id, str) and store_box_id.isdigit()):
+            store_box_id = resolve_box_id(coordinator)
+        if isinstance(store_box_id, str) and store_box_id.isdigit():
+            telemetry_store = TelemetryStore(hass, box_id=store_box_id)
+            setattr(coordinator, "telemetry_store", telemetry_store)
+            return telemetry_store
+    except Exception:
+        return None
+    return None
+
+
+async def _start_data_source_controller(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: OigCloudCoordinator,
+    telemetry_store: Any | None,
+) -> Any | None:
+    try:
+        data_source_controller = DataSourceController(
+            hass,
+            entry,
+            coordinator,
+            telemetry_store=telemetry_store,
+        )
+        await data_source_controller.async_start()
+        return data_source_controller
+    except Exception as err:
+        _LOGGER.warning("DataSourceController start failed (non-critical): %s", err)
+        return None
 
 
 async def async_setup_entry(
@@ -931,7 +1189,7 @@ async def async_setup_entry(
 
         _LOGGER.debug("Telemetry handled only by ServiceShield, not main module")
 
-        coordinator, session_manager, oig_api = await _init_session_manager_and_coordinator(
+        coordinator, session_manager = await _init_session_manager_and_coordinator(
             hass,
             entry,
             username,
@@ -941,166 +1199,20 @@ async def async_setup_entry(
             extended_scan_interval,
         )
 
-        # OPRAVA: Inicializace notification manageru se správným error handling
-        notification_manager = None
-        enable_cloud_notifications = entry.options.get(
-            "enable_cloud_notifications", True
+        notification_manager = await _init_notification_manager(
+            hass, entry, coordinator, session_manager, service_shield
         )
-        cloud_active_for_setup = (
-            get_data_source_state(hass, entry.entry_id).effective_mode
-            == DATA_SOURCE_CLOUD_ONLY
-        )
-        if enable_cloud_notifications and cloud_active_for_setup:
-            try:
-                _LOGGER.debug("Initializing notification manager...")
-                from .core.oig_cloud_notification import OigNotificationManager
 
-                # PROBLÉM: Ověříme, že používáme správný objekt
-                _LOGGER.debug(f"Using API object: {type(oig_api)}")
-                _LOGGER.debug(
-                    f"API has get_notifications: {hasattr(oig_api, 'get_notifications')}"
-                )
-
-                # OPRAVA: Použít oig_api objekt (OigCloudApi) místo jakéhokoliv jiného
-                # NOVÉ: Použít session_manager.api pro přístup k underlying API
-                notification_manager = OigNotificationManager(
-                    hass, session_manager.api, "https://www.oigpower.cz/cez/"
-                )
-
-                # Nastavíme device_id deterministicky (numerický box_id)
-                device_id = _resolve_entry_box_id(entry, coordinator)
-                if device_id:
-                    notification_manager.set_device_id(device_id)
-                    _LOGGER.debug(
-                        "Set notification manager device_id to: %s", device_id
-                    )
-
-                    # Inicializace Mode Transition Tracker
-                    if service_shield:
-                        try:
-                            from .shield.core import ModeTransitionTracker
-
-                            service_shield.mode_tracker = ModeTransitionTracker(
-                                hass, device_id
-                            )
-                            await service_shield.mode_tracker.async_setup()
-                            _LOGGER.info(
-                                f"Mode Transition Tracker inicializován pro box {device_id}"
-                            )
-                        except Exception as tracker_error:
-                            _LOGGER.warning(
-                                f"Failed to initialize Mode Transition Tracker: {tracker_error}"
-                            )
-                            # Pokračujeme bez trackeru
-
-                    # OPRAVA: Použít nový API přístup místo fetch_notifications_and_status
-                    try:
-                        await notification_manager.update_from_api()
-                        _LOGGER.debug("Initial notification data loaded successfully")
-                    except Exception as fetch_error:
-                        _LOGGER.warning(
-                            f"Failed to fetch initial notifications (API endpoint may not exist): {fetch_error}"
-                        )
-                        # Pokračujeme bez počátečních notifikací - API endpoint možná neexistuje
-
-                    # Připoj notification manager ke koordinátoru i když fetch selhal
-                    # Manager může fungovat později pokud se API opraví
-                    coordinator.notification_manager = notification_manager
-                    _LOGGER.info(
-                        "Notification manager created and attached to coordinator (may not have data yet)"
-                    )
-                else:
-                    _LOGGER.warning(
-                        "No device data available, notification manager not initialized"
-                    )
-                    notification_manager = None
-
-            except Exception as e:
-                _LOGGER.warning(
-                    "Failed to setup notification manager (API may not be available): %s",
-                    e,
-                )
-                # Pokračujeme bez notification manageru - API endpoint možná neexistuje nebo je nedostupný
-                notification_manager = None
-        else:
-            _LOGGER.debug(
-                "Cloud notifications disabled or cloud not active - skipping notification manager"
-            )
-
-        # Inicializace solar forecast (pokud je povolená)
-        solar_forecast = None
-        if entry.options.get("enable_solar_forecast", False):
-            try:
-                _LOGGER.debug("Initializing solar forecast functionality")
-                # Solar forecast se inicializuje přímo v sensorech, ne zde
-                solar_forecast = {"enabled": True, "config": entry.options}
-            except Exception as e:
-                _LOGGER.error("Chyba při inicializaci solární předpovědi: %s", e)
-                solar_forecast = {"enabled": False, "error": str(e)}
+        solar_forecast = _init_solar_forecast(entry)
 
         # **OPRAVA: Správné nastavení statistics pro reload**
         statistics_enabled = entry.options.get("enable_statistics", True)
         _LOGGER.debug("Statistics enabled: %s", statistics_enabled)
 
-        # Analytics device info (service device linked to the main box device)
-        # NOTE: box_id musí být numerické a stabilní i v local_only režimu (bez cloud dat).
-        try:
-            from .entities.base_sensor import resolve_box_id
+        analytics_device_info = _build_analytics_device_info(entry, coordinator)
 
-            box_id_for_devices = resolve_box_id(coordinator)
-        except Exception:
-            box_id_for_devices = entry.options.get("box_id")
-        if not (isinstance(box_id_for_devices, str) and box_id_for_devices.isdigit()):
-            box_id_for_devices = "unknown"
-
-        analytics_device_info = {
-            "identifiers": {(DOMAIN, f"{box_id_for_devices}_analytics")},
-            "name": f"Analytics & Predictions {box_id_for_devices}",
-            "manufacturer": "OIG",
-            "model": "Analytics Module",
-            "via_device": (DOMAIN, box_id_for_devices),
-            "entry_type": "service",
-        }
-
-        # NOVÉ: Podpora pro OTE API a spotové ceny
-        ote_api = None
-        if entry.options.get("enable_pricing", False):
-            try:
-                _LOGGER.debug("Initializing OTE API for spot prices")
-                from .api.ote_api import OteApi
-
-                ote_api = OteApi()
-                # OPRAVA: Odstraněno volání fetch_spot_prices - data už jsou v coordinatoru
-                _LOGGER.info("OTE API successfully initialized")
-            except Exception as e:
-                _LOGGER.error("Failed to initialize OTE API: %s", e)
-                if ote_api:
-                    await ote_api.close()
-                ote_api = None
-        else:
-            _LOGGER.debug("Pricing disabled - skipping OTE API initialization")
-
-        # NOVÉ: Bojlerový modul (pokud je povolen)
-        boiler_coordinator = None
-        if entry.options.get("enable_boiler", False):
-            try:
-                _LOGGER.debug("Initializing Boiler module")
-                from .boiler.coordinator import BoilerCoordinator
-
-                # Kombinace entry.data a entry.options pro config
-                boiler_config = {**entry.data, **entry.options}
-
-                boiler_coordinator = BoilerCoordinator(hass, boiler_config)
-
-                # První refresh
-                await boiler_coordinator.async_config_entry_first_refresh()
-
-                _LOGGER.info("Boiler coordinator successfully initialized")
-            except Exception as e:
-                _LOGGER.error("Failed to initialize Boiler coordinator: %s", e)
-                boiler_coordinator = None
-        else:
-            _LOGGER.debug("Boiler module disabled")
+        ote_api = await _init_ote_api(entry)
+        boiler_coordinator = await _init_boiler_coordinator(hass, entry)
 
         # NOVÉ: Podmíněné nastavení dashboard podle konfigurace
         dashboard_enabled = entry.options.get(
@@ -1108,111 +1220,14 @@ async def async_setup_entry(
         )  # OPRAVA: default False místo True
         # OPRAVA: Dashboard registrujeme AŽ PO vytvoření senzorů
 
-        # PHASE 3: Inicializace Balancing Manager (refactored - no physics)
-        balancing_enabled = entry.options.get("balancing_enabled", True)
-        battery_prediction_enabled = entry.options.get("enable_battery_prediction", False)
-        if balancing_enabled and not battery_prediction_enabled:
-            _LOGGER.info(
-                "oig_cloud: balancing disabled because battery prediction is off"
-            )
-            balancing_enabled = False
-        _LOGGER.info("oig_cloud: balancing_enabled=%s", balancing_enabled)
+        battery_prediction_enabled = entry.options.get(
+            "enable_battery_prediction", False
+        )
+        balancing_manager = await _init_balancing_manager(
+            hass, entry, coordinator, battery_prediction_enabled
+        )
 
-        balancing_manager = None
-        if balancing_enabled and BalancingManager is not None:
-            try:
-                _LOGGER.info("oig_cloud: Initializing BalancingManager")
-                # Get box_id deterministicky (entry.options → coordinator numeric keys)
-                box_id = _resolve_entry_box_id(entry, coordinator)
-
-                if not box_id:
-                    _LOGGER.warning(
-                        "oig_cloud: No box_id available for BalancingManager"
-                    )
-
-                storage_path = hass.config.path(".storage")
-
-                balancing_manager = BalancingManager(hass, box_id, storage_path, entry)
-                await balancing_manager.async_setup()
-
-                _LOGGER.info("oig_cloud: BalancingManager successfully initialized")
-
-                # Periodické volání balancingu (check every 30min)
-                from datetime import timedelta
-
-                from homeassistant.helpers.event import (
-                    async_call_later,
-                    async_track_time_interval,
-                )
-
-                async def update_balancing(_now: Any) -> None:
-                    """Periodická kontrola balancingu."""
-                    _LOGGER.debug("BalancingManager: periodic check_balancing()")
-                    try:
-                        await balancing_manager.check_balancing()
-                    except Exception as e:
-                        _LOGGER.error(
-                            "Error checking balancing: %s", e, exc_info=True
-                        )
-
-                # Aktualizace každých 30 minut
-                entry.async_on_unload(
-                    async_track_time_interval(
-                        hass, update_balancing, timedelta(minutes=30)
-                    )
-                )
-
-                # První volání hned při startu (po delay aby forecast měl čas se inicializovat)
-                async def initial_balancing_check(_now: Any) -> None:
-                    """Počáteční kontrola balancingu po startu."""
-                    _LOGGER.debug("BalancingManager: initial check_balancing()")
-                    try:
-                        result = await balancing_manager.check_balancing()
-                        if result:
-                            _LOGGER.info(
-                                f"✅ Initial check created plan: {result.mode.name}"
-                            )
-                        else:
-                            _LOGGER.debug("Initial check: no plan needed yet")
-                    except Exception as e:
-                        _LOGGER.error(
-                            "Error in initial balancing check: %s", e, exc_info=True
-                        )
-
-                # První kontrola za 2 minuty (aby forecast měl čas se inicializovat)
-                async_call_later(hass, 120, initial_balancing_check)
-
-            except Exception as err:
-                _LOGGER.error(
-                    "oig_cloud: Failed to initialize BalancingManager: %s",
-                    err,
-                    exc_info=True,
-                )
-                balancing_manager = None
-        else:
-            if not balancing_enabled:
-                _LOGGER.info("oig_cloud: BalancingManager disabled via config options")
-            if BalancingManager is None:
-                _LOGGER.warning(
-                    "oig_cloud: BalancingManager not available (import failed)"
-                )
-
-        # Uložení dat do hass.data
-        # Local telemetry store (cloud-shaped payload for coordinator.data in local mode)
-        telemetry_store = None
-        try:
-            from .core.telemetry_store import TelemetryStore
-            from .entities.base_sensor import resolve_box_id
-
-            store_box_id = entry.options.get("box_id") or entry.data.get("box_id")
-            if not (isinstance(store_box_id, str) and store_box_id.isdigit()):
-                store_box_id = resolve_box_id(coordinator)
-            if isinstance(store_box_id, str) and store_box_id.isdigit():
-                telemetry_store = TelemetryStore(hass, box_id=store_box_id)
-                # Expose on coordinator for other modules (optional)
-                setattr(coordinator, "telemetry_store", telemetry_store)
-        except Exception:
-            telemetry_store = None
+        telemetry_store = _init_telemetry_store(hass, entry, coordinator)
 
         hass.data[DOMAIN][entry.entry_id] = {
             "coordinator": coordinator,
@@ -1237,22 +1252,13 @@ async def async_setup_entry(
             },
         }
 
-        # Data source controller (cloud/hybrid/local with proxy health fallback)
-        try:
-            data_source_controller = DataSourceController(
-                hass,
-                entry,
-                coordinator,
-                telemetry_store=hass.data[DOMAIN][entry.entry_id].get(
-                    "telemetry_store"
-                ),
-            )
-            await data_source_controller.async_start()
+        data_source_controller = await _start_data_source_controller(
+            hass, entry, coordinator, telemetry_store
+        )
+        if data_source_controller:
             hass.data[DOMAIN][entry.entry_id][
                 "data_source_controller"
             ] = data_source_controller
-        except Exception as err:
-            _LOGGER.warning("DataSourceController start failed (non-critical): %s", err)
 
         # OPRAVA: Přidání ServiceShield dat do globálního úložiště pro senzory
         if service_shield:
