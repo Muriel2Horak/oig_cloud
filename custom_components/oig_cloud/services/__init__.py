@@ -313,9 +313,11 @@ async def async_setup_services(hass: HomeAssistant) -> None:  # noqa: C901
                         f"Manuálně aktualizována solární předpověď pro {entry_id}"
                     )
                 except Exception as e:
-                    _LOGGER.error(f"Chyba při aktualizaci solární předpovědi: {e}")
+                    _LOGGER.error(
+                        "Chyba při aktualizaci solární předpovědi: %s", e
+                    )
             else:
-                _LOGGER.debug(f"Config entry {entry_id} nemá solární předpověď")
+                _LOGGER.debug("Config entry %s nemá solární předpověď", entry_id)
 
     async def handle_save_dashboard_tiles(call: ServiceCall) -> None:
         """Zpracování služby pro uložení konfigurace dashboard tiles."""
@@ -368,9 +370,11 @@ async def async_setup_entry_services_with_shield(
     hass: HomeAssistant, entry: ConfigEntry, shield: Any
 ) -> None:
     """Setup entry-specific services with shield protection - direct shield parameter."""
-    _LOGGER.debug(f"Setting up entry services for {entry.entry_id} with shield")
-    _LOGGER.debug(f"Shield object: {shield}")
-    _LOGGER.debug(f"Shield type: {type(shield)}")
+    _LOGGER.debug(
+        "Setting up entry services for %s with shield", entry.entry_id
+    )
+    _LOGGER.debug("Shield object: %s", shield)
+    _LOGGER.debug("Shield type: %s", type(shield))
 
     if not shield:
         _LOGGER.debug("ServiceShield not provided, falling back to regular setup")
@@ -560,7 +564,9 @@ async def async_setup_entry_services_with_shield(
                 setup_boiler_services(hass, boiler_coordinator)
                 _LOGGER.info("Boiler services registered")
             except Exception as e:
-                _LOGGER.error(f"Failed to register boiler services: {e}", exc_info=True)
+                _LOGGER.error(
+                    "Failed to register boiler services: %s", e, exc_info=True
+                )
 
         _LOGGER.info("All entry services registered with shield protection")
     else:
@@ -569,7 +575,7 @@ async def async_setup_entry_services_with_shield(
 
 async def async_setup_entry_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Setup entry-specific services with optional shield protection."""
-    _LOGGER.debug(f"Setting up entry services for {entry.entry_id}")
+    _LOGGER.debug("Setting up entry services for %s", entry.entry_id)
     shield = hass.data[DOMAIN].get("shield")
 
     if shield:
@@ -585,7 +591,7 @@ async def async_setup_entry_services_fallback(
 ) -> None:
     """Setup entry-specific services WITHOUT shield protection as fallback."""
     await asyncio.sleep(0)
-    _LOGGER.info(f"Registering fallback services for entry {entry.entry_id}")
+    _LOGGER.info("Registering fallback services for entry %s", entry.entry_id)
 
     async def handle_set_box_mode(call: ServiceCall) -> None:
         client = _get_entry_client(hass, entry)
@@ -693,7 +699,7 @@ async def async_setup_entry_services_fallback(
                     f"Successfully registered fallback service: {service_name}"
                 )
             except Exception as e:
-                _LOGGER.error(f"Failed to register service {service_name}: {e}")
+                _LOGGER.error("Failed to register service %s: %s", service_name, e)
 
         _LOGGER.info("All fallback services registration completed")
     else:
@@ -725,11 +731,11 @@ async def _save_dashboard_tiles_config(
         )
 
     except json.JSONDecodeError as e:
-        _LOGGER.error(f"Invalid JSON in dashboard tiles config: {e}")
+        _LOGGER.error("Invalid JSON in dashboard tiles config: %s", e)
     except ValueError as e:
-        _LOGGER.error(f"Invalid dashboard tiles config structure: {e}")
+        _LOGGER.error("Invalid dashboard tiles config structure: %s", e)
     except Exception as e:
-        _LOGGER.error(f"Failed to save dashboard tiles config: {e}")
+        _LOGGER.error("Failed to save dashboard tiles config: %s", e)
 
 
 async def _load_dashboard_tiles_config(hass: HomeAssistant) -> dict:
@@ -745,7 +751,7 @@ async def _load_dashboard_tiles_config(hass: HomeAssistant) -> dict:
         return {"config": None}
 
     except Exception as e:
-        _LOGGER.error(f"Failed to load dashboard tiles config: {e}")
+        _LOGGER.error("Failed to load dashboard tiles config: %s", e)
         return {"config": None}
 
 

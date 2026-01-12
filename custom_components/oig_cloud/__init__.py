@@ -438,7 +438,6 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
 
 async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Odebrání frontend panelu."""
-    await asyncio.sleep(0)
     try:
         panel_id = f"oig_cloud_dashboard_{entry.entry_id}"
 
@@ -454,15 +453,17 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
             except ValueError as ve:
                 if "unknown panel" in str(ve).lower():
                     _LOGGER.debug(
-                        f"Panel {panel_id} was already removed or never existed"
+                        "Panel %s was already removed or never existed", panel_id
                     )
                 else:
-                    _LOGGER.warning("Error removing panel %s: {ve}", panel_id)
-            except Exception as re:
+                    _LOGGER.warning("Error removing panel %s: %s", panel_id, ve)
+            except Exception as remove_err:
                 try:
                     frontend.async_remove_panel(hass, panel_id)
                 except Exception:
-                    _LOGGER.debug("Panel removal handled (panel may not exist): %s", re)
+                    _LOGGER.debug(
+                        "Panel removal handled (panel may not exist): %s", remove_err
+                    )
         else:
             _LOGGER.debug("async_remove_panel not available")
 
@@ -622,7 +623,7 @@ async def _migrate_entity_unique_ids(
 
     # Najdeme všechny OIG entity pro tento config entry
     entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-    _LOGGER.info(f"📊 Found {len(entities)} entities for config entry")
+    _LOGGER.info("📊 Found %s entities for config entry", len(entities))
 
     migrated_count = 0
     skipped_count = 0
@@ -682,15 +683,22 @@ async def _migrate_entity_unique_ids(
             entity_registry.async_update_entity(entity_id, new_unique_id=new_unique_id)
             migrated_count += 1
             _LOGGER.info(
-                f"✅ Migrated entity {entity_id}: {old_unique_id} -> {new_unique_id}"
+                "✅ Migrated entity %s: %s -> %s",
+                entity_id,
+                old_unique_id,
+                new_unique_id,
             )
         except Exception as err:
             _LOGGER.warning("⚠️ Failed to migrate %s: %s", entity_id, err)
 
     # Summary
     _LOGGER.info(
-        f"📊 Migration summary: migrated={migrated_count}, removed={removed_count}, "
-        f"renamed={renamed_count}, enabled={enabled_count}, skipped={skipped_count}"
+        "📊 Migration summary: migrated=%s, removed=%s, renamed=%s, enabled=%s, skipped=%s",
+        migrated_count,
+        removed_count,
+        renamed_count,
+        enabled_count,
+        skipped_count,
     )
 
     if removed_count > 0 or migrated_count > 0 or renamed_count > 0:
@@ -728,7 +736,6 @@ async def _cleanup_invalid_empty_devices(
     This is a targeted/safe cleanup to get rid of stale registry entries created by
     older versions when box_id resolution was unstable.
     """
-    await asyncio.sleep(0)
     try:
         from homeassistant.helpers import device_registry as dr
 
@@ -1228,9 +1235,9 @@ async def async_setup_entry(
 ) -> bool:  # noqa: C901
     """Set up OIG Cloud from a config entry."""
     _LOGGER.info("oig_cloud: async_setup_entry started for entry_id=%s", entry.entry_id)
-    _LOGGER.info(f"Setting up OIG Cloud entry: {entry.title}")
-    _LOGGER.debug(f"Config data keys: {list(entry.data.keys())}")
-    _LOGGER.debug(f"Config options keys: {list(entry.options.keys())}")
+    _LOGGER.info("Setting up OIG Cloud entry: %s", entry.title)
+    _LOGGER.debug("Config data keys: %s", list(entry.data.keys()))
+    _LOGGER.debug("Config options keys: %s", list(entry.options.keys()))
 
     # Inject defaults for new planner/autonomy options so legacy setups keep working
     _ensure_planner_option_defaults(hass, entry)
@@ -1484,7 +1491,6 @@ def _setup_service_shield_monitoring(
     _LOGGER.debug("Ověřuji, že ServiceShield monitoring běží...")
 
     async def test_shield_monitoring(_now: Any) -> None:
-        await asyncio.sleep(0)
         status = service_shield.get_shield_status()
         queue_info = service_shield.get_queue_info()
         _LOGGER.debug(
@@ -1514,7 +1520,6 @@ def _setup_service_shield_monitoring(
 
 async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
     """Setup telemetry if enabled."""
-    await asyncio.sleep(0)
     try:
         _LOGGER.debug("Starting telemetry setup...")
 
@@ -1522,7 +1527,9 @@ async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
         hass_id = hashlib.sha256(hass.data["core.uuid"].encode("utf-8")).hexdigest()
 
         _LOGGER.debug(
-            f"Telemetry identifiers - Email hash: {email_hash[:16]}..., HASS ID: {hass_id[:16]}..."
+            "Telemetry identifiers - Email hash: %s..., HASS ID: %s...",
+            email_hash[:16],
+            hass_id[:16],
         )
 
         from .shared.logging import setup_simple_telemetry
@@ -1578,7 +1585,6 @@ async def async_remove_config_entry_device(
     Home Assistant calls this when the user tries to delete a device from the UI.
     We only allow removing devices that have no entities.
     """
-    await asyncio.sleep(0)
     _ = config_entry
     try:
         from homeassistant.helpers import entity_registry as er
@@ -1617,12 +1623,16 @@ async def async_update_options(
     new_dashboard_enabled = new_options.get("enable_dashboard", False)
 
     _LOGGER.debug(
-        f"Dashboard options update: old={old_dashboard_enabled}, new={new_dashboard_enabled}"
+        "Dashboard options update: old=%s, new=%s",
+        old_dashboard_enabled,
+        new_dashboard_enabled,
     )
 
     if old_dashboard_enabled != new_dashboard_enabled:
         _LOGGER.info(
-            f"Dashboard setting changed: {old_dashboard_enabled} -> {new_dashboard_enabled}"
+            "Dashboard setting changed: %s -> %s",
+            old_dashboard_enabled,
+            new_dashboard_enabled,
         )
 
         if new_dashboard_enabled:
@@ -1689,7 +1699,6 @@ def _should_keep_device(device: Any, entity_registry: Any, keep_patterns: list[s
 
 async def _cleanup_unused_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Vyčištění nepoužívaných zařízení."""
-    await asyncio.sleep(0)
     try:
         from homeassistant.helpers import device_registry as dr
         from homeassistant.helpers import entity_registry as er
@@ -1708,21 +1717,27 @@ async def _cleanup_unused_devices(hass: HomeAssistant, entry: ConfigEntry) -> No
             if not should_keep:
                 devices_to_remove.append(device)
                 _LOGGER.info(
-                    f"Marking device for removal: {device.name} (ID: {device.id})"
+                    "Marking device for removal: %s (ID: %s)",
+                    device.name,
+                    device.id,
                 )
             else:
-                _LOGGER.debug(f"Keeping device: {device.name} (ID: {device.id})")
+                _LOGGER.debug(
+                    "Keeping device: %s (ID: %s)", device.name, device.id
+                )
 
         # Smažeme nepoužívaná zařízení
         for device in devices_to_remove:
             try:
-                _LOGGER.info(f"Removing unused device: {device.name} (ID: {device.id})")
+                _LOGGER.info(
+                    "Removing unused device: %s (ID: %s)", device.name, device.id
+                )
                 device_registry.async_remove_device(device.id)
             except Exception as e:
-                _LOGGER.warning("Error removing device {device.id}: %s", e)
+                _LOGGER.warning("Error removing device %s: %s", device.id, e)
 
         if devices_to_remove:
-            _LOGGER.info(f"Removed {len(devices_to_remove)} unused devices")
+            _LOGGER.info("Removed %s unused devices", len(devices_to_remove))
         else:
             _LOGGER.debug("No unused devices found to remove")
     except Exception as e:
