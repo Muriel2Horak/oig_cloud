@@ -32,42 +32,19 @@ async def build_unified_cost_tile(
         today_data = await build_today_cost_data(self)
     except Exception as e:
         _LOGGER.error("Failed to build today cost data: %s", e, exc_info=True)
-        today_data = {
-            "plan_total_cost": 0.0,
-            "actual_total_cost": 0.0,
-            "delta": 0.0,
-            "performance": "on_plan",
-            "completed_intervals": 0,
-            "total_intervals": 0,
-            "progress_pct": 0,
-            "eod_prediction": {
-                "predicted_total": 0.0,
-                "vs_plan": 0.0,
-                "confidence": "low",
-            },
-            "error": str(e),
-        }
+        today_data = _build_today_fallback(e)
 
     try:
         yesterday_data = get_yesterday_cost_from_archive(self, mode_names=mode_names)
     except Exception as e:
         _LOGGER.error("Failed to get yesterday cost data: %s", e, exc_info=True)
-        yesterday_data = {
-            "plan_total_cost": 0.0,
-            "actual_total_cost": 0.0,
-            "delta": 0.0,
-            "performance": "on_plan",
-            "error": str(e),
-        }
+        yesterday_data = _build_yesterday_fallback(e)
 
     try:
         tomorrow_data = await build_tomorrow_cost_data(self, mode_names=mode_names)
     except Exception as e:
         _LOGGER.error("Failed to build tomorrow cost data: %s", e, exc_info=True)
-        tomorrow_data = {
-            "plan_total_cost": 0.0,
-            "error": str(e),
-        }
+        tomorrow_data = _build_tomorrow_fallback(e)
 
     result = {
         "today": today_data,
@@ -83,3 +60,38 @@ async def build_unified_cost_tile(
     _LOGGER.info("Unified Cost Tile: Built in %.2fs", build_duration)
 
     return result
+
+
+def _build_today_fallback(error: Exception) -> Dict[str, Any]:
+    return {
+        "plan_total_cost": 0.0,
+        "actual_total_cost": 0.0,
+        "delta": 0.0,
+        "performance": "on_plan",
+        "completed_intervals": 0,
+        "total_intervals": 0,
+        "progress_pct": 0,
+        "eod_prediction": {
+            "predicted_total": 0.0,
+            "vs_plan": 0.0,
+            "confidence": "low",
+        },
+        "error": str(error),
+    }
+
+
+def _build_yesterday_fallback(error: Exception) -> Dict[str, Any]:
+    return {
+        "plan_total_cost": 0.0,
+        "actual_total_cost": 0.0,
+        "delta": 0.0,
+        "performance": "on_plan",
+        "error": str(error),
+    }
+
+
+def _build_tomorrow_fallback(error: Exception) -> Dict[str, Any]:
+    return {
+        "plan_total_cost": 0.0,
+        "error": str(error),
+    }
