@@ -531,6 +531,21 @@ async def log_event(
         context=context,
     )
 
+    shield.hass.bus.async_fire(
+        "oig_cloud_service_shield_event",
+        {
+            "event_type": event_type,
+            "service": service,
+            "entity_id": entity_id,
+            "from": from_value,
+            "to": expected_value,
+            "friendly_name": friendly_name,
+            "reason": reason,
+            "params": params,
+        },
+        context=context,
+    )
+
 
 def _capture_original_states(
     shield: Any, expected_entities: Dict[str, str]
@@ -746,27 +761,3 @@ def _build_log_message(
             f"Zrušeno uživatelem – {friendly_name}: očekávaná změna na '{expected_value}' nebyla provedena"
         )
     return f"{event_type} – {service}"
-
-    shield.hass.bus.async_fire(
-        "oig_cloud_service_shield_event",
-        {
-            "event_type": event_type,
-            "service": service,
-            "entity_id": entity_id,
-            "from": from_value,
-            "to": expected_value,
-            "friendly_name": friendly_name,
-            "reason": reason,
-            "params": params,
-        },
-        context=context,
-    )
-
-    _LOGGER.debug(
-        "[OIG Shield] Event: %s | Entity: %s | From: '%s' → To: '%s' | Reason: %s",
-        event_type,
-        entity_id,
-        from_value,
-        expected_value,
-        reason or "-",
-    )

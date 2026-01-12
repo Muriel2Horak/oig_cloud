@@ -19,7 +19,7 @@ DATE_FMT = "%Y-%m-%d"
 
 async def async_added_to_hass(sensor) -> None:
     """Pri pridani do HA - restore persistent data."""
-    await _ensure_storage_helpers(sensor)
+    _ensure_storage_helpers(sensor)
     _maybe_start_auto_switch(sensor)
     await _restore_precomputed(sensor)
 
@@ -38,7 +38,7 @@ async def async_added_to_hass(sensor) -> None:
     _schedule_aggregations(sensor)
 
 
-async def _ensure_storage_helpers(sensor) -> None:
+def _ensure_storage_helpers(sensor) -> None:
     if not sensor._plans_store and sensor._hass:
         sensor._plans_store = Store(
             sensor._hass,

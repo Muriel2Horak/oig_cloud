@@ -104,7 +104,9 @@ class CnbRate:
                         error = cast(RateError, await response.json())
                         if error.get("errorCode") == "VALIDATION_ERROR":
                             raise InvalidDateError(f"Invalid date format: {day}")
-                    raise Exception(f"Error {response.status} while downloading rates")
+                    raise RuntimeError(
+                        f"Error {response.status} while downloading rates"
+                    )
                 text = cast(Rates, await response.json())
         return text
 
@@ -120,7 +122,7 @@ class CnbRate:
             except InvalidDateError:
                 continue
         if not cnb_rates:
-            raise Exception("Could not download CNB rates for last 7 days")
+            raise RuntimeError("Could not download CNB rates for last 7 days")
         for rate in cnb_rates["rates"]:
             rates[rate["currencyCode"]] = Decimal(rate["rate"])
         return rates
@@ -155,7 +157,7 @@ class OteApi:
 
         OteApi does not keep a persistent aiohttp session, so there is nothing to close.
         """
-        return
+        return None
 
     def _load_cached_spot_prices_sync(self) -> None:
         if not self._cache_path:

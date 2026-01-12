@@ -103,30 +103,37 @@ async def _create_baseline_from_fallback(sensor: Any, date_str: str) -> bool:
 async def _load_fallback_intervals(sensor: Any, date_str: str) -> List[Dict[str, Any]]:
     fallback_intervals: List[Dict[str, Any]] = []
     if sensor._plans_store:
-        try:
-            storage_plans = await sensor._plans_store.async_load() or {}
-            archive_day = storage_plans.get("daily_archive", {}).get(date_str, {}) or {}
-            if archive_day.get("plan"):
-                fallback_intervals = archive_day.get("plan") or []
-            if not fallback_intervals:
-                detailed_day = storage_plans.get("detailed", {}).get(date_str, {})
-                if detailed_day.get("intervals"):
-                    fallback_intervals = detailed_day.get("intervals") or []
-        except Exception as err:
-            _LOGGER.debug(
-                "Failed to load fallback plans for %s: %s",
-                date_str,
-                err,
-            )
-
-    if (
-        not fallback_intervals
-        and getattr(sensor, "_daily_plan_state", None)
-        and sensor._daily_plan_state.get("date") == date_str
-    ):
-        fallback_intervals = sensor._daily_plan_state.get("plan") or []
-
+        fallback_intervals = await _fallback_from_storage(sensor, date_str)
+    if not fallback_intervals:
+        fallback_intervals = _fallback_from_daily_state(sensor, date_str)
     return fallback_intervals
+
+
+async def _fallback_from_storage(
+    sensor: Any, date_str: str
+) -> List[Dict[str, Any]]:
+    try:
+        storage_plans = await sensor._plans_store.async_load() or {}
+        archive_day = storage_plans.get("daily_archive", {}).get(date_str, {}) or {}
+        if archive_day.get("plan"):
+            return archive_day.get("plan") or []
+        detailed_day = storage_plans.get("detailed", {}).get(date_str, {})
+        if detailed_day.get("intervals"):
+            return detailed_day.get("intervals") or []
+    except Exception as err:
+        _LOGGER.debug(
+            "Failed to load fallback plans for %s: %s",
+            date_str,
+            err,
+        )
+    return []
+
+
+def _fallback_from_daily_state(sensor: Any, date_str: str) -> List[Dict[str, Any]]:
+    daily_state = getattr(sensor, "_daily_plan_state", None)
+    if daily_state and daily_state.get("date") == date_str:
+        return daily_state.get("plan") or []
+    return []
 
 
 async def _build_baseline_intervals(

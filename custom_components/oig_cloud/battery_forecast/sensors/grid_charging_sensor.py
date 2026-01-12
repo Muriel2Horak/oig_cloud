@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -23,6 +23,7 @@ MODE_LABEL_HOME_UPS = "Home UPS"
 MODE_LABEL_HOME_I = "HOME I"
 
 _LOGGER = logging.getLogger(__name__)
+HOME_UPS_LABEL = "HOME UPS"
 
 
 class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
@@ -125,17 +126,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             if not self.hass:
                 return []
 
-            battery_sensor = None
-            component = self.hass.data.get("entity_components", {}).get("sensor")
-            if component:
-                for entity in component.entities:
-                    if (
-                        hasattr(entity, "_precomputed_store")
-                        and self._box_id in entity.entity_id
-                        and "battery_forecast" in entity.entity_id
-                    ):
-                        battery_sensor = entity
-                        break
+            battery_sensor = _find_battery_forecast_sensor(self.hass, self._box_id)
 
             if not battery_sensor:
                 _LOGGER.warning("[GridChargingPlan] BatteryForecastSensor not found")
@@ -147,79 +138,19 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 return []
 
             _ = plan  # legacy parameter (dual-planner removed)
-            detail_tabs = precomputed.get("detail_tabs", {}) or precomputed.get(
-                "detail_tabs_hybrid", {}
-            )
+            detail_tabs = _get_detail_tabs(precomputed)
             if not detail_tabs:
                 _LOGGER.debug("[GridChargingPlan] No detail tabs data available")
                 return []
 
-            now = dt_util.now()
-            current_time = now.strftime("%H:%M")
-
-            ups_blocks = []
-
-            today = detail_tabs.get("today", {})
-            today_blocks = today.get("mode_blocks", [])
-
-            for block in today_blocks:
-                mode_hist = block.get("mode_historical", "")
-                mode_plan = block.get("mode_planned", "")
-                if "HOME UPS" not in mode_hist and "HOME UPS" not in mode_plan:
-                    continue
-
-                status = block.get("status", "")
-                end_time = block.get("end_time", "")
-
-                if status == "completed" and end_time < current_time:
-                    continue
-
-                ups_blocks.append(
-                    {
-                        "time_from": block.get("start_time", ""),
-                        "time_to": end_time,
-                        "day": "today",
-                        "mode": MODE_LABEL_HOME_UPS,
-                        "status": status,
-                        "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
-                        "cost_czk": block.get(
-                            (
-                                "cost_historical"
-                                if status == "completed"
-                                else "cost_planned"
-                            ),
-                            0.0,
-                        ),
-                        "battery_start_kwh": block.get("battery_soc_start", 0.0),
-                        "battery_end_kwh": block.get("battery_soc_end", 0.0),
-                        "interval_count": block.get("interval_count", 0),
-                        "duration_hours": block.get("duration_hours", 0.0),
-                    }
-                )
-
-            tomorrow = detail_tabs.get("tomorrow", {})
-            tomorrow_blocks = tomorrow.get("mode_blocks", [])
-
-            for block in tomorrow_blocks:
-                mode_plan = block.get("mode_planned", "")
-                if "HOME UPS" not in mode_plan:
-                    continue
-
-                ups_blocks.append(
-                    {
-                        "time_from": block.get("start_time", ""),
-                        "time_to": block.get("end_time", ""),
-                        "day": "tomorrow",
-                        "mode": MODE_LABEL_HOME_UPS,
-                        "status": "planned",
-                        "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
-                        "cost_czk": block.get("cost_planned", 0.0),
-                        "battery_start_kwh": block.get("battery_soc_start", 0.0),
-                        "battery_end_kwh": block.get("battery_soc_end", 0.0),
-                        "interval_count": block.get("interval_count", 0),
-                        "duration_hours": block.get("duration_hours", 0.0),
-                    }
-                )
+            current_time = dt_util.now().strftime("%H:%M")
+            ups_blocks = _collect_today_blocks(
+                detail_tabs.get("today", {}),
+                current_time,
+            )
+            ups_blocks.extend(
+                _collect_tomorrow_blocks(detail_tabs.get("tomorrow", {}))
+            )
 
             _LOGGER.debug(
                 "[GridChargingPlan] Found %s active/future UPS blocks (today + tomorrow)",
@@ -234,6 +165,86 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
     def _get_active_plan_key(self) -> str:
         """Return active plan key (single-planner)."""
         return "hybrid"
+
+
+def _find_battery_forecast_sensor(hass: Any, box_id: str) -> Optional[Any]:
+    component = hass.data.get("entity_components", {}).get("sensor")
+    if not component:
+        return None
+    for entity in component.entities:
+        if (
+            hasattr(entity, "_precomputed_store")
+            and box_id in entity.entity_id
+            and "battery_forecast" in entity.entity_id
+        ):
+            return entity
+    return None
+
+
+def _get_detail_tabs(precomputed: Dict[str, Any]) -> Dict[str, Any]:
+    return precomputed.get("detail_tabs", {}) or precomputed.get(
+        "detail_tabs_hybrid", {}
+    )
+
+
+def _collect_today_blocks(
+    today: Dict[str, Any], current_time: str
+) -> List[Dict[str, Any]]:
+    ups_blocks = []
+    for block in today.get("mode_blocks", []):
+        if not _is_home_ups_mode(
+            block.get("mode_historical", ""),
+            block.get("mode_planned", ""),
+        ):
+            continue
+
+        status = block.get("status", "")
+        end_time = block.get("end_time", "")
+        if status == "completed" and end_time < current_time:
+            continue
+
+        cost_key = "cost_historical" if status == "completed" else "cost_planned"
+        ups_blocks.append(
+            _build_ups_block(block, "today", status, cost_key, end_time)
+        )
+    return ups_blocks
+
+
+def _collect_tomorrow_blocks(tomorrow: Dict[str, Any]) -> List[Dict[str, Any]]:
+    ups_blocks = []
+    for block in tomorrow.get("mode_blocks", []):
+        if not _is_home_ups_mode(block.get("mode_planned", "")):
+            continue
+        ups_blocks.append(
+            _build_ups_block(block, "tomorrow", "planned", "cost_planned")
+        )
+    return ups_blocks
+
+
+def _is_home_ups_mode(*modes: str) -> bool:
+    return any(HOME_UPS_LABEL in (mode or "") for mode in modes)
+
+
+def _build_ups_block(
+    block: Dict[str, Any],
+    day: str,
+    status: str,
+    cost_key: str,
+    end_time_override: Optional[str] = None,
+) -> Dict[str, Any]:
+    return {
+        "time_from": block.get("start_time", ""),
+        "time_to": end_time_override or block.get("end_time", ""),
+        "day": day,
+        "mode": MODE_LABEL_HOME_UPS,
+        "status": status,
+        "grid_charge_kwh": block.get("grid_import_total_kwh", 0.0),
+        "cost_czk": block.get(cost_key, 0.0),
+        "battery_start_kwh": block.get("battery_soc_start", 0.0),
+        "battery_end_kwh": block.get("battery_soc_end", 0.0),
+        "interval_count": block.get("interval_count", 0),
+        "duration_hours": block.get("duration_hours", 0.0),
+    }
 
     def _calculate_charging_intervals(
         self,
@@ -382,7 +393,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 )
                 continue
 
-            offset_on = self._get_dynamic_offset(current_mode, "HOME UPS")
+            offset_on = self._get_dynamic_offset(current_mode, HOME_UPS_LABEL)
             start_time_with_offset = start_time - timedelta(seconds=offset_on)
 
             next_block_is_ups = False
@@ -407,7 +418,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 offset_off = 0
             else:
                 next_mode = self._get_next_mode_after_ups(block, sorted_blocks, i)
-                offset_off = self._get_dynamic_offset("HOME UPS", next_mode)
+                offset_off = self._get_dynamic_offset(HOME_UPS_LABEL, next_mode)
 
             end_time_with_offset = end_time - timedelta(seconds=offset_off)
 
@@ -441,7 +452,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         if current_idx + 1 < len(all_blocks):
             next_block = all_blocks[current_idx + 1]
             next_mode = next_block.get("mode_planned", MODE_LABEL_HOME_I)
-            if "HOME UPS" not in next_mode:
+            if HOME_UPS_LABEL not in next_mode:
                 return next_mode
 
         return MODE_LABEL_HOME_I

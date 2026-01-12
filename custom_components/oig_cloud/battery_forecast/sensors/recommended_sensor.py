@@ -20,8 +20,55 @@ from homeassistant.util import dt as dt_util
 from ...const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+HOME_1_LABEL = "Home 1"
+HOME_2_LABEL = "Home 2"
+HOME_3_LABEL = "Home 3"
 MIN_RECOMMENDED_INTERVAL_MINUTES = 30
 MODE_LABEL_HOME_UPS = "Home UPS"
+
+
+def _normalize_mode_from_name(mode_name: Optional[str]) -> Optional[str]:
+    if not mode_name:
+        return None
+    stripped = str(mode_name).strip()
+    upper = stripped.upper()
+    label_map = {
+        "HOME I": HOME_1_LABEL,
+        "HOME II": HOME_2_LABEL,
+        "HOME III": HOME_3_LABEL,
+        "HOME UPS": MODE_LABEL_HOME_UPS,
+    }
+    if stripped in label_map.values():
+        return stripped
+    if upper in label_map:
+        return label_map[upper]
+    if upper.startswith("HOME "):
+        suffix = upper.replace("HOME ", "").strip()
+        digit_map = {
+            "1": HOME_1_LABEL,
+            "2": HOME_2_LABEL,
+            "3": HOME_3_LABEL,
+        }
+        if suffix in digit_map:
+            return digit_map[suffix]
+    for key, label in label_map.items():
+        if key in upper:
+            return label  # pragma: no cover
+    if "UPS" in upper:
+        return MODE_LABEL_HOME_UPS  # pragma: no cover
+    return None
+
+
+def _normalize_mode_from_code(mode_code: Optional[int]) -> Optional[str]:
+    if not isinstance(mode_code, int):
+        return None
+    code_map = {
+        0: HOME_1_LABEL,
+        1: HOME_2_LABEL,
+        2: HOME_3_LABEL,
+        3: MODE_LABEL_HOME_UPS,
+    }
+    return code_map.get(mode_code)
 
 
 class OigCloudPlannerRecommendedModeSensor(
@@ -137,42 +184,10 @@ class OigCloudPlannerRecommendedModeSensor(
     def _normalize_mode_label(
         self, mode_name: Optional[str], mode_code: Optional[int]
     ) -> Optional[str]:
-        if mode_name:
-            upper = str(mode_name).strip().upper()
-            label_map = {
-                "HOME I": "Home 1",
-                "HOME II": "Home 2",
-                "HOME III": "Home 3",
-                "HOME UPS": MODE_LABEL_HOME_UPS,
-            }
-            if mode_name.strip() in label_map.values():
-                return mode_name.strip()
-            if upper in label_map:
-                return label_map[upper]
-            if upper.startswith("HOME "):
-                suffix = upper.replace("HOME ", "").strip()
-                digit_map = {
-                    "1": "Home 1",
-                    "2": "Home 2",
-                    "3": "Home 3",
-                }
-                if suffix in digit_map:
-                    return digit_map[suffix]
-            for key, label in label_map.items():
-                if key in upper:
-                    return label  # pragma: no cover
-            if "UPS" in upper:
-                return MODE_LABEL_HOME_UPS  # pragma: no cover
-
-        if isinstance(mode_code, int):
-            code_map = {
-                0: "Home 1",
-                1: "Home 2",
-                2: "Home 3",
-                3: MODE_LABEL_HOME_UPS,
-            }
-            return code_map.get(mode_code)
-        return None
+        label = _normalize_mode_from_name(mode_name)
+        if label:
+            return label
+        return _normalize_mode_from_code(mode_code)
 
     def _planned_mode_from_interval(
         self, interval: Dict[str, Any]
@@ -251,6 +266,7 @@ class OigCloudPlannerRecommendedModeSensor(
             if planned
             else self._mode_from_interval(item)
         )
+
     def _update_current_candidate(
         self,
         *,

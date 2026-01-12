@@ -36,25 +36,15 @@ def enforce_min_mode_duration(
         mode_name = mode_names.get(current_mode, f"Mode {current_mode}")
 
         block_start = i
-        while i < n and result[i] == current_mode:
-            i += 1
-        block_length = i - block_start
+        block_end = _find_block_end(result, block_start, current_mode)
+        block_length = block_end - block_start
 
         min_duration = min_mode_duration.get(mode_name, 1)
 
         if block_length < min_duration:
             violations_fixed += 1
-
-            if block_start == 0:
-                replacement_mode = result[i] if i < n else result[block_start]
-            elif i >= n:
-                replacement_mode = result[block_start - 1]
-            else:
-                replacement_mode = result[block_start - 1]
-
-            for j in range(block_start, min(i, n)):
-                result[j] = replacement_mode
-
+            replacement_mode = _pick_replacement_mode(result, block_start, block_end)
+            _apply_replacement(result, block_start, block_end, replacement_mode)
             logger.debug(
                 "[MIN_DURATION] Fixed violation: %s block @ %s "
                 "(length %s < min %s) → %s",
@@ -64,13 +54,34 @@ def enforce_min_mode_duration(
                 min_duration,
                 mode_names.get(replacement_mode, "unknown"),
             )
-
             i = block_start
+        else:
+            i = block_end
 
     if violations_fixed > 0:
         logger.info("✅ MIN_MODE_DURATION: Fixed %s violations", violations_fixed)
 
     return result
+
+
+def _find_block_end(modes: List[int], start: int, mode: int) -> int:
+    end = start
+    while end < len(modes) and modes[end] == mode:
+        end += 1
+    return end
+
+
+def _pick_replacement_mode(modes: List[int], start: int, end: int) -> int:
+    if start == 0:
+        return modes[end] if end < len(modes) else modes[start]
+    return modes[start - 1]
+
+
+def _apply_replacement(
+    modes: List[int], start: int, end: int, replacement_mode: int
+) -> None:
+    for idx in range(start, min(end, len(modes))):
+        modes[idx] = replacement_mode
 
 
 def get_mode_guard_context(
@@ -168,67 +179,51 @@ def apply_mode_guard(
     for i, planned_mode in enumerate(modes):
         if i >= len(spot_prices):
             break
-
-        ts_value = spot_prices[i].get("time")
-        start_dt = parse_timeline_timestamp(str(ts_value or ""))
-        if not start_dt:
-            start_dt = now + timedelta(minutes=15 * i)
-
-        if start_dt >= guard_until:
-            break
-
-        solar_kwh = solar_kwh_list[i] if i < len(solar_kwh_list) else 0.0
-        load_kwh = load_forecast[i] if i < len(load_forecast) else 0.125
-        locked_mode = lock_modes.get(str(ts_value or ""))
-
-        forced_mode = locked_mode if locked_mode is not None else planned_mode
-        res = simulate_interval(
-            mode=forced_mode,
-            solar_kwh=solar_kwh,
-            load_kwh=load_kwh,
-            battery_soc_kwh=soc,
-            capacity_kwh=max_capacity,
-            hw_min_capacity_kwh=hw_min_capacity,
-            charge_efficiency=efficiency,
-            discharge_efficiency=efficiency,
-            home_charge_rate_kwh_15min=charge_rate_kwh_15min,
+        guard_ctx = _resolve_guard_context(
+            spot_prices, i, now, guard_until, lock_modes
         )
-        next_soc = res.new_soc_kwh
+        if guard_ctx is None:
+            break
+        ts_value, locked_mode = guard_ctx
+
+        solar_kwh, load_kwh = _resolve_interval_loads(
+            i, solar_kwh_list, load_forecast
+        )
+        forced_mode = locked_mode if locked_mode is not None else planned_mode
+        next_soc = _simulate_guard_interval(
+            forced_mode,
+            solar_kwh,
+            load_kwh,
+            soc,
+            max_capacity,
+            hw_min_capacity,
+            efficiency,
+            charge_rate_kwh_15min,
+        )
 
         if next_soc < planning_min_kwh:
-            if planned_mode != forced_mode:
-                overrides.append(
-                    {
-                        "idx": i,
-                        "type": "guard_exception_soc",
-                        "planned_mode": planned_mode,
-                        "forced_mode": planned_mode,
-                    }
-                )
+            _record_guard_override(overrides, i, planned_mode, forced_mode)
             forced_mode = planned_mode
-            res = simulate_interval(
-                mode=forced_mode,
-                solar_kwh=solar_kwh,
-                load_kwh=load_kwh,
-                battery_soc_kwh=soc,
-                capacity_kwh=max_capacity,
-                hw_min_capacity_kwh=hw_min_capacity,
-                charge_efficiency=efficiency,
-                discharge_efficiency=efficiency,
-                home_charge_rate_kwh_15min=charge_rate_kwh_15min,
+            next_soc = _simulate_guard_interval(
+                forced_mode,
+                solar_kwh,
+                load_kwh,
+                soc,
+                max_capacity,
+                hw_min_capacity,
+                efficiency,
+                charge_rate_kwh_15min,
             )
-            next_soc = res.new_soc_kwh
-        else:
-            if planned_mode != forced_mode:
-                guarded_modes[i] = forced_mode
-                overrides.append(
-                    {
-                        "idx": i,
-                        "type": "guard_locked_plan",
-                        "planned_mode": planned_mode,
-                        "forced_mode": forced_mode,
-                    }
-                )
+        elif planned_mode != forced_mode:
+            guarded_modes[i] = forced_mode
+            overrides.append(
+                {
+                    "idx": i,
+                    "type": "guard_locked_plan",
+                    "planned_mode": planned_mode,
+                    "forced_mode": forced_mode,
+                }
+            )
 
         soc = next_soc
 
@@ -250,6 +245,71 @@ def apply_mode_guard(
             )
 
     return guarded_modes, overrides, guard_until
+
+
+def _resolve_guard_context(
+    spot_prices: List[Dict[str, Any]],
+    idx: int,
+    now: datetime,
+    guard_until: datetime,
+    lock_modes: Dict[str, int],
+) -> Optional[tuple[Any, Optional[int]]]:
+    ts_value = spot_prices[idx].get("time")
+    start_dt = parse_timeline_timestamp(str(ts_value or ""))
+    if not start_dt:
+        start_dt = now + timedelta(minutes=15 * idx)
+    if start_dt >= guard_until:
+        return None
+    return ts_value, lock_modes.get(str(ts_value or ""))
+
+
+def _resolve_interval_loads(
+    idx: int, solar_kwh_list: List[float], load_forecast: List[float]
+) -> tuple[float, float]:
+    solar_kwh = solar_kwh_list[idx] if idx < len(solar_kwh_list) else 0.0
+    load_kwh = load_forecast[idx] if idx < len(load_forecast) else 0.125
+    return solar_kwh, load_kwh
+
+
+def _simulate_guard_interval(
+    mode: int,
+    solar_kwh: float,
+    load_kwh: float,
+    soc: float,
+    max_capacity: float,
+    hw_min_capacity: float,
+    efficiency: float,
+    charge_rate_kwh_15min: float,
+) -> float:
+    res = simulate_interval(
+        mode=mode,
+        solar_kwh=solar_kwh,
+        load_kwh=load_kwh,
+        battery_soc_kwh=soc,
+        capacity_kwh=max_capacity,
+        hw_min_capacity_kwh=hw_min_capacity,
+        charge_efficiency=efficiency,
+        discharge_efficiency=efficiency,
+        home_charge_rate_kwh_15min=charge_rate_kwh_15min,
+    )
+    return res.new_soc_kwh
+
+
+def _record_guard_override(
+    overrides: List[Dict[str, Any]],
+    idx: int,
+    planned_mode: int,
+    forced_mode: int,
+) -> None:
+    if planned_mode != forced_mode:
+        overrides.append(
+            {
+                "idx": idx,
+                "type": "guard_exception_soc",
+                "planned_mode": planned_mode,
+                "forced_mode": planned_mode,
+            }
+        )
 
 
 def apply_guard_reasons_to_timeline(

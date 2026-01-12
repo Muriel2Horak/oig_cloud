@@ -9,6 +9,7 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
+STORAGE_HELPER_NOT_INITIALIZED = "Storage Helper not initialized"
 
 
 async def load_plan_from_storage(
@@ -16,8 +17,8 @@ async def load_plan_from_storage(
 ) -> Optional[Dict[str, Any]]:
     """Load a plan from Storage Helper for a given date."""
     if not sensor._plans_store:
-        _LOGGER.error("Storage Helper not initialized")
-        return _get_cached_plan(sensor, date_str, "Storage Helper not initialized")
+        _LOGGER.error(STORAGE_HELPER_NOT_INITIALIZED)
+        return _get_cached_plan(sensor, date_str, STORAGE_HELPER_NOT_INITIALIZED)
 
     try:
         data = await sensor._plans_store.async_load()
@@ -55,7 +56,7 @@ async def save_plan_to_storage(
 ) -> bool:
     """Save a plan to Storage Helper."""
     if not sensor._plans_store:
-        _LOGGER.error("Storage Helper not initialized")
+        _LOGGER.error(STORAGE_HELPER_NOT_INITIALIZED)
         return False
 
     try:

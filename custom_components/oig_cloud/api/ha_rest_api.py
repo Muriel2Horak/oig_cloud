@@ -454,7 +454,9 @@ class OIGCloudAnalyticsView(HomeAssistantView):
             }
 
             _LOGGER.debug(
-                f"API: Serving analytics for {box_id}, " f"hours={len(hourly_prices)}"
+                "API: Serving analytics for %s, hours=%s",
+                box_id,
+                len(hourly_prices),
             )
 
             return web.json_response(response_data)

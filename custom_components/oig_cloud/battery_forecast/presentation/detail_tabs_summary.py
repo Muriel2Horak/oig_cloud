@@ -27,60 +27,6 @@ def aggregate_interval_metrics(
 ) -> Dict[str, Dict[str, Any]]:
     """Aggregate plan vs actual metrics for summary tiles."""
 
-    def _get_plan_value(interval: Dict[str, Any], key: str) -> float:
-        return safe_nested_get(interval, "planned", key, default=0.0)
-
-    def _get_actual_value(interval: Dict[str, Any], key: str) -> Optional[float]:
-        actual = interval.get("actual")
-        if not actual:
-            return None
-        value = actual.get(key)
-        if value is None:
-            return actual.get(f"{key}_kwh")
-        return value
-
-    def _get_grid_net(payload: Dict[str, Any], prefix: str) -> float:
-        import_key = "grid_import"
-        export_key = "grid_export"
-        import_val = safe_nested_get(payload, prefix, import_key, default=None)
-        if import_val is None:
-            import_val = safe_nested_get(
-                payload, prefix, f"{import_key}_kwh", default=0.0
-            )
-        export_val = safe_nested_get(payload, prefix, export_key, default=None)
-        if export_val is None:
-            export_val = safe_nested_get(
-                payload, prefix, f"{export_key}_kwh", default=0.0
-            )
-        return (import_val or 0.0) - (export_val or 0.0)
-
-    def _accumulate_metric(
-        metrics_map: Dict[str, Dict[str, Any]],
-        metric_key: str,
-        plan_value: float,
-        actual_value: Optional[float],
-    ) -> None:
-        metrics_map[metric_key]["plan"] += plan_value
-        if actual_value is not None:
-            metrics_map[metric_key]["actual"] += actual_value
-            metrics_map[metric_key]["actual_samples"] += 1
-        else:
-            metrics_map[metric_key]["actual"] += plan_value
-
-    def _get_actual_grid(interval: Dict[str, Any]) -> Optional[float]:
-        actual_payload = interval.get("actual")
-        if not actual_payload:
-            return None
-        return (
-            actual_payload.get("grid_import")
-            or actual_payload.get("grid_import_kwh")
-            or 0.0
-        ) - (
-            actual_payload.get("grid_export")
-            or actual_payload.get("grid_export_kwh")
-            or 0.0
-        )
-
     metrics_template = {
         "plan": 0.0,
         "actual": 0.0,
@@ -128,6 +74,61 @@ def aggregate_interval_metrics(
         }
 
     return formatted_metrics
+
+
+def _get_plan_value(interval: Dict[str, Any], key: str) -> float:
+    return safe_nested_get(interval, "planned", key, default=0.0)
+
+
+def _get_actual_value(interval: Dict[str, Any], key: str) -> Optional[float]:
+    actual = interval.get("actual")
+    if not actual:
+        return None
+    value = actual.get(key)
+    if value is None:
+        return actual.get(f"{key}_kwh")
+    return value
+
+
+def _get_grid_net(payload: Dict[str, Any], prefix: str) -> float:
+    import_key = "grid_import"
+    export_key = "grid_export"
+    import_val = safe_nested_get(payload, prefix, import_key, default=None)
+    if import_val is None:
+        import_val = safe_nested_get(payload, prefix, f"{import_key}_kwh", default=0.0)
+    export_val = safe_nested_get(payload, prefix, export_key, default=None)
+    if export_val is None:
+        export_val = safe_nested_get(payload, prefix, f"{export_key}_kwh", default=0.0)
+    return (import_val or 0.0) - (export_val or 0.0)
+
+
+def _accumulate_metric(
+    metrics_map: Dict[str, Dict[str, Any]],
+    metric_key: str,
+    plan_value: float,
+    actual_value: Optional[float],
+) -> None:
+    metrics_map[metric_key]["plan"] += plan_value
+    if actual_value is not None:
+        metrics_map[metric_key]["actual"] += actual_value
+        metrics_map[metric_key]["actual_samples"] += 1
+    else:
+        metrics_map[metric_key]["actual"] += plan_value
+
+
+def _get_actual_grid(interval: Dict[str, Any]) -> Optional[float]:
+    actual_payload = interval.get("actual")
+    if not actual_payload:
+        return None
+    return (
+        actual_payload.get("grid_import")
+        or actual_payload.get("grid_import_kwh")
+        or 0.0
+    ) - (
+        actual_payload.get("grid_export")
+        or actual_payload.get("grid_export_kwh")
+        or 0.0
+    )
 
 
 def calculate_tab_summary(
