@@ -341,34 +341,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         now = dt_util.now()
 
-        # Kontrola, jestli máme aktuální data
-        needs_data = False
-
-        if hasattr(self, "data") and self.data and "spot_prices" in self.data:
-            spot_data = self.data["spot_prices"]
-
-            # Před 13:00 - kontrolujeme jestli máme dnešní data
-            if now.hour < 13:
-                today_key = f"{now.strftime('%Y-%m-%d')}T{now.hour:02d}:00:00"
-                if today_key not in spot_data.get("prices_czk_kwh", {}):
-                    needs_data = True
-                    _LOGGER.debug(
-                        f"Missing today's data for hour {now.hour}, triggering fallback"
-                    )
-
-            # Po 13:00 - kontrolujeme jestli máme zítřejší data
-            else:
-                tomorrow = now + timedelta(days=1)
-                tomorrow_key = f"{tomorrow.strftime('%Y-%m-%d')}T00:00:00"
-                if tomorrow_key not in spot_data.get("prices_czk_kwh", {}):
-                    needs_data = True
-                    _LOGGER.debug(
-                        "Missing tomorrow's data after 13:00, triggering fallback"
-                    )
-        else:
-            # Žádná data vůbec
-            needs_data = True
-            _LOGGER.debug("No spot price data available, triggering fallback")
+        needs_data = self._needs_spot_data(now)
 
         if needs_data:
             self._hourly_fallback_active = True
@@ -377,32 +350,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     "Hourly fallback: Attempting to fetch spot prices from OTE"
                 )
 
-                # Upravit OTE API call podle času
-                if now.hour < 13:
-                    # Před 13:00 - stahujeme pouze dnešek
-                    _LOGGER.debug("Before 13:00 - fetching today's data only")
-                    spot_data = await self.ote_api.get_spot_prices()
-                else:
-                    # Po 13:00 - stahujeme dnes + zítra
-                    _LOGGER.debug("After 13:00 - fetching today + tomorrow data")
-                    spot_data = await self.ote_api.get_spot_prices()
-
-                if spot_data and spot_data.get("prices_czk_kwh"):
-                    # Aktualizujeme data v koordinátoru
-                    self._spot_prices_cache = spot_data
-                    if hasattr(self, "data") and self.data:
-                        self.data["spot_prices"] = spot_data
-                        self.async_update_listeners()
-
-                    _LOGGER.info(
-                        f"Hourly fallback: Successfully updated spot prices: {spot_data.get('hours_count', 0)} hours"
-                    )
-                    self._last_spot_fetch = dt_util.now()
-                    self._hourly_fallback_active = False
-                else:
-                    _LOGGER.warning(
-                        "Hourly fallback: No valid spot price data received"
-                    )
+                spot_data = await self._fetch_spot_prices_for_fallback(now)
+                self._apply_spot_fallback_result(spot_data)
 
             except Exception as e:
                 _LOGGER.warning(f"Hourly fallback: Failed to update spot prices: {e}")
@@ -411,6 +360,55 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         # Naplánuj další hodinovou kontrolu
         self._schedule_hourly_fallback()
+
+    def _needs_spot_data(self, now: datetime) -> bool:
+        if hasattr(self, "data") and self.data and "spot_prices" in self.data:
+            spot_data = self.data["spot_prices"]
+            return self._is_spot_data_missing(now, spot_data)
+
+        _LOGGER.debug("No spot price data available, triggering fallback")
+        return True
+
+    def _is_spot_data_missing(self, now: datetime, spot_data: Dict[str, Any]) -> bool:
+        if now.hour < 13:
+            today_key = f"{now.strftime('%Y-%m-%d')}T{now.hour:02d}:00:00"
+            if today_key not in spot_data.get("prices_czk_kwh", {}):
+                _LOGGER.debug(
+                    "Missing today's data for hour %s, triggering fallback", now.hour
+                )
+                return True
+        else:
+            tomorrow = now + timedelta(days=1)
+            tomorrow_key = f"{tomorrow.strftime('%Y-%m-%d')}T00:00:00"
+            if tomorrow_key not in spot_data.get("prices_czk_kwh", {}):
+                _LOGGER.debug(
+                    "Missing tomorrow's data after 13:00, triggering fallback"
+                )
+                return True
+        return False
+
+    async def _fetch_spot_prices_for_fallback(self, now: datetime) -> Optional[Dict[str, Any]]:
+        if now.hour < 13:
+            _LOGGER.debug("Before 13:00 - fetching today's data only")
+        else:
+            _LOGGER.debug("After 13:00 - fetching today + tomorrow data")
+        return await self.ote_api.get_spot_prices()
+
+    def _apply_spot_fallback_result(self, spot_data: Optional[Dict[str, Any]]) -> None:
+        if spot_data and spot_data.get("prices_czk_kwh"):
+            self._spot_prices_cache = spot_data
+            if hasattr(self, "data") and self.data:
+                self.data["spot_prices"] = spot_data
+                self.async_update_listeners()
+
+            _LOGGER.info(
+                "Hourly fallback: Successfully updated spot prices: %s hours",
+                spot_data.get("hours_count", 0),
+            )
+            self._last_spot_fetch = dt_util.now()
+            self._hourly_fallback_active = False
+        else:
+            _LOGGER.warning("Hourly fallback: No valid spot price data received")
 
     async def _update_spot_prices(self) -> None:
         """Aktualizace spotových cen s lepším error handling."""
