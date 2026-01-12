@@ -104,6 +104,54 @@ def get_local_event_debounce_ms(entry: ConfigEntry) -> int:
         return DEFAULT_LOCAL_EVENT_DEBOUNCE_MS
 
 
+def _get_proxy_state(hass: HomeAssistant) -> tuple[Any, Optional[dt_util.dt.datetime]]:
+    proxy_state = hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
+    proxy_last_dt = _parse_dt(proxy_state.state if proxy_state else None)
+    if proxy_state and proxy_last_dt is None:
+        _LOGGER.debug(
+            "Proxy health parse failed for value=%s, attributes=%s",
+            proxy_state.state,
+            proxy_state.attributes,
+        )
+    return proxy_state, proxy_last_dt
+
+
+def _get_proxy_entity_timestamp(proxy_state: Any) -> Optional[dt_util.dt.datetime]:
+    if proxy_state is None:
+        return None
+    try:
+        dt = proxy_state.last_updated or proxy_state.last_changed
+        if dt is None:
+            return None
+        return dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
+    except Exception:
+        return None
+
+
+def _get_expected_box_id(entry: ConfigEntry) -> Optional[str]:
+    try:
+        return _coerce_box_id(entry.options.get("box_id"))
+    except Exception:
+        return None
+
+
+def _get_proxy_box_id(hass: HomeAssistant) -> Optional[str]:
+    proxy_box_state = hass.states.get(PROXY_BOX_ID_ENTITY_ID)
+    return _coerce_box_id(proxy_box_state.state if proxy_box_state else None)
+
+
+def _determine_local_entities_dt(
+    hass: HomeAssistant,
+    box_id_for_scan: Optional[str],
+    last_local_entity_update: Optional[dt_util.dt.datetime] = None,
+) -> Optional[dt_util.dt.datetime]:
+    if last_local_entity_update is not None:
+        return last_local_entity_update
+    if not box_id_for_scan:
+        return None
+    return _get_latest_local_entity_update(hass, box_id_for_scan)
+
+
 def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
     if value in (None, "", "unknown", "unavailable"):
         return None
@@ -291,35 +339,14 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
     """
     configured = get_configured_mode(entry)
     stale_minutes = get_proxy_stale_minutes(entry)
+    expected_box_id = _get_expected_box_id(entry)
 
-    expected_box_id: Optional[str] = None
-    try:
-        expected_box_id = _coerce_box_id(entry.options.get("box_id"))
-    except Exception:
-        expected_box_id = None
-
-    proxy_state = hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
-    proxy_last_dt = _parse_dt(proxy_state.state if proxy_state else None)
-    proxy_entity_dt: Optional[dt_util.dt.datetime] = None
-    if proxy_state is not None:
-        try:
-            dt = proxy_state.last_updated or proxy_state.last_changed
-            if dt is not None:
-                proxy_entity_dt = (
-                    dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
-                )
-        except Exception:
-            proxy_entity_dt = None
-
-    proxy_box_state = hass.states.get(PROXY_BOX_ID_ENTITY_ID)
-    proxy_box_id = _coerce_box_id(proxy_box_state.state if proxy_box_state else None)
+    proxy_state, proxy_last_dt = _get_proxy_state(hass)
+    proxy_entity_dt = _get_proxy_entity_timestamp(proxy_state)
+    proxy_box_id = _get_proxy_box_id(hass)
 
     box_id_for_scan = expected_box_id or proxy_box_id
-    local_entities_dt = (
-        _get_latest_local_entity_update(hass, box_id_for_scan)
-        if box_id_for_scan
-        else None
-    )
+    local_entities_dt = _determine_local_entities_dt(hass, box_id_for_scan)
 
     now = dt_util.utcnow()
     local_available, last_dt, reason, effective = _evaluate_local_state(
@@ -480,19 +507,14 @@ class DataSourceController:
             return
         event_box_id = m.group(1)
 
-        expected_box_id: Optional[str] = None
-        try:
-            expected_box_id = _coerce_box_id(self.entry.options.get("box_id"))
-        except Exception:
-            expected_box_id = None
+        expected_box_id = _get_expected_box_id(self.entry)
 
         if expected_box_id and event_box_id != expected_box_id:
             return
 
         # If box_id isn't configured yet, fall back to proxy-reported box_id (if available).
         if expected_box_id is None:
-            proxy_box = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
-            proxy_box_id = _coerce_box_id(proxy_box.state if proxy_box else None)
+            proxy_box_id = _get_proxy_box_id(self.hass)
             if proxy_box_id and event_box_id != proxy_box_id:
                 return
 
@@ -545,48 +567,19 @@ class DataSourceController:
         configured = get_configured_mode(self.entry)
         stale_minutes = get_proxy_stale_minutes(self.entry)
 
-        proxy_state = self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
+        proxy_state, proxy_last_dt = _get_proxy_state(self.hass)
         if proxy_state is None:
             _LOGGER.debug("Proxy health entity not found")
-        proxy_last_dt = _parse_dt(proxy_state.state if proxy_state else None)
-        if proxy_state and proxy_last_dt is None:
-            _LOGGER.debug(
-                "Proxy health parse failed for value=%s, attributes=%s",
-                proxy_state.state,
-                proxy_state.attributes,
-            )
-        proxy_entity_dt: Optional[dt_util.dt.datetime] = None
-        if proxy_state is not None:
-            try:
-                dt = proxy_state.last_updated or proxy_state.last_changed
-                if dt is not None:
-                    proxy_entity_dt = (
-                        dt_util.as_utc(dt)
-                        if dt.tzinfo
-                        else dt.replace(tzinfo=dt_util.UTC)
-                    )
-            except Exception:
-                proxy_entity_dt = None
+        proxy_entity_dt = _get_proxy_entity_timestamp(proxy_state)
         now = dt_util.utcnow()
 
-        expected_box_id: Optional[str] = None
-        try:
-            expected_box_id = _coerce_box_id(self.entry.options.get("box_id"))
-        except Exception:
-            expected_box_id = None
-
-        proxy_box_state = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
-        proxy_box_id = _coerce_box_id(
-            proxy_box_state.state if proxy_box_state else None
-        )
+        expected_box_id = _get_expected_box_id(self.entry)
+        proxy_box_id = _get_proxy_box_id(self.hass)
 
         box_id_for_scan = expected_box_id or proxy_box_id
-        local_entities_dt = self._last_local_entity_update
-        if local_entities_dt is None and box_id_for_scan:
-            # Startup fallback when we haven't seen any local state_changed yet.
-            local_entities_dt = _get_latest_local_entity_update(
-                self.hass, box_id_for_scan
-            )
+        local_entities_dt = _determine_local_entities_dt(
+            self.hass, box_id_for_scan, self._last_local_entity_update
+        )
 
         local_available, last_dt, reason, effective = _evaluate_local_state(
             configured=configured,
