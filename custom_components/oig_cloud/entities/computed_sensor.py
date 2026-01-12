@@ -581,32 +581,14 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         try:
             now = datetime.now(timezone.utc)
 
-            bat_power_val = self._get_oig_number("batt_batt_comp_p")
-            if bat_power_val is None:
+            power_values = self._get_power_values()
+            if power_values is None:
                 return None
-            bat_power = float(bat_power_val)
-
-            fv_p1 = float(self._get_oig_number("actual_fv_p1") or 0.0)
-            fv_p2 = float(self._get_oig_number("actual_fv_p2") or 0.0)
-            fv_power = fv_p1 + fv_p2
-
+            bat_power, fv_power = power_values
             last_update = self._get_last_energy_update()
 
             if last_update is not None:
-                delta_seconds = (now - last_update).total_seconds()
-                wh_increment = (abs(bat_power) * delta_seconds) / 3600.0
-
-                if bat_power > 0:
-                    self._apply_charge_delta(
-                        wh_increment, delta_seconds, bat_power, fv_power
-                    )
-
-                elif bat_power < 0:
-                    self._apply_discharge_delta(wh_increment)
-
-                _LOGGER.debug(
-                    f"[{self.entity_id}] Δt={delta_seconds:.1f}s bat={bat_power:.1f}W fv={fv_power:.1f}W -> ΔWh={wh_increment:.4f}"
-                )
+                self._apply_energy_accumulation(now, last_update, bat_power, fv_power)
 
             self._set_last_energy_update(now)
             self._attr_extra_state_attributes = {
@@ -623,6 +605,36 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         except Exception as e:
             _LOGGER.error(f"Error calculating energy: {e}", exc_info=True)
             return None
+
+    def _get_power_values(self) -> Optional[tuple[float, float]]:
+        bat_power_val = self._get_oig_number("batt_batt_comp_p")
+        if bat_power_val is None:
+            return None
+        bat_power = float(bat_power_val)
+
+        fv_p1 = float(self._get_oig_number("actual_fv_p1") or 0.0)
+        fv_p2 = float(self._get_oig_number("actual_fv_p2") or 0.0)
+        fv_power = fv_p1 + fv_p2
+        return bat_power, fv_power
+
+    def _apply_energy_accumulation(
+        self,
+        now: datetime,
+        last_update: datetime,
+        bat_power: float,
+        fv_power: float,
+    ) -> None:
+        delta_seconds = (now - last_update).total_seconds()
+        wh_increment = (abs(bat_power) * delta_seconds) / 3600.0
+
+        if bat_power > 0:
+            self._apply_charge_delta(wh_increment, delta_seconds, bat_power, fv_power)
+        elif bat_power < 0:
+            self._apply_discharge_delta(wh_increment)
+
+        _LOGGER.debug(
+            f"[{self.entity_id}] Δt={delta_seconds:.1f}s bat={bat_power:.1f}W fv={fv_power:.1f}W -> ΔWh={wh_increment:.4f}"
+        )
 
     def _get_energy_value(self) -> Optional[float]:
         # Always read from the shared cache when available (multiple sensors per box).
