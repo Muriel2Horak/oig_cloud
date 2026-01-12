@@ -147,40 +147,14 @@ def build_today_tile_summary(
     current_minute = (now.minute // 15) * 15
     current_interval_time = now.replace(minute=current_minute, second=0, microsecond=0)
 
-    historical = []
-    future = []
+    historical, future = _split_intervals(intervals, current_interval_time)
 
-    for interval in intervals:
-        try:
-            interval_time_str = interval.get("time", "")
-            if not interval_time_str:
-                continue
-
-            interval_time = datetime.fromisoformat(interval_time_str)
-            if interval_time.tzinfo is None:
-                interval_time = dt_util.as_local(interval_time)
-
-            if interval_time < current_interval_time and interval.get("actual"):
-                historical.append(interval)
-            else:
-                future.append(interval)
-        except Exception:  # nosec B112
-            continue
-
-    def safe_get_cost(interval: Dict[str, Any], key: str) -> float:
-        data = interval.get(key)
-        if data is None:
-            return 0.0
-        if isinstance(data, dict):
-            return float(data.get("net_cost", 0))
-        return 0.0
-
-    planned_so_far = sum(safe_get_cost(h, "planned") for h in historical)
-    actual_so_far = sum(safe_get_cost(h, "actual") for h in historical)
+    planned_so_far = sum(_safe_get_cost(h, "planned") for h in historical)
+    actual_so_far = sum(_safe_get_cost(h, "actual") for h in historical)
     delta = actual_so_far - planned_so_far
     delta_pct = (delta / planned_so_far * 100) if planned_so_far > 0 else 0.0
 
-    planned_future = sum(safe_get_cost(f, "planned") for f in future)
+    planned_future = sum(_safe_get_cost(f, "planned") for f in future)
     eod_plan = planned_so_far + planned_future
 
     eod_prediction = actual_so_far + planned_future
@@ -193,46 +167,8 @@ def build_today_tile_summary(
         (historical_count / total_intervals * 100) if total_intervals > 0 else 0.0
     )
 
-    if progress_pct < 25:
-        confidence = "low"
-    elif progress_pct < 50:
-        confidence = "medium"
-    elif progress_pct < 75:
-        confidence = "good"
-    else:
-        confidence = "high"
-
-    mini_chart_data = []
-    for interval in intervals:
-        interval_time_str = interval.get("time", "")
-        if not interval_time_str:
-            continue
-
-        try:
-            interval_time = datetime.fromisoformat(interval_time_str)
-            if interval_time.tzinfo is None:
-                interval_time = dt_util.as_local(interval_time)
-
-            is_current = (
-                current_interval_time
-                <= interval_time
-                < current_interval_time + timedelta(minutes=15)
-            )
-
-            delta_value = None
-            if interval.get("actual") and interval.get("delta"):
-                delta_value = interval["delta"].get("net_cost")
-
-            mini_chart_data.append(
-                {
-                    "time": interval_time_str,
-                    "delta": delta_value,
-                    "is_historical": bool(interval.get("actual")),
-                    "is_current": is_current,
-                }
-            )
-        except Exception:  # nosec B112
-            continue
+    confidence = _confidence_for_progress(progress_pct)
+    mini_chart_data = _build_mini_chart_data(intervals, current_interval_time)
 
     return {
         "progress_pct": round(progress_pct, 1),
@@ -252,6 +188,84 @@ def build_today_tile_summary(
         "intervals_historical": historical_count,
         "intervals_future": len(future),
     }
+
+
+def _parse_interval_time(interval_time_str: str) -> Optional[datetime]:
+    if not interval_time_str:
+        return None
+    try:
+        interval_time = datetime.fromisoformat(interval_time_str)
+    except Exception:  # nosec B112
+        return None
+    if interval_time.tzinfo is None:
+        interval_time = dt_util.as_local(interval_time)
+    return interval_time
+
+
+def _split_intervals(
+    intervals: List[Dict[str, Any]], current_interval_time: datetime
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    historical = []
+    future = []
+    for interval in intervals:
+        interval_time = _parse_interval_time(interval.get("time", ""))
+        if not interval_time:
+            continue
+        if interval_time < current_interval_time and interval.get("actual"):
+            historical.append(interval)
+        else:
+            future.append(interval)
+    return historical, future
+
+
+def _safe_get_cost(interval: Dict[str, Any], key: str) -> float:
+    data = interval.get(key)
+    if data is None:
+        return 0.0
+    if isinstance(data, dict):
+        return float(data.get("net_cost", 0))
+    return 0.0
+
+
+def _confidence_for_progress(progress_pct: float) -> str:
+    if progress_pct < 25:
+        return "low"
+    if progress_pct < 50:
+        return "medium"
+    if progress_pct < 75:
+        return "good"
+    return "high"
+
+
+def _build_mini_chart_data(
+    intervals: List[Dict[str, Any]], current_interval_time: datetime
+) -> List[Dict[str, Any]]:
+    mini_chart_data = []
+    for interval in intervals:
+        interval_time_str = interval.get("time", "")
+        interval_time = _parse_interval_time(interval_time_str)
+        if not interval_time:
+            continue
+
+        is_current = (
+            current_interval_time
+            <= interval_time
+            < current_interval_time + timedelta(minutes=15)
+        )
+
+        delta_value = None
+        if interval.get("actual") and interval.get("delta"):
+            delta_value = interval["delta"].get("net_cost")
+
+        mini_chart_data.append(
+            {
+                "time": interval_time_str,
+                "delta": delta_value,
+                "is_historical": bool(interval.get("actual")),
+                "is_current": is_current,
+            }
+        )
+    return mini_chart_data
 
 
 def get_empty_tile_summary(now: datetime) -> Dict[str, Any]:

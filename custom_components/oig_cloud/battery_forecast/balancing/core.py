@@ -97,21 +97,25 @@ class BalancingManager:
         self._last_cost_savings: Optional[float] = None
 
     # Configuration parameter helpers
+    def _get_int_option(self, primary_key: str, legacy_key: str, default: int) -> int:
+        opts = self._config_entry.options
+        if primary_key in opts:
+            return int(opts.get(primary_key) or default)
+        if legacy_key in opts:
+            return int(opts.get(legacy_key) or default)
+        return int(default)
+
     def _get_holding_time_hours(self) -> int:
         """Get balancing holding time from config (default 3 hours)."""
-        opts = self._config_entry.options
-        # Wizard/options key used in config_flow.py
-        if "balancing_hold_hours" in opts:
-            return int(opts.get("balancing_hold_hours") or 3)
-        # Legacy/internal key
-        return int(opts.get("balancing_holding_time") or 3)
+        return self._get_int_option(
+            "balancing_hold_hours", "balancing_holding_time", 3
+        )
 
     def _get_cycle_days(self) -> int:
         """Get balancing cycle days from config (default 7 days)."""
-        opts = self._config_entry.options
-        if "balancing_interval_days" in opts:
-            return int(opts.get("balancing_interval_days") or 7)
-        return int(opts.get("balancing_cycle_days") or 7)
+        return self._get_int_option(
+            "balancing_interval_days", "balancing_cycle_days", 7
+        )
 
     def _get_cooldown_hours(self) -> int:
         """Get balancing cooldown hours from config (default ~70% of cycle, min 24h)."""

@@ -116,19 +116,13 @@ def validate_tariff_hours(
     vt_starts_str: str, nt_starts_str: str, allow_single_tariff: bool = False
 ) -> tuple[bool, Optional[str]]:
     """Validate VT/NT tariff hour starts for gaps and overlaps."""
-    try:
-        vt_starts = [int(x.strip()) for x in vt_starts_str.split(",") if x.strip()]
-        if not all(0 <= h <= 23 for h in vt_starts):
-            return False, "invalid_hour_range"
-    except ValueError:
-        return False, "invalid_hour_format"
+    vt_starts, error = _parse_hour_starts(vt_starts_str)
+    if error:
+        return False, error
 
-    try:
-        nt_starts = [int(x.strip()) for x in nt_starts_str.split(",") if x.strip()]
-        if not all(0 <= h <= 23 for h in nt_starts):
-            return False, "invalid_hour_range"
-    except ValueError:
-        return False, "invalid_hour_format"
+    nt_starts, error = _parse_hour_starts(nt_starts_str)
+    if error:
+        return False, error
 
     if not vt_starts and not nt_starts:
         return False, "tariff_gaps"
@@ -138,48 +132,53 @@ def validate_tariff_hours(
         return False, "tariff_gaps"
 
     hour_map: Dict[int, str] = {}
+    all_starts = sorted(vt_starts + nt_starts)
 
-    for vt_start in sorted(vt_starts):
-        all_starts = sorted(vt_starts + nt_starts)
-        try:
-            next_start_idx = all_starts.index(vt_start) + 1
-            if next_start_idx < len(all_starts):
-                next_start = all_starts[next_start_idx]
-            else:
-                next_start = all_starts[0]
-        except (ValueError, IndexError):
-            next_start = (vt_start + 1) % 24
-
-        h = vt_start
-        while h != next_start:
-            if h in hour_map:
-                return False, "overlapping_tariffs"
-            hour_map[h] = "VT"
-            h = (h + 1) % 24
-            if len(hour_map) > 24:  # pragma: no cover
-                break
-
-    for nt_start in sorted(nt_starts):
-        all_starts = sorted(vt_starts + nt_starts)
-        try:
-            next_start_idx = all_starts.index(nt_start) + 1
-            if next_start_idx < len(all_starts):
-                next_start = all_starts[next_start_idx]
-            else:
-                next_start = all_starts[0]
-        except (ValueError, IndexError):
-            next_start = (nt_start + 1) % 24
-
-        h = nt_start
-        while h != next_start:
-            if h in hour_map:
-                return False, "overlapping_tariffs"
-            hour_map[h] = "NT"
-            h = (h + 1) % 24
-            if len(hour_map) > 24:  # pragma: no cover
-                break
+    if not _fill_tariff_hours(hour_map, vt_starts, all_starts, "VT"):
+        return False, "overlapping_tariffs"
+    if not _fill_tariff_hours(hour_map, nt_starts, all_starts, "NT"):
+        return False, "overlapping_tariffs"
 
     if len(hour_map) != 24:
         return False, "tariff_gaps"
 
     return True, None
+
+
+def _parse_hour_starts(value: str) -> tuple[List[int], Optional[str]]:
+    try:
+        hours = [int(x.strip()) for x in value.split(",") if x.strip()]
+    except ValueError:
+        return [], "invalid_hour_format"
+    if not all(0 <= h <= 23 for h in hours):
+        return [], "invalid_hour_range"
+    return hours, None
+
+
+def _next_tariff_start(all_starts: List[int], start: int) -> int:
+    try:
+        next_start_idx = all_starts.index(start) + 1
+        if next_start_idx < len(all_starts):
+            return all_starts[next_start_idx]
+        return all_starts[0]
+    except (ValueError, IndexError):
+        return (start + 1) % 24
+
+
+def _fill_tariff_hours(
+    hour_map: Dict[int, str],
+    starts: List[int],
+    all_starts: List[int],
+    label: str,
+) -> bool:
+    for start in sorted(starts):
+        next_start = _next_tariff_start(all_starts, start)
+        h = start
+        while h != next_start:
+            if h in hour_map:
+                return False
+            hour_map[h] = label
+            h = (h + 1) % 24
+            if len(hour_map) > 24:  # pragma: no cover
+                break
+    return True
