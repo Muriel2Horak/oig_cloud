@@ -469,130 +469,144 @@ class OteApi:
         - Před 13:00 (nebo force_today_only) bere jen dnešek.
         - Po 13:00 bere včera/dnes/zítra.
         """
+        now = datetime.now(tz=self.timezone)
         if date is None:
-            date = datetime.now(tz=self.timezone)
+            date = now
 
         # Pokud máme validní cache (dnešek + případně zítřek po 13h), použij ji
         if self._is_cache_valid():
             _LOGGER.debug(
                 "Using cached spot prices (valid for today%s)",
-                " and tomorrow" if datetime.now(self.timezone).hour >= 13 else "",
+                " and tomorrow" if now.hour >= 13 else "",
             )
             return self._last_data
 
         # Cache není validní - chybí data, musíme stáhnout z OTE
         _LOGGER.info(
             "Cache missing required data - fetching from OTE (hour=%d)",
-            datetime.now(self.timezone).hour,
+            now.hour,
         )
 
         try:
-            eur_czk_rate = await self.get_cnb_exchange_rate()
-            if not eur_czk_rate:
-                _LOGGER.warning("No CNB rate available, using default 25.0")
-                eur_czk_rate = 25.0
-
-            now = datetime.now(tz=self.timezone)
-            if force_today_only or now.hour < 13:
-                start_date = date.date()
-                end_date = date.date()
-                _LOGGER.info(f"Fetching PT15M prices for today only: {start_date}")
-            else:
-                start_date = date.date() - timedelta(days=1)
-                end_date = date.date() + timedelta(days=1)
-                _LOGGER.info(f"Fetching PT15M prices for {start_date} to {end_date}")
-
-            # 1) stáhni 15m a připrav i agregované hodiny
+            eur_czk_rate = await self._resolve_eur_czk_rate()
+            start_date, end_date = self._resolve_date_range(
+                date, now, force_today_only
+            )
             qh_eur_kwh = await self._get_dam_period_prices(start_date, end_date)
             if not qh_eur_kwh:
-                _LOGGER.warning("No DAM PT15M data found.")
-                if self._last_data:
-                    _LOGGER.warning(
-                        "OTE returned no data - using cached prices from %s",
-                        self._cache_time.isoformat() if self._cache_time else "unknown",
-                    )
-                    return self._last_data
-                return {}
+                return self._fallback_cached_prices()
 
-            hourly_eur_kwh = self._aggregate_quarter_to_hour(qh_eur_kwh)
-
-            # 2) přepočty na CZK/kWh
-            qh_czk_kwh: Dict[datetime, float] = {
-                dt: float(val) * eur_czk_rate for dt, val in qh_eur_kwh.items()
-            }
-            hourly_czk_kwh: Dict[datetime, float] = {
-                dt: float(val) * eur_czk_rate for dt, val in hourly_eur_kwh.items()
-            }
-
-            # 3) formát výsledku (primárně hodinové klíče; 15m přidány aditivně)
-            data = await self._format_spot_data(
-                hourly_czk_kwh,
-                hourly_eur_kwh,
+            data = await self._build_spot_data(
+                qh_eur_kwh,
                 eur_czk_rate,
                 date,
-                qh_rates_czk=qh_czk_kwh,
-                qh_rates_eur=qh_eur_kwh,
             )
+            if not data:
+                return self._fallback_cached_prices()
 
-            if data:
-                if not force_today_only and now.hour >= 13:
-                    tomorrow = date.date() + timedelta(days=1)
-                    tomorrow_prefix = tomorrow.strftime("%Y-%m-%d")
-                    prices = data.get("prices_czk_kwh", {})
-                    has_tomorrow = any(
-                        key.startswith(tomorrow_prefix) for key in prices.keys()
-                    )
-                    if not has_tomorrow:
-                        _LOGGER.warning(
-                            "OTE data missing tomorrow after 13:00; retrying tomorrow-only fetch"
-                        )
-                        try:
-                            qh_eur_kwh_tomorrow = await self._get_dam_period_prices(
-                                tomorrow, tomorrow
-                            )
-                            if qh_eur_kwh_tomorrow:
-                                qh_eur_kwh.update(qh_eur_kwh_tomorrow)
-                                hourly_eur_kwh = self._aggregate_quarter_to_hour(
-                                    qh_eur_kwh
-                                )
-                                qh_czk_kwh = {
-                                    dt: float(val) * eur_czk_rate
-                                    for dt, val in qh_eur_kwh.items()
-                                }
-                                hourly_czk_kwh = {
-                                    dt: float(val) * eur_czk_rate
-                                    for dt, val in hourly_eur_kwh.items()
-                                }
-                                data = await self._format_spot_data(
-                                    hourly_czk_kwh,
-                                    hourly_eur_kwh,
-                                    eur_czk_rate,
-                                    date,
-                                    qh_rates_czk=qh_czk_kwh,
-                                    qh_rates_eur=qh_eur_kwh,
-                                )
-                        except Exception as err:
-                            _LOGGER.warning(
-                                "Retry for tomorrow data failed: %s", err
-                            )
-
-                if data:
-                    self._last_data = data
-                    self._cache_time = datetime.now(self.timezone)
-                    await self.async_persist_cache()
-                    return data
-
-        except Exception as e:
-            _LOGGER.error(f"Error fetching spot prices from OTE: {e}", exc_info=True)
-            # Fallback na cached data pokud existují
-            if self._last_data:
-                _LOGGER.warning(
-                    "OTE nedostupné - používám cached data z %s",
-                    self._cache_time.isoformat() if self._cache_time else "unknown",
+            if not force_today_only and now.hour >= 13:
+                data = await self._ensure_tomorrow_data(
+                    data, date, qh_eur_kwh, eur_czk_rate
                 )
-                return self._last_data
+            if data:
+                await self._persist_spot_cache(data)
+                return data
+        except Exception as err:
+            _LOGGER.error(
+                "Error fetching spot prices from OTE: %s", err, exc_info=True
+            )
+            return self._fallback_cached_prices()
 
         return {}
+
+    async def _resolve_eur_czk_rate(self) -> float:
+        eur_czk_rate = await self.get_cnb_exchange_rate()
+        if not eur_czk_rate:
+            _LOGGER.warning("No CNB rate available, using default 25.0")
+            eur_czk_rate = 25.0
+        return float(eur_czk_rate)
+
+    def _resolve_date_range(
+        self, date_value: datetime, now: datetime, force_today_only: bool
+    ) -> tuple[date, date]:
+        if force_today_only or now.hour < 13:
+            start_date = date_value.date()
+            end_date = date_value.date()
+            _LOGGER.info(
+                "Fetching PT15M prices for today only: %s", start_date
+            )
+        else:
+            start_date = date_value.date() - timedelta(days=1)
+            end_date = date_value.date() + timedelta(days=1)
+            _LOGGER.info(
+                "Fetching PT15M prices for %s to %s", start_date, end_date
+            )
+        return start_date, end_date
+
+    async def _build_spot_data(
+        self,
+        qh_eur_kwh: Dict[datetime, Decimal],
+        eur_czk_rate: float,
+        date_value: datetime,
+    ) -> Dict[str, Any]:
+        hourly_eur_kwh = self._aggregate_quarter_to_hour(qh_eur_kwh)
+        qh_czk_kwh: Dict[datetime, float] = {
+            dt: float(val) * eur_czk_rate for dt, val in qh_eur_kwh.items()
+        }
+        hourly_czk_kwh: Dict[datetime, float] = {
+            dt: float(val) * eur_czk_rate for dt, val in hourly_eur_kwh.items()
+        }
+        return await self._format_spot_data(
+            hourly_czk_kwh,
+            hourly_eur_kwh,
+            eur_czk_rate,
+            date_value,
+            qh_rates_czk=qh_czk_kwh,
+            qh_rates_eur=qh_eur_kwh,
+        )
+
+    def _fallback_cached_prices(self) -> Dict[str, Any]:
+        _LOGGER.warning("No DAM PT15M data found.")
+        if self._last_data:
+            _LOGGER.warning(
+                "OTE returned no data - using cached prices from %s",
+                self._cache_time.isoformat() if self._cache_time else "unknown",
+            )
+            return self._last_data
+        return {}
+
+    async def _ensure_tomorrow_data(
+        self,
+        data: Dict[str, Any],
+        date_value: datetime,
+        qh_eur_kwh: Dict[datetime, Decimal],
+        eur_czk_rate: float,
+    ) -> Dict[str, Any]:
+        tomorrow = date_value.date() + timedelta(days=1)
+        tomorrow_prefix = tomorrow.strftime("%Y-%m-%d")
+        prices = data.get("prices_czk_kwh", {})
+        has_tomorrow = any(key.startswith(tomorrow_prefix) for key in prices.keys())
+        if has_tomorrow:
+            return data
+        _LOGGER.warning(
+            "OTE data missing tomorrow after 13:00; retrying tomorrow-only fetch"
+        )
+        try:
+            qh_eur_kwh_tomorrow = await self._get_dam_period_prices(
+                tomorrow, tomorrow
+            )
+            if not qh_eur_kwh_tomorrow:
+                return data
+            qh_eur_kwh.update(qh_eur_kwh_tomorrow)
+            return await self._build_spot_data(qh_eur_kwh, eur_czk_rate, date_value)
+        except Exception as err:
+            _LOGGER.warning("Retry for tomorrow data failed: %s", err)
+            return data
+
+    async def _persist_spot_cache(self, data: Dict[str, Any]) -> None:
+        self._last_data = data
+        self._cache_time = datetime.now(self.timezone)
+        await self.async_persist_cache()
 
     async def _format_spot_data(
         self,

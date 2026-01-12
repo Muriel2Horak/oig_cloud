@@ -29,29 +29,15 @@ def plan_charging_intervals(
     infeasible_reason: Optional[str] = None
     eps_kwh = 0.01
     recovery_mode = initial_battery_kwh < strategy._planning_min - eps_kwh
-
-    blocked_indices: set[int] = set()
-    if balancing_plan and balancing_plan.mode_overrides:
-        blocked_indices = {
-            idx
-            for idx, mode in balancing_plan.mode_overrides.items()
-            if mode != CBB_MODE_HOME_UPS and 0 <= idx < n
-        }
-
-    # Add balancing charge intervals (UPS only)
-    if balancing_plan:
-        for idx in balancing_plan.charging_intervals:
-            if 0 <= idx < n and idx not in blocked_indices:
-                charging_intervals.add(idx)
-
-    # Respect negative price strategy (only force UPS when configured)
-    if (
-        negative_price_intervals
-        and strategy.config.negative_price_strategy == NegativePriceStrategy.CHARGE_GRID
-    ):
-        for idx in negative_price_intervals:
-            if 0 <= idx < n and idx not in blocked_indices:
-                charging_intervals.add(idx)
+    blocked_indices = _build_blocked_indices(balancing_plan, n)
+    _seed_charging_intervals(
+        strategy,
+        charging_intervals=charging_intervals,
+        balancing_plan=balancing_plan,
+        negative_price_intervals=negative_price_intervals,
+        blocked_indices=blocked_indices,
+        n=n,
+    )
 
     def add_ups_interval(idx: int, *, allow_expensive: bool = False) -> None:
         if idx in blocked_indices:
@@ -69,122 +55,49 @@ def plan_charging_intervals(
             if allow_expensive or prices[next_idx] <= strategy.config.max_ups_price_czk:
                 charging_intervals.add(next_idx)
 
-    # Recovery if we start below planning minimum: charge ASAP.
-    recovery_index: Optional[int] = None
+    recovery_index = 0
     if recovery_mode:
-        soc = initial_battery_kwh
-        for i in range(n):
-            if soc >= strategy._planning_min - eps_kwh:
-                recovery_index = max(0, i - 1)
-                break
-
-            price = prices[i]
-            if price > strategy.config.max_ups_price_czk and infeasible_reason is None:
-                infeasible_reason = (
-                    "Battery below planning minimum at start; "
-                    f"interval {i} exceeds max_ups_price_czk={strategy.config.max_ups_price_czk}"
-                )
-            add_ups_interval(
-                i, allow_expensive=price > strategy.config.max_ups_price_czk
-            )
-
-            solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
-            load = consumption_forecast[i] if i < len(consumption_forecast) else 0.125
-            res = strategy.simulator.simulate(
-                battery_start=soc,
-                mode=CBB_MODE_HOME_UPS,
-                solar_kwh=solar,
-                load_kwh=load,
-                force_charge=True,
-            )
-            soc = res.battery_end
-
-        if recovery_index is None and soc >= strategy._planning_min - eps_kwh:
-            recovery_index = n - 1
-
-        if soc < strategy._planning_min - eps_kwh:
-            if infeasible_reason is None:
-                infeasible_reason = "Battery below planning minimum at start and could not recover within planning horizon"
+        recovery_index, infeasible_reason, recovered = _run_recovery(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            prices=prices,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            add_ups_interval=add_ups_interval,
+            eps_kwh=eps_kwh,
+        )
+        if not recovered:
             return charging_intervals, infeasible_reason, price_band_intervals
-    else:
-        recovery_index = 0
 
     # Repair loop: add UPS intervals before first violation.
     buffer = 0.5
-    for _ in range(strategy.MAX_ITERATIONS):
-        battery_trajectory = simulate_trajectory(
-            strategy,
-            initial_battery_kwh=initial_battery_kwh,
-            solar_forecast=solar_forecast,
-            consumption_forecast=consumption_forecast,
-            charging_intervals=charging_intervals,
-        )
-
-        violation_idx = None
-        start_idx = recovery_index + 1 if recovery_index is not None else 0
-        for i in range(start_idx, len(battery_trajectory)):
-            if battery_trajectory[i] < strategy._planning_min + buffer:
-                violation_idx = i
-                break
-
-        if violation_idx is None:
-            break
-
-        candidate = None
-        candidate_price = None
-        for idx in range(0, min(n, violation_idx + 1)):
-            if idx in charging_intervals or idx in blocked_indices:
-                continue
-            price = prices[idx]
-            if price > strategy.config.max_ups_price_czk:
-                continue
-            if candidate is None or price < candidate_price:
-                candidate = idx
-                candidate_price = price
-
-        if candidate is None:
-            if infeasible_reason is None:
-                infeasible_reason = (
-                    f"No UPS interval <= max_ups_price_czk={strategy.config.max_ups_price_czk} "
-                    f"available before violation index {violation_idx}"
-                )
-            for idx in range(0, min(n, violation_idx + 1)):
-                add_ups_interval(idx, allow_expensive=True)
-            break
-
-        add_ups_interval(candidate)
+    infeasible_reason = _repair_plan_before_min(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        charging_intervals=charging_intervals,
+        blocked_indices=blocked_indices,
+        prices=prices,
+        recovery_index=recovery_index,
+        buffer=buffer,
+        add_ups_interval=add_ups_interval,
+        infeasible_reason=infeasible_reason,
+        n=n,
+    )
 
     # Target fill: add cheapest UPS intervals until target SoC is reachable.
-    if strategy._target > strategy._planning_min + eps_kwh:
-        for _ in range(strategy.MAX_ITERATIONS):
-            battery_trajectory = simulate_trajectory(
-                strategy,
-                initial_battery_kwh=initial_battery_kwh,
-                solar_forecast=solar_forecast,
-                consumption_forecast=consumption_forecast,
-                charging_intervals=charging_intervals,
-            )
-            max_soc = (
-                max(battery_trajectory) if battery_trajectory else initial_battery_kwh
-            )
-            if max_soc >= strategy._target - eps_kwh:
-                break
-
-            candidate = None
-            candidate_price = None
-            for idx, price in enumerate(prices):
-                if idx in charging_intervals or idx in blocked_indices:
-                    continue
-                if price > strategy.config.max_ups_price_czk:
-                    continue
-                if candidate is None or price < candidate_price:
-                    candidate = idx
-                    candidate_price = price
-
-            if candidate is None:
-                break
-
-            add_ups_interval(candidate)
+    _reach_target_soc(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        charging_intervals=charging_intervals,
+        blocked_indices=blocked_indices,
+        prices=prices,
+        add_ups_interval=add_ups_interval,
+        eps_kwh=eps_kwh,
+    )
 
     # Final validation: flag infeasible if still under planning minimum.
     final_trajectory = simulate_trajectory(
@@ -218,6 +131,211 @@ def plan_charging_intervals(
             )
 
     return charging_intervals, infeasible_reason, price_band_intervals
+
+
+def _build_blocked_indices(
+    balancing_plan: Optional[StrategyBalancingPlan], n: int
+) -> set[int]:
+    if not balancing_plan or not balancing_plan.mode_overrides:
+        return set()
+    return {
+        idx
+        for idx, mode in balancing_plan.mode_overrides.items()
+        if mode != CBB_MODE_HOME_UPS and 0 <= idx < n
+    }
+
+
+def _seed_charging_intervals(
+    strategy,
+    *,
+    charging_intervals: set[int],
+    balancing_plan: Optional[StrategyBalancingPlan],
+    negative_price_intervals: Optional[List[int]],
+    blocked_indices: set[int],
+    n: int,
+) -> None:
+    if balancing_plan:
+        for idx in balancing_plan.charging_intervals:
+            if 0 <= idx < n and idx not in blocked_indices:
+                charging_intervals.add(idx)
+
+    if (
+        negative_price_intervals
+        and strategy.config.negative_price_strategy == NegativePriceStrategy.CHARGE_GRID
+    ):
+        for idx in negative_price_intervals:
+            if 0 <= idx < n and idx not in blocked_indices:
+                charging_intervals.add(idx)
+
+
+def _run_recovery(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    prices: List[float],
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    add_ups_interval,
+    eps_kwh: float,
+) -> Tuple[int, Optional[str], bool]:
+    recovery_index = 0
+    infeasible_reason: Optional[str] = None
+    soc = initial_battery_kwh
+    n = len(prices)
+
+    for i in range(n):
+        if soc >= strategy._planning_min - eps_kwh:
+            recovery_index = max(0, i - 1)
+            break
+
+        price = prices[i]
+        if price > strategy.config.max_ups_price_czk and infeasible_reason is None:
+            infeasible_reason = (
+                "Battery below planning minimum at start; "
+                f"interval {i} exceeds max_ups_price_czk={strategy.config.max_ups_price_czk}"
+            )
+        add_ups_interval(i, allow_expensive=price > strategy.config.max_ups_price_czk)
+
+        solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
+        load = consumption_forecast[i] if i < len(consumption_forecast) else 0.125
+        res = strategy.simulator.simulate(
+            battery_start=soc,
+            mode=CBB_MODE_HOME_UPS,
+            solar_kwh=solar,
+            load_kwh=load,
+            force_charge=True,
+        )
+        soc = res.battery_end
+
+    if recovery_index == 0 and soc >= strategy._planning_min - eps_kwh:
+        recovery_index = n - 1
+
+    if soc < strategy._planning_min - eps_kwh:
+        if infeasible_reason is None:
+            infeasible_reason = (
+                "Battery below planning minimum at start and could not recover within planning horizon"
+            )
+        return recovery_index, infeasible_reason, False
+
+    return recovery_index, infeasible_reason, True
+
+
+def _repair_plan_before_min(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    prices: List[float],
+    recovery_index: int,
+    buffer: float,
+    add_ups_interval,
+    infeasible_reason: Optional[str],
+    n: int,
+) -> Optional[str]:
+    for _ in range(strategy.MAX_ITERATIONS):
+        battery_trajectory = simulate_trajectory(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            charging_intervals=charging_intervals,
+        )
+
+        violation_idx = None
+        for i in range(recovery_index + 1, len(battery_trajectory)):
+            if battery_trajectory[i] < strategy._planning_min + buffer:
+                violation_idx = i
+                break
+
+        if violation_idx is None:
+            break
+
+        candidate = _find_cheapest_candidate(
+            prices=prices,
+            charging_intervals=charging_intervals,
+            blocked_indices=blocked_indices,
+            max_price=strategy.config.max_ups_price_czk,
+            limit=violation_idx + 1,
+        )
+
+        if candidate is None:
+            if infeasible_reason is None:
+                infeasible_reason = (
+                    f"No UPS interval <= max_ups_price_czk={strategy.config.max_ups_price_czk} "
+                    f"available before violation index {violation_idx}"
+                )
+            for idx in range(0, min(n, violation_idx + 1)):
+                add_ups_interval(idx, allow_expensive=True)
+            break
+
+        add_ups_interval(candidate)
+
+    return infeasible_reason
+
+
+def _reach_target_soc(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    prices: List[float],
+    add_ups_interval,
+    eps_kwh: float,
+) -> None:
+    if strategy._target <= strategy._planning_min + eps_kwh:
+        return
+
+    for _ in range(strategy.MAX_ITERATIONS):
+        battery_trajectory = simulate_trajectory(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            charging_intervals=charging_intervals,
+        )
+        max_soc = max(battery_trajectory) if battery_trajectory else initial_battery_kwh
+        if max_soc >= strategy._target - eps_kwh:
+            break
+
+        candidate = _find_cheapest_candidate(
+            prices=prices,
+            charging_intervals=charging_intervals,
+            blocked_indices=blocked_indices,
+            max_price=strategy.config.max_ups_price_czk,
+            limit=len(prices),
+        )
+        if candidate is None:
+            break
+
+        add_ups_interval(candidate)
+
+
+def _find_cheapest_candidate(
+    *,
+    prices: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    max_price: float,
+    limit: int,
+) -> Optional[int]:
+    candidate = None
+    candidate_price = None
+    for idx in range(0, min(len(prices), limit)):
+        if idx in charging_intervals or idx in blocked_indices:
+            continue
+        price = prices[idx]
+        if price > max_price:
+            continue
+        if candidate is None or price < candidate_price:
+            candidate = idx
+            candidate_price = price
+    return candidate
 
 
 def get_price_band_delta_pct(strategy) -> float:

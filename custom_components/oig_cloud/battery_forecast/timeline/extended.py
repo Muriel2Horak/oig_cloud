@@ -19,6 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DATE_FMT = "%Y-%m-%d"
 DATETIME_FMT = "%Y-%m-%dT%H:%M:%S"
+UTC_OFFSET = "+00:00"
 
 
 async def _load_storage_plans(sensor: Any) -> Dict[str, Any]:
@@ -98,12 +99,9 @@ async def _build_planned_intervals_map(
         if not time_key:
             continue
         try:
-            if "T" in time_key:
-                planned_dt = datetime.fromisoformat(time_key.replace("Z", "+00:00"))
-            else:
-                planned_dt = datetime.combine(
-                    day, datetime.strptime(time_key, "%H:%M").time()
-                )
+            planned_dt = _parse_planned_time(time_key, day, date_str)
+            if not planned_dt:
+                continue
             planned_dt = dt_util.as_local(planned_dt)
             time_str = planned_dt.strftime(DATETIME_FMT)
             planned_intervals_map[time_str] = planned_entry
@@ -154,6 +152,483 @@ async def _build_historical_actual_data(
         "savings": 0,
     }
 
+
+def _parse_iso_datetime(time_str: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(time_str.replace("Z", UTC_OFFSET))
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_planned_time(
+    time_str: str, day: date, date_str: str
+) -> Optional[datetime]:
+    if not time_str:
+        return None
+    if "T" in time_str:
+        return _parse_iso_datetime(time_str)
+    try:
+        return datetime.combine(day, datetime.strptime(time_str, "%H:%M").time())
+    except (ValueError, TypeError):
+        return None
+
+
+def _planned_data_from_storage(planned_entry: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "mode": planned_entry.get("mode", 0),
+        "mode_name": planned_entry.get("mode_name", "Unknown"),
+        "consumption_kwh": planned_entry.get("consumption_kwh", 0),
+        "solar_kwh": planned_entry.get("solar_kwh", 0),
+        "battery_soc": planned_entry.get("battery_soc", 0),
+        "net_cost": planned_entry.get("net_cost", 0),
+    }
+
+
+async def _load_historical_modes(
+    sensor: Any,
+    source: str,
+    day_start: datetime,
+    day_end: datetime,
+    now: datetime,
+    date_str: str,
+) -> Dict[str, Any]:
+    if source not in ("historical_only", "mixed") or not sensor._hass:
+        return {}
+    try:
+        fetch_end = day_end if source == "historical_only" else now
+        return await history_module.build_historical_modes_lookup(
+            sensor,
+            day_start=day_start,
+            fetch_end=fetch_end,
+            date_str=date_str,
+            source=source,
+        )
+    except Exception as err:
+        _LOGGER.error(
+            "Failed to fetch historical modes from Recorder for %s: %s",
+            date_str,
+            err,
+        )
+        return {}
+
+
+async def _build_historical_only_intervals(
+    sensor: Any,
+    day: date,
+    day_start: datetime,
+    storage_plans: Dict[str, Any],
+    date_str: str,
+    historical_modes_lookup: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    planned_intervals_map = await _build_planned_intervals_map(
+        sensor, storage_plans, day, date_str
+    )
+    intervals: List[Dict[str, Any]] = []
+    interval_time = day_start
+    while interval_time.date() == day:
+        interval_time_str = interval_time.strftime(DATETIME_FMT)
+
+        mode_from_recorder = historical_modes_lookup.get(interval_time_str)
+        planned_from_storage = planned_intervals_map.get(interval_time_str, {})
+
+        actual_data = {}
+        if mode_from_recorder:
+            actual_data = await _build_historical_actual_data(
+                sensor, interval_time, mode_from_recorder
+            )
+
+        planned_data = (
+            _planned_data_from_storage(planned_from_storage)
+            if planned_from_storage
+            else {}
+        )
+
+        mode_match = None
+        if actual_data and planned_data:
+            mode_match = actual_data.get("mode") == planned_data.get("mode")
+
+        intervals.append(
+            {
+                "time": interval_time_str,
+                "status": "historical",
+                "planned": planned_data,
+                "actual": actual_data,
+                "delta": None,
+                "mode_match": mode_match,
+            }
+        )
+
+        interval_time += timedelta(minutes=15)
+    return intervals
+
+
+def _load_past_planned_from_storage(
+    sensor: Any,
+    storage_plans: Dict[str, Any],
+    date_str: str,
+    day: date,
+) -> tuple[List[Dict[str, Any]], bool, bool]:
+    past_planned: List[Dict[str, Any]] = []
+    storage_day = storage_plans.get("detailed", {}).get(date_str)
+    storage_invalid = sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
+    storage_missing = not storage_day or not storage_day.get("intervals")
+    if storage_day and storage_day.get("intervals") and not storage_invalid:
+        past_planned = storage_day["intervals"]
+        _LOGGER.debug(
+            "📦 Loaded %s planned intervals from Storage Helper for %s",
+            len(past_planned),
+            day,
+        )
+    return past_planned, storage_missing, storage_invalid
+
+
+async def _maybe_repair_baseline(
+    sensor: Any,
+    storage_plans: Dict[str, Any],
+    date_str: str,
+) -> Dict[str, Any]:
+    if date_str in sensor._baseline_repair_attempts:
+        return storage_plans
+    sensor._baseline_repair_attempts.add(date_str)
+    _LOGGER.info("Baseline plan missing/invalid for %s, attempting rebuild", date_str)
+    try:
+        repaired = await sensor._create_baseline_plan(date_str)
+    except Exception as err:
+        _LOGGER.error(
+            "Baseline rebuild failed for %s: %s",
+            date_str,
+            err,
+            exc_info=True,
+        )
+        repaired = False
+    if repaired:
+        return await _refresh_storage_after_repair(sensor, storage_plans, date_str)
+    return storage_plans
+
+
+async def _refresh_storage_after_repair(
+    sensor: Any, storage_plans: Dict[str, Any], date_str: str
+) -> Dict[str, Any]:
+    try:
+        refreshed_plans = await sensor._plans_store.async_load() or {}
+        storage_day = refreshed_plans.get("detailed", {}).get(date_str)
+        storage_invalid = (
+            sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
+        )
+        if not storage_invalid and storage_day and storage_day.get("intervals"):
+            return refreshed_plans
+    except Exception as err:
+        _LOGGER.error(
+            "Failed to reload baseline plan after rebuild for %s: %s",
+            date_str,
+            err,
+            exc_info=True,
+        )
+    return storage_plans
+
+
+def _load_past_planned_from_daily_state(
+    sensor: Any, date_str: str, day: date
+) -> List[Dict[str, Any]]:
+    if not getattr(sensor, "_daily_plan_state", None):
+        return []
+    if sensor._daily_plan_state.get("date") != date_str:
+        return []
+    past_planned: List[Dict[str, Any]] = []
+    plan_intervals = sensor._daily_plan_state.get("plan", [])
+    plan_locked = bool(sensor._daily_plan_state.get("locked", False))
+    if plan_intervals:
+        past_planned = plan_intervals
+        _LOGGER.info("Using in-memory daily plan for %s (baseline invalid)", date_str)
+    elif not plan_locked:
+        actual_intervals = sensor._daily_plan_state.get("actual", [])
+        for interval in actual_intervals:
+            if interval.get("time"):
+                past_planned.append(interval)
+    _LOGGER.debug(
+        "📋 Loaded %s intervals from _daily_plan_state for %s",
+        len(past_planned),
+        day,
+    )
+    return past_planned
+
+
+def _collect_future_planned(
+    all_timeline: List[Dict[str, Any]],
+    day: date,
+) -> List[Dict[str, Any]]:
+    future_planned: List[Dict[str, Any]] = []
+    parse_errors = 0
+    wrong_date = 0
+    for interval in all_timeline:
+        time_str = interval.get("time")
+        if time_str:
+            interval_dt = _parse_iso_datetime(time_str)
+            if not interval_dt:
+                parse_errors += 1
+                continue
+            if interval_dt.date() == day:
+                future_planned.append(interval)
+            else:
+                wrong_date += 1
+    _LOGGER.debug(
+        "📋 Future filter: %s kept, %s wrong_date, %s parse_errors (from %s total)",
+        len(future_planned),
+        wrong_date,
+        parse_errors,
+        len(all_timeline),
+    )
+    return future_planned
+
+
+def _build_planned_lookup(
+    past_planned: List[Dict[str, Any]],
+    future_planned: List[Dict[str, Any]],
+    date_str: str,
+    current_interval_naive: datetime,
+) -> Dict[str, Dict[str, Any]]:
+    planned_lookup: Dict[str, Dict[str, Any]] = {}
+    for planned in past_planned:
+        time_str = planned.get("time")
+        if not time_str:
+            continue
+        if "T" not in time_str:
+            time_str = f"{date_str}T{time_str}:00"
+        interval_dt = _parse_iso_datetime(time_str)
+        if not interval_dt:
+            _LOGGER.warning("Failed to parse time_str: %s", time_str)
+            continue
+        interval_dt_naive = interval_dt.replace(tzinfo=None) if interval_dt.tzinfo else interval_dt
+        if interval_dt_naive < current_interval_naive:
+            planned_lookup[interval_dt.strftime(DATETIME_FMT)] = planned
+
+    added_future = 0
+    skipped_future = 0
+    for planned in future_planned:
+        time_str = planned.get("time")
+        if not time_str:
+            continue
+        interval_dt = _parse_iso_datetime(time_str)
+        if not interval_dt:
+            _LOGGER.debug("Failed to parse time: %s", time_str)
+            continue
+        interval_dt_naive = (
+            interval_dt.replace(tzinfo=None) if interval_dt.tzinfo else interval_dt
+        )
+        if interval_dt_naive >= current_interval_naive:
+            planned_lookup[time_str] = planned
+            added_future += 1
+        else:
+            skipped_future += 1
+
+    _LOGGER.debug(
+        "📋 Merge stats: added_future=%s, skipped_future=%s, current_interval=%s",
+        added_future,
+        skipped_future,
+        current_interval_naive,
+    )
+    return planned_lookup
+
+
+def _interval_status(
+    interval_time: datetime, current_interval_naive: datetime
+) -> str:
+    interval_time_naive = (
+        interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
+    )
+    if interval_time_naive < current_interval_naive:
+        return "historical"
+    if interval_time_naive == current_interval_naive:
+        return "current"
+    return "planned"
+
+
+async def _build_actual_data(
+    sensor: Any,
+    interval_time: datetime,
+    interval_time_str: str,
+    status: str,
+    planned_data: Dict[str, Any],
+    historical_modes_lookup: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    if status not in ("historical", "current"):
+        return None
+    mode_from_recorder = historical_modes_lookup.get(interval_time_str)
+    if not mode_from_recorder:
+        return None
+    interval_end = interval_time + timedelta(minutes=15)
+    historical_metrics = await history_module.fetch_interval_from_history(
+        sensor, interval_time, interval_end
+    )
+    if historical_metrics:
+        return {
+            "mode": mode_from_recorder.get("mode", 0),
+            "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
+            "consumption_kwh": historical_metrics.get("consumption_kwh", 0),
+            "solar_kwh": historical_metrics.get("solar_kwh", 0),
+            "battery_soc": historical_metrics.get("battery_soc", 0),
+            "grid_import_kwh": historical_metrics.get("grid_import", 0),
+            "grid_export_kwh": historical_metrics.get("grid_export", 0),
+            "net_cost": historical_metrics.get("net_cost", 0),
+            "savings": 0,
+        }
+    return {
+        "mode": mode_from_recorder.get("mode", 0),
+        "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
+        "consumption_kwh": 0,
+        "solar_kwh": 0,
+        "battery_soc": 0,
+        "grid_import_kwh": 0,
+        "grid_export_kwh": 0,
+        "net_cost": planned_data.get("net_cost", 0) if planned_data else 0,
+        "savings": 0,
+    }
+
+
+def _apply_current_interval_data(
+    sensor: Any,
+    actual_data: Optional[Dict[str, Any]],
+    mode_names: Dict[int, str],
+) -> Dict[str, Any]:
+    current_mode = sensor._get_current_mode()
+    current_mode_name = mode_names.get(current_mode, "HOME I")
+    current_soc = sensor._get_current_battery_soc_percent()
+    current_kwh = sensor._get_current_battery_capacity()
+    if actual_data is None:
+        actual_data = {
+            "consumption_kwh": 0,
+            "solar_kwh": 0,
+            "grid_import_kwh": 0,
+            "grid_export_kwh": 0,
+            "net_cost": 0,
+            "savings": 0,
+        }
+    actual_data["mode"] = current_mode
+    actual_data["mode_name"] = current_mode_name
+    if current_soc is not None:
+        actual_data["battery_soc"] = round(current_soc, 1)
+    if current_kwh is not None:
+        actual_data["battery_kwh"] = round(current_kwh, 2)
+    return actual_data
+
+
+async def _build_mixed_intervals(
+    sensor: Any,
+    day: date,
+    day_start: datetime,
+    storage_plans: Dict[str, Any],
+    date_str: str,
+    now: datetime,
+    mode_names: Dict[int, str],
+    historical_modes_lookup: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    past_planned, storage_missing, storage_invalid = _load_past_planned_from_storage(
+        sensor, storage_plans, date_str, day
+    )
+    storage_day = storage_plans.get("detailed", {}).get(date_str)
+    if sensor._plans_store and (storage_missing or storage_invalid):
+        storage_plans = await _maybe_repair_baseline(sensor, storage_plans, date_str)
+        storage_day = storage_plans.get("detailed", {}).get(date_str)
+        storage_invalid = sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
+        if storage_day and storage_day.get("intervals") and not storage_invalid:
+            past_planned = storage_day["intervals"]
+    if not past_planned:
+        past_planned = _load_past_planned_from_daily_state(sensor, date_str, day)
+    if not past_planned and storage_day and storage_day.get("intervals"):
+        past_planned = storage_day["intervals"]
+        _LOGGER.warning(
+            "Using baseline plan for %s despite invalid data (no fallback)",
+            date_str,
+        )
+    if not past_planned:
+        _LOGGER.debug("⚠️  No past planned data available for %s", day)
+
+    future_planned = _collect_future_planned(getattr(sensor, "_timeline_data", []), day)
+
+    _LOGGER.debug(
+        "📋 Planned data sources for %s: past=%s intervals from daily_plan, future=%s intervals from active timeline",
+        day,
+        len(past_planned),
+        len(future_planned),
+    )
+
+    current_minute = (now.minute // 15) * 15
+    current_interval = now.replace(minute=current_minute, second=0, microsecond=0)
+    current_interval_naive = current_interval.replace(tzinfo=None)
+
+    planned_lookup = _build_planned_lookup(
+        past_planned, future_planned, date_str, current_interval_naive
+    )
+    _LOGGER.debug(
+        "📋 Combined planned lookup: %s total intervals for %s",
+        len(planned_lookup),
+        day,
+    )
+
+    intervals: List[Dict[str, Any]] = []
+    interval_time = day_start
+    while interval_time.date() == day:
+        interval_time_str = interval_time.strftime(DATETIME_FMT)
+        status = _interval_status(interval_time, current_interval_naive)
+
+        planned_entry = planned_lookup.get(interval_time_str)
+        planned_data = format_planned_data(planned_entry) if planned_entry else {}
+
+        actual_data = await _build_actual_data(
+            sensor,
+            interval_time,
+            interval_time_str,
+            status,
+            planned_data,
+            historical_modes_lookup,
+        )
+
+        if status == "current":
+            actual_data = _apply_current_interval_data(sensor, actual_data, mode_names)
+
+        if actual_data or planned_data:
+            intervals.append(
+                {
+                    "time": interval_time_str,
+                    "status": status,
+                    "planned": planned_data,
+                    "actual": actual_data,
+                    "delta": None,
+                }
+            )
+
+        interval_time += timedelta(minutes=15)
+
+    return intervals
+
+
+def _build_planned_only_intervals(
+    sensor: Any, day: date, day_start: datetime, day_end: datetime
+) -> List[Dict[str, Any]]:
+    intervals: List[Dict[str, Any]] = []
+    if not (getattr(sensor, "_mode_optimization_result", None)):
+        return intervals
+    optimal_timeline = sensor._mode_optimization_result.get("optimal_timeline", [])
+    for interval in optimal_timeline:
+        interval_time_str = interval.get("time", "")
+        if not interval_time_str:
+            continue
+        interval_time = _parse_iso_datetime(interval_time_str)
+        if not interval_time:
+            continue
+        if interval_time.tzinfo is None:
+            interval_time = dt_util.as_local(interval_time)
+        if day_start <= interval_time <= day_end:
+            intervals.append(
+                {
+                    "time": interval_time_str,
+                    "status": "planned",
+                    "planned": format_planned_data(interval),
+                    "actual": None,
+                    "delta": None,
+                }
+            )
+    return intervals
 
 async def build_timeline_extended(
     sensor: Any, *, mode_names: Optional[Dict[int, str]] = None
@@ -213,381 +688,27 @@ async def build_day_timeline(  # noqa: C901
 
     source = _get_day_source(day, today)
 
-    historical_modes_lookup = {}
-    if source in ["historical_only", "mixed"] and self._hass:
-        try:
-            fetch_end = day_end if source == "historical_only" else now
-            historical_modes_lookup = (
-                await history_module.build_historical_modes_lookup(
-                    self,
-                    day_start=day_start,
-                    fetch_end=fetch_end,
-                    date_str=date_str,
-                    source=source,
-                )
-            )
-        except Exception as e:
-            _LOGGER.error(
-                "Failed to fetch historical modes from Recorder for %s: %s",
-                date_str,
-                e,
-            )
-            historical_modes_lookup = {}
+    historical_modes_lookup = await _load_historical_modes(
+        self, source, day_start, day_end, now, date_str
+    )
 
     if source == "historical_only":
-        planned_intervals_map = await _build_planned_intervals_map(
-            self, storage_plans, day, date_str
+        intervals = await _build_historical_only_intervals(
+            self, day, day_start, storage_plans, date_str, historical_modes_lookup
         )
-
-        interval_time = day_start
-        while interval_time.date() == day:
-            interval_time_str = interval_time.strftime(DATETIME_FMT)
-
-            mode_from_recorder = historical_modes_lookup.get(interval_time_str)
-            planned_from_storage = planned_intervals_map.get(interval_time_str, {})
-
-            actual_data = {}
-            if mode_from_recorder:
-                actual_data = await _build_historical_actual_data(
-                    self, interval_time, mode_from_recorder
-                )
-
-            planned_data = {}
-            if planned_from_storage:
-                planned_data = {
-                    "mode": planned_from_storage.get("mode", 0),
-                    "mode_name": planned_from_storage.get("mode_name", "Unknown"),
-                    "consumption_kwh": planned_from_storage.get("consumption_kwh", 0),
-                    "solar_kwh": planned_from_storage.get("solar_kwh", 0),
-                    "battery_soc": planned_from_storage.get("battery_soc", 0),
-                    "net_cost": planned_from_storage.get("net_cost", 0),
-                }
-
-            mode_match = None
-            if actual_data and planned_data:
-                actual_mode = actual_data.get("mode")
-                planned_mode = planned_data.get("mode")
-                mode_match = actual_mode == planned_mode
-
-            intervals.append(
-                {
-                    "time": interval_time_str,
-                    "status": "historical",
-                    "planned": planned_data,
-                    "actual": actual_data,
-                    "delta": None,
-                    "mode_match": mode_match,
-                }
-            )
-
-            interval_time += timedelta(minutes=15)
-
     elif source == "mixed":
-        past_planned = []
-
-        storage_day = storage_plans.get("detailed", {}).get(date_str)
-        storage_invalid = (
-            self._is_baseline_plan_invalid(storage_day) if storage_day else True
-        )
-        storage_missing = not storage_day or not storage_day.get("intervals")
-        if (
-            self._plans_store
-            and (storage_missing or storage_invalid)
-            and date_str not in self._baseline_repair_attempts
-        ):
-            self._baseline_repair_attempts.add(date_str)
-            _LOGGER.info(
-                "Baseline plan missing/invalid for %s, attempting rebuild",
-                date_str,
-            )
-            try:
-                repaired = await self._create_baseline_plan(date_str)
-            except Exception as err:
-                _LOGGER.error(
-                    "Baseline rebuild failed for %s: %s",
-                    date_str,
-                    err,
-                    exc_info=True,
-                )
-                repaired = False
-            if repaired:
-                try:
-                    storage_plans = await self._plans_store.async_load() or {}
-                    storage_day = storage_plans.get("detailed", {}).get(date_str)
-                    storage_invalid = (
-                        self._is_baseline_plan_invalid(storage_day)
-                        if storage_day
-                        else True
-                    )
-                except Exception as err:
-                    _LOGGER.error(
-                        "Failed to reload baseline plan after rebuild for %s: %s",
-                        date_str,
-                        err,
-                        exc_info=True,
-                    )
-        if storage_day and storage_day.get("intervals") and not storage_invalid:
-            past_planned = storage_day["intervals"]
-            _LOGGER.debug(
-                "📦 Loaded %s planned intervals from Storage Helper for %s",
-                len(past_planned),
-                day,
-            )
-        elif (
-            hasattr(self, "_daily_plan_state")
-            and self._daily_plan_state
-            and self._daily_plan_state.get("date") == date_str
-        ):
-            plan_intervals = self._daily_plan_state.get("plan", [])
-            plan_locked = bool(self._daily_plan_state.get("locked", False))
-            if plan_intervals:
-                past_planned = plan_intervals
-                _LOGGER.info(
-                    "Using in-memory daily plan for %s (baseline invalid)",
-                    date_str,
-                )
-            elif not plan_locked:
-                actual_intervals = self._daily_plan_state.get("actual", [])
-                for interval in actual_intervals:
-                    if interval.get("time"):
-                        past_planned.append(interval)
-            _LOGGER.debug(
-                "📋 Loaded %s intervals from _daily_plan_state for %s",
-                len(past_planned),
-                day,
-            )
-        elif storage_day and storage_day.get("intervals"):
-            past_planned = storage_day["intervals"]
-            _LOGGER.warning(
-                "Using baseline plan for %s despite invalid data (no fallback)",
-                date_str,
-            )
-        else:
-            _LOGGER.debug("⚠️  No past planned data available for %s", day)
-
-        future_planned = []
-        all_timeline = getattr(self, "_timeline_data", [])
-        parse_errors = 0
-        wrong_date = 0
-        for interval in all_timeline:
-            time_str = interval.get("time")
-            if time_str:
-                try:
-                    interval_dt = datetime.fromisoformat(
-                        time_str.replace("Z", "+00:00")
-                    )
-                    if interval_dt.date() == day:
-                        future_planned.append(interval)
-                    else:
-                        wrong_date += 1
-                except (ValueError, TypeError):
-                    parse_errors += 1
-                    continue
-
-        _LOGGER.debug(
-            "📋 Future filter: %s kept, %s wrong_date, %s parse_errors (from %s total)",
-            len(future_planned),
-            wrong_date,
-            parse_errors,
-            len(all_timeline),
-        )
-
-        _LOGGER.debug(
-            "📋 Planned data sources for %s: past=%s intervals from daily_plan, future=%s intervals from active timeline",
+        intervals = await _build_mixed_intervals(
+            self,
             day,
-            len(past_planned),
-            len(future_planned),
+            day_start,
+            storage_plans,
+            date_str,
+            now,
+            mode_names,
+            historical_modes_lookup,
         )
-
-        current_minute = (now.minute // 15) * 15
-        current_interval = now.replace(minute=current_minute, second=0, microsecond=0)
-        current_interval_naive = current_interval.replace(tzinfo=None)
-
-        planned_lookup: Dict[str, Dict[str, Any]] = {}
-
-        for planned in past_planned:
-            time_str = planned.get("time")
-            if time_str:
-                try:
-                    if "T" not in time_str:
-                        time_str = f"{date_str}T{time_str}:00"
-
-                    interval_dt = datetime.fromisoformat(
-                        time_str.replace("Z", "+00:00")
-                    )
-                    interval_dt_naive = (
-                        interval_dt.replace(tzinfo=None)
-                        if interval_dt.tzinfo
-                        else interval_dt
-                    )
-
-                    if interval_dt_naive < current_interval_naive:
-                        lookup_key = interval_dt.strftime(DATETIME_FMT)
-                        planned_lookup[lookup_key] = planned
-                except (ValueError, TypeError):
-                    _LOGGER.warning("Failed to parse time_str: %s", time_str)
-                    continue
-
-        added_future = 0
-        skipped_future = 0
-        for planned in future_planned:
-            time_str = planned.get("time")
-            if time_str:
-                try:
-                    interval_dt = datetime.fromisoformat(time_str)
-                    if interval_dt >= current_interval_naive:
-                        planned_lookup[time_str] = planned
-                        added_future += 1
-                    else:
-                        skipped_future += 1
-                except (ValueError, TypeError) as err:
-                    _LOGGER.debug("Failed to parse time: %s, error: %s", time_str, err)
-                    continue
-
-        _LOGGER.debug(
-            "📋 Merge stats: added_future=%s, skipped_future=%s, current_interval=%s",
-            added_future,
-            skipped_future,
-            current_interval_naive,
-        )
-
-        _LOGGER.debug(
-            "📋 Combined planned lookup: %s total intervals for %s",
-            len(planned_lookup),
-            day,
-        )
-
-        interval_time = day_start
-        while interval_time.date() == day:
-            interval_time_str = interval_time.strftime(DATETIME_FMT)
-
-            interval_time_naive = (
-                interval_time.replace(tzinfo=None)
-                if interval_time.tzinfo
-                else interval_time
-            )
-            if interval_time_naive < current_interval_naive:
-                status = "historical"
-            elif interval_time_naive == current_interval_naive:
-                status = "current"
-            else:
-                status = "planned"
-
-            planned_entry = planned_lookup.get(interval_time_str)
-            planned_data = None
-            if planned_entry:
-                planned_data = format_planned_data(planned_entry)
-
-            if planned_data is None:
-                planned_data = {}
-
-            actual_data = None
-            if status in ("historical", "current"):
-                mode_from_recorder = historical_modes_lookup.get(interval_time_str)
-                if mode_from_recorder:
-                    interval_end = interval_time + timedelta(minutes=15)
-                    historical_metrics = (
-                        await history_module.fetch_interval_from_history(
-                            self, interval_time, interval_end
-                        )
-                    )
-
-                    if historical_metrics:
-                        actual_data = {
-                            "mode": mode_from_recorder.get("mode", 0),
-                            "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
-                            "consumption_kwh": historical_metrics.get(
-                                "consumption_kwh", 0
-                            ),
-                            "solar_kwh": historical_metrics.get("solar_kwh", 0),
-                            "battery_soc": historical_metrics.get("battery_soc", 0),
-                            "grid_import_kwh": historical_metrics.get("grid_import", 0),
-                            "grid_export_kwh": historical_metrics.get("grid_export", 0),
-                            "net_cost": historical_metrics.get("net_cost", 0),
-                            "savings": 0,
-                        }
-                    else:
-                        actual_data = {
-                            "mode": mode_from_recorder.get("mode", 0),
-                            "mode_name": mode_from_recorder.get("mode_name", "Unknown"),
-                            "consumption_kwh": 0,
-                            "solar_kwh": 0,
-                            "battery_soc": 0,
-                            "grid_import_kwh": 0,
-                            "grid_export_kwh": 0,
-                            "net_cost": (
-                                planned_data.get("net_cost", 0) if planned_data else 0
-                            ),
-                            "savings": 0,
-                        }
-
-            if status == "current":
-                current_mode = self._get_current_mode()
-                current_mode_name = mode_names.get(current_mode, "HOME I")
-                current_soc = self._get_current_battery_soc_percent()
-                current_kwh = self._get_current_battery_capacity()
-
-                if actual_data is None:
-                    actual_data = {
-                        "consumption_kwh": 0,
-                        "solar_kwh": 0,
-                        "grid_import_kwh": 0,
-                        "grid_export_kwh": 0,
-                        "net_cost": 0,
-                        "savings": 0,
-                    }
-
-                actual_data["mode"] = current_mode
-                actual_data["mode_name"] = current_mode_name
-                if current_soc is not None:
-                    actual_data["battery_soc"] = round(current_soc, 1)
-                if current_kwh is not None:
-                    actual_data["battery_kwh"] = round(current_kwh, 2)
-
-            if actual_data or planned_data:
-                intervals.append(
-                    {
-                        "time": interval_time_str,
-                        "status": status,
-                        "planned": planned_data,
-                        "actual": actual_data,
-                        "delta": None,
-                    }
-                )
-
-            interval_time += timedelta(minutes=15)
-
-    elif source == "planned_only":
-        if (
-            hasattr(self, "_mode_optimization_result")
-            and self._mode_optimization_result
-        ):
-            optimal_timeline = self._mode_optimization_result.get(
-                "optimal_timeline", []
-            )
-
-            for interval in optimal_timeline:
-                interval_time_str = interval.get("time", "")
-                if not interval_time_str:
-                    continue
-
-                try:
-                    interval_time = datetime.fromisoformat(interval_time_str)
-                    if interval_time.tzinfo is None:
-                        interval_time = dt_util.as_local(interval_time)
-                except Exception:  # nosec B112
-                    continue
-
-                if day_start <= interval_time <= day_end:
-                    intervals.append(
-                        {
-                            "time": interval_time_str,
-                            "status": "planned",
-                            "planned": format_planned_data(interval),
-                            "actual": None,
-                            "delta": None,
-                        }
-                    )
+    else:
+        intervals = _build_planned_only_intervals(self, day, day_start, day_end)
 
     summary = calculate_day_summary(intervals)
 

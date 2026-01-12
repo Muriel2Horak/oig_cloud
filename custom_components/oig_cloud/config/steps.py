@@ -1582,64 +1582,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 6a: Import (purchase) pricing configuration."""
         if user_input is not None:
-            # Kontrola tlačítka "Zpět"
-            if user_input.get("go_back", False):
-                return await self._handle_back_button("wizard_pricing_import")
-
-            # Detekce změny scénáře - pokud se změnil, znovu zobrazit formulář s novými poli
-            old_scenario = self._wizard_data.get(
-                "import_pricing_scenario", "spot_percentage"
+            return await self._handle_pricing_flow(
+                user_input,
+                step_id="wizard_pricing_import",
+                scenario_key="import_pricing_scenario",
+                schema_builder=self._get_pricing_import_schema,
+                validator=self._validate_import_pricing,
+                default_scenario="spot_percentage",
             )
-            new_scenario = user_input.get("import_pricing_scenario", "spot_percentage")
-
-            if old_scenario != new_scenario:
-                self._wizard_data.update(user_input)
-                return self.async_show_form(
-                    step_id="wizard_pricing_import",
-                    data_schema=self._get_pricing_import_schema(user_input),
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_pricing_import"
-                    ),
-                )
-
-            errors = {}
-
-            # Validace podle scénáře
-            scenario = user_input.get("import_pricing_scenario", "spot_percentage")
-
-            if scenario == "spot_percentage":
-                pos_fee = user_input.get("spot_positive_fee_percent", 15.0)
-                neg_fee = user_input.get("spot_negative_fee_percent", 9.0)
-                if pos_fee < 0.1 or pos_fee > 100:
-                    errors["spot_positive_fee_percent"] = "invalid_percentage"
-                if neg_fee < 0.1 or neg_fee > 100:
-                    errors["spot_negative_fee_percent"] = "invalid_percentage"
-
-            elif scenario == "spot_fixed":
-                fee = user_input.get("spot_fixed_fee_kwh", 0.50)
-                if fee < 0.01 or fee > 10:
-                    errors["spot_fixed_fee_kwh"] = "invalid_fee"
-
-            elif scenario == "fix_price":
-                price = user_input.get("fixed_price_kwh", 4.50)
-                if price < 0.1 or price > 20:
-                    errors["fixed_price_kwh"] = "invalid_price"
-
-            if errors:
-                return self.async_show_form(
-                    step_id="wizard_pricing_import",
-                    data_schema=self._get_pricing_import_schema(user_input),
-                    errors=errors,
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_pricing_import"
-                    ),
-                )
-
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_pricing_import")
-
-            next_step = self._get_next_step("wizard_pricing_import")
-            return await getattr(self, f"async_step_{next_step}")()
 
         return self.async_show_form(
             step_id="wizard_pricing_import",
@@ -1706,61 +1656,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
     ) -> FlowResult:
         """Wizard Step 6b: Export (sell) pricing configuration."""
         if user_input is not None:
-            # Kontrola tlačítka "Zpět"
-            if user_input.get("go_back", False):
-                return await self._handle_back_button("wizard_pricing_export")
-
-            # Detekce změny scénáře
-            old_scenario = self._wizard_data.get(
-                "export_pricing_scenario", "spot_percentage"
+            return await self._handle_pricing_flow(
+                user_input,
+                step_id="wizard_pricing_export",
+                scenario_key="export_pricing_scenario",
+                schema_builder=self._get_pricing_export_schema,
+                validator=self._validate_export_pricing,
+                default_scenario="spot_percentage",
             )
-            new_scenario = user_input.get("export_pricing_scenario", "spot_percentage")
-
-            if old_scenario != new_scenario:
-                self._wizard_data.update(user_input)
-                return self.async_show_form(
-                    step_id="wizard_pricing_export",
-                    data_schema=self._get_pricing_export_schema(user_input),
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_pricing_export"
-                    ),
-                )
-
-            errors = {}
-
-            # Validace podle scénáře
-            scenario = user_input.get("export_pricing_scenario", "spot_percentage")
-
-            if scenario == "spot_percentage":
-                fee = user_input.get("export_fee_percent", 15.0)
-                if fee < 0 or fee > 50:
-                    errors["export_fee_percent"] = "invalid_percentage"
-
-            elif scenario == "spot_fixed":
-                fee = user_input.get("export_fixed_fee_czk", 0.20)
-                if fee < 0 or fee > 5:
-                    errors["export_fixed_fee_czk"] = "invalid_fee"
-
-            elif scenario == "fix_price":
-                price = user_input.get("export_fixed_price_kwh", 2.50)
-                if price < 0 or price > 10:
-                    errors["export_fixed_price_kwh"] = "invalid_price"
-
-            if errors:
-                return self.async_show_form(
-                    step_id="wizard_pricing_export",
-                    data_schema=self._get_pricing_export_schema(user_input),
-                    errors=errors,
-                    description_placeholders=self._get_step_placeholders(
-                        "wizard_pricing_export"
-                    ),
-                )
-
-            self._wizard_data.update(user_input)
-            self._step_history.append("wizard_pricing_export")
-
-            next_step = self._get_next_step("wizard_pricing_export")
-            return await getattr(self, f"async_step_{next_step}")()
 
         return self.async_show_form(
             step_id="wizard_pricing_export",
@@ -1815,6 +1718,87 @@ Kliknutím na "Odeslat" spustíte průvodce.
         schema_fields[vol.Optional("go_back", default=False)] = bool
 
         return vol.Schema(schema_fields)
+
+    async def _handle_pricing_flow(
+        self,
+        user_input: Dict[str, Any],
+        *,
+        step_id: str,
+        scenario_key: str,
+        schema_builder,
+        validator,
+        default_scenario: str,
+    ) -> FlowResult:
+        if user_input.get("go_back", False):
+            return await self._handle_back_button(step_id)
+
+        old_scenario = self._wizard_data.get(scenario_key, default_scenario)
+        new_scenario = user_input.get(scenario_key, default_scenario)
+
+        if old_scenario != new_scenario:
+            self._wizard_data.update(user_input)
+            return self.async_show_form(
+                step_id=step_id,
+                data_schema=schema_builder(user_input),
+                description_placeholders=self._get_step_placeholders(step_id),
+            )
+
+        errors = validator(user_input)
+        if errors:
+            return self.async_show_form(
+                step_id=step_id,
+                data_schema=schema_builder(user_input),
+                errors=errors,
+                description_placeholders=self._get_step_placeholders(step_id),
+            )
+
+        self._wizard_data.update(user_input)
+        self._step_history.append(step_id)
+        next_step = self._get_next_step(step_id)
+        return await getattr(self, f"async_step_{next_step}")()
+
+    @staticmethod
+    def _validate_import_pricing(user_input: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        scenario = user_input.get("import_pricing_scenario", "spot_percentage")
+
+        if scenario == "spot_percentage":
+            pos_fee = user_input.get("spot_positive_fee_percent", 15.0)
+            neg_fee = user_input.get("spot_negative_fee_percent", 9.0)
+            if pos_fee < 0.1 or pos_fee > 100:
+                errors["spot_positive_fee_percent"] = "invalid_percentage"
+            if neg_fee < 0.1 or neg_fee > 100:
+                errors["spot_negative_fee_percent"] = "invalid_percentage"
+        elif scenario == "spot_fixed":
+            fee = user_input.get("spot_fixed_fee_kwh", 0.50)
+            if fee < 0.01 or fee > 10:
+                errors["spot_fixed_fee_kwh"] = "invalid_fee"
+        elif scenario == "fix_price":
+            price = user_input.get("fixed_price_kwh", 4.50)
+            if price < 0.1 or price > 20:
+                errors["fixed_price_kwh"] = "invalid_price"
+
+        return errors
+
+    @staticmethod
+    def _validate_export_pricing(user_input: Dict[str, Any]) -> Dict[str, str]:
+        errors: Dict[str, str] = {}
+        scenario = user_input.get("export_pricing_scenario", "spot_percentage")
+
+        if scenario == "spot_percentage":
+            fee = user_input.get("export_fee_percent", 15.0)
+            if fee < 0 or fee > 50:
+                errors["export_fee_percent"] = "invalid_percentage"
+        elif scenario == "spot_fixed":
+            fee = user_input.get("export_fixed_fee_czk", 0.20)
+            if fee < 0 or fee > 5:
+                errors["export_fixed_fee_czk"] = "invalid_fee"
+        elif scenario == "fix_price":
+            price = user_input.get("export_fixed_price_kwh", 2.50)
+            if price < 0 or price > 10:
+                errors["export_fixed_price_kwh"] = "invalid_price"
+
+        return errors
 
     async def async_step_wizard_pricing_distribution(
         self, user_input: Optional[Dict[str, Any]] = None

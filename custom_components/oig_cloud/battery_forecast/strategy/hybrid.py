@@ -23,6 +23,9 @@ from .balancing import StrategyBalancingPlan
 
 _LOGGER = logging.getLogger(__name__)
 
+HOME_III_LABEL = "HOME III"
+HOME_UPS_LABEL = "HOME UPS"
+
 
 @dataclass
 class IntervalDecision:
@@ -229,8 +232,8 @@ class HybridStrategy:
         mode_counts: Dict[str, int] = {
             "HOME I": 0,
             "HOME II": 0,
-            "HOME III": 0,
-            "HOME UPS": 0,
+            HOME_III_LABEL: 0,
+            HOME_UPS_LABEL: 0,
         }
 
         for i in range(n_intervals):
@@ -314,7 +317,7 @@ class HybridStrategy:
             total_cost += cost
             total_import += result.grid_import
             total_export += result.grid_export
-            mode_counts[CBB_MODE_NAMES.get(mode, "HOME III")] += 1
+            mode_counts[CBB_MODE_NAMES.get(mode, HOME_III_LABEL)] += 1
 
         # Apply smoothing to avoid rapid mode changes (recompute outputs after changes).
         smoothed = self._apply_smoothing(
@@ -336,8 +339,8 @@ class HybridStrategy:
         mode_counts = {
             "HOME I": 0,
             "HOME II": 0,
-            "HOME III": 0,
-            "HOME UPS": 0,
+            HOME_III_LABEL: 0,
+            HOME_UPS_LABEL: 0,
         }
         for i, decision in enumerate(decisions):
             solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
@@ -364,7 +367,7 @@ class HybridStrategy:
             total_cost += cost
             total_import += result.grid_import
             total_export += result.grid_export
-            mode_counts[CBB_MODE_NAMES.get(decision.mode, "HOME III")] += 1
+            mode_counts[CBB_MODE_NAMES.get(decision.mode, HOME_III_LABEL)] += 1
 
         # Calculate baseline (HOME I only)
         baseline_cost = self._calculate_baseline_cost(
@@ -382,7 +385,7 @@ class HybridStrategy:
             total_grid_export_kwh=total_export,
             final_battery_kwh=battery,
             mode_counts=mode_counts,
-            ups_intervals=mode_counts["HOME UPS"],
+            ups_intervals=mode_counts[HOME_UPS_LABEL],
             calculation_time_ms=calc_time,
             negative_prices_detected=has_negative,
             balancing_applied=balancing_plan is not None and balancing_plan.is_active,

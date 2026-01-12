@@ -386,6 +386,81 @@ def get_mode_switch_timeline(sensor: Any) -> Tuple[List[Dict[str, Any]], str]:
     return [], "none"
 
 
+def _iter_timeline_entries(
+    sensor: Any, timeline: List[Dict[str, Any]]
+) -> List[Tuple[datetime, str]]:
+    entries: List[Tuple[datetime, str]] = []
+    for interval in timeline:
+        timestamp = interval.get("time") or interval.get("timestamp")
+        mode_label = normalize_service_mode(
+            sensor, interval.get("mode_name")
+        ) or normalize_service_mode(sensor, interval.get("mode"))
+        if not timestamp or not mode_label:
+            continue
+
+        start_dt = parse_timeline_timestamp(timestamp)
+        if not start_dt:
+            continue
+        entries.append((start_dt, mode_label))
+    return entries
+
+
+def _build_schedule_events(
+    sensor: Any,
+    *,
+    timeline: List[Dict[str, Any]],
+    now: datetime,
+    last_mode_change: Optional[datetime],
+) -> Tuple[Optional[str], List[Tuple[datetime, str, Optional[str]]]]:
+    current_mode: Optional[str] = None
+    last_mode: Optional[str] = None
+    scheduled_events: List[Tuple[datetime, str, Optional[str]]] = []
+    last_switch_time = last_mode_change or now
+    min_interval = timedelta(minutes=MIN_AUTO_SWITCH_INTERVAL_MINUTES)
+
+    for start_dt, mode_label in _iter_timeline_entries(sensor, timeline):
+        if start_dt <= now:
+            current_mode = mode_label
+            last_mode = mode_label
+            continue
+
+        if last_mode_change and start_dt < (last_mode_change + min_interval):
+            current_mode = mode_label
+            last_mode = mode_label
+            continue
+
+        if mode_label == last_mode:
+            continue
+
+        previous_mode = last_mode
+        if not _is_min_interval_elapsed(start_dt, last_switch_time, min_interval):
+            continue
+
+        last_mode = mode_label
+        last_switch_time = start_dt
+        scheduled_events.append((start_dt, mode_label, previous_mode))
+
+    return current_mode, scheduled_events
+
+
+def _is_min_interval_elapsed(
+    start_dt: datetime, last_switch_time: datetime, min_interval: timedelta
+) -> bool:
+    try:
+        return (start_dt - last_switch_time) >= min_interval
+    except Exception:
+        return True
+
+
+def _startup_delay_seconds(sensor: Any, now: datetime) -> Optional[float]:
+    ready_at = getattr(sensor, "_auto_switch_ready_at", None)
+    if not ready_at:
+        return None
+    if now >= ready_at:
+        return None
+    return (ready_at - now).total_seconds()
+
+
 async def update_auto_switch_schedule(sensor: Any) -> None:
     """Sync scheduled set_box_mode calls with planned timeline."""
     cancel_auto_switch_schedule(sensor)
@@ -404,24 +479,21 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
             "[AutoModeSwitch] Last mode change at %s",
             last_mode_change.isoformat(),
         )
-    if sensor._auto_switch_ready_at:  # pylint: disable=protected-access
-        if now < sensor._auto_switch_ready_at:  # pylint: disable=protected-access
-            wait_seconds = (
-                sensor._auto_switch_ready_at - now  # pylint: disable=protected-access
-            ).total_seconds()
-            log_rl = getattr(sensor, "_log_rate_limited", None)
-            if log_rl:
-                log_rl(
-                    "auto_mode_switch_startup_delay",
-                    "debug",
-                    "[AutoModeSwitch] Startup delay active (%.0fs remaining)",
-                    wait_seconds,
-                    cooldown_s=60.0,
-                )
-            schedule_auto_switch_retry(sensor, wait_seconds)
-            return
-        sensor._auto_switch_ready_at = None  # pylint: disable=protected-access
-        clear_auto_switch_retry(sensor)
+    wait_seconds = _startup_delay_seconds(sensor, now)
+    if wait_seconds is not None:
+        log_rl = getattr(sensor, "_log_rate_limited", None)
+        if log_rl:
+            log_rl(
+                "auto_mode_switch_startup_delay",
+                "debug",
+                "[AutoModeSwitch] Startup delay active (%.0fs remaining)",
+                wait_seconds,
+                cooldown_s=60.0,
+            )
+        schedule_auto_switch_retry(sensor, wait_seconds)
+        return
+    sensor._auto_switch_ready_at = None  # pylint: disable=protected-access
+    clear_auto_switch_retry(sensor)
 
     timeline, timeline_source = get_mode_switch_timeline(sensor)
     if not timeline:
@@ -431,56 +503,9 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
         )
         return
 
-    current_mode: Optional[str] = None
-    last_mode: Optional[str] = None
-    scheduled_events: List[Tuple[datetime, str, Optional[str]]] = []
-    last_switch_time = last_mode_change or now
-
-    for interval in timeline:
-        timestamp = interval.get("time") or interval.get("timestamp")
-        mode_label = normalize_service_mode(
-            sensor, interval.get("mode_name")
-        ) or normalize_service_mode(sensor, interval.get("mode"))
-        if not timestamp or not mode_label:
-            continue
-
-        start_dt = parse_timeline_timestamp(timestamp)
-        if not start_dt:
-            continue
-
-        if start_dt <= now:
-            current_mode = mode_label
-            last_mode = mode_label
-            continue
-
-        if (
-            last_mode_change
-            and isinstance(start_dt, datetime)
-            and start_dt
-            < (
-                last_mode_change
-                + timedelta(minutes=MIN_AUTO_SWITCH_INTERVAL_MINUTES)
-            )
-        ):
-            current_mode = mode_label
-            last_mode = mode_label
-            continue
-
-        if mode_label == last_mode:
-            continue
-
-        previous_mode = last_mode
-        try:
-            if (start_dt - last_switch_time) < timedelta(
-                minutes=MIN_AUTO_SWITCH_INTERVAL_MINUTES
-            ):
-                continue
-        except Exception:
-            pass
-
-        last_mode = mode_label
-        last_switch_time = start_dt
-        scheduled_events.append((start_dt, mode_label, previous_mode))
+    current_mode, scheduled_events = _build_schedule_events(
+        sensor, timeline=timeline, now=now, last_mode_change=last_mode_change
+    )
 
     if current_mode:
         await ensure_current_mode(sensor, current_mode, "current planned block")

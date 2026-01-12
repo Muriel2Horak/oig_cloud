@@ -270,3 +270,11 @@ async def test_maybe_fix_daily_plan_preserves_actual(monkeypatch):
 
     await daily_module.maybe_fix_daily_plan(sensor)
     assert sensor._daily_plan_state["actual"] == [{"a": 1}]
+
+
+@pytest.mark.asyncio
+async def test_archive_daily_plan_no_state():
+    sensor = DummySensor()
+    now = datetime(2025, 1, 2, 12, 0, tzinfo=timezone.utc)
+    await daily_module._archive_daily_plan(sensor, now)
+    assert sensor._daily_plans_archive == {}

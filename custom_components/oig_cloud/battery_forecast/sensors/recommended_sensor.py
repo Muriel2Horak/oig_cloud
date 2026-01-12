@@ -160,6 +160,97 @@ class OigCloudPlannerRecommendedModeSensor(
                 return "Home UPS"
         return None
 
+    def _planned_mode_from_interval(
+        self, interval: Dict[str, Any]
+    ) -> tuple[Optional[str], Optional[int]]:
+        planned = interval.get("planned") or {}
+        mode_label = self._normalize_mode_label(
+            planned.get("mode_name"), planned.get("mode")
+        )
+        mode_code = planned.get("mode") if isinstance(planned.get("mode"), int) else None
+        return mode_label, mode_code
+
+    def _mode_from_interval(
+        self, interval: Dict[str, Any]
+    ) -> tuple[Optional[str], Optional[int]]:
+        mode_label = self._normalize_mode_label(
+            interval.get("mode_name"), interval.get("mode")
+        )
+        mode_code = interval.get("mode") if isinstance(interval.get("mode"), int) else None
+        return mode_label, mode_code
+
+    def _find_current_interval(
+        self,
+        intervals: list[Dict[str, Any]],
+        now: datetime,
+        date_hint: Optional[str],
+        *,
+        planned: bool,
+    ) -> tuple[Optional[int], Optional[datetime], Optional[str], Optional[int]]:
+        current_idx: Optional[int] = None
+        current_mode: Optional[str] = None
+        current_mode_code: Optional[int] = None
+        current_start: Optional[datetime] = None
+
+        for i, item in enumerate(intervals):
+            start = (
+                self._parse_interval_time(item.get("time") or item.get("timestamp"), date_hint)
+                if planned
+                else self._parse_local_start(item.get("time") or item.get("timestamp"))
+            )
+            if not start:
+                continue
+            end = start + timedelta(minutes=15)
+            mode_label, mode_code = (
+                self._planned_mode_from_interval(item)
+                if planned
+                else self._mode_from_interval(item)
+            )
+            if planned and not mode_label:
+                continue
+            if start <= now < end:
+                return i, start, mode_label, mode_code
+            if start <= now:
+                current_idx = i
+                current_start = start
+                current_mode = mode_label
+                current_mode_code = mode_code
+            if start > now and current_idx is not None:
+                break
+
+        return current_idx, current_start, current_mode, current_mode_code
+
+    def _find_next_change(
+        self,
+        intervals: list[Dict[str, Any]],
+        current_idx: int,
+        current_mode: str,
+        current_start: datetime,
+        date_hint: Optional[str],
+        *,
+        planned: bool,
+    ) -> tuple[Optional[datetime], Optional[str], Optional[int]]:
+        for item in intervals[current_idx + 1 :]:
+            start = (
+                self._parse_interval_time(item.get("time") or item.get("timestamp"), date_hint)
+                if planned
+                else self._parse_local_start(item.get("time") or item.get("timestamp"))
+            )
+            if not start:
+                continue
+            if start < current_start + timedelta(
+                minutes=MIN_RECOMMENDED_INTERVAL_MINUTES
+            ):
+                continue
+            mode_label, mode_code = (
+                self._planned_mode_from_interval(item)
+                if planned
+                else self._mode_from_interval(item)
+            )
+            if mode_label and mode_label != current_mode:
+                return start, mode_label, mode_code
+        return None, None, None
+
     def _get_auto_switch_lead_seconds(
         self, from_mode: Optional[str], to_mode: Optional[str]
     ) -> float:
@@ -219,113 +310,38 @@ class OigCloudPlannerRecommendedModeSensor(
             return None, attrs, sig
 
         now = dt_util.now()
-        current_idx: Optional[int] = None
-        current_mode: Optional[str] = None
-        current_mode_code: Optional[int] = None
-        current_start: Optional[datetime] = None
-
-        if detail_intervals and isinstance(detail_intervals, list):
-
-            def _planned_mode(
-                interval: Dict[str, Any],
-            ) -> tuple[Optional[str], Optional[int]]:
-                planned = interval.get("planned") or {}
-                mode_label = self._normalize_mode_label(
-                    planned.get("mode_name"), planned.get("mode")
+        current_idx: Optional[int]
+        current_start: Optional[datetime]
+        current_mode: Optional[str]
+        current_mode_code: Optional[int]
+        planned_detail = bool(detail_intervals and isinstance(detail_intervals, list))
+        if planned_detail:
+            current_idx, current_start, current_mode, current_mode_code = (
+                self._find_current_interval(
+                    detail_intervals or [],
+                    now,
+                    detail_date,
+                    planned=True,
                 )
-                mode_code = (
-                    planned.get("mode")
-                    if isinstance(planned.get("mode"), int)
-                    else None
-                )
-                return mode_label, mode_code
-
-            for i, item in enumerate(detail_intervals):
-                start = self._parse_interval_time(
-                    item.get("time") or item.get("timestamp"), detail_date
-                )
-                if not start:
-                    continue
-                end = start + timedelta(minutes=15)
-                mode_label, mode_code = _planned_mode(item)
-                if not mode_label:
-                    continue
-                if start <= now < end:
-                    current_idx = i
-                    current_start = start
-                    current_mode = mode_label
-                    current_mode_code = mode_code
-                    break
-                if start <= now:
-                    current_idx = i
-                    current_start = start
-                    current_mode = mode_label
-                    current_mode_code = mode_code
-                if start > now and current_idx is not None:
-                    break
-
+            )
             if current_mode is None and isinstance(timeline, list):
-                for i, item in enumerate(timeline):
-                    start = self._parse_local_start(
-                        item.get("time") or item.get("timestamp")
+                current_idx, current_start, current_mode, current_mode_code = (
+                    self._find_current_interval(
+                        timeline,
+                        now,
+                        detail_date,
+                        planned=False,
                     )
-                    if not start:
-                        continue
-                    end = start + timedelta(minutes=15)
-                    if start <= now < end:
-                        current_idx = i
-                        current_start = start
-                        current_mode = self._normalize_mode_label(
-                            item.get("mode_name"), item.get("mode")
-                        )
-                        current_mode_code = (
-                            item.get("mode")
-                            if isinstance(item.get("mode"), int)
-                            else None
-                        )
-                        break
-                    if start <= now:
-                        current_idx = i
-                        current_start = start
-                        current_mode = self._normalize_mode_label(
-                            item.get("mode_name"), item.get("mode")
-                        )
-                        current_mode_code = (
-                            item.get("mode")
-                            if isinstance(item.get("mode"), int)
-                            else None
-                        )
-                    if start > now and current_idx is not None:
-                        break
-        else:
-            for i, item in enumerate(source_intervals):
-                start = self._parse_local_start(
-                    item.get("time") or item.get("timestamp")
                 )
-                if not start:
-                    continue
-                end = start + timedelta(minutes=15)
-                if start <= now < end:
-                    current_idx = i
-                    current_start = start
-                    current_mode = self._normalize_mode_label(
-                        item.get("mode_name"), item.get("mode")
-                    )
-                    current_mode_code = (
-                        item.get("mode") if isinstance(item.get("mode"), int) else None
-                    )
-                    break
-                if start <= now:
-                    current_idx = i
-                    current_start = start
-                    current_mode = self._normalize_mode_label(
-                        item.get("mode_name"), item.get("mode")
-                    )
-                    current_mode_code = (
-                        item.get("mode") if isinstance(item.get("mode"), int) else None
-                    )
-                if start > now and current_idx is not None:
-                    break
+        else:
+            current_idx, current_start, current_mode, current_mode_code = (
+                self._find_current_interval(
+                    source_intervals,
+                    now,
+                    None,
+                    planned=False,
+                )
+            )
 
         attrs["recommended_interval_start"] = (
             current_start.isoformat() if isinstance(current_start, datetime) else None
@@ -334,60 +350,25 @@ class OigCloudPlannerRecommendedModeSensor(
         next_change_at: Optional[datetime] = None
         next_mode: Optional[str] = None
         next_mode_code: Optional[int] = None
-        if current_idx is not None and current_mode:
-            if detail_intervals and isinstance(detail_intervals, list):
-                for item in detail_intervals[current_idx + 1 :]:
-                    start = self._parse_interval_time(
-                        item.get("time") or item.get("timestamp"), detail_date
-                    )
-                    if not start:
-                        continue
-                    if (
-                        isinstance(current_start, datetime)
-                        and start
-                        < current_start
-                        + timedelta(minutes=MIN_RECOMMENDED_INTERVAL_MINUTES)
-                    ):
-                        continue
-                    planned = item.get("planned") or {}
-                    candidate = self._normalize_mode_label(
-                        planned.get("mode_name"), planned.get("mode")
-                    )
-                    if candidate and candidate != current_mode:
-                        next_change_at = start
-                        next_mode = candidate
-                        next_mode_code = (
-                            planned.get("mode")
-                            if isinstance(planned.get("mode"), int)
-                            else None
-                        )
-                        break
+        if current_idx is not None and current_mode and isinstance(current_start, datetime):
+            if planned_detail:
+                next_change_at, next_mode, next_mode_code = self._find_next_change(
+                    detail_intervals or [],
+                    current_idx,
+                    current_mode,
+                    current_start,
+                    detail_date,
+                    planned=True,
+                )
             else:
-                for item in source_intervals[current_idx + 1 :]:
-                    start = self._parse_local_start(
-                        item.get("time") or item.get("timestamp")
-                    )
-                    if not start:
-                        continue
-                    if (
-                        isinstance(current_start, datetime)
-                        and start
-                        < current_start
-                        + timedelta(minutes=MIN_RECOMMENDED_INTERVAL_MINUTES)
-                    ):
-                        continue
-                    candidate = self._normalize_mode_label(
-                        item.get("mode_name"), item.get("mode")
-                    )
-                    if candidate and candidate != current_mode:
-                        next_change_at = start
-                        next_mode = candidate
-                        next_mode_code = (
-                            item.get("mode")
-                            if isinstance(item.get("mode"), int)
-                            else None
-                        )
-                        break
+                next_change_at, next_mode, next_mode_code = self._find_next_change(
+                    source_intervals,
+                    current_idx,
+                    current_mode,
+                    current_start,
+                    None,
+                    planned=False,
+                )
 
         attrs["next_mode_change_at"] = (
             next_change_at.isoformat() if next_change_at else None

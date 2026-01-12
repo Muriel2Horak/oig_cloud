@@ -136,6 +136,29 @@ async def test_check_balancing_natural_plan(monkeypatch):
     assert result == plan
 
 
+def test_normalize_plan_datetime_handles_none_and_invalid(monkeypatch):
+    monkeypatch.setattr(core_module, "Store", DummyStore)
+    manager = _make_manager()
+
+    assert manager._normalize_plan_datetime(None) is None
+    assert manager._normalize_plan_datetime(123) is None
+
+
+@pytest.mark.asyncio
+async def test_handle_active_plan_missing_dates(monkeypatch):
+    monkeypatch.setattr(core_module, "Store", DummyStore)
+    manager = _make_manager()
+
+    now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+    plan = _make_plan(now, now + timedelta(hours=3))
+    plan.holding_start = None
+    plan.holding_end = None
+    manager._active_plan = plan
+
+    result = await manager._handle_active_plan()
+    assert result == plan
+
+
 @pytest.mark.asyncio
 async def test_check_balancing_forced_by_cycle(monkeypatch):
     monkeypatch.setattr(core_module, "Store", DummyStore)

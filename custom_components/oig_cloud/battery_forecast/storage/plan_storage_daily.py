@@ -16,6 +16,109 @@ DATE_FMT = "%Y-%m-%d"
 _LOGGER = logging.getLogger(__name__)
 
 
+def _within_midnight_window(now: datetime) -> bool:
+    return now.hour == 0 and 10 <= now.minute < 60
+
+
+async def _ensure_baseline(sensor: Any, today_str: str, now: datetime) -> None:
+    if not _within_midnight_window(now):
+        return
+    plan_exists = await plan_exists_in_storage(sensor, today_str)
+    if plan_exists:
+        _LOGGER.debug("Baseline plan already exists for %s", today_str)
+        return
+    _LOGGER.info(
+        "Post-midnight baseline creation window: %s",
+        now.strftime("%H:%M"),
+    )
+    baseline_created = await create_baseline_plan(sensor, today_str)
+    if baseline_created:
+        _LOGGER.info("Baseline plan created in Storage Helper for %s", today_str)
+    else:
+        _LOGGER.warning("Failed to create baseline plan for %s", today_str)
+
+
+async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
+    if not sensor._daily_plan_state:
+        return
+    yesterday_date = sensor._daily_plan_state.get("date")
+    sensor._daily_plans_archive[yesterday_date] = sensor._daily_plan_state.copy()
+
+    cutoff_date = (now.date() - timedelta(days=7)).strftime(DATE_FMT)
+    sensor._daily_plans_archive = {
+        date: plan
+        for date, plan in sensor._daily_plans_archive.items()
+        if date >= cutoff_date
+    }
+
+    _LOGGER.info(
+        "Archived daily plan for %s (archive size: %s days)",
+        yesterday_date,
+        len(sensor._daily_plans_archive),
+    )
+
+    if sensor._plans_store:
+        try:
+            storage_data = await sensor._plans_store.async_load() or {}
+            storage_data["daily_archive"] = sensor._daily_plans_archive
+            await sensor._plans_store.async_save(storage_data)
+            _LOGGER.info(
+                "Saved daily plans archive to storage (%s days)",
+                len(sensor._daily_plans_archive),
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to save daily plans archive: %s",
+                err,
+                exc_info=True,
+            )
+
+
+def _collect_today_timeline(
+    optimal_timeline: list[dict[str, Any]],
+    today_start: datetime,
+    today_end: datetime,
+) -> list[dict[str, Any]]:
+    today_timeline = []
+    for interval in optimal_timeline:
+        if not interval.get("time"):
+            continue
+        try:
+            interval_time = datetime.fromisoformat(interval["time"])
+            if interval_time.tzinfo is None:
+                interval_time = dt_util.as_local(interval_time)
+            if today_start <= interval_time <= today_end:
+                today_timeline.append(interval)
+        except Exception:  # nosec B112
+            continue
+    return today_timeline
+
+
+def _build_plan_intervals(
+    today_timeline: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    plan_intervals = []
+    for interval in today_timeline:
+        plan_intervals.append(
+            {
+                "time": interval.get("timestamp"),
+                "solar_kwh": round(interval.get("solar_kwh", 0), 4),
+                "consumption_kwh": round(interval.get("load_kwh", 0), 4),
+                "battery_soc": round(interval.get("battery_soc", 0), 2),
+                "battery_capacity_kwh": round(
+                    interval.get("battery_capacity_kwh", 0), 2
+                ),
+                "grid_import_kwh": round(interval.get("grid_import", 0), 4),
+                "grid_export_kwh": round(interval.get("grid_export", 0), 4),
+                "mode": interval.get("mode", 0),
+                "mode_name": interval.get("mode_name", "N/A"),
+                "spot_price": round(interval.get("spot_price", 0), 2),
+                "net_cost": round(interval.get("net_cost", 0), 2),
+            }
+        )
+    return plan_intervals
+
+
 async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
     """Fix daily plan state and create baseline after midnight."""
     now = dt_util.now()
@@ -24,22 +127,7 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
     if not hasattr(sensor, "_daily_plan_state"):
         sensor._daily_plan_state = None
 
-    if now.hour == 0 and 10 <= now.minute < 60:
-        plan_exists = await plan_exists_in_storage(sensor, today_str)
-        if not plan_exists:
-            _LOGGER.info(
-                "Post-midnight baseline creation window: %s",
-                now.strftime("%H:%M"),
-            )
-            baseline_created = await create_baseline_plan(sensor, today_str)
-            if baseline_created:
-                _LOGGER.info(
-                    "Baseline plan created in Storage Helper for %s", today_str
-                )
-            else:
-                _LOGGER.warning("Failed to create baseline plan for %s", today_str)
-        else:
-            _LOGGER.debug("Baseline plan already exists for %s", today_str)
+    await _ensure_baseline(sensor, today_str, now)
 
     if (
         sensor._daily_plan_state
@@ -60,39 +148,7 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
         or not sensor._daily_plan_state.get("plan", [])
     ):
         if sensor._daily_plan_state:
-            yesterday_date = sensor._daily_plan_state.get("date")
-            sensor._daily_plans_archive[yesterday_date] = (
-                sensor._daily_plan_state.copy()
-            )
-
-            cutoff_date = (now.date() - timedelta(days=7)).strftime(DATE_FMT)
-            sensor._daily_plans_archive = {
-                date: plan
-                for date, plan in sensor._daily_plans_archive.items()
-                if date >= cutoff_date
-            }
-
-            _LOGGER.info(
-                "Archived daily plan for %s (archive size: %s days)",
-                yesterday_date,
-                len(sensor._daily_plans_archive),
-            )
-
-            if sensor._plans_store:
-                try:
-                    storage_data = await sensor._plans_store.async_load() or {}
-                    storage_data["daily_archive"] = sensor._daily_plans_archive
-                    await sensor._plans_store.async_save(storage_data)
-                    _LOGGER.info(
-                        "Saved daily plans archive to storage (%s days)",
-                        len(sensor._daily_plans_archive),
-                    )
-                except Exception as err:
-                    _LOGGER.error(
-                        "Failed to save daily plans archive: %s",
-                        err,
-                        exc_info=True,
-                    )
+            await _archive_daily_plan(sensor, now)
 
         if (
             hasattr(sensor, "_mode_optimization_result")
@@ -104,62 +160,17 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
                     "optimal_timeline", []
                 )
 
-            mode_recommendations = sensor._mode_optimization_result.get(
-                "mode_recommendations", []
-            )
-
             today_start = datetime.combine(now.date(), datetime.min.time())
             today_start = dt_util.as_local(today_start)
             today_end = datetime.combine(now.date(), datetime.max.time())
             today_end = dt_util.as_local(today_end)
 
-            today_timeline = []
-            for interval in optimal_timeline:
-                if not interval.get("time"):
-                    continue
-                try:
-                    interval_time = datetime.fromisoformat(interval["time"])
-                    if interval_time.tzinfo is None:
-                        interval_time = dt_util.as_local(interval_time)
-                    if today_start <= interval_time <= today_end:
-                        today_timeline.append(interval)
-                except Exception:  # nosec B112
-                    continue
-
-            today_blocks = []
-            for block in mode_recommendations:
-                if not block.get("from_time"):
-                    continue
-                try:
-                    block_time = datetime.fromisoformat(block["from_time"])
-                    if block_time.tzinfo is None:
-                        block_time = dt_util.as_local(block_time)
-                    if today_start <= block_time <= today_end:
-                        today_blocks.append(block)
-                except Exception:  # nosec B112
-                    continue
-
+            today_timeline = _collect_today_timeline(
+                optimal_timeline, today_start, today_end
+            )
             expected_total_cost = sum(i.get("net_cost", 0) for i in today_timeline)
 
-            plan_intervals = []
-            for interval in today_timeline:
-                plan_intervals.append(
-                    {
-                        "time": interval.get("timestamp"),
-                        "solar_kwh": round(interval.get("solar_kwh", 0), 4),
-                        "consumption_kwh": round(interval.get("load_kwh", 0), 4),
-                        "battery_soc": round(interval.get("battery_soc", 0), 2),
-                        "battery_capacity_kwh": round(
-                            interval.get("battery_capacity_kwh", 0), 2
-                        ),
-                        "grid_import_kwh": round(interval.get("grid_import", 0), 4),
-                        "grid_export_kwh": round(interval.get("grid_export", 0), 4),
-                        "mode": interval.get("mode", 0),
-                        "mode_name": interval.get("mode_name", "N/A"),
-                        "spot_price": round(interval.get("spot_price", 0), 2),
-                        "net_cost": round(interval.get("net_cost", 0), 2),
-                    }
-                )
+            plan_intervals = _build_plan_intervals(today_timeline)
 
             existing_actual = []
             if (

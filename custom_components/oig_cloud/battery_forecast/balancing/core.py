@@ -289,80 +289,21 @@ class BalancingManager:
             _LOGGER.warning("Forecast sensor not set, cannot check balancing")
             return None
 
-        # 0. Check if balancing just completed
-        balancing_occurred, completion_time = await self._check_if_balancing_occurred()
-        if balancing_occurred:
-            _LOGGER.info(
-                f"✅ Balancing completed at {completion_time.strftime('%Y-%m-%d %H:%M')}! "
-                f"Battery held at ≥99% for {self._get_holding_time_hours()}h"
-            )
-            self._last_balancing_ts = completion_time
-            self._active_plan = None  # Clear active plan
-            await self._save_state()
+        if await self._handle_recent_balancing():
             return None
 
         # 0.5 CRITICAL FIX: If we already have an ACTIVE plan, DO NOT create a new one!
         # This prevents deadline from shifting every 30 minutes
         # EXCEPTION: If deadline (holding_start) is in the past, we missed it -> create new plan
         # BUT: If we're DURING holding period, keep the plan active!
-        if self._active_plan is not None:
-            now = dt_util.now()
-
-            # Ensure holding_start is datetime (might be string from old storage)
-            holding_start = self._active_plan.holding_start
-            if isinstance(holding_start, str):
-                holding_start = datetime.fromisoformat(holding_start)
-
-            # Ensure holding_end is datetime too
-            holding_end = self._active_plan.holding_end
-            if isinstance(holding_end, str):
-                holding_end = datetime.fromisoformat(holding_end)
-
-            # Ensure timezone aware for comparison
-            if holding_start.tzinfo is None:
-                holding_start = dt_util.as_local(holding_start)
-            if holding_end.tzinfo is None:
-                holding_end = dt_util.as_local(holding_end)
-
-            # Check if we're DURING holding period
-            if holding_start <= now <= holding_end:
-                _LOGGER.info(
-                    f"🔋 Currently IN holding period ({holding_start.strftime('%H:%M')}-"
-                    f"{holding_end.strftime('%H:%M')}). Keeping active plan."
-                )
-                return self._active_plan
-
-            # Check if holding period completely passed
-            if holding_end < now:
-                _LOGGER.warning(
-                    f"⏰ Holding period ended at {holding_end.strftime('%H:%M')}. "
-                    f"Clearing expired plan."
-                )
-                self._active_plan = None
-                await self._save_state()
-            else:
-                # Deadline still in future - keep existing plan
-                _LOGGER.debug(
-                    f"🔒 Active plan already exists ({self._active_plan.mode.name}), "
-                    f"deadline at {holding_start.strftime('%H:%M')}. "
-                    "Skipping new plan creation."
-                )
-                return self._active_plan
+        active_plan = await self._handle_active_plan()
+        if active_plan is not None:
+            return active_plan
 
         # FORCE MODE: Skip all checks and create forced plan immediately
         if force:
             _LOGGER.warning("🔴 FORCE MODE enabled - creating forced balancing plan!")
-            forced_plan = await self._create_forced_plan()
-            if forced_plan:
-                _LOGGER.warning("🔴 FORCED balancing plan created (manual trigger)!")
-                self._active_plan = forced_plan
-                self._last_plan_ts = dt_util.now()
-                self._last_plan_mode = forced_plan.mode.value
-                await self._save_state()
-                return forced_plan
-            else:
-                _LOGGER.error("Failed to create forced balancing plan!")
-                return None
+            return await self._handle_forced_plan(manual_trigger=True)
 
         # Calculate days since last balancing
         days_since_last = self._get_days_since_last_balancing()
@@ -378,25 +319,20 @@ class BalancingManager:
         natural_plan = await self._check_natural_balancing()
         if natural_plan:
             _LOGGER.info("✓ Natural balancing detected in HYBRID forecast")
-            self._active_plan = natural_plan
-            self._last_balancing_ts = datetime.fromisoformat(natural_plan.holding_end)
-            self._last_plan_ts = dt_util.now()
-            self._last_plan_mode = natural_plan.mode.value
-            await self._save_state()
+            completion_time = self._normalize_plan_datetime(natural_plan.holding_end)
+            await self._activate_plan(
+                natural_plan, last_balancing_ts=completion_time
+            )
             return natural_plan
 
         # 2. Forced: cycle_days passed, charge ASAP regardless of cost
         if days_since_last >= cycle_days:
-            forced_plan = await self._create_forced_plan()
+            forced_plan = await self._handle_forced_plan(manual_trigger=False)
             if forced_plan:
                 _LOGGER.warning(
-                    f"🔴 FORCED balancing after {days_since_last:.1f} days! "
-                    "Health priority over cost."
+                    "🔴 FORCED balancing after %.1f days! Health priority over cost.",
+                    days_since_last,
                 )
-                self._active_plan = forced_plan
-                self._last_plan_ts = dt_util.now()
-                self._last_plan_mode = forced_plan.mode.value
-                await self._save_state()
                 return forced_plan
 
         # 3. Opportunistic: SoC ≥ threshold AND cooldown passed
@@ -416,16 +352,100 @@ class BalancingManager:
                 opportunistic_plan = await self._create_opportunistic_plan()
             if opportunistic_plan:
                 _LOGGER.info(
-                    f"⚡ Opportunistic balancing planned after {hours_since_last:.1f} hours"
+                    "⚡ Opportunistic balancing planned after %.1f hours",
+                    hours_since_last,
                 )
-                self._active_plan = opportunistic_plan
-                self._last_plan_ts = dt_util.now()
-                self._last_plan_mode = opportunistic_plan.mode.value
-                await self._save_state()
+                await self._activate_plan(opportunistic_plan)
                 return opportunistic_plan
 
-        _LOGGER.info(f"No balancing needed yet ({days_since_last:.1f} days)")
+        _LOGGER.info("No balancing needed yet (%.1f days)", days_since_last)
         return None
+
+    async def _handle_recent_balancing(self) -> bool:
+        balancing_occurred, completion_time = await self._check_if_balancing_occurred()
+        if not balancing_occurred:
+            return False
+        _LOGGER.info(
+            "✅ Balancing completed at %s! Battery held at ≥99%% for %sh",
+            completion_time.strftime("%Y-%m-%d %H:%M") if completion_time else "n/a",
+            self._get_holding_time_hours(),
+        )
+        self._last_balancing_ts = completion_time
+        self._active_plan = None
+        await self._save_state()
+        return True
+
+    async def _handle_active_plan(self) -> Optional[BalancingPlan]:
+        if self._active_plan is None:
+            return None
+
+        now = dt_util.now()
+        holding_start = self._normalize_plan_datetime(
+            self._active_plan.holding_start
+        )
+        holding_end = self._normalize_plan_datetime(self._active_plan.holding_end)
+        if not holding_start or not holding_end:
+            return self._active_plan
+
+        if holding_start <= now <= holding_end:
+            _LOGGER.info(
+                "🔋 Currently IN holding period (%s-%s). Keeping active plan.",
+                holding_start.strftime("%H:%M"),
+                holding_end.strftime("%H:%M"),
+            )
+            return self._active_plan
+
+        if holding_end < now:
+            _LOGGER.warning(
+                "⏰ Holding period ended at %s. Clearing expired plan.",
+                holding_end.strftime("%H:%M"),
+            )
+            self._active_plan = None
+            await self._save_state()
+            return None
+
+        _LOGGER.debug(
+            "🔒 Active plan already exists (%s), deadline at %s. Skipping new plan creation.",
+            self._active_plan.mode.name,
+            holding_start.strftime("%H:%M"),
+        )
+        return self._active_plan
+
+    async def _handle_forced_plan(
+        self, *, manual_trigger: bool
+    ) -> Optional[BalancingPlan]:
+        forced_plan = await self._create_forced_plan()
+        if not forced_plan:
+            _LOGGER.error("Failed to create forced balancing plan!")
+            return None
+        if manual_trigger:
+            _LOGGER.warning("🔴 FORCED balancing plan created (manual trigger)!")
+        await self._activate_plan(forced_plan)
+        return forced_plan
+
+    async def _activate_plan(
+        self,
+        plan: BalancingPlan,
+        *,
+        last_balancing_ts: Optional[datetime] = None,
+    ) -> None:
+        self._active_plan = plan
+        self._last_plan_ts = dt_util.now()
+        self._last_plan_mode = plan.mode.value
+        if last_balancing_ts:
+            self._last_balancing_ts = last_balancing_ts
+        await self._save_state()
+
+    def _normalize_plan_datetime(self, value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value)
+        if not isinstance(value, datetime):
+            return None
+        if value.tzinfo is None:
+            return dt_util.as_local(value)
+        return value
 
     def _get_days_since_last_balancing(self) -> int:
         """Calculate days since last balancing."""

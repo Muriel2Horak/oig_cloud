@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from ..const import DOMAIN
 
@@ -286,33 +286,42 @@ def extract_expected_entities(
 
 
 def _resolve_box_id_for_shield(shield: Any) -> Optional[str]:
-    box_id = None
+    box_id = _resolve_box_id_from_entry(shield.entry)
+    if box_id:
+        return box_id
+    return _resolve_box_id_from_coordinator(shield)
+
+
+def _resolve_box_id_from_entry(entry: Any) -> Optional[str]:
     for key in ("box_id", "inverter_sn"):
-        val = shield.entry.options.get(key) or shield.entry.data.get(key)
+        val = entry.options.get(key) or entry.data.get(key)
         if isinstance(val, str) and val.isdigit():
-            box_id = val
-            break
+            return val
+    return None
 
-    if not box_id:
-        try:
-            from ..entities.base_sensor import resolve_box_id
 
-            coordinator = None
-            for entry_data in shield.hass.data.get(DOMAIN, {}).values():
-                if not isinstance(entry_data, dict):
-                    continue
-                if entry_data.get("service_shield") != shield:
-                    continue
-                coordinator = entry_data.get("coordinator")
-                break
-            if coordinator:
-                resolved = resolve_box_id(coordinator)
-                if isinstance(resolved, str) and resolved.isdigit():
-                    box_id = resolved
-        except Exception:
-            box_id = None
+def _resolve_box_id_from_coordinator(shield: Any) -> Optional[str]:
+    try:
+        from ..entities.base_sensor import resolve_box_id
 
-    return box_id
+        coordinator = _find_shield_coordinator(shield)
+        if coordinator:
+            resolved = resolve_box_id(coordinator)
+            if isinstance(resolved, str) and resolved.isdigit():
+                return resolved
+    except Exception:
+        return None
+    return None
+
+
+def _find_shield_coordinator(shield: Any) -> Optional[Any]:
+    for entry_data in shield.hass.data.get(DOMAIN, {}).values():
+        if not isinstance(entry_data, dict):
+            continue
+        if entry_data.get("service_shield") != shield:
+            continue
+        return entry_data.get("coordinator")
+    return None
 
 
 def _find_entity_by_suffix(shield: Any, box_id: str, suffix: str) -> Optional[str]:
@@ -333,18 +342,33 @@ def check_entity_state_change(shield: Any, entity_id: str, expected_value: Any) 
 
     current_value = current_state.state
 
-    if "boiler_manual_mode" in entity_id:
-        return _matches_boiler_mode(expected_value, current_value)
-    if "ssr" in entity_id:
-        return _matches_ssr_mode(expected_value, current_value)
-    if "box_prms_mode" in entity_id:
-        return _matches_box_mode(expected_value, current_value)
-    if "invertor_prms_to_grid" in entity_id:
-        return _matches_inverter_mode(entity_id, expected_value, current_value)
-    if "p_max_feed_grid" in entity_id:
-        return _matches_numeric(expected_value, current_value)
+    matcher = _select_entity_matcher(entity_id)
+    return matcher(entity_id, expected_value, current_value)
 
-    return _matches_generic(expected_value, current_value)
+
+def _select_entity_matcher(
+    entity_id: str,
+) -> Callable[[str, Any, Any], bool]:
+    patterns: list[tuple[str, Callable[[str, Any, Any], bool]]] = [
+        ("boiler_manual_mode", _wrap_matcher(_matches_boiler_mode)),
+        ("ssr", _wrap_matcher(_matches_ssr_mode)),
+        ("box_prms_mode", _wrap_matcher(_matches_box_mode)),
+        ("invertor_prms_to_grid", _matches_inverter_mode),
+        ("p_max_feed_grid", _wrap_matcher(_matches_numeric)),
+    ]
+    for marker, matcher in patterns:
+        if marker in entity_id:
+            return matcher
+    return _wrap_matcher(_matches_generic)
+
+
+def _wrap_matcher(
+    matcher: Callable[[Any, Any], bool],
+) -> Callable[[str, Any, Any], bool]:
+    def wrapped(_entity_id: str, expected_value: Any, current_value: Any) -> bool:
+        return matcher(expected_value, current_value)
+
+    return wrapped
 
 
 def _matches_boiler_mode(expected_value: Any, current_value: Any) -> bool:

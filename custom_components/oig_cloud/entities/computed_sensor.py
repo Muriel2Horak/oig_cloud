@@ -236,39 +236,49 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         usable_percent = (100 - params["bat_min_percent"]) / 100
         bat_c = params["bat_c"]
         bat_power = params["bat_power"]
+        remaining = self._remaining_capacity(bat_p_wh, usable_percent, bat_c)
+        missing = self._missing_capacity(bat_p_wh, bat_c)
 
         if self._sensor_type == "usable_battery_capacity":
             return round((bat_p_wh * usable_percent) / 1000, 2)
-
         if self._sensor_type == "missing_battery_kwh":
-            return round((bat_p_wh * (1 - bat_c / 100)) / 1000, 2)
-
+            return round(missing / 1000, 2)
         if self._sensor_type == "remaining_usable_capacity":
             usable = bat_p_wh * usable_percent
-            missing = bat_p_wh * (1 - bat_c / 100)
             return round((usable - missing) / 1000, 2)
-
         if self._sensor_type == "time_to_full":
-            missing = bat_p_wh * (1 - bat_c / 100)
-            if bat_power > 0:
-                return self._format_time(missing / bat_power)
-            if missing == 0:
-                return "Nabito"
-            return "Vybíjí se"
-
+            return self._time_to_full(missing, bat_power)
         if self._sensor_type == "time_to_empty":
-            usable = bat_p_wh * usable_percent
-            missing = bat_p_wh * (1 - bat_c / 100)
-            remaining = usable - missing
-            if bat_c >= 100:
-                return "Nabito"
-            if bat_power < 0:
-                return self._format_time(remaining / abs(bat_power))
-            if remaining == 0:
-                return "Vybito"
-            return "Nabíjí se"
-
+            return self._time_to_empty(remaining, bat_c, bat_power)
         return None
+
+    @staticmethod
+    def _missing_capacity(bat_p_wh: float, bat_c: float) -> float:
+        return bat_p_wh * (1 - bat_c / 100)
+
+    @staticmethod
+    def _remaining_capacity(
+        bat_p_wh: float, usable_percent: float, bat_c: float
+    ) -> float:
+        usable = bat_p_wh * usable_percent
+        missing = bat_p_wh * (1 - bat_c / 100)
+        return usable - missing
+
+    def _time_to_full(self, missing: float, bat_power: float) -> str:
+        if bat_power > 0:
+            return self._format_time(missing / bat_power)
+        if missing == 0:
+            return "Nabito"
+        return "Vybíjí se"
+
+    def _time_to_empty(self, remaining: float, bat_c: float, bat_power: float) -> str:
+        if bat_c >= 100:
+            return "Nabito"
+        if bat_power < 0:
+            return self._format_time(remaining / abs(bat_power))
+        if remaining == 0:
+            return "Vybito"
+        return "Nabíjí se"
 
     def _get_energy_value_key(self) -> Optional[str]:
         sensor_map = {
@@ -544,8 +554,15 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     def _state_from_mapping(self) -> Optional[Union[float, str]]:
         if self._sensor_type == "real_data_update":
             return self._state_real_data_update()
+        handler = self._sensor_mapping().get(self._sensor_type)
+        if handler:
+            return handler()
+        if self._sensor_type.startswith("computed_batt_"):
+            return self._accumulate_energy()
+        return None
 
-        mapping = {
+    def _sensor_mapping(self) -> Dict[str, Any]:
+        return {
             "ac_in_aci_wtotal": lambda: self._sum_three_phase("ac_in_aci"),
             "actual_aci_wtotal": lambda: self._sum_three_phase("actual_aci"),
             "dc_in_fv_total": lambda: self._sum_two_phase("dc_in_fv"),
@@ -554,15 +571,6 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             "batt_batt_comp_p_charge": self._state_batt_comp_charge,
             "batt_batt_comp_p_discharge": self._state_batt_comp_discharge,
         }
-
-        handler = mapping.get(self._sensor_type)
-        if handler:
-            return handler()
-
-        if self._sensor_type.startswith("computed_batt_"):
-            return self._accumulate_energy()
-
-        return None
 
     def _state_batt_comp_charge(self) -> Optional[float]:
         bat_p = self._get_oig_number("batt_batt_comp_p")
@@ -602,8 +610,8 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
             return self._get_energy_value()
 
-        except Exception as e:
-            _LOGGER.error(f"Error calculating energy: {e}", exc_info=True)
+        except Exception as err:
+            _LOGGER.error("Error calculating energy: %s", err, exc_info=True)
             return None
 
     def _get_power_values(self) -> Optional[tuple[float, float]]:
@@ -792,42 +800,55 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     def _check_for_real_data_changes(self, pv_data: Dict[str, Any]) -> bool:
         """Zkontroluje, zda došlo ke skutečné změně v datech."""
         try:
-            # OPRAVA: Kontrola existence "actual" dat
-            if "actual" not in pv_data:
-                _LOGGER.warning(
-                    f"[{self.entity_id}] Live Data nejsou zapnutá - real data update nefunguje. "
-                    f"Zapněte Live Data v OIG aplikaci."
-                )
+            current_values = self._extract_real_data_values(pv_data)
+            if current_values is None:
                 return False
 
-            current_values = {}
-
-            # Získej aktuální hodnoty klíčových senzorů
-            for sensor_key in self._key_sensors:
-                if sensor_key.startswith(("bat_", "fv_", "aco_", "aci_")):
-                    current_values[sensor_key] = pv_data["actual"].get(sensor_key, 0)
-
-            # Porovnej s předchozími hodnotami
-            has_changes = False
-            for key, current_value in current_values.items():
-                previous_value = self._monitored_sensors.get(key)
-                if (
-                    previous_value is None
-                    or abs(float(current_value) - float(previous_value)) > 0.1
-                ):
-                    has_changes = True
-                    _LOGGER.debug(
-                        f"[{self.entity_id}] Real data change detected: {key} {previous_value} -> {current_value}"
-                    )
-
-            # Ulož aktuální hodnoty pro příští porovnání
+            has_changes = self._detect_real_data_changes(current_values)
             self._monitored_sensors = current_values.copy()
-
             return has_changes
 
-        except Exception as e:
-            _LOGGER.error(f"[{self.entity_id}] Error checking data changes: {e}")
+        except Exception as err:
+            _LOGGER.error(
+                "[%s] Error checking data changes: %s", self.entity_id, err
+            )
             return False
+
+    def _extract_real_data_values(
+        self, pv_data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        if "actual" not in pv_data:
+            _LOGGER.warning(
+                "[%s] Live Data nejsou zapnutá - real data update nefunguje. "
+                "Zapněte Live Data v OIG aplikaci.",
+                self.entity_id,
+            )
+            return None
+
+        actual = pv_data["actual"]
+        current_values = {}
+        for sensor_key in self._key_sensors:
+            if sensor_key.startswith(("bat_", "fv_", "aco_", "aci_")):
+                current_values[sensor_key] = actual.get(sensor_key, 0)
+        return current_values
+
+    def _detect_real_data_changes(self, current_values: Dict[str, Any]) -> bool:
+        has_changes = False
+        for key, current_value in current_values.items():
+            previous_value = self._monitored_sensors.get(key)
+            if (
+                previous_value is None
+                or abs(float(current_value) - float(previous_value)) > 0.1
+            ):
+                has_changes = True
+                _LOGGER.debug(
+                    "[%s] Real data change detected: %s %s -> %s",
+                    self.entity_id,
+                    key,
+                    previous_value,
+                    current_value,
+                )
+        return has_changes
 
     async def async_will_remove_from_hass(self) -> None:
         await super().async_will_remove_from_hass()

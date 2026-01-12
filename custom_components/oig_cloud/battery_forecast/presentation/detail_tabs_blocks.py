@@ -263,12 +263,22 @@ def _extract_soc_payload(
     if raw_kwh is None:
         raw_kwh = source.get("battery_capacity_kwh")
 
-    soc_percent = None
-    kwh_value = raw_kwh
+    soc_percent, kwh_value = _resolve_soc_and_kwh(raw_soc, raw_kwh, total_capacity)
+    return (round(soc_percent, 1), round(kwh_value, 2))
+
+
+def _resolve_soc_and_kwh(
+    raw_soc: Optional[float],
+    raw_kwh: Optional[float],
+    total_capacity: float,
+) -> Tuple[float, float]:
+    soc_percent: Optional[float] = None
+    kwh_value: Optional[float] = raw_kwh
 
     if raw_soc is not None:
         if total_capacity > 0 and raw_soc <= total_capacity + 0.01:
-            kwh_value = raw_soc if kwh_value is None else kwh_value
+            if kwh_value is None:
+                kwh_value = raw_soc
         else:
             soc_percent = raw_soc
 
@@ -278,7 +288,7 @@ def _extract_soc_payload(
     if soc_percent is not None and kwh_value is None and total_capacity > 0:
         kwh_value = (soc_percent / 100.0) * total_capacity
 
-    return (round(soc_percent or 0.0, 1), round(kwh_value or 0.0, 2))
+    return (soc_percent or 0.0, kwh_value or 0.0)
 
 
 def _interval_net(interval_entry: Dict[str, Any], branch: str) -> Optional[float]:

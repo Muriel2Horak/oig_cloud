@@ -149,6 +149,74 @@ async def test_build_planned_intervals_map_skips_missing_time(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_build_planned_intervals_map_parse_exception(monkeypatch):
+    sensor = DummySensor()
+    sensor._plans_store = DummyStore()
+    day = dt_util.as_local(datetime(2025, 1, 1)).date()
+    date_str = day.strftime(module.DATE_FMT)
+    storage_plans = {"detailed": {date_str: {"intervals": [{"time": "00:00"}]}}}
+
+    def _boom(*_a, **_k):
+        raise ValueError("bad")
+
+    monkeypatch.setattr(module, "_parse_planned_time", _boom)
+
+    planned = await module._build_planned_intervals_map(
+        sensor, storage_plans, day, date_str
+    )
+    assert planned == {}
+
+
+def test_parse_planned_time_empty_returns_none():
+    day = dt_util.as_local(datetime(2025, 1, 1)).date()
+    assert module._parse_planned_time("", day, "2025-01-01") is None
+
+
+@pytest.mark.asyncio
+async def test_maybe_repair_baseline_skips_when_attempted():
+    sensor = DummySensor()
+    date_str = "2025-01-01"
+    sensor._baseline_repair_attempts.add(date_str)
+    storage_plans = {"detailed": {date_str: {"intervals": []}}}
+
+    result = await module._maybe_repair_baseline(sensor, storage_plans, date_str)
+    assert result == storage_plans
+
+
+@pytest.mark.asyncio
+async def test_refresh_storage_after_repair_returns_loaded():
+    sensor = DummySensor()
+    sensor._plans_store = DummyStore(
+        data={"detailed": {"2025-01-01": {"intervals": [{"time": "00:00"}]}}}
+    )
+
+    result = await module._refresh_storage_after_repair(
+        sensor, {}, "2025-01-01"
+    )
+    assert result["detailed"]["2025-01-01"]["intervals"]
+
+
+def test_load_past_planned_from_daily_state_date_mismatch():
+    sensor = DummySensor()
+    sensor._daily_plan_state = {"date": "2025-01-02", "plan": []}
+    day = dt_util.as_local(datetime(2025, 1, 1)).date()
+    assert module._load_past_planned_from_daily_state(
+        sensor, "2025-01-01", day
+    ) == []
+
+
+def test_build_planned_lookup_skips_missing_and_bad_times():
+    current_interval = datetime(2025, 1, 1, 12, 0, 0)
+    past = [{"time": ""}]
+    future = [{"time": ""}, {"time": "bad"}]
+
+    planned = module._build_planned_lookup(
+        past, future, "2025-01-01", current_interval
+    )
+    assert planned == {}
+
+
+@pytest.mark.asyncio
 async def test_build_day_timeline_historical_archive_invalid(monkeypatch):
     sensor = DummySensor()
     sensor._hass = SimpleNamespace()
@@ -224,6 +292,33 @@ async def test_build_day_timeline_mixed_invalid_storage_warning(monkeypatch):
         "detailed": {"2025-01-02": {"intervals": [{"time": "00:00"}]}}
     }
     data = await module.build_day_timeline(sensor, fixed_now.date(), storage_plans)
+    assert data["intervals"]
+
+
+@pytest.mark.asyncio
+async def test_build_day_timeline_mixed_repair_success(monkeypatch):
+    sensor = DummySensor()
+    sensor._plans_store = DummyStore(
+        data={"detailed": {"2025-01-02": {"intervals": [{"time": "00:00"}]}}}
+    )
+    sensor._hass = SimpleNamespace()
+
+    async def _create(*_a, **_k):
+        return True
+
+    sensor._create_baseline_plan = _create
+    sensor._is_baseline_plan_invalid = lambda *_a, **_k: False
+
+    monkeypatch.setattr(
+        module.history_module,
+        "build_historical_modes_lookup",
+        lambda *_a, **_k: {},
+    )
+
+    fixed_now = dt_util.as_local(datetime(2025, 1, 2, 12, 5, 0))
+    monkeypatch.setattr(module.dt_util, "now", lambda: fixed_now)
+
+    data = await module.build_day_timeline(sensor, fixed_now.date(), {})
     assert data["intervals"]
 
 

@@ -81,87 +81,56 @@ def _entities_already_match(
     return True
 
 
-async def intercept_service_call(
+async def _handle_split_grid_delivery(
     shield: Any,
     domain: str,
     service: str,
-    data: Dict[str, Any],
+    params: Dict[str, Any],
     original_call: Any,
     blocking: bool,
     context: Optional[Context],
-) -> None:
-    """Intercept service calls and queue/execute in shield."""
-    service_name = f"{domain}.{service}"
-    params = data["params"]
-    trace_id = str(uuid.uuid4())[:8]
-
-    split_params = None
-    if service_name == "oig_cloud.set_grid_delivery":
-        split_params = _split_grid_delivery_params(params)
-    if split_params:
-        _LOGGER.info(
-            "[Grid Delivery] Detected mode + limit together, splitting into 2 calls"
-        )
-
-        _LOGGER.info("[Grid Delivery] Step 1/2: Processing mode change")
-        await intercept_service_call(
-            shield,
-            domain,
-            service,
-            {"params": split_params[0]},
-            original_call,
-            blocking,
-            context,
-        )
-
-        _LOGGER.info("[Grid Delivery] Step 2/2: Processing limit change")
-        await intercept_service_call(
-            shield,
-            domain,
-            service,
-            {"params": split_params[1]},
-            original_call,
-            blocking,
-            context,
-        )
-
-        _LOGGER.info("[Grid Delivery] Both calls queued successfully")
-        return
-
-    expected_entities = shield.extract_expected_entities(service_name, params)
-    api_info = shield._extract_api_info(service_name, params)
-
-    _LOGGER.debug("Intercept service: %s", service_name)
-    _LOGGER.debug("Intercept expected entities: %s", expected_entities)
-    _LOGGER.debug("Intercept queue length: %s", len(shield.queue))
-    _LOGGER.debug("Intercept running: %s", shield.running)
-
-    shield._log_security_event(
-        "SERVICE_INTERCEPTED",
-        {
-            "task_id": trace_id,
-            "service": service_name,
-            "params": str(params),
-            "expected_entities": str(expected_entities),
-        },
+) -> bool:
+    split_params = _split_grid_delivery_params(params)
+    if not split_params:
+        return False
+    _LOGGER.info(
+        "[Grid Delivery] Detected mode + limit together, splitting into 2 calls"
     )
+    _LOGGER.info("[Grid Delivery] Step 1/2: Processing mode change")
+    await intercept_service_call(
+        shield,
+        domain,
+        service,
+        {"params": split_params[0]},
+        original_call,
+        blocking,
+        context,
+    )
+    _LOGGER.info("[Grid Delivery] Step 2/2: Processing limit change")
+    await intercept_service_call(
+        shield,
+        domain,
+        service,
+        {"params": split_params[1]},
+        original_call,
+        blocking,
+        context,
+    )
+    _LOGGER.info("[Grid Delivery] Both calls queued successfully")
+    return True
 
-    if not expected_entities:
-        if getattr(shield, "_expected_entity_missing", False):
-            _LOGGER.debug(
-                "Intercept: expected entities missing; calling original service without state verification"
-            )
-            await original_call(
-                domain, service, service_data=params, blocking=blocking, context=context
-            )
-            await shield._log_event(
-                "change_requested",
-                service_name,
-                {"params": params, "entities": {}},
-                reason="Entita nenalezena – volám službu bez state validace",
-                context=context,
-            )
-            return
+
+async def _handle_missing_expected(
+    shield: Any,
+    domain: str,
+    service: str,
+    service_name: str,
+    params: Dict[str, Any],
+    original_call: Any,
+    blocking: bool,
+    context: Optional[Context],
+) -> bool:
+    if not getattr(shield, "_expected_entity_missing", False):
         _LOGGER.debug("Intercept: no expected entities; returning early")
         await shield._log_event(
             "skipped",
@@ -170,12 +139,60 @@ async def intercept_service_call(
             reason="Není co měnit – požadované hodnoty již nastaveny",
             context=context,
         )
-        return
+        return True
+    _LOGGER.debug(
+        "Intercept: expected entities missing; calling original service without state verification"
+    )
+    await original_call(
+        domain, service, service_data=params, blocking=blocking, context=context
+    )
+    await shield._log_event(
+        "change_requested",
+        service_name,
+        {"params": params, "entities": {}},
+        reason="Entita nenalezena – volám službu bez state validace",
+        context=context,
+    )
+    return True
 
+
+async def _handle_duplicate(
+    shield: Any,
+    duplicate_location: str,
+    service_name: str,
+    params: Dict[str, Any],
+    expected_entities: Dict[str, str],
+    context: Optional[Context],
+) -> None:
+    _LOGGER.debug(
+        "Intercept: service already in %s; returning early", duplicate_location
+    )
+    await shield._log_event(
+        "ignored",
+        service_name,
+        {"params": params, "entities": expected_entities},
+        reason=(
+            "Ignorováno – služba se stejným efektem je již "
+            f"{'ve frontě' if duplicate_location == 'queue' else 'spuštěna'}"
+        ),
+        context=context,
+    )
+    await shield._log_telemetry(
+        "ignored",
+        service_name,
+        {
+            "params": params,
+            "entities": expected_entities,
+            "reason": f"duplicate_in_{duplicate_location}",
+        },
+    )
+
+
+def _log_dedup_state(shield: Any, service_name: str, params: Dict[str, Any], expected: Dict[str, str]) -> None:
     _LOGGER.debug("Dedup: checking for duplicates")
     _LOGGER.debug("Dedup: new service=%s", service_name)
     _LOGGER.debug("Dedup: new params=%s", params)
-    _LOGGER.debug("Dedup: new expected=%s", expected_entities)
+    _LOGGER.debug("Dedup: new expected=%s", expected)
     _LOGGER.debug("Dedup: queue length=%s", len(shield.queue))
     _LOGGER.debug("Dedup: pending length=%s", len(shield.pending))
     for i, q in enumerate(shield.queue):
@@ -189,66 +206,19 @@ async def intercept_service_call(
             pending_info.get("entities", {}),
         )
 
-    duplicate_location = _is_duplicate(
-        shield, service_name, params, expected_entities
-    )
 
-    if duplicate_location:
-        _LOGGER.debug(
-            "Intercept: service already in %s; returning early", duplicate_location
-        )
-        await shield._log_event(
-            "ignored",
-            service_name,
-            {"params": params, "entities": expected_entities},
-            reason=f"Ignorováno – služba se stejným efektem je již {'ve frontě' if duplicate_location == 'queue' else 'spuštěna'}",
-            context=context,
-        )
-        await shield._log_telemetry(
-            "ignored",
-            service_name,
-            {
-                "params": params,
-                "entities": expected_entities,
-                "reason": f"duplicate_in_{duplicate_location}",
-            },
-        )
-        return
-
-    if _entities_already_match(shield, expected_entities):
-        _LOGGER.debug("Intercept: all entities already match; returning early")
-        await shield._log_telemetry(
-            "skipped",
-            service_name,
-            {
-                "trace_id": trace_id,
-                "params": params,
-                "entities": expected_entities,
-                "reason": "already_completed",
-                **api_info,
-            },
-        )
-        await shield._log_event(
-            "skipped",
-            service_name,
-            {"params": params, "entities": expected_entities},
-            reason="Změna již provedena – není co volat",
-            context=context,
-        )
-        return
-
-    _LOGGER.debug("Intercept: will execute service; logging telemetry")
-    await shield._log_telemetry(
-        "change_requested",
-        service_name,
-        {
-            "trace_id": trace_id,
-            "params": params,
-            "entities": expected_entities,
-            **api_info,
-        },
-    )
-
+async def _enqueue_or_run(
+    shield: Any,
+    service_name: str,
+    params: Dict[str, Any],
+    expected_entities: Dict[str, str],
+    original_call: Any,
+    domain: str,
+    service: str,
+    blocking: bool,
+    context: Optional[Context],
+    trace_id: str,
+) -> None:
     if shield.running is not None:
         _LOGGER.info(
             "[OIG Shield] Služba %s přidána do fronty (běží: %s)",
@@ -287,26 +257,139 @@ async def intercept_service_call(
             reason=f"Přidáno do fronty (běží: {shield.running})",
             context=context,
         )
-    else:
-        _LOGGER.info("[OIG Shield] Spouštím službu %s (fronta prázdná)", service_name)
+        return
 
-        if service_name == SERVICE_SET_BOX_MODE and shield.mode_tracker:
-            from_mode = params.get("current_value")
-            to_mode = params.get("value")
-            if from_mode and to_mode:
-                shield.mode_tracker.track_request(trace_id, from_mode, to_mode)
+    _LOGGER.info("[OIG Shield] Spouštím službu %s (fronta prázdná)", service_name)
 
-        await start_call(
+    if service_name == SERVICE_SET_BOX_MODE and shield.mode_tracker:
+        from_mode = params.get("current_value")
+        to_mode = params.get("value")
+        if from_mode and to_mode:
+            shield.mode_tracker.track_request(trace_id, from_mode, to_mode)
+
+    await start_call(
+        shield,
+        service_name,
+        params,
+        expected_entities,
+        original_call,
+        domain,
+        service,
+        blocking,
+        context,
+    )
+
+
+async def intercept_service_call(
+    shield: Any,
+    domain: str,
+    service: str,
+    data: Dict[str, Any],
+    original_call: Any,
+    blocking: bool,
+    context: Optional[Context],
+) -> None:
+    """Intercept service calls and queue/execute in shield."""
+    service_name = f"{domain}.{service}"
+    params = data["params"]
+    trace_id = str(uuid.uuid4())[:8]
+
+    if service_name == "oig_cloud.set_grid_delivery":
+        if await _handle_split_grid_delivery(
+            shield, domain, service, params, original_call, blocking, context
+        ):
+            return
+
+    expected_entities = shield.extract_expected_entities(service_name, params)
+    api_info = shield._extract_api_info(service_name, params)
+
+    _LOGGER.debug("Intercept service: %s", service_name)
+    _LOGGER.debug("Intercept expected entities: %s", expected_entities)
+    _LOGGER.debug("Intercept queue length: %s", len(shield.queue))
+    _LOGGER.debug("Intercept running: %s", shield.running)
+
+    shield._log_security_event(
+        "SERVICE_INTERCEPTED",
+        {
+            "task_id": trace_id,
+            "service": service_name,
+            "params": str(params),
+            "expected_entities": str(expected_entities),
+        },
+    )
+
+    if not expected_entities:
+        handled = await _handle_missing_expected(
             shield,
-            service_name,
-            params,
-            expected_entities,
-            original_call,
             domain,
             service,
+            service_name,
+            params,
+            original_call,
             blocking,
             context,
         )
+        if handled:
+            return
+
+    _log_dedup_state(shield, service_name, params, expected_entities)
+
+    duplicate_location = _is_duplicate(
+        shield, service_name, params, expected_entities
+    )
+
+    if duplicate_location:
+        await _handle_duplicate(
+            shield, duplicate_location, service_name, params, expected_entities, context
+        )
+        return
+
+    if _entities_already_match(shield, expected_entities):
+        _LOGGER.debug("Intercept: all entities already match; returning early")
+        await shield._log_telemetry(
+            "skipped",
+            service_name,
+            {
+                "trace_id": trace_id,
+                "params": params,
+                "entities": expected_entities,
+                "reason": "already_completed",
+                **api_info,
+            },
+        )
+        await shield._log_event(
+            "skipped",
+            service_name,
+            {"params": params, "entities": expected_entities},
+            reason="Změna již provedena – není co volat",
+            context=context,
+        )
+        return
+
+    _LOGGER.debug("Intercept: will execute service; logging telemetry")
+    await shield._log_telemetry(
+        "change_requested",
+        service_name,
+        {
+            "trace_id": trace_id,
+            "params": params,
+            "entities": expected_entities,
+            **api_info,
+        },
+    )
+
+    await _enqueue_or_run(
+        shield,
+        service_name,
+        params,
+        expected_entities,
+        original_call,
+        domain,
+        service,
+        blocking,
+        context,
+        trace_id,
+    )
 
 
 async def start_call(
