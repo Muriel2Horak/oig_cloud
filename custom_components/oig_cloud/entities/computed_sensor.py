@@ -180,6 +180,169 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             )
         return _energy_stores.get(self._box_id)
 
+    def _has_numeric_box(self) -> bool:
+        return isinstance(self._box_id, str) and self._box_id.isdigit()
+
+    def _state_real_data_update(self) -> Optional[str]:
+        candidates = [
+            self._get_oig_last_updated("batt_batt_comp_p"),
+            self._get_oig_last_updated("batt_bat_c"),
+            self._get_oig_last_updated("device_lastcall"),
+            self._get_entity_timestamp(PROXY_LAST_DATA_ENTITY_ID),
+            self._get_latest_oig_entity_update(),
+        ]
+        latest = max((dt for dt in candidates if dt), default=None)
+        return dt_util.as_local(latest).isoformat() if latest else None
+
+    def _sum_three_phase(self, base: str) -> Optional[float]:
+        wr = self._get_oig_number(f"{base}_wr")
+        ws = self._get_oig_number(f"{base}_ws")
+        wt = self._get_oig_number(f"{base}_wt")
+        if wr is None or ws is None or wt is None:
+            return None
+        return float(wr + ws + wt)
+
+    def _sum_two_phase(self, base: str) -> Optional[float]:
+        p1 = self._get_oig_number(f"{base}_p1")
+        p2 = self._get_oig_number(f"{base}_p2")
+        if p1 is None or p2 is None:
+            return None
+        return float(p1 + p2)
+
+    def _get_battery_params(self) -> Optional[Dict[str, float]]:
+        try:
+            bat_p_wh = float(
+                self._get_oig_number("installed_battery_capacity_kwh") or 0.0
+            )
+            bat_min_percent = float(self._get_oig_number("batt_bat_min") or 20.0)
+            bat_c = float(self._get_oig_number("batt_bat_c") or 0.0)
+            bat_power = float(self._get_oig_number("batt_batt_comp_p") or 0.0)
+            return {
+                "bat_p_wh": bat_p_wh,
+                "bat_min_percent": bat_min_percent,
+                "bat_c": bat_c,
+                "bat_power": bat_power,
+            }
+        except Exception as err:
+            _LOGGER.debug("[%s] Error computing value: %s", self.entity_id, err)
+            return None
+
+    def _state_battery_metrics(self) -> Optional[Union[float, str]]:
+        params = self._get_battery_params()
+        if not params:
+            return None
+
+        bat_p_wh = params["bat_p_wh"]
+        usable_percent = (100 - params["bat_min_percent"]) / 100
+        bat_c = params["bat_c"]
+        bat_power = params["bat_power"]
+
+        if self._sensor_type == "usable_battery_capacity":
+            return round((bat_p_wh * usable_percent) / 1000, 2)
+
+        if self._sensor_type == "missing_battery_kwh":
+            return round((bat_p_wh * (1 - bat_c / 100)) / 1000, 2)
+
+        if self._sensor_type == "remaining_usable_capacity":
+            usable = bat_p_wh * usable_percent
+            missing = bat_p_wh * (1 - bat_c / 100)
+            return round((usable - missing) / 1000, 2)
+
+        if self._sensor_type == "time_to_full":
+            missing = bat_p_wh * (1 - bat_c / 100)
+            if bat_power > 0:
+                return self._format_time(missing / bat_power)
+            if missing == 0:
+                return "Nabito"
+            return "Vybíjí se"
+
+        if self._sensor_type == "time_to_empty":
+            usable = bat_p_wh * usable_percent
+            missing = bat_p_wh * (1 - bat_c / 100)
+            remaining = usable - missing
+            if bat_c >= 100:
+                return "Nabito"
+            if bat_power < 0:
+                return self._format_time(remaining / abs(bat_power))
+            if remaining == 0:
+                return "Vybito"
+            return "Nabíjí se"
+
+        return None
+
+    def _get_energy_value_key(self) -> Optional[str]:
+        sensor_map = {
+            "computed_batt_charge_energy_today": "charge_today",
+            "computed_batt_discharge_energy_today": "discharge_today",
+            "computed_batt_charge_energy_month": "charge_month",
+            "computed_batt_discharge_energy_month": "discharge_month",
+            "computed_batt_charge_energy_year": "charge_year",
+            "computed_batt_discharge_energy_year": "discharge_year",
+            "computed_batt_charge_fve_energy_today": "charge_fve_today",
+            "computed_batt_charge_fve_energy_month": "charge_fve_month",
+            "computed_batt_charge_fve_energy_year": "charge_fve_year",
+            "computed_batt_charge_grid_energy_today": "charge_grid_today",
+            "computed_batt_charge_grid_energy_month": "charge_grid_month",
+            "computed_batt_charge_grid_energy_year": "charge_grid_year",
+        }
+        return sensor_map.get(self._sensor_type)
+
+    def _update_shared_energy_cache(self) -> None:
+        if self._box_id and self._box_id != "unknown":
+            cached = _energy_data_cache.get(self._box_id)
+            if cached is not None:
+                self._energy = cached
+            else:
+                _energy_data_cache[self._box_id] = self._energy
+
+    def _get_last_energy_update(self) -> Optional[datetime]:
+        if self._box_id and self._box_id != "unknown":
+            return _energy_last_update_cache.get(self._box_id)
+        return self._last_update
+
+    def _set_last_energy_update(self, now: datetime) -> None:
+        if self._box_id and self._box_id != "unknown":
+            _energy_last_update_cache[self._box_id] = now
+        self._last_update = now
+
+    def _apply_charge_delta(
+        self, wh_increment: float, delta_seconds: float, bat_power: float, fv_power: float
+    ) -> None:
+        self._energy["charge_today"] += wh_increment
+        self._energy["charge_month"] += wh_increment
+        self._energy["charge_year"] += wh_increment
+
+        if fv_power > 50:
+            from_fve = min(bat_power, fv_power)
+            from_grid = bat_power - from_fve
+        else:
+            from_fve = 0
+            from_grid = bat_power
+
+        wh_increment_fve = (from_fve * delta_seconds) / 3600.0
+        wh_increment_grid = (from_grid * delta_seconds) / 3600.0
+
+        self._energy["charge_fve_today"] += wh_increment_fve
+        self._energy["charge_fve_month"] += wh_increment_fve
+        self._energy["charge_fve_year"] += wh_increment_fve
+
+        self._energy["charge_grid_today"] += wh_increment_grid
+        self._energy["charge_grid_month"] += wh_increment_grid
+        self._energy["charge_grid_year"] += wh_increment_grid
+
+    def _apply_discharge_delta(self, wh_increment: float) -> None:
+        self._energy["discharge_today"] += wh_increment
+        self._energy["discharge_month"] += wh_increment
+        self._energy["discharge_year"] += wh_increment
+
+    def _maybe_schedule_energy_save(self) -> None:
+        if not hasattr(self, "hass") or not self.hass:
+            return
+        coro = self._save_energy_to_storage()
+        task = self.hass.async_create_task(coro)
+        if task is None or asyncio.iscoroutine(task) or not asyncio.isfuture(task):
+            coro.close()
+
     async def _load_energy_from_storage(self) -> bool:
         """Load energy data from persistent storage. Returns True if data was loaded."""
         # Already loaded for this box?
@@ -365,50 +528,23 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
 
     @property
     def state(self) -> Optional[Union[float, str]]:  # noqa: C901
-        box = self._box_id
-        if not (isinstance(box, str) and box.isdigit()):
+        if not self._has_numeric_box():
             return None
 
         if self._sensor_type == "real_data_update":
-            candidates = [
-                self._get_oig_last_updated("batt_batt_comp_p"),
-                self._get_oig_last_updated("batt_bat_c"),
-                self._get_oig_last_updated("device_lastcall"),
-                self._get_entity_timestamp(PROXY_LAST_DATA_ENTITY_ID),
-                self._get_latest_oig_entity_update(),
-            ]
-            latest = max((dt for dt in candidates if dt), default=None)
-            return dt_util.as_local(latest).isoformat() if latest else None
+            return self._state_real_data_update()
 
         if self._sensor_type == "ac_in_aci_wtotal":
-            wr = self._get_oig_number("ac_in_aci_wr")
-            ws = self._get_oig_number("ac_in_aci_ws")
-            wt = self._get_oig_number("ac_in_aci_wt")
-            if wr is None or ws is None or wt is None:
-                return None
-            return float(wr + ws + wt)
+            return self._sum_three_phase("ac_in_aci")
 
         if self._sensor_type == "actual_aci_wtotal":
-            wr = self._get_oig_number("actual_aci_wr")
-            ws = self._get_oig_number("actual_aci_ws")
-            wt = self._get_oig_number("actual_aci_wt")
-            if wr is None or ws is None or wt is None:
-                return None
-            return float(wr + ws + wt)
+            return self._sum_three_phase("actual_aci")
 
         if self._sensor_type == "dc_in_fv_total":
-            p1 = self._get_oig_number("dc_in_fv_p1")
-            p2 = self._get_oig_number("dc_in_fv_p2")
-            if p1 is None or p2 is None:
-                return None
-            return float(p1 + p2)
+            return self._sum_two_phase("dc_in_fv")
 
         if self._sensor_type == "actual_fv_total":
-            p1 = self._get_oig_number("actual_fv_p1")
-            p2 = self._get_oig_number("actual_fv_p2")
-            if p1 is None or p2 is None:
-                return None
-            return float(p1 + p2)
+            return self._sum_two_phase("actual_fv")
 
         if self._sensor_type == "boiler_current_w":
             return self._get_boiler_consumption_from_entities()
@@ -428,60 +564,14 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if self._sensor_type.startswith("computed_batt_"):
             return self._accumulate_energy()
 
-        try:
-            bat_p_wh = float(
-                self._get_oig_number("installed_battery_capacity_kwh") or 0.0
-            )
-            bat_min_percent = float(self._get_oig_number("batt_bat_min") or 20.0)
-            usable_percent = (100 - bat_min_percent) / 100
-            bat_c = float(self._get_oig_number("batt_bat_c") or 0.0)
-            bat_power = float(self._get_oig_number("batt_batt_comp_p") or 0.0)
-
-            if self._sensor_type == "usable_battery_capacity":
-                return round((bat_p_wh * usable_percent) / 1000, 2)
-
-            if self._sensor_type == "missing_battery_kwh":
-                return round((bat_p_wh * (1 - bat_c / 100)) / 1000, 2)
-
-            if self._sensor_type == "remaining_usable_capacity":
-                usable = bat_p_wh * usable_percent
-                missing = bat_p_wh * (1 - bat_c / 100)
-                return round((usable - missing) / 1000, 2)
-
-            if self._sensor_type == "time_to_full":
-                missing = bat_p_wh * (1 - bat_c / 100)
-                if bat_power > 0:
-                    return self._format_time(missing / bat_power)
-                if missing == 0:
-                    return "Nabito"
-                return "Vybíjí se"
-
-            if self._sensor_type == "time_to_empty":
-                usable = bat_p_wh * usable_percent
-                missing = bat_p_wh * (1 - bat_c / 100)
-                remaining = usable - missing
-                if bat_c >= 100:
-                    return "Nabito"
-                if bat_power < 0:
-                    return self._format_time(remaining / abs(bat_power))
-                if remaining == 0:
-                    return "Vybito"
-                return "Nabíjí se"
-
-        except Exception as e:
-            _LOGGER.debug("[%s] Error computing value: %s", self.entity_id, e)
+        battery_state = self._state_battery_metrics()
+        if battery_state is not None:
+            return battery_state
 
         return None
 
     def _accumulate_energy(self) -> Optional[float]:
-        # Use shared per-box cache so multiple computed energy sensors don't double-count.
-        if self._box_id and self._box_id != "unknown":
-            cached = _energy_data_cache.get(self._box_id)
-            if cached is not None:
-                self._energy = cached
-            else:
-                _energy_data_cache[self._box_id] = self._energy
-
+        self._update_shared_energy_cache()
         try:
             now = datetime.now(timezone.utc)
 
@@ -494,51 +584,25 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             fv_p2 = float(self._get_oig_number("actual_fv_p2") or 0.0)
             fv_power = fv_p1 + fv_p2
 
-            last_update = (
-                _energy_last_update_cache.get(self._box_id)
-                if self._box_id and self._box_id != "unknown"
-                else self._last_update
-            )
+            last_update = self._get_last_energy_update()
 
             if last_update is not None:
                 delta_seconds = (now - last_update).total_seconds()
                 wh_increment = (abs(bat_power) * delta_seconds) / 3600.0
 
                 if bat_power > 0:
-                    self._energy["charge_today"] += wh_increment
-                    self._energy["charge_month"] += wh_increment
-                    self._energy["charge_year"] += wh_increment
-
-                    if fv_power > 50:
-                        from_fve = min(bat_power, fv_power)
-                        from_grid = bat_power - from_fve
-                    else:
-                        from_fve = 0
-                        from_grid = bat_power
-
-                    wh_increment_fve = (from_fve * delta_seconds) / 3600.0
-                    wh_increment_grid = (from_grid * delta_seconds) / 3600.0
-
-                    self._energy["charge_fve_today"] += wh_increment_fve
-                    self._energy["charge_fve_month"] += wh_increment_fve
-                    self._energy["charge_fve_year"] += wh_increment_fve
-
-                    self._energy["charge_grid_today"] += wh_increment_grid
-                    self._energy["charge_grid_month"] += wh_increment_grid
-                    self._energy["charge_grid_year"] += wh_increment_grid
+                    self._apply_charge_delta(
+                        wh_increment, delta_seconds, bat_power, fv_power
+                    )
 
                 elif bat_power < 0:
-                    self._energy["discharge_today"] += wh_increment
-                    self._energy["discharge_month"] += wh_increment
-                    self._energy["discharge_year"] += wh_increment
+                    self._apply_discharge_delta(wh_increment)
 
                 _LOGGER.debug(
                     f"[{self.entity_id}] Δt={delta_seconds:.1f}s bat={bat_power:.1f}W fv={fv_power:.1f}W -> ΔWh={wh_increment:.4f}"
                 )
 
-            if self._box_id and self._box_id != "unknown":
-                _energy_last_update_cache[self._box_id] = now
-            self._last_update = now
+            self._set_last_energy_update(now)
             self._attr_extra_state_attributes = {
                 k: round(v, 3) for k, v in self._energy.items()
             }
@@ -546,11 +610,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
                 _energy_data_cache[self._box_id] = self._energy
 
             # Periodic save to persistent storage (throttled)
-            if hasattr(self, "hass") and self.hass:
-                coro = self._save_energy_to_storage()
-                task = self.hass.async_create_task(coro)
-                if task is None or asyncio.iscoroutine(task) or not asyncio.isfuture(task):
-                    coro.close()
+            self._maybe_schedule_energy_save()
 
             return self._get_energy_value()
 
@@ -568,21 +628,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         if isinstance(energy, dict):
             self._energy = energy
 
-        sensor_map = {
-            "computed_batt_charge_energy_today": "charge_today",
-            "computed_batt_discharge_energy_today": "discharge_today",
-            "computed_batt_charge_energy_month": "charge_month",
-            "computed_batt_discharge_energy_month": "discharge_month",
-            "computed_batt_charge_energy_year": "charge_year",
-            "computed_batt_discharge_energy_year": "discharge_year",
-            "computed_batt_charge_fve_energy_today": "charge_fve_today",
-            "computed_batt_charge_fve_energy_month": "charge_fve_month",
-            "computed_batt_charge_fve_energy_year": "charge_fve_year",
-            "computed_batt_charge_grid_energy_today": "charge_grid_today",
-            "computed_batt_charge_grid_energy_month": "charge_grid_month",
-            "computed_batt_charge_grid_energy_year": "charge_grid_year",
-        }
-        energy_key = sensor_map.get(self._sensor_type)
+        energy_key = self._get_energy_value_key()
         if energy_key:
             return round(self._energy[energy_key], 3)
         return None
