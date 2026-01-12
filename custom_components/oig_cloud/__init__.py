@@ -185,7 +185,7 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
             options["max_ups_price_czk"] = defaults["max_ups_price_czk"]
         options.pop("max_price_conf", None)
 
-    removed = [k for k in list(options.keys()) if k in obsolete_keys]
+    removed = [k for k in options if k in obsolete_keys]
     for k in removed:
         options.pop(k, None)
 
@@ -246,6 +246,153 @@ async def _register_static_paths(hass: HomeAssistant) -> None:
     _LOGGER.info("✅ Static paths registered successfully")
 
 
+async def _resolve_inverter_sn(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
+    inverter_sn = None
+    opt_box = entry.options.get("box_id")
+    if isinstance(opt_box, str) and opt_box.isdigit():
+        return opt_box
+
+    coordinator_data = (
+        hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
+    )
+    if not coordinator_data:
+        return None
+
+    try:
+        from .entities.base_sensor import resolve_box_id
+
+        resolved = resolve_box_id(coordinator_data)
+        if isinstance(resolved, str) and resolved.isdigit():
+            inverter_sn = resolved
+    except Exception:
+        return None
+    return inverter_sn
+
+
+def _panel_title_for_inverter(inverter_sn: str) -> str:
+    return (
+        f"OIG Dashboard ({inverter_sn})"
+        if inverter_sn != "unknown"
+        else "OIG Cloud Dashboard"
+    )
+
+
+async def _load_manifest_version(hass: HomeAssistant) -> str:
+    import json
+    import os
+
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    try:
+        manifest_data = await hass.async_add_executor_job(
+            _read_manifest_file, manifest_path
+        )
+        manifest = json.loads(manifest_data)
+        return manifest.get("version", "unknown")
+    except Exception as exc:
+        _LOGGER.warning("Could not load version from manifest: %s", exc)
+        return "unknown"
+
+
+def _build_dashboard_url(
+    entry_id: str, inverter_sn: str, version: str, cache_bust: int
+) -> str:
+    return (
+        "/oig_cloud_static/dashboard.html"
+        f"?entry_id={entry_id}&inverter_sn={inverter_sn}&v={version}&t={cache_bust}"
+    )
+
+
+def _remove_existing_panel(hass: HomeAssistant, panel_id: str) -> None:
+    from homeassistant.components import frontend
+
+    if not hasattr(frontend, "async_remove_panel") or not callable(
+        getattr(frontend, "async_remove_panel")
+    ):
+        return
+
+    try:
+        frontend.async_remove_panel(hass, panel_id, warn_if_unknown=False)
+    except Exception as err:
+        try:
+            frontend.async_remove_panel(hass, panel_id)
+        except Exception as fallback_err:
+            _LOGGER.debug(
+                "Failed to remove panel %s: %s (fallback: %s)",
+                panel_id,
+                err,
+                fallback_err,
+            )
+
+
+async def _register_frontend_panel(
+    hass: HomeAssistant, panel_id: str, panel_title: str, dashboard_url: str
+) -> None:
+    from homeassistant.components import frontend
+
+    if not hasattr(frontend, "async_register_built_in_panel"):
+        _LOGGER.warning("Frontend async_register_built_in_panel not available")
+        return
+
+    register_func = getattr(frontend, "async_register_built_in_panel")
+    if not callable(register_func):
+        _LOGGER.warning("async_register_built_in_panel is not callable")
+        return
+
+    result = register_func(
+        hass,
+        "iframe",
+        sidebar_title=panel_title,
+        sidebar_icon="mdi:solar-power",
+        frontend_url_path=panel_id,
+        config={"url": dashboard_url},
+        require_admin=False,
+    )
+
+    if hasattr(result, "__await__"):
+        await result
+
+    _LOGGER.info("✅ Panel '%s' registered successfully", panel_title)
+
+
+def _log_dashboard_entities(
+    hass: HomeAssistant, entry: ConfigEntry, inverter_sn: str
+) -> None:
+    coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
+    if not coordinator or not coordinator.data:
+        _LOGGER.warning("Dashboard: No coordinator data for entity checking")
+        return
+
+    entity_count = len(
+        [
+            k
+            for k in hass.states.async_entity_ids()
+            if k.startswith(f"sensor.oig_{inverter_sn}")
+        ]
+    )
+    _LOGGER.info(
+        "Dashboard: Found %s OIG entities for inverter %s",
+        entity_count,
+        inverter_sn,
+    )
+
+    key_entities = [
+        f"sensor.oig_{inverter_sn}_remaining_usable_capacity",
+    ]
+    if entry.options.get("enable_solar_forecast", False):
+        key_entities.append(f"sensor.oig_{inverter_sn}_solar_forecast")
+    if entry.options.get("enable_battery_prediction", False):
+        key_entities.append(f"sensor.oig_{inverter_sn}_battery_forecast")
+
+    for entity_id in key_entities:
+        entity_state = hass.states.get(entity_id)
+        if entity_state:
+            _LOGGER.debug(
+                "Dashboard entity check: %s = %s", entity_id, entity_state.state
+            )
+        else:
+            _LOGGER.debug("Dashboard entity not yet available: %s", entity_id)
+
+
 async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Nastavení frontend panelu (pouze když je povolen)."""
     try:
@@ -253,26 +400,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         panel_id = f"oig_cloud_dashboard_{entry.entry_id}"
 
         # OPRAVA: inverter_sn musí být numerické box_id (nikdy ne helper klíče jako "spot_prices")
-        inverter_sn = None
-        try:
-            opt_box = entry.options.get("box_id")
-            if isinstance(opt_box, str) and opt_box.isdigit():
-                inverter_sn = opt_box
-        except Exception:
-            inverter_sn = None
-
-        coordinator_data = (
-            hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
-        )
-        if inverter_sn is None and coordinator_data:
-            try:
-                from .entities.base_sensor import resolve_box_id
-
-                resolved = resolve_box_id(coordinator_data)
-                if isinstance(resolved, str) and resolved.isdigit():
-                    inverter_sn = resolved
-            except Exception:
-                inverter_sn = None
+        inverter_sn = await _resolve_inverter_sn(hass, entry)
 
         if inverter_sn is None:
             inverter_sn = "unknown"
@@ -282,125 +410,27 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         else:
             _LOGGER.info("Dashboard setup: Using inverter_sn = %s", inverter_sn)
 
-        panel_title = (
-            f"OIG Dashboard ({inverter_sn})"
-            if inverter_sn != "unknown"
-            else "OIG Cloud Dashboard"
-        )
+        panel_title = _panel_title_for_inverter(inverter_sn)
 
         # Cache-busting: Přidat verzi + timestamp k URL pro vymazání browseru cache
-        import json
-        import os
         import time
 
-        manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
-        version = "unknown"
-        try:
-            # OPRAVA: Použít async file read místo blocking open()
-            manifest_data = await hass.async_add_executor_job(
-                _read_manifest_file, manifest_path
-            )
-            manifest = json.loads(manifest_data)
-            version = manifest.get("version", "unknown")
-        except Exception as e:
-            _LOGGER.warning("Could not load version from manifest: %s", e)
+        version = await _load_manifest_version(hass)
 
         # Přidat timestamp pro cache-busting při každém restartu
         cache_bust = int(time.time())
 
         # OPRAVA: Přidat parametry včetně v= a t= pro cache-busting
-        dashboard_url = f"/oig_cloud_static/dashboard.html?entry_id={entry.entry_id}&inverter_sn={inverter_sn}&v={version}&t={cache_bust}"
+        dashboard_url = _build_dashboard_url(
+            entry.entry_id, inverter_sn, version, cache_bust
+        )
 
         _LOGGER.info("Dashboard URL: %s", dashboard_url)
 
-        from homeassistant.components import frontend
-
         # Prevent reload errors ("Overwriting panel ...") by removing any existing panel first.
-        if hasattr(frontend, "async_remove_panel") and callable(
-            getattr(frontend, "async_remove_panel")
-        ):
-            try:
-                frontend.async_remove_panel(hass, panel_id, warn_if_unknown=False)
-            except Exception as err:
-                try:
-                    frontend.async_remove_panel(hass, panel_id)
-                except Exception as fallback_err:
-                    _LOGGER.debug(
-                        "Failed to remove panel %s: %s (fallback: %s)",
-                        panel_id,
-                        err,
-                        fallback_err,
-                    )
-
-        # OPRAVA: Kontrola existence funkce a její volání bez await pokud vrací None
-        if hasattr(frontend, "async_register_built_in_panel"):
-            register_func = getattr(frontend, "async_register_built_in_panel")
-            if callable(register_func):
-                try:
-                    # OPRAVA: Použít keyword argumenty pro správné volání
-                    # Signature: (hass, component_name, sidebar_title, sidebar_icon,
-                    #             sidebar_default_visible, frontend_url_path, config, require_admin)
-                    result = register_func(
-                        hass,
-                        "iframe",  # component_name
-                        sidebar_title=panel_title,
-                        sidebar_icon="mdi:solar-power",
-                        frontend_url_path=panel_id,
-                        config={"url": dashboard_url},
-                        require_admin=False,
-                    )
-
-                    # Pokud funkce vrací coroutine, await it
-                    if hasattr(result, "__await__"):
-                        await result
-
-                    _LOGGER.info("✅ Panel '%s' registered successfully", panel_title)
-                except Exception as reg_error:
-                    _LOGGER.error("Error during panel registration: %s", reg_error)
-                    raise
-            else:
-                _LOGGER.warning("async_register_built_in_panel is not callable")
-        else:
-            _LOGGER.warning("Frontend async_register_built_in_panel not available")
-
-        # OPRAVA: Debug logování dostupných entit
-        coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
-        if coordinator and coordinator.data:
-            entity_count = len(
-                [
-                    k
-                    for k in hass.states.async_entity_ids()
-                    if k.startswith(f"sensor.oig_{inverter_sn}")
-                ]
-            )
-            _LOGGER.info(
-                f"Dashboard: Found {entity_count} OIG entities for inverter {inverter_sn}"
-            )
-
-            # Kontrola klíčových entit (pouze pokud jsou zapnuté v konfiguraci)
-            key_entities = [
-                f"sensor.oig_{inverter_sn}_remaining_usable_capacity",  # vždy
-            ]
-
-            # Přidat solar_forecast pouze pokud je zapnutý
-            if entry.options.get("enable_solar_forecast", False):
-                key_entities.append(f"sensor.oig_{inverter_sn}_solar_forecast")
-
-            # Přidat battery_forecast pouze pokud je zapnutý
-            if entry.options.get("enable_battery_prediction", False):
-                key_entities.append(f"sensor.oig_{inverter_sn}_battery_forecast")
-
-            for entity_id in key_entities:
-                entity_state = hass.states.get(entity_id)
-                if entity_state:
-                    _LOGGER.debug(
-                        f"Dashboard entity check: {entity_id} = {entity_state.state}"
-                    )
-                else:
-                    # DEBUG místo WARNING - entity může chybět při startu (timing issue)
-                    _LOGGER.debug("Dashboard entity not yet available: %s", entity_id)
-        else:
-            _LOGGER.warning("Dashboard: No coordinator data for entity checking")
+        _remove_existing_panel(hass, panel_id)
+        await _register_frontend_panel(hass, panel_id, panel_title, dashboard_url)
+        _log_dashboard_entities(hass, entry, inverter_sn)
 
     except Exception as e:
         _LOGGER.error("Failed to setup frontend panel: %s", e)
@@ -441,13 +471,151 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
         _LOGGER.debug("Panel removal handled gracefully: %s", e)
 
 
+def _is_boiler_unique_id(unique_id: str) -> bool:
+    return "_boiler_" in unique_id
+
+
+def _maybe_rename_entity_id(
+    entity_registry: Any,
+    entity_id: str,
+    unique_id: str,
+    duplicate_pattern: re.Pattern[str],
+) -> tuple[str, bool]:
+    entity_id_match = duplicate_pattern.match(entity_id)
+    if not entity_id_match:
+        return entity_id, False
+
+    suffix = entity_id_match.group(2)
+    base_entity_id = entity_id_match.group(1)
+
+    if unique_id.endswith(suffix):
+        return entity_id, False
+
+    try:
+        entity_registry.async_update_entity(entity_id, new_entity_id=base_entity_id)
+        _LOGGER.info("🔄 Renamed entity: %s -> %s", entity_id, base_entity_id)
+        return base_entity_id, True
+    except Exception as err:
+        _LOGGER.warning("⚠️ Failed to rename %s: %s", entity_id, err)
+        return entity_id, False
+
+
+def _maybe_enable_entity(entity_registry: Any, entity_id: str, entity: Any) -> bool:
+    from homeassistant.helpers import entity_registry as er
+
+    if entity.disabled_by != er.RegistryEntryDisabler.INTEGRATION:
+        return False
+
+    try:
+        entity_registry.async_update_entity(entity_id, disabled_by=None)
+        _LOGGER.info("✅ Re-enabled correct entity: %s", entity_id)
+        return True
+    except Exception as err:
+        _LOGGER.warning("⚠️ Failed to enable %s: %s", entity_id, err)
+        return False
+
+
+def _is_duplicate_entity(
+    entity_id: str, unique_id: str, duplicate_pattern: re.Pattern[str]
+) -> bool:
+    entity_id_match = duplicate_pattern.match(entity_id)
+    if not entity_id_match:
+        return False
+
+    suffix = entity_id_match.group(2)
+    return not unique_id.endswith(suffix)
+
+
+def _build_new_unique_id(old_unique_id: str) -> str:
+    if old_unique_id.startswith("oig_") and not old_unique_id.startswith(
+        "oig_cloud_"
+    ):
+        return f"oig_cloud_{old_unique_id[4:]}"
+    return f"oig_cloud_{old_unique_id}"
+
+
+def _build_migration_notification(
+    renamed_count: int,
+    removed_count: int,
+    migrated_count: int,
+    enabled_count: int,
+) -> str:
+    message_parts: list[str] = []
+
+    if renamed_count > 0:
+        message_parts.append(
+            f"**Přejmenováno {renamed_count} entit**\n"
+            "Entity s příponami (_2, _3) byly přejmenovány na správné názvy.\n\n"
+        )
+
+    if removed_count > 0:
+        message_parts.append(
+            f"**Odstraněno {removed_count} duplicitních entit**\n"
+            "Byly to staré kolize s nesprávným unique_id.\n\n"
+        )
+
+    if migrated_count > 0:
+        message_parts.append(
+            f"**Migrováno {migrated_count} entit na nový formát unique_id**\n"
+            "Všechny OIG entity nyní používají standardní formát `oig_cloud_*`.\n\n"
+        )
+
+    if enabled_count > 0:
+        message_parts.append(
+            f"**Povoleno {enabled_count} správných entit**\n"
+            "Entity s novým formátem byly znovu aktivovány.\n\n"
+        )
+
+    message_parts.append(
+        "**Co se stalo:**\n"
+        "- Staré entity se přeregistrovaly s novým unique_id\n"
+        "- Duplicity byly odstraněny\n"
+        "- Všechny entity by měly fungovat normálně\n\n"
+        "**Pokud něco nefunguje:**\n"
+        "Reload integrace v Nastavení → Zařízení & Služby → OIG Cloud\n\n"
+        "Toto je jednorázová migrace po aktualizaci integrace."
+    )
+
+    return "".join(message_parts)
+
+
+def _strip_known_suffixes(value: str) -> str:
+    for suffix in ("_analytics", "_shield"):
+        if value.endswith(suffix):
+            return value[: -len(suffix)]
+    return value
+
+
+def _extract_device_bases(device: Any) -> set[str]:
+    id_values = [
+        identifier[1]
+        for identifier in device.identifiers
+        if identifier and identifier[0] == DOMAIN and len(identifier) > 1
+    ]
+    return {
+        _strip_known_suffixes(v) for v in id_values if isinstance(v, str) and v
+    }
+
+
+def _device_has_entities(entity_registry: Any, device_id: str) -> bool:
+    from homeassistant.helpers import entity_registry as er
+
+    return bool(er.async_entries_for_device(entity_registry, device_id))
+
+
+def _is_valid_device_base(bases: set[str], allowlisted_bases: set[str]) -> bool:
+    if not bases:
+        return True
+    if any(base in allowlisted_bases for base in bases):
+        return True
+    return all(base.isdigit() for base in bases)
+
+
 async def _migrate_entity_unique_ids(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:  # noqa: C901
     """Migrace unique_id a cleanup duplicitních entit s _2, _3, atd."""
     _LOGGER.info("🔍 Starting _migrate_entity_unique_ids function...")
-    import re
-
     from homeassistant.helpers import entity_registry as er
 
     entity_registry = er.async_get(hass)
@@ -470,7 +638,7 @@ async def _migrate_entity_unique_ids(
 
         # OPRAVA: Přeskočit bojler senzory - mají vlastní formát unique_id bez oig_cloud_ prefixu
         # Formát: {entry_id}_boiler_{sensor_type}
-        if "_boiler_" in old_unique_id:
+        if _is_boiler_unique_id(old_unique_id):
             skipped_count += 1
             _LOGGER.debug("Skipping boiler sensor (correct format): %s", entity_id)
             continue
@@ -478,69 +646,37 @@ async def _migrate_entity_unique_ids(
         # 1. Pokud má entita správný formát unique_id (oig_cloud_*):
         if old_unique_id.startswith("oig_cloud_"):
             # Zkontrolujeme, jestli entity_id má příponu, ale unique_id ne
-            entity_id_match = duplicate_pattern.match(entity_id)
-            if entity_id_match:
-                suffix = entity_id_match.group(2)
-                base_entity_id = entity_id_match.group(1)
-
-                # Pokud unique_id nemá příponu, ale entity_id ano, přejmenujeme
-                if not old_unique_id.endswith(suffix):
-                    try:
-                        # Zkusíme přejmenovat entity_id (odstraníme příponu)
-                        entity_registry.async_update_entity(
-                            entity_id, new_entity_id=base_entity_id
-                        )
-                        renamed_count += 1
-                        _LOGGER.info(
-                            f"🔄 Renamed entity: {entity_id} -> {base_entity_id}"
-                        )
-                        entity_id = base_entity_id  # Aktualizujeme pro další kontroly
-                    except Exception as err:
-                        _LOGGER.warning("⚠️ Failed to rename %s: %s", entity_id, err)
+            entity_id, renamed = _maybe_rename_entity_id(
+                entity_registry, entity_id, old_unique_id, duplicate_pattern
+            )
+            if renamed:
+                renamed_count += 1
 
             # Pokud je disabled, enable ji
-            if entity.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
-                try:
-                    entity_registry.async_update_entity(entity_id, disabled_by=None)
-                    enabled_count += 1
-                    _LOGGER.info("✅ Re-enabled correct entity: %s", entity_id)
-                except Exception as err:
-                    _LOGGER.warning("⚠️ Failed to enable %s: %s", entity_id, err)
+            if _maybe_enable_entity(entity_registry, entity_id, entity):
+                enabled_count += 1
 
             skipped_count += 1
             continue
 
         # 2. Má starý formát unique_id - potřebuje migraci
         # Zjistíme, jestli entity_id má příponu _X (znamená duplicitu)
-        entity_id_match = duplicate_pattern.match(entity_id)
-
-        if entity_id_match:
-            suffix = entity_id_match.group(2)  # např. "_2", "_3"
-
-            # Pokud unique_id nemá příponu, ale entity_id ano = duplicita
-            # Tyto entity SMAŽEME (ne jen disable)
-            if not old_unique_id.endswith(suffix):
-                try:
-                    entity_registry.async_remove(entity_id)
-                    removed_count += 1
-                    _LOGGER.info(
-                        f"🗑️ Removed duplicate entity: {entity_id} "
-                        f"(unique_id={old_unique_id} doesn't match entity_id suffix)"
-                    )
-                    continue
-                except Exception as err:
-                    _LOGGER.warning("⚠️ Failed to remove %s: %s", entity_id, err)
-                    continue
+        if _is_duplicate_entity(entity_id, old_unique_id, duplicate_pattern):
+            try:
+                entity_registry.async_remove(entity_id)
+                removed_count += 1
+                _LOGGER.info(
+                    "🗑️ Removed duplicate entity: %s (unique_id=%s doesn't match entity_id suffix)",
+                    entity_id,
+                    old_unique_id,
+                )
+                continue
+            except Exception as err:
+                _LOGGER.warning("⚠️ Failed to remove %s: %s", entity_id, err)
+                continue
 
         # 3. Migrace unique_id na nový formát
-        if old_unique_id.startswith("oig_") and not old_unique_id.startswith(
-            "oig_cloud_"
-        ):
-            # Formát oig_{boxId}_{sensor} -> oig_cloud_{boxId}_{sensor}
-            new_unique_id = f"oig_cloud_{old_unique_id[4:]}"
-        else:
-            # Formát {boxId}_{sensor} -> oig_cloud_{boxId}_{sensor}
-            new_unique_id = f"oig_cloud_{old_unique_id}"
+        new_unique_id = _build_new_unique_id(old_unique_id)
 
         try:
             entity_registry.async_update_entity(entity_id, new_unique_id=new_unique_id)
@@ -558,48 +694,14 @@ async def _migrate_entity_unique_ids(
     )
 
     if removed_count > 0 or migrated_count > 0 or renamed_count > 0:
-        message_parts = []
-
-        if renamed_count > 0:
-            message_parts.append(
-                f"**Přejmenováno {renamed_count} entit**\n"
-                f"Entity s příponami (_2, _3) byly přejmenovány na správné názvy.\n\n"
-            )
-
-        if removed_count > 0:
-            message_parts.append(
-                f"**Odstraněno {removed_count} duplicitních entit**\n"
-                f"Byly to staré kolize s nesprávným unique_id.\n\n"
-            )
-
-        if migrated_count > 0:
-            message_parts.append(
-                f"**Migrováno {migrated_count} entit na nový formát unique_id**\n"
-                f"Všechny OIG entity nyní používají standardní formát `oig_cloud_*`.\n\n"
-            )
-
-        if enabled_count > 0:
-            message_parts.append(
-                f"**Povoleno {enabled_count} správných entit**\n"
-                f"Entity s novým formátem byly znovu aktivovány.\n\n"
-            )
-
-        message_parts.append(
-            "**Co se stalo:**\n"
-            "- Staré entity se přeregistrovaly s novým unique_id\n"
-            "- Duplicity byly odstraněny\n"
-            "- Všechny entity by měly fungovat normálně\n\n"
-            "**Pokud něco nefunguje:**\n"
-            "Reload integrace v Nastavení → Zařízení & Služby → OIG Cloud\n\n"
-            "Toto je jednorázová migrace po aktualizaci integrace."
-        )
-
         await hass.services.async_call(
             "persistent_notification",
             "create",
             {
                 "title": "OIG Cloud: Migrace entit dokončena",
-                "message": "".join(message_parts),
+                "message": _build_migration_notification(
+                    renamed_count, removed_count, migrated_count, enabled_count
+                ),
                 "notification_id": "oig_cloud_migration_complete",
             },
         )
@@ -629,16 +731,11 @@ async def _cleanup_invalid_empty_devices(
     await asyncio.sleep(0)
     try:
         from homeassistant.helpers import device_registry as dr
-        from homeassistant.helpers import entity_registry as er
 
         device_registry = dr.async_get(hass)
-        entity_registry = er.async_get(hass)
+        from homeassistant.helpers import entity_registry as er
 
-        def _strip_known_suffixes(value: str) -> str:
-            for suffix in ("_analytics", "_shield"):
-                if value.endswith(suffix):
-                    return value[: -len(suffix)]
-            return value
+        entity_registry = er.async_get(hass)
 
         # Non-numeric identifiers used by this integration that are still valid.
         allowlisted_bases = {"oig_bojler"}
@@ -648,26 +745,11 @@ async def _cleanup_invalid_empty_devices(
 
         for device in devices:
             # Never remove devices that still have entities.
-            if er.async_entries_for_device(entity_registry, device.id):
+            if _device_has_entities(entity_registry, device.id):
                 continue
 
-            id_values = [
-                identifier[1]
-                for identifier in device.identifiers
-                if identifier and identifier[0] == DOMAIN and len(identifier) > 1
-            ]
-            if not id_values:
-                continue
-
-            bases = {_strip_known_suffixes(v) for v in id_values if isinstance(v, str)}
-            if not bases:
-                continue
-
-            if any(base in allowlisted_bases for base in bases):
-                continue
-
-            # If every base is numeric, the device id is valid.
-            if all(isinstance(base, str) and base.isdigit() for base in bases):
+            bases = _extract_device_bases(device)
+            if _is_valid_device_base(bases, allowlisted_bases):
                 continue
 
             device_registry.async_remove_device(device.id)
@@ -1575,6 +1657,28 @@ async def async_update_options(
         hass.config_entries.async_update_entry(config_entry, options=new_options)
 
 
+def _keep_device_patterns() -> list[str]:
+    return [
+        "OIG.*Statistics",
+        "ČEZ Battery Box",
+        "OIG Cloud Home",
+        "Analytics & Predictions",
+        "ServiceShield",
+    ]
+
+
+def _device_matches_keep_patterns(device_name: str, keep_patterns: list[str]) -> bool:
+    if not device_name:
+        return False
+    return any(re.search(pattern, device_name) for pattern in keep_patterns)
+
+
+def _should_keep_device(device: Any, entity_registry: Any, keep_patterns: list[str]) -> bool:
+    if _device_matches_keep_patterns(device.name or "", keep_patterns):
+        return True
+    return _device_has_entities(entity_registry, device.id)
+
+
 async def _cleanup_unused_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Vyčištění nepoužívaných zařízení."""
     await asyncio.sleep(0)
@@ -1589,37 +1693,9 @@ async def _cleanup_unused_devices(hass: HomeAssistant, entry: ConfigEntry) -> No
         devices = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
 
         devices_to_remove = []
+        keep_patterns = _keep_device_patterns()
         for device in devices:
-            device_name = device.name or ""
-            should_keep = True
-
-            # Definujeme pravidla pro zachování zařízení
-            keep_patterns = [
-                "OIG.*Statistics",  # Staré statistiky (regex pattern)
-                "ČEZ Battery Box",
-                "OIG Cloud Home",
-                "Analytics & Predictions",
-                "ServiceShield",
-            ]
-            for pattern in keep_patterns:
-                if pattern in device_name:
-                    should_keep = True
-                    break
-            else:
-                # Pokud neodpovídá keep patterns, zkontrolujeme remove patterns
-
-                # Zkontrolujeme, jestli zařízení odpovídá keep patterns
-                for pattern in keep_patterns:
-                    if re.search(pattern, device_name):
-                        should_keep = False
-                        break
-                else:
-                    # Pokud nemá žádné entity, můžeme smazat
-                    device_entities = er.async_entries_for_device(
-                        entity_registry, device.id
-                    )
-                    if not device_entities:
-                        should_keep = False
+            should_keep = _should_keep_device(device, entity_registry, keep_patterns)
 
             if not should_keep:
                 devices_to_remove.append(device)
