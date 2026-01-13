@@ -17,32 +17,32 @@ Praktické příklady automatizací pro optimální využití OIG systému.
 
 ## 🌟 Základní automatizace
 
-### 1. Denní rutina - Eco přes den, Backup v noci
+### 1. Denní rutina - Home 1 přes den, Home 2 v noci
 
 **Účel:** Standardní provoz s ochranou baterie v noci.
 
 ```yaml
 automation:
-  - alias: "OIG: Eco režim ráno"
-    description: "Přepnutí na Eco režim každé ráno v 6:00"
+  - alias: "OIG: Home 1 režim ráno"
+    description: "Přepnutí na Home 1 režim každé ráno v 6:00"
     trigger:
       - platform: time
         at: "06:00:00"
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Eco"
+          mode: "Home 1"
           acknowledgement: true
 
-  - alias: "OIG: Backup režim večer"
-    description: "Přepnutí na Backup režim každý večer ve 22:00"
+  - alias: "OIG: Home 2 režim večer"
+    description: "Přepnutí na Home 2 režim každý večer ve 22:00"
     trigger:
       - platform: time
         at: "22:00:00"
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Backup"
+          mode: "Home 2"
           acknowledgement: true
 ```
 
@@ -51,18 +51,18 @@ automation:
 ```yaml
 automation:
   - alias: "OIG: Denní režim (chytrý)"
-    description: "Eco jen pokud není nízká baterie"
+    description: "Home 1 jen pokud není nízká baterie"
     trigger:
       - platform: time
         at: "06:00:00"
     condition:
       - condition: numeric_state
         entity_id: sensor.oig_2206237016_bat_soc
-        above: 30 # Eco jen pokud SOC > 30%
+        above: 30 # Home 1 jen pokud SOC > 30%
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Eco"
+          mode: "Home 1"
           acknowledgement: true
 ```
 
@@ -72,24 +72,24 @@ automation:
 
 ```yaml
 automation:
-  - alias: "OIG: Grid ON při Eco"
-    description: "Zapnout výkup když Box v Eco režimu"
+  - alias: "OIG: Grid ON při Home 1"
+    description: "Zapnout výkup když Box v Home 1 režimu"
     trigger:
       - platform: state
         entity_id: sensor.oig_2206237016_box_prms_mode
-        to: "Eco"
+        to: "Home 1"
     action:
       - service: oig_cloud.set_grid_delivery
         data:
           mode: "On"
           acknowledgement: true
 
-  - alias: "OIG: Grid OFF při Backup"
-    description: "Vypnout výkup když Box v Backup režimu"
+  - alias: "OIG: Grid OFF při Home 2"
+    description: "Vypnout výkup když Box v Home 2 režimu"
     trigger:
       - platform: state
         entity_id: sensor.oig_2206237016_box_prms_mode
-        to: "Backup"
+        to: "Home 2"
     action:
       - service: oig_cloud.set_grid_delivery
         data:
@@ -108,7 +108,7 @@ automation:
 ```yaml
 automation:
   - alias: "OIG: Nabíjení při spot < 1.5 Kč"
-    description: "Charge režim když spot cena klesne pod 1.5 Kč/kWh"
+    description: "Home UPS režim když spot cena klesne pod 1.5 Kč/kWh"
     trigger:
       - platform: numeric_state
         entity_id: sensor.oig_2206237016_spot_price_current_15min
@@ -123,21 +123,21 @@ automation:
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Charge"
+          mode: "Home UPS"
           acknowledgement: true
       - service: notify.mobile_app_phone
         data:
           message: "⚡ Nabíjení baterie - levná elektřina ({{ states('sensor.oig_2206237016_spot_price_current_15min') }} Kč/kWh)"
 ```
 
-### 4. Vybíjení při drahé elektřině
+### 4. Home 1 při drahé elektřině
 
-**Účel:** Dodávka do sítě nebo krytí spotřeby z baterie při vysokých cenách.
+**Účel:** Maximalizace vlastní spotřeby při vysokých cenách (baterie kryje deficit).
 
 ```yaml
 automation:
-  - alias: "OIG: Vybíjení při spot > 4 Kč"
-    description: "Discharge režim když spot cena přesáhne 4 Kč/kWh"
+  - alias: "OIG: Home 1 při spot > 4 Kč"
+    description: "Home 1 režim když spot cena přesáhne 4 Kč/kWh"
     trigger:
       - platform: numeric_state
         entity_id: sensor.oig_2206237016_spot_price_current_15min
@@ -152,21 +152,21 @@ automation:
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Discharge"
+          mode: "Home 1"
           acknowledgement: true
       - service: notify.mobile_app_phone
         data:
-          message: "💰 Vybíjení baterie - drahá elektřina ({{ states('sensor.oig_2206237016_spot_price_current_15min') }} Kč/kWh)"
+          message: "💰 Vysoká cena - přepnuto na Home 1 ({{ states('sensor.oig_2206237016_spot_price_current_15min') }} Kč/kWh)"
 ```
 
-### 5. Návrat na Eco při normální ceně
+### 5. Návrat na Home 1 při normální ceně
 
-**Účel:** Automatický návrat z Charge/Discharge zpět na Eco.
+**Účel:** Automatický návrat z jiných režimů zpět na Home 1.
 
 ```yaml
 automation:
-  - alias: "OIG: Zpět na Eco"
-    description: "Návrat na Eco když cena normální (1.5-4 Kč)"
+  - alias: "OIG: Zpět na Home 1"
+    description: "Návrat na Home 1 když cena normální (1.5-4 Kč)"
     trigger:
       - platform: numeric_state
         entity_id: sensor.oig_2206237016_spot_price_current_15min
@@ -179,14 +179,17 @@ automation:
         conditions:
           - condition: state
             entity_id: sensor.oig_2206237016_box_prms_mode
-            state: "Charge"
+            state: "Home UPS"
           - condition: state
             entity_id: sensor.oig_2206237016_box_prms_mode
-            state: "Discharge"
+            state: "Home 2"
+          - condition: state
+            entity_id: sensor.oig_2206237016_box_prms_mode
+            state: "Home 3"
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Eco"
+          mode: "Home 1"
           acknowledgement: true
 ```
 
@@ -216,7 +219,7 @@ automation:
             sequence:
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Charge"
+                  mode: "Home UPS"
                   acknowledgement: true
               - service: oig_cloud.set_grid_delivery
                 data:
@@ -235,7 +238,7 @@ automation:
             sequence:
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Charge"
+                  mode: "Home UPS"
                   acknowledgement: true
               - service: oig_cloud.set_grid_delivery
                 data:
@@ -243,7 +246,7 @@ automation:
                   limit: 3000
                   acknowledgement: true
 
-          # Drahá elektřina (4-6 Kč) = Vybíjení
+          # Drahá elektřina (4-6 Kč) = Home 1 (max vlastní spotřeba)
           - conditions:
               - condition: numeric_state
                 entity_id: sensor.oig_2206237016_spot_price_current_15min
@@ -255,14 +258,14 @@ automation:
             sequence:
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Discharge"
+                  mode: "Home 1"
                   acknowledgement: true
               - service: oig_cloud.set_grid_delivery
                 data:
                   mode: "On"  # Maximální prodej
                   acknowledgement: true
 
-          # Velmi drahá elektřina (> 6 Kč) = Vybíjení i při nižším SOC
+          # Velmi drahá elektřina (> 6 Kč) = Home 1 i při nižším SOC
           - conditions:
               - condition: numeric_state
                 entity_id: sensor.oig_2206237016_spot_price_current_15min
@@ -273,18 +276,18 @@ automation:
             sequence:
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Discharge"
+                  mode: "Home 1"
                   acknowledgement: true
               - service: oig_cloud.set_grid_delivery
                 data:
                   mode: "On"
                   acknowledgement: true
 
-          # Jinak Eco (normální cena 2-4 Kč)
+          # Jinak Home 1 (normální cena 2-4 Kč)
           default:
             - service: oig_cloud.set_box_mode
               data:
-                mode: "Eco"
+                mode: "Home 1"
                 acknowledgement: true
             - service: oig_cloud.set_grid_delivery
               data:
@@ -298,11 +301,11 @@ automation:
 
 ### 7. Ochrana před vybíjením
 
-**Účel:** Přepnutí na Backup když baterie nízká.
+**Účel:** Přepnutí na Home 2 když baterie nízká.
 
 ```yaml
 automation:
-  - alias: "OIG: Backup při SOC < 20%"
+  - alias: "OIG: Home 2 při SOC < 20%"
     description: "Ochrana baterie při nízkém stavu"
     trigger:
       - platform: numeric_state
@@ -313,11 +316,11 @@ automation:
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Backup"
+          mode: "Home 2"
           acknowledgement: true
       - service: notify.mobile_app_phone
         data:
-          message: "⚠️ Baterie pod 20% - přepnuto na Backup"
+          message: "⚠️ Baterie pod 20% - přepnuto na Home 2"
           data:
             priority: high
 ```
@@ -340,14 +343,14 @@ automation:
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Charge"
+          mode: "Home UPS"
           acknowledgement: true
       - wait_template: >
           {{ states('sensor.oig_2206237016_bat_soc')|float >= 100 }}
         timeout: "04:00:00" # Max 4 hodiny
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Eco"
+          mode: "Home 1"
           acknowledgement: true
 ```
 
@@ -376,7 +379,7 @@ automation:
             sequence:
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Eco" # Normální provoz
+                  mode: "Home 1" # Normální provoz
                   acknowledgement: true
               - service: oig_cloud.set_grid_delivery
                 data:
@@ -391,7 +394,7 @@ automation:
             sequence:
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Backup" # Nepoužívat baterii
+                  mode: "Home 2" # Nepoužívat baterii
                   acknowledgement: true
 ```
 
@@ -601,7 +604,7 @@ automation:
             tag: "battery_low"
             actions:
               - action: "SET_BACKUP"
-                title: "Přepnout na Backup"
+                title: "Přepnout na Home 2"
 ```
 
 ### 16. Denní souhrn
@@ -664,7 +667,7 @@ automation:
             sequence:
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Eco"
+                  mode: "Home 1"
                   acknowledgement: true
               - service: oig_cloud.set_grid_delivery
                 data:
@@ -679,7 +682,7 @@ automation:
             sequence:
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Backup"  # Šetřit baterii
+                  mode: "Home 2"  # Šetřit baterii
                   acknowledgement: true
               - service: oig_cloud.set_grid_delivery
                 data:
@@ -691,7 +694,7 @@ automation:
           default:
             - service: oig_cloud.set_box_mode
               data:
-                mode: "Eco"
+                mode: "Home 1"
                 acknowledgement: true
             - service: oig_cloud.set_grid_delivery
               data:
@@ -727,11 +730,11 @@ automation:
               # Nenabíjet baterii - bude dostatek FVE
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Eco"
+                  mode: "Home 1"
                   acknowledgement: true
               - service: notify.mobile_app_phone
                 data:
-                  message: "☀️ Slunečný den předpovězen ({{ states('sensor.oig_2206237016_solar_forecast') }} kWh) - Eco režim"
+                  message: "☀️ Slunečný den předpovězen ({{ states('sensor.oig_2206237016_solar_forecast') }} kWh) - Home 1 režim"
 
           # Předpověď zataženo (< 10 kWh)
           - conditions:
@@ -748,7 +751,7 @@ automation:
                 below: 2.0
               - service: oig_cloud.set_box_mode
                 data:
-                  mode: "Charge"
+                  mode: "Home UPS"
                   acknowledgement: true
               - service: notify.mobile_app_phone
                 data:

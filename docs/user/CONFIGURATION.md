@@ -1,509 +1,184 @@
 # Průvodce konfigurací OIG Cloud
 
-Tento průvodce vás krok po kroku provede nastavením OIG Cloud integrace do Home Assistant.
+Tento dokument popisuje aktuální konfiguraci integrace podle toho, jak ji skutečně nabízí konfigurační wizard v Home Assistant.
 
 ## 📋 Před začátkem
 
-### Co budete potřebovat
-
 ✅ **Povinné:**
 
-- Home Assistant verze **2023.1 nebo novější**
-- Účet v [OIG Cloud portálu](https://portal.oig.cz)
-- E-mail a heslo pro přihlášení
-- OIG Battery Box připojený k internetu
+- Home Assistant 2024.1+ (doporučeno)
+- Účet v OIG Cloud portálu
+- E‑mail a heslo pro přihlášení
+- Aktivní „Živá data“ v OIG Cloud mobilní aplikaci
 
 ⚠️ **Volitelné:**
 
-- API klíč pro solární předpověď ([Forecast.solar](https://forecast.solar))
-- Informace o distributorovi a dodavateli elektřiny (pro spot ceny)
+- API klíč pro solární předpověď (Forecast.Solar nebo Solcast)
+- Informace o tarifech/distribuci (pro přesnější ceny)
 
-### Odhadovaný čas nastavení
-
-- 🚀 **Rychlé nastavení:** 2-3 minuty (pouze základní funkce)
-- ⚙️ **Kompletní nastavení:** 5-10 minut (všechny funkce)
+📖 Pokud chybí živá data, konfigurace skončí chybou: `./LIVE_DATA_REQUIREMENT.md`.
 
 ---
 
-## 🎯 Krok 1: Přidání integrace
+## 🧭 Typy nastavení
 
-1. Otevřete Home Assistant
-2. Přejděte do **Nastavení** → **Zařízení a služby**
-3. Klikněte na tlačítko **+ Přidat integraci** (vpravo dole)
-4. Do vyhledávacího pole napište: **OIG Cloud**
-5. Vyberte **OIG Cloud** ze seznamu
+Po přidání integrace si zvolíte jeden ze tří režimů:
 
----
-
-## 🎉 Krok 2: Uvítání
-
-První obrazovka vás přivítá a vysvětlí, co integrace umí:
-
-```
-🎉 Vítejte v průvodci nastavením OIG Cloud!
-
-Tato integrace propojí váš OIG Box s Home Assistant a přidá:
-
-⚡ Monitorování energie v reálném čase
-🔧 Ovládání režimů (box, grid delivery, boiler)
-🛡️ ServiceShield - ochrana před nechtěnými změnami
-📊 Interaktivní dashboard s grafy
-💰 Spot ceny elektřiny z burzy
-☀️ Předpověď solární výroby
-
-📝 Co budete potřebovat:
-• E-mail a heslo k OIG Cloud účtu
-• (Volitelně) API klíč pro solární předpověď
-
-⏱️ Průvodce zabere ~2-3 minuty.
-```
-
-✅ Klikněte na **Pokračovat**
+1. **Wizard (doporučeno)** – postupné nastavení v několika krocích.
+2. **Quick setup** – pouze přihlášení + základní výchozí hodnoty.
+3. **Import z YAML** – zatím **není** implementováno.
 
 ---
 
-## 🔐 Krok 3: Přihlašovací údaje
+## 🧙‍♂️ Wizard: krok za krokem
 
-Zadejte své přihlašovací údaje k OIG Cloud:
+### 1) Uvítání
 
-### E-mail
+Informační krok. Nic nenastavujete.
 
-```
-📧 Váš e-mail pro přihlášení do OIG Cloud portálu
-```
+### 2) Přihlašovací údaje + „Živá data“
 
-**Kde najdu:**
+- **E‑mail** a **heslo** pro OIG Cloud.
+- Potvrzení checkboxu, že máte zapnutá **Živá data**.
 
-- E-mail, který jste použili při registraci
-- Najdete v aplikaci OIG nebo na portálu https://portal.oig.cz
+> Bez živých dat integrace nebude schopná číst telemetrii.
 
-**Příklad:** `jan.novak@example.com`
+### 3) Výběr modulů
 
-### Heslo
+Zde zapínáte funkcionalitu. Přehled:
 
-```
-🔑 Heslo k vašemu OIG Cloud účtu
-```
+- **Statistiky a analýzy** – výpočty a dlouhodobé metriky.
+- **Solární předpověď** – Forecast.Solar nebo Solcast.
+- **Predikce baterie** – plánovač timeline a doporučený režim.
+- **Cenové senzory (OTE)** – spot ceny a výpočty cen.
+- **Rozšířené senzory** – napětí/proudy/teploty.
+- **ČHMÚ varování** – meteorologická varování.
+- **Dashboard** – webový UI panel v HA.
+- **Bojler** – modul řízení bojleru.
+- **Auto** – připravovaný modul (zatím bez funkční logiky).
 
-**Kde najdu:**
+Důležité závislosti:
 
-- Heslo, které jste si nastavili při registraci
-- Pokud jste ho zapomněli, můžete ho resetovat na portálu
+- **Predikce baterie** vyžaduje **Solární předpověď** a **Rozšířené senzory**.
+- **Dashboard** vyžaduje **Statistiky + Solární předpověď + Predikci baterie + Cenové senzory + Rozšířené senzory**.
 
-**💡 Tip:** Heslo je bezpečně uloženo v Home Assistant a je šifrované.
+### 4) Intervaly a zdroj dat
 
-### Co se stane po kliknutí na "Pokračovat"?
+- **standard_scan_interval** (30–300 s)
+- **extended_scan_interval** (300–3600 s)
+- **data_source_mode**
+  - `cloud_only` – telemetrie z OIG Cloud API
+  - `local_only` – lokální proxy, fallback na cloud při výpadku
+- **local_proxy_stale_minutes** – po jak dlouhé neaktivitě přepnout na cloud
+- **local_event_debounce_ms** – debounce změn z lokální proxy
 
-Integrace ověří, že se může připojit k vašemu OIG Cloud účtu. Pokud se přihlášení nezdaří, zkontrolujte:
+📖 Detaily o lokálním režimu: `./DATA_SOURCE.md`.
 
-- ✅ Správně napsaný e-mail
-- ✅ Správné heslo (pozor na velikost písmen)
-- ✅ Funkční internetové připojení
+### 5) Solární předpověď (pokud je zapnuto)
 
----
+- **Provider**: Forecast.Solar / Solcast
+- **Režim aktualizace** (daily, every_4h, hourly)
+- **API klíč**
+  - Forecast.Solar: klíč je nutný pro častější aktualizace (4h / hourly)
+  - Solcast: klíč je nutný vždy
+- **Souřadnice** (lat, lon)
+- **String 1 / String 2**
+  - alespoň jeden string musí být zapnutý
+  - parametry: kWp, sklon (declination), azimut
 
-## ⚙️ Krok 4: Základní nastavení
+### 6) Predikce baterie (pokud je zapnuto)
 
-### Interval aktualizace (v sekundách)
+Hlavní parametry plánovače:
 
-```
-⏱️ Jak často se mají data aktualizovat
-```
+- **auto_mode_switch_enabled** – automatické přepínání režimu podle plánu
+- **min_capacity_percent** – minimální SOC
+- **target_capacity_percent** – cílový SOC
+- **home_charge_rate** – nabíjecí výkon ze sítě (kW)
+- **max_ups_price_czk** – maximální cena pro režim HOME UPS
+- **disable_planning_min_guard** – vypnutí min. guardu v plánovači
+- **balancing_enabled** – zapnutí balancování
+- **balancing_interval_days** – periodicita balancování
+- **balancing_hold_hours** – jak dlouho držet SOC pro balancování
+- **balancing_opportunistic_threshold** – práh pro opportunistic režim
+- **balancing_economic_threshold** – práh pro economic režim
+- **cheap_window_percentile** – percentile levných oken
 
-**Výchozí hodnota:** `300` sekund (5 minut)
+Detailní popis plánovače: `./PLANNER.md` + `./STATISTICS.md`.
 
-**💡 Doporučení:**
-| Interval | Popis | Kdy použít |
-|----------|-------|------------|
-| **60s** | Rychlá aktualizace | Chcete vidět změny téměř okamžitě, nevadí vám vyšší zátěž |
-| **300s** ⭐ | Vyvážené (doporučeno) | Ideální kompromis mezi aktuálností a zátěží |
-| **600s** | Úspora dat | Nepotřebujete častou aktualizaci, šetříte zátěž API |
+### 7) Ceny – nákup (import)
 
-**⚠️ Poznámka:** Příliš krátký interval (pod 30s) může způsobit problémy s API.
+Výběr scénáře pro cenu nákupu:
 
----
+- **SPOT + procento** (spot_percentage)
+- **SPOT + fixní poplatek** (spot_fixed)
+- **FIX cena** (fix_price)
 
-### Zdroj telemetrie (cloud vs. lokální)
+### 8) Ceny – prodej (export)
 
-V rekonfiguraci integrace můžete zvolit, odkud se má brát telemetrie:
+Analogicky:
 
-- **☁️ Cloud only** – vše se čte z OIG Cloud API.
-- **🏠 Local only (fallback na cloud při výpadku)** – primárně lokální entity, při výpadku lokální proxy dočasně cloud a po obnovení zpět.
+- **SPOT − procento**
+- **SPOT − fixní srážka**
+- **FIX cena**
 
-Podrobnosti (jaké entity jsou potřeba, jak funguje fallback a jak ověřit aktuální stav): `./DATA_SOURCE.md`.
+### 9) Ceny – distribuce a tarify
 
----
+- **tariff_count**: single / dual
+- Distribuční poplatky (VT/NT)
+- **VT/NT starty** pro **pracovní dny** i **víkendy**
+- **tariff_weekend_same_as_weekday** – zjednodušení
+- **VAT (DPH)**
 
-## ✨ Krok 5: Výběr funkcí
+### 10) Bojler (pokud je zapnuto)
 
-Zde si vyberte, které pokročilé funkce chcete použít. Všechny můžete později změnit v nastavení integrace.
+Vyplňují se fyzikální a technické parametry bojleru, např.:
 
-### 🛡️ ServiceShield (DOPORUČENO)
+- **boiler_volume_l**
+- **boiler_target_temp_c** / **boiler_cold_inlet_temp_c**
+- Senzory teplot (top/bottom nebo single sensor + pozice)
+- Výkon topné patrony a spínací entita
+- Horizon plánování / slot minutes
+- Volitelné alternativní ohřívání
 
-```
-[✓] ServiceShield - ochrana před nechtěnými změnami
-```
+### 11) Souhrn
 
-**Co to je:**
-
-- Fronta požadavků - vidíte, co se právě děje
-- Validace změn - kontrola, zda změna proběhla správně
-- Historie - přehled všech provedených změn
-- Ochrana - zabrání náhodným změnám režimů
-
-**Proč zapnout:**
-
-- ✅ Víte vždy, co se děje s vašim systémem
-- ✅ Minimalizace chyb při ovládání
-- ✅ Přehledná fronta v dashboardu
-
-**Kdy NEzapnout:**
-
-- ❌ Chcete co nejjednodušší setup bez extra funkcí
-
-**💡 Doporučení:** **Zapnuto** - Výrazně zlepšuje UX ovládání
-
----
-
-### ☀️ Solární předpověď
-
-```
-[ ] Solární předpověď (Forecast.solar)
-```
-
-**Co to je:**
-
-- Odhad výroby FVE na dnes a zítra
-- Graf předpovědi v dashboardu
-- Využití pro optimalizaci nabíjení baterie
-
-**Co potřebujete:**
-
-- ⚠️ **API klíč** od Forecast.solar (zdarma)
-- Zeměpisné souřadnice (automaticky z HA)
-
-**Proč zapnout:**
-
-- ✅ Předpověď pomáhá optimalizovat nabíjení
-- ✅ Vidíte, kolik energie očekávat
-- ✅ Lepší plánování spotřeby
-
-**Kdy NEzapnout:**
-
-- ❌ Nemáte API klíč (můžete přidat později)
-- ❌ Nepotřebujete předpověď
-
-**💡 Doporučení:** Zapnuto pokud máte API klíč
+Zobrazí se shrnutí konfigurace a potvrdíte vytvoření integrace.
 
 ---
 
-### 💰 Spot ceny elektřiny
+## ⚡ Quick setup
 
-```
-[ ] Spot ceny elektřiny (OTE)
-```
+Quick setup obsahuje jen:
 
-**Co to je:**
+- Username + password
+- Potvrzení živých dat
 
-- Aktuální burzovní ceny za 15minutové intervaly
-- Graf vývoje cen přes den
-- Automatická kalkulace výkupních cen
-- Predikce úspor
-
-**Co potřebujete:**
-
-- Nic! Funguje automaticky z veřejného OTE API
-
-**Proč zapnout:**
-
-- ✅ Vidíte, kdy je elektřina nejlevnější
-- ✅ Můžete automatizovat nabíjení baterie
-- ✅ Optimalizace spotřeby podle cen
-
-**Kdy NEzapnout:**
-
-- ❌ Nemáte dynamickou cenu elektřiny
-- ❌ Nezajímají vás burz ovní ceny
-
-**💡 Doporučení:** Zapnuto pokud máte dynamickou cenu nebo chcete optimalizovat spotřebu
+Ostatní volby se nastaví na výchozí hodnoty (intervaly, moduly atd.).
 
 ---
 
-### 🔋 Plánovač nabíjení (Battery forecast) a automatický režim
+## 🔧 Rekonfigurace
 
-Pokud tuto část zapnete, integrace začne počítat plán/timeline a doplní související diagnostické entity (např. plánované nabíjení ze sítě, efektivita baterie, profily spotřeby).
+Změny provedete přes:
 
-Volitelně můžete zapnout i **Automatické přepínání režimů podle plánu** – integrace pak bude sama volat `oig_cloud.set_box_mode` podle vypočteného plánu (doporučeno používat spolu se ServiceShield).
+`Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat`
 
-Podrobnosti k chování plánovače, zapnutí/vypnutí auto režimu a vysvětlení metrik: `./PLANNER.md` a `./STATISTICS.md`.
-
----
-
-### 📊 Webový dashboard
-
-```
-[✓] Webový energetický dashboard
-```
-
-**Co to je:**
-
-- Interaktivní flow diagram (tok energie)
-- Grafy výroby a spotřeby (ApexCharts)
-- Ovládací panel pro změnu režimů
-- ServiceShield fronta v reálném čase
-- Detailní informace o systému
-
-**Kde ho najdu:**
-
-- 📍 Boční panel → **OIG Dashboard**
-
-**Proč zapnout:**
-
-- ✅ Nejlepší UX pro monitoring a ovládání
-- ✅ Vše na jednom místě
-- ✅ Krásný design přizpůsobený pro mobil i desktop
-
-**Kdy NEzapnout:**
-
-- ❌ Chcete používat pouze vlastní dashboard
-- ❌ Preferujete klasické entity karty
-
-**💡 Doporučení:** **Zapnuto** - Dashboard je hlavní hodnota této integrace!
+Otevře se stejný wizard (bez přihlášení) a změny se uloží do options.
 
 ---
 
-## 🛡️ Krok 6: ServiceShield nastavení (volitelné)
+## 🧪 Telemetrie
 
-Pokud jste zapnuli ServiceShield, můžete upravit pokročilá nastavení:
+Integrace odesílá omezenou telemetrii pouze pro ServiceShield (diagnostika a stabilita). Identifikátory jsou **hashované** (e‑mail + HA instance). V UI zatím není přepínač, ale lze použít `no_telemetry` v options (pokročilé nastavení).
 
-### Timeout pro dokončení změny
-
-```
-Timeout: [900] sekund (15 minut)
-```
-
-**Co to znamená:**
-
-- Po zavolání služby (např. změna režimu) má systém tento čas na dokončení
-- Pokud se změna neprovede, ServiceShield hlásí chybu
-
-**💡 Doporučení:** `900s` (15 minut) je vhodné pro všechny změny
-
-### Interval kontroly stavu
-
-```
-Interval: [15] sekund
-```
-
-**Co to znamená:**
-
-- Jak často ServiceShield kontroluje, zda se změna provedla
-
-**💡 Doporučení:** `15s` je optimální balance
-
-**⚠️ Pro většinu uživatelů:** Nechte výchozí hodnoty!
+Pokud potřebujete telemetrii vypnout, napište nám – poradíme s bezpečným postupem.
 
 ---
 
-## ☀️ Krok 7: Solární předpověď (volitelné)
-
-Pokud jste zapnuli solární předpověď:
-
-### API klíč
-
-```
-API klíč: [_____________________]
-```
-
-**Kde získat API klíč:**
-
-1. Navštivte: [https://forecast.solar](https://forecast.solar)
-2. Klikněte na **"Get API Key"** nebo **"Sign Up"**
-3. Vytvořte bezplatný účet
-4. Zkopírujte API klíč z dashboardu
-5. Vložte ho sem
-
-**💡 Tip:** Základní účet je zdarma a stačí pro běžné použití!
-
-### Zeměpisné souřadnice
-
-```
-Zeměpisná šířka:  [50.0875] (automaticky)
-Zeměpisná délka:  [14.4213] (automaticky)
-```
-
-**Co to je:**
-
-- Poloha vaší FVE pro přesnou předpověď
-- Automaticky vyplněno z Home Assistant
-- Můžete upravit, pokud je box na jiné adrese
-
----
-
-## 💰 Krok 8: Tarify (volitelné)
-
-Pokud jste zapnuli spot ceny, můžete zadat svého distributora a dodavatele:
-
-### Distributor elektřiny
-
-```
-Distributor: [_________________]
-```
-
-**Příklady:**
-
-- ČEZ Distribuce
-- EG.D (E.ON)
-- PREdistribuce
-
-**Kde najdu:**
-
-- Na vyúčtování elektřiny
-- V smlouvě o připojení
-
-### Dodavatel elektřiny
-
-```
-Dodavatel: [_________________]
-```
-
-**Příklady:**
-
-- ČEZ Prodej
-- E.ON Energie
-- Pražská energetika
-
-**Kde najdu:**
-
-- Na vyúčtování elektřiny
-- V smlouvě o dodávce
-
-**💡 Poznámka:** Toto je volitelné - spot ceny fungují i bez těchto údajů.
-
----
-
-## ✅ Krok 9: Souhrn a dokončení
-
-Na konci průvodce uvidíte přehled vaší konfigurace:
-
-```
-✅ Konfigurace dokončena!
-
-👤 Účet: jan.novak@example.com
-⏱️ Aktualizace: každých 300s
-
-✨ Zapnuté funkce:
-  🛡️ ServiceShield
-  📊 Webový dashboard
-
-📋 Další kroky:
-  1. Integrace se připojí k OIG Cloud
-  2. Entity se objeví v zařízení 'OIG Box'
-  3. Dashboard: Boční panel → OIG Dashboard
-
-💡 Všechno můžete změnit později v nastavení!
-```
-
-Klikněte na **Dokončit** a integrace se nastaví!
-
----
-
-## 🎉 Po dokončení
-
-### Co se stane:
-
-1. **Vytvoří se zařízení**
-
-   - Název: `OIG Box` (nebo podle ID vašeho boxu)
-   - Najdete v: **Nastavení → Zařízení a služby → Zařízení**
-
-2. **Přidají se entity**
-
-   - ~50+ senzorů s aktuálními daty
-   - Seznam entit: [ENTITIES.md](ENTITIES.md)
-
-3. **Dashboard se aktivuje** (pokud zapnut)
-   - Otevřete boční panel
-   - Vyberte **OIG Dashboard**
-   - Prohlédněte si flow diagram!
-
-### První kroky:
-
-1. **Zkontrolujte zařízení**
-
-   - Přejděte do **Nastavení → Zařízení a služby → Zařízení**
-   - Najděte **OIG Box**
-   - Zkontrolujte, že entity mají hodnoty
-
-2. **Otevřete dashboard** (pokud zapnut)
-
-   - Boční panel → **OIG Dashboard**
-   - Prozkoumejte flow diagram
-   - Vyzkoušejte ovládání režimů
-
-3. **Přidejte do energy dashboardu**
-
-   - **Nastavení → Dashboardy → Energie**
-   - Přidejte entity:
-     - Výroba: `sensor.oig_XXXXX_dc_in_fv_ad`
-     - Odběr ze sítě: `sensor.oig_XXXXX_ac_in_ac_ad`
-     - Dodávka do sítě: `sensor.oig_XXXXX_ac_in_ac_pd`
-
-4. **Vytvořte první automatizaci**
-   - Viz: [AUTOMATIONS.md](AUTOMATIONS.md)
-
----
-
-## 🔧 Změna nastavení
-
-Chcete změnit konfiguraci? Žádný problém!
-
-1. Přejděte do **Nastavení → Zařízení a služby**
-2. Najděte **OIG Cloud**
-3. Klikněte na **⋮ (tři tečky)** → **Znovu nakonfigurovat**
-4. Proveďte změny
-5. Uložte
-
-**💡 Tip:** Změna nastavení nevyžaduje restart Home Assistant!
-
----
-
-## ❓ Často kladené otázky
-
-### Q: Musím mít všechny funkce zapnuté?
-
-**A:** Ne! Začněte se základním nastavením a funkce přidávejte postupně podle potřeby.
-
-### Q: Co když nemám API klíč pro solární předpověď?
-
-**A:** Nevadí! Můžete ho přidat později. Integrace funguje i bez něj.
-
-### Q: Můžu změnit interval aktualizace později?
-
-**A:** Ano! V nastavení integrace (Znovu nakonfigurovat).
-
-### Q: Dashboard nefunguje, co dělat?
-
-**A:** Zkontrolujte:
-
-1. Je dashboard zapnutý v konfiguraci?
-2. Restartovali jste Home Assistant po instalaci?
-3. Podívejte se do logů (Nastavení → Systém → Logy)
-
-### Q: Entity nemají hodnoty
-
-**A:** Počkejte 5-10 minut na první aktualizaci. Pokud problém přetrvává, viz [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
-
----
-
-## 🆘 Potřebujete pomoc?
-
-- 📖 **Dokumentace:** [README.md](../../README.md)
-- ❓ **FAQ:** [FAQ.md](FAQ.md)
-- 🔧 **Řešení problémů:** [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-- 💬 **Diskuse:** [GitHub Discussions](https://github.com/psimsa/oig_cloud/discussions)
-- 🐛 **Hlášení chyb:** [GitHub Issues](https://github.com/psimsa/oig_cloud/issues)
-
----
-
-**Gratulujeme! Vaše OIG Cloud integrace je připravena k použití!** 🎉
+## ✅ Co dál
+
+- Dashboard: `./DASHBOARD.md`
+- Služby: `./SERVICES.md`
+- Plánovač a algoritmy: `./PLANNER.md`
+- Statistiky a metriky: `./STATISTICS.md`
+- Lokální data: `./DATA_SOURCE.md`
