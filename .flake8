@@ -1,0 +1,23 @@
+[flake8]
+max-line-length = 88
+max-complexity = 100
+extend-ignore = E203,E501
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    .mypy_cache,
+    .pytest_cache,
+    .ruff_cache,
+    .dev_docs,
+    .ha-env,
+    .ha-env-313,
+    .ha-env-*,
+    .pyenv,
+    local_dev,
+    node_modules,
+    tests,
+    htmlcov,
+    build,
+    dist

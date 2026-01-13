@@ -1,0 +1,1077 @@
+"""Notification management for OIG Cloud integration."""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from html.parser import HTMLParser
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+
+import aiohttp
+from homeassistant.core import HomeAssistant
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
+
+from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
+
+_LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class OigNotification:
+    """Representation of OIG Cloud notification."""
+
+    id: str
+    type: str  # error, warning, info, debug
+    message: str
+    timestamp: datetime
+    device_id: Optional[str] = None
+    severity: int = 0
+    read: bool = False
+    raw_data: Optional[Dict[str, Any]] = None
+
+
+class _NotificationHtmlParser(HTMLParser):
+    """Lightweight HTML parser for OIG notification blocks."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.items: List[Tuple[str, str, str, str, str]] = []
+        self._current: Optional[Dict[str, str]] = None
+        self._folder_depth = 0
+        self._capture: Optional[str] = None
+        self._row2_parts: List[str] = []
+        self._body_parts: List[str] = []
+        self._in_strong = False
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+        if tag != "div":
+            self._handle_non_div_tag(tag)
+            return
+
+        attrs_map = dict(attrs)
+        class_attr = attrs_map.get("class") or ""
+        classes = class_attr.split()
+
+        if "folder" in classes:
+            self._start_new_folder()
+            return
+
+        if not self._current:
+            return
+
+        self._folder_depth += 1
+        self._update_capture_target(classes)
+
+    def _handle_non_div_tag(self, tag: str) -> None:
+        if tag == "strong" and self._capture == "row-2":
+            self._in_strong = True
+        elif tag == "br" and self._capture == "body":
+            self._body_parts.append("\n")
+
+    def _start_new_folder(self) -> None:
+        self._finalize_current()
+        self._current = {
+            "severity_level": "",
+            "date_str": "",
+            "device_id": "",
+            "short_message": "",
+            "full_message": "",
+        }
+        self._folder_depth = 1
+
+    def _update_capture_target(self, classes: List[str]) -> None:
+        if "point" in classes:
+            for cls in classes:
+                if cls.startswith("level-"):
+                    self._current["severity_level"] = cls.split("-", 1)[1]
+                    break
+            return
+        if "date" in classes:
+            self._capture = "date"
+            return
+        if "row-2" in classes:
+            self._capture = "row-2"
+            self._row2_parts = []
+            return
+        if "body" in classes:
+            self._capture = "body"
+            self._body_parts = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "strong":
+            self._in_strong = False
+            return
+
+        if tag != "div" or not self._current:
+            return
+
+        if self._capture == "row-2":
+            row2_text = "".join(self._row2_parts).strip()
+            if row2_text:
+                if "-" in row2_text:
+                    _, _, short_message = row2_text.partition("-")
+                    self._current["short_message"] = short_message.strip()
+                else:
+                    self._current["short_message"] = row2_text
+            self._capture = None
+        elif self._capture == "body":
+            self._current["full_message"] = "".join(self._body_parts).strip()
+            self._capture = None
+        elif self._capture == "date":
+            self._capture = None
+
+        self._folder_depth -= 1
+        if self._folder_depth <= 0:
+            self._finalize_current()
+
+    def handle_data(self, data: str) -> None:
+        if not self._current or not self._capture or not data:
+            return
+
+        if self._capture == "date":
+            self._current["date_str"] += data.strip()
+            return
+
+        if self._capture == "row-2":
+            if self._in_strong:
+                self._current["device_id"] += data.strip()
+            else:
+                self._row2_parts.append(data)
+            return
+
+        if self._capture == "body":
+            self._body_parts.append(data)
+
+    def _finalize_current(self) -> None:
+        if not self._current:
+            return
+
+        if any(self._current.values()):
+            self.items.append(
+                (
+                    self._current.get("severity_level", ""),
+                    self._current.get("date_str", ""),
+                    self._current.get("device_id", ""),
+                    self._current.get("short_message", ""),
+                    self._current.get("full_message", ""),
+                )
+            )
+
+        self._current = None
+        self._folder_depth = 0
+        self._capture = None
+        self._row2_parts = []
+        self._body_parts = []
+        self._in_strong = False
+
+
+class OigNotificationParser:
+    """Parser for OIG Cloud notifications from JavaScript/JSON."""
+
+    def __init__(self) -> None:
+        """Initialize notification parser."""
+        self._max_parse_chars = 200000
+
+    def parse_from_controller_call(self, content: str) -> List[OigNotification]:
+        """Parse notifications from Controller.Call.php content."""
+        try:
+            _LOGGER.debug(f"Parsing notification content preview: {content[:500]}...")
+
+            notifications = self._parse_notifications_from_content(content)
+            _LOGGER.debug(
+                "Parsed %d unique notifications from controller",
+                len(notifications),
+            )
+            return notifications
+
+        except Exception as e:
+            _LOGGER.error(f"Error parsing notifications: {e}")
+            return []
+
+    def _parse_notifications_from_content(
+        self, content: str
+    ) -> List[OigNotification]:
+        html_content = self._extract_html_from_json_response(content)
+        if html_content:
+            _LOGGER.debug(
+                "Extracted HTML from JSON wrapper, length: %s", len(html_content)
+            )
+            _LOGGER.debug("HTML content preview: %s...", html_content[:300])
+            content = html_content
+
+        notifications = []
+        html_notifications = self._parse_html_notifications(content)
+        notifications.extend(html_notifications)
+
+        if not html_notifications:
+            notifications.extend(self._parse_json_notifications(content))
+
+        return self._dedupe_notifications(notifications)
+
+    def _dedupe_notifications(
+        self, notifications: List[OigNotification]
+    ) -> List[OigNotification]:
+        unique_notifications = []
+        seen_ids = set()
+        for notification in notifications:
+            if notification.id not in seen_ids:
+                unique_notifications.append(notification)
+                seen_ids.add(notification.id)
+        return unique_notifications
+
+    def _extract_html_from_json_response(self, content: str) -> Optional[str]:
+        """Extract HTML content from JSON wrapper response."""
+        try:
+            # Zkusit parsovat jako JSON array: [[11,"ctrl-notifs"," HTML ",null]]
+            import json
+
+            data = json.loads(content)
+            if isinstance(data, list) and len(data) > 0:
+                first_item = data[0]
+                if isinstance(first_item, list) and len(first_item) >= 3:
+                    # Třetí element by měl být HTML obsah
+                    html_content = first_item[2]
+                    if isinstance(html_content, str) and len(html_content) > 10:
+                        # NOVÉ: Unescape HTML entity pro správné parsování
+                        import html
+
+                        html_content = html.unescape(html_content)
+                        _LOGGER.debug(
+                            "Successfully extracted and unescaped HTML from JSON wrapper"
+                        )
+                        return html_content
+
+            return None
+
+        except (json.JSONDecodeError, IndexError, TypeError) as e:
+            _LOGGER.debug(f"Content is not JSON wrapper format: {e}")
+            return None
+        except Exception as e:
+            _LOGGER.warning(f"Error extracting HTML from JSON: {e}")
+            return None
+
+    def _parse_html_notifications(self, content: str) -> List[OigNotification]:
+        """Parse HTML structured notifications."""
+        notifications = []
+
+        try:
+            if len(content) > self._max_parse_chars:
+                content = content[: self._max_parse_chars]
+
+            parser = _NotificationHtmlParser()
+            parser.feed(content)
+            parser.close()
+
+            _LOGGER.debug(f"Found {len(parser.items)} HTML notification matches")
+
+            for match in parser.items:
+                severity_level, date_str, device_id, short_message, full_message = match
+
+                try:
+                    notification = self._create_notification_from_html(
+                        severity_level, date_str, device_id, short_message, full_message
+                    )
+                    if notification:
+                        notifications.append(notification)
+                except Exception as e:
+                    _LOGGER.warning(f"Error creating notification from HTML match: {e}")
+                    continue
+
+        except Exception as e:
+            _LOGGER.error(f"Error parsing HTML notifications: {e}")
+
+        return notifications
+
+    def _parse_json_notifications(self, content: str) -> List[OigNotification]:
+        """Parse JSON structured notifications (fallback)."""
+        notifications = []
+
+        try:
+            payloads = self._extract_show_notifications_payloads(content)
+            if not payloads:
+                payloads = [content]
+
+            _LOGGER.debug(f"Found {len(payloads)} JS function matches")
+
+            for payload in payloads:
+                json_matches = self._extract_json_objects(payload)
+                for json_str in json_matches:
+                    notification = self._parse_single_notification(json_str)
+                    if notification:
+                        notifications.append(notification)
+
+        except Exception as e:
+            _LOGGER.error(f"Error parsing JSON notifications: {e}")
+
+        return notifications
+
+    def _extract_show_notifications_payloads(self, content: str) -> List[str]:
+        """Extract payloads passed to showNotifications(...) without regex."""
+        payloads: List[str] = []
+        marker = "showNotifications"
+        search_index = 0
+
+        while True:
+            start = content.find(marker, search_index)
+            if start == -1:
+                break
+
+            open_paren = content.find("(", start + len(marker))
+            if open_paren == -1:
+                break
+
+            close_paren = self._find_matching_paren(content, open_paren)
+            if close_paren == -1:
+                break
+
+            payloads.append(content[open_paren + 1 : close_paren])
+            search_index = close_paren + 1
+
+        return payloads
+
+    def _find_matching_paren(self, text: str, open_index: int) -> int:
+        """Find matching closing parenthesis for the opening one."""
+        depth = 0
+        string_quote: Optional[str] = None
+        escape = False
+
+        for idx in range(open_index, len(text)):
+            ch = text[idx]
+            string_quote, escape, should_continue = _update_string_state(
+                ch, string_quote, escape
+            )
+            if should_continue:
+                continue
+
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return idx
+
+        return -1
+
+    def _extract_json_objects(self, payload: str) -> List[str]:
+        """Extract JSON objects from a string payload without regex."""
+        objects: List[str] = []
+        depth = 0
+        start: Optional[int] = None
+        string_quote: Optional[str] = None
+        escape = False
+
+        for idx, ch in enumerate(payload):
+            string_quote, escape, should_continue = _update_string_state(
+                ch, string_quote, escape
+            )
+            if should_continue:
+                continue
+
+            if ch == "{":
+                depth, start = _open_brace(depth, start, idx)
+            elif ch == "}":
+                depth, start = _close_brace(depth, start, idx, payload, objects)
+
+        return objects
+
+    def _parse_single_notification(self, json_str: str) -> Optional[OigNotification]:
+        """Parse single notification from JSON string."""
+        try:
+            # Clean and parse JSON
+            clean_json = self._clean_json_string(json_str)
+            data = json.loads(clean_json)
+            return self._create_notification_from_json(data)
+        except ValueError as e:
+            _LOGGER.debug(f"Failed to parse JSON notification: {e}")
+            return None
+        except Exception as e:
+            _LOGGER.warning(f"Error parsing single notification: {e}")
+            return None
+
+    def parse_notification(self, notif_data: Dict[str, Any]) -> OigNotification:
+        """Parse notification from API response data."""
+        try:
+            return self._create_notification_from_json(notif_data)
+        except Exception as e:
+            _LOGGER.warning(f"Error parsing notification from API data: {e}")
+            # Return fallback notification
+            return OigNotification(
+                id=f"fallback_{int(datetime.now().timestamp())}",
+                type="info",
+                message="Failed to parse notification",
+                timestamp=datetime.now(),
+                device_id=notif_data.get("device_id"),
+                severity=1,
+                read=False,
+                raw_data=notif_data,
+            )
+
+    def _determine_notification_type(
+        self, message: str, severity_level: str = "1"
+    ) -> str:
+        """Determine notification type from message content and CSS severity level."""
+        message_lower = message.lower()
+
+        try:
+            css_level = int(severity_level)
+        except (ValueError, TypeError):
+            css_level = 1
+
+        # Nejdřív kontrola podle CSS level
+        if css_level >= 3:
+            return "error"
+        elif css_level == 2:
+            return "warning"
+
+        # Pak kontrola podle obsahu zprávy
+        error_keywords = ["chyba", "error", "failed", "neúspěšný", "problém"]
+        warning_keywords = ["varování", "warning", "pozor", "upozornění", "bypass"]
+        info_keywords = ["stav", "info", "baterii", "nabití", "dobrý den"]
+
+        # Bypass notifikace považujeme za warning
+        if "bypass" in message_lower:
+            return "warning"
+
+        for keyword in error_keywords:
+            if keyword in message_lower:
+                return "error"
+
+        for keyword in warning_keywords:
+            if keyword in message_lower:
+                return "warning"
+
+        for keyword in info_keywords:
+            if keyword in message_lower:
+                return "info"
+
+        # Fallback podle CSS level
+        if css_level == 1:
+            return "info"
+        else:
+            return "warning"
+
+    def _clean_json_string(self, json_str: str) -> str:
+        """Clean and fix common JSON formatting issues."""
+        # Odstranit JavaScript komentáře
+        json_str = re.sub(r"//.*$", "", json_str, flags=re.MULTILINE)
+
+        # Opravit apostrofy na uvozovky
+        json_str = re.sub(r"'([^']*)':", r'"\1":', json_str)
+        json_str = re.sub(r":\s*'([^']*)'", r': "\1"', json_str)
+
+        # Odstranit trailing commas
+        json_str = re.sub(r",\s*}", "}", json_str)
+        json_str = re.sub(r",\s*]", "]", json_str)
+
+        return json_str.strip()
+
+    def _create_notification_from_json(
+        self, data: Dict[str, Any]
+    ) -> Optional[OigNotification]:
+        """Create notification object from JSON data."""
+        try:
+            notification_type = data.get("type", "info")
+            message = data.get("message", data.get("text", "Unknown notification"))
+
+            # Generovat ID z obsahu nebo použít timestamp
+            notification_id = data.get("id")
+            if not notification_id:
+                notification_id = f"{notification_type}_{hash(message)}_{int(datetime.now().timestamp())}"
+
+            # Parsovat timestamp
+            timestamp = datetime.now()
+            if "timestamp" in data:
+                try:
+                    timestamp = datetime.fromisoformat(str(data["timestamp"]))
+                except (ValueError, TypeError):
+                    pass
+            elif "time" in data:
+                try:
+                    timestamp = datetime.fromisoformat(str(data["time"]))
+                except (ValueError, TypeError):
+                    pass
+
+            # Určit závažnost
+            severity_map = {"error": 3, "warning": 2, "info": 1, "debug": 0}
+            severity = severity_map.get(notification_type.lower(), 1)
+
+            return OigNotification(
+                id=str(notification_id),
+                type=notification_type.lower(),
+                message=str(message),
+                timestamp=timestamp,
+                device_id=data.get("device_id"),
+                severity=severity,
+                read=data.get("read", False),
+                raw_data=data,
+            )
+
+        except Exception as e:
+            _LOGGER.warning(f"Error creating notification from data {data}: {e}")
+            return None
+
+    def _get_priority_name(self, priority: int) -> str:
+        """Get priority name from level number."""
+        priority_names = {1: "info", 2: "warning", 3: "error", 4: "critical"}
+        return priority_names.get(priority, "info")
+
+    def _get_notification_severity(self, css_level: str) -> Tuple[str, int]:
+        """Parse severity level from CSS class and return type and numeric severity."""
+        # Rozšířené mapování všech možných úrovní
+        severity_map = {
+            "1": ("info", 1),  # Informační zprávy (stav baterie, denní výroba)
+            "2": ("warning", 2),  # Varování
+            "3": ("notice", 2),  # Upozornění (zapnutí/vypnutí) - považujeme za warning
+            "4": ("error", 3),  # Chyby nebo důležité akce
+            "5": ("critical", 4),  # Kritické stavy (pokud existují)
+        }
+
+        result = severity_map.get(css_level, ("info", 1))
+        _LOGGER.debug(
+            f"Mapped CSS level-{css_level} to severity: {result[0]} (numeric: {result[1]})"
+        )
+        return result
+
+    def _create_notification_from_html(
+        self,
+        severity_level: str,
+        date_str: str,
+        device_id: str,
+        short_message: str,
+        full_message: str,
+    ) -> Optional[OigNotification]:
+        """Create notification object from HTML data."""
+        try:
+            clean_message = self._clean_html_message(full_message)
+            extracted_device_id = self._extract_device_id(device_id)
+
+            # Parsovat datum - formát "28. 6. 2025 | 13:05"
+            timestamp = self._parse_czech_datetime(date_str)
+
+            notification_id = self._build_html_notification_id(
+                extracted_device_id, clean_message, date_str, timestamp
+            )
+
+            # Určit typ notifikace a severitu podle CSS level
+            notification_type, severity = self._get_notification_severity(
+                severity_level
+            )
+
+            # Pokud obsah zprávy obsahuje bypass, přednostně to označíme jako warning
+            if "bypass" in clean_message.lower():
+                notification_type = "warning"
+                severity = 2
+
+            return OigNotification(
+                id=notification_id,
+                type=notification_type,
+                message=clean_message,
+                timestamp=timestamp,
+                device_id=extracted_device_id,
+                severity=severity,
+                read=False,
+                raw_data={
+                    "date_str": date_str,
+                    "device_id": extracted_device_id,
+                    "short_message": short_message,
+                    "full_message": full_message,
+                    "css_level": severity_level,
+                    "source": "html",
+                },
+            )
+
+        except Exception as e:
+            _LOGGER.warning(f"Error creating HTML notification: {e}")
+            return None
+
+    def _clean_html_message(self, full_message: str) -> str:
+        import html
+
+        clean_message = html.unescape(full_message)
+        clean_message = (
+            clean_message.replace("<br />", "\n")
+            .replace("<br/>", "\n")
+            .replace("<br>", "\n")
+        )
+        return "\n".join(
+            part.strip() for part in clean_message.replace("\r", "").split("\n")
+        ).strip()
+
+    def _extract_device_id(self, device_id: str) -> str:
+        extracted_device_id = device_id.strip()
+        marker = "Box #"
+        if marker in device_id:
+            extracted_device_id = (
+                device_id.split(marker, 1)[1].strip().split()[0].strip()
+            )
+        return extracted_device_id
+
+    def _build_html_notification_id(
+        self,
+        device_id: str,
+        clean_message: str,
+        date_str: str,
+        timestamp: datetime,
+    ) -> str:
+        content_hash = hash(f"{device_id}_{clean_message}_{date_str}")
+        return f"html_{abs(content_hash)}_{int(timestamp.timestamp())}"
+
+    def _parse_czech_datetime(self, date_str: str) -> datetime:
+        """Parse Czech datetime format '25. 6. 2025 | 8:13'."""
+        try:
+            # Rozdělit datum a čas
+            date_part, time_part = date_str.split(" | ")
+
+            # Parsovat datum "25. 6. 2025"
+            day, month, year = date_part.split(". ")
+            day = int(day)
+            month = int(month)
+            year = int(year)
+
+            # Parsovat čas "8:13"
+            hour, minute = time_part.split(":")
+            hour = int(hour)
+            minute = int(minute)
+
+            return datetime(year, month, day, hour, minute)
+
+        except Exception as e:
+            _LOGGER.warning(f"Error parsing datetime '{date_str}': {e}")
+            return datetime.now()
+
+    def detect_bypass_status(self, content: str) -> bool:
+        """Detect bypass status from content."""
+        try:
+            normalized = " ".join(content.lower().split())
+            compact = normalized.replace(" ", "")
+            matches = _collect_bypass_matches(normalized, compact)
+            if matches:
+                last_status = _latest_bypass_status(matches)
+                _LOGGER.info(
+                    "Bypass status from LATEST message: %s (found %s total bypass messages)",
+                    "ON" if last_status else "OFF",
+                    len(matches),
+                )
+                return last_status
+
+            indicator_status = _indicator_status(compact)
+            if indicator_status is not None:
+                _LOGGER.debug(
+                    "Bypass detected as %s from indicators",
+                    "ON" if indicator_status else "OFF",
+                )
+                return indicator_status
+
+            _LOGGER.debug("No bypass indicators found, assuming OFF")
+            return False
+
+        except Exception as e:
+            _LOGGER.error(f"Error detecting bypass status: {e}")
+            return False
+
+
+def _collect_bypass_matches(
+    normalized: str, compact: str
+) -> List[Tuple[int, bool]]:
+    matches: List[Tuple[int, bool]] = []
+    matches.extend(_phrase_matches(normalized))
+    matches.extend(_window_matches(normalized))
+    matches.extend(_compact_matches(compact))
+    return matches
+
+
+def _phrase_matches(text: str) -> List[Tuple[int, bool]]:
+    on_phrases = [
+        "automatický bypass - zapnut",
+        "automatic bypass - on",
+    ]
+    off_phrases = [
+        "automatický bypass - vypnut",
+        "automatic bypass - off",
+    ]
+    matches: List[Tuple[int, bool]] = []
+    for phrase in on_phrases:
+        matches.extend((pos, True) for pos in _find_positions(text, phrase))
+    for phrase in off_phrases:
+        matches.extend((pos, False) for pos in _find_positions(text, phrase))
+    return matches
+
+
+def _window_matches(text: str) -> List[Tuple[int, bool]]:
+    on_tokens = ["zapnut", "enabled", "active", "on"]
+    off_tokens = ["vypnut", "disabled", "inactive", "off"]
+    matches: List[Tuple[int, bool]] = []
+    search_index = 0
+    while True:
+        pos = text.find("bypass", search_index)
+        if pos == -1:
+            break
+        window = text[pos : pos + 80]
+        if any(token in window for token in on_tokens):
+            matches.append((pos, True))
+        elif any(token in window for token in off_tokens):
+            matches.append((pos, False))
+        search_index = pos + len("bypass")
+    return matches
+
+
+def _compact_matches(text: str) -> List[Tuple[int, bool]]:
+    matches: List[Tuple[int, bool]] = []
+    if "bypasson" in text:
+        matches.append((text.find("bypasson"), True))
+    if "bypassoff" in text:
+        matches.append((text.find("bypassoff"), False))
+    return matches
+
+
+def _latest_bypass_status(matches: List[Tuple[int, bool]]) -> bool:
+    return max(matches, key=lambda item: item[0])[1]
+
+
+def _indicator_status(compact: str) -> Optional[bool]:
+    positive_indicators = [
+        '"bypass":true',
+        '"bypass":1',
+        '"bypass":"on"',
+        '"bypass":"active"',
+        '"manual_mode":true',
+        '"manual_mode":"on"',
+        "bypassenabledtrue",
+        "bypass_activetrue",
+        "ismanualmodetrue",
+    ]
+    if any(indicator in compact for indicator in positive_indicators):
+        return True
+
+    negative_indicators = [
+        '"bypass":false',
+        '"bypass":0',
+        '"bypass":"off"',
+        '"bypass":"inactive"',
+        '"manual_mode":false',
+        "bypassenabledfalse",
+        "bypass_activefalse",
+        "ismanualmodefalse",
+    ]
+    if any(indicator in compact for indicator in negative_indicators):
+        return False
+    return None
+
+
+def _find_positions(text: str, phrase: str) -> List[int]:
+    positions: List[int] = []
+    start = text.find(phrase)
+    while start != -1:
+        positions.append(start)
+        start = text.find(phrase, start + 1)
+    return positions
+
+
+def _update_string_state(
+    ch: str, string_quote: Optional[str], escape: bool
+) -> tuple[Optional[str], bool, bool]:
+    if string_quote:
+        if escape:
+            return string_quote, False, True
+        if ch == "\\":
+            return string_quote, True, True
+        if ch == string_quote:
+            return None, False, True
+        return string_quote, False, True
+    if ch in ('"', "'"):
+        return ch, False, True
+    return string_quote, escape, False
+
+
+def _open_brace(
+    depth: int, start: Optional[int], idx: int
+) -> tuple[int, Optional[int]]:
+    if depth == 0:
+        start = idx
+    return depth + 1, start
+
+
+def _close_brace(
+    depth: int,
+    start: Optional[int],
+    idx: int,
+    payload: str,
+    objects: List[str],
+) -> tuple[int, Optional[int]]:
+    if not depth:
+        return depth, start
+    depth -= 1
+    if depth == 0 and start is not None:
+        objects.append(payload[start : idx + 1])
+        start = None
+    return depth, start
+
+
+class OigNotificationManager:
+    """Manager for OIG Cloud notifications."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api: Union["OigCloudApi", aiohttp.ClientSession],
+        base_url: str,
+    ) -> None:
+        """Initialize notification manager."""
+        self.hass = hass
+        self._api = api
+        self._base_url = base_url
+        self._parser = OigNotificationParser()
+        self._notifications: List[OigNotification] = []
+        self._bypass_status: bool = False
+        self._storage_key = "oig_notifications"
+        self._max_notifications = 100
+        self._device_id: Optional[str] = None
+        _LOGGER.debug(
+            f"NotificationManager initialized: base_url={base_url}, api_type={type(api)}"
+        )
+
+    def set_device_id(self, device_id: str) -> None:
+        """Set device ID for notification requests."""
+        self._device_id = device_id
+        # Aktualizovat storage key s device_id
+        self._storage_key = f"oig_notifications_{device_id}"
+        _LOGGER.debug(f"Set device_id to {device_id} for notification manager")
+
+    def get_device_id(self) -> Optional[str]:
+        """Get current device ID."""
+        return self._device_id
+
+    def _generate_nonce(self) -> str:
+        """Generate nonce for request."""
+        import time
+
+        return str(int(time.time() * 1000))
+
+    async def _save_notifications_to_storage(
+        self, notifications: List[OigNotification]
+    ) -> None:
+        """Save notifications to storage."""
+        try:
+            store = Store(self.hass, 1, self._storage_key)
+
+            # Převést notifikace na dict pro storage
+            notifications_data = []
+            for notif in notifications[: self._max_notifications]:  # Omezit počet
+                notifications_data.append(
+                    {
+                        "id": notif.id,
+                        "type": notif.type,
+                        "message": notif.message,
+                        "timestamp": notif.timestamp.isoformat(),
+                        "device_id": notif.device_id,
+                        "severity": notif.severity,
+                        "read": notif.read,
+                        "raw_data": notif.raw_data,
+                    }
+                )
+
+            await store.async_save(
+                {
+                    "notifications": notifications_data,
+                    "bypass_status": self._bypass_status,
+                    "last_update": dt_util.now().isoformat(),
+                }
+            )
+
+            _LOGGER.debug(f"Saved {len(notifications_data)} notifications to storage")
+
+        except Exception as e:
+            _LOGGER.error(f"Error saving notifications to storage: {e}")
+
+    async def _load_notifications_from_storage(self) -> List[OigNotification]:
+        """Load notifications from storage."""
+        try:
+            store = Store(self.hass, 1, self._storage_key)
+            data = await store.async_load()
+
+            if not data or "notifications" not in data:
+                return []
+
+            notifications = []
+            for notif_data in data["notifications"]:
+                try:
+                    # Převést zpět na OigNotification objekt
+                    timestamp = datetime.fromisoformat(notif_data["timestamp"])
+                    notification = OigNotification(
+                        id=notif_data["id"],
+                        type=notif_data["type"],
+                        message=notif_data["message"],
+                        timestamp=timestamp,
+                        device_id=notif_data.get("device_id"),
+                        severity=notif_data.get("severity", 1),
+                        read=notif_data.get("read", False),
+                        raw_data=notif_data.get("raw_data"),
+                    )
+                    notifications.append(notification)
+                except Exception as e:
+                    _LOGGER.warning(f"Error loading notification from storage: {e}")
+                    continue
+
+            # Obnovit bypass status pokud je k dispozici
+            if "bypass_status" in data:
+                self._bypass_status = data["bypass_status"]
+
+            _LOGGER.debug(f"Loaded {len(notifications)} notifications from storage")
+            return notifications
+
+        except Exception as e:
+            _LOGGER.warning(f"Error loading notifications from storage: {e}")
+            return []
+
+    async def refresh_data(self) -> bool:
+        """Alias for update_from_api to maintain compatibility with coordinator."""
+        _LOGGER.debug("refresh_data called - redirecting to update_from_api")
+        return await self.update_from_api()
+
+    async def update_from_api(self) -> bool:
+        """Update notifications directly from API - simplified method."""
+        if not self._device_id:
+            _LOGGER.warning("Device ID not set for notification fetching, skipping")
+            return False
+
+        try:
+            _LOGGER.debug(f"Updating notifications for device: {self._device_id}")
+            _LOGGER.debug(f"API object type: {type(self._api)}")
+            _LOGGER.debug(
+                f"API object methods: {[method for method in dir(self._api) if not method.startswith('_')]}"
+            )
+
+            # OPRAVA: Použít API metodu přímo
+            if hasattr(self._api, "get_notifications"):
+                return await self._update_from_notification_api()
+
+            return await self._handle_missing_notification_api()
+
+        except Exception as e:
+            _LOGGER.error(f"Error in update_from_api: {e}")
+            return await self._use_cached_notifications_on_error("exception")
+
+    async def _update_from_notification_api(self) -> bool:
+        _LOGGER.debug("API object has get_notifications method, calling...")
+        result = await self._api.get_notifications(self._device_id)
+
+        if result.get("status") == "success" and "content" in result:
+            content = result["content"]
+            _LOGGER.debug("Fetched notification content length: %s", len(content))
+
+            notifications = self._parser.parse_from_controller_call(content)
+            filtered_notifications = [
+                notif
+                for notif in notifications
+                if notif.device_id == self._device_id or notif.device_id is None
+            ]
+
+            bypass_status = self._parser.detect_bypass_status(content)
+            await self._update_notifications(filtered_notifications)
+            self._bypass_status = bypass_status
+
+            _LOGGER.info(
+                "Successfully updated %d notifications, bypass: %s",
+                len(self._notifications),
+                bypass_status,
+            )
+            return True
+
+        if result.get("error"):
+            error = result["error"]
+            _LOGGER.warning("API returned error: %s", error)
+            return await self._use_cached_notifications_on_error(error)
+
+        _LOGGER.warning("API returned unexpected response format")
+        return False
+
+    async def _handle_missing_notification_api(self) -> bool:
+        available_methods = [
+            method
+            for method in dir(self._api)
+            if callable(getattr(self._api, method)) and not method.startswith("_")
+        ]
+        _LOGGER.error(
+            "API object %s doesn't have get_notifications method", type(self._api)
+        )
+        _LOGGER.error("Available callable methods: %s", available_methods)
+
+        notification_methods = [
+            method for method in available_methods if "notification" in method.lower()
+        ]
+        if notification_methods:
+            _LOGGER.info(
+                "Found notification-related methods: %s", notification_methods
+            )
+
+        return await self._use_cached_notifications_on_error("missing_api")
+
+    async def _use_cached_notifications_on_error(self, error: str) -> bool:
+        try:
+            cached_notifications = await self._load_notifications_from_storage()
+            if cached_notifications:
+                _LOGGER.info(
+                    "Using %d cached notifications due to API error: %s",
+                    len(cached_notifications),
+                    error,
+                )
+                self._notifications = cached_notifications
+                return True
+        except Exception as cache_error:
+            _LOGGER.warning(f"Error loading cached notifications: {cache_error}")
+        return False
+
+    async def get_notifications_and_status(self) -> Tuple[List[OigNotification], bool]:
+        """Get current notifications and bypass status."""
+        await self.update_from_api()
+        return self._notifications, self._bypass_status
+
+    async def _update_notifications(self, notifications: List[OigNotification]) -> None:
+        """Update internal notification list and handle storage."""
+        try:
+            # Uložit notifikace do storage
+            await self._save_notifications_to_storage(notifications)
+
+            # Aktualizovat interní seznam notifikací
+            self._notifications = notifications
+
+            _LOGGER.info(
+                f"Updated notifications: {len(notifications)} loaded, {self._bypass_status=}"
+            )
+
+        except Exception as e:
+            _LOGGER.error(f"Error updating notifications: {e}")
+
+    def get_latest_notification_message(self) -> str:
+        """Get latest notification message."""
+        if not self._notifications:
+            return "No notifications"
+        return self._notifications[0].message
+
+    def get_bypass_status(self) -> str:
+        """Get bypass status."""
+        return "on" if self._bypass_status else "off"
+
+    def get_notification_count(self, notification_type: str) -> int:
+        """Get count of notifications by type."""
+        if notification_type == "error":
+            return len([n for n in self._notifications if n.type == "error"])
+        elif notification_type == "warning":
+            return len([n for n in self._notifications if n.type == "warning"])
+        return 0
+
+    def get_unread_count(self) -> int:
+        """Get count of unread notifications."""
+        return len([n for n in self._notifications if not n.read])
+
+    def get_latest_notification(self) -> Optional[OigNotification]:
+        """Get latest notification object."""
+        if not self._notifications:
+            return None
+        return self._notifications[0]

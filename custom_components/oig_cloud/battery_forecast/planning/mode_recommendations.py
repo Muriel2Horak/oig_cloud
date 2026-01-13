@@ -1,0 +1,383 @@
+"""Mode recommendation helpers extracted from battery forecast sensor."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def create_mode_recommendations(
+    optimal_timeline: List[Dict[str, Any]],
+    *,
+    hours_ahead: int = 48,
+    now: Optional[datetime] = None,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> List[Dict[str, Any]]:
+    """Create user-friendly recommendations from the optimized timeline."""
+    if not optimal_timeline:
+        return []
+
+    try:
+        current_time = now or datetime.now()
+        future_intervals = _filter_future_intervals(
+            optimal_timeline, current_time=current_time, hours_ahead=hours_ahead
+        )
+        if not future_intervals:
+            return []
+
+        recommendations = _build_recommendation_blocks(
+            future_intervals,
+            mode_home_i=mode_home_i,
+            mode_home_ii=mode_home_ii,
+            mode_home_iii=mode_home_iii,
+            mode_home_ups=mode_home_ups,
+        )
+        return _split_blocks_by_midnight(
+            recommendations,
+            mode_home_i=mode_home_i,
+            mode_home_ii=mode_home_ii,
+            mode_home_iii=mode_home_iii,
+            mode_home_ups=mode_home_ups,
+        )
+    except Exception as exc:
+        _LOGGER.error("Failed to create mode recommendations: %s", exc)
+        return []
+
+
+def _filter_future_intervals(
+    optimal_timeline: List[Dict[str, Any]],
+    *,
+    current_time: datetime,
+    hours_ahead: int,
+) -> List[Dict[str, Any]]:
+    tomorrow_end = datetime.combine(
+        current_time.date() + timedelta(days=1), datetime.max.time()
+    )
+    if hours_ahead > 0:
+        end_time = min(
+            tomorrow_end, current_time + timedelta(hours=hours_ahead)
+        )
+    else:
+        end_time = tomorrow_end  # pragma: no cover
+
+    return [
+        interval
+        for interval in optimal_timeline
+        if interval.get("time")
+        and current_time <= datetime.fromisoformat(interval["time"]) <= end_time
+    ]
+
+
+def _build_recommendation_blocks(
+    future_intervals: List[Dict[str, Any]],
+    *,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> List[Dict[str, Any]]:
+    recommendations: List[Dict[str, Any]] = []
+    current_block: Optional[Dict[str, Any]] = None
+    block_intervals: List[Dict[str, Any]] = []
+
+    for interval in future_intervals:
+        mode = interval.get("mode")
+        mode_name = interval.get("mode_name", f"MODE_{mode}")
+        time_str = interval.get("time", "")
+
+        if current_block is None:
+            current_block = _new_block(mode, mode_name, time_str)
+            block_intervals = [interval]
+            continue
+
+        if current_block["mode"] == mode:
+            current_block["intervals_count"] += 1
+            block_intervals.append(interval)
+            continue
+
+        _finalize_block(
+            current_block,
+            block_intervals,
+            mode_home_i=mode_home_i,
+            mode_home_ii=mode_home_ii,
+            mode_home_iii=mode_home_iii,
+            mode_home_ups=mode_home_ups,
+        )
+        recommendations.append(current_block)
+        current_block = _new_block(mode, mode_name, time_str)
+        block_intervals = [interval]
+
+    if current_block and block_intervals:
+        _finalize_block(
+            current_block,
+            block_intervals,
+            mode_home_i=mode_home_i,
+            mode_home_ii=mode_home_ii,
+            mode_home_iii=mode_home_iii,
+            mode_home_ups=mode_home_ups,
+        )
+        recommendations.append(current_block)
+
+    return recommendations
+
+
+def _new_block(mode: Any, mode_name: str, time_str: str) -> Dict[str, Any]:
+    return {
+        "mode": mode,
+        "mode_name": mode_name,
+        "from_time": time_str,
+        "to_time": None,
+        "intervals_count": 1,
+    }
+
+
+def _finalize_block(
+    block: Dict[str, Any],
+    block_intervals: List[Dict[str, Any]],
+    *,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> None:
+    last_interval_time = block_intervals[-1].get("time", "")
+    try:
+        last_dt = datetime.fromisoformat(last_interval_time)
+        end_dt = last_dt + timedelta(minutes=15)
+        block["to_time"] = end_dt.isoformat()
+    except Exception:
+        block["to_time"] = last_interval_time
+
+    add_block_details(
+        block,
+        block_intervals,
+        mode_home_i=mode_home_i,
+        mode_home_ii=mode_home_ii,
+        mode_home_iii=mode_home_iii,
+        mode_home_ups=mode_home_ups,
+    )
+    block["_intervals"] = block_intervals
+
+
+def _split_blocks_by_midnight(
+    recommendations: List[Dict[str, Any]],
+    *,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> List[Dict[str, Any]]:
+    split_recommendations: List[Dict[str, Any]] = []
+    for block in recommendations:
+        from_dt = datetime.fromisoformat(block["from_time"])
+        to_dt = datetime.fromisoformat(block["to_time"])
+
+        if from_dt.date() == to_dt.date():
+            block.pop("_intervals", None)
+            split_recommendations.append(block)
+            continue
+
+        midnight = datetime.combine(
+            from_dt.date() + timedelta(days=1), datetime.min.time()
+        )
+
+        intervals = block.get("_intervals", [])
+        intervals1 = [
+            i
+            for i in intervals
+            if datetime.fromisoformat(i.get("time", "")) < midnight
+        ]
+        intervals2 = [
+            i
+            for i in intervals
+            if datetime.fromisoformat(i.get("time", "")) >= midnight
+        ]
+
+        block1 = {
+            "mode": block["mode"],
+            "mode_name": block["mode_name"],
+            "from_time": block["from_time"],
+            "to_time": midnight.isoformat(),
+            "intervals_count": len(intervals1),
+        }
+        duration1 = (midnight - from_dt).total_seconds() / 3600
+        block1["duration_hours"] = round(duration1, 2)
+        if intervals1:
+            add_block_details(
+                block1,
+                intervals1,
+                mode_home_i=mode_home_i,
+                mode_home_ii=mode_home_ii,
+                mode_home_iii=mode_home_iii,
+                mode_home_ups=mode_home_ups,
+            )
+        split_recommendations.append(block1)
+
+        block2 = {
+            "mode": block["mode"],
+            "mode_name": block["mode_name"],
+            "from_time": midnight.isoformat(),
+            "to_time": block["to_time"],
+            "intervals_count": len(intervals2),
+        }
+        duration2 = (to_dt - midnight).total_seconds() / 3600
+        block2["duration_hours"] = round(duration2, 2)
+        if intervals2:
+            add_block_details(
+                block2,
+                intervals2,
+                mode_home_i=mode_home_i,
+                mode_home_ii=mode_home_ii,
+                mode_home_iii=mode_home_iii,
+                mode_home_ups=mode_home_ups,
+            )
+        split_recommendations.append(block2)
+
+    return split_recommendations
+
+
+def add_block_details(
+    block: Dict[str, Any],
+    intervals: List[Dict[str, Any]],
+    *,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> None:
+    """Add metrics and rationale to a recommendation block."""
+    try:
+        from_dt = datetime.fromisoformat(block["from_time"])
+        to_dt = datetime.fromisoformat(block["to_time"])
+        duration = (to_dt - from_dt).total_seconds() / 3600 + 0.25
+        block["duration_hours"] = round(duration, 2)
+    except Exception:
+        block["duration_hours"] = block["intervals_count"] * 0.25
+
+    if not intervals:
+        return
+
+    total_cost = sum(i.get("net_cost", 0) for i in intervals)
+    block["total_cost"] = round(total_cost, 2)
+    block["savings_vs_home_i"] = 0.0
+
+    solar_vals = [i.get("solar_kwh", 0) * 4 for i in intervals]
+    load_vals = [i.get("load_kwh", 0) * 4 for i in intervals]
+    spot_prices = [i.get("spot_price", 0) for i in intervals]
+
+    block["avg_solar_kw"] = (
+        round(sum(solar_vals) / len(solar_vals), 2)
+        if solar_vals and any(v > 0 for v in solar_vals)
+        else 0.0
+    )
+    block["avg_load_kw"] = (
+        round(sum(load_vals) / len(load_vals), 2) if load_vals else 0.0
+    )
+    block["avg_spot_price"] = (
+        round(sum(spot_prices) / len(spot_prices), 2) if spot_prices else 0.0
+    )
+
+    mode = block["mode"]
+    solar_kw = block["avg_solar_kw"]
+    load_kw = block["avg_load_kw"]
+    spot_price = block["avg_spot_price"]
+
+    block["rationale"] = _build_mode_rationale(
+        mode=mode,
+        solar_kw=solar_kw,
+        load_kw=load_kw,
+        spot_price=spot_price,
+        mode_home_i=mode_home_i,
+        mode_home_ii=mode_home_ii,
+        mode_home_iii=mode_home_iii,
+        mode_home_ups=mode_home_ups,
+    )
+
+
+def _build_mode_rationale(
+    *,
+    mode: int,
+    solar_kw: float,
+    load_kw: float,
+    spot_price: float,
+    mode_home_i: int,
+    mode_home_ii: int,
+    mode_home_iii: int,
+    mode_home_ups: int,
+) -> str:
+    if mode == mode_home_i:
+        return _rationale_home_i(solar_kw=solar_kw, load_kw=load_kw, spot_price=spot_price)
+    if mode == mode_home_ii:
+        return _rationale_home_ii(solar_kw=solar_kw, load_kw=load_kw, spot_price=spot_price)
+    if mode == mode_home_iii:
+        return _rationale_home_iii(solar_kw=solar_kw, spot_price=spot_price)
+    if mode == mode_home_ups:
+        return _rationale_home_ups(spot_price=spot_price)
+    return "Optimalizovaný režim podle aktuálních podmínek"
+
+
+def _rationale_home_i(*, solar_kw: float, load_kw: float, spot_price: float) -> str:
+    if solar_kw > load_kw + 0.1:
+        surplus_kw = solar_kw - load_kw
+        return (
+            "Nabíjíme baterii z FVE přebytku "
+            f"({surplus_kw:.1f} kW) - ukládáme levnou energii na později"
+        )
+    if solar_kw > 0.2:
+        deficit_kw = load_kw - solar_kw
+        return (
+            f"FVE pokrývá část spotřeby ({solar_kw:.1f} kW), "
+            f"baterie doplňuje {deficit_kw:.1f} kW"
+        )
+    return (
+        "Vybíjíme baterii pro pokrytí spotřeby - šetříme "
+        f"{spot_price:.1f} Kč/kWh ze sítě"
+    )
+
+
+def _rationale_home_ii(*, solar_kw: float, load_kw: float, spot_price: float) -> str:
+    if solar_kw > load_kw + 0.1:
+        surplus_kw = solar_kw - load_kw
+        return (
+            "Nabíjíme baterii z FVE přebytku "
+            f"({surplus_kw:.1f} kW) - připravujeme na večerní špičku"
+        )
+    if spot_price > 4.0:
+        return (
+            f"Grid pokrývá spotřebu ({spot_price:.1f} Kč/kWh) - "
+            "ale ještě ne vrcholová cena"
+        )
+    return (
+        f"Levný proud ze sítě ({spot_price:.1f} Kč/kWh) - "
+        "šetříme baterii na dražší období"
+    )
+
+
+def _rationale_home_iii(*, solar_kw: float, spot_price: float) -> str:
+    if solar_kw > 0.2:
+        return (
+            "Maximální nabíjení baterie - veškeré FVE "
+            f"({solar_kw:.1f} kW) jde do baterie, spotřeba ze sítě"
+        )
+    return (
+        "Vybíjíme baterii pro pokrytí spotřeby - šetříme "
+        f"{spot_price:.1f} Kč/kWh ze sítě"
+    )
+
+
+def _rationale_home_ups(*, spot_price: float) -> str:
+    if spot_price < 3.0:
+        return (
+            "Nabíjíme ze sítě - velmi levný proud "
+            f"({spot_price:.1f} Kč/kWh), připravujeme plnou baterii"
+        )
+    return (
+        f"Nabíjíme ze sítě ({spot_price:.1f} Kč/kWh) - "
+        "připravujeme na dražší špičku"
+    )
