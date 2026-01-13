@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 from custom_components.oig_cloud.const import DOMAIN
 
+pytestmark = pytest.mark.e2e_mock
+
 
 @pytest.mark.e2e
 async def test_services_registered(e2e_setup):

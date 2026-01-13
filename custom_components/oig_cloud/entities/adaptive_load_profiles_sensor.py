@@ -970,7 +970,6 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             self._last_profile_reason = "error"
             return None
 
-
     @property
     def native_value(self) -> Optional[str]:
         """Return profiling status."""

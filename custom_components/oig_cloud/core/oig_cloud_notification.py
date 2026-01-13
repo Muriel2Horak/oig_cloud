@@ -380,7 +380,6 @@ class OigNotificationParser:
 
         return objects
 
-
     def _parse_single_notification(self, json_str: str) -> Optional[OigNotification]:
         """Parse single notification from JSON string."""
         try:

@@ -318,6 +318,7 @@ def _calc_delta(actual_val: Optional[float], planned_val: float) -> Optional[flo
         return None
     return round(actual_val - planned_val, 2)
 
+
 def summarize_block_reason(
     sensor: Any, group_intervals: List[Dict[str, Any]], block: Dict[str, Any]
 ) -> Optional[str]:

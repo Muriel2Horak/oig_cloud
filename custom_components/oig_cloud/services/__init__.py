@@ -556,6 +556,7 @@ def _make_fallback_handler(
 
     return handler
 
+
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Nastavení základních služeb pro OIG Cloud."""
     await asyncio.sleep(0)

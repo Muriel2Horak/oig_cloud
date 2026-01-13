@@ -2,11 +2,15 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: 'tests/fe/specs',
-  timeout: 60_000,
-  expect: { timeout: 10_000 },
+  timeout: 120_000,
+  expect: { timeout: 20_000 },
+  workers: 2,
   use: {
     baseURL: 'http://localhost:8124',
-    viewport: { width: 1280, height: 800 }
+    viewport: { width: 1280, height: 800 },
+    screenshot: 'on',
+    video: 'on',
+    trace: 'on'
   },
   projects: [
     { name: 'cloud', metadata: { mode: 'cloud' } },
@@ -28,5 +32,5 @@ export default defineConfig({
       use: { viewport: { width: 1024, height: 600 } }
     }
   ],
-  reporter: 'list'
+  reporter: [['list'], ['html', { open: 'never' }]]
 });

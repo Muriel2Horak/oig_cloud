@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -55,6 +56,36 @@ def test_build_planner_timeline(monkeypatch):
     assert len(timeline) == 2
     assert timeline[0]["grid_import"] == 1.0
     assert timeline[1]["solar_kwh"] == 0.0
+
+
+def test_build_planner_timeline_uses_solar_forecast(monkeypatch):
+    def _simulate(**_kwargs):
+        return DummySimResult(new_soc_kwh=4.0, gi=0.0, ge=0.0, sc=0.0, gc=0.0)
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.timeline.planner.simulate_interval",
+        lambda **kwargs: _simulate(**kwargs),
+    )
+
+    now = datetime.now().replace(minute=0, second=0, microsecond=0)
+    hour_key = now.isoformat()
+    solar_forecast = {"today": {hour_key: 2.0}}
+
+    timeline = planner.build_planner_timeline(
+        modes=[CBB_MODE_HOME_I],
+        spot_prices=[{"time": hour_key, "price": 1.0}],
+        export_prices=[{"price": 0.1}],
+        solar_forecast=solar_forecast,
+        load_forecast=[0.2],
+        current_capacity=3.0,
+        max_capacity=5.0,
+        hw_min_capacity=1.0,
+        efficiency=1.0,
+        home_charge_rate_kw=2.0,
+    )
+
+    assert timeline
+    assert timeline[0]["solar_kwh"] == pytest.approx(0.5)
 
 
 def test_build_planner_timeline_breaks(monkeypatch):

@@ -740,6 +740,7 @@ def _build_planned_only_entry(
         "delta": None,
     }
 
+
 async def build_timeline_extended(
     sensor: Any, *, mode_names: Optional[Dict[int, str]] = None
 ) -> Dict[str, Any]:

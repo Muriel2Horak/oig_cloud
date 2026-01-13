@@ -4,6 +4,8 @@ import pytest
 
 from custom_components.oig_cloud.const import DOMAIN
 
+pytestmark = pytest.mark.e2e_mock
+
 
 @pytest.mark.e2e
 async def test_auto_mode_switching(e2e_setup):

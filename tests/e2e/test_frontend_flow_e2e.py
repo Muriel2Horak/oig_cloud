@@ -4,6 +4,8 @@ import pytest
 
 from custom_components.oig_cloud.const import DOMAIN
 
+pytestmark = pytest.mark.e2e_mock
+
 
 @pytest.mark.e2e
 async def test_frontend_config_flow_renders(e2e_setup):

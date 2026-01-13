@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.oig_cloud.pricing import spot_price_15min as price15_module
 from custom_components.oig_cloud.pricing import spot_price_15min_base as base_module
+from custom_components.oig_cloud.pricing import spot_price_shared
 
 
 class DummyOteApi:
@@ -513,7 +514,7 @@ async def test_schedule_retry_executes(monkeypatch):
         return None
 
     sensor.hass.async_create_task = lambda coro: asyncio.create_task(coro)
-    monkeypatch.setattr(base_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(spot_price_shared.asyncio, "sleep", fake_sleep)
     sensor._schedule_retry(fake_fetch)
     await sensor._retry_remove
     assert called["fetch"] == 1

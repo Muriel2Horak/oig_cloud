@@ -77,7 +77,9 @@ def mock_api() -> Mock:
     """Create a mock OigCloudApi-like instance for unit tests."""
     api: Mock = Mock()
 
-    api.get_stats = AsyncMock(return_value={"device1": {"box_prms": {"mode": 1}}})
+    api.get_stats = AsyncMock(
+        return_value={"device1": {"actual": {}, "box_prms": {"mode": 1}}}
+    )
 
     async def mock_get_extended_stats(
         name: str, from_date: str, to_date: str
@@ -91,7 +93,7 @@ def mock_api() -> Mock:
 
     api.get_notifications = AsyncMock(side_effect=mock_get_notifications)
     api.authenticate = AsyncMock(return_value=True)
-    api.get_session = Mock(return_value=Mock())
+    api.get_session = Mock(return_value=types.SimpleNamespace(close=AsyncMock()))
 
     async def mock_set_box_params_internal(table: str, column: str, value: str) -> bool:
         return True
@@ -111,5 +113,6 @@ def mock_api() -> Mock:
     api.box_id = "test_device_id"
     api.last_state = None
     api.last_parsed_state = None
+    api._phpsessid = "test-session"
 
     return api

@@ -1633,7 +1633,8 @@ async def async_update_options(
     hass: HomeAssistant, config_entry: config_entries.ConfigEntry
 ) -> None:
     """Update options with dashboard management."""
-    old_options = config_entry.options
+    hass_data = hass.data.get(DOMAIN, {}).get(config_entry.entry_id, {})
+    old_options = hass_data.get("config", {}) or config_entry.options
     new_options = dict(config_entry.options)
 
     # Kontrola změny dashboard nastavení

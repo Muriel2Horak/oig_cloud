@@ -21,8 +21,25 @@ function loadFixture(mode) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-function resolveMode(req) {
-  return (req.query.mode || process.env.OIG_MOCK_MODE || DEFAULT_MODE).toString();
+function resolveMode(req = {}) {
+  const query = req.query || {};
+  const headers = req.headers || {};
+  if (query.mode) {
+    return query.mode.toString();
+  }
+  const referer = headers.referer;
+  if (referer) {
+    try {
+      const refUrl = new URL(referer);
+      const refMode = refUrl.searchParams.get('mode');
+      if (refMode) {
+        return refMode.toString();
+      }
+    } catch (_err) {
+      // Ignore malformed referer and fallback to defaults.
+    }
+  }
+  return (process.env.OIG_MOCK_MODE || DEFAULT_MODE).toString();
 }
 
 function respondJson(res, payload) {
@@ -81,7 +98,10 @@ function serveStatic(res, filePath) {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const mode = resolveMode({ query: Object.fromEntries(url.searchParams.entries()) });
+  const mode = resolveMode({
+    query: Object.fromEntries(url.searchParams.entries()),
+    headers: req.headers
+  });
 
   if (url.pathname === '/host') {
     const fixture = loadFixture(mode);
@@ -126,7 +146,7 @@ const server = http.createServer((req, res) => {
       };
       window.__getServiceCalls = () => (window.__serviceCalls || []);
     </script>
-    <iframe id="dashboard" src="/local/oig_cloud/dashboard.html?inverter_sn=${inverterSn}"></iframe>
+    <iframe id="dashboard" src="/local/oig_cloud/dashboard.html?inverter_sn=${inverterSn}&mode=${mode}"></iframe>
   </body>
 </html>`);
     return;
