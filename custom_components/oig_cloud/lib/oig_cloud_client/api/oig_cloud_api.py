@@ -8,8 +8,14 @@ from typing import Any, Dict, Optional
 
 import aiohttp
 import certifi
-from aiohttp import (ClientConnectorError, ClientResponseError, ClientTimeout,
-                     ServerTimeoutError, TCPConnector)
+from aiohttp import (
+    ClientConnectorError,
+    ClientResponseError,
+    ClientTimeout,
+    ServerTimeoutError,
+    TCPConnector,
+)
+from yarl import URL
 
 from ..models import OigCloudData
 
@@ -212,8 +218,9 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                         responsecontent: str = await response.text()
                         if response.status == 200:
                             if responsecontent == '[[2,"",false]]':
+                                base_url = URL(self._base_url)
                                 self._phpsessid = (
-                                    session.cookie_jar.filter_cookies(self._base_url)
+                                    session.cookie_jar.filter_cookies(base_url)
                                     .get("PHPSESSID")
                                     .value
                                 )

@@ -620,7 +620,7 @@ class OigCloudPlannerRecommendedModeSensor(
 
         async def _on_forecast_updated() -> None:
             await asyncio.sleep(0)
-            self.hass.async_create_task(self._async_recompute())
+            await self._async_recompute()
 
         try:
             self._unsubs.append(

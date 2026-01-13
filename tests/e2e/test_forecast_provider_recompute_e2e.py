@@ -5,7 +5,6 @@ from datetime import datetime
 
 import pytest
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.storage import Store
 
 from custom_components.oig_cloud.battery_forecast.sensors.recommended_sensor import (
     OigCloudPlannerRecommendedModeSensor,
@@ -43,7 +42,8 @@ async def test_forecast_provider_switch_updates_recommended_mode(
     )
     sensor.hass = hass
 
-    store = Store(hass, version=1, key=f"oig_cloud.precomputed_data_{box_id}")
+    store = sensor._precomputed_store
+    assert store is not None
 
     timeline_a = [
         {"time": "2026-01-01T12:00:00+00:00", "mode_name": "Home 1", "mode": 0},

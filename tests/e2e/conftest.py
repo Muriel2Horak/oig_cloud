@@ -7,11 +7,46 @@ from typing import Any, Dict
 from unittest.mock import AsyncMock
 
 import pytest
+import pytest_socket
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 import custom_components.oig_cloud as init_module
 from custom_components.oig_cloud.const import CONF_PASSWORD, CONF_USERNAME, DOMAIN
 from custom_components.oig_cloud.core import data_source as data_source_module
+
+
+def pytest_collection_modifyitems(config, items) -> None:
+    for item in items:
+        if "tests/e2e/" in str(item.fspath):
+            item.add_marker(pytest.mark.enable_socket)
+
+
+def pytest_configure(config) -> None:
+    config.option.force_enable_socket = True
+    config.__socket_force_enabled = True
+    config.option.disable_socket = False
+    config.__socket_disabled = False
+    config.option.allow_hosts = None
+    config.__socket_allow_hosts = None
+
+
+@pytest.fixture(autouse=True)
+def _allow_sockets_for_e2e(pytestconfig):
+    pytestconfig.__socket_force_enabled = True
+    pytestconfig.__socket_disabled = False
+    pytestconfig.__socket_allow_hosts = None
+    pytest_socket.enable_socket()
+    pytest_socket._remove_restrictions()
+    yield
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_setup(item) -> None:
+    item.config.__socket_allow_hosts = None
+    item.config.__socket_disabled = False
+    item.config.__socket_force_enabled = True
+    pytest_socket.enable_socket()
+    pytest_socket._remove_restrictions()
 
 
 def _read_ha_config() -> Dict[str, str]:
@@ -69,6 +104,8 @@ def e2e_entry_options() -> Dict[str, Any]:
 
 
 async def _setup_entry(hass, entry_options, monkeypatch, *, data_mode, mock_api, live_credentials):
+    pytest_socket.enable_socket()
+    pytest_socket._remove_restrictions()
     if data_mode == "live":
         username = live_credentials.get("username") or ""
         password = live_credentials.get("password") or ""
