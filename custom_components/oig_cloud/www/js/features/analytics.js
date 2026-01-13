@@ -98,21 +98,34 @@ async function loadCostComparisonTile(force = false) {
 async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
     try {
         console.log(`[Cost Comparison] Loading data (attempt ${retryCount + 1}/${maxRetries + 1})`);
-        const hybridRes = await fetch(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/unified_cost_tile`);
+        const hybridRes = await fetchWithAuth(
+            `/api/oig_cloud/battery_forecast/${INVERTER_SN}/unified_cost_tile`,
+            { credentials: 'same-origin' }
+        );
 
         if (!hybridRes.ok) {
+            if (hybridRes.status === 401 || hybridRes.status === 403) {
+                console.warn('[Cost Comparison] Unauthorized, skipping cost tile fetch');
+                return { hybrid: null };
+            }
             const shouldRetry = (code) => code >= 500;
             if (retryCount < maxRetries && shouldRetry(hybridRes.status)) {
                 const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
                 await new Promise((resolve) => setTimeout(resolve, delay));
                 return fetchCostComparisonTileData(retryCount + 1, maxRetries);
             }
-            throw new Error(`HTTP ${hybridRes.status}`);
+            const error = new Error(`HTTP ${hybridRes.status}`);
+            error.status = hybridRes.status;
+            throw error;
         }
 
         const hybridData = await hybridRes.json();
         return { hybrid: hybridData };
     } catch (error) {
+        if (error?.status === 401 || error?.status === 403) {
+            console.warn('[Cost Comparison] Unauthorized, skipping cost tile fetch');
+            return { hybrid: null };
+        }
         console.error('[Cost Comparison] Failed to load', error);
         if (retryCount < maxRetries) {
             const delay = Math.min(1000 * Math.pow(2, retryCount), 5000);
@@ -449,8 +462,12 @@ async function buildYesterdayAnalysis() {
     const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/timeline?type=active`;
 
     try {
-        const response = await fetch(apiUrl);
+        const response = await fetchWithAuth(apiUrl, { credentials: 'same-origin' });
         if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+                console.warn('[Yesterday Analysis] Unauthorized, skipping');
+                return;
+            }
             console.error('[Yesterday Analysis] Failed to fetch data:', response.status);
             return;
         }

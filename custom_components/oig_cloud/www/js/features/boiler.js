@@ -69,7 +69,9 @@ async function loadBasicBoilerData() {
         }
 
         // Načíst profily
-        const profilesResp = await fetch(`/api/oig_cloud/${entryId}/boiler_profile`);
+        const profilesResp = await fetchWithAuth(`/api/oig_cloud/${entryId}/boiler_profile`, {
+            credentials: 'same-origin'
+        });
         if (profilesResp.ok) {
             const data = await profilesResp.json();
             boilerState.profiles = data.profiles || {};
@@ -78,7 +80,9 @@ async function loadBasicBoilerData() {
         }
 
         // Načíst plán
-        const planResp = await fetch(`/api/oig_cloud/${entryId}/boiler_plan`);
+        const planResp = await fetchWithAuth(`/api/oig_cloud/${entryId}/boiler_plan`, {
+            credentials: 'same-origin'
+        });
         if (planResp.ok) {
             boilerState.plan = await planResp.json();
             console.log('🔥 [Boiler] Plan loaded');

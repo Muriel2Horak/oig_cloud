@@ -2275,8 +2275,12 @@ async function fetchTimelineFromAPI(plan, boxId) {
     const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active`;
     const fetchStart = performance.now();
     console.log(`[Pricing] Fetching ${plan} timeline from API...`);
-    const response = await fetch(timelineUrl);
+    const response = await fetchWithAuth(timelineUrl, { credentials: 'same-origin' });
     if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+            console.warn(`[Pricing] Unauthorized, skipping ${plan} timeline fetch`);
+            return [];
+        }
         throw new Error(`HTTP ${response.status}`);
     }
     const data = await response.json();
