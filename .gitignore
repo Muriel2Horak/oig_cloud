@@ -54,6 +54,11 @@ coverage.xml
 .pytest_cache/
 cover/
 .scannerwork/
+sonar-project.properties
+sonar-project.properties.template
+docker-compose.sonarqube.yml
+scripts/sonar_local.sh
+.github/workflows/sonarqube.yml
 
 # Translations
 *.mo
