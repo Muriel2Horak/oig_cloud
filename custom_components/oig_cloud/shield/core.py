@@ -526,7 +526,7 @@ class ModeTransitionTracker:
             return
 
         # Najít aktivní transakci která odpovídá této změně
-        for trace_id, transition in list(self._active_transitions.items()):
+        for trace_id, transition in self._active_transitions.items():
             if (
                 transition["from_mode"] == old_mode
                 and transition["to_mode"] == new_mode
@@ -637,92 +637,92 @@ class ModeTransitionTracker:
                 f"[ModeTracker] Loading historical data for {sensor_id}..."
             )
 
-            # Načíst 30 dní zpátky
-            end_time = dt_now()
-            start_time = end_time - timedelta(days=30)
-
-            # Načíst změny stavu z recorderu
-            from homeassistant.components import recorder
-
-            # Run v executoru aby to neblokovalo event loop
-            states = await self.hass.async_add_executor_job(
-                recorder.history.state_changes_during_period,
-                self.hass,
-                start_time,
-                end_time,
-                sensor_id,
-            )
-
-            if not states or sensor_id not in states:
+            state_list = await self._load_historical_states(sensor_id)
+            if not state_list:
                 self._logger.warning(
                     f"[ModeTracker] No historical data found for {sensor_id}"
                 )
                 return
 
-            state_list = states[sensor_id]
             self._logger.info(
                 f"[ModeTracker] Found {len(state_list)} historical states"
             )
 
-            # Analyzovat přechody
-            transitions_found = 0
-
-            for i in range(1, len(state_list)):
-                prev_state = state_list[i - 1]
-                curr_state = state_list[i]
-
-                prev_mode = prev_state.state
-                curr_mode = curr_state.state
-
-                # Pokud se režim změnil
-                if (
-                    prev_mode != curr_mode
-                    and prev_mode != "unknown"
-                    and curr_mode != "unknown"
-                ):
-                    # Spočítat dobu od posledního požadavku
-                    # Hledáme změnu requested_mode v předchozích stavech
-                    curr_state.attributes.get("requested_mode")
-
-                    # Jednoduchá heuristika: když se state změnil, předpokládáme že
-                    # změna proběhla od posledního stavu
-                    duration = (
-                        curr_state.last_changed - prev_state.last_changed
-                    ).total_seconds()
-
-                    # Filtrovat rozumné hodnoty (0.1s - 5min)
-                    if 0.1 < duration < 300:
-                        scenario_key = f"{prev_mode}→{curr_mode}"
-
-                        if scenario_key not in self._transition_history:
-                            self._transition_history[scenario_key] = []
-
-                        self._transition_history[scenario_key].append(duration)
-                        transitions_found += 1
-
-            # Oříznout na max_samples
-            for scenario_key in self._transition_history:
-                if len(self._transition_history[scenario_key]) > self._max_samples:
-                    self._transition_history[scenario_key] = self._transition_history[
-                        scenario_key
-                    ][-self._max_samples :]
+            transitions_found = self._track_transitions(state_list)
+            self._trim_transition_history()
 
             self._logger.info(
                 f"[ModeTracker] Loaded {transitions_found} transitions from history, "
                 f"scenarios: {len(self._transition_history)}"
             )
 
-            # Vypsat statistiky
-            stats = self.get_statistics()
-            for scenario, data in stats.items():
-                self._logger.debug(
-                    f"[ModeTracker] {scenario}: median={data['median_seconds']}s, "
-                    f"p95={data['p95_seconds']}s, samples={data['samples']}"
-                )
+            self._log_transition_stats()
 
         except Exception as e:
             self._logger.error(
                 f"[ModeTracker] Error loading historical data: {e}", exc_info=True
+            )
+
+    async def _load_historical_states(self, sensor_id: str) -> Optional[list[Any]]:
+        end_time = dt_now()
+        start_time = end_time - timedelta(days=30)
+
+        from homeassistant.components import recorder
+
+        states = await self.hass.async_add_executor_job(
+            recorder.history.state_changes_during_period,
+            self.hass,
+            start_time,
+            end_time,
+            sensor_id,
+        )
+        if not states or sensor_id not in states:
+            return None
+        return states[sensor_id]
+
+    def _track_transitions(self, state_list: list[Any]) -> int:
+        transitions_found = 0
+        for i in range(1, len(state_list)):
+            prev_state = state_list[i - 1]
+            curr_state = state_list[i]
+
+            prev_mode = prev_state.state
+            curr_mode = curr_state.state
+
+            if not self._is_valid_transition(prev_mode, curr_mode):
+                continue
+
+            duration = (curr_state.last_changed - prev_state.last_changed).total_seconds()
+            if 0.1 < duration < 300:
+                self._record_transition(prev_mode, curr_mode, duration)
+                transitions_found += 1
+        return transitions_found
+
+    @staticmethod
+    def _is_valid_transition(prev_mode: str, curr_mode: str) -> bool:
+        return (
+            prev_mode != curr_mode
+            and prev_mode != "unknown"
+            and curr_mode != "unknown"
+        )
+
+    def _record_transition(self, prev_mode: str, curr_mode: str, duration: float) -> None:
+        scenario_key = f"{prev_mode}→{curr_mode}"
+        self._transition_history.setdefault(scenario_key, []).append(duration)
+
+    def _trim_transition_history(self) -> None:
+        for scenario_key in self._transition_history:
+            if len(self._transition_history[scenario_key]) > self._max_samples:
+                self._transition_history[scenario_key] = self._transition_history[
+                    scenario_key
+                ][-self._max_samples :]
+
+    def _log_transition_stats(self) -> None:
+        stats = self.get_statistics()
+        for scenario, data in stats.items():
+            self._logger.debug(
+                f"[ModeTracker] {scenario}: median={data['median_seconds']}s, "
+                f"p95={data['p95_seconds']}s, samples={data['samples']}"
             )
 
     async def async_cleanup(self) -> None:

@@ -41,34 +41,39 @@ def _normalize_box_mode(value: Any) -> Optional[int]:
     if coerced is None:
         return None
     if isinstance(coerced, (int, float)):
-        try:
-            as_int = int(coerced)
-        except Exception:
-            return None
-        return as_int if 0 <= as_int <= 5 else None
+        return _normalize_box_mode_number(coerced)
     if isinstance(coerced, str):
-        s = coerced.strip().lower()
-        if not s:
-            return None
-        # Czech/English "unknown" strings
-        if s in {"neznámý", "neznamy", "unknown"}:
-            return None
-        # Common representations
-        if s.startswith("home"):
-            if "ups" in s:
-                return 3
-            # Accept "home 1" .. "home 6" (Home 4 is Home UPS)
-            for num, mode_id in (
-                ("1", 0),
-                ("2", 1),
-                ("3", 2),
-                ("4", 3),
-                ("5", 4),
-                ("6", 5),
-            ):
-                if num in s:
-                    return mode_id
+        return _normalize_box_mode_string(coerced)
+    return None
+
+
+def _normalize_box_mode_number(value: float) -> Optional[int]:
+    try:
+        as_int = int(value)
+    except Exception:
         return None
+    return as_int if 0 <= as_int <= 5 else None
+
+
+def _normalize_box_mode_string(value: str) -> Optional[int]:
+    s = value.strip().lower()
+    if not s:
+        return None
+    if s in {"neznámý", "neznamy", "unknown"}:
+        return None
+    if s.startswith("home"):
+        if "ups" in s:
+            return 3
+        for num, mode_id in (
+            ("1", 0),
+            ("2", 1),
+            ("3", 2),
+            ("4", 3),
+            ("5", 4),
+            ("6", 5),
+        ):
+            if num in s:
+                return mode_id
     return None
 
 
@@ -255,18 +260,10 @@ class LocalUpdateApplier:
         last_updated: Optional[datetime],
     ) -> bool:
         """Return True if payload changed."""
-        if not isinstance(entity_id, str):
+        parsed = _parse_local_entity_id(entity_id, self.box_id)
+        if parsed is None:
             return False
-        domain = None
-        suffix = None
-        for candidate_domain in ("sensor", "binary_sensor"):
-            prefix = f"{candidate_domain}.oig_local_{self.box_id}_"
-            if entity_id.startswith(prefix):
-                domain = candidate_domain
-                suffix = entity_id[len(prefix) :]
-                break
-        if domain is None or suffix is None:
-            return False
+        domain, suffix = parsed
 
         suffix_cfg = _SUFFIX_UPDATES.get(suffix)
         if not suffix_cfg or domain not in suffix_cfg.domains:
@@ -279,55 +276,91 @@ class LocalUpdateApplier:
         changed = False
         ts = _as_utc(last_updated) or dt_util.utcnow()
 
-        # Ensure base structure exists
-        box = payload.setdefault(self.box_id, {})
-        if not isinstance(box, dict):
-            payload[self.box_id] = {}
-            box = payload[self.box_id]
+        box = _ensure_box_payload(payload, self.box_id)
 
         for upd in suffix_cfg.updates:
             if isinstance(upd, _NodeUpdate):
-                node = box.setdefault(upd.node_id, {})
-                if not isinstance(node, dict):
-                    box[upd.node_id] = {}
-                    node = box[upd.node_id]
-                new_value: Any = value
-                # Normalize local box mode string ("Home 1") to numeric ID expected by cloud path.
-                if upd.node_id == "box_prms" and upd.node_key == "mode":
-                    normalized = _normalize_box_mode(state)
-                    if normalized is None:
-                        continue
-                    new_value = normalized
-
-                prev = node.get(upd.node_key)
-                if prev != new_value:
-                    node[upd.node_key] = new_value
+                if _apply_node_update(box, upd, value, state):
                     changed = True
             elif isinstance(upd, _ExtendedUpdate):
-                group_size = _EXTENDED_GROUP_SIZES.get(upd.group, upd.index + 1)
-                ext_obj = payload.get(upd.group)
-                if not isinstance(ext_obj, dict):
-                    ext_obj = {"items": []}
-                    payload[upd.group] = ext_obj
-                items = ext_obj.get("items")
-                if not isinstance(items, list):
-                    items = []
-                    ext_obj["items"] = items
-                if items:
-                    last = items[-1]
-                else:
-                    last = {}
-                    items.append(last)
-                values = last.get("values")
-                if not isinstance(values, list):
-                    values = [None] * group_size
-                    last["values"] = values
-                if len(values) < group_size:
-                    values.extend([None] * (group_size - len(values)))
-                prev = values[upd.index] if upd.index < len(values) else None
-                if prev != value:
-                    values[upd.index] = value
-                    last["ts"] = ts.isoformat()
+                if _apply_extended_update(payload, upd, value, ts):
                     changed = True
 
         return changed
+
+
+def _parse_local_entity_id(
+    entity_id: Any, box_id: str
+) -> Optional[Tuple[str, str]]:
+    if not isinstance(entity_id, str):
+        return None
+    for candidate_domain in ("sensor", "binary_sensor"):
+        prefix = f"{candidate_domain}.oig_local_{box_id}_"
+        if entity_id.startswith(prefix):
+            return candidate_domain, entity_id[len(prefix) :]
+    return None
+
+
+def _ensure_box_payload(payload: Dict[str, Any], box_id: str) -> Dict[str, Any]:
+    box = payload.setdefault(box_id, {})
+    if not isinstance(box, dict):
+        payload[box_id] = {}
+        box = payload[box_id]
+    return box
+
+
+def _apply_node_update(
+    box: Dict[str, Any],
+    upd: _NodeUpdate,
+    value: Any,
+    raw_state: Any,
+) -> bool:
+    node = box.setdefault(upd.node_id, {})
+    if not isinstance(node, dict):
+        box[upd.node_id] = {}
+        node = box[upd.node_id]
+    new_value: Any = value
+    if upd.node_id == "box_prms" and upd.node_key == "mode":
+        normalized = _normalize_box_mode(raw_state)
+        if normalized is None:
+            return False
+        new_value = normalized
+
+    if node.get(upd.node_key) != new_value:
+        node[upd.node_key] = new_value
+        return True
+    return False
+
+
+def _apply_extended_update(
+    payload: Dict[str, Any],
+    upd: _ExtendedUpdate,
+    value: Any,
+    ts: datetime,
+) -> bool:
+    group_size = _EXTENDED_GROUP_SIZES.get(upd.group, upd.index + 1)
+    ext_obj = payload.get(upd.group)
+    if not isinstance(ext_obj, dict):
+        ext_obj = {"items": []}
+        payload[upd.group] = ext_obj
+    items = ext_obj.get("items")
+    if not isinstance(items, list):
+        items = []
+        ext_obj["items"] = items
+    if items:
+        last = items[-1]
+    else:
+        last = {}
+        items.append(last)
+    values = last.get("values")
+    if not isinstance(values, list):
+        values = [None] * group_size
+        last["values"] = values
+    if len(values) < group_size:
+        values.extend([None] * (group_size - len(values)))
+    prev = values[upd.index] if upd.index < len(values) else None
+    if prev != value:
+        values[upd.index] = value
+        last["ts"] = ts.isoformat()
+        return True
+    return False

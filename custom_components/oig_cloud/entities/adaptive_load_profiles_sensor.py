@@ -65,71 +65,80 @@ def _generate_profile_name(
     if not hourly_consumption or len(hourly_consumption) != 24:
         return "Neznámý profil"
 
-    # 1. ZÁKLADNÍ KLASIFIKACE
     day_name = "Víkend" if is_weekend else "Pracovní den"
 
-    # Celková denní spotřeba
+    stats = _profile_consumption_stats(hourly_consumption)
+    special_tags = _profile_special_tags(season, is_weekend, stats)
+    if special_tags:
+        special_name = _profile_special_name(day_name, special_tags[0])
+        if special_name:
+            return special_name
+
+    return _profile_spike_name(day_name, stats)
+
+
+def _profile_consumption_stats(hourly_consumption: List[float]) -> Dict[str, float]:
+    """Compute basic averages and spike markers for a daily profile."""
     total = sum(hourly_consumption)
     daily_avg = total / 24
+    morning_avg = float(np.mean(hourly_consumption[6:12]))
+    afternoon_avg = float(np.mean(hourly_consumption[12:18]))
+    evening_avg = float(np.mean(hourly_consumption[18:24]))
+    night_avg = float(np.mean(hourly_consumption[0:6]))
+    return {
+        "daily_avg": daily_avg,
+        "morning_avg": morning_avg,
+        "afternoon_avg": afternoon_avg,
+        "evening_avg": evening_avg,
+        "night_avg": night_avg,
+        "has_morning_spike": morning_avg > daily_avg * 1.3,
+        "has_evening_spike": evening_avg > daily_avg * 1.3,
+        "has_afternoon_spike": afternoon_avg > daily_avg * 1.3,
+    }
 
-    # 2. ANALÝZA PATTERN SHAPE
-    morning_avg = float(np.mean(hourly_consumption[6:12]))  # 6-12h
-    afternoon_avg = float(np.mean(hourly_consumption[12:18]))  # 12-18h
-    evening_avg = float(np.mean(hourly_consumption[18:24]))  # 18-24h
-    night_avg = float(np.mean(hourly_consumption[0:6]))  # 0-6h
 
-    # Detekce špiček (špička > 1.3× průměr)
-    has_morning_spike = morning_avg > daily_avg * 1.3
-    has_evening_spike = evening_avg > daily_avg * 1.3
-    has_afternoon_spike = afternoon_avg > daily_avg * 1.3
-
-    # 3. SPECIÁLNÍ DETEKCE
-    special_tags = []
-
-    # Topení (zimní vysoká večerní spotřeba)
-    if season == "winter" and evening_avg > 1.2:
+def _profile_special_tags(
+    season: str, is_weekend: bool, stats: Dict[str, float]
+) -> List[str]:
+    """Return ordered list of special tags detected from consumption."""
+    special_tags: List[str] = []
+    if season == "winter" and stats["evening_avg"] > 1.2:
         special_tags.append("topení")
-
-    # Klimatizace (letní vysoká odpolední spotřeba)
-    if season == "summer" and afternoon_avg > 1.0:
+    if season == "summer" and stats["afternoon_avg"] > 1.0:
         special_tags.append("klimatizace")
-
-    # Praní (víkend s ranní špičkou)
-    if is_weekend and has_morning_spike:
+    if is_weekend and stats["has_morning_spike"]:
         special_tags.append("praní")
-
-    # Home office (pracovní den s vysokou denní spotřebou)
-    if not is_weekend and afternoon_avg > 0.8:
+    if not is_weekend and stats["afternoon_avg"] > 0.8:
         special_tags.append("home office")
-
-    # Vysoká noční spotřeba (bojler?)
-    if night_avg > 0.5:
+    if stats["night_avg"] > 0.5:
         special_tags.append("noční ohřev")
+    return special_tags
 
-    # 4. SESTAVENÍ NÁZVU
-    if special_tags:
-        # Preferovat speciální tag
-        main_tag = special_tags[0]
-        if main_tag == "topení":
-            return f"{day_name} s topením"
-        elif main_tag == "klimatizace":
-            return f"{day_name} s klimatizací"
-        elif main_tag == "praní":
-            return f"{day_name} s praním"
-        elif main_tag == "home office":
-            return "Home office"
-        elif main_tag == "noční ohřev":
-            return f"{day_name} s nočním ohřevem"
 
-    # Fallback podle špičky
-    if has_evening_spike:
+def _profile_special_name(day_name: str, tag: str) -> Optional[str]:
+    """Return a profile name for a special tag, if known."""
+    if tag == "topení":
+        return f"{day_name} s topením"
+    if tag == "klimatizace":
+        return f"{day_name} s klimatizací"
+    if tag == "praní":
+        return f"{day_name} s praním"
+    if tag == "home office":
+        return "Home office"
+    if tag == "noční ohřev":
+        return f"{day_name} s nočním ohřevem"
+    return None
+
+
+def _profile_spike_name(day_name: str, stats: Dict[str, float]) -> str:
+    """Return a fallback name based on dominant spikes."""
+    if stats["has_evening_spike"]:
         return f"{day_name} - večerní špička"
-    elif has_morning_spike:
+    if stats["has_morning_spike"]:
         return f"{day_name} - ranní špička"
-    elif has_afternoon_spike:
+    if stats["has_afternoon_spike"]:
         return f"{day_name} - polední špička"
-    else:
-        return f"{day_name} - běžný"
+    return f"{day_name} - běžný"
 
 
 class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
@@ -333,6 +342,76 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             return 1.0
         return 0.001  # Wh → kWh
 
+    def _get_recorder_instance(self):
+        """Return recorder instance when available."""
+        if not self._hass:
+            return None
+        from homeassistant.helpers.recorder import get_instance
+
+        recorder_instance = get_instance(self._hass)
+        if not recorder_instance:
+            _LOGGER.error("Recorder instance not available")
+            return None
+        return recorder_instance
+
+    def _query_hourly_statistics(
+        self, sensor_entity_id: str, start_ts: int, end_ts: int
+    ):
+        """Query statistics rows for hourly values."""
+        from homeassistant.helpers.recorder import get_instance, session_scope
+        from sqlalchemy import text
+
+        instance = get_instance(self._hass)
+        with session_scope(hass=self._hass, session=instance.get_session()) as session:
+            query = text(
+                """
+                SELECT s.sum, s.mean, s.state, s.start_ts
+                FROM statistics s
+                INNER JOIN statistics_meta sm ON s.metadata_id = sm.id
+                WHERE sm.statistic_id = :statistic_id
+                AND s.start_ts >= :start_ts
+                AND s.start_ts < :end_ts
+                ORDER BY s.start_ts
+                """
+            )
+            result = session.execute(
+                query,
+                {
+                    "statistic_id": sensor_entity_id,
+                    "start_ts": start_ts,
+                    "end_ts": end_ts,
+                },
+            )
+            return result.fetchall()
+
+    def _parse_hourly_row(
+        self, row: Tuple[Any, ...], value_field: str, unit_factor: float
+    ) -> Optional[Tuple[datetime, float]]:
+        """Normalize a statistics row into a local timestamp and value."""
+        try:
+            sum_val = row[0]
+            mean_val = row[1]
+            state_val = row[2]
+            timestamp_ts = float(row[3])
+        except (ValueError, AttributeError, IndexError, TypeError):
+            return None
+
+        timestamp = datetime.fromtimestamp(timestamp_ts, tz=dt_util.UTC)
+        if value_field == "mean":
+            if mean_val is None:
+                return None
+            value = float(mean_val) / 1000.0  # W → kWh/h
+        else:
+            raw = sum_val if sum_val is not None else state_val
+            if raw is None:
+                return None
+            value = float(raw) * unit_factor  # Wh → kWh (if needed)
+
+        if value < 0 or value > MAX_REASONABLE_KWH_H:
+            return None
+
+        return dt_util.as_local(timestamp), value
+
     async def _load_hourly_series(
         self,
         sensor_entity_id: str,
@@ -350,52 +429,18 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             end_time: konec rozsahu (local)
             value_field: "sum" (energy) nebo "mean" (power)
         """
-        if not self._hass:
-            return []
-
         try:
-            from homeassistant.helpers.recorder import get_instance
-            from sqlalchemy import text
-
-            recorder_instance = get_instance(self._hass)
+            recorder_instance = self._get_recorder_instance()
             if not recorder_instance:
-                _LOGGER.error("Recorder instance not available")
                 return []
-
             start_ts = int(dt_util.as_utc(start_time).timestamp())
             end_ts = int(dt_util.as_utc(end_time).timestamp())
 
-            def get_statistics():
-                """Query statistics for hourly values."""
-                from homeassistant.helpers.recorder import session_scope
-
-                instance = get_instance(self._hass)
-                with session_scope(
-                    hass=self._hass, session=instance.get_session()
-                ) as session:
-                    query = text(
-                        """
-                        SELECT s.sum, s.mean, s.state, s.start_ts
-                        FROM statistics s
-                        INNER JOIN statistics_meta sm ON s.metadata_id = sm.id
-                        WHERE sm.statistic_id = :statistic_id
-                        AND s.start_ts >= :start_ts
-                        AND s.start_ts < :end_ts
-                        ORDER BY s.start_ts
-                        """
-                    )
-
-                    result = session.execute(
-                        query,
-                        {
-                            "statistic_id": sensor_entity_id,
-                            "start_ts": start_ts,
-                            "end_ts": end_ts,
-                        },
-                    )
-                    return result.fetchall()
-
-            stats_rows = await recorder_instance.async_add_executor_job(get_statistics)
+            stats_rows = await recorder_instance.async_add_executor_job(
+                lambda: self._query_hourly_statistics(
+                    sensor_entity_id, start_ts, end_ts
+                )
+            )
             if not stats_rows:
                 return []
 
@@ -403,30 +448,9 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             series: List[Tuple[datetime, float]] = []
 
             for row in stats_rows:
-                try:
-                    sum_val = row[0]
-                    mean_val = row[1]
-                    state_val = row[2]
-                    timestamp_ts = float(row[3])
-                except (ValueError, AttributeError, IndexError, TypeError):
-                    continue
-
-                timestamp = datetime.fromtimestamp(timestamp_ts, tz=dt_util.UTC)
-
-                if value_field == "mean":
-                    if mean_val is None:
-                        continue
-                    value = float(mean_val) / 1000.0  # W → kWh/h
-                else:
-                    raw = sum_val if sum_val is not None else state_val
-                    if raw is None:
-                        continue
-                    value = float(raw) * unit_factor  # Wh → kWh (if needed)
-
-                if value < 0 or value > MAX_REASONABLE_KWH_H:
-                    continue
-
-                series.append((dt_util.as_local(timestamp), value))
+                parsed = self._parse_hourly_row(row, value_field, unit_factor)
+                if parsed:
+                    series.append(parsed)
 
             return series
 
@@ -796,6 +820,97 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             fallback_sensor, value_field="mean"
         )
 
+    def _log_profile_window(self, window: Dict[str, int]) -> None:
+        _LOGGER.debug(
+            "Profiling window: time=%02d:00, matching=%sh, prediction=%sh",
+            window["current_hour"],
+            window["match_hours"],
+            window["predict_hours"],
+        )
+
+    async def _resolve_profile_history_window(
+        self,
+        sensor_entity_id: str,
+        now: datetime,
+        days_back: Optional[int],
+    ) -> Tuple[datetime, datetime]:
+        start_time, end_time, history_label = await _resolve_history_window(
+            self, sensor_entity_id, now, days_back
+        )
+        _LOGGER.debug(
+            "Profiling history window: %s → %s (%s)",
+            start_time.date().isoformat(),
+            end_time.date().isoformat(),
+            history_label,
+        )
+        return start_time, end_time
+
+    async def _load_profile_hourly_series(
+        self,
+        sensor_entity_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        *,
+        value_field: str,
+    ) -> Optional[List[Tuple[datetime, float]]]:
+        hourly_series = await self._load_hourly_series(
+            sensor_entity_id,
+            start_time,
+            end_time,
+            value_field=value_field,
+        )
+        if not hourly_series:
+            self._last_profile_reason = "no_hourly_stats"
+            _LOGGER.debug("No hourly statistics data for %s", sensor_entity_id)
+            return None
+        return hourly_series
+
+    def _prepare_profile_candidates(
+        self,
+        hourly_series: List[Tuple[datetime, float]],
+        window: Dict[str, int],
+    ) -> Optional[
+        Tuple[List[Dict[str, Any]], Dict[int, float], Dict[datetime.date, int], List[float]]
+    ]:
+        daily_profiles, hour_medians, interpolated = self._build_daily_profiles(
+            hourly_series
+        )
+        if not _has_enough_daily_profiles(self, daily_profiles):
+            return None
+
+        current_match = self._build_current_match(hourly_series, hour_medians)
+        if not _has_enough_current_match(
+            self, current_match, window["match_hours"]
+        ):
+            return None
+
+        profiles = self._build_72h_profiles(daily_profiles)
+        if not profiles:
+            self._last_profile_reason = "no_historical_profiles"
+            _LOGGER.debug("No historical 72h profiles available for matching")
+            return None
+
+        selected = _select_top_matches(
+            self, profiles, current_match, window["match_hours"]
+        )
+        if not selected:
+            self._last_profile_reason = "no_matching_profiles"
+            _LOGGER.debug("No matching profile found")
+            return None
+
+        return selected, hour_medians, interpolated, current_match
+
+    def _log_profile_match(
+        self, result: Dict[str, Any], window: Dict[str, int]
+    ) -> None:
+        _LOGGER.info(
+            "🎯 Profile match: score=%.3f, samples=%s, predicted_%sh=%.2f kWh",
+            result["similarity_score"],
+            result["sample_count"],
+            window["predict_hours"],
+            result["predicted_total_kwh"],
+        )
+
     async def _find_best_matching_profile_for_sensor(
         self,
         sensor_entity_id: str,
@@ -818,59 +933,24 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             self._last_profile_reason = None
             now = dt_util.now()
             window = _resolve_profile_window(now)
-            _LOGGER.debug(
-                "Profiling window: time=%02d:00, matching=%sh, prediction=%sh",
-                window["current_hour"],
-                window["match_hours"],
-                window["predict_hours"],
+            self._log_profile_window(window)
+            start_time, end_time = await self._resolve_profile_history_window(
+                sensor_entity_id, now, days_back
             )
-
-            start_time, end_time, history_label = await _resolve_history_window(
-                self, sensor_entity_id, now, days_back
-            )
-            _LOGGER.debug(
-                "Profiling history window: %s → %s (%s)",
-                start_time.date().isoformat(),
-                end_time.date().isoformat(),
-                history_label,
-            )
-
-            hourly_series = await self._load_hourly_series(
+            hourly_series = await self._load_profile_hourly_series(
                 sensor_entity_id,
                 start_time,
                 end_time,
                 value_field=value_field,
             )
             if not hourly_series:
-                self._last_profile_reason = "no_hourly_stats"
-                _LOGGER.debug("No hourly statistics data for %s", sensor_entity_id)
                 return None
 
-            daily_profiles, hour_medians, interpolated = self._build_daily_profiles(
-                hourly_series
-            )
-            if not _has_enough_daily_profiles(self, daily_profiles):
+            prepared = self._prepare_profile_candidates(hourly_series, window)
+            if not prepared:
                 return None
 
-            current_match = self._build_current_match(hourly_series, hour_medians)
-            if not _has_enough_current_match(
-                self, current_match, window["match_hours"]
-            ):
-                return None
-
-            profiles = self._build_72h_profiles(daily_profiles)
-            if not profiles:
-                self._last_profile_reason = "no_historical_profiles"
-                _LOGGER.debug("No historical 72h profiles available for matching")
-                return None
-
-            selected = _select_top_matches(
-                self, profiles, current_match, window["match_hours"]
-            )
-            if not selected:
-                self._last_profile_reason = "no_matching_profiles"
-                _LOGGER.debug("No matching profile found")
-                return None
+            selected, hour_medians, interpolated, current_match = prepared
 
             result = _build_profile_prediction(
                 selected,
@@ -881,14 +961,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 interpolated=interpolated,
                 apply_floor=self._apply_floor_to_prediction,
             )
-
-            _LOGGER.info(
-                "🎯 Profile match: score=%.3f, samples=%s, predicted_%sh=%.2f kWh",
-                result["similarity_score"],
-                result["sample_count"],
-                window["predict_hours"],
-                result["predicted_total_kwh"],
-            )
+            self._log_profile_match(result, window)
 
             return result
 
@@ -920,162 +993,195 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             ),
         }
 
-        # Add prediction summary if available
-        if self._current_prediction:
-            attrs["prediction_summary"] = {
-                "similarity_score": self._current_prediction.get("similarity_score"),
-                "predicted_total_kwh": self._current_prediction.get(
-                    "predicted_total_kwh"
-                ),
-                "predicted_avg_kwh": self._current_prediction.get("predicted_avg_kwh"),
-                "sample_count": self._current_prediction.get("sample_count"),
-                "match_hours": self._current_prediction.get("match_hours"),
-                "data_source": self._current_prediction.get("data_source"),
-                "floor_applied": self._current_prediction.get("floor_applied"),
-                "interpolated_hours": self._current_prediction.get(
-                    "interpolated_hours"
-                ),
-            }
-
-            # Add today_profile and tomorrow_profile for battery_forecast integration
-            predicted = self._current_prediction.get("predicted_consumption", [])
-            predict_hours = self._current_prediction.get("predict_hours", 0)
-
-            if predicted and predict_hours > 0:
-                similarity_score = self._current_prediction.get("similarity_score", 0)
-                sample_count = self._current_prediction.get("sample_count", 1)
-                now = dt_util.now()
-                current_hour = now.hour
-
-                # Kolik hodin zbývá do půlnoci (včetně aktuální hodiny)
-                hours_until_midnight = 24 - current_hour
-
-                # TODAY: Zbývající část dneška (od current_hour do půlnoci)
-                # - Vezmi prvních min(hours_until_midnight, predict_hours) hodin z predikce
-                today_count = min(hours_until_midnight, predict_hours)
-                today_hours = predicted[:today_count]
-
-                # TOMORROW: Zbytek predikce (od půlnoci)
-                tomorrow_hours = (
-                    predicted[today_count:] if today_count < predict_hours else []
-                )
-
-                # Doplnění tomorrow na 24h pokud je kratší (padding s průměrem)
-                if len(tomorrow_hours) < 24:
-                    avg_hour = (
-                        float(np.mean(tomorrow_hours))
-                        if len(tomorrow_hours) > 0
-                        else 0.5
-                    )
-                    tomorrow_hours = list(tomorrow_hours) + [avg_hour] * (
-                        24 - len(tomorrow_hours)
-                    )
-
-                # Vytvoř metadata
-                season = _get_season(now)
-                is_weekend_today = now.weekday() >= 5
-                is_weekend_tomorrow = (now.weekday() + 1) % 7 >= 5
-
-                # Vygenerovat názvy z matched profilu (72h)
-                # Pro dnešek: použít zbytek dnešního dne z matched profilu
-                # Pro zítřek: použít celý zítřejší den z matched profilu
-                matched_profile_full = self._current_prediction.get(
-                    "matched_profile_full", []
-                )
-                today_full: List[float] = []
-                name_suffix = (
-                    f" ({sample_count} podobných dnů, shoda {similarity_score:.2f})"
-                    if sample_count > 1
-                    else f" (shoda {similarity_score:.2f})"
-                )
-
-                if len(matched_profile_full) >= 72:
-                    # Matched profil: [včera 24h | dnes 24h | zítra 24h]
-                    today_full = matched_profile_full[24:48]
-                    tomorrow_from_matched = matched_profile_full[48:72]
-
-                    # Pro dnešek: vezmi aktuální hodinu až konec dne z matched profilu
-                    today_from_matched = today_full[current_hour:]
-                else:
-                    # Fallback pokud matched profil není dostupný
-                    tomorrow_from_matched = tomorrow_hours[:24]
-                    today_from_matched = today_hours
-
-                # Generovat názvy z odpovídajících částí matched profilu
-                today_name_source = (
-                    today_full
-                    if len(matched_profile_full) >= 72 and len(today_full) == 24
-                    else (
-                        today_from_matched
-                        if len(today_from_matched) == 24
-                        else (
-                            today_from_matched + [0.0] * (24 - len(today_from_matched))
-                        )
-                    )
-                )
-
-                today_profile_name = _generate_profile_name(
-                    hourly_consumption=today_name_source,
-                    season=season,
-                    is_weekend=is_weekend_today,
-                )
-                today_profile_name = f"{today_profile_name}{name_suffix}"
-
-                tomorrow_profile_name = _generate_profile_name(
-                    hourly_consumption=tomorrow_from_matched,
-                    season=season,
-                    is_weekend=is_weekend_tomorrow,
-                )
-                tomorrow_profile_name = f"{tomorrow_profile_name}{name_suffix}"
-
-                today_profile_data = {
-                    "hourly_consumption": today_hours,
-                    "start_hour": current_hour,  # Hodina od které začíná pole (14 = index 0 je 14:00)
-                    "total_kwh": float(np.sum(today_hours)),
-                    "avg_kwh_h": (
-                        float(np.mean(today_hours)) if len(today_hours) > 0 else 0.0
-                    ),
-                    "season": season,
-                    "day_count": sample_count,
-                    "ui": {
-                        "name": today_profile_name,
-                        "similarity_score": similarity_score,
-                        "sample_count": sample_count,
-                    },
-                    "characteristics": {
-                        "season": season,
-                        "is_weekend": is_weekend_today,
-                    },
-                    "sample_count": sample_count,
-                }
-
-                # TOMORROW profile (název už vygenerovaný nahoře)
-                tomorrow_profile_data = {
-                    "hourly_consumption": tomorrow_hours[:24],
-                    "start_hour": 0,  # Zítřek vždy začíná od půlnoci (0:00)
-                    "total_kwh": float(np.sum(tomorrow_hours[:24])),
-                    "avg_kwh_h": float(np.mean(tomorrow_hours[:24])),
-                    "season": season,
-                    "day_count": sample_count,
-                    "ui": {
-                        "name": tomorrow_profile_name,
-                        "similarity_score": similarity_score,
-                        "sample_count": sample_count,
-                    },
-                    "characteristics": {
-                        "season": season,
-                        "is_weekend": is_weekend_tomorrow,
-                    },
-                    "sample_count": sample_count,
-                }
-
-                attrs["today_profile"] = today_profile_data
-                attrs["tomorrow_profile"] = tomorrow_profile_data
-                attrs["profile_name"] = today_profile_name
-                attrs["match_score"] = round(similarity_score * 100, 1)
-                attrs["sample_count"] = sample_count
+        attrs.update(self._build_prediction_attributes())
 
         return attrs
+
+    def _build_prediction_attributes(self) -> Dict[str, Any]:
+        prediction = self._current_prediction
+        if not prediction:
+            return {}
+        attrs = {"prediction_summary": self._build_prediction_summary(prediction)}
+        attrs.update(self._build_profile_attributes(prediction))
+        return attrs
+
+    @staticmethod
+    def _build_prediction_summary(prediction: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "similarity_score": prediction.get("similarity_score"),
+            "predicted_total_kwh": prediction.get("predicted_total_kwh"),
+            "predicted_avg_kwh": prediction.get("predicted_avg_kwh"),
+            "sample_count": prediction.get("sample_count"),
+            "match_hours": prediction.get("match_hours"),
+            "data_source": prediction.get("data_source"),
+            "floor_applied": prediction.get("floor_applied"),
+            "interpolated_hours": prediction.get("interpolated_hours"),
+        }
+
+    def _build_profile_attributes(self, prediction: Dict[str, Any]) -> Dict[str, Any]:
+        predicted = prediction.get("predicted_consumption", [])
+        predict_hours = prediction.get("predict_hours", 0)
+        if not predicted or predict_hours <= 0:
+            return {}
+
+        now = dt_util.now()
+        current_hour = now.hour
+        today_hours, tomorrow_hours = self._split_predicted_hours(
+            predicted, predict_hours, current_hour
+        )
+        tomorrow_hours = self._pad_profile_hours(tomorrow_hours, 24, 0.5)
+
+        similarity_score = prediction.get("similarity_score", 0)
+        sample_count = prediction.get("sample_count", 1)
+        season = _get_season(now)
+        is_weekend_today = now.weekday() >= 5
+        is_weekend_tomorrow = (now.weekday() + 1) % 7 >= 5
+
+        name_suffix = self._build_profile_name_suffix(
+            sample_count, similarity_score
+        )
+        today_name_source, tomorrow_name_source = self._resolve_name_sources(
+            prediction.get("matched_profile_full", []),
+            today_hours,
+            tomorrow_hours,
+            current_hour,
+        )
+        today_profile_name, tomorrow_profile_name = self._build_profile_names(
+            today_name_source,
+            tomorrow_name_source,
+            season,
+            is_weekend_today,
+            is_weekend_tomorrow,
+            name_suffix,
+        )
+
+        attrs: Dict[str, Any] = {}
+        attrs["today_profile"] = self._build_profile_data(
+            today_hours,
+            current_hour,
+            season,
+            sample_count,
+            today_profile_name,
+            similarity_score,
+            is_weekend_today,
+        )
+        attrs["tomorrow_profile"] = self._build_profile_data(
+            tomorrow_hours[:24],
+            0,
+            season,
+            sample_count,
+            tomorrow_profile_name,
+            similarity_score,
+            is_weekend_tomorrow,
+        )
+        attrs["profile_name"] = today_profile_name
+        attrs["match_score"] = round(similarity_score * 100, 1)
+        attrs["sample_count"] = sample_count
+        return attrs
+
+    @staticmethod
+    def _split_predicted_hours(
+        predicted: List[float], predict_hours: int, current_hour: int
+    ) -> Tuple[List[float], List[float]]:
+        hours_until_midnight = 24 - current_hour
+        today_count = min(hours_until_midnight, predict_hours)
+        today_hours = predicted[:today_count]
+        tomorrow_hours = predicted[today_count:] if today_count < predict_hours else []
+        return today_hours, tomorrow_hours
+
+    @staticmethod
+    def _pad_profile_hours(
+        hours: List[float], target: int, fallback: float
+    ) -> List[float]:
+        if len(hours) >= target:
+            return list(hours)
+        avg_hour = float(np.mean(hours)) if hours else fallback
+        return list(hours) + [avg_hour] * (target - len(hours))
+
+    @staticmethod
+    def _build_profile_name_suffix(sample_count: int, similarity_score: float) -> str:
+        if sample_count > 1:
+            return f" ({sample_count} podobných dnů, shoda {similarity_score:.2f})"
+        return f" (shoda {similarity_score:.2f})"
+
+    def _resolve_name_sources(
+        self,
+        matched_profile_full: List[float],
+        today_hours: List[float],
+        tomorrow_hours: List[float],
+        current_hour: int,
+    ) -> Tuple[List[float], List[float]]:
+        today_full: List[float] = []
+        if len(matched_profile_full) >= 72:
+            today_full = matched_profile_full[24:48]
+            tomorrow_from_matched = matched_profile_full[48:72]
+            today_from_matched = today_full[current_hour:]
+        else:
+            tomorrow_from_matched = tomorrow_hours[:24]
+            today_from_matched = today_hours
+
+        if len(matched_profile_full) >= 72 and len(today_full) == 24:
+            today_name_source = today_full
+        elif len(today_from_matched) == 24:
+            today_name_source = today_from_matched
+        else:
+            padding = [0.0] * (24 - len(today_from_matched))
+            today_name_source = today_from_matched + padding
+
+        return today_name_source, tomorrow_from_matched
+
+    @staticmethod
+    def _build_profile_names(
+        today_name_source: List[float],
+        tomorrow_name_source: List[float],
+        season: str,
+        is_weekend_today: bool,
+        is_weekend_tomorrow: bool,
+        name_suffix: str,
+    ) -> Tuple[str, str]:
+        today_profile_name = _generate_profile_name(
+            hourly_consumption=today_name_source,
+            season=season,
+            is_weekend=is_weekend_today,
+        )
+        today_profile_name = f"{today_profile_name}{name_suffix}"
+
+        tomorrow_profile_name = _generate_profile_name(
+            hourly_consumption=tomorrow_name_source,
+            season=season,
+            is_weekend=is_weekend_tomorrow,
+        )
+        tomorrow_profile_name = f"{tomorrow_profile_name}{name_suffix}"
+        return today_profile_name, tomorrow_profile_name
+
+    @staticmethod
+    def _build_profile_data(
+        hours: List[float],
+        start_hour: int,
+        season: str,
+        sample_count: int,
+        profile_name: str,
+        similarity_score: float,
+        is_weekend: bool,
+    ) -> Dict[str, Any]:
+        return {
+            "hourly_consumption": hours,
+            "start_hour": start_hour,
+            "total_kwh": float(np.sum(hours)),
+            "avg_kwh_h": float(np.mean(hours)) if hours else 0.0,
+            "season": season,
+            "day_count": sample_count,
+            "ui": {
+                "name": profile_name,
+                "similarity_score": similarity_score,
+                "sample_count": sample_count,
+            },
+            "characteristics": {
+                "season": season,
+                "is_weekend": is_weekend,
+            },
+            "sample_count": sample_count,
+        }
 
     def get_current_prediction(self) -> Optional[Dict[str, Any]]:
         """Get current consumption prediction for use by other components."""

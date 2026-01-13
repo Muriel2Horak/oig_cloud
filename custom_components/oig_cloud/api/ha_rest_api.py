@@ -799,6 +799,83 @@ def _json_error(message: str, *, status: int) -> web.Response:
     return web.json_response({"error": message}, status=status)
 
 
+def _filter_detail_tabs(detail_tabs: Dict[str, Any], tab: Optional[str]) -> Dict[str, Any]:
+    if tab and tab in ["yesterday", "today", "tomorrow"]:
+        return {tab: detail_tabs.get(tab, {})}
+    return {
+        "yesterday": detail_tabs.get("yesterday", {}),
+        "today": detail_tabs.get("today", {}),
+        "tomorrow": detail_tabs.get("tomorrow", {}),
+    }
+
+
+async def _load_detail_tabs_from_store(
+    hass: HomeAssistant, box_id: str
+) -> Optional[Dict[str, Any]]:
+    from homeassistant.helpers.storage import Store
+
+    store: Store = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
+    try:
+        loaded: Optional[Dict[str, Any]] = await store.async_load()
+        if not isinstance(loaded, dict):
+            return None
+        return loaded.get("detail_tabs") or loaded.get("detail_tabs_hybrid")
+    except Exception as storage_error:
+        _LOGGER.warning(
+            "Failed to read precomputed detail tabs data (fast path): %s",
+            storage_error,
+        )
+        return None
+
+
+async def _load_detail_tabs_from_entity_store(
+    entity_obj: Any,
+    box_id: str,
+    tab: Optional[str],
+    plan_key: str,
+) -> Optional[Dict[str, Any]]:
+    if not (hasattr(entity_obj, "_precomputed_store") and entity_obj._precomputed_store):
+        return None
+    try:
+        precomputed_data = await entity_obj._precomputed_store.async_load()
+        if not precomputed_data:
+            return None
+        detail_tabs = precomputed_data.get("detail_tabs") or precomputed_data.get(
+            "detail_tabs_hybrid"
+        )
+        if not detail_tabs:
+            _LOGGER.debug("API: detail_tabs missing in precomputed store")
+            return None
+        _LOGGER.debug(
+            f"API: Serving detail tabs ({plan_key}) from precomputed storage for {box_id}, "
+            f"tab_filter={tab}, "
+            f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
+            if precomputed_data.get("last_update")
+            else "unknown age"
+        )
+        return detail_tabs
+    except Exception as storage_error:
+        _LOGGER.warning(
+            f"Failed to read precomputed data ({plan_key}): {storage_error}, falling back to live build"
+        )
+        return None
+
+
+async def _load_detail_tabs_on_demand(
+    entity_obj: Any, box_id: str, tab: Optional[str], plan_key: str
+) -> Dict[str, Any]:
+    if not hasattr(entity_obj, "build_detail_tabs"):
+        raise AttributeError("build_detail_tabs method not found")
+    try:
+        return await entity_obj.build_detail_tabs(tab=tab, plan=plan_key)
+    except Exception as build_error:
+        _LOGGER.error(
+            f"API: Error in build_detail_tabs() for {box_id}: {build_error}",
+            exc_info=True,
+        )
+        raise
+
+
 class OIGCloudDetailTabsView(HomeAssistantView):
     """
     API endpoint for Detail Tabs - mode-aggregated battery forecast data.
@@ -864,120 +941,31 @@ class OIGCloudDetailTabsView(HomeAssistantView):
         plan_key = "hybrid"
 
         try:
-            # STORAGE-FIRST: Serve from precomputed storage if available (fast path)
-            from homeassistant.helpers.storage import Store
+            detail_tabs = await _load_detail_tabs_from_store(hass, box_id)
+            if detail_tabs:
+                return web.json_response(_filter_detail_tabs(detail_tabs, tab))
 
-            store: Store = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
-            precomputed_data: Optional[Dict[str, Any]] = None
-            try:
-                loaded: Optional[Dict[str, Any]] = await store.async_load()
-                if isinstance(loaded, dict):
-                    precomputed_data = loaded
-            except Exception as storage_error:
-                _LOGGER.warning(
-                    "Failed to read precomputed detail tabs data (fast path): %s",
-                    storage_error,
-                )
-
-            if precomputed_data:
-                detail_tabs = precomputed_data.get(
-                    "detail_tabs"
-                ) or precomputed_data.get("detail_tabs_hybrid")
-                if detail_tabs:
-                    if tab and tab in ["yesterday", "today", "tomorrow"]:
-                        return web.json_response({tab: detail_tabs.get(tab, {})})
-                    return web.json_response(
-                        {
-                            "yesterday": detail_tabs.get("yesterday", {}),
-                            "today": detail_tabs.get("today", {}),
-                            "tomorrow": detail_tabs.get("tomorrow", {}),
-                        }
-                    )
-
-            # FALLBACK: Find sensor entity
             sensor_id = f"sensor.oig_{box_id}_battery_forecast"
             component = _get_sensor_component(hass)
-
             if not component:
                 return web.json_response(
                     {"error": SENSOR_COMPONENT_NOT_FOUND}, status=503
                 )
-
             entity_obj = _find_entity(component, sensor_id)
-
             if not entity_obj:
                 return web.json_response(
                     {"error": f"Sensor {sensor_id} not found"}, status=404
                 )
 
-            # PHASE 3.5: Read from precomputed storage for instant response
-            if (
-                hasattr(entity_obj, "_precomputed_store")
-                and entity_obj._precomputed_store
-            ):
-                try:
-                    precomputed_data = await entity_obj._precomputed_store.async_load()
-                    if precomputed_data:
-                        detail_tabs = precomputed_data.get(
-                            "detail_tabs"
-                        ) or precomputed_data.get("detail_tabs_hybrid")
-                        if not detail_tabs:
-                            _LOGGER.debug(
-                                "API: detail_tabs missing in precomputed store",
-                            )
-                            detail_tabs = None
+            detail_tabs = await _load_detail_tabs_from_entity_store(
+                entity_obj, box_id, tab, plan_key
+            )
+            if detail_tabs:
+                return web.json_response(_filter_detail_tabs(detail_tabs, tab))
 
-                        if detail_tabs:
-                            # Filter by tab if requested
-                            if tab and tab in ["yesterday", "today", "tomorrow"]:
-                                result = {tab: detail_tabs.get(tab, {})}
-                            else:
-                                # Return all tabs
-                                result = {
-                                    "yesterday": detail_tabs.get("yesterday", {}),
-                                    "today": detail_tabs.get("today", {}),
-                                    "tomorrow": detail_tabs.get("tomorrow", {}),
-                                }
-
-                            _LOGGER.debug(
-                                f"API: Serving detail tabs ({plan_key}) from precomputed storage for {box_id}, "
-                                f"tab_filter={tab}, "
-                                f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
-                                if precomputed_data.get("last_update")
-                                else "unknown age"
-                            )
-
-                            return web.json_response(result)
-
-                    _LOGGER.debug(
-                        "No precomputed detail_tabs (%s) data found for %s, falling back to live build",
-                        plan_key,
-                        box_id,
-                    )
-                except Exception as storage_error:
-                    _LOGGER.warning(
-                        f"Failed to read precomputed data ({plan_key}): {storage_error}, falling back to live build"
-                    )
-
-            # Fallback: Build detail tabs on-demand (old behavior)
-            if hasattr(entity_obj, "build_detail_tabs"):
-                try:
-                    detail_tabs = await entity_obj.build_detail_tabs(
-                        tab=tab, plan=plan_key
-                    )
-                except Exception as build_error:
-                    _LOGGER.error(
-                        f"API: Error in build_detail_tabs() for {box_id}: {build_error}",
-                        exc_info=True,
-                    )
-                    return web.json_response(
-                        {"error": f"Failed to build detail tabs: {build_error}"},
-                        status=500,
-                    )
-            else:
-                return web.json_response(
-                    {"error": "build_detail_tabs method not found"}, status=500
-                )
+            detail_tabs = await _load_detail_tabs_on_demand(
+                entity_obj, box_id, tab, plan_key
+            )
 
             _LOGGER.debug(
                 f"API: Serving detail tabs for {box_id}, "

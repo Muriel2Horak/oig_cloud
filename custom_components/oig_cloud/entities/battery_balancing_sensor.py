@@ -5,7 +5,7 @@ This sensor only displays information, all planning logic is in BalancingManager
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -114,21 +114,32 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
             self._status = "unknown"
             return
 
-        # Config parameters
-        try:
-            self._cycle_days = int(getattr(manager, "_get_cycle_days")())
-        except Exception:
-            self._cycle_days = 7
-        try:
-            self._holding_hours = int(getattr(manager, "_get_holding_time_hours")())
-        except Exception:
-            self._holding_hours = 3
-        try:
-            self._soc_threshold = int(getattr(manager, "_get_soc_threshold")())
-        except Exception:
-            self._soc_threshold = 80
+        self._apply_config_params(manager)
+        self._apply_last_balancing(manager_attrs)
+        self._apply_costs(manager_attrs)
 
-        # Last balancing / days since
+        active_plan = getattr(manager, "get_active_plan", lambda: None)()
+        self._planned_window = self._build_planned_window(active_plan)
+
+        self._status = self._resolve_status(active_plan)
+        self._apply_current_state(active_plan)
+
+        # Last planning check
+        self._last_planning_check = dt_util.now()
+
+    def _apply_config_params(self, manager: Any) -> None:
+        self._cycle_days = self._safe_get_int(manager, "_get_cycle_days", 7)
+        self._holding_hours = self._safe_get_int(manager, "_get_holding_time_hours", 3)
+        self._soc_threshold = self._safe_get_int(manager, "_get_soc_threshold", 80)
+
+    @staticmethod
+    def _safe_get_int(manager: Any, attr: str, fallback: int) -> int:
+        try:
+            return int(getattr(manager, attr)())
+        except Exception:
+            return fallback
+
+    def _apply_last_balancing(self, manager_attrs: Dict[str, Any]) -> None:
         last_ts = manager_attrs.get("last_balancing_ts")
         self._last_balancing = (
             _parse_dt_local(last_ts) if isinstance(last_ts, str) else None
@@ -141,98 +152,103 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         except Exception:
             self._days_since_last = 99
 
-        # Costs
+    def _apply_costs(self, manager_attrs: Dict[str, Any]) -> None:
         self._cost_immediate = manager_attrs.get("immediate_cost_czk")
         self._cost_selected = manager_attrs.get("selected_cost_czk")
         self._cost_savings = manager_attrs.get("cost_savings_czk")
 
-        # Plan (if any)
-        active_plan = getattr(manager, "get_active_plan", lambda: None)()
-        self._planned_window = None
-        if active_plan:
-            holding_start = active_plan.holding_start
-            holding_end = active_plan.holding_end
-            intervals = [
-                {"ts": i.ts, "mode": i.mode} for i in (active_plan.intervals or [])
-            ]
+    def _build_planned_window(self, active_plan: Any) -> Optional[Dict[str, Any]]:
+        if not active_plan:
+            return None
+        holding_start = active_plan.holding_start
+        holding_end = active_plan.holding_end
+        intervals = [
+            {"ts": i.ts, "mode": i.mode} for i in (active_plan.intervals or [])
+        ]
 
-            charging_intervals = []
-            try:
-                holding_start_dt = _parse_dt_local(holding_start)
-                if holding_start_dt:
-                    for it in intervals:
-                        ts = _parse_dt_local(it["ts"])
-                        if ts and ts < holding_start_dt:
-                            charging_intervals.append(it["ts"])
-            except Exception:
-                charging_intervals = []
+        charging_intervals = self._collect_charging_intervals(
+            intervals, holding_start
+        )
 
-            self._planned_window = {
-                "mode": getattr(
-                    active_plan.mode, "value", str(active_plan.mode)
-                ).lower(),
-                "priority": getattr(
-                    active_plan.priority, "value", str(active_plan.priority)
-                ).lower(),
-                "holding_start": holding_start,
-                "holding_end": holding_end,
-                "reason": active_plan.reason,
-                "charging_intervals": charging_intervals,
-                "intervals": intervals,
-            }
+        return {
+            "mode": getattr(active_plan.mode, "value", str(active_plan.mode)).lower(),
+            "priority": getattr(
+                active_plan.priority, "value", str(active_plan.priority)
+            ).lower(),
+            "holding_start": holding_start,
+            "holding_end": holding_end,
+            "reason": active_plan.reason,
+            "charging_intervals": charging_intervals,
+            "intervals": intervals,
+        }
 
-        # Translate to dashboard-friendly status buckets
+    @staticmethod
+    def _collect_charging_intervals(
+        intervals: List[Dict[str, Any]], holding_start: Any
+    ) -> List[Any]:
+        charging_intervals: List[Any] = []
+        try:
+            holding_start_dt = _parse_dt_local(holding_start)
+            if holding_start_dt:
+                for it in intervals:
+                    ts = _parse_dt_local(it["ts"])
+                    if ts and ts < holding_start_dt:
+                        charging_intervals.append(it["ts"])
+        except Exception:
+            return []
+        return charging_intervals
+
+    def _resolve_status(self, active_plan: Any) -> str:
         enabled = bool(self._config_entry.options.get("balancing_enabled", True))
         if not enabled:
-            self._status = "disabled"
-        elif active_plan:
+            return "disabled"
+        if active_plan:
             prio = (getattr(active_plan.priority, "value", "") or "").lower()
             mode = (getattr(active_plan.mode, "value", "") or "").lower()
             if prio == "critical" or mode == "forced":
-                self._status = "critical"
-            elif prio == "high":
-                self._status = "due_soon"
-            else:
-                self._status = "ok"
-        else:
-            if self._days_since_last >= self._cycle_days:
-                self._status = "overdue"
-            elif self._days_since_last >= max(0, self._cycle_days - 2):
-                self._status = "due_soon"
-            else:
-                self._status = "ok"
+                return "critical"
+            if prio == "high":
+                return "due_soon"
+            return "ok"
+        if self._days_since_last >= self._cycle_days:
+            return "overdue"
+        if self._days_since_last >= max(0, self._cycle_days - 2):
+            return "due_soon"
+        return "ok"
 
-        # Current state + time remaining
+    def _apply_current_state(self, active_plan: Any) -> None:
         self._current_state = "standby"
+        self._time_remaining = None
+        if not active_plan:
+            return
         now = dt_util.now()
-        self._time_remaining: Optional[str] = None
-        if active_plan:
-            try:
-                hs = _parse_dt_local(active_plan.holding_start)
-                he = _parse_dt_local(active_plan.holding_end)
-                if hs and he:
-                    if hs <= now < he:
-                        self._current_state = "balancing"
-                        remaining = he - now
-                        self._time_remaining = _format_hhmm(remaining)
-                    elif now < hs:
-                        # If we're within any interval before holding_start, call it charging.
-                        in_interval = False
-                        for it in active_plan.intervals or []:
-                            ts = _parse_dt_local(it.ts)
-                            if ts and ts <= now < (ts + timedelta(minutes=15)):
-                                in_interval = True
-                                break
-                        self._current_state = "charging" if in_interval else "planned"
-                        remaining = hs - now
-                        self._time_remaining = _format_hhmm(remaining)
-                    else:
-                        self._current_state = "completed"
-            except Exception:
-                self._current_state = "standby"
+        try:
+            hs = _parse_dt_local(active_plan.holding_start)
+            he = _parse_dt_local(active_plan.holding_end)
+            if hs and he:
+                if hs <= now < he:
+                    self._current_state = "balancing"
+                    remaining = he - now
+                    self._time_remaining = _format_hhmm(remaining)
+                elif now < hs:
+                    in_interval = self._is_now_in_intervals(
+                        now, active_plan.intervals or []
+                    )
+                    self._current_state = "charging" if in_interval else "planned"
+                    remaining = hs - now
+                    self._time_remaining = _format_hhmm(remaining)
+                else:
+                    self._current_state = "completed"
+        except Exception:
+            self._current_state = "standby"
 
-        # Last planning check
-        self._last_planning_check = dt_util.now()
+    @staticmethod
+    def _is_now_in_intervals(now: datetime, intervals: List[Any]) -> bool:
+        for it in intervals:
+            ts = _parse_dt_local(it.ts)
+            if ts and ts <= now < (ts + timedelta(minutes=15)):
+                return True
+        return False
 
     @property
     def native_value(self) -> str:

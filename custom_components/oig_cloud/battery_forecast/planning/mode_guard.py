@@ -182,7 +182,7 @@ def apply_mode_guard(
         guard_ctx = _resolve_guard_context(spot_prices, i, now, guard_until, lock_modes)
         if guard_ctx is None:
             break
-        ts_value, locked_mode = guard_ctx
+        _, locked_mode = guard_ctx
 
         forced_mode, next_soc, override = _apply_guard_interval(
             idx=i,
@@ -368,32 +368,48 @@ def apply_guard_reasons_to_timeline(
 
         planned_name = mode_names.get(planned_mode, "HOME I")
         forced_name = mode_names.get(forced_mode, planned_name)
+        reason = _build_guard_reason(
+            override_type,
+            planned_name,
+            forced_name,
+            guard_until_str,
+        )
 
-        if override_type == "guard_exception_soc":
-            reason = (
-                "Výjimka guardu: SoC pod plánovacím minimem – "
-                f"povolujeme změnu na {planned_name}."
-            )
-        elif override_type == "guard_locked_plan":
-            guard_until_label = format_time_label(guard_until_str)
-            if guard_until_label != "--:--":
-                reason = (
-                    "Stabilizace: držíme potvrzený plán "
-                    f"{forced_name} do {guard_until_label}."
-                )
-            else:
-                reason = "Stabilizace: držíme potvrzený plán " f"{forced_name}."
-        else:
-            reason = "Stabilizace: držíme potvrzený plán."
+        _append_guard_reason(entry, reason)
 
-        if entry.get("planner_reason"):
-            entry["planner_reason"] += f"\n{reason}"
-        else:
-            entry["planner_reason"] = reason
-
-        if entry.get("reason"):
-            entry["reason"] = reason
-
-        entry["guard_reason"] = reason
         if current_mode_name:
             entry["guard_current_mode"] = current_mode_name
+
+
+def _build_guard_reason(
+    override_type: Optional[str],
+    planned_name: str,
+    forced_name: str,
+    guard_until_str: Optional[str],
+) -> str:
+    if override_type == "guard_exception_soc":
+        return (
+            "Výjimka guardu: SoC pod plánovacím minimem – "
+            f"povolujeme změnu na {planned_name}."
+        )
+    if override_type == "guard_locked_plan":
+        guard_until_label = format_time_label(guard_until_str)
+        if guard_until_label != "--:--":
+            return (
+                "Stabilizace: držíme potvrzený plán "
+                f"{forced_name} do {guard_until_label}."
+            )
+        return f"Stabilizace: držíme potvrzený plán {forced_name}."
+    return "Stabilizace: držíme potvrzený plán."
+
+
+def _append_guard_reason(entry: Dict[str, Any], reason: str) -> None:
+    if entry.get("planner_reason"):
+        entry["planner_reason"] += f"\n{reason}"
+    else:
+        entry["planner_reason"] = reason
+
+    if entry.get("reason"):
+        entry["reason"] = reason
+
+    entry["guard_reason"] = reason

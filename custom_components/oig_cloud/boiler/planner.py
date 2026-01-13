@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -260,22 +260,32 @@ class BoilerPlanner:
         overflow_windows = battery_forecast_data.get("overflow_windows", [])
 
         # Filtrovat okna s SOC >= 100%
-        filtered_windows = []
+        filtered_windows: list[tuple[datetime, datetime]] = []
         for window in overflow_windows:
-            soc = window.get("soc", 0.0)
-            if soc >= BATTERY_SOC_OVERFLOW_THRESHOLD:
-                start = window.get("start")
-                end = window.get("end")
-
-                if start and end:
-                    # Konverze na datetime pokud string
-                    if isinstance(start, str):
-                        start = dt_util.parse_datetime(start)
-                    if isinstance(end, str):
-                        end = dt_util.parse_datetime(end)
-
-                    if start and end:
-                        filtered_windows.append((start, end))
+            parsed = self._parse_overflow_window(window)
+            if parsed:
+                filtered_windows.append(parsed)
 
         _LOGGER.debug("Nalezeno %s overflow oken (SOC >= 100%%)", len(filtered_windows))
         return filtered_windows
+
+    @staticmethod
+    def _parse_overflow_window(
+        window: dict[str, Any]
+    ) -> Optional[tuple[datetime, datetime]]:
+        soc = window.get("soc", 0.0)
+        if soc < BATTERY_SOC_OVERFLOW_THRESHOLD:
+            return None
+        start = _parse_window_datetime(window.get("start"))
+        end = _parse_window_datetime(window.get("end"))
+        if start and end:
+            return start, end
+        return None
+
+
+def _parse_window_datetime(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return dt_util.parse_datetime(value)
+    return None

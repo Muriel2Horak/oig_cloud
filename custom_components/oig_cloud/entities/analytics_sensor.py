@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, time, timedelta
-from typing import Any, Dict, List, Optional, Tuple, Union  # PŘIDÁNO: Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union  # PŘIDÁNO: Union
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
@@ -197,55 +197,43 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         for day_offset in [0, 1]:  # Dnes a zítra
             check_date = current_time.date() + timedelta(days=day_offset)
             is_weekend = check_date.weekday() >= 5
-            options = self._entry.options
-
-            # Získání tarifních časů
-            if is_weekend:
-                nt_times = self._parse_tariff_times(
-                    options.get("tariff_nt_start_weekend", "0")
-                )
-                vt_times = self._parse_tariff_times(
-                    options.get("tariff_vt_start_weekend", "")
-                )
-            else:
-                nt_times = self._parse_tariff_times(
-                    options.get("tariff_nt_start_weekday", "22,2")
-                )
-                vt_times = self._parse_tariff_times(
-                    options.get("tariff_vt_start_weekday", "6")
-                )
-
-            # Vytvoř seznam všech změn pro den
-            all_changes: List[Tuple[int, str]] = []
-            for hour in nt_times:
-                all_changes.append((hour, "NT"))
-            for hour in vt_times:
-                all_changes.append((hour, "VT"))
-
-            all_changes.sort()
-
-            # Zpracuj intervaly
-            if all_changes:
-                for i, (start_hour, tariff) in enumerate(all_changes):
-                    if i < len(all_changes) - 1:
-                        end_hour = all_changes[i + 1][0]
-                    else:
-                        # Poslední interval dne - pokračuje do dalšího dne
-                        end_hour = 24
-
-                    start_time = f"{start_hour:02d}:00"
-                    end_time = f"{end_hour:02d}:00" if end_hour < 24 else "24:00"
-
-                    interval_str = (
-                        f"{check_date.strftime('%d.%m')} {start_time}-{end_time}"
-                    )
-                    intervals[tariff].append(interval_str)
-            else:
-                # Žádné změny = celý den NT
-                interval_str = f"{check_date.strftime('%d.%m')} 00:00-24:00"
-                intervals["NT"].append(interval_str)
+            nt_times, vt_times = self._get_tariff_times_for_day(is_weekend)
+            self._append_day_intervals(intervals, check_date, nt_times, vt_times)
 
         return intervals
+
+    def _get_tariff_times_for_day(self, is_weekend: bool) -> Tuple[List[int], List[int]]:
+        return self._get_tariff_change_hours(is_weekend)
+
+    def _append_day_intervals(
+        self,
+        intervals: Dict[str, List[str]],
+        check_date: datetime.date,
+        nt_times: List[int],
+        vt_times: List[int],
+    ) -> None:
+        all_changes = self._build_tariff_changes(nt_times, vt_times)
+        all_changes.sort()
+        if not all_changes:
+            interval_str = f"{check_date.strftime('%d.%m')} 00:00-24:00"
+            intervals["NT"].append(interval_str)
+            return
+
+        for start_hour, end_hour, tariff in self._iter_change_intervals(all_changes):
+            start_time = f"{start_hour:02d}:00"
+            end_time = f"{end_hour:02d}:00" if end_hour < 24 else "24:00"
+            interval_str = f"{check_date.strftime('%d.%m')} {start_time}-{end_time}"
+            intervals[tariff].append(interval_str)
+
+    @staticmethod
+    def _iter_change_intervals(
+        changes: List[Tuple[int, str]]
+    ) -> List[Tuple[int, int, str]]:
+        result: List[Tuple[int, int, str]] = []
+        for idx, (start_hour, tariff) in enumerate(changes):
+            end_hour = changes[idx + 1][0] if idx < len(changes) - 1 else 24
+            result.append((start_hour, end_hour, tariff))
+        return result
 
     def _get_tariff_for_datetime(self, target_datetime: datetime) -> str:
         """Get tariff (VT/NT) for specific datetime."""
@@ -325,90 +313,120 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         vat_rate = self._entry.options.get("vat_rate", 21.0)
 
         def calculate_fixed_final_price(target_datetime: datetime = None) -> float:
-            """Vypočítat finální cenu s fixními obchodními cenami včetně DPH."""
-            # Určení tarifu
-            if target_datetime:
-                current_tariff = self._get_tariff_for_datetime(target_datetime)
-            elif dual_tariff_enabled:
-                current_tariff = self._calculate_current_tariff()
-            else:
-                current_tariff = "VT"
-
-            # Výběr obchodní ceny podle tarifu
-            commercial_price = (
-                fixed_price_vt if current_tariff == "VT" else fixed_price_nt
+            return self._calculate_fixed_final_price(
+                target_datetime,
+                dual_tariff_enabled=dual_tariff_enabled,
+                fixed_price_vt=fixed_price_vt,
+                fixed_price_nt=fixed_price_nt,
+                distribution_fee_vt_kwh=distribution_fee_vt_kwh,
+                distribution_fee_nt_kwh=distribution_fee_nt_kwh,
+                vat_rate=vat_rate,
             )
 
-            # Výběr distribučního poplatku podle tarifu
-            distribution_fee = (
-                distribution_fee_vt_kwh
-                if current_tariff == "VT"
-                else distribution_fee_nt_kwh
-            )
+        return self._resolve_fixed_sensor_value(
+            calculate_fixed_final_price,
+            dual_tariff_enabled=dual_tariff_enabled,
+            fixed_price_vt=fixed_price_vt,
+            fixed_price_nt=fixed_price_nt,
+            distribution_fee_vt_kwh=distribution_fee_vt_kwh,
+            distribution_fee_nt_kwh=distribution_fee_nt_kwh,
+            vat_rate=vat_rate,
+        )
 
-            # Cena bez DPH
-            price_without_vat = commercial_price + distribution_fee
+    def _calculate_fixed_final_price(
+        self,
+        target_datetime: Optional[datetime],
+        *,
+        dual_tariff_enabled: bool,
+        fixed_price_vt: float,
+        fixed_price_nt: float,
+        distribution_fee_vt_kwh: float,
+        distribution_fee_nt_kwh: float,
+        vat_rate: float,
+    ) -> float:
+        if target_datetime:
+            current_tariff = self._get_tariff_for_datetime(target_datetime)
+        elif dual_tariff_enabled:
+            current_tariff = self._calculate_current_tariff()
+        else:
+            current_tariff = "VT"
 
-            # Finální cena včetně DPH
-            return round(price_without_vat * (1 + vat_rate / 100.0), 2)
+        commercial_price = (
+            fixed_price_vt if current_tariff == "VT" else fixed_price_nt
+        )
+        distribution_fee = (
+            distribution_fee_vt_kwh
+            if current_tariff == "VT"
+            else distribution_fee_nt_kwh
+        )
+        price_without_vat = commercial_price + distribution_fee
+        return round(price_without_vat * (1 + vat_rate / 100.0), 2)
 
-        # Implementace pro různé typy senzorů
+    def _resolve_fixed_sensor_value(
+        self,
+        calculate_fixed_final_price: Callable[[Optional[datetime]], float],
+        *,
+        dual_tariff_enabled: bool,
+        fixed_price_vt: float,
+        fixed_price_nt: float,
+        distribution_fee_vt_kwh: float,
+        distribution_fee_nt_kwh: float,
+        vat_rate: float,
+    ) -> Optional[float]:
         if self._sensor_type == "spot_price_current_czk_kwh":
-            now = datetime.now()
-            return calculate_fixed_final_price(now)
-
-        elif self._sensor_type == "spot_price_current_eur_mwh":
-            # Pro EUR/MWh vracíme None pro fixní ceny (není relevantní)
+            return calculate_fixed_final_price(datetime.now())
+        if self._sensor_type == "spot_price_current_eur_mwh":
             return None
-
-        elif self._sensor_type == "spot_price_today_avg":
-            # Průměr fixních cen podle tarifních pásem dnes
+        if self._sensor_type == "spot_price_today_avg":
             return self._calculate_fixed_daily_average(datetime.now().date())
-
-        elif self._sensor_type == "spot_price_today_min":
-            # Minimum z fixních cen (obvykle NT)
-            if dual_tariff_enabled:
-                return round(
-                    min(
-                        fixed_price_vt + distribution_fee_vt_kwh,
-                        fixed_price_nt + distribution_fee_nt_kwh,
-                    )
-                    * (1 + vat_rate / 100.0),
-                    2,
-                )
-            else:
-                return round(
-                    (fixed_price_vt + distribution_fee_vt_kwh) * (1 + vat_rate / 100.0),
-                    2,
-                )
-
-        elif self._sensor_type == "spot_price_today_max":
-            # Maximum z fixních cen (obvykle VT)
-            if dual_tariff_enabled:
-                return round(
-                    max(
-                        fixed_price_vt + distribution_fee_vt_kwh,
-                        fixed_price_nt + distribution_fee_nt_kwh,
-                    )
-                    * (1 + vat_rate / 100.0),
-                    2,
-                )
-            else:
-                return round(
-                    (fixed_price_vt + distribution_fee_vt_kwh) * (1 + vat_rate / 100.0),
-                    2,
-                )
-
-        elif self._sensor_type == "spot_price_tomorrow_avg":
-            # Průměr fixních cen podle tarifních pásem zítra
+        if self._sensor_type == "spot_price_today_min":
+            return self._fixed_daily_extreme(
+                dual_tariff_enabled,
+                fixed_price_vt,
+                fixed_price_nt,
+                distribution_fee_vt_kwh,
+                distribution_fee_nt_kwh,
+                vat_rate,
+                use_min=True,
+            )
+        if self._sensor_type == "spot_price_today_max":
+            return self._fixed_daily_extreme(
+                dual_tariff_enabled,
+                fixed_price_vt,
+                fixed_price_nt,
+                distribution_fee_vt_kwh,
+                distribution_fee_nt_kwh,
+                vat_rate,
+                use_min=False,
+            )
+        if self._sensor_type == "spot_price_tomorrow_avg":
             tomorrow = datetime.now().date() + timedelta(days=1)
             return self._calculate_fixed_daily_average(tomorrow)
-
-        elif self._sensor_type == "eur_czk_exchange_rate":
-            # Pro fixní ceny vracíme None (není relevantní)
+        if self._sensor_type == "eur_czk_exchange_rate":
             return None
-
         return None
+
+    @staticmethod
+    def _fixed_daily_extreme(
+        dual_tariff_enabled: bool,
+        fixed_price_vt: float,
+        fixed_price_nt: float,
+        distribution_fee_vt_kwh: float,
+        distribution_fee_nt_kwh: float,
+        vat_rate: float,
+        *,
+        use_min: bool,
+    ) -> float:
+        if dual_tariff_enabled:
+            candidate = (
+                min if use_min else max
+            )(
+                fixed_price_vt + distribution_fee_vt_kwh,
+                fixed_price_nt + distribution_fee_nt_kwh,
+            )
+        else:
+            candidate = fixed_price_vt + distribution_fee_vt_kwh
+        return round(candidate * (1 + vat_rate / 100.0), 2)
 
     def _calculate_fixed_daily_average(self, target_date: datetime.date) -> float:
         """Vypočítat vážený průměr fixních cen pro daný den podle tarifních pásem."""
@@ -591,141 +609,119 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
 
         # Pro tarifní senzor přidat speciální atributy
         if self._sensor_type == "current_tariff":
-            current_time = dt_util.now()
-            is_weekend = current_time.weekday() >= 5
-            dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
-
-            # Vypočítej další změnu tarifu
-            next_tariff, next_change_time = self._get_next_tariff_change(
-                current_time, is_weekend
-            )
-
-            # Vypočítej intervaly
-            intervals = self._calculate_tariff_intervals(current_time)
-
-            attrs.update(
-                {
-                    "current_tariff": self.native_value,
-                    "dual_tariff_enabled": dual_tariff_enabled,
-                    "tariff_type": (
-                        "Dvoutarifní" if dual_tariff_enabled else "Jednotarifní"
-                    ),
-                    "next_tariff": next_tariff if dual_tariff_enabled else "VT",
-                    "next_change": (
-                        next_change_time.strftime("%d.%m %H:%M")
-                        if dual_tariff_enabled
-                        else "Žádná změna"
-                    ),
-                    "is_weekend": is_weekend,
-                    "nt_intervals": intervals["NT"],
-                    "vt_intervals": intervals["VT"],
-                    "update_time": current_time.strftime("%d.%m.%Y %H:%M:%S"),
-                    "distribution_fee_vt": self._entry.options.get(
-                        "distribution_fee_vt_kwh", 1.35
-                    ),
-                }
-            )
-
-            # Přidat NT poplatek pouze pro dvoutarifní sazbu
-            if dual_tariff_enabled:
-                attrs["distribution_fee_nt"] = self._entry.options.get(
-                    "distribution_fee_nt_kwh", 1.05
-                )
+            attrs.update(self._build_tariff_attributes())
 
         if self.coordinator.data and "spot_prices" in self.coordinator.data:
             spot_data = self.coordinator.data["spot_prices"]
-            pricing_model = self._entry.options.get("spot_pricing_model", "percentage")
 
             # OPRAVA: Přidat atributy pro spot_price_hourly_all - pouze finální ceny
             if spot_data and self._sensor_type == "spot_price_hourly_all":
-                if pricing_model == "fixed_prices":
-                    final_prices = self._build_fixed_hourly_prices()
+                attrs.update(self._build_spot_hourly_attributes(spot_data))
 
-                    # OPRAVA: Pouze finální ceny v atributech
-                    attrs["hourly_final_prices"] = final_prices
-                    attrs["hours_count"] = len(final_prices)
-                    attrs["date_range"] = {
-                        "start": datetime.now().strftime("%Y-%m-%d"),
-                        "end": (datetime.now() + timedelta(days=1)).strftime(
-                            "%Y-%m-%d"
-                        ),
-                    }
-                else:
-                    # Původní logika pro spotové ceny
-                    raw_prices = spot_data.get("prices_czk_kwh", {})
-                    final_prices = self._build_dynamic_hourly_prices(raw_prices)
+        return attrs
 
-                    # OPRAVA: Pouze finální ceny v atributech
-                    attrs["hourly_final_prices"] = final_prices
-                    attrs["hours_count"] = len(final_prices)
+    def _build_tariff_attributes(self) -> Dict[str, Any]:
+        current_time = dt_util.now()
+        is_weekend = current_time.weekday() >= 5
+        dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
 
-                    # OPRAVA: Přidat date_range i pro spotové ceny
-                    date_range = self._build_date_range_from_prices(final_prices)
-                    if date_range:
-                        attrs["date_range"] = date_range
+        next_tariff, next_change_time = self._get_next_tariff_change(
+            current_time, is_weekend
+        )
+        intervals = self._calculate_tariff_intervals(current_time)
 
-                # Přidat informace o použité konfiguraci pro všechny CZK senzory
-                if (
-                    "czk" in self._sensor_type
-                    and self._sensor_type != "eur_czk_exchange_rate"
-                ):
-                    pricing_model = self._entry.options.get(
-                        "spot_pricing_model", "percentage"
-                    )
-                    dual_tariff_enabled = self._entry.options.get(
-                        "dual_tariff_enabled", True
-                    )
+        attrs = {
+            "current_tariff": self.native_value,
+            "dual_tariff_enabled": dual_tariff_enabled,
+            "tariff_type": "Dvoutarifní" if dual_tariff_enabled else "Jednotarifní",
+            "next_tariff": next_tariff if dual_tariff_enabled else "VT",
+            "next_change": (
+                next_change_time.strftime("%d.%m %H:%M")
+                if dual_tariff_enabled
+                else "Žádná změna"
+            ),
+            "is_weekend": is_weekend,
+            "nt_intervals": intervals["NT"],
+            "vt_intervals": intervals["VT"],
+            "update_time": current_time.strftime("%d.%m.%Y %H:%M:%S"),
+            "distribution_fee_vt": self._entry.options.get(
+                "distribution_fee_vt_kwh", 1.35
+            ),
+        }
+        if dual_tariff_enabled:
+            attrs["distribution_fee_nt"] = self._entry.options.get(
+                "distribution_fee_nt_kwh", 1.05
+            )
+        return attrs
 
-                    attrs["pricing_type"] = (
-                        "Fixní obchodní ceny"
-                        if pricing_model == "fixed_prices"
-                        else "Spotové ceny"
-                    )
-                    attrs["pricing_model"] = {
-                        "percentage": "Procentní model",
-                        "fixed": "Fixní poplatek",
-                        "fixed_prices": "Fixní ceny",
-                    }.get(pricing_model, "Neznámý")
-                    attrs["tariff_type"] = (
-                        "Dvoutarifní" if dual_tariff_enabled else "Jednotarifní"
-                    )
-                    attrs["distribution_fee_vt_kwh"] = self._entry.options.get(
-                        "distribution_fee_vt_kwh", 1.35
-                    )
+    def _build_spot_hourly_attributes(self, spot_data: Dict[str, Any]) -> Dict[str, Any]:
+        pricing_model = self._entry.options.get("spot_pricing_model", "percentage")
+        attrs: Dict[str, Any] = {}
+        if pricing_model == "fixed_prices":
+            final_prices = self._build_fixed_hourly_prices()
+            attrs["date_range"] = {
+                "start": datetime.now().strftime("%Y-%m-%d"),
+                "end": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
+            }
+        else:
+            raw_prices = spot_data.get("prices_czk_kwh", {})
+            final_prices = self._build_dynamic_hourly_prices(raw_prices)
+            date_range = self._build_date_range_from_prices(final_prices)
+            if date_range:
+                attrs["date_range"] = date_range
 
-                    if dual_tariff_enabled:
-                        attrs["distribution_fee_nt_kwh"] = self._entry.options.get(
-                            "distribution_fee_nt_kwh", 1.05
-                        )
+        attrs["hourly_final_prices"] = final_prices
+        attrs["hours_count"] = len(final_prices)
+        attrs.update(self._build_pricing_metadata(pricing_model))
+        attrs["vat_rate"] = self._entry.options.get("vat_rate", 21.0)
+        return attrs
 
-                    if pricing_model == "fixed_prices":
-                        attrs["fixed_commercial_price_vt"] = self._entry.options.get(
-                            "fixed_commercial_price_vt", 4.50
-                        )
-                        if dual_tariff_enabled:
-                            attrs["fixed_commercial_price_nt"] = (
-                                self._entry.options.get(
-                                    "fixed_commercial_price_nt", 3.20
-                                )
-                            )
-                    elif pricing_model == "percentage":
-                        attrs["positive_fee_percent"] = self._entry.options.get(
-                            "spot_positive_fee_percent", 15.0
-                        )
-                        attrs["negative_fee_percent"] = self._entry.options.get(
-                            "spot_negative_fee_percent", 9.0
-                        )
-                    elif pricing_model == "fixed":
-                        attrs["fixed_fee_mwh"] = self._entry.options.get(
-                            "spot_fixed_fee_mwh", 500.0
-                        )
-                        attrs["fixed_fee_kwh"] = (
-                            self._entry.options.get("spot_fixed_fee_mwh", 500.0)
-                            / 1000.0
-                        )
+    def _build_pricing_metadata(self, pricing_model: str) -> Dict[str, Any]:
+        if "czk" not in self._sensor_type or self._sensor_type == "eur_czk_exchange_rate":
+            return {}
 
-                attrs["vat_rate"] = self._entry.options.get("vat_rate", 21.0)
+        dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
+        attrs: Dict[str, Any] = {
+            "pricing_type": (
+                "Fixní obchodní ceny"
+                if pricing_model == "fixed_prices"
+                else "Spotové ceny"
+            ),
+            "pricing_model": {
+                "percentage": "Procentní model",
+                "fixed": "Fixní poplatek",
+                "fixed_prices": "Fixní ceny",
+            }.get(pricing_model, "Neznámý"),
+            "tariff_type": "Dvoutarifní" if dual_tariff_enabled else "Jednotarifní",
+            "distribution_fee_vt_kwh": self._entry.options.get(
+                "distribution_fee_vt_kwh", 1.35
+            ),
+        }
 
+        if dual_tariff_enabled:
+            attrs["distribution_fee_nt_kwh"] = self._entry.options.get(
+                "distribution_fee_nt_kwh", 1.05
+            )
+
+        if pricing_model == "fixed_prices":
+            attrs["fixed_commercial_price_vt"] = self._entry.options.get(
+                "fixed_commercial_price_vt", 4.50
+            )
+            if dual_tariff_enabled:
+                attrs["fixed_commercial_price_nt"] = self._entry.options.get(
+                    "fixed_commercial_price_nt", 3.20
+                )
+        elif pricing_model == "percentage":
+            attrs["positive_fee_percent"] = self._entry.options.get(
+                "spot_positive_fee_percent", 15.0
+            )
+            attrs["negative_fee_percent"] = self._entry.options.get(
+                "spot_negative_fee_percent", 9.0
+            )
+        elif pricing_model == "fixed":
+            fixed_fee_mwh = self._entry.options.get("spot_fixed_fee_mwh", 500.0)
+            attrs["fixed_fee_mwh"] = fixed_fee_mwh
+            attrs["fixed_fee_kwh"] = fixed_fee_mwh / 1000.0
         return attrs
 
     @property

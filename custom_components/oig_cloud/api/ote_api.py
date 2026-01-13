@@ -157,7 +157,7 @@ class OteApi:
 
         OteApi does not keep a persistent aiohttp session, so there is nothing to close.
         """
-        return None
+        await self.async_persist_cache()
 
     def _load_cached_spot_prices_sync(self) -> None:
         if not self._cache_path:
@@ -625,6 +625,69 @@ class OteApi:
         self._cache_time = datetime.now(self.timezone)
         await self.async_persist_cache()
 
+    def _split_hourly_prices(
+        self,
+        hourly_czk: Dict[datetime, float],
+        hourly_eur_kwh: Dict[datetime, Decimal],
+        today: date,
+        tomorrow: date,
+    ) -> tuple[
+        Dict[str, float],
+        Dict[str, float],
+        List[float],
+        List[float],
+    ]:
+        prices_czk_kwh: Dict[str, float] = {}
+        prices_eur_mwh: Dict[str, float] = {}
+        today_prices_czk: List[float] = []
+        tomorrow_prices_czk: List[float] = []
+
+        for dt, price_czk in hourly_czk.items():
+            local_dt = dt.astimezone(self.timezone)
+            price_date = local_dt.date()
+            time_key = f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:00:00"
+
+            prices_czk_kwh[time_key] = round(price_czk, 4)
+            prices_eur_mwh[time_key] = round(float(hourly_eur_kwh[dt]) * 1000.0, 2)
+
+            if price_date == today:
+                today_prices_czk.append(price_czk)
+            elif price_date == tomorrow:
+                tomorrow_prices_czk.append(price_czk)
+
+        return prices_czk_kwh, prices_eur_mwh, today_prices_czk, tomorrow_prices_czk
+
+    @staticmethod
+    def _build_daily_stats(prices: List[float]) -> Optional[Dict[str, float]]:
+        if not prices:
+            return None
+        return {
+            "avg_czk": round(sum(prices) / len(prices), 4),
+            "min_czk": round(min(prices), 4),
+            "max_czk": round(max(prices), 4),
+        }
+
+    def _add_quarter_hour_prices(
+        self,
+        result: Dict[str, Any],
+        qh_rates_czk: Dict[datetime, float],
+        qh_rates_eur: Dict[datetime, Decimal],
+    ) -> None:
+        qh_prices_czk_kwh: Dict[str, float] = {}
+        qh_prices_eur_mwh: Dict[str, float] = {}
+
+        for dt, price_czk in qh_rates_czk.items():
+            local_dt = dt.astimezone(self.timezone)
+            price_date = local_dt.date()
+            time_key = (
+                f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:{local_dt.minute:02d}:00"
+            )
+            qh_prices_czk_kwh[time_key] = round(price_czk, 4)
+            qh_prices_eur_mwh[time_key] = round(float(qh_rates_eur[dt]) * 1000.0, 2)
+
+        result["prices15m_czk_kwh"] = qh_prices_czk_kwh
+        result["prices15m_eur_mwh"] = qh_prices_eur_mwh
+
     async def _format_spot_data(
         self,
         hourly_czk: Dict[datetime, float],
@@ -639,25 +702,12 @@ class OteApi:
         today = reference_date.date()
         tomorrow = today + timedelta(days=1)
 
-        prices_czk_kwh: Dict[str, float] = {}
-        prices_eur_mwh: Dict[str, float] = {}
-
-        today_prices_czk: List[float] = []
-        tomorrow_prices_czk: List[float] = []
-
-        for dt, price_czk in hourly_czk.items():
-            local_dt = dt.astimezone(self.timezone)
-            price_date = local_dt.date()
-
-            time_key = f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:00:00"
-
-            prices_czk_kwh[time_key] = round(price_czk, 4)
-            prices_eur_mwh[time_key] = round(float(hourly_eur_kwh[dt]) * 1000.0, 2)
-
-            if price_date == today:
-                today_prices_czk.append(price_czk)
-            elif price_date == tomorrow:
-                tomorrow_prices_czk.append(price_czk)
+        (
+            prices_czk_kwh,
+            prices_eur_mwh,
+            today_prices_czk,
+            tomorrow_prices_czk,
+        ) = self._split_hourly_prices(hourly_czk, hourly_eur_kwh, today, tomorrow)
 
         if not prices_czk_kwh:
             return {}
@@ -684,42 +734,12 @@ class OteApi:
                 "from": (min(prices_czk_kwh.keys()) if prices_czk_kwh else None),
                 "to": (max(prices_czk_kwh.keys()) if prices_czk_kwh else None),
             },
-            "today_stats": (
-                {
-                    "avg_czk": round(sum(today_prices_czk) / len(today_prices_czk), 4),
-                    "min_czk": round(min(today_prices_czk), 4),
-                    "max_czk": round(max(today_prices_czk), 4),
-                }
-                if today_prices_czk
-                else None
-            ),
-            "tomorrow_stats": (
-                {
-                    "avg_czk": round(
-                        sum(tomorrow_prices_czk) / len(tomorrow_prices_czk), 4
-                    ),
-                    "min_czk": round(min(tomorrow_prices_czk), 4),
-                    "max_czk": round(max(tomorrow_prices_czk), 4),
-                }
-                if tomorrow_prices_czk
-                else None
-            ),
+            "today_stats": self._build_daily_stats(today_prices_czk),
+            "tomorrow_stats": self._build_daily_stats(tomorrow_prices_czk),
         }
 
         # aditivně přidáme 15m (můžeš klidně smazat, pokud nechceš)
         if qh_rates_czk and qh_rates_eur:
-            qh_prices_czk_kwh: Dict[str, float] = {}
-            qh_prices_eur_mwh: Dict[str, float] = {}
-
-            for dt, price_czk in qh_rates_czk.items():
-                local_dt = dt.astimezone(self.timezone)
-                price_date = local_dt.date()
-
-                time_key = f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:{local_dt.minute:02d}:00"
-                qh_prices_czk_kwh[time_key] = round(price_czk, 4)
-                qh_prices_eur_mwh[time_key] = round(float(qh_rates_eur[dt]) * 1000.0, 2)
-
-            result["prices15m_czk_kwh"] = qh_prices_czk_kwh
-            result["prices15m_eur_mwh"] = qh_prices_eur_mwh
+            self._add_quarter_hour_prices(result, qh_rates_czk, qh_rates_eur)
 
         return result

@@ -247,67 +247,59 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             )
             return
 
-        # Pro optimalizovaný denní režim - kontrolujeme konkrétní hodiny
+        should_fetch = False
         if forecast_mode == "daily_optimized":
-            # Aktualizace pouze v 6:00, 12:00 a 16:00 (±5 minut tolerance)
-            target_hours = [6, 12, 16]
-            current_hour = now.hour
-            current_minute = now.minute
-
-            # Kontrola zda jsme v požadované hodině a prvních 5 minutách
-            if current_hour in target_hours and current_minute <= 5:
-                # Dodatečná kontrola - neaktualizovali jsme už v posledních 3 hodinách?
-                if self._last_api_call:
-                    time_since_last = current_time - self._last_api_call
-                    if time_since_last < 10800:  # 3 hodiny
-                        _LOGGER.debug(
-                            f"🌞 Skipping update - last call was {time_since_last / 60:.1f} minutes ago"
-                        )
-                        return
-
-                # Pouze hlavní sensor provádí API call
-                if self._sensor_type == "solar_forecast":
-                    _LOGGER.info(
-                        f"🌞 Scheduled solar forecast update at {current_hour}:00"
-                    )
-                    await self.async_fetch_forecast_data()
-            return
-
-        # Pro denní režim kontrolujeme čas a datum posledního volání
+            should_fetch = self._should_fetch_daily_optimized(now, current_time)
         elif forecast_mode == "daily":
-            if now.hour != 6:  # Pouze v 6:00
-                return
-
-            # Kontrola zda jsme už dnes neaktualizovali
-            if self._last_api_call:
-                last_call_date = datetime.fromtimestamp(self._last_api_call).date()
-                if last_call_date == now.date():
-                    _LOGGER.debug("🌞 Already updated today, skipping")
-                    return
-
-            # Pouze hlavní sensor provádí API call
-            if self._sensor_type == "solar_forecast":
-                await self.async_fetch_forecast_data()
-
-        # Pro every_4h režim
+            should_fetch = self._should_fetch_daily(now)
         elif forecast_mode == "every_4h":
-            if self._last_api_call:
-                time_since_last = current_time - self._last_api_call
-                if time_since_last < 14400:  # 4 hodiny
-                    return
-
-            if self._sensor_type == "solar_forecast":
-                await self.async_fetch_forecast_data()
-
-        # Pro hodinový režim
+            should_fetch = self._should_fetch_every_4h(current_time)
         elif forecast_mode == "hourly":
-            if self._last_api_call:
-                time_since_last = current_time - self._last_api_call
-                if time_since_last < 3600:  # 1 hodina
-                    return
+            should_fetch = self._should_fetch_hourly(current_time)
 
-            if self._sensor_type == "solar_forecast":
-                await self.async_fetch_forecast_data()
+        if should_fetch and self._is_primary_sensor():
+            await self.async_fetch_forecast_data()
+
+    def _is_primary_sensor(self) -> bool:
+        return self._sensor_type == "solar_forecast"
+
+    def _should_fetch_daily_optimized(self, now: datetime, current_time: float) -> bool:
+        target_hours = [6, 12, 16]
+        if now.hour not in target_hours or now.minute > 5:
+            return False
+        if self._last_api_call:
+            time_since_last = current_time - self._last_api_call
+            if time_since_last < 10800:  # 3 hodiny
+                _LOGGER.debug(
+                    f"🌞 Skipping update - last call was {time_since_last / 60:.1f} minutes ago"
+                )
+                return False
+        _LOGGER.info(f"🌞 Scheduled solar forecast update at {now.hour}:00")
+        return True
+
+    def _should_fetch_daily(self, now: datetime) -> bool:
+        if now.hour != 6:
+            return False
+        if self._last_api_call:
+            last_call_date = datetime.fromtimestamp(self._last_api_call).date()
+            if last_call_date == now.date():
+                _LOGGER.debug("🌞 Already updated today, skipping")
+                return False
+        return True
+
+    def _should_fetch_every_4h(self, current_time: float) -> bool:
+        if self._last_api_call:
+            time_since_last = current_time - self._last_api_call
+            if time_since_last < 14400:  # 4 hodiny
+                return False
+        return True
+
+    def _should_fetch_hourly(self, current_time: float) -> bool:
+        if self._last_api_call:
+            time_since_last = current_time - self._last_api_call
+            if time_since_last < 3600:  # 1 hodina
+                return False
+        return True
 
     # Přidání metody pro okamžitou aktualizaci
     async def async_manual_update(self) -> bool:

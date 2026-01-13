@@ -8,6 +8,7 @@ from ..const import DOMAIN
 from .base_sensor import OigCloudSensor, _get_sensor_definition, resolve_box_id
 
 _LOGGER = logging.getLogger(__name__)
+SERVICE_PREFIX = f"{DOMAIN}."
 
 
 def _extract_param_type(entity_id: str) -> str:
@@ -280,7 +281,7 @@ def _compute_shield_activity(shield: Any) -> str:
     if not running:
         return translate_shield_state("idle")
 
-    service_short = running.replace("oig_cloud.", "")
+    service_short = running.replace(SERVICE_PREFIX, "")
     pending = getattr(shield, "pending", {})
     pending_info = pending.get(running)
     if pending_info:
@@ -304,7 +305,7 @@ def _build_shield_attrs(
     base_attrs = {
         "total_requests": len(queue) + len(pending),
         "running_requests": running_requests,
-        "primary_running": running.replace("oig_cloud.", "") if running else None,
+        "primary_running": running.replace(SERVICE_PREFIX, "") if running else None,
         "queued_requests": queue_items,
         "queue_length": len(queue),
         "running_count": len(pending),

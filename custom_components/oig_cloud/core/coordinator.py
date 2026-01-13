@@ -75,50 +75,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         )
 
         if pricing_enabled:
-            try:
-                _LOGGER.debug("Pricing enabled - initializing OTE API")
-                from ..api.ote_api import OteApi
-
-                # OPRAVA: Předat cache_path pro načtení uložených spotových cen
-                cache_path = hass.config.path(".storage", "oig_ote_spot_prices.json")
-                self.ote_api = OteApi(cache_path=cache_path)
-
-                # Load cached spot prices asynchronously (avoid blocking file I/O in event loop)
-                async def _async_load_ote_cache() -> None:
-                    try:
-                        await self.ote_api.async_load_cached_spot_prices()
-                        if self.ote_api._last_data:
-                            self._spot_prices_cache = self.ote_api._last_data
-                            _LOGGER.info(
-                                "Loaded %d hours of cached spot prices from disk",
-                                self.ote_api._last_data.get("hours_count", 0),
-                            )
-                    except Exception as err:
-                        _LOGGER.debug(
-                            "Failed to load OTE cache asynchronously: %s", err
-                        )
-
-                self.hass.async_create_task(_async_load_ote_cache())
-
-                # Naplánovat aktualizaci na příští den ve 13:05 (OTE zveřejňuje kolem 13:00)
-                # OPRAVA: Použít zoneinfo místo pytz
-                now = datetime.now(ZoneInfo("Europe/Prague"))
-                next_update = now.replace(hour=13, minute=5, second=0, microsecond=0)
-                if next_update <= now:
-                    next_update += timedelta(days=1)
-
-                _LOGGER.debug(f"Next spot price update scheduled for: {next_update}")
-
-                # NOVÉ: Naplánovat fallback hodinové kontroly
-                self._schedule_hourly_fallback()
-
-                # NOVĚ: Aktivovat i hlavní plánovač a provést první fetch asynchronně
-                self._schedule_spot_price_update()
-                self.hass.async_create_task(self._update_spot_prices())
-
-            except Exception as e:
-                _LOGGER.error(f"Failed to initialize OTE API: {e}")
-                self.ote_api = None
+            self._setup_pricing_ote(hass)
         else:
             _LOGGER.debug("Spot prices disabled - not initializing OTE API")
             self.ote_api = None
@@ -131,32 +88,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         self._hourly_fallback_active: bool = False  # NOVÉ: flag pro hodinový fallback
 
         # NOVÉ: ČHMÚ API inicializace
-        chmu_enabled = self.config_entry and self.config_entry.options.get(
-            "enable_chmu_warnings", False
-        )
-
-        if chmu_enabled:
-            try:
-                _LOGGER.debug("ČHMÚ warnings enabled - initializing ČHMÚ API")
-                from ..api.api_chmu import ChmuApi
-
-                self.chmu_api = ChmuApi()
-                self.chmu_warning_data: Optional[Dict[str, Any]] = None
-
-                _LOGGER.debug("ČHMÚ API initialized successfully")
-
-            except Exception as e:
-                _LOGGER.error(f"Failed to initialize ČHMÚ API: {e}")
-                self.chmu_api = None
-                self.chmu_warning_data = None
-        else:
-            _LOGGER.debug("ČHMÚ warnings disabled - not initializing ČHMÚ API")
-            self.chmu_api = None
-            self.chmu_warning_data = None
-
-        _LOGGER.info(
-            f"Coordinator initialized with intervals: standard={standard_interval_seconds}s, extended={extended_interval_seconds}s, jitter=±{JITTER_SECONDS}s"
-        )
+        self._setup_chmu_warnings()
 
         # Last jitter value (for diagnostics/tests).
         self._next_jitter: Optional[float] = None
@@ -164,8 +96,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         # Startup grace period to avoid loading-heavy work during HA bootstrap
         self._startup_ts: datetime = self._utcnow()
         self._startup_grace_seconds: int = (
-            int(config_entry.options.get("startup_grace_seconds", 30))
-            if config_entry and hasattr(config_entry, "options")
+            int(self.config_entry.options.get("startup_grace_seconds", 30))
+            if self.config_entry and hasattr(self.config_entry, "options")
             else 30
         )
 
@@ -181,6 +113,78 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 )
         except Exception:
             self._cache_store = None
+
+        _LOGGER.info(
+            "Coordinator initialized with intervals: standard=%ss, extended=%ss, jitter=±%ss",
+            standard_interval_seconds,
+            extended_interval_seconds,
+            JITTER_SECONDS,
+        )
+
+    def _setup_chmu_warnings(self) -> None:
+        chmu_enabled = self.config_entry and self.config_entry.options.get(
+            "enable_chmu_warnings", False
+        )
+        if not chmu_enabled:
+            _LOGGER.debug("ČHMÚ warnings disabled - not initializing ČHMÚ API")
+            self.chmu_api = None
+            self.chmu_warning_data = None
+            return
+        try:
+            _LOGGER.debug("ČHMÚ warnings enabled - initializing ČHMÚ API")
+            from ..api.api_chmu import ChmuApi
+
+            self.chmu_api = ChmuApi()
+            self.chmu_warning_data = None
+            _LOGGER.debug("ČHMÚ API initialized successfully")
+        except Exception as e:
+            _LOGGER.error(f"Failed to initialize ČHMÚ API: {e}")
+            self.chmu_api = None
+            self.chmu_warning_data = None
+
+    def _setup_pricing_ote(self, hass: HomeAssistant) -> None:
+        try:
+            _LOGGER.debug("Pricing enabled - initializing OTE API")
+            from ..api.ote_api import OteApi
+
+            # OPRAVA: Předat cache_path pro načtení uložených spotových cen
+            cache_path = hass.config.path(".storage", "oig_ote_spot_prices.json")
+            self.ote_api = OteApi(cache_path=cache_path)
+
+            # Load cached spot prices asynchronously (avoid blocking file I/O in event loop)
+            async def _async_load_ote_cache() -> None:
+                try:
+                    await self.ote_api.async_load_cached_spot_prices()
+                    if self.ote_api._last_data:
+                        self._spot_prices_cache = self.ote_api._last_data
+                        _LOGGER.info(
+                            "Loaded %d hours of cached spot prices from disk",
+                            self.ote_api._last_data.get("hours_count", 0),
+                        )
+                except Exception as err:
+                    _LOGGER.debug("Failed to load OTE cache asynchronously: %s", err)
+
+            self.hass.async_create_task(_async_load_ote_cache())
+
+            # Naplánovat aktualizaci na příští den ve 13:05 (OTE zveřejňuje kolem 13:00)
+            # OPRAVA: Použít zoneinfo místo pytz
+            now = datetime.now(ZoneInfo("Europe/Prague"))
+            next_update = now.replace(hour=13, minute=5, second=0, microsecond=0)
+            if next_update <= now:
+                next_update += timedelta(days=1)
+
+            _LOGGER.debug("Next spot price update scheduled for: %s", next_update)
+
+            # NOVÉ: Naplánovat fallback hodinové kontroly
+            self._schedule_hourly_fallback()
+
+            # NOVĚ: Aktivovat i hlavní plánovač a provést první fetch asynchronně
+            self._schedule_spot_price_update()
+            self.hass.async_create_task(self._update_spot_prices())
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to initialize OTE API: {e}")
+            self.ote_api = None
 
     async def async_config_entry_first_refresh(self) -> None:
         """Load cached payload before the first refresh.
@@ -224,41 +228,53 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             return value
 
         if isinstance(value, str):
-            return (
-                value
-                if len(value) <= COORDINATOR_CACHE_MAX_STR_LEN
-                else value[:COORDINATOR_CACHE_MAX_STR_LEN]
-            )
+            return self._prune_string(value)
 
         if isinstance(value, datetime):
-            try:
-                return value.isoformat()
-            except Exception:
-                return str(value)
+            return self._prune_datetime(value)
 
         if isinstance(value, list):
-            trimmed = value[:COORDINATOR_CACHE_MAX_LIST_ITEMS]
-            return [self._prune_for_cache(v, _depth=_depth + 1) for v in trimmed]
+            return self._prune_sequence(value, _depth=_depth)
 
         if isinstance(value, tuple):
-            trimmed = list(value)[:COORDINATOR_CACHE_MAX_LIST_ITEMS]
-            return [self._prune_for_cache(v, _depth=_depth + 1) for v in trimmed]
+            return self._prune_sequence(list(value), _depth=_depth)
 
         if isinstance(value, dict):
-            out: Dict[str, Any] = {}
-            for k, v in value.items():
-                # Drop very large/volatile raw blobs by key name
-                key = str(k)
-                if key in {"timeline_data", "timeline", "latest_timeline"}:
-                    continue
-                out[key] = self._prune_for_cache(v, _depth=_depth + 1)
-            return out
+            return self._prune_mapping(value, _depth=_depth)
 
         # Fallback: keep a readable representation
         try:
             return str(value)
         except Exception:
             return None
+
+    @staticmethod
+    def _prune_string(value: str) -> str:
+        return (
+            value
+            if len(value) <= COORDINATOR_CACHE_MAX_STR_LEN
+            else value[:COORDINATOR_CACHE_MAX_STR_LEN]
+        )
+
+    @staticmethod
+    def _prune_datetime(value: datetime) -> str:
+        try:
+            return value.isoformat()
+        except Exception:
+            return str(value)
+
+    def _prune_sequence(self, value: List[Any], *, _depth: int) -> List[Any]:
+        trimmed = value[:COORDINATOR_CACHE_MAX_LIST_ITEMS]
+        return [self._prune_for_cache(v, _depth=_depth + 1) for v in trimmed]
+
+    def _prune_mapping(self, value: Dict[Any, Any], *, _depth: int) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for k, v in value.items():
+            key = str(k)
+            if key in {"timeline_data", "timeline", "latest_timeline"}:
+                continue
+            out[key] = self._prune_for_cache(v, _depth=_depth + 1)
+        return out
 
     def _maybe_schedule_cache_save(self, data: Dict[str, Any]) -> None:
         if self._cache_store is None:
@@ -636,7 +652,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             try:
                 _LOGGER.debug(
                     "Config entry option keys: %s",
-                    sorted(list(getattr(config_entry, "options", {}).keys())),
+                    sorted(getattr(config_entry, "options", {}).keys()),
                 )
             except Exception:
                 _LOGGER.debug("Config entry option keys: <unavailable>")
@@ -891,27 +907,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 )
                 return
 
-            # Importujeme battery forecast třídu
-            from ..battery_forecast.sensors.ha_sensor import (
-                OigCloudBatteryForecastSensor,
-            )
-
             # Získat inverter_sn deterministicky (config entry → numerické klíče v self.data)
-            inverter_sn: Optional[str] = None
-            try:
-                if self.config_entry:
-                    opt_box = self.config_entry.options.get("box_id")
-                    if isinstance(opt_box, str) and opt_box.isdigit():
-                        inverter_sn = opt_box
-            except Exception:
-                inverter_sn = None
-
-            if inverter_sn is None and isinstance(self.data, dict) and self.data:
-                inverter_sn = next(
-                    (str(k) for k in self.data.keys() if str(k).isdigit()),
-                    None,
-                )
-
+            inverter_sn = self._resolve_forecast_box_id()
             if not inverter_sn:
                 _LOGGER.debug(
                     "🔋 No numeric inverter_sn available, skipping forecast update"
@@ -920,30 +917,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
             _LOGGER.debug("🔍 Inverter SN resolved for forecast: %s", inverter_sn)
 
-            # Vytvořit device_info pro Analytics Module
-            from ..const import DOMAIN
-
-            device_info: Dict[str, Any] = {
-                "identifiers": {(DOMAIN, f"{inverter_sn}_analytics")},
-                "name": "Analytics & Predictions",
-                "manufacturer": "ČEZ",
-                "model": "Battery Box Analytics Module",
-                "sw_version": "1.0.0",
-            }
-
-            # Vytvoříme dočasnou instanci pro výpočet (bez registrace)
-            # DŮLEŽITÉ: Předáme hass PŘÍMO do __init__
-            _LOGGER.debug(
-                f"🔍 Creating temp sensor with config_entry: {self.config_entry is not None}"
-            )
-            temp_sensor = OigCloudBatteryForecastSensor(
-                self,
-                "battery_forecast",
-                self.config_entry,
-                device_info,
-                self.hass,
-                side_effects_enabled=False,
-            )
+            temp_sensor = self._create_forecast_sensor(inverter_sn)
             _LOGGER.debug(
                 f"🔍 Temp sensor created, _hass set: {temp_sensor._hass is not None}"
             )
@@ -951,30 +925,17 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             # Spustíme výpočet - nová metoda async_update()
             await temp_sensor.async_update()
 
-            # Získat data z timeline_data
-            if temp_sensor._timeline_data:
-                self.battery_forecast_data = {
-                    "timeline_data": temp_sensor._timeline_data,
-                    "calculation_time": (
-                        temp_sensor._last_update.isoformat()
-                        if temp_sensor._last_update
-                        else None
-                    ),
-                    "data_source": "simplified_calculation",
-                    "current_battery_kwh": (
-                        temp_sensor._timeline_data[0].get("battery_capacity_kwh", 0)
-                        if temp_sensor._timeline_data
-                        else 0
-                    ),
-                    # Use consistent API key name and ensure default list when empty
-                    "mode_recommendations": temp_sensor._mode_recommendations or [],
-                }
-                _LOGGER.debug(
-                    f"🔋 Battery forecast data updated in coordinator: {len(temp_sensor._timeline_data)} points"
-                )
-            else:
+            forecast_payload = self._build_forecast_payload(temp_sensor)
+            if forecast_payload is None:
                 self.battery_forecast_data = None
                 _LOGGER.warning("🔋 Battery forecast returned no timeline data")
+                return
+
+            self.battery_forecast_data = forecast_payload
+            _LOGGER.debug(
+                "🔋 Battery forecast data updated in coordinator: %s points",
+                len(temp_sensor._timeline_data or []),
+            )
 
         except Exception as e:
             _LOGGER.error(
@@ -982,6 +943,69 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 exc_info=True,
             )
             self.battery_forecast_data = None
+
+    def _resolve_forecast_box_id(self) -> Optional[str]:
+        inverter_sn: Optional[str] = None
+        try:
+            if self.config_entry:
+                opt_box = self.config_entry.options.get("box_id")
+                if isinstance(opt_box, str) and opt_box.isdigit():
+                    inverter_sn = opt_box
+        except Exception:
+            inverter_sn = None
+
+        if inverter_sn is None and isinstance(self.data, dict) and self.data:
+            inverter_sn = next(
+                (str(k) for k in self.data.keys() if str(k).isdigit()),
+                None,
+            )
+
+        return inverter_sn
+
+    def _build_forecast_device_info(self, inverter_sn: str) -> Dict[str, Any]:
+        from ..const import DOMAIN
+
+        return {
+            "identifiers": {(DOMAIN, f"{inverter_sn}_analytics")},
+            "name": "Analytics & Predictions",
+            "manufacturer": "ČEZ",
+            "model": "Battery Box Analytics Module",
+            "sw_version": "1.0.0",
+        }
+
+    def _create_forecast_sensor(self, inverter_sn: str) -> Any:
+        from ..battery_forecast.sensors.ha_sensor import OigCloudBatteryForecastSensor
+
+        device_info = self._build_forecast_device_info(inverter_sn)
+        _LOGGER.debug(
+            "🔍 Creating temp sensor with config_entry: %s",
+            self.config_entry is not None,
+        )
+        return OigCloudBatteryForecastSensor(
+            self,
+            "battery_forecast",
+            self.config_entry,
+            device_info,
+            self.hass,
+            side_effects_enabled=False,
+        )
+
+    def _build_forecast_payload(self, sensor: Any) -> Optional[Dict[str, Any]]:
+        if not sensor._timeline_data:
+            return None
+        return {
+            "timeline_data": sensor._timeline_data,
+            "calculation_time": (
+                sensor._last_update.isoformat() if sensor._last_update else None
+            ),
+            "data_source": "simplified_calculation",
+            "current_battery_kwh": (
+                sensor._timeline_data[0].get("battery_capacity_kwh", 0)
+                if sensor._timeline_data
+                else 0
+            ),
+            "mode_recommendations": sensor._mode_recommendations or [],
+        }
 
     def _create_simple_battery_forecast(self) -> Dict[str, Any]:
         """Vytvoří jednoduchá forecast data když senzor není dostupný."""

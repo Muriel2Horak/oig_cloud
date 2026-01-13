@@ -878,7 +878,6 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
     async def async_will_remove_from_hass(self) -> None:
         await super().async_will_remove_from_hass()
         self._cancel_reset()
-        return
 
     def _cancel_reset(self) -> None:
         unsub = getattr(self, "_daily_reset_unsub", None)

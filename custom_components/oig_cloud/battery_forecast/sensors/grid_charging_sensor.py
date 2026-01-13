@@ -277,72 +277,23 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         now = dt_util.now()
         current_mode = self._get_current_mode()
 
-        sorted_blocks = sorted(
-            charging_intervals,
-            key=lambda b: (0 if b.get("day") == "today" else 1, b.get("time_from", "")),
-        )
+        sorted_blocks = self._get_sorted_charging_blocks(charging_intervals)
 
         for i, block in enumerate(sorted_blocks):
-            start_time_str = block.get("time_from", "00:00")
-            end_time_str = block.get("time_to", "23:59")
-            day = block.get("day", "today")
-
-            try:
-                start_hour, start_min = map(int, start_time_str.split(":"))
-                end_hour, end_min = map(int, end_time_str.split(":"))
-
-                start_time = now.replace(
-                    hour=start_hour, minute=start_min, second=0, microsecond=0
-                )
-                end_time = now.replace(
-                    hour=end_hour, minute=end_min, second=0, microsecond=0
-                )
-
-                if day == "tomorrow":
-                    start_time = start_time + timedelta(days=1)
-                    end_time = end_time + timedelta(days=1)
-
-                if end_time <= start_time:
-                    end_time = end_time + timedelta(days=1)
-
-            except (ValueError, AttributeError):
-                _LOGGER.warning(
-                    "[GridChargingPlan] Invalid time format: %s - %s",
-                    start_time_str,
-                    end_time_str,
-                )
+            window = self._build_block_window(block, now)
+            if not window:
                 continue
+            start_time, end_time, start_time_str, end_time_str = window
 
-            offset_on = self._get_dynamic_offset(current_mode, HOME_UPS_LABEL)
-            start_time_with_offset = start_time - timedelta(seconds=offset_on)
+            offset_on, offset_off = self._resolve_block_offsets(
+                sorted_blocks,
+                i,
+                block,
+                current_mode,
+                end_time,
+            )
 
-            next_block_is_ups = False
-            if i + 1 < len(sorted_blocks):
-                next_block = sorted_blocks[i + 1]
-                next_start = next_block.get("time_from", "")
-                if (
-                    next_start == end_time_str
-                    or abs(
-                        (
-                            self._parse_time_to_datetime(
-                                next_start, next_block.get("day")
-                            )
-                            - end_time
-                        ).total_seconds()
-                    )
-                    <= 60
-                ):
-                    next_block_is_ups = True
-
-            if next_block_is_ups:
-                offset_off = 0
-            else:
-                next_mode = self._get_next_mode_after_ups(block, sorted_blocks, i)
-                offset_off = self._get_dynamic_offset(HOME_UPS_LABEL, next_mode)
-
-            end_time_with_offset = end_time - timedelta(seconds=offset_off)
-
-            if start_time_with_offset <= now <= end_time_with_offset:
+            if self._is_now_in_block(now, start_time, end_time, offset_on, offset_off):
                 _LOGGER.debug(
                     "[GridChargingPlan] Sensor ON: now=%s, block=%s-%s, "
                     "offset_on=%ss, offset_off=%ss",
@@ -355,6 +306,93 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 return "on"
 
         return "off"
+
+    @staticmethod
+    def _get_sorted_charging_blocks(charging_intervals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return sorted(
+            charging_intervals,
+            key=lambda b: (0 if b.get("day") == "today" else 1, b.get("time_from", "")),
+        )
+
+    def _build_block_window(
+        self, block: Dict[str, Any], now: datetime
+    ) -> Optional[tuple[datetime, datetime, str, str]]:
+        start_time_str = block.get("time_from", "00:00")
+        end_time_str = block.get("time_to", "23:59")
+        day = block.get("day", "today")
+
+        try:
+            start_hour, start_min = map(int, start_time_str.split(":"))
+            end_hour, end_min = map(int, end_time_str.split(":"))
+
+            start_time = now.replace(
+                hour=start_hour, minute=start_min, second=0, microsecond=0
+            )
+            end_time = now.replace(
+                hour=end_hour, minute=end_min, second=0, microsecond=0
+            )
+
+            if day == "tomorrow":
+                start_time = start_time + timedelta(days=1)
+                end_time = end_time + timedelta(days=1)
+
+            if end_time <= start_time:
+                end_time = end_time + timedelta(days=1)
+
+            return start_time, end_time, start_time_str, end_time_str
+        except (ValueError, AttributeError):
+            _LOGGER.warning(
+                "[GridChargingPlan] Invalid time format: %s - %s",
+                start_time_str,
+                end_time_str,
+            )
+            return None
+
+    def _resolve_block_offsets(
+        self,
+        blocks: List[Dict[str, Any]],
+        idx: int,
+        block: Dict[str, Any],
+        current_mode: str,
+        end_time: datetime,
+    ) -> tuple[float, float]:
+        offset_on = self._get_dynamic_offset(current_mode, HOME_UPS_LABEL)
+        if self._next_block_is_ups(blocks, idx, end_time):
+            return offset_on, 0.0
+        next_mode = self._get_next_mode_after_ups(block, blocks, idx)
+        offset_off = self._get_dynamic_offset(HOME_UPS_LABEL, next_mode)
+        return offset_on, offset_off
+
+    def _next_block_is_ups(
+        self, blocks: List[Dict[str, Any]], idx: int, end_time: datetime
+    ) -> bool:
+        if idx + 1 >= len(blocks):
+            return False
+        next_block = blocks[idx + 1]
+        next_start = next_block.get("time_from", "")
+        if next_start == blocks[idx].get("time_to", ""):
+            return True
+        return (
+            abs(
+                (
+                    self._parse_time_to_datetime(next_start, next_block.get("day"))
+                    - end_time
+                ).total_seconds()
+            )
+            <= 60
+        )
+
+    @staticmethod
+    def _is_now_in_block(
+        now: datetime,
+        start_time: datetime,
+        end_time: datetime,
+        offset_on: float,
+        offset_off: float,
+    ) -> bool:
+        start_time_with_offset = start_time - timedelta(seconds=offset_on)
+        end_time_with_offset = end_time - timedelta(seconds=offset_off)
+        return start_time_with_offset <= now <= end_time_with_offset
 
     def _get_current_mode(self) -> str:
         """Získá aktuální režim z coordinator data."""

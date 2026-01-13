@@ -495,119 +495,25 @@ class BalancingManager:
         battery_sensor_id = f"sensor.oig_{self.box_id}_batt_bat_c"
 
         # Determine how far back to scan
-        from homeassistant.util import dt as dt_util
-
         end_time = dt_util.now()
-
-        if self._last_balancing_ts is None:
-            # No previous balancing recorded - scan last 30 days to find it
-            history_hours = 30 * 24
-            _LOGGER.info(
-                "No last balancing timestamp - scanning last 30 days for completion"
-            )
-        else:
-            # Have previous balancing - only check recent history for new completion
-            history_hours = holding_time_hours + 1
-
+        history_hours = self._resolve_history_hours(holding_time_hours)
         start_time = end_time - timedelta(hours=history_hours)
 
         # Query HA statistics (longer retention than state history)
         try:
-            from homeassistant.components.recorder.statistics import (
-                statistics_during_period,
+            hourly_stats = await self._load_soc_stats(
+                battery_sensor_id, start_time, end_time
             )
-
-            # Use hourly statistics for battery SoC
-            stats = await self.hass.async_add_executor_job(
-                statistics_during_period,
-                self.hass,
-                start_time,
-                end_time,
-                {battery_sensor_id},
-                "hour",
-                None,
-                {"mean", "max"},
-            )
-
-            if not stats or battery_sensor_id not in stats:
+            if not hourly_stats:
                 _LOGGER.debug(
                     "No battery SoC statistics available for balancing detection"
                 )
                 return (False, None)
 
-            hourly_stats = stats[battery_sensor_id]
-
-            # Scan for ALL continuous periods with SoC ≥99% and find the latest one
-            holding_start = None
-            latest_completion = None
-            latest_completion_time = None
-
-            for stat in hourly_stats:
-                # Use 'max' if available, otherwise 'mean'
-                soc = stat.get("max") or stat.get("mean")
-
-                # stat["start"] can be datetime, float (timestamp), or string
-                stat_start = stat.get("start")
-                if stat_start is None:
-                    continue
-
-                if isinstance(stat_start, datetime):
-                    stat_time = stat_start
-                elif isinstance(stat_start, (int, float)):
-                    stat_time = datetime.fromtimestamp(stat_start, tz=dt_util.UTC)
-                elif isinstance(stat_start, str):
-                    stat_time = dt_util.parse_datetime(stat_start)
-                    if stat_time is None:
-                        continue
-                else:
-                    continue
-
-                if soc and soc >= 99.0:
-                    # Battery at high SoC during this hour
-                    if holding_start is None:
-                        holding_start = stat_time
-                else:
-                    # Battery dropped below threshold
-                    if holding_start is not None:
-                        # Check if previous high-SoC period was long enough
-                        holding_duration = stat_time - holding_start
-                        if holding_duration >= timedelta(hours=holding_time_hours):
-                            # Found a balancing completion - keep track of latest
-                            if (
-                                latest_completion_time is None
-                                or stat_time > latest_completion_time
-                            ):
-                                latest_completion = (
-                                    holding_start,
-                                    stat_time,
-                                    holding_duration,
-                                )
-                                latest_completion_time = stat_time
-                    holding_start = None
-
-            # Check if still holding (last stat was ≥99%)
-            if holding_start is not None and hourly_stats:
-                now = dt_util.now()
-                holding_duration = now - holding_start
-                if holding_duration >= timedelta(hours=holding_time_hours):
-                    # Balancing completed and still holding!
-                    # This is the most recent, use it
-                    _LOGGER.info(
-                        f"Detected ongoing balancing completion: "
-                        f"SoC ≥99% since {holding_start.strftime('%Y-%m-%d %H:%M')} "
-                        f"({holding_duration.total_seconds() / 3600:.1f}h)"
-                    )
-                    return (True, now)
-
-            # Return the latest completed balancing found
-            if latest_completion is not None:
-                holding_start, completion_time, holding_duration = latest_completion
-                _LOGGER.info(
-                    f"Detected last balancing completion: "
-                    f"SoC ≥99% from {holding_start.strftime('%Y-%m-%d %H:%M')} "
-                    f"to {completion_time.strftime('%Y-%m-%d %H:%M')} "
-                    f"({holding_duration.total_seconds() / 3600:.1f}h)"
-                )
+            completion_time = self._detect_balancing_completion(
+                hourly_stats, holding_time_hours, end_time
+            )
+            if completion_time:
                 return (True, completion_time)
 
         except RuntimeError as e:
@@ -622,6 +528,176 @@ class BalancingManager:
             _LOGGER.error(f"Error checking balancing completion: {e}", exc_info=True)
 
         return (False, None)
+
+    def _resolve_history_hours(self, holding_time_hours: float) -> int:
+        if self._last_balancing_ts is None:
+            _LOGGER.info(
+                "No last balancing timestamp - scanning last 30 days for completion"
+            )
+            return 30 * 24
+        return int(holding_time_hours + 1)
+
+    async def _load_soc_stats(
+        self,
+        battery_sensor_id: str,
+        start_time: datetime,
+        end_time: datetime,
+    ) -> Optional[List[Dict[str, Any]]]:
+        from homeassistant.components.recorder.statistics import (
+            statistics_during_period,
+        )
+
+        stats = await self.hass.async_add_executor_job(
+            statistics_during_period,
+            self.hass,
+            start_time,
+            end_time,
+            {battery_sensor_id},
+            "hour",
+            None,
+            {"mean", "max"},
+        )
+        if not stats or battery_sensor_id not in stats:
+            return None
+        return stats[battery_sensor_id]
+
+    def _detect_balancing_completion(
+        self,
+        hourly_stats: List[Dict[str, Any]],
+        holding_time_hours: float,
+        now: datetime,
+    ) -> Optional[datetime]:
+        now_utc = dt_util.as_utc(now) if now.tzinfo else now.replace(tzinfo=dt_util.UTC)
+        state = self._init_completion_state()
+
+        for stat in hourly_stats:
+            soc = stat.get("max") or stat.get("mean")
+            stat_time = self._normalize_stat_time(stat)
+            if stat_time is None:
+                continue
+
+            if self._is_holding_soc(soc):
+                self._extend_holding_window(state, stat_time)
+                continue
+
+            self._flush_holding_window(state, holding_time_hours)
+
+        return self._finalize_completion_state(state, now_utc, holding_time_hours)
+
+    @staticmethod
+    def _init_completion_state() -> Dict[str, Any]:
+        return {
+            "holding_start": None,
+            "last_hold_time": None,
+            "latest_completion": None,
+            "latest_completion_time": None,
+        }
+
+    @staticmethod
+    def _is_holding_soc(soc: Any) -> bool:
+        return bool(soc and soc >= 99.0)
+
+    @staticmethod
+    def _extend_holding_window(state: Dict[str, Any], stat_time: datetime) -> None:
+        if state["holding_start"] is None:
+            state["holding_start"] = stat_time
+        state["last_hold_time"] = stat_time
+
+    def _flush_holding_window(
+        self, state: Dict[str, Any], holding_time_hours: float
+    ) -> None:
+        (
+            state["holding_start"],
+            state["last_hold_time"],
+            state["latest_completion"],
+            state["latest_completion_time"],
+        ) = self._finalize_holding_window(
+            state["holding_start"],
+            state["last_hold_time"],
+            holding_time_hours,
+            state["latest_completion"],
+            state["latest_completion_time"],
+        )
+
+    def _finalize_completion_state(
+        self,
+        state: Dict[str, Any],
+        now_utc: datetime,
+        holding_time_hours: float,
+    ) -> Optional[datetime]:
+        holding_start = state["holding_start"]
+        last_hold_time = state["last_hold_time"]
+        latest_completion = state["latest_completion"]
+
+        if holding_start is not None and last_hold_time is not None:
+            completion_time = max(now_utc, last_hold_time + timedelta(hours=1))
+            holding_duration = completion_time - holding_start
+            if holding_duration >= timedelta(hours=holding_time_hours):
+                _LOGGER.info(
+                    f"Detected ongoing balancing completion: "
+                    f"SoC ≥99% since {holding_start.strftime('%Y-%m-%d %H:%M')} "
+                    f"({holding_duration.total_seconds() / 3600:.1f}h)"
+                )
+                return completion_time
+
+        if latest_completion is not None:
+            start, completion_time, holding_duration = latest_completion
+            _LOGGER.info(
+                f"Detected last balancing completion: "
+                f"SoC ≥99% from {start.strftime('%Y-%m-%d %H:%M')} "
+                f"to {completion_time.strftime('%Y-%m-%d %H:%M')} "
+                f"({holding_duration.total_seconds() / 3600:.1f}h)"
+            )
+            return completion_time
+        return None
+
+    @staticmethod
+    def _normalize_stat_time(stat: Dict[str, Any]) -> Optional[datetime]:
+        stat_time = BalancingManager._parse_stat_time(stat.get("start"))
+        if stat_time is None:
+            return None
+        if stat_time.tzinfo:
+            return dt_util.as_utc(stat_time)
+        return stat_time.replace(tzinfo=dt_util.UTC)
+
+    @staticmethod
+    def _finalize_holding_window(
+        holding_start: Optional[datetime],
+        last_hold_time: Optional[datetime],
+        holding_time_hours: float,
+        latest_completion: Optional[tuple[datetime, datetime, timedelta]],
+        latest_completion_time: Optional[datetime],
+    ) -> tuple[
+        Optional[datetime],
+        Optional[datetime],
+        Optional[tuple[datetime, datetime, timedelta]],
+        Optional[datetime],
+    ]:
+        if holding_start is None or last_hold_time is None:
+            return None, None, latest_completion, latest_completion_time
+
+        completion_time = last_hold_time + timedelta(hours=1)
+        holding_duration = completion_time - holding_start
+        if holding_duration >= timedelta(hours=holding_time_hours) and (
+            latest_completion_time is None
+            or completion_time > latest_completion_time
+        ):
+            latest_completion = (holding_start, completion_time, holding_duration)
+            latest_completion_time = completion_time
+
+        return None, None, latest_completion, latest_completion_time
+
+    @staticmethod
+    def _parse_stat_time(value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value, tz=dt_util.UTC)
+        if isinstance(value, str):
+            return dt_util.parse_datetime(value)
+        return None
 
     async def _check_natural_balancing(self) -> Optional[BalancingPlan]:
         """Check if HYBRID forecast naturally reaches 100% for 3h.
@@ -1072,99 +1148,35 @@ class BalancingManager:
             Total cost in CZK (waiting + charging)
         """
         now = datetime.now()
-        wait_duration = (window_start - now).total_seconds() / 3600.0  # hours
-
+        wait_duration = (window_start - now).total_seconds() / 3600.0
         if wait_duration <= 0:
-            # Window is now or in past, no waiting cost
             return await self._calculate_immediate_balancing_cost(current_soc_percent)
 
         battery_capacity_kwh = self._get_battery_capacity_kwh()
         if not battery_capacity_kwh:
             return 999.0
 
-        # 1. Calculate battery discharge during wait
-        # Self-discharge rate ~0.05 kWh/hour (from battery specs)
-        DISCHARGE_RATE_KWH_PER_HOUR = 0.05
-        battery_loss_kwh = wait_duration * DISCHARGE_RATE_KWH_PER_HOUR
+        battery_loss_kwh = self._estimate_battery_loss(wait_duration)
+        grid_consumption_kwh = self._estimate_grid_consumption(now, window_start)
 
-        # 2. Get grid consumption during wait from forecast timeline
-        grid_consumption_kwh = 0.0
-        if self._forecast_sensor and hasattr(self._forecast_sensor, "_timeline_data"):
-            timeline = self._forecast_sensor._timeline_data
-            if timeline:
-                for interval in timeline:
-                    # OPRAVA: Timeline data jsou slovníky, ne objekty
-                    ts_str = (
-                        interval.get("timestamp")
-                        if isinstance(interval, dict)
-                        else getattr(interval, "ts", None)
-                    )
-                    if not ts_str:
-                        continue
-                    try:
-                        interval_time = datetime.fromisoformat(ts_str)
-                        if now <= interval_time < window_start:
-                            # Grid consumption in this 15-min interval
-                            if isinstance(interval, dict):
-                                grid_kwh = float(
-                                    interval.get(
-                                        "grid_consumption_kwh",
-                                        interval.get(
-                                            "grid_import", interval.get("grid_net", 0.0)
-                                        ),
-                                    )
-                                    or 0.0
-                                )
-                            else:
-                                grid_kwh = float(
-                                    getattr(
-                                        interval,
-                                        "grid_consumption_kwh",
-                                        getattr(
-                                            interval,
-                                            "grid_import",
-                                            getattr(interval, "grid_net", 0.0),
-                                        ),
-                                    )
-                                    or 0.0
-                                )
-                            grid_consumption_kwh += grid_kwh
-                    except (ValueError, TypeError):
-                        continue
-
-        # 3. Calculate average spot price during wait
         prices = await self._get_spot_prices_48h()
-        wait_prices = [
-            price for ts, price in prices.items() if now <= ts < window_start
-        ]
-        avg_wait_price = sum(wait_prices) / len(wait_prices) if wait_prices else 5.0
+        avg_wait_price = self._average_price_for_window(prices, now, window_start)
 
-        # 4. Calculate waiting cost
         total_wait_energy = battery_loss_kwh + grid_consumption_kwh
-        # Price is already in CZK/kWh (includes all fees)
         waiting_cost = total_wait_energy * avg_wait_price
 
-        # 5. Calculate SoC at window start
-        soc_loss_percent = (battery_loss_kwh / battery_capacity_kwh) * 100
-        soc_at_window = max(0, current_soc_percent - soc_loss_percent)
-
-        # 6. Calculate charging cost
+        soc_at_window = self._estimate_soc_at_window(
+            current_soc_percent, battery_loss_kwh, battery_capacity_kwh
+        )
         charge_needed_kwh = (100 - soc_at_window) / 100 * battery_capacity_kwh
 
-        # Average spot price during charging/holding window
         holding_time_hours = self._get_holding_time_hours()
         window_end = window_start + timedelta(hours=holding_time_hours)
-        charging_prices = [
-            price for ts, price in prices.items() if window_start <= ts < window_end
-        ]
-        avg_charging_price = (
-            sum(charging_prices) / len(charging_prices) if charging_prices else 5.0
+        avg_charging_price = self._average_price_for_window(
+            prices, window_start, window_end
         )
-
-        # Price is already in CZK/kWh (includes all fees)
         charging_cost = charge_needed_kwh * avg_charging_price
 
-        # 7. Total cost
         total_cost = waiting_cost + charging_cost
 
         _LOGGER.debug(
@@ -1175,6 +1187,74 @@ class BalancingManager:
         )
 
         return total_cost
+
+    @staticmethod
+    def _estimate_battery_loss(wait_duration: float) -> float:
+        discharge_rate_kwh_per_hour = 0.05
+        return wait_duration * discharge_rate_kwh_per_hour
+
+    def _estimate_grid_consumption(
+        self, now: datetime, window_start: datetime
+    ) -> float:
+        if not (self._forecast_sensor and hasattr(self._forecast_sensor, "_timeline_data")):
+            return 0.0
+        timeline = self._forecast_sensor._timeline_data
+        if not timeline:
+            return 0.0
+        grid_consumption_kwh = 0.0
+        for interval in timeline:
+            ts_str = (
+                interval.get("timestamp")
+                if isinstance(interval, dict)
+                else getattr(interval, "ts", None)
+            )
+            if not ts_str:
+                continue
+            try:
+                interval_time = datetime.fromisoformat(ts_str)
+                if now <= interval_time < window_start:
+                    grid_consumption_kwh += self._extract_grid_kwh(interval)
+            except (ValueError, TypeError):
+                continue
+        return grid_consumption_kwh
+
+    @staticmethod
+    def _extract_grid_kwh(interval: Any) -> float:
+        if isinstance(interval, dict):
+            return float(
+                interval.get(
+                    "grid_consumption_kwh",
+                    interval.get("grid_import", interval.get("grid_net", 0.0)),
+                )
+                or 0.0
+            )
+        return float(
+            getattr(
+                interval,
+                "grid_consumption_kwh",
+                getattr(interval, "grid_import", getattr(interval, "grid_net", 0.0)),
+            )
+            or 0.0
+        )
+
+    @staticmethod
+    def _average_price_for_window(
+        prices: Dict[datetime, float],
+        start: datetime,
+        end: datetime,
+        fallback: float = 5.0,
+    ) -> float:
+        window_prices = [price for ts, price in prices.items() if start <= ts < end]
+        return sum(window_prices) / len(window_prices) if window_prices else fallback
+
+    @staticmethod
+    def _estimate_soc_at_window(
+        current_soc_percent: float,
+        battery_loss_kwh: float,
+        battery_capacity_kwh: float,
+    ) -> float:
+        soc_loss_percent = (battery_loss_kwh / battery_capacity_kwh) * 100
+        return max(0, current_soc_percent - soc_loss_percent)
 
     async def _find_cheap_holding_window(
         self,
@@ -1271,10 +1351,8 @@ class BalancingManager:
             capacity = capacity_raw
 
             # Some installations expose this sensor in Wh, not kWh.
-            if unit and unit.lower() == "wh":
-                capacity = capacity_raw / 1000.0
-            elif capacity_raw > 1000:
-                # Safety net: treat large values as Wh.
+            if (unit and unit.lower() == "wh") or capacity_raw > 1000:
+                # Treat Wh inputs (explicit or obvious large values) as kWh.
                 capacity = capacity_raw / 1000.0
 
             _LOGGER.debug(

@@ -989,7 +989,9 @@ def _calculate_sampling_median(
 
     now = datetime.now()
     cutoff_time = now - timedelta(minutes=sampling_minutes)
-    recent_data = [value for dt, value in sampling_data if dt > cutoff_time]
+    recent_data = [
+        value for dt, value in sampling_data if dt > cutoff_time and value is not None
+    ]
 
     _LOGGER.debug(
         "[%s] Time check: now=%s, cutoff=%s, total_samples=%s, recent_samples=%s",
@@ -1000,7 +1002,11 @@ def _calculate_sampling_median(
         len(recent_data),
     )
 
-    data = recent_data if recent_data else [value for _, value in sampling_data]
+    data = (
+        recent_data
+        if recent_data
+        else [value for _, value in sampling_data if value is not None]
+    )
     if not data:
         return None
     result = median(data)
@@ -1233,35 +1239,11 @@ class StatisticsProcessor:
             current_time = dt_util.now()
 
             # Filter and process data points
-            processed_data = []
-            for point in raw_data:
-                processed_point = dict(point)
-
-                # Handle timestamp field
-                if "timestamp" in processed_point:
-                    ts = processed_point["timestamp"]
-                    if isinstance(ts, str):
-                        try:
-                            ts = dt_util.parse_datetime(ts)
-                        except ValueError:
-                            continue
-                    elif isinstance(ts, datetime):
-                        ts = ensure_timezone_aware(ts)
-                    processed_point["timestamp"] = ts
-
-                # Handle time field
-                elif "time" in processed_point:
-                    ts = processed_point["time"]
-                    if isinstance(ts, str):
-                        try:
-                            ts = dt_util.parse_datetime(ts)
-                        except ValueError:
-                            continue
-                    elif isinstance(ts, datetime):
-                        ts = ensure_timezone_aware(ts)
-                    processed_point["time"] = ts
-
-                processed_data.append(processed_point)
+            processed_data = [
+                processed
+                for point in raw_data
+                if (processed := self._normalize_point(point)) is not None
+            ]
 
             # Create attributes safely
             attributes = create_hourly_attributes(
@@ -1269,10 +1251,7 @@ class StatisticsProcessor:
             )
 
             # Calculate current value
-            current_value = 0.0
-            if processed_data:
-                latest_point = processed_data[-1]
-                current_value = float(latest_point.get(value_key, 0.0))
+            current_value = self._extract_current_value(processed_data, value_key)
 
             return {"value": current_value, "attributes": attributes}
 
@@ -1285,3 +1264,39 @@ class StatisticsProcessor:
                     "last_updated": dt_util.now().isoformat(),
                 },
             }
+
+    def _normalize_point(self, point: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        processed_point = dict(point)
+        ts = self._normalize_time_field(processed_point, "timestamp")
+        if ts is False:
+            return None
+        if ts is None:
+            ts = self._normalize_time_field(processed_point, "time")
+            if ts is False:
+                return None
+        return processed_point
+
+    def _normalize_time_field(
+        self, processed_point: Dict[str, Any], key: str
+    ) -> Optional[bool]:
+        if key not in processed_point:
+            return None
+        ts = processed_point[key]
+        if isinstance(ts, str):
+            try:
+                ts = dt_util.parse_datetime(ts)
+            except ValueError:
+                return False
+        elif isinstance(ts, datetime):
+            ts = ensure_timezone_aware(ts)
+        processed_point[key] = ts
+        return True
+
+    @staticmethod
+    def _extract_current_value(
+        processed_data: List[Dict[str, Any]], value_key: str
+    ) -> float:
+        if not processed_data:
+            return 0.0
+        latest_point = processed_data[-1]
+        return float(latest_point.get(value_key, 0.0))

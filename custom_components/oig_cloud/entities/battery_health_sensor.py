@@ -193,14 +193,13 @@ class BatteryHealthTracker:
         Returns:
             List of (start_time, end_time, start_soc, end_soc)
         """
-        intervals = []
+        intervals: List[tuple] = []
 
-        # Začátek potenciálního intervalu
         interval_start_time = None
         interval_start_soc = None
         interval_max_soc = None
         last_soc = None
-        prev_timestamp = None  # Inicializace
+        prev_timestamp = None
 
         for state in soc_states:
             if state.state in ["unknown", "unavailable"]:
@@ -209,59 +208,60 @@ class BatteryHealthTracker:
             try:
                 soc = float(state.state)
                 timestamp = state.last_changed
-
-                if last_soc is None:
-                    # První hodnota
-                    interval_start_time = timestamp
-                    interval_start_soc = soc
-                    interval_max_soc = soc
-                elif soc >= last_soc:
-                    # SoC roste nebo je stejné - pokračujeme v intervalu
-                    interval_max_soc = soc
-                else:
-                    # SoC kleslo - konec monotónního intervalu
-                    if interval_start_soc is not None and interval_max_soc is not None:
-                        delta_soc = interval_max_soc - interval_start_soc
-                        if delta_soc >= 50:
-                            # Najít timestamp pro max_soc (poslední před poklesem)
-                            intervals.append(
-                                (
-                                    interval_start_time,
-                                    prev_timestamp,  # Použijeme předchozí timestamp
-                                    interval_start_soc,
-                                    interval_max_soc,
-                                )
-                            )
-                            _LOGGER.debug(
-                                f"Found interval: {interval_start_soc:.0f}%→{interval_max_soc:.0f}% "
-                                f"(Δ{delta_soc:.0f}%)"
-                            )
-
-                    # Začít nový interval od tohoto bodu
-                    interval_start_time = timestamp
-                    interval_start_soc = soc
-                    interval_max_soc = soc
-
-                prev_timestamp = timestamp
-                last_soc = soc
-
             except (ValueError, TypeError):
                 continue
 
-        # Zkontrolovat poslední interval (pokud SoC stále roste)
-        if interval_start_soc is not None and interval_max_soc is not None:
-            delta_soc = interval_max_soc - interval_start_soc
-            if delta_soc >= 50:
-                intervals.append(
-                    (
-                        interval_start_time,
-                        prev_timestamp,
-                        interval_start_soc,
-                        interval_max_soc,
-                    )
+            if last_soc is None:
+                interval_start_time = timestamp
+                interval_start_soc = soc
+                interval_max_soc = soc
+            elif soc >= last_soc:
+                interval_max_soc = soc
+            else:
+                self._maybe_add_interval(
+                    intervals,
+                    interval_start_time,
+                    prev_timestamp,
+                    interval_start_soc,
+                    interval_max_soc,
                 )
+                interval_start_time = timestamp
+                interval_start_soc = soc
+                interval_max_soc = soc
+
+            prev_timestamp = timestamp
+            last_soc = soc
+
+        self._maybe_add_interval(
+            intervals,
+            interval_start_time,
+            prev_timestamp,
+            interval_start_soc,
+            interval_max_soc,
+        )
 
         return intervals
+
+    @staticmethod
+    def _maybe_add_interval(
+        intervals: List[tuple],
+        start_time: Optional[datetime],
+        end_time: Optional[datetime],
+        start_soc: Optional[float],
+        end_soc: Optional[float],
+    ) -> None:
+        if start_soc is None or end_soc is None or start_time is None:
+            return
+        delta_soc = end_soc - start_soc
+        if delta_soc < 50 or end_time is None:
+            return
+        intervals.append((start_time, end_time, start_soc, end_soc))
+        _LOGGER.debug(
+            "Found interval: %.0f%%→%.0f%% (Δ%.0f%%)",
+            start_soc,
+            end_soc,
+            delta_soc,
+        )
 
     def _calculate_capacity(
         self,

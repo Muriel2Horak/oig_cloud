@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 COMPOSE_FILE="docker-compose.sonarqube.yml"
+SONAR_COMPOSE_PROJECT="${SONAR_COMPOSE_PROJECT:-oig_sonarqube}"
 SONAR_PORT="${SONAR_PORT:-9001}"
 SONAR_HOST_URL="${SONAR_HOST_URL:-http://localhost:${SONAR_PORT}}"
 
@@ -26,6 +27,7 @@ Usage:
 Env:
   SONAR_PORT=9001                     # host port mapped to SonarQube 9000
   SONAR_HOST_URL=http://localhost:9001
+  SONAR_COMPOSE_PROJECT=oig_sonarqube # docker compose project name
   SONAR_TOKEN=...                     # required for 'scan'
   SONAR_PROJECT_KEY=oig_cloud         # default is 'oig_cloud'
   SONAR_PROJECT_NAME=oig_cloud        # default is SONAR_PROJECT_KEY
@@ -86,7 +88,7 @@ PY
 }
 
 start() {
-  docker compose -f "$COMPOSE_FILE" up -d
+  docker compose -p "${SONAR_COMPOSE_PROJECT}" -f "$COMPOSE_FILE" up -d
   wait_for_sonarqube
   cat <<TXT
 
@@ -103,7 +105,7 @@ TXT
 }
 
 stop() {
-  docker compose -f "$COMPOSE_FILE" down -v
+  docker compose -p "${SONAR_COMPOSE_PROJECT}" -f "$COMPOSE_FILE" down -v
 }
 
 logs() {

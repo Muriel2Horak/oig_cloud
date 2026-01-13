@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import callback
@@ -27,6 +27,8 @@ _LANGS: Dict[str, Dict[str, str]] = {
     "Zapnuto/On": {"en": "On", "cs": "Zapnuto"},
     "Vypnuto/Off": {"en": "Off", "cs": "Vypnuto"},
 }
+
+_STATE_NOT_HANDLED = object()
 
 
 class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
@@ -100,7 +102,6 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         # Local telemetry mapping is handled centrally by DataSourceController
         # which keeps coordinator.data in a cloud-shaped format even in local mode.
         # Data sensors therefore never subscribe to `sensor.oig_local_*` directly.
-        return
 
     async def async_will_remove_from_hass(self) -> None:
         if self._local_state_unsub:
@@ -176,56 +177,9 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     def state(self) -> Any:  # noqa: C901
         """Return the state of the sensor."""
         try:
-            # Notification sensors - OPRAVA: Debug logování + lepší diagnostika
-            if self._sensor_type == "latest_notification":
-                notification_manager = getattr(
-                    self.coordinator, "notification_manager", None
-                )
-                if notification_manager is None:
-                    # Notifications are optional; avoid noisy warnings on startup.
-                    if not getattr(self, "_warned_notification_manager_missing", False):
-                        self._warned_notification_manager_missing = True
-                        _LOGGER.debug(
-                            "[%s] Notification manager not initialized yet",
-                            self.entity_id,
-                        )
-                    return None
-                return notification_manager.get_latest_notification_message()
-
-            elif self._sensor_type == "bypass_status":
-                notification_manager = getattr(
-                    self.coordinator, "notification_manager", None
-                )
-                if notification_manager is None:
-                    _LOGGER.debug(
-                        f"[{self.entity_id}] Notification manager is None for bypass status"
-                    )
-                    return self._fallback_value()
-                return notification_manager.get_bypass_status()
-
-            elif self._sensor_type == "notification_count_error":
-                notification_manager = getattr(
-                    self.coordinator, "notification_manager", None
-                )
-                if notification_manager is None:
-                    return None
-                return notification_manager.get_notification_count("error")
-
-            elif self._sensor_type == "notification_count_warning":
-                notification_manager = getattr(
-                    self.coordinator, "notification_manager", None
-                )
-                if notification_manager is None:
-                    return None
-                return notification_manager.get_notification_count("warning")
-
-            elif self._sensor_type == "notification_count_unread":
-                notification_manager = getattr(
-                    self.coordinator, "notification_manager", None
-                )
-                if notification_manager is None:
-                    return None
-                return notification_manager.get_unread_count()
+            notification_state = self._get_notification_state()
+            if notification_state is not _STATE_NOT_HANDLED:
+                return notification_state
 
             if self.coordinator.data is None:
                 return self._fallback_value()
@@ -251,25 +205,9 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             if raw_value is None:
                 return self._fallback_value()
 
-            # SPECIÁLNÍ ZPRACOVÁNÍ pro určité typy senzorů
-            if self._sensor_type == "box_prms_mode":
-                return self._get_mode_name(raw_value, "cs")
-            elif self._sensor_type == "invertor_prms_to_grid":
-                if isinstance(raw_value, (int, float, str)):
-                    return self._grid_mode(pv_data, raw_value, "cs")
-                else:
-                    _LOGGER.warning(
-                        f"[{self.entity_id}] Invalid raw_value type for grid mode: {type(raw_value)}"
-                    )
-                    return None
-            elif "ssr" in self._sensor_type:
-                return self._get_ssrmode_name(raw_value, "cs")
-            elif self._sensor_type == "boiler_manual_mode":
-                return self._get_boiler_mode_name(raw_value, "cs")
-            elif self._sensor_type == "boiler_is_use":
-                return self._get_on_off_name(raw_value, "cs")
-            elif self._sensor_type == "box_prms_crct":
-                return self._get_on_off_name(raw_value, "cs")
+            special_state = self._get_special_state(raw_value, pv_data)
+            if special_state is not _STATE_NOT_HANDLED:
+                return special_state
 
             # Pro ostatní senzory vrátíme raw hodnotu přímo
             return raw_value
@@ -279,6 +217,73 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
                 f"Error getting state for {self.entity_id}: {e}", exc_info=True
             )
             return self._fallback_value()
+
+    def _get_notification_state(self) -> Any:
+        notification_manager = getattr(self.coordinator, "notification_manager", None)
+        if self._sensor_type == "latest_notification":
+            return self._get_latest_notification_state(notification_manager)
+
+        handler = self._notification_handler()
+        if handler is None:
+            return _STATE_NOT_HANDLED
+
+        method_name, args, missing_value = handler
+        if notification_manager is None:
+            self._log_missing_notification_manager(method_name)
+            return missing_value
+
+        return getattr(notification_manager, method_name)(*args)
+
+    def _get_latest_notification_state(self, notification_manager: Any) -> Any:
+        if notification_manager is None:
+            if not getattr(self, "_warned_notification_manager_missing", False):
+                self._warned_notification_manager_missing = True
+                _LOGGER.debug(
+                    "[%s] Notification manager not initialized yet",
+                    self.entity_id,
+                )
+            return None
+        return notification_manager.get_latest_notification_message()
+
+    def _notification_handler(
+        self,
+    ) -> Optional[Tuple[str, Tuple[Any, ...], Any]]:
+        if self._sensor_type == "bypass_status":
+            return ("get_bypass_status", (), self._fallback_value())
+        if self._sensor_type == "notification_count_error":
+            return ("get_notification_count", ("error",), None)
+        if self._sensor_type == "notification_count_warning":
+            return ("get_notification_count", ("warning",), None)
+        if self._sensor_type == "notification_count_unread":
+            return ("get_unread_count", (), None)
+        return None
+
+    def _log_missing_notification_manager(self, method_name: str) -> None:
+        if method_name == "get_bypass_status":
+            _LOGGER.debug(
+                "[%s] Notification manager is None for bypass status",
+                self.entity_id,
+            )
+
+    def _get_special_state(self, raw_value: Any, pv_data: Dict[str, Any]) -> Any:
+        if self._sensor_type == "box_prms_mode":
+            return self._get_mode_name(raw_value, "cs")
+        if self._sensor_type == "invertor_prms_to_grid":
+            if isinstance(raw_value, (int, float, str)):
+                return self._grid_mode(pv_data, raw_value, "cs")
+            _LOGGER.warning(
+                "[%s] Invalid raw_value type for grid mode: %s",
+                self.entity_id,
+                type(raw_value),
+            )
+            return None
+        if "ssr" in self._sensor_type:
+            return self._get_ssrmode_name(raw_value, "cs")
+        if self._sensor_type == "boiler_manual_mode":
+            return self._get_boiler_mode_name(raw_value, "cs")
+        if self._sensor_type in {"boiler_is_use", "box_prms_crct"}:
+            return self._get_on_off_name(raw_value, "cs")
+        return _STATE_NOT_HANDLED
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -445,57 +450,32 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
 
     def _get_mode_name(self, node_value: int, language: str) -> str:
         """Convert box mode number to human-readable name."""
-        if node_value == 0:
-            return "Home 1"
-        elif node_value == 1:
-            return "Home 2"
-        elif node_value == 2:
-            return "Home 3"
-        elif node_value == 3:
-            return "Home UPS"
-        elif node_value == 4:
-            return "Home 5"
-        elif node_value == 5:
-            return "Home 6"
-        return _LANGS["unknown"][language]
+        modes = {
+            0: "Home 1",
+            1: "Home 2",
+            2: "Home 3",
+            3: "Home UPS",
+            4: "Home 5",
+            5: "Home 6",
+        }
+        return modes.get(node_value, _LANGS["unknown"][language])
 
     def _grid_mode(
         self, pv_data: Dict[str, Any], node_value: Any, language: str
     ) -> str:
         try:
-            box_prms = pv_data.get("box_prms", {}) or {}
-            grid_enabled_raw = None
-            if isinstance(box_prms, dict):
-                grid_enabled_raw = box_prms.get("crcte", box_prms.get("crct"))
-
-            invertor_prm1 = pv_data.get("invertor_prm1", {}) or {}
-            max_grid_feed_raw = (
-                invertor_prm1.get("p_max_feed_grid")
-                if isinstance(invertor_prm1, dict)
-                else None
-            )
-
+            grid_enabled_raw, max_grid_feed_raw = self._extract_grid_inputs(pv_data)
             if grid_enabled_raw is None or max_grid_feed_raw is None:
                 local_mode = self._get_local_grid_mode(node_value, language)
                 if local_mode != _LANGS["unknown"][language]:
                     return local_mode
-                if grid_enabled_raw is None:
-                    _LOGGER.debug(
-                        "[%s] Missing box_prms.crcte/crct in data",
-                        self.entity_id,
-                    )
-                if max_grid_feed_raw is None:
-                    _LOGGER.debug(
-                        "[%s] Missing invertor_prm1.p_max_feed_grid in data",
-                        self.entity_id,
-                    )
+                self._log_missing_grid_inputs(grid_enabled_raw, max_grid_feed_raw)
                 return _LANGS["unknown"][language]
 
-            grid_enabled = int(grid_enabled_raw)
-            to_grid = int(node_value) if node_value is not None else 0
-            max_grid_feed = int(max_grid_feed_raw)
-
-            if "queen" in pv_data and bool(pv_data["queen"]):
+            grid_enabled, to_grid, max_grid_feed = self._normalize_grid_inputs(
+                grid_enabled_raw, node_value, max_grid_feed_raw
+            )
+            if self._is_queen_mode(pv_data):
                 return self._grid_mode_queen(
                     grid_enabled, to_grid, max_grid_feed, language
                 )
@@ -504,6 +484,50 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         except (KeyError, ValueError, TypeError) as e:
             _LOGGER.error(f"[{self.entity_id}] Error determining grid mode: {e}")
             return _LANGS["unknown"][language]
+
+    def _extract_grid_inputs(
+        self, pv_data: Dict[str, Any]
+    ) -> Tuple[Optional[Any], Optional[Any]]:
+        box_prms = pv_data.get("box_prms", {}) or {}
+        grid_enabled_raw = (
+            box_prms.get("crcte", box_prms.get("crct"))
+            if isinstance(box_prms, dict)
+            else None
+        )
+        invertor_prm1 = pv_data.get("invertor_prm1", {}) or {}
+        max_grid_feed_raw = (
+            invertor_prm1.get("p_max_feed_grid")
+            if isinstance(invertor_prm1, dict)
+            else None
+        )
+        return grid_enabled_raw, max_grid_feed_raw
+
+    def _log_missing_grid_inputs(
+        self, grid_enabled_raw: Optional[Any], max_grid_feed_raw: Optional[Any]
+    ) -> None:
+        if grid_enabled_raw is None:
+            _LOGGER.debug(
+                "[%s] Missing box_prms.crcte/crct in data",
+                self.entity_id,
+            )
+        if max_grid_feed_raw is None:
+            _LOGGER.debug(
+                "[%s] Missing invertor_prm1.p_max_feed_grid in data",
+                self.entity_id,
+            )
+
+    @staticmethod
+    def _normalize_grid_inputs(
+        grid_enabled_raw: Any, node_value: Any, max_grid_feed_raw: Any
+    ) -> Tuple[int, int, int]:
+        grid_enabled = int(grid_enabled_raw)
+        to_grid = int(node_value) if node_value is not None else 0
+        max_grid_feed = int(max_grid_feed_raw)
+        return grid_enabled, to_grid, max_grid_feed
+
+    @staticmethod
+    def _is_queen_mode(pv_data: Dict[str, Any]) -> bool:
+        return "queen" in pv_data and bool(pv_data["queen"])
 
     def _grid_mode_queen(
         self, grid_enabled: int, to_grid: int, max_grid_feed: int, language: str

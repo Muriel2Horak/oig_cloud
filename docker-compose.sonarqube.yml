@@ -9,6 +9,8 @@ services:
       POSTGRES_DB: "${SONAR_DB_NAME:-sonar}"
     volumes:
       - oig_sonarqube_db:/var/lib/postgresql/data
+    networks:
+      - oig_sonarqube_net
 
   sonarqube:
     image: sonarqube:latest
@@ -42,9 +44,23 @@ services:
       - oig_sonarqube_data:/opt/sonarqube/data
       - oig_sonarqube_extensions:/opt/sonarqube/extensions
       - oig_sonarqube_logs:/opt/sonarqube/logs
+    networks:
+      - oig_sonarqube_net
 
 volumes:
   oig_sonarqube_data:
+    name: oig_cloud_oig_sonarqube_data
+    external: true
   oig_sonarqube_extensions:
+    name: oig_cloud_oig_sonarqube_extensions
+    external: true
   oig_sonarqube_logs:
+    name: oig_cloud_oig_sonarqube_logs
+    external: true
   oig_sonarqube_db:
+    name: oig_cloud_oig_sonarqube_db
+    external: true
+
+networks:
+  oig_sonarqube_net:
+    name: oig_sonarqube_net

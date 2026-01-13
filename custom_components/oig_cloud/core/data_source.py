@@ -207,23 +207,35 @@ def _coerce_box_id(value: Any) -> Optional[str]:
     if value in (None, "", "unknown", "unavailable"):
         return None
     if isinstance(value, int):
-        return str(value) if value > 0 else None
+        return _coerce_box_id_int(value)
     if isinstance(value, float):
-        try:
-            as_int = int(value)
-            return str(as_int) if as_int > 0 else None
-        except Exception:
-            return None
+        return _coerce_box_id_float(value)
     if isinstance(value, str):
-        s = value.strip()
-        if s.isdigit():
-            return s
-        try:
-            m = re.search(r"(\d{6,})", s)
-            return m.group(1) if m else None
-        except Exception:
-            return None
+        return _coerce_box_id_str(value)
     return None
+
+
+def _coerce_box_id_int(value: int) -> Optional[str]:
+    return str(value) if value > 0 else None
+
+
+def _coerce_box_id_float(value: float) -> Optional[str]:
+    try:
+        as_int = int(value)
+        return str(as_int) if as_int > 0 else None
+    except Exception:
+        return None
+
+
+def _coerce_box_id_str(value: str) -> Optional[str]:
+    s = value.strip()
+    if s.isdigit():
+        return s
+    try:
+        m = re.search(r"(\d{6,})", s)
+    except Exception:
+        return None
+    return m.group(1) if m else None
 
 
 def _get_latest_local_entity_update(
@@ -234,23 +246,31 @@ def _get_latest_local_entity_update(
         return None
     try:
         latest: Optional[dt_util.dt.datetime] = None
-        for domain in ("sensor", "binary_sensor"):
-            prefix = f"{domain}.oig_local_{box_id}_"
-            for st in hass.states.async_all(domain):
-                if not st.entity_id.startswith(prefix):
-                    continue
-                if st.state in (None, "", "unknown", "unavailable"):
-                    continue
-                dt = st.last_updated or st.last_changed
-                if dt is None:
-                    continue
-                dt_utc = (
-                    dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
-                )
-                latest = dt_utc if latest is None else max(latest, dt_utc)
+        for st in _iter_local_entities(hass, box_id):
+            dt_utc = _extract_state_timestamp(st)
+            if dt_utc is None:
+                continue
+            latest = dt_utc if latest is None else max(latest, dt_utc)
         return latest
     except Exception:
         return None
+
+
+def _iter_local_entities(hass: HomeAssistant, box_id: str):
+    for domain in ("sensor", "binary_sensor"):
+        prefix = f"{domain}.oig_local_{box_id}_"
+        for st in hass.states.async_all(domain):
+            if st.entity_id.startswith(prefix):
+                yield st
+
+
+def _extract_state_timestamp(state: Any) -> Optional[dt_util.dt.datetime]:
+    if state.state in (None, "", "unknown", "unavailable"):
+        return None
+    dt = state.last_updated or state.last_changed
+    if dt is None:
+        return None
+    return dt_util.as_utc(dt) if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC)
 
 
 def _pick_latest_source(
@@ -481,12 +501,14 @@ class DataSourceController:
 
     @callback
     def _on_proxy_change(self, _event: Any) -> None:
-        _, mode_changed = self._update_state()
-        if mode_changed:
-            self._on_effective_mode_changed()
+        self._refresh_mode()
 
     @callback
     def _on_periodic(self, _now: Any) -> None:
+        self._refresh_mode()
+
+    @callback
+    def _refresh_mode(self) -> None:
         _, mode_changed = self._update_state()
         if mode_changed:
             self._on_effective_mode_changed()

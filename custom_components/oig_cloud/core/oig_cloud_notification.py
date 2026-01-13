@@ -51,10 +51,7 @@ class _NotificationHtmlParser(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
         if tag != "div":
-            if tag == "strong" and self._capture == "row-2":
-                self._in_strong = True
-            elif tag == "br" and self._capture == "body":
-                self._body_parts.append("\n")
+            self._handle_non_div_tag(tag)
             return
 
         attrs_map = dict(attrs)
@@ -62,33 +59,47 @@ class _NotificationHtmlParser(HTMLParser):
         classes = class_attr.split()
 
         if "folder" in classes:
-            self._finalize_current()
-            self._current = {
-                "severity_level": "",
-                "date_str": "",
-                "device_id": "",
-                "short_message": "",
-                "full_message": "",
-            }
-            self._folder_depth = 1
+            self._start_new_folder()
             return
 
         if not self._current:
             return
 
         self._folder_depth += 1
+        self._update_capture_target(classes)
 
+    def _handle_non_div_tag(self, tag: str) -> None:
+        if tag == "strong" and self._capture == "row-2":
+            self._in_strong = True
+        elif tag == "br" and self._capture == "body":
+            self._body_parts.append("\n")
+
+    def _start_new_folder(self) -> None:
+        self._finalize_current()
+        self._current = {
+            "severity_level": "",
+            "date_str": "",
+            "device_id": "",
+            "short_message": "",
+            "full_message": "",
+        }
+        self._folder_depth = 1
+
+    def _update_capture_target(self, classes: List[str]) -> None:
         if "point" in classes:
             for cls in classes:
                 if cls.startswith("level-"):
                     self._current["severity_level"] = cls.split("-", 1)[1]
                     break
-        elif "date" in classes:
+            return
+        if "date" in classes:
             self._capture = "date"
-        elif "row-2" in classes:
+            return
+        if "row-2" in classes:
             self._capture = "row-2"
             self._row2_parts = []
-        elif "body" in classes:
+            return
+        if "body" in classes:
             self._capture = "body"
             self._body_parts = []
 
@@ -332,17 +343,10 @@ class OigNotificationParser:
 
         for idx in range(open_index, len(text)):
             ch = text[idx]
-            if string_quote:
-                if escape:
-                    escape = False
-                elif ch == "\\":
-                    escape = True
-                elif ch == string_quote:
-                    string_quote = None
-                continue
-
-            if ch in ('"', "'"):
-                string_quote = ch
+            string_quote, escape, should_continue = _update_string_state(
+                ch, string_quote, escape
+            )
+            if should_continue:
                 continue
 
             if ch == "(":
@@ -384,7 +388,7 @@ class OigNotificationParser:
             clean_json = self._clean_json_string(json_str)
             data = json.loads(clean_json)
             return self._create_notification_from_json(data)
-        except (json.JSONDecodeError, ValueError) as e:
+        except ValueError as e:
             _LOGGER.debug(f"Failed to parse JSON notification: {e}")
             return None
         except Exception as e:

@@ -11,14 +11,11 @@ Instead, it wraps API calls to provide:
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, Optional, ParamSpec, TypeVar
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
 
 _LOGGER = logging.getLogger(__name__)
-
-P = ParamSpec("P")
-T = TypeVar("T")
 
 # Session TTL: 30 minut (bezpečná rezerva)
 SESSION_TTL = timedelta(minutes=30)
@@ -69,59 +66,17 @@ class OigCloudSessionManager:
     async def _log_api_session_info(self) -> None:
         """Log information about API session configuration and headers."""
         try:
-            # Base URL
             base_url = getattr(self._api, "_base_url", "https://www.oigpower.cz/cez")
             _LOGGER.info(f"🌐 Base URL: {base_url}")
 
-            # Try to get session info via get_session() method
-            try:
-                # OigCloudApi.get_session() creates a new session with headers
-                # We'll inspect what it would create
-                session = self._api.get_session()
-
-                if session:
-                    _LOGGER.info("📋 HTTP HEADERS sent by OigCloudApi:")
-
-                    # aiohttp stores headers in internal structure
-                    # Try multiple ways to access them
-                    headers_found = False
-
-                    # Method 1: _default_headers (internal CIMultiDict)
-                    if (
-                        hasattr(session, "_default_headers")
-                        and session._default_headers
-                    ):
-                        for key, value in session._default_headers.items():
-                            _LOGGER.info(f"   {key}: {value}")
-                            headers_found = True
-
-                    # Method 2: Direct inspection via connector's headers
-                    if (
-                        not headers_found
-                        and hasattr(session, "_connector")
-                        and hasattr(session._connector, "_default_headers")
-                    ):
-                        for key, value in session._connector._default_headers.items():
-                            _LOGGER.info(f"   {key}: {value}")
-                            headers_found = True
-
-                    if not headers_found:
-                        _LOGGER.debug(
-                            "Could not find headers in session object, checking attributes..."
-                        )
-                        _LOGGER.debug(
-                            f"Session attributes: {[attr for attr in dir(session) if 'header' in attr.lower()]}"
-                        )
-
-                    # Close the test session
+            session = self._open_debug_session()
+            if session:
+                try:
+                    self._log_session_headers(session)
+                finally:
                     await session.close()
-                else:
-                    _LOGGER.debug("No session object available from get_session()")
-
-            except Exception as e:
-                _LOGGER.warning(
-                    f"Could not inspect session headers: {e}", exc_info=True
-                )
+            else:
+                _LOGGER.debug("No session object available from get_session()")
 
             # Log known API endpoints
             _LOGGER.info("Known API endpoints:")
@@ -131,6 +86,38 @@ class OigCloudSessionManager:
 
         except Exception as e:
             _LOGGER.debug(f"Error logging API session info: {e}")
+
+    def _open_debug_session(self) -> Optional[Any]:
+        try:
+            return self._api.get_session()
+        except Exception as e:
+            _LOGGER.warning(f"Could not inspect session headers: {e}", exc_info=True)
+            return None
+
+    def _log_session_headers(self, session: Any) -> None:
+        _LOGGER.info("📋 HTTP HEADERS sent by OigCloudApi:")
+
+        headers = self._extract_session_headers(session)
+        if headers:
+            for key, value in headers.items():
+                _LOGGER.info(f"   {key}: {value}")
+            return
+
+        _LOGGER.debug(
+            "Could not find headers in session object, checking attributes..."
+        )
+        _LOGGER.debug(
+            "Session attributes: %s",
+            [attr for attr in dir(session) if "header" in attr.lower()],
+        )
+
+    @staticmethod
+    def _extract_session_headers(session: Any) -> Optional[Dict[str, str]]:
+        if hasattr(session, "_default_headers") and session._default_headers:
+            return dict(session._default_headers)
+        if hasattr(session, "_connector") and hasattr(session._connector, "_default_headers"):
+            return dict(session._connector._default_headers)
+        return None
 
     def _is_session_expired(self) -> bool:
         """Check if session TTL has expired."""
@@ -212,8 +199,8 @@ class OigCloudSessionManager:
             self._last_request_time = datetime.now()
 
     async def _call_with_retry(
-        self, method: Callable[P, T], *args: P.args, **kwargs: P.kwargs
-    ) -> T:
+        self, method: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any
+    ) -> Any:
         """Call API method with automatic retry on 401 errors.
 
         Args:
