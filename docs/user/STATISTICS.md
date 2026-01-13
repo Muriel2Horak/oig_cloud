@@ -35,6 +35,7 @@ Poznámky:
 
 - Výsledky jsou orientační (závisí na kvalitě historických dat a „čistotě“ cyklů).
 - Pokud HA neukládá historii (recorder) nebo chybí relevantní entity, SoH nebude k dispozici.
+- Zdrojové entity: `sensor.oig_XXXXX_batt_bat_c` + `sensor.oig_XXXXX_computed_batt_charge_energy_month`.
 
 ## Profiling spotřeby (adaptivní profily, 72h)
 
@@ -60,6 +61,17 @@ Co to znamená:
 - integrace drží stav/diagnostiku: kdy proběhlo poslední balancování, kolik dní uplynulo, zda je plánované další, apod.
 
 Pro manuální kontrolu (diagnostika): viz služba `oig_cloud.check_balancing` v `./SERVICES.md`.
+
+### Konfigurace balancování (z config flow)
+
+Balancování ovlivňují parametry v kroku „Predikce baterie“:
+
+- `balancing_enabled` – zapnutí/vypnutí balancování
+- `balancing_interval_days` – perioda v dnech
+- `balancing_hold_hours` – jak dlouho držet vyšší SOC
+- `balancing_opportunistic_threshold` – práh pro opportunistic režim
+- `balancing_economic_threshold` – práh pro economic režim
+- `cheap_window_percentile` – jak agresivně hledat levná okna
 
 ## Statistiky pro plánovač
 

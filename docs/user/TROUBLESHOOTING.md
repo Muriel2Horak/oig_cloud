@@ -313,7 +313,7 @@ Vývojářské nástroje → Služby → homeassistant.reload_config_entry
 
 ### ❌ Entity se neaktualizují
 
-**Příčina:** Polling interval, API problém, nebo freeze.
+**Příčina:** Interval aktualizace, API problém, nebo freeze.
 
 **Diagnostika:**
 
@@ -324,10 +324,10 @@ Vývojářské nástroje → Stavy → sensor.oig_XXXXX_bat_soc
 → last_updated: 2024-01-01 10:30:00
 ```
 
-2. **Zkontrolujte polling interval:**
+2. **Zkontrolujte standardní interval:**
 
 ```
-Options → Interval aktualizace dat
+Options → Intervaly aktualizace dat (standard/extended)
 ```
 
 3. **Zkontrolujte logy:**
@@ -340,10 +340,7 @@ grep "Coordinator update" /config/home-assistant.log
 
 **Varianta A: Dlouhý interval**
 
-```yaml
-# Snižte interval
-polling_interval: 60 # Z 300 na 60 sekund
-```
+Snižte `standard_scan_interval` v konfiguraci integrace (např. na 60 s).
 
 **Varianta B: Force update**
 
@@ -470,12 +467,12 @@ Vývojářské nástroje → Služby → Filtr: "oig_cloud"
 # ŠPATNĚ
 service: oig_cloud.set_box_mode
 data:
-  mode: "Eco"
+  mode: "Home 1"
 
 # SPRÁVNĚ
 service: oig_cloud.set_box_mode
 data:
-  mode: "Eco"
+  mode: "Home 1"
   acknowledgement: true
 ```
 
@@ -487,7 +484,7 @@ data:
 
 ```yaml
 # set_box_mode
-mode: "Eco"  # Ne "eco" nebo "ECO"
+mode: "Home 1"  # Ne "eco" nebo "ECO"
 
 # set_grid_delivery
 mode: "On"   # Ne "on" nebo "ON"
@@ -500,7 +497,7 @@ mode: "CBB"  # Ne "cbb" nebo "Cbb"
 
 ```yaml
 set_box_mode:
-  mode: ["Eco", "Backup", "Charge", "Discharge"]
+  mode: ["Home 1", "Home 2", "Home 3", "Home UPS"]
 
 set_grid_delivery:
   mode: ["On", "Off", "Limited"]
@@ -889,7 +886,7 @@ trigger:
 condition:
   - condition: template
     value_template: >
-      {{ states('sensor.oig_XXXXX_box_prms_mode') != 'Backup' }}
+      {{ states('sensor.oig_XXXXX_box_prms_mode') != 'Home 2' }}
 ```
 
 ---
@@ -898,7 +895,7 @@ condition:
 
 ### ❌ Vysoké CPU usage
 
-**Příčina:** Krátký polling interval nebo moc automatizací.
+**Příčina:** Krátký standardní interval nebo moc automatizací.
 
 **Diagnostika:**
 
@@ -914,17 +911,11 @@ python3 -m cProfile -o profile.stats hass
 
 **Varianta A: Zvyšte interval**
 
-```yaml
-polling_interval: 600 # Z 60 na 600 sekund
-```
+Zvyšte `standard_scan_interval` (např. na 600 s).
 
-**Varianta B: Vypněte nepoužívané featury**
+**Varianta B: Vypněte nepoužívané moduly**
 
-```yaml
-enable_solar: false
-enable_pricing: false
-enable_boiler: false
-```
+V konfiguraci vypněte solární předpověď, pricing nebo bojler.
 
 **Varianta C: Optimalizujte automatizace**
 

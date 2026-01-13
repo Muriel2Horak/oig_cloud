@@ -26,6 +26,8 @@ OIG Dashboard je interaktivní webové rozhraní zobrazující:
 - **Ovládání režimů** (box mode, grid delivery, boiler)
 - **ServiceShield frontu** s přehledem změn
 - **Statistiky** a detailní informace o systému
+- **ČHMÚ badge** s varováními a detailním dialogem (pokud je modul zapnutý)
+- **Aktualizováno** čas poslední aktualizace dat
 
 ### Kde dashboard najdu?
 
@@ -262,51 +264,49 @@ Panel pro změnu režimů systému s potvrzením a ServiceShield ochranou.
 ┌─────────────────────────────────────────┐
 │ 📦 Režim Box                            │
 │                                         │
-│ [🌱 Eco] [🔋 Backup] [⚡ Charge] [⬇️ Discharge]
+│ [🏠 Home 1] [🏠 Home 2] [🏠 Home 3] [🔌 Home UPS]
 └─────────────────────────────────────────┘
 ```
 
 **Režimy:**
 
-#### 🌱 Eco (doporučeno)
+#### 🏠 Home 1 (doporučeno)
 
-- **Popis:** Ekonomický režim, automatická optimalizace
+- **Popis:** Základní režim (maximalizace vlastní spotřeby)
 - **Chování:**
-  - Nabíjí baterii z FVE přebytky
-  - Používá baterii při vyšší spotřebě
-  - Minimalizuje odběr ze sítě
-- **Kdy použít:** Běžný provoz, maximální úspora
+  - Solár → dům, přebytek → baterie
+  - Deficit → baterie (síť až když baterie nestačí)
+- **Kdy použít:** Běžný provoz
 
-#### 🔋 Backup
+#### 🏠 Home 2
 
-- **Popis:** Udržuje baterii plnou pro zálohu
+- **Popis:** Šetří baterii (nevybíjí do zátěže)
 - **Chování:**
-  - Nabíjí baterii na 100% a udržuje
-  - Baterie se nepoužívá pro běžnou spotřebu
-  - Připraveno na výpadek sítě
-- **Kdy použít:** Očekáváte výpadek nebo bouřku
+  - Solár → dům, přebytek → baterie
+  - Deficit → síť (baterie zůstává)
+- **Kdy použít:** Chcete držet SOC
 
-#### ⚡ Charge
+#### 🏠 Home 3
 
-- **Popis:** Rychlé nabíjení baterie
+- **Popis:** Solar prioritně nabíjí baterii
 - **Chování:**
-  - Aktivně nabíjí baterii (i ze sítě)
-  - Priorita: naplnit baterii co nejrychleji
-- **Kdy použít:** Levná elektřina (nízká spot cena), chcete rychle nabít
+  - Solár → baterie
+  - Spotřeba domu primárně ze sítě
+- **Kdy použít:** Chcete dobíjet baterii ze slunce
 
-#### ⬇️ Discharge
+#### 🔌 Home UPS
 
-- **Popis:** Vybíjení baterie do sítě
+- **Popis:** Nabíjení ze sítě (UPS)
 - **Chování:**
-  - Aktivně vybíjí baterii do sítě
-  - Maximalizuje dodávku energie
-- **Kdy použít:** Vysoká výkupní cena, chcete prodat energii
+  - Síť + solár → baterie
+  - Spotřeba domu ze sítě
+- **Kdy použít:** Plánované nabíjení ze sítě (levné okno)
 
 **🛡️ Potvrzení:**
 Po kliknutí na režim se zobrazí dialog:
 
 ```
-Změnit režim na Eco?
+Změnit režim na Home 1?
 
 [ ] Rozumím, že změna může trvat několik minut
 
@@ -395,7 +395,7 @@ Po rozbalení:
 │ ┌─────────────────────────────────────────────────────────┐│
 │ │ 🏃 Běží:  Změna režimu Box                              ││
 │ │ Služba:   set_box_mode                                  ││
-│ │ Cíl:      Eco (aktuálně: Charge)                        ││
+│ │ Cíl:      Home 1 (aktuálně: Home UPS)                   ││
 │ │ Čas:      15:32:45                                      ││
 │ │ Trvání:   0:00:12                                       ││
 │ └─────────────────────────────────────────────────────────┘│
@@ -409,7 +409,7 @@ Po rozbalení:
 │                                                             │
 │ ✅ Dokončené (poslední 3):                                  │
 │ • Změna režimu bojleru → Inteligentní (15:30, 0:01:05)    │
-│ • Změna režimu Box → Backup (15:15, 0:00:45)              │
+│ • Změna režimu Box → Home 2 (15:15, 0:00:45)              │
 │ • Změna dodávky → Vypnuto (15:00, 0:00:32)                │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -439,6 +439,7 @@ Pokud máte zapnutý plánovač (Battery forecast), dashboard navíc zobrazuje:
 
 - **timeline/plán** (kdy se očekává nabíjení ze sítě, kdy se šetří baterie na drahé hodiny apod.)
 - **toggle „Automatický režim“** – zapnutí/vypnutí automatického přepínání režimů podle plánu
+- **dialog timeline** s taby: včera / dnes / zítra / srovnání / detail / historie
 
 Detailní popis chování, zapnutí/vypnutí a technické pozadí: `./PLANNER.md`.
 
@@ -461,7 +462,7 @@ Dole v dashboardu najdete klíčové statistiky:
 ┌──────────────────────────────────────────┐
 │ 📦 Box Info                              │
 │                                          │
-│ 🔧 Režim:      Eco                       │
+│ 🔧 Režim:      Home 1                    │
 │ 🌊 Grid:       S omezením (5000 W)      │
 │ 🔥 Bypass:     ✅ Aktivní                │
 │ 🌡️ Teplota:    35 °C                    │

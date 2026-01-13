@@ -241,7 +241,7 @@ Spotřeba dnes: 8500 Wh (8.5 kWh)
 
 | Entity ID                                        | Název         | Hodnoty                     | Popis                     |
 | ------------------------------------------------ | ------------- | --------------------------- | ------------------------- |
-| `sensor.oig_XXXXX_box_prms_mode`                 | Režim Box     | Eco/Backup/Charge/Discharge | Aktuální pracovní režim   |
+| `sensor.oig_XXXXX_box_prms_mode`                 | Režim Box     | Home 1/2/3/UPS              | Aktuální pracovní režim   |
 | `sensor.oig_XXXXX_invertor_prms_to_grid`         | Grid delivery | On/Off/Limited              | Režim dodávky do sítě     |
 | `sensor.oig_XXXXX_invertor_prm1_p_max_feed_grid` | Grid limit    | W                           | Maximální dodávka do sítě |
 
@@ -263,7 +263,7 @@ Spotřeba dnes: 8500 Wh (8.5 kWh)
 **📊 Příklad hodnot:**
 
 ```yaml
-Režim Box: Eco
+Režim Box: Home 1
 Grid delivery: S omezením
 Grid limit: 5000 W
 Teplota box: 35°C
@@ -278,6 +278,16 @@ Notifikace: 2 nepřečtené (1 chyba)
 - Automatizace přepínání
 - Kontrola teploty
 - Alert y na notifikace
+
+---
+
+## 🔄 Zdroj dat (diagnostika)
+
+| Entity ID                         | Název        | Hodnoty       | Popis |
+| --------------------------------- | ------------ | ------------- | ----- |
+| `sensor.oig_XXXXX_data_source`    | Zdroj dat    | cloud / local | Aktuální zdroj telemetrie + atributy o dostupnosti |
+
+Podrobnosti a význam atributů: `./DATA_SOURCE.md`.
 
 ---
 
@@ -325,6 +335,7 @@ Výkupní cena: 1.50 Kč/kWh
 | Entity ID                                 | Název                         | Jednotka | Popis |
 | ----------------------------------------- | ----------------------------- | -------- | ----- |
 | `sensor.oig_XXXXX_grid_charging_planned`  | Plánované nabíjení ze sítě    | -        | Indikace + intervaly a cena v attributes |
+| `sensor.oig_XXXXX_planner_recommended_mode` | Doporučený režim (plánovač) | -        | Doporučený režim pro aktuální interval + info o další změně |
 | `sensor.oig_XXXXX_battery_efficiency`     | Efektivita baterie (měsíc)    | %        | Round‑trip účinnost baterie |
 | `sensor.oig_XXXXX_battery_health`         | Kvalita baterie / SoH         | %        | Odhad kapacity/SoH z historie |
 | `sensor.oig_XXXXX_adaptive_load_profiles` | Adaptivní profily spotřeby    | -        | Profiling spotřeby a 72h predikce |
@@ -414,7 +425,7 @@ automation:
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Charge"
+          mode: "Home UPS"
           acknowledgement: true
 ```
 

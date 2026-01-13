@@ -55,16 +55,17 @@ Nastavení → Zařízení a služby → Přidat integraci → OIG Cloud
 
 ### Co je to wizard?
 
-Průvodce nastavením rozdělený do 8 kroků:
+Průvodce nastavením, jehož kroky se přizpůsobují zvoleným modulům. Typicky uvidíte:
 
 1. Uvítání
-2. Přihlášení
-3. Základní nastavení
-4. Funkce
-5. ServiceShield
-6. Solární předpověď
-7. Spot ceny
-8. Souhrn
+2. Přihlášení + potvrzení živých dat
+3. Výběr modulů
+4. Intervaly + zdroj dat
+5. Solární předpověď (pokud je zapnuta)
+6. Predikce baterie (pokud je zapnuta)
+7. Ceny – import / export / distribuce (pokud je zapnuto pricing)
+8. Bojler (pokud je zapnut)
+9. Souhrn
 
 **Proč wizard?**
 
@@ -89,19 +90,18 @@ Nastavení → Zařízení a služby → OIG Cloud → KONFIGUROVAT
 
 Otevře se stejný wizard s aktuálními hodnotami.
 
-### Co je polling interval?
+### Co jsou intervaly aktualizace?
 
-Jak často se aktualizují data z API:
+Integrace používá dva intervaly:
 
-- **Výchozí:** 300 sekund (5 minut)
-- **Minimum:** 60 sekund (1 minuta)
-- **Maximum:** 3600 sekund (1 hodina)
+- **standard_scan_interval** – základní telemetrie (výchozí 30 s, rozsah 30–300 s)
+- **extended_scan_interval** – náročnější výpočty (výchozí 300 s, rozsah 300–3600 s)
 
 **Doporučení:**
 
-- 300s = normální provoz
-- 60s = aktivní monitoring
-- 600s = úspora API volání
+- 30–60 s pro aktivní monitoring
+- 300 s pro běžný provoz
+- 600+ s pokud chcete šetřit API a výkon
 
 ### Jak získám API klíč pro forecast.solar?
 
@@ -135,7 +135,7 @@ Ne, ale doporučeno pro lepší předpovědi.
 **Možné příčiny:**
 
 1. **API nedostupné** - zkontrolujte připojení
-2. **Dlouhý interval** - počkejte 5 minut
+2. **Dlouhý interval** - počkejte podle nastavení (30–300 s)
 3. **Chyba přihlášení** - zkontrolujte credentials
 4. **Box offline** - zkontrolujte OIG aplikaci
 
@@ -155,9 +155,9 @@ Vývojářské nástroje → Služby → homeassistant.reload_config_entry
 
 ### Jak často se data aktualizují?
 
-Podle `polling_interval`:
+Podle `standard_scan_interval` (a `extended_scan_interval` pro náročnější výpočty):
 
-- Entit y se aktualizují každých X sekund
+- Entity se aktualizují každých X sekund
 - Dashboard se obnovuje automaticky
 - ServiceShield je real-time
 
@@ -244,7 +244,7 @@ script:
     sequence:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Eco"
+          mode: "Home 1"
           acknowledgement: true
       - service: oig_cloud.set_grid_delivery
         data:
@@ -315,7 +315,7 @@ ls www/dashboard.html  # Musí existovat
 
 **3 části:**
 
-1. **Box mode** - Eco/Backup/Charge/Discharge
+1. **Box mode** - Home 1/Home 2/Home 3/Home UPS
 2. **Grid delivery** - On/Off/Limited + limit
 3. **Boiler mode** - CBB/Manual
 
@@ -347,7 +347,7 @@ Ochranný systém který:
 
 ```python
 # ŠPATNĚ - rychlé volání = přetížení API
-await set_box_mode("Eco")
+await set_box_mode("Home 1")
 await set_grid_delivery("On")
 await set_boiler_mode("CBB")
 # ❌ API error: Too many requests
@@ -357,7 +357,7 @@ await set_boiler_mode("CBB")
 
 ```python
 # DOBŘE - fronta = ochrana API
-await shield.add_call(set_box_mode, "Eco")      # Do fronty
+await shield.add_call(set_box_mode, "Home 1")      # Do fronty
 await shield.add_call(set_grid_delivery, "On")   # Do fronty
 await shield.add_call(set_boiler_mode, "CBB")    # Do fronty
 # ✅ Postupné zpracování s prodlevami
@@ -425,7 +425,7 @@ automation:
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Eco"
+          mode: "Home 1"
           acknowledgement: true
 ```
 
@@ -445,7 +445,7 @@ automation:
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Charge"
+          mode: "Home UPS"
           acknowledgement: true
 ```
 
@@ -453,14 +453,14 @@ automation:
 
 ```yaml
 automation:
-  - alias: "Eco ráno"
+  - alias: "Home 1 ráno"
     trigger:
       - platform: time
         at: "06:00:00"
     action:
       - service: oig_cloud.set_box_mode
         data:
-          mode: "Eco"
+          mode: "Home 1"
           acknowledgement: true
 ```
 
@@ -484,21 +484,13 @@ Nastavení → Systém → Protokoly → Filtr: "oig_cloud"
 
 ### Integrace zatěžuje HA?
 
-**Ne!**
+**Typicky ne.**
 
-- Polling interval = kontrolované dotazy
-- Async/await = neblokující
-- ServiceShield = ochrana před přetížením
-- Minimální RAM/CPU usage
+- Intervaly jsou řízené (nepálí API)\n- Vše běží asynchronně\n- ServiceShield chrání API volání
 
 ### Mohu snížit zátěž?
 
-Ano, zvyšte polling interval:
-
-```yaml
-# V Options
-polling_interval: 600 # 10 minut místo 5
-```
+Ano – zvyšte `standard_scan_interval` a/nebo `extended_scan_interval` v konfiguraci integrace.
 
 ### Integrace způsobuje restarty HA?
 
@@ -518,7 +510,7 @@ polling_interval: 600 # 10 minut místo 5
 
 **Tipy:**
 
-1. **Polling interval:** 300-600s je dostatečné
+1. **Standardní interval:** 300–600 s je obvykle dostatečné
 2. **Disable unused features:** Vypněte bojler/solar pokud nemáte
 3. **Používejte automatizace:** Místo ručních změn
 4. **Cache:** Dashboard má vlastní cache
@@ -568,7 +560,7 @@ polling_interval: 600 # 10 minut místo 5
 2. **2FA** (two-factor auth)
 3. **HTTPS** s certifikátem
 4. **Fail2ban** proti brute-force
-5. **Backup** pravidelně
+5. **Home 2** pravidelně
 
 ### Loguje se API komunikace?
 
@@ -631,20 +623,13 @@ Vývojářské nástroje → Služby → oig_cloud.set_box_mode
 
 **Možné příčiny:**
 
-1. Krátký polling interval (< 60s)
+1. Krátký standardní interval (< 60 s)
 2. Moc instancí integrace
 3. Chyba v automatizaci (smyčka)
 
 **Řešení:**
 
-```yaml
-# Zvyšte interval
-polling_interval: 600
-
-# Vypněte nepoužívané featury
-enable_solar: false
-enable_pricing: false
-```
+Zvyšte `standard_scan_interval` a vypněte nepoužívané moduly v konfiguraci (solární předpověď, pricing, dashboard).
 
 ---
 

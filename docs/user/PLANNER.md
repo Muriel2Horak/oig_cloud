@@ -1,60 +1,84 @@
 # Plánovač nabíjení (Battery forecast) a automatický režim
 
-Plánovač v OIG Cloud integraci počítá:
+Plánovač kombinuje dostupná data (spot ceny, solární předpověď, spotřebu, SOC) a vytváří **timeline režimů** a plánované nabíjení ze sítě. Výstup používá jak dashboard, tak volitelné automatické přepínání režimu.
 
-- **predikci chování baterie** (vývoj kapacity/SOC v čase),
-- **kdy a kolik nabíjet ze sítě** (HOME UPS / grid charging),
-- **shrnutí pro dashboard** (timeline, detailní záložky „včera/dnes/zítra“).
-
-Součástí je i volitelný **automatický režim**, který umí přepínat režimy Battery Boxu podle vypočteného plánu.
+---
 
 ## Jak plánovač zapnout
 
-1. `Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat / Rekonfigurovat`
-2. Zapněte **Plánovač nabíjení (Battery forecast)**.
-3. Nastavte související parametry (min/target, cena, výkon nabíjení, strategie levných hodin…).
+1. `Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat`
+2. Zapněte **Predikci baterie**.
+3. Doplňte parametry v kroku **Predikce baterie**.
 
-## Jak poznám, že plánovač běží
+Poznámky:
 
-Typicky uvidíte tyto entity (příklady):
+- Predikce baterie vyžaduje **Solární předpověď** a **Rozšířené senzory**.
+- Dashboard vyžaduje i **Statistiky** a **Cenové senzory**.
 
-- `sensor.oig_XXXXX_battery_forecast` – hlavní predikce (state + rozsáhlé attributes s timeline)
-- `binary_sensor.oig_XXXXX_grid_charging_planned` / `sensor.oig_XXXXX_grid_charging_planned` – indikace plánovaného nabíjení ze sítě + intervaly/cena v attributes
+---
 
-Dashboard z toho vykresluje časovou osu a dlaždice „Today plan / Grid charging“.
+## Co plánovač počítá
 
-Podrobnosti k metrikám a statistikám: `./STATISTICS.md`.
+- **Timeline režimů** (typicky 15min bloky)
+- **Plánované nabíjení ze sítě** (intervaly + cena)
+- **Detailní taby** pro včera/dnes/zítra
 
-## Ukázka: optimalizovaný plán režimů (72h)
+---
 
-![Optimální plán režimů (72h) + auto přepínání](../images/planovac.png)
+## Hlavní výstupní entity
+
+- `sensor.oig_XXXXX_battery_forecast`
+  - hlavní predikce (state = kWh)
+  - atributy obsahují kompletní timeline, detail tabs, souhrny
+
+- `sensor.oig_XXXXX_planner_recommended_mode`
+  - doporučený režim pro aktuální interval
+  - atributy: kdy je další změna, proč byl režim zvolen
+
+- `binary_sensor.oig_XXXXX_grid_charging_planned`
+  - on/off podle toho, zda je v plánu nabíjení ze sítě
+
+---
+
+## Konfigurační parametry (krok „Predikce baterie“)
+
+- **auto_mode_switch_enabled**
+  - zapne automatické přepínání režimů podle timeline
+- **min_capacity_percent / target_capacity_percent**
+  - minimální a cílový SOC
+- **home_charge_rate**
+  - výkon nabíjení ze sítě (kW)
+- **max_ups_price_czk**
+  - max cena (Kč/kWh), kdy planner dovolí HOME UPS
+- **disable_planning_min_guard**
+  - vypnutí minimálního guardu plánovače
+- **balancing_* parametry**
+  - řízení balancování (intervaly, držení SOC, prahy)
+- **cheap_window_percentile**
+  - jak agresivně hledat „levná okna“
+
+---
 
 ## Automatický režim (auto mode)
 
-Pokud zapnete **Automatické přepínání režimů podle plánu**:
+Pokud je `auto_mode_switch_enabled=true`, integrace volá `oig_cloud.set_box_mode` v okamžiku, kdy se má změnit režim v plánu. ServiceShield zajišťuje frontu a validaci.
 
-- integrace bude automaticky volat `oig_cloud.set_box_mode` (přes ServiceShield, pokud je zapnutý),
-- cílem je držet plánovaný režim v čase (např. nabíjet v levných oknech, šetřit baterii pro drahé hodiny),
-- plán se průběžně přepočítává podle nových dat (spot ceny, výroba, spotřeba, SOC…).
+Omezení:
 
-### Zapnutí/vypnutí
+- Doporučený režim se neaktualizuje častěji než **30 minut** (guard proti rychlým přepnutím).
+- Ruční přepnutí režimu může být plánovačem v dalším kroku „přepsáno“.
 
-Nejjednodušší je přes OIG Dashboard (toggle „Automatický režim“).
+---
 
-Technicky je to nastavení uložené v config entry a dashboard ho ovládá přes REST endpoint:
+## Jak poznat, že planner běží
 
-- `GET /api/oig_cloud/battery_forecast/<box_id>/planner_settings`
-- `POST /api/oig_cloud/battery_forecast/<box_id>/planner_settings` s JSON:
-  - `{ "auto_mode_switch_enabled": true }` nebo `{ "auto_mode_switch_enabled": false }`
+- `sensor.oig_XXXXX_battery_forecast` má platná data
+- dashboard zobrazuje timeline a detailní taby
+- `sensor.oig_XXXXX_planner_recommended_mode` mění hodnotu
 
-## Co plánovač (ne)dělá
+---
 
-- Plánovač **nepřepisuje** vaše ruční volání služeb – pokud ručně přepnete režim, auto mode se může snažit vrátit systém do „plánovaného“ stavu až v dalším kroku plánu.
-- Auto mode přepíná jen to, co umí přes služby integrace (primárně `set_box_mode`).
+## Souvisící dokumentace
 
-## Doporučení a bezpečnost
-
-- Auto mode zapínejte až ve chvíli, kdy:
-  - máte ověřené správné entity (spot ceny, výroba/spotřeba, SOC),
-  - rozumíte dopadu režimů (hlavně HOME UPS / nabíjení ze sítě),
-  - máte zapnutý ServiceShield (lepší kontrola, fronta, retry).
+- `./STATISTICS.md` – efektivita, profil spotřeby, balancování
+- `./SERVICES.md` – služby, které planner používá
