@@ -310,6 +310,87 @@ test('timeline dialog renders today content', async ({ page }, testInfo) => {
   await expect(tomorrowContainer).not.toHaveText('');
 });
 
+test('timeline refresh updates pricing cache', async ({ page }, testInfo) => {
+  const mode = getMode(testInfo);
+  if (mode === 'proxy') {
+    test.skip();
+  }
+
+  const timelineA = [
+    {
+      timestamp: '2025-01-01T10:00:00+00:00',
+      mode: 'Home 1',
+      spot_price_czk: 3.1,
+      export_price_czk: 2.0,
+      battery_capacity_kwh: 5.5,
+      solar_charge_kwh: 0.4,
+      grid_charge_kwh: 0.1,
+      grid_import: 0.2,
+      grid_export: 0.0,
+      load_kwh: 0.6
+    }
+  ];
+  const timelineB = [
+    {
+      timestamp: '2025-01-01T10:00:00+00:00',
+      mode: 'Home 2',
+      spot_price_czk: 8.8,
+      export_price_czk: 2.5,
+      battery_capacity_kwh: 5.8,
+      solar_charge_kwh: 0.3,
+      grid_charge_kwh: 0.0,
+      grid_import: 0.3,
+      grid_export: 0.1,
+      load_kwh: 0.5
+    }
+  ];
+
+  let useUpdatedTimeline = false;
+  await page.route(/\/api\/oig_cloud\/battery_forecast\/\d+\/timeline/, async (route) => {
+    const payload = useUpdatedTimeline ? timelineB : timelineA;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ active: payload })
+    });
+  });
+
+  await page.goto(`/host?mode=${mode}`);
+  const frame = await getDashboardFrame(page);
+  await frame.locator('.dashboard-tab', { hasText: 'Predikce a statistiky' }).click();
+
+  await frame.evaluate(async () => {
+    if (window.invalidatePricingTimelineCache) {
+      window.invalidatePricingTimelineCache('hybrid');
+    }
+    if (window.DashboardPricing?.loadPricingData) {
+      await window.DashboardPricing.loadPricingData();
+    }
+  });
+
+  const firstPrice = await frame.evaluate(
+    () => window.timelineDataCache?.perPlan?.hybrid?.data?.[0]?.spot_price_czk ?? null
+  );
+  expect(firstPrice).toBe(3.1);
+
+  useUpdatedTimeline = true;
+
+  await frame.evaluate(async () => {
+    if (window.invalidatePricingTimelineCache) {
+      window.invalidatePricingTimelineCache('hybrid');
+    }
+    if (window.DashboardPricing?.loadPricingData) {
+      await window.DashboardPricing.loadPricingData();
+    }
+  });
+
+  const secondPrice = await frame.evaluate(
+    () => window.timelineDataCache?.perPlan?.hybrid?.data?.[0]?.spot_price_czk ?? null
+  );
+  expect(secondPrice).toBe(8.8);
+  expect(secondPrice).not.toBe(firstPrice);
+});
+
 test('solar forecast updates flow tiles', async ({ page }, testInfo) => {
   const mode = getMode(testInfo);
   await page.goto(`/host?mode=${mode}`);
