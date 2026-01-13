@@ -14,6 +14,8 @@ from ..utils_common import format_time_label, parse_timeline_timestamp
 
 _LOGGER = logging.getLogger(__name__)
 
+GetCurrentMode = Callable[[], int]
+
 
 def enforce_min_mode_duration(
     modes: List[int],
@@ -89,7 +91,7 @@ def get_mode_guard_context(
     hass: Optional[HomeAssistant],
     box_id: str,
     mode_guard_minutes: int,
-    get_current_mode: Callable[[], int],
+    get_current_mode: GetCurrentMode,
 ) -> Tuple[Optional[int], Optional[datetime]]:
     """Get current mode and guard window end timestamp."""
     if not hass or mode_guard_minutes <= 0:

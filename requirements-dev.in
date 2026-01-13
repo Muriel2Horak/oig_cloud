@@ -12,3 +12,7 @@ pip-tools==7.4.1
 
 # Optional: Type checking
 mypy==1.18.2
+
+# Python-version compatibility for CI (3.12)
+annotatedyaml==0.4.5; python_version < "3.13"
+annotatedyaml==1.0.2; python_version >= "3.13"

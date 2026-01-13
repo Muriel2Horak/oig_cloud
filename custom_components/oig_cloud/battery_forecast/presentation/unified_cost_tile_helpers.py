@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Protocol
 
 from homeassistant.util import dt as dt_util
 
@@ -14,7 +14,13 @@ from ..utils_common import safe_nested_get
 _LOGGER = logging.getLogger(__name__)
 
 
-def build_baseline_comparison(sensor: Any, hybrid_cost: float) -> Dict[str, Any]:
+class _BaselineSensor(Protocol):
+    _mode_optimization_result: Optional[Dict[str, Any]]
+
+
+def build_baseline_comparison(
+    sensor: _BaselineSensor, hybrid_cost: float
+) -> Dict[str, Any]:
     """Build baseline comparison data for cost tile."""
     self = sensor
 

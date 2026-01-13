@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
@@ -13,6 +13,9 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from ...core.coordinator import OigCloudCoordinator
 
 
 class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEntity):
@@ -41,7 +44,7 @@ class OigCloudBatteryEfficiencySensor(RestoreEntity, CoordinatorEntity, SensorEn
 
     def __init__(
         self,
-        coordinator: Any,
+        coordinator: OigCloudCoordinator,
         sensor_type: str,
         config_entry: ConfigEntry,
         device_info: Dict[str, Any],

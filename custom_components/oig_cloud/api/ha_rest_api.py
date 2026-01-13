@@ -189,7 +189,7 @@ class OIGCloudBatteryTimelineView(HomeAssistantView):
 
     url = f"{API_BASE}/battery_forecast/{{box_id}}/timeline"
     name = "api:oig_cloud:battery_timeline"
-    requires_auth = False  # NOTE: Re-enable once auth method is implemented
+    requires_auth = True
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -286,7 +286,7 @@ class OIGCloudSpotPricesView(HomeAssistantView):
 
     url = f"{API_BASE}/spot_prices/{{box_id}}/intervals"
     name = "api:oig_cloud:spot_prices"
-    requires_auth = False  # NOTE: Re-enable once auth method is implemented
+    requires_auth = True
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -396,7 +396,7 @@ class OIGCloudAnalyticsView(HomeAssistantView):
 
     url = f"{API_BASE}/analytics/{{box_id}}/hourly"
     name = "api:oig_cloud:analytics"
-    requires_auth = False  # NOTE: Re-enable once auth method is implemented
+    requires_auth = True
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -471,7 +471,7 @@ class OIGCloudConsumptionProfilesView(HomeAssistantView):
 
     url = f"{API_BASE}/consumption_profiles/{{box_id}}"
     name = "api:oig_cloud:consumption_profiles"
-    requires_auth = False  # NOTE: Re-enable once auth method is implemented
+    requires_auth = True
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -548,7 +548,7 @@ class OIGCloudBalancingDecisionsView(HomeAssistantView):
 
     url = f"{API_BASE}/balancing_decisions/{{box_id}}"
     name = "api:oig_cloud:balancing_decisions"
-    requires_auth = False  # NOTE: Re-enable once auth method is implemented
+    requires_auth = True
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -642,7 +642,7 @@ class OIGCloudUnifiedCostTileView(HomeAssistantView):
 
     url = f"{API_BASE}/battery_forecast/{{box_id}}/unified_cost_tile"
     name = "api:oig_cloud:unified_cost_tile"
-    requires_auth = False
+    requires_auth = True
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
@@ -886,7 +886,7 @@ class OIGCloudDetailTabsView(HomeAssistantView):
 
     url = f"{API_BASE}/battery_forecast/{{box_id}}/detail_tabs"
     name = "api:oig_cloud:detail_tabs"
-    requires_auth = False  # NOTE: Re-enable once auth method is implemented
+    requires_auth = True
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
         """
