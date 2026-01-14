@@ -963,34 +963,8 @@ async function monitorShieldActivity() {
 // SERVICE-SPECIFIC SHOW/HIDE FUNCTIONS
 // ============================================================================
 
-// Box Mode
-function showBoxModeChanging(targetMode) {
-    const modeButtonMap = {
-        'Home 1': 'btn-mode-home1',
-        'Home 2': 'btn-mode-home2',
-        'Home 3': 'btn-mode-home3',
-        'Home UPS': 'btn-mode-ups'
-    };
-
-    const buttonIds = Object.values(modeButtonMap);
+function setPendingButtons(buttonIds, targetButtonId) {
     const buttons = buttonIds.map(id => document.getElementById(id)).filter(Boolean);
-    const targetButtonId = modeButtonMap[targetMode];
-
-    // Flow diagram: blink mode text
-    const inverterModeElement = document.getElementById('inverter-mode');
-    if (inverterModeElement) {
-        inverterModeElement.classList.add('mode-changing');
-    }
-
-    // Show badge
-    const modeChangeIndicator = document.getElementById('mode-change-indicator');
-    const modeChangeText = document.getElementById('mode-change-text');
-    if (modeChangeIndicator && modeChangeText) {
-        modeChangeText.textContent = `→ ${targetMode}`;
-        modeChangeIndicator.style.display = 'flex';
-    }
-
-    // Lock buttons, animate target
     buttons.forEach(btn => {
         btn.disabled = true;
         if (btn.id === targetButtonId) {
@@ -1003,28 +977,58 @@ function showBoxModeChanging(targetMode) {
     });
 }
 
-function hideBoxModeChanging() {
-    const buttonIds = ['btn-mode-home1', 'btn-mode-home2', 'btn-mode-home3', 'btn-mode-ups'];
+function clearPendingButtons(buttonIds) {
     const buttons = buttonIds.map(id => document.getElementById(id)).filter(Boolean);
-
-    // Remove flow diagram animation
-    const inverterModeElement = document.getElementById('inverter-mode');
-    if (inverterModeElement) {
-        inverterModeElement.classList.remove('mode-changing');
-    }
-
-    // Hide badge
-    const modeChangeIndicator = document.getElementById('mode-change-indicator');
-    if (modeChangeIndicator) {
-        modeChangeIndicator.style.display = 'none';
-    }
-
-    // Unlock buttons
     buttons.forEach(btn => {
         btn.disabled = false;
         btn.style.animation = '';
         btn.style.opacity = '';
     });
+}
+
+function setFlowChanging(flowElementId, enabled) {
+    const element = document.getElementById(flowElementId);
+    if (!element) return;
+    element.classList.toggle('mode-changing', enabled);
+}
+
+function showIndicator(indicatorId, textId, text) {
+    const indicator = document.getElementById(indicatorId);
+    const textElement = document.getElementById(textId);
+    if (!indicator || !textElement) return;
+    textElement.textContent = text;
+    indicator.style.display = 'flex';
+}
+
+function hideIndicator(indicatorId) {
+    const indicator = document.getElementById(indicatorId);
+    if (indicator) {
+        indicator.style.display = 'none';
+    }
+}
+
+// Box Mode
+function showBoxModeChanging(targetMode) {
+    const modeButtonMap = {
+        'Home 1': 'btn-mode-home1',
+        'Home 2': 'btn-mode-home2',
+        'Home 3': 'btn-mode-home3',
+        'Home UPS': 'btn-mode-ups'
+    };
+
+    const buttonIds = Object.values(modeButtonMap);
+    const targetButtonId = modeButtonMap[targetMode];
+
+    setFlowChanging('inverter-mode', true);
+    showIndicator('mode-change-indicator', 'mode-change-text', `→ ${targetMode}`);
+    setPendingButtons(buttonIds, targetButtonId);
+}
+
+function hideBoxModeChanging() {
+    const buttonIds = ['btn-mode-home1', 'btn-mode-home2', 'btn-mode-home3', 'btn-mode-ups'];
+    setFlowChanging('inverter-mode', false);
+    hideIndicator('mode-change-indicator');
+    clearPendingButtons(buttonIds);
 }
 
 // Boiler Mode
@@ -1036,68 +1040,24 @@ function showBoilerModeChanging(targetMode) {
         'Inteligentní': 'cbb'
     };
 
-    const boilerButtons = [
-        document.getElementById('btn-boiler-cbb'),
-        document.getElementById('btn-boiler-manual')
-    ].filter(Boolean);
+    const boilerButtons = ['btn-boiler-cbb', 'btn-boiler-manual'];
 
     const targetModeLower = boilerModeMap[targetMode] || targetMode?.toLowerCase();
     const targetButtonId = targetModeLower ? `btn-boiler-${targetModeLower}` : null;
 
-    // Flow diagram: blink mode text
-    const boilerModeElement = document.getElementById('boiler-mode');
-    if (boilerModeElement) {
-        boilerModeElement.classList.add('mode-changing');
-    }
-
-    // Show badge
-    const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
-    const boilerChangeText = document.getElementById('boiler-change-text');
-    if (boilerChangeIndicator && boilerChangeText) {
-        const isIntelligent = targetMode === 'CBB' || targetMode === 'Inteligentní';
-        const modeIcon = isIntelligent ? '🤖' : '👤';
-        const modeName = isIntelligent ? 'Inteligentní' : 'Manuální';
-        boilerChangeText.textContent = `${modeIcon} ${modeName}`;
-        boilerChangeIndicator.style.display = 'flex';
-    }
-
-    // Lock buttons, animate target
-    boilerButtons.forEach(btn => {
-        btn.disabled = true;
-        if (btn.id === targetButtonId) {
-            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
-            btn.style.opacity = '0.8';
-        } else {
-            btn.style.animation = '';
-            btn.style.opacity = '0.5';
-        }
-    });
+    setFlowChanging('boiler-mode', true);
+    const isIntelligent = targetMode === 'CBB' || targetMode === 'Inteligentní';
+    const modeIcon = isIntelligent ? '🤖' : '👤';
+    const modeName = isIntelligent ? 'Inteligentní' : 'Manuální';
+    showIndicator('boiler-change-indicator', 'boiler-change-text', `${modeIcon} ${modeName}`);
+    setPendingButtons(boilerButtons, targetButtonId);
 }
 
 function hideBoilerModeChanging() {
-    const boilerButtons = [
-        document.getElementById('btn-boiler-cbb'),
-        document.getElementById('btn-boiler-manual')
-    ].filter(Boolean);
-
-    // Remove flow diagram animation
-    const boilerModeElement = document.getElementById('boiler-mode');
-    if (boilerModeElement) {
-        boilerModeElement.classList.remove('mode-changing');
-    }
-
-    // Hide badge
-    const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
-    if (boilerChangeIndicator) {
-        boilerChangeIndicator.style.display = 'none';
-    }
-
-    // Unlock buttons
-    boilerButtons.forEach(btn => {
-        btn.disabled = false;
-        btn.style.animation = '';
-        btn.style.opacity = '';
-    });
+    const boilerButtons = ['btn-boiler-cbb', 'btn-boiler-manual'];
+    setFlowChanging('boiler-mode', false);
+    hideIndicator('boiler-change-indicator');
+    clearPendingButtons(boilerButtons);
 }
 
 // Grid Mode
@@ -1112,134 +1072,41 @@ function showGridModeChanging(targetMode, startedAt = null) {
         'S omezením': 'limited'
     };
 
-    const gridButtons = [
-        document.getElementById('btn-grid-off'),
-        document.getElementById('btn-grid-on'),
-        document.getElementById('btn-grid-limited')
-    ].filter(Boolean);
+    const gridButtons = ['btn-grid-off', 'btn-grid-on', 'btn-grid-limited'];
 
     const gridModeLower = gridModeMap[targetMode];
     const targetButtonId = gridModeLower ? `btn-grid-${gridModeLower}` : null;
 
-    // Flow diagram: blink mode text
-    const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
-    if (gridExportModeElement) {
-        gridExportModeElement.classList.add('mode-changing');
-    }
-
-    // Show badge - bez duration!
-    const gridChangeIndicator = document.getElementById('grid-change-indicator');
-    const gridChangeText = document.getElementById('grid-change-text');
-    if (gridChangeIndicator && gridChangeText) {
-        const modeDisplay = resolveGridModeLabel(targetMode);
-
-        gridChangeText.textContent = `${modeDisplay.icon} ${modeDisplay.label}`;
-        gridChangeIndicator.style.display = 'flex';
-    }
-
-    // Lock buttons, animate target
-    gridButtons.forEach(btn => {
-        btn.disabled = true;
-        if (btn.id === targetButtonId) {
-            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
-            btn.style.opacity = '0.8';
-        } else {
-            btn.style.animation = '';
-            btn.style.opacity = '0.5';
-        }
-    });
+    setFlowChanging('inverter-grid-export-mode', true);
+    const modeDisplay = resolveGridModeLabel(targetMode);
+    showIndicator('grid-change-indicator', 'grid-change-text', `${modeDisplay.icon} ${modeDisplay.label}`);
+    setPendingButtons(gridButtons, targetButtonId);
 }
 
 function hideGridModeChanging() {
-    const gridButtons = [
-        document.getElementById('btn-grid-off'),
-        document.getElementById('btn-grid-on'),
-        document.getElementById('btn-grid-limited')
-    ].filter(Boolean);
-
-    // Remove flow diagram animation
-    const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
-    if (gridExportModeElement) {
-        gridExportModeElement.classList.remove('mode-changing');
-    }
-
-    // Hide badge
-    const gridChangeIndicator = document.getElementById('grid-change-indicator');
-    if (gridChangeIndicator) {
-        gridChangeIndicator.style.display = 'none';
-    }
-
-    // Unlock buttons
-    gridButtons.forEach(btn => {
-        btn.disabled = false;
-        btn.style.animation = '';
-        btn.style.opacity = '';
-    });
+    const gridButtons = ['btn-grid-off', 'btn-grid-on', 'btn-grid-limited'];
+    setFlowChanging('inverter-grid-export-mode', false);
+    hideIndicator('grid-change-indicator');
+    clearPendingButtons(gridButtons);
 }
 
 // Grid Limit
 function showGridLimitChanging(targetLimit, startedAt = null) {
-    const gridButtons = [
-        document.getElementById('btn-grid-off'),
-        document.getElementById('btn-grid-on'),
-        document.getElementById('btn-grid-limited')
-    ].filter(Boolean);
+    const gridButtons = ['btn-grid-off', 'btn-grid-on', 'btn-grid-limited'];
 
     // When only limit changes, animate the Limited button
     const targetButtonId = 'btn-grid-limited';
 
-    // Animate limit value in flow diagram
-    const gridLimitElement = document.getElementById('inverter-export-limit');
-    if (gridLimitElement) {
-        gridLimitElement.classList.add('mode-changing');
-    }
-
-    // Show limit badge (different from mode badge) - bez duration!
-    const gridLimitIndicator = document.getElementById('grid-limit-indicator');
-    const gridLimitText = document.getElementById('grid-limit-text');
-    if (gridLimitIndicator && gridLimitText) {
-        gridLimitText.textContent = `→ ${targetLimit}W`;
-        gridLimitIndicator.style.display = 'flex';
-    }
-
-    // Lock buttons, animate Limited
-    gridButtons.forEach(btn => {
-        btn.disabled = true;
-        if (btn.id === targetButtonId) {
-            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
-            btn.style.opacity = '0.8';
-        } else {
-            btn.style.animation = '';
-            btn.style.opacity = '0.5';
-        }
-    });
+    setFlowChanging('inverter-export-limit', true);
+    showIndicator('grid-limit-indicator', 'grid-limit-text', `→ ${targetLimit}W`);
+    setPendingButtons(gridButtons, targetButtonId);
 }
 
 function hideGridLimitChanging() {
-    const gridButtons = [
-        document.getElementById('btn-grid-off'),
-        document.getElementById('btn-grid-on'),
-        document.getElementById('btn-grid-limited')
-    ].filter(Boolean);
-
-    // Remove limit value animation in flow diagram
-    const gridLimitElement = document.getElementById('inverter-export-limit');
-    if (gridLimitElement) {
-        gridLimitElement.classList.remove('mode-changing');
-    }
-
-    // Hide limit badge
-    const gridLimitIndicator = document.getElementById('grid-limit-indicator');
-    if (gridLimitIndicator) {
-        gridLimitIndicator.style.display = 'none';
-    }
-
-    // Unlock buttons (only if no mode change is active)
-    gridButtons.forEach(btn => {
-        btn.disabled = false;
-        btn.style.animation = '';
-        btn.style.opacity = '';
-    });
+    const gridButtons = ['btn-grid-off', 'btn-grid-on', 'btn-grid-limited'];
+    setFlowChanging('inverter-export-limit', false);
+    hideIndicator('grid-limit-indicator');
+    clearPendingButtons(gridButtons);
 }
 
 // ============================================================================

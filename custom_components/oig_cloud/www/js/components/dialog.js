@@ -87,6 +87,107 @@ class TileConfigDialog {
         this.setupEventListeners();
     }
 
+    _getSupportEntityIds(prefix, number) {
+        const base = prefix ? `${prefix}-support-entity-${number}` : `support-entity-${number}`;
+        return {
+            listId: `${base}-list`,
+            hiddenId: base,
+            searchId: `${base}-search`
+        };
+    }
+
+    _filterEntityList(listSelector, searchText) {
+        const items = document.querySelectorAll(listSelector);
+        const search = searchText.toLowerCase();
+
+        items.forEach(item => {
+            const entityId = item.dataset.entityId;
+            const state = this.hass.states[entityId];
+            const name = (state.attributes.friendly_name || entityId).toLowerCase();
+
+            item.style.display = name.includes(search) || entityId.toLowerCase().includes(search)
+                ? ''
+                : 'none';
+        });
+    }
+
+    _filterSupportEntities(prefix, number, searchText, selectHandler) {
+        const ids = this._getSupportEntityIds(prefix, number);
+        const listDiv = document.getElementById(ids.listId);
+        const hiddenInput = document.getElementById(ids.hiddenId);
+
+        if (!searchText.trim()) {
+            listDiv.style.display = 'none';
+            hiddenInput.value = '';
+            return;
+        }
+
+        const search = searchText.toLowerCase();
+        const filtered = this.supportEntities.filter(entityId => {
+            const state = this.hass.states[entityId];
+            const name = (state.attributes.friendly_name || entityId).toLowerCase();
+            return name.includes(search) || entityId.toLowerCase().includes(search);
+        });
+
+        if (filtered.length === 0) {
+            listDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-secondary);">Žádné entity nenalezeny</div>';
+            listDiv.style.display = 'block';
+            return;
+        }
+
+        listDiv.innerHTML = filtered.slice(0, 20).map(entityId => {
+            const state = this.hass.states[entityId];
+            const name = state.attributes.friendly_name || entityId;
+            const value = state.state;
+            const unit = state.attributes.unit_of_measurement || '';
+            const safeName = escapeAttrValue(name);
+
+            return `
+                <div class="entity-item support-entity-item"
+                     data-entity-id="${entityId}"
+                     onclick="globalThis.tileDialog.${selectHandler}(${number}, '${entityId}', '${safeName}')">
+                    <div class="entity-item-name">${name}</div>
+                    <div class="entity-item-value">${value} ${unit}</div>
+                </div>
+            `;
+        }).join('');
+
+        listDiv.style.display = 'block';
+    }
+
+    _selectSupportEntity(prefix, number, entityId, entityName) {
+        const ids = this._getSupportEntityIds(prefix, number);
+        const searchInput = document.getElementById(ids.searchId);
+        const hiddenInput = document.getElementById(ids.hiddenId);
+        const listDiv = document.getElementById(ids.listId);
+
+        searchInput.value = entityName;
+        hiddenInput.value = entityId;
+        listDiv.style.display = 'none';
+    }
+
+    _applyEntityDefaults(entityId, labelId, iconId, colorId) {
+        if (!entityId) return;
+
+        const state = this.hass.states[entityId];
+        if (!state) return;
+
+        const labelInput = document.getElementById(labelId);
+        if (labelInput && !labelInput.value) {
+            labelInput.value = state.attributes.friendly_name || '';
+        }
+
+        const iconInput = document.getElementById(iconId);
+        if (iconInput && !this.isEditing && !iconInput.value && state.attributes.icon) {
+            iconInput.value = state.attributes.icon;
+        }
+
+        const colorInput = document.getElementById(colorId);
+        if (colorInput) {
+            colorInput.value = this.tileManager.getColorFromDomain(entityId);
+        }
+    }
+
     /**
      * Vytvoř dialog element
      */
@@ -549,60 +650,14 @@ class TileConfigDialog {
      * Filtrovat podporné entity podle hledaného textu
      */
     filterSupportEntities(number, searchText) {
-        const listDiv = document.getElementById(`support-entity-${number}-list`);
-        const hiddenInput = document.getElementById(`support-entity-${number}`);
-
-        if (!searchText.trim()) {
-            listDiv.style.display = 'none';
-            hiddenInput.value = '';
-            return;
-        }
-
-        const search = searchText.toLowerCase();
-        const filtered = this.supportEntities.filter(entityId => {
-            const state = this.hass.states[entityId];
-            const name = (state.attributes.friendly_name || entityId).toLowerCase();
-            return name.includes(search) || entityId.toLowerCase().includes(search);
-        });
-
-        if (filtered.length === 0) {
-            listDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-secondary);">Žádné entity nenalezeny</div>';
-            listDiv.style.display = 'block';
-            return;
-        }
-
-        listDiv.innerHTML = filtered.slice(0, 20).map(entityId => {
-            const state = this.hass.states[entityId];
-            const name = state.attributes.friendly_name || entityId;
-            const value = state.state;
-            const unit = state.attributes.unit_of_measurement || '';
-            const safeName = escapeAttrValue(name);
-
-            return `
-                <div class="entity-item support-entity-item"
-                     data-entity-id="${entityId}"
-                     onclick="globalThis.tileDialog.selectSupportEntity(${number}, '${entityId}', '${safeName}')">
-                    <div class="entity-item-name">${name}</div>
-                    <div class="entity-item-value">${value} ${unit}</div>
-                </div>
-            `;
-        }).join('');
-
-        listDiv.style.display = 'block';
+        this._filterSupportEntities('', number, searchText, 'selectSupportEntity');
     }
 
     /**
      * Vybrat podpornou entitu
      */
     selectSupportEntity(number, entityId, entityName) {
-        const searchInput = document.getElementById(`support-entity-${number}-search`);
-        const hiddenInput = document.getElementById(`support-entity-${number}`);
-        const listDiv = document.getElementById(`support-entity-${number}-list`);
-
-        searchInput.value = entityName;
-        hiddenInput.value = entityId;
-        listDiv.style.display = 'none';
-
+        this._selectSupportEntity('', number, entityId, entityName);
         console.log(`✅ Selected support entity ${number}: ${entityId}`);
     }
 
@@ -610,60 +665,14 @@ class TileConfigDialog {
      * Filtrovat support entities pro button (stejné jako filterSupportEntities)
      */
     filterButtonSupportEntities(number, searchText) {
-        const listDiv = document.getElementById(`button-support-entity-${number}-list`);
-        const hiddenInput = document.getElementById(`button-support-entity-${number}`);
-
-        if (!searchText.trim()) {
-            listDiv.style.display = 'none';
-            hiddenInput.value = '';
-            return;
-        }
-
-        const search = searchText.toLowerCase();
-        const filtered = this.supportEntities.filter(entityId => {
-            const state = this.hass.states[entityId];
-            const name = (state.attributes.friendly_name || entityId).toLowerCase();
-            return name.includes(search) || entityId.toLowerCase().includes(search);
-        });
-
-        if (filtered.length === 0) {
-            listDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-secondary);">Žádné entity nenalezeny</div>';
-            listDiv.style.display = 'block';
-            return;
-        }
-
-        listDiv.innerHTML = filtered.slice(0, 20).map(entityId => {
-            const state = this.hass.states[entityId];
-            const name = state.attributes.friendly_name || entityId;
-            const value = state.state;
-            const unit = state.attributes.unit_of_measurement || '';
-            const safeName = escapeAttrValue(name);
-
-            return `
-                <div class="entity-item support-entity-item"
-                     data-entity-id="${entityId}"
-                     onclick="globalThis.tileDialog.selectButtonSupportEntity(${number}, '${entityId}', '${safeName}')">
-                    <div class="entity-item-name">${name}</div>
-                    <div class="entity-item-value">${value} ${unit}</div>
-                </div>
-            `;
-        }).join('');
-
-        listDiv.style.display = 'block';
+        this._filterSupportEntities('button', number, searchText, 'selectButtonSupportEntity');
     }
 
     /**
      * Vybrat button support entitu
      */
     selectButtonSupportEntity(number, entityId, entityName) {
-        const searchInput = document.getElementById(`button-support-entity-${number}-search`);
-        const hiddenInput = document.getElementById(`button-support-entity-${number}`);
-        const listDiv = document.getElementById(`button-support-entity-${number}-list`);
-
-        searchInput.value = entityName;
-        hiddenInput.value = entityId;
-        listDiv.style.display = 'none';
-
+        this._selectSupportEntity('button', number, entityId, entityName);
         console.log(`✅ Selected button support entity ${number}: ${entityId}`);
     }
 
@@ -764,94 +773,28 @@ class TileConfigDialog {
      * Filtrovat entity podle hledaného textu
      */
     filterEntities(searchText) {
-        const items = document.querySelectorAll('#entity-list .entity-item');
-        const search = searchText.toLowerCase();
-
-        items.forEach(item => {
-            const entityId = item.dataset.entityId;
-            const state = this.hass.states[entityId];
-            const name = (state.attributes.friendly_name || entityId).toLowerCase();
-
-            if (name.includes(search) || entityId.toLowerCase().includes(search)) {
-                item.style.display = '';
-            } else {
-                item.style.display = 'none';
-            }
-        });
+        this._filterEntityList('#entity-list .entity-item', searchText);
     }
 
     /**
      * Filtrovat entity pro tlačítka podle hledaného textu
      */
     filterButtonEntities(searchText) {
-        const items = document.querySelectorAll('#button-entity-list .entity-item');
-        const search = searchText.toLowerCase();
-
-        items.forEach(item => {
-            const entityId = item.dataset.entityId;
-            const state = this.hass.states[entityId];
-            const name = (state.attributes.friendly_name || entityId).toLowerCase();
-
-            if (name.includes(search) || entityId.toLowerCase().includes(search)) {
-                item.style.display = '';
-            } else {
-                item.style.display = 'none';
-            }
-        });
+        this._filterEntityList('#button-entity-list .entity-item', searchText);
     }
 
     /**
      * Když je vybrána entita, auto-fill ikonu a barvu
      */
     onEntitySelected(entityId) {
-        const state = this.hass.states[entityId];
-        if (!state) return;
-
-        // Auto-fill label
-        const labelInput = document.getElementById('entity-label');
-        if (labelInput && !labelInput.value) {
-            labelInput.value = state.attributes.friendly_name || '';
-        }
-
-        // Auto-fill icon - POUZE pokud vytváříme novou dlaždici (ne při editaci)
-        const iconInput = document.getElementById('entity-icon');
-        if (iconInput && !this.isEditing && !iconInput.value && state.attributes.icon) {
-            iconInput.value = state.attributes.icon;
-        }
-
-        // Auto-fill color podle domény
-        const colorInput = document.getElementById('entity-color');
-        if (colorInput) {
-            colorInput.value = this.tileManager.getColorFromDomain(entityId);
-        }
+        this._applyEntityDefaults(entityId, 'entity-label', 'entity-icon', 'entity-color');
     }
 
     /**
      * Když je vybrána button entita, auto-fill ikonu a barvu
      */
     onButtonEntitySelected(entityId) {
-        if (!entityId) return;
-
-        const state = this.hass.states[entityId];
-        if (!state) return;
-
-        // Auto-fill label
-        const labelInput = document.getElementById('button-label');
-        if (labelInput && !labelInput.value) {
-            labelInput.value = state.attributes.friendly_name || '';
-        }
-
-        // Auto-fill icon - POUZE pokud vytváříme novou dlaždici (ne při editaci)
-        const iconInput = document.getElementById('button-icon');
-        if (iconInput && !this.isEditing && !iconInput.value && state.attributes.icon) {
-            iconInput.value = state.attributes.icon;
-        }
-
-        // Auto-fill color podle domény
-        const colorInput = document.getElementById('button-color');
-        if (colorInput) {
-            colorInput.value = this.tileManager.getColorFromDomain(entityId);
-        }
+        this._applyEntityDefaults(entityId, 'button-label', 'button-icon', 'button-color');
     }
 
     /**
