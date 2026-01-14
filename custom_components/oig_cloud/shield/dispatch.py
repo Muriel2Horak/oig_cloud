@@ -120,31 +120,6 @@ async def _handle_split_grid_delivery(
     return True
 
 
-async def _handle_missing_expected(
-    shield: Any,
-    domain: str,
-    service: str,
-    service_name: str,
-    params: Dict[str, Any],
-    original_call: Any,
-    blocking: bool,
-    context: Optional[Context],
-) -> None:
-    _LOGGER.debug(
-        "Intercept: expected entities missing; calling original service without state verification"
-    )
-    await original_call(
-        domain, service, service_data=params, blocking=blocking, context=context
-    )
-    await shield._log_event(
-        "change_requested",
-        service_name,
-        {"params": params, "entities": {}},
-        reason="Entita nenalezena – volám službu bez state validace",
-        context=context,
-    )
-
-
 async def _handle_duplicate(
     shield: Any,
     duplicate_location: str,
@@ -307,15 +282,18 @@ async def intercept_service_call(
     )
 
     if not expected_entities and getattr(shield, "_expected_entity_missing", False):
-        await _handle_missing_expected(
-            shield,
-            domain,
-            service,
+        _LOGGER.debug(
+            "Intercept: expected entities missing; calling original service without state verification"
+        )
+        await original_call(
+            domain, service, service_data=params, blocking=blocking, context=context
+        )
+        await shield._log_event(
+            "change_requested",
             service_name,
-            params,
-            original_call,
-            blocking,
-            context,
+            {"params": params, "entities": {}},
+            reason="Entita nenalezena – volám službu bez state validace",
+            context=context,
         )
         return
 

@@ -495,9 +495,6 @@ function setupThemeListeners() {
 }
 // === TAB SWITCHING ===
 let pricingTabActive = false;
-globalThis.needsFlowReinitialize = globalThis.needsFlowReinitialize ?? false; // Flag pro vynucené restartování flow animací
-globalThis.cachedNodeCenters = globalThis.cachedNodeCenters ?? null;
-globalThis.lastLayoutHash = globalThis.lastLayoutHash ?? null;
 
 function switchTab(tabName) {
     // Zapamatuj si předchozí tab PŘED změnou
@@ -550,8 +547,7 @@ function switchTab(tabName) {
             }
 
             // 3. Invalidovat cache pozic
-            globalThis.cachedNodeCenters = null;
-            globalThis.lastLayoutHash = null;
+            globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
             console.log('[Tab] ✓ Cache invalidated');
 
             // 4. Force browser reflow aby DOM byl stabilní
@@ -570,8 +566,7 @@ function switchTab(tabName) {
                 console.error('[Tab] ✗ Failed to get node centers (DOM not ready), retrying...');
                 // Zkusit znovu s delším timeout
                 setTimeout(() => {
-                    globalThis.cachedNodeCenters = null;
-                    globalThis.lastLayoutHash = null;
+                    globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
                     const retryCenters = getNodeCenters();
                     console.log('[Tab] Retry node centers result:', retryCenters);
 
@@ -582,7 +577,7 @@ function switchTab(tabName) {
 
                     console.log('[Tab] ✓ Node centers loaded on retry:', Object.keys(retryCenters).length);
                     drawConnections();
-                    globalThis.needsFlowReinitialize = true;
+                    globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
                     loadData();
                     console.log('[Tab] ✓ Retry complete');
                 }, 200);
@@ -596,7 +591,7 @@ function switchTab(tabName) {
             console.log('[Tab] ✓ Connections drawn');
 
             // 7. Nastavit flag pro vynucené restartování animací
-            globalThis.needsFlowReinitialize = true;
+            globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
             console.log('[Tab] Flag needsFlowReinitialize set to TRUE');
 
             // 8. Načíst aktuální data a restartovat particles

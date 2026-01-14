@@ -85,7 +85,7 @@ function drawConnections() {
     svg.innerHTML = '';
 
     // OPRAVA BUG #2: Použít cache místo přepočítávání
-    const centers = globalThis.cachedNodeCenters || getNodeCenters();
+    const centers = FLOW_STATE.cachedNodeCenters || getNodeCenters();
     if (!centers) return;
 
     // Draw lines
@@ -173,9 +173,11 @@ const particleFlows = {
     inverterToHouse: { active: false, speed: 2000, count: 0, sources: [] }
 };
 
-globalThis.cachedNodeCenters = globalThis.cachedNodeCenters ?? null;
-globalThis.lastLayoutHash = globalThis.lastLayoutHash ?? null;
-globalThis.needsFlowReinitialize = globalThis.needsFlowReinitialize ?? false;
+const FLOW_STATE = globalThis.OIG_FLOW_STATE ?? (globalThis.OIG_FLOW_STATE = {
+    cachedNodeCenters: null,
+    lastLayoutHash: null,
+    needsFlowReinitialize: false
+});
 
 /**
  * Vyčistí všechny sub-flow klíče pro daný flow
@@ -254,17 +256,18 @@ function updateAllParticleFlows() {
     // DŮLEŽITÉ: Zastavit VŠECHNY běžící particles okamžitě
     stopAllParticleFlows();
 
-    // Invalidovat cache pozic nodes
-    globalThis.cachedNodeCenters = null;
-    globalThis.lastLayoutHash = null;
-
-    // Nastavit flag pro reinicializaci při dalším update cyklu
-    globalThis.needsFlowReinitialize = true;
+    invalidateFlowLayoutCache();
 
     // NEBUDEME spouštět animateFlow okamžitě - necháme to na normální update cyklus
     // Tím zajistíme že particles dostanou správné pozice z getNodeCenters()
 
     console.log('[Layout] ✓ All particles stopped, waiting for next data update to reinitialize');
+}
+
+function invalidateFlowLayoutCache() {
+    FLOW_STATE.cachedNodeCenters = null;
+    FLOW_STATE.lastLayoutHash = null;
+    FLOW_STATE.needsFlowReinitialize = true;
 }
 
 /**
@@ -719,8 +722,8 @@ function getNodeCenters() {
     const currentHash = getLayoutHash();
 
     // If layout hasn't changed, return cached centers
-    if (currentHash === globalThis.lastLayoutHash && globalThis.cachedNodeCenters) {
-        return globalThis.cachedNodeCenters;
+    if (currentHash === FLOW_STATE.lastLayoutHash && FLOW_STATE.cachedNodeCenters) {
+        return FLOW_STATE.cachedNodeCenters;
     }
 
     // Layout changed - recalculate
@@ -767,7 +770,7 @@ function getNodeCenters() {
     };
 
     // Detect meaningful center movement (avoid restarting particles on tiny shifts).
-    const prev = globalThis.cachedNodeCenters;
+    const prev = FLOW_STATE.cachedNodeCenters;
     const centerShift = (a, b) => {
         if (!a || !b) return 0;
         const dx = (a.x || 0) - (b.x || 0);
@@ -783,11 +786,11 @@ function getNodeCenters() {
             centerShift(prev.house, centers.house),
         )
         : 999;
-    const layoutChanged = currentHash !== globalThis.lastLayoutHash;
+    const layoutChanged = currentHash !== FLOW_STATE.lastLayoutHash;
 
     // Cache the results
-    globalThis.cachedNodeCenters = centers;
-    globalThis.lastLayoutHash = currentHash;
+    FLOW_STATE.cachedNodeCenters = centers;
+    FLOW_STATE.lastLayoutHash = currentHash;
 
     // OPRAVA: Pokud se layout změnil, vyčistit VŠECHNY particles
     // protože mají hardcodované staré cílové pozice v animacích
@@ -800,7 +803,7 @@ function getNodeCenters() {
         }
 
         // Nastavit flag pro reinicializaci
-        globalThis.needsFlowReinitialize = true;
+        FLOW_STATE.needsFlowReinitialize = true;
 
         // Překreslit čáry s novými pozicemi
         debouncedDrawConnections(50);
@@ -837,7 +840,7 @@ function maybeCleanupParticlesOnPowerChange(current, previous, threshold = 2000)
         // Vyčistit jen pokud je více než 10 kuliček (aby se to nevolalo zbytečně)
         stopAllParticleFlows();
         // Po cleanup nastavit flag pro reinicializaci (už je nastaven v loadData, ale pro jistotu)
-        globalThis.needsFlowReinitialize = true;
+        FLOW_STATE.needsFlowReinitialize = true;
     }
 }
 
@@ -1614,10 +1617,10 @@ async function loadData() {
             Math.abs(currentPowerValues[key] - (lastPowerValues[key] || 0)) > 0.1
         );
 
-    if (powerChanged || globalThis.needsFlowReinitialize) {
-        if (globalThis.needsFlowReinitialize) {
+    if (powerChanged || FLOW_STATE.needsFlowReinitialize) {
+        if (FLOW_STATE.needsFlowReinitialize) {
             // console.log('[Animation] Flow reinitialize flag set, forcing animation update');
-            globalThis.needsFlowReinitialize = false; // Reset flag
+            FLOW_STATE.needsFlowReinitialize = false; // Reset flag
         } else {
             // console.log('[Animation] Power values changed, updating flow');
         }
@@ -2175,6 +2178,7 @@ globalThis.DashboardFlow = {
     debouncedDrawConnections,
     drawConnections,
     getNodeCenters,
+    invalidateFlowLayoutCache,
     loadData,
     loadNodeDetails,
     forceFullRefresh,

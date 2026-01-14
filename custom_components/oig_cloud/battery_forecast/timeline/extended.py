@@ -292,9 +292,9 @@ async def _maybe_repair_baseline(
     sensor: Any,
     storage_plans: Dict[str, Any],
     date_str: str,
-) -> Dict[str, Any]:
+) -> tuple[Dict[str, Any], bool]:
     if date_str in sensor._baseline_repair_attempts:
-        return storage_plans
+        return storage_plans, False
     sensor._baseline_repair_attempts.add(date_str)
     _LOGGER.info("Baseline plan missing/invalid for %s, attempting rebuild", date_str)
     try:
@@ -308,8 +308,9 @@ async def _maybe_repair_baseline(
         )
         repaired = False
     if repaired:
-        return await _refresh_storage_after_repair(sensor, storage_plans, date_str)
-    return storage_plans
+        refreshed = await _refresh_storage_after_repair(sensor, storage_plans, date_str)
+        return refreshed, True
+    return storage_plans, False
 
 
 async def _refresh_storage_after_repair(
@@ -597,7 +598,7 @@ async def _resolve_mixed_planned(
             day,
         )
     if sensor._plans_store and (storage_missing or storage_invalid):
-        storage_plans = await _maybe_repair_baseline(sensor, storage_plans, date_str)
+        storage_plans, _ = await _maybe_repair_baseline(sensor, storage_plans, date_str)
         storage_day = storage_plans.get("detailed", {}).get(date_str)
         storage_invalid = (
             sensor._is_baseline_plan_invalid(storage_day) if storage_day else True

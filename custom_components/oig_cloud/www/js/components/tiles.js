@@ -5,7 +5,7 @@
 
 // Global tile manager instance
 let tileManager = null;
-let tileDialog = null;
+globalThis.tileDialog = globalThis.tileDialog ?? null;
 
 class DashboardTileManager {
     constructor(hass) {
@@ -412,9 +412,8 @@ async function initCustomTiles() {
     }
 
     // Initialize tile dialog (only once)
-    if (!tileDialog) {
-        tileDialog = new TileConfigDialog(hass, tileManager);
-        globalThis.tileDialog = tileDialog; // Export for onclick handlers
+    if (!globalThis.tileDialog) {
+        globalThis.tileDialog = new TileConfigDialog(hass, tileManager);
     }
 
     // Initial render
