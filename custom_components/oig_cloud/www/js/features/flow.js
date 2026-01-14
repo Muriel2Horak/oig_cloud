@@ -251,12 +251,8 @@ function updateAllParticleFlows() {
     stopAllParticleFlows();
 
     // Invalidovat cache pozic nodes
-    if (typeof cachedNodeCenters !== 'undefined') {
-        cachedNodeCenters = null;
-    }
-    if (typeof lastLayoutHash !== 'undefined') {
-        lastLayoutHash = null;
-    }
+    cachedNodeCenters = null;
+    lastLayoutHash = null;
 
     // Nastavit flag pro reinicializaci při dalším update cyklu
     if (typeof needsFlowReinitialize !== 'undefined') {
@@ -334,6 +330,11 @@ async function updatePlannerModeBadge(force = false) {
     }
 
     if (badge.dataset.modeState !== newState) {
+        const className = newState === 'enabled'
+            ? 'auto-enabled'
+            : newState === 'disabled'
+                ? 'auto-disabled'
+                : 'auto-unknown';
         badge.classList.remove('auto-enabled', 'auto-disabled', 'auto-unknown');
         badge.classList.add(className);
         badge.dataset.modeState = newState;
@@ -454,36 +455,51 @@ function createContinuousParticle(flowKey, from, to, color, speed, size = 8, opa
     };
 }
 
+function areSourcesEqual(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    if (left.length !== right.length) return false;
+    return left.every((source, index) => {
+        const other = right[index];
+        return !!other &&
+            source.type === other.type &&
+            source.power === other.power &&
+            source.color === other.color;
+    });
+}
+
+function cloneSources(sources) {
+    return Array.isArray(sources) ? sources.map(source => ({ ...source })) : [];
+}
+
 /**
  * Vytvoří multi-source flow s kuličkami různých barev
  * @param {string} flowKey - Klíč toku
- * @param {object} from - Pozice začátku
- * @param {object} to - Pozice konce
- * @param {Array} sources - [{type, power, color}, ...]
- * @param {number} totalPower - Celkový výkon
- * @param {number} speed - Rychlost animace
- * @param {number} size - Velikost kuliček
- * @param {number} opacity - Průhlednost
+ * @param {object} params - Parametry toku
  */
-function updateMultiSourceFlow(flowKey, from, to, sources, totalPower, speed, size, opacity) {
+function updateMultiSourceFlow(flowKey, params) {
     const flow = particleFlows[flowKey];
     if (!flow) return;
 
+    const {
+        from,
+        to,
+        sources = [],
+        totalPower = 0,
+        speed,
+        size,
+        opacity
+    } = params || {};
+
     // Zastavit starý flow pokud se změnily zdroje nebo rychlost
-    const sourcesChanged = JSON.stringify(flow.sources) !== JSON.stringify(sources);
+    const sourcesChanged = !areSourcesEqual(flow.sources, sources);
     const speedChanged = flow.speed !== speed;
 
     if (sourcesChanged || speedChanged) {
         // OPRAVA: Zastavit VŠECHNY staré sub-flow klíče
-        Object.keys(particleFlows).forEach(key => {
-            if (key.startsWith(flowKey + '_')) {
-                particleFlows[key].active = false;
-                delete particleFlows[key];
-            }
-        });
+        cleanupSubFlows(flowKey);
 
         flow.active = false;
-        flow.sources = sources;
+        flow.sources = cloneSources(sources);
 
         // Restart po malém delaye
         setTimeout(() => {
@@ -492,9 +508,11 @@ function updateMultiSourceFlow(flowKey, from, to, sources, totalPower, speed, si
 
             // Pro každý zdroj vytvořit kuličky podle poměru
             let cumulativeDelay = 0;
-            const totalCount = Math.max(1, Math.min(4, Math.ceil(sources.length + totalPower / 2000)));
+            const scheduledSources = cloneSources(sources);
+            if (!totalPower || scheduledSources.length === 0) return;
+            const totalCount = Math.max(1, Math.min(4, Math.ceil(scheduledSources.length + totalPower / 2000)));
 
-            sources.forEach((source, idx) => {
+            scheduledSources.forEach(source => {
                 const ratio = source.power / totalPower;
                 const sourceCount = Math.max(1, Math.round(totalCount * ratio));
 
@@ -525,12 +543,24 @@ function updateMultiSourceFlow(flowKey, from, to, sources, totalPower, speed, si
 }
 
 // Spustí nebo zastaví kontinuální tok kuliček (simple single-color flow)
-function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1, size = 8, opacity = 1) {
+function updateParticleFlow(flowKey, params) {
     const flow = particleFlows[flowKey];
     if (!flow) return;
 
+    const {
+        from,
+        to,
+        color,
+        active,
+        speed,
+        count = 1,
+        size = 8,
+        opacity = 1
+    } = params || {};
+
     const wasActive = flow.active;
-    const countChanged = flow.count !== count;
+    const previousCount = flow.count;
+    const countChanged = previousCount !== count;
     const speedChanged = Math.abs(flow.speed - speed) > 150; // OPRAVA: Tolerace ±150ms pro prevenci zbytečných restartů
 
     // OPRAVA: Pokud se mění počet kuliček NEBO výrazně rychlost, musíme restartovat flow
@@ -542,9 +572,9 @@ function updateParticleFlow(flowKey, from, to, color, active, speed, count = 1, 
 
         // Pokud se změnil počet, přidáme/ubereme kuličky
         if (countChanged) {
-            console.log(`[Particles] Count changed for ${flowKey}: ${flow.count} -> ${count}`);
+            console.log(`[Particles] Count changed for ${flowKey}: ${previousCount} -> ${count}`);
             // Starý count byl flow.count, nový je count
-            const diff = count - flow.count;
+            const diff = count - previousCount;
 
             if (diff > 0) {
                 // Přidat kuličky
@@ -782,6 +812,332 @@ function getNodeCenters() {
     return centers;
 }
 
+function stopFlowAndCleanup(flowKey, params) {
+    updateParticleFlow(flowKey, {
+        ...params,
+        active: false,
+        count: 0
+    });
+    cleanupSubFlows(flowKey);
+}
+
+function maybeCleanupParticlesOnPowerChange(current, previous, threshold = 2000) {
+    if (!previous) return;
+
+    const changes = {
+        solar: Math.abs(current.solarPower - (previous.solarPower || 0)),
+        battery: Math.abs(current.batteryPower - (previous.batteryPower || 0)),
+        grid: Math.abs(current.gridPower - (previous.gridPower || 0)),
+        house: Math.abs(current.housePower - (previous.housePower || 0))
+    };
+
+    const significantChange = Object.values(changes).some(change => change > threshold);
+    if (!significantChange) return;
+
+    console.log(`[Particles] 🔄 Significant power change detected (S:${changes.solar}W B:${changes.battery}W G:${changes.grid}W H:${changes.house}W), cleaning up...`);
+    const container = document.getElementById('particles');
+    if (container && container.children.length > 10) {
+        // Vyčistit jen pokud je více než 10 kuliček (aby se to nevolalo zbytečně)
+        stopAllParticleFlows();
+        // Po cleanup nastavit flag pro reinicializaci (už je nastaven v loadData, ale pro jistotu)
+        if (typeof needsFlowReinitialize !== 'undefined') {
+            needsFlowReinitialize = true;
+        }
+    }
+}
+
+function buildBatteryChargeSources(solarPower, gridPower, batteryPower) {
+    const sources = [];
+    let solarToBattery = 0;
+    let gridToBattery = 0;
+
+    if (solarPower > 0) {
+        solarToBattery = Math.min(solarPower, batteryPower);
+    }
+
+    const remaining = batteryPower - solarToBattery;
+    if (remaining > 50 && gridPower > 0) {
+        gridToBattery = remaining;
+    }
+
+    if (solarToBattery > 50) {
+        sources.push({ type: 'solar', power: solarToBattery, color: FLOW_COLORS.solar });
+    }
+    if (gridToBattery > 50) {
+        sources.push({ type: 'grid', power: gridToBattery, color: FLOW_COLORS.grid_import });
+    }
+
+    return sources;
+}
+
+function buildGridExportSources(solarPower, batteryPower, gridExportPower) {
+    let solarToGrid = 0;
+    let batteryToGrid = 0;
+
+    // Solár co nejde do baterie ani domu může jít do gridu
+    const solarUsed = batteryPower > 0 ? batteryPower : 0;
+    const solarAvailableForGrid = Math.max(0, solarPower - solarUsed);
+
+    solarToGrid = Math.min(solarAvailableForGrid, gridExportPower);
+
+    const remaining = gridExportPower - solarToGrid;
+    if (remaining > 50 && batteryPower < 0) {
+        // Zbytek z baterie
+        batteryToGrid = Math.min(Math.abs(batteryPower), remaining);
+    }
+
+    const sources = [];
+    if (solarToGrid > 50) {
+        sources.push({ type: 'solar', power: solarToGrid, color: FLOW_COLORS.solar });
+    }
+    if (batteryToGrid > 50) {
+        sources.push({ type: 'battery', power: batteryToGrid, color: FLOW_COLORS.battery });
+    }
+
+    return sources;
+}
+
+function buildHouseSources(solarPower, batteryPower, gridPower, housePower) {
+    // 1. Kolik energie baterie poskytuje/odebírá
+    const batteryContribution = batteryPower < 0 ? Math.abs(batteryPower) : 0;
+
+    // 2. Kolik soláru je dostupné pro dům
+    // Solár může jít do: baterie (nabíjení) + dům + grid (přebytek)
+    const solarAvailable = batteryPower > 0
+        ? Math.max(0, solarPower - batteryPower)
+        : solarPower;
+
+    // 3. Kolik gridu potřebujeme
+    // Grid pokrývá to, co solár + baterie nezvládnou
+    const solarAndBattery = solarAvailable + batteryContribution;
+    const gridNeeded = housePower > solarAndBattery && gridPower > 0
+        ? Math.min(gridPower, housePower - solarAndBattery)
+        : 0;
+
+    // Přiřadit zdroje k domu
+    const solarToHouse = Math.min(solarAvailable, housePower);
+    const houseRemaining = housePower - solarToHouse;
+    const batteryToHouse = houseRemaining > 0
+        ? Math.min(batteryContribution, houseRemaining)
+        : 0;
+    const stillRemaining = houseRemaining - batteryToHouse;
+    const gridToHouse = stillRemaining > 0
+        ? Math.min(gridNeeded, stillRemaining)
+        : 0;
+
+    const sources = [];
+    if (solarToHouse > 50) {
+        sources.push({ type: 'solar', power: solarToHouse, color: FLOW_COLORS.solar });
+    }
+    if (batteryToHouse > 50) {
+        sources.push({ type: 'battery', power: batteryToHouse, color: FLOW_COLORS.battery });
+    }
+    if (gridToHouse > 50) {
+        sources.push({ type: 'grid', power: gridToHouse, color: FLOW_COLORS.grid_import });
+    }
+
+    return sources;
+}
+
+function updateSolarFlow(centers, solarPower) {
+    const solarParams = calculateFlowParams(solarPower, FLOW_MAXIMUMS.solar, 'solarToInverter');
+    updateParticleFlow('solarToInverter', {
+        from: centers.solar,
+        to: centers.inverter,
+        color: FLOW_COLORS.solar,
+        active: solarParams.active,
+        speed: solarParams.speed,
+        count: solarParams.count,
+        size: solarParams.size,
+        opacity: solarParams.opacity
+    });
+}
+
+function updateBatteryFlow(centers, solarPower, batteryPower, gridPower) {
+    const batteryAbsPower = Math.abs(batteryPower);
+    const batteryParams = calculateFlowParams(
+        batteryAbsPower,
+        FLOW_MAXIMUMS.battery,
+        batteryPower > 0 ? 'inverterToBattery' : 'batteryToInverter'
+    );
+
+    stopFlowAndCleanup('batteryToInverter', {
+        from: centers.battery,
+        to: centers.inverter,
+        color: FLOW_COLORS.battery,
+        speed: batteryParams.speed
+    });
+    stopFlowAndCleanup('inverterToBattery', {
+        from: centers.inverter,
+        to: centers.battery,
+        color: FLOW_COLORS.solar,
+        speed: batteryParams.speed
+    });
+
+    if (!batteryParams.active) {
+        return;
+    }
+
+    if (batteryPower > 0) {
+        // ===== NABÍJENÍ BATERIE =====
+        // Vypočítat zdroje: solar + grid
+        const sources = buildBatteryChargeSources(solarPower, gridPower, batteryPower);
+
+        if (sources.length > 1) {
+            // Multi-source: použít novou funkci
+            updateMultiSourceFlow('inverterToBattery', {
+                from: centers.inverter,
+                to: centers.battery,
+                sources,
+                totalPower: batteryPower,
+                speed: batteryParams.speed,
+                size: batteryParams.size,
+                opacity: batteryParams.opacity
+            });
+        } else {
+            // Single source: vyčistit staré sub-flows a použít starou funkci
+            cleanupSubFlows('inverterToBattery');
+            const color = sources.length > 0 ? sources[0].color : FLOW_COLORS.solar;
+            updateParticleFlow('inverterToBattery', {
+                from: centers.inverter,
+                to: centers.battery,
+                color,
+                active: true,
+                speed: batteryParams.speed,
+                count: batteryParams.count,
+                size: batteryParams.size,
+                opacity: batteryParams.opacity
+            });
+        }
+    } else {
+        // ===== VYBÍJENÍ BATERIE =====
+        // Vždy oranžová
+        updateParticleFlow('batteryToInverter', {
+            from: centers.battery,
+            to: centers.inverter,
+            color: FLOW_COLORS.battery,
+            active: true,
+            speed: batteryParams.speed,
+            count: batteryParams.count,
+            size: batteryParams.size,
+            opacity: batteryParams.opacity
+        });
+    }
+}
+
+function updateGridFlow(centers, solarPower, batteryPower, gridPower) {
+    const gridAbsPower = Math.abs(gridPower);
+    const gridParams = calculateFlowParams(
+        gridAbsPower,
+        FLOW_MAXIMUMS.grid,
+        gridPower > 0 ? 'gridToInverter' : 'inverterToGrid'
+    );
+
+    stopFlowAndCleanup('gridToInverter', {
+        from: centers.grid,
+        to: centers.inverter,
+        color: FLOW_COLORS.grid_import,
+        speed: gridParams.speed
+    });
+    stopFlowAndCleanup('inverterToGrid', {
+        from: centers.inverter,
+        to: centers.grid,
+        color: FLOW_COLORS.grid_export,
+        speed: gridParams.speed
+    });
+
+    if (!gridParams.active) {
+        return;
+    }
+
+    if (gridPower > 0) {
+        // ===== ODBĚR ZE SÍTĚ =====
+        updateParticleFlow('gridToInverter', {
+            from: centers.grid,
+            to: centers.inverter,
+            color: FLOW_COLORS.grid_import,
+            active: true,
+            speed: gridParams.speed,
+            count: gridParams.count,
+            size: gridParams.size,
+            opacity: gridParams.opacity
+        });
+        return;
+    }
+
+    // ===== DODÁVKA DO SÍTĚ =====
+    const gridExportPower = Math.abs(gridPower);
+    const sources = buildGridExportSources(solarPower, batteryPower, gridExportPower);
+
+    if (sources.length > 1) {
+        updateMultiSourceFlow('inverterToGrid', {
+            from: centers.inverter,
+            to: centers.grid,
+            sources,
+            totalPower: gridExportPower,
+            speed: gridParams.speed,
+            size: gridParams.size,
+            opacity: gridParams.opacity
+        });
+        return;
+    }
+
+    cleanupSubFlows('inverterToGrid');
+    const color = sources.length > 0 ? sources[0].color : FLOW_COLORS.grid_export;
+    updateParticleFlow('inverterToGrid', {
+        from: centers.inverter,
+        to: centers.grid,
+        color,
+        active: true,
+        speed: gridParams.speed,
+        count: gridParams.count,
+        size: gridParams.size,
+        opacity: gridParams.opacity
+    });
+}
+
+function updateHouseFlow(centers, solarPower, batteryPower, gridPower, housePower) {
+    const houseParams = calculateFlowParams(housePower, FLOW_MAXIMUMS.house, 'inverterToHouse');
+
+    if (!houseParams.active || housePower <= 0) {
+        stopFlowAndCleanup('inverterToHouse', {
+            from: centers.inverter,
+            to: centers.house,
+            color: FLOW_COLORS.house,
+            speed: houseParams.speed
+        });
+        return;
+    }
+
+    const sources = buildHouseSources(solarPower, batteryPower, gridPower, housePower);
+
+    if (sources.length > 1) {
+        updateMultiSourceFlow('inverterToHouse', {
+            from: centers.inverter,
+            to: centers.house,
+            sources,
+            totalPower: housePower,
+            speed: houseParams.speed,
+            size: houseParams.size,
+            opacity: houseParams.opacity
+        });
+        return;
+    }
+
+    cleanupSubFlows('inverterToHouse');
+    const color = sources.length > 0 ? sources[0].color : FLOW_COLORS.house;
+    updateParticleFlow('inverterToHouse', {
+        from: centers.inverter,
+        to: centers.house,
+        color,
+        active: true,
+        speed: houseParams.speed,
+        count: houseParams.count,
+        size: houseParams.size,
+        opacity: houseParams.opacity
+    });
+}
+
 // Animate particles - v2.0 with continuous normalization
 function animateFlow(data) {
     const runtime = globalThis.OIG_RUNTIME || {};
@@ -804,319 +1160,15 @@ function animateFlow(data) {
     const centers = getNodeCenters();
     if (!centers) return;
 
-    // OPRAVA ÚNIK PAMĚTI: Při výrazné změně power hodnot vyčistit staré particles
-    // Toto pomáhá při náhlých změnách (např. cloud zakryje solár, zapne se boiler, atd.)
-    if (lastPowerValues) {
-        const solarChange = Math.abs(solarPower - (lastPowerValues.solarPower || 0));
-        const batteryChange = Math.abs(batteryPower - (lastPowerValues.batteryPower || 0));
-        const gridChange = Math.abs(gridPower - (lastPowerValues.gridPower || 0));
-        const houseChange = Math.abs(housePower - (lastPowerValues.housePower || 0));
-
-        // Pokud došlo k výrazné změně (>2000W na jakémkoli toku), vyčistit particles
-        const significantChange = solarChange > 2000 || batteryChange > 2000 ||
-                                  gridChange > 2000 || houseChange > 2000;
-
-        if (significantChange) {
-            console.log(`[Particles] 🔄 Significant power change detected (S:${solarChange}W B:${batteryChange}W G:${gridChange}W H:${houseChange}W), cleaning up...`);
-            const container = document.getElementById('particles');
-            if (container && container.children.length > 10) {
-                // Vyčistit jen pokud je více než 10 kuliček (aby se to nevolalo zbytečně)
-                stopAllParticleFlows();
-                // Po cleanup nastavit flag pro reinicializaci (už je nastaven v loadData, ale pro jistotu)
-                needsFlowReinitialize = true;
-            }
-        }
-    }
-
-    // ========================================
-    // 1. SOLAR → INVERTER (žlutá, jednosměrný)
-    // ========================================
-    const solarParams = calculateFlowParams(solarPower, FLOW_MAXIMUMS.solar, 'solarToInverter');
-
-    updateParticleFlow(
-        'solarToInverter',
-        centers.solar,
-        centers.inverter,
-        FLOW_COLORS.solar,
-        solarParams.active,
-        solarParams.speed,
-        solarParams.count,
-        solarParams.size,
-        solarParams.opacity
+    maybeCleanupParticlesOnPowerChange(
+        { solarPower, batteryPower, gridPower, housePower },
+        lastPowerValues
     );
 
-    // ========================================
-    // 2. BATTERY ↔ INVERTER (obousměrný)
-    // ========================================
-    const batteryAbsPower = Math.abs(batteryPower);
-    const batteryParams = calculateFlowParams(batteryAbsPower, FLOW_MAXIMUMS.battery,
-        batteryPower > 0 ? 'inverterToBattery' : 'batteryToInverter');
-
-    // Zastavit oba směry nejdřív
-    updateParticleFlow('batteryToInverter', centers.battery, centers.inverter, FLOW_COLORS.battery, false, batteryParams.speed, 0);
-    updateParticleFlow('inverterToBattery', centers.inverter, centers.battery, FLOW_COLORS.solar, false, batteryParams.speed, 0);
-    // Vyčistit i sub-flows
-    cleanupSubFlows('batteryToInverter');
-    cleanupSubFlows('inverterToBattery');
-
-    if (batteryParams.active) {
-        if (batteryPower > 0) {
-            // ===== NABÍJENÍ BATERIE =====
-            // Vypočítat zdroje: solar + grid
-            let solarToBattery = 0;
-            let gridToBattery = 0;
-
-            if (solarPower > 0) {
-                solarToBattery = Math.min(solarPower, batteryPower);
-            }
-
-            const remaining = batteryPower - solarToBattery;
-            if (remaining > 50 && gridPower > 0) {
-                gridToBattery = remaining;
-            }
-
-            // Multi-source flow: žluté + modré kuličky
-            const sources = [];
-            if (solarToBattery > 50) {
-                sources.push({ type: 'solar', power: solarToBattery, color: FLOW_COLORS.solar });
-            }
-            if (gridToBattery > 50) {
-                sources.push({ type: 'grid', power: gridToBattery, color: FLOW_COLORS.grid_import });
-            }
-
-            if (sources.length > 1) {
-                // Multi-source: použít novou funkci
-                updateMultiSourceFlow(
-                    'inverterToBattery',
-                    centers.inverter,
-                    centers.battery,
-                    sources,
-                    batteryPower,
-                    batteryParams.speed,
-                    batteryParams.size,
-                    batteryParams.opacity
-                );
-            } else {
-                // Single source: vyčistit staré sub-flows a použít starou funkci
-                cleanupSubFlows('inverterToBattery');
-                const color = sources.length > 0 ? sources[0].color : FLOW_COLORS.solar;
-                updateParticleFlow(
-                    'inverterToBattery',
-                    centers.inverter,
-                    centers.battery,
-                    color,
-                    true,
-                    batteryParams.speed,
-                    batteryParams.count,
-                    batteryParams.size,
-                    batteryParams.opacity
-                );
-            }
-        } else {
-            // ===== VYBÍJENÍ BATERIE =====
-            // Vždy oranžová
-            updateParticleFlow(
-                'batteryToInverter',
-                centers.battery,
-                centers.inverter,
-                FLOW_COLORS.battery,
-                true,
-                batteryParams.speed,
-                batteryParams.count,
-                batteryParams.size,
-                batteryParams.opacity
-            );
-        }
-    }
-
-    // ========================================
-    // 3. GRID ↔ INVERTER (obousměrný)
-    // ========================================
-    const gridAbsPower = Math.abs(gridPower);
-    const gridParams = calculateFlowParams(gridAbsPower, FLOW_MAXIMUMS.grid,
-        gridPower > 0 ? 'gridToInverter' : 'inverterToGrid');
-
-    // Zastavit oba směry nejdřív
-    updateParticleFlow('gridToInverter', centers.grid, centers.inverter, FLOW_COLORS.grid_import, false, gridParams.speed, 0);
-    updateParticleFlow('inverterToGrid', centers.inverter, centers.grid, FLOW_COLORS.grid_export, false, gridParams.speed, 0);
-    // Vyčistit i sub-flows
-    cleanupSubFlows('gridToInverter');
-    cleanupSubFlows('inverterToGrid');
-
-    if (gridParams.active) {
-        if (gridPower > 0) {
-            // ===== ODBĚR ZE SÍTĚ =====
-            // Červená, jednosměrný
-            updateParticleFlow(
-                'gridToInverter',
-                centers.grid,
-                centers.inverter,
-                FLOW_COLORS.grid_import,
-                true,
-                gridParams.speed,
-                gridParams.count,
-                gridParams.size,
-                gridParams.opacity
-            );
-        } else {
-            // ===== DODÁVKA DO SÍTĚ =====
-            // Vypočítat zdroje: solar + battery
-            const gridExportPower = Math.abs(gridPower);
-
-            let solarToGrid = 0;
-            let batteryToGrid = 0;
-
-            // Solár co nejde do baterie ani domu může jít do gridu
-            const solarUsed = (batteryPower > 0 ? batteryPower : 0);
-            const solarAvailableForGrid = Math.max(0, solarPower - solarUsed);
-
-            solarToGrid = Math.min(solarAvailableForGrid, gridExportPower);
-
-            const remaining = gridExportPower - solarToGrid;
-            if (remaining > 50 && batteryPower < 0) {
-                // Zbytek z baterie
-                batteryToGrid = Math.min(Math.abs(batteryPower), remaining);
-            }
-
-            // Multi-source flow: žluté + oranžové kuličky
-            const sources = [];
-            if (solarToGrid > 50) {
-                sources.push({ type: 'solar', power: solarToGrid, color: FLOW_COLORS.solar });
-            }
-            if (batteryToGrid > 50) {
-                sources.push({ type: 'battery', power: batteryToGrid, color: FLOW_COLORS.battery });
-            }
-
-            if (sources.length > 1) {
-                // Multi-source
-                updateMultiSourceFlow(
-                    'inverterToGrid',
-                    centers.inverter,
-                    centers.grid,
-                    sources,
-                    gridExportPower,
-                    gridParams.speed,
-                    gridParams.size,
-                    gridParams.opacity
-                );
-            } else {
-                // Single source - vyčistit staré sub-flows
-                cleanupSubFlows('inverterToGrid');
-                const color = sources.length > 0 ? sources[0].color : FLOW_COLORS.grid_export;
-                updateParticleFlow(
-                    'inverterToGrid',
-                    centers.inverter,
-                    centers.grid,
-                    color,
-                    true,
-                    gridParams.speed,
-                    gridParams.count,
-                    gridParams.size,
-                    gridParams.opacity
-                );
-            }
-        }
-    }
-
-    // ========================================
-    // 4. INVERTER → HOUSE (spotřeba, multi-source)
-    // ========================================
-    const houseParams = calculateFlowParams(housePower, FLOW_MAXIMUMS.house, 'inverterToHouse');
-
-    // Vypočítat zdroje pro spotřebu (house)
-    let solarToHouse = 0;
-    let batteryToHouse = 0;
-    let gridToHouse = 0;
-
-    if (houseParams.active && housePower > 0) {
-        // OPRAVA: Správná logika rozdělení zdrojů
-        // batteryPower > 0 = nabíjení baterie (energie TEČE DO baterie)
-        // batteryPower < 0 = vybíjení baterie (energie TEČE Z baterie)
-        // gridPower > 0 = odběr ze sítě
-        // gridPower < 0 = dodávka do sítě
-
-        // 1. Kolik energie baterie poskytuje/odebírá
-        let batteryContribution = 0;
-        if (batteryPower < 0) {
-            // Vybíjení - baterie dává energii
-            batteryContribution = Math.abs(batteryPower);
-        }
-        // Pokud batteryPower > 0, baterie ODEBÍRÁ energii (nabíjí se), nedává do domu
-
-        // 2. Kolik soláru je dostupné pro dům
-        // Solár může jít do: baterie (nabíjení) + dům + grid (přebytek)
-        let solarAvailable = solarPower;
-        if (batteryPower > 0) {
-            // Baterie se nabíjí - část soláru jde do baterie
-            solarAvailable = Math.max(0, solarPower - batteryPower);
-        }
-
-        // 3. Kolik gridu potřebujeme
-        // Grid pokrývá to, co solár + baterie nezvládnou
-        const solarAndBattery = solarAvailable + batteryContribution;
-        let gridNeeded = 0;
-        if (housePower > solarAndBattery && gridPower > 0) {
-            gridNeeded = Math.min(gridPower, housePower - solarAndBattery);
-        }
-
-        // Přiřadit zdroje k domu
-        solarToHouse = Math.min(solarAvailable, housePower);
-        const houseRemaining = housePower - solarToHouse;
-
-        if (houseRemaining > 0) {
-            batteryToHouse = Math.min(batteryContribution, houseRemaining);
-            const stillRemaining = houseRemaining - batteryToHouse;
-
-            if (stillRemaining > 0) {
-                gridToHouse = Math.min(gridNeeded, stillRemaining);
-            }
-        }
-
-        // Multi-source flow: žluté + oranžové + červené kuličky
-        const sources = [];
-        if (solarToHouse > 50) {
-            sources.push({ type: 'solar', power: solarToHouse, color: FLOW_COLORS.solar });
-        }
-        if (batteryToHouse > 50) {
-            sources.push({ type: 'battery', power: batteryToHouse, color: FLOW_COLORS.battery });
-        }
-        if (gridToHouse > 50) {
-            sources.push({ type: 'grid', power: gridToHouse, color: FLOW_COLORS.grid_import });
-        }
-
-        if (sources.length > 1) {
-            // Multi-source
-            updateMultiSourceFlow(
-                'inverterToHouse',
-                centers.inverter,
-                centers.house,
-                sources,
-                housePower,
-                houseParams.speed,
-                houseParams.size,
-                houseParams.opacity
-            );
-        } else {
-            // Single source - vyčistit staré sub-flows
-            cleanupSubFlows('inverterToHouse');
-            const color = sources.length > 0 ? sources[0].color : FLOW_COLORS.house;
-            updateParticleFlow(
-                'inverterToHouse',
-                centers.inverter,
-                centers.house,
-                color,
-                true,
-                houseParams.speed,
-                houseParams.count,
-                houseParams.size,
-                houseParams.opacity
-            );
-        }
-    } else {
-        updateParticleFlow('inverterToHouse', centers.inverter, centers.house, FLOW_COLORS.house, false, houseParams.speed, 0);
-        // Vyčistit i sub-flows
-        cleanupSubFlows('inverterToHouse');
-    }
+    updateSolarFlow(centers, solarPower);
+    updateBatteryFlow(centers, solarPower, batteryPower, gridPower);
+    updateGridFlow(centers, solarPower, batteryPower, gridPower);
+    updateHouseFlow(centers, solarPower, batteryPower, gridPower, housePower);
 
     // OPRAVA: Uložit aktuální power hodnoty pro detekci změn
     lastPowerValues = { solarPower, batteryPower, gridPower, housePower };
