@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * OIG Cloud - Detail Tabs Dashboard Component
  *
@@ -198,7 +197,7 @@ class DetailTabsDialog {
         }
 
         const tabData = this.cache[tab];
-        if (!tabData || !tabData.mode_blocks || tabData.mode_blocks.length === 0) {
+        if (!tabData?.mode_blocks || tabData.mode_blocks.length === 0) {
             container.innerHTML = this.renderNoData(tab);
             return;
         }
@@ -378,17 +377,18 @@ class DetailTabsDialog {
                 }
             }
 
-            const deltaText =
-                deltaState === 'delta-better'
-                    ? 'Lépe než plán'
-                    : deltaState === 'delta-worse'
-                    ? 'Hůře než plán'
-                    : 'Rozdíl vs. plán';
+            let deltaText = 'Rozdíl vs. plán';
+            if (deltaState === 'delta-better') {
+                deltaText = 'Lépe než plán';
+            } else if (deltaState === 'delta-worse') {
+                deltaText = 'Hůře než plán';
+            }
 
-            const deltaValueText =
-                absDelta >= 0.01
-                    ? `${delta > 0 ? '+' : ''}${this.formatMetricValue(delta)} ${unit}`
-                    : '±0';
+            let deltaValueText = '±0';
+            if (absDelta >= 0.01) {
+                const deltaSign = delta > 0 ? '+' : '';
+                deltaValueText = `${deltaSign}${this.formatMetricValue(delta)} ${unit}`;
+            }
 
             deltaRow = `
                 <div class="tile-delta ${deltaState}">
@@ -433,12 +433,18 @@ class DetailTabsDialog {
 
         let actualHtml = '';
         if (hasActual && actual !== null) {
-            const deltaClass =
-                delta > 0 ? 'delta-positive' : delta < 0 ? 'delta-negative' : '';
-            const deltaLabel =
-                delta !== null && Math.abs(delta) > 0.009
-                    ? `<span class="metric-delta ${deltaClass}">${delta > 0 ? '+' : ''}${delta.toFixed(2)} ${unit}</span>`
-                    : '';
+            let deltaClass = '';
+            if (delta > 0) {
+                deltaClass = 'delta-positive';
+            } else if (delta < 0) {
+                deltaClass = 'delta-negative';
+            }
+
+            let deltaLabel = '';
+            if (delta !== null && Math.abs(delta) > 0.009) {
+                const deltaSign = delta > 0 ? '+' : '';
+                deltaLabel = `<span class="metric-delta ${deltaClass}">${deltaSign}${delta.toFixed(2)} ${unit}</span>`;
+            }
             actualHtml = `
                 <div class="metric-actual">
                     <span class="metric-label">Skutečnost:</span>
@@ -508,22 +514,35 @@ class DetailTabsDialog {
             cost_historical !== undefined;
 
         // Match indicator
-        const matchClass = isPlannedOnly
-            ? 'match-neutral'
-            : mode_match
-              ? 'match-yes'
-              : 'match-no';
-        const matchIcon = isPlannedOnly ? 'ℹ️' : mode_match ? '✅' : '❌';
-        const matchLabel = isPlannedOnly ? 'Plán' : mode_match ? 'Shoda' : 'Odchylka';
+        let matchClass = 'match-no';
+        let matchIcon = '❌';
+        let matchLabel = 'Odchylka';
+        if (isPlannedOnly) {
+            matchClass = 'match-neutral';
+            matchIcon = 'ℹ️';
+            matchLabel = 'Plán';
+        } else if (mode_match) {
+            matchClass = 'match-yes';
+            matchIcon = '✅';
+            matchLabel = 'Shoda';
+        }
 
         // Cost delta indicator
         let costDeltaHtml = '';
         if (!isPlannedOnly && cost_delta !== null && cost_delta !== undefined) {
-            const deltaClass = cost_delta > 0 ? 'cost-higher' : cost_delta < 0 ? 'cost-lower' : 'cost-equal';
-            const deltaIcon = cost_delta > 0 ? '⬆️' : cost_delta < 0 ? '⬇️' : '➡️';
+            let deltaClass = 'cost-equal';
+            let deltaIcon = '➡️';
+            if (cost_delta > 0) {
+                deltaClass = 'cost-higher';
+                deltaIcon = '⬆️';
+            } else if (cost_delta < 0) {
+                deltaClass = 'cost-lower';
+                deltaIcon = '⬇️';
+            }
+            const deltaSign = cost_delta > 0 ? '+' : '';
             costDeltaHtml = `
                 <span class="cost-delta ${deltaClass}">
-                    ${deltaIcon} ${cost_delta > 0 ? '+' : ''}${cost_delta.toFixed(2)} Kč
+                    ${deltaIcon} ${deltaSign}${cost_delta.toFixed(2)} Kč
                 </span>
             `;
         }
@@ -663,12 +682,18 @@ class DetailTabsDialog {
         }
 
         const delta = actual - (planned ?? 0);
-        const deltaClass =
-            delta > 0 ? 'delta-positive' : delta < 0 ? 'delta-negative' : '';
-        const deltaLabel =
-            Math.abs(delta) > 0.009
-                ? `<span class="metric-delta ${deltaClass}">${delta > 0 ? '+' : ''}${delta.toFixed(2)} ${unit}</span>`
-                : '';
+        let deltaClass = '';
+        if (delta > 0) {
+            deltaClass = 'delta-positive';
+        } else if (delta < 0) {
+            deltaClass = 'delta-negative';
+        }
+
+        let deltaLabel = '';
+        if (Math.abs(delta) > 0.009) {
+            const deltaSign = delta > 0 ? '+' : '';
+            deltaLabel = `<span class="metric-delta ${deltaClass}">${deltaSign}${delta.toFixed(2)} ${unit}</span>`;
+        }
 
         return `
             <span class="metric-value-pair">
@@ -692,7 +717,7 @@ class DetailTabsDialog {
             });
             const startDate = new Date(startIso);
             const endDate = new Date(endIso);
-            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
                 return `${startIso} - ${endIso}`;
             }
             return `${fmt.format(startDate)} – ${fmt.format(endDate)}`;
@@ -706,11 +731,12 @@ class DetailTabsDialog {
         if (!isoTs) return '--:--';
         try {
             const dt = new Date(isoTs);
-            if (isNaN(dt.getTime())) {
+            if (Number.isNaN(dt.getTime())) {
                 return '--:--';
             }
             return dt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
         } catch (err) {
+            console.warn('[DetailTabs] Failed to format time label', err);
             return '--:--';
         }
     }
@@ -804,15 +830,15 @@ class DetailTabsDialog {
 }
 
 // Global instance
-window.DetailTabsDialog = null;
+globalThis.DetailTabsDialog = null;
 
 /**
  * Initialize Detail Tabs Dialog
  */
 function initDetailTabsDialog(boxId) {
-    if (!window.DetailTabsDialog) {
-        window.DetailTabsDialog = new DetailTabsDialog(boxId);
-        window.DetailTabsDialog.init();
+    if (!globalThis.DetailTabsDialog) {
+        globalThis.DetailTabsDialog = new DetailTabsDialog(boxId);
+        globalThis.DetailTabsDialog.init();
         console.log('[DetailTabs] Global instance created');
     }
 }
@@ -821,13 +847,13 @@ function initDetailTabsDialog(boxId) {
  * Open Detail Tabs Dialog
  */
 function openDetailTabsDialog(tab = 'today', plan = 'hybrid') {
-    if (window.DetailTabsDialog) {
-        window.DetailTabsDialog.open(tab, plan);
+    if (globalThis.DetailTabsDialog) {
+        globalThis.DetailTabsDialog.open(tab, plan);
     } else {
         console.error('[DetailTabs] Dialog not initialized. Call initDetailTabsDialog() first.');
     }
 }
 
 // Export for global access
-window.initDetailTabsDialog = initDetailTabsDialog;
-window.openDetailTabsDialog = openDetailTabsDialog;
+globalThis.initDetailTabsDialog = initDetailTabsDialog;
+globalThis.openDetailTabsDialog = openDetailTabsDialog;

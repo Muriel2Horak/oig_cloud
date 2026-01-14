@@ -45,7 +45,7 @@ class OigBatteryForecastCard extends HTMLElement {
     async loadChartsLibrary() {
         try {
             // Načtení chart loaderu pokud není dostupný
-            if (!window.ApexChartsLoader) {
+            if (!globalThis.ApexChartsLoader) {
                 await this.loadScript('/oig_cloud_static/chart-loader.js');
             }
 
@@ -53,7 +53,7 @@ class OigBatteryForecastCard extends HTMLElement {
             this.showLoading('Načítání grafu...');
 
             // Načtení Apex Charts pomocí CDN loaderu
-            await window.ApexChartsLoader.load();
+            await globalThis.ApexChartsLoader.load();
 
             // Inicializace grafu
             this.initChart();
@@ -217,7 +217,7 @@ class OigBatteryForecastCard extends HTMLElement {
     }
 
     initChart() {
-        if (!window.ApexCharts || !this.shadowRoot.querySelector('#chart')) return;
+        if (!globalThis.ApexCharts || !this.shadowRoot.querySelector('#chart')) return;
 
         const options = {
             chart: {
@@ -822,8 +822,8 @@ class OigBatteryForecastCard extends HTMLElement {
 customElements.define('oig-battery-forecast-card', OigBatteryForecastCard);
 
 // Registrace pro Lovelace
-window.customCards = window.customCards || [];
-window.customCards.push({
+globalThis.customCards = globalThis.customCards || [];
+globalThis.customCards.push({
     type: 'oig-battery-forecast-card',
     name: 'OIG Battery Forecast Card',
     description: 'Karta pro zobrazení predikce kapacity baterie s Apex Charts',

@@ -49,18 +49,18 @@
             <h1>⚡ Energetické Toky</h1>
 
             <!-- ČHMÚ Weather Warning Badge -->
-            <div class="chmu-warning-badge" id="chmu-warning-badge" onclick="toggleChmuWarningModal()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+            <button type="button" class="chmu-warning-badge button-reset" id="chmu-warning-badge" onclick="toggleChmuWarningModal()">
                 <span class="chmu-icon" id="chmu-icon">✓</span>
                 <span class="chmu-text" id="chmu-text">Bez výstrah</span>
-            </div>
+            </button>
 
             <div class="time" id="current-time">--:--:--</div>
             <div class="last-update" id="last-update-header">Aktualizováno: --</div>
         </div>
 
         <!-- ČHMÚ Warning Modal -->
-        <div class="chmu-modal" id="chmu-modal" onclick="closeChmuWarningModal(event)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
-            <div class="chmu-modal-content" onclick="event.stopPropagation()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+        <div class="chmu-modal" id="chmu-modal">
+            <div class="chmu-modal-content">
                 <div class="chmu-modal-header">
                     <h3 id="chmu-modal-title">🌦️ Meteorologická Výstraha ČHMÚ</h3>
                     <button class="chmu-modal-close" onclick="closeChmuWarningModal()">&times;</button>
@@ -73,9 +73,9 @@
 
         <!-- Tabs -->
         <div class="dashboard-tabs">
-            <div class="dashboard-tab active" onclick="switchTab('flow')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">⚡ Toky</div>
-            <div class="dashboard-tab" onclick="switchTab('pricing')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">💰 Predikce a statistiky</div>
-            <div class="dashboard-tab" id="dashboard-tab-boiler" style="display:none" onclick="switchTab('boiler')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">🔥 Bojler & Auto</div>
+            <button type="button" class="dashboard-tab button-reset active" data-tab="flow" onclick="switchTab('flow')">⚡ Toky</button>
+            <button type="button" class="dashboard-tab button-reset" data-tab="pricing" onclick="switchTab('pricing')">💰 Predikce a statistiky</button>
+            <button type="button" class="dashboard-tab button-reset" data-tab="boiler" id="dashboard-tab-boiler" style="display:none" onclick="switchTab('boiler')">🔥 Bojler & Auto</button>
             <div class="layout-controls">
                 <button id="edit-layout-btn" class="btn-layout-edit" onclick="toggleEditMode()" data-tooltip="Upravit rozmístění boxů">
                     🔧
@@ -91,12 +91,13 @@
 
             <!-- Control Panel -->
             <div class="control-panel minimized" id="control-panel">
-                <div class="panel-header" onclick="toggleControlPanel()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+            <div class="panel-header">
+                <button type="button" class="panel-header-toggle button-reset" onclick="toggleControlPanel()">
                     <h3>⚙️ Ovládání
-                        <span class="info-bubble" onclick="event.stopPropagation()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">❓
-                            <span class="info-bubble-tooltip">
-                                <strong>Ovládací panel</strong>
-                                Zde můžete měnit režimy systému v reálném čase. Všechny změny jsou chráněny
+                        <span class="info-bubble">❓
+                        <span class="info-bubble-tooltip">
+                            <strong>Ovládací panel</strong>
+                            Zde můžete měnit režimy systému v reálném čase. Všechny změny jsou chráněny
                                 ServiceShield systémem pro bezpečné API volání.
                                 <ul>
                                     <li><strong>Režim střídače:</strong> Home 1-4 režimy</li>
@@ -106,11 +107,13 @@
                                 Změny jsou vidět ve frontě požadavků níže.
                             </span>
                         </span>
+                    </span>
                     </h3>
-                    <button class="btn-minimize" onclick="event.stopPropagation(); toggleControlPanel()">
-                        <span id="panel-toggle-icon">+</span>
-                    </button>
-                </div>
+                </button>
+                <button type="button" class="btn-minimize" onclick="toggleControlPanel()">
+                    <span id="panel-toggle-icon">+</span>
+                </button>
+            </div>
 
                 <div class="panel-content">
                     <!-- Box Mode -->
@@ -225,68 +228,68 @@
 
                 <!-- Solar -->
                 <div class="node solar">
-                    <div class="solar-forecast-today entity-value" id="solar-forecast-today-corner"
+                    <button type="button" class="solar-forecast-today entity-value button-reset" id="solar-forecast-today-corner"
                         data-entity="solar_forecast" data-tooltip="Dnešní předpověď"
-                        onclick="openEntityDialog(getSensorId('solar_forecast'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                        onclick="openEntityDialog(getSensorId('solar_forecast'))">
                         <span class="forecast-icon">🔮</span>
                         <span class="forecast-value" id="solar-forecast-today-value">-- kWh</span>
-                    </div>
-                    <div class="solar-forecast-tomorrow entity-value" id="solar-forecast-tomorrow-corner"
+                    </button>
+                    <button type="button" class="solar-forecast-tomorrow entity-value button-reset" id="solar-forecast-tomorrow-corner"
                         data-entity="solar_forecast_tomorrow" data-tooltip="Zítřejší předpověď"
-                        onclick="openEntityDialog(getSensorId('solar_forecast_tomorrow'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                        onclick="openEntityDialog(getSensorId('solar_forecast_tomorrow'))">
                         <span class="forecast-icon">🌅</span>
                         <span class="forecast-value" id="solar-forecast-tomorrow-value">-- kWh</span>
-                    </div>
+                    </button>
                     <div class="node-icon solar-icon-dynamic" id="solar-icon-dynamic">☀️</div>
                     <div class="node-label">Solár</div>
-                    <div class="node-value entity-value" id="solar-power" data-entity="actual_fv_total"
+                    <button type="button" class="node-value entity-value button-reset" id="solar-power" data-entity="actual_fv_total"
                         data-tooltip="Aktuální výkon FVE (oba stringy)"
-                        onclick="openEntityDialog(getSensorId('actual_fv_total'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- W</div>
-                    <div class="node-subvalue entity-value" id="solar-today" data-flip-pad="none" data-entity="dc_in_fv_ad"
-                        data-tooltip="Vyrobeno dnes celkem" onclick="openEntityDialog(getSensorId('dc_in_fv_ad'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">Dnes:
-                        -- kWh</div>
+                        onclick="openEntityDialog(getSensorId('actual_fv_total'))">-- W</button>
+                    <button type="button" class="node-subvalue entity-value button-reset" id="solar-today" data-flip-pad="none" data-entity="dc_in_fv_ad"
+                        data-tooltip="Vyrobeno dnes celkem" onclick="openEntityDialog(getSensorId('dc_in_fv_ad'))">Dnes:
+                        -- kWh</button>
                     <div class="node-details">
                         <div class="solar-columns">
                             <div class="solar-column">
                                 <div class="detail-subheader">🏭 String 1</div>
                                 <div class="detail-row">
                                     <span class="detail-icon">⚡</span>
-                                    <span class="detail-value entity-value" id="solar-s1-volt"
+                                    <button type="button" class="detail-value entity-value button-reset" id="solar-s1-volt"
                                         data-entity="extended_fve_voltage_1" data-tooltip="String 1 - Napětí"
-                                        onclick="openEntityDialog(getSensorId('extended_fve_voltage_1'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--V</span>
+                                        onclick="openEntityDialog(getSensorId('extended_fve_voltage_1'))">--V</button>
                                 </div>
                                 <div class="detail-row">
                                     <span class="detail-icon">〰️</span>
-                                    <span class="detail-value entity-value" id="solar-s1-amp"
+                                    <button type="button" class="detail-value entity-value button-reset" id="solar-s1-amp"
                                         data-entity="extended_fve_current_1" data-tooltip="String 1 - Proud"
-                                        onclick="openEntityDialog(getSensorId('extended_fve_current_1'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--A</span>
+                                        onclick="openEntityDialog(getSensorId('extended_fve_current_1'))">--A</button>
                                 </div>
                                 <div class="detail-row">
                                     <span class="detail-icon">⚡</span>
-                                    <span class="detail-value entity-value" id="solar-s1" data-entity="dc_in_fv_p1"
+                                    <button type="button" class="detail-value entity-value button-reset" id="solar-s1" data-entity="dc_in_fv_p1"
                                         data-tooltip="String 1 - Výkon"
-                                        onclick="openEntityDialog(getSensorId('dc_in_fv_p1'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- W</span>
+                                        onclick="openEntityDialog(getSensorId('dc_in_fv_p1'))">-- W</button>
                                 </div>
                             </div>
                             <div class="solar-column">
                                 <div class="detail-subheader">🏭 String 2</div>
                                 <div class="detail-row">
                                     <span class="detail-icon">⚡</span>
-                                    <span class="detail-value entity-value" id="solar-s2-volt"
+                                    <button type="button" class="detail-value entity-value button-reset" id="solar-s2-volt"
                                         data-entity="extended_fve_voltage_2" data-tooltip="String 2 - Napětí"
-                                        onclick="openEntityDialog(getSensorId('extended_fve_voltage_2'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--V</span>
+                                        onclick="openEntityDialog(getSensorId('extended_fve_voltage_2'))">--V</button>
                                 </div>
                                 <div class="detail-row">
                                     <span class="detail-icon">〰️</span>
-                                    <span class="detail-value entity-value" id="solar-s2-amp"
+                                    <button type="button" class="detail-value entity-value button-reset" id="solar-s2-amp"
                                         data-entity="extended_fve_current_2" data-tooltip="String 2 - Proud"
-                                        onclick="openEntityDialog(getSensorId('extended_fve_current_2'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--A</span>
+                                        onclick="openEntityDialog(getSensorId('extended_fve_current_2'))">--A</button>
                                 </div>
                                 <div class="detail-row">
                                     <span class="detail-icon">⚡</span>
-                                    <span class="detail-value entity-value" id="solar-s2" data-entity="dc_in_fv_p2"
+                                    <button type="button" class="detail-value entity-value button-reset" id="solar-s2" data-entity="dc_in_fv_p2"
                                         data-tooltip="String 2 - Výkon"
-                                        onclick="openEntityDialog(getSensorId('dc_in_fv_p2'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- W</span>
+                                        onclick="openEntityDialog(getSensorId('dc_in_fv_p2'))">-- W</button>
                                 </div>
                             </div>
                         </div>
@@ -295,30 +298,30 @@
 
                 <!-- Battery -->
                 <div class="node battery">
-                    <div class="battery-current-indicator entity-value" id="battery-current-indicator"
+                    <button type="button" class="battery-current-indicator entity-value button-reset" id="battery-current-indicator"
                         data-entity="extended_battery_current" data-tooltip="Proud baterie"
-                        onclick="openEntityDialog(getSensorId('extended_battery_current'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                        onclick="openEntityDialog(getSensorId('extended_battery_current'))">
                         <span style="font-size: 12px;">〰️</span>
                         <span id="battery-current-value">-- A</span>
-                    </div>
+                    </button>
                     <!-- Battery Balancing Indicator - nový indikátor pod proudem -->
                     <div class="battery-balancing-indicator" id="battery-balancing-indicator" style="display: none;"
                         data-tooltip-html="">
                         <span class="balancing-icon" id="balancing-icon">⚖️</span>
                         <span class="balancing-text" id="balancing-text">Balancuje...</span>
                     </div>
-                    <div class="battery-voltage-indicator entity-value" id="battery-voltage-indicator"
+                    <button type="button" class="battery-voltage-indicator entity-value button-reset" id="battery-voltage-indicator"
                         data-entity="extended_battery_voltage" data-tooltip="Napětí baterie"
-                        onclick="openEntityDialog(getSensorId('extended_battery_voltage'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                        onclick="openEntityDialog(getSensorId('extended_battery_voltage'))">
                         <span style="font-size: 10px;">⚡</span>
                         <span id="battery-voltage-value">-- V</span>
-                    </div>
-                    <div class="battery-temp-indicator entity-value" id="battery-temp-indicator"
+                    </button>
+                    <button type="button" class="battery-temp-indicator entity-value button-reset" id="battery-temp-indicator"
                         data-entity="extended_battery_temperature" data-tooltip="Teplota baterie"
-                        onclick="openEntityDialog(getSensorId('extended_battery_temperature'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                        onclick="openEntityDialog(getSensorId('extended_battery_temperature'))">
                         <span class="battery-temp-icon" id="battery-temp-icon">🌡️</span>
                         <span id="battery-temp-value">-- °C</span>
-                    </div>
+                    </button>
                     <!-- Grid Charging Indicator - vedle teploty -->
                     <div class="battery-grid-charging-indicator entity-value" id="battery-grid-charging-indicator"
                         data-entity="grid_charging_planned">
@@ -351,12 +354,12 @@
                         </svg>
                     </div>
                     <div class="node-label">Baterie</div>
-                    <div class="node-value entity-value" id="battery-soc" data-flip-pad="none" data-entity="batt_bat_c"
-                        data-tooltip="Stav nabití baterie" onclick="openEntityDialog(getSensorId('batt_bat_c'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- %
-                    </div>
-                    <div class="node-subvalue entity-value" id="battery-power" data-entity="batt_batt_comp_p"
+                    <button type="button" class="node-value entity-value button-reset" id="battery-soc" data-flip-pad="none" data-entity="batt_bat_c"
+                        data-tooltip="Stav nabití baterie" onclick="openEntityDialog(getSensorId('batt_bat_c'))">-- %
+                    </button>
+                    <button type="button" class="node-subvalue entity-value button-reset" id="battery-power" data-entity="batt_batt_comp_p"
                         data-tooltip="Aktuální výkon baterie"
-                        onclick="openEntityDialog(getSensorId('batt_batt_comp_p'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- W</div>
+                        onclick="openEntityDialog(getSensorId('batt_batt_comp_p'))">-- W</button>
                     <div class="node-status" id="battery-status">--</div>
                     <div class="node-details">
                         <div class="detail-group">
@@ -366,35 +369,35 @@
                                     <div class="detail-subheader">⚡ Energie</div>
                                     <div class="detail-row">
                                         <span class="detail-label">Nabíjení:</span>
-                                        <span class="detail-value entity-value" id="battery-charge-total"
+                                        <button type="button" class="detail-value entity-value button-reset" id="battery-charge-total"
                                             data-entity="computed_batt_charge_energy_today"
                                             data-tooltip="Nabito dnes celkem"
-                                            onclick="openEntityDialog(getSensorId('computed_batt_charge_energy_today'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--
-                                            kWh</span>
+                                            onclick="openEntityDialog(getSensorId('computed_batt_charge_energy_today'))">--
+                                            kWh</button>
                                     </div>
                                     <div class="detail-row">
                                         <span class="detail-label">└ z FVE:</span>
-                                        <span class="detail-value entity-value" id="battery-charge-solar"
+                                        <button type="button" class="detail-value entity-value button-reset" id="battery-charge-solar"
                                             data-entity="computed_batt_charge_fve_energy_today"
                                             data-tooltip="Nabito z FVE dnes"
-                                            onclick="openEntityDialog(getSensorId('computed_batt_charge_fve_energy_today'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--
-                                            kWh</span>
+                                            onclick="openEntityDialog(getSensorId('computed_batt_charge_fve_energy_today'))">--
+                                            kWh</button>
                                     </div>
                                     <div class="detail-row">
                                         <span class="detail-label">└ ze sítě:</span>
-                                        <span class="detail-value entity-value" id="battery-charge-grid"
+                                        <button type="button" class="detail-value entity-value button-reset" id="battery-charge-grid"
                                             data-entity="computed_batt_charge_grid_energy_today"
                                             data-tooltip="Nabito ze sítě dnes"
-                                            onclick="openEntityDialog(getSensorId('computed_batt_charge_grid_energy_today'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--
-                                            kWh</span>
+                                            onclick="openEntityDialog(getSensorId('computed_batt_charge_grid_energy_today'))">--
+                                            kWh</button>
                                     </div>
                                     <div class="detail-row" style="margin-top: 10px;">
                                         <span class="detail-label">Vybíjení:</span>
-                                        <span class="detail-value entity-value" id="battery-discharge-total"
+                                        <button type="button" class="detail-value entity-value button-reset" id="battery-discharge-total"
                                             data-entity="computed_batt_discharge_energy_today"
                                             data-tooltip="Vybito dnes celkem"
-                                            onclick="openEntityDialog(getSensorId('computed_batt_discharge_energy_today'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--
-                                            kWh</span>
+                                            onclick="openEntityDialog(getSensorId('computed_batt_discharge_energy_today'))">--
+                                            kWh</button>
                                     </div>
                                 </div>
 
@@ -443,18 +446,18 @@
 
                 <!-- Inverter Center -->
                 <div class="node inverter" id="inverter-box">
-                    <div class="inverter-bypass-indicator entity-value" id="inverter-bypass-indicator"
+                    <button type="button" class="inverter-bypass-indicator entity-value button-reset" id="inverter-bypass-indicator"
                         data-entity="bypass_status" data-tooltip="Bypass"
-                        onclick="openEntityDialog(getSensorId('bypass_status'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                        onclick="openEntityDialog(getSensorId('bypass_status'))">
                         <span id="inverter-bypass-icon">🌉</span>
-                    </div>
+                    </button>
                     <div class="inverter-bypass-label" id="inverter-bypass-label" style="display: none;">Bypass</div>
-                    <div class="inverter-temp-indicator entity-value" id="inverter-temp-indicator"
+                    <button type="button" class="inverter-temp-indicator entity-value button-reset" id="inverter-temp-indicator"
                         data-entity="box_temp" data-tooltip="Teplota střídače"
-                        onclick="openEntityDialog(getSensorId('box_temp'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                        onclick="openEntityDialog(getSensorId('box_temp'))">
                         <span class="inverter-temp-icon" id="inverter-temp-icon">🌡️</span>
                         <span id="inverter-temp-value">-- °C</span>
-                    </div>
+                    </button>
                     <!-- Mode change indicator -->
                     <div class="mode-change-indicator" id="mode-change-indicator" style="display: none;">
                         <span class="spinner"></span>
@@ -468,8 +471,8 @@
                     <!-- Grid delivery change indicator moved to "Přetoky do sítě" section -->
                     <div class="node-icon">🔄</div>
                     <div class="node-label">Střídač</div>
-                    <div class="node-value entity-value" id="inverter-mode" data-entity="box_prms_mode"
-                        data-tooltip="Režim střídače" onclick="openEntityDialog(getSensorId('box_prms_mode'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--</div>
+                    <button type="button" class="node-value entity-value button-reset" id="inverter-mode" data-entity="box_prms_mode"
+                        data-tooltip="Režim střídače" onclick="openEntityDialog(getSensorId('box_prms_mode'))">--</button>
                     <div class="node-status planner-mode-badge" id="planner-mode-badge"
                         data-tooltip="Stav automatického přepínání režimů podle plánu">Režim plánovače: --</div>
                     <div class="node-details">
@@ -486,17 +489,17 @@
                                 style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px; align-items: center;">
                                 <div style="display: flex; align-items: center; gap: 5px;">
                                     <span class="detail-icon" id="grid-export-icon">💧</span>
-                                    <span class="detail-value entity-value" id="inverter-grid-export-mode"
+                                    <button type="button" class="detail-value entity-value button-reset" id="inverter-grid-export-mode"
                                         data-entity="invertor_prms_to_grid" data-tooltip="Režim dodávky do sítě"
-                                        onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--</span>
+                                        onclick="openEntityDialog(getSensorId('invertor_prms_to_grid'))">--</button>
                                 </div>
                                 <div
                                     style="display: flex; align-items: center; gap: 5px; white-space: nowrap; position: relative;">
                                     <span class="detail-label">LIMIT:</span>
-                                    <span class="detail-value entity-value" id="inverter-export-limit"
+                                    <button type="button" class="detail-value entity-value button-reset" id="inverter-export-limit"
                                         data-entity="invertor_prm1_p_max_feed_grid" data-tooltip="Limit přetoků"
-                                        onclick="openEntityDialog(getSensorId('invertor_prm1_p_max_feed_grid'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--
-                                        kW</span>
+                                        onclick="openEntityDialog(getSensorId('invertor_prm1_p_max_feed_grid'))">--
+                                        kW</button>
                                 </div>
                             </div>
                         </div>
@@ -504,15 +507,15 @@
                             <div class="detail-subheader">🔔 Notifikace</div>
                             <div class="detail-row">
                                 <span class="detail-icon">📨</span>
-                                <span class="detail-value entity-value notification-badge"
+                                <button type="button" class="detail-value entity-value notification-badge button-reset"
                                     id="inverter-notifications-unread" data-entity="notification_count_unread"
                                     data-tooltip="Nepřečtené notifikace"
-                                    onclick="openEntityDialog(getSensorId('notification_count_unread'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--</span>
+                                    onclick="openEntityDialog(getSensorId('notification_count_unread'))">--</button>
                                 <span class="detail-icon">❌</span>
-                                <span class="detail-value entity-value notification-badge"
+                                <button type="button" class="detail-value entity-value notification-badge button-reset"
                                     id="inverter-notifications-error" data-entity="notification_count_error"
                                     data-tooltip="Chybové notifikace"
-                                    onclick="openEntityDialog(getSensorId('notification_count_error'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--</span>
+                                    onclick="openEntityDialog(getSensorId('notification_count_error'))">--</button>
                             </div>
                         </div>
                     </div>
@@ -522,39 +525,39 @@
                 <div class="node grid-node" id="grid-box">
                     <div class="node-icon" id="grid-icon" style="filter: brightness(1.5) contrast(1.2);">🔌</div>
                     <div class="node-label">Síť</div>
-                    <div class="node-tariff entity-value" id="grid-tariff-indicator" data-entity="current_tariff"
-                        data-tooltip="Aktuální tarif" onclick="openEntityDialog(getSensorId('current_tariff'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--</div>
-                    <div class="node-frequency entity-value" id="grid-freq-indicator" data-entity="ac_in_aci_f"
-                        data-tooltip="Frekvence sítě" onclick="openEntityDialog(getSensorId('ac_in_aci_f'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- Hz</div>
-                    <div class="node-value entity-value" id="grid-power" data-entity="actual_aci_wtotal"
+                    <button type="button" class="node-tariff entity-value button-reset" id="grid-tariff-indicator" data-entity="current_tariff"
+                        data-tooltip="Aktuální tarif" onclick="openEntityDialog(getSensorId('current_tariff'))">--</button>
+                    <button type="button" class="node-frequency entity-value button-reset" id="grid-freq-indicator" data-entity="ac_in_aci_f"
+                        data-tooltip="Frekvence sítě" onclick="openEntityDialog(getSensorId('ac_in_aci_f'))">-- Hz</button>
+                    <button type="button" class="node-value entity-value button-reset" id="grid-power" data-entity="actual_aci_wtotal"
                         data-tooltip="Aktuální celkový výkon ze sítě (všechny fáze)"
-                        onclick="openEntityDialog(getSensorId('actual_aci_wtotal'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- W</div>
+                        onclick="openEntityDialog(getSensorId('actual_aci_wtotal'))">-- W</button>
                     <div class="node-phases">
                         <div class="phase-row-group">
-                            <span class="phase-value entity-value" id="grid-l1-power-main" data-entity="actual_aci_wr"
+                            <button type="button" class="phase-value entity-value button-reset" id="grid-l1-power-main" data-entity="actual_aci_wr"
                                 data-tooltip="L1 výkon"
-                                onclick="openEntityDialog(getSensorId('actual_aci_wr'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--W</span>
+                                onclick="openEntityDialog(getSensorId('actual_aci_wr'))">--W</button>
                             <span class="phase-separator">|</span>
-                            <span class="phase-value entity-value" id="grid-l2-power-main" data-entity="actual_aci_ws"
+                            <button type="button" class="phase-value entity-value button-reset" id="grid-l2-power-main" data-entity="actual_aci_ws"
                                 data-tooltip="L2 výkon"
-                                onclick="openEntityDialog(getSensorId('actual_aci_ws'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--W</span>
+                                onclick="openEntityDialog(getSensorId('actual_aci_ws'))">--W</button>
                             <span class="phase-separator">|</span>
-                            <span class="phase-value entity-value" id="grid-l3-power-main" data-entity="actual_aci_wt"
+                            <button type="button" class="phase-value entity-value button-reset" id="grid-l3-power-main" data-entity="actual_aci_wt"
                                 data-tooltip="L3 výkon"
-                                onclick="openEntityDialog(getSensorId('actual_aci_wt'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--W</span>
+                                onclick="openEntityDialog(getSensorId('actual_aci_wt'))">--W</button>
                         </div>
                         <div class="phase-row-group">
-                            <span class="phase-value entity-value" id="grid-l1-volt-main" data-entity="ac_in_aci_vr"
+                            <button type="button" class="phase-value entity-value button-reset" id="grid-l1-volt-main" data-entity="ac_in_aci_vr"
                                 data-tooltip="L1 napětí"
-                                onclick="openEntityDialog(getSensorId('ac_in_aci_vr'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--V</span>
+                                onclick="openEntityDialog(getSensorId('ac_in_aci_vr'))">--V</button>
                             <span class="phase-separator">|</span>
-                            <span class="phase-value entity-value" id="grid-l2-volt-main" data-entity="ac_in_aci_vs"
+                            <button type="button" class="phase-value entity-value button-reset" id="grid-l2-volt-main" data-entity="ac_in_aci_vs"
                                 data-tooltip="L2 napětí"
-                                onclick="openEntityDialog(getSensorId('ac_in_aci_vs'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--V</span>
+                                onclick="openEntityDialog(getSensorId('ac_in_aci_vs'))">--V</button>
                             <span class="phase-separator">|</span>
-                            <span class="phase-value entity-value" id="grid-l3-volt-main" data-entity="ac_in_aci_vt"
+                            <button type="button" class="phase-value entity-value button-reset" id="grid-l3-volt-main" data-entity="ac_in_aci_vt"
                                 data-tooltip="L3 napětí"
-                                onclick="openEntityDialog(getSensorId('ac_in_aci_vt'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--V</span>
+                                onclick="openEntityDialog(getSensorId('ac_in_aci_vt'))">--V</button>
                         </div>
                     </div>
                     <div class="node-status" id="grid-status">--</div>
@@ -563,57 +566,57 @@
                             <div class="detail-subheader">⚡ Energie</div>
                             <div class="detail-row detail-row-quad">
                                 <span class="detail-icon">⬇️</span>
-                                <span class="detail-value entity-value" id="grid-import" data-entity="ac_in_ac_ad"
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-import" data-entity="ac_in_ac_ad"
                                     data-tooltip="Import ze sítě"
-                                    onclick="openEntityDialog(getSensorId('ac_in_ac_ad'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- kWh</span>
+                                    onclick="openEntityDialog(getSensorId('ac_in_ac_ad'))">-- kWh</button>
                                 <span class="detail-icon">⬆️</span>
-                                <span class="detail-value entity-value" id="grid-export" data-entity="ac_in_ac_pd"
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-export" data-entity="ac_in_ac_pd"
                                     data-tooltip="Export do sítě"
-                                    onclick="openEntityDialog(getSensorId('ac_in_ac_pd'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- kWh</span>
+                                    onclick="openEntityDialog(getSensorId('ac_in_ac_pd'))">-- kWh</button>
                             </div>
                         </div>
                         <div class="detail-group">
                             <div class="detail-subheader">💰 Ceny</div>
                             <div class="detail-row detail-row-quad">
                                 <span class="detail-icon">⬇️</span>
-                                <span class="detail-value entity-value" id="grid-spot-price"
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-spot-price"
                                     data-entity="spot_price_current_15min" data-tooltip="Nákupní cena"
-                                    onclick="openEntityDialog(getSensorId('spot_price_current_15min'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- Kč/kWh</span>
+                                    onclick="openEntityDialog(getSensorId('spot_price_current_15min'))">-- Kč/kWh</button>
                                 <span class="detail-icon">⬆️</span>
-                                <span class="detail-value entity-value" id="grid-export-price"
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-export-price"
                                     data-entity="export_price_current_15min" data-tooltip="Prodejní cena"
-                                    onclick="openEntityDialog(getSensorId('export_price_current_15min'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--
-                                    Kč/kWh</span>
+                                    onclick="openEntityDialog(getSensorId('export_price_current_15min'))">--
+                                    Kč/kWh</button>
                             </div>
                         </div>
                         <div class="detail-group" style="display: none;">
                             <div class="detail-subheader">⚡ Fáze</div>
                             <div class="detail-row">
                                 <span class="detail-icon">L1</span>
-                                <span class="detail-value entity-value" id="grid-l1-volt" data-entity="ac_in_aci_vr"
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-l1-volt" data-entity="ac_in_aci_vr"
                                     data-tooltip="L1 napětí"
-                                    onclick="openEntityDialog(getSensorId('ac_in_aci_vr'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--V</span>
-                                <span class="detail-value entity-value" id="grid-l1-power" data-entity="actual_aci_wr"
+                                    onclick="openEntityDialog(getSensorId('ac_in_aci_vr'))">--V</button>
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-l1-power" data-entity="actual_aci_wr"
                                     data-tooltip="L1 výkon"
-                                    onclick="openEntityDialog(getSensorId('actual_aci_wr'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--W</span>
+                                    onclick="openEntityDialog(getSensorId('actual_aci_wr'))">--W</button>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-icon">L2</span>
-                                <span class="detail-value entity-value" id="grid-l2-volt" data-entity="ac_in_aci_vs"
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-l2-volt" data-entity="ac_in_aci_vs"
                                     data-tooltip="L2 napětí"
-                                    onclick="openEntityDialog(getSensorId('ac_in_aci_vs'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--V</span>
-                                <span class="detail-value entity-value" id="grid-l2-power" data-entity="actual_aci_ws"
+                                    onclick="openEntityDialog(getSensorId('ac_in_aci_vs'))">--V</button>
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-l2-power" data-entity="actual_aci_ws"
                                     data-tooltip="L2 výkon"
-                                    onclick="openEntityDialog(getSensorId('actual_aci_ws'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--W</span>
+                                    onclick="openEntityDialog(getSensorId('actual_aci_ws'))">--W</button>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-icon">L3</span>
-                                <span class="detail-value entity-value" id="grid-l3-volt" data-entity="ac_in_aci_vt"
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-l3-volt" data-entity="ac_in_aci_vt"
                                     data-tooltip="L3 napětí"
-                                    onclick="openEntityDialog(getSensorId('ac_in_aci_vt'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--V</span>
-                                <span class="detail-value entity-value" id="grid-l3-power" data-entity="actual_aci_wt"
+                                    onclick="openEntityDialog(getSensorId('ac_in_aci_vt'))">--V</button>
+                                <button type="button" class="detail-value entity-value button-reset" id="grid-l3-power" data-entity="actual_aci_wt"
                                     data-tooltip="L3 výkon"
-                                    onclick="openEntityDialog(getSensorId('actual_aci_wt'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--W</span>
+                                    onclick="openEntityDialog(getSensorId('actual_aci_wt'))">--W</button>
                             </div>
                         </div>
                     </div>
@@ -628,12 +631,12 @@
                     </div>
                     <div class="node-icon">🏠</div>
                     <div class="node-label">Spotřeba</div>
-                    <div class="node-value entity-value" id="house-power" data-entity="actual_aco_p"
+                    <button type="button" class="node-value entity-value button-reset" id="house-power" data-entity="actual_aco_p"
                         data-tooltip="Aktuální celková spotřeba domácnosti"
-                        onclick="openEntityDialog(getSensorId('actual_aco_p'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- W</div>
-                    <div class="node-subvalue entity-value" id="house-today" data-flip-pad="none" data-entity="ac_out_en_day"
-                        data-tooltip="Spotřeba dnes celkem" onclick="openEntityDialog(getSensorId('ac_out_en_day'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
-                        Dnes: -- kWh</div>
+                        onclick="openEntityDialog(getSensorId('actual_aco_p'))">-- W</button>
+                    <button type="button" class="node-subvalue entity-value button-reset" id="house-today" data-flip-pad="none" data-entity="ac_out_en_day"
+                        data-tooltip="Spotřeba dnes celkem" onclick="openEntityDialog(getSensorId('ac_out_en_day'))">
+                        Dnes: -- kWh</button>
                     <div class="node-phases">
                         <span class="phase-value" id="house-l1-main">--W</span>
                         <span class="phase-separator">|</span>
@@ -647,23 +650,23 @@
                             <div class="detail-row" style="justify-content: flex-start;">
                                 <span class="detail-icon">⚡</span>
                                 <span class="detail-label">Výkon:</span>
-                                <span class="detail-value entity-value" id="house-boiler-power"
+                                <button type="button" class="detail-value entity-value button-reset" id="house-boiler-power"
                                     data-entity="boiler_current_cbb_w" data-tooltip="Aktuální výkon bojleru"
-                                    onclick="openEntityDialog(getSensorId('boiler_current_cbb_w'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- W</span>
+                                    onclick="openEntityDialog(getSensorId('boiler_current_cbb_w'))">-- W</button>
                             </div>
                             <div class="detail-row" style="justify-content: flex-start;">
                                 <span class="detail-icon">📊</span>
                                 <span class="detail-label">Nabito:</span>
-                                <span class="detail-value entity-value" id="house-boiler-today"
+                                <button type="button" class="detail-value entity-value button-reset" id="house-boiler-today"
                                     data-entity="boiler_day_w" data-tooltip="Energie nabita do bojleru dnes"
-                                    onclick="openEntityDialog(getSensorId('boiler_day_w'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">-- Wh</span>
+                                    onclick="openEntityDialog(getSensorId('boiler_day_w'))">-- Wh</button>
                             </div>
                             <div class="detail-row" style="justify-content: flex-start;">
                                 <span class="detail-icon" id="boiler-mode-icon">🤖</span>
                                 <span class="detail-label">Režim:</span>
-                                <span class="detail-value entity-value" id="house-boiler-mode"
+                                <button type="button" class="detail-value entity-value button-reset" id="house-boiler-mode"
                                     data-entity="boiler_manual_mode" data-tooltip="Režim bojleru"
-                                    onclick="openEntityDialog(getSensorId('boiler_manual_mode'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">--</span>
+                                    onclick="openEntityDialog(getSensorId('boiler_manual_mode'))">--</button>
                             </div>
                         </div>
                     </div>
@@ -678,7 +681,7 @@
         <!-- INCLUDE: Boiler Tab -->
         <script>
             async function _shouldShowBoilerAutoTab() {
-                const entryId = new URLSearchParams(window.location.search).get('entry_id');
+                const entryId = new URLSearchParams(globalThis.location.search).get('entry_id');
                 if (!entryId) return false; // safer default: keep hidden if we can't determine
                 try {
                     if (typeof fetchWithAuth !== 'function') {
@@ -932,8 +935,8 @@
         <!-- End Pricing Tab -->
 
         <!-- Mode Timeline Dialog -->
-        <div id="mode-timeline-dialog" class="dialog-overlay" style="display: none;" onclick="closeModeTimelineDialog()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
-            <div class="dialog-content timeline-dialog" onclick="event.stopPropagation()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+        <div id="mode-timeline-dialog" class="dialog-overlay" style="display: none;">
+            <div class="dialog-content timeline-dialog">
                 <div class="dialog-header">
                     <div class="dialog-header-left">
                         <h3>📅 Optimalizovaný plán režimů (72h)</h3>

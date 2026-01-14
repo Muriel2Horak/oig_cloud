@@ -143,20 +143,20 @@
 }
 
 .metric-context--positive {
-    color: #4CAF50;
-    background: rgb(76, 175, 80, 0.12);
+    color: #14532d;
+    background: rgb(76, 175, 80, 0.25);
     border-color: rgb(76, 175, 80, 0.4);
 }
 
 .metric-context--negative {
-    color: #F44336;
-    background: rgb(244, 67, 54, 0.12);
+    color: #7f1d1d;
+    background: rgb(244, 67, 54, 0.25);
     border-color: rgb(244, 67, 54, 0.4);
 }
 
 .metric-context--neutral {
-    color: #FFC107;
-    background: rgb(255, 193, 7, 0.12);
+    color: #7c2d12;
+    background: rgb(255, 193, 7, 0.25);
     border-color: rgb(255, 193, 7, 0.4);
 }
 
@@ -169,11 +169,11 @@
 }
 
 .metric-delta.delta-positive {
-    color: #f44336;
+    color: #14532d;
 }
 
 .metric-delta.delta-negative {
-    color: #4caf50;
+    color: #7f1d1d;
 }
 
 /* ========================================
@@ -462,13 +462,13 @@
 }
 
 .cost-delta.cost-higher {
-    background: rgb(244, 67, 54, 0.15);
-    color: #F44336;
+    background: rgb(244, 67, 54, 0.3);
+    color: #7f1d1d;
 }
 
 .cost-delta.cost-lower {
-    background: rgb(76, 175, 80, 0.15);
-    color: #4CAF50;
+    background: rgb(76, 175, 80, 0.3);
+    color: #14532d;
 }
 
 .cost-delta.cost-equal {
@@ -488,18 +488,18 @@
 }
 
 .block-match.match-yes {
-    background: rgb(76, 175, 80, 0.15);
-    color: #4CAF50;
+    background: rgb(76, 175, 80, 0.3);
+    color: #14532d;
 }
 
 .block-match.match-no {
-    background: rgb(244, 67, 54, 0.15);
-    color: #F44336;
+    background: rgb(244, 67, 54, 0.3);
+    color: #7f1d1d;
 }
 
 .block-match.match-neutral {
-    background: rgb(255, 193, 7, 0.15);
-    color: #FFC107;
+    background: rgb(255, 193, 7, 0.3);
+    color: #7c2d12;
 }
 
 /* Responsive Design */
@@ -733,7 +733,7 @@
     font-size: 0.85rem;
     border: 1px solid rgb(255, 255, 255, 0.08);
     background: rgb(255, 255, 255, 0.03);
-    color: rgb(255, 255, 255, 0.8);
+    color: #f8fafc;
 }
 
 .tile-delta span:last-child {
@@ -741,19 +741,19 @@
 }
 
 .tile-delta.delta-better {
-    color: #9ccc65;
+    color: #14532d;
     border-color: rgb(156, 204, 101, 0.5);
-    background: rgb(156, 204, 101, 0.12);
+    background: rgb(156, 204, 101, 0.3);
 }
 
 .tile-delta.delta-worse {
-    color: #ff8a80;
+    color: #7f1d1d;
     border-color: rgb(255, 138, 128, 0.5);
-    background: rgb(255, 138, 128, 0.12);
+    background: rgb(255, 138, 128, 0.3);
 }
 
 .tile-delta.delta-neutral {
-    color: rgb(255, 255, 255, 0.75);
+    color: #f8fafc;
     border-color: rgb(255, 255, 255, 0.08);
 }
 
@@ -767,7 +767,7 @@
     background: rgb(255, 255, 255, 0.02);
     border-radius: 6px;
     font-size: 13px;
-    color: rgb(255, 255, 255, 0.7);
+    color: #f8fafc;
     margin-bottom: 16px;
 }
 

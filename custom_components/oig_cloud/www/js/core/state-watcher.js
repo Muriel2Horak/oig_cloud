@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * OIG Cloud Dashboard - State Watcher (no extra WebSocket subscriptions)
  *
@@ -38,7 +37,7 @@
         if (!hass || !hass.states || typeof prefix !== 'string') return;
 
         const ids = Object.keys(hass.states);
-        const runtime = window.OIG_RUNTIME || {};
+        const runtime = globalThis.OIG_RUNTIME || {};
         const shouldChunk = !!(runtime.isHaApp || runtime.isMobile || ids.length > 800);
 
         if (!shouldChunk) {
@@ -69,8 +68,8 @@
         };
 
         const schedule = () => {
-            if (typeof window.requestIdleCallback === 'function') {
-                window.requestIdleCallback(step, { timeout: 250 });
+            if (typeof globalThis.requestIdleCallback === 'function') {
+                globalThis.requestIdleCallback(step, { timeout: 250 });
             } else {
                 setTimeout(step, 16);
             }
@@ -110,7 +109,7 @@
         if (running) return;
         running = true;
 
-        const runtime = window.OIG_RUNTIME || {};
+        const runtime = globalThis.OIG_RUNTIME || {};
         const baseInterval = Number(options.intervalMs || 1000);
         const intervalMs = (runtime.isHaApp || runtime.isMobile)
             ? Math.max(2000, baseInterval)
@@ -141,7 +140,7 @@
         console.log('[StateWatcher] Stopped');
     }
 
-    window.DashboardStateWatcher = {
+    globalThis.DashboardStateWatcher = {
         start,
         stop,
         registerEntities,

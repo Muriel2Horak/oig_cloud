@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * Battery Health Dashboard Module
  * Zobrazuje kvalitu baterie (SoH%), quality metrics, cycle progress
@@ -8,7 +7,7 @@
  */
 
 // Cache pro Battery Health data (change detection)
-var batteryHealthCache = {
+let batteryHealthCache = {
     soh: null,
     capacity: null,
     measurementCount: null,
@@ -46,7 +45,7 @@ async function updateBatteryHealthStats() {
     console.log('[Battery Health] Sensor state:', state, 'attributes:', attrs);
 
     // Získat data ze senzoru (NOVÁ STRUKTURA PO REFACTORINGU)
-    const soh = (state !== 'unknown' && state !== 'unavailable') ? parseFloat(state) : null;
+    const soh = (state !== 'unknown' && state !== 'unavailable') ? Number.parseFloat(state) : null;
 
     // 30-day průměry
     const capacity = attrs.capacity_kwh || null; // Průměrná kapacita za 30 dní
@@ -383,7 +382,7 @@ function subscribeBatteryHealthUpdates() {
 
     console.log('[Battery Health] Subscribing to updates:', sensorId);
 
-    const watcher = window.DashboardStateWatcher;
+    const watcher = globalThis.DashboardStateWatcher;
     if (!watcher) {
         console.warn('[Battery Health] StateWatcher not available yet, retrying...');
         setTimeout(subscribeBatteryHealthUpdates, 500);
@@ -394,9 +393,9 @@ function subscribeBatteryHealthUpdates() {
     watcher.start({ intervalMs: 1000, prefixes: [`sensor.oig_${INVERTER_SN}_`] });
 
     // Register and subscribe once
-    if (!window.__oigBatteryHealthWatcherUnsub) {
+    if (!globalThis.__oigBatteryHealthWatcherUnsub) {
         watcher.registerEntities([sensorId]);
-        window.__oigBatteryHealthWatcherUnsub = watcher.onEntityChange((entityId) => {
+        globalThis.__oigBatteryHealthWatcherUnsub = watcher.onEntityChange((entityId) => {
             if (entityId !== sensorId) return;
             console.log('[Battery Health] Sensor changed, updating...');
             updateBatteryHealthStats();
@@ -408,7 +407,7 @@ function subscribeBatteryHealthUpdates() {
 }
 
 // Export funkcí pro použití v dashboard.html
-window.updateBatteryHealthStats = updateBatteryHealthStats;
-window.subscribeBatteryHealthUpdates = subscribeBatteryHealthUpdates;
+globalThis.updateBatteryHealthStats = updateBatteryHealthStats;
+globalThis.subscribeBatteryHealthUpdates = subscribeBatteryHealthUpdates;
 
 console.log('[Battery Health] Module loaded ✅');

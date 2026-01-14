@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * OIG Cloud Dashboard - Utility Functions
  *
@@ -20,7 +19,7 @@
  * @returns {string} Formátovaný string s jednotkou
  */
 function formatPower(watts) {
-    if (watts === null || watts === undefined || isNaN(watts)) return '-- W';
+    if (watts === null || watts === undefined || Number.isNaN(watts)) return '-- W';
     const absWatts = Math.abs(watts);
     if (absWatts >= 1000) {
         return (watts / 1000).toFixed(2) + ' kW';
@@ -35,7 +34,7 @@ function formatPower(watts) {
  * @returns {string} Formátovaný string s jednotkou
  */
 function formatEnergy(wattHours) {
-    if (wattHours === null || wattHours === undefined || isNaN(wattHours)) return '-- Wh';
+    if (wattHours === null || wattHours === undefined || Number.isNaN(wattHours)) return '-- Wh';
     const absWh = Math.abs(wattHours);
     if (absWh >= 1000) {
         return (wattHours / 1000).toFixed(2) + ' kWh';
@@ -88,6 +87,7 @@ function formatChmuDateTime(isoString) {
             minute: '2-digit'
         });
     } catch (e) {
+        console.warn('[Utils] Failed to format CHMU date time', e);
         return isoString;
     }
 }
@@ -99,7 +99,7 @@ function formatChmuDateTime(isoString) {
  * @returns {string} Formátované číslo
  */
 function formatNumber(value, decimals = 2) {
-    if (value === null || value === undefined || isNaN(value)) return '--';
+    if (value === null || value === undefined || Number.isNaN(value)) return '--';
     return value.toFixed(decimals);
 }
 
@@ -109,7 +109,7 @@ function formatNumber(value, decimals = 2) {
  * @returns {string} Formátovaná cena s jednotkou
  */
 function formatCurrency(value) {
-    if (value === null || value === undefined || isNaN(value)) return '-- CZK';
+    if (value === null || value === undefined || Number.isNaN(value)) return '-- CZK';
     return `${value.toFixed(2)} CZK`;
 }
 
@@ -119,7 +119,7 @@ function formatCurrency(value) {
  * @returns {string} Formátovaná procenta
  */
 function formatPercent(value) {
-    if (value === null || value === undefined || isNaN(value)) return '-- %';
+    if (value === null || value === undefined || Number.isNaN(value)) return '-- %';
     return `${Math.round(value)} %`;
 }
 
@@ -135,7 +135,7 @@ function formatPercent(value) {
  */
 function showNotification(title, message, type = 'success') {
     // Pokus o použití HA notification
-    const hass = window.getHass?.();
+    const hass = globalThis.getHass?.();
     if (hass?.callService) {
         try {
             hass.callService('persistent_notification', 'create', {
@@ -237,7 +237,7 @@ function _splitGraphemes(value) {
             return Array.from(segmenter.segment(str), (s) => s.segment);
         }
     } catch (e) {
-        // Ignore and fall back
+        console.warn('[Utils] Failed to split graphemes, falling back', e);
     }
     return Array.from(str);
 }
@@ -248,8 +248,9 @@ function _renderChar(char) {
 
 function _prefersReducedMotion() {
     try {
-        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        return !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     } catch (e) {
+        console.warn('[Utils] Failed to check reduced motion preference', e);
         return false;
     }
 }
@@ -452,8 +453,8 @@ async function waitForElement(selector, maxRetries = 10, delay = 100) {
  * @returns {boolean} True pokud je validní
  */
 function isNumberInRange(value, min, max) {
-    const num = parseFloat(value);
-    return !isNaN(num) && num >= min && num <= max;
+    const num = Number.parseFloat(value);
+    return !Number.isNaN(num) && num >= min && num <= max;
 }
 
 /**
@@ -547,8 +548,8 @@ function findShieldSensorId(sensorName) {
 }
 
 // Export utilities
-if (typeof window !== 'undefined') {
-    window.DashboardUtils = {
+if (typeof globalThis !== 'undefined') {
+    globalThis.DashboardUtils = {
         formatPower,
         formatEnergy,
         formatRelativeTime,

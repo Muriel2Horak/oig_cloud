@@ -37,18 +37,18 @@
             margin-bottom: 8px;
         }
 
-        .card-value {
+        .stat-card .card-value {
             font-size: 1.5em;
             font-weight: 700;
             color: var(--text-primary, #fff);
             margin-bottom: 5px;
         }
 
-        .card-value.better {
+        .stat-card .card-value.better {
             color: var(--success-color, #4caf50);
         }
 
-        .card-value.worse {
+        .stat-card .card-value.worse {
             color: var(--error-color, #f44336);
         }
 
@@ -74,7 +74,7 @@
     box-shadow: 0 4px 12px rgb(0, 0, 0, 0.2);
 }
 
-.card-icon {
+.card .card-icon {
     font-size: 2.5rem;
     flex-shrink: 0;
 }
@@ -82,16 +82,17 @@
 .card-content {
     flex: 1;
     min-width: 0;
+    padding: 1rem;
 }
 
-.card-title {
+.card .card-title {
     font-size: 0.85rem;
     color: rgb(255, 255, 255, 0.7);
     margin-bottom: 0.5rem;
     font-weight: 500;
 }
 
-.card-value {
+.card .card-value {
     font-size: 1.75rem;
     font-weight: 700;
     color: #fff;
@@ -99,11 +100,11 @@
     line-height: 1.2;
 }
 
-.card-value.positive {
+.card .card-value.positive {
     color: #4CAF50;
 }
 
-.card-value.negative {
+.card .card-value.negative {
     color: #F44336;
 }
 
@@ -125,19 +126,21 @@
     border-left: 4px solid #9C27B0;
 }
 
-    .card-value {
-        font-size: 1.5rem;
-    }
-
 .metric-cards-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 1.25rem;
 }
 
+@media (width <= 900px) {
+    .card .card-value {
+        font-size: 1.5rem;
+    }
+
     .metric-cards-grid {
         grid-template-columns: 1fr;
     }
+}
 
 .metric-card {
     background: rgb(40, 50, 60, 0.5);
@@ -175,12 +178,12 @@
     margin-bottom: 0.75rem;
 }
 
-.card-icon {
+.metric-card .card-icon {
     font-size: 1.75rem;
     filter: drop-shadow(0 1px 2px rgb(0, 0, 0, 0.3));
 }
 
-.card-title {
+.metric-card .card-title {
     font-size: 0.875rem;
     font-weight: 600;
     color: rgb(255, 255, 255, 0.7);
@@ -233,16 +236,12 @@
     font-size: 0.85rem;
 }
 
-.card-content {
-    padding: 1rem;
-}
-
-.card-details {
+details.card-details {
     margin-top: 1rem;
     border-top: 1px solid var(--border-primary);
 }
 
-.card-details summary {
+details.card-details summary {
     padding: 0.75rem 1rem;
     cursor: pointer;
     user-select: none;
@@ -251,13 +250,12 @@
     transition: all 0.2s ease;
 }
 
-.card-details summary:hover {
+details.card-details summary:hover {
     color: var(--text-primary);
     background: rgb(255, 255, 255, 0.05);
 }
 
-.card-details[open] summary {
+details.card-details[open] summary {
     color: var(--text-primary);
     font-weight: 600;
 }
-

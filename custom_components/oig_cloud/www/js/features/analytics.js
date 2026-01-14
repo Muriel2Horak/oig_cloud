@@ -1,15 +1,14 @@
-/* eslint-disable */
 // ============================================================================
 // ANALYTICS HELPERS
 // ============================================================================
 
 // Import ČHMÚ functions from dashboard-chmu.js
-var toggleChmuWarningModal = window.DashboardChmu?.toggleChmuWarningModal;
+let toggleChmuWarningModal = globalThis.DashboardChmu?.toggleChmuWarningModal;
 
 // Import Timeline functions from dashboard-timeline.js (var allows re-declaration)
-var openTimelineDialog = window.DashboardTimeline?.openTimelineDialog;
-var closeModeTimelineDialog = window.DashboardTimeline?.closeModeTimelineDialog;
-var buildModeTimeline = window.DashboardTimeline?.buildModeTimeline;
+let openTimelineDialog = globalThis.DashboardTimeline?.openTimelineDialog;
+let closeModeTimelineDialog = globalThis.DashboardTimeline?.closeModeTimelineDialog;
+let buildModeTimeline = globalThis.DashboardTimeline?.buildModeTimeline;
 
 /**
  * Initialize Today Plan Tile instance
@@ -54,7 +53,7 @@ function initTodayPlanTile(container, tileSummary) {
  */
 
 
-var costComparisonTileInstance = null;
+let costComparisonTileInstance = null;
 const COST_TILE_CACHE_TTL = 60 * 1000;
 let costComparisonTileCache = null;
 let costComparisonTileLastFetch = 0;
@@ -72,13 +71,13 @@ async function loadCostComparisonTile(force = false) {
         return costComparisonTilePromise;
     }
 
-    const plannerPromise = window.PlannerState?.fetchSettings?.() || Promise.resolve(null);
+    const plannerPromise = globalThis.PlannerState?.fetchSettings?.() || Promise.resolve(null);
 
     costComparisonTilePromise = Promise.all([fetchCostComparisonTileData(), plannerPromise])
         .then(([rawTiles, plannerSettings]) => {
             const activePlan =
-                window.PlannerState?.resolveActivePlan?.(
-                    plannerSettings || window.PlannerState?.getCachedSettings?.()
+                globalThis.PlannerState?.resolveActivePlan?.(
+                    plannerSettings || globalThis.PlannerState?.getCachedSettings?.()
                 ) || 'hybrid';
 
             const summary = buildCostComparisonSummary(rawTiles.hybrid, activePlan);
@@ -137,7 +136,7 @@ async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
 }
 
 function buildCostComparisonSummary(hybridTile, activePlan = 'hybrid') {
-    const todayHybrid = (hybridTile || {}).today || {};
+    const todayHybrid = hybridTile?.today || {};
 
     const actualSpent =
         todayHybrid.actual_cost_so_far ??
@@ -165,10 +164,10 @@ function buildCostComparisonSummary(hybridTile, activePlan = 'hybrid') {
             standard: standardSummary
         },
         delta_vs_standard: 0,
-        baseline: todayHybrid.baseline_comparison || null,
-        yesterday: (hybridTile || {}).yesterday || null,
+        baseline: todayHybrid.baseline_comparison ?? null,
+        yesterday: hybridTile?.yesterday ?? null,
         tomorrow: {
-            standard: (hybridTile || {}).tomorrow?.plan_total_cost ?? null
+            standard: hybridTile?.tomorrow?.plan_total_cost ?? null
         }
     };
 }
@@ -182,7 +181,10 @@ function renderCostComparisonTile(data) {
 
     if (typeof CostComparisonTile === 'undefined') {
         const script = document.createElement('script');
-        const payload = JSON.parse(JSON.stringify(data || {}));
+        let payload = {};
+        if (data) {
+            payload = globalThis.structuredClone ? globalThis.structuredClone(data) : { ...data };
+        }
         script.src = `modules/cost-comparison-tile.js?v=${Date.now()}`;
         script.onload = () => renderCostComparisonTile(payload);
         script.onerror = () => console.error('[Cost Comparison] Failed to load module');
@@ -190,7 +192,7 @@ function renderCostComparisonTile(data) {
         return;
     }
 
-    if (!data || !data.comparison) {
+    if (!data?.comparison) {
         container.innerHTML = `
             <div class="cost-card-placeholder">
                 <span class="cost-card-title">💰 Nákladový přehled</span>
@@ -201,7 +203,7 @@ function renderCostComparisonTile(data) {
     }
 
     const options = {
-        onOpenHybrid: () => window.DashboardTimeline?.openTimelineDialog?.('today', 'hybrid')
+        onOpenHybrid: () => globalThis.DashboardTimeline?.openTimelineDialog?.('today', 'hybrid')
     };
 
     if (costComparisonTileInstance) {
@@ -307,7 +309,12 @@ function renderTodayComparison(todayData, dailyPlanState) {
                 const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
                 const delta = interval.delta;
                 const deltaClass = delta.net_cost > 0 ? 'worse' : 'better';
-                const icon = idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉';
+                let icon = '🥉';
+                if (idx === 0) {
+                    icon = '🥇';
+                } else if (idx === 1) {
+                    icon = '🥈';
+                }
 
                 html += `
                     <div class="deviation-item ${deltaClass}">
@@ -358,7 +365,20 @@ function renderTodayComparison(todayData, dailyPlanState) {
 
             const modeMatch = planned.mode_name === actual.mode_name;
             const modeIcon = modeMatch ? '✅' : '❌';
-            const deltaClass = delta && delta.net_cost > 0 ? 'worse' : delta && delta.net_cost < 0 ? 'better' : '';
+            let deltaClass = '';
+            if (delta) {
+                if (delta.net_cost > 0) {
+                    deltaClass = 'worse';
+                } else if (delta.net_cost < 0) {
+                    deltaClass = 'better';
+                }
+            }
+            const deltaCost = delta?.net_cost;
+            let deltaCostLabel = '0.00 Kč';
+            if (deltaCost !== null && deltaCost !== undefined) {
+                const sign = deltaCost > 0 ? '+' : '';
+                deltaCostLabel = `${sign}${deltaCost.toFixed(2)} Kč`;
+            }
 
             const plannedModeConfig = MODE_CONFIG[planned.mode_name] || MODE_CONFIG['HOME I'];
             const actualModeConfig = MODE_CONFIG[actual.mode_name] || MODE_CONFIG['HOME I'];
@@ -382,10 +402,7 @@ function renderTodayComparison(todayData, dailyPlanState) {
                     <td class="cost-cell">${planned.net_cost?.toFixed(2) || '0.00'} Kč</td>
                     <td class="cost-cell">${actual.net_cost?.toFixed(2) || '0.00'} Kč</td>
                     <td class="delta-cell ${deltaClass}">
-                        ${delta && delta.net_cost ?
-                            `${delta.net_cost > 0 ? '+' : ''}${delta.net_cost.toFixed(2)} Kč` :
-                            '0.00 Kč'
-                        }
+                        ${deltaCostLabel}
                     </td>
                 </tr>
             `;
@@ -475,7 +492,7 @@ async function buildYesterdayAnalysis() {
         const data = await response.json();
         const timelineExtended = data.timeline_extended;
 
-        if (!timelineExtended || !timelineExtended.yesterday) {
+        if (!timelineExtended?.yesterday) {
             console.warn('[Yesterday Analysis] No yesterday data available');
             showYesterdayNoData();
             return;
@@ -552,6 +569,9 @@ function renderYesterdayAnalysis(yesterdayData) {
         const deltaPct = summary.delta_cost !== null && summary.planned_total_cost > 0
             ? ((summary.delta_cost / summary.planned_total_cost) * 100).toFixed(1)
             : '0.0';
+        const deltaSign = summary.delta_cost > 0 ? '+' : '';
+        const deltaOutcomeIcon = summary.delta_cost > 0 ? '❌' : '✅';
+        const deltaOutcomeLabel = summary.delta_cost > 0 ? 'horší' : 'lepší';
 
         html += `
             <div class="summary-cards">
@@ -566,10 +586,10 @@ function renderYesterdayAnalysis(yesterdayData) {
                 <div class="summary-card ${deltaClass}">
                     <div class="card-label">${deltaIcon} Výsledek</div>
                     <div class="card-value ${deltaClass}">
-                        ${summary.delta_cost > 0 ? '+' : ''}${summary.delta_cost?.toFixed(2) || '0.00'} Kč
+                        ${deltaSign}${summary.delta_cost?.toFixed(2) || '0.00'} Kč
                     </div>
                     <div class="card-sublabel ${deltaClass}">
-                        ${summary.delta_cost > 0 ? '❌' : '✅'} ${deltaPct}% ${summary.delta_cost > 0 ? 'horší' : 'lepší'}
+                        ${deltaOutcomeIcon} ${deltaPct}% ${deltaOutcomeLabel}
                     </div>
                 </div>
                 <div class="summary-card">
@@ -593,7 +613,7 @@ function renderYesterdayAnalysis(yesterdayData) {
 }
 
 // Global function for toggling interval details
-window.toggleIntervalDetail = function(intervalId) {
+globalThis.toggleIntervalDetail = function(intervalId) {
     const detailEl = document.getElementById(`interval-detail-${intervalId}`);
     const rowEl = document.querySelector(`[data-interval-id="${intervalId}"]`);
 
@@ -610,7 +630,7 @@ window.toggleIntervalDetail = function(intervalId) {
 };
 
 // Global function for toggling section collapse
-window.toggleSection = function(sectionId) {
+globalThis.toggleSection = function(sectionId) {
     const sectionEl = document.getElementById(sectionId);
     const headerEl = sectionEl?.parentElement.querySelector('.section-header');
 
@@ -680,7 +700,7 @@ function updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff) {
 
 // Export analytics functions
 // Cache for battery efficiency to prevent unnecessary updates
-var batteryEfficiencyCache = {
+let batteryEfficiencyCache = {
     efficiency: null,
     charge: null,
     discharge: null,
@@ -760,87 +780,84 @@ async function updateBatteryEfficiencyStats() {
             batteryEfficiencyCache.losses !== displayLossesKwh ||
             batteryEfficiencyCache.label !== displayLabel;
 
-        if (!hasChanged) {
-            // No changes, skip update
-            return;
-        }
+        if (hasChanged) {
+            // Update cache
+            batteryEfficiencyCache.efficiency = displayEff;
+            batteryEfficiencyCache.charge = displayCharge;
+            batteryEfficiencyCache.discharge = displayDischarge;
+            batteryEfficiencyCache.losses = displayLossesKwh;
+            batteryEfficiencyCache.label = displayLabel;
 
-        // Update cache
-        batteryEfficiencyCache.efficiency = displayEff;
-        batteryEfficiencyCache.charge = displayCharge;
-        batteryEfficiencyCache.discharge = displayDischarge;
-        batteryEfficiencyCache.losses = displayLossesKwh;
-        batteryEfficiencyCache.label = displayLabel;
+            console.log('[Battery Efficiency] Values changed, updating UI:', {
+                efficiency: displayEff,
+                charge: displayCharge,
+                discharge: displayDischarge,
+                losses: displayLossesKwh,
+                label: displayLabel
+            });
 
-        console.log('[Battery Efficiency] Values changed, updating UI:', {
-            efficiency: displayEff,
-            charge: displayCharge,
-            discharge: displayDischarge,
-            losses: displayLossesKwh,
-            label: displayLabel
-        });
+            // Main value - direct DOM update (more reliable than updateElementIfChanged)
+            const mainEl = document.getElementById('battery-efficiency-main');
+            if (mainEl) {
+                mainEl.textContent = `${displayEff.toFixed(1)}%`;
+            }
 
-        // Main value - direct DOM update (more reliable than updateElementIfChanged)
-        const mainEl = document.getElementById('battery-efficiency-main');
-        if (mainEl) {
-            mainEl.textContent = `${displayEff.toFixed(1)}%`;
-        }
+            // Period label
+            const periodEl = document.getElementById('battery-efficiency-period-label');
+            if (periodEl) {
+                periodEl.textContent = displayLabel;
+            }
 
-        // Period label
-        const periodEl = document.getElementById('battery-efficiency-period-label');
-        if (periodEl) {
-            periodEl.textContent = displayLabel;
-        }
+            // Trend comparison
+            if (lastMonthEff !== null && currentMonthEff !== null &&
+                lastMonthEff !== undefined && currentMonthEff !== undefined) {
+                const diff = currentMonthEff - lastMonthEff;
+                const diffAbs = Math.abs(diff);
+                let trendText = '';
+                let trendColor = '';
 
-        // Trend comparison
-        if (lastMonthEff !== null && currentMonthEff !== null &&
-            lastMonthEff !== undefined && currentMonthEff !== undefined) {
-            const diff = currentMonthEff - lastMonthEff;
-            const diffAbs = Math.abs(diff);
-            let trendText = '';
-            let trendColor = '';
+                if (diff > 0.5) {
+                    trendText = `↗️ Vs minulý měsíc +${diffAbs.toFixed(1)}%`;
+                    trendColor = '#4CAF50';
+                } else if (diff < -0.5) {
+                    trendText = `↘️ Vs minulý měsíc -${diffAbs.toFixed(1)}%`;
+                    trendColor = '#FF5722';
+                } else {
+                    trendText = `➡️ Podobně jako minulý měsíc`;
+                    trendColor = 'var(--text-secondary)';
+                }
 
-            if (diff > 0.5) {
-                trendText = `↗️ Vs minulý měsíc +${diffAbs.toFixed(1)}%`;
-                trendColor = '#4CAF50';
-            } else if (diff < -0.5) {
-                trendText = `↘️ Vs minulý měsíc -${diffAbs.toFixed(1)}%`;
-                trendColor = '#FF5722';
+                const trendEl = document.getElementById('battery-efficiency-trend');
+                if (trendEl) {
+                    trendEl.textContent = trendText;
+                    trendEl.style.color = trendColor;
+                }
             } else {
-                trendText = `➡️ Podobně jako minulý měsíc`;
-                trendColor = 'var(--text-secondary)';
+                const trendEl = document.getElementById('battery-efficiency-trend');
+                if (trendEl) {
+                    trendEl.textContent = displayLabel;
+                }
             }
 
-            const trendEl = document.getElementById('battery-efficiency-trend');
-            if (trendEl) {
-                trendEl.textContent = trendText;
-                trendEl.style.color = trendColor;
+            // Detail values
+            const chargeEl = document.getElementById('battery-charge-value');
+            if (chargeEl) {
+                chargeEl.textContent = `${displayCharge?.toFixed(1) || '--'} kWh`;
             }
-        } else {
-            const trendEl = document.getElementById('battery-efficiency-trend');
-            if (trendEl) {
-                trendEl.textContent = displayLabel;
+
+            const dischargeEl = document.getElementById('battery-discharge-value');
+            if (dischargeEl) {
+                dischargeEl.textContent = `${displayDischarge?.toFixed(1) || '--'} kWh`;
             }
-        }
 
-        // Detail values
-        const chargeEl = document.getElementById('battery-charge-value');
-        if (chargeEl) {
-            chargeEl.textContent = `${displayCharge?.toFixed(1) || '--'} kWh`;
-        }
+            const lossesEl = document.getElementById('battery-losses-value');
+            if (lossesEl) {
+                lossesEl.textContent = `${displayLossesKwh?.toFixed(1) || '--'} kWh (${displayLossesPct?.toFixed(1) || '--'}%)`;
+            }
 
-        const dischargeEl = document.getElementById('battery-discharge-value');
-        if (dischargeEl) {
-            dischargeEl.textContent = `${displayDischarge?.toFixed(1) || '--'} kWh`;
+            // Update gradient bar comparison
+            updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff);
         }
-
-        const lossesEl = document.getElementById('battery-losses-value');
-        if (lossesEl) {
-            lossesEl.textContent = `${displayLossesKwh?.toFixed(1) || '--'} kWh (${displayLossesPct?.toFixed(1) || '--'}%)`;
-        }
-
-        // Update gradient bar comparison
-        updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff);
     } else {
         console.warn('[Battery Efficiency] No displayEff - setting UI to defaults');
 
@@ -864,7 +881,7 @@ async function updateBatteryEfficiencyStats() {
     }
 }
 
-window.DashboardAnalytics = {
+globalThis.DashboardAnalytics = {
     buildYesterdayAnalysis,
     showYesterdayNoData,
     renderYesterdayAnalysis,

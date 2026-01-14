@@ -1,9 +1,8 @@
-/* eslint-disable */
 // === PRICING CHARTS ===
-var loadPricingDataTimer = null;
-var updatePlannedConsumptionTimer = null;
-var priceCardHandlersAttached = false;  // Flag aby se handlery nastavily JEN JEDNOU
-var currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
+let loadPricingDataTimer = null;
+let updatePlannedConsumptionTimer = null;
+let priceCardHandlersAttached = false;  // Flag aby se handlery nastavily JEN JEDNOU
+let currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
     cheapest: null,
     expensive: null,
     bestExport: null,
@@ -11,9 +10,9 @@ var currentPriceBlocks = {  // Aktuální bloky pro onClick handlery
 };
 
 // Cache for timeline data to prevent re-fetching on tab switch
-var pricingPlanMode = null;
+let pricingPlanMode = null;
 
-var timelineDataCache = {
+let timelineDataCache = {
     perPlan: {
         hybrid: { data: null, timestamp: null, chartsRendered: false, stale: true }
     }
@@ -189,13 +188,15 @@ function invalidatePricingTimelineCache(plan) {
     });
 }
 
-window.invalidatePricingTimelineCache = invalidatePricingTimelineCache;
+globalThis.invalidatePricingTimelineCache = invalidatePricingTimelineCache;
 
 // Debounced loadPricingData() - prevents excessive calls when multiple entities change
 function debouncedLoadPricingData() {
     try {
         if (loadPricingDataTimer) clearTimeout(loadPricingDataTimer);
-    } catch (e) { }
+    } catch (e) {
+        console.warn('[Pricing] Failed to clear loadPricingData timer', e);
+    }
     try {
         loadPricingDataTimer = setTimeout(() => {
         if (pricingTabActive) {  // Only update if pricing tab is active
@@ -205,6 +206,7 @@ function debouncedLoadPricingData() {
     } catch (e) {
         // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
         loadPricingDataTimer = null;
+        console.warn('[Pricing] Failed to schedule pricing data load', e);
     }
 }
 
@@ -212,7 +214,9 @@ function debouncedLoadPricingData() {
 function debouncedUpdatePlannedConsumption() {
     try {
         if (updatePlannedConsumptionTimer) clearTimeout(updatePlannedConsumptionTimer);
-    } catch (e) { }
+    } catch (e) {
+        console.warn('[Pricing] Failed to clear planned consumption timer', e);
+    }
     try {
         updatePlannedConsumptionTimer = setTimeout(() => {
         if (pricingTabActive) {  // Only update if pricing tab is active
@@ -222,10 +226,11 @@ function debouncedUpdatePlannedConsumption() {
     } catch (e) {
         // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
         updatePlannedConsumptionTimer = null;
+        console.warn('[Pricing] Failed to schedule planned consumption update', e);
     }
 }
 
-var combinedChart = null;
+let combinedChart = null;
 
 // Helper funkce pro detekci theme a barvy
 function isLightTheme() {
@@ -237,12 +242,14 @@ function isLightTheme() {
             if (primaryBg) {
                 const rgb = primaryBg.match(/\d+/g);
                 if (rgb && rgb.length >= 3) {
-                    const brightness = (parseInt(rgb[0]) + parseInt(rgb[1]) + parseInt(rgb[2])) / 3;
+                    const brightness = (Number.parseInt(rgb[0]) + Number.parseInt(rgb[1]) + Number.parseInt(rgb[2])) / 3;
                     return brightness > 128;
                 }
             }
         }
-    } catch (e) { }
+    } catch (e) {
+        console.warn('[Pricing] Failed to detect theme', e);
+    }
     return false; // Default: dark theme
 }
 
@@ -251,9 +258,9 @@ async function ensurePricingPlanMode(force = false) {
         return pricingPlanMode;
     }
 
-    if (window.PlannerState) {
+    if (globalThis.PlannerState) {
         try {
-            const plan = await window.PlannerState.getDefaultPlan(force);
+            const plan = await globalThis.PlannerState.getDefaultPlan(force);
             pricingPlanMode = plan || 'hybrid';
         } catch (error) {
             console.warn('[Pricing] Failed to resolve default plan', error);
@@ -276,7 +283,7 @@ function updateChartPlanIndicator() {
 
     const pill = document.getElementById('chart-plan-pill');
     if (pill) {
-        const label = window.PLAN_LABELS?.[pricingPlanMode]?.short || 'Plán';
+        const label = globalThis.PLAN_LABELS?.[pricingPlanMode]?.short || 'Plán';
         pill.textContent = label;
         // No dual-plan UI - keep pill in default styling.
     }
@@ -358,8 +365,8 @@ function getPricingModeMeta(modeName) {
         return { icon: '❓', color: 'rgba(158, 158, 158, 0.15)', label: 'Unknown' };
     }
 
-    if (window.DashboardTimeline?.MODE_CONFIG?.[modeName]) {
-        const base = window.DashboardTimeline.MODE_CONFIG[modeName];
+    if (globalThis.DashboardTimeline?.MODE_CONFIG?.[modeName]) {
+        const base = globalThis.DashboardTimeline.MODE_CONFIG[modeName];
         return {
             icon: base.icon || '❓',
             color: adjustModeColorAlpha(base.color || 'rgba(158, 158, 158, 0.15)'),
@@ -560,11 +567,11 @@ function toggleDatalabelMode() {
 }
 
 // Sledování aktuálního zoom stavu
-var currentZoomRange = null;
-var activeZoomCard = null; // Reference na aktuálně aktivní kartu
+let currentZoomRange = null;
+let activeZoomCard = null; // Reference na aktuálně aktivní kartu
 
 // Datalabels režim: 'auto' (závislé na zoomu), 'always', 'never'
-var datalabelMode = 'auto';
+let datalabelMode = 'auto';
 
 // Toggle zoom: pokud není zoom -> zoom IN, pokud je zoom -> zoom OUT
 function zoomToTimeRange(startTime, endTime, cardElement = null) {
@@ -751,8 +758,8 @@ function updateChartDetailLevel(chart) {
 
             // Nastavení podle typu dat
             const isPrice = dataset.yAxisID === 'y-price';
-            const isSolar = dataset.label && (dataset.label.includes('Solární') || dataset.label.includes('String'));
-            const isBattery = dataset.label && dataset.label.includes('kapacita');
+            const isSolar = dataset.label?.includes('Solární') || dataset.label?.includes('String');
+            const isBattery = dataset.label?.includes('kapacita');
 
             dataset.datalabels.align = 'top';
             dataset.datalabels.offset = 6;
@@ -829,16 +836,15 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
     // Chart.js keeps a global registry per canvas. Always destroy any existing instance first
     // to avoid: "Canvas is already in use. Chart with ID ... must be destroyed..."
     try {
-        const existing = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+        const existing = Chart?.getChart ? Chart.getChart(canvas) : null;
         if (existing) {
             existing.destroy();
         }
     } catch (e) {
-        // ignore - best effort cleanup
+        console.warn('[Pricing] Failed to destroy existing mini chart', e);
     }
 
     // Vypočítat statistiky pro detekci razantních změn (potřebujeme před optimalizací)
-    const avg = values.reduce((a, b) => a + b, 0) / values.length;
     const min = Math.min(...values);
     const max = Math.max(...values);
     const range = max - min;
@@ -870,7 +876,7 @@ function createMiniPriceChart(canvasId, values, color, startTime, endTime) {
     canvas.lastDataKey = dataKey;
 
     // Pokud existuje graf a jen se změnila data (ne struktura), aktualizovat
-    if (canvas.chart && canvas.chart.data.datasets[0]) {
+    if (canvas.chart?.data?.datasets?.[0]) {
         const dataset = canvas.chart.data.datasets[0];
         const labelsChanged = canvas.chart.data.labels.length !== values.length;
 
@@ -1085,9 +1091,9 @@ async function loadPricingData() {
     const spotSensor = hass.states[spotEntityId];
 
     // Update current price card from sensor state (not attributes)
-    if (spotSensor && spotSensor.state) {
-        const currentPrice = parseFloat(spotSensor.state);
-        if (!isNaN(currentPrice)) {
+    if (spotSensor?.state) {
+        const currentPrice = Number.parseFloat(spotSensor.state);
+        if (!Number.isNaN(currentPrice)) {
             const spotCard = document.getElementById('current-spot-price');
             if (spotCard) {
                 spotCard.innerHTML = currentPrice.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
@@ -1213,10 +1219,10 @@ async function loadPricingData() {
     // Export prices (15min) - from timeline API
     const exportEntityId = 'sensor.oig_' + boxId + '_export_price_current_15min';
     const exportSensor = hass.states[exportEntityId];
-    if (exportSensor && exportSensor.state) {
+    if (exportSensor?.state) {
         // Current price from sensor state
-        const currentPrice = parseFloat(exportSensor.state);
-        if (!isNaN(currentPrice)) {
+        const currentPrice = Number.parseFloat(exportSensor.state);
+        if (!Number.isNaN(currentPrice)) {
             const exportCard = document.getElementById('current-export-price');
             if (exportCard) {  // ✅ NULL CHECK - element neexistuje ve nové verzi
                 exportCard.innerHTML = currentPrice.toFixed(2) + ' <span class="stat-unit">Kč/kWh</span>';
@@ -1292,7 +1298,7 @@ async function loadPricingData() {
     // Solar forecast (hourly) - interpolate to 15min grid
     const solarEntityId = 'sensor.oig_' + boxId + '_solar_forecast';
     const solarSensor = hass.states[solarEntityId];
-    if (solarSensor && solarSensor.attributes) {
+    if (solarSensor?.attributes) {
         const attrs = solarSensor.attributes;
         const todayTotal = attrs.today_total_kwh || 0;
         const solarCard = document.getElementById('today-forecast-total');
@@ -1303,8 +1309,6 @@ async function loadPricingData() {
             solarCard.parentElement.onclick = () => openEntityDialog(solarEntityId);
         }
 
-        const todayTotal_kw = attrs.today_hourly_total_kw || {};
-        const tomorrowTotal_kw = attrs.tomorrow_hourly_total_kw || {};
         const todayString1_kw = attrs.today_hourly_string1_kw || {};
         const tomorrowString1_kw = attrs.tomorrow_hourly_string1_kw || {};
         const todayString2_kw = attrs.today_hourly_string2_kw || {};
@@ -1452,7 +1456,7 @@ async function loadPricingData() {
     let initialZoomStart = null;
     let initialZoomEnd = null;
 
-    if (batteryForecastSensor && batteryForecastSensor.attributes) {
+    if (batteryForecastSensor?.attributes) {
         // Timeline data already loaded from API at function start
         // console.log('[Pricing] Timeline data length:', timelineData.length);
         const maxCapacityKwh = batteryForecastSensor.attributes.max_capacity_kwh || 10;
@@ -1991,7 +1995,7 @@ function setupPriceCardHandlers() {
         }
 
         // Pokud máme data o bloku, zoomuj
-        if (blockData && blockData.start && blockData.end) {
+        if (blockData?.start && blockData?.end) {
             console.log(`[Card] ${cardType} clicked, zooming to:`, blockData.start, '->', blockData.end);
             e.stopPropagation();
             zoomToTimeRange(blockData.start, blockData.end, card);
@@ -2053,8 +2057,9 @@ async function updatePlannedConsumptionStats() {
     // Získat již spotřebovanou energii dnes z ac_out_en_day (vrací Wh, převést na kWh)
     const todayConsumedSensorId = `sensor.oig_${INVERTER_SN}_ac_out_en_day`;
     const todayConsumedSensor = hass.states[todayConsumedSensorId];
-    const todayConsumedWh = todayConsumedSensor && todayConsumedSensor.state !== 'unavailable'
-        ? parseFloat(todayConsumedSensor.state) || 0
+    const todayConsumedState = todayConsumedSensor?.state;
+    const todayConsumedWh = todayConsumedState && todayConsumedState !== 'unavailable'
+        ? Number.parseFloat(todayConsumedState) || 0
         : 0;
     const todayConsumedKwh = todayConsumedWh / 1000; // Převod Wh -> kWh
 
@@ -2229,7 +2234,7 @@ async function updateWhatIfAnalysis() {
     });
 
     // Highlight the active one (if DO NOTHING exists, check which mode it represents)
-    if (doNothing && doNothing.current_mode) {
+    if (doNothing?.current_mode) {
         // Backend provides current_mode field in DO NOTHING
         const activeMode = doNothing.current_mode;
         let activeRowId = null;
@@ -2255,7 +2260,7 @@ async function updateWhatIfAnalysis() {
 }
 
 
-window.DashboardPricing = {
+globalThis.DashboardPricing = {
     debouncedLoadPricingData,
     debouncedUpdatePlannedConsumption,
     loadPricingData,
@@ -2268,8 +2273,8 @@ window.DashboardPricing = {
 };
 
 console.log('[DashboardPricing] Module loaded');
-if (window.DashboardPricing && typeof window.DashboardPricing.init === 'function') {
-    window.DashboardPricing.init();
+if (typeof globalThis.DashboardPricing?.init === 'function') {
+    globalThis.DashboardPricing.init();
 }
 async function fetchTimelineFromAPI(plan, boxId) {
     const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active`;

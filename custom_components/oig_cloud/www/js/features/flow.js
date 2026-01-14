@@ -1,7 +1,6 @@
-/* eslint-disable */
 // === EXISTING FUNCTIONS ===
 
-// NOTE: Analytics/Pricing/CHMU functions are called directly via window.Dashboard*
+// NOTE: Analytics/Pricing/CHMU functions are called directly via globalThis.Dashboard*
 // to avoid load-order dependency issues (flow.js loads before analytics.js)
 
 // Get sensor entity ID
@@ -12,7 +11,7 @@ function getSensorId(sensor) {
 // Find shield sensor dynamically (may have suffix like _2, _3)
 // Lazy load from utils to avoid load-time dependency
 function findShieldSensorId(sensorName) {
-    return window.DashboardUtils?.findShieldSensorId?.(sensorName) || `sensor.oig_${INVERTER_SN}_${sensorName}`;
+    return globalThis.DashboardUtils?.findShieldSensorId?.(sensorName) || `sensor.oig_${INVERTER_SN}_${sensorName}`;
 }
 
 // Update time
@@ -22,15 +21,16 @@ function updateTime() {
 }
 
 // Debouncing timers
-var drawConnectionsTimeout = null;
-var loadDataTimer = null;
-var loadDetailsTimer = null;
+let drawConnectionsTimeout = null;
+let loadDataTimer = null;
+let loadDetailsTimer = null;
 
 function safeClearTimeout(timerId) {
     try {
         if (timerId) clearTimeout(timerId);
     } catch (e) {
         // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+        console.warn('[Flow] Failed to clear timeout', e);
     }
 }
 
@@ -39,10 +39,13 @@ function safeSetTimeout(fn, delay) {
         return setTimeout(() => {
             try {
                 if (document?.body) fn();
-            } catch (e) { }
+            } catch (e) {
+                console.warn('[Flow] Timeout callback failed', e);
+            }
         }, delay);
     } catch (e) {
         // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+        console.warn('[Flow] Failed to set timeout', e);
         return null;
     }
 }
@@ -77,7 +80,6 @@ function debouncedLoadNodeDetails() {
 // Draw connection lines
 function drawConnections() {
     const svg = document.getElementById('connections');
-    const canvas = document.querySelector('.flow-canvas');
     if (!svg) return; // Guard: SVG neexistuje
 
     svg.innerHTML = '';
@@ -126,10 +128,6 @@ function createParticle(from, to, color, speed = 2000, delay = 0) {
         if (!particlesContainer) return; // Guard: container neexistuje
 
         particlesContainer.appendChild(particle);
-
-        const dx = to.x - from.x;
-        const dy = to.y - from.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
 
         particle.animate([
             { left: from.x + 'px', top: from.y + 'px', opacity: 0 },
@@ -218,7 +216,7 @@ function stopAllParticleFlows() {
                 try {
                     anim.cancel();
                 } catch (e) {
-                    // Ignorovat chyby při rušení už dokončených animací
+                    console.warn('[Particles] Failed to cancel animation', e);
                 }
             });
             particle.remove();
@@ -300,8 +298,8 @@ function logParticleMemoryStats() {
 }
 
 // Globální funkce pro debugging - můžeš volat z konzole
-window.logParticleStats = logParticleMemoryStats;
-window.cleanupParticles = stopAllParticleFlows;
+globalThis.logParticleStats = logParticleMemoryStats;
+globalThis.cleanupParticles = stopAllParticleFlows;
 
 // Cache pro smoothing rychlosti - zabraňuje náhlým skokům
 const speedCache = {};
@@ -312,21 +310,21 @@ async function updatePlannerModeBadge(force = false) {
         return;
     }
 
-    const data = window.PlannerState
-        ? await window.PlannerState.fetchSettings(force)
+    const data = globalThis.PlannerState
+        ? await globalThis.PlannerState.fetchSettings(force)
         : null;
-    const newState = data ? (data.auto_mode_switch_enabled ? 'enabled' : 'disabled') : 'unknown';
+    let newState = 'unknown';
+    if (data) {
+        newState = data.auto_mode_switch_enabled ? 'enabled' : 'disabled';
+    }
     let labelText = 'Plánovač: --';
-    let className = 'auto-unknown';
 
     if (!data) {
         labelText = 'Plánovač: N/A';
     } else if (newState === 'enabled') {
         labelText = 'Plánovač: AUTO';
-        className = 'auto-enabled';
     } else {
         labelText = 'Plánovač: MANUÁL';
-        className = 'auto-disabled';
     }
 
     if (typeof updateElementIfChanged === 'function') {
@@ -396,7 +394,7 @@ function calculateFlowParams(power, maximum, flowKey = null) {
  */
 function createContinuousParticle(flowKey, from, to, color, speed, size = 8, opacity = 1) {
     const flow = particleFlows[flowKey];
-    if (!flow || !flow.active || !from || !to) return;
+    if (!flow?.active || !from || !to) return;
 
     const particle = document.createElement('div');
     particle.className = 'particle';
@@ -442,14 +440,14 @@ function createContinuousParticle(flowKey, from, to, color, speed, size = 8, opa
         try {
             animation.cancel();
         } catch (e) {
-            // Ignorovat chyby (animace už může být zrušená)
+            console.warn('[Particles] Failed to cancel animation on finish', e);
         }
         particle.remove();
 
         // OPRAVA: Zkontrolovat že flow je stále aktivní PŘED vytvořením nové kuličky
         // Tím zabráníme "zombie" kuličkám když se flow zastaví
         const flow = particleFlows[flowKey];
-        if (flow && flow.active) {
+        if (flow?.active) {
             // Použít AKTUÁLNÍ rychlost z flow objektu (může se změnit během animace)
             createContinuousParticle(flowKey, from, to, color, flow.speed, size, opacity);
         }
@@ -644,17 +642,17 @@ function getEnergySourceColor(solarRatio, gridRatio, batteryRatio = 0) {
 }
 
 // Global cache for node positions
-var cachedNodeCenters = null;
-var lastLayoutHash = null;
+let cachedNodeCenters = null;
+let lastLayoutHash = null;
 
 // OPRAVA BUG #4: Cache pro power hodnoty
-var lastPowerValues = null;
+let lastPowerValues = null;
 
 // Prevent overlapping refreshes (iOS WebView can freeze during HA initial state burst)
-var loadDataInProgress = false;
-var loadDataPending = false;
-var loadNodeDetailsInProgress = false;
-var loadNodeDetailsPending = false;
+let loadDataInProgress = false;
+let loadDataPending = false;
+let loadNodeDetailsInProgress = false;
+let loadNodeDetailsPending = false;
 
 // Calculate layout hash to detect changes
 function getLayoutHash() {
@@ -714,14 +712,14 @@ function getNodeCenters() {
         const canvasRect = canvas.getBoundingClientRect();
 
         // Get canvas scale factor
-        const canvasStyle = window.getComputedStyle(canvas);
+        const canvasStyle = globalThis.getComputedStyle(canvas);
         const transform = canvasStyle.transform;
         let scale = 1;
         if (transform && transform !== 'none') {
             const matrix = transform.match(/matrix\(([^)]+)\)/);
             if (matrix) {
                 const values = matrix[1].split(',');
-                scale = parseFloat(values[0]) || 1;
+                scale = Number.parseFloat(values[0]) || 1;
             }
         }
 
@@ -786,7 +784,7 @@ function getNodeCenters() {
 
 // Animate particles - v2.0 with continuous normalization
 function animateFlow(data) {
-    const runtime = window.OIG_RUNTIME || {};
+    const runtime = globalThis.OIG_RUNTIME || {};
     if (runtime.reduceMotion) {
         if (!runtime.particlesDisabled) {
             runtime.particlesDisabled = true;
@@ -800,7 +798,7 @@ function animateFlow(data) {
         }
         return;
     }
-    const { solarPower, solarPerc, batteryPower, gridPower, housePower, boilerPower, boilerMaxPower } = data;
+    const { solarPower, batteryPower, gridPower, housePower } = data;
 
     // Use cached positions
     const centers = getNodeCenters();
@@ -1125,9 +1123,9 @@ function animateFlow(data) {
 }
 
 // Use utils from DashboardUtils module (var allows re-declaration)
-var formatPower = window.DashboardUtils?.formatPower;
-var formatEnergy = window.DashboardUtils?.formatEnergy;
-var updateElementIfChanged = window.DashboardUtils?.updateElementIfChanged;
+let formatPower = globalThis.DashboardUtils?.formatPower;
+let formatEnergy = globalThis.DashboardUtils?.formatEnergy;
+let updateElementIfChanged = globalThis.DashboardUtils?.updateElementIfChanged;
 
 // Legacy wrapper kept for backward compatibility
 function updateElementIfChanged_legacy(elementId, newValue, cacheKey) {
@@ -1165,15 +1163,15 @@ async function loadData() {
         return;
     }
     loadDataInProgress = true;
-    const runtime = window.OIG_RUNTIME || {};
+    const runtime = globalThis.OIG_RUNTIME || {};
     try {
-    const isConstrainedRuntime = !!runtime.isHaApp || !!runtime.isMobile || window.innerWidth <= 768;
+    const isConstrainedRuntime = !!runtime.isHaApp || !!runtime.isMobile || globalThis.innerWidth <= 768;
     const shouldYield = isConstrainedRuntime && !runtime.initialLoadComplete;
     const yieldIfNeeded = async () => {
         if (!shouldYield) return;
         await new Promise(resolve => {
-            if (typeof window.requestAnimationFrame === 'function') {
-                window.requestAnimationFrame(() => resolve());
+            if (typeof globalThis.requestAnimationFrame === 'function') {
+                globalThis.requestAnimationFrame(() => resolve());
             } else {
                 setTimeout(resolve, 0);
             }
@@ -1580,7 +1578,7 @@ async function loadData() {
 
         // Animate particles only when Flow tab is active (reduces initial load cost on iOS).
         const flowTab = document.querySelector('#flow-tab');
-        const isFlowTabActive = flowTab && flowTab.classList.contains('active');
+        const isFlowTabActive = flowTab?.classList.contains('active');
         if (isFlowTabActive) {
             if (isConstrainedRuntime && !runtime.initialLoadComplete) {
                 runtime.pendingFlowValues = currentPowerValues;
@@ -1599,7 +1597,7 @@ async function loadData() {
     // Load details for all nodes (only on first load or explicit refresh)
     if (!previousValues['node-details-loaded']) {
         // Do not await heavy details on first render; it can freeze iOS WebView.
-        if ((runtime.isHaApp || runtime.isMobile || window.innerWidth <= 768) && !runtime.initialLoadComplete) {
+        if ((runtime.isHaApp || runtime.isMobile || globalThis.innerWidth <= 768) && !runtime.initialLoadComplete) {
             if (!runtime.nodeDetailsScheduled) {
                 runtime.nodeDetailsScheduled = true;
                 setTimeout(() => {
@@ -1614,43 +1612,43 @@ async function loadData() {
     }
 
     // Update ČHMÚ weather warning badge
-    if (window.DashboardChmu?.updateChmuWarningBadge) {
-        window.DashboardChmu.updateChmuWarningBadge();
+    if (globalThis.DashboardChmu?.updateChmuWarningBadge) {
+        globalThis.DashboardChmu.updateChmuWarningBadge();
     }
 
     // Update battery efficiency statistics
-    if (window.DashboardAnalytics?.updateBatteryEfficiencyStats) {
-        window.DashboardAnalytics.updateBatteryEfficiencyStats();
+    if (globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats) {
+        globalThis.DashboardAnalytics.updateBatteryEfficiencyStats();
     }
 
     const pricingActive = typeof pricingTabActive !== 'undefined' ? pricingTabActive : false;
     if (pricingActive) {
         // Update planned consumption statistics
-        if (window.DashboardPricing?.updatePlannedConsumptionStats) {
-            window.DashboardPricing.updatePlannedConsumptionStats();
+        if (globalThis.DashboardPricing?.updatePlannedConsumptionStats) {
+            globalThis.DashboardPricing.updatePlannedConsumptionStats();
         }
 
         // Phase 2.6: Update what-if analysis and mode recommendations
-        if (window.DashboardPricing?.updateWhatIfAnalysis) {
-            window.DashboardPricing.updateWhatIfAnalysis();
+        if (globalThis.DashboardPricing?.updateWhatIfAnalysis) {
+            globalThis.DashboardPricing.updateWhatIfAnalysis();
         }
-        if (window.DashboardPricing?.updateModeRecommendations) {
-            window.DashboardPricing.updateModeRecommendations();
+        if (globalThis.DashboardPricing?.updateModeRecommendations) {
+            globalThis.DashboardPricing.updateModeRecommendations();
         }
     }
 
     // Performance chart removed (legacy performance tracking)
     } finally {
         loadDataInProgress = false;
-        if (window.OIG_RUNTIME) {
-            window.OIG_RUNTIME.initialLoadComplete = true;
+        if (globalThis.OIG_RUNTIME) {
+            globalThis.OIG_RUNTIME.initialLoadComplete = true;
         }
-        if (runtime.pendingFlowValues && (runtime.isHaApp || runtime.isMobile || window.innerWidth <= 768)) {
+        if (runtime.pendingFlowValues && (runtime.isHaApp || runtime.isMobile || globalThis.innerWidth <= 768)) {
             const pendingValues = runtime.pendingFlowValues;
             runtime.pendingFlowValues = null;
             setTimeout(() => {
                 const flowTab = document.querySelector('#flow-tab');
-                if (flowTab && flowTab.classList.contains('active')) {
+                if (flowTab?.classList.contains('active')) {
                     animateFlow(pendingValues);
                 }
             }, 400);
@@ -1687,8 +1685,6 @@ async function loadNodeDetails() {
 
         // Solar forecast sensors
         const solarForecast = await getSensor(getSensorId('solar_forecast'));
-        const solarForecastS1 = await getSensor(getSensorId('solar_forecast_string1'));
-        const solarForecastS2 = await getSensor(getSensorId('solar_forecast_string2'));
 
         // Update only if changed
         updateElementIfChanged('solar-s1', Math.round(solarP1.value || 0) + ' W');
@@ -1703,7 +1699,7 @@ async function loadNodeDetails() {
         updateElementIfChanged('solar-forecast-today-value', forecastToday + ' kWh');
 
         const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw || 0;
-        updateElementIfChanged('solar-forecast-tomorrow-value', parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
+        updateElementIfChanged('solar-forecast-tomorrow-value', Number.parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
 
         // === BATTERY DETAILS ===
         const battChargeTotal = await getSensor(getSensorId('computed_batt_charge_energy_today'));
@@ -1724,7 +1720,6 @@ async function loadNodeDetails() {
         await updateBatteryBalancingCard();
 
         // === GRID DETAILS ===
-        const gridPowerData = await getSensor(getSensorId('actual_aci_wtotal'));
         const gridImport = await getSensor(getSensorId('ac_in_ac_ad'));
         const gridExport = await getSensor(getSensorId('ac_in_ac_pd'));
         const gridFreq = await getSensor(getSensorId('ac_in_aci_f')); // OPRAVENO: správný senzor
@@ -1980,7 +1975,7 @@ async function showChargeBatteryDialog() {
     try {
         // Check shield queue before adding task (use dynamic lookup)
         const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
-        const queueCount = parseInt(shieldQueue.value) || 0;
+        const queueCount = Number.parseInt(shieldQueue.value) || 0;
 
         // Warn if queue is getting full
         if (queueCount >= 3) {
@@ -2075,7 +2070,7 @@ async function showChargeBatteryDialog() {
 // Confirm charge battery
 async function confirmChargeBattery() {
     const overlay = document.querySelector('.ack-dialog-overlay');
-    const targetSoC = parseInt(document.getElementById('target-soc-slider').value);
+    const targetSoC = Number.parseInt(document.getElementById('target-soc-slider').value);
 
     // Remove dialog
     if (overlay) overlay.remove();
@@ -2126,7 +2121,7 @@ async function confirmChargeBattery() {
 // Initialize
 
 // Export functions to window for backward compatibility
-window.DashboardFlow = {
+globalThis.DashboardFlow = {
     getSensorId,
     findShieldSensorId,
     updateTime,

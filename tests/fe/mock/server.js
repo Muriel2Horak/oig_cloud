@@ -136,15 +136,15 @@ const server = http.createServer((req, res) => {
       };
       hass.callWS = async () => ({ result: {} });
       hass.callService = async (domain, service, data) => {
-        window.__serviceCalls = window.__serviceCalls || [];
-        window.__serviceCalls.push({ domain, service, data });
+        globalThis.__serviceCalls = globalThis.__serviceCalls || [];
+        globalThis.__serviceCalls.push({ domain, service, data });
         return { result: 'ok' };
       };
       ha.hass = hass;
-      window.__setHassState = (entityId, state) => {
+      globalThis.__setHassState = (entityId, state) => {
         ha.hass.states[entityId] = state;
       };
-      window.__getServiceCalls = () => (window.__serviceCalls || []);
+      globalThis.__getServiceCalls = () => (globalThis.__serviceCalls || []);
     </script>
     <iframe id="dashboard" src="/local/oig_cloud/dashboard.html?inverter_sn=${inverterSn}&mode=${mode}"></iframe>
   </body>

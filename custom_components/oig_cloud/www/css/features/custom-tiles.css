@@ -402,7 +402,7 @@
             top: 1px;
             right: 1px;
             background: rgb(244, 67, 54, 0.9);
-            color: white;
+            color: #111827;
             border: none;
             border-radius: 50%;
             width: 14px;
@@ -430,7 +430,7 @@
 
             /* Vedle remove buttonu */
             background: rgb(66, 165, 245, 0.9);
-            color: white;
+            color: #111827;
             border: none;
             border-radius: 50%;
             width: 14px;
@@ -763,7 +763,7 @@
 
         .btn-primary {
             background: linear-gradient(135deg, rgb(66, 165, 245, 0.8), rgb(33, 150, 243, 0.8));
-            color: white;
+            color: #111827;
         }
 
         .btn-primary:hover {
@@ -908,8 +908,8 @@
         }
 
         .icon-picker-close:hover {
-            background: rgb(244, 67, 54, 0.1);
-            color: rgb(244, 67, 54, 1);
+            background: rgb(244, 67, 54, 0.4);
+            color: #ffffff;
         }
 
         .icon-picker-search {

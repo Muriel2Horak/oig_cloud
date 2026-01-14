@@ -4,13 +4,15 @@ from typing import Any, Dict
 
 from homeassistant.components.sensor import SensorDeviceClass
 
+UNIT_CZK_KWH = "CZK/kWh"
+
 # Typy senzorů pro spotové ceny elektřiny
 SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
     "spot_price_current_czk_kwh": {
         "name": "Current Spot Price",
         "name_cs": "Aktuální spotová cena",
         "icon": "mdi:flash",
-        "unit_of_measurement": "CZK/kWh",
+        "unit_of_measurement": UNIT_CZK_KWH,
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,  # OPRAVA: Monetary sensors nesmí mít measurement state_class
         "category": "spot_price",
@@ -36,7 +38,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "name": "Today Average Price",
         "name_cs": "Průměrná cena dnes",
         "icon": "mdi:chart-line",
-        "unit_of_measurement": "CZK/kWh",
+        "unit_of_measurement": UNIT_CZK_KWH,
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,  # OPRAVA: Monetary sensors nesmí mít measurement state_class
         "category": "spot_price",
@@ -49,7 +51,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "name": "Today Minimum Price",
         "name_cs": "Minimální cena dnes",
         "icon": "mdi:arrow-down",
-        "unit_of_measurement": "CZK/kWh",
+        "unit_of_measurement": UNIT_CZK_KWH,
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,  # OPRAVA: Monetary sensors nesmí mít measurement state_class
         "category": "spot_price",
@@ -62,7 +64,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "name": "Today Maximum Price",
         "name_cs": "Maximální cena dnes",
         "icon": "mdi:arrow-up",
-        "unit_of_measurement": "CZK/kWh",
+        "unit_of_measurement": UNIT_CZK_KWH,
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,  # OPRAVA: Monetary sensors nesmí mít measurement state_class
         "category": "spot_price",
@@ -75,7 +77,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "name": "Tomorrow Average Price",
         "name_cs": "Průměrná cena zítřek",
         "icon": "mdi:chart-bar",
-        "unit_of_measurement": "CZK/kWh",
+        "unit_of_measurement": UNIT_CZK_KWH,
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,  # OPRAVA: Monetary sensors nesmí mít measurement state_class
         "category": "spot_price",
@@ -88,7 +90,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "name": "Hourly Prices All",
         "name_cs": "Všechny hodinové ceny",
         "icon": "mdi:clock-time-eight-outline",
-        "unit_of_measurement": "CZK/kWh",
+        "unit_of_measurement": UNIT_CZK_KWH,
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,  # OPRAVA: Monetary sensors nesmí mít measurement state_class
         "category": "spot_price",
@@ -127,7 +129,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "name": "Current Spot Price (15min)",
         "name_cs": "Aktuální spotová cena (15min interval)",
         "icon": "mdi:flash-outline",
-        "unit_of_measurement": "CZK/kWh",
+        "unit_of_measurement": UNIT_CZK_KWH,
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,
         "category": "spot_price",
@@ -140,7 +142,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "name": "Current Export Price (15min)",
         "name_cs": "Aktuální výkupní cena (15min interval)",
         "icon": "mdi:transmission-tower-export",
-        "unit_of_measurement": "CZK/kWh",
+        "unit_of_measurement": UNIT_CZK_KWH,
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,
         "category": "export_price",
@@ -153,7 +155,7 @@ SENSOR_TYPES_SPOT: Dict[str, Dict[str, Any]] = {
         "name": "Adjusted Spot Electricity Prices",
         "name_cs": "Upravené spotové ceny elektřiny",
         "icon": "mdi:chart-line-variant",
-        "unit_of_measurement": "CZK/kWh",
+        "unit_of_measurement": UNIT_CZK_KWH,
         "device_class": SensorDeviceClass.MONETARY,
         "state_class": None,
         "category": "spot_price",

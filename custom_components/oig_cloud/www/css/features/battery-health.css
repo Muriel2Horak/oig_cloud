@@ -49,27 +49,27 @@
 
 .status-excellent {
     background: rgb(76, 217, 100, 0.2);
-    color: #4cd964;
+    color: #14532d;
 }
 
 .status-good {
     background: rgb(52, 199, 89, 0.2);
-    color: #34c759;
+    color: #166534;
 }
 
 .status-fair {
     background: rgb(255, 204, 0, 0.2);
-    color: #fc0;
+    color: #7c2d12;
 }
 
 .status-poor {
     background: rgb(255, 69, 58, 0.2);
-    color: #ff453a;
+    color: #7f1d1d;
 }
 
 .status-unknown {
     background: rgb(142, 142, 147, 0.2);
-    color: #8e8e93;
+    color: #1f2937;
 }
 
 /* Main Section - SoH Display */

@@ -48,15 +48,15 @@ export class BoilerChartModule {
         const energySensor = this.hass.states[energyEntityId];
         const costSensor = this.hass.states[costEntityId];
 
-        if (!planSensor || !planSensor.attributes) {
+        if (!planSensor?.attributes) {
             console.warn('[BoilerChart] Boiler plan sensor not found:', planEntityId);
             return;
         }
 
         // Získat plán z atributů
-        const plan = planSensor.attributes.plan || {};
-        const slots = plan.slots || [];
-        const digest = plan.digest || 'N/A';
+        const plan = planSensor.attributes.plan ?? {};
+        const slots = plan.slots ?? [];
+        const digest = plan.digest ?? 'N/A';
 
         if (slots.length === 0) {
             console.warn('[BoilerChart] No plan slots available');
@@ -126,10 +126,10 @@ export class BoilerChartModule {
 
     buildMetadata({ socSensor, tempSensor, energySensor, costSensor, digest }) {
         return {
-            currentSoc: socSensor ? parseFloat(socSensor.state) : 0,
-            currentTemp: tempSensor ? parseFloat(tempSensor.state) : 0,
-            energyRequired: energySensor ? parseFloat(energySensor.state) : 0,
-            totalCost: costSensor ? parseFloat(costSensor.state) : 0,
+            currentSoc: Number.parseFloat(socSensor?.state ?? '0'),
+            currentTemp: Number.parseFloat(tempSensor?.state ?? '0'),
+            energyRequired: Number.parseFloat(energySensor?.state ?? '0'),
+            totalCost: Number.parseFloat(costSensor?.state ?? '0'),
             digest,
         };
     }

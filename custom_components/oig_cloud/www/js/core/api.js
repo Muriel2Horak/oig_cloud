@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * OIG Cloud Dashboard - API & Data Loading
  *
@@ -11,7 +10,7 @@
  */
 
 // Global inverter SN (může být přepsán)
-var INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
+let INVERTER_SN = new URLSearchParams(globalThis.location.search).get('inverter_sn') || '2206237016';
 
 // ============================================================================
 // HOME ASSISTANT ACCESS
@@ -51,9 +50,7 @@ function getHAToken() {
  */
 async function fetchWithAuth(url, options = {}) {
     const token = getHAToken();
-    const mergedHeaders = {
-        ...(options.headers || {})
-    };
+    const mergedHeaders = options.headers ? { ...options.headers } : {};
 
     // Add Bearer token if not already provided.
     if (token && !mergedHeaders.Authorization && !mergedHeaders.authorization) {
@@ -138,12 +135,13 @@ async function getSensor(entityId) {
         }
 
         const value = state.state !== 'unavailable' && state.state !== 'unknown'
-            ? parseFloat(state.state) || 0
+            ? Number.parseFloat(state.state) || 0
             : 0;
         const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
         const attributes = state.attributes || {};
         return { value, lastUpdated, attributes };
     } catch (e) {
+        console.warn('[API] Error reading sensor:', e);
         return { value: 0, lastUpdated: null, attributes: {} };
     }
 }
@@ -172,6 +170,7 @@ async function getSensorString(entityId) {
         const attributes = state.attributes || {};
         return { value, lastUpdated, attributes };
     } catch (e) {
+        console.warn('[API] Error reading string sensor:', e);
         return { value: '', lastUpdated: null, attributes: {} };
     }
 }
@@ -196,7 +195,7 @@ async function getSensorSafe(entityId, silent = true) {
         }
 
         const value = state.state !== 'unavailable' && state.state !== 'unknown'
-            ? parseFloat(state.state) || 0
+            ? Number.parseFloat(state.state) || 0
             : 0;
         const lastUpdated = state.last_updated ? new Date(state.last_updated) : null;
         const attributes = state.attributes || {};
@@ -369,7 +368,7 @@ async function batchLoadSensors(entityIds) {
         const state = hass.states[entityId];
         if (state) {
             const value = state.state !== 'unavailable' && state.state !== 'unknown'
-                ? parseFloat(state.state) || 0
+                ? Number.parseFloat(state.state) || 0
                 : 0;
             result[entityId] = {
                 value,
@@ -438,21 +437,21 @@ const PlannerState = (() => {
         }
 
         inflight = (async () => {
-            if (!window.INVERTER_SN) {
+            if (!globalThis.INVERTER_SN) {
                 return null;
             }
 
             const endpoint = `oig_cloud/battery_forecast/${INVERTER_SN}/planner_settings`;
 
             try {
-                const hass = window.DashboardAPI?.getHass?.() || window.getHass?.();
+                const hass = globalThis.DashboardAPI?.getHass?.() || globalThis.getHass?.();
                 let payload;
 
                 if (hass && typeof hass.callApi === 'function') {
                     payload = await hass.callApi('GET', endpoint);
                 } else {
                     const headers = { 'Content-Type': 'application/json' };
-                    const token = window.DashboardAPI?.getHAToken?.();
+                    const token = globalThis.DashboardAPI?.getHAToken?.();
                     if (token) {
                         headers.Authorization = `Bearer ${token}`;
                     }
@@ -506,8 +505,8 @@ const PlannerState = (() => {
 // EXPORT DEFAULT (backward compatibility)
 // ============================================================================
 
-if (typeof window !== 'undefined') {
-    window.DashboardAPI = {
+if (typeof globalThis !== 'undefined') {
+    globalThis.DashboardAPI = {
         getHass,
         getHAToken,
         getSensorId,
@@ -531,7 +530,7 @@ if (typeof window !== 'undefined') {
     };
 
     // Backward compatibility - expose getHass globally
-    window.getHass = getHass;
-    window.PlannerState = PlannerState;
-    window.PLAN_LABELS = PLAN_LABELS;
+    globalThis.getHass = getHass;
+    globalThis.PlannerState = PlannerState;
+    globalThis.PLAN_LABELS = PLAN_LABELS;
 }

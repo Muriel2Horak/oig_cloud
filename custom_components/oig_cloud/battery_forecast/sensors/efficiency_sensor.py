@@ -185,43 +185,67 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
         if self._last_month_key == prev_key and self._last_month_metrics and not force:
             return
 
-        metrics = None
-        if self._month_snapshot and self._month_snapshot.get("month_key") == prev_key:
-            snapshot = self._month_snapshot
-            metrics = _compute_metrics_from_wh(
-                snapshot.get("charge_wh"),
-                snapshot.get("discharge_wh"),
-                snapshot.get("battery_start_kwh"),
-                snapshot.get("battery_end_kwh"),
-            )
-            if metrics:
-                metrics["year"] = prev_year
-                metrics["month"] = prev_month
-
-        if metrics is None and not self._history_refresh_inflight:
-            self._history_refresh_inflight = True
-            try:
-                metrics = await _load_month_metrics(
-                    self.hass, self._box_id, prev_year, prev_month
-                )
-            finally:
-                self._history_refresh_inflight = False
+        metrics = self._get_snapshot_metrics(prev_key, prev_year, prev_month)
+        if metrics is None:
+            metrics = await self._load_last_month_metrics(prev_year, prev_month)
 
         if metrics:
             self._last_month_metrics = metrics
             self._last_month_key = prev_key
         else:
-            if self._last_month_key != prev_key:
-                self._last_month_metrics = None
-                self._last_month_key = None
+            self._reset_last_month_metrics(prev_key)
 
         if now_local.day == 1:
-            if self._month_snapshot and self._month_snapshot.get("month_key") == prev_key:
-                self._month_snapshot = None
-            battery_now = self._get_sensor("remaining_usable_capacity")
-            if battery_now is not None:
-                self._current_month_start_kwh = battery_now
-            self._current_month_key = _month_key(now_local.year, now_local.month)
+            self._rollover_month(now_local, prev_key)
+
+    def _get_snapshot_metrics(
+        self, prev_key: str, prev_year: int, prev_month: int
+    ) -> Optional[Dict[str, Any]]:
+        snapshot = self._month_snapshot
+        if not snapshot or snapshot.get("month_key") != prev_key:
+            return None
+
+        metrics = _compute_metrics_from_wh(
+            snapshot.get("charge_wh"),
+            snapshot.get("discharge_wh"),
+            snapshot.get("battery_start_kwh"),
+            snapshot.get("battery_end_kwh"),
+        )
+        if metrics is None:
+            return None
+
+        metrics["year"] = prev_year
+        metrics["month"] = prev_month
+        return metrics
+
+    async def _load_last_month_metrics(
+        self, prev_year: int, prev_month: int
+    ) -> Optional[Dict[str, Any]]:
+        if self._history_refresh_inflight:
+            return None
+
+        self._history_refresh_inflight = True
+        try:
+            return await _load_month_metrics(
+                self.hass, self._box_id, prev_year, prev_month
+            )
+        finally:
+            self._history_refresh_inflight = False
+
+    def _reset_last_month_metrics(self, prev_key: str) -> None:
+        if self._last_month_key == prev_key:
+            return
+        self._last_month_metrics = None
+        self._last_month_key = None
+
+    def _rollover_month(self, now_local: datetime, prev_key: str) -> None:
+        if self._month_snapshot and self._month_snapshot.get("month_key") == prev_key:
+            self._month_snapshot = None
+
+        battery_now = self._get_sensor("remaining_usable_capacity")
+        if battery_now is not None:
+            self._current_month_start_kwh = battery_now
+        self._current_month_key = _month_key(now_local.year, now_local.month)
 
     def _update_current_month_metrics(self) -> None:
         now_local = dt_util.as_local(dt_util.utcnow())

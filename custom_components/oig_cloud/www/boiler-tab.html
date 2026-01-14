@@ -3,9 +3,9 @@
 
     <!-- Boiler Control Panel -->
     <div class="boiler-control-panel minimized" id="boiler-control-panel">
-        <div class="panel-header" onclick="toggleBoilerControlPanel()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+        <button type="button" class="panel-header button-reset" onclick="toggleBoilerControlPanel()">
             <h3>🛠️ Pokročilé ovládání (Debug)
-                <span class="info-bubble" onclick="event.stopPropagation()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">❓
+                <span class="info-bubble">❓
                     <span class="info-bubble-tooltip">
                         <strong>⚠️ Automatický režim</strong>
                         Bojler funguje plně automaticky! Systém:
@@ -23,10 +23,10 @@
                     </span>
                 </span>
             </h3>
-            <button class="btn-minimize" onclick="event.stopPropagation(); toggleBoilerControlPanel()">
+            <span class="btn-minimize" aria-hidden="true">
                 <span id="boiler-panel-toggle-icon">+</span>
-            </button>
-        </div>
+            </span>
+        </button>
 
         <div class="panel-content">
             <!-- Boiler Actions -->
@@ -54,39 +54,39 @@
                 <div class="boiler-status-grid">
                     <div class="status-card">
                         <div class="status-label">SOC</div>
-                        <div class="status-value entity-value" id="boiler-soc-value"
+                        <button type="button" class="status-value entity-value button-reset" id="boiler-soc-value"
                             data-entity="boiler_soc"
                             data-tooltip="State of Charge - úroveň nabití (0-100%)"
-                            onclick="openEntityDialog(getSensorId('boiler_soc'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                            onclick="openEntityDialog(getSensorId('boiler_soc'))">
                             -- %
-                        </div>
+                        </button>
                     </div>
                     <div class="status-card">
                         <div class="status-label">Teplota horní</div>
-                        <div class="status-value entity-value" id="boiler-temp-top-value"
+                        <button type="button" class="status-value entity-value button-reset" id="boiler-temp-top-value"
                             data-entity="boiler_temperature_top"
                             data-tooltip="Teplota v horní zóně bojleru"
-                            onclick="openEntityDialog(getSensorId('boiler_temperature_top'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                            onclick="openEntityDialog(getSensorId('boiler_temperature_top'))">
                             -- °C
-                        </div>
+                        </button>
                     </div>
                     <div class="status-card">
                         <div class="status-label">Energie potřebná</div>
-                        <div class="status-value entity-value" id="boiler-energy-required-value"
+                        <button type="button" class="status-value entity-value button-reset" id="boiler-energy-required-value"
                             data-entity="boiler_energy_required"
                             data-tooltip="Energie potřebná k dosažení cílové teploty"
-                            onclick="openEntityDialog(getSensorId('boiler_energy_required'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                            onclick="openEntityDialog(getSensorId('boiler_energy_required'))">
                             -- kWh
-                        </div>
+                        </button>
                     </div>
                     <div class="status-card">
                         <div class="status-label">Náklady plánu</div>
-                        <div class="status-value entity-value" id="boiler-plan-cost-value"
+                        <button type="button" class="status-value entity-value button-reset" id="boiler-plan-cost-value"
                             data-entity="boiler_plan_cost"
                             data-tooltip="Celkové náklady na naplánovaný ohřev"
-                            onclick="openEntityDialog(getSensorId('boiler_plan_cost'))" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); this.click();}">
+                            onclick="openEntityDialog(getSensorId('boiler_plan_cost'))">
                             -- Kč
-                        </div>
+                        </button>
                     </div>
                 </div>
             </div>

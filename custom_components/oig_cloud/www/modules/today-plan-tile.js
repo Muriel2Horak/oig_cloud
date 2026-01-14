@@ -296,6 +296,6 @@ class TodayPlanTile {
 }
 
 // Export pro použití v dashboard
-window.TodayPlanTile = TodayPlanTile;
+globalThis.TodayPlanTile = TodayPlanTile;
 
 export default TodayPlanTile;

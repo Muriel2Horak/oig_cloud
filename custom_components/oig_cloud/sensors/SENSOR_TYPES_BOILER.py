@@ -3,6 +3,8 @@ from typing import Any, Dict
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 
+BOILER_ON_OFF_OPTIONS = ["Vypnuto / Off", "Zapnuto / On"]
+
 SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
     "boiler_current_cbb_w": {
         "name": "Boiler - Current Energy (CBB)",
@@ -55,7 +57,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "local_entity_suffix": "tbl_boiler_prms_manual",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "state_class": None,
-        "options": ["Vypnuto / Off", "Zapnuto / On"],
+        "options": BOILER_ON_OFF_OPTIONS,
         "sensor_type_category": "data",
         "device_mapping": "main",
     },
@@ -71,7 +73,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "local_entity_suffix": "tbl_boiler_prms_ssr0",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "state_class": None,
-        "options": ["Vypnuto / Off", "Zapnuto / On"],
+        "options": BOILER_ON_OFF_OPTIONS,
         "sensor_type_category": "data",
         "device_mapping": "main",
     },
@@ -87,7 +89,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "local_entity_suffix": "tbl_boiler_prms_ssr1",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "state_class": None,
-        "options": ["Vypnuto / Off", "Zapnuto / On"],
+        "options": BOILER_ON_OFF_OPTIONS,
         "sensor_type_category": "data",
         "device_mapping": "main",
     },
@@ -103,7 +105,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "local_entity_suffix": "tbl_boiler_prms_ssr2",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "state_class": None,
-        "options": ["Vypnuto / Off", "Zapnuto / On"],
+        "options": BOILER_ON_OFF_OPTIONS,
         "sensor_type_category": "data",
         "device_mapping": "main",
     },
@@ -119,7 +121,7 @@ SENSOR_TYPES_BOILER: Dict[str, Dict[str, Any]] = {
         "local_entity_suffix": "tbl_boiler_prms_ison",
         "entity_category": EntityCategory.DIAGNOSTIC,
         "state_class": None,
-        "options": ["Vypnuto / Off", "Zapnuto / On"],
+        "options": BOILER_ON_OFF_OPTIONS,
         "sensor_type_category": "data",
         "device_mapping": "main",
     },

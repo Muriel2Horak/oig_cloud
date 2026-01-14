@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * OIG Bojler Dashboard - Integrace do hlavního dashboardu
  * Heatmap, timeline, profiling
@@ -62,7 +61,7 @@ async function loadBasicBoilerData() {
     try {
         console.log('🔥 [Boiler] Loading data from API');
 
-        const entryId = new URLSearchParams(window.location.search).get('entry_id');
+        const entryId = new URLSearchParams(globalThis.location.search).get('entry_id');
         if (!entryId) {
             console.error('[Boiler] Missing entry_id');
             return;
@@ -384,13 +383,13 @@ function toggleBoilerControlPanel() {
 }
 
 // Export functions to global scope
-window.initBoilerDashboard = initBoilerDashboard;
-window.onBoilerCategoryChange = onBoilerCategoryChange;
-window.toggleBoilerControlPanel = toggleBoilerControlPanel;
+globalThis.initBoilerDashboard = initBoilerDashboard;
+globalThis.onBoilerCategoryChange = onBoilerCategoryChange;
+globalThis.toggleBoilerControlPanel = toggleBoilerControlPanel;
 
 console.log('🔥 [Boiler] Dashboard script loaded');
 // === BOILER DATA & CHART ===
-var boilerChartInstance = null;
+let boilerChartInstance = null;
 
 /**
  * Load extended boiler data (sensors, profile, energy breakdown, predictions, charts)
@@ -447,8 +446,8 @@ async function updateBoilerSensors() {
 
         const element = document.getElementById(elementId);
         if (element && state) {
-            const value = parseFloat(state.state);
-            if (!isNaN(value)) {
+            const value = Number.parseFloat(state.state);
+            if (!Number.isNaN(value)) {
                 if (entityId.includes('stav_nabiti')) {
                     element.textContent = `${value.toFixed(0)} %`;
                 } else if (entityId.includes('teplota')) {
@@ -540,10 +539,10 @@ async function initializeBoilerChart() {
     }
 
     // Lazy load boiler chart module
-    if (!window.BoilerChartModule) {
+    if (!globalThis.BoilerChartModule) {
         try {
             const module = await import('./modules/boiler-chart.js');
-            window.BoilerChartModule = module.BoilerChartModule;
+            globalThis.BoilerChartModule = module.BoilerChartModule;
         } catch (error) {
             console.error('[Boiler] Failed to load boiler-chart.js:', error);
             return;
@@ -552,7 +551,7 @@ async function initializeBoilerChart() {
 
     // Create or refresh chart instance
     if (!boilerChartInstance) {
-        boilerChartInstance = new window.BoilerChartModule();
+        boilerChartInstance = new globalThis.BoilerChartModule();
         await boilerChartInstance.init(canvas, hass, INVERTER_SN);
     } else {
         await boilerChartInstance.refresh();
@@ -566,7 +565,6 @@ async function planBoilerHeating() {
     const hass = getHass();
     if (!hass) return;
 
-    const service = 'oig_cloud.plan_boiler_heating';
     const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
 
     try {
@@ -590,7 +588,6 @@ async function applyBoilerPlan() {
     const hass = getHass();
     if (!hass) return;
 
-    const service = 'oig_cloud.apply_boiler_plan';
     const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
 
     try {
@@ -614,7 +611,6 @@ async function cancelBoilerPlan() {
     const hass = getHass();
     if (!hass) return;
 
-    const service = 'oig_cloud.cancel_boiler_plan';
     const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
 
     try {
@@ -704,8 +700,8 @@ async function updateBoilerGradeThermometer() {
     const energyState = hass?.states?.[energyEntityId];
 
     if (tempTopState && socState) {
-        const tempTop = parseFloat(tempTopState.state);
-        const soc = parseFloat(socState.state);
+        const tempTop = Number.parseFloat(tempTopState.state);
+        const soc = Number.parseFloat(socState.state);
         const tempBottom = energyState?.attributes?.temp_bottom_c || tempTop * 0.8;
         const targetTemp = energyState?.attributes?.target_temp_c || 60;
 
@@ -746,7 +742,7 @@ async function renderBoilerProfilingChart() {
 
         // Get data from sensor attributes
         const energySensor = hass.states['sensor.oig_bojler_pozadovana_energie'];
-        if (!energySensor || !energySensor.attributes) {
+        if (!energySensor?.attributes) {
             console.warn('[Boiler] Energy sensor not available');
             return;
         }
@@ -759,16 +755,16 @@ async function renderBoilerProfilingChart() {
 
         // Prepare data for chart
         const labels = Array.from({ length: 24 }, (_, i) => `${i}h`);
-        const data = labels.map((_, i) => parseFloat(hourlyData[i] || 0));
+        const data = labels.map((_, i) => Number.parseFloat(hourlyData[i] || 0));
 
         // Destroy existing chart
-        if (window.boilerProfileChart) {
-            window.boilerProfileChart.destroy();
+        if (globalThis.boilerProfileChart) {
+            globalThis.boilerProfileChart.destroy();
         }
 
         // Create new chart
         const ctx = canvas.getContext('2d');
-        window.boilerProfileChart = new Chart(ctx, {
+        globalThis.boilerProfileChart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: labels,
@@ -841,7 +837,7 @@ async function renderBoilerHeatmap() {
 
         // Get data from sensor attributes
         const energySensor = hass.states['sensor.oig_bojler_pozadovana_energie'];
-        if (!energySensor || !energySensor.attributes) {
+        if (!energySensor?.attributes) {
             console.warn('[Boiler] Energy sensor not available for heatmap');
             return;
         }
@@ -854,7 +850,7 @@ async function renderBoilerHeatmap() {
         if (!heatmapData || heatmapData.length === 0) {
             const hourlyData = attrs.hourly_avg_kwh || {};
             dataMatrix = Array.from({ length: 7 }, () =>
-                Array.from({ length: 24 }, (_, hour) => parseFloat(hourlyData[hour] || 0))
+                Array.from({ length: 24 }, (_, hour) => Number.parseFloat(hourlyData[hour] || 0))
             );
         }
 
@@ -918,7 +914,7 @@ async function renderBoilerHeatmap() {
 
 
 // Export enhanced boiler functions
-window.DashboardBoiler = Object.assign(window.DashboardBoiler || {}, {
+globalThis.DashboardBoiler = Object.assign(globalThis.DashboardBoiler || {}, {
     initBoilerDashboard,
     loadBoilerData,
     loadBasicBoilerData,

@@ -15,7 +15,7 @@ class CostComparisonTile {
     }
 
     render() {
-        if (!this.summary || !this.summary.plans) {
+        if (!this.summary?.plans) {
             this.container.innerHTML = `
                 <div class="cost-card-placeholder">
                     <span class="cost-card-title">💰 Nákladový přehled</span>
@@ -125,7 +125,7 @@ class CostComparisonTile {
 
     getPlanLabel(planKey) {
         const fallback = 'Standardní';  // Always hybrid
-        const labels = window.PLAN_LABELS && window.PLAN_LABELS[planKey];
+        const labels = globalThis.PLAN_LABELS?.[planKey];
         if (!labels) {
             return fallback;
         }
@@ -148,4 +148,4 @@ class CostComparisonTile {
     }
 }
 
-window.CostComparisonTile = CostComparisonTile;
+globalThis.CostComparisonTile = CostComparisonTile;
