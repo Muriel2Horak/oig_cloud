@@ -104,6 +104,10 @@ class TestOigCloudApi:
         assert ctx1 is ctx2
 
     async def test_get_connector_modes(self, monkeypatch):
+        self.api._ssl_mode = 0
+        connector = self.api._get_connector()
+        assert connector._ssl is not False
+
         self.api._ssl_mode = 1
         monkeypatch.setattr(
             self.api, "_get_ssl_context_with_intermediate", ssl.create_default_context

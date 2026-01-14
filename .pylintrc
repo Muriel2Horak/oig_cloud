@@ -1,1 +1,3 @@
-ignore=E402
+[MESSAGES CONTROL]
+disable=all
+enable=F

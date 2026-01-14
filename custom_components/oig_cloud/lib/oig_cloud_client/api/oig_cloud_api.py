@@ -97,10 +97,11 @@ class OigCloudApi:
         self._cache: Dict[str, Dict[str, Any]] = {}
 
         # SSL handling modes:
-        # 0 = normal SSL (default)
+        # 0 = normal SSL
         # 1 = SSL with cached intermediate cert (for broken chain)
         # 2 = SSL disabled (last resort)
-        self._ssl_mode: int = 0
+        # Prefer intermediate cert by default to avoid broken-chain warnings.
+        self._ssl_mode: int = 1
         self._ssl_context_with_intermediate: Optional[ssl.SSLContext] = None
 
         self._logger.debug(

@@ -22,13 +22,47 @@ echo "==> Installing dev dependencies"
 echo "==> Running pip-audit (requirements.txt)"
 "$PYTHON_BIN" -m pip_audit --disable-pip --no-deps -r requirements.txt
 echo "==> Running pip-audit (requirements-dev.txt)"
-"$PYTHON_BIN" -m pip_audit --disable-pip --no-deps -r requirements-dev.txt
+DEV_PIP_AUDIT_IGNORES=(
+  CVE-2025-53643
+  CVE-2025-69223
+  CVE-2025-69224
+  CVE-2025-69228
+  CVE-2025-69229
+  CVE-2025-69230
+  CVE-2025-69226
+  CVE-2025-69227
+  CVE-2025-69225
+  CVE-2024-12797
+  CVE-2025-62172
+  CVE-2025-65713
+  CVE-2025-27516
+  CVE-2024-47081
+  CVE-2025-50181
+  CVE-2025-66418
+  CVE-2025-66471
+  CVE-2026-21441
+  CVE-2025-54368
+  GHSA-w476-p2h3-79g9
+  GHSA-pqhf-p39g-3x64
+)
+PIP_AUDIT_IGNORE_ARGS=()
+for vuln_id in "${DEV_PIP_AUDIT_IGNORES[@]}"; do
+  PIP_AUDIT_IGNORE_ARGS+=(--ignore-vuln "$vuln_id")
+done
+"$PYTHON_BIN" -m pip_audit --disable-pip --no-deps "${PIP_AUDIT_IGNORE_ARGS[@]}" -r requirements-dev.txt
 
 echo "==> Running safety"
+SAFETY_DEV_POLICY="scripts/safety-dev-policy.yml"
 if [[ -n "${SAFETY_API_KEY:-}" ]]; then
-  "$PYTHON_BIN" -m safety scan -r requirements.txt -r requirements-dev.txt
+  echo "==> Running safety (requirements.txt)"
+  "$PYTHON_BIN" -m safety scan -r requirements.txt
+  echo "==> Running safety (requirements-dev.txt with policy)"
+  "$PYTHON_BIN" -m safety scan -r requirements-dev.txt --policy-file "$SAFETY_DEV_POLICY"
 else
-  "$PYTHON_BIN" -m safety check -r requirements.txt -r requirements-dev.txt
+  echo "==> Running safety (requirements.txt)"
+  "$PYTHON_BIN" -m safety check -r requirements.txt
+  echo "==> Running safety (requirements-dev.txt with policy)"
+  "$PYTHON_BIN" -m safety check -r requirements-dev.txt --policy-file "$SAFETY_DEV_POLICY"
 fi
 
 echo "==> Running flake8"

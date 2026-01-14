@@ -1,0 +1,48 @@
+# Safety policy for dev/test dependencies pinned by pytest-homeassistant-custom-component.
+security:
+  ignore-unpinned-requirements: true
+  ignore-cvss-severity-below: 0
+  ignore-cvss-unknown-severity: false
+  ignore-vulnerabilities:
+    75976:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    76170:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    77680:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    77744:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    78162:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    80464:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    80507:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    80986:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    82331:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    82332:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    83245:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    83955:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    83956:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    83957:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    83958:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    83959:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    83967:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    83968:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    83969:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    84031:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    79083:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.

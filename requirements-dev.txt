@@ -1746,9 +1746,9 @@ pip==25.3 \
     # via
     #   pip-tools
     #   pipdeptree
-pip-tools==7.4.1 \
-    --hash=sha256:4c690e5fbae2f21e87843e89c26191f0d9454f362d8acdbd695716493ec8b3a9 \
-    --hash=sha256:864826f5073864450e24dbeeb85ce3920cdfb09848a3d69ebf537b521f14bcc9
+pip-tools==7.5.2 \
+    --hash=sha256:2d64d72da6a044da1110257d333960563d7a4743637e8617dd2610ae7b82d60f \
+    --hash=sha256:2fe16db727bbe5bf28765aeb581e792e61be51fc275545ef6725374ad720a1ce
     # via -r requirements-dev.in
 pipdeptree==2.23.4 \
     --hash=sha256:6a4b4f45bb4a27a440702747636b98e4b88369c00396a840266d536fc6804b6f \

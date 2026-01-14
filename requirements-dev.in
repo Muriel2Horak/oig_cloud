@@ -8,7 +8,7 @@ pytest-homeassistant-custom-component==0.13.205
 flake8==7.3.0
 black==25.11.0
 isort==7.0.0
-pip-tools==7.4.1
+pip-tools==7.5.2
 
 # Optional: Type checking
 mypy==1.18.2

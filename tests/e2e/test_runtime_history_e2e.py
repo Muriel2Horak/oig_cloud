@@ -155,8 +155,10 @@ async def test_efficiency_history_load_mocked(e2e_setup, monkeypatch, freezer):
     sensor.hass = hass
     sensor.async_write_ha_state = Mock()
 
-    await sensor._try_load_last_month_from_history()
+    now_local = dt_util.as_local(datetime(2026, 2, 15, tzinfo=timezone.utc))
+    await sensor._finalize_last_month(now_local, force=True)
 
-    assert sensor._efficiency_last_month == pytest.approx(65.0)
-    assert sensor._last_month_data["charge_kwh"] == pytest.approx(20.0)
-    assert sensor._last_month_data["discharge_kwh"] == pytest.approx(15.0)
+    assert sensor._last_month_metrics is not None
+    assert sensor._last_month_metrics["efficiency_pct"] == pytest.approx(65.0)
+    assert sensor._last_month_metrics["charge_kwh"] == pytest.approx(20.0)
+    assert sensor._last_month_metrics["discharge_kwh"] == pytest.approx(15.0)

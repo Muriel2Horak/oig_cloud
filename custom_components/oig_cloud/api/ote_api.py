@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import ssl
 import xml.etree.ElementTree as ET  # nosec B314
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -13,6 +14,7 @@ from typing import Any, Dict, List, Optional, TypedDict, cast
 from zoneinfo import ZoneInfo
 
 import aiohttp
+import certifi
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,6 +33,15 @@ OTE_PUBLIC_URL = "https://www.ote-cr.cz/services/PublicDataService"
 SOAP_ACTIONS = {
     "GetDamPricePeriodE": f"{NAMESPACE}/GetDamPricePeriodE",
 }
+
+_SSL_CONTEXT: Optional[ssl.SSLContext] = None
+
+
+def _get_ssl_context() -> ssl.SSLContext:
+    global _SSL_CONTEXT
+    if _SSL_CONTEXT is None:
+        _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+    return _SSL_CONTEXT
 
 
 def _soap_headers(action: str) -> Dict[str, str]:
@@ -98,7 +109,9 @@ class CnbRate:
     async def download_rates(self, day: date) -> Rates:
         params = {"date": day.isoformat()}
         async with aiohttp.ClientSession() as session:
-            async with session.get(self.RATES_URL, params=params) as response:
+            async with session.get(
+                self.RATES_URL, params=params, ssl=_get_ssl_context()
+            ) as response:
                 if response.status > 299:
                     if response.status == 400:
                         error = cast(RateError, await response.json())
@@ -281,7 +294,10 @@ class OteApi:
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
-                    OTE_PUBLIC_URL, data=body_xml, headers=_soap_headers(action)
+                    OTE_PUBLIC_URL,
+                    data=body_xml,
+                    headers=_soap_headers(action),
+                    ssl=_get_ssl_context(),
                 ) as response:
                     text = await response.text()
                     _LOGGER.debug(f"SOAP Response status: {response.status}")
