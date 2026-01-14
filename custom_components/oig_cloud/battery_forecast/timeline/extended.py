@@ -288,26 +288,6 @@ async def _build_historical_only_intervals(
     return intervals
 
 
-def _load_past_planned_from_storage(
-    sensor: Any,
-    storage_plans: Dict[str, Any],
-    date_str: str,
-    day: date,
-) -> tuple[List[Dict[str, Any]], bool, bool]:
-    past_planned: List[Dict[str, Any]] = []
-    storage_day = storage_plans.get("detailed", {}).get(date_str)
-    storage_invalid = sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
-    storage_missing = not storage_day or not storage_day.get("intervals")
-    if storage_day and storage_day.get("intervals") and not storage_invalid:
-        past_planned = storage_day["intervals"]
-        _LOGGER.debug(
-            "📦 Loaded %s planned intervals from Storage Helper for %s",
-            len(past_planned),
-            day,
-        )
-    return past_planned, storage_missing, storage_invalid
-
-
 async def _maybe_repair_baseline(
     sensor: Any,
     storage_plans: Dict[str, Any],
@@ -605,10 +585,17 @@ async def _resolve_mixed_planned(
     date_str: str,
     day: date,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    past_planned, storage_missing, storage_invalid = _load_past_planned_from_storage(
-        sensor, storage_plans, date_str, day
-    )
     storage_day = storage_plans.get("detailed", {}).get(date_str)
+    past_planned: List[Dict[str, Any]] = []
+    storage_invalid = sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
+    storage_missing = not storage_day or not storage_day.get("intervals")
+    if storage_day and storage_day.get("intervals") and not storage_invalid:
+        past_planned = storage_day["intervals"]
+        _LOGGER.debug(
+            "📦 Loaded %s planned intervals from Storage Helper for %s",
+            len(past_planned),
+            day,
+        )
     if sensor._plans_store and (storage_missing or storage_invalid):
         storage_plans = await _maybe_repair_baseline(sensor, storage_plans, date_str)
         storage_day = storage_plans.get("detailed", {}).get(date_str)

@@ -236,8 +236,8 @@ function createChargingBlock(parsed) {
 }
 
 function finalizeChargingBlock(blocks, current) {
-    if (!current) return false;
-    if (current.interval_count <= 0) return false;
+    if (!current) return;
+    if (current.interval_count <= 0) return;
     const avg = current.grid_import_kwh > 0 ? (current.total_cost_czk / current.grid_import_kwh) : 0;
     blocks.push({
         day: current.day,
@@ -248,7 +248,6 @@ function finalizeChargingBlock(blocks, current) {
         total_cost_czk: current.total_cost_czk,
         avg_spot_price_czk: avg
     });
-    return true;
 }
 
 function applyChargingPoint(current, parsed) {
@@ -283,9 +282,8 @@ function buildChargingBlocksFromTimeline(rawTimeline) {
     sorted.forEach((point) => {
         const parsed = parseChargingPoint(point, todayKey);
         if (!parsed) {
-            if (finalizeChargingBlock(blocks, current)) {
-                current = null;
-            }
+            finalizeChargingBlock(blocks, current);
+            current = null;
             return;
         }
 

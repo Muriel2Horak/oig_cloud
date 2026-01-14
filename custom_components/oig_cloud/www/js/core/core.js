@@ -368,7 +368,7 @@ function applyReduceMotion() {
 }
 
 function initLayoutCustomization() {
-    currentBreakpoint = getCurrentBreakpoint();
+    const currentBreakpoint = getCurrentBreakpoint();
     console.log(`[Layout] Initial breakpoint: ${currentBreakpoint}`);
 
     const loaded = loadLayout(currentBreakpoint);
@@ -495,10 +495,9 @@ function setupThemeListeners() {
 }
 // === TAB SWITCHING ===
 let pricingTabActive = false;
-let needsFlowReinitialize = false; // Flag pro vynucené restartování flow animací
-let currentBreakpoint = null;
-let cachedNodeCenters = null;
-let lastLayoutHash = null;
+globalThis.needsFlowReinitialize = globalThis.needsFlowReinitialize ?? false; // Flag pro vynucené restartování flow animací
+globalThis.cachedNodeCenters = globalThis.cachedNodeCenters ?? null;
+globalThis.lastLayoutHash = globalThis.lastLayoutHash ?? null;
 
 function switchTab(tabName) {
     // Zapamatuj si předchozí tab PŘED změnou
@@ -551,8 +550,8 @@ function switchTab(tabName) {
             }
 
             // 3. Invalidovat cache pozic
-            cachedNodeCenters = null;
-            lastLayoutHash = null;
+            globalThis.cachedNodeCenters = null;
+            globalThis.lastLayoutHash = null;
             console.log('[Tab] ✓ Cache invalidated');
 
             // 4. Force browser reflow aby DOM byl stabilní
@@ -571,8 +570,8 @@ function switchTab(tabName) {
                 console.error('[Tab] ✗ Failed to get node centers (DOM not ready), retrying...');
                 // Zkusit znovu s delším timeout
                 setTimeout(() => {
-                    cachedNodeCenters = null;
-                    lastLayoutHash = null;
+                    globalThis.cachedNodeCenters = null;
+                    globalThis.lastLayoutHash = null;
                     const retryCenters = getNodeCenters();
                     console.log('[Tab] Retry node centers result:', retryCenters);
 
@@ -583,7 +582,7 @@ function switchTab(tabName) {
 
                     console.log('[Tab] ✓ Node centers loaded on retry:', Object.keys(retryCenters).length);
                     drawConnections();
-                    needsFlowReinitialize = true;
+                    globalThis.needsFlowReinitialize = true;
                     loadData();
                     console.log('[Tab] ✓ Retry complete');
                 }, 200);
@@ -597,7 +596,7 @@ function switchTab(tabName) {
             console.log('[Tab] ✓ Connections drawn');
 
             // 7. Nastavit flag pro vynucené restartování animací
-            needsFlowReinitialize = true;
+            globalThis.needsFlowReinitialize = true;
             console.log('[Tab] Flag needsFlowReinitialize set to TRUE');
 
             // 8. Načíst aktuální data a restartovat particles

@@ -1132,9 +1132,8 @@ async function loadPricingData() {
             }
         });
 
-            // Uložit kompletní data pro výpočet extrémů (nezávisle na zoomu)
+            // Kompletní data pro výpočet extrémů (nezávisle na zoomu)
             const spotPriceData = prices.map(p => p.price);
-            originalPriceData = spotPriceData;
 
             // Identifikace top/bottom 10% cen z CELÉHO datasetu
             const sortedPrices = [...priceValues].sort((a, b) => a - b);

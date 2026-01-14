@@ -129,9 +129,7 @@ async def _handle_missing_expected(
     original_call: Any,
     blocking: bool,
     context: Optional[Context],
-) -> bool:
-    if not getattr(shield, "_expected_entity_missing", False):
-        return False
+) -> None:
     _LOGGER.debug(
         "Intercept: expected entities missing; calling original service without state verification"
     )
@@ -145,7 +143,6 @@ async def _handle_missing_expected(
         reason="Entita nenalezena – volám službu bez state validace",
         context=context,
     )
-    return True
 
 
 async def _handle_duplicate(
@@ -309,8 +306,8 @@ async def intercept_service_call(
         },
     )
 
-    if not expected_entities:
-        handled = await _handle_missing_expected(
+    if not expected_entities and getattr(shield, "_expected_entity_missing", False):
+        await _handle_missing_expected(
             shield,
             domain,
             service,
@@ -320,8 +317,7 @@ async def intercept_service_call(
             blocking,
             context,
         )
-        if handled:
-            return
+        return
 
     _log_dedup_state(shield, service_name, params, expected_entities)
 

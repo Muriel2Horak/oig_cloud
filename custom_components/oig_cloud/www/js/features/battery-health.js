@@ -12,9 +12,16 @@ let batteryHealthCache = {
     capacity: null,
     measurementCount: null,
     lastMeasured: null,
+    minCapacity: null,
+    maxCapacity: null,
+    qualityScore: null,
     degradation3m: null,
     degradation6m: null,
-    degradation12m: null
+    degradation12m: null,
+    degradationPerYear: null,
+    estimatedEolDate: null,
+    yearsTo80Pct: null,
+    trendConfidence: null
 };
 
 /**
@@ -72,9 +79,16 @@ async function updateBatteryHealthStats() {
         batteryHealthCache.capacity !== capacity ||
         batteryHealthCache.measurementCount !== measurementCount ||
         batteryHealthCache.lastMeasured !== lastMeasured ||
+        batteryHealthCache.minCapacity !== minCapacity ||
+        batteryHealthCache.maxCapacity !== maxCapacity ||
+        batteryHealthCache.qualityScore !== qualityScore ||
         batteryHealthCache.degradation3m !== degradation3mPercent ||
         batteryHealthCache.degradation6m !== degradation6mPercent ||
-        batteryHealthCache.degradation12m !== degradation12mPercent;
+        batteryHealthCache.degradation12m !== degradation12mPercent ||
+        batteryHealthCache.degradationPerYear !== degradationPerYearPercent ||
+        batteryHealthCache.estimatedEolDate !== estimatedEolDate ||
+        batteryHealthCache.yearsTo80Pct !== yearsTo80Pct ||
+        batteryHealthCache.trendConfidence !== trendConfidence;
 
     if (!hasChanged) {
         // Žádné změny, přeskočit update
@@ -86,9 +100,16 @@ async function updateBatteryHealthStats() {
     batteryHealthCache.capacity = capacity;
     batteryHealthCache.measurementCount = measurementCount;
     batteryHealthCache.lastMeasured = lastMeasured;
+    batteryHealthCache.minCapacity = minCapacity;
+    batteryHealthCache.maxCapacity = maxCapacity;
+    batteryHealthCache.qualityScore = qualityScore;
     batteryHealthCache.degradation3m = degradation3mPercent;
     batteryHealthCache.degradation6m = degradation6mPercent;
     batteryHealthCache.degradation12m = degradation12mPercent;
+    batteryHealthCache.degradationPerYear = degradationPerYearPercent;
+    batteryHealthCache.estimatedEolDate = estimatedEolDate;
+    batteryHealthCache.yearsTo80Pct = yearsTo80Pct;
+    batteryHealthCache.trendConfidence = trendConfidence;
 
     console.log('[Battery Health] Values changed, updating UI:', {
         soh,
@@ -181,6 +202,39 @@ function createBatteryHealthContainer() {
     return wrapper;
 }
 
+function getBatteryHealthStatus(soh) {
+    if (soh === null) {
+        return { statusClass: 'status-unknown', statusIcon: '❓', statusText: 'Čekám na data' };
+    }
+    if (soh >= 95) {
+        return { statusClass: 'status-excellent', statusIcon: '✅', statusText: 'Výborný stav' };
+    }
+    if (soh >= 90) {
+        return { statusClass: 'status-good', statusIcon: '✔️', statusText: 'Dobrý stav' };
+    }
+    if (soh >= 80) {
+        return { statusClass: 'status-fair', statusIcon: '⚠️', statusText: 'Střední degradace' };
+    }
+    return { statusClass: 'status-poor', statusIcon: '❌', statusText: 'Vysoká degradace' };
+}
+
+function getDegradationColor(value) {
+    if (value === null || value === undefined) return 'var(--text-secondary)';
+    if (value <= 2) return '#44ff44'; // zelená - výborné
+    if (value <= 5) return '#ffaa00'; // oranžová - střední
+    return '#ff4444'; // červená - vysoká
+}
+
+function formatDegradationRow(label, value) {
+    if (value === null || value === undefined) return '';
+    return `
+        <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+            <span>${label}</span>
+            <span style="color: ${getDegradationColor(value)}; font-weight: 600;">${value.toFixed(2)}%</span>
+        </div>
+    `;
+}
+
 /**
  * Aktualizuje UI Battery Health tile
  */
@@ -202,38 +256,7 @@ function updateBatteryHealthUI(container, data) {
         trendConfidence
     } = data;
 
-    // Určit status a barvu
-    let statusClass = 'status-unknown';
-    let statusIcon = '❓';
-    let statusText = 'Čekám na data';
-
-    if (soh !== null) {
-        if (soh >= 95) {
-            statusClass = 'status-excellent';
-            statusIcon = '✅';
-            statusText = 'Výborný stav';
-        } else if (soh >= 90) {
-            statusClass = 'status-good';
-            statusIcon = '✔️';
-            statusText = 'Dobrý stav';
-        } else if (soh >= 80) {
-            statusClass = 'status-fair';
-            statusIcon = '⚠️';
-            statusText = 'Střední degradace';
-        } else {
-            statusClass = 'status-poor';
-            statusIcon = '❌';
-            statusText = 'Vysoká degradace';
-        }
-    }
-
-    // Funkce pro barvu degradace
-    const getDegradationColor = (value) => {
-        if (value === null || value === undefined) return 'var(--text-secondary)';
-        if (value <= 2) return '#44ff44'; // zelená - výborné
-        if (value <= 5) return '#ffaa00'; // oranžová - střední
-        return '#ff4444'; // červená - vysoká
-    };
+    const { statusClass, statusIcon, statusText } = getBatteryHealthStatus(soh);
 
     // Degradace trendy (3/6/12 měsíců)
     let degradationHTML = '';
@@ -241,24 +264,9 @@ function updateBatteryHealthUI(container, data) {
         degradationHTML = `
             <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
                 <div style="font-weight: 600; margin-bottom: 4px;">📉 Degradace kapacity:</div>
-                ${degradation3mPercent !== null ? `
-                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-                    <span>3 měsíce:</span>
-                    <span style="color: ${getDegradationColor(degradation3mPercent)}; font-weight: 600;">${degradation3mPercent.toFixed(2)}%</span>
-                </div>
-                ` : ''}
-                ${degradation6mPercent !== null ? `
-                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-                    <span>6 měsíců:</span>
-                    <span style="color: ${getDegradationColor(degradation6mPercent)}; font-weight: 600;">${degradation6mPercent.toFixed(2)}%</span>
-                </div>
-                ` : ''}
-                ${degradation12mPercent !== null ? `
-                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-                    <span>12 měsíců:</span>
-                    <span style="color: ${getDegradationColor(degradation12mPercent)}; font-weight: 600;">${degradation12mPercent.toFixed(2)}%</span>
-                </div>
-                ` : ''}
+                ${formatDegradationRow('3 měsíce:', degradation3mPercent)}
+                ${formatDegradationRow('6 měsíců:', degradation6mPercent)}
+                ${formatDegradationRow('12 měsíců:', degradation12mPercent)}
             </div>
         `;
     }

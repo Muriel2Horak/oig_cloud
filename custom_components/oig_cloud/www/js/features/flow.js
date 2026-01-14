@@ -85,7 +85,7 @@ function drawConnections() {
     svg.innerHTML = '';
 
     // OPRAVA BUG #2: Použít cache místo přepočítávání
-    const centers = cachedNodeCenters || getNodeCenters();
+    const centers = globalThis.cachedNodeCenters || getNodeCenters();
     if (!centers) return;
 
     // Draw lines
@@ -173,6 +173,10 @@ const particleFlows = {
     inverterToHouse: { active: false, speed: 2000, count: 0, sources: [] }
 };
 
+globalThis.cachedNodeCenters = globalThis.cachedNodeCenters ?? null;
+globalThis.lastLayoutHash = globalThis.lastLayoutHash ?? null;
+globalThis.needsFlowReinitialize = globalThis.needsFlowReinitialize ?? false;
+
 /**
  * Vyčistí všechny sub-flow klíče pro daný flow
  * @param {string} flowKey - Hlavní klíč toku
@@ -251,13 +255,11 @@ function updateAllParticleFlows() {
     stopAllParticleFlows();
 
     // Invalidovat cache pozic nodes
-    cachedNodeCenters = null;
-    lastLayoutHash = null;
+    globalThis.cachedNodeCenters = null;
+    globalThis.lastLayoutHash = null;
 
     // Nastavit flag pro reinicializaci při dalším update cyklu
-    if (typeof needsFlowReinitialize !== 'undefined') {
-        needsFlowReinitialize = true;
-    }
+    globalThis.needsFlowReinitialize = true;
 
     // NEBUDEME spouštět animateFlow okamžitě - necháme to na normální update cyklus
     // Tím zajistíme že particles dostanou správné pozice z getNodeCenters()
@@ -672,9 +674,6 @@ function getEnergySourceColor(solarRatio, gridRatio, batteryRatio = 0) {
 }
 
 // Global cache for node positions
-let cachedNodeCenters = null;
-let lastLayoutHash = null;
-
 // OPRAVA BUG #4: Cache pro power hodnoty
 let lastPowerValues = null;
 
@@ -720,8 +719,8 @@ function getNodeCenters() {
     const currentHash = getLayoutHash();
 
     // If layout hasn't changed, return cached centers
-    if (currentHash === lastLayoutHash && cachedNodeCenters) {
-        return cachedNodeCenters;
+    if (currentHash === globalThis.lastLayoutHash && globalThis.cachedNodeCenters) {
+        return globalThis.cachedNodeCenters;
     }
 
     // Layout changed - recalculate
@@ -768,7 +767,7 @@ function getNodeCenters() {
     };
 
     // Detect meaningful center movement (avoid restarting particles on tiny shifts).
-    const prev = cachedNodeCenters;
+    const prev = globalThis.cachedNodeCenters;
     const centerShift = (a, b) => {
         if (!a || !b) return 0;
         const dx = (a.x || 0) - (b.x || 0);
@@ -784,11 +783,11 @@ function getNodeCenters() {
             centerShift(prev.house, centers.house),
         )
         : 999;
-    const layoutChanged = currentHash !== lastLayoutHash;
+    const layoutChanged = currentHash !== globalThis.lastLayoutHash;
 
     // Cache the results
-    cachedNodeCenters = centers;
-    lastLayoutHash = currentHash;
+    globalThis.cachedNodeCenters = centers;
+    globalThis.lastLayoutHash = currentHash;
 
     // OPRAVA: Pokud se layout změnil, vyčistit VŠECHNY particles
     // protože mají hardcodované staré cílové pozice v animacích
@@ -801,9 +800,7 @@ function getNodeCenters() {
         }
 
         // Nastavit flag pro reinicializaci
-        if (typeof needsFlowReinitialize !== 'undefined') {
-            needsFlowReinitialize = true;
-        }
+        globalThis.needsFlowReinitialize = true;
 
         // Překreslit čáry s novými pozicemi
         debouncedDrawConnections(50);
@@ -840,9 +837,7 @@ function maybeCleanupParticlesOnPowerChange(current, previous, threshold = 2000)
         // Vyčistit jen pokud je více než 10 kuliček (aby se to nevolalo zbytečně)
         stopAllParticleFlows();
         // Po cleanup nastavit flag pro reinicializaci (už je nastaven v loadData, ale pro jistotu)
-        if (typeof needsFlowReinitialize !== 'undefined') {
-            needsFlowReinitialize = true;
-        }
+        globalThis.needsFlowReinitialize = true;
     }
 }
 
@@ -1619,10 +1614,10 @@ async function loadData() {
             Math.abs(currentPowerValues[key] - (lastPowerValues[key] || 0)) > 0.1
         );
 
-    if (powerChanged || needsFlowReinitialize) {
-        if (needsFlowReinitialize) {
+    if (powerChanged || globalThis.needsFlowReinitialize) {
+        if (globalThis.needsFlowReinitialize) {
             // console.log('[Animation] Flow reinitialize flag set, forcing animation update');
-            needsFlowReinitialize = false; // Reset flag
+            globalThis.needsFlowReinitialize = false; // Reset flag
         } else {
             // console.log('[Animation] Power values changed, updating flow');
         }
