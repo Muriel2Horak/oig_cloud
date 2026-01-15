@@ -445,8 +445,8 @@ async def _load_month_metrics(
             [charge_sensor, discharge_sensor, battery_sensor],
         )
         if stats:
-            charge_sum = _sum_stat_series(stats, charge_sensor)
-            discharge_sum = _sum_stat_series(stats, discharge_sensor)
+            charge_sum = _last_stat_sum(stats, charge_sensor)
+            discharge_sum = _last_stat_sum(stats, discharge_sensor)
             battery_start, battery_end = _extract_stats_bounds(
                 stats, battery_sensor, prefer_sum=False
             )
@@ -593,26 +593,15 @@ def _extract_stat_value(
     return None
 
 
-def _sum_stat_series(
+def _last_stat_sum(
     stats: Optional[Dict[str, Any]],
     entity_id: str,
 ) -> Optional[float]:
     if not stats or entity_id not in stats or not stats[entity_id]:
         return None
-    total = 0.0
-    found = False
-    for item in stats[entity_id]:
-        value = item.get("sum")
-        if value is None:
-            continue
-        try:
-            total += float(value)
-            found = True
-        except (ValueError, TypeError):
-            continue
-    if found:
-        return total
-    # Fallback to latest state-like value if sums are missing.
+    value = _extract_stat_value(stats[entity_id], prefer_sum=True, forward=False)
+    if value is not None:
+        return value
     return _extract_stat_value(stats[entity_id], prefer_sum=False, forward=False)
 
 
