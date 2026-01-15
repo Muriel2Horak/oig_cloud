@@ -374,7 +374,7 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
             # Metadata
             "last_update": self._last_update_iso,
             "calculation_method": "Energy balance with SoC correction",
-            "data_source": "snapshot + recorder fallback",
+            "data_source": "snapshot + month-end history",
             "formula": "(discharge - ΔE_battery) / charge * 100",
             "formula_losses": "charge - (discharge - ΔE_battery)",
             # Internal (for restore)
@@ -416,19 +416,16 @@ def _month_range_local(year: int, month: int) -> tuple[datetime, datetime]:
     tz = dt_util.DEFAULT_TIME_ZONE
     last_day = calendar.monthrange(year, month)[1]
     start_local = datetime(year, month, 1, 0, 0, 0, tzinfo=tz)
-    end_local = datetime(year, month, last_day, 23, 59, 59, tzinfo=tz)
+    end_local = datetime(year, month, last_day, 23, 59, 0, tzinfo=tz)
     return start_local, end_local
 
 
 async def _load_month_metrics(
     hass: Any, box_id: str, year: int, month: int
 ) -> Optional[Dict[str, Any]]:
-    """Compute efficiency metrics for a closed month using recorder history."""
+    """Compute efficiency metrics for a closed month using end-of-month snapshots."""
     try:
         from homeassistant.components.recorder.history import get_significant_states
-        from homeassistant.components.recorder.statistics import (
-            statistics_during_period,
-        )
     except ImportError:
         _LOGGER.warning("Recorder component not available")
         return None
@@ -439,74 +436,28 @@ async def _load_month_metrics(
 
     charge_sensor, discharge_sensor, battery_sensor = _monthly_sensor_ids(box_id)
 
-    # Pull a wide window to ensure we capture values around month boundaries.
-    history = await _load_history_states(
+    history_end = await _load_history_states(
         hass,
         get_significant_states,
-        start_utc - timedelta(days=1),
+        end_utc - timedelta(days=1),
         end_utc,
         [charge_sensor, discharge_sensor, battery_sensor],
     )
 
-    charge_start = _extract_first_numeric(history, charge_sensor)
-    charge_end = _extract_latest_numeric(history, charge_sensor)
-    discharge_start = _extract_first_numeric(history, discharge_sensor)
-    discharge_end = _extract_latest_numeric(history, discharge_sensor)
-    battery_start = _extract_first_numeric(history, battery_sensor)
-    battery_end = _extract_latest_numeric(history, battery_sensor)
+    charge_wh = _extract_latest_numeric(history_end, charge_sensor)
+    discharge_wh = _extract_latest_numeric(history_end, discharge_sensor)
+    battery_end = _extract_latest_numeric(history_end, battery_sensor)
 
-    if (
-        charge_start is None
-        or charge_end is None
-        or discharge_start is None
-        or discharge_end is None
-        or battery_start is None
-        or battery_end is None
-    ):
-        stats = await _load_statistics(
-            hass,
-            statistics_during_period,
-            start_utc,
-            end_utc,
-            [charge_sensor, discharge_sensor, battery_sensor],
-        )
-        if stats:
-            charge_sum = _last_stat_sum(stats, charge_sensor)
-            discharge_sum = _last_stat_sum(stats, discharge_sensor)
-            battery_start, battery_end = _extract_stats_bounds(
-                stats, battery_sensor, prefer_sum=False
-            )
-            charge_start_stats, charge_end_stats = _extract_stats_bounds(
-                stats, charge_sensor, prefer_sum=False
-            )
-            discharge_start_stats, discharge_end_stats = _extract_stats_bounds(
-                stats, discharge_sensor, prefer_sum=False
-            )
-
-            charge_bounds = _resolve_month_delta(
-                charge_start_stats, charge_end_stats, "charge", month, year
-            )
-            discharge_bounds = _resolve_month_delta(
-                discharge_start_stats, discharge_end_stats, "discharge", month, year
-            )
-            if charge_sum is not None and discharge_sum is not None:
-                charge_start = None
-                charge_end = charge_sum
-                discharge_start = None
-                discharge_end = discharge_sum
-            elif charge_bounds is not None and discharge_bounds is not None:
-                charge_start = None
-                charge_end = charge_bounds
-                discharge_start = None
-                discharge_end = discharge_bounds
-
-    charge_wh = _resolve_month_delta(charge_start, charge_end, "charge", month, year)
-    discharge_wh = _resolve_month_delta(
-        discharge_start, discharge_end, "discharge", month, year
+    history_start = await _load_history_states(
+        hass,
+        get_significant_states,
+        start_utc,
+        start_utc + timedelta(days=1),
+        [battery_sensor],
     )
-    if charge_end is not None and discharge_end is not None:
-        charge_wh = charge_end
-        discharge_wh = discharge_end
+    battery_start = _extract_first_numeric(
+        history_start, battery_sensor
+    ) or _extract_latest_numeric(history_start, battery_sensor)
 
     metrics = _compute_metrics_from_wh(
         charge_wh, discharge_wh, battery_start, battery_end
@@ -561,73 +512,6 @@ async def _load_history_states(
     )
 
 
-async def _load_statistics(
-    hass: Any,
-    stats_fn: Any,
-    start_time: datetime,
-    end_time: datetime,
-    entity_ids: list[str],
-) -> Optional[Dict[str, Any]]:
-    try:
-        return await hass.async_add_executor_job(
-            stats_fn,
-            hass,
-            start_time,
-            end_time,
-            set(entity_ids),
-            "day",
-            None,
-            {"mean", "max", "sum", "state"},
-        )
-    except Exception as exc:  # pragma: no cover - recorder can fail early
-        _LOGGER.warning("Failed to load statistics: %s", exc)
-        return None
-
-
-def _extract_stats_bounds(
-    stats: Optional[Dict[str, Any]],
-    entity_id: str,
-    prefer_sum: bool,
-) -> tuple[Optional[float], Optional[float]]:
-    if not stats or entity_id not in stats or not stats[entity_id]:
-        return None, None
-    items = stats[entity_id]
-    first_value = _extract_stat_value(items, prefer_sum, forward=True)
-    last_value = _extract_stat_value(items, prefer_sum, forward=False)
-    return first_value, last_value
-
-
-def _extract_stat_value(
-    items: list[Dict[str, Any]],
-    prefer_sum: bool,
-    forward: bool,
-) -> Optional[float]:
-    keys = ("sum", "state", "max", "mean") if prefer_sum else ("state", "mean", "max", "sum")
-    iterable = items if forward else reversed(items)
-    for item in iterable:
-        for key in keys:
-            value = item.get(key)
-            if value is None:
-                continue
-            try:
-                return float(value)
-            except (ValueError, TypeError):
-                continue
-    return None
-
-
-def _last_stat_sum(
-    stats: Optional[Dict[str, Any]],
-    entity_id: str,
-) -> Optional[float]:
-    if not stats or entity_id not in stats or not stats[entity_id]:
-        return None
-    value = _extract_stat_value(stats[entity_id], prefer_sum=True, forward=False)
-    if value is not None:
-        return value
-    return _extract_stat_value(stats[entity_id], prefer_sum=False, forward=False)
-
-
 def _is_efficiency_plausible(value: Optional[float]) -> bool:
     if value is None:
         return False
@@ -664,46 +548,6 @@ def _extract_first_numeric(
         except (ValueError, TypeError):
             continue
     return None
-
-
-def _resolve_month_delta(
-    start_value: Optional[float],
-    end_value: Optional[float],
-    label: str,
-    month: int,
-    year: int,
-) -> Optional[float]:
-    if end_value is None:
-        return None
-    if start_value is None:
-        return end_value
-    delta = end_value - start_value
-    if delta < 0:
-        _LOGGER.info(
-            "Detected %s reset for %s/%s: start=%s end=%s, using end as total",
-            label,
-            month,
-            year,
-            start_value,
-            end_value,
-        )
-        return end_value
-    return delta
-
-
-async def _load_battery_start(
-    hass: Any, history_fn: Any, battery_sensor: str, start_time: datetime
-) -> Optional[float]:
-    history_start = await hass.async_add_executor_job(
-        history_fn,
-        hass,
-        start_time,
-        start_time + timedelta(hours=1),
-        [battery_sensor],
-    )
-    return _extract_first_numeric(history_start, battery_sensor) or _extract_latest_numeric(
-        history_start, battery_sensor
-    )
 
 
 def _compute_metrics_from_wh(
