@@ -445,15 +445,16 @@ async def _load_month_metrics(
             [charge_sensor, discharge_sensor, battery_sensor],
         )
         if stats:
-            charge_start, charge_end = _extract_stats_bounds(
-                stats, charge_sensor, prefer_sum=False
-            )
-            discharge_start, discharge_end = _extract_stats_bounds(
-                stats, discharge_sensor, prefer_sum=False
-            )
+            charge_wh = _sum_stat_series(stats, charge_sensor)
+            discharge_wh = _sum_stat_series(stats, discharge_sensor)
             battery_start, battery_end = _extract_stats_bounds(
                 stats, battery_sensor, prefer_sum=False
             )
+            # If sums are available, skip delta for charge/discharge.
+            charge_start = None
+            charge_end = charge_wh
+            discharge_start = None
+            discharge_end = discharge_wh
 
     charge_wh = _resolve_month_delta(charge_start, charge_end, "charge", month, year)
     discharge_wh = _resolve_month_delta(
@@ -556,6 +557,29 @@ def _extract_stat_value(
             except (ValueError, TypeError):
                 continue
     return None
+
+
+def _sum_stat_series(
+    stats: Optional[Dict[str, Any]],
+    entity_id: str,
+) -> Optional[float]:
+    if not stats or entity_id not in stats or not stats[entity_id]:
+        return None
+    total = 0.0
+    found = False
+    for item in stats[entity_id]:
+        value = item.get("sum")
+        if value is None:
+            continue
+        try:
+            total += float(value)
+            found = True
+        except (ValueError, TypeError):
+            continue
+    if found:
+        return total
+    # Fallback to latest state-like value if sums are missing.
+    return _extract_stat_value(stats[entity_id], prefer_sum=False, forward=False)
 
 
 def _extract_latest_numeric(
