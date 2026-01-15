@@ -57,6 +57,12 @@ class BatteryHealthTracker:
         box_id: str,
         nominal_capacity_kwh: float = 15.3,  # kWh - skutečná kapacita baterie
     ) -> None:
+        self._recorder_days = 10
+        self._stats_backfill_days = 120
+        self._min_delta_soc = 50
+        self._min_duration_hours = 3.0
+        self._min_charge_wh = 2000
+        self._soc_drop_tolerance = 1.5
         self._hass = hass
         self._box_id = box_id
         self._nominal_capacity_kwh = nominal_capacity_kwh
@@ -65,6 +71,7 @@ class BatteryHealthTracker:
         self._store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{box_id}")
         self._measurements: List[CapacityMeasurement] = []
         self._last_analysis: Optional[datetime] = None
+        self._stats_backfill_until: Optional[datetime] = None
 
         _LOGGER.info(
             f"BatteryHealthTracker initialized, nominal capacity: {nominal_capacity_kwh:.2f} kWh"
@@ -80,6 +87,10 @@ class BatteryHealthTracker:
                 ]
                 if data.get("last_analysis"):
                     self._last_analysis = datetime.fromisoformat(data["last_analysis"])
+                if data.get("stats_backfill_until"):
+                    self._stats_backfill_until = datetime.fromisoformat(
+                        data["stats_backfill_until"]
+                    )
                 _LOGGER.info(
                     f"Loaded {len(self._measurements)} measurements from storage"
                 )
@@ -95,6 +106,11 @@ class BatteryHealthTracker:
                 ],  # Max 100
                 "last_analysis": (
                     self._last_analysis.isoformat() if self._last_analysis else None
+                ),
+                "stats_backfill_until": (
+                    self._stats_backfill_until.isoformat()
+                    if self._stats_backfill_until
+                    else None
                 ),
                 "nominal_capacity_kwh": self._nominal_capacity_kwh,
             }
@@ -114,7 +130,7 @@ class BatteryHealthTracker:
         from homeassistant.components.recorder.history import get_significant_states
 
         end_time = dt_util.now()
-        start_time = end_time - timedelta(days=10)
+        start_time = end_time - timedelta(days=self._recorder_days)
 
         _LOGGER.info(f"Analyzing {start_time} to {end_time} for clean charging cycles")
 
@@ -186,6 +202,75 @@ class BatteryHealthTracker:
             _LOGGER.error(f"Error analyzing history: {e}", exc_info=True)
             return []
 
+    async def backfill_from_statistics(self) -> List[CapacityMeasurement]:
+        """Backfill starších dat z recorder statistics."""
+        if self._stats_backfill_until is not None:
+            return []
+
+        end_time = dt_util.now() - timedelta(days=self._recorder_days)
+        start_time = end_time - timedelta(days=self._stats_backfill_days)
+        if start_time >= end_time:
+            return []
+
+        soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
+        charge_sensor = f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month"
+
+        try:
+            from homeassistant.components.recorder.statistics import (
+                statistics_during_period,
+            )
+        except Exception as exc:
+            _LOGGER.warning("Statistics not available: %s", exc)
+            return []
+
+        stats = await self._hass.async_add_executor_job(
+            statistics_during_period,
+            self._hass,
+            start_time,
+            end_time,
+            {soc_sensor, charge_sensor},
+            "day",
+            None,
+            {"mean", "max", "sum", "state"},
+        )
+
+        soc_points = self._extract_soc_points(stats.get(soc_sensor) if stats else None)
+        charge_points = self._extract_charge_points(
+            stats.get(charge_sensor) if stats else None
+        )
+
+        if not soc_points or not charge_points:
+            _LOGGER.warning("Statistics backfill missing data")
+            return []
+
+        intervals = self._find_monotonic_intervals_from_points(soc_points)
+        new_measurements: List[CapacityMeasurement] = []
+
+        for start_time_cycle, end_time_cycle, start_soc, end_soc in intervals:
+            charge_start = self._nearest_value(charge_points, start_time_cycle)
+            charge_end = self._nearest_value(charge_points, end_time_cycle)
+            if charge_start is None or charge_end is None:
+                continue
+            charge_energy = charge_end - charge_start
+            if charge_energy < 0:
+                continue
+            measurement = self._build_measurement(
+                start_time_cycle, end_time_cycle, start_soc, end_soc, charge_energy
+            )
+            if measurement and not any(
+                m.timestamp == measurement.timestamp for m in self._measurements
+            ):
+                self._measurements.append(measurement)
+                new_measurements.append(measurement)
+
+        if new_measurements:
+            self._stats_backfill_until = end_time
+            await self.async_save_to_storage()
+            _LOGGER.info(
+                "Backfilled %d measurements from statistics", len(new_measurements)
+            )
+        return new_measurements
+
     def _find_monotonic_charging_intervals(self, soc_states: List) -> List[tuple]:
         """
         Najít intervaly kde SoC MONOTÓNNĚ ROSTE (nikdy neklesne) o ≥50%.
@@ -215,7 +300,7 @@ class BatteryHealthTracker:
                 interval_start_time = timestamp
                 interval_start_soc = soc
                 interval_max_soc = soc
-            elif soc >= last_soc:
+            elif soc >= last_soc - self._soc_drop_tolerance:
                 interval_max_soc = soc
             else:
                 self._maybe_add_interval(
@@ -224,6 +309,7 @@ class BatteryHealthTracker:
                     prev_timestamp,
                     interval_start_soc,
                     interval_max_soc,
+                    self._min_duration_hours,
                 )
                 interval_start_time = timestamp
                 interval_start_soc = soc
@@ -238,6 +324,7 @@ class BatteryHealthTracker:
             prev_timestamp,
             interval_start_soc,
             interval_max_soc,
+            self._min_duration_hours,
         )
 
         return intervals
@@ -249,11 +336,15 @@ class BatteryHealthTracker:
         end_time: Optional[datetime],
         start_soc: Optional[float],
         end_soc: Optional[float],
+        min_duration_hours: float,
     ) -> None:
         if start_soc is None or end_soc is None or start_time is None:
             return
         delta_soc = end_soc - start_soc
-        if delta_soc < 50 or end_time is None:
+        if delta_soc < self._min_delta_soc or end_time is None:
+            return
+        duration_hours = (end_time - start_time).total_seconds() / 3600
+        if duration_hours < min_duration_hours:
             return
         intervals.append((start_time, end_time, start_soc, end_soc))
         _LOGGER.debug(
@@ -262,6 +353,116 @@ class BatteryHealthTracker:
             end_soc,
             delta_soc,
         )
+
+    def _extract_soc_points(
+        self, stats: Optional[List[Dict[str, Any]]]
+    ) -> List[tuple]:
+        if not stats:
+            return []
+        points = []
+        for item in stats:
+            timestamp = self._parse_stat_time(item)
+            if not timestamp:
+                continue
+            value = item.get("max")
+            if value is None:
+                value = item.get("mean")
+            if value is None:
+                continue
+            try:
+                points.append((timestamp, float(value)))
+            except (ValueError, TypeError):
+                continue
+        return sorted(points, key=lambda x: x[0])
+
+    def _extract_charge_points(
+        self, stats: Optional[List[Dict[str, Any]]]
+    ) -> List[tuple]:
+        if not stats:
+            return []
+        points = []
+        for item in stats:
+            timestamp = self._parse_stat_time(item)
+            if not timestamp:
+                continue
+            value = item.get("state")
+            if value is None:
+                value = item.get("sum")
+            if value is None:
+                value = item.get("max")
+            if value is None:
+                value = item.get("mean")
+            if value is None:
+                continue
+            try:
+                points.append((timestamp, float(value)))
+            except (ValueError, TypeError):
+                continue
+        return sorted(points, key=lambda x: x[0])
+
+    @staticmethod
+    def _parse_stat_time(item: Dict[str, Any]) -> Optional[datetime]:
+        value = item.get("start") or item.get("start_time")
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            parsed = dt_util.parse_datetime(value)
+            if parsed:
+                return parsed
+        return None
+
+    @staticmethod
+    def _nearest_value(points: List[tuple], target_time: datetime) -> Optional[float]:
+        if not points:
+            return None
+        return min(points, key=lambda p: abs((p[0] - target_time).total_seconds()))[1]
+
+    def _find_monotonic_intervals_from_points(self, points: List[tuple]) -> List[tuple]:
+        intervals: List[tuple] = []
+        if not points:
+            return intervals
+
+        interval_start_time = None
+        interval_start_soc = None
+        interval_max_soc = None
+        last_soc = None
+        prev_timestamp = None
+
+        for timestamp, soc in points:
+            if last_soc is None:
+                interval_start_time = timestamp
+                interval_start_soc = soc
+                interval_max_soc = soc
+            elif soc >= last_soc - self._soc_drop_tolerance:
+                interval_max_soc = soc
+            else:
+                self._maybe_add_interval(
+                    intervals,
+                    interval_start_time,
+                    prev_timestamp,
+                    interval_start_soc,
+                    interval_max_soc,
+                    self._min_duration_hours,
+                )
+                interval_start_time = timestamp
+                interval_start_soc = soc
+                interval_max_soc = soc
+
+            prev_timestamp = timestamp
+            last_soc = soc
+
+        self._maybe_add_interval(
+            intervals,
+            interval_start_time,
+            prev_timestamp,
+            interval_start_soc,
+            interval_max_soc,
+            self._min_duration_hours,
+        )
+
+        return intervals
 
     def _calculate_capacity(
         self,
@@ -287,23 +488,11 @@ class BatteryHealthTracker:
             return None
 
         charge_energy = charge_end - charge_start
+        return self._build_measurement(
+            start_time, end_time, start_soc, end_soc, charge_energy
+        )
 
-        # Kontrola resetu měsíce (záporná hodnota = reset)
-        if charge_energy < 0:
-            _LOGGER.debug("Interval rejected: charge_month reset detected")
-            return None
-
-        # Kontrola minimální energie (filtr šumu)
-        if charge_energy < 1000:  # Méně než 1 kWh
-            _LOGGER.debug(
-                f"Interval rejected: too little energy ({charge_energy:.0f} Wh)"
-            )
-            return None
-
-        # charge_energy z computed_batt_charge_energy_month je měřena na AC straně střídače
-        # Pro výpočet kapacity potřebujeme DC energii uloženou v baterii
-        # Použijeme odmocninu z round-trip účinnosti jako přibližnou nabíjecí účinnost
-        # (round-trip = nabíjecí × vybíjecí, obě jsou podobné)
+    def _resolve_charging_efficiency(self) -> float:
         efficiency_sensor = f"sensor.oig_{self._box_id}_battery_efficiency"
         efficiency_state = self._hass.states.get(efficiency_sensor)
         if efficiency_state and efficiency_state.state not in [
@@ -312,25 +501,41 @@ class BatteryHealthTracker:
         ]:
             try:
                 round_trip_eff = float(efficiency_state.state) / 100.0
-                # Nabíjecí účinnost ≈ √(round_trip) - obě směry mají podobnou účinnost
-                charging_efficiency = round_trip_eff**0.5
+                return round_trip_eff**0.5
             except (ValueError, TypeError):
-                charging_efficiency = 0.97  # Fallback (~√0.94)
-        else:
-            charging_efficiency = 0.97  # Fallback pokud senzor neexistuje
+                return 0.97
+        return 0.97
 
-        # Reálně uložená energie = nabíjená energie × nabíjecí účinnost
+    def _build_measurement(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        start_soc: float,
+        end_soc: float,
+        charge_energy: float,
+    ) -> Optional[CapacityMeasurement]:
+        # Kontrola resetu měsíce (záporná hodnota = reset)
+        if charge_energy < 0:
+            _LOGGER.debug("Interval rejected: charge_month reset detected")
+            return None
+
+        # Kontrola minimální energie (filtr šumu)
+        if charge_energy < self._min_charge_wh:
+            _LOGGER.debug(
+                f"Interval rejected: too little energy ({charge_energy:.0f} Wh)"
+            )
+            return None
+
+        charging_efficiency = self._resolve_charging_efficiency()
         stored_energy = charge_energy * charging_efficiency
 
-        # Výpočet kapacity: energie / delta_soc
         delta_soc = end_soc - start_soc
+        if delta_soc < self._min_delta_soc:
+            return None
+
         capacity_kwh = (stored_energy / 1000.0) / (delta_soc / 100.0)
         soh_percent = (capacity_kwh / self._nominal_capacity_kwh) * 100.0
 
-        # Sanity check: odmítnout nereálné hodnoty
-        # Integrální senzor energie může mít chyby (vzorkování, zaokrouhlování, drift)
-        # Proto tolerujeme SoH až do 105% (5% tolerance pro měřicí chyby)
-        # Pod 70% je extrémní degradace - pravděpodobně chyba měření
         if soh_percent > 105.0:
             _LOGGER.warning(
                 f"Interval rejected: SoH {soh_percent:.1f}% > 105%% (measurement error), "
@@ -346,11 +551,12 @@ class BatteryHealthTracker:
             )
             return None
 
-        # Omezit SoH na max 100% pro zobrazení (i když měření ukazuje víc kvůli chybám)
         soh_percent = min(soh_percent, 100.0)
 
         duration = end_time - start_time
         duration_hours = duration.total_seconds() / 3600
+        if duration_hours < self._min_duration_hours:
+            return None
 
         measurement = CapacityMeasurement(
             timestamp=end_time.isoformat(),
@@ -512,6 +718,7 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
         """Počáteční analýza po startu."""
         # Počkat 60 sekund na stabilizaci HA
         await asyncio.sleep(60)
+        await self._tracker.backfill_from_statistics()
         await self._tracker.analyze_last_10_days()
         self.async_write_ha_state()
 
