@@ -521,9 +521,18 @@ class OigCloudPlannerRecommendedModeSensor(
         timeline: Any,
     ) -> tuple[Any, bool]:
         planned_detail = bool(detail_intervals and isinstance(detail_intervals, list))
-        if planned_detail:
-            return detail_intervals, True
-        return timeline, False
+        if not planned_detail:
+            return [], False
+        planned_only = [
+            item
+            for item in detail_intervals
+            if self._interval_has_planned_mode(item)
+        ]
+        return planned_only, True
+
+    def _interval_has_planned_mode(self, interval: Dict[str, Any]) -> bool:
+        mode_label, mode_code = self._planned_mode_from_interval(interval)
+        return bool(mode_label or mode_code is not None)
 
     def _resolve_current_interval(
         self,
@@ -544,21 +553,9 @@ class OigCloudPlannerRecommendedModeSensor(
                     planned=True,
                 )
             )
-            if current_mode is None and isinstance(timeline, list):
-                return self._find_current_interval(
-                    timeline,
-                    now,
-                    detail_date,
-                    planned=False,
-                )
             return current_idx, current_start, current_mode, current_mode_code
 
-        return self._find_current_interval(
-            source_intervals,
-            now,
-            None,
-            planned=False,
-        )
+        return None, None, None, None
 
     def _resolve_next_change(
         self,

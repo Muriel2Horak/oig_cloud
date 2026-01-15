@@ -11,10 +11,12 @@ from custom_components.oig_cloud.battery_forecast.sensors.recommended_sensor imp
 )
 
 
-def _build_precomputed_payload(timeline: list[dict], *, ts: str) -> dict:
+def _build_precomputed_payload(
+    timeline: list[dict], detail_intervals: list[dict], *, ts: str, date: str
+) -> dict:
     return {
-        "detail_tabs": {},
-        "detail_tabs_hybrid": {},
+        "detail_tabs": {"today": {"date": date, "intervals": detail_intervals}},
+        "detail_tabs_hybrid": {"today": {"date": date, "intervals": detail_intervals}},
         "unified_cost_tile": {},
         "unified_cost_tile_hybrid": {},
         "timeline": timeline,
@@ -49,8 +51,14 @@ async def test_forecast_provider_switch_updates_recommended_mode(
         {"time": "2026-01-01T12:00:00+00:00", "mode_name": "Home 1", "mode": 0},
         {"time": "2026-01-01T12:15:00+00:00", "mode_name": "Home 2", "mode": 1},
     ]
+    detail_a = [
+        {"time": "12:00", "planned": {"mode": 0, "mode_name": "HOME I"}},
+        {"time": "12:15", "planned": {"mode": 1, "mode_name": "HOME II"}},
+    ]
     await store.async_save(
-        _build_precomputed_payload(timeline_a, ts="2026-01-01T12:00:00+00:00")
+        _build_precomputed_payload(
+            timeline_a, detail_a, ts="2026-01-01T12:00:00+00:00", date="2026-01-01"
+        )
     )
 
     await sensor.async_added_to_hass()
@@ -61,8 +69,14 @@ async def test_forecast_provider_switch_updates_recommended_mode(
         {"time": "2026-01-01T12:00:00+00:00", "mode_name": "Home 3", "mode": 2},
         {"time": "2026-01-01T12:15:00+00:00", "mode_name": "Home 2", "mode": 1},
     ]
+    detail_b = [
+        {"time": "12:00", "planned": {"mode": 2, "mode_name": "HOME III"}},
+        {"time": "12:15", "planned": {"mode": 1, "mode_name": "HOME II"}},
+    ]
     await store.async_save(
-        _build_precomputed_payload(timeline_b, ts="2026-01-01T12:05:00+00:00")
+        _build_precomputed_payload(
+            timeline_b, detail_b, ts="2026-01-01T12:05:00+00:00", date="2026-01-01"
+        )
     )
 
     async_dispatcher_send(hass, f"oig_cloud_{box_id}_forecast_updated")
