@@ -409,20 +409,26 @@ async def _load_month_metrics(
     end_utc = dt_util.as_utc(end_local)
 
     charge_sensor, discharge_sensor, battery_sensor = _monthly_sensor_ids(box_id)
-    history_end = await _load_history_states(
+
+    # Pull a wide window to ensure we capture values around month boundaries.
+    history = await _load_history_states(
         hass,
         get_significant_states,
-        end_utc - timedelta(hours=1),
+        start_utc - timedelta(days=1),
         end_utc,
         [charge_sensor, discharge_sensor, battery_sensor],
     )
 
-    charge_wh = _extract_latest_numeric(history_end, charge_sensor)
-    discharge_wh = _extract_latest_numeric(history_end, discharge_sensor)
-    battery_end = _extract_latest_numeric(history_end, battery_sensor)
+    charge_start = _extract_first_numeric(history, charge_sensor)
+    charge_end = _extract_latest_numeric(history, charge_sensor)
+    discharge_start = _extract_first_numeric(history, discharge_sensor)
+    discharge_end = _extract_latest_numeric(history, discharge_sensor)
+    battery_start = _extract_first_numeric(history, battery_sensor)
+    battery_end = _extract_latest_numeric(history, battery_sensor)
 
-    battery_start = await _load_battery_start(
-        hass, get_significant_states, battery_sensor, start_utc
+    charge_wh = _resolve_month_delta(charge_start, charge_end, "charge", month, year)
+    discharge_wh = _resolve_month_delta(
+        discharge_start, discharge_end, "discharge", month, year
     )
 
     metrics = _compute_metrics_from_wh(
@@ -498,6 +504,31 @@ def _extract_first_numeric(
         except (ValueError, TypeError):
             continue
     return None
+
+
+def _resolve_month_delta(
+    start_value: Optional[float],
+    end_value: Optional[float],
+    label: str,
+    month: int,
+    year: int,
+) -> Optional[float]:
+    if end_value is None:
+        return None
+    if start_value is None:
+        return end_value
+    delta = end_value - start_value
+    if delta < 0:
+        _LOGGER.info(
+            "Detected %s reset for %s/%s: start=%s end=%s, using end as total",
+            label,
+            month,
+            year,
+            start_value,
+            end_value,
+        )
+        return end_value
+    return delta
 
 
 async def _load_battery_start(
