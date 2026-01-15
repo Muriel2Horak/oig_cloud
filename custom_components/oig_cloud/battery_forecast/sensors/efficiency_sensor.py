@@ -504,6 +504,9 @@ async def _load_month_metrics(
     discharge_wh = _resolve_month_delta(
         discharge_start, discharge_end, "discharge", month, year
     )
+    if charge_end is not None and discharge_end is not None:
+        charge_wh = charge_end
+        discharge_wh = discharge_end
 
     metrics = _compute_metrics_from_wh(
         charge_wh, discharge_wh, battery_start, battery_end
