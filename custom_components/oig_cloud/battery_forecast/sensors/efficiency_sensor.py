@@ -463,16 +463,16 @@ async def _load_month_metrics(
             discharge_bounds = _resolve_month_delta(
                 discharge_start_stats, discharge_end_stats, "discharge", month, year
             )
-            if charge_bounds is not None and discharge_bounds is not None:
-                charge_start = None
-                charge_end = charge_bounds
-                discharge_start = None
-                discharge_end = discharge_bounds
-            elif charge_sum is not None and discharge_sum is not None:
+            if charge_sum is not None and discharge_sum is not None:
                 charge_start = None
                 charge_end = charge_sum
                 discharge_start = None
                 discharge_end = discharge_sum
+            elif charge_bounds is not None and discharge_bounds is not None:
+                charge_start = None
+                charge_end = charge_bounds
+                discharge_start = None
+                discharge_end = discharge_bounds
 
     charge_wh = _resolve_month_delta(charge_start, charge_end, "charge", month, year)
     discharge_wh = _resolve_month_delta(
@@ -482,7 +482,17 @@ async def _load_month_metrics(
     metrics = _compute_metrics_from_wh(
         charge_wh, discharge_wh, battery_start, battery_end
     )
-    if not metrics:
+    if not metrics or not _is_efficiency_plausible(metrics.get("efficiency_pct")):
+        if metrics and not _is_efficiency_plausible(metrics.get("efficiency_pct")):
+            _LOGGER.warning(
+                "Implausible efficiency for %s/%s: %.1f%% (charge=%.2f kWh, discharge=%.2f kWh, delta=%.2f kWh)",
+                month,
+                year,
+                metrics.get("efficiency_pct") or -1,
+                metrics.get("charge_kwh") or 0,
+                metrics.get("discharge_kwh") or 0,
+                metrics.get("delta_kwh") or 0,
+            )
         _log_last_month_failure(
             month,
             year,
@@ -587,6 +597,12 @@ def _last_stat_sum(
     if value is not None:
         return value
     return _extract_stat_value(stats[entity_id], prefer_sum=False, forward=False)
+
+
+def _is_efficiency_plausible(value: Optional[float]) -> bool:
+    if value is None:
+        return False
+    return 50.0 <= value <= 110.0
 
 
 def _extract_latest_numeric(
