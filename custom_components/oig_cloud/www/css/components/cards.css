@@ -10,18 +10,22 @@
    =================================== */
 
         .stat-card {
-            background: var(--bg-secondary);
+            background: linear-gradient(135deg, rgba(18, 25, 40, 0.72) 0%, rgba(18, 25, 40, 0.35) 100%);
             border-radius: 8px;
-            border: 1px solid var(--border-primary);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             padding: 15px;
             transition: transform 0.2s, box-shadow 0.2s, border-color 0.3s, background 0.3s;
             display: flex;
             flex-direction: column;
+            backdrop-filter: blur(14px) saturate(120%);
+            -webkit-backdrop-filter: blur(14px) saturate(120%);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
         }
 
         .stat-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgb(0, 0, 0, 0.3);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+            border-color: rgba(255, 255, 255, 0.14);
         }
 
         .stat-card.zoom-active {
@@ -62,14 +66,16 @@
     align-items: center;
     gap: 1rem;
     padding: 1.25rem;
-    background: rgb(255, 255, 255, 0.05);
+    background: linear-gradient(135deg, rgba(18, 25, 40, 0.72) 0%, rgba(18, 25, 40, 0.35) 100%);
     border-radius: 12px;
-    border: 1px solid rgb(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     transition: all 0.3s ease;
+    backdrop-filter: blur(14px) saturate(120%);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
 }
 
 .card:hover {
-    background: rgb(255, 255, 255, 0.08);
+    background: linear-gradient(135deg, rgba(24, 32, 50, 0.8) 0%, rgba(24, 32, 50, 0.45) 100%);
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgb(0, 0, 0, 0.2);
 }
