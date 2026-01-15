@@ -445,16 +445,50 @@ async def _load_month_metrics(
             [charge_sensor, discharge_sensor, battery_sensor],
         )
         if stats:
-            charge_wh = _sum_stat_series(stats, charge_sensor)
-            discharge_wh = _sum_stat_series(stats, discharge_sensor)
+            charge_sum = _sum_stat_series(stats, charge_sensor)
+            discharge_sum = _sum_stat_series(stats, discharge_sensor)
             battery_start, battery_end = _extract_stats_bounds(
                 stats, battery_sensor, prefer_sum=False
             )
-            # If sums are available, skip delta for charge/discharge.
-            charge_start = None
-            charge_end = charge_wh
-            discharge_start = None
-            discharge_end = discharge_wh
+            charge_start_stats, charge_end_stats = _extract_stats_bounds(
+                stats, charge_sensor, prefer_sum=False
+            )
+            discharge_start_stats, discharge_end_stats = _extract_stats_bounds(
+                stats, discharge_sensor, prefer_sum=False
+            )
+
+            metrics_sum = (
+                _compute_metrics_from_wh(
+                    charge_sum, discharge_sum, battery_start, battery_end
+                )
+                if charge_sum is not None and discharge_sum is not None
+                else None
+            )
+            charge_bounds = _resolve_month_delta(
+                charge_start_stats, charge_end_stats, "charge", month, year
+            )
+            discharge_bounds = _resolve_month_delta(
+                discharge_start_stats, discharge_end_stats, "discharge", month, year
+            )
+            metrics_bounds = (
+                _compute_metrics_from_wh(
+                    charge_bounds, discharge_bounds, battery_start, battery_end
+                )
+                if charge_bounds is not None and discharge_bounds is not None
+                else None
+            )
+
+            chosen = _select_metrics(metrics_sum, metrics_bounds)
+            if chosen == "bounds":
+                charge_start = None
+                charge_end = charge_bounds
+                discharge_start = None
+                discharge_end = discharge_bounds
+            elif chosen == "sum":
+                charge_start = None
+                charge_end = charge_sum
+                discharge_start = None
+                discharge_end = discharge_sum
 
     charge_wh = _resolve_month_delta(charge_start, charge_end, "charge", month, year)
     discharge_wh = _resolve_month_delta(
@@ -580,6 +614,27 @@ def _sum_stat_series(
         return total
     # Fallback to latest state-like value if sums are missing.
     return _extract_stat_value(stats[entity_id], prefer_sum=False, forward=False)
+
+
+def _select_metrics(
+    metrics_sum: Optional[Dict[str, float]],
+    metrics_bounds: Optional[Dict[str, float]],
+) -> Optional[str]:
+    if metrics_sum and _is_efficiency_plausible(metrics_sum.get("efficiency_pct")):
+        return "sum"
+    if metrics_bounds and _is_efficiency_plausible(metrics_bounds.get("efficiency_pct")):
+        return "bounds"
+    if metrics_sum:
+        return "sum"
+    if metrics_bounds:
+        return "bounds"
+    return None
+
+
+def _is_efficiency_plausible(value: Optional[float]) -> bool:
+    if value is None:
+        return False
+    return 50.0 <= value <= 110.0
 
 
 def _extract_latest_numeric(
