@@ -446,10 +446,10 @@ async def _load_month_metrics(
         )
         if stats:
             charge_start, charge_end = _extract_stats_bounds(
-                stats, charge_sensor, prefer_sum=True
+                stats, charge_sensor, prefer_sum=False
             )
             discharge_start, discharge_end = _extract_stats_bounds(
-                stats, discharge_sensor, prefer_sum=True
+                stats, discharge_sensor, prefer_sum=False
             )
             battery_start, battery_end = _extract_stats_bounds(
                 stats, battery_sensor, prefer_sum=False
