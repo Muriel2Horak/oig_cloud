@@ -843,10 +843,6 @@ function executeTileButtonAction(entityId, action) {
 }
 
 // === ČHMÚ (moved to dashboard-chmu.js) ===
-const updateChmuWarningBadgeRef = globalThis.DashboardChmu?.updateChmuWarningBadge;
-const toggleChmuWarningModalRef = globalThis.DashboardChmu?.toggleChmuWarningModal;
-const openChmuWarningModalRef = globalThis.DashboardChmu?.openChmuWarningModal;
-const closeChmuWarningModalRef = globalThis.DashboardChmu?.closeChmuWarningModal;
 
 // === BATTERY & PRICING ANALYTICS (moved to modules) ===
 const updateBatteryEfficiencyBarRef = globalThis.DashboardAnalytics?.updateBatteryEfficiencyBar;

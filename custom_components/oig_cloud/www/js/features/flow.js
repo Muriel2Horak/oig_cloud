@@ -1194,22 +1194,6 @@ let formatPowerRef = globalThis.DashboardUtils?.formatPower;
 let formatEnergyValue = globalThis.DashboardUtils?.formatEnergy;
 let updateElementIfChangedRef = globalThis.DashboardUtils?.updateElementIfChanged;
 
-// Legacy wrapper kept for backward compatibility
-function updateElementIfChanged_legacy(elementId, newValue, cacheKey) {
-    if (!cacheKey) cacheKey = elementId;
-    const element = document.getElementById(elementId);
-    if (!element) return false;
-
-    // Always update on first load (when previousValues[cacheKey] is undefined)
-    // or when value actually changed
-    if (previousValues[cacheKey] === undefined || previousValues[cacheKey] !== newValue) {
-        element.textContent = newValue;
-        previousValues[cacheKey] = newValue;
-        return true; // Changed
-    }
-    return false; // No change
-}
-
 // Helper to update class only if changed
 function updateClassIfChanged(element, className, shouldAdd) {
     const hasClass = element.classList.contains(className);

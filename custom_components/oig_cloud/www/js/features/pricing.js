@@ -2013,7 +2013,7 @@ function buildPlannedTrendText(todayTotalKwh, tomorrowKwh) {
     }
 
     const diff = tomorrowKwh - todayTotalKwh;
-    const diffPercent = todayTotalKwh > 0 ? ((diff / todayTotalKwh) * 100) : 0;
+    const diffPercent = (diff / todayTotalKwh) * 100;
     if (Math.abs(diffPercent) < 5) {
         return '➡️ Zítra podobně';
     }

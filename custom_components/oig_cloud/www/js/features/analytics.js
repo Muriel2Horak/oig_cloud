@@ -420,45 +420,6 @@ function buildFutureIntervalsHtml(futureIntervals) {
     return html;
 }
 
-function renderTodayComparison(todayData, dailyPlanState) {
-    const container = document.getElementById('extended-timeline-container');
-    if (!container) {
-        console.warn('[Extended Timeline] Container not found');
-        return;
-    }
-
-    const { date, intervals, summary } = todayData;
-
-    if (!intervals || intervals.length === 0) {
-        container.innerHTML = `
-            <div class="today-comparison">
-                <p class="no-data" style="padding: 40px; text-align: center; color: var(--text-tertiary);">
-                    📅 Žádná data pro dnešní porovnání
-                </p>
-            </div>
-        `;
-        return;
-    }
-
-    const { historicalIntervals, futureIntervals } = splitIntervals(intervals);
-
-    let html = '<div class="today-comparison">';
-    html += buildTodaySummaryHtml({ date, summary, historicalCount: historicalIntervals.length });
-
-    if (historicalIntervals.length === 0) {
-        html += buildNoHistoricalHtml();
-    } else {
-        html += buildTopDeviationsHtml(historicalIntervals);
-        html += buildHistoricalTableHtml(historicalIntervals);
-    }
-
-    html += buildFutureIntervalsHtml(futureIntervals);
-    html += '</div>';
-
-    container.innerHTML = html;
-}
-
-
 // =============================================================================
 // PHASE 2.10: YESTERDAY ANALYSIS - Včerejší plán vs skutečnost
 // =============================================================================
