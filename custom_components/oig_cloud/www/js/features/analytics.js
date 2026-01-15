@@ -863,3 +863,7 @@ globalThis.DashboardAnalytics = {
 };
 
 console.log('[DashboardAnalytics] Module loaded');
+if (typeof globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats === 'function') {
+    setTimeout(() => globalThis.DashboardAnalytics.updateBatteryEfficiencyStats(), 500);
+    setTimeout(() => globalThis.DashboardAnalytics.updateBatteryEfficiencyStats(), 2000);
+}
