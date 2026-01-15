@@ -193,7 +193,14 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
             self._last_month_metrics = metrics
             self._last_month_key = prev_key
         else:
-            self._reset_last_month_metrics(prev_key)
+            if self._last_month_key == prev_key and self._last_month_metrics:
+                _LOGGER.warning(
+                    "Keeping last month efficiency for %s/%s from stored state (history missing)",
+                    prev_month,
+                    prev_year,
+                )
+            else:
+                self._reset_last_month_metrics(prev_key)
 
         if now_local.day == 1:
             self._rollover_month(now_local, prev_key)
