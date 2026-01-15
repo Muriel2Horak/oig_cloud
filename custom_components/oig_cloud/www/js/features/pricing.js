@@ -2227,6 +2227,12 @@ globalThis.DashboardPricing = {
     init: function() {
         console.log('[DashboardPricing] Initialized');
         initChartPlanToggle();
+        const bootstrapStats = () => {
+            updatePlannedConsumptionStats();
+            globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats?.();
+        };
+        setTimeout(bootstrapStats, 500);
+        setTimeout(bootstrapStats, 2000);
     }
 };
 
