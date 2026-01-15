@@ -16,6 +16,10 @@ let costComparisonTileLastFetch = 0;
 let costComparisonTilePromise = null;
 
 async function loadCostComparisonTile(force = false) {
+    const container = document.getElementById('cost-comparison-tile-container');
+    if (!container) {
+        return null;
+    }
     const now = Date.now();
 
     if (!force && costComparisonTileCache && now - costComparisonTileLastFetch < COST_TILE_CACHE_TTL) {
@@ -869,12 +873,42 @@ async function updateBatteryEfficiencyStats() {
     updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff);
 }
 
+function subscribeBatteryEfficiencyUpdates() {
+    const hass = getHass();
+    if (!hass) {
+        console.warn('[Battery Efficiency] Cannot subscribe - no HA connection');
+        return;
+    }
+
+    const sensorId = `sensor.oig_${INVERTER_SN}_battery_efficiency`;
+    const watcher = globalThis.DashboardStateWatcher;
+    if (!watcher) {
+        console.warn('[Battery Efficiency] StateWatcher not available yet, retrying...');
+        setTimeout(subscribeBatteryEfficiencyUpdates, 500);
+        return;
+    }
+
+    watcher.start({ intervalMs: 1000, prefixes: [`sensor.oig_${INVERTER_SN}_`] });
+
+    if (!globalThis.__oigBatteryEfficiencyWatcherUnsub) {
+        watcher.registerEntities([sensorId]);
+        globalThis.__oigBatteryEfficiencyWatcherUnsub = watcher.onEntityChange((entityId) => {
+            if (entityId !== sensorId) return;
+            console.log('[Battery Efficiency] Sensor changed, updating...');
+            updateBatteryEfficiencyStats();
+        });
+    }
+
+    updateBatteryEfficiencyStats();
+}
+
 globalThis.DashboardAnalytics = {
     buildYesterdayAnalysis,
     showYesterdayNoData,
     renderYesterdayAnalysis,
     updateBatteryEfficiencyBar,
     updateBatteryEfficiencyStats,
+    subscribeBatteryEfficiencyUpdates,
     init: function() {
         console.log('[DashboardAnalytics] Initialized');
     }
@@ -884,4 +918,7 @@ console.log('[DashboardAnalytics] Module loaded');
 if (typeof globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats === 'function') {
     setTimeout(() => globalThis.DashboardAnalytics.updateBatteryEfficiencyStats(), 500);
     setTimeout(() => globalThis.DashboardAnalytics.updateBatteryEfficiencyStats(), 2000);
+}
+if (typeof globalThis.DashboardAnalytics?.subscribeBatteryEfficiencyUpdates === 'function') {
+    setTimeout(() => globalThis.DashboardAnalytics.subscribeBatteryEfficiencyUpdates(), 1200);
 }
