@@ -1228,6 +1228,575 @@ function updateExtremeExportBlocks(exportPrices) {
     }
 }
 
+function addSolarForecastDatasets({ hass, boxId, allLabels, datasets }) {
+    const solarEntityId = 'sensor.oig_' + boxId + '_solar_forecast';
+    const solarSensor = hass.states[solarEntityId];
+    if (!solarSensor?.attributes || allLabels.length === 0) {
+        return;
+    }
+
+    const attrs = solarSensor.attributes;
+    const todayTotal = attrs.today_total_kwh || 0;
+    const solarCard = document.getElementById('today-forecast-total');
+    if (solarCard) {
+        solarCard.innerHTML = todayTotal.toFixed(2) + ' <span class="stat-unit">kWh</span>';
+        solarCard.parentElement.style.cursor = 'pointer';
+        solarCard.parentElement.onclick = () => openEntityDialog(solarEntityId);
+    }
+
+    const todayString1_kw = attrs.today_hourly_string1_kw || {};
+    const tomorrowString1_kw = attrs.tomorrow_hourly_string1_kw || {};
+    const todayString2_kw = attrs.today_hourly_string2_kw || {};
+    const tomorrowString2_kw = attrs.tomorrow_hourly_string2_kw || {};
+
+    const interpolate = (v1, v2, ratio) => {
+        if (v1 == null || v2 == null) return v1 || v2 || null;
+        return v1 + (v2 - v1) * ratio;
+    };
+
+    const string1Data = [];
+    const string2Data = [];
+
+    const allSolarData = {
+        string1: { ...todayString1_kw, ...tomorrowString1_kw },
+        string2: { ...todayString2_kw, ...tomorrowString2_kw }
+    };
+
+    for (const timeLabel of allLabels) {
+        const hour = timeLabel.getHours();
+        const minute = timeLabel.getMinutes();
+
+        const currentHourDate = new Date(timeLabel);
+        currentHourDate.setMinutes(0, 0, 0);
+        const currentHourKey = toLocalISOString(currentHourDate);
+
+        const nextHourDate = new Date(currentHourDate);
+        nextHourDate.setHours(hour + 1);
+        const nextHourKey = toLocalISOString(nextHourDate);
+
+        const s1_current = allSolarData.string1[currentHourKey] || 0;
+        const s1_next = allSolarData.string1[nextHourKey] || 0;
+        const s2_current = allSolarData.string2[currentHourKey] || 0;
+        const s2_next = allSolarData.string2[nextHourKey] || 0;
+
+        const ratio = minute / 60;
+
+        string1Data.push(interpolate(s1_current, s1_next, ratio));
+        string2Data.push(interpolate(s2_current, s2_next, ratio));
+    }
+
+    const hasString1 = string1Data.some(v => v != null && v > 0);
+    const hasString2 = string2Data.some(v => v != null && v > 0);
+    const stringCount = (hasString1 ? 1 : 0) + (hasString2 ? 1 : 0);
+
+    const solarColors = {
+        string1: { border: 'rgba(255, 193, 7, 0.8)', bg: 'rgba(255, 193, 7, 0.2)' },
+        string2: { border: 'rgba(255, 152, 0, 0.8)', bg: 'rgba(255, 152, 0, 0.2)' }
+    };
+
+    if (stringCount === 1) {
+        if (hasString1) {
+            datasets.push({
+                label: '☀️ Solární předpověď',
+                data: string1Data,
+                borderColor: solarColors.string1.border,
+                backgroundColor: solarColors.string1.bg,
+                borderWidth: 2,
+                fill: 'origin',
+                tension: 0.4,
+                type: 'line',
+                yAxisID: 'y-power',
+                pointRadius: 0,
+                pointHoverRadius: 5,
+                order: 2
+            });
+        } else if (hasString2) {
+            datasets.push({
+                label: '☀️ Solární předpověď',
+                data: string2Data,
+                borderColor: solarColors.string2.border,
+                backgroundColor: solarColors.string2.bg,
+                borderWidth: 2,
+                fill: 'origin',
+                tension: 0.4,
+                type: 'line',
+                yAxisID: 'y-power',
+                pointRadius: 0,
+                pointHoverRadius: 5,
+                order: 2
+            });
+        }
+        return;
+    }
+
+    if (stringCount === 2) {
+        datasets.push(
+            {
+                label: '☀️ String 2',
+                data: string2Data,
+                borderColor: solarColors.string2.border,
+                backgroundColor: solarColors.string2.bg,
+                borderWidth: 1.5,
+                fill: 'origin',
+                tension: 0.4,
+                type: 'line',
+                yAxisID: 'y-power',
+                stack: 'solar',
+                pointRadius: 0,
+                pointHoverRadius: 5,
+                order: 2
+            },
+            {
+                label: '☀️ String 1',
+                data: string1Data,
+                borderColor: solarColors.string1.border,
+                backgroundColor: solarColors.string1.bg,
+                borderWidth: 1.5,
+                fill: '-1',
+                tension: 0.4,
+                type: 'line',
+                yAxisID: 'y-power',
+                stack: 'solar',
+                pointRadius: 0,
+                pointHoverRadius: 5,
+                order: 2
+            }
+        );
+    }
+}
+
+function addBatteryForecastDatasets({ hass, timelineData, prices, allLabels, datasets }) {
+    const batteryForecastEntityId = findShieldSensorId('battery_forecast');
+    const batteryForecastSensor = hass.states[batteryForecastEntityId];
+    let initialZoomStart = null;
+    let initialZoomEnd = null;
+
+    if (!batteryForecastSensor?.attributes) {
+        return { allLabels, datasets, initialZoomStart, initialZoomEnd };
+    }
+
+    if (!(timelineData.length > 0 && prices.length > 0)) {
+        return { allLabels, datasets, initialZoomStart, initialZoomEnd };
+    }
+
+    const timelineTimestamps = timelineData.map(t => new Date(t.timestamp));
+    initialZoomStart = timelineTimestamps[0].getTime();
+    const lastTimestamp = timelineTimestamps.at(-1);
+    initialZoomEnd = lastTimestamp ? lastTimestamp.getTime() : initialZoomStart;
+
+    const batteryTimestamps = timelineTimestamps;
+    const priceTimestamps = allLabels;
+
+    const allTimestamps = new Set([...priceTimestamps, ...batteryTimestamps].map(d => d.getTime()));
+    allLabels = Array.from(allTimestamps).sort((a, b) => a - b).map(ts => new Date(ts));
+
+    const baselineData = [];
+    const solarStackData = [];
+    const gridStackData = [];
+    const gridNetData = [];
+    const consumptionData = [];
+
+    for (const timeLabel of allLabels) {
+        const isoKey = toLocalISOString(timeLabel);
+
+        const timelineEntry = timelineData.find(t => t.timestamp === isoKey);
+
+        if (timelineEntry) {
+            const targetCapacity =
+                (timelineEntry.battery_capacity_kwh ?? timelineEntry.battery_soc ?? timelineEntry.battery_start) || 0;
+            const solarCharge = timelineEntry.solar_charge_kwh || 0;
+            const gridCharge = timelineEntry.grid_charge_kwh || 0;
+            const gridNet = typeof timelineEntry.grid_net === 'number'
+                ? timelineEntry.grid_net
+                : (timelineEntry.grid_import || 0) - (timelineEntry.grid_export || 0);
+            const loadKwhRaw =
+                timelineEntry.load_kwh ??
+                timelineEntry.consumption_kwh ??
+                timelineEntry.load ??
+                0;
+            const loadKwh = Number(loadKwhRaw) || 0;
+            const loadKw = loadKwh * 4;
+
+            const baseline = targetCapacity - solarCharge - gridCharge;
+
+            baselineData.push(baseline);
+            solarStackData.push(solarCharge);
+            gridStackData.push(gridCharge);
+            gridNetData.push(gridNet);
+            consumptionData.push(loadKw);
+        } else {
+            baselineData.push(null);
+            solarStackData.push(null);
+            gridStackData.push(null);
+            gridNetData.push(null);
+            consumptionData.push(null);
+        }
+    }
+
+    const batteryColors = {
+        baseline: { border: '#78909C', bg: 'rgba(120, 144, 156, 0.25)' },
+        solar: { border: 'transparent', bg: 'rgba(255, 167, 38, 0.6)' },
+        grid: { border: 'transparent', bg: 'rgba(33, 150, 243, 0.6)' }
+    };
+
+    if (consumptionData.some(v => v != null && v > 0)) {
+        datasets.push({
+            label: '🏠 Spotřeba (plán)',
+            data: consumptionData,
+            borderColor: 'rgba(255, 112, 67, 0.7)',
+            backgroundColor: 'rgba(255, 112, 67, 0.12)',
+            borderWidth: 1.5,
+            type: 'line',
+            fill: false,
+            tension: 0.25,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            yAxisID: 'y-power',
+            stack: 'consumption',
+            borderDash: [6, 4],
+            order: 2
+        });
+    }
+
+    if (gridStackData.some(v => v != null && v > 0)) {
+        datasets.push({
+            label: '⚡ Do baterie ze sítě',
+            data: gridStackData,
+            backgroundColor: batteryColors.grid.bg,
+            borderColor: batteryColors.grid.border,
+            borderWidth: 0,
+            type: 'line',
+            fill: true,
+            tension: 0.4,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            yAxisID: 'y-solar',
+            stack: 'charging',
+            order: 3
+        });
+    }
+
+    if (solarStackData.some(v => v != null && v > 0)) {
+        datasets.push({
+            label: '☀️ Do baterie ze soláru',
+            data: solarStackData,
+            backgroundColor: batteryColors.solar.bg,
+            borderColor: batteryColors.solar.border,
+            borderWidth: 0,
+            type: 'line',
+            fill: true,
+            tension: 0.4,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            yAxisID: 'y-solar',
+            stack: 'charging',
+            order: 3
+        });
+    }
+
+    datasets.push({
+        label: '🔋 Zbývající kapacita',
+        data: baselineData,
+        backgroundColor: batteryColors.baseline.bg,
+        borderColor: batteryColors.baseline.border,
+        borderWidth: 3,
+        type: 'line',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        yAxisID: 'y-solar',
+        stack: 'charging',
+        order: 3
+    });
+
+    if (gridNetData.some(v => v !== null)) {
+        datasets.push({
+            label: '📡 Netto odběr ze sítě',
+            data: gridNetData,
+            borderColor: '#00BCD4',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            type: 'line',
+            fill: false,
+            tension: 0.2,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            yAxisID: 'y-solar',
+            order: 2
+        });
+    }
+
+    return { allLabels, datasets, initialZoomStart, initialZoomEnd };
+}
+
+function updateCombinedChart({
+    allLabels,
+    datasets,
+    modeIconOptions,
+    initialZoomStart,
+    initialZoomEnd
+}) {
+    const ctx = document.getElementById('combined-chart');
+    if (!ctx) {
+        console.warn('[Pricing] Canvas element not found, deferring chart creation');
+        return false;
+    }
+
+    const isVisible = ctx.offsetParent !== null;
+    if (!isVisible && !combinedChart) {
+        console.warn('[Pricing] Canvas not visible yet, deferring chart creation');
+        setTimeout(() => {
+            if (pricingTabActive) {
+                console.log('[Pricing] Retrying chart creation after visibility delay');
+                loadPricingData();
+            }
+        }, 200);
+        return false;
+    }
+
+    if (combinedChart) {
+        const labelsChanged = JSON.stringify(combinedChart.data.labels) !== JSON.stringify(allLabels);
+        const datasetsChanged = combinedChart.data.datasets.length !== datasets.length;
+
+        if (labelsChanged) {
+            combinedChart.data.labels = allLabels;
+        }
+
+        let updateMode = 'none';
+        if (datasetsChanged) {
+            combinedChart.data.datasets = datasets;
+            updateMode = undefined;
+        } else {
+            datasets.forEach((newDataset, idx) => {
+                if (combinedChart.data.datasets[idx]) {
+                    combinedChart.data.datasets[idx].data = newDataset.data;
+                    combinedChart.data.datasets[idx].label = newDataset.label;
+                    combinedChart.data.datasets[idx].backgroundColor = newDataset.backgroundColor;
+                    combinedChart.data.datasets[idx].borderColor = newDataset.borderColor;
+                }
+            });
+        }
+
+        combinedChart.options.plugins = combinedChart.options.plugins || {};
+        combinedChart.options.plugins.pricingModeIcons = modeIconOptions || null;
+        applyPricingModeIconPadding(combinedChart.options, modeIconOptions);
+        combinedChart.update(updateMode);
+        return true;
+    }
+
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: {
+                labels: {
+                    color: '#ffffff',
+                    font: { size: 11, weight: '500' },
+                    padding: 10,
+                    usePointStyle: true,
+                    pointStyle: 'circle',
+                    boxWidth: 12,
+                    boxHeight: 12
+                },
+                position: 'top'
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0,0,0,0.9)',
+                titleColor: '#ffffff',
+                bodyColor: '#ffffff',
+                titleFont: { size: 13, weight: 'bold' },
+                bodyFont: { size: 11 },
+                padding: 10,
+                cornerRadius: 6,
+                displayColors: true,
+                callbacks: {
+                    title: function (tooltipItems) {
+                        if (tooltipItems.length > 0) {
+                            const date = new Date(tooltipItems[0].parsed.x);
+                            return date.toLocaleString('cs-CZ', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            });
+                        }
+                        return '';
+                    },
+                    label: function (context) {
+                        let label = context.dataset.label || '';
+                        if (label) {
+                            label += ': ';
+                        }
+                        if (context.parsed.y !== null) {
+                            if (context.dataset.yAxisID === 'y-price') {
+                                label += context.parsed.y.toFixed(2) + ' Kč/kWh';
+                            } else if (context.dataset.yAxisID === 'y-solar') {
+                                label += context.parsed.y.toFixed(2) + ' kWh';
+                            } else if (context.dataset.yAxisID === 'y-power') {
+                                label += context.parsed.y.toFixed(2) + ' kW';
+                            } else {
+                                label += context.parsed.y;
+                            }
+                        }
+                        return label;
+                    }
+                }
+            },
+            datalabels: {
+                display: false
+            },
+            zoom: {
+                zoom: {
+                    wheel: {
+                        enabled: true,
+                        modifierKey: null
+                    },
+                    drag: {
+                        enabled: true,
+                        backgroundColor: 'rgba(33, 150, 243, 0.3)',
+                        borderColor: 'rgba(33, 150, 243, 0.8)',
+                        borderWidth: 2
+                    },
+                    pinch: {
+                        enabled: true
+                    },
+                    mode: 'x',
+                    onZoomComplete: function ({ chart }) {
+                        currentZoomRange = null;
+                        if (activeZoomCard) {
+                            activeZoomCard.classList.remove('zoom-active');
+                            activeZoomCard = null;
+                        }
+                        updateChartDetailLevel(chart);
+                    }
+                },
+                pan: {
+                    enabled: true,
+                    mode: 'x',
+                    modifierKey: 'shift',
+                    onPanComplete: function ({ chart }) {
+                        currentZoomRange = null;
+                        if (activeZoomCard) {
+                            activeZoomCard.classList.remove('zoom-active');
+                            activeZoomCard = null;
+                        }
+                        updateChartDetailLevel(chart);
+                    }
+                },
+                limits: {
+                    x: { minRange: 3600000 }
+                }
+            },
+            pricingModeIcons: modeIconOptions || null
+        },
+        scales: {
+            x: {
+                type: 'timeseries',
+                time: {
+                    unit: 'hour',
+                    displayFormats: {
+                        hour: 'dd.MM HH:mm'
+                    },
+                    tooltipFormat: 'dd.MM.yyyy HH:mm'
+                },
+                ticks: {
+                    color: getTextColor(),
+                    maxRotation: 45,
+                    minRotation: 45,
+                    font: { size: 11 },
+                    maxTicksLimit: 20
+                },
+                grid: { color: getGridColor(), lineWidth: 1 }
+            },
+            'y-price': {
+                type: 'linear',
+                position: 'left',
+                ticks: {
+                    color: '#2196F3',
+                    font: { size: 11, weight: '500' },
+                    callback: function (value) { return value.toFixed(2) + ' Kč'; }
+                },
+                grid: { color: 'rgba(33, 150, 243, 0.15)', lineWidth: 1 },
+                title: {
+                    display: true,
+                    text: '💰 Cena (Kč/kWh)',
+                    color: '#2196F3',
+                    font: { size: 13, weight: 'bold' }
+                }
+            },
+            'y-solar': {
+                type: 'linear',
+                position: 'left',
+                stacked: true,
+                ticks: {
+                    color: '#78909C',
+                    font: { size: 11, weight: '500' },
+                    callback: function (value) { return value.toFixed(1) + ' kWh'; },
+                    display: true
+                },
+                grid: {
+                    display: true,
+                    color: 'rgba(120, 144, 156, 0.15)',
+                    lineWidth: 1,
+                    drawOnChartArea: true
+                },
+                title: {
+                    display: true,
+                    text: '🔋 Kapacita baterie (kWh)',
+                    color: '#78909C',
+                    font: { size: 11, weight: 'bold' }
+                },
+                beginAtZero: false
+            },
+            'y-power': {
+                type: 'linear',
+                position: 'right',
+                stacked: true,
+                ticks: {
+                    color: '#FFA726',
+                    font: { size: 11, weight: '500' },
+                    callback: function (value) { return value.toFixed(2) + ' kW'; }
+                },
+                grid: { display: false },
+                title: {
+                    display: true,
+                    text: '☀️ Výkon (kW)',
+                    color: '#FFA726',
+                    font: { size: 13, weight: 'bold' }
+                }
+            }
+        }
+    };
+
+    applyPricingModeIconPadding(chartOptions, modeIconOptions);
+
+    combinedChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: allLabels, datasets: datasets },
+        plugins: [ChartDataLabels],
+        options: chartOptions
+    });
+
+    updateChartDetailLevel(combinedChart);
+
+    if (initialZoomStart && initialZoomEnd) {
+        requestAnimationFrame(() => {
+            if (!combinedChart) return;
+
+            combinedChart.options.scales.x.min = initialZoomStart;
+            combinedChart.options.scales.x.max = initialZoomEnd;
+            combinedChart.update('none');
+
+            updateChartDetailLevel(combinedChart);
+        });
+    }
+
+    return true;
+}
+
 async function loadPricingData() {
     const perfStart = performance.now();
     console.log('[Pricing] === loadPricingData START ===');
@@ -1298,616 +1867,27 @@ async function loadPricingData() {
         updateExtremeExportBlocks(exportPrices);
     }
 
-    // Solar forecast (hourly) - interpolate to 15min grid
-    const solarEntityId = 'sensor.oig_' + boxId + '_solar_forecast';
-    const solarSensor = hass.states[solarEntityId];
-    if (solarSensor?.attributes) {
-        const attrs = solarSensor.attributes;
-        const todayTotal = attrs.today_total_kwh || 0;
-        const solarCard = document.getElementById('today-forecast-total');
-        if (solarCard) {  // ✅ NULL CHECK - element neexistuje ve nové verzi
-            solarCard.innerHTML = todayTotal.toFixed(2) + ' <span class="stat-unit">kWh</span>';
-            // Make card clickable
-            solarCard.parentElement.style.cursor = 'pointer';
-            solarCard.parentElement.onclick = () => openEntityDialog(solarEntityId);
-        }
+    addSolarForecastDatasets({ hass, boxId, allLabels, datasets });
 
-        const todayString1_kw = attrs.today_hourly_string1_kw || {};
-        const tomorrowString1_kw = attrs.tomorrow_hourly_string1_kw || {};
-        const todayString2_kw = attrs.today_hourly_string2_kw || {};
-        const tomorrowString2_kw = attrs.tomorrow_hourly_string2_kw || {};
+    const batteryResult = addBatteryForecastDatasets({
+        hass,
+        timelineData,
+        prices,
+        allLabels,
+        datasets
+    });
+    allLabels = batteryResult.allLabels;
+    const initialZoomStart = batteryResult.initialZoomStart;
+    const initialZoomEnd = batteryResult.initialZoomEnd;
 
-        // Helper: Linear interpolation between two points
-        function interpolate(v1, v2, ratio) {
-            if (v1 == null || v2 == null) return v1 || v2 || null;
-            return v1 + (v2 - v1) * ratio;
-        }
-
-        // Map hourly solar data to 15min price grid with interpolation
-        // This now handles today + tomorrow seamlessly
-        if (allLabels.length > 0) {
-            const string1Data = [];
-            const string2Data = [];
-
-            // Merge today and tomorrow solar data into continuous timeline
-            const allSolarData = {
-                string1: { ...todayString1_kw, ...tomorrowString1_kw },
-                string2: { ...todayString2_kw, ...tomorrowString2_kw }
-            };
-
-            for (const timeLabel of allLabels) {
-
-                // For solar data, we need to interpolate from hourly values
-                const hour = timeLabel.getHours();
-                const minute = timeLabel.getMinutes();
-
-                // Create current and next hour timestamps for interpolation
-                const currentHourDate = new Date(timeLabel);
-                currentHourDate.setMinutes(0, 0, 0);
-                const currentHourKey = toLocalISOString(currentHourDate);
-
-                const nextHourDate = new Date(currentHourDate);
-                nextHourDate.setHours(hour + 1);
-                const nextHourKey = toLocalISOString(nextHourDate);
-
-                // Get values for interpolation from merged data
-                const s1_current = allSolarData.string1[currentHourKey] || 0;
-                const s1_next = allSolarData.string1[nextHourKey] || 0;
-                const s2_current = allSolarData.string2[currentHourKey] || 0;
-                const s2_next = allSolarData.string2[nextHourKey] || 0;
-
-                // Interpolation ratio (0.0 at :00, 0.25 at :15, 0.5 at :30, 0.75 at :45)
-                const ratio = minute / 60;
-
-                string1Data.push(interpolate(s1_current, s1_next, ratio));
-                string2Data.push(interpolate(s2_current, s2_next, ratio));
-            }
-
-            // Determine solar visualization strategy
-            const hasString1 = string1Data.some(v => v != null && v > 0);
-            const hasString2 = string2Data.some(v => v != null && v > 0);
-            const stringCount = (hasString1 ? 1 : 0) + (hasString2 ? 1 : 0);
-
-            // Jasné sluneční barvy pro lepší viditelnost
-            const solarColors = {
-                string1: { border: 'rgba(255, 193, 7, 0.8)', bg: 'rgba(255, 193, 7, 0.2)' },  // zlatá žlutá
-                string2: { border: 'rgba(255, 152, 0, 0.8)', bg: 'rgba(255, 152, 0, 0.2)' }   // oranžová
-            };
-
-            if (stringCount === 1) {
-                // Pouze 1 string aktivní - zobrazit jen ten jeden (bez celkového součtu)
-                if (hasString1) {
-                    datasets.push({
-                        label: '☀️ Solární předpověď',
-                        data: string1Data,
-                        borderColor: solarColors.string1.border,
-                        backgroundColor: solarColors.string1.bg,
-                        borderWidth: 2,
-                        fill: 'origin',
-                        tension: 0.4,
-                        type: 'line',
-                        yAxisID: 'y-power',
-                        pointRadius: 0,
-                        pointHoverRadius: 5,
-                        order: 2
-                    });
-                } else if (hasString2) {
-                    datasets.push({
-                        label: '☀️ Solární předpověď',
-                        data: string2Data,
-                        borderColor: solarColors.string2.border,
-                        backgroundColor: solarColors.string2.bg,
-                        borderWidth: 2,
-                        fill: 'origin',
-                        tension: 0.4,
-                        type: 'line',
-                        yAxisID: 'y-power',
-                        pointRadius: 0,
-                        pointHoverRadius: 5,
-                        order: 2
-                    });
-                }
-            } else if (stringCount === 2) {
-                // Oba stringy - zobrazit jako stacked area chart
-                datasets.push(
-                    {
-                        label: '☀️ String 2',
-                        data: string2Data,
-                        borderColor: solarColors.string2.border,
-                        backgroundColor: solarColors.string2.bg,
-                        borderWidth: 1.5,
-                        fill: 'origin',
-                        tension: 0.4,
-                        type: 'line',
-                        yAxisID: 'y-power',
-                        stack: 'solar',
-                        pointRadius: 0,
-                        pointHoverRadius: 5,
-                        order: 2
-                    },
-                    {
-                        label: '☀️ String 1',
-                        data: string1Data,
-                        borderColor: solarColors.string1.border,
-                        backgroundColor: solarColors.string1.bg,
-                        borderWidth: 1.5,
-                        fill: '-1',  // stack on previous dataset
-                        tension: 0.4,
-                        type: 'line',
-                        yAxisID: 'y-power',
-                        stack: 'solar',
-                        pointRadius: 0,
-                        pointHoverRadius: 5,
-                        order: 2
-                    }
-                );
-                // Bez celkového součtu - stacked area chart ukazuje celkovou výšku
-            }
-        }
-    }
-
-    // Battery forecast (timeline data) - using findShieldSensorId for dynamic suffix support
-    const batteryForecastEntityId = findShieldSensorId('battery_forecast');
-    const batteryForecastSensor = hass.states[batteryForecastEntityId];
-
-    // Uchovej timeline rozsah pro výchozí zoom grafu
-    let initialZoomStart = null;
-    let initialZoomEnd = null;
-
-    if (batteryForecastSensor?.attributes) {
-        // Timeline data already loaded from API at function start
-        if (timelineData.length > 0 && prices.length > 0) {
-            // ULOŽIT ROZSAH TIMELINE PRO VÝCHOZÍ ZOOM
-            const timelineTimestamps = timelineData.map(t => new Date(t.timestamp));
-            initialZoomStart = timelineTimestamps[0].getTime();
-            const lastTimestamp = timelineTimestamps.at(-1);
-            initialZoomEnd = lastTimestamp ? lastTimestamp.getTime() : initialZoomStart;
-
-            // EXTEND allLabels with battery forecast timestamps (union)
-            const batteryTimestamps = timelineTimestamps;
-            const priceTimestamps = allLabels; // already Date objects
-
-            // Merge and dedupe timestamps
-            const allTimestamps = new Set([...priceTimestamps, ...batteryTimestamps].map(d => d.getTime()));
-            allLabels = Array.from(allTimestamps).sort((a, b) => a - b).map(ts => new Date(ts));
-
-            // ZOBRAZENÍ KAPACITY BATERIE:
-            // battery_capacity_kwh = SOC baterie na konci intervalu (kWh)
-            // solar_charge_kwh = kWh do baterie ze soláru (pre-efficiency)
-            // grid_charge_kwh = kWh do baterie ze sítě (pre-efficiency)
-            // baseline = battery_capacity_kwh - solar_charge_kwh - grid_charge_kwh
-
-            const baselineData = [];          // Předchozí kapacita (baseline pro stack)
-            const solarStackData = [];        // Solar přírůstek
-            const gridStackData = [];         // Grid přírůstek
-            const gridNetData = [];           // Netto odběr ze sítě (import - export)
-            const consumptionData = [];       // Plánovaná spotřeba (kW)
-
-            for (const timeLabel of allLabels) {
-                const isoKey = toLocalISOString(timeLabel);
-
-                const timelineEntry = timelineData.find(t => t.timestamp === isoKey);
-
-                if (timelineEntry) {
-                    // Planner timeline uses: battery_capacity_kwh, solar_charge_kwh, grid_charge_kwh.
-                    // Keep compatibility fallbacks for older payloads.
-                    const targetCapacity =
-                        (timelineEntry.battery_capacity_kwh ?? timelineEntry.battery_soc ?? timelineEntry.battery_start) || 0;
-                    const solarCharge = timelineEntry.solar_charge_kwh || 0;
-                    const gridCharge = timelineEntry.grid_charge_kwh || 0;
-                    const gridNet = typeof timelineEntry.grid_net === 'number'
-                        ? timelineEntry.grid_net
-                        : (timelineEntry.grid_import || 0) - (timelineEntry.grid_export || 0);
-                    const loadKwhRaw =
-                        timelineEntry.load_kwh ??
-                        timelineEntry.consumption_kwh ??
-                        timelineEntry.load ??
-                        0;
-                    const loadKwh = Number(loadKwhRaw) || 0;
-                    const loadKw = loadKwh * 4;
-
-                    // Baseline = odkud vyšli (cílová - přírůstky)
-                    const baseline = targetCapacity - solarCharge - gridCharge;
-
-                    baselineData.push(baseline);
-                    solarStackData.push(solarCharge);
-                    gridStackData.push(gridCharge);
-                    gridNetData.push(gridNet);
-                    consumptionData.push(loadKw);
-                } else {
-                    baselineData.push(null);
-                    solarStackData.push(null);
-                    gridStackData.push(null);
-                    gridNetData.push(null);
-                    consumptionData.push(null);
-                }
-            }
-
-            // Vylepšené barvy pro viditelnost kapacity baterie
-            const batteryColors = {
-                baseline: { border: '#78909C', bg: 'rgba(120, 144, 156, 0.25)' }, // šedá - zbývající kapacita
-                solar: { border: 'transparent', bg: 'rgba(255, 167, 38, 0.6)' },   // výrazná oranžová - solár
-                grid: { border: 'transparent', bg: 'rgba(33, 150, 243, 0.6)' }    // výrazná modrá - síť
-            };
-
-            if (consumptionData.some(v => v != null && v > 0)) {
-                datasets.push({
-                    label: '🏠 Spotřeba (plán)',
-                    data: consumptionData,
-                    borderColor: 'rgba(255, 112, 67, 0.7)',
-                    backgroundColor: 'rgba(255, 112, 67, 0.12)',
-                    borderWidth: 1.5,
-                    type: 'line',
-                    fill: false,
-                    tension: 0.25,
-                    pointRadius: 0,
-                    pointHoverRadius: 5,
-                    yAxisID: 'y-power',
-                    stack: 'consumption',
-                    borderDash: [6, 4],
-                    order: 2
-                });
-            }
-
-            // POŘADÍ DATASETŮ určuje pořadí ve stacku (první = dole, poslední = nahoře)
-            // 1. Grid area (dole) - nabíjení ze sítě, BEZ borderu
-            if (gridStackData.some(v => v != null && v > 0)) {
-                datasets.push({
-                    label: '⚡ Do baterie ze sítě',
-                    data: gridStackData,
-                    backgroundColor: batteryColors.grid.bg,
-                    borderColor: batteryColors.grid.border,
-                    borderWidth: 0,
-                    type: 'line',
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 0,
-                    pointHoverRadius: 5,
-                    yAxisID: 'y-solar',
-                    stack: 'charging',
-                    order: 3
-                });
-            }
-
-            // 2. Solar area (uprostřed) - nabíjení ze solaru, BEZ borderu
-            if (solarStackData.some(v => v != null && v > 0)) {
-                datasets.push({
-                    label: '☀️ Do baterie ze soláru',
-                    data: solarStackData,
-                    backgroundColor: batteryColors.solar.bg,
-                    borderColor: batteryColors.solar.border,
-                    borderWidth: 0,
-                    type: 'line',
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 0,
-                    pointHoverRadius: 5,
-                    yAxisID: 'y-solar',
-                    stack: 'charging',
-                    order: 3
-                });
-            }
-
-            // 3. Baseline area (nahoře) - zbývající kapacita s TLUSTOU ČÁROU
-            datasets.push({
-                label: '🔋 Zbývající kapacita',
-                data: baselineData,
-                backgroundColor: batteryColors.baseline.bg,
-                borderColor: batteryColors.baseline.border,
-                borderWidth: 3,  // TLUSTÁ ČÁRA
-                type: 'line',
-                fill: true,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHoverRadius: 5,
-                yAxisID: 'y-solar',
-                stack: 'charging',
-                order: 3
-            });
-
-            if (gridNetData.some(v => v !== null)) {
-                datasets.push({
-                    label: '📡 Netto odběr ze sítě',
-                    data: gridNetData,
-                    borderColor: '#00BCD4',
-                    backgroundColor: 'transparent',
-                    borderWidth: 2,
-                    type: 'line',
-                    fill: false,
-                    tension: 0.2,
-                    pointRadius: 0,
-                    pointHoverRadius: 5,
-                    yAxisID: 'y-solar',
-                    order: 2
-                });
-            }
-        }
-    }
-
-    // Create/update combined chart
-    const ctx = document.getElementById('combined-chart');
-
-    // OPRAVA: Kontrola jestli je canvas viditelný (pricing tab aktivní)
-    // Pokud není, odložit vytvoření grafu
-    if (!ctx) {
-        console.warn('[Pricing] Canvas element not found, deferring chart creation');
+    if (!updateCombinedChart({
+        allLabels,
+        datasets,
+        modeIconOptions,
+        initialZoomStart,
+        initialZoomEnd
+    })) {
         return;
-    }
-
-    const isVisible = ctx.offsetParent !== null;
-    if (!isVisible && !combinedChart) {
-        console.warn('[Pricing] Canvas not visible yet, deferring chart creation');
-        // Zkusit znovu za chvíli
-        setTimeout(() => {
-            if (pricingTabActive) {
-                console.log('[Pricing] Retrying chart creation after visibility delay');
-                loadPricingData();
-            }
-        }, 200);
-        return;
-    }
-
-    if (combinedChart) {
-        // OPTIMALIZACE: Místo přenastavení celého datasetu aktualizujeme jen labely a data
-        const labelsChanged = JSON.stringify(combinedChart.data.labels) !== JSON.stringify(allLabels);
-        const datasetsChanged = combinedChart.data.datasets.length !== datasets.length;
-
-        if (labelsChanged) {
-            combinedChart.data.labels = allLabels;
-        }
-
-        let updateMode = 'none';
-        if (datasetsChanged) {
-            // Pokud se změnil počet datasetů, musíme je nahradit
-            combinedChart.data.datasets = datasets;
-            updateMode = undefined;
-        } else {
-            // Jinak jen aktualizujeme data v existujících datasetech
-            datasets.forEach((newDataset, idx) => {
-                if (combinedChart.data.datasets[idx]) {
-                    // Zachovat reference na dataset, jen aktualizovat data
-                    combinedChart.data.datasets[idx].data = newDataset.data;
-                    // Aktualizovat i další properties které se mohly změnit
-                    combinedChart.data.datasets[idx].label = newDataset.label;
-                    combinedChart.data.datasets[idx].backgroundColor = newDataset.backgroundColor;
-                    combinedChart.data.datasets[idx].borderColor = newDataset.borderColor;
-                }
-            });
-        }
-
-        if (!combinedChart.options.plugins) {
-            combinedChart.options.plugins = {};
-        }
-
-        combinedChart.options.plugins.pricingModeIcons = modeIconOptions || null;
-        applyPricingModeIconPadding(combinedChart.options, modeIconOptions);
-        combinedChart.update(updateMode); // Update bez animace když se jen mění data
-    } else {
-        const chartOptions = {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: {
-                        labels: {
-                            color: '#ffffff',
-                            font: { size: 11, weight: '500' },
-                            padding: 10,
-                            usePointStyle: true,
-                            pointStyle: 'circle',
-                            boxWidth: 12,
-                            boxHeight: 12
-                        },
-                        position: 'top'
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0,0,0,0.9)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        titleFont: { size: 13, weight: 'bold' },
-                        bodyFont: { size: 11 },
-                        padding: 10,
-                        cornerRadius: 6,
-                        displayColors: true,
-                        callbacks: {
-                            title: function (tooltipItems) {
-                                if (tooltipItems.length > 0) {
-                                    const date = new Date(tooltipItems[0].parsed.x);
-                                    return date.toLocaleString('cs-CZ', {
-                                        day: '2-digit',
-                                        month: '2-digit',
-                                        year: 'numeric',
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                    });
-                                }
-                                return '';
-                            },
-                            label: function (context) {
-                                let label = context.dataset.label || '';
-                                if (label) {
-                                    label += ': ';
-                                }
-                                if (context.parsed.y !== null) {
-                                    // Formátování podle typu datasetu
-                                    if (context.dataset.yAxisID === 'y-price') {
-                                        label += context.parsed.y.toFixed(2) + ' Kč/kWh';
-                                    } else if (context.dataset.yAxisID === 'y-solar') {
-                                        label += context.parsed.y.toFixed(2) + ' kWh';
-                                    } else if (context.dataset.yAxisID === 'y-power') {
-                                        label += context.parsed.y.toFixed(2) + ' kW';
-                                    } else {
-                                        label += context.parsed.y;
-                                    }
-                                }
-                                return label;
-                            }
-                        }
-                    },
-                    datalabels: {
-                        display: false // Vypnout globálně, povolit jen pro specifické datasety
-                    },
-                    zoom: {
-                        zoom: {
-                            wheel: {
-                                enabled: true,
-                                modifierKey: null // Zoom kolečkem bez modifikátorů
-                            },
-                            drag: {
-                                enabled: true, // Drag-to-zoom jako v Grafaně
-                                backgroundColor: 'rgba(33, 150, 243, 0.3)',
-                                borderColor: 'rgba(33, 150, 243, 0.8)',
-                                borderWidth: 2
-                            },
-                            pinch: {
-                                enabled: true // Touch zoom pro mobily
-                            },
-                            mode: 'x', // Zoom jen na X ose (časové ose)
-                            onZoomComplete: function ({ chart }) {
-                                // Při manuálním zoomu (kolečko/drag) resetovat currentZoomRange
-                                // aby další klik na dlaždici fungoval správně
-                                currentZoomRange = null;
-
-                                // Odebrat zoom-active z aktivní karty
-                                if (activeZoomCard) {
-                                    activeZoomCard.classList.remove('zoom-active');
-                                    activeZoomCard = null;
-                                }
-
-                                updateChartDetailLevel(chart);
-                            }
-                        },
-                        pan: {
-                            enabled: true,
-                            mode: 'x',
-                            modifierKey: 'shift', // Pan s Shift+drag
-                            onPanComplete: function ({ chart }) {
-                                // Při manuálním panu resetovat currentZoomRange
-                                currentZoomRange = null;
-
-                                // Odebrat zoom-active z aktivní karty
-                                if (activeZoomCard) {
-                                    activeZoomCard.classList.remove('zoom-active');
-                                    activeZoomCard = null;
-                                }
-
-                                updateChartDetailLevel(chart);
-                            }
-                        },
-                        limits: {
-                            x: { minRange: 3600000 } // Min 1 hodina (v milisekundách)
-                        }
-                    },
-                    pricingModeIcons: modeIconOptions || null
-                },
-                scales: {
-                    x: {
-                        // KRITICKÁ ZMĚNA: 'timeseries' místo 'time' pro lepší timezone handling
-                        // timeseries používá data.labels přímo bez UTC konverze
-                        type: 'timeseries',
-                        time: {
-                            unit: 'hour',
-                            displayFormats: {
-                                hour: 'dd.MM HH:mm'
-                            },
-                            tooltipFormat: 'dd.MM.yyyy HH:mm'
-                        },
-                        ticks: {
-                            color: getTextColor(),
-                            maxRotation: 45,
-                            minRotation: 45,
-                            font: { size: 11 },
-                            maxTicksLimit: 20
-                        },
-                        grid: { color: getGridColor(), lineWidth: 1 }
-                    },
-                    'y-price': {
-                        type: 'linear',
-                        position: 'left',
-                        ticks: {
-                            color: '#2196F3',
-                            font: { size: 11, weight: '500' },
-                            callback: function (value) { return value.toFixed(2) + ' Kč'; }
-                        },
-                        grid: { color: 'rgba(33, 150, 243, 0.15)', lineWidth: 1 },
-                        title: {
-                            display: true,
-                            text: '💰 Cena (Kč/kWh)',
-                            color: '#2196F3',
-                            font: { size: 13, weight: 'bold' }
-                        }
-                    },
-                    'y-solar': {
-                        type: 'linear',
-                        position: 'left',
-                        stacked: true,
-                        ticks: {
-                            color: '#78909C',
-                            font: { size: 11, weight: '500' },
-                            callback: function (value) { return value.toFixed(1) + ' kWh'; },
-                            display: true
-                        },
-                        grid: {
-                            display: true,
-                            color: 'rgba(120, 144, 156, 0.15)',
-                            lineWidth: 1,
-                            drawOnChartArea: true
-                        },
-                        title: {
-                            display: true,
-                            text: '🔋 Kapacita baterie (kWh)',
-                            color: '#78909C',
-                            font: { size: 11, weight: 'bold' }
-                        },
-                        // Začátek shora, aby se nepřekrývala s y-price
-                        beginAtZero: false
-                    },
-                    'y-power': {
-                        type: 'linear',
-                        position: 'right',
-                        stacked: true,
-                        ticks: {
-                            color: '#FFA726',
-                            font: { size: 11, weight: '500' },
-                            callback: function (value) { return value.toFixed(2) + ' kW'; }
-                        },
-                        grid: { display: false },
-                        title: {
-                            display: true,
-                            text: '☀️ Výkon (kW)',
-                            color: '#FFA726',
-                            font: { size: 13, weight: 'bold' }
-                        }
-                    }
-                }
-        };
-
-        applyPricingModeIconPadding(chartOptions, modeIconOptions);
-
-        combinedChart = new Chart(ctx, {
-            type: 'bar', // Changed to 'bar' to support mixed chart (bar + line)
-            data: { labels: allLabels, datasets: datasets },
-            plugins: [ChartDataLabels], // Registrace datalabels pluginu
-            options: chartOptions
-        });
-
-        // Inicializace detailu pro nový graf
-        updateChartDetailLevel(combinedChart);
-
-        // OPRAVA: Nastavit zoom asynchronně PO dokončení inicializace Chart.js
-        // Chart.js zoom plugin se inicializuje asynchronně a přepisuje naše nastavení
-        // Použijeme requestAnimationFrame aby se zoom aplikoval až po prvním renderu
-        if (initialZoomStart && initialZoomEnd) {
-            requestAnimationFrame(() => {
-                if (!combinedChart) return; // Safety check
-
-                combinedChart.options.scales.x.min = initialZoomStart;
-                combinedChart.options.scales.x.max = initialZoomEnd;
-                combinedChart.update('none'); // Aplikovat okamžitě bez animace
-
-                updateChartDetailLevel(combinedChart);
-            });
-        }
     }
 
     // Attach card handlers only once
