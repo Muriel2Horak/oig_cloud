@@ -396,16 +396,39 @@ function updateBoxModeButtons(currentMode, pending, isRunning) {
         'Home 3': 'btn-mode-home3',
         'Home UPS': 'btn-mode-ups'
     };
+    const normalizedMode = normalizeBoxMode(currentMode);
 
     updateModeButtons({
         modes,
         getButtonId: (mode) => buttonIds[mode],
         pendingService: 'set_box_mode',
         pending,
-        currentMode,
+        currentMode: normalizedMode,
         isRunning
     });
-    updateModeStatus('box-mode-status', currentMode, pending, 'set_box_mode', isRunning, '--');
+    updateModeStatus('box-mode-status', normalizedMode, pending, 'set_box_mode', isRunning, '--');
+}
+
+function normalizeBoxMode(modeValue) {
+    if (!modeValue) return modeValue;
+    const raw = String(modeValue).trim();
+    const modeMap = {
+        'Mode 0': 'Home 1',
+        'Mode 1': 'Home 2',
+        'Mode 2': 'Home 3',
+        'Mode 3': 'Home UPS',
+        'HOME I': 'Home 1',
+        'HOME II': 'Home 2',
+        'HOME III': 'Home 3',
+        'HOME UPS': 'Home UPS'
+    };
+    if (raw in modeMap) {
+        return modeMap[raw];
+    }
+    if (/^[0-3]$/.test(raw)) {
+        return modeMap[`Mode ${raw}`];
+    }
+    return raw;
 }
 
 // Update Boiler Mode buttons

@@ -24,6 +24,10 @@ const DETAIL_TABS_MODE_CONFIG = {
     'HOME UPS': { icon: '🛡️', color: 'rgba(255, 152, 0, 0.7)', label: 'HOME UPS' },
     'FULL HOME UPS': { icon: '🛡️', color: 'rgba(255, 152, 0, 0.7)', label: 'FULL HOME UPS' },
     'DO NOTHING': { icon: '⏸️', color: 'rgba(158, 158, 158, 0.7)', label: 'DO NOTHING' },
+    'Mode 0': { icon: '🏠', color: 'rgba(76, 175, 80, 0.7)', label: 'HOME I' },
+    'Mode 1': { icon: '⚡', color: 'rgba(33, 150, 243, 0.7)', label: 'HOME II' },
+    'Mode 2': { icon: '🔋', color: 'rgba(156, 39, 176, 0.7)', label: 'HOME III' },
+    'Mode 3': { icon: '🛡️', color: 'rgba(255, 152, 0, 0.7)', label: 'HOME UPS' },
     'Unknown': { icon: '❓', color: 'rgba(158, 158, 158, 0.5)', label: 'Unknown' }
 };
 
