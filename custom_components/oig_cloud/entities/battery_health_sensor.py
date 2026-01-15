@@ -599,26 +599,38 @@ class BatteryHealthTracker:
         if not self._measurements:
             return None
 
-        # P80 z posledních 20 měření (stabilnější než průměr).
-        recent = self._measurements[-20:]
-        if len(recent) < 2:
-            return None
-        values = sorted(m.soh_percent for m in recent)
-        idx = max(0, int((len(values) * 0.8) - 1))
-        return values[idx]
+        return self._get_percentile_soh(80, window=20)
 
     def get_current_capacity(self) -> Optional[float]:
         """Získat aktuální kapacitu (průměr z posledních měření)."""
         if not self._measurements:
             return None
 
-        # P80 z posledních 20 měření (konzistentní se SoH).
-        recent = self._measurements[-20:]
+        return self._get_percentile_capacity(80, window=20)
+
+    def _get_percentile_soh(self, percentile: int, window: int = 20) -> Optional[float]:
+        values = self._get_recent_values("soh", window)
+        return _percentile(values, percentile)
+
+    def _get_percentile_capacity(self, percentile: int, window: int = 20) -> Optional[float]:
+        values = self._get_recent_values("capacity", window)
+        return _percentile(values, percentile)
+
+    def _get_recent_values(self, kind: str, window: int) -> List[float]:
+        recent = self._measurements[-window:]
         if len(recent) < 2:
-            return None
-        values = sorted(m.capacity_kwh for m in recent)
-        idx = max(0, int((len(values) * 0.8) - 1))
-        return values[idx]
+            return []
+        if kind == "capacity":
+            return [m.capacity_kwh for m in recent]
+        return [m.soh_percent for m in recent]
+
+
+def _percentile(values: List[float], percentile: int) -> Optional[float]:
+    if not values:
+        return None
+    sorted_values = sorted(values)
+    idx = max(0, int((len(sorted_values) * (percentile / 100)) - 1))
+    return sorted_values[idx]
 
 
 class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
@@ -762,5 +774,56 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
                 }
                 for m in recent
             ]
+
+        # Detailní statistiky a metodika (pro FE popup)
+        window = 20
+        attrs["measurement_window"] = window
+        attrs["soh_p20_last_20"] = self._tracker._get_percentile_soh(20, window)
+        attrs["soh_p50_last_20"] = self._tracker._get_percentile_soh(50, window)
+        attrs["soh_p80_last_20"] = self._tracker._get_percentile_soh(80, window)
+        attrs["capacity_p20_last_20"] = self._tracker._get_percentile_capacity(
+            20, window
+        )
+        attrs["capacity_p50_last_20"] = self._tracker._get_percentile_capacity(
+            50, window
+        )
+        attrs["capacity_p80_last_20"] = self._tracker._get_percentile_capacity(
+            80, window
+        )
+        attrs["soh_selection_method"] = "p80_last_20"
+        attrs["filters"] = {
+            "min_delta_soc": self._tracker._min_delta_soc,
+            "min_duration_hours": self._tracker._min_duration_hours,
+            "min_charge_wh": self._tracker._min_charge_wh,
+            "soc_drop_tolerance": self._tracker._soc_drop_tolerance,
+        }
+        attrs["data_sources"] = {
+            "recorder_days": self._tracker._recorder_days,
+            "stats_backfill_days": self._tracker._stats_backfill_days,
+            "stats_backfill_until": (
+                self._tracker._stats_backfill_until.isoformat()
+                if self._tracker._stats_backfill_until
+                else None
+            ),
+        }
+        attrs["measurement_history"] = [
+            {
+                "timestamp": m.timestamp,
+                "start_soc": m.start_soc,
+                "end_soc": m.end_soc,
+                "delta_soc": m.delta_soc,
+                "charge_wh": m.charge_energy_wh,
+                "capacity_kwh": m.capacity_kwh,
+                "soh_percent": m.soh_percent,
+                "duration_hours": m.duration_hours,
+            }
+            for m in self._tracker._measurements
+        ]
+        attrs["soh_method_description"] = (
+            "SoH počítáme z čistých nabíjecích cyklů (ΔSoC>=50%) "
+            "a energie z měsíčního nabíjecího senzoru. "
+            "Výsledek je p80 z posledních 20 měření. "
+            "Cykly s krátkou délkou nebo malou energií jsou filtrovány."
+        )
 
         return attrs

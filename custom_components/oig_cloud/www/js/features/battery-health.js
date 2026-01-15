@@ -15,6 +15,12 @@ let batteryHealthCache = {
     minCapacity: null,
     maxCapacity: null,
     qualityScore: null,
+    sohP20: null,
+    sohP50: null,
+    sohP80: null,
+    selectionMethod: null,
+    measurementHistory: null,
+    methodDescription: null,
     degradation3m: null,
     degradation6m: null,
     degradation12m: null,
@@ -54,13 +60,19 @@ async function updateBatteryHealthStats() {
     // Získat data ze senzoru (NOVÁ STRUKTURA PO REFACTORINGU)
     const soh = (state !== 'unknown' && state !== 'unavailable') ? Number.parseFloat(state) : null;
 
-    // 30-day průměry
-    const capacity = attrs.capacity_kwh || null; // Průměrná kapacita za 30 dní
+    const capacity = attrs.capacity_p80_last_20 ?? attrs.current_capacity_kwh ?? null;
     const measurementCount = attrs.measurement_count || 0;
-    const lastMeasured = attrs.last_measured || null;
-    const minCapacity = attrs.min_capacity_kwh || null;
-    const maxCapacity = attrs.max_capacity_kwh || null;
+    const lastMeasured = attrs.last_analysis || null;
+    const minCapacity = attrs.capacity_p20_last_20 ?? null;
+    const maxCapacity = attrs.capacity_p80_last_20 ?? null;
     const qualityScore = attrs.quality_score || null;
+    const sohP20 = attrs.soh_p20_last_20 ?? null;
+    const sohP50 = attrs.soh_p50_last_20 ?? null;
+    const sohP80 = attrs.soh_p80_last_20 ?? null;
+    const selectionMethod = attrs.soh_selection_method || null;
+    const measurementHistory = attrs.measurement_history || [];
+    const filters = attrs.filters || {};
+    const methodDescription = attrs.soh_method_description || null;
 
     // Degradation trends (3, 6, 12 měsíců)
     const degradation3mPercent = attrs.degradation_3_months_percent || null;
@@ -82,6 +94,12 @@ async function updateBatteryHealthStats() {
         batteryHealthCache.minCapacity !== minCapacity ||
         batteryHealthCache.maxCapacity !== maxCapacity ||
         batteryHealthCache.qualityScore !== qualityScore ||
+        batteryHealthCache.sohP20 !== sohP20 ||
+        batteryHealthCache.sohP50 !== sohP50 ||
+        batteryHealthCache.sohP80 !== sohP80 ||
+        batteryHealthCache.selectionMethod !== selectionMethod ||
+        batteryHealthCache.measurementHistory !== measurementHistory ||
+        batteryHealthCache.methodDescription !== methodDescription ||
         batteryHealthCache.degradation3m !== degradation3mPercent ||
         batteryHealthCache.degradation6m !== degradation6mPercent ||
         batteryHealthCache.degradation12m !== degradation12mPercent ||
@@ -103,6 +121,12 @@ async function updateBatteryHealthStats() {
     batteryHealthCache.minCapacity = minCapacity;
     batteryHealthCache.maxCapacity = maxCapacity;
     batteryHealthCache.qualityScore = qualityScore;
+    batteryHealthCache.sohP20 = sohP20;
+    batteryHealthCache.sohP50 = sohP50;
+    batteryHealthCache.sohP80 = sohP80;
+    batteryHealthCache.selectionMethod = selectionMethod;
+    batteryHealthCache.measurementHistory = measurementHistory;
+    batteryHealthCache.methodDescription = methodDescription;
     batteryHealthCache.degradation3m = degradation3mPercent;
     batteryHealthCache.degradation6m = degradation6mPercent;
     batteryHealthCache.degradation12m = degradation12mPercent;
@@ -137,6 +161,13 @@ async function updateBatteryHealthStats() {
         minCapacity,
         maxCapacity,
         qualityScore,
+        sohP20,
+        sohP50,
+        sohP80,
+        selectionMethod,
+        measurementHistory,
+        filters,
+        methodDescription,
         degradation3mPercent,
         degradation6mPercent,
         degradation12mPercent,
@@ -379,6 +410,54 @@ function buildMeasurementSection(measurementCount, lastMeasured, qualityScore) {
     `;
 }
 
+function buildPercentileRow(label, value) {
+    if (!hasValue(value)) return '';
+    return `
+        <div style="display: flex; justify-content: space-between; font-size: 0.85em; opacity: 0.8;">
+            <span>${label}</span>
+            <span style="color: var(--text-primary); font-weight: 600;">${value.toFixed(1)}%</span>
+        </div>
+    `;
+}
+
+function buildSohPercentiles(sohP20, sohP50, sohP80, selectionMethod) {
+    if (!hasValue(sohP20) && !hasValue(sohP50) && !hasValue(sohP80)) return '';
+    const methodText = selectionMethod ? `Metoda: ${selectionMethod}` : '';
+    return `
+        <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-weight: 600; margin-bottom: 4px;">📈 Percentily SoH</div>
+            ${buildPercentileRow('P20:', sohP20)}
+            ${buildPercentileRow('P50:', sohP50)}
+            ${buildPercentileRow('P80:', sohP80)}
+            ${methodText ? `<div style="margin-top: 4px; opacity: 0.7;">${methodText}</div>` : ''}
+        </div>
+    `;
+}
+
+function buildSohSparkline(measurements) {
+    if (!Array.isArray(measurements) || measurements.length < 2) return '';
+    const values = measurements.map(m => m.soh_percent).filter(v => typeof v === 'number');
+    if (values.length < 2) return '';
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const width = 180;
+    const height = 42;
+    const padding = 4;
+    const step = (width - padding * 2) / (values.length - 1);
+    const points = values.map((val, idx) => {
+        const x = padding + idx * step;
+        const y = padding + (height - padding * 2) * (1 - (val - min) / range);
+        return `${x},${y}`;
+    }).join(' ');
+
+    return `
+        <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="margin-top: 6px;">
+            <polyline points="${points}" fill="none" stroke="rgba(76,217,100,0.9)" stroke-width="2"/>
+        </svg>
+    `;
+}
+
 /**
  * Aktualizuje UI Battery Health tile
  */
@@ -391,6 +470,13 @@ function updateBatteryHealthUI(container, data) {
         minCapacity,
         maxCapacity,
         qualityScore,
+        sohP20,
+        sohP50,
+        sohP80,
+        selectionMethod,
+        measurementHistory,
+        filters,
+        methodDescription,
         degradation3mPercent,
         degradation6mPercent,
         degradation12mPercent,
@@ -416,6 +502,8 @@ function updateBatteryHealthUI(container, data) {
     const sohHtml = buildSohSection(soh, measurementCount);
     const capacityHtml = buildCapacitySection(capacity, minCapacity, maxCapacity);
     const measurementHtml = buildMeasurementSection(measurementCount, lastMeasured, qualityScore);
+    const percentilesHtml = buildSohPercentiles(sohP20, sohP50, sohP80, selectionMethod);
+    const sparklineHtml = buildSohSparkline(measurementHistory);
 
     // Sestavit HTML (stat-card kompatibilní struktura)
     container.innerHTML = `
@@ -433,11 +521,123 @@ function updateBatteryHealthUI(container, data) {
             ${measurementHtml}
         </div>
 
+        ${percentilesHtml}
+        ${sparklineHtml}
+        <div style="margin-top: 6px;">
+            <button class="chart-control-btn" style="font-size: 0.75em;" onclick="openBatteryHealthDetails()">
+                📋 Detail měření
+            </button>
+        </div>
         ${degradationHTML}
         ${predictionHTML}
     `;
 
+    window.__batteryHealthDetails = {
+        soh,
+        capacity,
+        measurementCount,
+        lastMeasured,
+        sohP20,
+        sohP50,
+        sohP80,
+        selectionMethod,
+        measurementHistory,
+        filters,
+        methodDescription
+    };
+
     console.log('[Battery Health] UI updated successfully');
+}
+
+function openBatteryHealthDetails() {
+    const data = window.__batteryHealthDetails;
+    if (!data) return;
+    const existing = document.getElementById('battery-health-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'battery-health-modal';
+    modal.style.position = 'fixed';
+    modal.style.inset = '0';
+    modal.style.background = 'rgba(0,0,0,0.6)';
+    modal.style.zIndex = '9999';
+    modal.style.display = 'flex';
+    modal.style.alignItems = 'center';
+    modal.style.justifyContent = 'center';
+
+    const panel = document.createElement('div');
+    panel.style.background = 'rgba(18, 24, 40, 0.98)';
+    panel.style.border = '1px solid rgba(255,255,255,0.1)';
+    panel.style.borderRadius = '12px';
+    panel.style.width = 'min(900px, 92vw)';
+    panel.style.maxHeight = '86vh';
+    panel.style.overflow = 'auto';
+    panel.style.padding = '20px';
+    panel.style.color = 'var(--text-primary)';
+
+    const historyRows = (data.measurementHistory || []).slice().reverse().map(m => `
+        <tr>
+            <td>${new Date(m.timestamp).toLocaleDateString('cs-CZ')}</td>
+            <td style="text-align:right;">${m.soh_percent?.toFixed(1)}%</td>
+            <td style="text-align:right;">${m.capacity_kwh?.toFixed(2)} kWh</td>
+            <td style="text-align:right;">${m.delta_soc?.toFixed(0)}%</td>
+            <td style="text-align:right;">${(m.charge_wh / 1000).toFixed(2)} kWh</td>
+            <td style="text-align:right;">${m.duration_hours?.toFixed(1)} h</td>
+        </tr>
+    `).join('');
+
+    panel.innerHTML = `
+        <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 10px;">
+            <h3 style="margin:0;">🔍 Detail kvality baterie</h3>
+            <button class="chart-control-btn" onclick="document.getElementById('battery-health-modal').remove()">✕ Zavřít</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; font-size: 0.85em;">
+            <div><strong>SoH (p80):</strong> ${data.soh?.toFixed(1) ?? '--'}%</div>
+            <div><strong>P50:</strong> ${data.sohP50?.toFixed(1) ?? '--'}%</div>
+            <div><strong>P20:</strong> ${data.sohP20?.toFixed(1) ?? '--'}%</div>
+            <div><strong>Měření:</strong> ${data.measurementCount ?? 0}</div>
+            <div><strong>Poslední analýza:</strong> ${data.lastMeasured ? new Date(data.lastMeasured).toLocaleDateString('cs-CZ') : '--'}</div>
+            <div><strong>Metoda:</strong> ${data.selectionMethod || '--'}</div>
+        </div>
+
+        <div style="margin-top: 12px; font-size: 0.85em; opacity: 0.85;">
+            ${data.methodDescription || ''}
+        </div>
+
+        <div style="margin-top: 12px; font-size: 0.85em;">
+            <strong>Filtry:</strong>
+            <div>ΔSoC ≥ ${data.filters?.min_delta_soc ?? '--'}%, min. délka ${data.filters?.min_duration_hours ?? '--'}h, min. energie ${(data.filters?.min_charge_wh ?? 0) / 1000} kWh, tolerance poklesu ${data.filters?.soc_drop_tolerance ?? '--'}%</div>
+        </div>
+
+        <div style="margin-top: 12px;">
+            ${buildSohSparkline(data.measurementHistory || [])}
+        </div>
+
+        <div style="margin-top: 12px; overflow:auto;">
+            <table style="width:100%; border-collapse: collapse; font-size:0.85em;">
+                <thead>
+                    <tr style="text-align:left; opacity:0.7;">
+                        <th>Datum</th>
+                        <th style="text-align:right;">SoH</th>
+                        <th style="text-align:right;">Kapacita</th>
+                        <th style="text-align:right;">ΔSoC</th>
+                        <th style="text-align:right;">Energie</th>
+                        <th style="text-align:right;">Doba</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${historyRows || '<tr><td colspan="6">Žádná měření</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    modal.appendChild(panel);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+    document.body.appendChild(modal);
 }
 
 /**
