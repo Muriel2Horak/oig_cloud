@@ -694,6 +694,7 @@ def _compute_metrics_from_wh(
     charge_kwh = charge_wh / 1000
     discharge_kwh = discharge_wh / 1000
     delta_kwh = battery_end_kwh - battery_start_kwh
+
     effective_discharge = discharge_kwh - delta_kwh
     if charge_kwh <= 0 or effective_discharge <= 0:
         return None
