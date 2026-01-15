@@ -46,7 +46,7 @@
 
 .btn-primary {
     background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
-    color: white;
+    color: #111827;
 }
 
 .btn-primary:hover {
@@ -68,7 +68,7 @@
 .btn-action {
     background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
     border: 1px solid rgb(33, 150, 243, 0.3);
-    color: white;
+    color: #111827;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -105,6 +105,19 @@
 }
 
 /* === LAYOUT BUTTONS === */
+
+.button-reset {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    appearance: none;
+}
 
 .btn-minimize {
     position: absolute;
@@ -202,6 +215,7 @@
     background: var(--button-active-bg);
     border-color: #4caf50;
     color: #4caf50;
+    position: relative;
 }
 
 .button-group button:disabled,
@@ -222,10 +236,6 @@
 }
 
 /* === BUTTON STATES WITH INDICATORS === */
-
-.button-group button.active {
-    position: relative;
-}
 
 .button-group button.active::before {
     content: '●';
@@ -292,7 +302,7 @@
 .ack-dialog-buttons .btn-confirm {
     background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
     border: none;
-    color: white;
+    color: #111827;
 }
 
 .ack-dialog-buttons .btn-confirm:hover:not(:disabled) {
@@ -356,27 +366,28 @@
 /* === LIGHT THEME OVERRIDES === */
 
 body.light-theme .btn-minimize {
-    color: rgb(0, 0, 0, 0.6);
+    color: #2b2b2b;
 }
 
 body.light-theme .btn-minimize:hover {
-    background: rgb(0, 0, 0, 0.05);
-    color: rgb(0, 0, 0, 0.8);
+    background: #e0e0e0;
+    color: #111111;
 }
 
 body.light-theme .button-group button {
-    background: rgb(0, 0, 0, 0.03);
-    border-color: rgb(0, 0, 0, 0.1);
-    color: rgb(0, 0, 0, 0.87);
+    background: #f0f0f0;
+    border-color: #7a7a7a;
+    color: #111111;
 }
 
 body.light-theme .button-group button:hover:not(:disabled) {
-    background: rgb(0, 0, 0, 0.08);
+    background: #e2e2e2;
 }
 
 body.light-theme .button-group button.active {
-    background: rgb(76, 175, 80, 0.15);
-    border-color: #4caf50;
+    background: #dff0df;
+    border-color: #2e7d32;
+    color: #1b1b1b;
 }
 
 body.light-theme .button-group button:disabled {
@@ -384,9 +395,9 @@ body.light-theme .button-group button:disabled {
 }
 
 body.light-theme .btn-close {
-    color: rgb(0, 0, 0, 0.54);
+    color: #444444;
 }
 
 body.light-theme .btn-close:hover {
-    color: rgb(0, 0, 0, 0.87);
+    color: #111111;
 }

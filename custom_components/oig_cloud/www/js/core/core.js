@@ -1,18 +1,10 @@
-/* eslint-disable */
 // === INVERTER SN (from api.js) ===
 // INVERTER_SN is defined in dashboard-api.js (loaded before this file)
 
 // === LAYOUT (using dashboard-layout.js module) ===
-// Import layout functions (var allows re-declaration if script re-runs)
-var getCurrentBreakpoint = window.DashboardLayout?.getCurrentBreakpoint;
-var saveLayout = window.DashboardLayout?.saveLayout;
-var loadLayout = window.DashboardLayout?.loadLayout;
-var resetLayout = window.DashboardLayout?.resetLayout;
-var toggleEditMode = window.DashboardLayout?.toggleEditMode;
-
-// === GLOBAL VARIABLES FOR CHART DATA ===
-// Store complete dataset for extremes calculation regardless of zoom
-var originalPriceData = null;
+// Import layout functions (use unique names to avoid global collisions)
+const getCurrentBreakpointRef = globalThis.DashboardLayout?.getCurrentBreakpoint;
+const loadLayoutRef = globalThis.DashboardLayout?.loadLayout;
 
 // === TOOLTIP POSITIONING ===
 
@@ -26,9 +18,18 @@ function toggleControlPanel() {
     icon.textContent = panel.classList.contains('minimized') ? '+' : '−';
 }
 
+function handleInteractiveKey(event) {
+    if (event?.key === 'Enter' || event?.key === ' ') {
+        event.preventDefault();
+        event.currentTarget?.click?.();
+    }
+}
+
+globalThis.handleInteractiveKey = handleInteractiveKey;
+
 function runWhenIdle(task, timeoutMs = 2000, fallbackDelayMs = 600) {
-    if (typeof window.requestIdleCallback === 'function') {
-        window.requestIdleCallback(() => task(), { timeout: timeoutMs });
+    if (typeof globalThis.requestIdleCallback === 'function') {
+        globalThis.requestIdleCallback(() => task(), { timeout: timeoutMs });
         return;
     }
     setTimeout(task, fallbackDelayMs);
@@ -36,68 +37,55 @@ function runWhenIdle(task, timeoutMs = 2000, fallbackDelayMs = 600) {
 
 function detectHaApp() {
     try {
-        const ua = window.navigator?.userAgent || '';
+        const ua = globalThis.navigator?.userAgent || '';
         return /Home Assistant|HomeAssistant/i.test(ua);
     } catch (e) {
+        console.warn('[Theme] Failed to detect HA app:', e);
         return false;
     }
 }
 
 function detectMobile() {
     try {
-        const ua = window.navigator?.userAgent || '';
+        const ua = globalThis.navigator?.userAgent || '';
         const mobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-        const smallViewport = window.innerWidth <= 768 || window.matchMedia?.('(max-width: 768px)')?.matches;
+        const smallViewport = globalThis.innerWidth <= 768 || globalThis.matchMedia?.('(max-width: 768px)')?.matches;
         return mobileUA || !!smallViewport;
     } catch (e) {
+        console.warn('[Theme] Failed to detect mobile runtime:', e);
         return false;
     }
 }
 
-window.OIG_RUNTIME = window.OIG_RUNTIME || {};
-if (window.OIG_RUNTIME.isHaApp === undefined) {
-    window.OIG_RUNTIME.isHaApp = detectHaApp();
+globalThis.OIG_RUNTIME = globalThis.OIG_RUNTIME || {};
+if (globalThis.OIG_RUNTIME.isHaApp === undefined) {
+    globalThis.OIG_RUNTIME.isHaApp = detectHaApp();
 }
-if (window.OIG_RUNTIME.isMobile === undefined) {
-    window.OIG_RUNTIME.isMobile = detectMobile();
+if (globalThis.OIG_RUNTIME.isMobile === undefined) {
+    globalThis.OIG_RUNTIME.isMobile = detectMobile();
 }
-if (window.OIG_RUNTIME.reduceMotion === undefined) {
-    const prefersReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-    window.OIG_RUNTIME.reduceMotion = !!(prefersReduced || window.OIG_RUNTIME.isHaApp || window.OIG_RUNTIME.isMobile);
+if (globalThis.OIG_RUNTIME.reduceMotion === undefined) {
+    const prefersReduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    globalThis.OIG_RUNTIME.reduceMotion = !!(prefersReduced || globalThis.OIG_RUNTIME.isHaApp || globalThis.OIG_RUNTIME.isMobile);
 }
-if (window.OIG_RUNTIME.initialLoadComplete === undefined) {
-    window.OIG_RUNTIME.initialLoadComplete = false;
+if (globalThis.OIG_RUNTIME.initialLoadComplete === undefined) {
+    globalThis.OIG_RUNTIME.initialLoadComplete = false;
 }
 
 // === SHIELD (moved to dashboard-shield.js) ===
 // Import shield functions
-var subscribeToShield = window.DashboardShield?.subscribeToShield;
-var startShieldQueueLiveUpdate = window.DashboardShield?.startShieldQueueLiveUpdate;
-var stopShieldQueueLiveUpdate = window.DashboardShield?.stopShieldQueueLiveUpdate;
-var loadShieldData = window.DashboardShield?.loadShieldData;
-var debouncedShieldMonitor = window.DashboardShield?.debouncedShieldMonitor;
-var setShieldMode = window.DashboardShield?.setShieldMode;
-var setShieldModeWithConfirmation = window.DashboardShield?.setShieldModeWithConfirmation;
-var cancelShieldAction = window.DashboardShield?.cancelShieldAction;
-var loadControlPanelStatus = window.DashboardShield?.loadControlPanelStatus;
+const subscribeToShieldRef = globalThis.DashboardShield?.subscribeToShield;
 
 // === FLOW DIAGRAM (moved to dashboard-flow.js) ===
 // Import functions from DashboardFlow module
-var getSensorId = window.DashboardFlow?.getSensorId;
-var updateTime = window.DashboardFlow?.updateTime;
-var debouncedDrawConnections = window.DashboardFlow?.debouncedDrawConnections;
-var drawConnections = window.DashboardFlow?.drawConnections;
-var getNodeCenters = window.DashboardFlow?.getNodeCenters;
-var updateNode = window.DashboardFlow?.updateNode;
-var updateNodeDetails = window.DashboardFlow?.updateNodeDetails;
-var loadData = window.DashboardFlow?.loadData;
-var loadNodeDetails = window.DashboardFlow?.loadNodeDetails;
-var forceFullRefresh = window.DashboardFlow?.forceFullRefresh;
-var debouncedLoadData = window.DashboardFlow?.debouncedLoadData;
-var debouncedLoadNodeDetails = window.DashboardFlow?.debouncedLoadNodeDetails;
+const updateTimeRef = globalThis.DashboardFlow?.updateTime;
+const drawConnectionsRef = globalThis.DashboardFlow?.drawConnections;
+const getNodeCentersRef = globalThis.DashboardFlow?.getNodeCenters;
+const loadDataRef = globalThis.DashboardFlow?.loadData;
+const forceFullRefreshRef = globalThis.DashboardFlow?.forceFullRefresh;
 
 // Import findShieldSensorId from utils
-var findShieldSensorId = window.DashboardUtils?.findShieldSensorId;
+const findShieldSensorIdRef = globalThis.DashboardUtils?.findShieldSensorId;
 
 // === THEME DETECTION ===
 
@@ -108,75 +96,64 @@ function detectAndApplyTheme() {
     try {
         const hass = getHass();
         const bodyElement = document.body;
-        let isLightTheme = false;
-
-        if (hass && hass.themes) {
-            // Metoda 1: Přímý přístup k HA theme konfiguraci (nejspolehlivější)
-            const selectedTheme = hass.selectedTheme || hass.themes.default_theme;
-            const darkMode = hass.themes.darkMode;
-
-            // console.log('[Theme] HA theme info:', {
-            //     selectedTheme,
-            //     darkMode,
-            //     themes: hass.themes
-            // });
-
-            // HA má explicitní dark mode flag
-            if (darkMode !== undefined) {
-                isLightTheme = !darkMode;
-                // console.log('[Theme] Using HA darkMode flag:', darkMode, '-> light theme:', isLightTheme);
-            } else if (selectedTheme) {
-                // Fallback: některá témata mají v názvu "light" nebo "dark"
-                const themeName = selectedTheme.toLowerCase();
-                if (themeName.includes('light')) {
-                    isLightTheme = true;
-                } else if (themeName.includes('dark')) {
-                    isLightTheme = false;
-                }
-                // console.log('[Theme] Detected from theme name:', selectedTheme, '-> light:', isLightTheme);
-            }
-        } else {
-            console.warn('[Theme] Cannot access hass.themes, trying CSS detection');
+        let isLightTheme = resolveThemeFromHass(hass);
+        if (isLightTheme === null) {
+            isLightTheme = resolveThemeFromCss();
         }
-
-        // Metoda 2: Fallback - detekce z CSS proměnných
-        if (!hass || !hass.themes) {
-            try {
-                const haElement = parent.document.querySelector('home-assistant');
-                if (haElement) {
-                    const computedStyle = getComputedStyle(haElement);
-                    const primaryBg = computedStyle.getPropertyValue('--primary-background-color');
-
-                    if (primaryBg) {
-                        const rgb = primaryBg.match(/\d+/g);
-                        if (rgb && rgb.length >= 3) {
-                            const brightness = (parseInt(rgb[0]) + parseInt(rgb[1]) + parseInt(rgb[2])) / 3;
-                            isLightTheme = brightness > 128;
-                            console.log('[Theme] CSS detection - brightness:', brightness, '-> light:', isLightTheme);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn('[Theme] CSS detection failed:', e);
-            }
-        }
-
-// Aplikovat třídu na body
-        if (isLightTheme) {
-            bodyElement.classList.add('light-theme');
-            bodyElement.classList.remove('dark-theme');
-            // console.log('[Theme] ✓ Light theme applied');
-        } else {
-            bodyElement.classList.add('dark-theme');
-            bodyElement.classList.remove('light-theme');
-            // console.log('[Theme] ✓ Dark theme applied');
-        }
+        applyThemeToBody(bodyElement, isLightTheme ?? false);
 
     } catch (error) {
         console.error('[Theme] Error detecting theme:', error);
         // Výchozí: tmavé téma
         document.body.classList.add('dark-theme');
         document.body.classList.remove('light-theme');
+    }
+}
+
+function resolveThemeFromHass(hass) {
+    if (!hass?.themes) {
+        console.warn('[Theme] Cannot access hass.themes, trying CSS detection');
+        return null;
+    }
+
+    const selectedTheme = hass.selectedTheme || hass.themes.default_theme;
+    const darkMode = hass.themes.darkMode;
+    if (darkMode !== undefined) {
+        return !darkMode;
+    }
+    if (!selectedTheme) return null;
+
+    const themeName = selectedTheme.toLowerCase();
+    if (themeName.includes('light')) return true;
+    if (themeName.includes('dark')) return false;
+    return null;
+}
+
+function resolveThemeFromCss() {
+    try {
+        const haElement = globalThis.parent?.document?.querySelector?.('home-assistant');
+        if (!haElement) return null;
+        const computedStyle = getComputedStyle(haElement);
+        const primaryBg = computedStyle.getPropertyValue('--primary-background-color');
+        if (!primaryBg) return null;
+        const rgb = primaryBg.match(/\d+/g);
+        if (!rgb || rgb.length < 3) return null;
+        const brightness = (Number.parseInt(rgb[0], 10) + Number.parseInt(rgb[1], 10) + Number.parseInt(rgb[2], 10)) / 3;
+        console.log('[Theme] CSS detection - brightness:', brightness, '-> light:', brightness > 128);
+        return brightness > 128;
+    } catch (e) {
+        console.warn('[Theme] CSS detection failed:', e);
+        return null;
+    }
+}
+
+function applyThemeToBody(bodyElement, isLightTheme) {
+    if (isLightTheme) {
+        bodyElement.classList.add('light-theme');
+        bodyElement.classList.remove('dark-theme');
+    } else {
+        bodyElement.classList.add('dark-theme');
+        bodyElement.classList.remove('light-theme');
     }
 }
 
@@ -203,12 +180,12 @@ function initRollingNumbers() {
                 if (!el) return;
                 el.classList.remove('rolling-change');
                 // force reflow to restart animation
-                void el.offsetWidth;
+                el.getBoundingClientRect();
                 el.classList.add('rolling-change');
             } else if (mutation.type === 'childList' && mutation.target) {
                 const el = /** @type {HTMLElement} */ (mutation.target);
                 el.classList.remove('rolling-change');
-                void el.offsetWidth;
+                el.getBoundingClientRect();
                 el.classList.add('rolling-change');
             }
         });
@@ -241,8 +218,8 @@ function initTooltips() {
 
     entityValues.forEach(element => {
         element.addEventListener('mouseenter', function () {
-            const tooltipText = this.getAttribute('data-tooltip');
-            const tooltipHtml = this.getAttribute('data-tooltip-html');
+            const tooltipText = this.dataset.tooltip;
+            const tooltipHtml = this.dataset.tooltipHtml;
 
             if (!tooltipText && !tooltipHtml) return;
 
@@ -271,7 +248,7 @@ function initTooltips() {
             let tooltipLeft = rect.left + (rect.width / 2) - (tooltipWidth / 2);
 
             // Zajistit že tooltip není mimo viewport (horizontálně)
-            const viewportWidth = window.innerWidth;
+            const viewportWidth = globalThis.innerWidth;
             if (tooltipLeft < padding) {
                 tooltipLeft = padding;
             }
@@ -330,71 +307,70 @@ function initTooltips() {
         });
     });
 
-    // console.log('[Tooltips] Initialized for', entityValues.length, 'elements');
+    // Tooltips initialized.
 }
 
 // === GRID CHARGING (moved to dashboard-grid-charging.js) ===
-var openGridChargingDialog = window.DashboardGridCharging?.openGridChargingDialog;
-var closeGridChargingDialog = window.DashboardGridCharging?.closeGridChargingDialog;
 
 // === INITIALIZATION ===
 function init() {
     console.log('[Dashboard] Initializing...');
-    const isConstrainedRuntime = !!(window.OIG_RUNTIME?.isHaApp || window.OIG_RUNTIME?.isMobile);
-    if (window.OIG_RUNTIME?.reduceMotion) {
-        document.body.classList.add('oig-reduce-motion');
-        const particles = document.getElementById('particles');
-        if (particles) {
-            particles.style.display = 'none';
-        }
+    const isConstrainedRuntime = !!(globalThis.OIG_RUNTIME?.isHaApp || globalThis.OIG_RUNTIME?.isMobile);
+
+    applyReduceMotion();
+    detectAndApplyTheme();
+    initLayoutCustomization();
+    setupControlPanelForMobile();
+    initTooltips();
+    initRollingNumbers();
+
+    if (typeof initPerformanceChartRef === 'function') {
+        initPerformanceChartRef();
     }
 
-    // Detekovat a aplikovat téma z Home Assistantu
-    detectAndApplyTheme();
+    scheduleInitialDataLoad(isConstrainedRuntime);
+    startShieldSubscription(isConstrainedRuntime);
+    scheduleInitialShieldLoad();
+    setupThemeListeners();
+}
 
-    // === LAYOUT CUSTOMIZATION INITIALIZATION ===
-    currentBreakpoint = getCurrentBreakpoint();
+function applyReduceMotion() {
+    if (!globalThis.OIG_RUNTIME?.reduceMotion) return;
+    document.body.classList.add('oig-reduce-motion');
+    const particles = document.getElementById('particles');
+    if (particles) {
+        particles.style.display = 'none';
+    }
+}
+
+function initLayoutCustomization() {
+    const currentBreakpoint = getCurrentBreakpointRef?.();
     console.log(`[Layout] Initial breakpoint: ${currentBreakpoint}`);
 
-    // Načíst custom layout pokud existuje
-    const loaded = loadLayout(currentBreakpoint);
+    const loaded = loadLayoutRef?.(currentBreakpoint);
     if (loaded) {
         console.log(`[Layout] Custom ${currentBreakpoint} layout loaded`);
     } else {
         console.log(`[Layout] Using default ${currentBreakpoint} layout`);
     }
 
-    // Resize listener pro breakpoint changes
-    window.addEventListener('resize', handleLayoutResize);
+    globalThis.addEventListener('resize', handleLayoutResize);
+}
 
-    // Auto-collapse control panel on mobile
-    if (window.innerWidth <= 768) {
-        const panel = document.getElementById('control-panel');
-        const icon = document.getElementById('panel-toggle-icon');
-        if (panel && icon) {
-            panel.classList.add('minimized');
-            icon.textContent = '+';
-        }
+function setupControlPanelForMobile() {
+    if (globalThis.innerWidth > 768) return;
+    const panel = document.getElementById('control-panel');
+    const icon = document.getElementById('panel-toggle-icon');
+    if (panel && icon) {
+        panel.classList.add('minimized');
+        icon.textContent = '+';
     }
+}
 
-    // Initialize tooltip system
-    initTooltips();
-
-    // Start number rolling animation observer
-    initRollingNumbers();
-
-    // Optional: legacy performance chart (removed)
-    if (typeof initPerformanceChart === 'function') {
-        initPerformanceChart();
-    }
-
-    // OPRAVA: Počkat na dokončení layout načtení před voláním loadData()
-    // Pokud byl načten custom layout, particles byly zastaveny
-    // a needsFlowReinitialize je TRUE, takže loadData() je restartuje
+function scheduleInitialDataLoad(isConstrainedRuntime) {
     setTimeout(() => {
-        // Initial full load (defer heavy work in HA app to avoid UI freeze)
         const startHeavyLoad = () => {
-            forceFullRefresh();
+            forceFullRefreshRef?.();
         };
         if (isConstrainedRuntime) {
             setTimeout(() => runWhenIdle(startHeavyLoad, 3500, 1200), 200);
@@ -402,283 +378,99 @@ function init() {
             startHeavyLoad();
         }
 
-        updateTime();
-
-        // NOVÉ: Load extended timeline for Today Plan Tile
+        updateTimeRef?.();
         runWhenIdle(buildExtendedTimeline, isConstrainedRuntime ? 3500 : 2500, isConstrainedRuntime ? 1200 : 900);
-
-        // OPRAVA: Načíst pricing data pokud je pricing tab aktivní při načtení stránky
-        const pricingTab = document.getElementById('pricing-tab');
-        if (pricingTab && pricingTab.classList.contains('active')) {
-            console.log('[Init] Pricing tab is active, loading initial pricing data...');
-            pricingTabActive = true;
-            setTimeout(() => {
-                loadPricingData();
-            }, 200);
-        }
+        loadPricingIfActive();
     }, 50);
+}
 
-    // Subscribe to shield state changes for real-time updates (defer on mobile/HA app)
-    const startShieldSubscription = () => {
-        subscribeToShield();
+function loadPricingIfActive() {
+    const pricingTab = document.getElementById('pricing-tab');
+    if (!pricingTab?.classList?.contains('active')) return;
+    console.log('[Init] Pricing tab is active, loading initial pricing data...');
+    pricingTabActive = true;
+    setTimeout(() => {
+        loadPricingDataRef?.();
+    }, 200);
+}
+
+function startShieldSubscription(isConstrainedRuntime) {
+    const startShield = () => {
+        subscribeToShieldRef?.();
     };
     if (isConstrainedRuntime) {
-        setTimeout(() => runWhenIdle(startShieldSubscription, 4000, 1500), 300);
+        setTimeout(() => runWhenIdle(startShield, 4000, 1500), 300);
     } else {
-        startShieldSubscription();
+        startShield();
     }
+}
 
-    // Initial shield UI update with retry logic (wait for sensors after HA restart)
+function scheduleInitialShieldLoad() {
     let retryCount = 0;
     const maxRetries = 10;
-    const retryInterval = 2000; // 2s between retries
+    const retryInterval = 2000;
 
-    function tryInitialShieldLoad() {
+    const tryInitialShieldLoad = () => {
         console.log(`[Shield] Attempting initial load (attempt ${retryCount + 1}/${maxRetries})...`);
-
-        // Check if shield sensors are available
         const hass = getHass();
-        if (!hass || !hass.states) {
-            console.warn('[Shield] HA connection not ready, will retry...');
+        if (!hass?.states) {
             retryCount++;
-            if (retryCount < maxRetries) {
-                setTimeout(tryInitialShieldLoad, retryInterval);
-            } else {
-                console.error('[Shield] Failed to load after', maxRetries, 'attempts');
-                console.warn('[Shield] Falling back to 20s polling as backup');
-                // Fallback: Enable backup polling if initial load fails
-                setInterval(() => {
-                    console.log('[Shield] Backup polling triggered');
-                    monitorShieldActivity();
-                    updateShieldQueue();
-                    updateShieldUI();
-                    updateButtonStates();
-                }, 20000);
-            }
-            return;
+            return retryShieldLoad(tryInitialShieldLoad, retryCount, maxRetries, retryInterval);
         }
 
-        const activitySensorId = findShieldSensorId('service_shield_activity');
+        const activitySensorId = findShieldSensorIdRef?.('service_shield_activity');
         if (!activitySensorId || !hass.states[activitySensorId]) {
-            console.warn('[Shield] Shield sensors not ready yet, will retry...');
             retryCount++;
-            if (retryCount < maxRetries) {
-                setTimeout(tryInitialShieldLoad, retryInterval);
-            } else {
-                console.error('[Shield] Shield sensors not available after', maxRetries, 'attempts');
-                console.warn('[Shield] Falling back to 20s polling as backup');
-                // Fallback: Enable backup polling if sensors not available
-                setInterval(() => {
-                    console.log('[Shield] Backup polling triggered');
-                    monitorShieldActivity();
-                    updateShieldQueue();
-                    updateShieldUI();
-                    updateButtonStates();
-                }, 20000);
-            }
-            return;
+            return retryShieldLoad(tryInitialShieldLoad, retryCount, maxRetries, retryInterval);
         }
 
-        // Sensors are ready, load UI
         console.log('[Shield] Sensors ready, loading initial UI...');
-        updateButtonStates(); // Set initial active states (green highlighting)
-        updateShieldQueue();  // Load initial queue state
-        updateShieldUI();     // Load initial shield status
-        monitorShieldActivity(); // Start activity monitoring
-    }
+        updateButtonStates();
+        updateShieldQueue();
+        updateShieldUI();
+        monitorShieldActivity();
+    };
 
-    // Start initial load with delay
     setTimeout(tryInitialShieldLoad, 1000);
+}
 
-    // === EVENT-DRIVEN ARCHITECTURE ===
-    // Veškeré updates jsou řízeny přes StateWatcher (polling hass.states), bez dalších `state_changed` WS subscription.
-    // - Data sensors -> debouncedLoadData() (200ms debounce)
-    // - Detail sensors -> debouncedLoadNodeDetails() (500ms debounce)
-    // - Pricing sensors -> debouncedLoadPricingData() (300ms debounce)
-    // - Shield sensors -> debouncedShieldMonitor() (100ms debounce)
+function retryShieldLoad(retryFn, retryCount, maxRetries, retryInterval) {
+    if (retryCount < maxRetries) {
+        setTimeout(retryFn, retryInterval);
+        return;
+    }
+    console.error('[Shield] Failed to load after', maxRetries, 'attempts');
+    console.warn('[Shield] Falling back to 20s polling as backup');
+    setInterval(() => {
+        console.log('[Shield] Backup polling triggered');
+        monitorShieldActivity();
+        updateShieldQueue();
+        updateShieldUI();
+        updateButtonStates();
+    }, 20000);
+}
 
-    // REMOVED: Polling-based updates (replaced by WebSocket events)
-    // setInterval(loadData, 5000);  ❌ Nahrazeno event-driven
-    // setInterval(loadNodeDetails, 30000);  ❌ Nahrazeno event-driven
-    // setInterval(detectAndApplyTheme, 5000);  ❌ Nahrazeno event-driven
-
-    // Theme detection - pouze event listeners (NO POLLING)
-    // 1. Parent window theme changes
+function setupThemeListeners() {
     try {
-        if (parent && parent.addEventListener) {
-            parent.addEventListener('theme-changed', () => {
-                console.log('[Theme] Theme changed event detected');
-                detectAndApplyTheme();
-            });
-        }
+        globalThis.parent?.addEventListener?.('theme-changed', () => {
+            console.log('[Theme] Theme changed event detected');
+            detectAndApplyTheme();
+        });
     } catch (e) {
         console.warn('[Theme] Cannot listen to parent events:', e);
     }
 
-    // 2. System preference changes
-    if (window.matchMedia) {
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-            console.log('[Theme] System preference changed');
-            detectAndApplyTheme();
-        });
-    }
-
-    // 3. Fallback: Check theme on visibility change (tab switch)
-    document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) {
-            console.log('[Theme] Tab became visible, checking theme');
-            detectAndApplyTheme();
-        }
+    globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.addEventListener('change', () => {
+        console.log('[Theme] System preference changed');
+        detectAndApplyTheme();
     });
 
-    // REMOVED: Backup shield monitoring - WebSocket events handle all updates in real-time
-    // setInterval(() => {
-    //     monitorShieldActivity();
-    //     updateShieldQueue();
-    // }, 10000);
-
-    // Time update every second
-    setInterval(updateTime, 1000);
-
-    // Redraw lines on resize with debounce.
-    // Mobile WebViews (incl. HA app) fire frequent resize events when browser chrome shows/hides.
-    // Avoid stopping/reinitializing particles on height-only micro-resizes.
-    let resizeTimer;
-    let lastResizeWidth = window.innerWidth;
-    let lastResizeHeight = window.innerHeight;
-    let lastResizeBreakpoint = (window.innerWidth <= 768) ? 'mobile' : (window.innerWidth <= 1024 ? 'tablet' : 'desktop');
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimer);
-        // Clear cache on resize
-        cachedNodeCenters = null;
-        lastLayoutHash = null;
-        resizeTimer = setTimeout(() => {
-            const w = window.innerWidth;
-            const h = window.innerHeight;
-            const breakpoint = (w <= 768) ? 'mobile' : (w <= 1024 ? 'tablet' : 'desktop');
-
-            const dw = Math.abs(w - lastResizeWidth);
-            const dh = Math.abs(h - lastResizeHeight);
-            const breakpointChanged = breakpoint !== lastResizeBreakpoint;
-
-            // "Meaningful" resize: width changes (rotation / split-screen) or breakpoint changes.
-            // Height-only changes often happen continuously on mobile due to browser UI.
-            const meaningfulResize = breakpointChanged || dw >= 24 || dh >= 180;
-
-            lastResizeWidth = w;
-            lastResizeHeight = h;
-            lastResizeBreakpoint = breakpoint;
-
-            // OPRAVA: Při resize na flow tabu musíme reinicializovat particles
-            const flowTab = document.querySelector('#flow-tab');
-            const isFlowTabActive = flowTab && flowTab.classList.contains('active');
-
-            if (isFlowTabActive) {
-                if (meaningfulResize) {
-                    console.log('[Resize] Flow tab meaningful resize, reinitializing particles...');
-                    stopAllParticleFlows();
-                    drawConnections();
-                    needsFlowReinitialize = true;
-                    // Trigger a data refresh (debounced) to kick animations with updated positions.
-                    if (typeof debouncedLoadData === 'function') {
-                        debouncedLoadData();
-                    } else {
-                        loadData();
-                    }
-                } else {
-                    // Lightweight update: just redraw connections; particle flows will self-correct on next data tick.
-                    drawConnections();
-                }
-            } else {
-                // Jen překreslit connections pokud nejsme na flow tabu
-                drawConnections();
-            }
-        }, 100);
-    });
-
-    // FIX: Force layout stabilization after initial render
-    // Problém: Po restartu HA se někdy načítají CSS/HTML v jiném pořadí
-    // Řešení: Opakované překreslení po různých intervalech
-    // OPRAVA BUG #3: Inicializovat cache před prvním kreslením
-    const scheduleConnectionsDraw = (delay) => {
-        setTimeout(() => { getNodeCenters(); drawConnections(); }, delay);
-    };
-    if (isConstrainedRuntime) {
-        scheduleConnectionsDraw(200);   // První pokus po 200ms (mobile/HA app)
-        scheduleConnectionsDraw(1200);  // Finální po 1.2s
-    } else {
-        scheduleConnectionsDraw(100);   // První pokus po 100ms
-        scheduleConnectionsDraw(500);   // Druhý pokus po 500ms
-        scheduleConnectionsDraw(1000);  // Třetí pokus po 1s
-        scheduleConnectionsDraw(2000);  // Finální po 2s
-    }
-
-    // Mobile: Toggle node details on click (collapsed by default)
-    if (window.innerWidth <= 768) {
-        const nodes = document.querySelectorAll('.node');
-        nodes.forEach(node => {
-            node.addEventListener('click', function (e) {
-                // Ignore clicks on buttons inside nodes
-                if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
-                    return;
-                }
-                this.classList.toggle('expanded');
-            });
-
-            // Add cursor pointer to indicate clickability
-            node.style.cursor = 'pointer';
-        });
-    }
-
-    // === CUSTOM TILES INITIALIZATION ===
-    initCustomTiles();
-
-    // === PERIODICKÝ CLEANUP PARTICLES (PREVENCE ÚNIK PAMĚTI) ===
-    // Každých 30 sekund zkontrolujeme počet particles
-    // Pokud NEJSME na tab Toky, NEMAŽ particles (budou potřeba po návratu)
-    // Pokud JSME na tab Toky a je > 40 kuliček, proveď cleanup
-    setInterval(() => {
-        const flowTab = document.querySelector('#flow-tab');
-        const isFlowTabActive = flowTab && flowTab.classList.contains('active');
-        const particlesContainer = document.getElementById('particles');
-
-        if (!isFlowTabActive) {
-            // OPRAVA: NEMAŽ particles když nejsi na tabu - budou potřeba při návratu
-            // Jen zkontroluj count pro monitoring
-            if (particlesContainer) {
-                const particleCount = particlesContainer.children.length;
-                if (particleCount > 50) {
-                    console.log(`[Particles] ⚠️ High particle count while tab inactive: ${particleCount} (will cleanup on tab switch)`);
-                }
-            }
-        } else if (particlesContainer) {
-            // Jsme na tab flow (toky) -> cleanup jen pokud je > 40 kuliček
-            const particleCount = particlesContainer.children.length;
-            if (particleCount > 40) {
-                console.log(`[Particles] ⏰ Periodic cleanup (${particleCount} particles exceeded threshold)`);
-                stopAllParticleFlows();
-                // Po cleanup restartovat animace s aktuálními daty
-                setTimeout(() => {
-                    needsFlowReinitialize = true;
-                    loadData();
-                }, 200);
-            }
-        }
-    }, 30000); // 30 sekund
-
-    console.log('[Particles] ✓ Periodic cleanup timer started (30s interval)');
+    globalThis.setTimeout(() => {
+        detectAndApplyTheme();
+    }, 1000);
 }
-
-// Wait for DOM
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
-}
-
 // === TAB SWITCHING ===
-var pricingTabActive = false;
-var needsFlowReinitialize = false; // Flag pro vynucené restartování flow animací
+let pricingTabActive = false;
 
 function switchTab(tabName) {
     // Zapamatuj si předchozí tab PŘED změnou
@@ -692,7 +484,7 @@ function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
     // Add active to clicked tab (find by checking which one was clicked via event)
-    const clickedTab = event ? event.target : document.querySelector('.dashboard-tab');
+    const clickedTab = document.querySelector(`.dashboard-tab[data-tab="${tabName}"]`);
     if (clickedTab) {
         clickedTab.classList.add('active');
     }
@@ -721,18 +513,17 @@ function switchTab(tabName) {
             console.log('[Tab] --- Timeout fired, starting redraw ---');
 
             const flowTab = document.getElementById('flow-tab');
-            console.log('[Tab] Flow tab visible?', flowTab && flowTab.classList.contains('active'));
+            console.log('[Tab] Flow tab visible?', flowTab?.classList?.contains('active'));
             console.log('[Tab] Flow tab offsetHeight:', flowTab?.offsetHeight);
 
             // OPRAVA: Zkontrolovat jestli je tab skutečně viditelný
-            if (!flowTab || !flowTab.classList.contains('active')) {
+            if (!flowTab?.classList?.contains('active')) {
                 console.warn('[Tab] ✗ Flow tab not visible yet, aborting redraw');
                 return;
             }
 
             // 3. Invalidovat cache pozic
-            cachedNodeCenters = null;
-            lastLayoutHash = null;
+            globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
             console.log('[Tab] ✓ Cache invalidated');
 
             // 4. Force browser reflow aby DOM byl stabilní
@@ -743,7 +534,7 @@ function switchTab(tabName) {
 
             // 5. Načíst fresh pozice node elementů
             console.log('[Tab] Getting node centers...');
-            const centers = getNodeCenters();
+            const centers = getNodeCentersRef?.();
             console.log('[Tab] Node centers result:', centers);
 
             // OPRAVA: Zkontrolovat jestli se pozice načetly správně
@@ -751,9 +542,8 @@ function switchTab(tabName) {
                 console.error('[Tab] ✗ Failed to get node centers (DOM not ready), retrying...');
                 // Zkusit znovu s delším timeout
                 setTimeout(() => {
-                    cachedNodeCenters = null;
-                    lastLayoutHash = null;
-                    const retryCenters = getNodeCenters();
+                    globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
+                    const retryCenters = getNodeCentersRef?.();
                     console.log('[Tab] Retry node centers result:', retryCenters);
 
                     if (!retryCenters || Object.keys(retryCenters).length === 0) {
@@ -762,9 +552,9 @@ function switchTab(tabName) {
                     }
 
                     console.log('[Tab] ✓ Node centers loaded on retry:', Object.keys(retryCenters).length);
-                    drawConnections();
-                    needsFlowReinitialize = true;
-                    loadData();
+                    drawConnectionsRef?.();
+                    globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
+                    loadDataRef?.();
                     console.log('[Tab] ✓ Retry complete');
                 }, 200);
                 return;
@@ -773,16 +563,16 @@ function switchTab(tabName) {
             // 6. Překreslit čáry (teď už máme správné pozice)
             console.log('[Tab] ✓ Node centers cached:', Object.keys(centers).length);
             console.log('[Tab] Drawing connections...');
-            drawConnections();
+            drawConnectionsRef?.();
             console.log('[Tab] ✓ Connections drawn');
 
             // 7. Nastavit flag pro vynucené restartování animací
-            needsFlowReinitialize = true;
+            globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
             console.log('[Tab] Flag needsFlowReinitialize set to TRUE');
 
             // 8. Načíst aktuální data a restartovat particles
             console.log('[Tab] Loading fresh data for animations...');
-            loadData(); // Načte data a zavolá animateFlow() s aktuálními hodnotami
+            loadDataRef?.(); // Načte data a zavolá animateFlow() s aktuálními hodnotami
             console.log('[Tab] ========== TOKY TAB SWITCH COMPLETE ==========');
         }, 150); // Delší timeout aby se DOM stihl vykreslit
     }
@@ -795,7 +585,7 @@ function switchTab(tabName) {
         setTimeout(() => {
             const afterTimeout = performance.now();
             console.log(`[Pricing] Tab visible after ${(afterTimeout - tabSwitchStart).toFixed(0)}ms timeout, loading pricing data...`);
-            loadPricingData();
+            loadPricingDataRef?.();
 
             // Subscribe to Battery Health updates (once)
             if (typeof subscribeBatteryHealthUpdates === 'function') {
@@ -820,16 +610,10 @@ function switchTab(tabName) {
 }
 
 // === BOILER (enhanced in dashboard-boiler.js) ===
-var loadPricingData = window.DashboardPricing.loadPricingData;
-var updatePlannedConsumptionStats = window.DashboardPricing.updatePlannedConsumptionStats;
-var tileDialog = null;
+const loadPricingDataRef = globalThis.DashboardPricing?.loadPricingData;
 
 // === CUSTOM TILES (moved to dashboard-tiles.js) ===
-var initCustomTiles = window.DashboardTiles.initCustomTiles;
-var renderAllTiles = window.DashboardTiles.renderAllTiles;
-var updateTileCount = window.DashboardTiles.updateTileCount;
-var toggleTilesVisibility = window.DashboardTiles.toggleTilesVisibility;
-var resetAllTiles = window.DashboardTiles.resetAllTiles;
+const renderAllTilesRef = globalThis.DashboardTiles?.renderAllTiles;
 
 /**
  * Render icon - podporuje emoji i MDI ikony
@@ -843,86 +627,35 @@ function renderIcon(icon, color) {
     // MDI ikona (formát mdi:xxx) - použít emoji fallback protože ha-icon nefunguje v iframe
     if (icon.startsWith('mdi:')) {
         const iconName = icon.substring(4); // Odstranit 'mdi:' prefix
-
-        // Emoji mapa - stejná jako v dashboard-dialog.js
-        const emojiMap = {
-            // Spotřebiče
-            'fridge': '❄️', 'fridge-outline': '❄️', 'dishwasher': '🍽️', 'washing-machine': '🧺',
-            'tumble-dryer': '🌪️', 'stove': '🔥', 'microwave': '📦', 'coffee-maker': '☕',
-            'kettle': '🫖', 'toaster': '🍞',
-            // Osvětlení
-            'lightbulb': '💡', 'lightbulb-outline': '💡', 'lamp': '🪔', 'ceiling-light': '💡',
-            'floor-lamp': '🪔', 'led-strip': '✨', 'led-strip-variant': '✨', 'wall-sconce': '💡',
-            'chandelier': '💡',
-            // Vytápění
-            'thermometer': '🌡️', 'thermostat': '🌡️', 'radiator': '♨️', 'radiator-disabled': '❄️',
-            'heat-pump': '♨️', 'air-conditioner': '❄️', 'fan': '🌀', 'hvac': '♨️', 'fire': '🔥',
-            'snowflake': '❄️',
-            // Energie
-            'lightning-bolt': '⚡', 'flash': '⚡', 'battery': '🔋', 'battery-charging': '🔋',
-            'battery-50': '🔋', 'solar-panel': '☀️', 'solar-power': '☀️', 'meter-electric': '⚡',
-            'power-plug': '🔌', 'power-socket': '🔌',
-            // Auto
-            'car': '🚗', 'car-electric': '🚘', 'car-battery': '🔋', 'ev-station': '🔌',
-            'ev-plug-type2': '🔌', 'garage': '🏠', 'garage-open': '🏠',
-            // Zabezpečení
-            'door': '🚪', 'door-open': '🚪', 'lock': '🔒', 'lock-open': '🔓', 'shield-home': '🛡️',
-            'cctv': '📹', 'camera': '📹', 'motion-sensor': '👁️', 'alarm-light': '🚨', 'bell': '🔔',
-            // Okna
-            'window-closed': '🪟', 'window-open': '🪟', 'blinds': '🪟', 'blinds-open': '🪟',
-            'curtains': '🪟', 'roller-shade': '🪟',
-            // Média
-            'television': '📺', 'speaker': '🔊', 'speaker-wireless': '🔊', 'music': '🎵',
-            'volume-high': '🔊', 'cast': '📡', 'chromecast': '📡',
-            // Síť
-            'router-wireless': '📡', 'wifi': '📶', 'access-point': '📡', 'lan': '🌐',
-            'network': '🌐', 'home-assistant': '🏠',
-            // Voda
-            'water': '💧', 'water-percent': '💧', 'water-boiler': '♨️', 'water-pump': '💧',
-            'shower': '🚿', 'toilet': '🚽', 'faucet': '🚰', 'pipe': '🔧',
-            // Počasí
-            'weather-sunny': '☀️', 'weather-cloudy': '☁️', 'weather-night': '🌙',
-            'weather-rainy': '🌧️', 'weather-snowy': '❄️', 'weather-windy': '💨',
-            // Ostatní
-            'information': 'ℹ️', 'help-circle': '❓', 'alert-circle': '⚠️',
-            'checkbox-marked-circle': '✅', 'toggle-switch': '🔘', 'power': '⚡', 'sync': '🔄'
-        };
-
-        const emoji = emojiMap[iconName] || '⚙️';
+        const emoji = globalThis.DashboardUtils?.getIconEmoji?.(iconName) || '⚙️';
         return `<span style="font-size: 28px; color: ${color};">${emoji}</span>`;
     }
 
     // Emoji nebo jiný text
     return icon;
-}/**
- * Render entity tile content
- * @param {object} config - Entity tile config
- * @param {string} side - Tile side (left/right)
- * @param {number} index - Tile index
- * @returns {string} - HTML string
- */
-function renderEntityTile(config, side, index) {
+}
+
+function getEntityState(entityId) {
     const hass = getHass();
-    if (!hass || !hass.states) {
-        return '<div class="tile-error">HA nedostupné</div>';
+    if (!hass?.states) {
+        return { error: 'HA nedostupné' };
     }
 
-    const state = hass.states[config.entity_id];
+    const state = hass.states[entityId];
     if (!state) {
-        return `<div class="tile-error">Entita nenalezena:<br>${config.entity_id}</div>`;
+        return { error: `Entita nenalezena:<br>${entityId}` };
     }
 
-    const label = config.label || state.attributes.friendly_name || config.entity_id;
-    // Použij POUZE ikonu z config, pokud není nastavena, použij výchozí - nikdy ne z HA state
-    const icon = config.icon || '📊';
-    let value = state.state;
-    let unit = state.attributes.unit_of_measurement || '';
-    const color = config.color || '#03A9F4';
+    return { hass, state };
+}
 
-    // Konverze W/Wh na kW/kWh pokud >= 1000
+function formatPowerValue(rawValue, rawUnit = '') {
+    let value = rawValue;
+    let unit = rawUnit;
+
     if (unit === 'W' || unit === 'Wh') {
-        const numValue = parseFloat(value);
-        if (!isNaN(numValue)) {
+        const numValue = Number.parseFloat(value);
+        if (!Number.isNaN(numValue)) {
             if (Math.abs(numValue) >= 1000) {
                 value = (numValue / 1000).toFixed(1);
                 unit = unit === 'W' ? 'kW' : 'kWh';
@@ -932,73 +665,68 @@ function renderEntityTile(config, side, index) {
         }
     }
 
-    // Podporné entity
-    let supportHtml = '';
-    if (config.support_entities) {
-        // Top right
-        if (config.support_entities.top_right) {
-            const topRightState = hass.states[config.support_entities.top_right];
-            if (topRightState) {
-                let topRightValue = topRightState.state;
-                let topRightUnit = topRightState.attributes.unit_of_measurement || '';
-                const topRightIcon = topRightState.attributes.icon || '';
+    return { value, unit };
+}
 
-                // Konverze W/Wh na kW/kWh
-                if (topRightUnit === 'W' || topRightUnit === 'Wh') {
-                    const numValue = parseFloat(topRightValue);
-                    if (!isNaN(numValue)) {
-                        if (Math.abs(numValue) >= 1000) {
-                            topRightValue = (numValue / 1000).toFixed(1);
-                            topRightUnit = topRightUnit === 'W' ? 'kW' : 'kWh';
-                        } else {
-                            topRightValue = Math.round(numValue);
-                        }
-                    }
-                }
+function buildSupportEntityHtml(hass, entityId, position, side, index) {
+    if (!entityId) return '';
 
-                supportHtml += `
-                    <div class="tile-support tile-support-top-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.top_right}')">
-                        <span class="support-icon">${topRightIcon}</span>
-                        <span class="support-value" id="tile-${side}-${index}-support-top">${topRightValue}${topRightUnit}</span>
-                    </div>
-                `;
-            }
-        }
+    const supportState = hass.states[entityId];
+    if (!supportState) return '';
 
-        // Bottom right
-        if (config.support_entities.bottom_right) {
-            const bottomRightState = hass.states[config.support_entities.bottom_right];
-            if (bottomRightState) {
-                let bottomRightValue = bottomRightState.state;
-                let bottomRightUnit = bottomRightState.attributes.unit_of_measurement || '';
-                const bottomRightIcon = bottomRightState.attributes.icon || '';
+    const { value, unit } = formatPowerValue(
+        supportState.state,
+        supportState.attributes.unit_of_measurement || ''
+    );
+    const icon = supportState.attributes.icon || '';
+    const positionClass = position === 'top' ? 'tile-support-top-right' : 'tile-support-bottom-right';
+    const valueId = position === 'top'
+        ? `tile-${side}-${index}-support-top`
+        : `tile-${side}-${index}-support-bottom`;
 
-                // Konverze W/Wh na kW/kWh
-                if (bottomRightUnit === 'W' || bottomRightUnit === 'Wh') {
-                    const numValue = parseFloat(bottomRightValue);
-                    if (!isNaN(numValue)) {
-                        if (Math.abs(numValue) >= 1000) {
-                            bottomRightValue = (numValue / 1000).toFixed(1);
-                            bottomRightUnit = bottomRightUnit === 'W' ? 'kW' : 'kWh';
-                        } else {
-                            bottomRightValue = Math.round(numValue);
-                        }
-                    }
-                }
+    return `
+        <div class="tile-support ${positionClass}" onclick="event.stopPropagation(); openEntityDialog('${entityId}')">
+            <span class="support-icon">${icon}</span>
+            <span class="support-value" id="${valueId}">${value}${unit}</span>
+        </div>
+    `;
+}
 
-                supportHtml += `
-                    <div class="tile-support tile-support-bottom-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.bottom_right}')">
-                        <span class="support-icon">${bottomRightIcon}</span>
-                        <span class="support-value" id="tile-${side}-${index}-support-bottom">${bottomRightValue}${bottomRightUnit}</span>
-                    </div>
-                `;
-            }
-        }
+function buildSupportEntitiesHtml(hass, supportEntities, side, index) {
+    if (!supportEntities) return '';
+    const top = buildSupportEntityHtml(hass, supportEntities.top_right, 'top', side, index);
+    const bottom = buildSupportEntityHtml(hass, supportEntities.bottom_right, 'bottom', side, index);
+    return `${top}${bottom}`;
+}
+
+/**
+ * Render entity tile content
+ * @param {object} config - Entity tile config
+ * @param {string} side - Tile side (left/right)
+ * @param {number} index - Tile index
+ * @returns {string} - HTML string
+ */
+function renderEntityTile(config, side, index) {
+    const resolved = getEntityState(config.entity_id);
+    if (resolved.error) {
+        return `<div class="tile-error">${resolved.error}</div>`;
     }
+    const { hass, state } = resolved;
+
+    const label = config.label || state.attributes.friendly_name || config.entity_id;
+    // Použij POUZE ikonu z config, pokud není nastavena, použij výchozí - nikdy ne z HA state
+    const icon = config.icon || '📊';
+    const formatted = formatPowerValue(state.state, state.attributes.unit_of_measurement || '');
+    const value = formatted.value;
+    const unit = formatted.unit;
+    const color = config.color || '#03A9F4';
+
+    // Podporné entity
+    const supportHtml = buildSupportEntitiesHtml(hass, config.support_entities, side, index);
 
     // Detekce neaktivního stavu (0 W nebo 0 hodnota)
-    const numericValue = parseFloat(state.state);
-    const isInactive = !isNaN(numericValue) && numericValue === 0;
+    const numericValue = Number.parseFloat(state.state);
+    const isInactive = !Number.isNaN(numericValue) && numericValue === 0;
     const inactiveClass = isInactive ? ' tile-inactive' : '';
 
     return `
@@ -1021,15 +749,11 @@ function renderEntityTile(config, side, index) {
  * @returns {string} - HTML string
  */
 function renderButtonTile(config, side, index) {
-    const hass = getHass();
-    if (!hass || !hass.states) {
-        return '<div class="tile-error">HA nedostupné</div>';
+    const resolved = getEntityState(config.entity_id);
+    if (resolved.error) {
+        return `<div class="tile-error">${resolved.error}</div>`;
     }
-
-    const state = hass.states[config.entity_id];
-    if (!state) {
-        return `<div class="tile-error">Entita nenalezena:<br>${config.entity_id}</div>`;
-    }
+    const { hass, state } = resolved;
 
     const label = config.label || state.attributes.friendly_name || config.entity_id;
     // Použij POUZE ikonu z config, pokud není nastavena, použij výchozí - nikdy ne z HA state
@@ -1049,68 +773,7 @@ function renderButtonTile(config, side, index) {
     const actionLabel = actionLabels[action] || 'Ovládat';
 
     // Podporné entity
-    let supportHtml = '';
-    if (config.support_entities) {
-        // Top right
-        if (config.support_entities.top_right) {
-            const topRightState = hass.states[config.support_entities.top_right];
-            if (topRightState) {
-                let topRightValue = topRightState.state;
-                let topRightUnit = topRightState.attributes.unit_of_measurement || '';
-                const topRightIcon = topRightState.attributes.icon || '';
-
-                // Konverze W/Wh na kW/kWh
-                if (topRightUnit === 'W' || topRightUnit === 'Wh') {
-                    const numValue = parseFloat(topRightValue);
-                    if (!isNaN(numValue)) {
-                        if (Math.abs(numValue) >= 1000) {
-                            topRightValue = (numValue / 1000).toFixed(1);
-                            topRightUnit = topRightUnit === 'W' ? 'kW' : 'kWh';
-                        } else {
-                            topRightValue = Math.round(numValue);
-                        }
-                    }
-                }
-
-                supportHtml += `
-                    <div class="tile-support tile-support-top-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.top_right}')">
-                        <span class="support-icon">${topRightIcon}</span>
-                        <span class="support-value" id="tile-${side}-${index}-support-top">${topRightValue}${topRightUnit}</span>
-                    </div>
-                `;
-            }
-        }
-
-        // Bottom right
-        if (config.support_entities.bottom_right) {
-            const bottomRightState = hass.states[config.support_entities.bottom_right];
-            if (bottomRightState) {
-                let bottomRightValue = bottomRightState.state;
-                let bottomRightUnit = bottomRightState.attributes.unit_of_measurement || '';
-                const bottomRightIcon = bottomRightState.attributes.icon || '';
-
-                // Konverze W/Wh na kW/kWh
-                if (bottomRightUnit === 'W' || bottomRightUnit === 'Wh') {
-                    const numValue = parseFloat(bottomRightValue);
-                    if (!isNaN(numValue)) {
-                        if (Math.abs(numValue) >= 1000) {
-                            bottomRightValue = (numValue / 1000).toFixed(1);
-                            bottomRightUnit = bottomRightUnit === 'W' ? 'kW' : 'kWh';
-                        } else {
-                            bottomRightValue = Math.round(numValue);
-                        }
-                    }
-                }
-
-                supportHtml += `
-                    <div class="tile-support tile-support-bottom-right" onclick="event.stopPropagation(); openEntityDialog('${config.support_entities.bottom_right}')">
-                        <span class="support-icon">${bottomRightIcon}</span>
-                        <span class="support-value" id="tile-${side}-${index}-support-bottom">${bottomRightValue}${bottomRightUnit}</span>
-                    </div>
-                `;
-            }
-        }
-    }
+    const supportHtml = buildSupportEntitiesHtml(hass, config.support_entities, side, index);
 
     return `
         <div class="tile-content tile-content-horizontal ${buttonClass}"
@@ -1147,7 +810,7 @@ function executeTileButtonAction(entityId, action) {
         .then(() => {
             console.log(`[Tiles] Service call successful`);
             // Re-render tiles after state change (debounced)
-            setTimeout(renderAllTiles, 500);
+            setTimeout(renderAllTilesRef, 500);
         })
         .catch((err) => {
             console.error(`[Tiles] Service call failed:`, err);
@@ -1156,24 +819,16 @@ function executeTileButtonAction(entityId, action) {
 }
 
 // === ČHMÚ (moved to dashboard-chmu.js) ===
-var updateChmuWarningBadge = window.DashboardChmu?.updateChmuWarningBadge;
-var toggleChmuWarningModal = window.DashboardChmu?.toggleChmuWarningModal;
-var openChmuWarningModal = window.DashboardChmu?.openChmuWarningModal;
-var closeChmuWarningModal = window.DashboardChmu?.closeChmuWarningModal;
 
 // === BATTERY & PRICING ANALYTICS (moved to modules) ===
-var updateBatteryEfficiencyBar = window.DashboardAnalytics?.updateBatteryEfficiencyBar;
-var updateWhatIfAnalysis = window.DashboardPricing?.updateWhatIfAnalysis;
-var updateModeRecommendations = window.DashboardPricing?.updateModeRecommendations;
 
 // === ANALYTICS (moved to dashboard-analytics.js) ===
-var initPerformanceChart = window.DashboardAnalytics?.initPerformanceChart;
-var updatePerformanceChart = window.DashboardAnalytics?.updatePerformanceChart;
-var buildYesterdayAnalysis = window.DashboardAnalytics?.buildYesterdayAnalysis;
-var renderYesterdayAnalysis = window.DashboardAnalytics?.renderYesterdayAnalysis;
+const initPerformanceChartRef = globalThis.DashboardAnalytics?.initPerformanceChart;
 
 // === EXPORT TILE RENDERING FUNCTIONS FOR TILES.JS ===
-window.renderEntityTile = renderEntityTile;
-window.renderButtonTile = renderButtonTile;
-window.executeTileButtonAction = executeTileButtonAction;
-window.renderAllTiles = renderAllTiles;
+globalThis.renderEntityTile = renderEntityTile;
+globalThis.renderButtonTile = renderButtonTile;
+globalThis.executeTileButtonAction = executeTileButtonAction;
+if (renderAllTilesRef) {
+    globalThis.renderAllTiles = renderAllTilesRef;
+}

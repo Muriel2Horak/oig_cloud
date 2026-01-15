@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * Dashboard Tile Manager
  * Správa konfigurace dynamických dlaždic na OIG Dashboard
@@ -6,6 +5,7 @@
 
 // Global tile manager instance
 let tileManager = null;
+globalThis.tileDialog = globalThis.tileDialog ?? null;
 
 class DashboardTileManager {
     constructor(hass) {
@@ -69,7 +69,7 @@ class DashboardTileManager {
      */
     async loadFromHAStorage() {
         try {
-            const hass = window.hass || this.hass;
+            const hass = globalThis.hass || this.hass;
             if (!hass) {
                 console.warn('⚠️ Cannot load from HA storage - no hass connection');
                 return null;
@@ -86,7 +86,7 @@ class DashboardTileManager {
                 return_response: true
             });
 
-            if (response && response.response && response.response.config) {
+            if (response?.response?.config) {
                 console.log('✅ Config loaded from HA storage:', response.response.config);
                 return response.response.config;
             } else {
@@ -104,8 +104,8 @@ class DashboardTileManager {
      */
     getDefaultConfig() {
         return {
-            tiles_left: Array(6).fill(null),  // 2×3 nebo 3×2 grid = 6 dlaždic
-            tiles_right: Array(6).fill(null), // 2×3 nebo 3×2 grid = 6 dlaždic
+            tiles_left: new Array(6).fill(null),  // 2×3 nebo 3×2 grid = 6 dlaždic
+            tiles_right: new Array(6).fill(null), // 2×3 nebo 3×2 grid = 6 dlaždic
             left_count: 6,
             right_count: 6,
             visible: true,  // ZMĚNĚNO: Default je nyní TRUE (viditelné)
@@ -246,7 +246,7 @@ class DashboardTileManager {
     async syncToHA() {
         // Try multiple methods to get hass
         const hass = (typeof getHass === 'function' ? getHass() : null) ||
-                     window.hass ||
+                     globalThis.hass ||
                      this.hass;
 
         if (!hass) {
@@ -323,8 +323,8 @@ class DashboardTileManager {
      * Nastavit počet dlaždic pro stranu
      */
     setTileCount(side, count) {
-        const parsedCount = parseInt(count);
-        if (isNaN(parsedCount) || parsedCount < 0 || parsedCount > 6) {  // Max 6 pro 2×3 nebo 3×2 grid
+        const parsedCount = Number.parseInt(count);
+        if (Number.isNaN(parsedCount) || parsedCount < 0 || parsedCount > 6) {  // Max 6 pro 2×3 nebo 3×2 grid
             console.error(`❌ Invalid tile count: ${count}`);
             return;
         }
@@ -373,7 +373,7 @@ class DashboardTileManager {
 }
 
 // Export pro použití v ostatních souborech
-window.DashboardTileManager = DashboardTileManager;
+globalThis.DashboardTileManager = DashboardTileManager;
 
 // Track subscribed entities to avoid duplicate subscriptions
 let subscribedEntities = new Set();
@@ -395,7 +395,7 @@ async function initCustomTiles() {
     // Initialize tile manager (only once)
     if (!tileManager) {
         tileManager = new DashboardTileManager(hass);
-        window.tileManager = tileManager; // Export for dialog access
+        globalThis.tileManager = tileManager; // Export for dialog access
 
         // Listen for config changes - render ONLY tiles, not whole dashboard
         tileManager.addChangeListener(() => {
@@ -412,9 +412,8 @@ async function initCustomTiles() {
     }
 
     // Initialize tile dialog (only once)
-    if (!tileDialog) {
-        tileDialog = new TileConfigDialog(hass, tileManager);
-        window.tileDialog = tileDialog; // Export for onclick handlers
+    if (!globalThis.tileDialog) {
+        globalThis.tileDialog = new TileConfigDialog(hass, tileManager);
     }
 
     // Initial render
@@ -443,11 +442,11 @@ function subscribeToTileEntities() {
 
         for (let i = 0; i < count; i++) {
             const tile = tiles[i];
-            if (tile && tile.type === 'entity' && tile.entity_id) {
+            if (tile?.type === 'entity' && tile?.entity_id) {
                 allEntityIds.add(tile.entity_id);
 
                 // Add support entities if present
-                if (tile.support_entities) {
+                if (tile?.support_entities) {
                     Object.values(tile.support_entities).forEach(entityId => {
                         if (entityId) allEntityIds.add(entityId);
                     });
@@ -462,7 +461,7 @@ function subscribeToTileEntities() {
     // Update watched set for the callback
     tilesWatchedEntities = allEntityIds;
 
-    const watcher = window.DashboardStateWatcher;
+    const watcher = globalThis.DashboardStateWatcher;
     if (!watcher) {
         console.warn('[Tiles] StateWatcher not available yet, retrying...');
         setTimeout(subscribeToTileEntities, 500);
@@ -475,7 +474,7 @@ function subscribeToTileEntities() {
     // Ensure we have a single callback registered, and only update the watched entity set above.
     if (!tilesWatcherUnsub) {
         tilesWatcherUnsub = watcher.onEntityChange((entityId) => {
-            if (!tilesWatchedEntities || !tilesWatchedEntities.has(entityId)) return;
+            if (!tilesWatchedEntities?.has(entityId)) return;
             if (tilesRenderTimeout) return;
             tilesRenderTimeout = setTimeout(() => {
                 tilesRenderTimeout = null;
@@ -601,7 +600,7 @@ function _applyFlipToTileValues(side, index) {
     ids.forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
-        updateElementIfChanged(id, el.textContent, id, false, true);
+        updateElementIfChanged(id, el.textContent, id, true);
     });
 }
 
@@ -637,7 +636,6 @@ function renderTilesBlock(side) {
     const tiles = tileManager.getTiles(side);
 
     // Debug log pro diagnostiku
-    // console.log(`[Tiles] DEBUG ${side} tiles:`, tiles, 'non-null:', tiles.filter(t => t !== null));
 
     // Render tiles up to count
     gridElement.innerHTML = '';
@@ -648,7 +646,6 @@ function renderTilesBlock(side) {
         _applyFlipToTileValues(side, i);
     }
 
-    // console.log(`[Tiles] Rendered ${side} block with ${tileCount} slots (${tiles.filter(t => t !== null).length} configured)`);
 }
 
 /**
@@ -668,7 +665,7 @@ function renderTile(side, index, config) {
         // Placeholder tile
         tile.classList.add('tile-placeholder');
         tile.innerHTML = `
-            <div class="tile-placeholder-content" onclick="window.tileDialog.open(${index}, '${side}')">
+            <div class="tile-placeholder-content" onclick="globalThis.tileDialog.open(${index}, '${side}')">
                 <div class="tile-placeholder-icon">➕</div>
                 <div class="tile-placeholder-text">Přidat dlaždici</div>
             </div>
@@ -691,7 +688,7 @@ function renderTile(side, index, config) {
         editBtn.title = 'Upravit dlaždici';
         editBtn.onclick = (e) => {
             e.stopPropagation();
-            window.tileDialog.open(index, side);
+            globalThis.tileDialog.open(index, side);
         };
         tile.appendChild(editBtn);
     }
@@ -722,7 +719,7 @@ function renderTile(side, index, config) {
  */
 
 // Export all tile functions
-window.DashboardTiles = Object.assign(window.DashboardTiles || {}, {
+globalThis.DashboardTiles = Object.assign(globalThis.DashboardTiles || {}, {
     // Existing TileManager
     DashboardTileManager,
     // Add rendering functions

@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * Dashboard Tile Config Dialog
  * Dialog pro konfiguraci dlaždic - výběr entity nebo tlačítka
@@ -13,57 +12,22 @@ function renderIconHTML(icon, color = 'var(--text-primary)') {
     // MDI ikona (formát mdi:xxx) - převést na emoji
     if (icon.startsWith('mdi:')) {
         const iconName = icon.substring(4); // Odstranit 'mdi:' prefix
-
-        // Emoji mapa - kompletní ze všech kategorií
-        const emojiMap = {
-            // Spotřebiče
-            'fridge': '❄️', 'fridge-outline': '❄️', 'dishwasher': '🍽️', 'washing-machine': '🧺',
-            'tumble-dryer': '🌪️', 'stove': '🔥', 'microwave': '📦', 'coffee-maker': '☕',
-            'kettle': '🫖', 'toaster': '🍞',
-            // Osvětlení
-            'lightbulb': '💡', 'lightbulb-outline': '💡', 'lamp': '🪔', 'ceiling-light': '💡',
-            'floor-lamp': '🪔', 'led-strip': '✨', 'led-strip-variant': '✨', 'wall-sconce': '💡',
-            'chandelier': '💡',
-            // Vytápění
-            'thermometer': '🌡️', 'thermostat': '🌡️', 'radiator': '♨️', 'radiator-disabled': '❄️',
-            'heat-pump': '♨️', 'air-conditioner': '❄️', 'fan': '🌀', 'hvac': '♨️', 'fire': '🔥',
-            'snowflake': '❄️',
-            // Energie
-            'lightning-bolt': '⚡', 'flash': '⚡', 'battery': '🔋', 'battery-charging': '🔋',
-            'battery-50': '🔋', 'solar-panel': '☀️', 'solar-power': '☀️', 'meter-electric': '⚡',
-            'power-plug': '🔌', 'power-socket': '🔌',
-            // Auto
-            'car': '🚗', 'car-electric': '🚘', 'car-battery': '🔋', 'ev-station': '🔌',
-            'ev-plug-type2': '🔌', 'garage': '🏠', 'garage-open': '🏠',
-            // Zabezpečení
-            'door': '🚪', 'door-open': '🚪', 'lock': '🔒', 'lock-open': '🔓', 'shield-home': '🛡️',
-            'cctv': '📹', 'camera': '📹', 'motion-sensor': '👁️', 'alarm-light': '🚨', 'bell': '🔔',
-            // Okna
-            'window-closed': '🪟', 'window-open': '🪟', 'blinds': '🪟', 'blinds-open': '🪟',
-            'curtains': '🪟', 'roller-shade': '🪟',
-            // Média
-            'television': '📺', 'speaker': '🔊', 'speaker-wireless': '🔊', 'music': '🎵',
-            'volume-high': '🔊', 'cast': '📡', 'chromecast': '📡',
-            // Síť
-            'router-wireless': '📡', 'wifi': '📶', 'access-point': '📡', 'lan': '🌐',
-            'network': '🌐', 'home-assistant': '🏠',
-            // Voda
-            'water': '💧', 'water-percent': '💧', 'water-boiler': '♨️', 'water-pump': '💧',
-            'shower': '🚿', 'toilet': '🚽', 'faucet': '🚰', 'pipe': '🔧',
-            // Počasí
-            'weather-sunny': '☀️', 'weather-cloudy': '☁️', 'weather-night': '🌙',
-            'weather-rainy': '🌧️', 'weather-snowy': '❄️', 'weather-windy': '💨',
-            // Ostatní
-            'information': 'ℹ️', 'help-circle': '❓', 'alert-circle': '⚠️',
-            'checkbox-marked-circle': '✅', 'toggle-switch': '🔘', 'power': '⚡', 'sync': '🔄'
-        };
-
-        const emoji = emojiMap[iconName] || '⚙️';
+        const emoji = globalThis.DashboardUtils?.getIconEmoji?.(iconName) || '⚙️';
         return `<span style="font-size: 28px; color: ${color};">${emoji}</span>`;
     }
 
     // Emoji nebo jiný text
     return icon;
+}
+
+function normalizeEntityId(entityId) {
+    return String(entityId).replaceAll('.', '_');
+}
+
+function escapeAttrValue(value) {
+    return String(value)
+        .replaceAll("'", '&#39;')
+        .replaceAll('"', '&quot;');
 }
 
 class TileConfigDialog {
@@ -76,6 +40,107 @@ class TileConfigDialog {
 
         this.createDialog();
         this.setupEventListeners();
+    }
+
+    _getSupportEntityIds(prefix, number) {
+        const base = prefix ? `${prefix}-support-entity-${number}` : `support-entity-${number}`;
+        return {
+            listId: `${base}-list`,
+            hiddenId: base,
+            searchId: `${base}-search`
+        };
+    }
+
+    _filterEntityList(listSelector, searchText) {
+        const items = document.querySelectorAll(listSelector);
+        const search = searchText.toLowerCase();
+
+        items.forEach(item => {
+            const entityId = item.dataset.entityId;
+            const state = this.hass.states[entityId];
+            const name = (state.attributes.friendly_name || entityId).toLowerCase();
+
+            item.style.display = name.includes(search) || entityId.toLowerCase().includes(search)
+                ? ''
+                : 'none';
+        });
+    }
+
+    _filterSupportEntities(prefix, number, searchText, selectHandler) {
+        const ids = this._getSupportEntityIds(prefix, number);
+        const listDiv = document.getElementById(ids.listId);
+        const hiddenInput = document.getElementById(ids.hiddenId);
+
+        if (!searchText.trim()) {
+            listDiv.style.display = 'none';
+            hiddenInput.value = '';
+            return;
+        }
+
+        const search = searchText.toLowerCase();
+        const filtered = this.supportEntities.filter(entityId => {
+            const state = this.hass.states[entityId];
+            const name = (state.attributes.friendly_name || entityId).toLowerCase();
+            return name.includes(search) || entityId.toLowerCase().includes(search);
+        });
+
+        if (filtered.length === 0) {
+            listDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-secondary);">Žádné entity nenalezeny</div>';
+            listDiv.style.display = 'block';
+            return;
+        }
+
+        listDiv.innerHTML = filtered.slice(0, 20).map(entityId => {
+            const state = this.hass.states[entityId];
+            const name = state.attributes.friendly_name || entityId;
+            const value = state.state;
+            const unit = state.attributes.unit_of_measurement || '';
+            const safeName = escapeAttrValue(name);
+
+            return `
+                <div class="entity-item support-entity-item"
+                     data-entity-id="${entityId}"
+                     onclick="globalThis.tileDialog.${selectHandler}(${number}, '${entityId}', '${safeName}')">
+                    <div class="entity-item-name">${name}</div>
+                    <div class="entity-item-value">${value} ${unit}</div>
+                </div>
+            `;
+        }).join('');
+
+        listDiv.style.display = 'block';
+    }
+
+    _selectSupportEntity(prefix, number, entityId, entityName) {
+        const ids = this._getSupportEntityIds(prefix, number);
+        const searchInput = document.getElementById(ids.searchId);
+        const hiddenInput = document.getElementById(ids.hiddenId);
+        const listDiv = document.getElementById(ids.listId);
+
+        searchInput.value = entityName;
+        hiddenInput.value = entityId;
+        listDiv.style.display = 'none';
+    }
+
+    _applyEntityDefaults(entityId, labelId, iconId, colorId) {
+        if (!entityId) return;
+
+        const state = this.hass.states[entityId];
+        if (!state) return;
+
+        const labelInput = document.getElementById(labelId);
+        if (labelInput && !labelInput.value) {
+            labelInput.value = state.attributes.friendly_name || '';
+        }
+
+        const iconInput = document.getElementById(iconId);
+        if (iconInput && !this.isEditing && !iconInput.value && state.attributes.icon) {
+            iconInput.value = state.attributes.icon;
+        }
+
+        const colorInput = document.getElementById(colorId);
+        if (colorInput) {
+            colorInput.value = this.tileManager.getColorFromDomain(entityId);
+        }
     }
 
     /**
@@ -97,7 +162,7 @@ class TileConfigDialog {
             <div class="tile-dialog">
                 <div class="tile-dialog-header">
                     <h2>Konfigurace dlaždice</h2>
-                    <button class="tile-dialog-close" onclick="window.tileDialog.close()">
+                    <button class="tile-dialog-close" onclick="globalThis.tileDialog.close()">
                         <svg width="24" height="24" viewBox="0 0 24 24">
                             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                         </svg>
@@ -105,10 +170,10 @@ class TileConfigDialog {
                 </div>
 
                 <div class="tile-dialog-tabs">
-                    <button class="tile-tab active" data-tab="entity" onclick="window.tileDialog.switchTab('entity')">
+                    <button class="tile-tab active" data-tab="entity" onclick="globalThis.tileDialog.switchTab('entity')">
                         📊 Entity
                     </button>
-                    <button class="tile-tab" data-tab="button" onclick="window.tileDialog.switchTab('button')">
+                    <button class="tile-tab" data-tab="button" onclick="globalThis.tileDialog.switchTab('button')">
                         🔘 Tlačítko
                     </button>
                 </div>
@@ -122,7 +187,7 @@ class TileConfigDialog {
                                    id="entity-search"
                                    class="form-input"
                                    placeholder="🔍 Hledat entitu..."
-                                   oninput="window.tileDialog.filterEntities(this.value)">
+                                   oninput="globalThis.tileDialog.filterEntities(this.value)">
                         </div>
 
                         <div id="entity-list" class="entity-list"></div>
@@ -139,16 +204,16 @@ class TileConfigDialog {
                             <div class="form-group">
                                 <label>Ikona (volitelné):</label>
                                 <div class="icon-input-wrapper">
-                                    <div class="icon-preview-box" id="entity-icon-preview" onclick="window.tileDialog.openIconPicker('entity')">
+                                    <div class="icon-preview-box" id="entity-icon-preview" onclick="globalThis.tileDialog.openIconPicker('entity')">
                                         <span class="icon-preview-placeholder">🔍</span>
                                     </div>
                                     <input type="text"
                                            id="entity-icon"
                                            class="form-input icon-input-field"
                                            placeholder="Klikni na 🔍 nebo hledej..."
-                                           oninput="window.tileDialog.searchIcons(this.value, 'entity')"
+                                           oninput="globalThis.tileDialog.searchIcons(this.value, 'entity')"
                                            readonly>
-                                    <button type="button" class="icon-picker-btn" onclick="window.tileDialog.openIconPicker('entity')" title="Vybrat ikonu">
+                                    <button type="button" class="icon-picker-btn" onclick="globalThis.tileDialog.openIconPicker('entity')" title="Vybrat ikonu">
                                         📋
                                     </button>
                                 </div>
@@ -172,7 +237,7 @@ class TileConfigDialog {
                                    id="support-entity-1-search"
                                    class="form-input"
                                    placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
-                                   oninput="window.tileDialog.filterSupportEntities(1, this.value)">
+                                   oninput="globalThis.tileDialog.filterSupportEntities(1, this.value)">
                             <div id="support-entity-1-list" class="entity-list support-entity-list" style="display: none;"></div>
                             <input type="hidden" id="support-entity-1" value="">
                         </div>
@@ -183,7 +248,7 @@ class TileConfigDialog {
                                    id="support-entity-2-search"
                                    class="form-input"
                                    placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
-                                   oninput="window.tileDialog.filterSupportEntities(2, this.value)">
+                                   oninput="globalThis.tileDialog.filterSupportEntities(2, this.value)">
                             <div id="support-entity-2-list" class="entity-list support-entity-list" style="display: none;"></div>
                             <input type="hidden" id="support-entity-2" value="">
                         </div>
@@ -206,7 +271,7 @@ class TileConfigDialog {
                                    id="button-entity-search"
                                    class="form-input"
                                    placeholder="🔍 Hledat entitu..."
-                                   oninput="window.tileDialog.filterButtonEntities(this.value)">
+                                   oninput="globalThis.tileDialog.filterButtonEntities(this.value)">
                         </div>
 
                         <div id="button-entity-list" class="entity-list"></div>
@@ -223,7 +288,7 @@ class TileConfigDialog {
                             <div class="form-group">
                                 <label>Ikona:</label>
                                 <div class="icon-input-wrapper">
-                                    <div class="icon-preview-box" id="button-icon-preview" onclick="window.tileDialog.openIconPicker('button')">
+                                    <div class="icon-preview-box" id="button-icon-preview" onclick="globalThis.tileDialog.openIconPicker('button')">
                                         <span class="icon-preview-placeholder">🔍</span>
                                     </div>
                                     <input type="text"
@@ -231,7 +296,7 @@ class TileConfigDialog {
                                            class="form-input icon-input-field"
                                            placeholder="Klikni na 🔍 nebo hledej..."
                                            readonly>
-                                    <button type="button" class="icon-picker-btn" onclick="window.tileDialog.openIconPicker('button')" title="Vybrat ikonu">
+                                    <button type="button" class="icon-picker-btn" onclick="globalThis.tileDialog.openIconPicker('button')" title="Vybrat ikonu">
                                         📋
                                     </button>
                                 </div>
@@ -254,7 +319,7 @@ class TileConfigDialog {
                                    id="button-support-entity-1-search"
                                    class="form-input"
                                    placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
-                                   oninput="window.tileDialog.filterButtonSupportEntities(1, this.value)">
+                                   oninput="globalThis.tileDialog.filterButtonSupportEntities(1, this.value)">
                             <div id="button-support-entity-1-list" class="entity-list support-entity-list" style="display: none;"></div>
                             <input type="hidden" id="button-support-entity-1" value="">
                         </div>
@@ -265,7 +330,7 @@ class TileConfigDialog {
                                    id="button-support-entity-2-search"
                                    class="form-input"
                                    placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
-                                   oninput="window.tileDialog.filterButtonSupportEntities(2, this.value)">
+                                   oninput="globalThis.tileDialog.filterButtonSupportEntities(2, this.value)">
                             <div id="button-support-entity-2-list" class="entity-list support-entity-list" style="display: none;"></div>
                             <input type="hidden" id="button-support-entity-2" value="">
                         </div>
@@ -273,28 +338,28 @@ class TileConfigDialog {
                 </div>
 
                 <div class="tile-dialog-footer">
-                    <button class="btn btn-secondary" onclick="window.tileDialog.close()">
+                    <button class="btn btn-secondary" onclick="globalThis.tileDialog.close()">
                         Zrušit
                     </button>
-                    <button class="btn btn-primary" onclick="window.tileDialog.save()">
+                    <button class="btn btn-primary" onclick="globalThis.tileDialog.save()">
                         Uložit
                     </button>
                 </div>
             </div>
 
             <!-- Icon Picker Modal -->
-            <div class="icon-picker-modal" id="icon-picker-modal" style="display: none;" onclick="if(event.target === this) window.tileDialog.closeIconPicker()">
+            <div class="icon-picker-modal" id="icon-picker-modal" style="display: none;" onclick="if(event.target === this) globalThis.tileDialog.closeIconPicker()">
                 <div class="icon-picker-content" onclick="event.stopPropagation()">
                     <div class="icon-picker-header">
                         <h3>Vyberte ikonu</h3>
-                        <button class="icon-picker-close" onclick="window.tileDialog.closeIconPicker()">✕</button>
+                        <button class="icon-picker-close" onclick="globalThis.tileDialog.closeIconPicker()">✕</button>
                     </div>
                     <div class="icon-picker-search">
                         <input type="text"
                                id="icon-picker-search"
                                class="form-input"
                                placeholder="🔍 Hledat ikonu..."
-                               oninput="window.tileDialog.filterIconPicker(this.value)">
+                               oninput="globalThis.tileDialog.filterIconPicker(this.value)">
                     </div>
                     <div class="icon-picker-body" id="icon-picker-body">
                         <!-- Icons will be populated here -->
@@ -362,7 +427,7 @@ class TileConfigDialog {
                 if (el) el.innerHTML = '<div class="entity-item" style="opacity:0.7;padding:8px;">Načítání…</div>';
             });
         } catch (e) {
-            // ignore
+            console.warn('[Tiles] Failed to set dialog placeholders:', e);
         }
 
         // Naplnit seznamy entit až po prvním paintu (aby otevření dialogu nebylo blokované)
@@ -448,15 +513,16 @@ class TileConfigDialog {
             const value = state.state;
             const unit = state.attributes.unit_of_measurement || '';
             const icon = state.attributes.icon || '';
+            const safeId = normalizeEntityId(entityId);
 
             return `
                 <div class="entity-item" data-entity-id="${entityId}">
                     <input type="radio"
                            name="entity"
                            value="${entityId}"
-                           id="e_${entityId.replace(/\./g, '_')}"
-                           onchange="window.tileDialog.onEntitySelected('${entityId}')">
-                    <label for="e_${entityId.replace(/\./g, '_')}">
+                           id="e_${safeId}"
+                           onchange="globalThis.tileDialog.onEntitySelected('${entityId}')">
+                    <label for="e_${safeId}">
                         <div class="entity-item-content">
                             <div class="entity-item-name">
                                 ${icon ? `<span class="entity-item-icon">${icon}</span>` : ''}
@@ -495,15 +561,16 @@ class TileConfigDialog {
             const name = state.attributes.friendly_name || entityId;
             const value = state.state;
             const icon = state.attributes.icon || '';
+            const safeId = normalizeEntityId(entityId);
 
             return `
                 <div class="entity-item" data-entity-id="${entityId}">
                     <input type="radio"
                            name="button_entity"
                            value="${entityId}"
-                           id="b_${entityId.replace(/\./g, '_')}"
-                           onchange="window.tileDialog.onButtonEntitySelected('${entityId}')">
-                    <label for="b_${entityId.replace(/\./g, '_')}">
+                           id="b_${safeId}"
+                           onchange="globalThis.tileDialog.onButtonEntitySelected('${entityId}')">
+                    <label for="b_${safeId}">
                         <div class="entity-item-content">
                             <div class="entity-item-name">
                                 ${icon ? `<span class="entity-item-icon">${icon}</span>` : ''}
@@ -538,59 +605,14 @@ class TileConfigDialog {
      * Filtrovat podporné entity podle hledaného textu
      */
     filterSupportEntities(number, searchText) {
-        const listDiv = document.getElementById(`support-entity-${number}-list`);
-        const hiddenInput = document.getElementById(`support-entity-${number}`);
-
-        if (!searchText.trim()) {
-            listDiv.style.display = 'none';
-            hiddenInput.value = '';
-            return;
-        }
-
-        const search = searchText.toLowerCase();
-        const filtered = this.supportEntities.filter(entityId => {
-            const state = this.hass.states[entityId];
-            const name = (state.attributes.friendly_name || entityId).toLowerCase();
-            return name.includes(search) || entityId.toLowerCase().includes(search);
-        });
-
-        if (filtered.length === 0) {
-            listDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-secondary);">Žádné entity nenalezeny</div>';
-            listDiv.style.display = 'block';
-            return;
-        }
-
-        listDiv.innerHTML = filtered.slice(0, 20).map(entityId => {
-            const state = this.hass.states[entityId];
-            const name = state.attributes.friendly_name || entityId;
-            const value = state.state;
-            const unit = state.attributes.unit_of_measurement || '';
-
-            return `
-                <div class="entity-item support-entity-item"
-                     data-entity-id="${entityId}"
-                     onclick="window.tileDialog.selectSupportEntity(${number}, '${entityId}', '${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">
-                    <div class="entity-item-name">${name}</div>
-                    <div class="entity-item-value">${value} ${unit}</div>
-                </div>
-            `;
-        }).join('');
-
-        listDiv.style.display = 'block';
+        this._filterSupportEntities('', number, searchText, 'selectSupportEntity');
     }
 
     /**
      * Vybrat podpornou entitu
      */
     selectSupportEntity(number, entityId, entityName) {
-        const searchInput = document.getElementById(`support-entity-${number}-search`);
-        const hiddenInput = document.getElementById(`support-entity-${number}`);
-        const listDiv = document.getElementById(`support-entity-${number}-list`);
-
-        searchInput.value = entityName;
-        hiddenInput.value = entityId;
-        listDiv.style.display = 'none';
-
+        this._selectSupportEntity('', number, entityId, entityName);
         console.log(`✅ Selected support entity ${number}: ${entityId}`);
     }
 
@@ -598,59 +620,14 @@ class TileConfigDialog {
      * Filtrovat support entities pro button (stejné jako filterSupportEntities)
      */
     filterButtonSupportEntities(number, searchText) {
-        const listDiv = document.getElementById(`button-support-entity-${number}-list`);
-        const hiddenInput = document.getElementById(`button-support-entity-${number}`);
-
-        if (!searchText.trim()) {
-            listDiv.style.display = 'none';
-            hiddenInput.value = '';
-            return;
-        }
-
-        const search = searchText.toLowerCase();
-        const filtered = this.supportEntities.filter(entityId => {
-            const state = this.hass.states[entityId];
-            const name = (state.attributes.friendly_name || entityId).toLowerCase();
-            return name.includes(search) || entityId.toLowerCase().includes(search);
-        });
-
-        if (filtered.length === 0) {
-            listDiv.innerHTML = '<div style="padding: 10px; text-align: center; color: var(--text-secondary);">Žádné entity nenalezeny</div>';
-            listDiv.style.display = 'block';
-            return;
-        }
-
-        listDiv.innerHTML = filtered.slice(0, 20).map(entityId => {
-            const state = this.hass.states[entityId];
-            const name = state.attributes.friendly_name || entityId;
-            const value = state.state;
-            const unit = state.attributes.unit_of_measurement || '';
-
-            return `
-                <div class="entity-item support-entity-item"
-                     data-entity-id="${entityId}"
-                     onclick="window.tileDialog.selectButtonSupportEntity(${number}, '${entityId}', '${name.replace(/'/g, "\\'").replace(/"/g, "&quot;")}')">
-                    <div class="entity-item-name">${name}</div>
-                    <div class="entity-item-value">${value} ${unit}</div>
-                </div>
-            `;
-        }).join('');
-
-        listDiv.style.display = 'block';
+        this._filterSupportEntities('button', number, searchText, 'selectButtonSupportEntity');
     }
 
     /**
      * Vybrat button support entitu
      */
     selectButtonSupportEntity(number, entityId, entityName) {
-        const searchInput = document.getElementById(`button-support-entity-${number}-search`);
-        const hiddenInput = document.getElementById(`button-support-entity-${number}`);
-        const listDiv = document.getElementById(`button-support-entity-${number}-list`);
-
-        searchInput.value = entityName;
-        hiddenInput.value = entityId;
-        listDiv.style.display = 'none';
-
+        this._selectSupportEntity('button', number, entityId, entityName);
         console.log(`✅ Selected button support entity ${number}: ${entityId}`);
     }
 
@@ -730,7 +707,7 @@ class TileConfigDialog {
         }
 
         suggestionsDiv.innerHTML = filtered.slice(0, 12).map(icon => `
-            <div class="icon-suggestion-item" onclick="window.tileDialog.selectIcon('mdi:${icon}')">
+            <div class="icon-suggestion-item" onclick="globalThis.tileDialog.selectIcon('mdi:${icon}')">
                 <ha-icon icon="mdi:${icon}" style="--mdc-icon-size: 20px;"></ha-icon>
                 <span class="icon-name">mdi:${icon}</span>
             </div>
@@ -751,94 +728,28 @@ class TileConfigDialog {
      * Filtrovat entity podle hledaného textu
      */
     filterEntities(searchText) {
-        const items = document.querySelectorAll('#entity-list .entity-item');
-        const search = searchText.toLowerCase();
-
-        items.forEach(item => {
-            const entityId = item.dataset.entityId;
-            const state = this.hass.states[entityId];
-            const name = (state.attributes.friendly_name || entityId).toLowerCase();
-
-            if (name.includes(search) || entityId.toLowerCase().includes(search)) {
-                item.style.display = '';
-            } else {
-                item.style.display = 'none';
-            }
-        });
+        this._filterEntityList('#entity-list .entity-item', searchText);
     }
 
     /**
      * Filtrovat entity pro tlačítka podle hledaného textu
      */
     filterButtonEntities(searchText) {
-        const items = document.querySelectorAll('#button-entity-list .entity-item');
-        const search = searchText.toLowerCase();
-
-        items.forEach(item => {
-            const entityId = item.dataset.entityId;
-            const state = this.hass.states[entityId];
-            const name = (state.attributes.friendly_name || entityId).toLowerCase();
-
-            if (name.includes(search) || entityId.toLowerCase().includes(search)) {
-                item.style.display = '';
-            } else {
-                item.style.display = 'none';
-            }
-        });
+        this._filterEntityList('#button-entity-list .entity-item', searchText);
     }
 
     /**
      * Když je vybrána entita, auto-fill ikonu a barvu
      */
     onEntitySelected(entityId) {
-        const state = this.hass.states[entityId];
-        if (!state) return;
-
-        // Auto-fill label
-        const labelInput = document.getElementById('entity-label');
-        if (labelInput && !labelInput.value) {
-            labelInput.value = state.attributes.friendly_name || '';
-        }
-
-        // Auto-fill icon - POUZE pokud vytváříme novou dlaždici (ne při editaci)
-        const iconInput = document.getElementById('entity-icon');
-        if (iconInput && !this.isEditing && !iconInput.value && state.attributes.icon) {
-            iconInput.value = state.attributes.icon;
-        }
-
-        // Auto-fill color podle domény
-        const colorInput = document.getElementById('entity-color');
-        if (colorInput) {
-            colorInput.value = this.tileManager.getColorFromDomain(entityId);
-        }
+        this._applyEntityDefaults(entityId, 'entity-label', 'entity-icon', 'entity-color');
     }
 
     /**
      * Když je vybrána button entita, auto-fill ikonu a barvu
      */
     onButtonEntitySelected(entityId) {
-        if (!entityId) return;
-
-        const state = this.hass.states[entityId];
-        if (!state) return;
-
-        // Auto-fill label
-        const labelInput = document.getElementById('button-label');
-        if (labelInput && !labelInput.value) {
-            labelInput.value = state.attributes.friendly_name || '';
-        }
-
-        // Auto-fill icon - POUZE pokud vytváříme novou dlaždici (ne při editaci)
-        const iconInput = document.getElementById('button-icon');
-        if (iconInput && !this.isEditing && !iconInput.value && state.attributes.icon) {
-            iconInput.value = state.attributes.icon;
-        }
-
-        // Auto-fill color podle domény
-        const colorInput = document.getElementById('button-color');
-        if (colorInput) {
-            colorInput.value = this.tileManager.getColorFromDomain(entityId);
-        }
+        this._applyEntityDefaults(entityId, 'button-label', 'button-icon', 'button-color');
     }
 
     /**
@@ -846,74 +757,77 @@ class TileConfigDialog {
      */
     loadTileConfig(tileConfig) {
         if (tileConfig.type === 'entity') {
-            this.switchTab('entity');
+            this.loadEntityTileConfig(tileConfig);
+            return;
+        }
+        if (tileConfig.type === 'button') {
+            this.loadButtonTileConfig(tileConfig);
+        }
+    }
 
-            // Vybrat radio button
-            const radio = document.querySelector(`input[name="entity"][value="${tileConfig.entity_id}"]`);
-            if (radio) radio.checked = true;
+    loadEntityTileConfig(tileConfig) {
+        this.switchTab('entity');
 
-            // Fill form
-            document.getElementById('entity-label').value = tileConfig.label || '';
-            document.getElementById('entity-icon').value = tileConfig.icon || '';
-            document.getElementById('entity-color').value = tileConfig.color || '#03A9F4';
+        const radio = document.querySelector(`input[name="entity"][value="${tileConfig.entity_id}"]`);
+        if (radio) radio.checked = true;
 
-            // Update icon preview
-            if (tileConfig.icon) {
-                this.updateIconPreview('entity', tileConfig.icon);
+        document.getElementById('entity-label').value = tileConfig.label || '';
+        document.getElementById('entity-icon').value = tileConfig.icon || '';
+        document.getElementById('entity-color').value = tileConfig.color || '#03A9F4';
+
+        if (tileConfig.icon) {
+            this.updateIconPreview('entity', tileConfig.icon);
+        }
+
+        this.loadSupportEntities(tileConfig.support_entities, {
+            topInput: 'support-entity-1',
+            topSearch: 'support-entity-1-search',
+            bottomInput: 'support-entity-2',
+            bottomSearch: 'support-entity-2-search'
+        });
+    }
+
+    loadButtonTileConfig(tileConfig) {
+        this.switchTab('button');
+
+        const radio = document.querySelector(`input[name="button_entity"][value="${tileConfig.entity_id}"]`);
+        if (radio) radio.checked = true;
+
+        document.getElementById('button-action').value = tileConfig.action || 'toggle';
+        document.getElementById('button-label').value = tileConfig.label || '';
+        document.getElementById('button-icon').value = tileConfig.icon || '';
+        document.getElementById('button-color').value = tileConfig.color || '#FFC107';
+
+        if (tileConfig.icon) {
+            this.updateIconPreview('button', tileConfig.icon);
+        }
+
+        this.loadSupportEntities(tileConfig.support_entities, {
+            topInput: 'button-support-entity-1',
+            topSearch: 'button-support-entity-1-search',
+            bottomInput: 'button-support-entity-2',
+            bottomSearch: 'button-support-entity-2-search'
+        });
+    }
+
+    loadSupportEntities(supportEntities, fields) {
+        if (!supportEntities) return;
+
+        const topRight = supportEntities.top_right;
+        if (topRight) {
+            const entity1 = this.hass.states[topRight];
+            if (entity1) {
+                document.getElementById(fields.topInput).value = topRight;
+                document.getElementById(fields.topSearch).value = entity1.attributes.friendly_name || topRight;
             }
+        }
 
-            // Podporné entity - nastavit hidden input a zobrazit název v search
-            if (tileConfig.support_entities) {
-                if (tileConfig.support_entities.top_right) {
-                    const entity1 = this.hass.states[tileConfig.support_entities.top_right];
-                    if (entity1) {
-                        document.getElementById('support-entity-1').value = tileConfig.support_entities.top_right;
-                        document.getElementById('support-entity-1-search').value = entity1.attributes.friendly_name || tileConfig.support_entities.top_right;
-                    }
-                }
-                if (tileConfig.support_entities.bottom_right) {
-                    const entity2 = this.hass.states[tileConfig.support_entities.bottom_right];
-                    if (entity2) {
-                        document.getElementById('support-entity-2').value = tileConfig.support_entities.bottom_right;
-                        document.getElementById('support-entity-2-search').value = entity2.attributes.friendly_name || tileConfig.support_entities.bottom_right;
-                    }
-                }
-            }
-
-        } else if (tileConfig.type === 'button') {
-            this.switchTab('button');
-
-            // Vybrat radio button
-            const radio = document.querySelector(`input[name="button_entity"][value="${tileConfig.entity_id}"]`);
-            if (radio) radio.checked = true;
-
-            // Fill form
-            document.getElementById('button-action').value = tileConfig.action || 'toggle';
-            document.getElementById('button-label').value = tileConfig.label || '';
-            document.getElementById('button-icon').value = tileConfig.icon || '';
-            document.getElementById('button-color').value = tileConfig.color || '#FFC107';
-
-            // Update icon preview
-            if (tileConfig.icon) {
-                this.updateIconPreview('button', tileConfig.icon);
-            }
-
-            // Načíst support entities
-            if (tileConfig.support_entities) {
-                if (tileConfig.support_entities.top_right) {
-                    const entity1 = this.hass.states[tileConfig.support_entities.top_right];
-                    if (entity1) {
-                        document.getElementById('button-support-entity-1').value = tileConfig.support_entities.top_right;
-                        document.getElementById('button-support-entity-1-search').value = entity1.attributes.friendly_name || tileConfig.support_entities.top_right;
-                    }
-                }
-                if (tileConfig.support_entities.bottom_right) {
-                    const entity2 = this.hass.states[tileConfig.support_entities.bottom_right];
-                    if (entity2) {
-                        document.getElementById('button-support-entity-2').value = tileConfig.support_entities.bottom_right;
-                        document.getElementById('button-support-entity-2-search').value = entity2.attributes.friendly_name || tileConfig.support_entities.bottom_right;
-                    }
-                }
+        const bottomRight = supportEntities.bottom_right;
+        if (bottomRight) {
+            const entity2 = this.hass.states[bottomRight];
+            if (entity2) {
+                document.getElementById(fields.bottomInput).value = bottomRight;
+                document.getElementById(fields.bottomSearch).value = entity2.attributes.friendly_name || bottomRight;
             }
         }
     }
@@ -1260,4 +1174,4 @@ class TileConfigDialog {
 }
 
 // Export do window pro použití inline onclick handlerů
-window.TileConfigDialog = TileConfigDialog;
+globalThis.TileConfigDialog = TileConfigDialog;

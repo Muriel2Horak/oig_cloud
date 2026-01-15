@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * OIG Cloud Dashboard - Layout Customization System
  *
@@ -15,19 +14,19 @@
 // STATE
 // ============================================================================
 
-var editMode = false;
-var currentBreakpoint = null;
-var draggedNode = null;
-var dragStartX = 0;
-var dragStartY = 0;
-var dragStartTop = 0;
-var dragStartLeft = 0;
-var resizeTimer = null;
-var lastResizeWidth = null;
-var lastResizeHeight = null;
+let editMode = false;
+let currentBreakpoint = null;
+let draggedNode = null;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragStartTop = 0;
+let dragStartLeft = 0;
+let resizeTimer = null;
+let lastResizeWidth = null;
+let lastResizeHeight = null;
 
 // Callbacks pro redraw (registruje core)
-var onLayoutChangeCallback = null;
+let onLayoutChangeCallback = null;
 
 // ============================================================================
 // BREAKPOINT DETECTION
@@ -38,7 +37,7 @@ var onLayoutChangeCallback = null;
  * @returns {string} 'mobile' | 'tablet' | 'desktop'
  */
 function getCurrentBreakpoint() {
-    const width = window.innerWidth;
+    const width = globalThis.innerWidth;
     if (width <= 768) return 'mobile';
     if (width <= 1024) return 'tablet';
     return 'desktop';
@@ -382,8 +381,8 @@ function handleLayoutResize() {
     resizeTimer = setTimeout(() => {
         // Mobile WebViews (incl. HA app) fire frequent resize events when the browser chrome
         // shows/hides; ignore height-only micro-resizes to avoid infinite redraw loops.
-        const w = window.innerWidth;
-        const h = window.innerHeight;
+        const w = globalThis.innerWidth;
+        const h = globalThis.innerHeight;
         const widthChanged = lastResizeWidth === null ? true : Math.abs(w - lastResizeWidth) >= 24;
         const heightChanged = lastResizeHeight === null ? true : Math.abs(h - lastResizeHeight) >= 180;
         lastResizeWidth = w;
@@ -428,7 +427,7 @@ function initLayout(changeCallback) {
     loadLayout(currentBreakpoint);
 
     // Resize listener
-    window.addEventListener('resize', handleLayoutResize);
+    globalThis.addEventListener('resize', handleLayoutResize);
 
     console.log('[Layout] Initialized');
 }
@@ -437,7 +436,7 @@ function initLayout(changeCallback) {
  * Cleanup
  */
 function destroyLayout() {
-    window.removeEventListener('resize', handleLayoutResize);
+    globalThis.removeEventListener('resize', handleLayoutResize);
     document.removeEventListener('mousemove', handleDragMove);
     document.removeEventListener('mouseup', handleDragEnd);
     document.removeEventListener('touchmove', handleTouchMove);
@@ -451,8 +450,8 @@ function destroyLayout() {
 // EXPORT DEFAULT (backward compatibility)
 // ============================================================================
 
-if (typeof window !== 'undefined') {
-    window.DashboardLayout = {
+if (typeof globalThis !== 'undefined') {
+    globalThis.DashboardLayout = {
         initLayout,
         destroyLayout,
         getCurrentBreakpoint,

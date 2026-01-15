@@ -1,7 +1,6 @@
-/* eslint-disable */
 // === ČHMÚ WEATHER WARNING FUNCTIONS ===
 
-var chmuWarningData = null;
+let chmuWarningData = null;
 
 // Update ČHMÚ warning badge
 function updateChmuWarningBadge() {
@@ -25,7 +24,7 @@ function updateChmuWarningBadge() {
 
     if (!badge || !icon || !text) return;
 
-    const severity = parseInt(localSensor.state) || 0;
+    const severity = Number.parseInt(localSensor.state) || 0;
     const attrs = localSensor.attributes || {};
     const warningsCount = attrs.warnings_count || 0;
     const eventType = attrs.event_type || '';
@@ -108,9 +107,9 @@ function closeChmuWarningModal(event) {
 function renderChmuWarningModal(container) {
     if (!chmuWarningData || !container) return;
 
-    const { local, global } = chmuWarningData;
+    const { local } = chmuWarningData;
     const attrs = local.attributes || {};
-    const severity = parseInt(local.state) || 0;
+    const severity = Number.parseInt(local.state) || 0;
 
     // If no warnings
     if (severity === 0) {
@@ -127,7 +126,6 @@ function renderChmuWarningModal(container) {
     // Get warnings from new structure
     const allWarningsDetails = attrs.all_warnings_details || [];
     const topEventType = attrs.event_type;
-    const topSeverity = attrs.severity;
     const topDescription = attrs.description;
     const topInstruction = attrs.instruction;
     const topOnset = attrs.onset;
@@ -303,6 +301,7 @@ function formatChmuDateTime(isoString) {
 
         return `${day}.${month}. ${hours}:${minutes}`;
     } catch (e) {
+        console.warn('[CHMU] Failed to format datetime', e);
         return isoString;
     }
 }
@@ -316,7 +315,7 @@ function formatChmuDateTime(isoString) {
 // No need to re-declare it here
 
 // Export ČHMÚ functions
-window.DashboardChmu = {
+globalThis.DashboardChmu = {
     updateChmuWarningBadge,
     toggleChmuWarningModal,
     openChmuWarningModal,

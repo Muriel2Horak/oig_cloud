@@ -48,28 +48,28 @@
 }
 
 .status-excellent {
-    background: rgb(76, 217, 100, 0.2);
-    color: #4cd964;
+    background: #15803d;
+    color: #ffffff;
 }
 
 .status-good {
-    background: rgb(52, 199, 89, 0.2);
-    color: #34c759;
+    background: #166534;
+    color: #ffffff;
 }
 
 .status-fair {
-    background: rgb(255, 204, 0, 0.2);
-    color: #fc0;
+    background: #b45309;
+    color: #ffffff;
 }
 
 .status-poor {
-    background: rgb(255, 69, 58, 0.2);
-    color: #ff453a;
+    background: #b91c1c;
+    color: #ffffff;
 }
 
 .status-unknown {
-    background: rgb(142, 142, 147, 0.2);
-    color: #8e8e93;
+    background: #334155;
+    color: #ffffff;
 }
 
 /* Main Section - SoH Display */

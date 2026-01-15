@@ -1,4 +1,11 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const FIXTURES_DIR = path.join(__dirname, '..', 'mock', 'fixtures');
 
 function getMode(testInfo) {
   return testInfo.project.metadata?.mode || 'cloud';
@@ -9,6 +16,15 @@ function normalizeSplitFlapText(value) {
   const numeric = value.replace(/[^0-9.]/g, '');
   const collapsed = numeric.replace(/(\d)\1+/g, '$1').replace(/\.{2,}/g, '.');
   return collapsed.trim();
+}
+
+function loadFixture(mode) {
+  const file = path.join(FIXTURES_DIR, `${mode}.json`);
+  const fallback = path.join(FIXTURES_DIR, 'cloud.json');
+  const payload = fs.existsSync(file)
+    ? fs.readFileSync(file, 'utf8')
+    : fs.readFileSync(fallback, 'utf8');
+  return JSON.parse(payload);
 }
 
 async function getDashboardFrame(page) {
@@ -22,6 +38,62 @@ async function getDashboardFrame(page) {
   return frame;
 }
 
+async function ensureMockHass(page, fixture) {
+  await page.evaluate((data) => {
+    const ha = document.querySelector('home-assistant');
+    if (!ha) return;
+    const defaultAuth = { data: { access_token: 'mock-token' } };
+    if (!ha.hass) {
+      ha.hass = {
+        states: data.hass?.states || {},
+        auth: data.hass?.auth || defaultAuth,
+        themes: data.hass?.themes || {
+          darkMode: false,
+          themes: {},
+          theme: 'default',
+          default_theme: 'default'
+        },
+        selectedTheme: data.hass?.selectedTheme || 'default'
+      };
+      return;
+    }
+    if (!ha.hass.states || Object.keys(ha.hass.states).length === 0) {
+      ha.hass.states = data.hass?.states || {};
+    }
+    if (!ha.hass.auth) {
+      ha.hass.auth = defaultAuth;
+    }
+  }, fixture);
+}
+
+async function prepareDashboard(page, testInfo, modeOverride) {
+  const mode = modeOverride || getMode(testInfo);
+  const fixture = loadFixture(mode);
+
+  await page.goto(`/host?mode=${mode}`);
+  await ensureMockHass(page, fixture);
+
+  const frame = await getDashboardFrame(page);
+  await frame.waitForFunction(() => {
+    const hass = globalThis.getHass?.();
+    return hass?.states && Object.keys(hass.states).length > 0;
+  });
+
+  await frame.waitForFunction(() => {
+    return typeof globalThis.DashboardPricing?.loadPricingData === 'function';
+  });
+
+  await frame.evaluate(() => {
+    globalThis.DashboardFlow?.forceFullRefresh?.();
+    globalThis.DashboardChmu?.updateChmuWarningBadge?.();
+    if (typeof globalThis.updateCombinedChart === 'function') {
+      globalThis.updateCombinedChart = () => true;
+    }
+  });
+
+  return frame;
+}
+
 test('dashboard loads and shows CHMU badge', async ({ page }, testInfo) => {
   const mode = getMode(testInfo);
   const consoleMessages = [];
@@ -31,10 +103,11 @@ test('dashboard loads and shows CHMU badge', async ({ page }, testInfo) => {
     }
   });
 
-  await page.goto(`/host?mode=${mode}`);
-
-  const frame = await getDashboardFrame(page);
-  await frame.waitForFunction(() => !!window.DashboardFlow?.loadData);
+  const frame = await prepareDashboard(page, testInfo);
+  await frame.waitForFunction(() => !!globalThis.DashboardFlow?.loadData);
+  await frame.evaluate(() => {
+    globalThis.DashboardChmu?.updateChmuWarningBadge?.();
+  });
   const chmuText = frame.locator('#chmu-text');
   await expect(chmuText).toBeVisible();
 
@@ -53,7 +126,7 @@ test('dashboard loads and shows CHMU badge', async ({ page }, testInfo) => {
       const eventType = mode === 'local' ? 'Local alert' : 'Test alert';
       const description =
         mode === 'local' ? 'Local warning detail' : 'Test warning detail';
-      window.__setHassState?.(chmuSensorId, {
+      globalThis.__setHassState?.(chmuSensorId, {
         entity_id: chmuSensorId,
         state: mode === 'local' ? '2' : '1',
         attributes: {
@@ -84,7 +157,7 @@ test('dashboard loads and shows CHMU badge', async ({ page }, testInfo) => {
   }, { mode, chmuSensorId });
 
   await frame.evaluate(() => {
-    window.updateChmuWarningBadge?.();
+    globalThis.updateChmuWarningBadge?.();
   });
 
   const chmuBadge = frame.locator('#chmu-warning-badge');
@@ -106,17 +179,14 @@ test('dashboard loads and shows CHMU badge', async ({ page }, testInfo) => {
 });
 
 test('mode buttons render and can trigger service call', async ({ page }, testInfo) => {
-  const mode = getMode(testInfo);
-  await page.goto(`/host?mode=${mode}`);
-
-  const frame = await getDashboardFrame(page);
-  await frame.waitForFunction(() => window.DashboardShield?.setBoxMode && window.getHass?.());
+  const frame = await prepareDashboard(page, testInfo);
+  await frame.waitForFunction(() => globalThis.DashboardShield?.setBoxMode && globalThis.getHass?.());
   const panelHeader = frame.locator('#control-panel .panel-header');
   await panelHeader.click();
 
   const targetMode = await frame.evaluate(() => {
     const entityId = getSensorId('box_prms_mode');
-    const hass = window.getHass?.();
+    const hass = globalThis.getHass?.();
     const now = new Date().toISOString();
     if (hass?.states?.[entityId]) {
       hass.states[entityId] = {
@@ -142,17 +212,17 @@ test('mode buttons render and can trigger service call', async ({ page }, testIn
   await expect(targetButton).toBeVisible();
 
   await frame.evaluate(async (mode) => {
-    window.__serviceCalls = [];
-    window.showAcknowledgementDialog = async () => true;
-    window.showSimpleConfirmDialog = async () => true;
-    window.executeServiceWithPendingUI = async ({ serviceCall }) => serviceCall();
-    await window.DashboardShield?.setBoxMode?.(mode);
+    globalThis.__serviceCalls = [];
+    globalThis.showAcknowledgementDialog = async () => true;
+    globalThis.showSimpleConfirmDialog = async () => true;
+    globalThis.executeServiceWithPendingUI = async ({ serviceCall }) => serviceCall();
+    await globalThis.DashboardShield?.setBoxMode?.(mode);
   }, targetMode);
 
-  await page.waitForFunction(() => (window.__getServiceCalls?.() || []).length > 0);
+  await page.waitForFunction(() => (globalThis.__getServiceCalls?.() || []).length > 0);
 
   const serviceCall = await page.evaluate(() => {
-    const calls = window.__getServiceCalls?.() || [];
+    const calls = globalThis.__getServiceCalls?.() || [];
     return calls[calls.length - 1] || null;
   });
 
@@ -163,7 +233,7 @@ test('mode buttons render and can trigger service call', async ({ page }, testIn
   });
 
   await frame.evaluate(async (mode) => {
-    const hass = window.getHass?.();
+    const hass = globalThis.getHass?.();
     const entityId = getSensorId('box_prms_mode');
     const now = new Date().toISOString();
     if (hass?.states) {
@@ -175,27 +245,24 @@ test('mode buttons render and can trigger service call', async ({ page }, testIn
         last_changed: now
       };
     }
-    await window.DashboardShield?.updateButtonStates?.();
+    await globalThis.DashboardShield?.updateButtonStates?.();
   }, targetMode);
 
   await expect(targetButton).toHaveClass(/active/);
 });
 
 test('mode button click triggers service call', async ({ page }, testInfo) => {
-  const mode = getMode(testInfo);
-  await page.goto(`/host?mode=${mode}`);
-
-  const frame = await getDashboardFrame(page);
+  const frame = await prepareDashboard(page, testInfo);
   const panelHeader = frame.locator('#control-panel .panel-header');
   await panelHeader.click();
 
   await frame.evaluate(() => {
-    window.showAcknowledgementDialog = async () => true;
-    window.executeServiceWithPendingUI = async ({ serviceCall }) => serviceCall();
+    globalThis.showAcknowledgementDialog = async () => true;
+    globalThis.executeServiceWithPendingUI = async ({ serviceCall }) => serviceCall();
   });
 
   const currentMode = await frame.evaluate(() => {
-    return window.getHass?.()?.states?.[getSensorId('box_prms_mode')]?.state || '';
+    return globalThis.getHass?.()?.states?.[getSensorId('box_prms_mode')]?.state || '';
   });
   const targetMode = currentMode.includes('Home 1') ? 'Home 2' : 'Home 1';
   const buttonId = targetMode === 'Home 1' ? '#btn-mode-home1' : '#btn-mode-home2';
@@ -204,9 +271,9 @@ test('mode button click triggers service call', async ({ page }, testInfo) => {
   await expect(button).toBeVisible();
   await button.click();
 
-  await page.waitForFunction(() => (window.__getServiceCalls?.() || []).length > 0);
+  await page.waitForFunction(() => (globalThis.__getServiceCalls?.() || []).length > 0);
   const serviceCall = await page.evaluate(() => {
-    const calls = window.__getServiceCalls?.() || [];
+    const calls = globalThis.__getServiceCalls?.() || [];
     return calls[calls.length - 1] || null;
   });
 
@@ -218,14 +285,11 @@ test('mode button click triggers service call', async ({ page }, testInfo) => {
 });
 
 test('pricing cards render current spot price', async ({ page }, testInfo) => {
-  const mode = getMode(testInfo);
-  await page.goto(`/host?mode=${mode}`);
-
-  const frame = await getDashboardFrame(page);
+  const frame = await prepareDashboard(page, testInfo);
   await frame.locator('.dashboard-tab', { hasText: 'Predikce a statistiky' }).click();
   await frame.evaluate(async () => {
-    if (window.DashboardPricing?.loadPricingData) {
-      await window.DashboardPricing.loadPricingData();
+    if (globalThis.DashboardPricing?.loadPricingData) {
+      await globalThis.DashboardPricing.loadPricingData();
     }
   });
 
@@ -240,16 +304,15 @@ test('pricing cards differ between spot and fixed fixtures', async ({ page }, te
   }
 
   const readCheapestPrice = async (mode) => {
-    await page.goto(`/host?mode=${mode}`);
-    const frame = await getDashboardFrame(page);
+    const frame = await prepareDashboard(page, testInfo, mode);
     await frame.locator('.dashboard-tab', { hasText: 'Predikce a statistiky' }).click();
     await frame.evaluate(async () => {
-      if (window.invalidatePricingTimelineCache) {
-        const plan = window.pricingPlanMode || 'hybrid';
-        window.invalidatePricingTimelineCache(plan);
+      if (globalThis.invalidatePricingTimelineCache) {
+        const plan = globalThis.pricingPlanMode || 'hybrid';
+        globalThis.invalidatePricingTimelineCache(plan);
       }
-      if (window.DashboardPricing?.loadPricingData) {
-        await window.DashboardPricing.loadPricingData();
+      if (globalThis.DashboardPricing?.loadPricingData) {
+        await globalThis.DashboardPricing.loadPricingData();
       }
     });
 
@@ -271,24 +334,24 @@ test('pricing cards differ between spot and fixed fixtures', async ({ page }, te
 });
 
 test('timeline dialog renders today content', async ({ page }, testInfo) => {
-  const mode = getMode(testInfo);
-  await page.goto(`/host?mode=${mode}`);
-
-  const frame = await getDashboardFrame(page);
+  const frame = await prepareDashboard(page, testInfo);
   await frame.locator('.dashboard-tab', { hasText: 'Predikce a statistiky' }).click();
   const pricingTab = frame.locator('#pricing-tab');
   await expect(pricingTab).toBeVisible();
 
-  await frame.waitForFunction(() => !!window.DashboardTimeline?.openTimelineDialog);
+  await frame.waitForFunction(() => !!globalThis.DashboardTimeline?.openTimelineDialog);
   await frame.evaluate(() => {
-    window.DashboardTimeline.openTimelineDialog('today');
+    globalThis.DashboardTimeline?.init?.();
+  });
+  await frame.evaluate(() => {
+    globalThis.DashboardTimeline.openTimelineDialog('today');
   });
 
   await frame.waitForFunction(
     () => document.getElementById('mode-timeline-dialog')?.style.display === 'flex'
   );
   await frame.evaluate(() => {
-    window.timelineDialogInstance?.switchTab?.('today');
+    globalThis.timelineDialogInstance?.switchTab?.('today');
   });
 
   const todayContainer = frame.locator('#today-timeline-container');
@@ -299,7 +362,7 @@ test('timeline dialog renders today content', async ({ page }, testInfo) => {
   await expect(todayContainer).not.toHaveText('');
 
   await frame.evaluate(() => {
-    window.timelineDialogInstance?.switchTab?.('tomorrow');
+    globalThis.timelineDialogInstance?.switchTab?.('tomorrow');
   });
 
   const tomorrowContainer = frame.locator('#tomorrow-timeline-container');
@@ -355,47 +418,53 @@ test('timeline refresh updates pricing cache', async ({ page }, testInfo) => {
     });
   });
 
-  await page.goto(`/host?mode=${mode}`);
-  const frame = await getDashboardFrame(page);
+  const frame = await prepareDashboard(page, testInfo);
   await frame.locator('.dashboard-tab', { hasText: 'Predikce a statistiky' }).click();
 
   await frame.evaluate(async () => {
-    if (window.invalidatePricingTimelineCache) {
-      window.invalidatePricingTimelineCache('hybrid');
+    if (globalThis.invalidatePricingTimelineCache) {
+      globalThis.invalidatePricingTimelineCache('hybrid');
     }
-    if (window.DashboardPricing?.loadPricingData) {
-      await window.DashboardPricing.loadPricingData();
+    if (globalThis.DashboardPricing?.loadPricingData) {
+      await globalThis.DashboardPricing.loadPricingData();
     }
   });
 
+  await frame.waitForFunction(() => {
+    return typeof timelineDataCache !== 'undefined' &&
+      timelineDataCache?.perPlan?.hybrid?.data?.length > 0;
+  });
+
   const firstPrice = await frame.evaluate(
-    () => window.timelineDataCache?.perPlan?.hybrid?.data?.[0]?.spot_price_czk ?? null
+    () => timelineDataCache?.perPlan?.hybrid?.data?.[0]?.spot_price_czk ?? null
   );
   expect(firstPrice).toBe(3.1);
 
   useUpdatedTimeline = true;
 
   await frame.evaluate(async () => {
-    if (window.invalidatePricingTimelineCache) {
-      window.invalidatePricingTimelineCache('hybrid');
+    if (globalThis.invalidatePricingTimelineCache) {
+      globalThis.invalidatePricingTimelineCache('hybrid');
     }
-    if (window.DashboardPricing?.loadPricingData) {
-      await window.DashboardPricing.loadPricingData();
+    if (globalThis.DashboardPricing?.loadPricingData) {
+      await globalThis.DashboardPricing.loadPricingData();
     }
   });
 
+  await frame.waitForFunction(() => {
+    return typeof timelineDataCache !== 'undefined' &&
+      timelineDataCache?.perPlan?.hybrid?.data?.[0]?.spot_price_czk === 8.8;
+  });
+
   const secondPrice = await frame.evaluate(
-    () => window.timelineDataCache?.perPlan?.hybrid?.data?.[0]?.spot_price_czk ?? null
+    () => timelineDataCache?.perPlan?.hybrid?.data?.[0]?.spot_price_czk ?? null
   );
   expect(secondPrice).toBe(8.8);
   expect(secondPrice).not.toBe(firstPrice);
 });
 
 test('solar forecast updates flow tiles', async ({ page }, testInfo) => {
-  const mode = getMode(testInfo);
-  await page.goto(`/host?mode=${mode}`);
-
-  const frame = await getDashboardFrame(page);
+  const frame = await prepareDashboard(page, testInfo);
 
   await frame.evaluate(() => {
     const entityId = 'sensor.oig_2206237016_solar_forecast';
@@ -415,14 +484,14 @@ test('solar forecast updates flow tiles', async ({ page }, testInfo) => {
   });
 
   await frame.evaluate(async () => {
-    if (window.DashboardFlow?.forceFullRefresh) {
-      window.DashboardFlow.forceFullRefresh();
+    if (globalThis.DashboardFlow?.forceFullRefresh) {
+      globalThis.DashboardFlow.forceFullRefresh();
       await new Promise((resolve) => setTimeout(resolve, 50));
-      window.DashboardFlow.forceFullRefresh();
-    } else if (window.DashboardFlow?.loadData) {
-      await window.DashboardFlow.loadData();
+      globalThis.DashboardFlow.forceFullRefresh();
+    } else if (globalThis.DashboardFlow?.loadData) {
+      await globalThis.DashboardFlow.loadData();
       await new Promise((resolve) => setTimeout(resolve, 50));
-      await window.DashboardFlow.loadData();
+      await globalThis.DashboardFlow.loadData();
     }
   });
 
@@ -449,15 +518,12 @@ test('solar forecast updates flow tiles', async ({ page }, testInfo) => {
 });
 
 test('last update header reflects real_data_update', async ({ page }, testInfo) => {
-  const mode = getMode(testInfo);
-  await page.goto(`/host?mode=${mode}`);
-
-  const frame = await getDashboardFrame(page);
+  const frame = await prepareDashboard(page, testInfo);
   const now = new Date().toISOString();
 
   await page.evaluate((value) => {
     const entityId = 'sensor.oig_2206237016_real_data_update';
-    window.__setHassState?.(entityId, {
+    globalThis.__setHassState?.(entityId, {
       entity_id: entityId,
       state: value,
       attributes: {},
@@ -467,8 +533,8 @@ test('last update header reflects real_data_update', async ({ page }, testInfo) 
   }, now);
 
   await frame.evaluate(async () => {
-    if (window.DashboardFlow?.loadData) {
-      await window.DashboardFlow.loadData();
+    if (globalThis.DashboardFlow?.loadData) {
+      await globalThis.DashboardFlow.loadData();
     }
   });
 
@@ -477,18 +543,15 @@ test('last update header reflects real_data_update', async ({ page }, testInfo) 
 });
 
 test('battery health and efficiency tiles render values', async ({ page }, testInfo) => {
-  const mode = getMode(testInfo);
-  await page.goto(`/host?mode=${mode}`);
-
-  const frame = await getDashboardFrame(page);
+  const frame = await prepareDashboard(page, testInfo);
   await frame.locator('.dashboard-tab', { hasText: 'Predikce a statistiky' }).click();
 
   await frame.evaluate(async () => {
-    if (typeof window.updateBatteryHealthStats === 'function') {
-      await window.updateBatteryHealthStats();
+    if (typeof globalThis.updateBatteryHealthStats === 'function') {
+      await globalThis.updateBatteryHealthStats();
     }
-    if (window.DashboardAnalytics?.updateBatteryEfficiencyStats) {
-      await window.DashboardAnalytics.updateBatteryEfficiencyStats();
+    if (globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats) {
+      await globalThis.DashboardAnalytics.updateBatteryEfficiencyStats();
     }
   });
 
@@ -502,10 +565,7 @@ test('battery health and efficiency tiles render values', async ({ page }, testI
 });
 
 test('runtime proxy/local change updates spot price card', async ({ page }, testInfo) => {
-  const mode = getMode(testInfo);
-  await page.goto(`/host?mode=${mode}`);
-
-  const frame = await getDashboardFrame(page);
+  const frame = await prepareDashboard(page, testInfo);
   await frame.locator('.dashboard-tab', { hasText: 'Toky' }).click();
 
   const priceEl = frame.locator('#grid-spot-price');
@@ -514,7 +574,7 @@ test('runtime proxy/local change updates spot price card', async ({ page }, test
   await page.evaluate(() => {
     const entityId = 'sensor.oig_2206237016_spot_price_current_15min';
     const now = new Date().toISOString();
-    window.__setHassState?.(entityId, {
+    globalThis.__setHassState?.(entityId, {
       entity_id: entityId,
       state: '9.99',
       attributes: {},
@@ -524,8 +584,8 @@ test('runtime proxy/local change updates spot price card', async ({ page }, test
   });
 
   await frame.evaluate(async () => {
-    if (window.DashboardFlow?.loadData) {
-      await window.DashboardFlow.loadData();
+    if (globalThis.DashboardFlow?.loadData) {
+      await globalThis.DashboardFlow.loadData();
     }
   });
 

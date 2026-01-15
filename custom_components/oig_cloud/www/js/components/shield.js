@@ -1,4 +1,3 @@
-/* eslint-disable */
 // === SHIELD INTEGRATION FUNCTIONS ===
 
 // Debouncing timers (only for shield-specific functions)
@@ -7,35 +6,125 @@ let timelineRefreshTimer = null;
 
 // Debounced shield monitor - prevents excessive calls when shield sensors change rapidly
 function debouncedShieldMonitor() {
-    try {
-        if (shieldMonitorTimer) clearTimeout(shieldMonitorTimer);
-    } catch (e) { }
+    if (shieldMonitorTimer) {
+        clearTimeout(shieldMonitorTimer);
+    }
     try {
         shieldMonitorTimer = setTimeout(() => {
-        monitorShieldActivity();
-        updateShieldQueue();
-        updateShieldUI();
-        updateButtonStates();
+            monitorShieldActivity();
+            updateShieldQueue();
+            updateShieldUI();
+            updateButtonStates();
         }, 100); // Wait 100ms before executing (shorter delay for responsive UI)
     } catch (e) {
         // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+        console.warn('[Shield] Failed to schedule debounced monitor:', e);
         shieldMonitorTimer = null;
     }
 }
 
 // Debounced timeline refresh - for Today Plan Tile updates
 function debouncedTimelineRefresh() {
-    try {
-        if (timelineRefreshTimer) clearTimeout(timelineRefreshTimer);
-    } catch (e) { }
+    if (timelineRefreshTimer) {
+        clearTimeout(timelineRefreshTimer);
+    }
     try {
         timelineRefreshTimer = setTimeout(() => {
-        window.DashboardTimeline?.buildExtendedTimeline?.();
+            globalThis.DashboardTimeline?.buildExtendedTimeline?.();
         }, 300); // Wait 300ms before executing
     } catch (e) {
         // Firefox can throw NS_ERROR_NOT_INITIALIZED if the document/window is being torn down.
+        console.warn('[Shield] Failed to schedule timeline refresh:', e);
         timelineRefreshTimer = null;
     }
+}
+
+function matchesAny(entityId, fragments) {
+    return fragments.some(fragment => entityId.includes(fragment));
+}
+
+function shouldRefreshShield(entityId) {
+    return matchesAny(entityId, [
+        'service_shield_',
+        'box_prms_mode',
+        'boiler_manual_mode',
+        'invertor_prms_to_grid',
+        'invertor_prm1_p_max_feed_grid'
+    ]);
+}
+
+function shouldRefreshData(entityId) {
+    return matchesAny(entityId, [
+        'actual_pv',
+        'actual_batt',
+        'actual_aci_wtotal',
+        'actual_aco_p',
+        'boiler_current_cbb_w',
+        'extended_battery_soc',
+        'extended_battery_voltage',
+        'box_temp',
+        'bypass_status',
+        'chmu_warning_level',
+        'battery_efficiency',
+        'real_data_update'
+    ]);
+}
+
+function shouldRefreshDetails(entityId) {
+    return matchesAny(entityId, [
+        'dc_in_fv_p',
+        'extended_fve_',
+        'computed_batt_',
+        'ac_in_',
+        'ac_out_',
+        'spot_price',
+        'current_tariff',
+        'grid_charging_planned',
+        'battery_balancing',
+        'notification_count'
+    ]);
+}
+
+function isPricingSensor(entityId) {
+    return matchesAny(entityId, [
+        '_spot_price_current_15min',
+        '_export_price_current_15min',
+        '_solar_forecast',
+        '_battery_forecast'
+    ]);
+}
+
+function shouldSkipPricingUpdate(entityId, newState, lastPricingPayload) {
+    if (!newState) return false;
+    let sig = '';
+    try {
+        sig = `${newState.state}|${JSON.stringify(newState.attributes || {})}`;
+    } catch (e) {
+        console.warn('[Shield] Failed to serialize pricing payload signature', e);
+        sig = `${newState.state}`;
+    }
+    const prev = lastPricingPayload.get(entityId);
+    if (prev === sig) return true;
+    lastPricingPayload.set(entityId, sig);
+    return false;
+}
+
+function getQueuePlural(queueCount) {
+    if (queueCount === 1) return 'úkol';
+    if (queueCount < 5) return 'úkoly';
+    return 'úkolů';
+}
+
+function resolveGridModeLabel(targetMode) {
+    const isOff = targetMode === 'Off' || targetMode === 'Vypnuto';
+    const isOn = targetMode === 'On' || targetMode === 'Zapnuto';
+    if (isOff) {
+        return { icon: '🚫', label: 'Vypnuto' };
+    }
+    if (isOn) {
+        return { icon: '💧', label: 'Zapnuto' };
+    }
+    return { icon: '🚰', label: 'Omezeno' };
 }
 
 // Subscribe to shield status changes
@@ -51,7 +140,7 @@ function subscribeToShield() {
     try {
         // IMPORTANT: Do NOT create extra `subscribeEvents('state_changed')` subscriptions here.
         // Mobile Safari / HA app can fall behind and HA will stop sending after 4096 pending messages.
-        const watcher = window.DashboardStateWatcher;
+        const watcher = globalThis.DashboardStateWatcher;
         if (!watcher) {
             console.warn('[Shield] StateWatcher not available yet, retrying...');
             setTimeout(subscribeToShield, 500);
@@ -67,82 +156,34 @@ function subscribeToShield() {
         });
 
         // Prevent duplicate callback registrations
-        if (!window.__oigShieldWatcherUnsub) {
+        if (!globalThis.__oigShieldWatcherUnsub) {
             const lastPricingPayload = new Map(); // entityId -> stable signature for skip logic
 
-            window.__oigShieldWatcherUnsub = watcher.onEntityChange((entityId, newState) => {
+            globalThis.__oigShieldWatcherUnsub = watcher.onEntityChange((entityId, newState) => {
                 if (!entityId) return;
 
-                // Shield status sensors
-                if (entityId.includes('service_shield_')) {
+                if (shouldRefreshShield(entityId)) {
                     debouncedShieldMonitor();
                 }
 
-                // Target state sensors (box mode, boiler mode, grid delivery)
-                if (entityId.includes('box_prms_mode') ||
-                    entityId.includes('boiler_manual_mode') ||
-                    entityId.includes('invertor_prms_to_grid') ||
-                    entityId.includes('invertor_prm1_p_max_feed_grid')) {
-                    debouncedShieldMonitor();
-                }
-
-                // Data sensors - trigger loadData() on changes
-                if (entityId.includes('actual_pv') ||           // Solar power
-                    entityId.includes('actual_batt') ||         // Battery power
-                    entityId.includes('actual_aci_wtotal') ||   // Grid power
-                    entityId.includes('actual_aco_p') ||        // House power
-                    entityId.includes('boiler_current_cbb_w') || // Boiler power
-                    entityId.includes('extended_battery_soc') || // Battery SOC
-                    entityId.includes('extended_battery_voltage') || // Battery voltage
-                    entityId.includes('box_temp') ||            // Inverter temp
-                    entityId.includes('bypass_status') ||       // Bypass status
-                    entityId.includes('chmu_warning_level') ||  // ČHMÚ weather warning
-                    entityId.includes('battery_efficiency') ||  // Battery efficiency stats
-                    entityId.includes('real_data_update')) {    // Real data update
+                if (shouldRefreshData(entityId)) {
                     debouncedLoadData();
                 }
 
-                // Detail sensors - trigger loadNodeDetails() on changes
-                if (entityId.includes('dc_in_fv_p') ||           // Solar strings
-                    entityId.includes('extended_fve_') ||        // Solar voltage/current
-                    entityId.includes('computed_batt_') ||       // Battery energy
-                    entityId.includes('ac_in_') ||               // Grid details
-                    entityId.includes('ac_out_') ||              // House phases
-                    entityId.includes('spot_price') ||           // Grid pricing
-                    entityId.includes('current_tariff') ||       // Tariff
-                    entityId.includes('grid_charging_planned') || // Grid charging plan
-                    entityId.includes('battery_balancing') ||    // Battery balancing plan
-                    entityId.includes('notification_count')) {   // Notifications
+                if (shouldRefreshDetails(entityId)) {
                     debouncedLoadNodeDetails();
                 }
 
-                // Pricing chart sensors - trigger loadPricingData() on changes
-                if (entityId.includes('_spot_price_current_15min') ||   // Spot prices
-                    entityId.includes('_export_price_current_15min') || // Export prices
-                    entityId.includes('_solar_forecast') ||             // Solar forecast
-                    entityId.includes('_battery_forecast')) {           // Battery forecast
-
+                if (isPricingSensor(entityId)) {
                     if (entityId.includes('_battery_forecast')) {
                         debouncedTimelineRefresh();
                     }
 
-                    // Skip if payload didn't actually change (rough equivalent of old_state/new_state compare)
-                    if (newState) {
-                        let sig = '';
-                        try {
-                            sig = `${newState.state}|${JSON.stringify(newState.attributes || {})}`;
-                        } catch (e) {
-                            sig = `${newState.state}`;
-                        }
-                        const prev = lastPricingPayload.get(entityId);
-                        if (prev === sig) return;
-                        lastPricingPayload.set(entityId, sig);
+                    if (shouldSkipPricingUpdate(entityId, newState, lastPricingPayload)) {
+                        return;
                     }
 
-                    if (typeof window.invalidatePricingTimelineCache === 'function') {
-                        window.invalidatePricingTimelineCache();
-                    }
-
+                    globalThis.invalidatePricingTimelineCache?.();
                     debouncedLoadPricingData();
 
                     if (entityId.includes('_battery_forecast')) {
@@ -224,7 +265,7 @@ async function updateShieldUI() {
         const shieldActivity = await getSensor(findShieldSensorId('service_shield_activity'));
 
         const status = shieldStatus.value || 'Idle';
-        const queueCount = parseInt(shieldQueue.value) || 0;
+        const queueCount = Number.parseInt(shieldQueue.value) || 0;
         const activity = shieldActivity.value || 'Idle';
 
         console.log('[Shield] Status:', status, 'Queue:', queueCount, 'Activity:', activity);
@@ -234,7 +275,7 @@ async function updateShieldUI() {
             statusEl.innerHTML = `🔄 Zpracovává: ${activity}`;
             statusEl.className = 'shield-status processing';
         } else if (queueCount > 0) {
-            const plural = queueCount === 1 ? 'úkol' : queueCount < 5 ? 'úkoly' : 'úkolů';
+            const plural = getQueuePlural(queueCount);
             statusEl.innerHTML = `⏳ Ve frontě: ${queueCount} ${plural}`;
             statusEl.className = 'shield-status pending';
         } else {
@@ -249,11 +290,9 @@ async function updateShieldUI() {
 // Update button states based on shield status
 async function updateButtonStates() {
     try {
-        // console.log('[Shield] Updating button states...');
 
         // Get shield sensors (string values for status/activity, use dynamic lookup)
         const shieldStatus = await getSensorString(getSensorId('service_shield_status'));
-        const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
         const shieldActivity = await getSensorString(findShieldSensorId('service_shield_activity'));
 
         // Get current states (string values)
@@ -264,7 +303,6 @@ async function updateButtonStates() {
         const pending = parseShieldActivity(shieldActivity.value);
         const isRunning = (shieldStatus.value === 'Running' || shieldStatus.value === 'running');
 
-        // console.log('[Shield] Parsed state:', {
         //     pending,
         //     isRunning,
         //     queueCount,
@@ -290,6 +328,41 @@ async function updateButtonStates() {
 }
 
 // Update Box Mode buttons
+function updateModeButtons({ modes, getButtonId, pendingService, pending, currentMode, isRunning }) {
+    modes.forEach(mode => {
+        const btn = document.getElementById(getButtonId(mode));
+        if (!btn) return;
+
+        btn.classList.remove('active', 'pending', 'processing', 'disabled-by-service');
+
+        if (pending?.service === pendingService) {
+            btn.disabled = true;
+            if (pending?.target === mode) {
+                btn.classList.add(isRunning ? 'processing' : 'pending');
+            } else {
+                btn.classList.add('disabled-by-service');
+            }
+        } else {
+            btn.disabled = false;
+            if (currentMode === mode) {
+                btn.classList.add('active');
+            }
+        }
+    });
+}
+
+function updateModeStatus(statusId, currentMode, pending, pendingService, isRunning, fallback = '') {
+    const statusEl = document.getElementById(statusId);
+    if (!statusEl) return;
+
+    if (pending?.service === pendingService) {
+        const arrow = isRunning ? '🔄' : '⏳';
+        statusEl.innerHTML = `${currentMode} ${arrow} <span class="transitioning">${pending?.target}</span>`;
+    } else {
+        statusEl.textContent = currentMode || fallback;
+    }
+}
+
 function updateBoxModeButtons(currentMode, pending, isRunning) {
     const modes = ['Home 1', 'Home 2', 'Home 3', 'Home UPS'];
     const buttonIds = {
@@ -299,46 +372,15 @@ function updateBoxModeButtons(currentMode, pending, isRunning) {
         'Home UPS': 'btn-mode-ups'
     };
 
-    modes.forEach(mode => {
-        const btn = document.getElementById(buttonIds[mode]);
-        if (!btn) return;
-
-        // Reset classes
-        btn.classList.remove('active', 'pending', 'processing', 'disabled-by-service');
-
-        // OPRAVA: Zamknout VŠECHNA tlačítka pokud běží set_box_mode (nezávisle na target)
-        if (pending && pending.service === 'set_box_mode') {
-            btn.disabled = true;
-            // Pokud je tento mode cílový, zobraz jako processing/pending
-            if (pending.target === mode) {
-                btn.classList.add(isRunning ? 'processing' : 'pending');
-                // console.log(`[Shield] Button ${mode} -> ${isRunning ? 'processing' : 'pending'} (target)`);
-            } else {
-                // Ostatní tlačítka jen zamknout
-                btn.classList.add('disabled-by-service');
-                // console.log(`[Shield] Button ${mode} -> disabled (service running)`);
-            }
-        }
-        // Check if this is current mode (exact match)
-        else {
-            btn.disabled = false;
-            if (currentMode === mode) {
-                btn.classList.add('active');
-                // console.log(`[Shield] Button ${mode} -> active (currentMode: ${currentMode})`);
-            }
-        }
+    updateModeButtons({
+        modes,
+        getButtonId: (mode) => buttonIds[mode],
+        pendingService: 'set_box_mode',
+        pending,
+        currentMode,
+        isRunning
     });
-
-    // Update status text
-    const statusEl = document.getElementById('box-mode-status');
-    if (!statusEl) return;
-
-    if (pending && pending.service === 'set_box_mode') {
-        const arrow = isRunning ? '🔄' : '⏳';
-        statusEl.innerHTML = `${currentMode} ${arrow} <span class="transitioning">${pending.target}</span>`;
-    } else {
-        statusEl.textContent = currentMode || '--';
-    }
+    updateModeStatus('box-mode-status', currentMode, pending, 'set_box_mode', isRunning, '--');
 }
 
 // Update Boiler Mode buttons
@@ -347,141 +389,109 @@ function updateBoilerModeButtons(currentModeRaw, pending, isRunning) {
     const currentMode = currentModeRaw === 'Manuální' ? 'Manual' : 'CBB';
     const modes = ['CBB', 'Manual'];
 
-    modes.forEach(mode => {
-        const btnId = `btn-boiler-${mode.toLowerCase()}`;
-        const btn = document.getElementById(btnId);
-        if (!btn) return;
-
-        // Reset classes
-        btn.classList.remove('active', 'pending', 'processing', 'disabled-by-service');
-
-        // OPRAVA: Zamknout VŠECHNA tlačítka pokud běží set_boiler_mode (nezávisle na target)
-        if (pending && pending.service === 'set_boiler_mode') {
-            btn.disabled = true;
-            // Pokud je tento mode cílový, zobraz jako processing/pending
-            if (pending.target === mode) {
-                btn.classList.add(isRunning ? 'processing' : 'pending');
-                // console.log(`[Shield] Boiler ${mode} -> ${isRunning ? 'processing' : 'pending'} (target)`);
-            } else {
-                // Ostatní tlačítka jen zamknout
-                btn.classList.add('disabled-by-service');
-                // console.log(`[Shield] Boiler ${mode} -> disabled (service running)`);
-            }
-        }
-        // Check if active
-        else {
-            btn.disabled = false;
-            if (currentMode === mode) {
-                btn.classList.add('active');
-                // console.log(`[Shield] Boiler ${mode} -> active`);
-            }
-        }
+    updateModeButtons({
+        modes,
+        getButtonId: (mode) => `btn-boiler-${mode.toLowerCase()}`,
+        pendingService: 'set_boiler_mode',
+        pending,
+        currentMode,
+        isRunning
     });
-
-    // Update status
-    const statusEl = document.getElementById('boiler-mode-status');
-    if (!statusEl) return;
-
-    if (pending && pending.service === 'set_boiler_mode') {
-        const arrow = isRunning ? '🔄' : '⏳';
-        statusEl.innerHTML = `${currentMode} ${arrow} <span class="transitioning">${pending.target}</span>`;
-    } else {
-        statusEl.textContent = currentMode;
-    }
+    updateModeStatus('boiler-mode-status', currentMode, pending, 'set_boiler_mode', isRunning);
 }
 
 // Update Grid Delivery buttons
 async function updateGridDeliveryButtons(pending, isRunning) {
     try {
-        // Get current grid delivery mode (string) and limit (number)
         const gridModeData = await getSensorString(getSensorId('invertor_prms_to_grid'));
         const gridLimitData = await getSensor(getSensorId('invertor_prm1_p_max_feed_grid'));
+        const context = buildGridDeliveryContext(gridModeData, gridLimitData, pending, isRunning);
+        if (!context) return;
 
-        const currentMode = gridModeData.value || '';
-        const currentLimit = gridLimitData.value || 0;
-        const isChanging = currentMode === 'Probíhá změna';
-
-        // console.log('[Shield] Grid delivery - mode:', currentMode, 'limit:', currentLimit, 'isChanging:', isChanging);
-
-        // Update mode buttons
-        // Sensor vrací: "Vypnuto", "Zapnuto", "Omezeno" (nebo "Probíhá změna")
-        // Mapování sensor hodnota -> button label
-        const modeMapping = {
-            'Vypnuto': 'Vypnuto / Off',
-            'Zapnuto': 'Zapnuto / On',
-            'Omezeno': 'S omezením / Limited'
-        };
-
-        const modeButtons = {
-            'Vypnuto / Off': 'btn-grid-off',
-            'Zapnuto / On': 'btn-grid-on',
-            'S omezením / Limited': 'btn-grid-limited'
-        };
-
-        // Zjistit jaký button label odpovídá current mode
-        const currentModeLabel = modeMapping[currentMode] || currentMode;
-
-        Object.entries(modeButtons).forEach(([mode, btnId]) => {
-            const btn = document.getElementById(btnId);
-            if (!btn) return;
-
-            btn.classList.remove('active', 'pending', 'processing');
-
-            // If "Probíhá změna", disable all buttons and show processing on all
-            if (isChanging) {
-                btn.disabled = true;
-                btn.classList.add('processing');
-                // console.log(`[Shield] Grid ${mode} -> disabled (změna probíhá)`);
-                return;
-            }
-
-            // OPRAVA: Zamknout VŠECHNA tlačítka pokud běží set_grid_delivery (nezávisle na target)
-            if (pending && pending.service === 'set_grid_delivery') {
-                btn.disabled = true;
-
-                // Pokud pending target je číslo (limit change), animuj tlačítko "S omezením"
-                const isLimitChange = !isNaN(parseInt(pending.target));
-                const isTargetButton = isLimitChange
-                    ? btnId === 'btn-grid-limited'  // Při změně limitu animuj "S omezením"
-                    : pending.target && pending.target.includes(mode.split(' ')[0]); // Při změně mode animuj odpovídající tlačítko
-
-                if (isTargetButton) {
-                    btn.classList.add(isRunning ? 'processing' : 'pending');
-                    // console.log(`[Shield] Grid ${mode} -> ${isRunning ? 'processing' : 'pending'} (target)`);
-                } else {
-                    // Ostatní tlačítka jen zamknout, nezobrazovat jako pending
-                    btn.classList.add('disabled-by-service');
-                    // console.log(`[Shield] Grid ${mode} -> disabled (service running)`);
-                }
-            }
-            // Check if active (porovnat label s currentModeLabel)
-            else {
-                btn.disabled = false;
-                if (mode === currentModeLabel) {
-                    btn.classList.add('active');
-                    // console.log(`[Shield] Grid ${mode} -> active (currentMode: ${currentMode})`);
-                }
-            }
-        });
-
-        // Update limit display
-        const inputEl = document.getElementById('grid-limit');
-        if (inputEl) {
-            // If pending limit change, show target value with highlight
-            if (pending && pending.service === 'set_grid_delivery' && !isNaN(parseInt(pending.target))) {
-                inputEl.value = pending.target;
-                inputEl.style.borderColor = isRunning ? '#42a5f5' : '#ffc107';
-            }
-            // Otherwise show current limit
-            else {
-                inputEl.value = currentLimit;
-                inputEl.style.borderColor = '';
-            }
-        }
-
+        updateGridDeliveryModeButtons(context);
+        updateGridDeliveryLimitInput(context);
     } catch (e) {
         console.error('[Shield] Error updating grid delivery buttons:', e);
     }
+}
+
+function buildGridDeliveryContext(gridModeData, gridLimitData, pending, isRunning) {
+    if (!gridModeData || !gridLimitData) return null;
+
+    const currentMode = gridModeData.value || '';
+    const currentLimit = gridLimitData.value || 0;
+    const isChanging = currentMode === 'Probíhá změna';
+    const modeMapping = {
+        'Vypnuto': 'Vypnuto / Off',
+        'Zapnuto': 'Zapnuto / On',
+        'Omezeno': 'S omezením / Limited'
+    };
+    const modeButtons = {
+        'Vypnuto / Off': 'btn-grid-off',
+        'Zapnuto / On': 'btn-grid-on',
+        'S omezením / Limited': 'btn-grid-limited'
+    };
+    const currentModeLabel = modeMapping[currentMode] || currentMode;
+    const pendingTarget = pending?.target;
+    const isPendingService = pending?.service === 'set_grid_delivery';
+    const pendingIsLimit = isPendingService && !Number.isNaN(Number.parseInt(pendingTarget));
+
+    return {
+        currentModeLabel,
+        currentLimit,
+        isChanging,
+        modeButtons,
+        isRunning,
+        isPendingService,
+        pendingIsLimit,
+        pendingTarget
+    };
+}
+
+function updateGridDeliveryModeButtons(context) {
+    Object.entries(context.modeButtons).forEach(([mode, btnId]) => {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+
+        btn.classList.remove('active', 'pending', 'processing');
+        if (context.isChanging) {
+            btn.disabled = true;
+            btn.classList.add('processing');
+            return;
+        }
+
+        if (context.isPendingService) {
+            btn.disabled = true;
+            const isTargetButton = context.pendingIsLimit
+                ? btnId === 'btn-grid-limited'
+                : context.pendingTarget?.includes(mode.split(' ')[0]);
+            let pendingClass = 'disabled-by-service';
+            if (isTargetButton) {
+                pendingClass = context.isRunning ? 'processing' : 'pending';
+            }
+            btn.classList.add(pendingClass);
+            return;
+        }
+
+        btn.disabled = false;
+        if (mode === context.currentModeLabel) {
+            btn.classList.add('active');
+        }
+    });
+}
+
+function updateGridDeliveryLimitInput(context) {
+    const inputEl = document.getElementById('grid-limit');
+    if (!inputEl) return;
+
+    if (context.isPendingService && context.pendingIsLimit) {
+        inputEl.value = context.pendingTarget;
+        inputEl.style.borderColor = context.isRunning ? '#42a5f5' : '#ffc107';
+        return;
+    }
+
+    inputEl.value = context.currentLimit;
+    inputEl.style.borderColor = '';
 }
 
 // Update Battery Formating button (charge-battery-btn)
@@ -491,10 +501,9 @@ async function updateBatteryFormatingButtons(pending, isRunning) {
         if (!chargeBtn) return;
 
         // Pokud je pending task pro battery formating
-        if (pending && pending.service === 'set_formating_mode') {
+        if (pending?.service === 'set_formating_mode') {
             chargeBtn.classList.remove('pending', 'processing');
             chargeBtn.classList.add(isRunning ? 'processing' : 'pending');
-            // console.log(`[Shield] Battery charging -> ${pending.target} (${isRunning ? 'processing' : 'pending'})`);
         } else {
             chargeBtn.classList.remove('pending', 'processing');
         }
@@ -531,7 +540,7 @@ async function callService(domain, service, data) {
     const hass = getHass();
     if (!hass) {
         console.error('[Service] Failed to get hass object');
-        window.DashboardUtils?.showNotification('Chyba', 'Nelze získat připojení k Home Assistant', 'error');
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Nelze získat připojení k Home Assistant', 'error');
         return false;
     }
 
@@ -547,7 +556,7 @@ async function callService(domain, service, data) {
     } catch (e) {
         console.error(`[Service] ❌ Error calling ${domain}.${service}:`, e);
         console.error('[Service] Error details:', e.message, e.stack);
-        window.DashboardUtils?.showNotification('Chyba', e.message || 'Volání služby selhalo', 'error');
+        globalThis.DashboardUtils?.showNotification('Chyba', e.message || 'Volání služby selhalo', 'error');
         return false;
     }
 }
@@ -558,6 +567,137 @@ let lastModeChangeNotified = false;
 
 // Shield Queue live duration update
 let shieldQueueUpdateInterval = null;
+
+const QUEUE_SERVICE_MAP = {
+    'set_box_mode': '🏠 Změna režimu boxu',
+    'set_grid_delivery': '💧 Změna nastavení přetoků',
+    'set_grid_delivery_limit': '🔢 Změna limitu přetoků',
+    'set_boiler_mode': '🔥 Změna nastavení bojleru',
+    'set_formating_mode': '🔋 Změna nabíjení baterie',
+    'set_battery_capacity': '⚡ Změna kapacity baterie'
+};
+
+const QUEUE_VALUE_MAP = {
+    'CBB': 'Inteligentní',
+    'Manual': 'Manuální',
+    'Manuální': 'Manuální'
+};
+
+function formatQueueServiceName(service) {
+    return QUEUE_SERVICE_MAP[service] || service || 'N/A';
+}
+
+function formatQueueChanges(changes) {
+    if (!Array.isArray(changes) || changes.length === 0) {
+        return 'N/A';
+    }
+    return changes.map((change) => {
+        const arrowIndex = change.indexOf('→');
+        if (arrowIndex === -1) {
+            return change;
+        }
+        const left = change.slice(0, arrowIndex).trim();
+        const right = change.slice(arrowIndex + 1).trim();
+        const colonIndex = left.indexOf(':');
+        const fromRaw = colonIndex === -1 ? left : left.slice(colonIndex + 1);
+
+        const from = (QUEUE_VALUE_MAP[fromRaw.replaceAll("'", '').trim()] || fromRaw)
+            .replaceAll("'", '')
+            .trim();
+        const to = (QUEUE_VALUE_MAP[right.replaceAll("'", '').trim()] || right)
+            .replaceAll("'", '')
+            .trim();
+
+        return `${from} → ${to}`;
+    }).join('<br>');
+}
+
+function formatQueueTimestamps(request) {
+    let createdText = '<span style="opacity: 0.4;">--</span>';
+    let durationText = '<span style="opacity: 0.4;">--</span>';
+    const timestamp = request.started_at || request.queued_at || request.created_at || request.timestamp || request.created;
+
+    if (!timestamp) {
+        console.warn('[Queue] No timestamp found in request:', request);
+        return { createdText, durationText };
+    }
+
+    try {
+        const createdDate = new Date(timestamp);
+        const now = new Date();
+        const diffSec = Math.floor((now - createdDate) / 1000);
+
+        const hours = String(createdDate.getHours()).padStart(2, '0');
+        const minutes = String(createdDate.getMinutes()).padStart(2, '0');
+        createdText = `${hours}:${minutes}`;
+
+        if (createdDate.toDateString() !== now.toDateString()) {
+            const day = createdDate.getDate();
+            const month = createdDate.getMonth() + 1;
+            createdText = `${day}.${month}. ${createdText}`;
+        }
+
+        if (diffSec < 60) {
+            durationText = `${diffSec}s`;
+        } else if (diffSec < 3600) {
+            const diffMin = Math.floor(diffSec / 60);
+            const diffSecRem = diffSec % 60;
+            durationText = `${diffMin}m ${diffSecRem}s`;
+        } else {
+            const diffHours = Math.floor(diffSec / 3600);
+            const diffMin = Math.floor((diffSec % 3600) / 60);
+            durationText = `${diffHours}h ${diffMin}m`;
+        }
+    } catch (e) {
+        console.warn('[Queue] Invalid timestamp format:', timestamp, e);
+    }
+
+    return { createdText, durationText };
+}
+
+function buildQueueRow(request, index, hasRunning) {
+    const isRunning = index === 0 && hasRunning;
+    const isQueued = !isRunning;
+    const position = index + 1;
+
+    request.position = position;
+
+    const statusClass = isRunning ? 'queue-status-running' : 'queue-status-queued';
+    const statusIcon = isRunning ? '🔄' : '⏳';
+    const statusText = isRunning ? 'Zpracovává se' : 'Čeká';
+    const serviceName = formatQueueServiceName(request.service);
+    const changes = formatQueueChanges(request.changes);
+    const { createdText, durationText } = formatQueueTimestamps(request);
+
+    return `
+        <tr>
+            <td class="${statusClass}">${statusIcon} ${statusText}</td>
+            <td>${serviceName}</td>
+            <td style="font-size: 11px;">${changes}</td>
+            <td class="queue-time">${createdText}</td>
+            <td class="queue-time" style="font-weight: 600;">${durationText}</td>
+            <td style="text-align: center;">
+                ${isQueued ? `
+                    <button
+                        onclick="removeFromQueue(${position})"
+                        style="
+                            background: none;
+                            border: none;
+                            cursor: pointer;
+                            font-size: 18px;
+                            opacity: 0.6;
+                            padding: 4px 8px;
+                            transition: all 0.2s;
+                        "
+                        onmouseover="this.style.opacity='1'; this.style.transform='scale(1.2)'"
+                        onmouseout="this.style.opacity='0.6'; this.style.transform='scale(1)'"
+                        title="Odstranit z fronty"
+                    >🗑️</button>
+                ` : '<span style="opacity: 0.4;">—</span>'}
+            </td>
+        </tr>
+    `;
+}
 
 function startShieldQueueLiveUpdate() {
     // Clear existing interval
@@ -599,7 +739,7 @@ function updateShieldQueue() {
         const activitySensor = hass.states[entityId];
         const container = document.getElementById('shield-queue-container');
 
-        if (!activitySensor || !activitySensor.attributes || !container) {
+        if (!activitySensor?.attributes || !container) {
             console.warn('[Queue] Missing data:', {
                 sensor: entityId,
                 hasState: !!activitySensor,
@@ -632,134 +772,8 @@ function updateShieldQueue() {
         let html = '<table class="shield-queue-table">';
         html += '<thead><tr><th>Stav</th><th>Služba</th><th>Změny</th><th>Vytvořeno</th><th>Trvání</th><th>Akce</th></tr></thead>';
         html += '<tbody>';
-
-        allRequests.forEach((req, index) => {
-            const isRunning = index === 0 && runningRequests.length > 0;
-            const isQueued = !isRunning; // Anything not running is queued
-
-            // OPRAVA: Přidat position pro delete button (1-based index pro backend)
-            // Running má position 1, queued jsou 2, 3, 4, ...
-            req.position = index + 1;
-
-            const statusClass = isRunning ? 'queue-status-running' : 'queue-status-queued';
-            const statusIcon = isRunning ? '🔄' : '⏳';
-            const statusText = isRunning ? 'Zpracovává se' : 'Čeká';
-
-            // Format service name to human-readable Czech
-            const serviceMap = {
-                'set_box_mode': '🏠 Změna režimu boxu',
-                'set_grid_delivery': '💧 Změna nastavení přetoků',
-                'set_grid_delivery_limit': '🔢 Změna limitu přetoků',
-                'set_boiler_mode': '🔥 Změna nastavení bojleru',
-                'set_formating_mode': '🔋 Změna nabíjení baterie',
-                'set_battery_capacity': '⚡ Změna kapacity baterie'
-            };
-            let serviceName = serviceMap[req.service] || req.service || 'N/A';
-
-            // Format changes
-            let changes = 'N/A';
-            if (req.changes && Array.isArray(req.changes) && req.changes.length > 0) {
-                changes = req.changes.map(ch => {
-                    const arrowIndex = ch.indexOf('→');
-                    if (arrowIndex === -1) {
-                        return ch;
-                    }
-                    const left = ch.slice(0, arrowIndex).trim();
-                    const right = ch.slice(arrowIndex + 1).trim();
-                    const colonIndex = left.indexOf(':');
-                    const fromRaw = colonIndex === -1 ? left : left.slice(colonIndex + 1);
-
-                    let from = fromRaw.replaceAll("'", '').trim();
-                    let to = right.replaceAll("'", '').trim();
-
-                    // Mapování hodnot pro lepší čitelnost
-                    const valueMap = {
-                        'CBB': 'Inteligentní',
-                        'Manual': 'Manuální',
-                        'Manuální': 'Manuální'
-                    };
-
-                    from = valueMap[from] || from;
-                    to = valueMap[to] || to;
-
-                    return `${from} → ${to}`;
-                }).join('<br>');
-            }
-
-            // Format creation time and duration
-            let createdText = '<span style="opacity: 0.4;">--</span>';
-            let durationText = '<span style="opacity: 0.4;">--</span>';
-
-            // Try multiple timestamp fields (started_at for running, queued_at for queued)
-            const timestamp = req.started_at || req.queued_at || req.created_at || req.timestamp || req.created;
-
-            if (timestamp) {
-                try {
-                    const createdDate = new Date(timestamp);
-                    const now = new Date();
-                    const diffSec = Math.floor((now - createdDate) / 1000);
-
-                    // Format creation time (HH:MM)
-                    const hours = String(createdDate.getHours()).padStart(2, '0');
-                    const minutes = String(createdDate.getMinutes()).padStart(2, '0');
-                    createdText = `${hours}:${minutes}`;
-
-                    // Add date if not today
-                    const isToday = createdDate.toDateString() === now.toDateString();
-                    if (!isToday) {
-                        const day = createdDate.getDate();
-                        const month = createdDate.getMonth() + 1;
-                        createdText = `${day}.${month}. ${createdText}`;
-                    }
-
-                    // Format duration (how long in queue)
-                    if (diffSec < 60) {
-                        durationText = `${diffSec}s`;
-                    } else if (diffSec < 3600) {
-                        const diffMin = Math.floor(diffSec / 60);
-                        const diffSecRem = diffSec % 60;
-                        durationText = `${diffMin}m ${diffSecRem}s`;
-                    } else {
-                        const diffHours = Math.floor(diffSec / 3600);
-                        const diffMin = Math.floor((diffSec % 3600) / 60);
-                        durationText = `${diffHours}h ${diffMin}m`;
-                    }
-                } catch (e) {
-                    console.warn('[Queue] Invalid timestamp format:', timestamp, e);
-                }
-            } else {
-                console.warn('[Queue] No timestamp found in request:', req);
-            }
-
-            html += `
-                <tr>
-                    <td class="${statusClass}">${statusIcon} ${statusText}</td>
-                    <td>${serviceName}</td>
-                    <td style="font-size: 11px;">${changes}</td>
-                    <td class="queue-time">${createdText}</td>
-                    <td class="queue-time" style="font-weight: 600;">${durationText}</td>
-                    <td style="text-align: center;">
-                        ${isQueued ? `
-                            <button
-                                onclick="removeFromQueue(${req.position})"
-                                style="
-                                    background: none;
-                                    border: none;
-                                    cursor: pointer;
-                                    font-size: 18px;
-                                    opacity: 0.6;
-                                    padding: 4px 8px;
-                                    transition: all 0.2s;
-                                "
-                                onmouseover="this.style.opacity='1'; this.style.transform='scale(1.2)'"
-                                onmouseout="this.style.opacity='0.6'; this.style.transform='scale(1)'"
-                                title="Odstranit z fronty"
-                            >🗑️</button>
-                        ` : '<span style="opacity: 0.3;">—</span>'}
-                    </td>
-                </tr>
-            `;
-        });
+        const hasRunning = runningRequests.length > 0;
+        html += allRequests.map((req, index) => buildQueueRow(req, index, hasRunning)).join('');
 
         html += '</tbody></table>';
         container.innerHTML = html;
@@ -775,71 +789,60 @@ function updateShieldQueue() {
 
 // Helper: Parse service request to get type and target value
 function parseServiceRequest(request) {
-    if (!request || !request.service) {
+    if (!request?.service) {
         return null;
     }
 
     const service = request.service;
+    const targetResult = parseServiceTargets(service, request?.targets);
+    if (targetResult) return targetResult;
 
-    // NOVÝ PŘÍSTUP: Použij strukturovaná data z targets[] místo parsování changes[]
-    if (request.targets && Array.isArray(request.targets) && request.targets.length > 0) {
-        const target = request.targets[0];
+    const changeStr = getServiceChangeString(request?.changes);
+    if (!changeStr) return null;
+    return parseServiceChange(service, changeStr);
+}
 
-        // Mapování param → type
-        if (service.includes('set_box_mode') && target.param === 'mode') {
-            return { type: 'box_mode', targetValue: target.value };
-        }
+function parseServiceTargets(service, targets) {
+    if (!Array.isArray(targets) || targets.length === 0) return null;
+    const target = targets[0];
+    const mappings = [
+        { service: 'set_box_mode', param: 'mode', type: 'box_mode' },
+        { service: 'set_boiler_mode', param: 'mode', type: 'boiler_mode' },
+        { service: 'set_grid_delivery', param: 'mode', type: 'grid_mode' },
+        { service: 'set_grid_delivery', param: 'limit', type: 'grid_limit' }
+    ];
+    const match = mappings.find(entry => service.includes(entry.service) && target.param === entry.param);
+    return match ? { type: match.type, targetValue: target.value } : null;
+}
 
-        if (service.includes('set_boiler_mode') && target.param === 'mode') {
-            return { type: 'boiler_mode', targetValue: target.value };
-        }
+function getServiceChangeString(changes) {
+    if (!Array.isArray(changes) || changes.length === 0) return null;
+    return changes[0] || '';
+}
 
-        if (service.includes('set_grid_delivery') && target.param === 'mode') {
-            return { type: 'grid_mode', targetValue: target.value };
-        }
-
-        if (service.includes('set_grid_delivery') && target.param === 'limit') {
-            return { type: 'grid_limit', targetValue: target.value };
-        }
-    }
-
-    // FALLBACK: Starý přístup pro kompatibilitu (pokud targets[] není dostupný)
-    if (!request.changes || !Array.isArray(request.changes)) {
-        return null;
-    }
-
-    const changeStr = request.changes[0] || '';
-
-    // Box mode: "prms_mode: 'Home 1' → 'Home 2'"
-    if (service.includes('set_box_mode')) {
-        const match = changeStr.match(/→\s*'([^']+)'/);
-        return match ? { type: 'box_mode', targetValue: match[1] } : null;
-    }
-
-    // Boiler mode: "manual_mode: 'CBB' → 'Manuální'"
-    if (service.includes('set_boiler_mode')) {
-        const match = changeStr.match(/→\s*'([^']+)'/);
-        return match ? { type: 'boiler_mode', targetValue: match[1] } : null;
-    }
-
-    // Grid mode: "prms_to_grid: 'Vypnuto' → 'Zapnuto'"
-    if (service.includes('set_grid_delivery') && changeStr.includes('prms_to_grid')) {
-        const match = changeStr.match(/→\s*'([^']+)'/);
-        return match ? { type: 'grid_mode', targetValue: match[1] } : null;
-    }
-
-    // Grid limit: "p_max_feed_grid: 5400 → 3000"
+function parseServiceChange(service, changeStr) {
     if (service.includes('set_grid_delivery') && changeStr.includes('p_max_feed_grid')) {
         const match = changeStr.match(/→\s*(\d+)/);
         return match ? { type: 'grid_limit', targetValue: match[1] } : null;
     }
 
+    const match = changeStr.match(/→\s*'([^']+)'/);
+    if (!match) return null;
+
+    if (service.includes('set_box_mode')) {
+        return { type: 'box_mode', targetValue: match[1] };
+    }
+    if (service.includes('set_boiler_mode')) {
+        return { type: 'boiler_mode', targetValue: match[1] };
+    }
+    if (service.includes('set_grid_delivery') && changeStr.includes('prms_to_grid')) {
+        return { type: 'grid_mode', targetValue: match[1] };
+    }
     return null;
 }
 
 // Helper: Show changing indicator for specific service type
 function showChangingIndicator(type, targetValue, startedAt = null) {
-    // console.log(`[Shield] Showing change indicator: ${type} → ${targetValue} (started: ${startedAt})`);
 
     switch (type) {
         case 'box_mode':
@@ -859,7 +862,6 @@ function showChangingIndicator(type, targetValue, startedAt = null) {
 
 // Helper: Hide changing indicator for specific service type
 function hideChangingIndicator(type) {
-    // console.log(`[Shield] Hiding change indicator: ${type}`);
 
     switch (type) {
         case 'box_mode':
@@ -882,7 +884,6 @@ let isMonitoringShieldActivity = false;
 
 async function monitorShieldActivity() {
     if (isMonitoringShieldActivity) {
-        // console.log('[Shield] Skipping - already running');
         return;
     }
 
@@ -898,23 +899,17 @@ async function monitorShieldActivity() {
         if (!entityId) return;
 
         const activitySensor = hass.states[entityId];
-        if (!activitySensor || !activitySensor.attributes) return;
+        if (!activitySensor?.attributes) return;
 
         const attrs = activitySensor.attributes;
         const runningRequests = attrs.running_requests || [];
         const queuedRequests = attrs.queued_requests || [];
-        const allRequests = [...runningRequests, ...queuedRequests];
-
-        // console.log('[Shield] Monitoring:', {
-        //     running: runningRequests.length,
-        //     queued: queuedRequests.length,
-        //     total: allRequests.length
-        // });
 
         // Track which service types mají aktivní indikátor
         const activeServices = new Set();
 
-        const processRequestList = (requests, { allowIfActive } = { allowIfActive: false }) => {
+        const processRequestList = (requests, options) => {
+            const { allowIfActive = false } = options || {};
             requests.forEach((request) => {
                 const parsed = parseServiceRequest(request);
                 if (!parsed) {
@@ -951,34 +946,8 @@ async function monitorShieldActivity() {
 // SERVICE-SPECIFIC SHOW/HIDE FUNCTIONS
 // ============================================================================
 
-// Box Mode
-function showBoxModeChanging(targetMode) {
-    const modeButtonMap = {
-        'Home 1': 'btn-mode-home1',
-        'Home 2': 'btn-mode-home2',
-        'Home 3': 'btn-mode-home3',
-        'Home UPS': 'btn-mode-ups'
-    };
-
-    const buttonIds = Object.values(modeButtonMap);
-    const buttons = buttonIds.map(id => document.getElementById(id)).filter(b => b);
-    const targetButtonId = modeButtonMap[targetMode];
-
-    // Flow diagram: blink mode text
-    const inverterModeElement = document.getElementById('inverter-mode');
-    if (inverterModeElement) {
-        inverterModeElement.classList.add('mode-changing');
-    }
-
-    // Show badge
-    const modeChangeIndicator = document.getElementById('mode-change-indicator');
-    const modeChangeText = document.getElementById('mode-change-text');
-    if (modeChangeIndicator && modeChangeText) {
-        modeChangeText.textContent = `→ ${targetMode}`;
-        modeChangeIndicator.style.display = 'flex';
-    }
-
-    // Lock buttons, animate target
+function setPendingButtons(buttonIds, targetButtonId) {
+    const buttons = buttonIds.map(id => document.getElementById(id)).filter(Boolean);
     buttons.forEach(btn => {
         btn.disabled = true;
         if (btn.id === targetButtonId) {
@@ -991,28 +960,58 @@ function showBoxModeChanging(targetMode) {
     });
 }
 
-function hideBoxModeChanging() {
-    const buttonIds = ['btn-mode-home1', 'btn-mode-home2', 'btn-mode-home3', 'btn-mode-ups'];
-    const buttons = buttonIds.map(id => document.getElementById(id)).filter(b => b);
-
-    // Remove flow diagram animation
-    const inverterModeElement = document.getElementById('inverter-mode');
-    if (inverterModeElement) {
-        inverterModeElement.classList.remove('mode-changing');
-    }
-
-    // Hide badge
-    const modeChangeIndicator = document.getElementById('mode-change-indicator');
-    if (modeChangeIndicator) {
-        modeChangeIndicator.style.display = 'none';
-    }
-
-    // Unlock buttons
+function clearPendingButtons(buttonIds) {
+    const buttons = buttonIds.map(id => document.getElementById(id)).filter(Boolean);
     buttons.forEach(btn => {
         btn.disabled = false;
         btn.style.animation = '';
         btn.style.opacity = '';
     });
+}
+
+function setFlowChanging(flowElementId, enabled) {
+    const element = document.getElementById(flowElementId);
+    if (!element) return;
+    element.classList.toggle('mode-changing', enabled);
+}
+
+function showIndicator(indicatorId, textId, text) {
+    const indicator = document.getElementById(indicatorId);
+    const textElement = document.getElementById(textId);
+    if (!indicator || !textElement) return;
+    textElement.textContent = text;
+    indicator.style.display = 'flex';
+}
+
+function hideIndicator(indicatorId) {
+    const indicator = document.getElementById(indicatorId);
+    if (indicator) {
+        indicator.style.display = 'none';
+    }
+}
+
+// Box Mode
+function showBoxModeChanging(targetMode) {
+    const modeButtonMap = {
+        'Home 1': 'btn-mode-home1',
+        'Home 2': 'btn-mode-home2',
+        'Home 3': 'btn-mode-home3',
+        'Home UPS': 'btn-mode-ups'
+    };
+
+    const buttonIds = Object.values(modeButtonMap);
+    const targetButtonId = modeButtonMap[targetMode];
+
+    setFlowChanging('inverter-mode', true);
+    showIndicator('mode-change-indicator', 'mode-change-text', `→ ${targetMode}`);
+    setPendingButtons(buttonIds, targetButtonId);
+}
+
+function hideBoxModeChanging() {
+    const buttonIds = ['btn-mode-home1', 'btn-mode-home2', 'btn-mode-home3', 'btn-mode-ups'];
+    setFlowChanging('inverter-mode', false);
+    hideIndicator('mode-change-indicator');
+    clearPendingButtons(buttonIds);
 }
 
 // Boiler Mode
@@ -1024,68 +1023,24 @@ function showBoilerModeChanging(targetMode) {
         'Inteligentní': 'cbb'
     };
 
-    const boilerButtons = [
-        document.getElementById('btn-boiler-cbb'),
-        document.getElementById('btn-boiler-manual')
-    ].filter(b => b);
+    const boilerButtons = ['btn-boiler-cbb', 'btn-boiler-manual'];
 
     const targetModeLower = boilerModeMap[targetMode] || targetMode?.toLowerCase();
     const targetButtonId = targetModeLower ? `btn-boiler-${targetModeLower}` : null;
 
-    // Flow diagram: blink mode text
-    const boilerModeElement = document.getElementById('boiler-mode');
-    if (boilerModeElement) {
-        boilerModeElement.classList.add('mode-changing');
-    }
-
-    // Show badge
-    const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
-    const boilerChangeText = document.getElementById('boiler-change-text');
-    if (boilerChangeIndicator && boilerChangeText) {
-        const isIntelligent = targetMode === 'CBB' || targetMode === 'Inteligentní';
-        const modeIcon = isIntelligent ? '🤖' : '👤';
-        const modeName = isIntelligent ? 'Inteligentní' : 'Manuální';
-        boilerChangeText.textContent = `${modeIcon} ${modeName}`;
-        boilerChangeIndicator.style.display = 'flex';
-    }
-
-    // Lock buttons, animate target
-    boilerButtons.forEach(btn => {
-        btn.disabled = true;
-        if (btn.id === targetButtonId) {
-            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
-            btn.style.opacity = '0.8';
-        } else {
-            btn.style.animation = '';
-            btn.style.opacity = '0.5';
-        }
-    });
+    setFlowChanging('boiler-mode', true);
+    const isIntelligent = targetMode === 'CBB' || targetMode === 'Inteligentní';
+    const modeIcon = isIntelligent ? '🤖' : '👤';
+    const modeName = isIntelligent ? 'Inteligentní' : 'Manuální';
+    showIndicator('boiler-change-indicator', 'boiler-change-text', `${modeIcon} ${modeName}`);
+    setPendingButtons(boilerButtons, targetButtonId);
 }
 
 function hideBoilerModeChanging() {
-    const boilerButtons = [
-        document.getElementById('btn-boiler-cbb'),
-        document.getElementById('btn-boiler-manual')
-    ].filter(b => b);
-
-    // Remove flow diagram animation
-    const boilerModeElement = document.getElementById('boiler-mode');
-    if (boilerModeElement) {
-        boilerModeElement.classList.remove('mode-changing');
-    }
-
-    // Hide badge
-    const boilerChangeIndicator = document.getElementById('boiler-change-indicator');
-    if (boilerChangeIndicator) {
-        boilerChangeIndicator.style.display = 'none';
-    }
-
-    // Unlock buttons
-    boilerButtons.forEach(btn => {
-        btn.disabled = false;
-        btn.style.animation = '';
-        btn.style.opacity = '';
-    });
+    const boilerButtons = ['btn-boiler-cbb', 'btn-boiler-manual'];
+    setFlowChanging('boiler-mode', false);
+    hideIndicator('boiler-change-indicator');
+    clearPendingButtons(boilerButtons);
 }
 
 // Grid Mode
@@ -1100,137 +1055,41 @@ function showGridModeChanging(targetMode, startedAt = null) {
         'S omezením': 'limited'
     };
 
-    const gridButtons = [
-        document.getElementById('btn-grid-off'),
-        document.getElementById('btn-grid-on'),
-        document.getElementById('btn-grid-limited')
-    ].filter(b => b);
+    const gridButtons = ['btn-grid-off', 'btn-grid-on', 'btn-grid-limited'];
 
     const gridModeLower = gridModeMap[targetMode];
     const targetButtonId = gridModeLower ? `btn-grid-${gridModeLower}` : null;
 
-    // Flow diagram: blink mode text
-    const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
-    if (gridExportModeElement) {
-        gridExportModeElement.classList.add('mode-changing');
-    }
-
-    // Show badge - bez duration!
-    const gridChangeIndicator = document.getElementById('grid-change-indicator');
-    const gridChangeText = document.getElementById('grid-change-text');
-    if (gridChangeIndicator && gridChangeText) {
-        const isOff = targetMode === 'Off' || targetMode === 'Vypnuto';
-        const isOn = targetMode === 'On' || targetMode === 'Zapnuto';
-        const modeIcon = isOff ? '🚫' : isOn ? '💧' : '🚰';
-        const modeName = isOff ? 'Vypnuto' : isOn ? 'Zapnuto' : 'Omezeno';
-
-        gridChangeText.textContent = `${modeIcon} ${modeName}`;
-        gridChangeIndicator.style.display = 'flex';
-    }
-
-    // Lock buttons, animate target
-    gridButtons.forEach(btn => {
-        btn.disabled = true;
-        if (btn.id === targetButtonId) {
-            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
-            btn.style.opacity = '0.8';
-        } else {
-            btn.style.animation = '';
-            btn.style.opacity = '0.5';
-        }
-    });
+    setFlowChanging('inverter-grid-export-mode', true);
+    const modeDisplay = resolveGridModeLabel(targetMode);
+    showIndicator('grid-change-indicator', 'grid-change-text', `${modeDisplay.icon} ${modeDisplay.label}`);
+    setPendingButtons(gridButtons, targetButtonId);
 }
 
 function hideGridModeChanging() {
-    const gridButtons = [
-        document.getElementById('btn-grid-off'),
-        document.getElementById('btn-grid-on'),
-        document.getElementById('btn-grid-limited')
-    ].filter(b => b);
-
-    // Remove flow diagram animation
-    const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
-    if (gridExportModeElement) {
-        gridExportModeElement.classList.remove('mode-changing');
-    }
-
-    // Hide badge
-    const gridChangeIndicator = document.getElementById('grid-change-indicator');
-    if (gridChangeIndicator) {
-        gridChangeIndicator.style.display = 'none';
-    }
-
-    // Unlock buttons
-    gridButtons.forEach(btn => {
-        btn.disabled = false;
-        btn.style.animation = '';
-        btn.style.opacity = '';
-    });
+    const gridButtons = ['btn-grid-off', 'btn-grid-on', 'btn-grid-limited'];
+    setFlowChanging('inverter-grid-export-mode', false);
+    hideIndicator('grid-change-indicator');
+    clearPendingButtons(gridButtons);
 }
 
 // Grid Limit
 function showGridLimitChanging(targetLimit, startedAt = null) {
-    const gridButtons = [
-        document.getElementById('btn-grid-off'),
-        document.getElementById('btn-grid-on'),
-        document.getElementById('btn-grid-limited')
-    ].filter(b => b);
+    const gridButtons = ['btn-grid-off', 'btn-grid-on', 'btn-grid-limited'];
 
     // When only limit changes, animate the Limited button
     const targetButtonId = 'btn-grid-limited';
 
-    // Animate limit value in flow diagram
-    const gridLimitElement = document.getElementById('inverter-export-limit');
-    if (gridLimitElement) {
-        gridLimitElement.classList.add('mode-changing');
-    }
-
-    // Show limit badge (different from mode badge) - bez duration!
-    const gridLimitIndicator = document.getElementById('grid-limit-indicator');
-    const gridLimitText = document.getElementById('grid-limit-text');
-    if (gridLimitIndicator && gridLimitText) {
-        gridLimitText.textContent = `→ ${targetLimit}W`;
-        gridLimitIndicator.style.display = 'flex';
-    }
-
-    // Lock buttons, animate Limited
-    gridButtons.forEach(btn => {
-        btn.disabled = true;
-        if (btn.id === targetButtonId) {
-            btn.style.animation = 'pulse-pending 1.5s ease-in-out infinite';
-            btn.style.opacity = '0.8';
-        } else {
-            btn.style.animation = '';
-            btn.style.opacity = '0.5';
-        }
-    });
+    setFlowChanging('inverter-export-limit', true);
+    showIndicator('grid-limit-indicator', 'grid-limit-text', `→ ${targetLimit}W`);
+    setPendingButtons(gridButtons, targetButtonId);
 }
 
 function hideGridLimitChanging() {
-    const gridButtons = [
-        document.getElementById('btn-grid-off'),
-        document.getElementById('btn-grid-on'),
-        document.getElementById('btn-grid-limited')
-    ].filter(b => b);
-
-    // Remove limit value animation in flow diagram
-    const gridLimitElement = document.getElementById('inverter-export-limit');
-    if (gridLimitElement) {
-        gridLimitElement.classList.remove('mode-changing');
-    }
-
-    // Hide limit badge
-    const gridLimitIndicator = document.getElementById('grid-limit-indicator');
-    if (gridLimitIndicator) {
-        gridLimitIndicator.style.display = 'none';
-    }
-
-    // Unlock buttons (only if no mode change is active)
-    gridButtons.forEach(btn => {
-        btn.disabled = false;
-        btn.style.animation = '';
-        btn.style.opacity = '';
-    });
+    const gridButtons = ['btn-grid-off', 'btn-grid-on', 'btn-grid-limited'];
+    setFlowChanging('inverter-export-limit', false);
+    hideIndicator('grid-limit-indicator');
+    clearPendingButtons(gridButtons);
 }
 
 // ============================================================================
@@ -1241,11 +1100,14 @@ function hideGridLimitChanging() {
 function showGridDeliveryDialog(mode, currentLimit) {
     return new Promise((resolve) => {
         const needsLimit = mode === 'S omezením / Limited';
-        const modeDisplayName = mode === 'Vypnuto / Off' ? 'Vypnuto' :
-            mode === 'Zapnuto / On' ? 'Zapnuto' :
-                'S omezením';
-        const modeIcon = mode === 'Vypnuto / Off' ? '🚫' :
-            mode === 'Zapnuto / On' ? '💧' : '🚰';
+        const modeMap = {
+            'Vypnuto / Off': { label: 'Vypnuto', icon: '🚫' },
+            'Zapnuto / On': { label: 'Zapnuto', icon: '💧' },
+            'S omezením / Limited': { label: 'S omezením', icon: '🚰' }
+        };
+        const resolvedMode = modeMap[mode] || { label: mode, icon: '⚙️' };
+        const modeDisplayName = resolvedMode.label;
+        const modeIcon = resolvedMode.icon;
 
         // Create overlay
         const overlay = document.createElement('div');
@@ -1316,32 +1178,24 @@ function showGridDeliveryDialog(mode, currentLimit) {
             if (checkbox.checked) {
                 let limit = null;
                 if (needsLimit && limitInput) {
-                    limit = parseInt(limitInput.value);
-                    if (isNaN(limit) || limit < 1 || limit > 20000) {
+                    limit = Number.parseInt(limitInput.value);
+                    if (Number.isNaN(limit) || limit < 1 || limit > 20000) {
                         alert('Prosím zadejte platný limit mezi 1-20000 W');
                         return;
                     }
                 }
-                document.body.removeChild(overlay);
+                overlay.remove();
                 resolve({ confirmed: true, mode, limit });
             }
         });
 
         // Handle cancel
         cancelBtn.addEventListener('click', () => {
-            document.body.removeChild(overlay);
+            overlay.remove();
             resolve({ confirmed: false });
         });
 
-        // Handle ESC key
-        const handleEsc = (e) => {
-            if (e.key === 'Escape') {
-                document.body.removeChild(overlay);
-                document.removeEventListener('keydown', handleEsc);
-                resolve({ confirmed: false });
-            }
-        };
-        document.addEventListener('keydown', handleEsc);
+        attachEscCloseHandler(overlay, resolve, { confirmed: false });
     });
 }
 
@@ -1394,26 +1248,18 @@ function showAcknowledgementDialog(title, message, onConfirm) {
         // Handle confirm
         confirmBtn.addEventListener('click', () => {
             if (checkbox.checked) {
-                document.body.removeChild(overlay);
+                overlay.remove();
                 resolve(true);
             }
         });
 
         // Handle cancel
         cancelBtn.addEventListener('click', () => {
-            document.body.removeChild(overlay);
+            overlay.remove();
             resolve(false);
         });
 
-        // Handle ESC key
-        const handleEsc = (e) => {
-            if (e.key === 'Escape') {
-                document.body.removeChild(overlay);
-                document.removeEventListener('keydown', handleEsc);
-                resolve(false);
-            }
-        };
-        document.addEventListener('keydown', handleEsc);
+        attachEscCloseHandler(overlay, resolve, false);
     });
 }
 
@@ -1449,26 +1295,29 @@ function showSimpleConfirmDialog(title, message, confirmText = 'OK', cancelText 
 
         // Handle confirm
         confirmBtn.addEventListener('click', () => {
-            document.body.removeChild(overlay);
+            overlay.remove();
             resolve(true);
         });
 
         // Handle cancel
         cancelBtn.addEventListener('click', () => {
-            document.body.removeChild(overlay);
+            overlay.remove();
             resolve(false);
         });
 
-        // Handle ESC key
-        const handleEsc = (e) => {
-            if (e.key === 'Escape') {
-                document.body.removeChild(overlay);
-                document.removeEventListener('keydown', handleEsc);
-                resolve(false);
-            }
-        };
-        document.addEventListener('keydown', handleEsc);
+        attachEscCloseHandler(overlay, resolve, false);
     });
+}
+
+function attachEscCloseHandler(overlay, resolve, result) {
+    const handleEsc = (e) => {
+        if (e.key === 'Escape') {
+            overlay.remove();
+            document.removeEventListener('keydown', handleEsc);
+            resolve(result);
+        }
+    };
+    document.addEventListener('keydown', handleEsc);
 }
 
 // Remove item from shield queue
@@ -1508,18 +1357,55 @@ async function removeFromQueue(position) {
 
         if (success) {
             // Tichá aktualizace bez notifikace
-            await updateShieldQueue();
+            updateShieldQueue();
             await updateShieldUI();
         } else {
-            window.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se odstranit položku z fronty', 'error');
+            globalThis.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se odstranit položku z fronty', 'error');
         }
     } catch (e) {
         console.error('[Queue] Error removing from queue:', e);
-        window.DashboardUtils?.showNotification('Chyba', 'Chyba při odstraňování z fronty', 'error');
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Chyba při odstraňování z fronty', 'error');
     }
 }
 
 // === SHIELD SERVICE CALL HELPERS ===
+
+async function shouldProceedWithQueueWarning(skipQueueWarning) {
+    if (skipQueueWarning) {
+        return true;
+    }
+    const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
+    const queueCount = Number.parseInt(shieldQueue.value) || 0;
+    if (queueCount < 3) {
+        return true;
+    }
+    return confirm(
+        `⚠️ VAROVÁNÍ: Fronta již obsahuje ${queueCount} úkolů!\n\n` +
+        `Každá změna může trvat až 10 minut.\n` +
+        `Opravdu chcete přidat další úkol?`
+    );
+}
+
+function setPendingButtonState(buttonId) {
+    const btn = buttonId ? document.getElementById(buttonId) : null;
+    if (!btn) return null;
+    btn.disabled = true;
+    btn.classList.add('pending');
+    return btn;
+}
+
+function clearPendingButtonState(btn) {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.classList.remove('pending');
+}
+
+async function refreshShieldUIAfterService() {
+    monitorShieldActivity();
+    updateShieldQueue();
+    await updateShieldUI();
+    await updateButtonStates();
+}
 
 /**
  * Univerzální wrapper pro volání služeb s pending UI
@@ -1533,56 +1419,23 @@ async function executeServiceWithPendingUI(config) {
     const { serviceName, buttonId, serviceCall, skipQueueWarning = false } = config;
 
     try {
-        // Check shield queue before adding task
-        if (!skipQueueWarning) {
-            const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
-            const queueCount = parseInt(shieldQueue.value) || 0;
-
-            if (queueCount >= 3) {
-                const proceed = confirm(
-                    `⚠️ VAROVÁNÍ: Fronta již obsahuje ${queueCount} úkolů!\n\n` +
-                    `Každá změna může trvat až 10 minut.\n` +
-                    `Opravdu chcete přidat další úkol?`
-                );
-                if (!proceed) return false;
-            }
-        }
-
-        // Show pending state immediately
-        const btn = buttonId ? document.getElementById(buttonId) : null;
-        if (btn) {
-            btn.disabled = true;
-            btn.classList.add('pending');
-        }
+        const proceed = await shouldProceedWithQueueWarning(skipQueueWarning);
+        if (!proceed) return false;
+        const btn = setPendingButtonState(buttonId);
 
         // Execute service call
-        const success = await serviceCall();
+        const success = await Promise.resolve(serviceCall());
 
         if (success) {
-            // Okamžitá aktualizace UI bez čekání na WebSocket debounce
-            monitorShieldActivity();
-            await updateShieldQueue();
-            await updateShieldUI();
-            await updateButtonStates();
+            await refreshShieldUIAfterService();
             return true;
-        } else {
-            // Re-enable on error
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('pending');
-            }
-            return false;
         }
+        clearPendingButtonState(btn);
+        return false;
     } catch (e) {
         console.error(`[Shield] Error in ${serviceName}:`, e);
-        window.DashboardUtils?.showNotification('Chyba', `Nepodařilo se provést: ${serviceName}`, 'error');
-
-        // Re-enable button on error
-        const btn = buttonId ? document.getElementById(buttonId) : null;
-        if (btn) {
-            btn.disabled = false;
-            btn.classList.remove('pending');
-        }
+        globalThis.DashboardUtils?.showNotification('Chyba', `Nepodařilo se provést: ${serviceName}`, 'error');
+        clearPendingButtonState(buttonId ? document.getElementById(buttonId) : null);
         return false;
     }
 }
@@ -1628,7 +1481,7 @@ async function setBoxMode(mode) {
 
     } catch (e) {
         console.error('[Shield] Error in setBoxMode:', e);
-        window.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit režim boxu', 'error');
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit režim boxu', 'error');
     }
 }
 
@@ -1745,19 +1598,19 @@ async function setGridDelivery(mode) {
 
     } catch (e) {
         console.error('[Grid] Error in setGridDelivery:', e);
-        window.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit dodávku do sítě', 'error');
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit dodávku do sítě', 'error');
     }
 }
 
 // OLD FUNCTIONS - KEPT FOR COMPATIBILITY BUT NOT USED
 async function setGridDeliveryOld(mode, limit) {
     if (mode === null && limit === null) {
-        window.DashboardUtils?.showNotification('Chyba', 'Musíte zadat režim nebo limit!', 'error');
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Musíte zadat režim nebo limit!', 'error');
         return;
     }
 
     if (mode !== null && limit !== null) {
-        window.DashboardUtils?.showNotification('Chyba', 'Můžete zadat pouze režim NEBO limit!', 'error');
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Můžete zadat pouze režim NEBO limit!', 'error');
         return;
     }
 
@@ -1769,21 +1622,24 @@ async function setGridDeliveryOld(mode, limit) {
         warning: true
     };
 
-    if (mode !== null) {
-        data.mode = mode;
-    } else {
-        data.limit = parseInt(limit);
-        if (isNaN(data.limit) || data.limit < 1 || data.limit > 9999) {
-            window.DashboardUtils?.showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
+    if (limit !== null && limit !== undefined) {
+        data.limit = Number.parseInt(limit, 10);
+        if (Number.isNaN(data.limit) || data.limit < 1 || data.limit > 9999) {
+            globalThis.DashboardUtils?.showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
             return;
         }
+    } else if (mode !== null) {
+        data.mode = mode;
+    } else {
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Vyberte režim nebo zadejte limit!', 'error');
+        return;
     }
 
     const success = await callService('oig_cloud', 'set_grid_delivery', data);
 
     if (success) {
         const msg = mode ? `Režim: ${mode}` : `Limit: ${data.limit} W`;
-        window.DashboardUtils?.showNotification('Dodávka do sítě', msg, 'success');
+        globalThis.DashboardUtils?.showNotification('Dodávka do sítě', msg, 'success');
         setTimeout(forceFullRefresh, 2000);
     }
 }
@@ -1791,10 +1647,10 @@ async function setGridDeliveryOld(mode, limit) {
 // Set grid delivery limit from input
 function setGridDeliveryLimit() {
     const input = document.getElementById('grid-limit');
-    const limit = parseInt(input.value);
+    const limit = Number.parseInt(input.value);
 
     if (!limit || limit < 1 || limit > 9999) {
-        window.DashboardUtils?.showNotification('Chyba', 'Zadejte limit 1-9999 W', 'error');
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Zadejte limit 1-9999 W', 'error');
         return;
     }
 
@@ -1833,7 +1689,7 @@ async function setBoilerMode(mode) {
 
         // Store expected mode for monitoring
         const expectedMode = mode === 'CBB' ? 'CBB' : 'Manuální';
-        window._lastRequestedBoilerMode = expectedMode;
+        globalThis._lastRequestedBoilerMode = expectedMode;
         console.log('[Boiler] Stored expected mode for monitoring:', expectedMode);
 
         // Execute with pending UI
@@ -1850,7 +1706,7 @@ async function setBoilerMode(mode) {
 
     } catch (e) {
         console.error('[Shield] Error in setBoilerMode:', e);
-        window.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit režim bojleru', 'error');
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit režim bojleru', 'error');
     }
 }
 
@@ -1862,7 +1718,7 @@ async function updateSolarForecast() {
     const success = await callService('oig_cloud', 'update_solar_forecast', {});
 
     if (success) {
-        window.DashboardUtils?.showNotification('Solární předpověď', 'Předpověď se aktualizuje...', 'success');
+        globalThis.DashboardUtils?.showNotification('Solární předpověď', 'Předpověď se aktualizuje...', 'success');
         // Delší čas pro forecast update
         setTimeout(forceFullRefresh, 5000);
     }
@@ -1881,7 +1737,7 @@ async function loadControlStatus() {
 
 
 // Export shield functions
-window.DashboardShield = {
+globalThis.DashboardShield = {
     subscribeToShield,
     startShieldQueueLiveUpdate,
     stopShieldQueueLiveUpdate,

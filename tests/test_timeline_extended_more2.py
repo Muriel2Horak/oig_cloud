@@ -179,8 +179,9 @@ async def test_maybe_repair_baseline_skips_when_attempted():
     sensor._baseline_repair_attempts.add(date_str)
     storage_plans = {"detailed": {date_str: {"intervals": []}}}
 
-    result = await module._maybe_repair_baseline(sensor, storage_plans, date_str)
+    result, repaired = await module._maybe_repair_baseline(sensor, storage_plans, date_str)
     assert result == storage_plans
+    assert repaired is False
 
 
 @pytest.mark.asyncio

@@ -5,9 +5,10 @@
 /* global Chart */
 
 export class BoilerChartModule {
-    constructor() {
-        this.chart = null;
-    }
+    chart = null;
+    canvasElement = null;
+    hass = null;
+    inverterId = null;
 
     /**
      * Inicializuje boiler chart s multi-axis visualizací
@@ -48,15 +49,15 @@ export class BoilerChartModule {
         const energySensor = this.hass.states[energyEntityId];
         const costSensor = this.hass.states[costEntityId];
 
-        if (!planSensor || !planSensor.attributes) {
+        if (!planSensor?.attributes) {
             console.warn('[BoilerChart] Boiler plan sensor not found:', planEntityId);
             return;
         }
 
         // Získat plán z atributů
-        const plan = planSensor.attributes.plan || {};
-        const slots = plan.slots || [];
-        const digest = plan.digest || 'N/A';
+        const plan = planSensor.attributes.plan ?? {};
+        const slots = plan.slots ?? [];
+        const digest = plan.digest ?? 'N/A';
 
         if (slots.length === 0) {
             console.warn('[BoilerChart] No plan slots available');
@@ -126,46 +127,45 @@ export class BoilerChartModule {
 
     buildMetadata({ socSensor, tempSensor, energySensor, costSensor, digest }) {
         return {
-            currentSoc: socSensor ? parseFloat(socSensor.state) : 0,
-            currentTemp: tempSensor ? parseFloat(tempSensor.state) : 0,
-            energyRequired: energySensor ? parseFloat(energySensor.state) : 0,
-            totalCost: costSensor ? parseFloat(costSensor.state) : 0,
+            currentSoc: Number.parseFloat(socSensor?.state ?? '0'),
+            currentTemp: Number.parseFloat(tempSensor?.state ?? '0'),
+            energyRequired: Number.parseFloat(energySensor?.state ?? '0'),
+            totalCost: Number.parseFloat(costSensor?.state ?? '0'),
             digest,
         };
     }
 
     buildDatasets(series) {
-        const datasets = [];
-
-        datasets.push({
-            label: 'Teplota horní zóna (°C)',
-            data: series.temperatureData,
-            borderColor: '#ff6b6b',
-            backgroundColor: 'rgba(255, 107, 107, 0.1)',
-            borderWidth: 2,
-            fill: true,
-            type: 'line',
-            tension: 0.3,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            yAxisID: 'y-temp',
-            order: 1
-        });
-
-        datasets.push({
-            label: 'SOC (%)',
-            data: series.socData,
-            borderColor: '#4ecdc4',
-            backgroundColor: 'rgba(78, 205, 196, 0.1)',
-            borderWidth: 2,
-            fill: true,
-            type: 'line',
-            tension: 0.3,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            yAxisID: 'y-soc',
-            order: 2
-        });
+        const datasets = [
+            {
+                label: 'Teplota horní zóna (°C)',
+                data: series.temperatureData,
+                borderColor: '#ff6b6b',
+                backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                type: 'line',
+                tension: 0.3,
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                yAxisID: 'y-temp',
+                order: 1
+            },
+            {
+                label: 'SOC (%)',
+                data: series.socData,
+                borderColor: '#4ecdc4',
+                backgroundColor: 'rgba(78, 205, 196, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                type: 'line',
+                tension: 0.3,
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                yAxisID: 'y-soc',
+                order: 2
+            }
+        ];
 
         const heatingBarData = series.heatingData.map((heating, idx) => {
             if (heating === 1) {
@@ -174,35 +174,36 @@ export class BoilerChartModule {
             return null;
         });
 
-        datasets.push({
-            label: 'Topení aktivní',
-            data: heatingBarData,
-            backgroundColor: 'rgba(255, 193, 7, 0.4)',
-            borderColor: '#ffc107',
-            borderWidth: 1,
-            type: 'bar',
-            barPercentage: 1.0,
-            categoryPercentage: 1.0,
-            yAxisID: 'y-temp',
-            order: 3
-        });
-
-        datasets.push({
-            label: 'Spot cena (Kč/kWh)',
-            data: series.spotPriceData,
-            borderColor: '#95a5a6',
-            backgroundColor: 'rgba(149, 165, 166, 0.1)',
-            borderWidth: 1,
-            borderDash: [5, 5],
-            fill: false,
-            type: 'line',
-            tension: 0,
-            pointRadius: 0,
-            pointHoverRadius: 3,
-            yAxisID: 'y-price',
-            hidden: true,
-            order: 4
-        });
+        datasets.push(
+            {
+                label: 'Topení aktivní',
+                data: heatingBarData,
+                backgroundColor: 'rgba(255, 193, 7, 0.4)',
+                borderColor: '#ffc107',
+                borderWidth: 1,
+                type: 'bar',
+                barPercentage: 1,
+                categoryPercentage: 1,
+                yAxisID: 'y-temp',
+                order: 3
+            },
+            {
+                label: 'Spot cena (Kč/kWh)',
+                data: series.spotPriceData,
+                borderColor: '#95a5a6',
+                backgroundColor: 'rgba(149, 165, 166, 0.1)',
+                borderWidth: 1,
+                borderDash: [5, 5],
+                fill: false,
+                type: 'line',
+                tension: 0,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                yAxisID: 'y-price',
+                hidden: true,
+                order: 4
+            }
+        );
 
         return datasets;
     }
@@ -284,7 +285,10 @@ export class BoilerChartModule {
                             } else if (label.includes('SOC')) {
                                 return `${label}: ${value.toFixed(0)}%`;
                             } else if (label.includes('Topení')) {
-                                return value !== null ? '🔥 Topení ZAPNUTO' : '';
+                                if (value === null) {
+                                    return '';
+                                }
+                                return '🔥 Topení ZAPNUTO';
                             } else if (label.includes('Spot cena')) {
                                 return `${label}: ${value.toFixed(2)} Kč/kWh`;
                             }

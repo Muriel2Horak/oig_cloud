@@ -43,7 +43,12 @@ class TodayPlanTile {
             delta_pct,
             eod_prediction
         } = this.data;
-        const deltaIcon = delta < 0 ? '↓' : (delta > 0 ? '↑' : '→');
+        let deltaIcon = '→';
+        if (delta < 0) {
+            deltaIcon = '↓';
+        } else if (delta > 0) {
+            deltaIcon = '↑';
+        }
 
         // Barva podle výsledku (zelená = lepší, červená = horší)
         const tileColor = delta < 0 ? '#4CAF50' : '#2196F3'; // Zelená nebo modrá
@@ -296,6 +301,6 @@ class TodayPlanTile {
 }
 
 // Export pro použití v dashboard
-window.TodayPlanTile = TodayPlanTile;
+globalThis.TodayPlanTile = TodayPlanTile;
 
 export default TodayPlanTile;

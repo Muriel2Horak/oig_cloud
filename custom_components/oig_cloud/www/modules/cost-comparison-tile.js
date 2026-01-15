@@ -15,7 +15,7 @@ class CostComparisonTile {
     }
 
     render() {
-        if (!this.summary || !this.summary.plans) {
+        if (!this.summary?.plans) {
             this.container.innerHTML = `
                 <div class="cost-card-placeholder">
                     <span class="cost-card-title">💰 Nákladový přehled</span>
@@ -69,23 +69,35 @@ class CostComparisonTile {
             yesterdayActual ??
             yesterdayPlan ??
             null;
-        const yesterdayNote =
-            yesterdayActual !== null
-                ? 'skutečnost'
-                : yesterdayPlan !== null
-                    ? 'plán'
-                    : '';
-        const yesterdayPlanNote =
-            yesterdayActual !== null && yesterdayPlan !== null && Math.round(yesterdayPlan) !== Math.round(yesterdayActual)
-                ? `plán ${this.formatCost(yesterdayPlan)}`
-                : '';
-        const tomorrowCost = (this.summary.tomorrow || {})['standard'] ?? null;
+        const yesterdayNote = this.getYesterdayNote(yesterdayActual, yesterdayPlan);
+        const yesterdayPlanNote = this.getYesterdayPlanNote(yesterdayActual, yesterdayPlan);
+        const tomorrowCost = this.summary.tomorrow?.standard ?? null;
         const tomorrowLabel = this.getPlanLabel('hybrid');
         const blocks = [
             this.renderHistoryCard('Včera', this.formatCost(yesterdayCost), yesterdayNote, yesterdayPlanNote),
             this.renderHistoryCard('Zítra', this.formatCost(tomorrowCost), tomorrowLabel)
         ];
         return `<div class="cost-history-grid">${blocks.join('')}</div>`;
+    }
+
+    getYesterdayNote(yesterdayActual, yesterdayPlan) {
+        if (yesterdayActual !== null) {
+            return 'skutečnost';
+        }
+        if (yesterdayPlan !== null) {
+            return 'plán';
+        }
+        return '';
+    }
+
+    getYesterdayPlanNote(yesterdayActual, yesterdayPlan) {
+        if (yesterdayActual === null || yesterdayPlan === null) {
+            return '';
+        }
+        if (Math.round(yesterdayPlan) === Math.round(yesterdayActual)) {
+            return '';
+        }
+        return `plán ${this.formatCost(yesterdayPlan)}`;
     }
 
     renderHistoryCard(label, value, note, secondaryNote = '') {
@@ -125,7 +137,7 @@ class CostComparisonTile {
 
     getPlanLabel(planKey) {
         const fallback = 'Standardní';  // Always hybrid
-        const labels = window.PLAN_LABELS && window.PLAN_LABELS[planKey];
+        const labels = globalThis.PLAN_LABELS?.[planKey];
         if (!labels) {
             return fallback;
         }
@@ -148,4 +160,4 @@ class CostComparisonTile {
     }
 }
 
-window.CostComparisonTile = CostComparisonTile;
+globalThis.CostComparisonTile = CostComparisonTile;

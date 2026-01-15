@@ -5,6 +5,8 @@ from typing import Any, Dict
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfPower
 
+ICON_TIMELINE_VARIANT = "mdi:chart-timeline-variant"
+
 # Seznam statistických senzorů s jejich konfigurací
 SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
     # Základní odběr - medián za posledních 10 minut
@@ -26,7 +28,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 6-8h Weekday",
         "name_cs": "Průměrný odběr 6-8h (všední dny)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (6, 8),
@@ -41,7 +43,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 8-12h Weekday",
         "name_cs": "Průměrný odběr 8-12h (všední dny)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (8, 12),
@@ -56,7 +58,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 12-16h Weekday",
         "name_cs": "Průměrný odběr 12-16h (všední dny)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (12, 16),
@@ -71,7 +73,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 16-22h Weekday",
         "name_cs": "Průměrný odběr 16-22h (všední dny)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (16, 22),
@@ -86,7 +88,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 22-6h Weekday",
         "name_cs": "Průměrný odběr 22-6h (všední dny)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (22, 6),  # přes půlnoc
@@ -102,7 +104,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 6-8h Weekend",
         "name_cs": "Průměrný odběr 6-8h (víkendy)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (6, 8),
@@ -117,7 +119,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 8-12h Weekend",
         "name_cs": "Průměrný odběr 8-12h (víkendy)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (8, 12),
@@ -132,7 +134,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 12-16h Weekend",
         "name_cs": "Průměrný odběr 12-16h (víkendy)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (12, 16),
@@ -147,7 +149,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 16-22h Weekend",
         "name_cs": "Průměrný odběr 16-22h (víkendy)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (16, 22),
@@ -162,7 +164,7 @@ SENSOR_TYPES_STATISTICS: Dict[str, Dict[str, Any]] = {
         "name": "Average Load 22-6h Weekend",
         "name_cs": "Průměrný odběr 22-6h (víkendy)",
         "unit": UnitOfPower.WATT,
-        "icon": "mdi:chart-timeline-variant",
+        "icon": ICON_TIMELINE_VARIANT,
         "device_class": SensorDeviceClass.POWER,
         "state_class": SensorStateClass.MEASUREMENT,
         "time_range": (22, 6),

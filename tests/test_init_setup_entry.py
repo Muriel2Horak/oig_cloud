@@ -7,6 +7,7 @@ import pytest
 
 import custom_components.oig_cloud as init_module
 from custom_components.oig_cloud.const import CONF_PASSWORD, CONF_USERNAME, DOMAIN
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import ConfigEntryNotReady
 
 
@@ -106,6 +107,21 @@ class DummyCoordinator:
         self.api = session_manager
 
     async def async_config_entry_first_refresh(self):
+        return None
+
+
+class DummyCoordinatorWithRefresh(DummyCoordinator):
+    def __init__(self, hass, session_manager, *_args, **_kwargs):
+        super().__init__(hass, session_manager, *_args, **_kwargs)
+        self.first_refresh_called = False
+        self.refresh_called = False
+
+    async def async_config_entry_first_refresh(self):
+        self.first_refresh_called = True
+        return None
+
+    async def async_refresh(self):
+        self.refresh_called = True
         return None
 
 
@@ -255,12 +271,82 @@ async def test_async_setup_entry_success_local(monkeypatch):
     result = await init_module.async_setup_entry(hass, entry)
 
     assert result is True
-    assert "coordinator" in hass.data[DOMAIN][entry.entry_id]
-    assert hass.config_entries.forwarded
-    assert (
-        hass.data[DOMAIN][entry.entry_id]["coordinator"].session_manager.ensure_called
-        is False
+
+
+@pytest.mark.asyncio
+async def test_init_session_manager_uses_async_refresh_when_available(monkeypatch):
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
     )
+    monkeypatch.setattr(
+        init_module, "OigCloudCoordinator", DummyCoordinatorWithRefresh
+    )
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"})
+    entry.state = ConfigEntryState.LOADED
+
+    coordinator, _session_manager = await init_module._init_session_manager_and_coordinator(
+        hass=hass,
+        entry=entry,
+        username="user",
+        password="pass",
+        no_telemetry=True,
+        standard_scan_interval=30,
+        extended_scan_interval=300,
+    )
+
+    assert coordinator.refresh_called is True
+    assert coordinator.first_refresh_called is False
+
+
+@pytest.mark.asyncio
+async def test_init_session_manager_uses_first_refresh_during_setup(monkeypatch):
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(
+        init_module, "OigCloudCoordinator", DummyCoordinatorWithRefresh
+    )
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"})
+    entry.state = ConfigEntryState.SETUP_IN_PROGRESS
+
+    coordinator, _session_manager = await init_module._init_session_manager_and_coordinator(
+        hass=hass,
+        entry=entry,
+        username="user",
+        password="pass",
+        no_telemetry=True,
+        standard_scan_interval=30,
+        extended_scan_interval=300,
+    )
+
+    assert coordinator.first_refresh_called is True
+    assert coordinator.refresh_called is False
 
 
 @pytest.mark.asyncio

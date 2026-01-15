@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * OIG Cloud - Detail Tabs Dashboard Component
  *
@@ -198,7 +197,7 @@ class DetailTabsDialog {
         }
 
         const tabData = this.cache[tab];
-        if (!tabData || !tabData.mode_blocks || tabData.mode_blocks.length === 0) {
+        if (!tabData?.mode_blocks || tabData.mode_blocks.length === 0) {
             container.innerHTML = this.renderNoData(tab);
             return;
         }
@@ -325,6 +324,82 @@ class DetailTabsDialog {
      * Logika: Pokud máme actual, zobrazujeme actual vs plán
      *         Pokud nemáme actual, zobrazujeme jen plán
      */
+    buildSmartMetricPlanRow(plan, unit, hasActual) {
+        if (!hasActual) {
+            return '';
+        }
+        return `
+            <div class="tile-sub-row">
+                <span>Plán:</span>
+                <span>${this.formatMetricValue(plan)} ${unit}</span>
+            </div>
+        `;
+    }
+
+    buildSmartMetricHintRow(hasActual, tabName) {
+        if (hasActual || tabName !== 'tomorrow') {
+            return '';
+        }
+        return `
+            <div class="tile-sub-row hint-row">
+                Plánovaná hodnota (čeká na živá data)
+            </div>
+        `;
+    }
+
+    buildSmartMetricDeltaRow({ label, unit, plan, actualValue, hasActual }) {
+        if (!hasActual) {
+            return '';
+        }
+
+        const delta = actualValue - plan;
+        const absDelta = Math.abs(delta);
+        const deltaState = this.getSmartMetricDeltaState(label, delta, absDelta);
+        const deltaText = this.getSmartMetricDeltaText(deltaState);
+        const deltaValueText = this.getSmartMetricDeltaValueText(delta, absDelta, unit);
+
+        return `
+            <div class="tile-delta ${deltaState}">
+                <span>${deltaText}</span>
+                <span>${deltaValueText}</span>
+            </div>
+        `;
+    }
+
+    getSmartMetricDeltaState(label, delta, absDelta) {
+        const preferLower = label === 'Náklady' || label === 'Odběr ze sítě';
+        const preferHigher = label === 'Solární výroba';
+
+        if (absDelta < 0.01) {
+            return 'delta-neutral';
+        }
+        if (preferLower) {
+            return delta <= 0 ? 'delta-better' : 'delta-worse';
+        }
+        if (preferHigher) {
+            return delta >= 0 ? 'delta-better' : 'delta-worse';
+        }
+        return 'delta-neutral';
+    }
+
+    getSmartMetricDeltaText(deltaState) {
+        if (deltaState === 'delta-better') {
+            return 'Lépe než plán';
+        }
+        if (deltaState === 'delta-worse') {
+            return 'Hůře než plán';
+        }
+        return 'Rozdíl vs. plán';
+    }
+
+    getSmartMetricDeltaValueText(delta, absDelta, unit) {
+        if (absDelta < 0.01) {
+            return '±0';
+        }
+        const deltaSign = delta > 0 ? '+' : '';
+        return `${deltaSign}${this.formatMetricValue(delta)} ${unit}`;
+    }
+
     renderSmartMetricTile(metric, icon, label, unit, tabName) {
         if (!metric) {
             return '';
@@ -343,60 +418,9 @@ class DetailTabsDialog {
         const mainValue = hasActual ? actualValue : plan;
         const mainLabel = hasActual ? 'Skutečnost' : 'Plán';
 
-        const planRow = hasActual
-            ? `
-                <div class="tile-sub-row">
-                    <span>Plán:</span>
-                    <span>${this.formatMetricValue(plan)} ${unit}</span>
-                </div>
-            `
-            : '';
-
-        const hintRow =
-            !hasActual && tabName === 'tomorrow'
-                ? `
-                    <div class="tile-sub-row hint-row">
-                        Plánovaná hodnota (čeká na živá data)
-                    </div>
-                `
-                : '';
-
-        let deltaRow = '';
-        if (hasActual) {
-            const delta = actualValue - plan;
-            const absDelta = Math.abs(delta);
-
-            const preferLower = label === 'Náklady' || label === 'Odběr ze sítě';
-            const preferHigher = label === 'Solární výroba';
-
-            let deltaState = 'delta-neutral';
-            if (absDelta >= 0.01) {
-                if (preferLower) {
-                    deltaState = delta <= 0 ? 'delta-better' : 'delta-worse';
-                } else if (preferHigher) {
-                    deltaState = delta >= 0 ? 'delta-better' : 'delta-worse';
-                }
-            }
-
-            const deltaText =
-                deltaState === 'delta-better'
-                    ? 'Lépe než plán'
-                    : deltaState === 'delta-worse'
-                    ? 'Hůře než plán'
-                    : 'Rozdíl vs. plán';
-
-            const deltaValueText =
-                absDelta >= 0.01
-                    ? `${delta > 0 ? '+' : ''}${this.formatMetricValue(delta)} ${unit}`
-                    : '±0';
-
-            deltaRow = `
-                <div class="tile-delta ${deltaState}">
-                    <span>${deltaText}</span>
-                    <span>${deltaValueText}</span>
-                </div>
-            `;
-        }
+        const planRow = this.buildSmartMetricPlanRow(plan, unit, hasActual);
+        const hintRow = this.buildSmartMetricHintRow(hasActual, tabName);
+        const deltaRow = this.buildSmartMetricDeltaRow({ label, unit, plan, actualValue, hasActual });
 
         const supplemental = [planRow, hintRow, deltaRow].filter(Boolean).join('');
 
@@ -431,22 +455,7 @@ class DetailTabsDialog {
 
         const planLabel = `${plan.toFixed(2)} ${unit}`;
 
-        let actualHtml = '';
-        if (hasActual && actual !== null) {
-            const deltaClass =
-                delta > 0 ? 'delta-positive' : delta < 0 ? 'delta-negative' : '';
-            const deltaLabel =
-                delta !== null && Math.abs(delta) > 0.009
-                    ? `<span class="metric-delta ${deltaClass}">${delta > 0 ? '+' : ''}${delta.toFixed(2)} ${unit}</span>`
-                    : '';
-            actualHtml = `
-                <div class="metric-actual">
-                    <span class="metric-label">Skutečnost:</span>
-                    <span class="metric-value">${actual.toFixed(2)} ${unit}</span>
-                    ${deltaLabel}
-                </div>
-            `;
-        }
+        const actualHtml = this.buildSummaryMetricActualHtml({ actual, delta, unit, hasActual });
 
         return `
             <div class="summary-tile metric-tile">
@@ -459,6 +468,96 @@ class DetailTabsDialog {
                 ${actualHtml}
             </div>
         `;
+    }
+
+    buildSummaryMetricActualHtml({ actual, delta, unit, hasActual }) {
+        if (!hasActual || actual === null) {
+            return '';
+        }
+
+        const deltaClass = this.getSummaryDeltaClass(delta);
+        const deltaLabel = this.getSummaryDeltaLabel(delta, unit, deltaClass);
+        return `
+            <div class="metric-actual">
+                <span class="metric-label">Skutečnost:</span>
+                <span class="metric-value">${actual.toFixed(2)} ${unit}</span>
+                ${deltaLabel}
+            </div>
+        `;
+    }
+
+    getSummaryDeltaClass(delta) {
+        if (delta > 0) {
+            return 'delta-positive';
+        }
+        if (delta < 0) {
+            return 'delta-negative';
+        }
+        return '';
+    }
+
+    getSummaryDeltaLabel(delta, unit, deltaClass) {
+        if (delta === null || Math.abs(delta) <= 0.009) {
+            return '';
+        }
+        const deltaSign = delta > 0 ? '+' : '';
+        return `<span class="metric-delta ${deltaClass}">${deltaSign}${delta.toFixed(2)} ${unit}</span>`;
+    }
+
+    getStatusIcon(status) {
+        const statusIcons = {
+            completed: '✅',
+            current: '▶️',
+            planned: '📅'
+        };
+        return statusIcons[status] || '❓';
+    }
+
+    getMatchState({ isPlannedOnly, modeMatch }) {
+        if (isPlannedOnly) {
+            return { className: 'match-neutral', icon: 'ℹ️', label: 'Plán' };
+        }
+        if (modeMatch) {
+            return { className: 'match-yes', icon: '✅', label: 'Shoda' };
+        }
+        return { className: 'match-no', icon: '❌', label: 'Odchylka' };
+    }
+
+    buildCostDeltaHtml({ isPlannedOnly, costDelta }) {
+        if (isPlannedOnly || costDelta === null || costDelta === undefined) {
+            return '';
+        }
+        let deltaClass = 'cost-equal';
+        let deltaIcon = '➡️';
+        if (costDelta > 0) {
+            deltaClass = 'cost-higher';
+            deltaIcon = '⬆️';
+        } else if (costDelta < 0) {
+            deltaClass = 'cost-lower';
+            deltaIcon = '⬇️';
+        }
+        const deltaSign = costDelta > 0 ? '+' : '';
+        return `
+            <span class="cost-delta ${deltaClass}">
+                ${deltaIcon} ${deltaSign}${costDelta.toFixed(2)} Kč
+            </span>
+        `;
+    }
+
+    buildModeCompare({ hasActualData, plannedMode, historicalMode, modePlanned }) {
+        if (hasActualData && modePlanned !== 'Unknown') {
+            return `<span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
+               <span class="mode-arrow">→</span>
+               <span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
+        }
+        return `<span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
+    }
+
+    buildModeLabels(hasActualData) {
+        return {
+            modeLabelText: hasActualData ? 'Skutečnost/Plán:' : 'Plánovaný režim:',
+            costLabelText: hasActualData ? 'Cena (skutečná/plán):' : 'Plánovaná cena:'
+        };
     }
 
     /**
@@ -487,17 +586,9 @@ class DetailTabsDialog {
             interval_reasons
         } = block;
 
-        // Get mode config
         const historicalMode = DETAIL_TABS_MODE_CONFIG[mode_historical] || DETAIL_TABS_MODE_CONFIG['Unknown'];
         const plannedMode = DETAIL_TABS_MODE_CONFIG[mode_planned] || DETAIL_TABS_MODE_CONFIG['Unknown'];
-
-        // Status icon
-        const statusIcons = {
-            completed: '✅',
-            current: '▶️',
-            planned: '📅'
-        };
-        const statusIcon = statusIcons[status] || '❓';
+        const statusIcon = this.getStatusIcon(status);
 
         const isPlannedOnly = status === 'planned';
         const hasActualData =
@@ -507,36 +598,14 @@ class DetailTabsDialog {
             cost_historical !== null &&
             cost_historical !== undefined;
 
-        // Match indicator
-        const matchClass = isPlannedOnly
-            ? 'match-neutral'
-            : mode_match
-              ? 'match-yes'
-              : 'match-no';
-        const matchIcon = isPlannedOnly ? 'ℹ️' : mode_match ? '✅' : '❌';
-        const matchLabel = isPlannedOnly ? 'Plán' : mode_match ? 'Shoda' : 'Odchylka';
-
-        // Cost delta indicator
-        let costDeltaHtml = '';
-        if (!isPlannedOnly && cost_delta !== null && cost_delta !== undefined) {
-            const deltaClass = cost_delta > 0 ? 'cost-higher' : cost_delta < 0 ? 'cost-lower' : 'cost-equal';
-            const deltaIcon = cost_delta > 0 ? '⬆️' : cost_delta < 0 ? '⬇️' : '➡️';
-            costDeltaHtml = `
-                <span class="cost-delta ${deltaClass}">
-                    ${deltaIcon} ${cost_delta > 0 ? '+' : ''}${cost_delta.toFixed(2)} Kč
-                </span>
-            `;
-        }
-
-        // Build compact single-line layout
-        let modeCompare;
-        if (hasActualData && mode_planned !== 'Unknown') {
-            modeCompare = `<span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
-               <span class="mode-arrow">→</span>
-               <span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
-        } else {
-            modeCompare = `<span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
-        }
+        const matchState = this.getMatchState({ isPlannedOnly, modeMatch: mode_match });
+        const costDeltaHtml = this.buildCostDeltaHtml({ isPlannedOnly, costDelta: cost_delta });
+        const modeCompare = this.buildModeCompare({
+            hasActualData,
+            plannedMode,
+            historicalMode,
+            modePlanned: mode_planned
+        });
 
         const costCompare = this.renderPlanActualValue(
             hasActualData ? cost_historical : null,
@@ -545,21 +614,20 @@ class DetailTabsDialog {
             costDeltaHtml
         );
 
-        const modeLabelText = hasActualData ? 'Skutečnost/Plán:' : 'Plánovaný režim:';
-        const costLabelText = hasActualData ? 'Cena (skutečná/plán):' : 'Plánovaná cena:';
+        const { modeLabelText, costLabelText } = this.buildModeLabels(hasActualData);
 
         const timeRange = this.formatTimeRange(start_time, end_time);
         const reasonsHtml = this.renderIntervalReasons(interval_reasons, status);
 
         return `
-            <div class="mode-block ${matchClass}" data-index="${index}">
+            <div class="mode-block ${matchState.className}" data-index="${index}">
                 <div class="block-header">
                     <div class="block-time">
                         ${statusIcon} <strong>${timeRange}</strong>
                         <span class="block-duration">(${duration_hours?.toFixed(1)}h)</span>
                     </div>
-                    <div class="block-match ${matchClass}">
-                        ${matchIcon} ${matchLabel}
+                    <div class="block-match ${matchState.className}">
+                        ${matchState.icon} ${matchState.label}
                     </div>
                 </div>
 
@@ -663,12 +731,18 @@ class DetailTabsDialog {
         }
 
         const delta = actual - (planned ?? 0);
-        const deltaClass =
-            delta > 0 ? 'delta-positive' : delta < 0 ? 'delta-negative' : '';
-        const deltaLabel =
-            Math.abs(delta) > 0.009
-                ? `<span class="metric-delta ${deltaClass}">${delta > 0 ? '+' : ''}${delta.toFixed(2)} ${unit}</span>`
-                : '';
+        let deltaClass = '';
+        if (delta > 0) {
+            deltaClass = 'delta-positive';
+        } else if (delta < 0) {
+            deltaClass = 'delta-negative';
+        }
+
+        let deltaLabel = '';
+        if (Math.abs(delta) > 0.009) {
+            const deltaSign = delta > 0 ? '+' : '';
+            deltaLabel = `<span class="metric-delta ${deltaClass}">${deltaSign}${delta.toFixed(2)} ${unit}</span>`;
+        }
 
         return `
             <span class="metric-value-pair">
@@ -692,7 +766,7 @@ class DetailTabsDialog {
             });
             const startDate = new Date(startIso);
             const endDate = new Date(endIso);
-            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
                 return `${startIso} - ${endIso}`;
             }
             return `${fmt.format(startDate)} – ${fmt.format(endDate)}`;
@@ -706,11 +780,12 @@ class DetailTabsDialog {
         if (!isoTs) return '--:--';
         try {
             const dt = new Date(isoTs);
-            if (isNaN(dt.getTime())) {
+            if (Number.isNaN(dt.getTime())) {
                 return '--:--';
             }
             return dt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
         } catch (err) {
+            console.warn('[DetailTabs] Failed to format time label', err);
             return '--:--';
         }
     }
@@ -804,15 +879,15 @@ class DetailTabsDialog {
 }
 
 // Global instance
-window.DetailTabsDialog = null;
+globalThis.DetailTabsDialog = null;
 
 /**
  * Initialize Detail Tabs Dialog
  */
 function initDetailTabsDialog(boxId) {
-    if (!window.DetailTabsDialog) {
-        window.DetailTabsDialog = new DetailTabsDialog(boxId);
-        window.DetailTabsDialog.init();
+    if (!globalThis.DetailTabsDialog) {
+        globalThis.DetailTabsDialog = new DetailTabsDialog(boxId);
+        globalThis.DetailTabsDialog.init();
         console.log('[DetailTabs] Global instance created');
     }
 }
@@ -821,13 +896,13 @@ function initDetailTabsDialog(boxId) {
  * Open Detail Tabs Dialog
  */
 function openDetailTabsDialog(tab = 'today', plan = 'hybrid') {
-    if (window.DetailTabsDialog) {
-        window.DetailTabsDialog.open(tab, plan);
+    if (globalThis.DetailTabsDialog) {
+        globalThis.DetailTabsDialog.open(tab, plan);
     } else {
         console.error('[DetailTabs] Dialog not initialized. Call initDetailTabsDialog() first.');
     }
 }
 
 // Export for global access
-window.initDetailTabsDialog = initDetailTabsDialog;
-window.openDetailTabsDialog = openDetailTabsDialog;
+globalThis.initDetailTabsDialog = initDetailTabsDialog;
+globalThis.openDetailTabsDialog = openDetailTabsDialog;

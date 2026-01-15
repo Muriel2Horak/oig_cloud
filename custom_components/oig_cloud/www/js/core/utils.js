@@ -1,4 +1,3 @@
-/* eslint-disable */
 /**
  * OIG Cloud Dashboard - Utility Functions
  *
@@ -20,7 +19,7 @@
  * @returns {string} Formátovaný string s jednotkou
  */
 function formatPower(watts) {
-    if (watts === null || watts === undefined || isNaN(watts)) return '-- W';
+    if (watts === null || watts === undefined || Number.isNaN(watts)) return '-- W';
     const absWatts = Math.abs(watts);
     if (absWatts >= 1000) {
         return (watts / 1000).toFixed(2) + ' kW';
@@ -35,7 +34,7 @@ function formatPower(watts) {
  * @returns {string} Formátovaný string s jednotkou
  */
 function formatEnergy(wattHours) {
-    if (wattHours === null || wattHours === undefined || isNaN(wattHours)) return '-- Wh';
+    if (wattHours === null || wattHours === undefined || Number.isNaN(wattHours)) return '-- Wh';
     const absWh = Math.abs(wattHours);
     if (absWh >= 1000) {
         return (wattHours / 1000).toFixed(2) + ' kWh';
@@ -88,6 +87,7 @@ function formatChmuDateTime(isoString) {
             minute: '2-digit'
         });
     } catch (e) {
+        console.warn('[Utils] Failed to format CHMU date time', e);
         return isoString;
     }
 }
@@ -99,7 +99,7 @@ function formatChmuDateTime(isoString) {
  * @returns {string} Formátované číslo
  */
 function formatNumber(value, decimals = 2) {
-    if (value === null || value === undefined || isNaN(value)) return '--';
+    if (value === null || value === undefined || Number.isNaN(value)) return '--';
     return value.toFixed(decimals);
 }
 
@@ -109,7 +109,7 @@ function formatNumber(value, decimals = 2) {
  * @returns {string} Formátovaná cena s jednotkou
  */
 function formatCurrency(value) {
-    if (value === null || value === undefined || isNaN(value)) return '-- CZK';
+    if (value === null || value === undefined || Number.isNaN(value)) return '-- CZK';
     return `${value.toFixed(2)} CZK`;
 }
 
@@ -119,7 +119,7 @@ function formatCurrency(value) {
  * @returns {string} Formátovaná procenta
  */
 function formatPercent(value) {
-    if (value === null || value === undefined || isNaN(value)) return '-- %';
+    if (value === null || value === undefined || Number.isNaN(value)) return '-- %';
     return `${Math.round(value)} %`;
 }
 
@@ -135,7 +135,7 @@ function formatPercent(value) {
  */
 function showNotification(title, message, type = 'success') {
     // Pokus o použití HA notification
-    const hass = window.getHass?.();
+    const hass = globalThis.getHass?.();
     if (hass?.callService) {
         try {
             hass.callService('persistent_notification', 'create', {
@@ -192,6 +192,57 @@ function throttle(func, limit) {
 }
 
 // ============================================================================
+// ICON HELPERS
+// ============================================================================
+
+const ICON_EMOJI_MAP = {
+    // Spotřebiče
+    'fridge': '❄️', 'fridge-outline': '❄️', 'dishwasher': '🍽️', 'washing-machine': '🧺',
+    'tumble-dryer': '🌪️', 'stove': '🔥', 'microwave': '📦', 'coffee-maker': '☕',
+    'kettle': '🫖', 'toaster': '🍞',
+    // Osvětlení
+    'lightbulb': '💡', 'lightbulb-outline': '💡', 'lamp': '🪔', 'ceiling-light': '💡',
+    'floor-lamp': '🪔', 'led-strip': '✨', 'led-strip-variant': '✨', 'wall-sconce': '💡',
+    'chandelier': '💡',
+    // Vytápění
+    'thermometer': '🌡️', 'thermostat': '🌡️', 'radiator': '♨️', 'radiator-disabled': '❄️',
+    'heat-pump': '♨️', 'air-conditioner': '❄️', 'fan': '🌀', 'hvac': '♨️', 'fire': '🔥',
+    'snowflake': '❄️',
+    // Energie
+    'lightning-bolt': '⚡', 'flash': '⚡', 'battery': '🔋', 'battery-charging': '🔋',
+    'battery-50': '🔋', 'solar-panel': '☀️', 'solar-power': '☀️', 'meter-electric': '⚡',
+    'power-plug': '🔌', 'power-socket': '🔌',
+    // Auto
+    'car': '🚗', 'car-electric': '🚘', 'car-battery': '🔋', 'ev-station': '🔌',
+    'ev-plug-type2': '🔌', 'garage': '🏠', 'garage-open': '🏠',
+    // Zabezpečení
+    'door': '🚪', 'door-open': '🚪', 'lock': '🔒', 'lock-open': '🔓', 'shield-home': '🛡️',
+    'cctv': '📹', 'camera': '📹', 'motion-sensor': '👁️', 'alarm-light': '🚨', 'bell': '🔔',
+    // Okna
+    'window-closed': '🪟', 'window-open': '🪟', 'blinds': '🪟', 'blinds-open': '🪟',
+    'curtains': '🪟', 'roller-shade': '🪟',
+    // Média
+    'television': '📺', 'speaker': '🔊', 'speaker-wireless': '🔊', 'music': '🎵',
+    'volume-high': '🔊', 'cast': '📡', 'chromecast': '📡',
+    // Síť
+    'router-wireless': '📡', 'wifi': '📶', 'access-point': '📡', 'lan': '🌐',
+    'network': '🌐', 'home-assistant': '🏠',
+    // Voda
+    'water': '💧', 'water-percent': '💧', 'water-boiler': '♨️', 'water-pump': '💧',
+    'shower': '🚿', 'toilet': '🚽', 'faucet': '🚰', 'pipe': '🔧',
+    // Počasí
+    'weather-sunny': '☀️', 'weather-cloudy': '☁️', 'weather-night': '🌙',
+    'weather-rainy': '🌧️', 'weather-snowy': '❄️', 'weather-windy': '💨',
+    // Ostatní
+    'information': 'ℹ️', 'help-circle': '❓', 'alert-circle': '⚠️',
+    'checkbox-marked-circle': '✅', 'toggle-switch': '🔘', 'power': '⚡', 'sync': '🔄'
+};
+
+function getIconEmoji(iconName) {
+    return ICON_EMOJI_MAP[iconName] || '⚙️';
+}
+
+// ============================================================================
 // DOM HELPERS
 // ============================================================================
 
@@ -237,7 +288,7 @@ function _splitGraphemes(value) {
             return Array.from(segmenter.segment(str), (s) => s.segment);
         }
     } catch (e) {
-        // Ignore and fall back
+        console.warn('[Utils] Failed to split graphemes, falling back', e);
     }
     return Array.from(str);
 }
@@ -248,8 +299,9 @@ function _renderChar(char) {
 
 function _prefersReducedMotion() {
     try {
-        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        return !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     } catch (e) {
+        console.warn('[Utils] Failed to check reduced motion preference', e);
         return false;
     }
 }
@@ -357,51 +409,63 @@ function _renderSplitFlap(element, cacheKey, oldValue, newValue, forceFlip = fal
     element.appendChild(board);
 }
 
+function setFallbackState(element, isFallback) {
+    if (isFallback) {
+        element.classList.add('fallback-value');
+        element.setAttribute('title', 'Data nejsou k dispozici');
+        return;
+    }
+    element.classList.remove('fallback-value');
+    element.removeAttribute('title');
+}
+
+function updateElementContent({ element, cacheKey, nextValue, animate }) {
+    const hasPrev = previousValues[cacheKey] !== undefined;
+    const prevValue = hasPrev ? String(previousValues[cacheKey]) : undefined;
+    if (hasPrev && prevValue === nextValue) {
+        return false;
+    }
+
+    previousValues[cacheKey] = nextValue;
+
+    if (animate) {
+        let fromValue = hasPrev ? prevValue : (element.textContent || '');
+        if (!hasPrev && fromValue === nextValue) {
+            fromValue = '';
+        }
+        _renderSplitFlap(element, cacheKey, fromValue, nextValue, !hasPrev);
+    } else {
+        element.textContent = nextValue;
+    }
+    return true;
+}
+
 /**
  * Aktualizuje element jen pokud se hodnota změnila
  * @param {string} elementId - ID elementu
  * @param {string} newValue - Nová hodnota
  * @param {string} cacheKey - Klíč pro cache (optional)
- * @param {boolean} isFallback - True pokud je hodnota fallback (např. '--')
  * @param {boolean} animate - True = krátká vizuální animace při změně
  * @returns {boolean} True pokud se změnilo
  */
-function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = false, animate = true) {
+function updateElementIfChanged(elementId, newValue, cacheKey, animate = true) {
     if (!cacheKey) cacheKey = elementId;
     const element = document.getElementById(elementId);
     if (!element) return false;
 
     const nextValue = newValue === null || newValue === undefined ? '' : String(newValue);
 
-    // Update fallback visualization
-    if (isFallback) {
-        element.classList.add('fallback-value');
-        element.setAttribute('title', 'Data nejsou k dispozici');
-    } else {
-        element.classList.remove('fallback-value');
-        element.removeAttribute('title');
-    }
+    return updateElementContent({ element, cacheKey, nextValue, animate });
+}
 
-    // Update value if changed
-    const hasPrev = previousValues[cacheKey] !== undefined;
-    const prevValue = hasPrev ? String(previousValues[cacheKey]) : undefined;
-    if (!hasPrev || prevValue !== nextValue) {
-        // Remember new value first (so rapid updates don't fight)
-        previousValues[cacheKey] = nextValue;
+function updateFallbackElementIfChanged(elementId, newValue, cacheKey, animate = true) {
+    if (!cacheKey) cacheKey = elementId;
+    const element = document.getElementById(elementId);
+    if (!element) return false;
 
-        if (animate && !isFallback) {
-            let fromValue = hasPrev ? prevValue : (element.textContent || '');
-            // First load: still flip even if the element already contains the same text (tiles render directly).
-            if (!hasPrev && fromValue === nextValue) {
-                fromValue = '';
-            }
-            _renderSplitFlap(element, cacheKey, fromValue, nextValue, !hasPrev);
-        } else {
-            element.textContent = nextValue;
-        }
-        return true;
-    }
-    return false;
+    setFallbackState(element, true);
+    const nextValue = newValue === null || newValue === undefined ? '' : String(newValue);
+    return updateElementContent({ element, cacheKey, nextValue, animate });
 }
 
 /**
@@ -452,8 +516,8 @@ async function waitForElement(selector, maxRetries = 10, delay = 100) {
  * @returns {boolean} True pokud je validní
  */
 function isNumberInRange(value, min, max) {
-    const num = parseFloat(value);
-    return !isNaN(num) && num >= min && num <= max;
+    const num = Number.parseFloat(value);
+    return !Number.isNaN(num) && num >= min && num <= max;
 }
 
 /**
@@ -547,8 +611,8 @@ function findShieldSensorId(sensorName) {
 }
 
 // Export utilities
-if (typeof window !== 'undefined') {
-    window.DashboardUtils = {
+if (typeof globalThis !== 'undefined') {
+    globalThis.DashboardUtils = {
         formatPower,
         formatEnergy,
         formatRelativeTime,
@@ -561,11 +625,13 @@ if (typeof window !== 'undefined') {
         debounce,
         throttle,
         updateElementIfChanged,
+        updateFallbackElementIfChanged,
         updateClassIfChanged,
         waitForElement,
         isNumberInRange,
         isValidEntityId,
         getCurrentTimeString,
-        findShieldSensorId
+        findShieldSensorId,
+        getIconEmoji
     };
 }
