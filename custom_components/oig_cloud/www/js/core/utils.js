@@ -409,26 +409,17 @@ function _renderSplitFlap(element, cacheKey, oldValue, newValue, forceFlip = fal
     element.appendChild(board);
 }
 
-/**
- * Aktualizuje element jen pokud se hodnota změnila
- * @param {string} elementId - ID elementu
- * @param {string} newValue - Nová hodnota
- * @param {string} cacheKey - Klíč pro cache (optional)
- * @param {boolean} isFallback - True pokud je hodnota fallback (např. '--')
- * @param {boolean} animate - True = krátká vizuální animace při změně
- * @returns {boolean} True pokud se změnilo
- */
-function applyFallbackState(element, isFallback) {
+function setFallbackState(element, isFallback) {
     if (isFallback) {
         element.classList.add('fallback-value');
         element.setAttribute('title', 'Data nejsou k dispozici');
-    } else {
-        element.classList.remove('fallback-value');
-        element.removeAttribute('title');
+        return;
     }
+    element.classList.remove('fallback-value');
+    element.removeAttribute('title');
 }
 
-function updateElementContent({ element, cacheKey, nextValue, animate, isFallback }) {
+function updateElementContent({ element, cacheKey, nextValue, animate }) {
     const hasPrev = previousValues[cacheKey] !== undefined;
     const prevValue = hasPrev ? String(previousValues[cacheKey]) : undefined;
     if (hasPrev && prevValue === nextValue) {
@@ -437,7 +428,7 @@ function updateElementContent({ element, cacheKey, nextValue, animate, isFallbac
 
     previousValues[cacheKey] = nextValue;
 
-    if (animate && !isFallback) {
+    if (animate) {
         let fromValue = hasPrev ? prevValue : (element.textContent || '');
         if (!hasPrev && fromValue === nextValue) {
             fromValue = '';
@@ -449,15 +440,32 @@ function updateElementContent({ element, cacheKey, nextValue, animate, isFallbac
     return true;
 }
 
-function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = false, animate = true) {
+/**
+ * Aktualizuje element jen pokud se hodnota změnila
+ * @param {string} elementId - ID elementu
+ * @param {string} newValue - Nová hodnota
+ * @param {string} cacheKey - Klíč pro cache (optional)
+ * @param {boolean} animate - True = krátká vizuální animace při změně
+ * @returns {boolean} True pokud se změnilo
+ */
+function updateElementIfChanged(elementId, newValue, cacheKey, animate = true) {
     if (!cacheKey) cacheKey = elementId;
     const element = document.getElementById(elementId);
     if (!element) return false;
 
     const nextValue = newValue === null || newValue === undefined ? '' : String(newValue);
 
-    applyFallbackState(element, isFallback);
-    return updateElementContent({ element, cacheKey, nextValue, animate, isFallback });
+    return updateElementContent({ element, cacheKey, nextValue, animate });
+}
+
+function updateFallbackElementIfChanged(elementId, newValue, cacheKey, animate = true) {
+    if (!cacheKey) cacheKey = elementId;
+    const element = document.getElementById(elementId);
+    if (!element) return false;
+
+    setFallbackState(element, true);
+    const nextValue = newValue === null || newValue === undefined ? '' : String(newValue);
+    return updateElementContent({ element, cacheKey, nextValue, animate });
 }
 
 /**
@@ -617,6 +625,7 @@ if (typeof globalThis !== 'undefined') {
         debounce,
         throttle,
         updateElementIfChanged,
+        updateFallbackElementIfChanged,
         updateClassIfChanged,
         waitForElement,
         isNumberInRange,

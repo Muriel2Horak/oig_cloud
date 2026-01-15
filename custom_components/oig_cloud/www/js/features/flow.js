@@ -543,6 +543,31 @@ function updateMultiSourceFlow(flowKey, params) {
     }
 }
 
+function shouldRestartParticleFlow(active, wasActive, countChanged, speedChanged) {
+    return active && wasActive && (countChanged || speedChanged);
+}
+
+function spawnAdditionalParticles({ flowKey, from, to, color, speed, size, opacity, flow, diff, count }) {
+    if (diff <= 0) return;
+    const delayBetweenParticles = speed / count / 2;
+    for (let i = 0; i < diff; i++) {
+        setTimeout(() => {
+            if (flow.active) {
+                createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
+            }
+        }, i * delayBetweenParticles);
+    }
+}
+
+function startParticleFlow({ flowKey, from, to, color, speed, count, size, opacity }) {
+    const delayBetweenParticles = speed / count / 2;
+    for (let i = 0; i < count; i++) {
+        setTimeout(() => {
+            createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
+        }, i * delayBetweenParticles);
+    }
+}
+
 // Spustí nebo zastaví kontinuální tok kuliček (simple single-color flow)
 function updateParticleFlow(flowKey, params) {
     const flow = particleFlows[flowKey];
@@ -562,35 +587,17 @@ function updateParticleFlow(flowKey, params) {
     const wasActive = flow.active;
     const previousCount = flow.count;
     const countChanged = previousCount !== count;
-    const speedChanged = Math.abs(flow.speed - speed) > 150; // OPRAVA: Tolerace ±150ms pro prevenci zbytečných restartů
+    const speedChanged = Math.abs(flow.speed - speed) > 150;
 
-    // OPRAVA: Pokud se mění počet kuliček NEBO výrazně rychlost, musíme restartovat flow
-    // ALE: Nebudeme zastavovat existující kuličky - nechť doběhnou přirozeně
-    if (active && wasActive && (countChanged || speedChanged)) {
-        // Místo zastavení starých jen aktualizujeme parametry
+    if (shouldRestartParticleFlow(active, wasActive, countChanged, speedChanged)) {
         flow.speed = speed;
         flow.count = count;
 
-        // Pokud se změnil počet, přidáme/ubereme kuličky
         if (countChanged) {
             console.log(`[Particles] Count changed for ${flowKey}: ${previousCount} -> ${count}`);
-            // Starý count byl flow.count, nový je count
             const diff = count - previousCount;
-
-            if (diff > 0) {
-                // Přidat kuličky
-                const delayBetweenParticles = speed / count / 2;
-                for (let i = 0; i < diff; i++) {
-                    setTimeout(() => {
-                        if (flow.active) { // Double-check že flow je stále aktivní
-                            createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
-                        }
-                    }, i * delayBetweenParticles);
-                }
-            }
-            // Pokud diff < 0 (ubrat kuličky), kuličky se zastaví přirozeně když onfinish zjistí jiný count
+            spawnAdditionalParticles({ flowKey, from, to, color, speed, size, opacity, flow, diff, count });
         }
-
         return;
     }
 
@@ -599,13 +606,7 @@ function updateParticleFlow(flowKey, params) {
     flow.count = count;
 
     if (active && !wasActive) {
-        // Spustit nové toky s odstupem
-        const delayBetweenParticles = speed / count / 2;
-        for (let i = 0; i < count; i++) {
-            setTimeout(() => {
-                createContinuousParticle(flowKey, from, to, color, speed, size, opacity);
-            }, i * delayBetweenParticles);
-        }
+        startParticleFlow({ flowKey, from, to, color, speed, count, size, opacity });
     }
     // Pokud je active=false, kuličky se zastaví samy (rekurze se ukončí)
 }
@@ -618,56 +619,78 @@ function updateParticleFlow(flowKey, params) {
  * @param {number} batteryRatio - Poměr energie z baterie (0-1, jen pro spotřebu)
  * @returns {string} CSS gradient nebo jednolitá barva
  */
-function getEnergySourceColor(solarRatio, gridRatio, batteryRatio = 0) {
-    const SOLAR_COLOR = '#ffd54f';   // Žlutá
-    const GRID_COLOR = '#42a5f5';    // Modrá
-    const BATTERY_COLOR = '#ff9800'; // Oranžová
-
-    // Normalize ratios (pokud se nesečtou na 1)
+function normalizeEnergyRatios(solarRatio, gridRatio, batteryRatio) {
     const total = solarRatio + gridRatio + batteryRatio;
-    if (total > 0) {
-        solarRatio = solarRatio / total;
-        gridRatio = gridRatio / total;
-        batteryRatio = batteryRatio / total;
+    if (total <= 0) {
+        return { solarRatio, gridRatio, batteryRatio };
     }
+    return {
+        solarRatio: solarRatio / total,
+        gridRatio: gridRatio / total,
+        batteryRatio: batteryRatio / total
+    };
+}
 
-    // Práh pro "čistý" zdroj (>95%)
-    const PURE_THRESHOLD = 0.95;
+function getPureSourceColor({ solarRatio, gridRatio, batteryRatio, colors, threshold }) {
+    if (solarRatio > threshold) return colors.solar;
+    if (gridRatio > threshold) return colors.grid;
+    if (batteryRatio > threshold) return colors.battery;
+    return null;
+}
 
-    // Pokud je jeden zdroj dominantní, použij čistou barvu
-    if (solarRatio > PURE_THRESHOLD) return SOLAR_COLOR;
-    if (gridRatio > PURE_THRESHOLD) return GRID_COLOR;
-    if (batteryRatio > PURE_THRESHOLD) return BATTERY_COLOR;
+function buildThreeSourceGradient({ solarRatio, gridRatio, colors }) {
+    const solarPct = (solarRatio * 100).toFixed(0);
+    const gridPct = ((solarRatio + gridRatio) * 100).toFixed(0);
+    return `linear-gradient(135deg, ${colors.solar} 0%, ${colors.solar} ${solarPct}%, ${colors.grid} ${solarPct}%, ${colors.grid} ${gridPct}%, ${colors.battery} ${gridPct}%, ${colors.battery} 100%)`;
+}
 
-    // Vytvořit gradient podle poměrů
-    if (batteryRatio > 0) {
-        // 3 zdroje (pro spotřebu)
-        if (solarRatio > 0.05 && gridRatio > 0.05 && batteryRatio > 0.05) {
-            // Všechny 3 zdroje
-            const solarPct = (solarRatio * 100).toFixed(0);
-            const gridPct = ((solarRatio + gridRatio) * 100).toFixed(0);
-            return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${GRID_COLOR} ${solarPct}%, ${GRID_COLOR} ${gridPct}%, ${BATTERY_COLOR} ${gridPct}%, ${BATTERY_COLOR} 100%)`;
-        }
-        if (solarRatio > 0.05 && batteryRatio > 0.05) {
-            // Solár + baterie
-            const solarPct = (solarRatio * 100).toFixed(0);
-            return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${BATTERY_COLOR} ${solarPct}%, ${BATTERY_COLOR} 100%)`;
-        }
-        if (gridRatio > 0.05 && batteryRatio > 0.05) {
-            // Grid + baterie
-            const gridPct = (gridRatio * 100).toFixed(0);
-            return `linear-gradient(135deg, ${GRID_COLOR} 0%, ${GRID_COLOR} ${gridPct}%, ${BATTERY_COLOR} ${gridPct}%, ${BATTERY_COLOR} 100%)`;
-        }
-    } else if (solarRatio > 0.05 && gridRatio > 0.05) {
-        // 2 zdroje (pro nabíjení baterie)
-        const solarPct = (solarRatio * 100).toFixed(0);
-        return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${GRID_COLOR} ${solarPct}%, ${GRID_COLOR} 100%)`;
+function buildTwoSourceGradient({ ratio, colorA, colorB }) {
+    const pct = (ratio * 100).toFixed(0);
+    return `linear-gradient(135deg, ${colorA} 0%, ${colorA} ${pct}%, ${colorB} ${pct}%, ${colorB} 100%)`;
+}
+
+function getGradientColor({ solarRatio, gridRatio, batteryRatio, colors }) {
+    const minRatio = 0.05;
+    const hasSolar = solarRatio > minRatio;
+    const hasGrid = gridRatio > minRatio;
+    const hasBattery = batteryRatio > minRatio;
+
+    if (hasSolar && hasGrid && hasBattery) {
+        return buildThreeSourceGradient({ solarRatio, gridRatio, colors });
     }
+    if (hasSolar && hasBattery) {
+        return buildTwoSourceGradient({ ratio: solarRatio, colorA: colors.solar, colorB: colors.battery });
+    }
+    if (hasGrid && hasBattery) {
+        return buildTwoSourceGradient({ ratio: gridRatio, colorA: colors.grid, colorB: colors.battery });
+    }
+    if (hasSolar && hasGrid) {
+        return buildTwoSourceGradient({ ratio: solarRatio, colorA: colors.solar, colorB: colors.grid });
+    }
+    return null;
+}
 
-    // Fallback na dominantní barvu
-    if (solarRatio >= gridRatio && solarRatio >= batteryRatio) return SOLAR_COLOR;
-    if (gridRatio >= batteryRatio) return GRID_COLOR;
-    return BATTERY_COLOR;
+function getDominantEnergyColor({ solarRatio, gridRatio, batteryRatio, colors }) {
+    if (solarRatio >= gridRatio && solarRatio >= batteryRatio) return colors.solar;
+    if (gridRatio >= batteryRatio) return colors.grid;
+    return colors.battery;
+}
+
+function getEnergySourceColor(solarRatio, gridRatio, batteryRatio = 0) {
+    const colors = {
+        solar: '#ffd54f',
+        grid: '#42a5f5',
+        battery: '#ff9800'
+    };
+
+    const ratios = normalizeEnergyRatios(solarRatio, gridRatio, batteryRatio);
+    const pureColor = getPureSourceColor({ ...ratios, colors, threshold: 0.95 });
+    if (pureColor) return pureColor;
+
+    const gradient = getGradientColor({ ...ratios, colors });
+    if (gradient) return gradient;
+
+    return getDominantEnergyColor({ ...ratios, colors });
 }
 
 // Global cache for node positions
@@ -1262,6 +1285,95 @@ async function updateSolarSection(yieldIfNeeded) {
     return { solarPower, solarPerc };
 }
 
+function updateBatteryGauge(batteryFill, batterySoC) {
+    const previousSoC = previousValues['battery-gauge-width'];
+    if (previousSoC !== undefined && Math.abs(previousSoC - batterySoC) <= 0.5) {
+        return;
+    }
+    const maxHeight = 54;
+    const fillHeight = (batterySoC / 100) * maxHeight;
+    const fillY = 13 + (maxHeight - fillHeight);
+
+    batteryFill.setAttribute('height', fillHeight);
+    batteryFill.setAttribute('y', fillY);
+    previousValues['battery-gauge-width'] = batterySoC;
+}
+
+function updateBatteryChargingState(batteryFill, batteryPower) {
+    const isCharging = batteryPower > 10;
+    if (previousValues['battery-power-state'] === isCharging) {
+        return;
+    }
+    batteryFill.classList.toggle('charging', isCharging);
+    previousValues['battery-power-state'] = isCharging;
+}
+
+function updateBatteryGridCharging({ batteryPower, isGridCharging }) {
+    const batteryLightning = document.getElementById('battery-lightning');
+    batteryLightning.classList.toggle('active', isGridCharging && batteryPower > 10);
+
+    const gridChargingIndicator = document.getElementById('battery-grid-charging-indicator');
+    if (gridChargingIndicator) {
+        gridChargingIndicator.classList.toggle('active', isGridCharging);
+    }
+}
+
+function getBatteryStatusInfo({ batteryPower, timeToEmpty, timeToFull }) {
+    if (batteryPower > 10) {
+        const timeInfo = timeToFull ? ` (${timeToFull})` : '';
+        return {
+            state: 'charging',
+            text: '⚡ Nabíjení' + timeInfo,
+            className: 'node-status status-charging pulse'
+        };
+    }
+    if (batteryPower < -10) {
+        const timeInfo = timeToEmpty ? ` (${timeToEmpty})` : '';
+        return {
+            state: 'discharging',
+            text: '⚡ Vybíjení' + timeInfo,
+            className: 'node-status status-discharging pulse'
+        };
+    }
+    return {
+        state: 'idle',
+        text: '◉ Klid',
+        className: 'node-status status-idle'
+    };
+}
+
+function updateBatteryStatus(batteryStatus, statusInfo) {
+    if (
+        previousValues['battery-state'] === statusInfo.state &&
+        previousValues['battery-status-text'] === statusInfo.text
+    ) {
+        return;
+    }
+    batteryStatus.textContent = statusInfo.text;
+    batteryStatus.className = statusInfo.className;
+    previousValues['battery-state'] = statusInfo.state;
+    previousValues['battery-status-text'] = statusInfo.text;
+}
+
+function getBatteryTempInfo(batteryTemp) {
+    if (batteryTemp > 25) {
+        return { icon: '🌡️', className: 'battery-temp-indicator temp-hot' };
+    }
+    if (batteryTemp < 15) {
+        return { icon: '🧊', className: 'battery-temp-indicator temp-cold' };
+    }
+    return { icon: '🌡️', className: 'battery-temp-indicator' };
+}
+
+function updateBatteryTemperature({ tempIndicator, tempIconElement, tempInfo }) {
+    if (previousValues['battery-temp-icon'] === tempInfo.icon) {
+        return;
+    }
+    tempIconElement.textContent = tempInfo.icon;
+    tempIndicator.className = tempInfo.className;
+    previousValues['battery-temp-icon'] = tempInfo.icon;
+}
+
 async function updateBatterySection(yieldIfNeeded) {
     const [batterySoCData, batteryPowerData] = await Promise.all([
         getSensor(getSensorId('batt_bat_c')),
@@ -1274,80 +1386,30 @@ async function updateBatterySection(yieldIfNeeded) {
     updateElementIfChanged('battery-power', formatPower(batteryPower), 'battery-power');
 
     const batteryFill = document.getElementById('battery-fill');
-    const previousSoC = previousValues['battery-gauge-width'];
-    if (previousSoC === undefined || Math.abs(previousSoC - batterySoC) > 0.5) {
-        const maxHeight = 54;
-        const fillHeight = (batterySoC / 100) * maxHeight;
-        const fillY = 13 + (maxHeight - fillHeight);
-
-        batteryFill.setAttribute('height', fillHeight);
-        batteryFill.setAttribute('y', fillY);
-
-        previousValues['battery-gauge-width'] = batterySoC;
-    }
-
-    const previousPower = previousValues['battery-power-state'];
-    const isCharging = batteryPower > 10;
-    if (previousPower !== isCharging) {
-        if (isCharging) {
-            batteryFill.classList.add('charging');
-        } else {
-            batteryFill.classList.remove('charging');
-        }
-        previousValues['battery-power-state'] = isCharging;
-    }
+    updateBatteryGauge(batteryFill, batterySoC);
+    updateBatteryChargingState(batteryFill, batteryPower);
 
     const gridChargingData = await getSensor(getSensorId('grid_charging_planned'));
-    const isGridCharging = gridChargingData.value === 'on';
-    const batteryLightning = document.getElementById('battery-lightning');
-
-    if (isGridCharging && batteryPower > 10) {
-        batteryLightning.classList.add('active');
-    } else {
-        batteryLightning.classList.remove('active');
-    }
-
-    const gridChargingIndicator = document.getElementById('battery-grid-charging-indicator');
-    if (gridChargingIndicator) {
-        if (isGridCharging) {
-            gridChargingIndicator.classList.add('active');
-        } else {
-            gridChargingIndicator.classList.remove('active');
-        }
-    }
+    updateBatteryGridCharging({
+        batteryPower,
+        isGridCharging: gridChargingData.value === 'on'
+    });
 
     const timeToEmptyData = await getSensorString(getSensorId('time_to_empty'));
     const timeToFullData = await getSensorString(getSensorId('time_to_full'));
-
     const batteryStatus = document.getElementById('battery-status');
-    let newBatteryState;
-    let newBatteryText;
-    let newBatteryClass;
-    if (batteryPower > 10) {
-        newBatteryState = 'charging';
-        const timeInfo = timeToFullData.value ? ` (${timeToFullData.value})` : '';
-        newBatteryText = '⚡ Nabíjení' + timeInfo;
-        newBatteryClass = 'node-status status-charging pulse';
-    } else if (batteryPower < -10) {
-        newBatteryState = 'discharging';
-        const timeInfo = timeToEmptyData.value ? ` (${timeToEmptyData.value})` : '';
-        newBatteryText = '⚡ Vybíjení' + timeInfo;
-        newBatteryClass = 'node-status status-discharging pulse';
-    } else {
-        newBatteryState = 'idle';
-        newBatteryText = '◉ Klid';
-        newBatteryClass = 'node-status status-idle';
-    }
-    if (previousValues['battery-state'] !== newBatteryState || previousValues['battery-status-text'] !== newBatteryText) {
-        batteryStatus.textContent = newBatteryText;
-        batteryStatus.className = newBatteryClass;
-        previousValues['battery-state'] = newBatteryState;
-        previousValues['battery-status-text'] = newBatteryText;
-    }
+    const statusInfo = getBatteryStatusInfo({
+        batteryPower,
+        timeToEmpty: timeToEmptyData.value,
+        timeToFull: timeToFullData.value
+    });
+    updateBatteryStatus(batteryStatus, statusInfo);
 
-    const batteryVoltageData = await getSensor(getSensorId('extended_battery_voltage'));
-    const batteryCurrentData = await getSensor(getSensorId('extended_battery_current'));
-    const batteryTempData = await getSensor(getSensorId('extended_battery_temperature'));
+    const [batteryVoltageData, batteryCurrentData, batteryTempData] = await Promise.all([
+        getSensor(getSensorId('extended_battery_voltage')),
+        getSensor(getSensorId('extended_battery_current')),
+        getSensor(getSensorId('extended_battery_temperature'))
+    ]);
 
     updateElementIfChanged('battery-voltage-value', (batteryVoltageData.value || 0).toFixed(1) + ' V');
     updateElementIfChanged('battery-current-value', (batteryCurrentData.value || 0).toFixed(1) + ' A');
@@ -1355,28 +1417,11 @@ async function updateBatterySection(yieldIfNeeded) {
     const batteryTemp = batteryTempData.value || 0;
     const tempIndicator = document.getElementById('battery-temp-indicator');
     const tempIconElement = document.getElementById('battery-temp-icon');
-    let tempIcon;
-    let tempClass;
-    if (batteryTemp > 25) {
-        tempIcon = '🌡️';
-        tempClass = 'battery-temp-indicator temp-hot';
-    } else if (batteryTemp < 15) {
-        tempIcon = '🧊';
-        tempClass = 'battery-temp-indicator temp-cold';
-    } else {
-        tempIcon = '🌡️';
-        tempClass = 'battery-temp-indicator';
-    }
-
-    if (previousValues['battery-temp-icon'] !== tempIcon) {
-        tempIconElement.textContent = tempIcon;
-        tempIndicator.className = tempClass;
-        previousValues['battery-temp-icon'] = tempIcon;
-    }
-
+    const tempInfo = getBatteryTempInfo(batteryTemp);
+    updateBatteryTemperature({ tempIndicator, tempIconElement, tempInfo });
     updateElementIfChanged('battery-temp-value', batteryTemp.toFixed(1) + ' °C');
-    await yieldIfNeeded();
 
+    await yieldIfNeeded();
     return { batteryPower };
 }
 
@@ -1420,9 +1465,50 @@ async function updateGridSection(yieldIfNeeded) {
     return { gridPower };
 }
 
+function getHouseModeInfo(boxMode) {
+    if (boxMode.includes('Home 1')) {
+        return { icon: '🏠', text: 'Home 1' };
+    }
+    if (boxMode.includes('Home 2')) {
+        return { icon: '🔋', text: 'Home 2' };
+    }
+    if (boxMode.includes('Home 3')) {
+        return { icon: '☀️', text: 'Home 3' };
+    }
+    if (boxMode.includes('UPS')) {
+        return { icon: '⚡', text: 'Home UPS' };
+    }
+    return { icon: '⚙️', text: boxMode };
+}
+
+function updateModeChangingElement(elementId, text, cacheKey) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    const isModeChanging = element.classList.contains('mode-changing');
+    updateElementIfChanged(elementId, text, cacheKey || elementId);
+    if (isModeChanging && !element.classList.contains('mode-changing')) {
+        element.classList.add('mode-changing');
+    }
+}
+
+function updateLastUpdateHeader(lastUpdateValue) {
+    if (!lastUpdateValue || lastUpdateValue === '--') return;
+    const lastUpdateHeader = document.getElementById('last-update-header');
+    const updateDate = new Date(lastUpdateValue);
+    const relativeTime = formatRelativeTime(updateDate);
+    const displayText = `Aktualizováno ${relativeTime}`;
+
+    if (previousValues['last-update'] !== displayText) {
+        lastUpdateHeader.textContent = displayText;
+        previousValues['last-update'] = displayText;
+    }
+}
+
 async function updateHouseSection({ yieldIfNeeded, runtime, isConstrainedRuntime }) {
-    const housePowerData = await getSensor(getSensorId('actual_aco_p'));
-    const houseTodayData = await getSensor(getSensorId('ac_out_en_day'));
+    const [housePowerData, houseTodayData] = await Promise.all([
+        getSensor(getSensorId('actual_aco_p')),
+        getSensor(getSensorId('ac_out_en_day'))
+    ]);
     const housePower = housePowerData.value || 0;
     const houseTodayWh = houseTodayData.value || 0;
     const houseTodayKWh = houseTodayWh / 1000;
@@ -1431,132 +1517,106 @@ async function updateHouseSection({ yieldIfNeeded, runtime, isConstrainedRuntime
     updateElementIfChanged('house-today', 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh', 'house-today');
 
     const boxModeData = await getSensorString(getSensorId('box_prms_mode'));
-    const boxMode = boxModeData.value || '--';
-    let modeIcon = '⚙️';
-    let modeText = boxMode;
-    if (boxMode.includes('Home 1')) {
-        modeIcon = '🏠';
-        modeText = 'Home 1';
-    } else if (boxMode.includes('Home 2')) {
-        modeIcon = '🔋';
-        modeText = 'Home 2';
-    } else if (boxMode.includes('Home 3')) {
-        modeIcon = '☀️';
-        modeText = 'Home 3';
-    } else if (boxMode.includes('UPS')) {
-        modeIcon = '⚡';
-        modeText = 'Home UPS';
-    }
+    const { icon: modeIcon, text: modeText } = getHouseModeInfo(boxModeData.value || '--');
+    updateModeChangingElement('inverter-mode', modeIcon + ' ' + modeText, 'inverter-mode');
 
-    const inverterModeElement = document.getElementById('inverter-mode');
-    if (inverterModeElement) {
-        const isModeChanging = inverterModeElement.classList.contains('mode-changing');
-        updateElementIfChanged('inverter-mode', modeIcon + ' ' + modeText, 'inverter-mode');
-        if (isModeChanging && !inverterModeElement.classList.contains('mode-changing')) {
-            inverterModeElement.classList.add('mode-changing');
-        }
-    }
-
-    const shouldUpdatePlanner = !isConstrainedRuntime || runtime.initialLoadComplete;
-    if (shouldUpdatePlanner) {
+    if (!isConstrainedRuntime || runtime.initialLoadComplete) {
         await updatePlannerModeBadge();
         await yieldIfNeeded();
     }
 
     const boilerModeFlowData = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
-    const boilerModeFlowElement = document.getElementById('boiler-mode');
-    if (boilerModeFlowElement && boilerModeFlowData.exists) {
-        const isModeChanging = boilerModeFlowElement.classList.contains('mode-changing');
-        updateElementIfChanged('boiler-mode', boilerModeFlowData.value || '--', 'boiler-mode');
-        if (isModeChanging && !boilerModeFlowElement.classList.contains('mode-changing')) {
-            boilerModeFlowElement.classList.add('mode-changing');
-        }
+    if (boilerModeFlowData.exists) {
+        updateModeChangingElement('boiler-mode', boilerModeFlowData.value || '--', 'boiler-mode');
     }
 
     const realDataUpdateSensor = await getSensorString(getSensorId('real_data_update'));
-    const lastUpdate = realDataUpdateSensor.value;
-    if (lastUpdate && lastUpdate !== '--') {
-        const lastUpdateHeader = document.getElementById('last-update-header');
-        const updateDate = new Date(lastUpdate);
-        const relativeTime = formatRelativeTime(updateDate);
-        const displayText = `Aktualizováno ${relativeTime}`;
-
-        if (previousValues['last-update'] !== displayText) {
-            lastUpdateHeader.textContent = displayText;
-            previousValues['last-update'] = displayText;
-        }
-    }
+    updateLastUpdateHeader(realDataUpdateSensor.value);
 
     return { housePower };
 }
 
-async function updateInverterIndicators() {
-    const bypassStatusData = await getSensorString(getSensorId('bypass_status'));
-    const bypassStatus = bypassStatusData.value || 'off';
-    const bypassIndicator = document.getElementById('inverter-bypass-indicator');
-    const bypassLabel = document.getElementById('inverter-bypass-label');
-    const bypassIconElement = document.getElementById('inverter-bypass-icon');
-    let bypassIcon;
-    let bypassClass;
+function getBypassIndicatorState(bypassStatus) {
     const isBypassActive = bypassStatus.toLowerCase() === 'on' || bypassStatus === '1';
-    if (isBypassActive) {
-        bypassIcon = '🔴';
-        bypassClass = 'inverter-bypass-indicator bypass-warning';
-    } else {
-        bypassIcon = '🟢';
-        bypassClass = 'inverter-bypass-indicator bypass-ok';
-    }
-    if (previousValues['inverter-bypass-icon'] !== bypassIcon) {
-        if (bypassIconElement) {
-            bypassIconElement.textContent = bypassIcon;
-        }
-        if (bypassIndicator) {
-            bypassIndicator.className = bypassClass;
-        }
-        if (bypassLabel) {
-            bypassLabel.style.display = isBypassActive ? 'block' : 'none';
-        }
-        previousValues['inverter-bypass-icon'] = bypassIcon;
-    }
+    return {
+        icon: isBypassActive ? '🔴' : '🟢',
+        className: isBypassActive
+            ? 'inverter-bypass-indicator bypass-warning'
+            : 'inverter-bypass-indicator bypass-ok',
+        isBypassActive
+    };
+}
 
-    const inverterTempData = await getSensor(getSensorId('box_temp'));
-    const inverterTemp = inverterTempData.value || 0;
-    const inverterTempIndicator = document.getElementById('inverter-temp-indicator');
-    const inverterTempIconElement = document.getElementById('inverter-temp-icon');
-    let inverterTempIcon;
-    let inverterTempClass;
+function updateBypassIndicator({ bypassIndicator, bypassLabel, bypassIconElement, state }) {
+    if (previousValues['inverter-bypass-icon'] === state.icon) {
+        return;
+    }
+    if (bypassIconElement) {
+        bypassIconElement.textContent = state.icon;
+    }
+    if (bypassIndicator) {
+        bypassIndicator.className = state.className;
+    }
+    if (bypassLabel) {
+        bypassLabel.style.display = state.isBypassActive ? 'block' : 'none';
+    }
+    previousValues['inverter-bypass-icon'] = state.icon;
+}
+
+function getInverterTempInfo(inverterTemp) {
     if (inverterTemp > 35) {
-        inverterTempIcon = '🌡️';
-        inverterTempClass = 'inverter-temp-indicator temp-hot';
-    } else {
-        inverterTempIcon = '🌡️';
-        inverterTempClass = 'inverter-temp-indicator';
+        return { icon: '🌡️', className: 'inverter-temp-indicator temp-hot' };
     }
-    if (previousValues['inverter-temp-icon'] !== inverterTempIcon || previousValues['inverter-temp-class'] !== inverterTempClass) {
-        if (inverterTempIconElement) {
-            inverterTempIconElement.textContent = inverterTempIcon;
-        }
-        if (inverterTempIndicator) {
-            inverterTempIndicator.className = inverterTempClass;
-        }
-        previousValues['inverter-temp-icon'] = inverterTempIcon;
-        previousValues['inverter-temp-class'] = inverterTempClass;
-    }
-    updateElementIfChanged('inverter-temp-value', inverterTemp.toFixed(1) + ' °C');
+    return { icon: '🌡️', className: 'inverter-temp-indicator' };
+}
 
-    const inverterBox = document.getElementById('inverter-box');
+function updateInverterTempIndicator({ inverterTempIndicator, inverterTempIconElement, tempInfo }) {
+    if (
+        previousValues['inverter-temp-icon'] === tempInfo.icon &&
+        previousValues['inverter-temp-class'] === tempInfo.className
+    ) {
+        return;
+    }
+    if (inverterTempIconElement) {
+        inverterTempIconElement.textContent = tempInfo.icon;
+    }
+    if (inverterTempIndicator) {
+        inverterTempIndicator.className = tempInfo.className;
+    }
+    previousValues['inverter-temp-icon'] = tempInfo.icon;
+    previousValues['inverter-temp-class'] = tempInfo.className;
+}
+
+function updateInverterWarning({ inverterBox, bypassStatus, inverterTemp }) {
     const bypassIsOn = bypassStatus && (bypassStatus.toLowerCase() === 'on' || bypassStatus === '1' || bypassStatus.toLowerCase().includes('on'));
     const tempIsHigh = inverterTemp > 35;
     const hasWarning = bypassIsOn || tempIsHigh;
 
     if (previousValues['inverter-warning'] === undefined || previousValues['inverter-warning'] !== hasWarning) {
-        if (hasWarning) {
-            inverterBox.classList.add('warning-active');
-        } else {
-            inverterBox.classList.remove('warning-active');
-        }
+        inverterBox.classList.toggle('warning-active', hasWarning);
         previousValues['inverter-warning'] = hasWarning;
     }
+}
+
+async function updateInverterIndicators() {
+    const bypassStatusData = await getSensorString(getSensorId('bypass_status'));
+    const bypassIndicator = document.getElementById('inverter-bypass-indicator');
+    const bypassLabel = document.getElementById('inverter-bypass-label');
+    const bypassIconElement = document.getElementById('inverter-bypass-icon');
+    const bypassState = getBypassIndicatorState(bypassStatusData.value || 'off');
+    updateBypassIndicator({ bypassIndicator, bypassLabel, bypassIconElement, state: bypassState });
+
+    const inverterTempData = await getSensor(getSensorId('box_temp'));
+    const inverterTemp = inverterTempData.value || 0;
+    updateElementIfChanged('inverter-temp-value', inverterTemp.toFixed(1) + ' °C');
+
+    const inverterTempIndicator = document.getElementById('inverter-temp-indicator');
+    const inverterTempIconElement = document.getElementById('inverter-temp-icon');
+    const tempInfo = getInverterTempInfo(inverterTemp);
+    updateInverterTempIndicator({ inverterTempIndicator, inverterTempIconElement, tempInfo });
+
+    const inverterBox = document.getElementById('inverter-box');
+    updateInverterWarning({ inverterBox, bypassStatus: bypassStatusData.value || 'off', inverterTemp });
 }
 
 async function updateFlowAnimation({
@@ -1712,6 +1772,298 @@ function forceFullRefresh() {
     loadData();
 }
 
+function getTariffDisplay(tariffValue) {
+    if (tariffValue === 'VT' || tariffValue.includes('vysoký')) {
+        return '⚡ VT';
+    }
+    if (tariffValue === 'NT' || tariffValue.includes('nízký')) {
+        return '🌙 NT';
+    }
+    return '⏰ ' + tariffValue;
+}
+
+function shouldShowBoilerSection(boilerIsUse) {
+    if (!boilerIsUse.exists) return false;
+    return (
+        boilerIsUse.value === 'Zapnuto' ||
+        boilerIsUse.value === 'on' ||
+        boilerIsUse.value === '1' ||
+        boilerIsUse.value === 1
+    );
+}
+
+function updateBoilerDetailSectionVisibility(boilerDetailSection, isActive) {
+    boilerDetailSection.style.display = isActive ? 'block' : 'none';
+}
+
+function updateBoilerControlSectionVisibility(boilerControlSection, isActive) {
+    if (!boilerControlSection) return;
+    if (isActive) {
+        boilerControlSection.style.display = 'block';
+        boilerControlSection.style.opacity = '1';
+        boilerControlSection.style.pointerEvents = 'auto';
+        return;
+    }
+    boilerControlSection.style.display = 'none';
+}
+
+function formatBoilerPower(powerValue) {
+    if (powerValue >= 1000) {
+        return (powerValue / 1000).toFixed(1) + ' kW';
+    }
+    return Math.round(powerValue) + ' W';
+}
+
+function formatBoilerEnergy(energyValue) {
+    if (energyValue >= 1000) {
+        return (energyValue / 1000).toFixed(2) + ' kWh';
+    }
+    return Math.round(energyValue) + ' Wh';
+}
+
+function updateBoilerModeDisplay(modeValue, modeIcon) {
+    let modeDisplay = modeValue;
+    const setModeIcon = (icon) => {
+        if (modeIcon) {
+            modeIcon.textContent = icon;
+        }
+    };
+
+    if (modeValue === 'CBB') {
+        modeDisplay = '🤖 Inteligentní';
+        setModeIcon('🤖');
+    } else if (modeValue === 'Manual') {
+        modeDisplay = '👤 Manuální';
+        setModeIcon('👤');
+    } else {
+        setModeIcon('⚙️');
+    }
+    return modeDisplay;
+}
+
+function getInverterModeDescription(modeDisplay) {
+    if (modeDisplay.includes('Home 1')) {
+        return '🏠 Home 1: Max baterie + FVE pro domácnost';
+    }
+    if (modeDisplay.includes('Home 2')) {
+        return '🔋 Home 2: Šetří baterii během výroby';
+    }
+    if (modeDisplay.includes('Home 3')) {
+        return '☀️ Home 3: Priorita nabíjení baterie z FVE';
+    }
+    if (modeDisplay.includes('UPS')) {
+        return '⚡ Home UPS: Vše ze sítě, baterie na 100%';
+    }
+    return '⚙️ ' + modeDisplay;
+}
+
+function getGridExportDisplay(rawDisplay = '--') {
+    let display = rawDisplay;
+    let icon = '💧';
+    if (display === 'Vypnuto / Off') {
+        icon = '🚫';
+        display = 'Vypnuto';
+    } else if (display === 'Zapnuto / On') {
+        display = 'Zapnuto';
+    } else if (display.includes('Limited') || display.includes('omezením')) {
+        icon = '🚰';
+        display = 'Omezeno';
+    }
+    return { display, icon };
+}
+
+function updateNotificationBadge(element, count, className) {
+    if (!element) return;
+    element.textContent = count;
+    if (count > 0) {
+        element.classList.add(className);
+        element.classList.remove(className === 'has-unread' ? 'has-error' : 'has-unread');
+        return;
+    }
+    element.classList.remove('has-unread', 'has-error');
+}
+
+async function loadSolarDetails() {
+    const [solarP1, solarP2, solarV1, solarV2, solarI1, solarI2, solarForecast] = await Promise.all([
+        getSensor(getSensorId('dc_in_fv_p1')),
+        getSensor(getSensorId('dc_in_fv_p2')),
+        getSensor(getSensorId('extended_fve_voltage_1')),
+        getSensor(getSensorId('extended_fve_voltage_2')),
+        getSensor(getSensorId('extended_fve_current_1')),
+        getSensor(getSensorId('extended_fve_current_2')),
+        getSensor(getSensorId('solar_forecast'))
+    ]);
+
+    updateElementIfChanged('solar-s1', Math.round(solarP1.value || 0) + ' W');
+    updateElementIfChanged('solar-s2', Math.round(solarP2.value || 0) + ' W');
+    updateElementIfChanged('solar-s1-volt', Math.round(solarV1.value || 0) + 'V');
+    updateElementIfChanged('solar-s2-volt', Math.round(solarV2.value || 0) + 'V');
+    updateElementIfChanged('solar-s1-amp', (solarI1.value || 0).toFixed(1) + 'A');
+    updateElementIfChanged('solar-s2-amp', (solarI2.value || 0).toFixed(1) + 'A');
+
+    const forecastToday = (solarForecast.value || 0).toFixed(2);
+    updateElementIfChanged('solar-forecast-today-value', forecastToday + ' kWh');
+    const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw || 0;
+    updateElementIfChanged('solar-forecast-tomorrow-value', Number.parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
+}
+
+async function loadBatteryDetails() {
+    const [battChargeTotal, battDischargeTotal, battChargeSolar, battChargeGrid] = await Promise.all([
+        getSensor(getSensorId('computed_batt_charge_energy_today')),
+        getSensor(getSensorId('computed_batt_discharge_energy_today')),
+        getSensor(getSensorId('computed_batt_charge_fve_energy_today')),
+        getSensor(getSensorId('computed_batt_charge_grid_energy_today'))
+    ]);
+
+    updateElementIfChanged('battery-charge-total', formatEnergy(battChargeTotal.value || 0));
+    updateElementIfChanged('battery-charge-solar', formatEnergy(battChargeSolar.value || 0));
+    updateElementIfChanged('battery-charge-grid', formatEnergy(battChargeGrid.value || 0));
+    updateElementIfChanged('battery-discharge-total', formatEnergy(battDischargeTotal.value || 0));
+
+    await updateGridChargingPlan();
+    await updateBatteryBalancingCard();
+}
+
+async function loadGridDetails() {
+    const [
+        gridImport, gridExport, gridFreq, gridL1V, gridL2V, gridL3V, gridL1P, gridL2P, gridL3P,
+        spotPrice, exportPrice, currentTariff
+    ] = await Promise.all([
+        getSensor(getSensorId('ac_in_ac_ad')),
+        getSensor(getSensorId('ac_in_ac_pd')),
+        getSensor(getSensorId('ac_in_aci_f')),
+        getSensor(getSensorId('ac_in_aci_vr')),
+        getSensor(getSensorId('ac_in_aci_vs')),
+        getSensor(getSensorId('ac_in_aci_vt')),
+        getSensor(getSensorId('actual_aci_wr')),
+        getSensor(getSensorId('actual_aci_ws')),
+        getSensor(getSensorId('actual_aci_wt')),
+        getSensor(getSensorId('spot_price_current_15min')),
+        getSensor(getSensorId('export_price_current_15min')),
+        getSensorString(getSensorId('current_tariff'))
+    ]);
+
+    const gridL1Power = gridL1P.value || 0;
+    const gridL2Power = gridL2P.value || 0;
+    const gridL3Power = gridL3P.value || 0;
+
+    updateElementIfChanged('grid-import', formatEnergy(gridImport.value || 0));
+    updateElementIfChanged('grid-export', formatEnergy(gridExport.value || 0));
+    updateElementIfChanged('grid-freq-indicator', '〰️ ' + (gridFreq.value || 0).toFixed(2) + ' Hz');
+    updateElementIfChanged('grid-spot-price', (spotPrice.value || 0).toFixed(2) + ' Kč/kWh');
+    updateElementIfChanged('grid-export-price', (exportPrice.value || 0).toFixed(2) + ' Kč/kWh');
+
+    const tariffValue = currentTariff.value || '--';
+    updateElementIfChanged('grid-tariff-indicator', getTariffDisplay(tariffValue));
+
+    updateElementIfChanged('grid-l1-volt', Math.round(gridL1V.value || 0) + 'V');
+    updateElementIfChanged('grid-l2-volt', Math.round(gridL2V.value || 0) + 'V');
+    updateElementIfChanged('grid-l3-volt', Math.round(gridL3V.value || 0) + 'V');
+    updateElementIfChanged('grid-l1-power', Math.round(gridL1Power) + 'W');
+    updateElementIfChanged('grid-l2-power', Math.round(gridL2Power) + 'W');
+    updateElementIfChanged('grid-l3-power', Math.round(gridL3Power) + 'W');
+
+    updateElementIfChanged('grid-l1-volt-main', Math.round(gridL1V.value || 0) + 'V');
+    updateElementIfChanged('grid-l2-volt-main', Math.round(gridL2V.value || 0) + 'V');
+    updateElementIfChanged('grid-l3-volt-main', Math.round(gridL3V.value || 0) + 'V');
+    updateElementIfChanged('grid-l1-power-main', Math.round(gridL1Power) + 'W');
+    updateElementIfChanged('grid-l2-power-main', Math.round(gridL2Power) + 'W');
+    updateElementIfChanged('grid-l3-power-main', Math.round(gridL3Power) + 'W');
+}
+
+async function loadHouseDetails() {
+    const [houseL1, houseL2, houseL3] = await Promise.all([
+        getSensor(getSensorId('ac_out_aco_pr')),
+        getSensor(getSensorId('ac_out_aco_ps')),
+        getSensor(getSensorId('ac_out_aco_pt'))
+    ]);
+
+    updateElementIfChanged('house-l1-main', Math.round(houseL1.value || 0) + 'W');
+    updateElementIfChanged('house-l2-main', Math.round(houseL2.value || 0) + 'W');
+    updateElementIfChanged('house-l3-main', Math.round(houseL3.value || 0) + 'W');
+}
+
+async function loadBoilerDetails(boilerIsUse, boilerDetailSection) {
+    const isActive = shouldShowBoilerSection(boilerIsUse);
+    updateBoilerDetailSectionVisibility(boilerDetailSection, isActive);
+    if (!isActive) return;
+
+    const [boilerCurrentPower, boilerDayEnergy, boilerManualMode] = await Promise.all([
+        getSensorSafe(getSensorId('boiler_current_cbb_w')),
+        getSensorSafe(getSensorId('boiler_day_w')),
+        getSensorStringSafe(getSensorId('boiler_manual_mode'))
+    ]);
+
+    updateElementIfChanged('house-boiler-power', formatBoilerPower(boilerCurrentPower.value || 0));
+    updateElementIfChanged('house-boiler-today', formatBoilerEnergy(boilerDayEnergy.value || 0));
+
+    const modeIcon = document.getElementById('boiler-mode-icon');
+    const modeDisplay = updateBoilerModeDisplay(boilerManualMode.value || '--', modeIcon);
+    updateElementIfChanged('house-boiler-mode', modeDisplay);
+}
+
+async function loadInverterDetails() {
+    const [
+        inverterMode,
+        inverterGridMode,
+        inverterGridLimit,
+        notificationsUnread,
+        notificationsError
+    ] = await Promise.all([
+        getSensorString(getSensorId('box_prms_mode')),
+        getSensorString(getSensorId('invertor_prms_to_grid')),
+        getSensorSafe(getSensorId('invertor_prm1_p_max_feed_grid')),
+        getSensor(getSensorId('notification_count_unread')),
+        getSensor(getSensorId('notification_count_error'))
+    ]);
+
+    const currentMode = inverterMode.value || '--';
+    if (previousValues['box-mode'] !== undefined && previousValues['box-mode'] !== currentMode) {
+        console.log('[Mode Change] Detected:', previousValues['box-mode'], '→', currentMode);
+        setTimeout(() => monitorShieldActivity(), 500);
+    }
+    previousValues['box-mode'] = currentMode;
+
+    updateElementIfChanged('inverter-mode-detail', getInverterModeDescription(currentMode));
+
+    const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
+    const { display: gridExportDisplay, icon: gridExportIcon } = getGridExportDisplay(inverterGridMode.value || '--');
+    if (gridExportModeElement) {
+        updateModeChangingElement('inverter-grid-export-mode', gridExportDisplay);
+    }
+    document.getElementById('grid-export-icon').textContent = gridExportIcon;
+
+    const limitKw = (inverterGridLimit.value || 0) / 1000;
+    updateElementIfChanged('inverter-export-limit', limitKw.toFixed(1) + ' kW');
+
+    updateNotificationBadge(document.getElementById('inverter-notifications-unread'), notificationsUnread.value || 0, 'has-unread');
+    updateNotificationBadge(document.getElementById('inverter-notifications-error'), notificationsError.value || 0, 'has-error');
+}
+
+async function loadBoilerNodeDetails() {
+    const boilerNode = document.getElementById('boiler-node');
+    if (!boilerNode || boilerNode.classList.contains('hidden')) {
+        return;
+    }
+
+    const [boilerPower, boilerMode, boilerTemp, boilerStatus] = await Promise.all([
+        getSensorSafe(getSensorId('boiler_current_cbb_w')),
+        getSensorStringSafe(getSensorId('boiler_manual_mode')),
+        getSensorSafe(getSensorId('boiler_temperature')),
+        getSensorStringSafe(getSensorId('boiler_status'))
+    ]);
+
+    if (boilerPower.exists || boilerMode.exists || boilerTemp.exists || boilerStatus.exists) {
+        updateElementIfChanged('boiler-power', Math.round(boilerPower.value || 0) + ' W');
+        if (boilerMode.exists) {
+            updateModeChangingElement('boiler-mode', boilerMode.value || '--');
+        }
+        updateElementIfChanged('boiler-mode-detail', boilerMode.value || '--');
+        updateElementIfChanged('boiler-temp', (boilerTemp.value || 0).toFixed(1) + ' °C');
+        updateElementIfChanged('boiler-status', boilerStatus.value || '--');
+    }
+}
+
 // Load detailed information for all nodes (optimized - partial updates)
 async function loadNodeDetails() {
     if (loadNodeDetailsInProgress) {
@@ -1720,289 +2072,21 @@ async function loadNodeDetails() {
     }
     loadNodeDetailsInProgress = true;
     try {
-        // === SOLAR DETAILS ===
-        const solarP1 = await getSensor(getSensorId('dc_in_fv_p1'));
-        const solarP2 = await getSensor(getSensorId('dc_in_fv_p2'));
-        const solarV1 = await getSensor(getSensorId('extended_fve_voltage_1'));
-        const solarV2 = await getSensor(getSensorId('extended_fve_voltage_2'));
-        const solarI1 = await getSensor(getSensorId('extended_fve_current_1'));
-        const solarI2 = await getSensor(getSensorId('extended_fve_current_2'));
+        await loadSolarDetails();
+        await loadBatteryDetails();
+        await loadGridDetails();
+        await loadHouseDetails();
 
-        // Solar forecast sensors
-        const solarForecast = await getSensor(getSensorId('solar_forecast'));
-
-        // Update only if changed
-        updateElementIfChanged('solar-s1', Math.round(solarP1.value || 0) + ' W');
-        updateElementIfChanged('solar-s2', Math.round(solarP2.value || 0) + ' W');
-        updateElementIfChanged('solar-s1-volt', Math.round(solarV1.value || 0) + 'V');
-        updateElementIfChanged('solar-s2-volt', Math.round(solarV2.value || 0) + 'V');
-        updateElementIfChanged('solar-s1-amp', (solarI1.value || 0).toFixed(1) + 'A');
-        updateElementIfChanged('solar-s2-amp', (solarI2.value || 0).toFixed(1) + 'A');
-
-        // Solar forecast - corner indicators (today and tomorrow)
-        const forecastToday = (solarForecast.value || 0).toFixed(2);
-        updateElementIfChanged('solar-forecast-today-value', forecastToday + ' kWh');
-
-        const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw || 0;
-        updateElementIfChanged('solar-forecast-tomorrow-value', Number.parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
-
-        // === BATTERY DETAILS ===
-        const battChargeTotal = await getSensor(getSensorId('computed_batt_charge_energy_today'));
-        const battDischargeTotal = await getSensor(getSensorId('computed_batt_discharge_energy_today'));
-        const battChargeSolar = await getSensor(getSensorId('computed_batt_charge_fve_energy_today'));
-        const battChargeGrid = await getSensor(getSensorId('computed_batt_charge_grid_energy_today'));
-
-        // Battery totals today - use formatEnergy (Wh from sensors)
-        updateElementIfChanged('battery-charge-total', formatEnergy(battChargeTotal.value || 0));
-        updateElementIfChanged('battery-charge-solar', formatEnergy(battChargeSolar.value || 0));
-        updateElementIfChanged('battery-charge-grid', formatEnergy(battChargeGrid.value || 0));
-        updateElementIfChanged('battery-discharge-total', formatEnergy(battDischargeTotal.value || 0));
-
-        // Grid charging plan
-        await updateGridChargingPlan();
-
-        // Battery balancing card
-        await updateBatteryBalancingCard();
-
-        // === GRID DETAILS ===
-        const gridImport = await getSensor(getSensorId('ac_in_ac_ad'));
-        const gridExport = await getSensor(getSensorId('ac_in_ac_pd'));
-        const gridFreq = await getSensor(getSensorId('ac_in_aci_f')); // OPRAVENO: správný senzor
-        const gridL1V = await getSensor(getSensorId('ac_in_aci_vr')); // OPRAVENO: L1 napětí
-        const gridL2V = await getSensor(getSensorId('ac_in_aci_vs')); // OPRAVENO: L2 napětí
-        const gridL3V = await getSensor(getSensorId('ac_in_aci_vt')); // OPRAVENO: L3 napětí
-        const gridL1P = await getSensor(getSensorId('actual_aci_wr'));
-        const gridL2P = await getSensor(getSensorId('actual_aci_ws'));
-        const gridL3P = await getSensor(getSensorId('actual_aci_wt'));
-        const gridL1Power = gridL1P.value || 0;
-        const gridL2Power = gridL2P.value || 0;
-        const gridL3Power = gridL3P.value || 0;
-
-        // Grid pricing sensors
-        const spotPrice = await getSensor(getSensorId('spot_price_current_15min'));
-        const exportPrice = await getSensor(getSensorId('export_price_current_15min'));
-        const currentTariff = await getSensorString(getSensorId('current_tariff'));
-
-        // Update only if changed - use formatEnergy (Wh from sensors)
-        updateElementIfChanged('grid-import', formatEnergy(gridImport.value || 0));
-        updateElementIfChanged('grid-export', formatEnergy(gridExport.value || 0));
-
-        // Update frequency indicator in top right corner
-        updateElementIfChanged('grid-freq-indicator', '〰️ ' + (gridFreq.value || 0).toFixed(2) + ' Hz');
-
-        // Grid prices and tariff
-        updateElementIfChanged('grid-spot-price', (spotPrice.value || 0).toFixed(2) + ' Kč/kWh');
-        updateElementIfChanged('grid-export-price', (exportPrice.value || 0).toFixed(2) + ' Kč/kWh');
-
-        // Update tariff indicator with better icons
-        const tariffValue = currentTariff.value || '--';
-        let tariffDisplay = '⏰ ' + tariffValue;
-        if (tariffValue === 'VT' || tariffValue.includes('vysoký')) {
-            tariffDisplay = '⚡ VT'; // Vysoký tarif - blesk
-        } else if (tariffValue === 'NT' || tariffValue.includes('nízký')) {
-            tariffDisplay = '🌙 NT'; // Nízký tarif - měsíc
-        }
-        updateElementIfChanged('grid-tariff-indicator', tariffDisplay);
-
-        updateElementIfChanged('grid-l1-volt', Math.round(gridL1V.value || 0) + 'V');
-        updateElementIfChanged('grid-l2-volt', Math.round(gridL2V.value || 0) + 'V');
-        updateElementIfChanged('grid-l3-volt', Math.round(gridL3V.value || 0) + 'V');
-        updateElementIfChanged('grid-l1-power', Math.round(gridL1Power) + 'W');
-        updateElementIfChanged('grid-l2-power', Math.round(gridL2Power) + 'W');
-        updateElementIfChanged('grid-l3-power', Math.round(gridL3Power) + 'W');
-
-        // Update main box phases (new elements)
-        updateElementIfChanged('grid-l1-volt-main', Math.round(gridL1V.value || 0) + 'V');
-        updateElementIfChanged('grid-l2-volt-main', Math.round(gridL2V.value || 0) + 'V');
-        updateElementIfChanged('grid-l3-volt-main', Math.round(gridL3V.value || 0) + 'V');
-        updateElementIfChanged('grid-l1-power-main', Math.round(gridL1Power) + 'W');
-        updateElementIfChanged('grid-l2-power-main', Math.round(gridL2Power) + 'W');
-        updateElementIfChanged('grid-l3-power-main', Math.round(gridL3Power) + 'W');
-
-        // === HOUSE DETAILS ===
-        const houseL1 = await getSensor(getSensorId('ac_out_aco_pr'));
-        const houseL2 = await getSensor(getSensorId('ac_out_aco_ps'));
-        const houseL3 = await getSensor(getSensorId('ac_out_aco_pt'));
-
-        // Update main box phases
-        updateElementIfChanged('house-l1-main', Math.round(houseL1.value || 0) + 'W');
-        updateElementIfChanged('house-l2-main', Math.round(houseL2.value || 0) + 'W');
-        updateElementIfChanged('house-l3-main', Math.round(houseL3.value || 0) + 'W');
-
-        // === BOILER DETAILS (as part of house) ===
         const boilerIsUse = await getSensorStringSafe(getSensorId('boiler_is_use'));
         const boilerDetailSection = document.getElementById('boiler-detail-section');
+        await loadBoilerDetails(boilerIsUse, boilerDetailSection);
+        updateBoilerControlSectionVisibility(
+            document.getElementById('boiler-control-section'),
+            shouldShowBoilerSection(boilerIsUse)
+        );
 
-        if (boilerIsUse.exists && (boilerIsUse.value === 'Zapnuto' || boilerIsUse.value === 'on' || boilerIsUse.value === '1' || boilerIsUse.value === 1)) {
-            // Show boiler section
-            boilerDetailSection.style.display = 'block';
-
-            const boilerCurrentPower = await getSensorSafe(getSensorId('boiler_current_cbb_w'));
-            const boilerDayEnergy = await getSensorSafe(getSensorId('boiler_day_w'));
-            const boilerManualMode = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
-
-            // Format power (W or kW)
-            const powerValue = boilerCurrentPower.value || 0;
-            const powerDisplay = powerValue >= 1000
-                ? (powerValue / 1000).toFixed(1) + ' kW'
-                : Math.round(powerValue) + ' W';
-            updateElementIfChanged('house-boiler-power', powerDisplay);
-
-            // Format energy (Wh or kWh)
-            const energyValue = boilerDayEnergy.value || 0;
-            const energyDisplay = energyValue >= 1000
-                ? (energyValue / 1000).toFixed(2) + ' kWh'
-                : Math.round(energyValue) + ' Wh';
-            updateElementIfChanged('house-boiler-today', energyDisplay);
-
-            // Format mode with icon
-            const modeValue = boilerManualMode.value || '--';
-            const modeIcon = document.getElementById('boiler-mode-icon');
-            const setModeIcon = (icon) => {
-                if (modeIcon) {
-                    modeIcon.textContent = icon;
-                }
-            };
-            let modeDisplay = modeValue;
-
-            if (modeValue === 'CBB') {
-                modeDisplay = '🤖 Inteligentní';
-                setModeIcon('🤖');
-            } else if (modeValue === 'Manual') {
-                modeDisplay = '👤 Manuální';
-                setModeIcon('👤');
-            } else {
-                setModeIcon('⚙️');
-            }
-            updateElementIfChanged('house-boiler-mode', modeDisplay);
-        } else {
-            // Hide boiler section
-            boilerDetailSection.style.display = 'none';
-        }
-
-        // Update boiler control panel visibility/state
-        const boilerControlSection = document.getElementById('boiler-control-section');
-        if (boilerControlSection) {
-            if (boilerIsUse.exists && (boilerIsUse.value === 'Zapnuto' || boilerIsUse.value === 'on' || boilerIsUse.value === '1' || boilerIsUse.value === 1)) {
-                boilerControlSection.style.display = 'block';
-                boilerControlSection.style.opacity = '1';
-                boilerControlSection.style.pointerEvents = 'auto';
-            } else {
-                boilerControlSection.style.display = 'none';
-            }
-        }
-
-        // === INVERTER DETAILS ===
-        const inverterMode = await getSensorString(getSensorId('box_prms_mode'));
-        const inverterGridMode = await getSensorString(getSensorId('invertor_prms_to_grid'));
-        const inverterGridLimit = await getSensorSafe(getSensorId('invertor_prm1_p_max_feed_grid'));
-        const notificationsUnread = await getSensor(getSensorId('notification_count_unread'));
-        const notificationsError = await getSensor(getSensorId('notification_count_error'));
-
-        // Check if box mode changed - trigger shield activity check
-        const currentMode = inverterMode.value || '--';
-        if (previousValues['box-mode'] !== undefined && previousValues['box-mode'] !== currentMode) {
-            console.log('[Mode Change] Detected:', previousValues['box-mode'], '→', currentMode);
-            // Trigger immediate shield activity check
-            setTimeout(() => monitorShieldActivity(), 500);
-        }
-        previousValues['box-mode'] = currentMode;
-
-        // Box mode with icons and descriptions
-        let modeDisplay = currentMode;
-        let modeDescription = '';
-        if (modeDisplay.includes('Home 1')) {
-            modeDescription = '🏠 Home 1: Max baterie + FVE pro domácnost';
-        } else if (modeDisplay.includes('Home 2')) {
-            modeDescription = '🔋 Home 2: Šetří baterii během výroby';
-        } else if (modeDisplay.includes('Home 3')) {
-            modeDescription = '☀️ Home 3: Priorita nabíjení baterie z FVE';
-        } else if (modeDisplay.includes('UPS')) {
-            modeDescription = '⚡ Home UPS: Vše ze sítě, baterie na 100%';
-        } else {
-            modeDescription = '⚙️ ' + modeDisplay;
-        }
-        updateElementIfChanged('inverter-mode-detail', modeDescription);
-
-        // Grid export mode with icons (water theme: waterfall / river / dam)
-        let gridExportDisplay = inverterGridMode.value || '--';
-        let gridExportIcon = '💧';
-        if (gridExportDisplay === 'Vypnuto / Off') {
-            gridExportIcon = '🚫'; // Zákaz - odpovídá ovládacímu panelu
-            gridExportDisplay = 'Vypnuto';
-        } else if (gridExportDisplay === 'Zapnuto / On') {
-            gridExportDisplay = 'Zapnuto';
-        } else if (gridExportDisplay.includes('Limited') || gridExportDisplay.includes('omezením')) {
-            gridExportIcon = '🚰'; // S omezením - odpovídá ovládacímu panelu
-            gridExportDisplay = 'Omezeno';
-        }
-
-        // Aktualizovat grid export mode, ale zachovat třídu mode-changing pokud existuje
-        const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
-        if (gridExportModeElement) {
-            const isModeChanging = gridExportModeElement.classList.contains('mode-changing');
-            updateElementIfChanged('inverter-grid-export-mode', gridExportDisplay);
-            // Obnovit třídu mode-changing, pokud byla nastavená
-            if (isModeChanging && !gridExportModeElement.classList.contains('mode-changing')) {
-                gridExportModeElement.classList.add('mode-changing');
-            }
-        }
-
-        document.getElementById('grid-export-icon').textContent = gridExportIcon;
-
-        // Grid export limit (convert W to kW)
-        const limitKw = (inverterGridLimit.value || 0) / 1000;
-        updateElementIfChanged('inverter-export-limit', limitKw.toFixed(1) + ' kW');
-
-        // Notifications with badges (zobrazení jen čísel)
-        const unreadCount = notificationsUnread.value || 0;
-        const errorCount = notificationsError.value || 0;
-
-        const unreadEl = document.getElementById('inverter-notifications-unread');
-        unreadEl.textContent = unreadCount;
-        if (unreadCount > 0) {
-            unreadEl.classList.add('has-unread');
-            unreadEl.classList.remove('has-error');
-        } else {
-            unreadEl.classList.remove('has-unread', 'has-error');
-        }
-
-        const errorEl = document.getElementById('inverter-notifications-error');
-        errorEl.textContent = errorCount;
-        if (errorCount > 0) {
-            errorEl.classList.add('has-error');
-            errorEl.classList.remove('has-unread');
-        } else {
-            errorEl.classList.remove('has-error', 'has-unread');
-        }
-
-        // === BOILER DETAILS (if available) ===
-        const boilerNode = document.getElementById('boiler-node');
-        if (boilerNode && !boilerNode.classList.contains('hidden')) {
-            const boilerPower = await getSensorSafe(getSensorId('boiler_current_cbb_w'));
-            const boilerMode = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
-            const boilerTemp = await getSensorSafe(getSensorId('boiler_temperature'));
-            const boilerStatus = await getSensorStringSafe(getSensorId('boiler_status'));
-
-            if (boilerPower.exists || boilerMode.exists || boilerTemp.exists || boilerStatus.exists) {
-                updateElementIfChanged('boiler-power', Math.round(boilerPower.value || 0) + ' W');
-
-                // Aktualizovat boiler-mode, ale zachovat třídu mode-changing pokud existuje
-                const boilerModeElement = document.getElementById('boiler-mode');
-                if (boilerModeElement) {
-                    const isModeChanging = boilerModeElement.classList.contains('mode-changing');
-                    updateElementIfChanged('boiler-mode', boilerMode.value || '--');
-                    // Obnovit třídu mode-changing, pokud byla nastavená
-                    if (isModeChanging && !boilerModeElement.classList.contains('mode-changing')) {
-                        boilerModeElement.classList.add('mode-changing');
-                    }
-                }
-
-                updateElementIfChanged('boiler-mode-detail', boilerMode.value || '--');
-                updateElementIfChanged('boiler-temp', (boilerTemp.value || 0).toFixed(1) + ' °C');
-                updateElementIfChanged('boiler-status', boilerStatus.value || '--');
-            }
-        }
+        await loadInverterDetails();
+        await loadBoilerNodeDetails();
 
     } catch (e) {
         console.error('[Details] Error loading node details:', e);

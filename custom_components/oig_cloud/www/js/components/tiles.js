@@ -600,7 +600,7 @@ function _applyFlipToTileValues(side, index) {
     ids.forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
-        updateElementIfChanged(id, el.textContent, id, false, true);
+        updateElementIfChanged(id, el.textContent, id, true);
     });
 }
 

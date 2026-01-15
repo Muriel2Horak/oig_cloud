@@ -504,6 +504,62 @@ class DetailTabsDialog {
         return `<span class="metric-delta ${deltaClass}">${deltaSign}${delta.toFixed(2)} ${unit}</span>`;
     }
 
+    getStatusIcon(status) {
+        const statusIcons = {
+            completed: '✅',
+            current: '▶️',
+            planned: '📅'
+        };
+        return statusIcons[status] || '❓';
+    }
+
+    getMatchState({ isPlannedOnly, modeMatch }) {
+        if (isPlannedOnly) {
+            return { className: 'match-neutral', icon: 'ℹ️', label: 'Plán' };
+        }
+        if (modeMatch) {
+            return { className: 'match-yes', icon: '✅', label: 'Shoda' };
+        }
+        return { className: 'match-no', icon: '❌', label: 'Odchylka' };
+    }
+
+    buildCostDeltaHtml({ isPlannedOnly, costDelta }) {
+        if (isPlannedOnly || costDelta === null || costDelta === undefined) {
+            return '';
+        }
+        let deltaClass = 'cost-equal';
+        let deltaIcon = '➡️';
+        if (costDelta > 0) {
+            deltaClass = 'cost-higher';
+            deltaIcon = '⬆️';
+        } else if (costDelta < 0) {
+            deltaClass = 'cost-lower';
+            deltaIcon = '⬇️';
+        }
+        const deltaSign = costDelta > 0 ? '+' : '';
+        return `
+            <span class="cost-delta ${deltaClass}">
+                ${deltaIcon} ${deltaSign}${costDelta.toFixed(2)} Kč
+            </span>
+        `;
+    }
+
+    buildModeCompare({ hasActualData, plannedMode, historicalMode, modePlanned }) {
+        if (hasActualData && modePlanned !== 'Unknown') {
+            return `<span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
+               <span class="mode-arrow">→</span>
+               <span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
+        }
+        return `<span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
+    }
+
+    buildModeLabels(hasActualData) {
+        return {
+            modeLabelText: hasActualData ? 'Skutečnost/Plán:' : 'Plánovaný režim:',
+            costLabelText: hasActualData ? 'Cena (skutečná/plán):' : 'Plánovaná cena:'
+        };
+    }
+
     /**
      * Render single mode block
      */
@@ -530,17 +586,9 @@ class DetailTabsDialog {
             interval_reasons
         } = block;
 
-        // Get mode config
         const historicalMode = DETAIL_TABS_MODE_CONFIG[mode_historical] || DETAIL_TABS_MODE_CONFIG['Unknown'];
         const plannedMode = DETAIL_TABS_MODE_CONFIG[mode_planned] || DETAIL_TABS_MODE_CONFIG['Unknown'];
-
-        // Status icon
-        const statusIcons = {
-            completed: '✅',
-            current: '▶️',
-            planned: '📅'
-        };
-        const statusIcon = statusIcons[status] || '❓';
+        const statusIcon = this.getStatusIcon(status);
 
         const isPlannedOnly = status === 'planned';
         const hasActualData =
@@ -550,49 +598,14 @@ class DetailTabsDialog {
             cost_historical !== null &&
             cost_historical !== undefined;
 
-        // Match indicator
-        let matchClass = 'match-no';
-        let matchIcon = '❌';
-        let matchLabel = 'Odchylka';
-        if (isPlannedOnly) {
-            matchClass = 'match-neutral';
-            matchIcon = 'ℹ️';
-            matchLabel = 'Plán';
-        } else if (mode_match) {
-            matchClass = 'match-yes';
-            matchIcon = '✅';
-            matchLabel = 'Shoda';
-        }
-
-        // Cost delta indicator
-        let costDeltaHtml = '';
-        if (!isPlannedOnly && cost_delta !== null && cost_delta !== undefined) {
-            let deltaClass = 'cost-equal';
-            let deltaIcon = '➡️';
-            if (cost_delta > 0) {
-                deltaClass = 'cost-higher';
-                deltaIcon = '⬆️';
-            } else if (cost_delta < 0) {
-                deltaClass = 'cost-lower';
-                deltaIcon = '⬇️';
-            }
-            const deltaSign = cost_delta > 0 ? '+' : '';
-            costDeltaHtml = `
-                <span class="cost-delta ${deltaClass}">
-                    ${deltaIcon} ${deltaSign}${cost_delta.toFixed(2)} Kč
-                </span>
-            `;
-        }
-
-        // Build compact single-line layout
-        let modeCompare;
-        if (hasActualData && mode_planned !== 'Unknown') {
-            modeCompare = `<span class="mode-badge" style="background: ${historicalMode.color};">${historicalMode.icon} ${historicalMode.label}</span>
-               <span class="mode-arrow">→</span>
-               <span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
-        } else {
-            modeCompare = `<span class="mode-badge mode-planned" style="background: ${plannedMode.color};">${plannedMode.icon} ${plannedMode.label}</span>`;
-        }
+        const matchState = this.getMatchState({ isPlannedOnly, modeMatch: mode_match });
+        const costDeltaHtml = this.buildCostDeltaHtml({ isPlannedOnly, costDelta: cost_delta });
+        const modeCompare = this.buildModeCompare({
+            hasActualData,
+            plannedMode,
+            historicalMode,
+            modePlanned: mode_planned
+        });
 
         const costCompare = this.renderPlanActualValue(
             hasActualData ? cost_historical : null,
@@ -601,21 +614,20 @@ class DetailTabsDialog {
             costDeltaHtml
         );
 
-        const modeLabelText = hasActualData ? 'Skutečnost/Plán:' : 'Plánovaný režim:';
-        const costLabelText = hasActualData ? 'Cena (skutečná/plán):' : 'Plánovaná cena:';
+        const { modeLabelText, costLabelText } = this.buildModeLabels(hasActualData);
 
         const timeRange = this.formatTimeRange(start_time, end_time);
         const reasonsHtml = this.renderIntervalReasons(interval_reasons, status);
 
         return `
-            <div class="mode-block ${matchClass}" data-index="${index}">
+            <div class="mode-block ${matchState.className}" data-index="${index}">
                 <div class="block-header">
                     <div class="block-time">
                         ${statusIcon} <strong>${timeRange}</strong>
                         <span class="block-duration">(${duration_hours?.toFixed(1)}h)</span>
                     </div>
-                    <div class="block-match ${matchClass}">
-                        ${matchIcon} ${matchLabel}
+                    <div class="block-match ${matchState.className}">
+                        ${matchState.icon} ${matchState.label}
                     </div>
                 </div>
 

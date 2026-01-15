@@ -194,39 +194,29 @@ function renderCostComparisonTile(data) {
  * FIRST: "Průběžný výsledek" (completed intervals with plan vs actual)
  * THEN: "Nadcházející intervaly" (future planned intervals)
  */
-function renderTodayComparison(todayData, dailyPlanState) {
-    const container = document.getElementById('extended-timeline-container');
-    if (!container) {
-        console.warn('[Extended Timeline] Container not found');
-        return;
-    }
+function splitIntervals(intervals) {
+    return {
+        historicalIntervals: intervals.filter(i => i.status === 'historical' && i.actual && i.planned),
+        futureIntervals: intervals.filter(i => i.status !== 'historical')
+    };
+}
 
-    const { date, intervals, summary } = todayData;
+function buildNoHistoricalHtml() {
+    return `
+        <div class="no-historical" style="padding: 40px; text-align: center; color: var(--text-secondary);">
+            ⏳ Zatím neproběhl žádný interval.<br>
+            <span style="font-size: 0.9em;">Porovnání bude k dispozici po dokončení prvního intervalu.</span>
+        </div>
+    `;
+}
 
-    if (!intervals || intervals.length === 0) {
-        container.innerHTML = `
-            <div class="today-comparison">
-                <p class="no-data" style="padding: 40px; text-align: center; color: var(--text-tertiary);">
-                    📅 Žádná data pro dnešní porovnání
-                </p>
-            </div>
-        `;
-        return;
-    }
-
-    // Split intervals: historical (completed) vs future (planned)
-    const historicalIntervals = intervals.filter(i => i.status === 'historical' && i.actual && i.planned);
-    const futureIntervals = intervals.filter(i => i.status !== 'historical');
-
-    let html = '<div class="today-comparison">';
-
-    // Header with summary stats
-    html += `
+function buildTodaySummaryHtml({ date, summary, historicalCount }) {
+    let html = `
         <div class="comparison-header">
             <h2>📊 Dnes (${date}) - Plán vs Skutečnost</h2>
     `;
 
-    if (summary && historicalIntervals.length > 0) {
+    if (summary && historicalCount > 0) {
         const deltaClass = summary.delta_cost > 0 ? 'worse' : 'better';
         const deltaIcon = summary.delta_cost > 0 ? '📈' : '📉';
 
@@ -250,195 +240,226 @@ function renderTodayComparison(todayData, dailyPlanState) {
                 <div class="summary-card">
                     <div class="card-label">Přesnost režimů</div>
                     <div class="card-value">${summary.accuracy_pct?.toFixed(0) || '0'}%</div>
-                    <div class="card-sublabel">${historicalIntervals.length} intervalů dokončeno</div>
+                    <div class="card-sublabel">${historicalCount} intervalů dokončeno</div>
                 </div>
             </div>
         `;
     }
 
-    html += '</div>'; // comparison-header
+    html += '</div>';
+    return html;
+}
 
-    // Only show if there are historical intervals
-    if (historicalIntervals.length === 0) {
+function buildTopDeviationsHtml(historicalIntervals) {
+    const sortedByDelta = [...historicalIntervals]
+        .filter(i => i.delta && Math.abs(i.delta.net_cost) > 0.01)
+        .sort((a, b) => Math.abs(b.delta.net_cost) - Math.abs(a.delta.net_cost))
+        .slice(0, 3);
+
+    if (sortedByDelta.length === 0) return '';
+
+    let html = `
+        <div class="top-deviations">
+            <h3>⚠️ Největší odchylky od plánu</h3>
+            <div class="deviation-list">
+    `;
+
+    const getRankIcon = (rank) => {
+        if (rank === 0) return '🥇';
+        if (rank === 1) return '🥈';
+        return '🥉';
+    };
+
+    sortedByDelta.forEach((interval, idx) => {
+        const time = new Date(interval.time);
+        const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
+        const delta = interval.delta;
+        const deltaClass = delta.net_cost > 0 ? 'worse' : 'better';
+        const icon = getRankIcon(idx);
+
         html += `
-            <div class="no-historical" style="padding: 40px; text-align: center; color: var(--text-secondary);">
-                ⏳ Zatím neproběhl žádný interval.<br>
-                <span style="font-size: 0.9em;">Porovnání bude k dispozici po dokončení prvního intervalu.</span>
+            <div class="deviation-item ${deltaClass}">
+                <span class="rank">${icon}</span>
+                <span class="time">${timeStr}</span>
+                <span class="modes">
+                    ${interval.planned.mode_name} → ${interval.actual.mode_name}
+                </span>
+                <span class="delta ${deltaClass}">
+                    ${delta.net_cost > 0 ? '+' : ''}${delta.net_cost.toFixed(2)} Kč
+                </span>
             </div>
         `;
-    } else {
-        // Find top 3 worst deviations
-        const sortedByDelta = [...historicalIntervals]
-            .filter(i => i.delta && Math.abs(i.delta.net_cost) > 0.01)
-            .sort((a, b) => Math.abs(b.delta.net_cost) - Math.abs(a.delta.net_cost))
-            .slice(0, 3);
+    });
 
-        if (sortedByDelta.length > 0) {
-            html += `
-                <div class="top-deviations">
-                    <h3>⚠️ Největší odchylky od plánu</h3>
-                    <div class="deviation-list">
-            `;
+    html += `
+            </div>
+        </div>
+    `;
+    return html;
+}
 
-            sortedByDelta.forEach((interval, idx) => {
-                const time = new Date(interval.time);
-                const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
-                const delta = interval.delta;
-                const deltaClass = delta.net_cost > 0 ? 'worse' : 'better';
-                let icon = '🥉';
-                if (idx === 0) {
-                    icon = '🥇';
-                } else if (idx === 1) {
-                    icon = '🥈';
-                }
+function buildHistoricalTableHtml(historicalIntervals) {
+    let html = `
+        <div class="comparison-table">
+            <h3>📋 Detail všech dokončených intervalů</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Čas</th>
+                        <th>Plán</th>
+                        <th>Skutečnost</th>
+                        <th>SOC plán</th>
+                        <th>SOC skutečnost</th>
+                        <th>Náklady plán</th>
+                        <th>Náklady skutečnost</th>
+                        <th>Rozdíl</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
 
-                html += `
-                    <div class="deviation-item ${deltaClass}">
-                        <span class="rank">${icon}</span>
-                        <span class="time">${timeStr}</span>
-                        <span class="modes">
-                            ${interval.planned.mode_name} → ${interval.actual.mode_name}
-                        </span>
-                        <span class="delta ${deltaClass}">
-                            ${delta.net_cost > 0 ? '+' : ''}${delta.net_cost.toFixed(2)} Kč
-                        </span>
-                    </div>
-                `;
-            });
+    historicalIntervals.forEach(interval => {
+        const time = new Date(interval.time);
+        const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
+        const planned = interval.planned;
+        const actual = interval.actual;
+        const delta = interval.delta;
 
-            html += `
-                    </div>
-                </div>
-            `;
+        const modeMatch = planned.mode_name === actual.mode_name;
+        const modeIcon = modeMatch ? '✅' : '❌';
+        let deltaClass = '';
+        if (delta?.net_cost > 0) {
+            deltaClass = 'worse';
+        } else if (delta?.net_cost < 0) {
+            deltaClass = 'better';
         }
 
-        // Detailed comparison table
-        html += `
-            <div class="comparison-table">
-                <h3>📋 Detail všech dokončených intervalů</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Čas</th>
-                            <th>Plán</th>
-                            <th>Skutečnost</th>
-                            <th>SOC plán</th>
-                            <th>SOC skutečnost</th>
-                            <th>Náklady plán</th>
-                            <th>Náklady skutečnost</th>
-                            <th>Rozdíl</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
+        const deltaCost = delta?.net_cost;
+        let deltaCostLabel = '0.00 Kč';
+        if (deltaCost !== null && deltaCost !== undefined) {
+            const sign = deltaCost > 0 ? '+' : '';
+            deltaCostLabel = `${sign}${deltaCost.toFixed(2)} Kč`;
+        }
 
-        historicalIntervals.forEach(interval => {
-            const time = new Date(interval.time);
-            const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
-            const planned = interval.planned;
-            const actual = interval.actual;
-            const delta = interval.delta;
-
-            const modeMatch = planned.mode_name === actual.mode_name;
-            const modeIcon = modeMatch ? '✅' : '❌';
-            let deltaClass = '';
-            if (delta) {
-                if (delta.net_cost > 0) {
-                    deltaClass = 'worse';
-                } else if (delta.net_cost < 0) {
-                    deltaClass = 'better';
-                }
-            }
-            const deltaCost = delta?.net_cost;
-            let deltaCostLabel = '0.00 Kč';
-            if (deltaCost !== null && deltaCost !== undefined) {
-                const sign = deltaCost > 0 ? '+' : '';
-                deltaCostLabel = `${sign}${deltaCost.toFixed(2)} Kč`;
-            }
-
-            const plannedModeConfig = MODE_CONFIG[planned.mode_name] || MODE_CONFIG['HOME I'];
-            const actualModeConfig = MODE_CONFIG[actual.mode_name] || MODE_CONFIG['HOME I'];
-
-            html += `
-                <tr class="${modeMatch ? 'match' : 'mismatch'}">
-                    <td class="time-cell">${timeStr}</td>
-                    <td class="mode-cell">
-                        <span class="mode-badge" style="background: ${plannedModeConfig.color};">
-                            ${planned.mode_name}
-                        </span>
-                    </td>
-                    <td class="mode-cell">
-                        ${modeIcon}
-                        <span class="mode-badge" style="background: ${actualModeConfig.color};">
-                            ${actual.mode_name}
-                        </span>
-                    </td>
-                    <td class="soc-cell">${planned.battery_soc?.toFixed(0) || '-'}%</td>
-                    <td class="soc-cell">${actual.battery_soc?.toFixed(0) || '-'}%</td>
-                    <td class="cost-cell">${planned.net_cost?.toFixed(2) || '0.00'} Kč</td>
-                    <td class="cost-cell">${actual.net_cost?.toFixed(2) || '0.00'} Kč</td>
-                    <td class="delta-cell ${deltaClass}">
-                        ${deltaCostLabel}
-                    </td>
-                </tr>
-            `;
-        });
+        const plannedModeConfig = MODE_CONFIG[planned.mode_name] || MODE_CONFIG['HOME I'];
+        const actualModeConfig = MODE_CONFIG[actual.mode_name] || MODE_CONFIG['HOME I'];
 
         html += `
-                    </tbody>
-                </table>
-            </div>
+            <tr class="${modeMatch ? 'match' : 'mismatch'}">
+                <td class="time-cell">${timeStr}</td>
+                <td class="mode-cell">
+                    <span class="mode-badge" style="background: ${plannedModeConfig.color};">
+                        ${planned.mode_name}
+                    </span>
+                </td>
+                <td class="mode-cell">
+                    ${modeIcon}
+                    <span class="mode-badge" style="background: ${actualModeConfig.color};">
+                        ${actual.mode_name}
+                    </span>
+                </td>
+                <td class="soc-cell">${planned.battery_soc?.toFixed(0) || '-'}%</td>
+                <td class="soc-cell">${actual.battery_soc?.toFixed(0) || '-'}%</td>
+                <td class="cost-cell">${planned.net_cost?.toFixed(2) || '0.00'} Kč</td>
+                <td class="cost-cell">${actual.net_cost?.toFixed(2) || '0.00'} Kč</td>
+                <td class="delta-cell ${deltaClass}">
+                    ${deltaCostLabel}
+                </td>
+            </tr>
         `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+    return html;
+}
+
+function buildFutureIntervalsHtml(futureIntervals) {
+    if (futureIntervals.length === 0) return '';
+
+    let html = `
+        <div class="future-intervals-section" style="margin-top: 30px; padding-top: 20px; border-top: 2px solid rgba(255,255,255,0.1);">
+            <h3>🔮 Nadcházející intervaly (${futureIntervals.length})</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Čas</th>
+                        <th>Plánovaný režim</th>
+                        <th>SOC plán</th>
+                        <th>Náklady plán</th>
+                        <th>Spotová cena</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    futureIntervals.forEach(interval => {
+        const time = new Date(interval.time);
+        const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
+        const planned = interval.planned;
+        const plannedModeConfig = MODE_CONFIG[planned?.mode_name] || MODE_CONFIG['HOME I'];
+        const isActive = interval.status === 'active';
+
+        html += `
+            <tr class="${isActive ? 'active-interval' : ''}">
+                <td class="time-cell">${timeStr}${isActive ? ' ⏱️' : ''}</td>
+                <td class="mode-cell">
+                    <span class="mode-badge" style="background: ${plannedModeConfig.color};">
+                        ${planned?.mode_name || 'N/A'}
+                    </span>
+                </td>
+                <td class="soc-cell">${planned?.battery_soc?.toFixed(0) || '-'}%</td>
+                <td class="cost-cell">${planned?.net_cost?.toFixed(2) || '0.00'} Kč</td>
+                <td class="cost-cell">${planned?.spot_price?.toFixed(2) || '0.00'} Kč/kWh</td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+    return html;
+}
+
+function renderTodayComparison(todayData, dailyPlanState) {
+    const container = document.getElementById('extended-timeline-container');
+    if (!container) {
+        console.warn('[Extended Timeline] Container not found');
+        return;
     }
 
-    // === SEKCE 2: NADCHÁZEJÍCÍ INTERVALY ===
-    if (futureIntervals.length > 0) {
-        html += `
-            <div class="future-intervals-section" style="margin-top: 30px; padding-top: 20px; border-top: 2px solid rgba(255,255,255,0.1);">
-                <h3>🔮 Nadcházející intervaly (${futureIntervals.length})</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Čas</th>
-                            <th>Plánovaný režim</th>
-                            <th>SOC plán</th>
-                            <th>Náklady plán</th>
-                            <th>Spotová cena</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
+    const { date, intervals, summary } = todayData;
 
-        futureIntervals.forEach(interval => {
-            const time = new Date(interval.time);
-            const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
-            const planned = interval.planned;
-            const plannedModeConfig = MODE_CONFIG[planned?.mode_name] || MODE_CONFIG['HOME I'];
-            const isActive = interval.status === 'active';
-
-            html += `
-                <tr class="${isActive ? 'active-interval' : ''}">
-                    <td class="time-cell">${timeStr}${isActive ? ' ⏱️' : ''}</td>
-                    <td class="mode-cell">
-                        <span class="mode-badge" style="background: ${plannedModeConfig.color};">
-                            ${planned?.mode_name || 'N/A'}
-                        </span>
-                    </td>
-                    <td class="soc-cell">${planned?.battery_soc?.toFixed(0) || '-'}%</td>
-                    <td class="cost-cell">${planned?.net_cost?.toFixed(2) || '0.00'} Kč</td>
-                    <td class="cost-cell">${planned?.spot_price?.toFixed(2) || '0.00'} Kč/kWh</td>
-                </tr>
-            `;
-        });
-
-        html += `
-                    </tbody>
-                </table>
+    if (!intervals || intervals.length === 0) {
+        container.innerHTML = `
+            <div class="today-comparison">
+                <p class="no-data" style="padding: 40px; text-align: center; color: var(--text-tertiary);">
+                    📅 Žádná data pro dnešní porovnání
+                </p>
             </div>
         `;
+        return;
     }
 
-    html += '</div>'; // today-comparison
+    const { historicalIntervals, futureIntervals } = splitIntervals(intervals);
+
+    let html = '<div class="today-comparison">';
+    html += buildTodaySummaryHtml({ date, summary, historicalCount: historicalIntervals.length });
+
+    if (historicalIntervals.length === 0) {
+        html += buildNoHistoricalHtml();
+    } else {
+        html += buildTopDeviationsHtml(historicalIntervals);
+        html += buildHistoricalTableHtml(historicalIntervals);
+    }
+
+    html += buildFutureIntervalsHtml(futureIntervals);
+    html += '</div>';
 
     container.innerHTML = html;
 }
@@ -508,6 +529,52 @@ function showYesterdayNoData() {
     `;
 }
 
+function buildYesterdaySummaryHtml(summary, historicalIntervals) {
+    if (!summary || historicalIntervals.length === 0) {
+        return `
+            <div style="padding: 40px; text-align: center; color: var(--text-secondary);">
+                ℹ️ Včerejší data jsou neúplná nebo se ještě zpracovávají.
+            </div>
+        `;
+    }
+
+    const deltaClass = summary.delta_cost > 0 ? 'worse' : 'better';
+    const deltaIcon = summary.delta_cost > 0 ? '📈' : '📉';
+    const deltaPct = summary.delta_cost !== null && summary.planned_total_cost > 0
+        ? ((summary.delta_cost / summary.planned_total_cost) * 100).toFixed(1)
+        : '0.0';
+    const deltaSign = summary.delta_cost > 0 ? '+' : '';
+    const deltaOutcomeIcon = summary.delta_cost > 0 ? '❌' : '✅';
+    const deltaOutcomeLabel = summary.delta_cost > 0 ? 'horší' : 'lepší';
+
+    return `
+        <div class="summary-cards">
+            <div class="summary-card">
+                <div class="card-label">💰 Plánované náklady</div>
+                <div class="card-value">${summary.planned_total_cost?.toFixed(2) || '0.00'} Kč</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">💸 Skutečné náklady</div>
+                <div class="card-value">${summary.actual_total_cost?.toFixed(2) || '0.00'} Kč</div>
+            </div>
+            <div class="summary-card ${deltaClass}">
+                <div class="card-label">${deltaIcon} Výsledek</div>
+                <div class="card-value ${deltaClass}">
+                    ${deltaSign}${summary.delta_cost?.toFixed(2) || '0.00'} Kč
+                </div>
+                <div class="card-sublabel ${deltaClass}">
+                    ${deltaOutcomeIcon} ${deltaPct}% ${deltaOutcomeLabel}
+                </div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">🎯 Přesnost režimů</div>
+                <div class="card-value">${summary.accuracy_pct?.toFixed(0) || '0'}%</div>
+                <div class="card-sublabel">${historicalIntervals.length}/96 intervalů</div>
+            </div>
+        </div>
+    `;
+}
+
 
 /**
  * Render yesterday's plan vs actual analysis
@@ -526,65 +593,18 @@ function renderYesterdayAnalysis(yesterdayData) {
         return;
     }
 
-    // Filter only historical (completed) intervals
     const historicalIntervals = intervals.filter(i => i.status === 'historical' && i.actual && i.planned);
-
     let html = '<div class="yesterday-analysis">';
 
-    // Header with date
     html += `
         <div class="analysis-header">
             <h2>📊 Včera (${date}) - Plán vs Skutečnost</h2>
         </div>
     `;
 
-    // Summary cards
-    if (summary && historicalIntervals.length > 0) {
-        const deltaClass = summary.delta_cost > 0 ? 'worse' : 'better';
-        const deltaIcon = summary.delta_cost > 0 ? '📈' : '📉';
-        const deltaPct = summary.delta_cost !== null && summary.planned_total_cost > 0
-            ? ((summary.delta_cost / summary.planned_total_cost) * 100).toFixed(1)
-            : '0.0';
-        const deltaSign = summary.delta_cost > 0 ? '+' : '';
-        const deltaOutcomeIcon = summary.delta_cost > 0 ? '❌' : '✅';
-        const deltaOutcomeLabel = summary.delta_cost > 0 ? 'horší' : 'lepší';
+    html += buildYesterdaySummaryHtml(summary, historicalIntervals);
 
-        html += `
-            <div class="summary-cards">
-                <div class="summary-card">
-                    <div class="card-label">💰 Plánované náklady</div>
-                    <div class="card-value">${summary.planned_total_cost?.toFixed(2) || '0.00'} Kč</div>
-                </div>
-                <div class="summary-card">
-                    <div class="card-label">💸 Skutečné náklady</div>
-                    <div class="card-value">${summary.actual_total_cost?.toFixed(2) || '0.00'} Kč</div>
-                </div>
-                <div class="summary-card ${deltaClass}">
-                    <div class="card-label">${deltaIcon} Výsledek</div>
-                    <div class="card-value ${deltaClass}">
-                        ${deltaSign}${summary.delta_cost?.toFixed(2) || '0.00'} Kč
-                    </div>
-                    <div class="card-sublabel ${deltaClass}">
-                        ${deltaOutcomeIcon} ${deltaPct}% ${deltaOutcomeLabel}
-                    </div>
-                </div>
-                <div class="summary-card">
-                    <div class="card-label">🎯 Přesnost režimů</div>
-                    <div class="card-value">${summary.accuracy_pct?.toFixed(0) || '0'}%</div>
-                    <div class="card-sublabel">${historicalIntervals.length}/96 intervalů</div>
-                </div>
-            </div>
-        `;
-    } else {
-        html += `
-            <div style="padding: 40px; text-align: center; color: var(--text-secondary);">
-                ℹ️ Včerejší data jsou neúplná nebo se ještě zpracovávají.
-            </div>
-        `;
-    }
-
-    html += '</div>'; // yesterday-analysis
-
+    html += '</div>';
     container.innerHTML = html;
 }
 
