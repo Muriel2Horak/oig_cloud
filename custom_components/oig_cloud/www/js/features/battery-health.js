@@ -338,13 +338,13 @@ function buildTileMetaSection(items) {
     if (!items.length) return '';
     const rows = items.map(item => `
         <div style="display:flex; justify-content: space-between; gap: 6px; min-width: 0;">
-            <span style="opacity: 0.7;">${item.label}</span>
-            <span style="color: var(--text-primary); font-weight: 600; text-align: right;">${item.value}</span>
+            <span style="opacity: 0.7; white-space: nowrap;">${item.label}</span>
+            <span style="color: var(--text-primary); font-weight: 600; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.value}</span>
         </div>
     `).join('');
 
     return `
-        <div style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px 10px; font-size: 0.64em; color: var(--text-secondary); margin-top: 6px; line-height: 1.2;">
+        <div style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px 10px; font-size: 0.62em; color: var(--text-secondary); margin-top: 6px; line-height: 1.15;">
             ${rows}
         </div>
     `;
