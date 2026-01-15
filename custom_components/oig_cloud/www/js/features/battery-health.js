@@ -323,11 +323,11 @@ function buildSohSection(soh, measurementCount) {
     }
 
     return `
-        <div style="display:flex; align-items:baseline; gap: 8px; margin: 8px 0 4px;">
+        <div style="margin: 8px 0 4px;">
             <div class="stat-value" style="font-size: 1.6em; color: #4cd964;">
                 ${soh.toFixed(1)}<span style="font-size: 0.6em; opacity: 0.7;">% SoH</span>
             </div>
-            <div style="font-size: 0.7em; color: var(--text-secondary);">
+            <div style="font-size: 0.68em; color: var(--text-secondary); margin-top: 2px;">
                 ${measurementCount || 0} měření
             </div>
         </div>
@@ -337,21 +337,29 @@ function buildSohSection(soh, measurementCount) {
 function buildTileMetaSection(items) {
     if (!items.length) return '';
     const rows = items.map(item => `
-        <div style="display:flex; justify-content: space-between; gap: 6px;">
+        <div style="display:flex; justify-content: space-between; gap: 6px; min-width: 0;">
             <span style="opacity: 0.7;">${item.label}</span>
-            <span style="color: var(--text-primary); font-weight: 600; white-space: nowrap;">${item.value}</span>
+            <span style="color: var(--text-primary); font-weight: 600; text-align: right;">${item.value}</span>
         </div>
     `).join('');
 
     return `
-        <div style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px 10px; font-size: 0.68em; color: var(--text-secondary); margin-top: 6px;">
+        <div style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px 10px; font-size: 0.64em; color: var(--text-secondary); margin-top: 6px; line-height: 1.2;">
             ${rows}
         </div>
     `;
 }
 
-function buildSohSparkline(measurements, width = 260, height = 60) {
+function formatShortDate(value) {
+    if (!value) return '--';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit' });
+}
+
+function buildSohSparkline(measurements, width = 260, height = 60, options = {}) {
     if (!Array.isArray(measurements) || measurements.length < 2) return '';
+    const { showAxes = false } = options;
     const values = measurements.map(m => m.soh_percent).filter(v => typeof v === 'number');
     if (values.length < 2) return '';
     const min = Math.min(...values);
@@ -365,8 +373,8 @@ function buildSohSparkline(measurements, width = 260, height = 60) {
         return `${x},${y}`;
     }).join(' ');
 
-    return `
-        <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="margin-top: 8px;">
+    const svg = `
+        <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="display:block;">
             <defs>
                 <linearGradient id="sohLine" x1="0" x2="1">
                     <stop offset="0%" stop-color="rgba(76,217,100,0.6)"></stop>
@@ -375,6 +383,26 @@ function buildSohSparkline(measurements, width = 260, height = 60) {
             </defs>
             <polyline points="${points}" fill="none" stroke="url(#sohLine)" stroke-width="2.5" stroke-linecap="round"/>
         </svg>
+    `;
+
+    if (!showAxes) {
+        return svg;
+    }
+
+    const first = measurements[0]?.timestamp;
+    const last = measurements[measurements.length - 1]?.timestamp;
+
+    return `
+        <div style="display:flex; justify-content: space-between; font-size: 0.6em; color: var(--text-secondary); margin-bottom: 2px;">
+            <span>${min.toFixed(1)}%</span>
+            <span>SoH</span>
+            <span>${max.toFixed(1)}%</span>
+        </div>
+        ${svg}
+        <div style="display:flex; justify-content: space-between; font-size: 0.6em; color: var(--text-secondary); margin-top: 2px;">
+            <span>${formatShortDate(first)}</span>
+            <span>${formatShortDate(last)}</span>
+        </div>
     `;
 }
 
@@ -420,19 +448,21 @@ function updateBatteryHealthUI(container, data) {
         metaItems.push({ label: 'Poslední', value: new Date(lastMeasured).toLocaleDateString('cs-CZ') });
     }
     const metaHtml = buildTileMetaSection(metaItems);
-    const sparklineHtml = buildSohSparkline(measurementHistory || [], 220, 42);
+    const sparklineHtml = buildSohSparkline(measurementHistory || [], 230, 46, { showAxes: true });
     // Sestavit HTML (stat-card kompatibilní struktura)
     container.innerHTML = `
-        <div class="stat-label" style="color: #4cd964; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
-            <span>🔋 Kvalita baterie</span>
-            <span class="battery-health-status ${statusClass}" style="font-size: 0.8em; padding: 4px 8px; border-radius: 12px;">
-                ${statusIcon} ${statusText}
-            </span>
-        </div>
+        <div style="display:flex; flex-direction: column; height: 100%;">
+            <div class="stat-label" style="color: #4cd964; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
+                <span>🔋 Kvalita baterie</span>
+                <span class="battery-health-status ${statusClass}" style="font-size: 0.8em; padding: 4px 8px; border-radius: 12px;">
+                    ${statusIcon} ${statusText}
+                </span>
+            </div>
 
-        ${sohHtml}
-        ${sparklineHtml ? `<div style="margin: 4px 0 2px;">${sparklineHtml}</div>` : ''}
-        ${metaHtml}
+            ${sohHtml}
+            ${metaHtml}
+            ${sparklineHtml ? `<div style="margin-top: auto;">${sparklineHtml}</div>` : ''}
+        </div>
     `;
 
     window.__batteryHealthDetails = {
@@ -533,7 +563,7 @@ function openBatteryHealthDetails() {
         ${predictionHTML}
 
         <div style="margin-top: 12px;">
-            ${buildSohSparkline(data.measurementHistory || [], 320, 70)}
+            ${buildSohSparkline(data.measurementHistory || [], 320, 70, { showAxes: true })}
         </div>
 
         <div style="margin-top: 12px; overflow:auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;">
