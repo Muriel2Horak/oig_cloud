@@ -268,70 +268,7 @@ function runWhenIdle(task, timeoutMs = 2000, fallbackDelayMs = 600) {
     setTimeout(task, fallbackDelayMs);
 }
 
-// Global Today Plan Tile instance
-let todayPlanTileInstance = null;
-
-/**
- * Render Today Plan Tile - live tracking of today's plan vs actual with EOD prediction
- * Event-driven refresh triggered by buildExtendedTimeline()
- */
-function renderTodayPlanTile(tileSummary) {
-    const container = document.getElementById('today-plan-tile-container');
-    if (!container) {
-        console.warn('[Today Plan Tile] Container not found - skipping render');
-        return;
-    }
-
-    // Lazy load TodayPlanTile class if not already loaded
-    if (typeof TodayPlanTile === 'undefined') {
-        console.log('[Today Plan Tile] Loading module...');
-        const script = document.createElement('script');
-        script.type = 'module';
-        script.src = 'modules/today-plan-tile.js';
-        script.onload = () => {
-            console.log('[Today Plan Tile] Module loaded, rendering...');
-            initTodayPlanTile(container, tileSummary);
-        };
-        script.onerror = () => {
-            console.error('[Today Plan Tile] Failed to load module');
-        };
-        document.head.appendChild(script);
-        return;
-    }
-
-    // Update existing instance or create new one
-    if (todayPlanTileInstance) {
-        console.log('[Today Plan Tile] Updating existing instance');
-        todayPlanTileInstance.update(tileSummary);
-    } else {
-        console.log('[Today Plan Tile] Creating new instance');
-        initTodayPlanTile(container, tileSummary);
-    }
-}
-
-/**
- * Initialize Today Plan Tile instance
- * @param {HTMLElement} container - Container element
- * @param {object} tileSummary - Tile summary data from API
- */
-function initTodayPlanTile(container, tileSummary) {
-    try {
-        todayPlanTileInstance = new TodayPlanTile(
-            container,
-            tileSummary,
-            () => {
-                // Click handler - open DNES tab in timeline dialog
-                console.log('[Today Plan Tile] Opening timeline dialog with DNES tab');
-                if (globalThis.DashboardTimeline?.openTimelineDialog) {
-                    globalThis.DashboardTimeline.openTimelineDialog('today');
-                }
-            }
-        );
-        console.log('[Today Plan Tile] Instance created');
-    } catch (error) {
-        console.error('[Today Plan Tile] Failed to create instance:', error);
-    }
-}
+// Today Plan Tile removed
 
 // =============================================================================
 // TIMELINE DIALOG - Clean Implementation
@@ -3800,7 +3737,6 @@ async function buildExtendedTimeline() {
         const data = await response.json();
         // API returns data in data.today object
         const todayData = data.today || data;
-        const todayTileSummary = todayData.summary;
         const modeBlocks = todayData.mode_blocks;
 
         if (!modeBlocks || modeBlocks.length === 0) {
@@ -3809,17 +3745,8 @@ async function buildExtendedTimeline() {
         }
 
         console.log('[Extended Timeline] Loaded TODAY data:', {
-            mode_blocks: modeBlocks.length,
-            summary: todayTileSummary ? 'present' : 'missing'
+            mode_blocks: modeBlocks.length
         });
-
-        // NOTE: renderTodayComparison() removed - replaced by Today Plan Tile
-        // Old timeline comparison view is deprecated
-
-        // Update Today Plan Tile (event-driven refresh)
-        if (todayTileSummary) {
-            renderTodayPlanTile(todayTileSummary);
-        }
 
         // Update Cost Comparison Tile (event-driven refresh)
         if (typeof loadCostComparisonTile === 'function') {
@@ -3842,7 +3769,6 @@ async function buildExtendedTimeline() {
 globalThis.DashboardTimeline = {
     MODE_CONFIG,
     TimelineDialog,
-    renderTodayPlanTile,
     initTimelineDialog,
     openModeTimelineDialog,
     openTimelineDialog,

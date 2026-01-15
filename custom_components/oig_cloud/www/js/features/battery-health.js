@@ -314,84 +314,39 @@ function buildPredictionHtml({ trendConfidence, yearsTo80Pct, estimatedEolDate, 
 function buildSohSection(soh, measurementCount) {
     if (!hasValue(soh)) {
         return `
-            <div style="text-align: center; padding: 20px 0; font-size: 0.9em; color: var(--text-secondary);">
-                <div style="font-size: 2em; margin-bottom: 8px; opacity: 0.5;">⏳</div>
-                <div>Čekám na první měření...</div>
-                <div style="font-size: 0.8em; margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px;">
-                    <div style="font-weight: 600; margin-bottom: 4px;">Jak to funguje:</div>
-                    <div style="text-align: left;">
-                        1. Baterii vybijte pod 90% SoC<br>
-                        2. Nabijte na 95%+ SoC<br>
-                        3. Snažte se nabíjet čistě ze slunce<br>
-                        4. Měření se uloží každý den v 01:00
-                    </div>
-                </div>
+            <div style="text-align: center; padding: 10px 0; font-size: 0.85em; color: var(--text-secondary);">
+                <div style="font-size: 1.6em; margin-bottom: 4px; opacity: 0.6;">⏳</div>
+                <div>Čekám na první měření</div>
+                <div style="font-size: 0.7em; margin-top: 4px; opacity: 0.7;">Klik pro detail metodiky</div>
             </div>
         `;
     }
 
     return `
-        <div class="stat-value" style="font-size: 1.8em; margin: 10px 0; color: #4cd964;">
-            ${soh.toFixed(1)}<span style="font-size: 0.6em; opacity: 0.7;">% SoH</span>
-        </div>
-        <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: -5px;">
-            (z ${measurementCount || 0} měření)
+        <div style="display:flex; align-items:baseline; gap: 8px; margin: 8px 0 4px;">
+            <div class="stat-value" style="font-size: 1.6em; color: #4cd964;">
+                ${soh.toFixed(1)}<span style="font-size: 0.6em; opacity: 0.7;">% SoH</span>
+            </div>
+            <div style="font-size: 0.7em; color: var(--text-secondary);">
+                ${measurementCount || 0} měření
+            </div>
         </div>
     `;
 }
 
-function buildCapacitySection(capacity, minCapacity, maxCapacity) {
-    if (!hasValue(capacity)) {
-        return '';
-    }
-
-    const rangeHtml = hasValue(minCapacity) && hasValue(maxCapacity)
-        ? `
-            <div style="display: flex; justify-content: space-between; font-size: 0.9em; opacity: 0.7;">
-                <span>Rozsah:</span>
-                <span>${minCapacity.toFixed(2)} - ${maxCapacity.toFixed(2)} kWh</span>
-            </div>
-        `
-        : '';
+function buildTileMetaSection(items) {
+    if (!items.length) return '';
+    const rows = items.map(item => `
+        <div style="display:flex; justify-content: space-between; gap: 6px;">
+            <span style="opacity: 0.7;">${item.label}</span>
+            <span style="color: var(--text-primary); font-weight: 600; white-space: nowrap;">${item.value}</span>
+        </div>
+    `).join('');
 
     return `
-        <div style="display: flex; justify-content: space-between;">
-            <span>📊 Aktuální kapacita:</span>
-            <span style="color: var(--text-primary); font-weight: 600;">${capacity.toFixed(2)} kWh</span>
+        <div style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px 10px; font-size: 0.68em; color: var(--text-secondary); margin-top: 6px;">
+            ${rows}
         </div>
-        ${rangeHtml}
-    `;
-}
-
-function buildMeasurementSection(measurementCount, lastMeasured, qualityScore) {
-    if (measurementCount <= 0) {
-        return '';
-    }
-
-    const lastMeasuredHtml = lastMeasured
-        ? `
-            <div style="display: flex; justify-content: space-between; font-size: 0.9em; opacity: 0.7;">
-                <span>Poslední měření:</span>
-                <span>${new Date(lastMeasured).toLocaleDateString('cs-CZ')}</span>
-            </div>
-        `
-        : '';
-    const qualityHtml = hasValue(qualityScore)
-        ? `
-            <div style="display: flex; justify-content: space-between;">
-                <span>⭐ Kvalita:</span>
-                <span style="color: var(--text-primary); font-weight: 600;">${qualityScore.toFixed(1)}/100</span>
-            </div>
-        `
-        : '';
-
-    return `
-        <div style="display: flex; justify-content: space-between; margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.05);">
-            <span>📈 Počet měření:</span>
-            <span style="color: var(--text-primary); font-weight: 600;">${measurementCount}</span>
-        </div>
-        ${lastMeasuredHtml}
-        ${qualityHtml}
     `;
 }
 
@@ -450,20 +405,22 @@ function updateBatteryHealthUI(container, data) {
 
     const { statusClass, statusIcon, statusText } = getBatteryHealthStatus(soh);
 
-    const degradationHTML = buildDegradationHtml({
-        degradation3mPercent,
-        degradation6mPercent,
-        degradation12mPercent
-    });
-    const predictionHTML = buildPredictionHtml({
-        trendConfidence,
-        yearsTo80Pct,
-        estimatedEolDate,
-        degradationPerYearPercent
-    });
     const sohHtml = buildSohSection(soh, measurementCount);
-    const capacityHtml = buildCapacitySection(capacity, minCapacity, maxCapacity);
-    const measurementHtml = buildMeasurementSection(measurementCount, lastMeasured, qualityScore);
+    const metaItems = [];
+    if (hasValue(capacity)) {
+        metaItems.push({ label: 'Kapacita', value: `${capacity.toFixed(2)} kWh` });
+    }
+    if (hasValue(minCapacity) && hasValue(maxCapacity)) {
+        metaItems.push({ label: 'Rozsah', value: `${minCapacity.toFixed(2)} - ${maxCapacity.toFixed(2)} kWh` });
+    }
+    if (measurementCount > 0) {
+        metaItems.push({ label: 'Měření', value: String(measurementCount) });
+    }
+    if (lastMeasured) {
+        metaItems.push({ label: 'Poslední', value: new Date(lastMeasured).toLocaleDateString('cs-CZ') });
+    }
+    const metaHtml = buildTileMetaSection(metaItems);
+    const sparklineHtml = buildSohSparkline(measurementHistory || [], 220, 42);
     // Sestavit HTML (stat-card kompatibilní struktura)
     container.innerHTML = `
         <div class="stat-label" style="color: #4cd964; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
@@ -474,14 +431,8 @@ function updateBatteryHealthUI(container, data) {
         </div>
 
         ${sohHtml}
-
-        <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px;">
-            ${capacityHtml}
-            ${measurementHtml}
-        </div>
-
-        ${degradationHTML}
-        ${predictionHTML}
+        ${sparklineHtml ? `<div style="margin: 4px 0 2px;">${sparklineHtml}</div>` : ''}
+        ${metaHtml}
     `;
 
     window.__batteryHealthDetails = {
@@ -492,7 +443,14 @@ function updateBatteryHealthUI(container, data) {
         selectionMethod,
         measurementHistory,
         filters,
-        methodDescription
+        methodDescription,
+        degradation3mPercent,
+        degradation6mPercent,
+        degradation12mPercent,
+        degradationPerYearPercent,
+        estimatedEolDate,
+        yearsTo80Pct,
+        trendConfidence
     };
 
     container.style.cursor = 'pointer';
@@ -538,6 +496,18 @@ function openBatteryHealthDetails() {
         </tr>
     `).join('');
 
+    const degradationHTML = buildDegradationHtml({
+        degradation3mPercent: data.degradation3mPercent,
+        degradation6mPercent: data.degradation6mPercent,
+        degradation12mPercent: data.degradation12mPercent
+    });
+    const predictionHTML = buildPredictionHtml({
+        trendConfidence: data.trendConfidence,
+        yearsTo80Pct: data.yearsTo80Pct,
+        estimatedEolDate: data.estimatedEolDate,
+        degradationPerYearPercent: data.degradationPerYearPercent
+    });
+
     panel.innerHTML = `
         <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 10px;">
             <h3 style="margin:0;">🔍 Detail kvality baterie</h3>
@@ -558,6 +528,9 @@ function openBatteryHealthDetails() {
                 ${data.methodDescription}
             </div>
         ` : ''}
+
+        ${degradationHTML}
+        ${predictionHTML}
 
         <div style="margin-top: 12px;">
             ${buildSohSparkline(data.measurementHistory || [], 320, 70)}
