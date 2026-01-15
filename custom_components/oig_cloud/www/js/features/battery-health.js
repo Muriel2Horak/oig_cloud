@@ -15,9 +15,6 @@ let batteryHealthCache = {
     minCapacity: null,
     maxCapacity: null,
     qualityScore: null,
-    sohP20: null,
-    sohP50: null,
-    sohP80: null,
     selectionMethod: null,
     measurementHistory: null,
     methodDescription: null,
@@ -66,9 +63,6 @@ async function updateBatteryHealthStats() {
     const minCapacity = attrs.capacity_p20_last_20 ?? null;
     const maxCapacity = attrs.capacity_p80_last_20 ?? null;
     const qualityScore = attrs.quality_score || null;
-    const sohP20 = attrs.soh_p20_last_20 ?? null;
-    const sohP50 = attrs.soh_p50_last_20 ?? null;
-    const sohP80 = attrs.soh_p80_last_20 ?? null;
     const selectionMethod = attrs.soh_selection_method || null;
     const measurementHistory = attrs.measurement_history || [];
     const filters = attrs.filters || {};
@@ -94,9 +88,6 @@ async function updateBatteryHealthStats() {
         batteryHealthCache.minCapacity !== minCapacity ||
         batteryHealthCache.maxCapacity !== maxCapacity ||
         batteryHealthCache.qualityScore !== qualityScore ||
-        batteryHealthCache.sohP20 !== sohP20 ||
-        batteryHealthCache.sohP50 !== sohP50 ||
-        batteryHealthCache.sohP80 !== sohP80 ||
         batteryHealthCache.selectionMethod !== selectionMethod ||
         batteryHealthCache.measurementHistory !== measurementHistory ||
         batteryHealthCache.methodDescription !== methodDescription ||
@@ -121,9 +112,6 @@ async function updateBatteryHealthStats() {
     batteryHealthCache.minCapacity = minCapacity;
     batteryHealthCache.maxCapacity = maxCapacity;
     batteryHealthCache.qualityScore = qualityScore;
-    batteryHealthCache.sohP20 = sohP20;
-    batteryHealthCache.sohP50 = sohP50;
-    batteryHealthCache.sohP80 = sohP80;
     batteryHealthCache.selectionMethod = selectionMethod;
     batteryHealthCache.measurementHistory = measurementHistory;
     batteryHealthCache.methodDescription = methodDescription;
@@ -161,9 +149,6 @@ async function updateBatteryHealthStats() {
         minCapacity,
         maxCapacity,
         qualityScore,
-        sohP20,
-        sohP50,
-        sohP80,
         selectionMethod,
         measurementHistory,
         filters,
@@ -410,40 +395,14 @@ function buildMeasurementSection(measurementCount, lastMeasured, qualityScore) {
     `;
 }
 
-function buildPercentileRow(label, value) {
-    if (!hasValue(value)) return '';
-    return `
-        <div style="display: flex; justify-content: space-between; font-size: 0.85em; opacity: 0.8;">
-            <span>${label}</span>
-            <span style="color: var(--text-primary); font-weight: 600;">${value.toFixed(1)}%</span>
-        </div>
-    `;
-}
-
-function buildSohPercentiles(sohP20, sohP50, sohP80, selectionMethod) {
-    if (!hasValue(sohP20) && !hasValue(sohP50) && !hasValue(sohP80)) return '';
-    const methodText = selectionMethod ? `Metoda: ${selectionMethod}` : '';
-    return `
-        <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.05);">
-            <div style="font-weight: 600; margin-bottom: 4px;">📈 Percentily SoH</div>
-            ${buildPercentileRow('P20:', sohP20)}
-            ${buildPercentileRow('P50:', sohP50)}
-            ${buildPercentileRow('P80:', sohP80)}
-            ${methodText ? `<div style="margin-top: 4px; opacity: 0.7;">${methodText}</div>` : ''}
-        </div>
-    `;
-}
-
-function buildSohSparkline(measurements) {
+function buildSohSparkline(measurements, width = 260, height = 60) {
     if (!Array.isArray(measurements) || measurements.length < 2) return '';
     const values = measurements.map(m => m.soh_percent).filter(v => typeof v === 'number');
     if (values.length < 2) return '';
     const min = Math.min(...values);
     const max = Math.max(...values);
     const range = max - min || 1;
-    const width = 180;
-    const height = 42;
-    const padding = 4;
+    const padding = 6;
     const step = (width - padding * 2) / (values.length - 1);
     const points = values.map((val, idx) => {
         const x = padding + idx * step;
@@ -452,8 +411,14 @@ function buildSohSparkline(measurements) {
     }).join(' ');
 
     return `
-        <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="margin-top: 6px;">
-            <polyline points="${points}" fill="none" stroke="rgba(76,217,100,0.9)" stroke-width="2"/>
+        <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="margin-top: 8px;">
+            <defs>
+                <linearGradient id="sohLine" x1="0" x2="1">
+                    <stop offset="0%" stop-color="rgba(76,217,100,0.6)"></stop>
+                    <stop offset="100%" stop-color="rgba(76,217,100,1)"></stop>
+                </linearGradient>
+            </defs>
+            <polyline points="${points}" fill="none" stroke="url(#sohLine)" stroke-width="2.5" stroke-linecap="round"/>
         </svg>
     `;
 }
@@ -470,9 +435,6 @@ function updateBatteryHealthUI(container, data) {
         minCapacity,
         maxCapacity,
         qualityScore,
-        sohP20,
-        sohP50,
-        sohP80,
         selectionMethod,
         measurementHistory,
         filters,
@@ -502,9 +464,6 @@ function updateBatteryHealthUI(container, data) {
     const sohHtml = buildSohSection(soh, measurementCount);
     const capacityHtml = buildCapacitySection(capacity, minCapacity, maxCapacity);
     const measurementHtml = buildMeasurementSection(measurementCount, lastMeasured, qualityScore);
-    const percentilesHtml = buildSohPercentiles(sohP20, sohP50, sohP80, selectionMethod);
-    const sparklineHtml = buildSohSparkline(measurementHistory);
-
     // Sestavit HTML (stat-card kompatibilní struktura)
     container.innerHTML = `
         <div class="stat-label" style="color: #4cd964; font-weight: 600; display: flex; justify-content: space-between; align-items: center;">
@@ -521,13 +480,6 @@ function updateBatteryHealthUI(container, data) {
             ${measurementHtml}
         </div>
 
-        ${percentilesHtml}
-        ${sparklineHtml}
-        <div style="margin-top: 6px;">
-            <button class="chart-control-btn" style="font-size: 0.75em;" onclick="openBatteryHealthDetails()">
-                📋 Detail měření
-            </button>
-        </div>
         ${degradationHTML}
         ${predictionHTML}
     `;
@@ -537,14 +489,14 @@ function updateBatteryHealthUI(container, data) {
         capacity,
         measurementCount,
         lastMeasured,
-        sohP20,
-        sohP50,
-        sohP80,
         selectionMethod,
         measurementHistory,
         filters,
         methodDescription
     };
+
+    container.style.cursor = 'pointer';
+    container.onclick = () => openBatteryHealthDetails();
 
     console.log('[Battery Health] UI updated successfully');
 }
@@ -592,32 +544,29 @@ function openBatteryHealthDetails() {
             <button class="chart-control-btn" onclick="document.getElementById('battery-health-modal').remove()">✕ Zavřít</button>
         </div>
 
-        <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; font-size: 0.85em;">
+        <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; font-size: 0.85em; background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
             <div><strong>SoH (p80):</strong> ${data.soh?.toFixed(1) ?? '--'}%</div>
-            <div><strong>P50:</strong> ${data.sohP50?.toFixed(1) ?? '--'}%</div>
-            <div><strong>P20:</strong> ${data.sohP20?.toFixed(1) ?? '--'}%</div>
             <div><strong>Měření:</strong> ${data.measurementCount ?? 0}</div>
-            <div><strong>Poslední analýza:</strong> ${data.lastMeasured ? new Date(data.lastMeasured).toLocaleDateString('cs-CZ') : '--'}</div>
             <div><strong>Metoda:</strong> ${data.selectionMethod || '--'}</div>
+            <div><strong>Kapacita (p80):</strong> ${data.capacity?.toFixed(2) ?? '--'} kWh</div>
+            <div><strong>Poslední analýza:</strong> ${data.lastMeasured ? new Date(data.lastMeasured).toLocaleDateString('cs-CZ') : '--'}</div>
+            <div><strong>Filtry:</strong> ΔSoC ≥ ${data.filters?.min_delta_soc ?? '--'}%, min ${data.filters?.min_duration_hours ?? '--'}h</div>
         </div>
 
-        <div style="margin-top: 12px; font-size: 0.85em; opacity: 0.85;">
-            ${data.methodDescription || ''}
-        </div>
-
-        <div style="margin-top: 12px; font-size: 0.85em;">
-            <strong>Filtry:</strong>
-            <div>ΔSoC ≥ ${data.filters?.min_delta_soc ?? '--'}%, min. délka ${data.filters?.min_duration_hours ?? '--'}h, min. energie ${(data.filters?.min_charge_wh ?? 0) / 1000} kWh, tolerance poklesu ${data.filters?.soc_drop_tolerance ?? '--'}%</div>
-        </div>
+        ${data.methodDescription ? `
+            <div style="margin-top: 12px; font-size: 0.85em; opacity: 0.85;">
+                ${data.methodDescription}
+            </div>
+        ` : ''}
 
         <div style="margin-top: 12px;">
-            ${buildSohSparkline(data.measurementHistory || [])}
+            ${buildSohSparkline(data.measurementHistory || [], 320, 70)}
         </div>
 
-        <div style="margin-top: 12px; overflow:auto;">
+        <div style="margin-top: 12px; overflow:auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;">
             <table style="width:100%; border-collapse: collapse; font-size:0.85em;">
-                <thead>
-                    <tr style="text-align:left; opacity:0.7;">
+                <thead style="background: rgba(255,255,255,0.03);">
+                    <tr style="text-align:left; opacity:0.8;">
                         <th>Datum</th>
                         <th style="text-align:right;">SoH</th>
                         <th style="text-align:right;">Kapacita</th>
