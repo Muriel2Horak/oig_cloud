@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 try:
     from homeassistant import config_entries, core
-    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.config_entries import ConfigEntry, ConfigEntryState
     from homeassistant.const import Platform
     from homeassistant.core import HomeAssistant
     from homeassistant.exceptions import ConfigEntryNotReady
@@ -20,6 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover
     config_entries = None  # type: ignore[assignment]
     core = None  # type: ignore[assignment]
     ConfigEntry = Any  # type: ignore[misc,assignment]
+    ConfigEntryState = Any  # type: ignore[misc,assignment]
     Platform = Any  # type: ignore[misc,assignment]
     HomeAssistant = Any  # type: ignore[misc,assignment]
     ConfigEntryNotReady = Exception  # type: ignore[assignment]
@@ -947,7 +948,13 @@ async def _init_session_manager_and_coordinator(
         hass, session_manager, standard_scan_interval, extended_scan_interval, entry
     )
     _LOGGER.debug("Waiting for initial coordinator data...")
-    await coordinator.async_config_entry_first_refresh()
+    entry_state = getattr(entry, "state", None)
+    if entry_state == ConfigEntryState.SETUP_IN_PROGRESS:
+        await coordinator.async_config_entry_first_refresh()
+    elif hasattr(coordinator, "async_refresh"):
+        await coordinator.async_refresh()
+    else:
+        await coordinator.async_config_entry_first_refresh()
     if coordinator.data is None:
         _LOGGER.error("Failed to get initial data from coordinator")
         raise ConfigEntryNotReady("No data received from OIG Cloud API")

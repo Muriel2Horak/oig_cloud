@@ -324,7 +324,7 @@ async function updatePlannerModeBadge(force = false) {
     }
 
     if (typeof updateElementIfChanged === 'function') {
-        updateElementIfChanged('planner-mode-badge', labelText, 'planner-mode-badge-text');
+        updateElementIfChangedRef('planner-mode-badge', labelText, 'planner-mode-badge-text');
     } else if (badge.textContent !== labelText) {
         badge.textContent = labelText;
     }
@@ -1190,9 +1190,9 @@ function animateFlow(data) {
 }
 
 // Use utils from DashboardUtils module (var allows re-declaration)
-let formatPower = globalThis.DashboardUtils?.formatPower;
-let formatEnergy = globalThis.DashboardUtils?.formatEnergy;
-let updateElementIfChanged = globalThis.DashboardUtils?.updateElementIfChanged;
+let formatPowerRef = globalThis.DashboardUtils?.formatPower;
+let formatEnergyValue = globalThis.DashboardUtils?.formatEnergy;
+let updateElementIfChangedRef = globalThis.DashboardUtils?.updateElementIfChanged;
 
 // Legacy wrapper kept for backward compatibility
 function updateElementIfChanged_legacy(elementId, newValue, cacheKey) {
@@ -1253,8 +1253,8 @@ async function updateSolarSection(yieldIfNeeded) {
     const solarTodayWh = solarTodayData.value || 0;
     const solarTodayKWh = solarTodayWh / 1000;
 
-    updateElementIfChanged('solar-power', formatPower(solarPower), 'solar-power');
-    updateElementIfChanged('solar-today', 'Dnes: ' + solarTodayKWh.toFixed(2) + ' kWh', 'solar-today');
+    updateElementIfChangedRef('solar-power', formatPowerRef(solarPower), 'solar-power');
+    updateElementIfChangedRef('solar-today', 'Dnes: ' + solarTodayKWh.toFixed(2) + ' kWh', 'solar-today');
 
     const solarIcon = document.getElementById('solar-icon-dynamic');
     let solarIconEmoji;
@@ -1276,7 +1276,7 @@ async function updateSolarSection(yieldIfNeeded) {
             solarIcon.style.fontSize = (32 * scale) + 'px';
         }
     }
-    updateElementIfChanged('solar-icon-dynamic', solarIconEmoji, 'solar-icon');
+    updateElementIfChangedRef('solar-icon-dynamic', solarIconEmoji, 'solar-icon');
 
     const solarNode = document.querySelector('.solar');
     updateClassIfChanged(solarNode, 'active', solarPower > 50);
@@ -1382,8 +1382,8 @@ async function updateBatterySection(yieldIfNeeded) {
     const batterySoC = batterySoCData.value || 0;
     const batteryPower = batteryPowerData.value || 0;
 
-    updateElementIfChanged('battery-soc', Math.round(batterySoC) + ' %', 'battery-soc');
-    updateElementIfChanged('battery-power', formatPower(batteryPower), 'battery-power');
+    updateElementIfChangedRef('battery-soc', Math.round(batterySoC) + ' %', 'battery-soc');
+    updateElementIfChangedRef('battery-power', formatPowerRef(batteryPower), 'battery-power');
 
     const batteryFill = document.getElementById('battery-fill');
     updateBatteryGauge(batteryFill, batterySoC);
@@ -1411,15 +1411,15 @@ async function updateBatterySection(yieldIfNeeded) {
         getSensor(getSensorId('extended_battery_temperature'))
     ]);
 
-    updateElementIfChanged('battery-voltage-value', (batteryVoltageData.value || 0).toFixed(1) + ' V');
-    updateElementIfChanged('battery-current-value', (batteryCurrentData.value || 0).toFixed(1) + ' A');
+    updateElementIfChangedRef('battery-voltage-value', (batteryVoltageData.value || 0).toFixed(1) + ' V');
+    updateElementIfChangedRef('battery-current-value', (batteryCurrentData.value || 0).toFixed(1) + ' A');
 
     const batteryTemp = batteryTempData.value || 0;
     const tempIndicator = document.getElementById('battery-temp-indicator');
     const tempIconElement = document.getElementById('battery-temp-icon');
     const tempInfo = getBatteryTempInfo(batteryTemp);
     updateBatteryTemperature({ tempIndicator, tempIconElement, tempInfo });
-    updateElementIfChanged('battery-temp-value', batteryTemp.toFixed(1) + ' °C');
+    updateElementIfChangedRef('battery-temp-value', batteryTemp.toFixed(1) + ' °C');
 
     await yieldIfNeeded();
     return { batteryPower };
@@ -1435,8 +1435,8 @@ async function updateGridSection(yieldIfNeeded) {
     const gridConsumptionKWh = gridConsumptionWh / 1000;
     const gridDeliveryKWh = gridDeliveryWh / 1000;
 
-    updateElementIfChanged('grid-power', formatPower(gridPower), 'grid-power');
-    updateElementIfChanged('grid-today', 'Dnes: ' + (gridConsumptionKWh + gridDeliveryKWh).toFixed(1) + ' kWh', 'grid-today');
+    updateElementIfChangedRef('grid-power', formatPowerRef(gridPower), 'grid-power');
+    updateElementIfChangedRef('grid-today', 'Dnes: ' + (gridConsumptionKWh + gridDeliveryKWh).toFixed(1) + ' kWh', 'grid-today');
 
     const gridStatus = document.getElementById('grid-status');
     let newGridState;
@@ -1485,7 +1485,7 @@ function updateModeChangingElement(elementId, text, cacheKey) {
     const element = document.getElementById(elementId);
     if (!element) return;
     const isModeChanging = element.classList.contains('mode-changing');
-    updateElementIfChanged(elementId, text, cacheKey || elementId);
+    updateElementIfChangedRef(elementId, text, cacheKey || elementId);
     if (isModeChanging && !element.classList.contains('mode-changing')) {
         element.classList.add('mode-changing');
     }
@@ -1513,8 +1513,8 @@ async function updateHouseSection({ yieldIfNeeded, runtime, isConstrainedRuntime
     const houseTodayWh = houseTodayData.value || 0;
     const houseTodayKWh = houseTodayWh / 1000;
 
-    updateElementIfChanged('house-power', formatPower(housePower), 'house-power');
-    updateElementIfChanged('house-today', 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh', 'house-today');
+    updateElementIfChangedRef('house-power', formatPowerRef(housePower), 'house-power');
+    updateElementIfChangedRef('house-today', 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh', 'house-today');
 
     const boxModeData = await getSensorString(getSensorId('box_prms_mode'));
     const { icon: modeIcon, text: modeText } = getHouseModeInfo(boxModeData.value || '--');
@@ -1608,7 +1608,7 @@ async function updateInverterIndicators() {
 
     const inverterTempData = await getSensor(getSensorId('box_temp'));
     const inverterTemp = inverterTempData.value || 0;
-    updateElementIfChanged('inverter-temp-value', inverterTemp.toFixed(1) + ' °C');
+    updateElementIfChangedRef('inverter-temp-value', inverterTemp.toFixed(1) + ' °C');
 
     const inverterTempIndicator = document.getElementById('inverter-temp-indicator');
     const inverterTempIconElement = document.getElementById('inverter-temp-icon');
@@ -1894,17 +1894,17 @@ async function loadSolarDetails() {
         getSensor(getSensorId('solar_forecast'))
     ]);
 
-    updateElementIfChanged('solar-s1', Math.round(solarP1.value || 0) + ' W');
-    updateElementIfChanged('solar-s2', Math.round(solarP2.value || 0) + ' W');
-    updateElementIfChanged('solar-s1-volt', Math.round(solarV1.value || 0) + 'V');
-    updateElementIfChanged('solar-s2-volt', Math.round(solarV2.value || 0) + 'V');
-    updateElementIfChanged('solar-s1-amp', (solarI1.value || 0).toFixed(1) + 'A');
-    updateElementIfChanged('solar-s2-amp', (solarI2.value || 0).toFixed(1) + 'A');
+    updateElementIfChangedRef('solar-s1', Math.round(solarP1.value || 0) + ' W');
+    updateElementIfChangedRef('solar-s2', Math.round(solarP2.value || 0) + ' W');
+    updateElementIfChangedRef('solar-s1-volt', Math.round(solarV1.value || 0) + 'V');
+    updateElementIfChangedRef('solar-s2-volt', Math.round(solarV2.value || 0) + 'V');
+    updateElementIfChangedRef('solar-s1-amp', (solarI1.value || 0).toFixed(1) + 'A');
+    updateElementIfChangedRef('solar-s2-amp', (solarI2.value || 0).toFixed(1) + 'A');
 
     const forecastToday = (solarForecast.value || 0).toFixed(2);
-    updateElementIfChanged('solar-forecast-today-value', forecastToday + ' kWh');
+    updateElementIfChangedRef('solar-forecast-today-value', forecastToday + ' kWh');
     const forecastTomorrow = solarForecast.attributes?.tomorrow_total_sum_kw || 0;
-    updateElementIfChanged('solar-forecast-tomorrow-value', Number.parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
+    updateElementIfChangedRef('solar-forecast-tomorrow-value', Number.parseFloat(forecastTomorrow).toFixed(2) + ' kWh');
 }
 
 async function loadBatteryDetails() {
@@ -1915,10 +1915,10 @@ async function loadBatteryDetails() {
         getSensor(getSensorId('computed_batt_charge_grid_energy_today'))
     ]);
 
-    updateElementIfChanged('battery-charge-total', formatEnergy(battChargeTotal.value || 0));
-    updateElementIfChanged('battery-charge-solar', formatEnergy(battChargeSolar.value || 0));
-    updateElementIfChanged('battery-charge-grid', formatEnergy(battChargeGrid.value || 0));
-    updateElementIfChanged('battery-discharge-total', formatEnergy(battDischargeTotal.value || 0));
+    updateElementIfChangedRef('battery-charge-total', formatEnergyValue(battChargeTotal.value || 0));
+    updateElementIfChangedRef('battery-charge-solar', formatEnergyValue(battChargeSolar.value || 0));
+    updateElementIfChangedRef('battery-charge-grid', formatEnergyValue(battChargeGrid.value || 0));
+    updateElementIfChangedRef('battery-discharge-total', formatEnergyValue(battDischargeTotal.value || 0));
 
     await updateGridChargingPlan();
     await updateBatteryBalancingCard();
@@ -1947,28 +1947,28 @@ async function loadGridDetails() {
     const gridL2Power = gridL2P.value || 0;
     const gridL3Power = gridL3P.value || 0;
 
-    updateElementIfChanged('grid-import', formatEnergy(gridImport.value || 0));
-    updateElementIfChanged('grid-export', formatEnergy(gridExport.value || 0));
-    updateElementIfChanged('grid-freq-indicator', '〰️ ' + (gridFreq.value || 0).toFixed(2) + ' Hz');
-    updateElementIfChanged('grid-spot-price', (spotPrice.value || 0).toFixed(2) + ' Kč/kWh');
-    updateElementIfChanged('grid-export-price', (exportPrice.value || 0).toFixed(2) + ' Kč/kWh');
+    updateElementIfChangedRef('grid-import', formatEnergyValue(gridImport.value || 0));
+    updateElementIfChangedRef('grid-export', formatEnergyValue(gridExport.value || 0));
+    updateElementIfChangedRef('grid-freq-indicator', '〰️ ' + (gridFreq.value || 0).toFixed(2) + ' Hz');
+    updateElementIfChangedRef('grid-spot-price', (spotPrice.value || 0).toFixed(2) + ' Kč/kWh');
+    updateElementIfChangedRef('grid-export-price', (exportPrice.value || 0).toFixed(2) + ' Kč/kWh');
 
     const tariffValue = currentTariff.value || '--';
-    updateElementIfChanged('grid-tariff-indicator', getTariffDisplay(tariffValue));
+    updateElementIfChangedRef('grid-tariff-indicator', getTariffDisplay(tariffValue));
 
-    updateElementIfChanged('grid-l1-volt', Math.round(gridL1V.value || 0) + 'V');
-    updateElementIfChanged('grid-l2-volt', Math.round(gridL2V.value || 0) + 'V');
-    updateElementIfChanged('grid-l3-volt', Math.round(gridL3V.value || 0) + 'V');
-    updateElementIfChanged('grid-l1-power', Math.round(gridL1Power) + 'W');
-    updateElementIfChanged('grid-l2-power', Math.round(gridL2Power) + 'W');
-    updateElementIfChanged('grid-l3-power', Math.round(gridL3Power) + 'W');
+    updateElementIfChangedRef('grid-l1-volt', Math.round(gridL1V.value || 0) + 'V');
+    updateElementIfChangedRef('grid-l2-volt', Math.round(gridL2V.value || 0) + 'V');
+    updateElementIfChangedRef('grid-l3-volt', Math.round(gridL3V.value || 0) + 'V');
+    updateElementIfChangedRef('grid-l1-power', Math.round(gridL1Power) + 'W');
+    updateElementIfChangedRef('grid-l2-power', Math.round(gridL2Power) + 'W');
+    updateElementIfChangedRef('grid-l3-power', Math.round(gridL3Power) + 'W');
 
-    updateElementIfChanged('grid-l1-volt-main', Math.round(gridL1V.value || 0) + 'V');
-    updateElementIfChanged('grid-l2-volt-main', Math.round(gridL2V.value || 0) + 'V');
-    updateElementIfChanged('grid-l3-volt-main', Math.round(gridL3V.value || 0) + 'V');
-    updateElementIfChanged('grid-l1-power-main', Math.round(gridL1Power) + 'W');
-    updateElementIfChanged('grid-l2-power-main', Math.round(gridL2Power) + 'W');
-    updateElementIfChanged('grid-l3-power-main', Math.round(gridL3Power) + 'W');
+    updateElementIfChangedRef('grid-l1-volt-main', Math.round(gridL1V.value || 0) + 'V');
+    updateElementIfChangedRef('grid-l2-volt-main', Math.round(gridL2V.value || 0) + 'V');
+    updateElementIfChangedRef('grid-l3-volt-main', Math.round(gridL3V.value || 0) + 'V');
+    updateElementIfChangedRef('grid-l1-power-main', Math.round(gridL1Power) + 'W');
+    updateElementIfChangedRef('grid-l2-power-main', Math.round(gridL2Power) + 'W');
+    updateElementIfChangedRef('grid-l3-power-main', Math.round(gridL3Power) + 'W');
 }
 
 async function loadHouseDetails() {
@@ -1978,9 +1978,9 @@ async function loadHouseDetails() {
         getSensor(getSensorId('ac_out_aco_pt'))
     ]);
 
-    updateElementIfChanged('house-l1-main', Math.round(houseL1.value || 0) + 'W');
-    updateElementIfChanged('house-l2-main', Math.round(houseL2.value || 0) + 'W');
-    updateElementIfChanged('house-l3-main', Math.round(houseL3.value || 0) + 'W');
+    updateElementIfChangedRef('house-l1-main', Math.round(houseL1.value || 0) + 'W');
+    updateElementIfChangedRef('house-l2-main', Math.round(houseL2.value || 0) + 'W');
+    updateElementIfChangedRef('house-l3-main', Math.round(houseL3.value || 0) + 'W');
 }
 
 async function loadBoilerDetails(boilerIsUse, boilerDetailSection) {
@@ -1994,12 +1994,12 @@ async function loadBoilerDetails(boilerIsUse, boilerDetailSection) {
         getSensorStringSafe(getSensorId('boiler_manual_mode'))
     ]);
 
-    updateElementIfChanged('house-boiler-power', formatBoilerPower(boilerCurrentPower.value || 0));
-    updateElementIfChanged('house-boiler-today', formatBoilerEnergy(boilerDayEnergy.value || 0));
+    updateElementIfChangedRef('house-boiler-power', formatBoilerPower(boilerCurrentPower.value || 0));
+    updateElementIfChangedRef('house-boiler-today', formatBoilerEnergy(boilerDayEnergy.value || 0));
 
     const modeIcon = document.getElementById('boiler-mode-icon');
     const modeDisplay = updateBoilerModeDisplay(boilerManualMode.value || '--', modeIcon);
-    updateElementIfChanged('house-boiler-mode', modeDisplay);
+    updateElementIfChangedRef('house-boiler-mode', modeDisplay);
 }
 
 async function loadInverterDetails() {
@@ -2024,7 +2024,7 @@ async function loadInverterDetails() {
     }
     previousValues['box-mode'] = currentMode;
 
-    updateElementIfChanged('inverter-mode-detail', getInverterModeDescription(currentMode));
+    updateElementIfChangedRef('inverter-mode-detail', getInverterModeDescription(currentMode));
 
     const gridExportModeElement = document.getElementById('inverter-grid-export-mode');
     const { display: gridExportDisplay, icon: gridExportIcon } = getGridExportDisplay(inverterGridMode.value || '--');
@@ -2034,7 +2034,7 @@ async function loadInverterDetails() {
     document.getElementById('grid-export-icon').textContent = gridExportIcon;
 
     const limitKw = (inverterGridLimit.value || 0) / 1000;
-    updateElementIfChanged('inverter-export-limit', limitKw.toFixed(1) + ' kW');
+    updateElementIfChangedRef('inverter-export-limit', limitKw.toFixed(1) + ' kW');
 
     updateNotificationBadge(document.getElementById('inverter-notifications-unread'), notificationsUnread.value || 0, 'has-unread');
     updateNotificationBadge(document.getElementById('inverter-notifications-error'), notificationsError.value || 0, 'has-error');
@@ -2054,13 +2054,13 @@ async function loadBoilerNodeDetails() {
     ]);
 
     if (boilerPower.exists || boilerMode.exists || boilerTemp.exists || boilerStatus.exists) {
-        updateElementIfChanged('boiler-power', Math.round(boilerPower.value || 0) + ' W');
+        updateElementIfChangedRef('boiler-power', Math.round(boilerPower.value || 0) + ' W');
         if (boilerMode.exists) {
             updateModeChangingElement('boiler-mode', boilerMode.value || '--');
         }
-        updateElementIfChanged('boiler-mode-detail', boilerMode.value || '--');
-        updateElementIfChanged('boiler-temp', (boilerTemp.value || 0).toFixed(1) + ' °C');
-        updateElementIfChanged('boiler-status', boilerStatus.value || '--');
+        updateElementIfChangedRef('boiler-mode-detail', boilerMode.value || '--');
+        updateElementIfChangedRef('boiler-temp', (boilerTemp.value || 0).toFixed(1) + ' °C');
+        updateElementIfChangedRef('boiler-status', boilerStatus.value || '--');
     }
 }
 

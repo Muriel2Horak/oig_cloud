@@ -2,12 +2,12 @@
 // INVERTER_SN is defined in dashboard-api.js (loaded before this file)
 
 // === LAYOUT (using dashboard-layout.js module) ===
-// Import layout functions
-const getCurrentBreakpoint = globalThis.DashboardLayout?.getCurrentBreakpoint;
-const saveLayout = globalThis.DashboardLayout?.saveLayout;
-const loadLayout = globalThis.DashboardLayout?.loadLayout;
-const resetLayout = globalThis.DashboardLayout?.resetLayout;
-const toggleEditMode = globalThis.DashboardLayout?.toggleEditMode;
+// Import layout functions (use unique names to avoid global collisions)
+const getCurrentBreakpointRef = globalThis.DashboardLayout?.getCurrentBreakpoint;
+const saveLayoutRef = globalThis.DashboardLayout?.saveLayout;
+const loadLayoutRef = globalThis.DashboardLayout?.loadLayout;
+const resetLayoutRef = globalThis.DashboardLayout?.resetLayout;
+const toggleEditModeRef = globalThis.DashboardLayout?.toggleEditMode;
 
 // === GLOBAL VARIABLES FOR CHART DATA ===
 // Store complete dataset for extremes calculation regardless of zoom
@@ -81,33 +81,33 @@ if (globalThis.OIG_RUNTIME.initialLoadComplete === undefined) {
 
 // === SHIELD (moved to dashboard-shield.js) ===
 // Import shield functions
-const subscribeToShield = globalThis.DashboardShield?.subscribeToShield;
-const startShieldQueueLiveUpdate = globalThis.DashboardShield?.startShieldQueueLiveUpdate;
-const stopShieldQueueLiveUpdate = globalThis.DashboardShield?.stopShieldQueueLiveUpdate;
-const loadShieldData = globalThis.DashboardShield?.loadShieldData;
-const debouncedShieldMonitor = globalThis.DashboardShield?.debouncedShieldMonitor;
-const setShieldMode = globalThis.DashboardShield?.setShieldMode;
-const setShieldModeWithConfirmation = globalThis.DashboardShield?.setShieldModeWithConfirmation;
-const cancelShieldAction = globalThis.DashboardShield?.cancelShieldAction;
-const loadControlPanelStatus = globalThis.DashboardShield?.loadControlPanelStatus;
+const subscribeToShieldRef = globalThis.DashboardShield?.subscribeToShield;
+const startShieldQueueLiveUpdateRef = globalThis.DashboardShield?.startShieldQueueLiveUpdate;
+const stopShieldQueueLiveUpdateRef = globalThis.DashboardShield?.stopShieldQueueLiveUpdate;
+const loadShieldDataRef = globalThis.DashboardShield?.loadShieldData;
+const debouncedShieldMonitorRef = globalThis.DashboardShield?.debouncedShieldMonitor;
+const setShieldModeRef = globalThis.DashboardShield?.setShieldMode;
+const setShieldModeWithConfirmationRef = globalThis.DashboardShield?.setShieldModeWithConfirmation;
+const cancelShieldActionRef = globalThis.DashboardShield?.cancelShieldAction;
+const loadControlPanelStatusRef = globalThis.DashboardShield?.loadControlPanelStatus;
 
 // === FLOW DIAGRAM (moved to dashboard-flow.js) ===
 // Import functions from DashboardFlow module
-const getSensorId = globalThis.DashboardFlow?.getSensorId;
-const updateTime = globalThis.DashboardFlow?.updateTime;
-const debouncedDrawConnections = globalThis.DashboardFlow?.debouncedDrawConnections;
-const drawConnections = globalThis.DashboardFlow?.drawConnections;
-const getNodeCenters = globalThis.DashboardFlow?.getNodeCenters;
-const updateNode = globalThis.DashboardFlow?.updateNode;
-const updateNodeDetails = globalThis.DashboardFlow?.updateNodeDetails;
-const loadData = globalThis.DashboardFlow?.loadData;
-const loadNodeDetails = globalThis.DashboardFlow?.loadNodeDetails;
-const forceFullRefresh = globalThis.DashboardFlow?.forceFullRefresh;
-const debouncedLoadData = globalThis.DashboardFlow?.debouncedLoadData;
-const debouncedLoadNodeDetails = globalThis.DashboardFlow?.debouncedLoadNodeDetails;
+const getSensorIdRef = globalThis.DashboardFlow?.getSensorId;
+const updateTimeRef = globalThis.DashboardFlow?.updateTime;
+const debouncedDrawConnectionsRef = globalThis.DashboardFlow?.debouncedDrawConnections;
+const drawConnectionsRef = globalThis.DashboardFlow?.drawConnections;
+const getNodeCentersRef = globalThis.DashboardFlow?.getNodeCenters;
+const updateNodeRef = globalThis.DashboardFlow?.updateNode;
+const updateNodeDetailsRef = globalThis.DashboardFlow?.updateNodeDetails;
+const loadDataRef = globalThis.DashboardFlow?.loadData;
+const loadNodeDetailsRef = globalThis.DashboardFlow?.loadNodeDetails;
+const forceFullRefreshRef = globalThis.DashboardFlow?.forceFullRefresh;
+const debouncedLoadDataRef = globalThis.DashboardFlow?.debouncedLoadData;
+const debouncedLoadNodeDetailsRef = globalThis.DashboardFlow?.debouncedLoadNodeDetails;
 
 // Import findShieldSensorId from utils
-const findShieldSensorId = globalThis.DashboardUtils?.findShieldSensorId;
+const findShieldSensorIdRef = globalThis.DashboardUtils?.findShieldSensorId;
 
 // === THEME DETECTION ===
 
@@ -333,8 +333,6 @@ function initTooltips() {
 }
 
 // === GRID CHARGING (moved to dashboard-grid-charging.js) ===
-const openGridChargingDialog = globalThis.DashboardGridCharging?.openGridChargingDialog;
-const closeGridChargingDialog = globalThis.DashboardGridCharging?.closeGridChargingDialog;
 
 // === INITIALIZATION ===
 function init() {
@@ -348,8 +346,8 @@ function init() {
     initTooltips();
     initRollingNumbers();
 
-    if (typeof initPerformanceChart === 'function') {
-        initPerformanceChart();
+    if (typeof initPerformanceChartRef === 'function') {
+        initPerformanceChartRef();
     }
 
     scheduleInitialDataLoad(isConstrainedRuntime);
@@ -368,10 +366,10 @@ function applyReduceMotion() {
 }
 
 function initLayoutCustomization() {
-    const currentBreakpoint = getCurrentBreakpoint();
+    const currentBreakpoint = getCurrentBreakpointRef?.();
     console.log(`[Layout] Initial breakpoint: ${currentBreakpoint}`);
 
-    const loaded = loadLayout(currentBreakpoint);
+    const loaded = loadLayoutRef?.(currentBreakpoint);
     if (loaded) {
         console.log(`[Layout] Custom ${currentBreakpoint} layout loaded`);
     } else {
@@ -394,7 +392,7 @@ function setupControlPanelForMobile() {
 function scheduleInitialDataLoad(isConstrainedRuntime) {
     setTimeout(() => {
         const startHeavyLoad = () => {
-            forceFullRefresh();
+            forceFullRefreshRef?.();
         };
         if (isConstrainedRuntime) {
             setTimeout(() => runWhenIdle(startHeavyLoad, 3500, 1200), 200);
@@ -402,7 +400,7 @@ function scheduleInitialDataLoad(isConstrainedRuntime) {
             startHeavyLoad();
         }
 
-        updateTime();
+        updateTimeRef?.();
         runWhenIdle(buildExtendedTimeline, isConstrainedRuntime ? 3500 : 2500, isConstrainedRuntime ? 1200 : 900);
         loadPricingIfActive();
     }, 50);
@@ -414,13 +412,13 @@ function loadPricingIfActive() {
     console.log('[Init] Pricing tab is active, loading initial pricing data...');
     pricingTabActive = true;
     setTimeout(() => {
-        loadPricingData();
+        loadPricingDataRef?.();
     }, 200);
 }
 
 function startShieldSubscription(isConstrainedRuntime) {
     const startShield = () => {
-        subscribeToShield();
+        subscribeToShieldRef?.();
     };
     if (isConstrainedRuntime) {
         setTimeout(() => runWhenIdle(startShield, 4000, 1500), 300);
@@ -442,7 +440,7 @@ function scheduleInitialShieldLoad() {
             return retryShieldLoad(tryInitialShieldLoad, retryCount, maxRetries, retryInterval);
         }
 
-        const activitySensorId = findShieldSensorId('service_shield_activity');
+        const activitySensorId = findShieldSensorIdRef?.('service_shield_activity');
         if (!activitySensorId || !hass.states[activitySensorId]) {
             retryCount++;
             return retryShieldLoad(tryInitialShieldLoad, retryCount, maxRetries, retryInterval);
@@ -558,7 +556,7 @@ function switchTab(tabName) {
 
             // 5. Načíst fresh pozice node elementů
             console.log('[Tab] Getting node centers...');
-            const centers = getNodeCenters();
+            const centers = getNodeCentersRef?.();
             console.log('[Tab] Node centers result:', centers);
 
             // OPRAVA: Zkontrolovat jestli se pozice načetly správně
@@ -567,7 +565,7 @@ function switchTab(tabName) {
                 // Zkusit znovu s delším timeout
                 setTimeout(() => {
                     globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
-                    const retryCenters = getNodeCenters();
+                    const retryCenters = getNodeCentersRef?.();
                     console.log('[Tab] Retry node centers result:', retryCenters);
 
                     if (!retryCenters || Object.keys(retryCenters).length === 0) {
@@ -576,9 +574,9 @@ function switchTab(tabName) {
                     }
 
                     console.log('[Tab] ✓ Node centers loaded on retry:', Object.keys(retryCenters).length);
-                    drawConnections();
+                    drawConnectionsRef?.();
                     globalThis.DashboardFlow?.invalidateFlowLayoutCache?.();
-                    loadData();
+                    loadDataRef?.();
                     console.log('[Tab] ✓ Retry complete');
                 }, 200);
                 return;
@@ -587,7 +585,7 @@ function switchTab(tabName) {
             // 6. Překreslit čáry (teď už máme správné pozice)
             console.log('[Tab] ✓ Node centers cached:', Object.keys(centers).length);
             console.log('[Tab] Drawing connections...');
-            drawConnections();
+            drawConnectionsRef?.();
             console.log('[Tab] ✓ Connections drawn');
 
             // 7. Nastavit flag pro vynucené restartování animací
@@ -596,7 +594,7 @@ function switchTab(tabName) {
 
             // 8. Načíst aktuální data a restartovat particles
             console.log('[Tab] Loading fresh data for animations...');
-            loadData(); // Načte data a zavolá animateFlow() s aktuálními hodnotami
+            loadDataRef?.(); // Načte data a zavolá animateFlow() s aktuálními hodnotami
             console.log('[Tab] ========== TOKY TAB SWITCH COMPLETE ==========');
         }, 150); // Delší timeout aby se DOM stihl vykreslit
     }
@@ -609,7 +607,7 @@ function switchTab(tabName) {
         setTimeout(() => {
             const afterTimeout = performance.now();
             console.log(`[Pricing] Tab visible after ${(afterTimeout - tabSwitchStart).toFixed(0)}ms timeout, loading pricing data...`);
-            loadPricingData();
+            loadPricingDataRef?.();
 
             // Subscribe to Battery Health updates (once)
             if (typeof subscribeBatteryHealthUpdates === 'function') {
@@ -634,16 +632,12 @@ function switchTab(tabName) {
 }
 
 // === BOILER (enhanced in dashboard-boiler.js) ===
-const loadPricingData = globalThis.DashboardPricing?.loadPricingData;
-const updatePlannedConsumptionStats = globalThis.DashboardPricing?.updatePlannedConsumptionStats;
+const loadPricingDataRef = globalThis.DashboardPricing?.loadPricingData;
+const updatePlannedConsumptionStatsRef = globalThis.DashboardPricing?.updatePlannedConsumptionStats;
 let tileDialog = null;
 
 // === CUSTOM TILES (moved to dashboard-tiles.js) ===
-const initCustomTiles = globalThis.DashboardTiles?.initCustomTiles;
-const renderAllTiles = globalThis.DashboardTiles?.renderAllTiles;
-const updateTileCount = globalThis.DashboardTiles?.updateTileCount;
-const toggleTilesVisibility = globalThis.DashboardTiles?.toggleTilesVisibility;
-const resetAllTiles = globalThis.DashboardTiles?.resetAllTiles;
+const renderAllTilesRef = globalThis.DashboardTiles?.renderAllTiles;
 
 /**
  * Render icon - podporuje emoji i MDI ikony
@@ -840,7 +834,7 @@ function executeTileButtonAction(entityId, action) {
         .then(() => {
             console.log(`[Tiles] Service call successful`);
             // Re-render tiles after state change (debounced)
-            setTimeout(renderAllTiles, 500);
+            setTimeout(renderAllTilesRef, 500);
         })
         .catch((err) => {
             console.error(`[Tiles] Service call failed:`, err);
@@ -849,24 +843,26 @@ function executeTileButtonAction(entityId, action) {
 }
 
 // === ČHMÚ (moved to dashboard-chmu.js) ===
-const updateChmuWarningBadge = globalThis.DashboardChmu?.updateChmuWarningBadge;
-const toggleChmuWarningModal = globalThis.DashboardChmu?.toggleChmuWarningModal;
-const openChmuWarningModal = globalThis.DashboardChmu?.openChmuWarningModal;
-const closeChmuWarningModal = globalThis.DashboardChmu?.closeChmuWarningModal;
+const updateChmuWarningBadgeRef = globalThis.DashboardChmu?.updateChmuWarningBadge;
+const toggleChmuWarningModalRef = globalThis.DashboardChmu?.toggleChmuWarningModal;
+const openChmuWarningModalRef = globalThis.DashboardChmu?.openChmuWarningModal;
+const closeChmuWarningModalRef = globalThis.DashboardChmu?.closeChmuWarningModal;
 
 // === BATTERY & PRICING ANALYTICS (moved to modules) ===
-const updateBatteryEfficiencyBar = globalThis.DashboardAnalytics?.updateBatteryEfficiencyBar;
-const updateWhatIfAnalysis = globalThis.DashboardPricing?.updateWhatIfAnalysis;
-const updateModeRecommendations = globalThis.DashboardPricing?.updateModeRecommendations;
+const updateBatteryEfficiencyBarRef = globalThis.DashboardAnalytics?.updateBatteryEfficiencyBar;
+const updateWhatIfAnalysisRef = globalThis.DashboardPricing?.updateWhatIfAnalysis;
+const updateModeRecommendationsRef = globalThis.DashboardPricing?.updateModeRecommendations;
 
 // === ANALYTICS (moved to dashboard-analytics.js) ===
-const initPerformanceChart = globalThis.DashboardAnalytics?.initPerformanceChart;
-const updatePerformanceChart = globalThis.DashboardAnalytics?.updatePerformanceChart;
-const buildYesterdayAnalysis = globalThis.DashboardAnalytics?.buildYesterdayAnalysis;
-const renderYesterdayAnalysis = globalThis.DashboardAnalytics?.renderYesterdayAnalysis;
+const initPerformanceChartRef = globalThis.DashboardAnalytics?.initPerformanceChart;
+const updatePerformanceChartRef = globalThis.DashboardAnalytics?.updatePerformanceChart;
+const buildYesterdayAnalysisRef = globalThis.DashboardAnalytics?.buildYesterdayAnalysis;
+const renderYesterdayAnalysisRef = globalThis.DashboardAnalytics?.renderYesterdayAnalysis;
 
 // === EXPORT TILE RENDERING FUNCTIONS FOR TILES.JS ===
 globalThis.renderEntityTile = renderEntityTile;
 globalThis.renderButtonTile = renderButtonTile;
 globalThis.executeTileButtonAction = executeTileButtonAction;
-globalThis.renderAllTiles = renderAllTiles;
+if (renderAllTilesRef) {
+    globalThis.renderAllTiles = renderAllTilesRef;
+}

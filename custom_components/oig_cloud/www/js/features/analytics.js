@@ -2,13 +2,7 @@
 // ANALYTICS HELPERS
 // ============================================================================
 
-// Import ČHMÚ functions from dashboard-chmu.js
-let toggleChmuWarningModal = globalThis.DashboardChmu?.toggleChmuWarningModal;
-
-// Import Timeline functions from dashboard-timeline.js (var allows re-declaration)
-let openTimelineDialog = globalThis.DashboardTimeline?.openTimelineDialog;
-let closeModeTimelineDialog = globalThis.DashboardTimeline?.closeModeTimelineDialog;
-let buildModeTimeline = globalThis.DashboardTimeline?.buildModeTimeline;
+// Import ČHMÚ/timeline helpers on demand to avoid global name collisions.
 
 /**
  * Initialize Today Plan Tile instance
