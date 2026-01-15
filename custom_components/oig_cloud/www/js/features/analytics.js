@@ -644,6 +644,18 @@ let batteryEfficiencyCache = {
     losses: null,
     label: null
 };
+let batteryEfficiencyRetryTimeout = null;
+
+function resolveBatteryEfficiencySensor(hass, sensorId) {
+    if (!hass || !hass.states) return null;
+    const direct = hass.states[sensorId];
+    if (direct) return direct;
+
+    const prefix = `sensor.oig_${INVERTER_SN}_`;
+    const suffix = '_battery_efficiency';
+    const matchId = Object.keys(hass.states).find((id) => id.startsWith(prefix) && id.endsWith(suffix));
+    return matchId ? hass.states[matchId] : null;
+}
 
 function buildEfficiencyDisplayData(attrs) {
     const lastMonthEff = attrs.efficiency_last_month_pct;
@@ -809,12 +821,18 @@ async function updateBatteryEfficiencyStats() {
     }
 
     const sensorId = `sensor.oig_${INVERTER_SN}_battery_efficiency`;
-    const sensor = hass.states[sensorId];
+    const sensor = resolveBatteryEfficiencySensor(hass, sensorId);
 
     console.log('[Battery Efficiency] Checking sensor:', sensorId, 'state:', sensor?.state);
 
     if (!sensor) {
         console.log('[Battery Efficiency] Sensor not available:', sensorId);
+        if (!batteryEfficiencyRetryTimeout) {
+            batteryEfficiencyRetryTimeout = setTimeout(() => {
+                batteryEfficiencyRetryTimeout = null;
+                updateBatteryEfficiencyStats();
+            }, 1500);
+        }
         return;
     }
 
