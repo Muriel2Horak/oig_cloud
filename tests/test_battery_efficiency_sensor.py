@@ -486,7 +486,7 @@ async def test_load_month_metrics_import_error(monkeypatch):
     orig_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
-        if name == "homeassistant.components.recorder.history":
+        if name == "homeassistant.components.recorder.statistics":
             raise ImportError("boom")
         return orig_import(name, *args, **kwargs)
 
@@ -499,22 +499,20 @@ async def test_load_month_metrics_import_error(monkeypatch):
 async def test_load_month_metrics_success(monkeypatch):
     hass = DummyHass()
 
-    class DummyHistoryState:
-        def __init__(self, state):
-            self.state = state
-
-    def fake_get_significant_states(_hass, start, end, entity_ids, *_a, **_k):
-        if len(entity_ids) == 1:
-            return {entity_ids[0]: [DummyHistoryState("10")]}
+    def fake_statistics_during_period(_hass, start, end, entity_ids, *_a, **_k):
+        entities = list(entity_ids)
+        charge = entities[0]
+        discharge = entities[1]
+        battery = entities[2]
         return {
-            entity_ids[0]: [DummyHistoryState("20000")],
-            entity_ids[1]: [DummyHistoryState("15000")],
-            entity_ids[2]: [DummyHistoryState("12")],
+            charge: [{"sum": 20000}],
+            discharge: [{"sum": 15000}],
+            battery: [{"state": 10}, {"state": 12}],
         }
 
     monkeypatch.setattr(
-        "homeassistant.components.recorder.history.get_significant_states",
-        fake_get_significant_states,
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        fake_statistics_during_period,
     )
 
     metrics = await eff_module._load_month_metrics(hass, "123", 2026, 1)
@@ -527,29 +525,24 @@ async def test_load_month_metrics_success(monkeypatch):
 async def test_load_month_metrics_invalid_data(monkeypatch):
     hass = DummyHass()
 
-    class DummyHistoryState:
-        def __init__(self, state):
-            self.state = state
-
-    def fake_get_significant_states(_hass, start, end, entity_ids, *_a, **_k):
-        return {entity_ids[0]: [DummyHistoryState("bad")]}
+    def fake_statistics_during_period(_hass, start, end, entity_ids, *_a, **_k):
+        entities = list(entity_ids)
+        charge = entities[0]
+        discharge = entities[1]
+        battery = entities[2]
+        return {
+            charge: [{"state": "bad"}],
+            discharge: [{"sum": 15000}],
+            battery: [{"state": 10}, {"state": 12}],
+        }
 
     monkeypatch.setattr(
-        "homeassistant.components.recorder.history.get_significant_states",
-        fake_get_significant_states,
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        fake_statistics_during_period,
     )
 
     metrics = await eff_module._load_month_metrics(hass, "123", 2026, 1)
     assert metrics is None
-
-
-def test_extract_numeric_helpers():
-    history = {"sensor.test": [{"state": "4.5"}, {"state": "unknown"}]}
-    assert eff_module._extract_latest_numeric(history, "sensor.test") == 4.5
-
-    history = {"sensor.test": [{"state": "unavailable"}, {"state": "3.2"}]}
-    assert eff_module._extract_first_numeric(history, "sensor.test") == 3.2
-    assert eff_module._extract_first_numeric(None, "sensor.test") is None
 
 
 def test_compute_metrics_invalid_values():

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -374,7 +374,7 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
             # Metadata
             "last_update": self._last_update_iso,
             "calculation_method": "Energy balance with SoC correction",
-            "data_source": "snapshot + month-end history",
+            "data_source": "snapshot + statistics",
             "formula": "(discharge - ΔE_battery) / charge * 100",
             "formula_losses": "charge - (discharge - ΔE_battery)",
             # Internal (for restore)
@@ -423,9 +423,11 @@ def _month_range_local(year: int, month: int) -> tuple[datetime, datetime]:
 async def _load_month_metrics(
     hass: Any, box_id: str, year: int, month: int
 ) -> Optional[Dict[str, Any]]:
-    """Compute efficiency metrics for a closed month using end-of-month snapshots."""
+    """Compute efficiency metrics for a closed month using statistics snapshots."""
     try:
-        from homeassistant.components.recorder.history import get_significant_states
+        from homeassistant.components.recorder.statistics import (
+            statistics_during_period,
+        )
     except ImportError:
         _LOGGER.warning("Recorder component not available")
         return None
@@ -436,43 +438,50 @@ async def _load_month_metrics(
 
     charge_sensor, discharge_sensor, battery_sensor = _monthly_sensor_ids(box_id)
 
-    history_end = await _load_history_states(
+    stats = await _load_statistics(
         hass,
-        get_significant_states,
-        end_utc - timedelta(days=1),
+        statistics_during_period,
+        start_utc,
         end_utc,
         [charge_sensor, discharge_sensor, battery_sensor],
     )
+    if not stats:
+        _log_last_month_failure(
+            month,
+            year,
+            None,
+            None,
+            None,
+            None,
+        )
+        return None
 
-    charge_wh = _extract_latest_numeric(history_end, charge_sensor)
-    discharge_wh = _extract_latest_numeric(history_end, discharge_sensor)
-    battery_end = _extract_latest_numeric(history_end, battery_sensor)
+    charge_series = stats.get(charge_sensor) or []
+    discharge_series = stats.get(discharge_sensor) or []
+    battery_series = stats.get(battery_sensor) or []
 
-    history_start = await _load_history_states(
-        hass,
-        get_significant_states,
-        start_utc,
-        start_utc + timedelta(days=1),
-        [battery_sensor],
+    charge_wh = _stat_value(charge_series[-1], prefer_sum=True) if charge_series else None
+    discharge_wh = (
+        _stat_value(discharge_series[-1], prefer_sum=True)
+        if discharge_series
+        else None
     )
-    battery_start = _extract_first_numeric(
-        history_start, battery_sensor
-    ) or _extract_latest_numeric(history_start, battery_sensor)
+    battery_start = (
+        _stat_value(battery_series[0], prefer_sum=False) if battery_series else None
+    )
+    battery_end = (
+        _stat_value(battery_series[-1], prefer_sum=False) if battery_series else None
+    )
+
+    if battery_start is None and battery_end is not None:
+        battery_start = battery_end
+    if battery_end is None and battery_start is not None:
+        battery_end = battery_start
 
     metrics = _compute_metrics_from_wh(
         charge_wh, discharge_wh, battery_start, battery_end
     )
-    if not metrics or not _is_efficiency_plausible(metrics.get("efficiency_pct")):
-        if metrics and not _is_efficiency_plausible(metrics.get("efficiency_pct")):
-            _LOGGER.warning(
-                "Implausible efficiency for %s/%s: %.1f%% (charge=%.2f kWh, discharge=%.2f kWh, delta=%.2f kWh)",
-                month,
-                year,
-                metrics.get("efficiency_pct") or -1,
-                metrics.get("charge_kwh") or 0,
-                metrics.get("discharge_kwh") or 0,
-                metrics.get("delta_kwh") or 0,
-            )
+    if not metrics:
         _log_last_month_failure(
             month,
             year,
@@ -496,55 +505,37 @@ def _monthly_sensor_ids(box_id: str) -> tuple[str, str, str]:
     return charge_sensor, discharge_sensor, battery_sensor
 
 
-async def _load_history_states(
+async def _load_statistics(
     hass: Any,
-    history_fn: Any,
+    stats_fn: Any,
     start_time: datetime,
     end_time: datetime,
     entity_ids: list[str],
 ) -> Optional[Dict[str, Any]]:
-    return await hass.async_add_executor_job(
-        history_fn,
-        hass,
-        start_time,
-        end_time,
-        entity_ids,
-    )
-
-
-def _is_efficiency_plausible(value: Optional[float]) -> bool:
-    if value is None:
-        return False
-    return 50.0 <= value <= 120.0
-
-
-def _extract_latest_numeric(
-    history: Optional[Dict[str, Any]], entity_id: str
-) -> Optional[float]:
-    if not history or entity_id not in history or not history[entity_id]:
+    try:
+        return await hass.async_add_executor_job(
+            stats_fn,
+            hass,
+            start_time,
+            end_time,
+            set(entity_ids),
+            "day",
+            None,
+            {"mean", "max", "sum", "state"},
+        )
+    except Exception as exc:  # pragma: no cover - recorder can fail early
+        _LOGGER.warning("Failed to load statistics: %s", exc)
         return None
-    for item in reversed(history[entity_id]):
-        state_value = item.get("state") if isinstance(item, dict) else item.state
-        if state_value in ["unknown", "unavailable", None]:
+
+
+def _stat_value(item: Dict[str, Any], prefer_sum: bool) -> Optional[float]:
+    keys = ("sum", "state", "max", "mean") if prefer_sum else ("state", "mean", "max")
+    for key in keys:
+        value = item.get(key)
+        if value is None:
             continue
         try:
-            return float(state_value)
-        except (ValueError, TypeError):
-            continue
-    return None
-
-
-def _extract_first_numeric(
-    history: Optional[Dict[str, Any]], entity_id: str
-) -> Optional[float]:
-    if not history or entity_id not in history or not history[entity_id]:
-        return None
-    for item in history[entity_id]:
-        state_value = item.get("state") if isinstance(item, dict) else item.state
-        if state_value in ["unknown", "unavailable", None]:
-            continue
-        try:
-            return float(state_value)
+            return float(value)
         except (ValueError, TypeError):
             continue
     return None
