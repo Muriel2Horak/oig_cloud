@@ -322,7 +322,7 @@ test('pricing cards differ between spot and fixed fixtures', async ({ page }, te
     const text = await priceEl.textContent();
     const match = text?.match(/[\d.,]+/);
     expect(match).not.toBeNull();
-    return Number.parseFloat(match[0].replace(',', '.'));
+    return parseFloat(match[0].replace(',', '.'));
   };
 
   const spotPrice = await readCheapestPrice('cloud');

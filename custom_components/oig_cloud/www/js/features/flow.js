@@ -676,23 +676,6 @@ function getDominantEnergyColor({ solarRatio, gridRatio, batteryRatio, colors })
     return colors.battery;
 }
 
-function getEnergySourceColor(solarRatio, gridRatio, batteryRatio = 0) {
-    const colors = {
-        solar: '#ffd54f',
-        grid: '#42a5f5',
-        battery: '#ff9800'
-    };
-
-    const ratios = normalizeEnergyRatios(solarRatio, gridRatio, batteryRatio);
-    const pureColor = getPureSourceColor({ ...ratios, colors, threshold: 0.95 });
-    if (pureColor) return pureColor;
-
-    const gradient = getGradientColor({ ...ratios, colors });
-    if (gradient) return gradient;
-
-    return getDominantEnergyColor({ ...ratios, colors });
-}
-
 // Global cache for node positions
 // OPRAVA BUG #4: Cache pro power hodnoty
 let lastPowerValues = null;
@@ -1159,9 +1142,7 @@ function animateFlow(data) {
     if (runtime.reduceMotion) {
         if (!runtime.particlesDisabled) {
             runtime.particlesDisabled = true;
-            if (typeof stopAllParticleFlows === 'function') {
-                stopAllParticleFlows();
-            }
+            stopAllParticleFlows();
             const container = document.getElementById('particles');
             if (container) {
                 container.innerHTML = '';
@@ -1191,7 +1172,7 @@ function animateFlow(data) {
 
 // Use utils from DashboardUtils module (var allows re-declaration)
 let formatPowerRef = globalThis.DashboardUtils?.formatPower;
-let formatEnergyValue = globalThis.DashboardUtils?.formatEnergy;
+let formatEnergyRef = globalThis.DashboardUtils?.formatEnergy;
 let updateElementIfChangedRef = globalThis.DashboardUtils?.updateElementIfChanged;
 
 // Helper to update class only if changed
@@ -1899,10 +1880,10 @@ async function loadBatteryDetails() {
         getSensor(getSensorId('computed_batt_charge_grid_energy_today'))
     ]);
 
-    updateElementIfChangedRef('battery-charge-total', formatEnergyValue(battChargeTotal.value || 0));
-    updateElementIfChangedRef('battery-charge-solar', formatEnergyValue(battChargeSolar.value || 0));
-    updateElementIfChangedRef('battery-charge-grid', formatEnergyValue(battChargeGrid.value || 0));
-    updateElementIfChangedRef('battery-discharge-total', formatEnergyValue(battDischargeTotal.value || 0));
+    updateElementIfChangedRef('battery-charge-total', formatEnergyRef(battChargeTotal.value || 0));
+    updateElementIfChangedRef('battery-charge-solar', formatEnergyRef(battChargeSolar.value || 0));
+    updateElementIfChangedRef('battery-charge-grid', formatEnergyRef(battChargeGrid.value || 0));
+    updateElementIfChangedRef('battery-discharge-total', formatEnergyRef(battDischargeTotal.value || 0));
 
     await updateGridChargingPlan();
     await updateBatteryBalancingCard();
@@ -1931,8 +1912,8 @@ async function loadGridDetails() {
     const gridL2Power = gridL2P.value || 0;
     const gridL3Power = gridL3P.value || 0;
 
-    updateElementIfChangedRef('grid-import', formatEnergyValue(gridImport.value || 0));
-    updateElementIfChangedRef('grid-export', formatEnergyValue(gridExport.value || 0));
+    updateElementIfChangedRef('grid-import', formatEnergyRef(gridImport.value || 0));
+    updateElementIfChangedRef('grid-export', formatEnergyRef(gridExport.value || 0));
     updateElementIfChangedRef('grid-freq-indicator', '〰️ ' + (gridFreq.value || 0).toFixed(2) + ' Hz');
     updateElementIfChangedRef('grid-spot-price', (spotPrice.value || 0).toFixed(2) + ' Kč/kWh');
     updateElementIfChangedRef('grid-export-price', (exportPrice.value || 0).toFixed(2) + ' Kč/kWh');

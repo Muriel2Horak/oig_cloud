@@ -5,20 +5,6 @@
 // Import ČHMÚ/timeline helpers on demand to avoid global name collisions.
 
 /**
- * Initialize Today Plan Tile instance
- * @param {HTMLElement} container - Container element
- * @param {object} tileSummary - Tile summary data from API
- */
-function initTodayPlanTile(_container, tileSummary) {
-    if (globalThis.DashboardTimeline?.renderTodayPlanTile) {
-        globalThis.DashboardTimeline.renderTodayPlanTile(tileSummary);
-        return;
-    }
-
-    console.warn('[Today Plan Tile] Timeline module not available');
-}
-
-/**
  * Load unified cost tile data from API
  */
 

@@ -4,14 +4,7 @@
 // === LAYOUT (using dashboard-layout.js module) ===
 // Import layout functions (use unique names to avoid global collisions)
 const getCurrentBreakpointRef = globalThis.DashboardLayout?.getCurrentBreakpoint;
-const saveLayoutRef = globalThis.DashboardLayout?.saveLayout;
 const loadLayoutRef = globalThis.DashboardLayout?.loadLayout;
-const resetLayoutRef = globalThis.DashboardLayout?.resetLayout;
-const toggleEditModeRef = globalThis.DashboardLayout?.toggleEditMode;
-
-// === GLOBAL VARIABLES FOR CHART DATA ===
-// Store complete dataset for extremes calculation regardless of zoom
-let originalPriceData = null;
 
 // === TOOLTIP POSITIONING ===
 
@@ -82,29 +75,14 @@ if (globalThis.OIG_RUNTIME.initialLoadComplete === undefined) {
 // === SHIELD (moved to dashboard-shield.js) ===
 // Import shield functions
 const subscribeToShieldRef = globalThis.DashboardShield?.subscribeToShield;
-const startShieldQueueLiveUpdateRef = globalThis.DashboardShield?.startShieldQueueLiveUpdate;
-const stopShieldQueueLiveUpdateRef = globalThis.DashboardShield?.stopShieldQueueLiveUpdate;
-const loadShieldDataRef = globalThis.DashboardShield?.loadShieldData;
-const debouncedShieldMonitorRef = globalThis.DashboardShield?.debouncedShieldMonitor;
-const setShieldModeRef = globalThis.DashboardShield?.setShieldMode;
-const setShieldModeWithConfirmationRef = globalThis.DashboardShield?.setShieldModeWithConfirmation;
-const cancelShieldActionRef = globalThis.DashboardShield?.cancelShieldAction;
-const loadControlPanelStatusRef = globalThis.DashboardShield?.loadControlPanelStatus;
 
 // === FLOW DIAGRAM (moved to dashboard-flow.js) ===
 // Import functions from DashboardFlow module
-const getSensorIdRef = globalThis.DashboardFlow?.getSensorId;
 const updateTimeRef = globalThis.DashboardFlow?.updateTime;
-const debouncedDrawConnectionsRef = globalThis.DashboardFlow?.debouncedDrawConnections;
 const drawConnectionsRef = globalThis.DashboardFlow?.drawConnections;
 const getNodeCentersRef = globalThis.DashboardFlow?.getNodeCenters;
-const updateNodeRef = globalThis.DashboardFlow?.updateNode;
-const updateNodeDetailsRef = globalThis.DashboardFlow?.updateNodeDetails;
 const loadDataRef = globalThis.DashboardFlow?.loadData;
-const loadNodeDetailsRef = globalThis.DashboardFlow?.loadNodeDetails;
 const forceFullRefreshRef = globalThis.DashboardFlow?.forceFullRefresh;
-const debouncedLoadDataRef = globalThis.DashboardFlow?.debouncedLoadData;
-const debouncedLoadNodeDetailsRef = globalThis.DashboardFlow?.debouncedLoadNodeDetails;
 
 // Import findShieldSensorId from utils
 const findShieldSensorIdRef = globalThis.DashboardUtils?.findShieldSensorId;
@@ -160,7 +138,7 @@ function resolveThemeFromCss() {
         if (!primaryBg) return null;
         const rgb = primaryBg.match(/\d+/g);
         if (!rgb || rgb.length < 3) return null;
-        const brightness = (Number.parseInt(rgb[0]) + Number.parseInt(rgb[1]) + Number.parseInt(rgb[2])) / 3;
+        const brightness = (Number.parseInt(rgb[0], 10) + Number.parseInt(rgb[1], 10) + Number.parseInt(rgb[2], 10)) / 3;
         console.log('[Theme] CSS detection - brightness:', brightness, '-> light:', brightness > 128);
         return brightness > 128;
     } catch (e) {
@@ -633,8 +611,6 @@ function switchTab(tabName) {
 
 // === BOILER (enhanced in dashboard-boiler.js) ===
 const loadPricingDataRef = globalThis.DashboardPricing?.loadPricingData;
-const updatePlannedConsumptionStatsRef = globalThis.DashboardPricing?.updatePlannedConsumptionStats;
-let tileDialog = null;
 
 // === CUSTOM TILES (moved to dashboard-tiles.js) ===
 const renderAllTilesRef = globalThis.DashboardTiles?.renderAllTiles;
@@ -845,15 +821,9 @@ function executeTileButtonAction(entityId, action) {
 // === ČHMÚ (moved to dashboard-chmu.js) ===
 
 // === BATTERY & PRICING ANALYTICS (moved to modules) ===
-const updateBatteryEfficiencyBarRef = globalThis.DashboardAnalytics?.updateBatteryEfficiencyBar;
-const updateWhatIfAnalysisRef = globalThis.DashboardPricing?.updateWhatIfAnalysis;
-const updateModeRecommendationsRef = globalThis.DashboardPricing?.updateModeRecommendations;
 
 // === ANALYTICS (moved to dashboard-analytics.js) ===
 const initPerformanceChartRef = globalThis.DashboardAnalytics?.initPerformanceChart;
-const updatePerformanceChartRef = globalThis.DashboardAnalytics?.updatePerformanceChart;
-const buildYesterdayAnalysisRef = globalThis.DashboardAnalytics?.buildYesterdayAnalysis;
-const renderYesterdayAnalysisRef = globalThis.DashboardAnalytics?.renderYesterdayAnalysis;
 
 // === EXPORT TILE RENDERING FUNCTIONS FOR TILES.JS ===
 globalThis.renderEntityTile = renderEntityTile;

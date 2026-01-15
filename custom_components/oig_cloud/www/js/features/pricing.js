@@ -242,7 +242,7 @@ function isLightTheme() {
             if (primaryBg) {
                 const rgb = primaryBg.match(/\d+/g);
                 if (rgb && rgb.length >= 3) {
-                    const brightness = (Number.parseInt(rgb[0]) + Number.parseInt(rgb[1]) + Number.parseInt(rgb[2])) / 3;
+                    const brightness = (Number.parseInt(rgb[0], 10) + Number.parseInt(rgb[1], 10) + Number.parseInt(rgb[2], 10)) / 3;
                     return brightness > 128;
                 }
             }

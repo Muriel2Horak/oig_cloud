@@ -1622,14 +1622,17 @@ async function setGridDeliveryOld(mode, limit) {
         warning: true
     };
 
-    if (mode === null) {
-        data.limit = Number.parseInt(limit);
+    if (limit !== null && limit !== undefined) {
+        data.limit = Number.parseInt(limit, 10);
         if (Number.isNaN(data.limit) || data.limit < 1 || data.limit > 9999) {
             globalThis.DashboardUtils?.showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
             return;
         }
-    } else {
+    } else if (mode !== null) {
         data.mode = mode;
+    } else {
+        globalThis.DashboardUtils?.showNotification('Chyba', 'Vyberte režim nebo zadejte limit!', 'error');
+        return;
     }
 
     const success = await callService('oig_cloud', 'set_grid_delivery', data);
