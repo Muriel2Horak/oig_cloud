@@ -268,6 +268,25 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
         battery_now = self._get_sensor("remaining_usable_capacity")
         self._last_update_iso = now_local.isoformat()
 
+        if (
+            charge_wh is not None
+            and discharge_wh is not None
+            and battery_now is not None
+            and self._current_month_start_kwh is not None
+            and (
+                self._month_snapshot is None
+                or self._month_snapshot.get("month_key") == current_key
+            )
+        ):
+            self._month_snapshot = {
+                "month_key": current_key,
+                "charge_wh": charge_wh,
+                "discharge_wh": discharge_wh,
+                "battery_start_kwh": self._current_month_start_kwh,
+                "battery_end_kwh": battery_now,
+                "captured_at": now_local.isoformat(),
+            }
+
         if charge_wh is None or discharge_wh is None:
             self._current_month_metrics = _empty_metrics(
                 charge_wh, discharge_wh, self._current_month_start_kwh, battery_now
