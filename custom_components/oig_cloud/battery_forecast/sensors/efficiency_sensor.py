@@ -631,7 +631,7 @@ def _last_stat_sum(
 def _is_efficiency_plausible(value: Optional[float]) -> bool:
     if value is None:
         return False
-    return 50.0 <= value <= 110.0
+    return 50.0 <= value <= 120.0
 
 
 def _extract_latest_numeric(
