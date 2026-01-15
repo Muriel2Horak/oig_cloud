@@ -1091,6 +1091,42 @@
                 });
             });
         </script>
+
+        <!-- Ensure dashboard init runs even if core.js cache is stale -->
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const tryInit = () => {
+                    if (globalThis.__oigDashboardInitialized) return;
+                    if (typeof init === 'function') {
+                        try {
+                            init();
+                            globalThis.__oigDashboardInitialized = true;
+                        } catch (e) {
+                            console.error('[Dashboard] Init failed:', e);
+                        }
+                        return;
+                    }
+                    setTimeout(tryInit, 200);
+                };
+                tryInit();
+
+                const tryTiles = () => {
+                    if (globalThis.__oigTilesInitialized) return;
+                    const tiles = globalThis.DashboardTiles?.initCustomTiles;
+                    if (typeof tiles === 'function') {
+                        try {
+                            tiles();
+                            globalThis.__oigTilesInitialized = true;
+                        } catch (e) {
+                            console.error('[Tiles] Init failed:', e);
+                        }
+                        return;
+                    }
+                    setTimeout(tryTiles, 200);
+                };
+                tryTiles();
+            });
+        </script>
 </body>
 
 </html>

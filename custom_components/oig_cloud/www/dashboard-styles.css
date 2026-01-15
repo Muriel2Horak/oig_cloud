@@ -857,6 +857,8 @@
             padding: 0 !important;
             background: transparent !important;
             border: none !important;
+            box-shadow: none !important;
+            color: var(--text-primary);
             display: flex;
             flex-direction: column;
             align-items: flex-end;
@@ -1079,6 +1081,11 @@
             cursor: pointer;
             transition: transform 0.2s;
             margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: var(--text-primary);
         }
 
         .inverter-bypass-indicator:hover {
@@ -1110,6 +1117,11 @@
             cursor: pointer;
             transition: transform 0.2s;
             margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: var(--text-primary);
             display: flex;
             flex-direction: column;
             align-items: flex-end;
@@ -7636,6 +7648,9 @@ body.light-theme .status-exporting {
 .node-subvalue {
     align-self: stretch;
     text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     box-sizing: border-box;
     max-width: 100%;
     overflow: hidden;
@@ -7665,6 +7680,18 @@ body.light-theme .status-exporting {
     font-size: 13px;
     font-weight: 700;
     opacity: 0.75;
+}
+
+#solar-power,
+#grid-power,
+#house-power,
+#battery-power,
+#inverter-mode {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    text-align: center;
 }
 
 .flow-canvas .node-phases,

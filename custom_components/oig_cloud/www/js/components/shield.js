@@ -56,12 +56,28 @@ function shouldRefreshShield(entityId) {
 function shouldRefreshData(entityId) {
     return matchesAny(entityId, [
         'actual_pv',
+        'actual_fv_',
+        'dc_in_fv_proc',
+        'dc_in_fv_ad',
         'actual_batt',
+        'batt_bat_c',
+        'batt_batt_comp_p',
         'actual_aci_wtotal',
+        'extended_grid_consumption',
+        'extended_grid_delivery',
         'actual_aco_p',
+        'ac_out_en_day',
         'boiler_current_cbb_w',
+        'boiler_install_power',
         'extended_battery_soc',
         'extended_battery_voltage',
+        'extended_battery_current',
+        'extended_battery_temperature',
+        'grid_charging_planned',
+        'time_to_empty',
+        'time_to_full',
+        'box_prms_mode',
+        'boiler_manual_mode',
         'box_temp',
         'bypass_status',
         'chmu_warning_level',
@@ -77,11 +93,17 @@ function shouldRefreshDetails(entityId) {
         'computed_batt_',
         'ac_in_',
         'ac_out_',
+        'actual_aci_w',
         'spot_price',
         'current_tariff',
         'grid_charging_planned',
         'battery_balancing',
-        'notification_count'
+        'notification_count',
+        'boiler_day_w',
+        'boiler_is_use',
+        'boiler_manual_mode',
+        'boiler_temperature',
+        'boiler_status'
     ]);
 }
 
@@ -129,9 +151,11 @@ function resolveGridModeLabel(targetMode) {
 
 // Subscribe to shield status changes
 function subscribeToShield() {
+    if (globalThis.__oigShieldSubscribed) return;
     const hass = getHass();
     if (!hass) {
         console.warn('Cannot subscribe to shield - no HA connection');
+        setTimeout(subscribeToShield, 500);
         return;
     }
 
@@ -215,6 +239,7 @@ function subscribeToShield() {
             console.warn('[Connection] WebSocket disconnected');
         });
 
+        globalThis.__oigShieldSubscribed = true;
         console.log('[Shield] Successfully subscribed to state changes');
     } catch (e) {
         console.error('[Shield] Failed to subscribe:', e);

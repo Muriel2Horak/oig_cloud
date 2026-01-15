@@ -2234,7 +2234,6 @@ globalThis.DashboardFlow = {
         console.log('[DashboardFlow] Initialized');
         // Start periodic updates
         setInterval(updateTime, 1000);
-        setInterval(debouncedLoadData, 5000);
     }
 };
 

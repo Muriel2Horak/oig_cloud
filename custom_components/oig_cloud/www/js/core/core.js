@@ -323,6 +323,7 @@ function init() {
     setupControlPanelForMobile();
     initTooltips();
     initRollingNumbers();
+    initCustomTilesSection(isConstrainedRuntime);
 
     if (typeof initPerformanceChartRef === 'function') {
         initPerformanceChartRef();
@@ -332,6 +333,17 @@ function init() {
     startShieldSubscription(isConstrainedRuntime);
     scheduleInitialShieldLoad();
     setupThemeListeners();
+}
+
+function initCustomTilesSection(isConstrainedRuntime) {
+    const startTiles = () => {
+        globalThis.DashboardTiles?.initCustomTiles?.();
+    };
+    if (isConstrainedRuntime) {
+        setTimeout(() => runWhenIdle(startTiles, 3500, 1200), 300);
+    } else {
+        startTiles();
+    }
 }
 
 function applyReduceMotion() {
@@ -831,4 +843,14 @@ globalThis.renderButtonTile = renderButtonTile;
 globalThis.executeTileButtonAction = executeTileButtonAction;
 if (renderAllTilesRef) {
     globalThis.renderAllTiles = renderAllTilesRef;
+}
+
+// Kick off dashboard initialization once (core.js is loaded last).
+if (!globalThis.__oigDashboardInitialized) {
+    globalThis.__oigDashboardInitialized = true;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 }
