@@ -599,41 +599,26 @@ class BatteryHealthTracker:
         if not self._measurements:
             return None
 
-        # Průměr z posledních 5 měření s jednoduchým filtrem odlehlých hodnot.
-        recent = self._measurements[-5:]
+        # P80 z posledních 20 měření (stabilnější než průměr).
+        recent = self._measurements[-20:]
         if len(recent) < 2:
             return None
-        values = [m.soh_percent for m in recent]
-        sorted_values = sorted(values)
-        mid = len(sorted_values) // 2
-        if len(sorted_values) % 2 == 0:
-            median = (sorted_values[mid - 1] + sorted_values[mid]) / 2
-        else:
-            median = sorted_values[mid]
-        filtered = [v for v in values if abs(v - median) <= 5.0]
-        if not filtered:
-            filtered = values
-        return sum(filtered) / len(filtered)
+        values = sorted(m.soh_percent for m in recent)
+        idx = max(0, int((len(values) * 0.8) - 1))
+        return values[idx]
 
     def get_current_capacity(self) -> Optional[float]:
         """Získat aktuální kapacitu (průměr z posledních měření)."""
         if not self._measurements:
             return None
 
-        recent = self._measurements[-5:]
+        # P80 z posledních 20 měření (konzistentní se SoH).
+        recent = self._measurements[-20:]
         if len(recent) < 2:
             return None
-        values = [m.capacity_kwh for m in recent]
-        sorted_values = sorted(values)
-        mid = len(sorted_values) // 2
-        if len(sorted_values) % 2 == 0:
-            median = (sorted_values[mid - 1] + sorted_values[mid]) / 2
-        else:
-            median = sorted_values[mid]
-        filtered = [v for v in values if abs(v - median) <= 1.0]
-        if not filtered:
-            filtered = values
-        return sum(filtered) / len(filtered)
+        values = sorted(m.capacity_kwh for m in recent)
+        idx = max(0, int((len(values) * 0.8) - 1))
+        return values[idx]
 
 
 class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
