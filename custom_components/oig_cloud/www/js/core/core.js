@@ -598,6 +598,8 @@ function switchTab(tabName) {
             const afterTimeout = performance.now();
             console.log(`[Pricing] Tab visible after ${(afterTimeout - tabSwitchStart).toFixed(0)}ms timeout, loading pricing data...`);
             loadPricingDataRef?.();
+            globalThis.DashboardPricing?.updatePlannedConsumptionStats?.();
+            globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats?.();
 
             // Subscribe to Battery Health updates (once)
             if (typeof subscribeBatteryHealthUpdates === 'function') {

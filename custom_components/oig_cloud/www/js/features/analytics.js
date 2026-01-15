@@ -813,12 +813,18 @@ async function updateBatteryEfficiencyStats() {
 
     console.log('[Battery Efficiency] Checking sensor:', sensorId, 'state:', sensor?.state);
 
-    if (!sensor || sensor.state === 'unavailable' || sensor.state === 'unknown') {
+    if (!sensor) {
         console.log('[Battery Efficiency] Sensor not available:', sensorId);
         return;
     }
 
     const attrs = sensor.attributes || {};
+    const hasAttrsData = attrs.efficiency_current_month_pct !== null &&
+        attrs.efficiency_current_month_pct !== undefined;
+    if ((sensor.state === 'unavailable' || sensor.state === 'unknown') && !hasAttrsData) {
+        console.log('[Battery Efficiency] Sensor has no data yet:', sensorId);
+        return;
+    }
     console.log('[Battery Efficiency] Sensor attributes:', attrs);
 
     const { display, lastMonthEff, currentMonthEff } = buildEfficiencyDisplayData(attrs);
