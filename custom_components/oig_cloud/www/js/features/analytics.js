@@ -841,8 +841,10 @@ async function updateBatteryEfficiencyStats() {
     }
 
     const attrs = sensor.attributes || {};
-    const hasAttrsData = attrs.efficiency_current_month_pct !== null &&
-        attrs.efficiency_current_month_pct !== undefined;
+    const hasAttrsData = (attrs.efficiency_current_month_pct !== null &&
+        attrs.efficiency_current_month_pct !== undefined) ||
+        (attrs.efficiency_last_month_pct !== null &&
+            attrs.efficiency_last_month_pct !== undefined);
     if ((sensor.state === 'unavailable' || sensor.state === 'unknown') && !hasAttrsData) {
         console.log('[Battery Efficiency] Sensor has no data yet:', sensorId);
         return;
