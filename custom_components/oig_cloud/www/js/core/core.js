@@ -403,6 +403,8 @@ function loadPricingIfActive() {
     pricingTabActive = true;
     setTimeout(() => {
         loadPricingDataRef?.();
+        globalThis.DashboardPricing?.updatePlannedConsumptionStats?.();
+        globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats?.();
     }, 200);
 }
 

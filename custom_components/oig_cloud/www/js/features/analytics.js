@@ -833,7 +833,12 @@ async function updateBatteryEfficiencyStats() {
         return;
     }
 
-    if (!hasEfficiencyChanged(display)) {
+    const mainEl = document.getElementById('battery-efficiency-main');
+    if (!mainEl) {
+        return;
+    }
+    const shouldForceRender = mainEl.textContent?.trim() === '--';
+    if (!hasEfficiencyChanged(display) && !shouldForceRender) {
         return;
     }
 
