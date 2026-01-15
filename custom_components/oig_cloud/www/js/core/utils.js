@@ -252,6 +252,7 @@ const _flipPadLengths = {};
 const _flipElementTokens = new WeakMap();
 let _flipTokenCounter = 0;
 const _transientClassTimeouts = new WeakMap();
+const _flipLastUpdateAt = {};
 
 function _triggerTransientClass(element, className, durationMs) {
     if (!element || !className) return;
@@ -427,6 +428,22 @@ function updateElementContent({ element, cacheKey, nextValue, animate }) {
     }
 
     previousValues[cacheKey] = nextValue;
+
+    if (animate) {
+        const wantsFlip = element.dataset?.flip === 'true' || element.classList.contains('flip-value');
+        if (!wantsFlip) {
+            animate = false;
+        }
+    }
+
+    if (animate) {
+        const now = Date.now();
+        const last = _flipLastUpdateAt[cacheKey] || 0;
+        _flipLastUpdateAt[cacheKey] = now;
+        if (now - last < 250) {
+            animate = false;
+        }
+    }
 
     if (animate) {
         let fromValue = hasPrev ? prevValue : (element.textContent || '');
