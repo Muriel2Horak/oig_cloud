@@ -235,6 +235,150 @@ function formatDegradationRow(label, value) {
     `;
 }
 
+function hasValue(value) {
+    return value !== null && value !== undefined;
+}
+
+function buildDegradationHtml({ degradation3mPercent, degradation6mPercent, degradation12mPercent }) {
+    if (!hasValue(degradation3mPercent) && !hasValue(degradation6mPercent) && !hasValue(degradation12mPercent)) {
+        return '';
+    }
+
+    return `
+        <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-weight: 600; margin-bottom: 4px;">📉 Degradace kapacity:</div>
+            ${formatDegradationRow('3 měsíce:', degradation3mPercent)}
+            ${formatDegradationRow('6 měsíců:', degradation6mPercent)}
+            ${formatDegradationRow('12 měsíců:', degradation12mPercent)}
+        </div>
+    `;
+}
+
+function buildPredictionHtml({ trendConfidence, yearsTo80Pct, estimatedEolDate, degradationPerYearPercent }) {
+    if (!hasValue(trendConfidence) || trendConfidence < 70 || !hasValue(yearsTo80Pct)) {
+        return '';
+    }
+
+    const yearsText = yearsTo80Pct >= 10 ? '10+' : yearsTo80Pct.toFixed(1);
+    const eolText = estimatedEolDate || 'N/A';
+    const hasEol = eolText !== 'N/A';
+    const degradationHtml = hasValue(degradationPerYearPercent)
+        ? `
+            <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                <span>Degradace/rok:</span>
+                <span style="color: ${getDegradationColor(degradationPerYearPercent)}; font-weight: 600;">${degradationPerYearPercent.toFixed(2)}%</span>
+            </div>
+        `
+        : '';
+    const eolHtml = hasEol
+        ? `
+            <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                <span>Očekávaný konec:</span>
+                <span style="color: var(--text-primary); font-weight: 600;">${eolText}</span>
+            </div>
+        `
+        : '';
+
+    return `
+        <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
+            <div style="font-weight: 600; margin-bottom: 4px;">🔮 Dlouhodobá predikce:</div>
+            ${degradationHtml}
+            <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                <span>Do 80% SoH:</span>
+                <span style="color: var(--text-primary); font-weight: 600;">${yearsText} let</span>
+            </div>
+            ${eolHtml}
+            <div style="font-size: 0.85em; opacity: 0.7; margin-top: 4px; font-style: italic;">
+                Spolehlivost: ${trendConfidence.toFixed(0)}%
+            </div>
+        </div>
+    `;
+}
+
+function buildSohSection(soh, measurementCount) {
+    if (!hasValue(soh)) {
+        return `
+            <div style="text-align: center; padding: 20px 0; font-size: 0.9em; color: var(--text-secondary);">
+                <div style="font-size: 2em; margin-bottom: 8px; opacity: 0.5;">⏳</div>
+                <div>Čekám na první měření...</div>
+                <div style="font-size: 0.8em; margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+                    <div style="font-weight: 600; margin-bottom: 4px;">Jak to funguje:</div>
+                    <div style="text-align: left;">
+                        1. Baterii vybijte pod 90% SoC<br>
+                        2. Nabijte na 95%+ SoC<br>
+                        3. Snažte se nabíjet čistě ze slunce<br>
+                        4. Měření se uloží každý den v 01:00
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="stat-value" style="font-size: 1.8em; margin: 10px 0; color: #4cd964;">
+            ${soh.toFixed(1)}<span style="font-size: 0.6em; opacity: 0.7;">% SoH</span>
+        </div>
+        <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: -5px;">
+            (z ${measurementCount || 0} měření)
+        </div>
+    `;
+}
+
+function buildCapacitySection(capacity, minCapacity, maxCapacity) {
+    if (!hasValue(capacity)) {
+        return '';
+    }
+
+    const rangeHtml = hasValue(minCapacity) && hasValue(maxCapacity)
+        ? `
+            <div style="display: flex; justify-content: space-between; font-size: 0.9em; opacity: 0.7;">
+                <span>Rozsah:</span>
+                <span>${minCapacity.toFixed(2)} - ${maxCapacity.toFixed(2)} kWh</span>
+            </div>
+        `
+        : '';
+
+    return `
+        <div style="display: flex; justify-content: space-between;">
+            <span>📊 Aktuální kapacita:</span>
+            <span style="color: var(--text-primary); font-weight: 600;">${capacity.toFixed(2)} kWh</span>
+        </div>
+        ${rangeHtml}
+    `;
+}
+
+function buildMeasurementSection(measurementCount, lastMeasured, qualityScore) {
+    if (measurementCount <= 0) {
+        return '';
+    }
+
+    const lastMeasuredHtml = lastMeasured
+        ? `
+            <div style="display: flex; justify-content: space-between; font-size: 0.9em; opacity: 0.7;">
+                <span>Poslední měření:</span>
+                <span>${new Date(lastMeasured).toLocaleDateString('cs-CZ')}</span>
+            </div>
+        `
+        : '';
+    const qualityHtml = hasValue(qualityScore)
+        ? `
+            <div style="display: flex; justify-content: space-between;">
+                <span>⭐ Kvalita:</span>
+                <span style="color: var(--text-primary); font-weight: 600;">${qualityScore.toFixed(1)}/100</span>
+            </div>
+        `
+        : '';
+
+    return `
+        <div style="display: flex; justify-content: space-between; margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.05);">
+            <span>📈 Počet měření:</span>
+            <span style="color: var(--text-primary); font-weight: 600;">${measurementCount}</span>
+        </div>
+        ${lastMeasuredHtml}
+        ${qualityHtml}
+    `;
+}
+
 /**
  * Aktualizuje UI Battery Health tile
  */
@@ -258,50 +402,20 @@ function updateBatteryHealthUI(container, data) {
 
     const { statusClass, statusIcon, statusText } = getBatteryHealthStatus(soh);
 
-    // Degradace trendy (3/6/12 měsíců)
-    let degradationHTML = '';
-    if (degradation3mPercent !== null || degradation6mPercent !== null || degradation12mPercent !== null) {
-        degradationHTML = `
-            <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
-                <div style="font-weight: 600; margin-bottom: 4px;">📉 Degradace kapacity:</div>
-                ${formatDegradationRow('3 měsíce:', degradation3mPercent)}
-                ${formatDegradationRow('6 měsíců:', degradation6mPercent)}
-                ${formatDegradationRow('12 měsíců:', degradation12mPercent)}
-            </div>
-        `;
-    }
-
-    // Dlouhodobá predikce (pokud je dostatečná spolehlivost)
-    let predictionHTML = '';
-    if (trendConfidence !== null && trendConfidence >= 70 && yearsTo80Pct !== null) {
-        const yearsText = yearsTo80Pct >= 10 ? '10+' : yearsTo80Pct.toFixed(1);
-        const eolText = estimatedEolDate || 'N/A';
-
-        predictionHTML = `
-            <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);">
-                <div style="font-weight: 600; margin-bottom: 4px;">🔮 Dlouhodobá predikce:</div>
-                ${degradationPerYearPercent !== null ? `
-                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-                    <span>Degradace/rok:</span>
-                    <span style="color: ${getDegradationColor(degradationPerYearPercent)}; font-weight: 600;">${degradationPerYearPercent.toFixed(2)}%</span>
-                </div>
-                ` : ''}
-                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-                    <span>Do 80% SoH:</span>
-                    <span style="color: var(--text-primary); font-weight: 600;">${yearsText} let</span>
-                </div>
-                ${eolText !== 'N/A' ? `
-                <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-                    <span>Očekávaný konec:</span>
-                    <span style="color: var(--text-primary); font-weight: 600;">${eolText}</span>
-                </div>
-                ` : ''}
-                <div style="font-size: 0.85em; opacity: 0.7; margin-top: 4px; font-style: italic;">
-                    Spolehlivost: ${trendConfidence.toFixed(0)}%
-                </div>
-            </div>
-        `;
-    }
+    const degradationHTML = buildDegradationHtml({
+        degradation3mPercent,
+        degradation6mPercent,
+        degradation12mPercent
+    });
+    const predictionHTML = buildPredictionHtml({
+        trendConfidence,
+        yearsTo80Pct,
+        estimatedEolDate,
+        degradationPerYearPercent
+    });
+    const sohHtml = buildSohSection(soh, measurementCount);
+    const capacityHtml = buildCapacitySection(capacity, minCapacity, maxCapacity);
+    const measurementHtml = buildMeasurementSection(measurementCount, lastMeasured, qualityScore);
 
     // Sestavit HTML (stat-card kompatibilní struktura)
     container.innerHTML = `
@@ -312,61 +426,11 @@ function updateBatteryHealthUI(container, data) {
             </span>
         </div>
 
-        ${soh !== null ? `
-        <div class="stat-value" style="font-size: 1.8em; margin: 10px 0; color: #4cd964;">
-            ${soh.toFixed(1)}<span style="font-size: 0.6em; opacity: 0.7;">% SoH</span>
-        </div>
-        <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: -5px;">
-            (z ${measurementCount || 0} měření)
-        </div>
-        ` : `
-        <div style="text-align: center; padding: 20px 0; font-size: 0.9em; color: var(--text-secondary);">
-            <div style="font-size: 2em; margin-bottom: 8px; opacity: 0.5;">⏳</div>
-            <div>Čekám na první měření...</div>
-            <div style="font-size: 0.8em; margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px;">
-                <div style="font-weight: 600; margin-bottom: 4px;">Jak to funguje:</div>
-                <div style="text-align: left;">
-                    1. Baterii vybijte pod 90% SoC<br>
-                    2. Nabijte na 95%+ SoC<br>
-                    3. Snažte se nabíjet čistě ze slunce<br>
-                    4. Měření se uloží každý den v 01:00
-                </div>
-            </div>
-        </div>
-        `}
+        ${sohHtml}
 
         <div style="font-size: 0.75em; color: var(--text-secondary); margin-top: 8px;">
-            ${capacity !== null ? `
-            <div style="display: flex; justify-content: space-between;">
-                <span>📊 Aktuální kapacita:</span>
-                <span style="color: var(--text-primary); font-weight: 600;">${capacity.toFixed(2)} kWh</span>
-            </div>
-            ${minCapacity !== null && maxCapacity !== null ? `
-            <div style="display: flex; justify-content: space-between; font-size: 0.9em; opacity: 0.7;">
-                <span>Rozsah:</span>
-                <span>${minCapacity.toFixed(2)} - ${maxCapacity.toFixed(2)} kWh</span>
-            </div>
-            ` : ''}
-            ` : ''}
-
-            ${measurementCount > 0 ? `
-            <div style="display: flex; justify-content: space-between; margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.05);">
-                <span>📈 Počet měření:</span>
-                <span style="color: var(--text-primary); font-weight: 600;">${measurementCount}</span>
-            </div>
-            ${lastMeasured ? `
-            <div style="display: flex; justify-content: space-between; font-size: 0.9em; opacity: 0.7;">
-                <span>Poslední měření:</span>
-                <span>${new Date(lastMeasured).toLocaleDateString('cs-CZ')}</span>
-            </div>
-            ` : ''}
-            ${qualityScore !== null ? `
-            <div style="display: flex; justify-content: space-between;">
-                <span>⭐ Kvalita:</span>
-                <span style="color: var(--text-primary); font-weight: 600;">${qualityScore.toFixed(1)}/100</span>
-            </div>
-            ` : ''}
-            ` : ''}
+            ${capacityHtml}
+            ${measurementHtml}
         </div>
 
         ${degradationHTML}

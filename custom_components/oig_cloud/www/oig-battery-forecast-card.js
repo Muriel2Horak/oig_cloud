@@ -501,7 +501,7 @@ class OigBatteryForecastCard extends HTMLElement {
         };
 
         // Přidat vertikální čáru pro "Nyní"
-        const now = new Date().getTime();
+        const now = Date.now();
         annotations.xaxis.push({
             x: now,
             borderColor: '#999',
@@ -681,7 +681,7 @@ class OigBatteryForecastCard extends HTMLElement {
         } else {
             // Fallback na původní metodu
             const current = attrs.current_battery_kwh || 0;
-            const now = new Date().getTime();
+            const now = Date.now();
 
             data.push({
                 x: now,

@@ -657,52 +657,7 @@ function renderIcon(icon, color) {
     // MDI ikona (formát mdi:xxx) - použít emoji fallback protože ha-icon nefunguje v iframe
     if (icon.startsWith('mdi:')) {
         const iconName = icon.substring(4); // Odstranit 'mdi:' prefix
-
-        // Emoji mapa - stejná jako v dashboard-dialog.js
-        const emojiMap = {
-            // Spotřebiče
-            'fridge': '❄️', 'fridge-outline': '❄️', 'dishwasher': '🍽️', 'washing-machine': '🧺',
-            'tumble-dryer': '🌪️', 'stove': '🔥', 'microwave': '📦', 'coffee-maker': '☕',
-            'kettle': '🫖', 'toaster': '🍞',
-            // Osvětlení
-            'lightbulb': '💡', 'lightbulb-outline': '💡', 'lamp': '🪔', 'ceiling-light': '💡',
-            'floor-lamp': '🪔', 'led-strip': '✨', 'led-strip-variant': '✨', 'wall-sconce': '💡',
-            'chandelier': '💡',
-            // Vytápění
-            'thermometer': '🌡️', 'thermostat': '🌡️', 'radiator': '♨️', 'radiator-disabled': '❄️',
-            'heat-pump': '♨️', 'air-conditioner': '❄️', 'fan': '🌀', 'hvac': '♨️', 'fire': '🔥',
-            'snowflake': '❄️',
-            // Energie
-            'lightning-bolt': '⚡', 'flash': '⚡', 'battery': '🔋', 'battery-charging': '🔋',
-            'battery-50': '🔋', 'solar-panel': '☀️', 'solar-power': '☀️', 'meter-electric': '⚡',
-            'power-plug': '🔌', 'power-socket': '🔌',
-            // Auto
-            'car': '🚗', 'car-electric': '🚘', 'car-battery': '🔋', 'ev-station': '🔌',
-            'ev-plug-type2': '🔌', 'garage': '🏠', 'garage-open': '🏠',
-            // Zabezpečení
-            'door': '🚪', 'door-open': '🚪', 'lock': '🔒', 'lock-open': '🔓', 'shield-home': '🛡️',
-            'cctv': '📹', 'camera': '📹', 'motion-sensor': '👁️', 'alarm-light': '🚨', 'bell': '🔔',
-            // Okna
-            'window-closed': '🪟', 'window-open': '🪟', 'blinds': '🪟', 'blinds-open': '🪟',
-            'curtains': '🪟', 'roller-shade': '🪟',
-            // Média
-            'television': '📺', 'speaker': '🔊', 'speaker-wireless': '🔊', 'music': '🎵',
-            'volume-high': '🔊', 'cast': '📡', 'chromecast': '📡',
-            // Síť
-            'router-wireless': '📡', 'wifi': '📶', 'access-point': '📡', 'lan': '🌐',
-            'network': '🌐', 'home-assistant': '🏠',
-            // Voda
-            'water': '💧', 'water-percent': '💧', 'water-boiler': '♨️', 'water-pump': '💧',
-            'shower': '🚿', 'toilet': '🚽', 'faucet': '🚰', 'pipe': '🔧',
-            // Počasí
-            'weather-sunny': '☀️', 'weather-cloudy': '☁️', 'weather-night': '🌙',
-            'weather-rainy': '🌧️', 'weather-snowy': '❄️', 'weather-windy': '💨',
-            // Ostatní
-            'information': 'ℹ️', 'help-circle': '❓', 'alert-circle': '⚠️',
-            'checkbox-marked-circle': '✅', 'toggle-switch': '🔘', 'power': '⚡', 'sync': '🔄'
-        };
-
-        const emoji = emojiMap[iconName] || '⚙️';
+        const emoji = globalThis.DashboardUtils?.getIconEmoji?.(iconName) || '⚙️';
         return `<span style="font-size: 28px; color: ${color};">${emoji}</span>`;
     }
 

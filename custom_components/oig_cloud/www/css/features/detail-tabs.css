@@ -143,21 +143,21 @@
 }
 
 .metric-context--positive {
-    color: #14532d;
-    background: rgb(76, 175, 80, 0.25);
-    border-color: rgb(76, 175, 80, 0.4);
+    color: #ffffff;
+    background: #15803d;
+    border-color: #166534;
 }
 
 .metric-context--negative {
-    color: #7f1d1d;
-    background: rgb(244, 67, 54, 0.25);
-    border-color: rgb(244, 67, 54, 0.4);
+    color: #ffffff;
+    background: #b91c1c;
+    border-color: #991b1b;
 }
 
 .metric-context--neutral {
-    color: #7c2d12;
-    background: rgb(255, 193, 7, 0.25);
-    border-color: rgb(255, 193, 7, 0.4);
+    color: #ffffff;
+    background: #b45309;
+    border-color: #92400e;
 }
 
 .metric-delta {
@@ -462,18 +462,18 @@
 }
 
 .cost-delta.cost-higher {
-    background: rgb(244, 67, 54, 0.3);
-    color: #7f1d1d;
+    background: #b91c1c;
+    color: #ffffff;
 }
 
 .cost-delta.cost-lower {
-    background: rgb(76, 175, 80, 0.3);
-    color: #14532d;
+    background: #15803d;
+    color: #ffffff;
 }
 
 .cost-delta.cost-equal {
-    background: rgb(158, 158, 158, 0.15);
-    color: var(--text-secondary, #999);
+    background: #334155;
+    color: #ffffff;
 }
 
 /* Match badge in header */
@@ -488,18 +488,18 @@
 }
 
 .block-match.match-yes {
-    background: rgb(76, 175, 80, 0.3);
-    color: #14532d;
+    background: #15803d;
+    color: #ffffff;
 }
 
 .block-match.match-no {
-    background: rgb(244, 67, 54, 0.3);
-    color: #7f1d1d;
+    background: #b91c1c;
+    color: #ffffff;
 }
 
 .block-match.match-neutral {
-    background: rgb(255, 193, 7, 0.3);
-    color: #7c2d12;
+    background: #b45309;
+    color: #ffffff;
 }
 
 /* Responsive Design */
@@ -731,8 +731,8 @@
     align-items: center;
     justify-content: space-between;
     font-size: 0.85rem;
-    border: 1px solid rgb(255, 255, 255, 0.08);
-    background: rgb(255, 255, 255, 0.03);
+    border: 1px solid rgb(148, 163, 184, 0.4);
+    background: rgb(15, 23, 42, 0.8);
     color: #f8fafc;
 }
 
@@ -741,20 +741,21 @@
 }
 
 .tile-delta.delta-better {
-    color: #14532d;
-    border-color: rgb(156, 204, 101, 0.5);
-    background: rgb(156, 204, 101, 0.3);
+    color: #ffffff;
+    border-color: #166534;
+    background: #15803d;
 }
 
 .tile-delta.delta-worse {
-    color: #7f1d1d;
-    border-color: rgb(255, 138, 128, 0.5);
-    background: rgb(255, 138, 128, 0.3);
+    color: #ffffff;
+    border-color: #991b1b;
+    background: #b91c1c;
 }
 
 .tile-delta.delta-neutral {
     color: #f8fafc;
-    border-color: rgb(255, 255, 255, 0.08);
+    border-color: rgb(255, 255, 255, 0.3);
+    background: rgb(30, 41, 59, 0.8);
 }
 
 /* Kompaktní meta info pod kartami */
@@ -764,7 +765,7 @@
     justify-content: center;
     gap: 12px;
     padding: 8px 16px;
-    background: rgb(255, 255, 255, 0.02);
+    background: rgb(30, 41, 59, 0.7);
     border-radius: 6px;
     font-size: 13px;
     color: #f8fafc;

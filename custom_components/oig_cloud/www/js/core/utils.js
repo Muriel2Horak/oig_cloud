@@ -192,6 +192,57 @@ function throttle(func, limit) {
 }
 
 // ============================================================================
+// ICON HELPERS
+// ============================================================================
+
+const ICON_EMOJI_MAP = {
+    // Spotřebiče
+    'fridge': '❄️', 'fridge-outline': '❄️', 'dishwasher': '🍽️', 'washing-machine': '🧺',
+    'tumble-dryer': '🌪️', 'stove': '🔥', 'microwave': '📦', 'coffee-maker': '☕',
+    'kettle': '🫖', 'toaster': '🍞',
+    // Osvětlení
+    'lightbulb': '💡', 'lightbulb-outline': '💡', 'lamp': '🪔', 'ceiling-light': '💡',
+    'floor-lamp': '🪔', 'led-strip': '✨', 'led-strip-variant': '✨', 'wall-sconce': '💡',
+    'chandelier': '💡',
+    // Vytápění
+    'thermometer': '🌡️', 'thermostat': '🌡️', 'radiator': '♨️', 'radiator-disabled': '❄️',
+    'heat-pump': '♨️', 'air-conditioner': '❄️', 'fan': '🌀', 'hvac': '♨️', 'fire': '🔥',
+    'snowflake': '❄️',
+    // Energie
+    'lightning-bolt': '⚡', 'flash': '⚡', 'battery': '🔋', 'battery-charging': '🔋',
+    'battery-50': '🔋', 'solar-panel': '☀️', 'solar-power': '☀️', 'meter-electric': '⚡',
+    'power-plug': '🔌', 'power-socket': '🔌',
+    // Auto
+    'car': '🚗', 'car-electric': '🚘', 'car-battery': '🔋', 'ev-station': '🔌',
+    'ev-plug-type2': '🔌', 'garage': '🏠', 'garage-open': '🏠',
+    // Zabezpečení
+    'door': '🚪', 'door-open': '🚪', 'lock': '🔒', 'lock-open': '🔓', 'shield-home': '🛡️',
+    'cctv': '📹', 'camera': '📹', 'motion-sensor': '👁️', 'alarm-light': '🚨', 'bell': '🔔',
+    // Okna
+    'window-closed': '🪟', 'window-open': '🪟', 'blinds': '🪟', 'blinds-open': '🪟',
+    'curtains': '🪟', 'roller-shade': '🪟',
+    // Média
+    'television': '📺', 'speaker': '🔊', 'speaker-wireless': '🔊', 'music': '🎵',
+    'volume-high': '🔊', 'cast': '📡', 'chromecast': '📡',
+    // Síť
+    'router-wireless': '📡', 'wifi': '📶', 'access-point': '📡', 'lan': '🌐',
+    'network': '🌐', 'home-assistant': '🏠',
+    // Voda
+    'water': '💧', 'water-percent': '💧', 'water-boiler': '♨️', 'water-pump': '💧',
+    'shower': '🚿', 'toilet': '🚽', 'faucet': '🚰', 'pipe': '🔧',
+    // Počasí
+    'weather-sunny': '☀️', 'weather-cloudy': '☁️', 'weather-night': '🌙',
+    'weather-rainy': '🌧️', 'weather-snowy': '❄️', 'weather-windy': '💨',
+    // Ostatní
+    'information': 'ℹ️', 'help-circle': '❓', 'alert-circle': '⚠️',
+    'checkbox-marked-circle': '✅', 'toggle-switch': '🔘', 'power': '⚡', 'sync': '🔄'
+};
+
+function getIconEmoji(iconName) {
+    return ICON_EMOJI_MAP[iconName] || '⚙️';
+}
+
+// ============================================================================
 // DOM HELPERS
 // ============================================================================
 
@@ -367,14 +418,7 @@ function _renderSplitFlap(element, cacheKey, oldValue, newValue, forceFlip = fal
  * @param {boolean} animate - True = krátká vizuální animace při změně
  * @returns {boolean} True pokud se změnilo
  */
-function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = false, animate = true) {
-    if (!cacheKey) cacheKey = elementId;
-    const element = document.getElementById(elementId);
-    if (!element) return false;
-
-    const nextValue = newValue === null || newValue === undefined ? '' : String(newValue);
-
-    // Update fallback visualization
+function applyFallbackState(element, isFallback) {
     if (isFallback) {
         element.classList.add('fallback-value');
         element.setAttribute('title', 'Data nejsou k dispozici');
@@ -382,27 +426,38 @@ function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = fals
         element.classList.remove('fallback-value');
         element.removeAttribute('title');
     }
+}
 
-    // Update value if changed
+function updateElementContent({ element, cacheKey, nextValue, animate, isFallback }) {
     const hasPrev = previousValues[cacheKey] !== undefined;
     const prevValue = hasPrev ? String(previousValues[cacheKey]) : undefined;
-    if (!hasPrev || prevValue !== nextValue) {
-        // Remember new value first (so rapid updates don't fight)
-        previousValues[cacheKey] = nextValue;
-
-        if (animate && !isFallback) {
-            let fromValue = hasPrev ? prevValue : (element.textContent || '');
-            // First load: still flip even if the element already contains the same text (tiles render directly).
-            if (!hasPrev && fromValue === nextValue) {
-                fromValue = '';
-            }
-            _renderSplitFlap(element, cacheKey, fromValue, nextValue, !hasPrev);
-        } else {
-            element.textContent = nextValue;
-        }
-        return true;
+    if (hasPrev && prevValue === nextValue) {
+        return false;
     }
-    return false;
+
+    previousValues[cacheKey] = nextValue;
+
+    if (animate && !isFallback) {
+        let fromValue = hasPrev ? prevValue : (element.textContent || '');
+        if (!hasPrev && fromValue === nextValue) {
+            fromValue = '';
+        }
+        _renderSplitFlap(element, cacheKey, fromValue, nextValue, !hasPrev);
+    } else {
+        element.textContent = nextValue;
+    }
+    return true;
+}
+
+function updateElementIfChanged(elementId, newValue, cacheKey, isFallback = false, animate = true) {
+    if (!cacheKey) cacheKey = elementId;
+    const element = document.getElementById(elementId);
+    if (!element) return false;
+
+    const nextValue = newValue === null || newValue === undefined ? '' : String(newValue);
+
+    applyFallbackState(element, isFallback);
+    return updateElementContent({ element, cacheKey, nextValue, animate, isFallback });
 }
 
 /**
@@ -567,6 +622,7 @@ if (typeof globalThis !== 'undefined') {
         isNumberInRange,
         isValidEntityId,
         getCurrentTimeString,
-        findShieldSensorId
+        findShieldSensorId,
+        getIconEmoji
     };
 }

@@ -580,42 +580,99 @@ async def _build_mixed_intervals(
     )
 
 
+def _get_storage_day(storage_plans: Dict[str, Any], date_str: str) -> Optional[Dict[str, Any]]:
+    return storage_plans.get("detailed", {}).get(date_str)
+
+
+def _storage_flags(sensor: Any, storage_day: Optional[Dict[str, Any]]) -> tuple[bool, bool]:
+    storage_invalid = sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
+    storage_missing = not storage_day or not storage_day.get("intervals")
+    return storage_invalid, storage_missing
+
+
+def _load_storage_intervals(
+    storage_day: Optional[Dict[str, Any]],
+    storage_invalid: bool,
+    day: date,
+) -> List[Dict[str, Any]]:
+    if storage_day and storage_day.get("intervals") and not storage_invalid:
+        intervals = storage_day["intervals"]
+        _LOGGER.debug(
+            "📦 Loaded %s planned intervals from Storage Helper for %s",
+            len(intervals),
+            day,
+        )
+        return intervals
+    return []
+
+
+async def _refresh_storage_if_needed(
+    sensor: Any,
+    storage_plans: Dict[str, Any],
+    date_str: str,
+    storage_missing: bool,
+    storage_invalid: bool,
+) -> Dict[str, Any]:
+    if not sensor._plans_store or not (storage_missing or storage_invalid):
+        return storage_plans
+    storage_plans, _ = await _maybe_repair_baseline(sensor, storage_plans, date_str)
+    return storage_plans
+
+
+def _fallback_storage_intervals(
+    storage_day: Optional[Dict[str, Any]],
+    past_planned: List[Dict[str, Any]],
+    date_str: str,
+) -> List[Dict[str, Any]]:
+    if past_planned or not storage_day or not storage_day.get("intervals"):
+        return past_planned
+    _LOGGER.warning(
+        "Using baseline plan for %s despite invalid data (no fallback)",
+        date_str,
+    )
+    return storage_day["intervals"]
+
+
+def _log_missing_past_planned(past_planned: List[Dict[str, Any]], day: date) -> None:
+    if not past_planned:
+        _LOGGER.debug("⚠️  No past planned data available for %s", day)
+
+
+async def _resolve_past_planned(
+    sensor: Any,
+    storage_plans: Dict[str, Any],
+    date_str: str,
+    day: date,
+) -> tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    storage_day = _get_storage_day(storage_plans, date_str)
+    storage_invalid, storage_missing = _storage_flags(sensor, storage_day)
+    past_planned = _load_storage_intervals(storage_day, storage_invalid, day)
+
+    if not past_planned:
+        storage_plans = await _refresh_storage_if_needed(
+            sensor, storage_plans, date_str, storage_missing, storage_invalid
+        )
+        storage_day = _get_storage_day(storage_plans, date_str)
+        storage_invalid, _ = _storage_flags(sensor, storage_day)
+        past_planned = _load_storage_intervals(storage_day, storage_invalid, day)
+
+    if not past_planned:
+        past_planned = _load_past_planned_from_daily_state(sensor, date_str, day)
+
+    past_planned = _fallback_storage_intervals(storage_day, past_planned, date_str)
+    _log_missing_past_planned(past_planned, day)
+    return past_planned, storage_day
+
+
 async def _resolve_mixed_planned(
     sensor: Any,
     storage_plans: Dict[str, Any],
     date_str: str,
     day: date,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    storage_day = storage_plans.get("detailed", {}).get(date_str)
-    past_planned: List[Dict[str, Any]] = []
-    storage_invalid = sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
-    storage_missing = not storage_day or not storage_day.get("intervals")
-    if storage_day and storage_day.get("intervals") and not storage_invalid:
-        past_planned = storage_day["intervals"]
-        _LOGGER.debug(
-            "📦 Loaded %s planned intervals from Storage Helper for %s",
-            len(past_planned),
-            day,
-        )
-    if sensor._plans_store and (storage_missing or storage_invalid):
-        storage_plans, _ = await _maybe_repair_baseline(sensor, storage_plans, date_str)
-        storage_day = storage_plans.get("detailed", {}).get(date_str)
-        storage_invalid = (
-            sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
-        )
-        if storage_day and storage_day.get("intervals") and not storage_invalid:
-            past_planned = storage_day["intervals"]
-    if not past_planned:
-        past_planned = _load_past_planned_from_daily_state(sensor, date_str, day)
-    if not past_planned and storage_day and storage_day.get("intervals"):
-        past_planned = storage_day["intervals"]
-        _LOGGER.warning(
-            "Using baseline plan for %s despite invalid data (no fallback)",
-            date_str,
-        )
-    if not past_planned:
-        _LOGGER.debug("⚠️  No past planned data available for %s", day)
-
+    past_planned, _ = await _resolve_past_planned(
+        sensor, storage_plans, date_str, day
+    )
     future_planned = _collect_future_planned(getattr(sensor, "_timeline_data", []), day)
 
     _LOGGER.debug(

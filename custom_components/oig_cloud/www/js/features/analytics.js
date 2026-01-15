@@ -15,37 +15,13 @@ let buildModeTimeline = globalThis.DashboardTimeline?.buildModeTimeline;
  * @param {HTMLElement} container - Container element
  * @param {object} tileSummary - Tile summary data from API
  */
-function initTodayPlanTile(container, tileSummary) {
-    if (!container) {
-        console.warn('[Today Plan Tile] Container not found - skipping render');
+function initTodayPlanTile(_container, tileSummary) {
+    if (globalThis.DashboardTimeline?.renderTodayPlanTile) {
+        globalThis.DashboardTimeline.renderTodayPlanTile(tileSummary);
         return;
     }
 
-    // Lazy load TodayPlanTile class if not already loaded
-    if (typeof TodayPlanTile === 'undefined') {
-        console.log('[Today Plan Tile] Loading module...');
-        const script = document.createElement('script');
-        script.type = 'module';
-        script.src = 'modules/today-plan-tile.js';  // Relativní cesta (stejný základ jako dashboard-core.js)
-        script.onload = () => {
-            console.log('[Today Plan Tile] Module loaded, rendering...');
-            initTodayPlanTile(container, tileSummary);
-        };
-        script.onerror = () => {
-            console.error('[Today Plan Tile] Failed to load module');
-        };
-        document.head.appendChild(script);
-        return;
-    }
-
-    // Update existing instance or create new one
-    if (todayPlanTileInstance) {
-        console.log('[Today Plan Tile] Updating existing instance');
-        todayPlanTileInstance.update(tileSummary);
-    } else {
-        console.log('[Today Plan Tile] Creating new instance');
-        initTodayPlanTile(container, tileSummary);
-    }
+    console.warn('[Today Plan Tile] Timeline module not available');
 }
 
 /**
@@ -708,6 +684,157 @@ let batteryEfficiencyCache = {
     label: null
 };
 
+function buildEfficiencyDisplayData(attrs) {
+    const lastMonthEff = attrs.efficiency_last_month_pct;
+    const lastMonthLossesPct = attrs.losses_last_month_pct;
+    const lastMonthLossesKwh = attrs.losses_last_month_kwh;
+    const lastMonthCharge = attrs.last_month_charge_kwh;
+    const lastMonthDischarge = attrs.last_month_discharge_kwh;
+
+    const currentMonthEff = attrs.efficiency_current_month_pct;
+    const currentMonthLossesPct = attrs.losses_current_month_pct;
+    const currentMonthLossesKwh = attrs.losses_current_month_kwh;
+    const currentMonthCharge = attrs.current_month_charge_kwh;
+    const currentMonthDischarge = attrs.current_month_discharge_kwh;
+    const currentMonthDays = attrs.current_month_days;
+
+    const hasLastMonth = lastMonthEff !== null && lastMonthEff !== undefined &&
+        lastMonthCharge !== null && lastMonthDischarge !== null;
+    const hasCurrentMonth = currentMonthEff !== null && currentMonthEff !== undefined;
+
+    if (hasLastMonth) {
+        console.log('[Battery Efficiency] Using LAST month data:', lastMonthEff + '%');
+        return {
+            display: {
+                efficiency: lastMonthEff,
+                lossesPct: lastMonthLossesPct,
+                lossesKwh: lastMonthLossesKwh,
+                charge: lastMonthCharge,
+                discharge: lastMonthDischarge,
+                label: 'Minulý měsíc'
+            },
+            lastMonthEff,
+            currentMonthEff
+        };
+    }
+
+    if (hasCurrentMonth) {
+        console.log('[Battery Efficiency] Using CURRENT month data:', currentMonthEff + '%');
+        return {
+            display: {
+                efficiency: currentMonthEff,
+                lossesPct: currentMonthLossesPct,
+                lossesKwh: currentMonthLossesKwh,
+                charge: currentMonthCharge,
+                discharge: currentMonthDischarge,
+                label: `Tento měsíc (${currentMonthDays} dní)`
+            },
+            lastMonthEff,
+            currentMonthEff
+        };
+    }
+
+    console.warn('[Battery Efficiency] No data available - lastMonth:', lastMonthEff, 'currentMonth:', currentMonthEff);
+    return { display: null, lastMonthEff, currentMonthEff };
+}
+
+function hasEfficiencyChanged(display) {
+    return (
+        batteryEfficiencyCache.efficiency !== display.efficiency ||
+        batteryEfficiencyCache.charge !== display.charge ||
+        batteryEfficiencyCache.discharge !== display.discharge ||
+        batteryEfficiencyCache.losses !== display.lossesKwh ||
+        batteryEfficiencyCache.label !== display.label
+    );
+}
+
+function updateBatteryEfficiencyCache(display) {
+    batteryEfficiencyCache.efficiency = display.efficiency;
+    batteryEfficiencyCache.charge = display.charge;
+    batteryEfficiencyCache.discharge = display.discharge;
+    batteryEfficiencyCache.losses = display.lossesKwh;
+    batteryEfficiencyCache.label = display.label;
+}
+
+function updateBatteryEfficiencyMain(display) {
+    const mainEl = document.getElementById('battery-efficiency-main');
+    if (mainEl) {
+        mainEl.textContent = `${display.efficiency.toFixed(1)}%`;
+    }
+
+    const periodEl = document.getElementById('battery-efficiency-period-label');
+    if (periodEl) {
+        periodEl.textContent = display.label;
+    }
+}
+
+function updateBatteryEfficiencyTrend(lastMonthEff, currentMonthEff, displayLabel) {
+    const trendEl = document.getElementById('battery-efficiency-trend');
+    if (!trendEl) return;
+
+    if (lastMonthEff !== null && currentMonthEff !== null &&
+        lastMonthEff !== undefined && currentMonthEff !== undefined) {
+        const diff = currentMonthEff - lastMonthEff;
+        const diffAbs = Math.abs(diff);
+        let trendText = '';
+        let trendColor = '';
+
+        if (diff > 0.5) {
+            trendText = `↗️ Vs minulý měsíc +${diffAbs.toFixed(1)}%`;
+            trendColor = '#4CAF50';
+        } else if (diff < -0.5) {
+            trendText = `↘️ Vs minulý měsíc -${diffAbs.toFixed(1)}%`;
+            trendColor = '#FF5722';
+        } else {
+            trendText = '➡️ Podobně jako minulý měsíc';
+            trendColor = 'var(--text-secondary)';
+        }
+
+        trendEl.textContent = trendText;
+        trendEl.style.color = trendColor;
+        return;
+    }
+
+    trendEl.textContent = displayLabel;
+}
+
+function updateBatteryEfficiencyDetails(display) {
+    const chargeEl = document.getElementById('battery-charge-value');
+    if (chargeEl) {
+        chargeEl.textContent = `${display.charge?.toFixed(1) || '--'} kWh`;
+    }
+
+    const dischargeEl = document.getElementById('battery-discharge-value');
+    if (dischargeEl) {
+        dischargeEl.textContent = `${display.discharge?.toFixed(1) || '--'} kWh`;
+    }
+
+    const lossesEl = document.getElementById('battery-losses-value');
+    if (lossesEl) {
+        lossesEl.textContent = `${display.lossesKwh?.toFixed(1) || '--'} kWh (${display.lossesPct?.toFixed(1) || '--'}%)`;
+    }
+}
+
+function resetBatteryEfficiencyUi() {
+    const mainEl = document.getElementById('battery-efficiency-main');
+    if (mainEl) mainEl.textContent = '--';
+
+    const periodEl = document.getElementById('battery-efficiency-period-label');
+    if (periodEl) periodEl.textContent = 'Čekám na data...';
+
+    const trendEl = document.getElementById('battery-efficiency-trend');
+    if (trendEl) trendEl.textContent = 'Čekám na data...';
+
+    const chargeEl = document.getElementById('battery-charge-value');
+    if (chargeEl) chargeEl.textContent = '--';
+
+    const dischargeEl = document.getElementById('battery-discharge-value');
+    if (dischargeEl) dischargeEl.textContent = '--';
+
+    const lossesEl = document.getElementById('battery-losses-value');
+    if (lossesEl) lossesEl.textContent = '--';
+}
+
 /**
  * Update battery efficiency statistics on Pricing tab
  * Loads data from battery_efficiency sensor and displays monthly stats
@@ -733,152 +860,23 @@ async function updateBatteryEfficiencyStats() {
     const attrs = sensor.attributes || {};
     console.log('[Battery Efficiency] Sensor attributes:', attrs);
 
-    // Prefer last month (complete), fallback to current month (partial)
-    let displayEff, displayLossesPct, displayLossesKwh, displayCharge, displayDischarge, displayLabel;
-
-    const lastMonthEff = attrs.efficiency_last_month_pct;
-    const lastMonthLossesPct = attrs.losses_last_month_pct;
-    const lastMonthLossesKwh = attrs.losses_last_month_kwh;
-    const lastMonthCharge = attrs.last_month_charge_kwh;
-    const lastMonthDischarge = attrs.last_month_discharge_kwh;
-
-    const currentMonthEff = attrs.efficiency_current_month_pct;
-    const currentMonthLossesPct = attrs.losses_current_month_pct;
-    const currentMonthLossesKwh = attrs.losses_current_month_kwh;
-    const currentMonthCharge = attrs.current_month_charge_kwh;
-    const currentMonthDischarge = attrs.current_month_discharge_kwh;
-    const currentMonthDays = attrs.current_month_days;
-
-    // Use last month if available (complete data), otherwise use current month (partial)
-    if (lastMonthEff !== null && lastMonthEff !== undefined &&
-        lastMonthCharge !== null && lastMonthDischarge !== null) {
-        displayEff = lastMonthEff;
-        displayLossesPct = lastMonthLossesPct;
-        displayLossesKwh = lastMonthLossesKwh;
-        displayCharge = lastMonthCharge;
-        displayDischarge = lastMonthDischarge;
-        displayLabel = 'Minulý měsíc';
-        console.log('[Battery Efficiency] Using LAST month data:', displayEff + '%');
-    } else if (currentMonthEff !== null && currentMonthEff !== undefined) {
-        displayEff = currentMonthEff;
-        displayLossesPct = currentMonthLossesPct;
-        displayLossesKwh = currentMonthLossesKwh;
-        displayCharge = currentMonthCharge;
-        displayDischarge = currentMonthDischarge;
-        displayLabel = `Tento měsíc (${currentMonthDays} dní)`;
-        console.log('[Battery Efficiency] Using CURRENT month data:', displayEff + '%');
-    } else {
-        console.warn('[Battery Efficiency] No data available - lastMonth:', lastMonthEff, 'currentMonth:', currentMonthEff);
+    const { display, lastMonthEff, currentMonthEff } = buildEfficiencyDisplayData(attrs);
+    if (!display) {
+        resetBatteryEfficiencyUi();
+        return;
     }
 
-    if (displayEff !== undefined) {
-        // Check if values changed (change detection)
-        const hasChanged =
-            batteryEfficiencyCache.efficiency !== displayEff ||
-            batteryEfficiencyCache.charge !== displayCharge ||
-            batteryEfficiencyCache.discharge !== displayDischarge ||
-            batteryEfficiencyCache.losses !== displayLossesKwh ||
-            batteryEfficiencyCache.label !== displayLabel;
-
-        if (hasChanged) {
-            // Update cache
-            batteryEfficiencyCache.efficiency = displayEff;
-            batteryEfficiencyCache.charge = displayCharge;
-            batteryEfficiencyCache.discharge = displayDischarge;
-            batteryEfficiencyCache.losses = displayLossesKwh;
-            batteryEfficiencyCache.label = displayLabel;
-
-            console.log('[Battery Efficiency] Values changed, updating UI:', {
-                efficiency: displayEff,
-                charge: displayCharge,
-                discharge: displayDischarge,
-                losses: displayLossesKwh,
-                label: displayLabel
-            });
-
-            // Main value - direct DOM update (more reliable than updateElementIfChanged)
-            const mainEl = document.getElementById('battery-efficiency-main');
-            if (mainEl) {
-                mainEl.textContent = `${displayEff.toFixed(1)}%`;
-            }
-
-            // Period label
-            const periodEl = document.getElementById('battery-efficiency-period-label');
-            if (periodEl) {
-                periodEl.textContent = displayLabel;
-            }
-
-            // Trend comparison
-            if (lastMonthEff !== null && currentMonthEff !== null &&
-                lastMonthEff !== undefined && currentMonthEff !== undefined) {
-                const diff = currentMonthEff - lastMonthEff;
-                const diffAbs = Math.abs(diff);
-                let trendText = '';
-                let trendColor = '';
-
-                if (diff > 0.5) {
-                    trendText = `↗️ Vs minulý měsíc +${diffAbs.toFixed(1)}%`;
-                    trendColor = '#4CAF50';
-                } else if (diff < -0.5) {
-                    trendText = `↘️ Vs minulý měsíc -${diffAbs.toFixed(1)}%`;
-                    trendColor = '#FF5722';
-                } else {
-                    trendText = `➡️ Podobně jako minulý měsíc`;
-                    trendColor = 'var(--text-secondary)';
-                }
-
-                const trendEl = document.getElementById('battery-efficiency-trend');
-                if (trendEl) {
-                    trendEl.textContent = trendText;
-                    trendEl.style.color = trendColor;
-                }
-            } else {
-                const trendEl = document.getElementById('battery-efficiency-trend');
-                if (trendEl) {
-                    trendEl.textContent = displayLabel;
-                }
-            }
-
-            // Detail values
-            const chargeEl = document.getElementById('battery-charge-value');
-            if (chargeEl) {
-                chargeEl.textContent = `${displayCharge?.toFixed(1) || '--'} kWh`;
-            }
-
-            const dischargeEl = document.getElementById('battery-discharge-value');
-            if (dischargeEl) {
-                dischargeEl.textContent = `${displayDischarge?.toFixed(1) || '--'} kWh`;
-            }
-
-            const lossesEl = document.getElementById('battery-losses-value');
-            if (lossesEl) {
-                lossesEl.textContent = `${displayLossesKwh?.toFixed(1) || '--'} kWh (${displayLossesPct?.toFixed(1) || '--'}%)`;
-            }
-
-            // Update gradient bar comparison
-            updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff);
-        }
-    } else {
-        console.warn('[Battery Efficiency] No displayEff - setting UI to defaults');
-
-        const mainEl = document.getElementById('battery-efficiency-main');
-        if (mainEl) mainEl.textContent = '--';
-
-        const periodEl = document.getElementById('battery-efficiency-period-label');
-        if (periodEl) periodEl.textContent = 'Čekám na data...';
-
-        const trendEl = document.getElementById('battery-efficiency-trend');
-        if (trendEl) trendEl.textContent = 'Čekám na data...';
-
-        const chargeEl = document.getElementById('battery-charge-value');
-        if (chargeEl) chargeEl.textContent = '--';
-
-        const dischargeEl = document.getElementById('battery-discharge-value');
-        if (dischargeEl) dischargeEl.textContent = '--';
-
-        const lossesEl = document.getElementById('battery-losses-value');
-        if (lossesEl) lossesEl.textContent = '--';
+    if (!hasEfficiencyChanged(display)) {
+        return;
     }
+
+    updateBatteryEfficiencyCache(display);
+    console.log('[Battery Efficiency] Values changed, updating UI:', display);
+
+    updateBatteryEfficiencyMain(display);
+    updateBatteryEfficiencyTrend(lastMonthEff, currentMonthEff, display.label);
+    updateBatteryEfficiencyDetails(display);
+    updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff);
 }
 
 globalThis.DashboardAnalytics = {

@@ -42,5 +42,12 @@ export default [
       "max-lines-per-function": ["warn", 150],
       "max-params": ["warn", 5]
     }
+  },
+  {
+    files: ["custom_components/oig_cloud/www/js/**/*.js"],
+    rules: {
+      "no-undef": "off",
+      "eqeqeq": ["warn", "always"]
+    }
   }
 ];

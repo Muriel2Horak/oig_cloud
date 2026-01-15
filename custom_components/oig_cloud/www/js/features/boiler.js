@@ -429,6 +429,51 @@ async function loadExtendedBoilerData() {
     }
 }
 
+function formatBoilerSensorValue(entityId, value) {
+    if (entityId.includes('stav_nabiti')) {
+        return `${value.toFixed(0)} %`;
+    }
+    if (entityId.includes('teplota')) {
+        return `${value.toFixed(1)} °C`;
+    }
+    if (entityId.includes('energie')) {
+        return `${value.toFixed(2)} kWh`;
+    }
+    if (entityId.includes('cena')) {
+        return `${value.toFixed(2)} Kč`;
+    }
+    return null;
+}
+
+function updateBoilerPlanInfo(plan) {
+    const slots = plan.slots || [];
+    const activeSlots = slots.filter(s => s.heating).length;
+
+    document.getElementById('boiler-plan-digest').textContent = plan.digest || 'N/A';
+    document.getElementById('boiler-plan-slots').textContent = slots.length;
+    document.getElementById('boiler-plan-active-slots').textContent = activeSlots;
+
+    if (slots.length === 0) {
+        return;
+    }
+
+    const startTime = new Date(slots[0].start_time);
+    const endTime = new Date(slots[slots.length - 1].start_time);
+
+    document.getElementById('boiler-plan-start').textContent = startTime.toLocaleString('cs-CZ', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    document.getElementById('boiler-plan-end').textContent = endTime.toLocaleString('cs-CZ', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
 async function updateBoilerSensors() {
     const hass = getHass();
     if (!hass) return;
@@ -445,19 +490,18 @@ async function updateBoilerSensors() {
         const state = hass?.states?.[entityId];
 
         const element = document.getElementById(elementId);
-        if (element && state) {
-            const value = Number.parseFloat(state.state);
-            if (!Number.isNaN(value)) {
-                if (entityId.includes('stav_nabiti')) {
-                    element.textContent = `${value.toFixed(0)} %`;
-                } else if (entityId.includes('teplota')) {
-                    element.textContent = `${value.toFixed(1)} °C`;
-                } else if (entityId.includes('energie')) {
-                    element.textContent = `${value.toFixed(2)} kWh`;
-                } else if (entityId.includes('cena')) {
-                    element.textContent = `${value.toFixed(2)} Kč`;
-                }
-            }
+        if (!element || !state) {
+            continue;
+        }
+
+        const value = Number.parseFloat(state.state);
+        if (Number.isNaN(value)) {
+            continue;
+        }
+
+        const formattedValue = formatBoilerSensorValue(entityId, value);
+        if (formattedValue !== null) {
+            element.textContent = formattedValue;
         }
     }
 
@@ -466,31 +510,7 @@ async function updateBoilerSensors() {
     const planState = hass?.states?.[planEntityId];
 
     if (planState?.attributes?.plan) {
-        const plan = planState.attributes.plan;
-        const slots = plan.slots || [];
-        const activeSlots = slots.filter(s => s.heating).length;
-
-        document.getElementById('boiler-plan-digest').textContent = plan.digest || 'N/A';
-        document.getElementById('boiler-plan-slots').textContent = slots.length;
-        document.getElementById('boiler-plan-active-slots').textContent = activeSlots;
-
-        if (slots.length > 0) {
-            const startTime = new Date(slots[0].start_time);
-            const endTime = new Date(slots[slots.length - 1].start_time);
-
-            document.getElementById('boiler-plan-start').textContent = startTime.toLocaleString('cs-CZ', {
-                day: '2-digit',
-                month: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            document.getElementById('boiler-plan-end').textContent = endTime.toLocaleString('cs-CZ', {
-                day: '2-digit',
-                month: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        }
+        updateBoilerPlanInfo(planState.attributes.plan);
     }
 }
 
@@ -550,12 +570,13 @@ async function initializeBoilerChart() {
     }
 
     // Create or refresh chart instance
-    if (!boilerChartInstance) {
-        boilerChartInstance = new globalThis.BoilerChartModule();
-        await boilerChartInstance.init(canvas, hass, INVERTER_SN);
-    } else {
+    if (boilerChartInstance) {
         await boilerChartInstance.refresh();
+        return;
     }
+
+    boilerChartInstance = new globalThis.BoilerChartModule();
+    await boilerChartInstance.init(canvas, hass, INVERTER_SN);
 }
 
 // Boiler control functions (will use ServiceShield)

@@ -328,6 +328,41 @@ async function updateButtonStates() {
 }
 
 // Update Box Mode buttons
+function updateModeButtons({ modes, getButtonId, pendingService, pending, currentMode, isRunning }) {
+    modes.forEach(mode => {
+        const btn = document.getElementById(getButtonId(mode));
+        if (!btn) return;
+
+        btn.classList.remove('active', 'pending', 'processing', 'disabled-by-service');
+
+        if (pending?.service === pendingService) {
+            btn.disabled = true;
+            if (pending?.target === mode) {
+                btn.classList.add(isRunning ? 'processing' : 'pending');
+            } else {
+                btn.classList.add('disabled-by-service');
+            }
+        } else {
+            btn.disabled = false;
+            if (currentMode === mode) {
+                btn.classList.add('active');
+            }
+        }
+    });
+}
+
+function updateModeStatus(statusId, currentMode, pending, pendingService, isRunning, fallback = '') {
+    const statusEl = document.getElementById(statusId);
+    if (!statusEl) return;
+
+    if (pending?.service === pendingService) {
+        const arrow = isRunning ? '🔄' : '⏳';
+        statusEl.innerHTML = `${currentMode} ${arrow} <span class="transitioning">${pending?.target}</span>`;
+    } else {
+        statusEl.textContent = currentMode || fallback;
+    }
+}
+
 function updateBoxModeButtons(currentMode, pending, isRunning) {
     const modes = ['Home 1', 'Home 2', 'Home 3', 'Home UPS'];
     const buttonIds = {
@@ -337,43 +372,15 @@ function updateBoxModeButtons(currentMode, pending, isRunning) {
         'Home UPS': 'btn-mode-ups'
     };
 
-    modes.forEach(mode => {
-        const btn = document.getElementById(buttonIds[mode]);
-        if (!btn) return;
-
-        // Reset classes
-        btn.classList.remove('active', 'pending', 'processing', 'disabled-by-service');
-
-        // OPRAVA: Zamknout VŠECHNA tlačítka pokud běží set_box_mode (nezávisle na target)
-        if (pending?.service === 'set_box_mode') {
-            btn.disabled = true;
-            // Pokud je tento mode cílový, zobraz jako processing/pending
-            if (pending?.target === mode) {
-                btn.classList.add(isRunning ? 'processing' : 'pending');
-            } else {
-                // Ostatní tlačítka jen zamknout
-                btn.classList.add('disabled-by-service');
-            }
-        }
-        // Check if this is current mode (exact match)
-        else {
-            btn.disabled = false;
-            if (currentMode === mode) {
-                btn.classList.add('active');
-            }
-        }
+    updateModeButtons({
+        modes,
+        getButtonId: (mode) => buttonIds[mode],
+        pendingService: 'set_box_mode',
+        pending,
+        currentMode,
+        isRunning
     });
-
-    // Update status text
-    const statusEl = document.getElementById('box-mode-status');
-    if (!statusEl) return;
-
-    if (pending?.service === 'set_box_mode') {
-        const arrow = isRunning ? '🔄' : '⏳';
-        statusEl.innerHTML = `${currentMode} ${arrow} <span class="transitioning">${pending?.target}</span>`;
-    } else {
-        statusEl.textContent = currentMode || '--';
-    }
+    updateModeStatus('box-mode-status', currentMode, pending, 'set_box_mode', isRunning, '--');
 }
 
 // Update Boiler Mode buttons
@@ -382,44 +389,15 @@ function updateBoilerModeButtons(currentModeRaw, pending, isRunning) {
     const currentMode = currentModeRaw === 'Manuální' ? 'Manual' : 'CBB';
     const modes = ['CBB', 'Manual'];
 
-    modes.forEach(mode => {
-        const btnId = `btn-boiler-${mode.toLowerCase()}`;
-        const btn = document.getElementById(btnId);
-        if (!btn) return;
-
-        // Reset classes
-        btn.classList.remove('active', 'pending', 'processing', 'disabled-by-service');
-
-        // OPRAVA: Zamknout VŠECHNA tlačítka pokud běží set_boiler_mode (nezávisle na target)
-        if (pending?.service === 'set_boiler_mode') {
-            btn.disabled = true;
-            // Pokud je tento mode cílový, zobraz jako processing/pending
-            if (pending?.target === mode) {
-                btn.classList.add(isRunning ? 'processing' : 'pending');
-            } else {
-                // Ostatní tlačítka jen zamknout
-                btn.classList.add('disabled-by-service');
-            }
-        }
-        // Check if active
-        else {
-            btn.disabled = false;
-            if (currentMode === mode) {
-                btn.classList.add('active');
-            }
-        }
+    updateModeButtons({
+        modes,
+        getButtonId: (mode) => `btn-boiler-${mode.toLowerCase()}`,
+        pendingService: 'set_boiler_mode',
+        pending,
+        currentMode,
+        isRunning
     });
-
-    // Update status
-    const statusEl = document.getElementById('boiler-mode-status');
-    if (!statusEl) return;
-
-    if (pending?.service === 'set_boiler_mode') {
-        const arrow = isRunning ? '🔄' : '⏳';
-        statusEl.innerHTML = `${currentMode} ${arrow} <span class="transitioning">${pending?.target}</span>`;
-    } else {
-        statusEl.textContent = currentMode;
-    }
+    updateModeStatus('boiler-mode-status', currentMode, pending, 'set_boiler_mode', isRunning);
 }
 
 // Update Grid Delivery buttons
@@ -590,6 +568,137 @@ let lastModeChangeNotified = false;
 // Shield Queue live duration update
 let shieldQueueUpdateInterval = null;
 
+const QUEUE_SERVICE_MAP = {
+    'set_box_mode': '🏠 Změna režimu boxu',
+    'set_grid_delivery': '💧 Změna nastavení přetoků',
+    'set_grid_delivery_limit': '🔢 Změna limitu přetoků',
+    'set_boiler_mode': '🔥 Změna nastavení bojleru',
+    'set_formating_mode': '🔋 Změna nabíjení baterie',
+    'set_battery_capacity': '⚡ Změna kapacity baterie'
+};
+
+const QUEUE_VALUE_MAP = {
+    'CBB': 'Inteligentní',
+    'Manual': 'Manuální',
+    'Manuální': 'Manuální'
+};
+
+function formatQueueServiceName(service) {
+    return QUEUE_SERVICE_MAP[service] || service || 'N/A';
+}
+
+function formatQueueChanges(changes) {
+    if (!Array.isArray(changes) || changes.length === 0) {
+        return 'N/A';
+    }
+    return changes.map((change) => {
+        const arrowIndex = change.indexOf('→');
+        if (arrowIndex === -1) {
+            return change;
+        }
+        const left = change.slice(0, arrowIndex).trim();
+        const right = change.slice(arrowIndex + 1).trim();
+        const colonIndex = left.indexOf(':');
+        const fromRaw = colonIndex === -1 ? left : left.slice(colonIndex + 1);
+
+        const from = (QUEUE_VALUE_MAP[fromRaw.replaceAll("'", '').trim()] || fromRaw)
+            .replaceAll("'", '')
+            .trim();
+        const to = (QUEUE_VALUE_MAP[right.replaceAll("'", '').trim()] || right)
+            .replaceAll("'", '')
+            .trim();
+
+        return `${from} → ${to}`;
+    }).join('<br>');
+}
+
+function formatQueueTimestamps(request) {
+    let createdText = '<span style="opacity: 0.4;">--</span>';
+    let durationText = '<span style="opacity: 0.4;">--</span>';
+    const timestamp = request.started_at || request.queued_at || request.created_at || request.timestamp || request.created;
+
+    if (!timestamp) {
+        console.warn('[Queue] No timestamp found in request:', request);
+        return { createdText, durationText };
+    }
+
+    try {
+        const createdDate = new Date(timestamp);
+        const now = new Date();
+        const diffSec = Math.floor((now - createdDate) / 1000);
+
+        const hours = String(createdDate.getHours()).padStart(2, '0');
+        const minutes = String(createdDate.getMinutes()).padStart(2, '0');
+        createdText = `${hours}:${minutes}`;
+
+        if (createdDate.toDateString() !== now.toDateString()) {
+            const day = createdDate.getDate();
+            const month = createdDate.getMonth() + 1;
+            createdText = `${day}.${month}. ${createdText}`;
+        }
+
+        if (diffSec < 60) {
+            durationText = `${diffSec}s`;
+        } else if (diffSec < 3600) {
+            const diffMin = Math.floor(diffSec / 60);
+            const diffSecRem = diffSec % 60;
+            durationText = `${diffMin}m ${diffSecRem}s`;
+        } else {
+            const diffHours = Math.floor(diffSec / 3600);
+            const diffMin = Math.floor((diffSec % 3600) / 60);
+            durationText = `${diffHours}h ${diffMin}m`;
+        }
+    } catch (e) {
+        console.warn('[Queue] Invalid timestamp format:', timestamp, e);
+    }
+
+    return { createdText, durationText };
+}
+
+function buildQueueRow(request, index, hasRunning) {
+    const isRunning = index === 0 && hasRunning;
+    const isQueued = !isRunning;
+    const position = index + 1;
+
+    request.position = position;
+
+    const statusClass = isRunning ? 'queue-status-running' : 'queue-status-queued';
+    const statusIcon = isRunning ? '🔄' : '⏳';
+    const statusText = isRunning ? 'Zpracovává se' : 'Čeká';
+    const serviceName = formatQueueServiceName(request.service);
+    const changes = formatQueueChanges(request.changes);
+    const { createdText, durationText } = formatQueueTimestamps(request);
+
+    return `
+        <tr>
+            <td class="${statusClass}">${statusIcon} ${statusText}</td>
+            <td>${serviceName}</td>
+            <td style="font-size: 11px;">${changes}</td>
+            <td class="queue-time">${createdText}</td>
+            <td class="queue-time" style="font-weight: 600;">${durationText}</td>
+            <td style="text-align: center;">
+                ${isQueued ? `
+                    <button
+                        onclick="removeFromQueue(${position})"
+                        style="
+                            background: none;
+                            border: none;
+                            cursor: pointer;
+                            font-size: 18px;
+                            opacity: 0.6;
+                            padding: 4px 8px;
+                            transition: all 0.2s;
+                        "
+                        onmouseover="this.style.opacity='1'; this.style.transform='scale(1.2)'"
+                        onmouseout="this.style.opacity='0.6'; this.style.transform='scale(1)'"
+                        title="Odstranit z fronty"
+                    >🗑️</button>
+                ` : '<span style="opacity: 0.4;">—</span>'}
+            </td>
+        </tr>
+    `;
+}
+
 function startShieldQueueLiveUpdate() {
     // Clear existing interval
     if (shieldQueueUpdateInterval) {
@@ -663,134 +772,8 @@ function updateShieldQueue() {
         let html = '<table class="shield-queue-table">';
         html += '<thead><tr><th>Stav</th><th>Služba</th><th>Změny</th><th>Vytvořeno</th><th>Trvání</th><th>Akce</th></tr></thead>';
         html += '<tbody>';
-
-        allRequests.forEach((req, index) => {
-            const isRunning = index === 0 && runningRequests.length > 0;
-            const isQueued = !isRunning; // Anything not running is queued
-
-            // OPRAVA: Přidat position pro delete button (1-based index pro backend)
-            // Running má position 1, queued jsou 2, 3, 4, ...
-            req.position = index + 1;
-
-            const statusClass = isRunning ? 'queue-status-running' : 'queue-status-queued';
-            const statusIcon = isRunning ? '🔄' : '⏳';
-            const statusText = isRunning ? 'Zpracovává se' : 'Čeká';
-
-            // Format service name to human-readable Czech
-            const serviceMap = {
-                'set_box_mode': '🏠 Změna režimu boxu',
-                'set_grid_delivery': '💧 Změna nastavení přetoků',
-                'set_grid_delivery_limit': '🔢 Změna limitu přetoků',
-                'set_boiler_mode': '🔥 Změna nastavení bojleru',
-                'set_formating_mode': '🔋 Změna nabíjení baterie',
-                'set_battery_capacity': '⚡ Změna kapacity baterie'
-            };
-            let serviceName = serviceMap[req.service] || req.service || 'N/A';
-
-            // Format changes
-            let changes = 'N/A';
-            if (req.changes && Array.isArray(req.changes) && req.changes.length > 0) {
-                changes = req.changes.map(ch => {
-                    const arrowIndex = ch.indexOf('→');
-                    if (arrowIndex === -1) {
-                        return ch;
-                    }
-                    const left = ch.slice(0, arrowIndex).trim();
-                    const right = ch.slice(arrowIndex + 1).trim();
-                    const colonIndex = left.indexOf(':');
-                    const fromRaw = colonIndex === -1 ? left : left.slice(colonIndex + 1);
-
-                    let from = fromRaw.replaceAll("'", '').trim();
-                    let to = right.replaceAll("'", '').trim();
-
-                    // Mapování hodnot pro lepší čitelnost
-                    const valueMap = {
-                        'CBB': 'Inteligentní',
-                        'Manual': 'Manuální',
-                        'Manuální': 'Manuální'
-                    };
-
-                    from = valueMap[from] || from;
-                    to = valueMap[to] || to;
-
-                    return `${from} → ${to}`;
-                }).join('<br>');
-            }
-
-            // Format creation time and duration
-            let createdText = '<span style="opacity: 0.4;">--</span>';
-            let durationText = '<span style="opacity: 0.4;">--</span>';
-
-            // Try multiple timestamp fields (started_at for running, queued_at for queued)
-            const timestamp = req.started_at || req.queued_at || req.created_at || req.timestamp || req.created;
-
-            if (timestamp) {
-                try {
-                    const createdDate = new Date(timestamp);
-                    const now = new Date();
-                    const diffSec = Math.floor((now - createdDate) / 1000);
-
-                    // Format creation time (HH:MM)
-                    const hours = String(createdDate.getHours()).padStart(2, '0');
-                    const minutes = String(createdDate.getMinutes()).padStart(2, '0');
-                    createdText = `${hours}:${minutes}`;
-
-                    // Add date if not today
-                    const isToday = createdDate.toDateString() === now.toDateString();
-                    if (!isToday) {
-                        const day = createdDate.getDate();
-                        const month = createdDate.getMonth() + 1;
-                        createdText = `${day}.${month}. ${createdText}`;
-                    }
-
-                    // Format duration (how long in queue)
-                    if (diffSec < 60) {
-                        durationText = `${diffSec}s`;
-                    } else if (diffSec < 3600) {
-                        const diffMin = Math.floor(diffSec / 60);
-                        const diffSecRem = diffSec % 60;
-                        durationText = `${diffMin}m ${diffSecRem}s`;
-                    } else {
-                        const diffHours = Math.floor(diffSec / 3600);
-                        const diffMin = Math.floor((diffSec % 3600) / 60);
-                        durationText = `${diffHours}h ${diffMin}m`;
-                    }
-                } catch (e) {
-                    console.warn('[Queue] Invalid timestamp format:', timestamp, e);
-                }
-            } else {
-                console.warn('[Queue] No timestamp found in request:', req);
-            }
-
-            html += `
-                <tr>
-                    <td class="${statusClass}">${statusIcon} ${statusText}</td>
-                    <td>${serviceName}</td>
-                    <td style="font-size: 11px;">${changes}</td>
-                    <td class="queue-time">${createdText}</td>
-                    <td class="queue-time" style="font-weight: 600;">${durationText}</td>
-                    <td style="text-align: center;">
-                        ${isQueued ? `
-                            <button
-                                onclick="removeFromQueue(${req.position})"
-                                style="
-                                    background: none;
-                                    border: none;
-                                    cursor: pointer;
-                                    font-size: 18px;
-                                    opacity: 0.6;
-                                    padding: 4px 8px;
-                                    transition: all 0.2s;
-                                "
-                                onmouseover="this.style.opacity='1'; this.style.transform='scale(1.2)'"
-                                onmouseout="this.style.opacity='0.6'; this.style.transform='scale(1)'"
-                                title="Odstranit z fronty"
-                            >🗑️</button>
-                        ` : '<span style="opacity: 0.3;">—</span>'}
-                    </td>
-                </tr>
-            `;
-        });
+        const hasRunning = runningRequests.length > 0;
+        html += allRequests.map((req, index) => buildQueueRow(req, index, hasRunning)).join('');
 
         html += '</tbody></table>';
         container.innerHTML = html;
@@ -1212,15 +1195,7 @@ function showGridDeliveryDialog(mode, currentLimit) {
             resolve({ confirmed: false });
         });
 
-        // Handle ESC key
-        const handleEsc = (e) => {
-            if (e.key === 'Escape') {
-                overlay.remove();
-                document.removeEventListener('keydown', handleEsc);
-                resolve({ confirmed: false });
-            }
-        };
-        document.addEventListener('keydown', handleEsc);
+        attachEscCloseHandler(overlay, resolve, { confirmed: false });
     });
 }
 
@@ -1284,15 +1259,7 @@ function showAcknowledgementDialog(title, message, onConfirm) {
             resolve(false);
         });
 
-        // Handle ESC key
-        const handleEsc = (e) => {
-            if (e.key === 'Escape') {
-                overlay.remove();
-                document.removeEventListener('keydown', handleEsc);
-                resolve(false);
-            }
-        };
-        document.addEventListener('keydown', handleEsc);
+        attachEscCloseHandler(overlay, resolve, false);
     });
 }
 
@@ -1338,16 +1305,19 @@ function showSimpleConfirmDialog(title, message, confirmText = 'OK', cancelText 
             resolve(false);
         });
 
-        // Handle ESC key
-        const handleEsc = (e) => {
-            if (e.key === 'Escape') {
-                overlay.remove();
-                document.removeEventListener('keydown', handleEsc);
-                resolve(false);
-            }
-        };
-        document.addEventListener('keydown', handleEsc);
+        attachEscCloseHandler(overlay, resolve, false);
     });
+}
+
+function attachEscCloseHandler(overlay, resolve, result) {
+    const handleEsc = (e) => {
+        if (e.key === 'Escape') {
+            overlay.remove();
+            document.removeEventListener('keydown', handleEsc);
+            resolve(result);
+        }
+    };
+    document.addEventListener('keydown', handleEsc);
 }
 
 // Remove item from shield queue
@@ -1400,6 +1370,43 @@ async function removeFromQueue(position) {
 
 // === SHIELD SERVICE CALL HELPERS ===
 
+async function shouldProceedWithQueueWarning(skipQueueWarning) {
+    if (skipQueueWarning) {
+        return true;
+    }
+    const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
+    const queueCount = Number.parseInt(shieldQueue.value) || 0;
+    if (queueCount < 3) {
+        return true;
+    }
+    return confirm(
+        `⚠️ VAROVÁNÍ: Fronta již obsahuje ${queueCount} úkolů!\n\n` +
+        `Každá změna může trvat až 10 minut.\n` +
+        `Opravdu chcete přidat další úkol?`
+    );
+}
+
+function setPendingButtonState(buttonId) {
+    const btn = buttonId ? document.getElementById(buttonId) : null;
+    if (!btn) return null;
+    btn.disabled = true;
+    btn.classList.add('pending');
+    return btn;
+}
+
+function clearPendingButtonState(btn) {
+    if (!btn) return;
+    btn.disabled = false;
+    btn.classList.remove('pending');
+}
+
+async function refreshShieldUIAfterService() {
+    monitorShieldActivity();
+    updateShieldQueue();
+    await updateShieldUI();
+    await updateButtonStates();
+}
+
 /**
  * Univerzální wrapper pro volání služeb s pending UI
  * @param {Object} config - Konfigurace
@@ -1412,56 +1419,23 @@ async function executeServiceWithPendingUI(config) {
     const { serviceName, buttonId, serviceCall, skipQueueWarning = false } = config;
 
     try {
-        // Check shield queue before adding task
-        if (!skipQueueWarning) {
-            const shieldQueue = await getSensor(findShieldSensorId('service_shield_queue'));
-            const queueCount = Number.parseInt(shieldQueue.value) || 0;
-
-            if (queueCount >= 3) {
-                const proceed = confirm(
-                    `⚠️ VAROVÁNÍ: Fronta již obsahuje ${queueCount} úkolů!\n\n` +
-                    `Každá změna může trvat až 10 minut.\n` +
-                    `Opravdu chcete přidat další úkol?`
-                );
-                if (!proceed) return false;
-            }
-        }
-
-        // Show pending state immediately
-        const btn = buttonId ? document.getElementById(buttonId) : null;
-        if (btn) {
-            btn.disabled = true;
-            btn.classList.add('pending');
-        }
+        const proceed = await shouldProceedWithQueueWarning(skipQueueWarning);
+        if (!proceed) return false;
+        const btn = setPendingButtonState(buttonId);
 
         // Execute service call
         const success = await Promise.resolve(serviceCall());
 
         if (success) {
-            // Okamžitá aktualizace UI bez čekání na WebSocket debounce
-            monitorShieldActivity();
-            updateShieldQueue();
-            await updateShieldUI();
-            await updateButtonStates();
+            await refreshShieldUIAfterService();
             return true;
-        } else {
-            // Re-enable on error
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('pending');
-            }
-            return false;
         }
+        clearPendingButtonState(btn);
+        return false;
     } catch (e) {
         console.error(`[Shield] Error in ${serviceName}:`, e);
         globalThis.DashboardUtils?.showNotification('Chyba', `Nepodařilo se provést: ${serviceName}`, 'error');
-
-        // Re-enable button on error
-        const btn = buttonId ? document.getElementById(buttonId) : null;
-        if (btn) {
-            btn.disabled = false;
-            btn.classList.remove('pending');
-        }
+        clearPendingButtonState(buttonId ? document.getElementById(buttonId) : null);
         return false;
     }
 }
@@ -1648,14 +1622,14 @@ async function setGridDeliveryOld(mode, limit) {
         warning: true
     };
 
-    if (mode !== null) {
-        data.mode = mode;
-    } else {
+    if (mode === null) {
         data.limit = Number.parseInt(limit);
         if (Number.isNaN(data.limit) || data.limit < 1 || data.limit > 9999) {
             globalThis.DashboardUtils?.showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
             return;
         }
+    } else {
+        data.mode = mode;
     }
 
     const success = await callService('oig_cloud', 'set_grid_delivery', data);

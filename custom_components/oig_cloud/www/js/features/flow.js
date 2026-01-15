@@ -318,14 +318,9 @@ async function updatePlannerModeBadge(force = false) {
     if (data) {
         newState = data.auto_mode_switch_enabled ? 'enabled' : 'disabled';
     }
-    let labelText = 'Plánovač: --';
-
-    if (!data) {
-        labelText = 'Plánovač: N/A';
-    } else if (newState === 'enabled') {
-        labelText = 'Plánovač: AUTO';
-    } else {
-        labelText = 'Plánovač: MANUÁL';
+    let labelText = 'Plánovač: N/A';
+    if (data) {
+        labelText = newState === 'enabled' ? 'Plánovač: AUTO' : 'Plánovač: MANUÁL';
     }
 
     if (typeof updateElementIfChanged === 'function') {
@@ -335,11 +330,12 @@ async function updatePlannerModeBadge(force = false) {
     }
 
     if (badge.dataset.modeState !== newState) {
-        const className = newState === 'enabled'
-            ? 'auto-enabled'
-            : newState === 'disabled'
-                ? 'auto-disabled'
-                : 'auto-unknown';
+        let className = 'auto-unknown';
+        if (newState === 'enabled') {
+            className = 'auto-enabled';
+        } else if (newState === 'disabled') {
+            className = 'auto-disabled';
+        }
         badge.classList.remove('auto-enabled', 'auto-disabled', 'auto-unknown');
         badge.classList.add(className);
         badge.dataset.modeState = newState;
@@ -384,7 +380,7 @@ function calculateFlowParams(power, maximum, flowKey = null) {
         count: Math.max(1, Math.min(4, Math.ceil(1 + intensity / 33))), // 1-4 kuličky
         speed: finalSpeed,                                               // Vyhlazená rychlost
         size: Math.round(6 + (intensity / 10)),                         // 6-16px
-        opacity: Math.min(1.0, 0.3 + (intensity / 150))                 // 0.3-1.0
+        opacity: Math.min(1, 0.3 + (intensity / 150))                   // 0.3-1
     };
 }
 
@@ -623,12 +619,11 @@ function updateParticleFlow(flowKey, params) {
  * @returns {string} CSS gradient nebo jednolitá barva
  */
 function getEnergySourceColor(solarRatio, gridRatio, batteryRatio = 0) {
-    const colors = [];
     const SOLAR_COLOR = '#ffd54f';   // Žlutá
     const GRID_COLOR = '#42a5f5';    // Modrá
     const BATTERY_COLOR = '#ff9800'; // Oranžová
 
-    // Normalize ratios (pokud se nesečtou na 1.0)
+    // Normalize ratios (pokud se nesečtou na 1)
     const total = solarRatio + gridRatio + batteryRatio;
     if (total > 0) {
         solarRatio = solarRatio / total;
@@ -652,22 +647,21 @@ function getEnergySourceColor(solarRatio, gridRatio, batteryRatio = 0) {
             const solarPct = (solarRatio * 100).toFixed(0);
             const gridPct = ((solarRatio + gridRatio) * 100).toFixed(0);
             return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${GRID_COLOR} ${solarPct}%, ${GRID_COLOR} ${gridPct}%, ${BATTERY_COLOR} ${gridPct}%, ${BATTERY_COLOR} 100%)`;
-        } else if (solarRatio > 0.05 && batteryRatio > 0.05) {
+        }
+        if (solarRatio > 0.05 && batteryRatio > 0.05) {
             // Solár + baterie
             const solarPct = (solarRatio * 100).toFixed(0);
             return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${BATTERY_COLOR} ${solarPct}%, ${BATTERY_COLOR} 100%)`;
-        } else if (gridRatio > 0.05 && batteryRatio > 0.05) {
+        }
+        if (gridRatio > 0.05 && batteryRatio > 0.05) {
             // Grid + baterie
             const gridPct = (gridRatio * 100).toFixed(0);
             return `linear-gradient(135deg, ${GRID_COLOR} 0%, ${GRID_COLOR} ${gridPct}%, ${BATTERY_COLOR} ${gridPct}%, ${BATTERY_COLOR} 100%)`;
         }
-    } else {
+    } else if (solarRatio > 0.05 && gridRatio > 0.05) {
         // 2 zdroje (pro nabíjení baterie)
-        if (solarRatio > 0.05 && gridRatio > 0.05) {
-            // Solár + grid
-            const solarPct = (solarRatio * 100).toFixed(0);
-            return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${GRID_COLOR} ${solarPct}%, ${GRID_COLOR} 100%)`;
-        }
+        const solarPct = (solarRatio * 100).toFixed(0);
+        return `linear-gradient(135deg, ${SOLAR_COLOR} 0%, ${SOLAR_COLOR} ${solarPct}%, ${GRID_COLOR} ${solarPct}%, ${GRID_COLOR} 100%)`;
     }
 
     // Fallback na dominantní barvu
@@ -748,8 +742,8 @@ function getNodeCenters() {
         const transform = canvasStyle.transform;
         let scale = 1;
         if (transform && transform !== 'none') {
-            const matrix = transform.match(/matrix\(([^)]+)\)/);
-            if (matrix) {
+            const matrix = /matrix\(([^)]+)\)/.exec(transform);
+            if (matrix?.[1]) {
                 const values = matrix[1].split(',');
                 scale = Number.parseFloat(values[0]) || 1;
             }
@@ -775,7 +769,7 @@ function getNodeCenters() {
         if (!a || !b) return 0;
         const dx = (a.x || 0) - (b.x || 0);
         const dy = (a.y || 0) - (b.y || 0);
-        return Math.sqrt(dx * dx + dy * dy);
+        return Math.hypot(dx, dy);
     };
     const maxShift = prev
         ? Math.max(
@@ -873,7 +867,7 @@ function buildGridExportSources(solarPower, batteryPower, gridExportPower) {
     let batteryToGrid = 0;
 
     // Solár co nejde do baterie ani domu může jít do gridu
-    const solarUsed = batteryPower > 0 ? batteryPower : 0;
+    const solarUsed = Math.max(0, batteryPower);
     const solarAvailableForGrid = Math.max(0, solarPower - solarUsed);
 
     solarToGrid = Math.min(solarAvailableForGrid, gridExportPower);
@@ -1206,15 +1200,7 @@ function updateClassIfChanged(element, className, shouldAdd) {
     return false;
 }
 
-// Load and update data (optimized - partial updates only)
-async function loadData() {
-    if (loadDataInProgress) {
-        loadDataPending = true;
-        return;
-    }
-    loadDataInProgress = true;
-    const runtime = globalThis.OIG_RUNTIME || {};
-    try {
+function createYieldHelper(runtime) {
     const isConstrainedRuntime = !!runtime.isHaApp || !!runtime.isMobile || globalThis.innerWidth <= 768;
     const shouldYield = isConstrainedRuntime && !runtime.initialLoadComplete;
     const yieldIfNeeded = async () => {
@@ -1227,8 +1213,10 @@ async function loadData() {
             }
         });
     };
+    return { isConstrainedRuntime, yieldIfNeeded };
+}
 
-    // Solar
+async function updateSolarSection(yieldIfNeeded) {
     const [solarP1Data, solarP2Data, solarPercData, solarTodayData] = await Promise.all([
         getSensor(getSensorId('actual_fv_p1')),
         getSensor(getSensorId('actual_fv_p2')),
@@ -1240,37 +1228,41 @@ async function loadData() {
     const solarPower = solarP1 + solarP2;
     const solarPerc = solarPercData.value || 0;
     const solarTodayWh = solarTodayData.value || 0;
-    const solarTodayKWh = solarTodayWh / 1000; // Convert Wh to kWh
+    const solarTodayKWh = solarTodayWh / 1000;
 
-    // Display solar power using formatPower helper - UPDATE ONLY IF CHANGED
     updateElementIfChanged('solar-power', formatPower(solarPower), 'solar-power');
     updateElementIfChanged('solar-today', 'Dnes: ' + solarTodayKWh.toFixed(2) + ' kWh', 'solar-today');
 
-    // Update solar icon based on percentage (dynamic icon with animation)
     const solarIcon = document.getElementById('solar-icon-dynamic');
     let solarIconEmoji;
     if (solarPerc <= 5) {
-        solarIconEmoji = '🌙'; // Měsíc v noci - výrazný
-        solarIcon.className = 'node-icon solar-icon-dynamic solar-icon-moon';
+        solarIconEmoji = '🌙';
+        if (solarIcon) {
+            solarIcon.className = 'node-icon solar-icon-dynamic solar-icon-moon';
+        }
     } else if (solarPerc < 50) {
-        solarIconEmoji = '☀️'; // Normální slunce
-        solarIcon.className = 'node-icon solar-icon-dynamic';
+        solarIconEmoji = '☀️';
+        if (solarIcon) {
+            solarIcon.className = 'node-icon solar-icon-dynamic';
+        }
     } else {
-        solarIconEmoji = '☀️'; // Aktivní slunce s animací
-        solarIcon.className = 'node-icon solar-icon-dynamic solar-active';
-        // Scale based on percentage (50% = 1.0, 100% = 1.3)
-        const scale = 1.0 + ((solarPerc - 50) / 50) * 0.3;
-        solarIcon.style.fontSize = (32 * scale) + 'px';
+        solarIconEmoji = '☀️';
+        if (solarIcon) {
+            solarIcon.className = 'node-icon solar-icon-dynamic solar-active';
+            const scale = 1 + ((solarPerc - 50) / 50) * 0.3;
+            solarIcon.style.fontSize = (32 * scale) + 'px';
+        }
     }
     updateElementIfChanged('solar-icon-dynamic', solarIconEmoji, 'solar-icon');
 
-    // Update active class only if changed
     const solarNode = document.querySelector('.solar');
     updateClassIfChanged(solarNode, 'active', solarPower > 50);
 
     await yieldIfNeeded();
+    return { solarPower, solarPerc };
+}
 
-    // Battery
+async function updateBatterySection(yieldIfNeeded) {
     const [batterySoCData, batteryPowerData] = await Promise.all([
         getSensor(getSensorId('batt_bat_c')),
         getSensor(getSensorId('batt_batt_comp_p')),
@@ -1278,22 +1270,15 @@ async function loadData() {
     const batterySoC = batterySoCData.value || 0;
     const batteryPower = batteryPowerData.value || 0;
 
-    // Update battery SoC only if changed
     updateElementIfChanged('battery-soc', Math.round(batterySoC) + ' %', 'battery-soc');
-
-    // Display battery power using formatPower helper - UPDATE ONLY IF CHANGED
     updateElementIfChanged('battery-power', formatPower(batteryPower), 'battery-power');
 
-    // Update SVG battery fill (animated) - s gradientem podle SoC
     const batteryFill = document.getElementById('battery-fill');
-
-    // Update fill height if SoC changed
     const previousSoC = previousValues['battery-gauge-width'];
     if (previousSoC === undefined || Math.abs(previousSoC - batterySoC) > 0.5) {
-        // SVG baterie má výšku 54px (od y=13 do y=67)
         const maxHeight = 54;
         const fillHeight = (batterySoC / 100) * maxHeight;
-        const fillY = 13 + (maxHeight - fillHeight); // Počítáme od shora dolů
+        const fillY = 13 + (maxHeight - fillHeight);
 
         batteryFill.setAttribute('height', fillHeight);
         batteryFill.setAttribute('y', fillY);
@@ -1301,10 +1286,8 @@ async function loadData() {
         previousValues['battery-gauge-width'] = batterySoC;
     }
 
-    // Add charging animation if charging
     const previousPower = previousValues['battery-power-state'];
     const isCharging = batteryPower > 10;
-
     if (previousPower !== isCharging) {
         if (isCharging) {
             batteryFill.classList.add('charging');
@@ -1314,7 +1297,6 @@ async function loadData() {
         previousValues['battery-power-state'] = isCharging;
     }
 
-    // Check grid charging status for lightning indicator
     const gridChargingData = await getSensor(getSensorId('grid_charging_planned'));
     const isGridCharging = gridChargingData.value === 'on';
     const batteryLightning = document.getElementById('battery-lightning');
@@ -1325,7 +1307,6 @@ async function loadData() {
         batteryLightning.classList.remove('active');
     }
 
-    // Update grid charging indicator (⚡🔌 icon next to temperature)
     const gridChargingIndicator = document.getElementById('battery-grid-charging-indicator');
     if (gridChargingIndicator) {
         if (isGridCharging) {
@@ -1335,13 +1316,13 @@ async function loadData() {
         }
     }
 
-    // Get time to empty/full from sensors
     const timeToEmptyData = await getSensorString(getSensorId('time_to_empty'));
     const timeToFullData = await getSensorString(getSensorId('time_to_full'));
 
-    // Update battery status with time info
     const batteryStatus = document.getElementById('battery-status');
-    let newBatteryState, newBatteryText, newBatteryClass;
+    let newBatteryState;
+    let newBatteryText;
+    let newBatteryClass;
     if (batteryPower > 10) {
         newBatteryState = 'charging';
         const timeInfo = timeToFullData.value ? ` (${timeToFullData.value})` : '';
@@ -1364,7 +1345,6 @@ async function loadData() {
         previousValues['battery-status-text'] = newBatteryText;
     }
 
-    // Update battery corner indicators
     const batteryVoltageData = await getSensor(getSensorId('extended_battery_voltage'));
     const batteryCurrentData = await getSensor(getSensorId('extended_battery_current'));
     const batteryTempData = await getSensor(getSensorId('extended_battery_temperature'));
@@ -1372,11 +1352,11 @@ async function loadData() {
     updateElementIfChanged('battery-voltage-value', (batteryVoltageData.value || 0).toFixed(1) + ' V');
     updateElementIfChanged('battery-current-value', (batteryCurrentData.value || 0).toFixed(1) + ' A');
 
-    // Update temperature indicator with animation
     const batteryTemp = batteryTempData.value || 0;
     const tempIndicator = document.getElementById('battery-temp-indicator');
     const tempIconElement = document.getElementById('battery-temp-icon');
-    let tempIcon, tempClass;
+    let tempIcon;
+    let tempClass;
     if (batteryTemp > 25) {
         tempIcon = '🌡️';
         tempClass = 'battery-temp-indicator temp-hot';
@@ -1394,28 +1374,29 @@ async function loadData() {
         previousValues['battery-temp-icon'] = tempIcon;
     }
 
-    // Update temperature value
     updateElementIfChanged('battery-temp-value', batteryTemp.toFixed(1) + ' °C');
-
     await yieldIfNeeded();
 
-    // Grid
+    return { batteryPower };
+}
+
+async function updateGridSection(yieldIfNeeded) {
     const gridPowerData = await getSensor(getSensorId('actual_aci_wtotal'));
     const gridConsumptionData = await getSensor(getSensorId('extended_grid_consumption'));
     const gridDeliveryData = await getSensor(getSensorId('extended_grid_delivery'));
     const gridPower = gridPowerData.value || 0;
     const gridConsumptionWh = gridConsumptionData.value || 0;
     const gridDeliveryWh = gridDeliveryData.value || 0;
-    const gridConsumptionKWh = gridConsumptionWh / 1000; // Convert Wh to kWh
-    const gridDeliveryKWh = gridDeliveryWh / 1000; // Convert Wh to kWh
+    const gridConsumptionKWh = gridConsumptionWh / 1000;
+    const gridDeliveryKWh = gridDeliveryWh / 1000;
 
-    // Display grid power using formatPower helper (absolute value) - UPDATE ONLY IF CHANGED
     updateElementIfChanged('grid-power', formatPower(gridPower), 'grid-power');
     updateElementIfChanged('grid-today', 'Dnes: ' + (gridConsumptionKWh + gridDeliveryKWh).toFixed(1) + ' kWh', 'grid-today');
 
-    // Update grid status only if state changed
     const gridStatus = document.getElementById('grid-status');
-    let newGridState, newGridText, newGridClass;
+    let newGridState;
+    let newGridText;
+    let newGridClass;
     if (gridPower > 10) {
         newGridState = 'importing';
         newGridText = '⬇ Import';
@@ -1436,19 +1417,19 @@ async function loadData() {
     }
 
     await yieldIfNeeded();
+    return { gridPower };
+}
 
-    // House
+async function updateHouseSection({ yieldIfNeeded, runtime, isConstrainedRuntime }) {
     const housePowerData = await getSensor(getSensorId('actual_aco_p'));
     const houseTodayData = await getSensor(getSensorId('ac_out_en_day'));
     const housePower = housePowerData.value || 0;
     const houseTodayWh = houseTodayData.value || 0;
-    const houseTodayKWh = houseTodayWh / 1000; // Convert Wh to kWh
+    const houseTodayKWh = houseTodayWh / 1000;
 
-    // Display house power using formatPower helper - UPDATE ONLY IF CHANGED
     updateElementIfChanged('house-power', formatPower(housePower), 'house-power');
     updateElementIfChanged('house-today', 'Dnes: ' + houseTodayKWh.toFixed(1) + ' kWh', 'house-today');
 
-    // Update box mode with icons
     const boxModeData = await getSensorString(getSensorId('box_prms_mode'));
     const boxMode = boxModeData.value || '--';
     let modeIcon = '⚙️';
@@ -1467,12 +1448,10 @@ async function loadData() {
         modeText = 'Home UPS';
     }
 
-    // Aktualizovat inverter mode, ale zachovat třídu mode-changing pokud existuje
     const inverterModeElement = document.getElementById('inverter-mode');
     if (inverterModeElement) {
         const isModeChanging = inverterModeElement.classList.contains('mode-changing');
         updateElementIfChanged('inverter-mode', modeIcon + ' ' + modeText, 'inverter-mode');
-        // Obnovit třídu mode-changing, pokud byla nastavená
         if (isModeChanging && !inverterModeElement.classList.contains('mode-changing')) {
             inverterModeElement.classList.add('mode-changing');
         }
@@ -1484,24 +1463,20 @@ async function loadData() {
         await yieldIfNeeded();
     }
 
-    // Aktualizovat boiler mode (ve flow diagramu), ale zachovat třídu mode-changing pokud existuje
     const boilerModeFlowData = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
     const boilerModeFlowElement = document.getElementById('boiler-mode');
     if (boilerModeFlowElement && boilerModeFlowData.exists) {
         const isModeChanging = boilerModeFlowElement.classList.contains('mode-changing');
         updateElementIfChanged('boiler-mode', boilerModeFlowData.value || '--', 'boiler-mode');
-        // Obnovit třídu mode-changing, pokud byla nastavená
         if (isModeChanging && !boilerModeFlowElement.classList.contains('mode-changing')) {
             boilerModeFlowElement.classList.add('mode-changing');
         }
     }
 
-    // Show last update time from real_data_update sensor - UPDATE TO HEADER
     const realDataUpdateSensor = await getSensorString(getSensorId('real_data_update'));
-    const lastUpdate = realDataUpdateSensor.value; // String value from sensor
+    const lastUpdate = realDataUpdateSensor.value;
     if (lastUpdate && lastUpdate !== '--') {
         const lastUpdateHeader = document.getElementById('last-update-header');
-        // Parse timestamp and convert to relative time
         const updateDate = new Date(lastUpdate);
         const relativeTime = formatRelativeTime(updateDate);
         const displayText = `Aktualizováno ${relativeTime}`;
@@ -1512,14 +1487,17 @@ async function loadData() {
         }
     }
 
-    // ===== INVERTER CORNER INDICATORS =====
-    // Bypass indicator (top-left corner)
+    return { housePower };
+}
+
+async function updateInverterIndicators() {
     const bypassStatusData = await getSensorString(getSensorId('bypass_status'));
     const bypassStatus = bypassStatusData.value || 'off';
     const bypassIndicator = document.getElementById('inverter-bypass-indicator');
     const bypassLabel = document.getElementById('inverter-bypass-label');
     const bypassIconElement = document.getElementById('inverter-bypass-icon');
-    let bypassIcon, bypassClass;
+    let bypassIcon;
+    let bypassClass;
     const isBypassActive = bypassStatus.toLowerCase() === 'on' || bypassStatus === '1';
     if (isBypassActive) {
         bypassIcon = '🔴';
@@ -1535,19 +1513,18 @@ async function loadData() {
         if (bypassIndicator) {
             bypassIndicator.className = bypassClass;
         }
-        // Show/hide bypass label
         if (bypassLabel) {
             bypassLabel.style.display = isBypassActive ? 'block' : 'none';
         }
         previousValues['inverter-bypass-icon'] = bypassIcon;
     }
 
-    // Temperature indicator (top-right corner)
     const inverterTempData = await getSensor(getSensorId('box_temp'));
     const inverterTemp = inverterTempData.value || 0;
     const inverterTempIndicator = document.getElementById('inverter-temp-indicator');
     const inverterTempIconElement = document.getElementById('inverter-temp-icon');
-    let inverterTempIcon, inverterTempClass;
+    let inverterTempIcon;
+    let inverterTempClass;
     if (inverterTemp > 35) {
         inverterTempIcon = '🌡️';
         inverterTempClass = 'inverter-temp-indicator temp-hot';
@@ -1565,42 +1542,39 @@ async function loadData() {
         previousValues['inverter-temp-icon'] = inverterTempIcon;
         previousValues['inverter-temp-class'] = inverterTempClass;
     }
-    // Always update temperature value (force update)
     updateElementIfChanged('inverter-temp-value', inverterTemp.toFixed(1) + ' °C');
 
-    // Warning border around entire inverter (when bypass ON OR temp >35°C)
     const inverterBox = document.getElementById('inverter-box');
     const bypassIsOn = bypassStatus && (bypassStatus.toLowerCase() === 'on' || bypassStatus === '1' || bypassStatus.toLowerCase().includes('on'));
     const tempIsHigh = inverterTemp > 35;
     const hasWarning = bypassIsOn || tempIsHigh;
 
-    // Debug log for bypass status
-    // console.log('[Inverter] Bypass status:', bypassStatus, 'isOn:', bypassIsOn, 'tempIsHigh:', tempIsHigh, 'hasWarning:', hasWarning);
-
-    // Force update on first load or when changed
     if (previousValues['inverter-warning'] === undefined || previousValues['inverter-warning'] !== hasWarning) {
         if (hasWarning) {
             inverterBox.classList.add('warning-active');
-            // console.log('[Inverter] Warning ACTIVATED');
         } else {
             inverterBox.classList.remove('warning-active');
-            // console.log('[Inverter] Warning DEACTIVATED');
         }
         previousValues['inverter-warning'] = hasWarning;
     }
+}
 
-    // ===== ANIMATION DATA LOADING =====
-    // Load sensors needed for proper animation logic (solarPerc already loaded above)
-
+async function updateFlowAnimation({
+    solarPower,
+    solarPerc,
+    batteryPower,
+    gridPower,
+    housePower,
+    runtime,
+    isConstrainedRuntime
+}) {
     const [boilerPowerData, boilerInstallPowerData] = await Promise.all([
         getSensorSafe(getSensorId('boiler_current_cbb_w')),
         getSensorSafe(getSensorId('boiler_install_power')),
     ]);
     const boilerPower = boilerPowerData.value || 0;
-    const boilerMaxPower = boilerInstallPowerData.value || 3000; // Default 3kW
+    const boilerMaxPower = boilerInstallPowerData.value || 3000;
 
-    // OPRAVA BUG #4: Volat animateFlow() jen pokud se hodnoty skutečně změnily
-    // NEBO pokud je nastaven flag needsFlowReinitialize (po přepnutí tabu)
     const currentPowerValues = {
         solarPower,
         solarPerc,
@@ -1611,7 +1585,6 @@ async function loadData() {
         boilerMaxPower
     };
 
-    // Kontrola zda se něco změnilo
     const powerChanged = !lastPowerValues ||
         Object.keys(currentPowerValues).some(key =>
             Math.abs(currentPowerValues[key] - (lastPowerValues[key] || 0)) > 0.1
@@ -1619,14 +1592,10 @@ async function loadData() {
 
     if (powerChanged || FLOW_STATE.needsFlowReinitialize) {
         if (FLOW_STATE.needsFlowReinitialize) {
-            // console.log('[Animation] Flow reinitialize flag set, forcing animation update');
-            FLOW_STATE.needsFlowReinitialize = false; // Reset flag
-        } else {
-            // console.log('[Animation] Power values changed, updating flow');
+            FLOW_STATE.needsFlowReinitialize = false;
         }
         lastPowerValues = currentPowerValues;
 
-        // Animate particles only when Flow tab is active (reduces initial load cost on iOS).
         const flowTab = document.querySelector('#flow-tab');
         const isFlowTabActive = flowTab?.classList.contains('active');
         if (isFlowTabActive) {
@@ -1637,57 +1606,83 @@ async function loadData() {
             }
         }
     }
+}
 
-    // REMOVED: Control panel status now handled by WebSocket events
-    // if (!previousValues['control-status-loaded']) {
-    //     loadControlStatus();
-    //     previousValues['control-status-loaded'] = true;
-    // }
-
-    // Load details for all nodes (only on first load or explicit refresh)
-    if (!previousValues['node-details-loaded']) {
-        // Do not await heavy details on first render; it can freeze iOS WebView.
-        if ((runtime.isHaApp || runtime.isMobile || globalThis.innerWidth <= 768) && !runtime.initialLoadComplete) {
-            if (!runtime.nodeDetailsScheduled) {
-                runtime.nodeDetailsScheduled = true;
-                setTimeout(() => {
-                    loadNodeDetails();
-                    runtime.nodeDetailsScheduled = false;
-                }, 1500);
-            }
-        } else {
-            loadNodeDetails();
-        }
-        previousValues['node-details-loaded'] = true;
+function scheduleNodeDetails(runtime) {
+    if (previousValues['node-details-loaded']) {
+        return;
     }
 
-    // Update ČHMÚ weather warning badge
-    if (globalThis.DashboardChmu?.updateChmuWarningBadge) {
-        globalThis.DashboardChmu.updateChmuWarningBadge();
+    if ((runtime.isHaApp || runtime.isMobile || globalThis.innerWidth <= 768) && !runtime.initialLoadComplete) {
+        if (!runtime.nodeDetailsScheduled) {
+            runtime.nodeDetailsScheduled = true;
+            setTimeout(() => {
+                loadNodeDetails();
+                runtime.nodeDetailsScheduled = false;
+            }, 1500);
+        }
+    } else {
+        loadNodeDetails();
+    }
+    previousValues['node-details-loaded'] = true;
+}
+
+function updatePricingStatsIfActive() {
+    const pricingActive = Boolean(globalThis.pricingTabActive);
+    if (!pricingActive) {
+        return;
     }
 
-    // Update battery efficiency statistics
-    if (globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats) {
-        globalThis.DashboardAnalytics.updateBatteryEfficiencyStats();
+    if (globalThis.DashboardPricing?.updatePlannedConsumptionStats) {
+        globalThis.DashboardPricing.updatePlannedConsumptionStats();
     }
-
-    const pricingActive = typeof pricingTabActive !== 'undefined' ? pricingTabActive : false;
-    if (pricingActive) {
-        // Update planned consumption statistics
-        if (globalThis.DashboardPricing?.updatePlannedConsumptionStats) {
-            globalThis.DashboardPricing.updatePlannedConsumptionStats();
-        }
-
-        // Phase 2.6: Update what-if analysis and mode recommendations
-        if (globalThis.DashboardPricing?.updateWhatIfAnalysis) {
-            globalThis.DashboardPricing.updateWhatIfAnalysis();
-        }
-        if (globalThis.DashboardPricing?.updateModeRecommendations) {
-            globalThis.DashboardPricing.updateModeRecommendations();
-        }
+    if (globalThis.DashboardPricing?.updateWhatIfAnalysis) {
+        globalThis.DashboardPricing.updateWhatIfAnalysis();
     }
+    if (globalThis.DashboardPricing?.updateModeRecommendations) {
+        globalThis.DashboardPricing.updateModeRecommendations();
+    }
+}
 
-    // Performance chart removed (legacy performance tracking)
+// Load and update data (optimized - partial updates only)
+async function loadData() {
+    if (loadDataInProgress) {
+        loadDataPending = true;
+        return;
+    }
+    loadDataInProgress = true;
+    const runtime = globalThis.OIG_RUNTIME || {};
+    try {
+        const { isConstrainedRuntime, yieldIfNeeded } = createYieldHelper(runtime);
+
+        const { solarPower, solarPerc } = await updateSolarSection(yieldIfNeeded);
+        const { batteryPower } = await updateBatterySection(yieldIfNeeded);
+        const { gridPower } = await updateGridSection(yieldIfNeeded);
+        const { housePower } = await updateHouseSection({ yieldIfNeeded, runtime, isConstrainedRuntime });
+
+        await updateInverterIndicators();
+        await updateFlowAnimation({
+            solarPower,
+            solarPerc,
+            batteryPower,
+            gridPower,
+            housePower,
+            runtime,
+            isConstrainedRuntime
+        });
+
+        scheduleNodeDetails(runtime);
+
+        if (globalThis.DashboardChmu?.updateChmuWarningBadge) {
+            globalThis.DashboardChmu.updateChmuWarningBadge();
+        }
+        if (globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats) {
+            globalThis.DashboardAnalytics.updateBatteryEfficiencyStats();
+        }
+
+        updatePricingStatsIfActive();
+
+        // Performance chart removed (legacy performance tracking)
     } finally {
         loadDataInProgress = false;
         if (globalThis.OIG_RUNTIME) {
@@ -1863,16 +1858,21 @@ async function loadNodeDetails() {
             // Format mode with icon
             const modeValue = boilerManualMode.value || '--';
             const modeIcon = document.getElementById('boiler-mode-icon');
+            const setModeIcon = (icon) => {
+                if (modeIcon) {
+                    modeIcon.textContent = icon;
+                }
+            };
             let modeDisplay = modeValue;
 
             if (modeValue === 'CBB') {
                 modeDisplay = '🤖 Inteligentní';
-                if (modeIcon) modeIcon.textContent = '🤖';
+                setModeIcon('🤖');
             } else if (modeValue === 'Manual') {
                 modeDisplay = '👤 Manuální';
-                if (modeIcon) modeIcon.textContent = '👤';
+                setModeIcon('👤');
             } else {
-                if (modeIcon) modeIcon.textContent = '⚙️';
+                setModeIcon('⚙️');
             }
             updateElementIfChanged('house-boiler-mode', modeDisplay);
         } else {
@@ -1931,7 +1931,6 @@ async function loadNodeDetails() {
             gridExportIcon = '🚫'; // Zákaz - odpovídá ovládacímu panelu
             gridExportDisplay = 'Vypnuto';
         } else if (gridExportDisplay === 'Zapnuto / On') {
-            gridExportIcon = '💧'; // Zapnuto - odpovídá ovládacímu panelu
             gridExportDisplay = 'Zapnuto';
         } else if (gridExportDisplay.includes('Limited') || gridExportDisplay.includes('omezením')) {
             gridExportIcon = '🚰'; // S omezením - odpovídá ovládacímu panelu
@@ -2148,12 +2147,10 @@ async function confirmChargeBattery() {
             setTimeout(() => {
                 updateButtonStates();
             }, 500);
-        } else {
+        } else if (btn) {
             // Re-enable on error
-            if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('pending');
-            }
+            btn.disabled = false;
+            btn.classList.remove('pending');
         }
     } catch (e) {
         console.error('[Battery] Error in confirmChargeBattery:', e);

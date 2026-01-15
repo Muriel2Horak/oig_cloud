@@ -324,6 +324,82 @@ class DetailTabsDialog {
      * Logika: Pokud máme actual, zobrazujeme actual vs plán
      *         Pokud nemáme actual, zobrazujeme jen plán
      */
+    buildSmartMetricPlanRow(plan, unit, hasActual) {
+        if (!hasActual) {
+            return '';
+        }
+        return `
+            <div class="tile-sub-row">
+                <span>Plán:</span>
+                <span>${this.formatMetricValue(plan)} ${unit}</span>
+            </div>
+        `;
+    }
+
+    buildSmartMetricHintRow(hasActual, tabName) {
+        if (hasActual || tabName !== 'tomorrow') {
+            return '';
+        }
+        return `
+            <div class="tile-sub-row hint-row">
+                Plánovaná hodnota (čeká na živá data)
+            </div>
+        `;
+    }
+
+    buildSmartMetricDeltaRow({ label, unit, plan, actualValue, hasActual }) {
+        if (!hasActual) {
+            return '';
+        }
+
+        const delta = actualValue - plan;
+        const absDelta = Math.abs(delta);
+        const deltaState = this.getSmartMetricDeltaState(label, delta, absDelta);
+        const deltaText = this.getSmartMetricDeltaText(deltaState);
+        const deltaValueText = this.getSmartMetricDeltaValueText(delta, absDelta, unit);
+
+        return `
+            <div class="tile-delta ${deltaState}">
+                <span>${deltaText}</span>
+                <span>${deltaValueText}</span>
+            </div>
+        `;
+    }
+
+    getSmartMetricDeltaState(label, delta, absDelta) {
+        const preferLower = label === 'Náklady' || label === 'Odběr ze sítě';
+        const preferHigher = label === 'Solární výroba';
+
+        if (absDelta < 0.01) {
+            return 'delta-neutral';
+        }
+        if (preferLower) {
+            return delta <= 0 ? 'delta-better' : 'delta-worse';
+        }
+        if (preferHigher) {
+            return delta >= 0 ? 'delta-better' : 'delta-worse';
+        }
+        return 'delta-neutral';
+    }
+
+    getSmartMetricDeltaText(deltaState) {
+        if (deltaState === 'delta-better') {
+            return 'Lépe než plán';
+        }
+        if (deltaState === 'delta-worse') {
+            return 'Hůře než plán';
+        }
+        return 'Rozdíl vs. plán';
+    }
+
+    getSmartMetricDeltaValueText(delta, absDelta, unit) {
+        if (absDelta < 0.01) {
+            return '±0';
+        }
+        const deltaSign = delta > 0 ? '+' : '';
+        return `${deltaSign}${this.formatMetricValue(delta)} ${unit}`;
+    }
+
     renderSmartMetricTile(metric, icon, label, unit, tabName) {
         if (!metric) {
             return '';
@@ -342,61 +418,9 @@ class DetailTabsDialog {
         const mainValue = hasActual ? actualValue : plan;
         const mainLabel = hasActual ? 'Skutečnost' : 'Plán';
 
-        const planRow = hasActual
-            ? `
-                <div class="tile-sub-row">
-                    <span>Plán:</span>
-                    <span>${this.formatMetricValue(plan)} ${unit}</span>
-                </div>
-            `
-            : '';
-
-        const hintRow =
-            !hasActual && tabName === 'tomorrow'
-                ? `
-                    <div class="tile-sub-row hint-row">
-                        Plánovaná hodnota (čeká na živá data)
-                    </div>
-                `
-                : '';
-
-        let deltaRow = '';
-        if (hasActual) {
-            const delta = actualValue - plan;
-            const absDelta = Math.abs(delta);
-
-            const preferLower = label === 'Náklady' || label === 'Odběr ze sítě';
-            const preferHigher = label === 'Solární výroba';
-
-            let deltaState = 'delta-neutral';
-            if (absDelta >= 0.01) {
-                if (preferLower) {
-                    deltaState = delta <= 0 ? 'delta-better' : 'delta-worse';
-                } else if (preferHigher) {
-                    deltaState = delta >= 0 ? 'delta-better' : 'delta-worse';
-                }
-            }
-
-            let deltaText = 'Rozdíl vs. plán';
-            if (deltaState === 'delta-better') {
-                deltaText = 'Lépe než plán';
-            } else if (deltaState === 'delta-worse') {
-                deltaText = 'Hůře než plán';
-            }
-
-            let deltaValueText = '±0';
-            if (absDelta >= 0.01) {
-                const deltaSign = delta > 0 ? '+' : '';
-                deltaValueText = `${deltaSign}${this.formatMetricValue(delta)} ${unit}`;
-            }
-
-            deltaRow = `
-                <div class="tile-delta ${deltaState}">
-                    <span>${deltaText}</span>
-                    <span>${deltaValueText}</span>
-                </div>
-            `;
-        }
+        const planRow = this.buildSmartMetricPlanRow(plan, unit, hasActual);
+        const hintRow = this.buildSmartMetricHintRow(hasActual, tabName);
+        const deltaRow = this.buildSmartMetricDeltaRow({ label, unit, plan, actualValue, hasActual });
 
         const supplemental = [planRow, hintRow, deltaRow].filter(Boolean).join('');
 
@@ -431,28 +455,7 @@ class DetailTabsDialog {
 
         const planLabel = `${plan.toFixed(2)} ${unit}`;
 
-        let actualHtml = '';
-        if (hasActual && actual !== null) {
-            let deltaClass = '';
-            if (delta > 0) {
-                deltaClass = 'delta-positive';
-            } else if (delta < 0) {
-                deltaClass = 'delta-negative';
-            }
-
-            let deltaLabel = '';
-            if (delta !== null && Math.abs(delta) > 0.009) {
-                const deltaSign = delta > 0 ? '+' : '';
-                deltaLabel = `<span class="metric-delta ${deltaClass}">${deltaSign}${delta.toFixed(2)} ${unit}</span>`;
-            }
-            actualHtml = `
-                <div class="metric-actual">
-                    <span class="metric-label">Skutečnost:</span>
-                    <span class="metric-value">${actual.toFixed(2)} ${unit}</span>
-                    ${deltaLabel}
-                </div>
-            `;
-        }
+        const actualHtml = this.buildSummaryMetricActualHtml({ actual, delta, unit, hasActual });
 
         return `
             <div class="summary-tile metric-tile">
@@ -465,6 +468,40 @@ class DetailTabsDialog {
                 ${actualHtml}
             </div>
         `;
+    }
+
+    buildSummaryMetricActualHtml({ actual, delta, unit, hasActual }) {
+        if (!hasActual || actual === null) {
+            return '';
+        }
+
+        const deltaClass = this.getSummaryDeltaClass(delta);
+        const deltaLabel = this.getSummaryDeltaLabel(delta, unit, deltaClass);
+        return `
+            <div class="metric-actual">
+                <span class="metric-label">Skutečnost:</span>
+                <span class="metric-value">${actual.toFixed(2)} ${unit}</span>
+                ${deltaLabel}
+            </div>
+        `;
+    }
+
+    getSummaryDeltaClass(delta) {
+        if (delta > 0) {
+            return 'delta-positive';
+        }
+        if (delta < 0) {
+            return 'delta-negative';
+        }
+        return '';
+    }
+
+    getSummaryDeltaLabel(delta, unit, deltaClass) {
+        if (delta === null || Math.abs(delta) <= 0.009) {
+            return '';
+        }
+        const deltaSign = delta > 0 ? '+' : '';
+        return `<span class="metric-delta ${deltaClass}">${deltaSign}${delta.toFixed(2)} ${unit}</span>`;
     }
 
     /**

@@ -70,8 +70,8 @@
         }
 
         .chmu-warning-badge.severity-4 {
-            background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
-            color: #111827;
+            background: linear-gradient(135deg, #6b21a8 0%, #4c1d95 100%);
+            color: #ffffff;
             animation: pulse-warning 1.5s ease-in-out infinite;
         }
 
@@ -4486,7 +4486,7 @@ body.light-theme .status-exporting {
             border: 1px solid var(--border-primary);
         }
 
-        .timeline-hour-markers {
+        .timeline-container .timeline-hour-markers {
             position: absolute;
             top: 0;
             left: 0;
@@ -4948,7 +4948,7 @@ body.light-theme .status-exporting {
             text-shadow: 0 1px 2px rgb(0, 0, 0, 0.5);
         }
 
-        .timeline-hour-markers {
+        .visual-timeline .timeline-hour-markers {
             position: absolute;
             bottom: 32px;
             left: 0;
@@ -5903,7 +5903,7 @@ body.light-theme .status-exporting {
             align-items: center;
         }
 
-        .live-time {
+        .compact-live-status .live-time {
             font-size: 0.8em;
             color: var(--text-secondary);
         }
@@ -5938,7 +5938,7 @@ body.light-theme .status-exporting {
             gap: 8px;
         }
 
-        .metric-row {
+        .compact-metrics .metric-row {
             display: flex;
             align-items: baseline;
             flex-wrap: wrap;
@@ -5946,19 +5946,19 @@ body.light-theme .status-exporting {
             font-size: 0.9em;
         }
 
-        .metric-row.dosud-section {
+        .compact-metrics .metric-row.dosud-section {
             margin-top: 12px;
             padding-top: 12px;
             border-top: 1px solid rgb(255, 255, 255, 0.1);
         }
 
-        .metric-row.dosud-details {
+        .compact-metrics .metric-row.dosud-details {
             margin-top: 2px;
             margin-left: 20px;
             font-size: 0.85em;
         }
 
-        .metric-label {
+        .compact-metrics .metric-label {
             color: var(--text-secondary);
             font-weight: 500;
         }
@@ -5969,7 +5969,7 @@ body.light-theme .status-exporting {
             font-size: 1.05em;
         }
 
-        .metric-value {
+        .compact-metrics .metric-value {
             color: var(--text-primary);
             font-weight: 600;
         }
@@ -5999,11 +5999,11 @@ body.light-theme .status-exporting {
 
         /* Responsive */
         @media (width <= 768px) {
-            .metric-row {
+            .compact-metrics .metric-row {
                 font-size: 0.85em;
             }
 
-            .metric-row.dosud-details {
+            .compact-metrics .metric-row.dosud-details {
                 margin-left: 10px;
             }
         }
@@ -6198,12 +6198,12 @@ body.light-theme .status-exporting {
     gap: 0.75rem;
 }
 
-.detail-label {
+.interval-detail .detail-label {
     color: rgb(255, 255, 255, 0.6);
     font-size: 0.85rem;
 }
 
-.detail-value {
+.interval-detail .detail-value {
     color: rgb(255, 255, 255, 0.95);
     font-weight: 600;
 }
@@ -6362,10 +6362,6 @@ body.light-theme .status-exporting {
 /* Large Progress Bar with Gradient */
 
 /* Card Grid Layout */
-
-@media (width <= 1024px) {
-
-}
 
 /* Individual Metric Cards */
 
@@ -6634,7 +6630,7 @@ body.light-theme .status-exporting {
     border-left: 4px solid #2196F3;
 }
 
-.section-header {
+.collapsible-section .section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -6644,7 +6640,7 @@ body.light-theme .status-exporting {
     transition: background 0.2s ease;
 }
 
-.section-header:hover {
+.collapsible-section .section-header:hover {
     background: var(--bg-hover);
 }
 
@@ -6657,14 +6653,14 @@ body.light-theme .status-exporting {
     color: var(--text-primary);
 }
 
-.section-title {
+.collapsible-section .section-title {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     flex: 1;
 }
 
-.section-icon {
+.collapsible-section .section-icon {
     font-size: 1.2rem;
 }
 
@@ -6717,39 +6713,6 @@ body.light-theme .status-exporting {
 .collapsible-section.expanded .section-content {
     max-height: 10000px;
     padding: 0.5rem 1rem 1rem;
-}
-
-/* Mode Blocks */
-.mode-block {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-primary);
-    border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 0.75rem;
-    transition: all 0.2s ease;
-}
-
-.mode-block:hover {
-    background: var(--bg-hover);
-    border-color: var(--border-secondary);
-    transform: translateX(2px);
-}
-
-.mode-block.mode-match {
-    border-left: 4px solid #4CAF50;
-}
-
-.mode-block.mode-mismatch {
-    border-left: 4px solid #F44336;
-}
-
-.mode-block.mode-current {
-    border-left: 4px solid #2196F3;
-    background: rgb(33, 150, 243, 0.1);
-}
-
-.mode-block.mode-planned {
-    border-left: 4px solid rgb(255, 255, 255, 0.3);
 }
 
 .mode-block-header {
@@ -7278,7 +7241,7 @@ body.light-theme .status-exporting {
     flex: 1;
 }
 
-.cost-hero-label {
+.cost-hero-lite .cost-hero-label {
     font-size: 0.7em;
     text-transform: uppercase;
     color: var(--text-secondary);
@@ -7376,7 +7339,7 @@ body.light-theme .status-exporting {
     flex-wrap: wrap;
 }
 
-.cost-hero-label {
+.cost-hero .cost-hero-label {
     font-size: 0.75em;
     text-transform: uppercase;
     color: var(--text-secondary);
@@ -7704,7 +7667,7 @@ body.light-theme .status-exporting {
     opacity: 0.75;
 }
 
-.node-phases,
+.flow-canvas .node-phases,
 .flow-canvas .node-details {
     align-self: stretch;
     width: 100%;
@@ -7712,8 +7675,8 @@ body.light-theme .status-exporting {
     box-sizing: border-box;
 }
 
-.phase-row-group,
-.detail-row {
+.flow-canvas .phase-row-group,
+.flow-canvas .detail-row {
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
@@ -7727,44 +7690,44 @@ body.light-theme .status-exporting {
     white-space: nowrap;
 }
 
-.inverter-temp-indicator {
+.flow-canvas .inverter-temp-indicator {
     max-width: calc(50% - 14px);
     overflow: hidden;
 }
 
-.inverter-temp-indicator > * {
+.flow-canvas .inverter-temp-indicator > * {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.node-status {
+.flow-canvas .node-status {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.node-phases {
+.flow-canvas .node-phases {
     max-width: 100%;
     overflow: hidden;
     box-sizing: border-box;
 }
 
-.phase-value {
+.flow-canvas .phase-value {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.detail-row {
+.flow-canvas .detail-row {
     min-width: 0;
 }
 
-.detail-label,
-.detail-value {
+.flow-canvas .detail-label,
+.flow-canvas .detail-value {
     min-width: 0;
     max-width: 100%;
     overflow: hidden;

@@ -499,8 +499,8 @@
         }
 
         .chmu-warning-badge.severity-4 {
-            background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
-            color: #111827;
+            background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
+            color: #ffffff;
             animation: pulse-warning 1.5s ease-in-out infinite;
         }
 

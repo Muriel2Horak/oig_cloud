@@ -422,6 +422,44 @@ def test_restore_from_state_loads_last_month(monkeypatch):
     assert sensor._current_month_start_kwh == 5.0
 
 
+def test_get_snapshot_metrics_returns_none_when_metrics_missing(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+    prev_key = eff_module._month_key(2026, 1)
+    sensor._month_snapshot = {
+        "month_key": prev_key,
+        "charge_wh": None,
+        "discharge_wh": None,
+        "battery_start_kwh": None,
+        "battery_end_kwh": None,
+    }
+
+    result = sensor._get_snapshot_metrics(prev_key, 2026, 1)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_load_last_month_metrics_skips_when_inflight(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+    sensor._history_refresh_inflight = True
+
+    result = await sensor._load_last_month_metrics(2026, 1)
+    assert result is None
+
+
+def test_reset_last_month_metrics_noop_for_same_key(monkeypatch):
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+    prev_key = eff_module._month_key(2026, 1)
+    sensor._last_month_key = prev_key
+    sensor._last_month_metrics = {"efficiency_pct": 80.0}
+
+    sensor._reset_last_month_metrics(prev_key)
+    assert sensor._last_month_key == prev_key
+    assert sensor._last_month_metrics["efficiency_pct"] == 80.0
+
+
 def test_get_sensor_handles_missing(monkeypatch):
     hass = DummyHass()
     sensor = _make_sensor(monkeypatch, hass)

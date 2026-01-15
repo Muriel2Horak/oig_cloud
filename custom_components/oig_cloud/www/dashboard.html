@@ -685,7 +685,7 @@
                 if (!entryId) return false; // safer default: keep hidden if we can't determine
                 try {
                     if (typeof fetchWithAuth !== 'function') {
-                        throw new Error('fetchWithAuth not ready');
+                        throw new TypeError('fetchWithAuth not ready');
                     }
                     const res = await fetchWithAuth(`/api/oig_cloud/${entryId}/modules`);
                     if (!res.ok) return false;
@@ -942,9 +942,10 @@
                         <h3>📅 Optimalizovaný plán režimů (72h)</h3>
                         <div class="timeline-header-controls">
                             <div class="auto-mode-toggle" id="auto-mode-toggle">
-                                <label class="auto-mode-switch">
+                                <label class="auto-mode-switch" for="auto-mode-toggle-input">
                                     <input type="checkbox" id="auto-mode-toggle-input">
                                     <span class="auto-mode-switch-track"></span>
+                                    <span style="position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0);">Auto přepínání</span>
                                 </label>
                                 <div class="auto-mode-toggle-text">
                                     <span class="auto-mode-toggle-title">Auto přepínání</span>
