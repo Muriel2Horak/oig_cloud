@@ -305,6 +305,32 @@ globalThis.cleanupParticles = stopAllParticleFlows;
 // Cache pro smoothing rychlosti - zabraňuje náhlým skokům
 const speedCache = {};
 
+let plannerSettingsLastFetch = 0;
+
+async function fetchPlannerSettingsDirect() {
+    try {
+        if (typeof fetchWithAuth === 'function') {
+            const res = await fetchWithAuth(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/planner_settings`);
+            if (res.ok) {
+                return await res.json();
+            }
+        }
+    } catch (e) {
+        console.warn('[PlannerModeBadge] Direct fetch failed', e);
+    }
+
+    const hass = getHass?.();
+    if (hass?.callApi) {
+        try {
+            return await hass.callApi('GET', `oig_cloud/battery_forecast/${INVERTER_SN}/planner_settings`);
+        } catch (e) {
+            console.warn('[PlannerModeBadge] hass.callApi failed', e);
+        }
+    }
+
+    return null;
+}
+
 async function updatePlannerModeBadge(force = false) {
     const badge = document.getElementById('planner-mode-badge');
     if (!badge) {
@@ -314,16 +340,29 @@ async function updatePlannerModeBadge(force = false) {
     const data = globalThis.PlannerState
         ? await globalThis.PlannerState.fetchSettings(force)
         : null;
-    let newState = 'unknown';
-    if (data) {
-        newState = data.auto_mode_switch_enabled ? 'enabled' : 'disabled';
-    }
-    let labelText = 'Plánovač: N/A';
-    if (data) {
-        labelText = newState === 'enabled' ? 'Plánovač: AUTO' : 'Plánovač: MANUÁL';
+    const cached = globalThis.PlannerState?.getCachedSettings?.() || null;
+    let settings = data || cached;
+
+    if (!settings) {
+        const now = Date.now();
+        if (now - plannerSettingsLastFetch > 10000) {
+            plannerSettingsLastFetch = now;
+            settings = await fetchPlannerSettingsDirect();
+        }
     }
 
-    if (typeof updateElementIfChanged === 'function') {
+    let newState = badge.dataset.modeState || 'unknown';
+    let labelText = badge.textContent || 'Plánovač: N/A';
+
+    if (settings) {
+        newState = settings.auto_mode_switch_enabled ? 'enabled' : 'disabled';
+        labelText = newState === 'enabled' ? 'Plánovač: AUTO' : 'Plánovač: VYPNUTO';
+    } else if (!badge.dataset.modeState) {
+        newState = 'unknown';
+        labelText = 'Plánovač: N/A';
+    }
+
+    if (typeof updateElementIfChangedRef === 'function') {
         updateElementIfChangedRef('planner-mode-badge', labelText, 'planner-mode-badge-text');
     } else if (badge.textContent !== labelText) {
         badge.textContent = labelText;
