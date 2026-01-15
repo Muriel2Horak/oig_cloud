@@ -400,6 +400,9 @@ async def _load_month_metrics(
     """Compute efficiency metrics for a closed month using recorder history."""
     try:
         from homeassistant.components.recorder.history import get_significant_states
+        from homeassistant.components.recorder.statistics import (
+            statistics_during_period,
+        )
     except ImportError:
         _LOGGER.warning("Recorder component not available")
         return None
@@ -425,6 +428,32 @@ async def _load_month_metrics(
     discharge_end = _extract_latest_numeric(history, discharge_sensor)
     battery_start = _extract_first_numeric(history, battery_sensor)
     battery_end = _extract_latest_numeric(history, battery_sensor)
+
+    if (
+        charge_start is None
+        or charge_end is None
+        or discharge_start is None
+        or discharge_end is None
+        or battery_start is None
+        or battery_end is None
+    ):
+        stats = await _load_statistics(
+            hass,
+            statistics_during_period,
+            start_utc,
+            end_utc,
+            [charge_sensor, discharge_sensor, battery_sensor],
+        )
+        if stats:
+            charge_start, charge_end = _extract_stats_bounds(
+                stats, charge_sensor, prefer_sum=True
+            )
+            discharge_start, discharge_end = _extract_stats_bounds(
+                stats, discharge_sensor, prefer_sum=True
+            )
+            battery_start, battery_end = _extract_stats_bounds(
+                stats, battery_sensor, prefer_sum=False
+            )
 
     charge_wh = _resolve_month_delta(charge_start, charge_end, "charge", month, year)
     discharge_wh = _resolve_month_delta(
@@ -472,6 +501,61 @@ async def _load_history_states(
         end_time,
         entity_ids,
     )
+
+
+async def _load_statistics(
+    hass: Any,
+    stats_fn: Any,
+    start_time: datetime,
+    end_time: datetime,
+    entity_ids: list[str],
+) -> Optional[Dict[str, Any]]:
+    try:
+        return await hass.async_add_executor_job(
+            stats_fn,
+            hass,
+            start_time,
+            end_time,
+            set(entity_ids),
+            "day",
+            None,
+            {"mean", "max", "sum", "state"},
+        )
+    except Exception as exc:  # pragma: no cover - recorder can fail early
+        _LOGGER.warning("Failed to load statistics: %s", exc)
+        return None
+
+
+def _extract_stats_bounds(
+    stats: Optional[Dict[str, Any]],
+    entity_id: str,
+    prefer_sum: bool,
+) -> tuple[Optional[float], Optional[float]]:
+    if not stats or entity_id not in stats or not stats[entity_id]:
+        return None, None
+    items = stats[entity_id]
+    first_value = _extract_stat_value(items, prefer_sum, forward=True)
+    last_value = _extract_stat_value(items, prefer_sum, forward=False)
+    return first_value, last_value
+
+
+def _extract_stat_value(
+    items: list[Dict[str, Any]],
+    prefer_sum: bool,
+    forward: bool,
+) -> Optional[float]:
+    keys = ("sum", "state", "max", "mean") if prefer_sum else ("state", "mean", "max", "sum")
+    iterable = items if forward else reversed(items)
+    for item in iterable:
+        for key in keys:
+            value = item.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                continue
+    return None
 
 
 def _extract_latest_numeric(
