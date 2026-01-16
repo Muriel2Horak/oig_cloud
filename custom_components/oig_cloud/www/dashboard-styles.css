@@ -1532,14 +1532,14 @@
 }
 
         .planner-mode-badge.auto-disabled {
-            background: rgb(148, 163, 184, 0.18);
-            border-color: rgb(148, 163, 184, 0.35);
-            color: #e2e8f0;
+            background: rgb(30, 41, 59, 0.7);
+            border-color: rgb(148, 163, 184, 0.65);
+            color: #f8fafc;
         }
 
 .planner-mode-badge.auto-unknown {
-    background: rgb(245, 124, 0, 0.65);
-    border-color: rgb(245, 124, 0, 0.9);
+    background: rgb(194, 65, 12, 0.8);
+    border-color: rgb(234, 88, 12, 0.9);
     color: #fff7ed;
 }
 

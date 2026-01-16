@@ -579,18 +579,35 @@ class OigCloudPlannerRecommendedModeSensor(
         timeline: Any,
     ) -> datetime.tzinfo:
         for ts in (payload.get("calculation_time"), payload.get("last_update")):
-            dt_obj = dt_util.parse_datetime(str(ts)) if ts else None
-            if dt_obj and dt_obj.tzinfo:
-                return dt_obj.tzinfo
-        if isinstance(timeline, list):
-            for item in timeline:
-                if not isinstance(item, dict):  # pragma: no cover
-                    continue
-                ts = item.get("time") or item.get("timestamp")
-                dt_obj = dt_util.parse_datetime(str(ts)) if ts else None
-                if dt_obj and dt_obj.tzinfo:
-                    return dt_obj.tzinfo
-        return dt_util.DEFAULT_TIME_ZONE
+            tzinfo = self._tzinfo_from_timestamp(ts)
+            if tzinfo:
+                return tzinfo
+        tzinfo = self._tzinfo_from_timeline(timeline)
+        return tzinfo or dt_util.DEFAULT_TIME_ZONE
+
+    @staticmethod
+    def _tzinfo_from_timestamp(ts: Any) -> Optional[datetime.tzinfo]:
+        if not ts:
+            return None
+        dt_obj = dt_util.parse_datetime(str(ts))
+        if dt_obj and dt_obj.tzinfo:
+            return dt_obj.tzinfo
+        return None
+
+    def _tzinfo_from_timeline(
+        self, timeline: Any
+    ) -> Optional[datetime.tzinfo]:
+        if not isinstance(timeline, list):
+            return None
+        for item in timeline:
+            if not isinstance(item, dict):  # pragma: no cover
+                continue
+            tzinfo = self._tzinfo_from_timestamp(
+                item.get("time") or item.get("timestamp")
+            )
+            if tzinfo:
+                return tzinfo
+        return None
 
     def _resolve_source_intervals(
         self,

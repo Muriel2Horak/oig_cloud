@@ -1651,46 +1651,52 @@ async function setGridDelivery(mode) {
 }
 
 // OLD FUNCTIONS - KEPT FOR COMPATIBILITY BUT NOT USED
-async function setGridDeliveryOld(mode, limit) {
+function buildGridDeliveryOldPayload(mode, limit) {
     if (mode === null && limit === null) {
-        globalThis.DashboardUtils?.showNotification('Chyba', 'Musíte zadat režim nebo limit!', 'error');
-        return;
+        return { error: 'Musíte zadat režim nebo limit!' };
     }
-
     if (mode !== null && limit !== null) {
-        globalThis.DashboardUtils?.showNotification('Chyba', 'Můžete zadat pouze režim NEBO limit!', 'error');
+        return { error: 'Můžete zadat pouze režim NEBO limit!' };
+    }
+
+    const data = {
+        acknowledgement: true,
+        warning: true
+    };
+
+    if (limit !== null && limit !== undefined) {
+        const parsedLimit = Number.parseInt(limit, 10);
+        if (Number.isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 9999) {
+            return { error: 'Limit musí být 1-9999 W' };
+        }
+        data.limit = parsedLimit;
+        return { data, label: `Limit: ${parsedLimit} W` };
+    }
+
+    if (mode !== null) {
+        data.mode = mode;
+        return { data, label: `Režim: ${mode}` };
+    }
+
+    return { error: 'Vyberte režim nebo zadejte limit!' };
+}
+
+async function setGridDeliveryOld(mode, limit) {
+    const payload = buildGridDeliveryOldPayload(mode, limit);
+    if (payload.error) {
+        globalThis.DashboardUtils?.showNotification('Chyba', payload.error, 'error');
         return;
     }
 
-    const confirmed = confirm('Opravdu chcete změnit dodávku do sítě?\n\n⚠️ VAROVÁNÍ: Tato změna může ovlivnit chování systému!');
+    const confirmed = confirm(
+        'Opravdu chcete změnit dodávku do sítě?\n\n⚠️ VAROVÁNÍ: Tato změna může ovlivnit chování systému!'
+    );
     if (confirmed) {
-        const data = {
-            acknowledgement: true,
-            warning: true
-        };
-
-        if (limit !== null && limit !== undefined) {
-            data.limit = Number.parseInt(limit, 10);
-            if (Number.isNaN(data.limit) || data.limit < 1 || data.limit > 9999) {
-                globalThis.DashboardUtils?.showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
-                return;
-            }
-        } else if (mode !== null) {
-            data.mode = mode;
-        } else {
-            globalThis.DashboardUtils?.showNotification('Chyba', 'Vyberte režim nebo zadejte limit!', 'error');
-            return;
-        }
-
-        const success = await callService('oig_cloud', 'set_grid_delivery', data);
-
+        const success = await callService('oig_cloud', 'set_grid_delivery', payload.data);
         if (success) {
-            const msg = mode ? `Režim: ${mode}` : `Limit: ${data.limit} W`;
-            globalThis.DashboardUtils?.showNotification('Dodávka do sítě', msg, 'success');
+            globalThis.DashboardUtils?.showNotification('Dodávka do sítě', payload.label, 'success');
             setTimeout(forceFullRefresh, 2000);
         }
-    } else {
-        return;
     }
 }
 
