@@ -122,12 +122,15 @@ def _get_export_config(sensor: Any) -> Dict[str, Any]:
 
 
 def _get_sensor_component(hass: Any) -> Optional[Any]:
-    if not hass or not isinstance(hass.data, dict):
+    if not hass:
         return None
-    entity_components = hass.data.get("entity_components")
+    hass_data = getattr(hass, "data", None)
+    if not isinstance(hass_data, dict):
+        return None
+    entity_components = hass_data.get("entity_components")
     if isinstance(entity_components, dict) and entity_components.get("sensor"):
         return entity_components.get("sensor")
-    return hass.data.get("sensor")
+    return hass_data.get("sensor")
 
 
 def _find_entity(component: Any, sensor_id: str) -> Optional[Any]:
