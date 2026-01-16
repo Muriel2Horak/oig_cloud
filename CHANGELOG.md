@@ -17,6 +17,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Timeline dialog: plan toggle switches between live Hybrid control and Autonomy preview dataset.
 - Analytics tile action: “Autonomní plán” opens the timeline dialog pre-filtered to the Autonomy plan.
 
+## [2.1.4] - 2026-01-16
+
+### Added
+
+- Battery health detail view with backfilled statistics and compact SoH chart.
+
+### Changed
+
+- Battery efficiency recalculated from monthly statistics (simplified charge/discharge ratio).
+- Dashboard: event-driven updates for efficiency + pricing tiles, refined flip animation behavior.
+- Frontend lint baseline relaxed to stabilize legacy JS without refactors.
+
+### Fixed
+
+- Pricing tab loading overlay stuck on refresh.
+- CHMU warning badge styling regressions.
+- Battery health tile overflow and spacing issues.
+- Planner badge update and mode label normalization.
+
 ## [2.0.6-pre.5] - 2025-12-17
 
 ### Fixed
@@ -216,7 +235,8 @@ If you use multiple devices, update automations/service calls to include `device
 - Service calls for mode control.
 - Statistics tracking.
 
-[Unreleased]: https://github.com/psimsa/oig_cloud/compare/v2.0.6-pre.3...HEAD
+[Unreleased]: https://github.com/psimsa/oig_cloud/compare/v2.1.4...HEAD
+[2.1.4]: https://github.com/psimsa/oig_cloud/compare/v2.1.3...v2.1.4
 [2.0.6-pre.3]: https://github.com/psimsa/oig_cloud/compare/v2.0.6-pre.2...v2.0.6-pre.3
 [2.0.6-pre.2]: https://github.com/psimsa/oig_cloud/compare/v2.0.4...v2.0.6-pre.2
 [2.0.4]: https://github.com/psimsa/oig_cloud/compare/v2.0.3-preview...v2.0.4
