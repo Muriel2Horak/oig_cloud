@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Timeline dialog: plan toggle switches between live Hybrid control and Autonomy preview dataset.
 - Analytics tile action: “Autonomní plán” opens the timeline dialog pre-filtered to the Autonomy plan.
 
+## [2.1.5] - 2026-01-16
+
+### Fixed
+
+- Planner spot price timeline now uses the same final 15-minute price calculation as the current spot price sensor.
+
 ## [2.1.4] - 2026-01-16
 
 ### Added
@@ -32,7 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Pricing tab loading overlay stuck on refresh.
-- Planner spot price timeline now uses the same final 15-minute price calculation as the current spot price sensor.
 - CHMU warning badge styling regressions.
 - Battery health tile overflow and spacing issues.
 - Planner badge update and mode label normalization.
@@ -236,7 +241,8 @@ If you use multiple devices, update automations/service calls to include `device
 - Service calls for mode control.
 - Statistics tracking.
 
-[Unreleased]: https://github.com/psimsa/oig_cloud/compare/v2.1.4...HEAD
+[Unreleased]: https://github.com/psimsa/oig_cloud/compare/v2.1.5...HEAD
+[2.1.5]: https://github.com/psimsa/oig_cloud/compare/v2.1.4...v2.1.5
 [2.1.4]: https://github.com/psimsa/oig_cloud/compare/v2.1.3...v2.1.4
 [2.0.6-pre.3]: https://github.com/psimsa/oig_cloud/compare/v2.0.6-pre.2...v2.0.6-pre.3
 [2.0.6-pre.2]: https://github.com/psimsa/oig_cloud/compare/v2.0.4...v2.0.6-pre.2
