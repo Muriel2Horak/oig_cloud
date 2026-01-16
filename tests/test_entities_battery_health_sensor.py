@@ -62,6 +62,7 @@ async def test_find_monotonic_charging_intervals(monkeypatch):
 
     hass = DummyHass(DummyStates({}))
     tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=10.0)
+    tracker._min_duration_hours = 1.0
 
     t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
     states = [
@@ -92,6 +93,7 @@ async def test_calculate_capacity(monkeypatch):
     )
 
     tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=15.3)
+    tracker._min_duration_hours = 1.0
 
     charge_states = [
         DummyState("1000", t0),
@@ -116,6 +118,7 @@ def test_get_value_at_time_invalid_state(monkeypatch):
     monkeypatch.setattr(module, "Store", DummyStore)
     hass = DummyHass(DummyStates({}))
     tracker = module.BatteryHealthTracker(hass, "123")
+    tracker._min_duration_hours = 1.0
 
     t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
     states = [DummyState("bad", t0)]
@@ -139,8 +142,8 @@ def test_current_soh_and_capacity(monkeypatch):
     )
     tracker._measurements = [base, replace(base, soh_percent=80.0, capacity_kwh=9.0)]
 
-    assert tracker.get_current_soh() == 85.0
-    assert tracker.get_current_capacity() == 9.5
+    assert tracker.get_current_soh() == 80.0
+    assert tracker.get_current_capacity() == 9.0
 
 
 @pytest.mark.asyncio
@@ -223,6 +226,7 @@ async def test_analyze_last_10_days_happy_path(monkeypatch):
         DummyStates({"sensor.oig_123_battery_efficiency": DummyState("90", t0)})
     )
     tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=15.3)
+    tracker._min_duration_hours = 1.0
 
     soc_states = [
         DummyState("10", t0),
@@ -254,6 +258,7 @@ def test_find_monotonic_intervals_ignores_unknown(monkeypatch):
     monkeypatch.setattr(module, "Store", DummyStore)
     hass = DummyHass(DummyStates({}))
     tracker = module.BatteryHealthTracker(hass, "123")
+    tracker._min_duration_hours = 1.0
 
     t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
     states = [
@@ -298,6 +303,7 @@ def test_calculate_capacity_efficiency_invalid(monkeypatch):
         DummyStates({"sensor.oig_123_battery_efficiency": DummyState("bad", t0)})
     )
     tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=12.0)
+    tracker._min_duration_hours = 1.0
 
     charge_states = [DummyState("0", t0), DummyState("6000", t1)]
     measurement = tracker._calculate_capacity(t0, t1, 0, 60, charge_states)
@@ -387,8 +393,8 @@ def test_current_soh_and_capacity_outliers(monkeypatch):
             duration_hours=1.0,
         ),
     ]
-    assert tracker.get_current_soh() == 50.0
-    assert tracker.get_current_capacity() == 5.0
+    assert tracker.get_current_soh() == 0.0
+    assert tracker.get_current_capacity() == 0.0
 
 
 def test_current_soh_and_capacity_median_odd(monkeypatch):
@@ -496,10 +502,15 @@ async def test_battery_health_sensor_remove_and_initial_analysis(monkeypatch):
     async def fake_sleep(_delay):
         called["sleep"] += 1
 
+    async def fake_backfill():
+        called["analyze"] += 0
+
     async def fake_analyze():
         called["analyze"] += 1
 
-    sensor._tracker = SimpleNamespace(analyze_last_10_days=fake_analyze)
+    sensor._tracker = SimpleNamespace(
+        analyze_last_10_days=fake_analyze, backfill_from_statistics=fake_backfill
+    )
     sensor.async_write_ha_state = lambda *args, **kwargs: None
     sensor._daily_unsub = lambda: called.__setitem__("daily", called["daily"] + 1)
 
@@ -541,6 +552,15 @@ def test_battery_health_sensor_native_value_and_attrs(monkeypatch):
         _last_analysis=datetime(2025, 1, 2, 0, 0, tzinfo=timezone.utc),
         get_current_soh=lambda: 88.84,
         get_current_capacity=lambda: 10.25,
+        _get_percentile_soh=lambda *_a, **_k: 88.8,
+        _get_percentile_capacity=lambda *_a, **_k: 10.25,
+        _min_delta_soc=50,
+        _min_duration_hours=1.0,
+        _min_charge_wh=2000,
+        _soc_drop_tolerance=5,
+        _recorder_days=10,
+        _stats_backfill_days=365,
+        _stats_backfill_until=None,
     )
     sensor._tracker = tracker
 

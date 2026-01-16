@@ -197,6 +197,7 @@
     vertical-align: baseline;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    line-height: 1;
 }
 
 .oig-flip-cell {
@@ -205,6 +206,8 @@
     overflow: hidden;
     vertical-align: baseline;
     perspective: 900px;
+    line-height: 1;
+    height: 1em;
 }
 
 .oig-flip-size {
@@ -212,6 +215,7 @@
     opacity: 0;
     user-select: none;
     pointer-events: none;
+    height: 1em;
 }
 
 .oig-flip-face {
@@ -224,6 +228,7 @@
     backface-visibility: hidden;
     transform-style: preserve-3d;
     will-change: transform;
+    height: 1em;
 }
 
 .oig-flip-static-top {

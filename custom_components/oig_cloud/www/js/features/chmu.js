@@ -39,9 +39,14 @@ function updateChmuWarningBadge() {
         severity: effectiveSeverity
     };
 
-    // Remove all severity classes
-    badge.className = 'chmu-warning-badge';
-    badge.classList.add(`severity-${effectiveSeverity}`);
+    badge.classList.remove(
+        'severity-0',
+        'severity-1',
+        'severity-2',
+        'severity-3',
+        'severity-4'
+    );
+    badge.classList.add('chmu-warning-badge', 'button-reset', `severity-${effectiveSeverity}`);
 
     // Update icon and text based on effective severity
     if (effectiveSeverity === 0) {

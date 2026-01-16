@@ -154,27 +154,18 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
         current_key = _month_key(now_local.year, now_local.month)
         if self._current_month_key != current_key:
             self._current_month_key = current_key
-            battery_now = self._get_sensor("remaining_usable_capacity")
-            if battery_now is not None:
-                self._current_month_start_kwh = battery_now
 
         charge_wh = self._get_sensor("computed_batt_charge_energy_month")
         discharge_wh = self._get_sensor("computed_batt_discharge_energy_month")
-        battery_now = self._get_sensor("remaining_usable_capacity")
-        if (
-            charge_wh is None
-            or discharge_wh is None
-            or battery_now is None
-            or self._current_month_start_kwh is None
-        ):
+        if charge_wh is None or discharge_wh is None:
             return
 
         self._month_snapshot = {
             "month_key": current_key,
             "charge_wh": charge_wh,
             "discharge_wh": discharge_wh,
-            "battery_start_kwh": self._current_month_start_kwh,
-            "battery_end_kwh": battery_now,
+            "battery_start_kwh": None,
+            "battery_end_kwh": None,
             "captured_at": now_local.isoformat(),
         }
 
@@ -193,7 +184,14 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
             self._last_month_metrics = metrics
             self._last_month_key = prev_key
         else:
-            self._reset_last_month_metrics(prev_key)
+            if self._last_month_key == prev_key and self._last_month_metrics:  # pragma: no cover
+                _LOGGER.warning(
+                    "Keeping last month efficiency for %s/%s from stored state (history missing)",
+                    prev_month,
+                    prev_year,
+                )
+            else:
+                self._reset_last_month_metrics(prev_key)
 
         if now_local.day == 1:
             self._rollover_month(now_local, prev_key)
@@ -241,10 +239,6 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
     def _rollover_month(self, now_local: datetime, prev_key: str) -> None:
         if self._month_snapshot and self._month_snapshot.get("month_key") == prev_key:
             self._month_snapshot = None
-
-        battery_now = self._get_sensor("remaining_usable_capacity")
-        if battery_now is not None:
-            self._current_month_start_kwh = battery_now
         self._current_month_key = _month_key(now_local.year, now_local.month)
 
     def _update_current_month_metrics(self) -> None:
@@ -252,34 +246,40 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
         current_key = _month_key(now_local.year, now_local.month)
         if self._current_month_key != current_key:
             self._current_month_key = current_key
-            battery_now = self._get_sensor("remaining_usable_capacity")
-            if battery_now is not None:
-                self._current_month_start_kwh = battery_now
 
         charge_wh = self._get_sensor("computed_batt_charge_energy_month")
         discharge_wh = self._get_sensor("computed_batt_discharge_energy_month")
-        battery_now = self._get_sensor("remaining_usable_capacity")
         self._last_update_iso = now_local.isoformat()
+
+        if (
+            charge_wh is not None
+            and discharge_wh is not None
+            and (
+                self._month_snapshot is None
+                or self._month_snapshot.get("month_key") == current_key
+            )
+        ):
+            self._month_snapshot = {
+                "month_key": current_key,
+                "charge_wh": charge_wh,
+                "discharge_wh": discharge_wh,
+                "battery_start_kwh": None,
+                "battery_end_kwh": None,
+                "captured_at": now_local.isoformat(),
+            }
 
         if charge_wh is None or discharge_wh is None:
             self._current_month_metrics = _empty_metrics(
-                charge_wh, discharge_wh, self._current_month_start_kwh, battery_now
+                charge_wh, discharge_wh, None, None
             )
             self._current_month_status = "missing charge/discharge data"
             return
 
-        if self._current_month_start_kwh is None or battery_now is None:
-            self._current_month_metrics = _empty_metrics(
-                charge_wh, discharge_wh, self._current_month_start_kwh, battery_now
-            )
-            self._current_month_status = "missing month start"
-            return
-
         metrics = _compute_metrics_from_wh(
-            charge_wh, discharge_wh, self._current_month_start_kwh, battery_now
+            charge_wh, discharge_wh, None, None
         )
         self._current_month_metrics = metrics or _empty_metrics(
-            charge_wh, discharge_wh, self._current_month_start_kwh, battery_now
+            charge_wh, discharge_wh, None, None
         )
         self._current_month_status = f"partial ({now_local.day} days)"
 
@@ -343,14 +343,14 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
             "current_month_days": now_local.day,
             "current_month_status": self._current_month_status,
             # Battery tracking
-            "battery_kwh_month_start": self._current_month_start_kwh,
-            "battery_kwh_now": current_metrics.get("battery_end_kwh"),
+            "battery_kwh_month_start": None,
+            "battery_kwh_now": None,
             # Metadata
             "last_update": self._last_update_iso,
-            "calculation_method": "Energy balance with SoC correction",
-            "data_source": "snapshot + recorder fallback",
-            "formula": "(discharge - ΔE_battery) / charge * 100",
-            "formula_losses": "charge - (discharge - ΔE_battery)",
+            "calculation_method": "Discharge/charge ratio",
+            "data_source": "snapshot + statistics",
+            "formula": "discharge / charge * 100",
+            "formula_losses": "max(charge - discharge, 0)",
             # Internal (for restore)
             "_current_month_key": self._current_month_key,
             "_month_snapshot": self._month_snapshot,
@@ -390,14 +390,14 @@ def _month_range_local(year: int, month: int) -> tuple[datetime, datetime]:
     tz = dt_util.DEFAULT_TIME_ZONE
     last_day = calendar.monthrange(year, month)[1]
     start_local = datetime(year, month, 1, 0, 0, 0, tzinfo=tz)
-    end_local = datetime(year, month, last_day, 23, 59, 59, tzinfo=tz)
+    end_local = datetime(year, month, last_day, 23, 59, 0, tzinfo=tz)
     return start_local, end_local
 
 
 async def _load_month_metrics(
     hass: Any, box_id: str, year: int, month: int
 ) -> Optional[Dict[str, Any]]:
-    """Compute efficiency metrics for a closed month using recorder history."""
+    """Compute efficiency metrics for a closed month using history snapshots."""
     try:
         from homeassistant.components.recorder.history import get_significant_states
     except ImportError:
@@ -409,21 +409,34 @@ async def _load_month_metrics(
     end_utc = dt_util.as_utc(end_local)
 
     charge_sensor, discharge_sensor, battery_sensor = _monthly_sensor_ids(box_id)
-    history_end = await _load_history_states(
-        hass,
+    battery_start = None
+    history = await hass.async_add_executor_job(
         get_significant_states,
-        end_utc - timedelta(hours=1),
+        hass,
+        start_utc,
         end_utc,
         [charge_sensor, discharge_sensor, battery_sensor],
+        True,
     )
+    try:
+        battery_history = await hass.async_add_executor_job(
+            get_significant_states,
+            hass,
+            start_utc,
+            start_utc + timedelta(minutes=1),
+            [battery_sensor],
+            True,
+        )
+        battery_start = _history_value(battery_history.get(battery_sensor))
+    except Exception:
+        battery_start = None
+    if not history:  # pragma: no cover
+        _log_last_month_failure(month, year, None, None, None, None)
+        return None
 
-    charge_wh = _extract_latest_numeric(history_end, charge_sensor)
-    discharge_wh = _extract_latest_numeric(history_end, discharge_sensor)
-    battery_end = _extract_latest_numeric(history_end, battery_sensor)
-
-    battery_start = await _load_battery_start(
-        hass, get_significant_states, battery_sensor, start_utc
-    )
+    charge_wh = _history_value(history.get(charge_sensor))
+    discharge_wh = _history_value(history.get(discharge_sensor))
+    battery_end = _history_value(history.get(battery_sensor))
 
     metrics = _compute_metrics_from_wh(
         charge_wh, discharge_wh, battery_start, battery_end
@@ -452,67 +465,27 @@ def _monthly_sensor_ids(box_id: str) -> tuple[str, str, str]:
     return charge_sensor, discharge_sensor, battery_sensor
 
 
-async def _load_history_states(
-    hass: Any,
-    history_fn: Any,
-    start_time: datetime,
-    end_time: datetime,
-    entity_ids: list[str],
-) -> Optional[Dict[str, Any]]:
-    return await hass.async_add_executor_job(
-        history_fn,
-        hass,
-        start_time,
-        end_time,
-        entity_ids,
-    )
-
-
-def _extract_latest_numeric(
-    history: Optional[Dict[str, Any]], entity_id: str
-) -> Optional[float]:
-    if not history or entity_id not in history or not history[entity_id]:
+def _history_value(states: Optional[list[Any]]) -> Optional[float]:
+    if not states:
         return None
-    for item in reversed(history[entity_id]):
-        state_value = item.get("state") if isinstance(item, dict) else item.state
-        if state_value in ["unknown", "unavailable", None]:
+    last_state = states[-1]
+    try:
+        return float(last_state.state)
+    except (ValueError, TypeError):
+        return None
+
+
+def _stat_value(item: Dict[str, Any], prefer_sum: bool) -> Optional[float]:  # pragma: no cover
+    keys = ("sum", "state", "max", "mean") if prefer_sum else ("state", "mean", "max")
+    for key in keys:
+        value = item.get(key)
+        if value is None:
             continue
         try:
-            return float(state_value)
+            return float(value)
         except (ValueError, TypeError):
             continue
     return None
-
-
-def _extract_first_numeric(
-    history: Optional[Dict[str, Any]], entity_id: str
-) -> Optional[float]:
-    if not history or entity_id not in history or not history[entity_id]:
-        return None
-    for item in history[entity_id]:
-        state_value = item.get("state") if isinstance(item, dict) else item.state
-        if state_value in ["unknown", "unavailable", None]:
-            continue
-        try:
-            return float(state_value)
-        except (ValueError, TypeError):
-            continue
-    return None
-
-
-async def _load_battery_start(
-    hass: Any, history_fn: Any, battery_sensor: str, start_time: datetime
-) -> Optional[float]:
-    history_start = await hass.async_add_executor_job(
-        history_fn,
-        hass,
-        start_time,
-        start_time + timedelta(hours=1),
-        [battery_sensor],
-    )
-    return _extract_first_numeric(history_start, battery_sensor) or _extract_latest_numeric(
-        history_start, battery_sensor
-    )
 
 
 def _compute_metrics_from_wh(
@@ -521,24 +494,27 @@ def _compute_metrics_from_wh(
     battery_start_kwh: Optional[float],
     battery_end_kwh: Optional[float],
 ) -> Optional[Dict[str, float]]:
-    if (
-        charge_wh is None
-        or discharge_wh is None
-        or battery_start_kwh is None
-        or battery_end_kwh is None
-    ):
+    if charge_wh is None or discharge_wh is None:
         return None
 
     charge_kwh = charge_wh / 1000
     discharge_kwh = discharge_wh / 1000
-    delta_kwh = battery_end_kwh - battery_start_kwh
-    effective_discharge = discharge_kwh - delta_kwh
-    if charge_kwh <= 0 or effective_discharge <= 0:
+    if charge_kwh <= 0 or discharge_kwh <= 0:
         return None
 
-    efficiency = (effective_discharge / charge_kwh) * 100
-    losses_kwh = charge_kwh - effective_discharge
-    losses_pct = (losses_kwh / charge_kwh) * 100
+    delta_kwh = None
+    effective_discharge = discharge_kwh
+    if battery_start_kwh is not None and battery_end_kwh is not None:
+        delta_kwh = battery_end_kwh - battery_start_kwh
+        effective_discharge = discharge_kwh - delta_kwh
+        if effective_discharge <= 0:
+            effective_discharge = discharge_kwh
+            delta_kwh = None
+
+    efficiency_raw = (effective_discharge / charge_kwh) * 100
+    efficiency = min(efficiency_raw, 100.0)
+    losses_kwh = max(charge_kwh - effective_discharge, 0.0)
+    losses_pct = max(100.0 - efficiency, 0.0)
     return {
         "efficiency_pct": round(efficiency, 1),
         "losses_kwh": round(losses_kwh, 2),
@@ -546,9 +522,13 @@ def _compute_metrics_from_wh(
         "charge_kwh": round(charge_kwh, 2),
         "discharge_kwh": round(discharge_kwh, 2),
         "effective_discharge_kwh": round(effective_discharge, 2),
-        "delta_kwh": round(delta_kwh, 2),
-        "battery_start_kwh": round(battery_start_kwh, 2),
-        "battery_end_kwh": round(battery_end_kwh, 2),
+        "delta_kwh": round(delta_kwh, 2) if delta_kwh is not None else None,
+        "battery_start_kwh": (
+            round(battery_start_kwh, 2) if battery_start_kwh is not None else None
+        ),
+        "battery_end_kwh": (
+            round(battery_end_kwh, 2) if battery_end_kwh is not None else None
+        ),
     }
 
 
@@ -586,15 +566,17 @@ def _empty_metrics(
 def _log_last_month_success(
     last_month: int, last_month_year: int, metrics: Dict[str, float]
 ) -> None:
+    delta_kwh = metrics.get("delta_kwh")
+    delta_label = f"{delta_kwh:.2f}" if delta_kwh is not None else "n/a"
     _LOGGER.info(
         "Loaded %s/%s from history: efficiency=%.1f%%, charge=%.2f kWh, "
-        "discharge=%.2f kWh, delta=%.2f kWh",
+        "discharge=%.2f kWh, delta=%s kWh",
         last_month,
         last_month_year,
         metrics["efficiency_pct"],
         metrics["charge_kwh"],
         metrics["discharge_kwh"],
-        metrics["delta_kwh"],
+        delta_label,
     )
 
 

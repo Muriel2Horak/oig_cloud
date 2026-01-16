@@ -56,12 +56,28 @@ function shouldRefreshShield(entityId) {
 function shouldRefreshData(entityId) {
     return matchesAny(entityId, [
         'actual_pv',
+        'actual_fv_',
+        'dc_in_fv_proc',
+        'dc_in_fv_ad',
         'actual_batt',
+        'batt_bat_c',
+        'batt_batt_comp_p',
         'actual_aci_wtotal',
+        'extended_grid_consumption',
+        'extended_grid_delivery',
         'actual_aco_p',
+        'ac_out_en_day',
         'boiler_current_cbb_w',
+        'boiler_install_power',
         'extended_battery_soc',
         'extended_battery_voltage',
+        'extended_battery_current',
+        'extended_battery_temperature',
+        'grid_charging_planned',
+        'time_to_empty',
+        'time_to_full',
+        'box_prms_mode',
+        'boiler_manual_mode',
         'box_temp',
         'bypass_status',
         'chmu_warning_level',
@@ -77,11 +93,17 @@ function shouldRefreshDetails(entityId) {
         'computed_batt_',
         'ac_in_',
         'ac_out_',
+        'actual_aci_w',
         'spot_price',
         'current_tariff',
         'grid_charging_planned',
         'battery_balancing',
-        'notification_count'
+        'notification_count',
+        'boiler_day_w',
+        'boiler_is_use',
+        'boiler_manual_mode',
+        'boiler_temperature',
+        'boiler_status'
     ]);
 }
 
@@ -129,9 +151,11 @@ function resolveGridModeLabel(targetMode) {
 
 // Subscribe to shield status changes
 function subscribeToShield() {
+    if (globalThis.__oigShieldSubscribed) return;
     const hass = getHass();
     if (!hass) {
         console.warn('Cannot subscribe to shield - no HA connection');
+        setTimeout(subscribeToShield, 500);
         return;
     }
 
@@ -215,6 +239,7 @@ function subscribeToShield() {
             console.warn('[Connection] WebSocket disconnected');
         });
 
+        globalThis.__oigShieldSubscribed = true;
         console.log('[Shield] Successfully subscribed to state changes');
     } catch (e) {
         console.error('[Shield] Failed to subscribe:', e);
@@ -371,16 +396,39 @@ function updateBoxModeButtons(currentMode, pending, isRunning) {
         'Home 3': 'btn-mode-home3',
         'Home UPS': 'btn-mode-ups'
     };
+    const normalizedMode = normalizeBoxMode(currentMode);
 
     updateModeButtons({
         modes,
         getButtonId: (mode) => buttonIds[mode],
         pendingService: 'set_box_mode',
         pending,
-        currentMode,
+        currentMode: normalizedMode,
         isRunning
     });
-    updateModeStatus('box-mode-status', currentMode, pending, 'set_box_mode', isRunning, '--');
+    updateModeStatus('box-mode-status', normalizedMode, pending, 'set_box_mode', isRunning, '--');
+}
+
+function normalizeBoxMode(modeValue) {
+    if (!modeValue) return modeValue;
+    const raw = String(modeValue).trim();
+    const modeMap = {
+        'Mode 0': 'Home 1',
+        'Mode 1': 'Home 2',
+        'Mode 2': 'Home 3',
+        'Mode 3': 'Home UPS',
+        'HOME I': 'Home 1',
+        'HOME II': 'Home 2',
+        'HOME III': 'Home 3',
+        'HOME UPS': 'Home UPS'
+    };
+    if (raw in modeMap) {
+        return modeMap[raw];
+    }
+    if (/^[0-3]$/.test(raw)) {
+        return modeMap[`Mode ${raw}`];
+    }
+    return raw;
 }
 
 // Update Boiler Mode buttons
@@ -1603,19 +1651,13 @@ async function setGridDelivery(mode) {
 }
 
 // OLD FUNCTIONS - KEPT FOR COMPATIBILITY BUT NOT USED
-async function setGridDeliveryOld(mode, limit) {
+function buildGridDeliveryOldPayload(mode, limit) {
     if (mode === null && limit === null) {
-        globalThis.DashboardUtils?.showNotification('Chyba', 'Musíte zadat režim nebo limit!', 'error');
-        return;
+        return { error: 'Musíte zadat režim nebo limit!' };
     }
-
     if (mode !== null && limit !== null) {
-        globalThis.DashboardUtils?.showNotification('Chyba', 'Můžete zadat pouze režim NEBO limit!', 'error');
-        return;
+        return { error: 'Můžete zadat pouze režim NEBO limit!' };
     }
-
-    const confirmed = confirm('Opravdu chcete změnit dodávku do sítě?\n\n⚠️ VAROVÁNÍ: Tato změna může ovlivnit chování systému!');
-    if (!confirmed) return;
 
     const data = {
         acknowledgement: true,
@@ -1623,24 +1665,38 @@ async function setGridDeliveryOld(mode, limit) {
     };
 
     if (limit !== null && limit !== undefined) {
-        data.limit = Number.parseInt(limit, 10);
-        if (Number.isNaN(data.limit) || data.limit < 1 || data.limit > 9999) {
-            globalThis.DashboardUtils?.showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
-            return;
+        const parsedLimit = Number.parseInt(limit, 10);
+        if (Number.isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 9999) {
+            return { error: 'Limit musí být 1-9999 W' };
         }
-    } else if (mode !== null) {
+        data.limit = parsedLimit;
+        return { data, label: `Limit: ${parsedLimit} W` };
+    }
+
+    if (mode !== null) {
         data.mode = mode;
-    } else {
-        globalThis.DashboardUtils?.showNotification('Chyba', 'Vyberte režim nebo zadejte limit!', 'error');
+        return { data, label: `Režim: ${mode}` };
+    }
+
+    return { error: 'Vyberte režim nebo zadejte limit!' };
+}
+
+async function setGridDeliveryOld(mode, limit) {
+    const payload = buildGridDeliveryOldPayload(mode, limit);
+    if (payload.error) {
+        globalThis.DashboardUtils?.showNotification('Chyba', payload.error, 'error');
         return;
     }
 
-    const success = await callService('oig_cloud', 'set_grid_delivery', data);
-
-    if (success) {
-        const msg = mode ? `Režim: ${mode}` : `Limit: ${data.limit} W`;
-        globalThis.DashboardUtils?.showNotification('Dodávka do sítě', msg, 'success');
-        setTimeout(forceFullRefresh, 2000);
+    const confirmed = confirm(
+        'Opravdu chcete změnit dodávku do sítě?\n\n⚠️ VAROVÁNÍ: Tato změna může ovlivnit chování systému!'
+    );
+    if (confirmed) {
+        const success = await callService('oig_cloud', 'set_grid_delivery', payload.data);
+        if (success) {
+            globalThis.DashboardUtils?.showNotification('Dodávka do sítě', payload.label, 'success');
+            setTimeout(forceFullRefresh, 2000);
+        }
     }
 }
 

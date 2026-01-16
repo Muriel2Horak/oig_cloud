@@ -305,41 +305,99 @@ globalThis.cleanupParticles = stopAllParticleFlows;
 // Cache pro smoothing rychlosti - zabraňuje náhlým skokům
 const speedCache = {};
 
+let plannerSettingsLastFetch = 0;
+
+async function fetchPlannerSettingsDirect() {
+    try {
+        if (typeof fetchWithAuth === 'function') {
+            const res = await fetchWithAuth(`/api/oig_cloud/battery_forecast/${INVERTER_SN}/planner_settings`);
+            if (res.ok) {
+                return await res.json();
+            }
+        }
+    } catch (e) {
+        console.warn('[PlannerModeBadge] Direct fetch failed', e);
+    }
+
+    const hass = getHass?.();
+    if (hass?.callApi) {
+        try {
+            return await hass.callApi('GET', `oig_cloud/battery_forecast/${INVERTER_SN}/planner_settings`);
+        } catch (e) {
+            console.warn('[PlannerModeBadge] hass.callApi failed', e);
+        }
+    }
+
+    return null;
+}
+
+async function getPlannerSettings(force) {
+    const data = globalThis.PlannerState
+        ? await globalThis.PlannerState.fetchSettings(force)
+        : null;
+    const cached = globalThis.PlannerState?.getCachedSettings?.() || null;
+    let settings = data || cached;
+
+    if (!settings) {
+        const now = Date.now();
+        if (now - plannerSettingsLastFetch > 10000) {
+            plannerSettingsLastFetch = now;
+            settings = await fetchPlannerSettingsDirect();
+        }
+    }
+    return settings;
+}
+
+function resolvePlannerBadgeState(badge, settings) {
+    let newState = badge.dataset.modeState || 'unknown';
+    let labelText = badge.textContent || 'Plánovač: N/A';
+
+    if (settings) {
+        newState = settings.auto_mode_switch_enabled ? 'enabled' : 'disabled';
+        labelText = newState === 'enabled' ? 'Plánovač: AUTO' : 'Plánovač: VYPNUTO';
+    } else if (!badge.dataset.modeState) {
+        newState = 'unknown';
+        labelText = 'Plánovač: N/A';
+    }
+
+    return { newState, labelText };
+}
+
+function applyPlannerBadgeLabel(badge, labelText) {
+    if (typeof updateElementIfChangedRef === 'function') {
+        updateElementIfChangedRef('planner-mode-badge', labelText, 'planner-mode-badge-text');
+        return;
+    }
+    if (badge.textContent !== labelText) {
+        badge.textContent = labelText;
+    }
+}
+
+function applyPlannerBadgeState(badge, newState) {
+    if (badge.dataset.modeState === newState) {
+        return;
+    }
+    let className = 'auto-unknown';
+    if (newState === 'enabled') {
+        className = 'auto-enabled';
+    } else if (newState === 'disabled') {
+        className = 'auto-disabled';
+    }
+    badge.classList.remove('auto-enabled', 'auto-disabled', 'auto-unknown');
+    badge.classList.add(className);
+    badge.dataset.modeState = newState;
+}
+
 async function updatePlannerModeBadge(force = false) {
     const badge = document.getElementById('planner-mode-badge');
     if (!badge) {
         return;
     }
 
-    const data = globalThis.PlannerState
-        ? await globalThis.PlannerState.fetchSettings(force)
-        : null;
-    let newState = 'unknown';
-    if (data) {
-        newState = data.auto_mode_switch_enabled ? 'enabled' : 'disabled';
-    }
-    let labelText = 'Plánovač: N/A';
-    if (data) {
-        labelText = newState === 'enabled' ? 'Plánovač: AUTO' : 'Plánovač: MANUÁL';
-    }
-
-    if (typeof updateElementIfChanged === 'function') {
-        updateElementIfChangedRef('planner-mode-badge', labelText, 'planner-mode-badge-text');
-    } else if (badge.textContent !== labelText) {
-        badge.textContent = labelText;
-    }
-
-    if (badge.dataset.modeState !== newState) {
-        let className = 'auto-unknown';
-        if (newState === 'enabled') {
-            className = 'auto-enabled';
-        } else if (newState === 'disabled') {
-            className = 'auto-disabled';
-        }
-        badge.classList.remove('auto-enabled', 'auto-disabled', 'auto-unknown');
-        badge.classList.add(className);
-        badge.dataset.modeState = newState;
-    }
+    const settings = await getPlannerSettings(force);
+    const { newState, labelText } = resolvePlannerBadgeState(badge, settings);
+    applyPlannerBadgeLabel(badge, labelText);
+    applyPlannerBadgeState(badge, newState);
 }
 
 /**
@@ -2234,7 +2292,6 @@ globalThis.DashboardFlow = {
         console.log('[DashboardFlow] Initialized');
         // Start periodic updates
         setInterval(updateTime, 1000);
-        setInterval(debouncedLoadData, 5000);
     }
 };
 

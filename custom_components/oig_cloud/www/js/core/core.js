@@ -323,6 +323,7 @@ function init() {
     setupControlPanelForMobile();
     initTooltips();
     initRollingNumbers();
+    initCustomTilesSection(isConstrainedRuntime);
 
     if (typeof initPerformanceChartRef === 'function') {
         initPerformanceChartRef();
@@ -332,6 +333,17 @@ function init() {
     startShieldSubscription(isConstrainedRuntime);
     scheduleInitialShieldLoad();
     setupThemeListeners();
+}
+
+function initCustomTilesSection(isConstrainedRuntime) {
+    const startTiles = () => {
+        globalThis.DashboardTiles?.initCustomTiles?.();
+    };
+    if (isConstrainedRuntime) {
+        setTimeout(() => runWhenIdle(startTiles, 3500, 1200), 300);
+    } else {
+        startTiles();
+    }
 }
 
 function applyReduceMotion() {
@@ -391,6 +403,8 @@ function loadPricingIfActive() {
     pricingTabActive = true;
     setTimeout(() => {
         loadPricingDataRef?.();
+        globalThis.DashboardPricing?.updatePlannedConsumptionStats?.();
+        globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats?.();
     }, 200);
 }
 
@@ -586,6 +600,8 @@ function switchTab(tabName) {
             const afterTimeout = performance.now();
             console.log(`[Pricing] Tab visible after ${(afterTimeout - tabSwitchStart).toFixed(0)}ms timeout, loading pricing data...`);
             loadPricingDataRef?.();
+            globalThis.DashboardPricing?.updatePlannedConsumptionStats?.();
+            globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats?.();
 
             // Subscribe to Battery Health updates (once)
             if (typeof subscribeBatteryHealthUpdates === 'function') {
@@ -831,4 +847,14 @@ globalThis.renderButtonTile = renderButtonTile;
 globalThis.executeTileButtonAction = executeTileButtonAction;
 if (renderAllTilesRef) {
     globalThis.renderAllTiles = renderAllTilesRef;
+}
+
+// Kick off dashboard initialization once (core.js is loaded last).
+if (!globalThis.__oigDashboardInitialized) {
+    globalThis.__oigDashboardInitialized = true;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 }

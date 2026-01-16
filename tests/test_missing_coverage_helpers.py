@@ -254,8 +254,9 @@ def test_average_profiles_zero_length():
 
 def test_battery_health_maybe_add_interval_missing_start():
     intervals: list[tuple] = []
+    tracker = SimpleNamespace(_min_delta_soc=50)
     BatteryHealthTracker._maybe_add_interval(
-        intervals, None, datetime(2025, 1, 1), None, 100
+        tracker, intervals, None, datetime(2025, 1, 1), None, 100, 1.0
     )
     assert intervals == []
 

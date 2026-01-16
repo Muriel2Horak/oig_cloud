@@ -23,20 +23,19 @@
         crossorigin="anonymous"></script>
 
     <!-- Styles with cache busting -->
-    <link rel="stylesheet" href="css/variables.css?v=20251215-013">
-    <link rel="stylesheet" href="css/02-layout.css?v=20251215-013">
-    <link rel="stylesheet" href="css/03-typography.css?v=20251215-013">
-    <link rel="stylesheet" href="css/utils/animations.css?v=20251215-013">
-    <link rel="stylesheet" href="css/components/buttons.css?v=20251215-013">
-    <link rel="stylesheet" href="css/components/cards.css?v=20251215-013">
-    <link rel="stylesheet" href="css/components/tiles.css?v=20251215-013">
-    <link rel="stylesheet" href="css/components/modals.css?v=20251215-013">
-    <link rel="stylesheet" href="dashboard-styles.css?v=20251215-013">
-    <link rel="stylesheet" href="css/features/today-plan-tile.css?v=20251215-013">
-    <link rel="stylesheet" href="css/features/detail-tabs.css?v=20251215-013">
-    <link rel="stylesheet" href="css/features/battery-health.css?v=20251215-013">
-    <link rel="stylesheet" href="css/features/custom-tiles.css?v=20251215-013">
-    <link rel="stylesheet" href="css/features/balancing-card.css?v=20251215-013">
+    <link rel="stylesheet" href="css/variables.css?v=20260115-001">
+    <link rel="stylesheet" href="css/02-layout.css?v=20260115-001">
+    <link rel="stylesheet" href="css/03-typography.css?v=20260115-001">
+    <link rel="stylesheet" href="css/utils/animations.css?v=20260115-001">
+    <link rel="stylesheet" href="css/components/buttons.css?v=20260115-001">
+    <link rel="stylesheet" href="css/components/cards.css?v=20260115-001">
+    <link rel="stylesheet" href="css/components/tiles.css?v=20260115-001">
+    <link rel="stylesheet" href="css/components/modals.css?v=20260115-001">
+    <link rel="stylesheet" href="dashboard-styles.css?v=20260115-001">
+    <link rel="stylesheet" href="css/features/detail-tabs.css?v=20260115-001">
+    <link rel="stylesheet" href="css/features/battery-health.css?v=20260115-001">
+    <link rel="stylesheet" href="css/features/custom-tiles.css?v=20260115-001">
+    <link rel="stylesheet" href="css/features/balancing-card.css?v=20260115-001">
 </head>
 
 <body>
@@ -245,7 +244,7 @@
                     <button type="button" class="node-value entity-value button-reset" id="solar-power" data-entity="actual_fv_total"
                         data-tooltip="Aktuální výkon FVE (oba stringy)"
                         onclick="openEntityDialog(getSensorId('actual_fv_total'))">-- W</button>
-                    <button type="button" class="node-subvalue entity-value button-reset" id="solar-today" data-flip-pad="none" data-entity="dc_in_fv_ad"
+                    <button type="button" class="node-subvalue entity-value button-reset" id="solar-today" data-flip="true" data-flip-pad="none" data-entity="dc_in_fv_ad"
                         data-tooltip="Vyrobeno dnes celkem" onclick="openEntityDialog(getSensorId('dc_in_fv_ad'))">Dnes:
                         -- kWh</button>
                     <div class="node-details">
@@ -354,7 +353,7 @@
                         </svg>
                     </div>
                     <div class="node-label">Baterie</div>
-                    <button type="button" class="node-value entity-value button-reset" id="battery-soc" data-flip-pad="none" data-entity="batt_bat_c"
+                    <button type="button" class="node-value entity-value button-reset" id="battery-soc" data-flip="true" data-flip-pad="none" data-entity="batt_bat_c"
                         data-tooltip="Stav nabití baterie" onclick="openEntityDialog(getSensorId('batt_bat_c'))">-- %
                     </button>
                     <button type="button" class="node-subvalue entity-value button-reset" id="battery-power" data-entity="batt_batt_comp_p"
@@ -634,7 +633,7 @@
                     <button type="button" class="node-value entity-value button-reset" id="house-power" data-entity="actual_aco_p"
                         data-tooltip="Aktuální celková spotřeba domácnosti"
                         onclick="openEntityDialog(getSensorId('actual_aco_p'))">-- W</button>
-                    <button type="button" class="node-subvalue entity-value button-reset" id="house-today" data-flip-pad="none" data-entity="ac_out_en_day"
+                    <button type="button" class="node-subvalue entity-value button-reset" id="house-today" data-flip="true" data-flip-pad="none" data-entity="ac_out_en_day"
                         data-tooltip="Spotřeba dnes celkem" onclick="openEntityDialog(getSensorId('ac_out_en_day'))">
                         Dnes: -- kWh</button>
                     <div class="node-phases">
@@ -740,8 +739,8 @@
                 <div style="font-size: 0.85em; color: var(--text-primary); font-weight: 500;">Načítání...</div>
             </div>
 
-            <!-- Top cards row: Pozitivní metriky + Today Plan -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+            <!-- Top cards row: Pozitivní metriky -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                 <!-- Nejlevnější období NÁKUPU -->
                 <div class="stat-card"
                     style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(76, 175, 80, 0.05) 100%); border: 1px solid rgba(76, 175, 80, 0.3); min-height: 160px;">
@@ -774,15 +773,7 @@
                     </div>
                 </div>
 
-                <!-- Today Plan Tile -->
-                <div id="today-plan-tile-container" class="stat-card">
-                    <div class="stat-label" style="color: var(--text-tertiary); font-weight: 600;">
-                        📆 Dnes - Plnění plánu
-                    </div>
-                    <div class="stat-value" style="font-size: 1.2em; margin: 20px 0; color: var(--text-tertiary);">
-                        ⏳ Načítání...
-                    </div>
-                </div>
+                <!-- Today Plan Tile removed -->
             </div>
 
             <!-- Grid Charging Card - ponechat když je aktiv -->
@@ -1089,6 +1080,42 @@
                         })
                         .catch(err => console.warn(`[Dashboard] Prefetch ${day} failed:`, err));
                 });
+            });
+        </script>
+
+        <!-- Ensure dashboard init runs even if core.js cache is stale -->
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const tryInit = () => {
+                    if (globalThis.__oigDashboardInitialized) return;
+                    if (typeof init === 'function') {
+                        try {
+                            init();
+                            globalThis.__oigDashboardInitialized = true;
+                        } catch (e) {
+                            console.error('[Dashboard] Init failed:', e);
+                        }
+                        return;
+                    }
+                    setTimeout(tryInit, 200);
+                };
+                tryInit();
+
+                const tryTiles = () => {
+                    if (globalThis.__oigTilesInitialized) return;
+                    const tiles = globalThis.DashboardTiles?.initCustomTiles;
+                    if (typeof tiles === 'function') {
+                        try {
+                            tiles();
+                            globalThis.__oigTilesInitialized = true;
+                        } catch (e) {
+                            console.error('[Tiles] Init failed:', e);
+                        }
+                        return;
+                    }
+                    setTimeout(tryTiles, 200);
+                };
+                tryTiles();
             });
         </script>
 </body>

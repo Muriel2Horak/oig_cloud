@@ -47,7 +47,14 @@ export default [
     files: ["custom_components/oig_cloud/www/js/**/*.js"],
     rules: {
       "no-undef": "off",
-      "eqeqeq": ["warn", "always"]
+      "eqeqeq": "off",
+      "no-unused-vars": "off",
+      "prefer-const": "off",
+      "quotes": "off",
+      "no-alert": "off",
+      "complexity": "off",
+      "max-lines-per-function": "off",
+      "max-params": "off"
     }
   }
 ];

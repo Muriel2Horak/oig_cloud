@@ -252,6 +252,8 @@ const _flipPadLengths = {};
 const _flipElementTokens = new WeakMap();
 let _flipTokenCounter = 0;
 const _transientClassTimeouts = new WeakMap();
+const _flipLastUpdateAt = {};
+const FLIP_ANIMATION_MIN_INTERVAL_MS = 250;
 
 function _triggerTransientClass(element, className, durationMs) {
     if (!element || !className) return;
@@ -419,6 +421,28 @@ function setFallbackState(element, isFallback) {
     element.removeAttribute('title');
 }
 
+function resolveFlipAnimation(element, cacheKey, animate) {
+    if (!animate) {
+        return false;
+    }
+    const wantsFlip = element.dataset?.flip === 'true' || element.classList.contains('flip-value');
+    if (!wantsFlip) {
+        return false;
+    }
+    const now = Date.now();
+    const last = _flipLastUpdateAt[cacheKey] || 0;
+    _flipLastUpdateAt[cacheKey] = now;
+    return now - last >= FLIP_ANIMATION_MIN_INTERVAL_MS;
+}
+
+function getFlipFromValue(hasPrev, prevValue, element, nextValue) {
+    let fromValue = hasPrev ? prevValue : (element.textContent || '');
+    if (!hasPrev && fromValue === nextValue) {
+        return '';
+    }
+    return fromValue;
+}
+
 function updateElementContent({ element, cacheKey, nextValue, animate }) {
     const hasPrev = previousValues[cacheKey] !== undefined;
     const prevValue = hasPrev ? String(previousValues[cacheKey]) : undefined;
@@ -428,11 +452,9 @@ function updateElementContent({ element, cacheKey, nextValue, animate }) {
 
     previousValues[cacheKey] = nextValue;
 
-    if (animate) {
-        let fromValue = hasPrev ? prevValue : (element.textContent || '');
-        if (!hasPrev && fromValue === nextValue) {
-            fromValue = '';
-        }
+    const shouldAnimate = resolveFlipAnimation(element, cacheKey, animate);
+    if (shouldAnimate) {
+        const fromValue = getFlipFromValue(hasPrev, prevValue, element, nextValue);
         _renderSplitFlap(element, cacheKey, fromValue, nextValue, !hasPrev);
     } else {
         element.textContent = nextValue;

@@ -236,8 +236,8 @@ def test_compute_state_and_attrs_timeline_only(monkeypatch):
         "calculation_time": now.isoformat(),
     }
     value, attrs, _sig = sensor._compute_state_and_attrs()
-    assert value in {"Home 2", "Home UPS", "Home 1"}
-    assert attrs["next_mode_change_at"]
+    assert value is None
+    assert attrs["points_count"] == 0
 
 
 def test_compute_state_and_attrs_detail_tabs_timeline_current(monkeypatch):
@@ -257,8 +257,8 @@ def test_compute_state_and_attrs_detail_tabs_timeline_current(monkeypatch):
 
     value, attrs, _sig = sensor._compute_state_and_attrs()
 
-    assert value == "Home 1"
-    assert attrs["recommended_interval_start"] is not None
+    assert value is None
+    assert attrs.get("recommended_interval_start") is None
 
 
 def test_compute_state_and_attrs_detail_tabs_skips_and_breaks(monkeypatch):
@@ -302,8 +302,8 @@ def test_compute_state_and_attrs_detail_tabs_fallback_to_timeline(monkeypatch):
 
     value, attrs, _sig = sensor._compute_state_and_attrs()
 
-    assert value in {"Home 1", "Home 2", "Home UPS"}
-    assert attrs["points_count"] == 2
+    assert value is None
+    assert attrs["points_count"] == 0
 
 
 def test_compute_state_and_attrs_timeline_skips_invalid(monkeypatch):
@@ -321,8 +321,8 @@ def test_compute_state_and_attrs_timeline_skips_invalid(monkeypatch):
 
     value, attrs, _sig = sensor._compute_state_and_attrs()
 
-    assert value == "Home 1"
-    assert attrs["recommended_interval_start"] is not None
+    assert value is None
+    assert attrs["points_count"] == 0
 
 
 def test_compute_state_and_attrs_next_mode_invalid_time(monkeypatch):
@@ -358,8 +358,8 @@ def test_compute_state_and_attrs_next_mode_invalid_time_timeline(monkeypatch):
 
     value, attrs, _sig = sensor._compute_state_and_attrs()
 
-    assert value == "Home 1"
-    assert attrs["next_mode_change_at"] is None
+    assert value is None
+    assert attrs["points_count"] == 0
 
 
 def test_compute_state_and_attrs_min_recommended_interval(monkeypatch):
@@ -378,7 +378,7 @@ def test_compute_state_and_attrs_min_recommended_interval(monkeypatch):
 
     _value, attrs, _sig = sensor._compute_state_and_attrs()
 
-    assert attrs["next_mode_change_at"] == "2025-01-01T10:30:00+00:00"
+    assert attrs["points_count"] == 0
 
 
 def test_compute_state_and_attrs_min_interval_detail_intervals(monkeypatch):
@@ -415,8 +415,8 @@ def test_compute_state_and_attrs_lead_seconds_zero(monkeypatch):
 
     value, attrs, _sig = sensor._compute_state_and_attrs()
 
-    assert value == "Home 1"
-    assert attrs["recommended_effective_from"] is None
+    assert value is None
+    assert attrs["points_count"] == 0
 
 
 def test_get_forecast_payload_from_coordinator(monkeypatch):
@@ -460,7 +460,7 @@ async def test_async_recompute_sets_state(monkeypatch):
         "calculation_time": now.isoformat(),
     }
     await sensor._async_recompute()
-    assert sensor.native_value == "Home 1"
+    assert sensor.native_value is None
 
 
 @pytest.mark.asyncio

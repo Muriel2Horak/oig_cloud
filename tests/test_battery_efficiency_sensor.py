@@ -97,11 +97,6 @@ async def test_update_current_month_metrics_computes_efficiency(monkeypatch):
 
     hass.states.async_set("sensor.oig_123_computed_batt_charge_energy_month", 10000)
     hass.states.async_set("sensor.oig_123_computed_batt_discharge_energy_month", 8000)
-    hass.states.async_set("sensor.oig_123_remaining_usable_capacity", 4.0)
-
-    sensor._current_month_start_kwh = 5.0
-    now_local = dt_util.as_local(dt_util.utcnow())
-    sensor._current_month_key = eff_module._month_key(now_local.year, now_local.month)
 
     sensor._update_current_month_metrics()
     sensor._publish_state()
@@ -109,10 +104,10 @@ async def test_update_current_month_metrics_computes_efficiency(monkeypatch):
     metrics = sensor._current_month_metrics
     assert metrics["charge_kwh"] == 10.0
     assert metrics["discharge_kwh"] == 8.0
-    assert metrics["delta_kwh"] == -1.0
-    assert metrics["effective_discharge_kwh"] == 9.0
-    assert metrics["efficiency_pct"] == 90.0
-    assert sensor._attr_extra_state_attributes["efficiency_current_month_pct"] == 90.0
+    assert metrics["delta_kwh"] is None
+    assert metrics["effective_discharge_kwh"] == 8.0
+    assert metrics["efficiency_pct"] == 80.0
+    assert sensor._attr_extra_state_attributes["efficiency_current_month_pct"] == 80.0
     assert sensor._attr_native_value is None
 
 
@@ -132,35 +127,12 @@ async def test_update_current_month_metrics_missing_energy(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_update_current_month_metrics_missing_start(monkeypatch):
-    hass = DummyHass()
-    sensor = _make_sensor(monkeypatch, hass)
-
-    hass.states.async_set("sensor.oig_123_computed_batt_charge_energy_month", 10000)
-    hass.states.async_set("sensor.oig_123_computed_batt_discharge_energy_month", 8000)
-    hass.states.async_set("sensor.oig_123_remaining_usable_capacity", 4.0)
-
-    sensor._current_month_start_kwh = None
-    now_local = dt_util.as_local(dt_util.utcnow())
-    sensor._current_month_key = eff_module._month_key(now_local.year, now_local.month)
-
-    sensor._update_current_month_metrics()
-    sensor._publish_state()
-
-    assert sensor._current_month_status == "missing month start"
-    assert sensor._attr_extra_state_attributes["efficiency_current_month_pct"] is None
-
-
-@pytest.mark.asyncio
 async def test_capture_month_snapshot_records_data(monkeypatch):
     hass = DummyHass()
     sensor = _make_sensor(monkeypatch, hass)
 
     hass.states.async_set("sensor.oig_123_computed_batt_charge_energy_month", 10000)
     hass.states.async_set("sensor.oig_123_computed_batt_discharge_energy_month", 8000)
-    hass.states.async_set("sensor.oig_123_remaining_usable_capacity", 4.0)
-
-    sensor._current_month_start_kwh = 5.0
     sensor._current_month_key = "2026-01"
     now_local = datetime(2026, 1, 15, tzinfo=dt_util.DEFAULT_TIME_ZONE)
 
@@ -169,8 +141,8 @@ async def test_capture_month_snapshot_records_data(monkeypatch):
     assert sensor._month_snapshot is not None
     assert sensor._month_snapshot["charge_wh"] == 10000
     assert sensor._month_snapshot["discharge_wh"] == 8000
-    assert sensor._month_snapshot["battery_start_kwh"] == 5.0
-    assert sensor._month_snapshot["battery_end_kwh"] == 4.0
+    assert sensor._month_snapshot["battery_start_kwh"] is None
+    assert sensor._month_snapshot["battery_end_kwh"] is None
 
 
 @pytest.mark.asyncio
@@ -248,11 +220,10 @@ async def test_finalize_last_month_resets_month_start(monkeypatch):
 
     monkeypatch.setattr(eff_module, "_load_month_metrics", fake_load_month_metrics)
 
-    hass.states.async_set("sensor.oig_123_remaining_usable_capacity", 6.0)
     now_local = datetime(2026, 2, 1, 0, 10, tzinfo=dt_util.DEFAULT_TIME_ZONE)
 
     await sensor._finalize_last_month(now_local, force=True)
-    assert sensor._current_month_start_kwh == 6.0
+    assert sensor._current_month_start_kwh is None
 
 
 def test_init_resolve_box_id_error(monkeypatch):
@@ -360,13 +331,12 @@ def test_capture_month_snapshot_updates_start_and_returns(monkeypatch):
     hass = DummyHass()
     sensor = _make_sensor(monkeypatch, hass)
 
-    hass.states.async_set("sensor.oig_123_remaining_usable_capacity", 4.0)
     now_local = datetime(2026, 2, 1, tzinfo=dt_util.DEFAULT_TIME_ZONE)
 
     sensor._capture_month_snapshot(now_local)
 
     assert sensor._current_month_key == "2026-02"
-    assert sensor._current_month_start_kwh == 4.0
+    assert sensor._current_month_start_kwh is None
     assert sensor._month_snapshot is None
 
 
@@ -499,17 +469,13 @@ async def test_load_month_metrics_import_error(monkeypatch):
 async def test_load_month_metrics_success(monkeypatch):
     hass = DummyHass()
 
-    class DummyHistoryState:
-        def __init__(self, state):
-            self.state = state
-
     def fake_get_significant_states(_hass, start, end, entity_ids, *_a, **_k):
-        if len(entity_ids) == 1:
-            return {entity_ids[0]: [DummyHistoryState("10")]}
+        entities = list(entity_ids)
+        charge = entities[0]
+        discharge = entities[1]
         return {
-            entity_ids[0]: [DummyHistoryState("20000")],
-            entity_ids[1]: [DummyHistoryState("15000")],
-            entity_ids[2]: [DummyHistoryState("12")],
+            charge: [SimpleNamespace(state="20000", last_updated=end)],
+            discharge: [SimpleNamespace(state="15000", last_updated=end)],
         }
 
     monkeypatch.setattr(
@@ -519,7 +485,7 @@ async def test_load_month_metrics_success(monkeypatch):
 
     metrics = await eff_module._load_month_metrics(hass, "123", 2026, 1)
     assert metrics is not None
-    assert metrics["efficiency_pct"] == 65.0
+    assert metrics["efficiency_pct"] == 75.0
     assert metrics["charge_kwh"] == 20.0
 
 
@@ -527,12 +493,14 @@ async def test_load_month_metrics_success(monkeypatch):
 async def test_load_month_metrics_invalid_data(monkeypatch):
     hass = DummyHass()
 
-    class DummyHistoryState:
-        def __init__(self, state):
-            self.state = state
-
     def fake_get_significant_states(_hass, start, end, entity_ids, *_a, **_k):
-        return {entity_ids[0]: [DummyHistoryState("bad")]}
+        entities = list(entity_ids)
+        charge = entities[0]
+        discharge = entities[1]
+        return {
+            charge: [SimpleNamespace(state="bad", last_updated=end)],
+            discharge: [SimpleNamespace(state="15000", last_updated=end)],
+        }
 
     monkeypatch.setattr(
         "homeassistant.components.recorder.history.get_significant_states",
@@ -543,21 +511,12 @@ async def test_load_month_metrics_invalid_data(monkeypatch):
     assert metrics is None
 
 
-def test_extract_numeric_helpers():
-    history = {"sensor.test": [{"state": "4.5"}, {"state": "unknown"}]}
-    assert eff_module._extract_latest_numeric(history, "sensor.test") == 4.5
-
-    history = {"sensor.test": [{"state": "unavailable"}, {"state": "3.2"}]}
-    assert eff_module._extract_first_numeric(history, "sensor.test") == 3.2
-    assert eff_module._extract_first_numeric(None, "sensor.test") is None
-
-
 def test_compute_metrics_invalid_values():
     metrics = eff_module._compute_metrics_from_wh(0.0, 1000.0, 5.0, 4.0)
     assert metrics is None
 
     metrics = eff_module._compute_metrics_from_wh(1000.0, 1000.0, 5.0, 10.0)
-    assert metrics is None
+    assert metrics["efficiency_pct"] == 100.0
 
 
 def test_previous_month_and_range():

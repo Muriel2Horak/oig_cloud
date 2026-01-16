@@ -857,6 +857,8 @@
             padding: 0 !important;
             background: transparent !important;
             border: none !important;
+            box-shadow: none !important;
+            color: var(--text-primary);
             display: flex;
             flex-direction: column;
             align-items: flex-end;
@@ -1079,6 +1081,11 @@
             cursor: pointer;
             transition: transform 0.2s;
             margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: var(--text-primary);
         }
 
         .inverter-bypass-indicator:hover {
@@ -1110,6 +1117,11 @@
             cursor: pointer;
             transition: transform 0.2s;
             margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: var(--text-primary);
             display: flex;
             flex-direction: column;
             align-items: flex-end;
@@ -1514,21 +1526,21 @@
         }
 
 .planner-mode-badge.auto-enabled {
-    background: rgb(76, 175, 80, 0.25);
-    border-color: rgb(76, 175, 80, 0.4);
-    color: #05230f;
+    background: rgb(46, 125, 50, 0.65);
+    border-color: rgb(46, 125, 50, 0.9);
+    color: #f1fff3;
 }
 
         .planner-mode-badge.auto-disabled {
-            background: rgb(158, 158, 158, 0.15);
-            border-color: rgb(158, 158, 158, 0.4);
-            color: #1f2937;
+            background: rgb(30, 41, 59, 0.7);
+            border-color: rgb(148, 163, 184, 0.65);
+            color: #f8fafc;
         }
 
 .planner-mode-badge.auto-unknown {
-    background: rgb(255, 152, 0, 0.2);
-    border-color: rgb(255, 152, 0, 0.4);
-    color: #5a2a00;
+    background: rgb(194, 65, 12, 0.8);
+    border-color: rgb(234, 88, 12, 0.9);
+    color: #fff7ed;
 }
 
         /* Baterie - ještě menší status */
@@ -3075,11 +3087,14 @@ body.light-theme .status-exporting {
         }
 
         .chart-container {
-            background: var(--bg-secondary);
+            background: linear-gradient(135deg, rgba(18, 25, 40, 0.72) 0%, rgba(18, 25, 40, 0.35) 100%);
             border-radius: 12px;
-            border: 1px solid var(--border-primary);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             padding: 20px;
             margin-bottom: 20px;
+            backdrop-filter: blur(16px) saturate(120%);
+            -webkit-backdrop-filter: blur(16px) saturate(120%);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
         }
 
         .chart-title {
@@ -7636,6 +7651,9 @@ body.light-theme .status-exporting {
 .node-subvalue {
     align-self: stretch;
     text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     box-sizing: border-box;
     max-width: 100%;
     overflow: hidden;
@@ -7665,6 +7683,18 @@ body.light-theme .status-exporting {
     font-size: 13px;
     font-weight: 700;
     opacity: 0.75;
+}
+
+#solar-power,
+#grid-power,
+#house-power,
+#battery-power,
+#inverter-mode {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    text-align: center;
 }
 
 .flow-canvas .node-phases,

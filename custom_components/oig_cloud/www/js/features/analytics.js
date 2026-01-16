@@ -16,6 +16,10 @@ let costComparisonTileLastFetch = 0;
 let costComparisonTilePromise = null;
 
 async function loadCostComparisonTile(force = false) {
+    const container = document.getElementById('cost-comparison-tile-container');
+    if (!container) {
+        return null;
+    }
     const now = Date.now();
 
     if (!force && costComparisonTileCache && now - costComparisonTileLastFetch < COST_TILE_CACHE_TTL) {
@@ -644,6 +648,18 @@ let batteryEfficiencyCache = {
     losses: null,
     label: null
 };
+let batteryEfficiencyRetryTimeout = null;
+
+function resolveBatteryEfficiencySensor(hass, sensorId) {
+    if (!hass?.states) return null;
+    const direct = hass.states[sensorId];
+    if (direct) return direct;
+
+    const prefix = `sensor.oig_${INVERTER_SN}_`;
+    const suffix = '_battery_efficiency';
+    const matchId = Object.keys(hass.states).find((id) => id.startsWith(prefix) && id.endsWith(suffix));
+    return matchId ? hass.states[matchId] : null;
+}
 
 function buildEfficiencyDisplayData(attrs) {
     const lastMonthEff = attrs.efficiency_last_month_pct;
@@ -809,16 +825,30 @@ async function updateBatteryEfficiencyStats() {
     }
 
     const sensorId = `sensor.oig_${INVERTER_SN}_battery_efficiency`;
-    const sensor = hass.states[sensorId];
+    const sensor = resolveBatteryEfficiencySensor(hass, sensorId);
 
     console.log('[Battery Efficiency] Checking sensor:', sensorId, 'state:', sensor?.state);
 
-    if (!sensor || sensor.state === 'unavailable' || sensor.state === 'unknown') {
+    if (!sensor) {
         console.log('[Battery Efficiency] Sensor not available:', sensorId);
+        if (!batteryEfficiencyRetryTimeout) {
+            batteryEfficiencyRetryTimeout = setTimeout(() => {
+                batteryEfficiencyRetryTimeout = null;
+                updateBatteryEfficiencyStats();
+            }, 1500);
+        }
         return;
     }
 
     const attrs = sensor.attributes || {};
+    const hasAttrsData = (attrs.efficiency_current_month_pct !== null &&
+        attrs.efficiency_current_month_pct !== undefined) ||
+        (attrs.efficiency_last_month_pct !== null &&
+            attrs.efficiency_last_month_pct !== undefined);
+    if ((sensor.state === 'unavailable' || sensor.state === 'unknown') && !hasAttrsData) {
+        console.log('[Battery Efficiency] Sensor has no data yet:', sensorId);
+        return;
+    }
     console.log('[Battery Efficiency] Sensor attributes:', attrs);
 
     const { display, lastMonthEff, currentMonthEff } = buildEfficiencyDisplayData(attrs);
@@ -827,7 +857,12 @@ async function updateBatteryEfficiencyStats() {
         return;
     }
 
-    if (!hasEfficiencyChanged(display)) {
+    const mainEl = document.getElementById('battery-efficiency-main');
+    if (!mainEl) {
+        return;
+    }
+    const shouldForceRender = mainEl.textContent?.trim() === '--';
+    if (!hasEfficiencyChanged(display) && !shouldForceRender) {
         return;
     }
 
@@ -840,15 +875,52 @@ async function updateBatteryEfficiencyStats() {
     updateBatteryEfficiencyBar(lastMonthEff, currentMonthEff);
 }
 
+function subscribeBatteryEfficiencyUpdates() {
+    const hass = getHass();
+    if (!hass) {
+        console.warn('[Battery Efficiency] Cannot subscribe - no HA connection');
+        return;
+    }
+
+    const sensorId = `sensor.oig_${INVERTER_SN}_battery_efficiency`;
+    const watcher = globalThis.DashboardStateWatcher;
+    if (!watcher) {
+        console.warn('[Battery Efficiency] StateWatcher not available yet, retrying...');
+        setTimeout(subscribeBatteryEfficiencyUpdates, 500);
+        return;
+    }
+
+    watcher.start({ intervalMs: 1000, prefixes: [`sensor.oig_${INVERTER_SN}_`] });
+
+    if (!globalThis.__oigBatteryEfficiencyWatcherUnsub) {
+        watcher.registerEntities([sensorId]);
+        globalThis.__oigBatteryEfficiencyWatcherUnsub = watcher.onEntityChange((entityId) => {
+            if (entityId !== sensorId) return;
+            console.log('[Battery Efficiency] Sensor changed, updating...');
+            updateBatteryEfficiencyStats();
+        });
+    }
+
+    updateBatteryEfficiencyStats();
+}
+
 globalThis.DashboardAnalytics = {
     buildYesterdayAnalysis,
     showYesterdayNoData,
     renderYesterdayAnalysis,
     updateBatteryEfficiencyBar,
     updateBatteryEfficiencyStats,
+    subscribeBatteryEfficiencyUpdates,
     init: function() {
         console.log('[DashboardAnalytics] Initialized');
     }
 };
 
 console.log('[DashboardAnalytics] Module loaded');
+if (typeof globalThis.DashboardAnalytics?.updateBatteryEfficiencyStats === 'function') {
+    setTimeout(() => globalThis.DashboardAnalytics.updateBatteryEfficiencyStats(), 500);
+    setTimeout(() => globalThis.DashboardAnalytics.updateBatteryEfficiencyStats(), 2000);
+}
+if (typeof globalThis.DashboardAnalytics?.subscribeBatteryEfficiencyUpdates === 'function') {
+    setTimeout(() => globalThis.DashboardAnalytics.subscribeBatteryEfficiencyUpdates(), 1200);
+}
