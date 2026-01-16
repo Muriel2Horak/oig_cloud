@@ -122,12 +122,15 @@ def _get_export_config(sensor: Any) -> Dict[str, Any]:
 
 
 def _get_sensor_component(hass: Any) -> Optional[Any]:
-    if not hass or not isinstance(hass.data, dict):
+    if not hass:
         return None
-    entity_components = hass.data.get("entity_components")
+    hass_data = getattr(hass, "data", None)
+    if not isinstance(hass_data, dict):
+        return None
+    entity_components = hass_data.get("entity_components")
     if isinstance(entity_components, dict) and entity_components.get("sensor"):
         return entity_components.get("sensor")
-    return hass.data.get("sensor")
+    return hass_data.get("sensor")
 
 
 def _find_entity(component: Any, sensor_id: str) -> Optional[Any]:
@@ -144,6 +147,21 @@ def _find_entity(component: Any, sensor_id: str) -> Optional[Any]:
             if getattr(ent, "entity_id", None) == sensor_id:
                 return ent
     return None
+
+
+def _get_price_sensor_entity(sensor: Any, *, price_type: str) -> Optional[Any]:
+    """Return the spot/export price sensor entity if available."""
+    hass = sensor._hass
+    if not hass:
+        return None
+
+    if price_type == "export":
+        sensor_id = f"sensor.oig_{sensor._box_id}_export_price_current_15min"
+    else:
+        sensor_id = f"sensor.oig_{sensor._box_id}_spot_price_current_15min"
+
+    component = _get_sensor_component(hass)
+    return _find_entity(component, sensor_id)
 
 
 def _derive_export_prices(
@@ -210,13 +228,25 @@ async def get_spot_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
         _LOGGER.warning("No prices15m_czk_kwh in spot price data")
         return []
 
+    price_sensor = _get_price_sensor_entity(sensor, price_type="spot")
+    sensor_price_fn = None
+    if price_sensor is not None:
+        sensor_price_fn = getattr(price_sensor, "_calculate_interval_price", None)
+        if not callable(sensor_price_fn):
+            sensor_price_fn = None
+
     computed_prices: Dict[str, Any] = {}
     for timestamp_str, raw_spot_price in raw_prices_dict.items():
         try:
             target_datetime = datetime.fromisoformat(timestamp_str)
-            computed_prices[timestamp_str] = calculate_final_spot_price(
-                sensor, raw_spot_price, target_datetime
-            )
+            if sensor_price_fn is not None:
+                computed_prices[timestamp_str] = sensor_price_fn(
+                    raw_spot_price, target_datetime
+                )
+            else:
+                computed_prices[timestamp_str] = calculate_final_spot_price(
+                    sensor, raw_spot_price, target_datetime
+                )
         except ValueError:
             _LOGGER.warning("Invalid timestamp in spot prices: %s", timestamp_str)
             continue
