@@ -651,7 +651,7 @@ let batteryEfficiencyCache = {
 let batteryEfficiencyRetryTimeout = null;
 
 function resolveBatteryEfficiencySensor(hass, sensorId) {
-    if (!hass || !hass.states) return null;
+    if (!hass?.states) return null;
     const direct = hass.states[sensorId];
     if (direct) return direct;
 

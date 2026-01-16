@@ -331,12 +331,7 @@ async function fetchPlannerSettingsDirect() {
     return null;
 }
 
-async function updatePlannerModeBadge(force = false) {
-    const badge = document.getElementById('planner-mode-badge');
-    if (!badge) {
-        return;
-    }
-
+async function getPlannerSettings(force) {
     const data = globalThis.PlannerState
         ? await globalThis.PlannerState.fetchSettings(force)
         : null;
@@ -350,7 +345,10 @@ async function updatePlannerModeBadge(force = false) {
             settings = await fetchPlannerSettingsDirect();
         }
     }
+    return settings;
+}
 
+function resolvePlannerBadgeState(badge, settings) {
     let newState = badge.dataset.modeState || 'unknown';
     let labelText = badge.textContent || 'Plánovač: N/A';
 
@@ -362,23 +360,44 @@ async function updatePlannerModeBadge(force = false) {
         labelText = 'Plánovač: N/A';
     }
 
+    return { newState, labelText };
+}
+
+function applyPlannerBadgeLabel(badge, labelText) {
     if (typeof updateElementIfChangedRef === 'function') {
         updateElementIfChangedRef('planner-mode-badge', labelText, 'planner-mode-badge-text');
-    } else if (badge.textContent !== labelText) {
+        return;
+    }
+    if (badge.textContent !== labelText) {
         badge.textContent = labelText;
     }
+}
 
-    if (badge.dataset.modeState !== newState) {
-        let className = 'auto-unknown';
-        if (newState === 'enabled') {
-            className = 'auto-enabled';
-        } else if (newState === 'disabled') {
-            className = 'auto-disabled';
-        }
-        badge.classList.remove('auto-enabled', 'auto-disabled', 'auto-unknown');
-        badge.classList.add(className);
-        badge.dataset.modeState = newState;
+function applyPlannerBadgeState(badge, newState) {
+    if (badge.dataset.modeState === newState) {
+        return;
     }
+    let className = 'auto-unknown';
+    if (newState === 'enabled') {
+        className = 'auto-enabled';
+    } else if (newState === 'disabled') {
+        className = 'auto-disabled';
+    }
+    badge.classList.remove('auto-enabled', 'auto-disabled', 'auto-unknown');
+    badge.classList.add(className);
+    badge.dataset.modeState = newState;
+}
+
+async function updatePlannerModeBadge(force = false) {
+    const badge = document.getElementById('planner-mode-badge');
+    if (!badge) {
+        return;
+    }
+
+    const settings = await getPlannerSettings(force);
+    const { newState, labelText } = resolvePlannerBadgeState(badge, settings);
+    applyPlannerBadgeLabel(badge, labelText);
+    applyPlannerBadgeState(badge, newState);
 }
 
 /**

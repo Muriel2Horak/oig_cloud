@@ -420,6 +420,28 @@ function setFallbackState(element, isFallback) {
     element.removeAttribute('title');
 }
 
+function resolveFlipAnimation(element, cacheKey, animate) {
+    if (!animate) {
+        return false;
+    }
+    const wantsFlip = element.dataset?.flip === 'true' || element.classList.contains('flip-value');
+    if (!wantsFlip) {
+        return false;
+    }
+    const now = Date.now();
+    const last = _flipLastUpdateAt[cacheKey] || 0;
+    _flipLastUpdateAt[cacheKey] = now;
+    return now - last >= 250;
+}
+
+function getFlipFromValue(hasPrev, prevValue, element, nextValue) {
+    let fromValue = hasPrev ? prevValue : (element.textContent || '');
+    if (!hasPrev && fromValue === nextValue) {
+        return '';
+    }
+    return fromValue;
+}
+
 function updateElementContent({ element, cacheKey, nextValue, animate }) {
     const hasPrev = previousValues[cacheKey] !== undefined;
     const prevValue = hasPrev ? String(previousValues[cacheKey]) : undefined;
@@ -429,27 +451,9 @@ function updateElementContent({ element, cacheKey, nextValue, animate }) {
 
     previousValues[cacheKey] = nextValue;
 
-    if (animate) {
-        const wantsFlip = element.dataset?.flip === 'true' || element.classList.contains('flip-value');
-        if (!wantsFlip) {
-            animate = false;
-        }
-    }
-
-    if (animate) {
-        const now = Date.now();
-        const last = _flipLastUpdateAt[cacheKey] || 0;
-        _flipLastUpdateAt[cacheKey] = now;
-        if (now - last < 250) {
-            animate = false;
-        }
-    }
-
-    if (animate) {
-        let fromValue = hasPrev ? prevValue : (element.textContent || '');
-        if (!hasPrev && fromValue === nextValue) {
-            fromValue = '';
-        }
+    const shouldAnimate = resolveFlipAnimation(element, cacheKey, animate);
+    if (shouldAnimate) {
+        const fromValue = getFlipFromValue(hasPrev, prevValue, element, nextValue);
         _renderSplitFlap(element, cacheKey, fromValue, nextValue, !hasPrev);
     } else {
         element.textContent = nextValue;

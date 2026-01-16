@@ -1663,32 +1663,34 @@ async function setGridDeliveryOld(mode, limit) {
     }
 
     const confirmed = confirm('Opravdu chcete změnit dodávku do sítě?\n\n⚠️ VAROVÁNÍ: Tato změna může ovlivnit chování systému!');
-    if (!confirmed) return;
+    if (confirmed) {
+        const data = {
+            acknowledgement: true,
+            warning: true
+        };
 
-    const data = {
-        acknowledgement: true,
-        warning: true
-    };
-
-    if (limit !== null && limit !== undefined) {
-        data.limit = Number.parseInt(limit, 10);
-        if (Number.isNaN(data.limit) || data.limit < 1 || data.limit > 9999) {
-            globalThis.DashboardUtils?.showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
+        if (limit !== null && limit !== undefined) {
+            data.limit = Number.parseInt(limit, 10);
+            if (Number.isNaN(data.limit) || data.limit < 1 || data.limit > 9999) {
+                globalThis.DashboardUtils?.showNotification('Chyba', 'Limit musí být 1-9999 W', 'error');
+                return;
+            }
+        } else if (mode !== null) {
+            data.mode = mode;
+        } else {
+            globalThis.DashboardUtils?.showNotification('Chyba', 'Vyberte režim nebo zadejte limit!', 'error');
             return;
         }
-    } else if (mode !== null) {
-        data.mode = mode;
+
+        const success = await callService('oig_cloud', 'set_grid_delivery', data);
+
+        if (success) {
+            const msg = mode ? `Režim: ${mode}` : `Limit: ${data.limit} W`;
+            globalThis.DashboardUtils?.showNotification('Dodávka do sítě', msg, 'success');
+            setTimeout(forceFullRefresh, 2000);
+        }
     } else {
-        globalThis.DashboardUtils?.showNotification('Chyba', 'Vyberte režim nebo zadejte limit!', 'error');
         return;
-    }
-
-    const success = await callService('oig_cloud', 'set_grid_delivery', data);
-
-    if (success) {
-        const msg = mode ? `Režim: ${mode}` : `Limit: ${data.limit} W`;
-        globalThis.DashboardUtils?.showNotification('Dodávka do sítě', msg, 'success');
-        setTimeout(forceFullRefresh, 2000);
     }
 }
 

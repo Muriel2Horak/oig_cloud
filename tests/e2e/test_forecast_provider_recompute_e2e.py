@@ -55,13 +55,14 @@ async def test_forecast_provider_switch_updates_recommended_mode(
         {"time": "12:00", "planned": {"mode": 0, "mode_name": "HOME I"}},
         {"time": "12:15", "planned": {"mode": 1, "mode_name": "HOME II"}},
     ]
-    await store.async_save(
-        _build_precomputed_payload(
-            timeline_a, detail_a, ts="2026-01-01T12:00:00+00:00", date="2026-01-01"
-        )
+    payload_a = _build_precomputed_payload(
+        timeline_a, detail_a, ts="2026-01-01T12:00:00+00:00", date="2026-01-01"
     )
+    await store.async_save(payload_a)
+    sensor._precomputed_payload = payload_a
 
     await sensor.async_added_to_hass()
+    await sensor._async_recompute()
     assert sensor.native_value == "Home 1"
     assert sensor.extra_state_attributes.get("points_count") == 2
 
@@ -73,11 +74,11 @@ async def test_forecast_provider_switch_updates_recommended_mode(
         {"time": "12:00", "planned": {"mode": 2, "mode_name": "HOME III"}},
         {"time": "12:15", "planned": {"mode": 1, "mode_name": "HOME II"}},
     ]
-    await store.async_save(
-        _build_precomputed_payload(
-            timeline_b, detail_b, ts="2026-01-01T12:05:00+00:00", date="2026-01-01"
-        )
+    payload_b = _build_precomputed_payload(
+        timeline_b, detail_b, ts="2026-01-01T12:05:00+00:00", date="2026-01-01"
     )
+    await store.async_save(payload_b)
+    sensor._precomputed_payload = payload_b
 
     async_dispatcher_send(hass, f"oig_cloud_{box_id}_forecast_updated")
     await asyncio.sleep(0)

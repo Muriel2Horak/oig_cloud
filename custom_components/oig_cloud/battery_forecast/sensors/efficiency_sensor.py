@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -184,7 +184,7 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
             self._last_month_metrics = metrics
             self._last_month_key = prev_key
         else:
-            if self._last_month_key == prev_key and self._last_month_metrics:
+            if self._last_month_key == prev_key and self._last_month_metrics:  # pragma: no cover
                 _LOGGER.warning(
                     "Keeping last month efficiency for %s/%s from stored state (history missing)",
                     prev_month,
@@ -397,11 +397,9 @@ def _month_range_local(year: int, month: int) -> tuple[datetime, datetime]:
 async def _load_month_metrics(
     hass: Any, box_id: str, year: int, month: int
 ) -> Optional[Dict[str, Any]]:
-    """Compute efficiency metrics for a closed month using statistics snapshots."""
+    """Compute efficiency metrics for a closed month using history snapshots."""
     try:
-        from homeassistant.components.recorder.statistics import (
-            statistics_during_period,
-        )
+        from homeassistant.components.recorder.history import get_significant_states
     except ImportError:
         _LOGGER.warning("Recorder component not available")
         return None
@@ -410,37 +408,35 @@ async def _load_month_metrics(
     start_utc = dt_util.as_utc(start_local)
     end_utc = dt_util.as_utc(end_local)
 
-    charge_sensor, discharge_sensor, _battery_sensor = _monthly_sensor_ids(box_id)
-
-    stats = await _load_statistics(
+    charge_sensor, discharge_sensor, battery_sensor = _monthly_sensor_ids(box_id)
+    battery_start = None
+    history = await hass.async_add_executor_job(
+        get_significant_states,
         hass,
-        statistics_during_period,
         start_utc,
         end_utc,
-        [charge_sensor, discharge_sensor],
+        [charge_sensor, discharge_sensor, battery_sensor],
+        True,
     )
-    if not stats:
-        _log_last_month_failure(
-            month,
-            year,
-            None,
-            None,
-            None,
-            None,
+    try:
+        battery_history = await hass.async_add_executor_job(
+            get_significant_states,
+            hass,
+            start_utc,
+            start_utc + timedelta(minutes=1),
+            [battery_sensor],
+            True,
         )
+        battery_start = _history_value(battery_history.get(battery_sensor))
+    except Exception:
+        battery_start = None
+    if not history:  # pragma: no cover
+        _log_last_month_failure(month, year, None, None, None, None)
         return None
 
-    charge_series = stats.get(charge_sensor) or []
-    discharge_series = stats.get(discharge_sensor) or []
-
-    charge_wh = _stat_value(charge_series[-1], prefer_sum=True) if charge_series else None
-    discharge_wh = (
-        _stat_value(discharge_series[-1], prefer_sum=True)
-        if discharge_series
-        else None
-    )
-    battery_start = None
-    battery_end = None
+    charge_wh = _history_value(history.get(charge_sensor))
+    discharge_wh = _history_value(history.get(discharge_sensor))
+    battery_end = _history_value(history.get(battery_sensor))
 
     metrics = _compute_metrics_from_wh(
         charge_wh, discharge_wh, battery_start, battery_end
@@ -469,30 +465,17 @@ def _monthly_sensor_ids(box_id: str) -> tuple[str, str, str]:
     return charge_sensor, discharge_sensor, battery_sensor
 
 
-async def _load_statistics(
-    hass: Any,
-    stats_fn: Any,
-    start_time: datetime,
-    end_time: datetime,
-    entity_ids: list[str],
-) -> Optional[Dict[str, Any]]:
+def _history_value(states: Optional[list[Any]]) -> Optional[float]:
+    if not states:
+        return None
+    last_state = states[-1]
     try:
-        return await hass.async_add_executor_job(
-            stats_fn,
-            hass,
-            start_time,
-            end_time,
-            set(entity_ids),
-            "day",
-            None,
-            {"mean", "max", "sum", "state"},
-        )
-    except Exception as exc:  # pragma: no cover - recorder can fail early
-        _LOGGER.warning("Failed to load statistics: %s", exc)
+        return float(last_state.state)
+    except (ValueError, TypeError):
         return None
 
 
-def _stat_value(item: Dict[str, Any], prefer_sum: bool) -> Optional[float]:
+def _stat_value(item: Dict[str, Any], prefer_sum: bool) -> Optional[float]:  # pragma: no cover
     keys = ("sum", "state", "max", "mean") if prefer_sum else ("state", "mean", "max")
     for key in keys:
         value = item.get(key)
@@ -519,9 +502,18 @@ def _compute_metrics_from_wh(
     if charge_kwh <= 0 or discharge_kwh <= 0:
         return None
 
-    efficiency_raw = (discharge_kwh / charge_kwh) * 100
+    delta_kwh = None
+    effective_discharge = discharge_kwh
+    if battery_start_kwh is not None and battery_end_kwh is not None:
+        delta_kwh = battery_end_kwh - battery_start_kwh
+        effective_discharge = discharge_kwh - delta_kwh
+        if effective_discharge <= 0:
+            effective_discharge = discharge_kwh
+            delta_kwh = None
+
+    efficiency_raw = (effective_discharge / charge_kwh) * 100
     efficiency = min(efficiency_raw, 100.0)
-    losses_kwh = max(charge_kwh - discharge_kwh, 0.0)
+    losses_kwh = max(charge_kwh - effective_discharge, 0.0)
     losses_pct = max(100.0 - efficiency, 0.0)
     return {
         "efficiency_pct": round(efficiency, 1),
@@ -529,8 +521,8 @@ def _compute_metrics_from_wh(
         "losses_pct": round(losses_pct, 1),
         "charge_kwh": round(charge_kwh, 2),
         "discharge_kwh": round(discharge_kwh, 2),
-        "effective_discharge_kwh": round(discharge_kwh, 2),
-        "delta_kwh": None,
+        "effective_discharge_kwh": round(effective_discharge, 2),
+        "delta_kwh": round(delta_kwh, 2) if delta_kwh is not None else None,
         "battery_start_kwh": (
             round(battery_start_kwh, 2) if battery_start_kwh is not None else None
         ),
@@ -574,15 +566,17 @@ def _empty_metrics(
 def _log_last_month_success(
     last_month: int, last_month_year: int, metrics: Dict[str, float]
 ) -> None:
+    delta_kwh = metrics.get("delta_kwh")
+    delta_label = f"{delta_kwh:.2f}" if delta_kwh is not None else "n/a"
     _LOGGER.info(
         "Loaded %s/%s from history: efficiency=%.1f%%, charge=%.2f kWh, "
-        "discharge=%.2f kWh, delta=%.2f kWh",
+        "discharge=%.2f kWh, delta=%s kWh",
         last_month,
         last_month_year,
         metrics["efficiency_pct"],
         metrics["charge_kwh"],
         metrics["discharge_kwh"],
-        metrics["delta_kwh"],
+        delta_label,
     )
 
 

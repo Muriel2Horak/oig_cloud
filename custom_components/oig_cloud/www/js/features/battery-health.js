@@ -390,7 +390,7 @@ function buildSohSparkline(measurements, width = 260, height = 60, options = {})
     }
 
     const first = measurements[0]?.timestamp;
-    const last = measurements[measurements.length - 1]?.timestamp;
+    const last = measurements.at(-1)?.timestamp;
 
     return `
         <div style="display:flex; justify-content: space-between; font-size: 0.6em; color: var(--text-secondary); margin-bottom: 2px;">
@@ -417,7 +417,6 @@ function updateBatteryHealthUI(container, data) {
         lastMeasured,
         minCapacity,
         maxCapacity,
-        qualityScore,
         selectionMethod,
         measurementHistory,
         filters,
@@ -465,7 +464,7 @@ function updateBatteryHealthUI(container, data) {
         </div>
     `;
 
-    window.__batteryHealthDetails = {
+    globalThis.__batteryHealthDetails = {
         soh,
         capacity,
         measurementCount,
@@ -490,7 +489,7 @@ function updateBatteryHealthUI(container, data) {
 }
 
 function openBatteryHealthDetails() {
-    const data = window.__batteryHealthDetails;
+    const data = globalThis.__batteryHealthDetails;
     if (!data) return;
     const existing = document.getElementById('battery-health-modal');
     if (existing) existing.remove();
