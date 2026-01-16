@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Pricing tab loading overlay stuck on refresh.
+- Planner spot price timeline now uses the same final 15-minute price calculation as the current spot price sensor.
 - CHMU warning badge styling regressions.
 - Battery health tile overflow and spacing issues.
 - Planner badge update and mode label normalization.
