@@ -1816,101 +1816,102 @@ async function loadPricingData() {
 
     togglePricingLoadingOverlay(true);
 
-    const pricingContext = getPricingContext();
-    if (!pricingContext) {
-        togglePricingLoadingOverlay(false);
-        return;
-    }
-    const { hass, boxId } = pricingContext;
-    const datasets = [];
-    let allLabels = [];
-
-    const { data: rawTimelineData, fromCache } = await getTimelineData(pricingPlanMode, boxId);
-    const cacheBucket = getTimelineCacheBucket(pricingPlanMode);
-
-    if (fromCache) {
-        console.log(`[Pricing] Using cached ${pricingPlanMode} timeline data (age: ${Math.round((Date.now() - cacheBucket.timestamp) / 1000)}s)`);
-        if (cacheBucket.chartsRendered) {
-            const perfEnd = performance.now();
-            console.log(`[Pricing] Charts already rendered, skipping re-render (took ${(perfEnd - perfStart).toFixed(1)}ms)`);
-
-            togglePricingLoadingOverlay(false);
+    try {
+        const pricingContext = getPricingContext();
+        if (!pricingContext) {
             return;
         }
+        const { hass, boxId } = pricingContext;
+        const datasets = [];
+        let allLabels = [];
+
+        const { data: rawTimelineData, fromCache } = await getTimelineData(pricingPlanMode, boxId);
+        const cacheBucket = getTimelineCacheBucket(pricingPlanMode);
+
+        if (fromCache) {
+            console.log(`[Pricing] Using cached ${pricingPlanMode} timeline data (age: ${Math.round((Date.now() - cacheBucket.timestamp) / 1000)}s)`);
+            if (cacheBucket.chartsRendered) {
+                const perfEnd = performance.now();
+                console.log(`[Pricing] Charts already rendered, skipping re-render (took ${(perfEnd - perfStart).toFixed(1)}ms)`);
+                return;
+            }
+        }
+
+        const timelineData = filterFutureTimelineIntervals(rawTimelineData);
+
+        const modeSegments = buildPricingModeSegments(timelineData);
+        const modeIconOptions = buildPricingModeIconOptions(modeSegments);
+        if (modeIconOptions) {
+            ensurePricingModeIconPluginRegistered();
+        }
+
+        // Convert timeline to prices format for compatibility with existing code
+        const prices = timelineData.map(point => ({
+            timestamp: point.timestamp,
+            price: point.spot_price_czk || 0
+        }));
+
+        const exportPrices = timelineData.map(point => ({
+            timestamp: point.timestamp,
+            price: point.export_price_czk || 0
+        }));
+
+        if (prices.length > 0) {
+            allLabels = parseTimelineLabels(prices);
+            updateSpotPriceCards(hass, boxId, prices);
+            datasets.push(buildSpotPriceDataset(prices));
+            updateExtremeBuyBlocks(prices);
+        }
+
+        updateExportCurrentPriceCard(hass, boxId);
+        if (exportPrices.length > 0) {
+            datasets.push(buildExportPriceDataset(exportPrices));
+            updateExtremeExportBlocks(exportPrices);
+        }
+
+        addSolarForecastDatasets({ hass, boxId, allLabels, datasets });
+
+        const batteryResult = addBatteryForecastDatasets({
+            hass,
+            timelineData,
+            prices,
+            allLabels,
+            datasets
+        });
+        allLabels = batteryResult.allLabels;
+        const initialZoomStart = batteryResult.initialZoomStart;
+        const initialZoomEnd = batteryResult.initialZoomEnd;
+
+        if (!updateCombinedChart({
+            allLabels,
+            datasets,
+            modeIconOptions,
+            initialZoomStart,
+            initialZoomEnd
+        })) {
+            return;
+        }
+
+        // Attach card handlers only once
+        setupPriceCardHandlers();
+
+        // Update Battery Health stats (if module is loaded)
+        if (typeof updateBatteryHealthStats === 'function') {
+            updateBatteryHealthStats();
+        }
+
+        // Mark charts as rendered to skip re-rendering on next tab switch
+        getTimelineCacheBucket(pricingPlanMode).chartsRendered = true;
+
+        const perfEnd = performance.now();
+        const totalTime = (perfEnd - perfStart).toFixed(0);
+        console.log(`[Pricing] === loadPricingData COMPLETE in ${totalTime}ms ===`);
+    } catch (error) {
+        console.error('[Pricing] loadPricingData failed:', error);
+    } finally {
+        // Single-planner: no dual-plan comparison tile here
+        togglePricingLoadingOverlay(false);
     }
-
-    const timelineData = filterFutureTimelineIntervals(rawTimelineData);
-
-    const modeSegments = buildPricingModeSegments(timelineData);
-    const modeIconOptions = buildPricingModeIconOptions(modeSegments);
-    if (modeIconOptions) {
-        ensurePricingModeIconPluginRegistered();
-    }
-
-    // Convert timeline to prices format for compatibility with existing code
-    const prices = timelineData.map(point => ({
-        timestamp: point.timestamp,
-        price: point.spot_price_czk || 0
-    }));
-
-    const exportPrices = timelineData.map(point => ({
-        timestamp: point.timestamp,
-        price: point.export_price_czk || 0
-    }));
-
-    if (prices.length > 0) {
-        allLabels = parseTimelineLabels(prices);
-        updateSpotPriceCards(hass, boxId, prices);
-        datasets.push(buildSpotPriceDataset(prices));
-        updateExtremeBuyBlocks(prices);
-    }
-
-    updateExportCurrentPriceCard(hass, boxId);
-    if (exportPrices.length > 0) {
-        datasets.push(buildExportPriceDataset(exportPrices));
-        updateExtremeExportBlocks(exportPrices);
-    }
-
-    addSolarForecastDatasets({ hass, boxId, allLabels, datasets });
-
-    const batteryResult = addBatteryForecastDatasets({
-        hass,
-        timelineData,
-        prices,
-        allLabels,
-        datasets
-    });
-    allLabels = batteryResult.allLabels;
-    const initialZoomStart = batteryResult.initialZoomStart;
-    const initialZoomEnd = batteryResult.initialZoomEnd;
-
-    if (!updateCombinedChart({
-        allLabels,
-        datasets,
-        modeIconOptions,
-        initialZoomStart,
-        initialZoomEnd
-    })) {
-        return;
-    }
-
-    // Attach card handlers only once
-    setupPriceCardHandlers();
-
-    // Update Battery Health stats (if module is loaded)
-    if (typeof updateBatteryHealthStats === 'function') {
-        updateBatteryHealthStats();
-    }
-
-    // Mark charts as rendered to skip re-rendering on next tab switch
-    getTimelineCacheBucket(pricingPlanMode).chartsRendered = true;
-
-    // Single-planner: no dual-plan comparison tile here
-    togglePricingLoadingOverlay(false);
-
-    const perfEnd = performance.now();
-    const totalTime = (perfEnd - perfStart).toFixed(0);
-    console.log(`[Pricing] === loadPricingData COMPLETE in ${totalTime}ms ===`);
 }
 
 /**
