@@ -94,7 +94,6 @@ async def test_calculate_capacity(monkeypatch):
 
     tracker = module.BatteryHealthTracker(hass, "123", nominal_capacity_kwh=15.3)
     tracker._min_duration_hours = 1.0
-    tracker._min_duration_hours = 1.0
 
     charge_states = [
         DummyState("1000", t0),

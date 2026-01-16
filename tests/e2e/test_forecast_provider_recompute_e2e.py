@@ -52,8 +52,8 @@ async def test_forecast_provider_switch_updates_recommended_mode(
         {"time": "2026-01-01T12:15:00+00:00", "mode_name": "Home 2", "mode": 1},
     ]
     detail_a = [
-        {"time": "12:00", "planned": {"mode": 0, "mode_name": "HOME I"}},
-        {"time": "12:15", "planned": {"mode": 1, "mode_name": "HOME II"}},
+        {"time": "12:00", "planned": {"mode": 0, "mode_name": "Home 1"}},
+        {"time": "12:15", "planned": {"mode": 1, "mode_name": "Home 2"}},
     ]
     payload_a = _build_precomputed_payload(
         timeline_a, detail_a, ts="2026-01-01T12:00:00+00:00", date="2026-01-01"
@@ -71,8 +71,8 @@ async def test_forecast_provider_switch_updates_recommended_mode(
         {"time": "2026-01-01T12:15:00+00:00", "mode_name": "Home 2", "mode": 1},
     ]
     detail_b = [
-        {"time": "12:00", "planned": {"mode": 2, "mode_name": "HOME III"}},
-        {"time": "12:15", "planned": {"mode": 1, "mode_name": "HOME II"}},
+        {"time": "12:00", "planned": {"mode": 2, "mode_name": "Home 3"}},
+        {"time": "12:15", "planned": {"mode": 1, "mode_name": "Home 2"}},
     ]
     payload_b = _build_precomputed_payload(
         timeline_b, detail_b, ts="2026-01-01T12:05:00+00:00", date="2026-01-01"

@@ -253,6 +253,7 @@ const _flipElementTokens = new WeakMap();
 let _flipTokenCounter = 0;
 const _transientClassTimeouts = new WeakMap();
 const _flipLastUpdateAt = {};
+const FLIP_ANIMATION_MIN_INTERVAL_MS = 250;
 
 function _triggerTransientClass(element, className, durationMs) {
     if (!element || !className) return;
@@ -431,7 +432,7 @@ function resolveFlipAnimation(element, cacheKey, animate) {
     const now = Date.now();
     const last = _flipLastUpdateAt[cacheKey] || 0;
     _flipLastUpdateAt[cacheKey] = now;
-    return now - last >= 250;
+    return now - last >= FLIP_ANIMATION_MIN_INTERVAL_MS;
 }
 
 function getFlipFromValue(hasPrev, prevValue, element, nextValue) {

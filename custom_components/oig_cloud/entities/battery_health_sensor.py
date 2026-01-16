@@ -315,6 +315,7 @@ class BatteryHealthTracker:
                 interval_start_time = timestamp
                 interval_start_soc = soc
                 interval_max_soc = soc
+            # Allow small SoC drops (measurement noise) without breaking the interval.
             elif soc >= last_soc - self._soc_drop_tolerance:
                 interval_max_soc = soc
             else:
