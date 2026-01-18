@@ -35,6 +35,7 @@ def plan_charging_intervals(
         charging_intervals=charging_intervals,
         balancing_plan=balancing_plan,
         negative_price_intervals=negative_price_intervals,
+        prices=prices,
         blocked_indices=blocked_indices,
         n=n,
     )
@@ -108,18 +109,20 @@ def _build_add_ups_interval(
     def add_ups_interval(idx: int, *, allow_expensive: bool = False) -> None:
         if idx in blocked_indices:
             return
+        max_price = strategy.config.max_ups_price_czk
+        if prices[idx] > max_price:
+            return
         charging_intervals.add(idx)
         min_len = max(1, strategy.config.min_ups_duration_intervals)
         if min_len <= 1:
             return
-        max_price = strategy.config.max_ups_price_czk
         for offset in range(1, min_len):
             next_idx = idx + offset
             if next_idx >= n:
                 break
             if next_idx in blocked_indices or next_idx in charging_intervals:
                 continue
-            if allow_expensive or prices[next_idx] <= max_price:
+            if prices[next_idx] <= max_price:
                 charging_intervals.add(next_idx)
 
     return add_ups_interval
@@ -188,12 +191,15 @@ def _seed_charging_intervals(
     charging_intervals: set[int],
     balancing_plan: Optional[StrategyBalancingPlan],
     negative_price_intervals: Optional[List[int]],
+    prices: List[float],
     blocked_indices: set[int],
     n: int,
 ) -> None:
     if balancing_plan:
         for idx in balancing_plan.charging_intervals:
             if 0 <= idx < n and idx not in blocked_indices:
+                if prices[idx] > strategy.config.max_ups_price_czk:
+                    continue
                 charging_intervals.add(idx)
 
     if (
