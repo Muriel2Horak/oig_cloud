@@ -201,6 +201,7 @@ function subscribeToShield() {
                 if (isPricingSensor(entityId)) {
                     if (entityId.includes('_battery_forecast')) {
                         debouncedTimelineRefresh();
+                        globalThis.DashboardPricing?.refreshPricingOnForecastUpdate?.();
                     }
 
                     if (shouldSkipPricingUpdate(entityId, newState, lastPricingPayload)) {

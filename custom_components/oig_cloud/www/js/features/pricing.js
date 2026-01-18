@@ -234,6 +234,18 @@ function debouncedUpdatePlannedConsumption() {
     }
 }
 
+function isPricingTabVisible() {
+    const pricingTab = document.getElementById('pricing-tab');
+    return Boolean(pricingTab?.classList?.contains('active'));
+}
+
+function refreshPricingOnForecastUpdate() {
+    if (!isPricingTabVisible()) return;
+    invalidatePricingTimelineCache();
+    debouncedLoadPricingData();
+    debouncedUpdatePlannedConsumption();
+}
+
 let combinedChart = null;
 
 // Helper funkce pro detekci theme a barvy
@@ -2225,6 +2237,7 @@ async function updateWhatIfAnalysis() {
 
 globalThis.DashboardPricing = {
     debouncedLoadPricingData,
+    refreshPricingOnForecastUpdate,
     debouncedUpdatePlannedConsumption,
     loadPricingData,
     updatePlannedConsumptionStats,

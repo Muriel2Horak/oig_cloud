@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, TYPE_CHECKING
@@ -404,6 +405,24 @@ async def _load_month_metrics(
         _LOGGER.warning("Recorder component not available")
         return None
 
+    def _get_history(
+        start_time: datetime,
+        end_time: datetime,
+        entity_ids: list[str],
+    ) -> dict:
+        """Compat wrapper to avoid passing deprecated filters argument."""
+        params = inspect.signature(get_significant_states).parameters
+        kwargs: dict[str, Any] = {}
+        if "entity_ids" in params:
+            kwargs["entity_ids"] = entity_ids
+        if "filters" in params:
+            kwargs["filters"] = None
+        if "minimal_response" in params:
+            kwargs["minimal_response"] = True
+        if "compressed_state_format" in params:
+            kwargs["compressed_state_format"] = False
+        return get_significant_states(hass, start_time, end_time, **kwargs)
+
     start_local, end_local = _month_range_local(year, month)
     start_utc = dt_util.as_utc(start_local)
     end_utc = dt_util.as_utc(end_local)
@@ -411,32 +430,44 @@ async def _load_month_metrics(
     charge_sensor, discharge_sensor, battery_sensor = _monthly_sensor_ids(box_id)
     battery_start = None
     history = await hass.async_add_executor_job(
-        get_significant_states,
-        hass,
+        _get_history,
         start_utc,
         end_utc,
         [charge_sensor, discharge_sensor, battery_sensor],
-        True,
     )
     try:
         battery_history = await hass.async_add_executor_job(
-            get_significant_states,
-            hass,
+            _get_history,
             start_utc,
             start_utc + timedelta(minutes=1),
             [battery_sensor],
-            True,
         )
         battery_start = _history_value(battery_history.get(battery_sensor))
     except Exception:
         battery_start = None
     if not history:  # pragma: no cover
-        _log_last_month_failure(month, year, None, None, None, None)
-        return None
+        history = {}
 
     charge_wh = _history_value(history.get(charge_sensor))
     discharge_wh = _history_value(history.get(discharge_sensor))
     battery_end = _history_value(history.get(battery_sensor))
+
+    if charge_wh is None or discharge_wh is None:
+        stats_metrics = await _load_month_metrics_from_statistics(
+            hass,
+            start_utc,
+            end_utc,
+            charge_sensor,
+            discharge_sensor,
+            battery_sensor,
+        )
+        if stats_metrics:
+            charge_wh = stats_metrics.get("charge_wh", charge_wh)
+            discharge_wh = stats_metrics.get("discharge_wh", discharge_wh)
+            if battery_start is None:
+                battery_start = stats_metrics.get("battery_start_kwh")
+            if battery_end is None:
+                battery_end = stats_metrics.get("battery_end_kwh")
 
     metrics = _compute_metrics_from_wh(
         charge_wh, discharge_wh, battery_start, battery_end
@@ -456,6 +487,91 @@ async def _load_month_metrics(
     metrics["month"] = month
     _log_last_month_success(month, year, metrics)
     return metrics
+
+
+async def _load_month_metrics_from_statistics(
+    hass: Any,
+    start_utc: datetime,
+    end_utc: datetime,
+    charge_sensor: str,
+    discharge_sensor: str,
+    battery_sensor: str,
+) -> Optional[Dict[str, Optional[float]]]:
+    try:
+        from homeassistant.components.recorder.db_schema import (
+            Statistics,
+            StatisticsMeta,
+        )
+        from homeassistant.components.recorder.util import session_scope
+    except ImportError:
+        _LOGGER.warning("Recorder statistics not available")
+        return None
+
+    start_ts = dt_util.as_timestamp(start_utc)
+    end_ts = dt_util.as_timestamp(end_utc)
+    sensor_ids = {charge_sensor, discharge_sensor, battery_sensor}
+
+    def _query_stats() -> Dict[str, Optional[float]]:
+        try:
+            with session_scope(hass=hass) as session:
+                meta_rows = (
+                    session.query(StatisticsMeta.statistic_id, StatisticsMeta.id)
+                    .filter(StatisticsMeta.statistic_id.in_(sensor_ids))
+                    .all()
+                )
+                meta_map = {row[0]: row[1] for row in meta_rows}
+
+                def _last_row(stat_id: str) -> Optional[Any]:
+                    meta_id = meta_map.get(stat_id)
+                    if not meta_id:
+                        return None
+                    return (
+                        session.query(Statistics)
+                        .filter(
+                            Statistics.metadata_id == meta_id,
+                            Statistics.start_ts >= start_ts,
+                            Statistics.start_ts < end_ts,
+                        )
+                        .order_by(Statistics.start_ts.desc())
+                        .first()
+                    )
+
+                def _first_row(stat_id: str) -> Optional[Any]:
+                    meta_id = meta_map.get(stat_id)
+                    if not meta_id:
+                        return None
+                    return (
+                        session.query(Statistics)
+                        .filter(
+                            Statistics.metadata_id == meta_id,
+                            Statistics.start_ts >= start_ts,
+                            Statistics.start_ts < end_ts,
+                        )
+                        .order_by(Statistics.start_ts.asc())
+                        .first()
+                    )
+
+                result = {
+                    "charge_wh": _stat_value(_last_row(charge_sensor), True),
+                    "discharge_wh": _stat_value(_last_row(discharge_sensor), True),
+                    "battery_start_kwh": _stat_value(_first_row(battery_sensor), False),
+                    "battery_end_kwh": _stat_value(_last_row(battery_sensor), False),
+                }
+                _LOGGER.debug(
+                    "Efficiency stats lookup %s: charge=%s discharge=%s",
+                    start_utc.date(),
+                    result["charge_wh"],
+                    result["discharge_wh"],
+                )
+                return result
+        except Exception as err:
+            _LOGGER.warning("Efficiency stats query failed: %s", err)
+            return {}
+
+    stats = await hass.async_add_executor_job(_query_stats)
+    if not stats or (stats.get("charge_wh") is None and stats.get("discharge_wh") is None):
+        return None
+    return stats
 
 
 def _monthly_sensor_ids(box_id: str) -> tuple[str, str, str]:
@@ -478,7 +594,10 @@ def _history_value(states: Optional[list[Any]]) -> Optional[float]:
 def _stat_value(item: Dict[str, Any], prefer_sum: bool) -> Optional[float]:  # pragma: no cover
     keys = ("sum", "state", "max", "mean") if prefer_sum else ("state", "mean", "max")
     for key in keys:
-        value = item.get(key)
+        if isinstance(item, dict):
+            value = item.get(key)
+        else:
+            value = getattr(item, key, None)
         if value is None:
             continue
         try:
