@@ -29,6 +29,8 @@
       "invalid_percentage": "⚠️ Neplatné procento (0.1-100%)",
       "invalid_port": "⚠️ Neplatný port (1-65535)",
       "invalid_price": "⚠️ Neplatná cena (1-50 CZK/kWh)",
+      "invalid_hysteresis": "⚠️ Neplatná hystereze ceny (0-5 CZK/kWh)",
+      "invalid_hours": "⚠️ Neplatný počet hodin (1-24)",
       "invalid_string1_params": "Neplatné parametry pro String 1",
       "invalid_string2_params": "Neplatné parametry pro String 2",
       "invalid_vat": "⚠️ Neplatná sazba DPH (0-30%)",
@@ -97,6 +99,8 @@
           "min_capacity_percent": "Minimální kapacita baterie (%)",
           "disable_planning_min_guard": "Vypnout ochranu plánovacího minima",
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
+          "price_hysteresis_czk": "Hystereze ceny (CZK/kWh)",
+          "hw_min_hold_hours": "Max. hodin na HW minimu",
           "target_capacity_percent": "Cílová kapacita baterie (%)"
         },
         "data_description": {
@@ -112,6 +116,8 @@
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
           "disable_planning_min_guard": "Povolí plánovači jít níž než plánovací minimum (agresivnější optimalizace)",
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
+          "price_hysteresis_czk": "Minimální cenový rozdíl pro rozhodnutí držet vs. čekat",
+          "hw_min_hold_hours": "Maximální doba na HW minimu před nuceným dobitím",
           "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",

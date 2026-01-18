@@ -390,6 +390,8 @@ class WizardMixin:
                 "disable_planning_min_guard", False
             ),
             "max_ups_price_czk": wizard_data.get("max_ups_price_czk", 10.0),
+            "price_hysteresis_czk": wizard_data.get("price_hysteresis_czk", 0.01),
+            "hw_min_hold_hours": wizard_data.get("hw_min_hold_hours", 6.0),
             "balancing_enabled": wizard_data.get("balancing_enabled", True),
             "balancing_interval_days": wizard_data.get("balancing_interval_days", 7),
             "balancing_hold_hours": wizard_data.get("balancing_hold_hours", 3),
@@ -640,8 +642,13 @@ class WizardMixin:
             min_cap = self._wizard_data.get("min_capacity_percent", 20)
             target_cap = self._wizard_data.get("target_capacity_percent", 80)
             max_price = self._wizard_data.get("max_ups_price_czk", 10.0)
+            hysteresis = self._wizard_data.get("price_hysteresis_czk", 0.01)
+            hw_min_hold = self._wizard_data.get("hw_min_hold_hours", 6.0)
             summary_parts.append(f"      → Kapacita: {min_cap}% - {target_cap}%")
             summary_parts.append(f"      → Max. cena: {max_price} CZK/kWh")
+            summary_parts.append(
+                f"      → Hystereze: {hysteresis} CZK/kWh, HW min hold: {hw_min_hold} h"
+            )
 
         if self._wizard_data.get("enable_pricing", False):
             summary_parts.append("   ✅ Cenové senzory a spotové ceny")
@@ -1497,6 +1504,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if max_price < 1.0 or max_price > 50.0:
                 errors["max_ups_price_czk"] = "invalid_price"
 
+            hysteresis = user_input.get("price_hysteresis_czk", 0.01)
+            if hysteresis < 0.0 or hysteresis > 5.0:
+                errors["price_hysteresis_czk"] = "invalid_hysteresis"
+
+            hw_min_hold = user_input.get("hw_min_hold_hours", 6.0)
+            if hw_min_hold < 1.0 or hw_min_hold > 24.0:
+                errors["hw_min_hold_hours"] = "invalid_hours"
+
             if errors:
                 return self.async_show_form(
                     step_id="wizard_battery",
@@ -1550,6 +1565,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
             vol.Optional(
                 "max_ups_price_czk", default=defaults.get("max_ups_price_czk", 10.0)
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
+            vol.Optional(
+                "price_hysteresis_czk",
+                default=defaults.get("price_hysteresis_czk", 0.01),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+            vol.Optional(
+                "hw_min_hold_hours",
+                default=defaults.get("hw_min_hold_hours", 6.0),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
             # BATTERY BALANCING PARAMETERS
             vol.Optional(
                 "balancing_enabled",

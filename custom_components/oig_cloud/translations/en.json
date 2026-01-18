@@ -29,6 +29,8 @@
       "invalid_percentage": "⚠️ Invalid percentage (0.1-100%)",
       "invalid_port": "⚠️ Invalid port (1-65535)",
       "invalid_price": "⚠️ Invalid price (1-50 CZK/kWh)",
+      "invalid_hysteresis": "⚠️ Invalid price hysteresis (0-5 CZK/kWh)",
+      "invalid_hours": "⚠️ Invalid hours (1-24)",
       "invalid_string1_params": "Invalid parameters for String 1",
       "invalid_string2_params": "Invalid parameters for String 2",
       "invalid_vat": "⚠️ Invalid VAT rate (0-30%)",
@@ -97,6 +99,8 @@
           "min_capacity_percent": "Minimum battery capacity (%)",
           "disable_planning_min_guard": "Disable planning minimum guard",
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
+          "price_hysteresis_czk": "Price hysteresis (CZK/kWh)",
+          "hw_min_hold_hours": "Max hours at HW minimum",
           "target_capacity_percent": "Target battery capacity (%)"
         },
         "data_description": {
@@ -112,6 +116,8 @@
           "min_capacity_percent": "If capacity drops below this value, charging starts",
           "disable_planning_min_guard": "Allows the planner to go below the planning minimum (more aggressive optimization)",
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
+          "price_hysteresis_czk": "Minimum price delta for hold vs. wait decisions",
+          "hw_min_hold_hours": "Maximum time to stay at hardware minimum before forcing recharge",
           "target_capacity_percent": "Optimal capacity to charge to"
         },
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently optimizes home battery charging according to spot electricity prices and solar production forecast. Automatically charges during cheapest hours.\n\n🔧 **What is needed:**\n• ☀️ Solar forecast (must be enabled)\n• ⚡ Extended sensors (must be enabled)\n• 📈 Spot electricity prices\n\n⚠️ **Experimental feature** - may require fine-tuning of parameters\n\n⚠️ **This module is required for:**\n• 📊 Dashboard (web interface)",
