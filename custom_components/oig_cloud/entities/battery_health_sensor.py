@@ -62,6 +62,8 @@ class BatteryHealthTracker:
         self._min_delta_soc = 50
         self._min_duration_hours = 3.0
         self._min_charge_wh = 2000
+        self._min_discharge_wh = 500
+        self._max_discharge_ratio = 0.1
         self._soc_drop_tolerance = 1.5
         self._hass = hass
         self._box_id = box_id
@@ -137,6 +139,9 @@ class BatteryHealthTracker:
         # Entity IDs - batt_bat_c je správný název (ne bat_c)
         soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
         charge_sensor = f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month"
+        discharge_sensor = (
+            f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_month"
+        )
 
         try:
             # Načíst historii z recorder
@@ -145,7 +150,7 @@ class BatteryHealthTracker:
                 self._hass,
                 start_time,
                 end_time,
-                [soc_sensor, charge_sensor],
+                [soc_sensor, charge_sensor, discharge_sensor],
                 None,  # filters
                 True,  # include_start_time_state
             )
@@ -156,13 +161,19 @@ class BatteryHealthTracker:
 
             soc_states = history.get(soc_sensor, [])
             charge_states = history.get(charge_sensor, [])
+            discharge_states = history.get(discharge_sensor, [])
 
             if not soc_states or not charge_states:
                 _LOGGER.warning("Missing sensor data in history")
                 return []
+            if not discharge_states:
+                _LOGGER.warning("Missing discharge data in history")
 
             _LOGGER.info(
-                f"Found {len(soc_states)} SoC states, {len(charge_states)} charge states"
+                "Found %d SoC states, %d charge states, %d discharge states",
+                len(soc_states),
+                len(charge_states),
+                len(discharge_states),
             )
 
             # Najít monotónní nabíjecí intervaly
@@ -180,6 +191,7 @@ class BatteryHealthTracker:
                     start_soc,
                     end_soc,
                     charge_states,
+                    discharge_states,
                 )
                 if measurement:
                     # Zkontrolovat duplicity
@@ -214,6 +226,9 @@ class BatteryHealthTracker:
 
         soc_sensor = f"sensor.oig_{self._box_id}_batt_bat_c"
         charge_sensor = f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month"
+        discharge_sensor = (
+            f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_month"
+        )
 
         try:
             from homeassistant.components.recorder.statistics import (
@@ -238,16 +253,23 @@ class BatteryHealthTracker:
         charge_points = self._extract_charge_points(
             stats.get(charge_sensor) if stats else None
         )
+        discharge_points = self._extract_charge_points(
+            stats.get(discharge_sensor) if stats else None
+        )
 
         if not soc_points or not charge_points:
             _LOGGER.warning("Statistics backfill missing data")
             return []
+        if not discharge_points:
+            _LOGGER.warning("Statistics backfill missing discharge data")
 
         intervals = self._find_monotonic_intervals_from_points(soc_points)
         new_measurements: List[CapacityMeasurement] = []
 
         for interval in intervals:
-            measurement = self._measurement_from_stats_interval(interval, charge_points)
+            measurement = self._measurement_from_stats_interval(
+                interval, charge_points, discharge_points
+            )
             self._append_measurement_if_new(measurement, new_measurements)
 
         if new_measurements:
@@ -259,7 +281,10 @@ class BatteryHealthTracker:
         return new_measurements
 
     def _measurement_from_stats_interval(  # pragma: no cover
-        self, interval: tuple, charge_points: List[tuple]
+        self,
+        interval: tuple,
+        charge_points: List[tuple],
+        discharge_points: List[tuple],
     ) -> Optional[CapacityMeasurement]:
         start_time_cycle, end_time_cycle, start_soc, end_soc = interval
         charge_start = self._nearest_value(charge_points, start_time_cycle)
@@ -269,10 +294,41 @@ class BatteryHealthTracker:
         charge_energy = charge_end - charge_start
         if charge_energy < 0:
             return None
+        discharge_start = self._nearest_value(discharge_points, start_time_cycle)
+        discharge_end = self._nearest_value(discharge_points, end_time_cycle)
+        discharge_energy = None
+        if discharge_start is not None and discharge_end is not None:
+            discharge_energy = discharge_end - discharge_start
+        if discharge_energy is not None and discharge_energy > self._max_discharge_threshold(
+            charge_energy
+        ):
+            _LOGGER.warning(
+                "Interval rejected: discharge during charge (%.0f Wh)%s",
+                discharge_energy,
+                self._format_measurement_context(
+                    {
+                        "source": "recorder_statistics",
+                        "soc_sensor": f"sensor.oig_{self._box_id}_batt_bat_c",
+                        "charge_sensor": f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month",
+                        "discharge_sensor": f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_month",
+                        "efficiency_sensor": f"sensor.oig_{self._box_id}_battery_efficiency",
+                        "start_time": start_time_cycle.isoformat(),
+                        "end_time": end_time_cycle.isoformat(),
+                        "start_soc": start_soc,
+                        "end_soc": end_soc,
+                        "charge_start": charge_start,
+                        "charge_end": charge_end,
+                        "discharge_start": discharge_start,
+                        "discharge_end": discharge_end,
+                    }
+                ),
+            )
+            return None
         debug_context = {
             "source": "recorder_statistics",
             "soc_sensor": f"sensor.oig_{self._box_id}_batt_bat_c",
             "charge_sensor": f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month",
+            "discharge_sensor": f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_month",
             "efficiency_sensor": f"sensor.oig_{self._box_id}_battery_efficiency",
             "start_time": start_time_cycle.isoformat(),
             "end_time": end_time_cycle.isoformat(),
@@ -280,6 +336,8 @@ class BatteryHealthTracker:
             "end_soc": end_soc,
             "charge_start": charge_start,
             "charge_end": charge_end,
+            "discharge_start": discharge_start,
+            "discharge_end": discharge_end,
         }
         return self._build_measurement(
             start_time_cycle,
@@ -504,6 +562,7 @@ class BatteryHealthTracker:
         start_soc: float,
         end_soc: float,
         charge_states: List,
+        discharge_states: Optional[List] = None,
     ) -> Optional[CapacityMeasurement]:
         """
         Spočítat kapacitu pro monotónní nabíjecí interval.
@@ -521,10 +580,44 @@ class BatteryHealthTracker:
             return None
 
         charge_energy = charge_end - charge_start
+        discharge_energy = None
+        discharge_start = None
+        discharge_end = None
+        if discharge_states:
+            discharge_start = self._get_value_at_time(discharge_states, start_time)
+            discharge_end = self._get_value_at_time(discharge_states, end_time)
+            if discharge_start is not None and discharge_end is not None:
+                discharge_energy = discharge_end - discharge_start
+        if discharge_energy is not None and discharge_energy > self._max_discharge_threshold(
+            charge_energy
+        ):
+            _LOGGER.warning(
+                "Interval rejected: discharge during charge (%.0f Wh)%s",
+                discharge_energy,
+                self._format_measurement_context(
+                    {
+                        "source": "recorder_history",
+                        "soc_sensor": f"sensor.oig_{self._box_id}_batt_bat_c",
+                        "charge_sensor": f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month",
+                        "discharge_sensor": f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_month",
+                        "efficiency_sensor": f"sensor.oig_{self._box_id}_battery_efficiency",
+                        "start_time": start_time.isoformat(),
+                        "end_time": end_time.isoformat(),
+                        "start_soc": start_soc,
+                        "end_soc": end_soc,
+                        "charge_start": charge_start,
+                        "charge_end": charge_end,
+                        "discharge_start": discharge_start,
+                        "discharge_end": discharge_end,
+                    }
+                ),
+            )
+            return None
         debug_context = {
             "source": "recorder_history",
             "soc_sensor": f"sensor.oig_{self._box_id}_batt_bat_c",
             "charge_sensor": f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month",
+            "discharge_sensor": f"sensor.oig_{self._box_id}_computed_batt_discharge_energy_month",
             "efficiency_sensor": f"sensor.oig_{self._box_id}_battery_efficiency",
             "start_time": start_time.isoformat(),
             "end_time": end_time.isoformat(),
@@ -532,6 +625,8 @@ class BatteryHealthTracker:
             "end_soc": end_soc,
             "charge_start": charge_start,
             "charge_end": charge_end,
+            "discharge_start": discharge_start,
+            "discharge_end": discharge_end,
         }
         return self._build_measurement(
             start_time,
@@ -656,6 +751,7 @@ class BatteryHealthTracker:
         for key in (
             "soc_sensor",
             "charge_sensor",
+            "discharge_sensor",
             "efficiency_sensor",
             "start_time",
             "end_time",
@@ -663,13 +759,23 @@ class BatteryHealthTracker:
             value = debug_context.get(key)
             if value:
                 parts.append(f"{key}={value}")
-        for key in ("start_soc", "end_soc", "charge_start", "charge_end"):
+        for key in (
+            "start_soc",
+            "end_soc",
+            "charge_start",
+            "charge_end",
+            "discharge_start",
+            "discharge_end",
+        ):
             value = debug_context.get(key)
             if isinstance(value, (int, float)):
                 parts.append(f"{key}={value:.2f}")
         if parts:
             return " (" + ", ".join(parts) + ")"
         return ""
+
+    def _max_discharge_threshold(self, charge_energy: float) -> float:
+        return max(self._min_discharge_wh, charge_energy * self._max_discharge_ratio)
 
     def _get_value_at_time(  # pragma: no cover
         self, states: List, target_time: datetime
@@ -889,6 +995,8 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
             "min_delta_soc": self._tracker._min_delta_soc,
             "min_duration_hours": self._tracker._min_duration_hours,
             "min_charge_wh": self._tracker._min_charge_wh,
+            "min_discharge_wh": self._tracker._min_discharge_wh,
+            "max_discharge_ratio": self._tracker._max_discharge_ratio,
             "soc_drop_tolerance": self._tracker._soc_drop_tolerance,
         }
         attrs["data_sources"] = {
