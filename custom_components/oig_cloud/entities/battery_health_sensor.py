@@ -269,8 +269,25 @@ class BatteryHealthTracker:
         charge_energy = charge_end - charge_start
         if charge_energy < 0:
             return None
+        debug_context = {
+            "source": "recorder_statistics",
+            "soc_sensor": f"sensor.oig_{self._box_id}_batt_bat_c",
+            "charge_sensor": f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month",
+            "efficiency_sensor": f"sensor.oig_{self._box_id}_battery_efficiency",
+            "start_time": start_time_cycle.isoformat(),
+            "end_time": end_time_cycle.isoformat(),
+            "start_soc": start_soc,
+            "end_soc": end_soc,
+            "charge_start": charge_start,
+            "charge_end": charge_end,
+        }
         return self._build_measurement(
-            start_time_cycle, end_time_cycle, start_soc, end_soc, charge_energy
+            start_time_cycle,
+            end_time_cycle,
+            start_soc,
+            end_soc,
+            charge_energy,
+            debug_context,
         )
 
     def _append_measurement_if_new(  # pragma: no cover
@@ -504,8 +521,25 @@ class BatteryHealthTracker:
             return None
 
         charge_energy = charge_end - charge_start
+        debug_context = {
+            "source": "recorder_history",
+            "soc_sensor": f"sensor.oig_{self._box_id}_batt_bat_c",
+            "charge_sensor": f"sensor.oig_{self._box_id}_computed_batt_charge_energy_month",
+            "efficiency_sensor": f"sensor.oig_{self._box_id}_battery_efficiency",
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "start_soc": start_soc,
+            "end_soc": end_soc,
+            "charge_start": charge_start,
+            "charge_end": charge_end,
+        }
         return self._build_measurement(
-            start_time, end_time, start_soc, end_soc, charge_energy
+            start_time,
+            end_time,
+            start_soc,
+            end_soc,
+            charge_energy,
+            debug_context,
         )
 
     def _resolve_charging_efficiency(self) -> float:  # pragma: no cover
@@ -529,16 +563,22 @@ class BatteryHealthTracker:
         start_soc: float,
         end_soc: float,
         charge_energy: float,
+        debug_context: Optional[Dict[str, Any]] = None,
     ) -> Optional[CapacityMeasurement]:
+        context_info = self._format_measurement_context(debug_context)
         # Kontrola resetu měsíce (záporná hodnota = reset)
         if charge_energy < 0:
-            _LOGGER.debug("Interval rejected: charge_month reset detected")
+            _LOGGER.debug(
+                "Interval rejected: charge_month reset detected%s", context_info
+            )
             return None
 
         # Kontrola minimální energie (filtr šumu)
         if charge_energy < self._min_charge_wh:
             _LOGGER.debug(
-                f"Interval rejected: too little energy ({charge_energy:.0f} Wh)"
+                "Interval rejected: too little energy (%.0f Wh)%s",
+                charge_energy,
+                context_info,
             )
             return None
 
@@ -554,16 +594,26 @@ class BatteryHealthTracker:
 
         if soh_percent > 105.0:
             _LOGGER.warning(
-                f"Interval rejected: SoH {soh_percent:.1f}% > 105%% (measurement error), "
-                f"capacity={capacity_kwh:.2f} kWh, ΔSoC={delta_soc:.0f}%, "
-                f"charge={charge_energy:.0f} Wh, eff={charging_efficiency:.1%}"
+                "Interval rejected: SoH %.1f%% > 105%% (measurement error), "
+                "capacity=%.2f kWh, ΔSoC=%.0f%%, charge=%.0f Wh, eff=%.1f%%%s",
+                soh_percent,
+                capacity_kwh,
+                delta_soc,
+                charge_energy,
+                charging_efficiency * 100.0,
+                context_info,
             )
             return None
         if soh_percent < 70.0:
             _LOGGER.warning(
-                f"Interval rejected: SoH {soh_percent:.1f}% < 70%% (extreme degradation or error), "
-                f"capacity={capacity_kwh:.2f} kWh, ΔSoC={delta_soc:.0f}%, "
-                f"charge={charge_energy:.0f} Wh, eff={charging_efficiency:.1%}"
+                "Interval rejected: SoH %.1f%% < 70%% (extreme degradation or error), "
+                "capacity=%.2f kWh, ΔSoC=%.0f%%, charge=%.0f Wh, eff=%.1f%%%s",
+                soh_percent,
+                capacity_kwh,
+                delta_soc,
+                charge_energy,
+                charging_efficiency * 100.0,
+                context_info,
             )
             return None
 
@@ -592,6 +642,34 @@ class BatteryHealthTracker:
         )
 
         return measurement
+
+    @staticmethod
+    def _format_measurement_context(
+        debug_context: Optional[Dict[str, Any]],
+    ) -> str:
+        if not debug_context:
+            return ""
+        parts = []
+        source = debug_context.get("source")
+        if source:
+            parts.append(f"source={source}")
+        for key in (
+            "soc_sensor",
+            "charge_sensor",
+            "efficiency_sensor",
+            "start_time",
+            "end_time",
+        ):
+            value = debug_context.get(key)
+            if value:
+                parts.append(f"{key}={value}")
+        for key in ("start_soc", "end_soc", "charge_start", "charge_end"):
+            value = debug_context.get(key)
+            if isinstance(value, (int, float)):
+                parts.append(f"{key}={value:.2f}")
+        if parts:
+            return " (" + ", ".join(parts) + ")"
+        return ""
 
     def _get_value_at_time(  # pragma: no cover
         self, states: List, target_time: datetime
