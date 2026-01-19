@@ -37,10 +37,14 @@ SOAP_ACTIONS = {
 _SSL_CONTEXT: Optional[ssl.SSLContext] = None
 
 
-def _get_ssl_context() -> ssl.SSLContext:
+def _create_ssl_context() -> ssl.SSLContext:
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+async def _get_ssl_context_async() -> ssl.SSLContext:
     global _SSL_CONTEXT
     if _SSL_CONTEXT is None:
-        _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+        _SSL_CONTEXT = await asyncio.to_thread(_create_ssl_context)
     return _SSL_CONTEXT
 
 
@@ -110,7 +114,7 @@ class CnbRate:
         params = {"date": day.isoformat()}
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                self.RATES_URL, params=params, ssl=_get_ssl_context()
+                self.RATES_URL, params=params, ssl=await _get_ssl_context_async()
             ) as response:
                 if response.status > 299:
                     if response.status == 400:
@@ -307,7 +311,7 @@ class OteApi:
                     OTE_PUBLIC_URL,
                     data=body_xml,
                     headers=_soap_headers(action),
-                    ssl=_get_ssl_context(),
+                    ssl=await _get_ssl_context_async(),
                 ) as response:
                     text = await response.text()
                     _LOGGER.debug(f"SOAP Response status: {response.status}")
