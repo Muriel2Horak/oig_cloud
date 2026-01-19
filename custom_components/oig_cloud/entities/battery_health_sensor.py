@@ -302,7 +302,7 @@ class BatteryHealthTracker:
         if discharge_energy is not None and discharge_energy > self._max_discharge_threshold(
             charge_energy
         ):
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Interval rejected: discharge during charge (%.0f Wh)%s",
                 discharge_energy,
                 self._format_measurement_context(
@@ -591,7 +591,7 @@ class BatteryHealthTracker:
         if discharge_energy is not None and discharge_energy > self._max_discharge_threshold(
             charge_energy
         ):
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Interval rejected: discharge during charge (%.0f Wh)%s",
                 discharge_energy,
                 self._format_measurement_context(
