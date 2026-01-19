@@ -22,7 +22,8 @@ FORECAST_SOLAR_API_URL = (
     "https://api.forecast.solar/estimate/{lat}/{lon}/{declination}/{azimuth}/{kwp}"
 )
 FORECAST_SOLAR_API_URL_WITH_KEY = "https://api.forecast.solar/{api_key}/estimate/{lat}/{lon}/{declination}/{azimuth}/{kwp}"
-SOLCAST_API_URL = "https://api.solcast.com.au/world_radiation/forecasts"
+SOLCAST_WORLD_RADIATION_API_URL = "https://api.solcast.com.au/world_radiation/forecasts"
+SOLCAST_ROOFTOP_API_URL = "https://api.solcast.com.au/rooftop_sites/{site_id}/forecasts"
 
 
 def _parse_forecast_hour(hour_str: str) -> Optional[datetime]:
@@ -308,7 +309,14 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             _LOGGER.info(
                 f"🌞 Manual solar forecast update requested for {self.entity_id}"
             )
+            previous_api_call = self._last_api_call
             await self.async_fetch_forecast_data()
+            if self._last_api_call <= previous_api_call:
+                _LOGGER.warning(
+                    "🌞 Manual solar forecast update finished without new data for %s",
+                    self.entity_id,
+                )
+                return False
             return True
         except Exception as e:
             _LOGGER.error(
@@ -558,12 +566,14 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
     async def _fetch_solcast_data(self, current_time: float) -> None:
         """Fetch forecast data from Solcast API and map to unified structure."""
-        lat = self._config_entry.options.get("solar_forecast_latitude", 50.1219800)
-        lon = self._config_entry.options.get("solar_forecast_longitude", 13.9373742)
         api_key = self._config_entry.options.get("solcast_api_key", "").strip()
+        site_id = self._config_entry.options.get("solcast_site_id", "").strip()
 
         if not api_key:
             _LOGGER.error("🌞 Solcast API key missing")
+            return
+        if not site_id:
+            _LOGGER.error("🌞 Solcast site ID missing")
             return
 
         string1_enabled = self._config_entry.options.get(
@@ -589,10 +599,14 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             return
 
         url = (
-            f"{SOLCAST_API_URL}?latitude={lat}&longitude={lon}"
-            f"&format=json&api_key={api_key}"
+            f"{SOLCAST_ROOFTOP_API_URL.format(site_id=site_id)}"
+            f"?format=json&api_key={api_key}"
         )
-        _LOGGER.info(f"🌞 Calling Solcast API: {url}")
+        safe_url = (
+            f"{SOLCAST_ROOFTOP_API_URL.format(site_id=site_id)}"
+            "?format=json&api_key=***"
+        )
+        _LOGGER.info("🌞 Calling Solcast API: %s", safe_url)
 
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=30) as response:
@@ -648,16 +662,22 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         for entry in forecasts:
             period_end = entry.get("period_end")
             ghi = entry.get("ghi")
-            if not period_end or ghi is None:
+            pv_estimate = entry.get("pv_estimate")
+            if not period_end or (ghi is None and pv_estimate is None):
                 continue
 
             period_hours = self._parse_solcast_period_hours(entry.get("period"))
-            try:
-                ghi_value = float(ghi)
-            except (TypeError, ValueError):
-                continue
-
-            pv_estimate_kw = total_kwp * (ghi_value / 1000.0)
+            if pv_estimate is not None:
+                try:
+                    pv_estimate_kw = float(pv_estimate)
+                except (TypeError, ValueError):
+                    continue
+            else:
+                try:
+                    ghi_value = float(ghi)
+                except (TypeError, ValueError):
+                    continue
+                pv_estimate_kw = total_kwp * (ghi_value / 1000.0)
             watts_data[period_end] = pv_estimate_kw * 1000.0
 
             day_key = period_end.split("T")[0]

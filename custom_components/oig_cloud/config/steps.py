@@ -16,6 +16,7 @@ from .schema import (CONF_SOLAR_FORECAST_API_KEY,
                      CONF_SOLAR_FORECAST_LATITUDE,
                      CONF_SOLAR_FORECAST_LONGITUDE,
                      CONF_SOLAR_FORECAST_PROVIDER, CONF_SOLCAST_API_KEY,
+                     CONF_SOLCAST_SITE_ID,
                      CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
                      CONF_SOLAR_FORECAST_STRING1_DECLINATION,
                      CONF_SOLAR_FORECAST_STRING1_ENABLED,
@@ -347,6 +348,7 @@ class WizardMixin:
                 CONF_SOLAR_FORECAST_API_KEY, ""
             ),
             CONF_SOLCAST_API_KEY: wizard_data.get(CONF_SOLCAST_API_KEY, ""),
+            CONF_SOLCAST_SITE_ID: wizard_data.get(CONF_SOLCAST_SITE_ID, ""),
             CONF_SOLAR_FORECAST_LATITUDE: wizard_data.get(
                 CONF_SOLAR_FORECAST_LATITUDE, 50.0
             ),
@@ -1302,8 +1304,11 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 errors["solar_forecast_mode"] = "api_key_required_for_frequent_updates"
         else:
             solcast_api_key = user_input.get(CONF_SOLCAST_API_KEY, "").strip()
+            solcast_site_id = user_input.get(CONF_SOLCAST_SITE_ID, "").strip()
             if not solcast_api_key:
                 errors[CONF_SOLCAST_API_KEY] = "solcast_api_key_required"
+            if not solcast_site_id:
+                errors[CONF_SOLCAST_SITE_ID] = "solcast_site_id_required"
         return errors
 
     def _validate_solar_coordinates(
@@ -1426,6 +1431,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
             schema_fields[vol.Optional(
                 CONF_SOLCAST_API_KEY,
                 default=defaults.get(CONF_SOLCAST_API_KEY, ""),
+            )] = str
+            schema_fields[vol.Optional(
+                CONF_SOLCAST_SITE_ID,
+                default=defaults.get(CONF_SOLCAST_SITE_ID, ""),
             )] = str
 
         # String 1 parametry - zobrazit jen když je povolen
