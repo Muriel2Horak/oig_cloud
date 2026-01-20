@@ -370,7 +370,6 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                     "🌞 Manual solar forecast update finished without new data for %s",
                     self.entity_id,
                 )
-                return False
             return True
         except Exception as e:
             _LOGGER.error(

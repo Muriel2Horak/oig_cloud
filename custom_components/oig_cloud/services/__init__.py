@@ -302,8 +302,16 @@ def _iter_entry_data(hass: HomeAssistant) -> Iterable[tuple[str, dict[str, Any]]
 
 def _get_entry_solar_sensors(entry_data: dict[str, Any]) -> list[Any]:
     sensors = entry_data.get("solar_forecast_sensors")
-    if isinstance(sensors, list):
+    if isinstance(sensors, list) and sensors:
         return sensors
+    fallback = entry_data.get("solar_forecast")
+    if fallback is not None and hasattr(fallback, "async_update"):
+        return [fallback]
+    coordinator = entry_data.get("coordinator")
+    if coordinator is not None:
+        coordinator_sensor = getattr(coordinator, "solar_forecast", None)
+        if coordinator_sensor is not None:
+            return [coordinator_sensor]
     return []
 
 

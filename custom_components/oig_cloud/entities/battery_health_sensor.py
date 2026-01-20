@@ -995,9 +995,9 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
             "min_delta_soc": self._tracker._min_delta_soc,
             "min_duration_hours": self._tracker._min_duration_hours,
             "min_charge_wh": self._tracker._min_charge_wh,
-            "min_discharge_wh": self._tracker._min_discharge_wh,
-            "max_discharge_ratio": self._tracker._max_discharge_ratio,
-            "soc_drop_tolerance": self._tracker._soc_drop_tolerance,
+            "min_discharge_wh": getattr(self._tracker, "_min_discharge_wh", None),
+            "max_discharge_ratio": getattr(self._tracker, "_max_discharge_ratio", None),
+            "soc_drop_tolerance": getattr(self._tracker, "_soc_drop_tolerance", None),
         }
         attrs["data_sources"] = {
             "recorder_days": self._tracker._recorder_days,

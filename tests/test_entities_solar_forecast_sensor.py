@@ -147,8 +147,8 @@ def test_convert_to_hourly_keeps_max():
         "2025-01-01T11:00:00+00:00": 90.0,
     }
     hourly = sensor._convert_to_hourly(watts_data)
-    key_10 = datetime(2025, 1, 1, 10, 0, tzinfo=timezone.utc).isoformat()
-    key_11 = datetime(2025, 1, 1, 11, 0, tzinfo=timezone.utc).isoformat()
+    key_10 = datetime(2025, 1, 1, 10, 0).isoformat()
+    key_11 = datetime(2025, 1, 1, 11, 0).isoformat()
 
     assert hourly[key_10] == 150.0
     assert hourly[key_11] == 90.0
