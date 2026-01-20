@@ -128,7 +128,9 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
                 "losses_pct": attrs.get("losses_last_month_pct"),
                 "charge_kwh": attrs.get("last_month_charge_kwh"),
                 "discharge_kwh": attrs.get("last_month_discharge_kwh"),
-                "effective_discharge_kwh": attrs.get("last_month_effective_discharge_kwh"),
+                "effective_discharge_kwh": attrs.get(
+                    "last_month_effective_discharge_kwh"
+                ),
                 "delta_kwh": attrs.get("last_month_delta_kwh"),
                 "battery_start_kwh": attrs.get("last_month_battery_start_kwh"),
                 "battery_end_kwh": attrs.get("last_month_battery_end_kwh"),
@@ -185,7 +187,9 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
             self._last_month_metrics = metrics
             self._last_month_key = prev_key
         else:
-            if self._last_month_key == prev_key and self._last_month_metrics:  # pragma: no cover
+            if (
+                self._last_month_key == prev_key and self._last_month_metrics
+            ):  # pragma: no cover
                 _LOGGER.warning(
                     "Keeping last month efficiency for %s/%s from stored state (history missing)",
                     prev_month,
@@ -276,9 +280,7 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
             self._current_month_status = "missing charge/discharge data"
             return
 
-        metrics = _compute_metrics_from_wh(
-            charge_wh, discharge_wh, None, None
-        )
+        metrics = _compute_metrics_from_wh(charge_wh, discharge_wh, None, None)
         self._current_month_metrics = metrics or _empty_metrics(
             charge_wh, discharge_wh, None, None
         )
@@ -290,9 +292,7 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
         prev_key = _month_key(prev_year, prev_month)
 
         last_metrics = (
-            self._last_month_metrics
-            if self._last_month_key == prev_key
-            else None
+            self._last_month_metrics if self._last_month_key == prev_key else None
         )
         current_metrics = self._current_month_metrics or {}
 
@@ -302,35 +302,33 @@ class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
 
         self._attr_extra_state_attributes = {
             # Last month (complete)
-            "efficiency_last_month_pct": last_metrics.get("efficiency_pct")
-            if last_metrics
-            else None,
-            "losses_last_month_kwh": last_metrics.get("losses_kwh")
-            if last_metrics
-            else None,
-            "losses_last_month_pct": last_metrics.get("losses_pct")
-            if last_metrics
-            else None,
-            "last_month_charge_kwh": last_metrics.get("charge_kwh")
-            if last_metrics
-            else None,
-            "last_month_discharge_kwh": last_metrics.get("discharge_kwh")
-            if last_metrics
-            else None,
-            "last_month_effective_discharge_kwh": last_metrics.get(
-                "effective_discharge_kwh"
-            )
-            if last_metrics
-            else None,
-            "last_month_delta_kwh": last_metrics.get("delta_kwh")
-            if last_metrics
-            else None,
-            "last_month_battery_start_kwh": last_metrics.get("battery_start_kwh")
-            if last_metrics
-            else None,
-            "last_month_battery_end_kwh": last_metrics.get("battery_end_kwh")
-            if last_metrics
-            else None,
+            "efficiency_last_month_pct": (
+                last_metrics.get("efficiency_pct") if last_metrics else None
+            ),
+            "losses_last_month_kwh": (
+                last_metrics.get("losses_kwh") if last_metrics else None
+            ),
+            "losses_last_month_pct": (
+                last_metrics.get("losses_pct") if last_metrics else None
+            ),
+            "last_month_charge_kwh": (
+                last_metrics.get("charge_kwh") if last_metrics else None
+            ),
+            "last_month_discharge_kwh": (
+                last_metrics.get("discharge_kwh") if last_metrics else None
+            ),
+            "last_month_effective_discharge_kwh": (
+                last_metrics.get("effective_discharge_kwh") if last_metrics else None
+            ),
+            "last_month_delta_kwh": (
+                last_metrics.get("delta_kwh") if last_metrics else None
+            ),
+            "last_month_battery_start_kwh": (
+                last_metrics.get("battery_start_kwh") if last_metrics else None
+            ),
+            "last_month_battery_end_kwh": (
+                last_metrics.get("battery_end_kwh") if last_metrics else None
+            ),
             "last_month_status": "complete" if last_metrics else "unavailable",
             "last_month_year": last_metrics.get("year") if last_metrics else None,
             "last_month_month": last_metrics.get("month") if last_metrics else None,
@@ -395,6 +393,49 @@ def _month_range_local(year: int, month: int) -> tuple[datetime, datetime]:
     return start_local, end_local
 
 
+async def _get_battery_start(
+    hass: Any, start_utc: datetime, battery_sensor: str, _get_history
+) -> Optional[float]:
+    """Retrieve initial battery level."""
+    try:
+        battery_history = await hass.async_add_executor_job(
+            _get_history,
+            start_utc,
+            start_utc + timedelta(minutes=1),
+            [battery_sensor],
+        )
+        return _history_value(battery_history.get(battery_sensor))
+    except Exception:
+        return None
+
+
+async def _fallback_to_statistics(
+    hass: Any,
+    start_utc: datetime,
+    end_utc: datetime,
+    charge_sensor: str,
+    discharge_sensor: str,
+    battery_sensor: str,
+    charge_wh: Optional[float],
+    discharge_wh: Optional[float],
+    battery_start: Optional[float],
+    battery_end: Optional[float],
+) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+    """Fallback to statistics if history values are missing."""
+    if charge_wh is None or discharge_wh is None:
+        stats_metrics = await _load_month_metrics_from_statistics(
+            hass, start_utc, end_utc, charge_sensor, discharge_sensor, battery_sensor
+        )
+        if stats_metrics:
+            charge_wh = stats_metrics.get("charge_wh", charge_wh)
+            discharge_wh = stats_metrics.get("discharge_wh", discharge_wh)
+            if battery_start is None:
+                battery_start = stats_metrics.get("battery_start_kwh")
+            if battery_end is None:
+                battery_end = stats_metrics.get("battery_end_kwh")
+    return charge_wh, discharge_wh, battery_start, battery_end
+
+
 async def _load_month_metrics(
     hass: Any, box_id: str, year: int, month: int
 ) -> Optional[Dict[str, Any]]:
@@ -428,23 +469,15 @@ async def _load_month_metrics(
     end_utc = dt_util.as_utc(end_local)
 
     charge_sensor, discharge_sensor, battery_sensor = _monthly_sensor_ids(box_id)
-    battery_start = None
     history = await hass.async_add_executor_job(
         _get_history,
         start_utc,
         end_utc,
         [charge_sensor, discharge_sensor, battery_sensor],
     )
-    try:
-        battery_history = await hass.async_add_executor_job(
-            _get_history,
-            start_utc,
-            start_utc + timedelta(minutes=1),
-            [battery_sensor],
-        )
-        battery_start = _history_value(battery_history.get(battery_sensor))
-    except Exception:
-        battery_start = None
+    battery_start = await _get_battery_start(
+        hass, start_utc, battery_sensor, _get_history
+    )
     if not history:  # pragma: no cover
         history = {}
 
@@ -452,22 +485,18 @@ async def _load_month_metrics(
     discharge_wh = _history_value(history.get(discharge_sensor))
     battery_end = _history_value(history.get(battery_sensor))
 
-    if charge_wh is None or discharge_wh is None:
-        stats_metrics = await _load_month_metrics_from_statistics(
-            hass,
-            start_utc,
-            end_utc,
-            charge_sensor,
-            discharge_sensor,
-            battery_sensor,
-        )
-        if stats_metrics:
-            charge_wh = stats_metrics.get("charge_wh", charge_wh)
-            discharge_wh = stats_metrics.get("discharge_wh", discharge_wh)
-            if battery_start is None:
-                battery_start = stats_metrics.get("battery_start_kwh")
-            if battery_end is None:
-                battery_end = stats_metrics.get("battery_end_kwh")
+    charge_wh, discharge_wh, battery_start, battery_end = await _fallback_to_statistics(
+        hass,
+        start_utc,
+        end_utc,
+        charge_sensor,
+        discharge_sensor,
+        battery_sensor,
+        charge_wh,
+        discharge_wh,
+        battery_start,
+        battery_end,
+    )
 
     metrics = _compute_metrics_from_wh(
         charge_wh, discharge_wh, battery_start, battery_end
@@ -569,7 +598,9 @@ async def _load_month_metrics_from_statistics(
             return {}
 
     stats = await hass.async_add_executor_job(_query_stats)
-    if not stats or (stats.get("charge_wh") is None and stats.get("discharge_wh") is None):
+    if not stats or (
+        stats.get("charge_wh") is None and stats.get("discharge_wh") is None
+    ):
         return None
     return stats
 
@@ -591,7 +622,9 @@ def _history_value(states: Optional[list[Any]]) -> Optional[float]:
         return None
 
 
-def _stat_value(item: Dict[str, Any], prefer_sum: bool) -> Optional[float]:  # pragma: no cover
+def _stat_value(
+    item: Dict[str, Any], prefer_sum: bool
+) -> Optional[float]:  # pragma: no cover
     keys = ("sum", "state", "max", "mean") if prefer_sum else ("state", "mean", "max")
     for key in keys:
         if isinstance(item, dict):
@@ -658,9 +691,7 @@ def _empty_metrics(
     battery_end_kwh: Optional[float],
 ) -> Dict[str, Optional[float]]:
     charge_kwh = round(charge_wh / 1000, 2) if charge_wh is not None else None
-    discharge_kwh = (
-        round(discharge_wh / 1000, 2) if discharge_wh is not None else None
-    )
+    discharge_kwh = round(discharge_wh / 1000, 2) if discharge_wh is not None else None
     return {
         "efficiency_pct": None,
         "losses_kwh": None,

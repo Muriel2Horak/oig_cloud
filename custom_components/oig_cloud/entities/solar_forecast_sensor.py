@@ -55,10 +55,9 @@ def _normalize_hourly_keys(hourly: Dict[str, float]) -> Dict[str, float]:
         else:
             local_dt = dt_util.as_local(parsed)
 
-        hour_key = (
-            local_dt.replace(minute=0, second=0, microsecond=0, tzinfo=None)
-            .isoformat()
-        )
+        hour_key = local_dt.replace(
+            minute=0, second=0, microsecond=0, tzinfo=None
+        ).isoformat()
         existing = normalized.get(hour_key)
         if existing is None or power > existing:
             normalized[hour_key] = power
@@ -164,9 +163,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                 # Načtení forecast dat
                 if isinstance(data.get("forecast_data"), dict):
                     self._last_forecast_data = data["forecast_data"]
-                    normalized = self._normalize_forecast_data(
-                        self._last_forecast_data
-                    )
+                    normalized = self._normalize_forecast_data(self._last_forecast_data)
                     if normalized != self._last_forecast_data:
                         self._last_forecast_data = normalized
                         await self._save_persistent_data()
@@ -683,9 +680,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             _LOGGER.error("🌞 Solcast response has no forecasts")
             return
 
-        self._last_forecast_data = self._process_solcast_data(
-            forecasts, kwp1, kwp2
-        )
+        self._last_forecast_data = self._process_solcast_data(forecasts, kwp1, kwp2)
         self._last_api_call = current_time
 
         await self._save_persistent_data()
@@ -701,43 +696,40 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         self.async_write_ha_state()
         await self._broadcast_forecast_data()
 
-    def _process_solcast_data(
-        self, forecasts: list[Dict[str, Any]], kwp1: float, kwp2: float
+    def _parse_forecast_entry(
+        self, entry: Dict[str, Any], total_kwp: float
+    ) -> Optional[tuple[str, float, float]]:
+        """Parse a single Solcast forecast entry."""
+        period_end = entry.get("period_end")
+        ghi = entry.get("ghi")
+        pv_estimate = entry.get("pv_estimate")
+        if not period_end or (ghi is None and pv_estimate is None):
+            return None
+
+        period_hours = self._parse_solcast_period_hours(entry.get("period"))
+        if pv_estimate is not None:
+            try:
+                pv_estimate_kw = float(pv_estimate)
+            except (TypeError, ValueError):
+                return None
+        else:
+            try:
+                ghi_value = float(ghi)
+            except (TypeError, ValueError):
+                return None
+            pv_estimate_kw = total_kwp * (ghi_value / 1000.0)
+
+        return period_end, pv_estimate_kw, period_hours
+
+    def _build_forecast_result(
+        self,
+        watts_data: Dict[str, float],
+        daily_kwh: Dict[str, float],
+        ratio1: float,
+        ratio2: float,
+        forecasts: list[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Transform Solcast forecasts into unified solar forecast structure."""
-        total_kwp = kwp1 + kwp2
-        ratio1 = (kwp1 / total_kwp) if total_kwp else 0.0
-        ratio2 = (kwp2 / total_kwp) if total_kwp else 0.0
-
-        watts_data: Dict[str, float] = {}
-        daily_kwh: Dict[str, float] = {}
-
-        for entry in forecasts:
-            period_end = entry.get("period_end")
-            ghi = entry.get("ghi")
-            pv_estimate = entry.get("pv_estimate")
-            if not period_end or (ghi is None and pv_estimate is None):
-                continue
-
-            period_hours = self._parse_solcast_period_hours(entry.get("period"))
-            if pv_estimate is not None:
-                try:
-                    pv_estimate_kw = float(pv_estimate)
-                except (TypeError, ValueError):
-                    continue
-            else:
-                try:
-                    ghi_value = float(ghi)
-                except (TypeError, ValueError):
-                    continue
-                pv_estimate_kw = total_kwp * (ghi_value / 1000.0)
-            watts_data[period_end] = pv_estimate_kw * 1000.0
-
-            day_key = period_end.split("T")[0]
-            daily_kwh[day_key] = daily_kwh.get(day_key, 0.0) + (
-                pv_estimate_kw * period_hours
-            )
-
+        """Build final forecast result from parsed data."""
         total_hourly = self._convert_to_hourly(watts_data)
         total_daily = daily_kwh
 
@@ -760,6 +752,34 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             "total_today_kwh": next(iter(total_daily.values()), 0),
             "solcast_raw_data": forecasts,
         }
+
+    def _process_solcast_data(
+        self, forecasts: list[Dict[str, Any]], kwp1: float, kwp2: float
+    ) -> Dict[str, Any]:
+        """Transform Solcast forecasts into unified solar forecast structure."""
+        total_kwp = kwp1 + kwp2
+        ratio1 = (kwp1 / total_kwp) if total_kwp else 0.0
+        ratio2 = (kwp2 / total_kwp) if total_kwp else 0.0
+
+        watts_data: Dict[str, float] = {}
+        daily_kwh: Dict[str, float] = {}
+
+        for entry in forecasts:
+            parsed = self._parse_forecast_entry(entry, total_kwp)
+            if not parsed:
+                continue
+
+            period_end, pv_estimate_kw, period_hours = parsed
+            watts_data[period_end] = pv_estimate_kw * 1000.0
+
+            day_key = period_end.split("T")[0]
+            daily_kwh[day_key] = daily_kwh.get(day_key, 0.0) + (
+                pv_estimate_kw * period_hours
+            )
+
+        return self._build_forecast_result(
+            watts_data, daily_kwh, ratio1, ratio2, forecasts
+        )
 
     @staticmethod
     def _parse_solcast_period_hours(period: Optional[str]) -> float:
@@ -843,9 +863,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             result.update(_build_string_payload("string1", data_string1, string1_data))
             result.update(_build_string_payload("string2", data_string2, string2_data))
 
-            total_hourly, total_daily = _merge_totals(
-                string1_data, string2_data
-            )
+            total_hourly, total_daily = _merge_totals(string1_data, string2_data)
             result.update(
                 {
                     "total_hourly": total_hourly,
@@ -884,10 +902,9 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                 else:
                     local_dt = dt_util.as_local(dt)
                 # Zaokrouhlení na celou hodinu v lokálním čase (bez tzinfo)
-                hour_key = (
-                    local_dt.replace(minute=0, second=0, microsecond=0, tzinfo=None)
-                    .isoformat()
-                )
+                hour_key = local_dt.replace(
+                    minute=0, second=0, microsecond=0, tzinfo=None
+                ).isoformat()
                 # Uchování nejvyšší hodnoty pro danou hodinu
                 hourly_data[hour_key] = max(hourly_data.get(hour_key, 0), power)
             except Exception as e:
