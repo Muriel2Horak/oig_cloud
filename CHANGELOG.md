@@ -17,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Timeline dialog: plan toggle switches between live Hybrid control and Autonomy preview dataset.
 - Analytics tile action: “Autonomní plán” opens the timeline dialog pre-filtered to the Autonomy plan.
 
+## [2.1.6] - 2026-01-20
+
+### Added
+
+- Solcast rooftop site ID support and manual solar forecast update targeting.
+- Battery planner guard rails: max UPS price cap, hysteresis, and HW min hold limits.
+
+### Changed
+
+- Solar forecast timestamps normalized to local time before aggregation.
+- UPS planning tuned with economic rules and cost-aware overrides.
+- SSL context creation moved off the event loop for OTE and OIG clients.
+
+### Fixed
+
+- Solar forecast update flow and pricing refresh on forecast changes.
+- Battery health diagnostics (skip charge cycles with significant discharge).
+- OTE cache recovery on corrupted files.
+- Sonar findings (TLS hardening and optional chaining in UI).
+
 ## [2.1.5] - 2026-01-16
 
 ### Fixed
