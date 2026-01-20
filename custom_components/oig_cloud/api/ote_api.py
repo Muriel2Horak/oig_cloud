@@ -38,7 +38,12 @@ _SSL_CONTEXT: Optional[ssl.SSLContext] = None
 
 
 def _create_ssl_context() -> ssl.SSLContext:
-    return ssl.create_default_context(cafile=certifi.where())
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    context.load_verify_locations(cafile=certifi.where())
+    return context
 
 
 async def _get_ssl_context_async() -> ssl.SSLContext:
