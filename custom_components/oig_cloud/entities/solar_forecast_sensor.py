@@ -12,6 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .base_sensor import OigCloudSensor
 
@@ -32,6 +33,37 @@ def _parse_forecast_hour(hour_str: str) -> Optional[datetime]:
     except Exception as err:
         _LOGGER.debug("Invalid forecast hour '%s': %s", hour_str, err)
         return None
+
+
+def _normalize_hourly_keys(hourly: Dict[str, float]) -> Dict[str, float]:
+    if not isinstance(hourly, dict) or not hourly:
+        return {} if hourly is None else hourly
+
+    normalized: Dict[str, float] = {}
+    for ts_str, power in hourly.items():
+        if not isinstance(ts_str, str):
+            normalized[ts_str] = power
+            continue
+        try:
+            parsed = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except ValueError:
+            normalized[ts_str] = power
+            continue
+
+        if parsed.tzinfo is None:
+            local_dt = parsed
+        else:
+            local_dt = dt_util.as_local(parsed)
+
+        hour_key = (
+            local_dt.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+            .isoformat()
+        )
+        existing = normalized.get(hour_key)
+        if existing is None or power > existing:
+            normalized[hour_key] = power
+
+    return normalized
 
 
 class OigCloudSolarForecastSensor(OigCloudSensor):
@@ -132,6 +164,15 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                 # Načtení forecast dat
                 if isinstance(data.get("forecast_data"), dict):
                     self._last_forecast_data = data["forecast_data"]
+                    normalized = self._normalize_forecast_data(
+                        self._last_forecast_data
+                    )
+                    if normalized != self._last_forecast_data:
+                        self._last_forecast_data = normalized
+                        await self._save_persistent_data()
+                        _LOGGER.debug(
+                            "Normalized solar forecast hourly keys to local time"
+                        )
                     _LOGGER.debug(
                         f"🌞 Loaded forecast data from storage with {len(self._last_forecast_data)} keys"
                     )
@@ -166,6 +207,19 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             )
         except Exception as e:
             _LOGGER.warning(f"🌞 Failed to save persistent data: {e}")
+
+    def _normalize_forecast_data(self, forecast_data: Dict[str, Any]) -> Dict[str, Any]:
+        updated = dict(forecast_data)
+        changed = False
+        for key in ("total_hourly", "string1_hourly", "string2_hourly"):
+            hourly = updated.get(key)
+            if not isinstance(hourly, dict):
+                continue
+            normalized = _normalize_hourly_keys(hourly)
+            if normalized != hourly:
+                updated[key] = normalized
+                changed = True
+        return updated if changed else forecast_data
 
     async def _load_last_api_call(self) -> None:
         """Načte čas posledního API volání z persistentního úložiště."""
@@ -826,8 +880,15 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             try:
                 # Parsování timestamp (forecast.solar používá UTC čas)
                 dt = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-                # Zaokrouhlení na celou hodinu
-                hour_key = dt.replace(minute=0, second=0, microsecond=0).isoformat()
+                if dt.tzinfo is None:
+                    local_dt = dt
+                else:
+                    local_dt = dt_util.as_local(dt)
+                # Zaokrouhlení na celou hodinu v lokálním čase (bez tzinfo)
+                hour_key = (
+                    local_dt.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+                    .isoformat()
+                )
                 # Uchování nejvyšší hodnoty pro danou hodinu
                 hourly_data[hour_key] = max(hourly_data.get(hour_key, 0), power)
             except Exception as e:
