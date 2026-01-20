@@ -150,16 +150,27 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
 8FpPkganuCwy++7umTkM7+Q=
 -----END CERTIFICATE-----"""
 
-    def _get_ssl_context_with_intermediate(self) -> ssl.SSLContext:
+    def _create_ssl_context_with_intermediate(self) -> ssl.SSLContext:
         """Create SSL context with cached intermediate certificate."""
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        # Add the intermediate certificate
+        ctx.load_verify_locations(cadata=self._CERTUM_INTERMEDIATE_CERT)
+        return ctx
+
+    async def _ensure_ssl_context_with_intermediate(self) -> None:
+        """Prepare SSL context without blocking the event loop."""
+        if self._ssl_context_with_intermediate is not None:
+            return
+        self._logger.info(
+            "🔐 Creating SSL context with Certum intermediate certificate"
+        )
+        self._ssl_context_with_intermediate = await asyncio.to_thread(
+            self._create_ssl_context_with_intermediate
+        )
+
+    def _get_ssl_context_with_intermediate(self) -> ssl.SSLContext:
         if self._ssl_context_with_intermediate is None:
-            self._logger.info(
-                "🔐 Creating SSL context with Certum intermediate certificate"
-            )
-            ctx = ssl.create_default_context(cafile=certifi.where())
-            # Add the intermediate certificate
-            ctx.load_verify_locations(cadata=self._CERTUM_INTERMEDIATE_CERT)
-            self._ssl_context_with_intermediate = ctx
+            raise RuntimeError("SSL context not initialized for intermediate cert")
         return self._ssl_context_with_intermediate
 
     def _get_connector(self) -> TCPConnector:
@@ -205,6 +216,8 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
         for mode in range(start_mode, max_ssl_mode + 1):
             self._ssl_mode = mode
             try:
+                if mode == 1:
+                    await self._ensure_ssl_context_with_intermediate()
                 connector = self._get_connector()
                 async with aiohttp.ClientSession(
                     timeout=self._timeout, connector=connector

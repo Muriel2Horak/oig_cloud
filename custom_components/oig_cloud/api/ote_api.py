@@ -37,10 +37,19 @@ SOAP_ACTIONS = {
 _SSL_CONTEXT: Optional[ssl.SSLContext] = None
 
 
-def _get_ssl_context() -> ssl.SSLContext:
+def _create_ssl_context() -> ssl.SSLContext:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    context.load_verify_locations(cafile=certifi.where())
+    return context
+
+
+async def _get_ssl_context_async() -> ssl.SSLContext:
     global _SSL_CONTEXT
     if _SSL_CONTEXT is None:
-        _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+        _SSL_CONTEXT = await asyncio.to_thread(_create_ssl_context)
     return _SSL_CONTEXT
 
 
@@ -110,7 +119,7 @@ class CnbRate:
         params = {"date": day.isoformat()}
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                self.RATES_URL, params=params, ssl=_get_ssl_context()
+                self.RATES_URL, params=params, ssl=await _get_ssl_context_async()
             ) as response:
                 if response.status > 299:
                     if response.status == 400:
@@ -189,6 +198,16 @@ class OteApi:
             return
         except Exception as err:
             _LOGGER.warning("Failed to load cached OTE spot prices: %s", err)
+            try:
+                if self._cache_path and os.path.exists(self._cache_path):
+                    os.remove(self._cache_path)
+                    _LOGGER.warning(
+                        "Deleted corrupted OTE cache file: %s", self._cache_path
+                    )
+            except Exception as cleanup_err:
+                _LOGGER.warning(
+                    "Failed to delete corrupted OTE cache file: %s", cleanup_err
+                )
 
     async def async_load_cached_spot_prices(self) -> None:
         """Load cache from disk without blocking the event loop."""
@@ -297,7 +316,7 @@ class OteApi:
                     OTE_PUBLIC_URL,
                     data=body_xml,
                     headers=_soap_headers(action),
-                    ssl=_get_ssl_context(),
+                    ssl=await _get_ssl_context_async(),
                 ) as response:
                     text = await response.text()
                     _LOGGER.debug(f"SOAP Response status: {response.status}")

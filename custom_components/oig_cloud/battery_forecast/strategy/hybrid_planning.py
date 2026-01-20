@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, List, Optional, Tuple
 
 from ..config import NegativePriceStrategy
 from ..types import CBB_MODE_HOME_I, CBB_MODE_HOME_UPS
@@ -35,6 +36,7 @@ def plan_charging_intervals(
         charging_intervals=charging_intervals,
         balancing_plan=balancing_plan,
         negative_price_intervals=negative_price_intervals,
+        prices=prices,
         blocked_indices=blocked_indices,
         n=n,
     )
@@ -60,7 +62,7 @@ def plan_charging_intervals(
         if not recovered:
             return charging_intervals, infeasible_reason, price_band_intervals
 
-    infeasible_reason = _apply_repair_and_target(
+    infeasible_reason = _apply_planning_min_repair(
         strategy,
         initial_battery_kwh=initial_battery_kwh,
         solar_forecast=solar_forecast,
@@ -72,8 +74,79 @@ def plan_charging_intervals(
         add_ups_interval=add_ups_interval,
         infeasible_reason=infeasible_reason,
         n=n,
-        eps_kwh=eps_kwh,
     )
+
+    target_price_cap = strategy.config.max_ups_price_czk
+    target_kwh = strategy._target
+    target_limit = None
+    if balancing_plan and balancing_plan.is_active and balancing_plan.holding_intervals:
+        target_price_cap = float("inf")
+        target_kwh = strategy._max
+        target_limit = min(balancing_plan.holding_intervals)
+    _reach_target_soc(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        charging_intervals=charging_intervals,
+        blocked_indices=blocked_indices,
+        prices=prices,
+        add_ups_interval=add_ups_interval,
+        eps_kwh=eps_kwh,
+        max_price=target_price_cap,
+        target_kwh=target_kwh,
+        limit=target_limit,
+    )
+
+    if not recovery_mode:
+        _apply_economic_charging(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            charging_intervals=charging_intervals,
+            blocked_indices=blocked_indices,
+            prices=prices,
+            add_ups_interval=add_ups_interval,
+            n=n,
+            eps_kwh=eps_kwh,
+        )
+
+        if _apply_cost_aware_override(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            charging_intervals=charging_intervals,
+            blocked_indices=blocked_indices,
+            prices=prices,
+            add_ups_interval=add_ups_interval,
+            n=n,
+            eps_kwh=eps_kwh,
+        ):
+            infeasible_reason = None
+
+        if _apply_hw_min_hold_limit(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            charging_intervals=charging_intervals,
+            blocked_indices=blocked_indices,
+            prices=prices,
+            add_ups_interval=add_ups_interval,
+            n=n,
+            eps_kwh=eps_kwh,
+        ):
+            infeasible_reason = None
+
+    if not recovery_mode:
+        price_band_intervals = _apply_price_band_extension(
+            strategy,
+            charging_intervals=charging_intervals,
+            prices=prices,
+            blocked_indices=blocked_indices,
+        )
 
     infeasible_reason = _finalize_infeasible_reason(
         strategy,
@@ -86,14 +159,6 @@ def plan_charging_intervals(
         infeasible_reason=infeasible_reason,
     )
 
-    if not recovery_mode:
-        price_band_intervals = _apply_price_band_extension(
-            strategy,
-            charging_intervals=charging_intervals,
-            prices=prices,
-            blocked_indices=blocked_indices,
-        )
-
     return charging_intervals, infeasible_reason, price_band_intervals
 
 
@@ -105,27 +170,31 @@ def _build_add_ups_interval(
     blocked_indices: set[int],
     n: int,
 ):
-    def add_ups_interval(idx: int, *, allow_expensive: bool = False) -> None:
+    def add_ups_interval(idx: int, *, max_price: Optional[float] = None) -> None:
         if idx in blocked_indices:
+            return
+        price_cap = (
+            max_price if max_price is not None else strategy.config.max_ups_price_czk
+        )
+        if prices[idx] > price_cap:
             return
         charging_intervals.add(idx)
         min_len = max(1, strategy.config.min_ups_duration_intervals)
         if min_len <= 1:
             return
-        max_price = strategy.config.max_ups_price_czk
         for offset in range(1, min_len):
             next_idx = idx + offset
             if next_idx >= n:
                 break
             if next_idx in blocked_indices or next_idx in charging_intervals:
                 continue
-            if allow_expensive or prices[next_idx] <= max_price:
+            if prices[next_idx] <= price_cap:
                 charging_intervals.add(next_idx)
 
     return add_ups_interval
 
 
-def _apply_repair_and_target(
+def _apply_planning_min_repair(
     strategy,
     *,
     initial_battery_kwh: float,
@@ -138,7 +207,6 @@ def _apply_repair_and_target(
     add_ups_interval,
     infeasible_reason: Optional[str],
     n: int,
-    eps_kwh: float,
 ) -> Optional[str]:
     buffer = 0.5
     infeasible_reason = _repair_plan_before_min(
@@ -155,19 +223,23 @@ def _apply_repair_and_target(
         infeasible_reason=infeasible_reason,
         n=n,
     )
-
-    _reach_target_soc(
-        strategy,
-        initial_battery_kwh=initial_battery_kwh,
-        solar_forecast=solar_forecast,
-        consumption_forecast=consumption_forecast,
-        charging_intervals=charging_intervals,
-        blocked_indices=blocked_indices,
-        prices=prices,
-        add_ups_interval=add_ups_interval,
-        eps_kwh=eps_kwh,
-    )
     return infeasible_reason
+
+
+@dataclass(frozen=True)
+class _ModeDecisionContext:
+    strategy: Any
+    charging_intervals: set[int]
+    blocked_indices: set[int]
+    prices: List[float]
+    max_price: float
+    solar_forecast: List[float]
+    consumption_forecast: List[float]
+    n: int
+    eps_kwh: float
+    round_trip_eff: float
+    hysteresis: float
+    add_ups_interval: Any
 
 
 def _build_blocked_indices(
@@ -182,27 +254,56 @@ def _build_blocked_indices(
     }
 
 
+def _add_balancing_intervals(
+    strategy,
+    charging_intervals: set[int],
+    balancing_plan: Optional[StrategyBalancingPlan],
+    prices: List[float],
+    blocked_indices: set[int],
+    n: int,
+) -> None:
+    """Add charging intervals from balancing plan."""
+    if not balancing_plan:
+        return
+    for idx in balancing_plan.charging_intervals:
+        if 0 <= idx < n and idx not in blocked_indices:
+            if prices[idx] <= strategy.config.max_ups_price_czk:
+                charging_intervals.add(idx)
+
+
+def _add_negative_price_intervals(
+    strategy,
+    charging_intervals: set[int],
+    negative_price_intervals: Optional[List[int]],
+    blocked_indices: set[int],
+    n: int,
+) -> None:
+    """Add negative price charging intervals."""
+    if not negative_price_intervals:
+        return
+    if strategy.config.negative_price_strategy != NegativePriceStrategy.CHARGE_GRID:
+        return
+    for idx in negative_price_intervals:
+        if 0 <= idx < n and idx not in blocked_indices:
+            charging_intervals.add(idx)
+
+
 def _seed_charging_intervals(
     strategy,
     *,
     charging_intervals: set[int],
     balancing_plan: Optional[StrategyBalancingPlan],
     negative_price_intervals: Optional[List[int]],
+    prices: List[float],
     blocked_indices: set[int],
     n: int,
 ) -> None:
-    if balancing_plan:
-        for idx in balancing_plan.charging_intervals:
-            if 0 <= idx < n and idx not in blocked_indices:
-                charging_intervals.add(idx)
-
-    if (
-        negative_price_intervals
-        and strategy.config.negative_price_strategy == NegativePriceStrategy.CHARGE_GRID
-    ):
-        for idx in negative_price_intervals:
-            if 0 <= idx < n and idx not in blocked_indices:
-                charging_intervals.add(idx)
+    _add_balancing_intervals(
+        strategy, charging_intervals, balancing_plan, prices, blocked_indices, n
+    )
+    _add_negative_price_intervals(
+        strategy, charging_intervals, negative_price_intervals, blocked_indices, n
+    )
 
 
 def _run_recovery(
@@ -231,7 +332,7 @@ def _run_recovery(
                 "Battery below planning minimum at start; "
                 f"interval {i} exceeds max_ups_price_czk={strategy.config.max_ups_price_czk}"
             )
-        add_ups_interval(i, allow_expensive=price > strategy.config.max_ups_price_czk)
+        add_ups_interval(i, max_price=float("inf"))
 
         solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
         load = consumption_forecast[i] if i < len(consumption_forecast) else 0.125
@@ -249,9 +350,7 @@ def _run_recovery(
 
     if soc < strategy._planning_min - eps_kwh:
         if infeasible_reason is None:
-            infeasible_reason = (
-                "Battery below planning minimum at start and could not recover within planning horizon"
-            )
+            infeasible_reason = "Battery below planning minimum at start and could not recover within planning horizon"
         return recovery_index, infeasible_reason, False
 
     return recovery_index, infeasible_reason, True
@@ -371,7 +470,7 @@ def _mark_infeasible_before_violation(
             f"available before violation index {violation_idx}"
         )
     for idx in range(0, min(n, violation_idx + 1)):
-        add_ups_interval(idx, allow_expensive=True)
+        add_ups_interval(idx)
     return infeasible_reason
 
 
@@ -403,9 +502,19 @@ def _reach_target_soc(
     prices: List[float],
     add_ups_interval,
     eps_kwh: float,
+    max_price: Optional[float] = None,
+    target_kwh: Optional[float] = None,
+    limit: Optional[int] = None,
 ) -> None:
-    if strategy._target <= strategy._planning_min + eps_kwh:
+    target = target_kwh if target_kwh is not None else strategy._target
+    if target <= strategy._planning_min + eps_kwh:
         return
+
+    price_cap = (
+        float(max_price) if max_price is not None else strategy.config.max_ups_price_czk
+    )
+
+    limit_idx = len(prices) if limit is None else max(0, min(len(prices), limit))
 
     for _ in range(strategy.MAX_ITERATIONS):
         battery_trajectory = simulate_trajectory(
@@ -415,21 +524,27 @@ def _reach_target_soc(
             consumption_forecast=consumption_forecast,
             charging_intervals=charging_intervals,
         )
-        max_soc = max(battery_trajectory) if battery_trajectory else initial_battery_kwh
-        if max_soc >= strategy._target - eps_kwh:
+        if limit_idx <= 0:
+            return
+        max_soc = (
+            max(battery_trajectory[:limit_idx])
+            if battery_trajectory
+            else initial_battery_kwh
+        )
+        if max_soc >= target - eps_kwh:
             break
 
         candidate = _find_cheapest_candidate(
             prices=prices,
             charging_intervals=charging_intervals,
             blocked_indices=blocked_indices,
-            max_price=strategy.config.max_ups_price_czk,
-            limit=len(prices),
+            max_price=price_cap,
+            limit=limit_idx,
         )
         if candidate is None:
             break
 
-        add_ups_interval(candidate)
+        add_ups_interval(candidate, max_price=price_cap)
 
 
 def _finalize_infeasible_reason(
@@ -508,9 +623,429 @@ def _find_cheapest_candidate(
     return candidate
 
 
+def _determine_mode_for_interval(
+    idx: int,
+    battery: float,
+    ctx: _ModeDecisionContext,
+) -> str:
+    """Determine charging mode for a specific interval."""
+    if idx in ctx.blocked_indices:
+        return CBB_MODE_HOME_I
+    if idx in ctx.charging_intervals:
+        return CBB_MODE_HOME_UPS
+
+    price = ctx.prices[idx]
+    if price > ctx.max_price + 0.0001:
+        return CBB_MODE_HOME_I
+
+    survival_end = _estimate_survival_end(
+        ctx.strategy,
+        start_idx=idx,
+        battery_start=battery,
+        solar_forecast=ctx.solar_forecast,
+        consumption_forecast=ctx.consumption_forecast,
+        min_level=ctx.strategy._planning_min,
+        n=ctx.n,
+        eps_kwh=ctx.eps_kwh,
+    )
+    min_future = _find_min_future_price(
+        ctx.prices,
+        start=idx + 1,
+        end=survival_end,
+        max_price=ctx.max_price,
+        blocked_indices=ctx.blocked_indices,
+    )
+    if _should_charge_now(
+        price,
+        min_future_price=min_future,
+        round_trip_eff=ctx.round_trip_eff,
+        hysteresis=ctx.hysteresis,
+    ):
+        ctx.add_ups_interval(idx)
+        return CBB_MODE_HOME_UPS
+    return CBB_MODE_HOME_I
+
+
+def _apply_economic_charging(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    prices: List[float],
+    add_ups_interval,
+    n: int,
+    eps_kwh: float,
+) -> None:
+    round_trip_eff = _resolve_round_trip_efficiency(strategy)
+    if round_trip_eff <= 0:
+        return
+
+    hysteresis = float(getattr(strategy.config, "price_hysteresis_czk", 0.0))
+    max_price = strategy.config.max_ups_price_czk
+    battery = initial_battery_kwh
+
+    ctx = _ModeDecisionContext(
+        strategy=strategy,
+        charging_intervals=charging_intervals,
+        blocked_indices=blocked_indices,
+        prices=prices,
+        max_price=max_price,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        n=n,
+        eps_kwh=eps_kwh,
+        round_trip_eff=round_trip_eff,
+        hysteresis=hysteresis,
+        add_ups_interval=add_ups_interval,
+    )
+
+    for idx in range(n):
+        mode = _determine_mode_for_interval(
+            idx,
+            battery,
+            ctx,
+        )
+
+        solar = solar_forecast[idx] if idx < len(solar_forecast) else 0.0
+        load = consumption_forecast[idx] if idx < len(consumption_forecast) else 0.125
+        result = strategy.simulator.simulate(
+            battery_start=battery,
+            mode=mode,
+            solar_kwh=solar,
+            load_kwh=load,
+            force_charge=(mode == CBB_MODE_HOME_UPS),
+        )
+        battery = result.battery_end
+
+
+def _estimate_survival_end(
+    strategy,
+    *,
+    start_idx: int,
+    battery_start: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    min_level: float,
+    n: int,
+    eps_kwh: float,
+) -> int:
+    battery = battery_start
+    last_idx = start_idx
+    for idx in range(start_idx, n):
+        if battery <= min_level + eps_kwh and idx > start_idx:
+            break
+        solar = solar_forecast[idx] if idx < len(solar_forecast) else 0.0
+        load = consumption_forecast[idx] if idx < len(consumption_forecast) else 0.125
+        result = strategy.simulator.simulate(
+            battery_start=battery,
+            mode=CBB_MODE_HOME_I,
+            solar_kwh=solar,
+            load_kwh=load,
+        )
+        battery = result.battery_end
+        last_idx = idx
+    return last_idx
+
+
+def _find_min_future_price(
+    prices: List[float],
+    *,
+    start: int,
+    end: int,
+    max_price: float,
+    blocked_indices: Optional[set[int]] = None,
+) -> Optional[float]:
+    if start >= len(prices) or end < start:
+        return None
+    limit = min(len(prices), end + 1)
+    best: Optional[float] = None
+    for idx in range(start, limit):
+        if blocked_indices and idx in blocked_indices:
+            continue
+        price = prices[idx]
+        if price > max_price:
+            continue
+        if best is None or price < best:
+            best = price
+    return best
+
+
+def _should_charge_now(
+    price_now: float,
+    *,
+    min_future_price: Optional[float],
+    round_trip_eff: float,
+    hysteresis: float,
+) -> bool:
+    if min_future_price is None:
+        return True
+    effective_future = min_future_price / round_trip_eff
+    return price_now <= effective_future - hysteresis
+
+
+def _apply_cost_aware_override(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    prices: List[float],
+    add_ups_interval,
+    n: int,
+    eps_kwh: float,
+) -> bool:
+    """Allow expensive UPS when it avoids even higher grid import costs."""
+    round_trip_eff = _resolve_round_trip_efficiency(strategy)
+    if round_trip_eff <= 0:
+        return False
+    hysteresis = float(getattr(strategy.config, "price_hysteresis_czk", 0.0))
+    hw_min = getattr(strategy.sim_config, "min_capacity_kwh", 0.0)
+
+    override_applied = False
+    for _ in range(strategy.MAX_ITERATIONS):
+        trajectory, results = _simulate_with_results(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            charging_intervals=charging_intervals,
+            n=n,
+        )
+        candidate, price_cap = _pick_cost_override_candidate(
+            trajectory=trajectory,
+            results=results,
+            prices=prices,
+            charging_intervals=charging_intervals,
+            blocked_indices=blocked_indices,
+            round_trip_eff=round_trip_eff,
+            hysteresis=hysteresis,
+            hw_min=hw_min,
+            eps_kwh=eps_kwh,
+        )
+        if candidate is None or price_cap is None:
+            break
+        add_ups_interval(candidate, max_price=price_cap)
+        override_applied = True
+
+    return override_applied
+
+
+def _pick_cost_override_candidate(
+    *,
+    trajectory: List[float],
+    results: List,
+    prices: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    round_trip_eff: float,
+    hysteresis: float,
+    hw_min: float,
+    eps_kwh: float,
+) -> Tuple[Optional[int], Optional[float]]:
+    best_idx = None
+    best_cap = None
+    best_cost = None
+
+    for idx, price in enumerate(prices):
+        if idx >= len(results):
+            break
+        if results[idx].grid_import <= eps_kwh:
+            continue
+        if trajectory[idx] > hw_min + eps_kwh:
+            continue
+        price_cap = max(0.0, (price - hysteresis)) * round_trip_eff
+        if price_cap <= 0.0:
+            continue
+        cost = results[idx].grid_import * price
+        if best_cost is None or cost > best_cost:
+            best_cost = cost
+            best_idx = idx
+            best_cap = price_cap
+
+    if best_idx is None or best_cap is None:
+        return None, None
+
+    candidate = _find_cheapest_candidate(
+        prices=prices,
+        charging_intervals=charging_intervals,
+        blocked_indices=blocked_indices,
+        max_price=best_cap,
+        limit=best_idx,
+    )
+    if candidate is None:
+        return None, None
+
+    return candidate, best_cap
+
+
+def _resolve_round_trip_efficiency(strategy) -> float:
+    eff = getattr(strategy.config, "round_trip_efficiency", None)
+    try:
+        eff_val = float(eff)
+    except (TypeError, ValueError):
+        eff_val = 0.0
+    if 0 < eff_val <= 1.0:
+        return eff_val
+    ac_dc = getattr(strategy.sim_config, "ac_dc_efficiency", None)
+    dc_ac = getattr(strategy.sim_config, "dc_ac_efficiency", None)
+    try:
+        ac_dc_val = float(ac_dc)
+        dc_ac_val = float(dc_ac)
+    except (TypeError, ValueError):
+        return 0.0
+    if ac_dc_val <= 0 or dc_ac_val <= 0:
+        return 0.0
+    return ac_dc_val * dc_ac_val
+
+
+def _apply_hw_min_hold_limit(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    prices: List[float],
+    add_ups_interval,
+    n: int,
+    eps_kwh: float,
+) -> bool:
+    max_hold_hours = float(getattr(strategy.config, "hw_min_hold_hours", 0.0))
+    if max_hold_hours <= 0:
+        return False
+    max_hold_intervals = max(1, int(round(max_hold_hours * 4)))
+    hw_min = getattr(strategy.sim_config, "min_capacity_kwh", 0.0)
+
+    trajectory, _ = _simulate_with_results(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        charging_intervals=charging_intervals,
+        n=n,
+    )
+
+    hold_start = None
+    for idx, soc in enumerate(trajectory):
+        at_min = soc <= hw_min + eps_kwh
+        if at_min and hold_start is None:
+            hold_start = idx
+        if not at_min and hold_start is not None:
+            if idx - hold_start >= max_hold_intervals:
+                return _force_target_before_index(
+                    strategy,
+                    initial_battery_kwh=initial_battery_kwh,
+                    solar_forecast=solar_forecast,
+                    consumption_forecast=consumption_forecast,
+                    charging_intervals=charging_intervals,
+                    blocked_indices=blocked_indices,
+                    prices=prices,
+                    add_ups_interval=add_ups_interval,
+                    limit=idx,
+                    eps_kwh=eps_kwh,
+                )
+            hold_start = None
+
+    if hold_start is not None and (len(trajectory) - hold_start) >= max_hold_intervals:
+        return _force_target_before_index(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            charging_intervals=charging_intervals,
+            blocked_indices=blocked_indices,
+            prices=prices,
+            add_ups_interval=add_ups_interval,
+            limit=len(prices),
+            eps_kwh=eps_kwh,
+        )
+    return False
+
+
+def _force_target_before_index(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    blocked_indices: set[int],
+    prices: List[float],
+    add_ups_interval,
+    limit: int,
+    eps_kwh: float,
+) -> bool:
+    if strategy._target <= strategy._planning_min + eps_kwh:
+        return False
+    applied = False
+    for _ in range(strategy.MAX_ITERATIONS):
+        battery_trajectory = simulate_trajectory(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            charging_intervals=charging_intervals,
+        )
+        max_soc = max(battery_trajectory) if battery_trajectory else initial_battery_kwh
+        if max_soc >= strategy._target - eps_kwh:
+            break
+        candidate = _find_cheapest_candidate(
+            prices=prices,
+            charging_intervals=charging_intervals,
+            blocked_indices=blocked_indices,
+            max_price=float("inf"),
+            limit=limit,
+        )
+        if candidate is None:
+            break
+        add_ups_interval(candidate, max_price=float("inf"))
+        applied = True
+    return applied
+
+
+def _simulate_with_results(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    charging_intervals: set[int],
+    n: int,
+) -> Tuple[List[float], List]:
+    battery = initial_battery_kwh
+    trajectory: List[float] = []
+    results: List = []
+
+    for i in range(n):
+        solar = solar_forecast[i] if i < len(solar_forecast) else 0.0
+        load = consumption_forecast[i] if i < len(consumption_forecast) else 0.125
+
+        mode = CBB_MODE_HOME_UPS if i in charging_intervals else CBB_MODE_HOME_I
+        force_charge = i in charging_intervals
+
+        result = strategy.simulator.simulate(
+            battery_start=battery,
+            mode=mode,
+            solar_kwh=solar,
+            load_kwh=load,
+            force_charge=force_charge,
+        )
+        battery = result.battery_end
+        trajectory.append(battery)
+        results.append(result)
+
+    return trajectory, results
+
+
 def get_price_band_delta_pct(strategy) -> float:
     """Compute price band delta from battery efficiency (min 8%)."""
-    eff = getattr(strategy.sim_config, "ac_dc_efficiency", None)
+    eff = getattr(strategy.config, "round_trip_efficiency", None)
     try:
         eff_val = float(eff)
     except (TypeError, ValueError):

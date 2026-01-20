@@ -8,20 +8,28 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
-from ..const import (CONF_AUTO_MODE_SWITCH, CONF_PASSWORD, CONF_USERNAME,
-                     DEFAULT_NAME, DOMAIN)
-from ..core.data_source import (PROXY_BOX_ID_ENTITY_ID,
-                                PROXY_LAST_DATA_ENTITY_ID)
-from .schema import (CONF_SOLAR_FORECAST_API_KEY,
-                     CONF_SOLAR_FORECAST_LATITUDE,
-                     CONF_SOLAR_FORECAST_LONGITUDE,
-                     CONF_SOLAR_FORECAST_PROVIDER, CONF_SOLCAST_API_KEY,
-                     CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
-                     CONF_SOLAR_FORECAST_STRING1_DECLINATION,
-                     CONF_SOLAR_FORECAST_STRING1_ENABLED,
-                     CONF_SOLAR_FORECAST_STRING1_KWP, validate_tariff_hours)
-from .validation import (CannotConnect, InvalidAuth, LiveDataNotEnabled,
-                         validate_input)
+from ..const import (
+    CONF_AUTO_MODE_SWITCH,
+    CONF_PASSWORD,
+    CONF_USERNAME,
+    DEFAULT_NAME,
+    DOMAIN,
+)
+from ..core.data_source import PROXY_BOX_ID_ENTITY_ID, PROXY_LAST_DATA_ENTITY_ID
+from .schema import (
+    CONF_SOLAR_FORECAST_API_KEY,
+    CONF_SOLAR_FORECAST_LATITUDE,
+    CONF_SOLAR_FORECAST_LONGITUDE,
+    CONF_SOLAR_FORECAST_PROVIDER,
+    CONF_SOLCAST_API_KEY,
+    CONF_SOLCAST_SITE_ID,
+    CONF_SOLAR_FORECAST_STRING1_AZIMUTH,
+    CONF_SOLAR_FORECAST_STRING1_DECLINATION,
+    CONF_SOLAR_FORECAST_STRING1_ENABLED,
+    CONF_SOLAR_FORECAST_STRING1_KWP,
+    validate_tariff_hours,
+)
+from .validation import CannotConnect, InvalidAuth, LiveDataNotEnabled, validate_input
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -141,9 +149,7 @@ class WizardMixin:
                 "fixed_commercial_price_nt", 3.20
             )
         else:
-            migrated["import_fixed_price"] = data.get(
-                "fixed_commercial_price_vt", 4.50
-            )
+            migrated["import_fixed_price"] = data.get("fixed_commercial_price_vt", 4.50)
 
     @staticmethod
     def _migrate_export_pricing(
@@ -321,7 +327,9 @@ class WizardMixin:
             "data_source_mode": WizardMixin._sanitize_data_source_mode(
                 wizard_data.get("data_source_mode", "cloud_only")
             ),
-            "local_proxy_stale_minutes": wizard_data.get("local_proxy_stale_minutes", 10),
+            "local_proxy_stale_minutes": wizard_data.get(
+                "local_proxy_stale_minutes", 10
+            ),
             "local_event_debounce_ms": wizard_data.get("local_event_debounce_ms", 300),
             "enable_statistics": wizard_data.get("enable_statistics", True),
             "enable_solar_forecast": wizard_data.get("enable_solar_forecast", False),
@@ -347,6 +355,7 @@ class WizardMixin:
                 CONF_SOLAR_FORECAST_API_KEY, ""
             ),
             CONF_SOLCAST_API_KEY: wizard_data.get(CONF_SOLCAST_API_KEY, ""),
+            CONF_SOLCAST_SITE_ID: wizard_data.get(CONF_SOLCAST_SITE_ID, ""),
             CONF_SOLAR_FORECAST_LATITUDE: wizard_data.get(
                 CONF_SOLAR_FORECAST_LATITUDE, 50.0
             ),
@@ -390,6 +399,8 @@ class WizardMixin:
                 "disable_planning_min_guard", False
             ),
             "max_ups_price_czk": wizard_data.get("max_ups_price_czk", 10.0),
+            "price_hysteresis_czk": wizard_data.get("price_hysteresis_czk", 0.01),
+            "hw_min_hold_hours": wizard_data.get("hw_min_hold_hours", 6.0),
             "balancing_enabled": wizard_data.get("balancing_enabled", True),
             "balancing_interval_days": wizard_data.get("balancing_interval_days", 7),
             "balancing_hold_hours": wizard_data.get("balancing_hold_hours", 3),
@@ -438,19 +449,13 @@ class WizardMixin:
                 "boiler_has_alternative_heating", False
             ),
             "boiler_alt_cost_kwh": wizard_data.get("boiler_alt_cost_kwh", 0.0),
-            "boiler_alt_energy_sensor": wizard_data.get(
-                "boiler_alt_energy_sensor", ""
-            ),
-            "boiler_spot_price_sensor": wizard_data.get(
-                "boiler_spot_price_sensor", ""
-            ),
+            "boiler_alt_energy_sensor": wizard_data.get("boiler_alt_energy_sensor", ""),
+            "boiler_spot_price_sensor": wizard_data.get("boiler_spot_price_sensor", ""),
             "boiler_deadline_time": wizard_data.get("boiler_deadline_time", "20:00"),
             "boiler_planning_horizon_hours": wizard_data.get(
                 "boiler_planning_horizon_hours", 36
             ),
-            "boiler_plan_slot_minutes": wizard_data.get(
-                "boiler_plan_slot_minutes", 30
-            ),
+            "boiler_plan_slot_minutes": wizard_data.get("boiler_plan_slot_minutes", 30),
         }
 
     @staticmethod
@@ -640,8 +645,13 @@ class WizardMixin:
             min_cap = self._wizard_data.get("min_capacity_percent", 20)
             target_cap = self._wizard_data.get("target_capacity_percent", 80)
             max_price = self._wizard_data.get("max_ups_price_czk", 10.0)
+            hysteresis = self._wizard_data.get("price_hysteresis_czk", 0.01)
+            hw_min_hold = self._wizard_data.get("hw_min_hold_hours", 6.0)
             summary_parts.append(f"      → Kapacita: {min_cap}% - {target_cap}%")
             summary_parts.append(f"      → Max. cena: {max_price} CZK/kWh")
+            summary_parts.append(
+                f"      → Hystereze: {hysteresis} CZK/kWh, HW min hold: {hw_min_hold} h"
+            )
 
         if self._wizard_data.get("enable_pricing", False):
             summary_parts.append("   ✅ Cenové senzory a spotové ceny")
@@ -731,7 +741,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         return self._show_credentials_form()
 
-    def _show_credentials_form(self, errors: Optional[Dict[str, str]] = None) -> FlowResult:
+    def _show_credentials_form(
+        self, errors: Optional[Dict[str, str]] = None
+    ) -> FlowResult:
         return self.async_show_form(
             step_id="wizard_credentials",
             data_schema=self._get_credentials_schema(),
@@ -1295,13 +1307,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 errors["solar_forecast_mode"] = "api_key_required_for_frequent_updates"
         else:
             solcast_api_key = user_input.get(CONF_SOLCAST_API_KEY, "").strip()
+            solcast_site_id = user_input.get(CONF_SOLCAST_SITE_ID, "").strip()
             if not solcast_api_key:
                 errors[CONF_SOLCAST_API_KEY] = "solcast_api_key_required"
+            if not solcast_site_id:
+                errors[CONF_SOLCAST_SITE_ID] = "solcast_site_id_required"
         return errors
 
-    def _validate_solar_coordinates(
-        self, user_input: Dict[str, Any]
-    ) -> Dict[str, str]:
+    def _validate_solar_coordinates(self, user_input: Dict[str, Any]) -> Dict[str, str]:
         errors: Dict[str, str] = {}
         try:
             lat = float(user_input.get(CONF_SOLAR_FORECAST_LATITUDE, 50.0))
@@ -1411,15 +1424,25 @@ Kliknutím na "Odeslat" spustíte průvodce.
         }
 
         if provider == "forecast_solar":
-            schema_fields[vol.Optional(
-                CONF_SOLAR_FORECAST_API_KEY,
-                default=defaults.get(CONF_SOLAR_FORECAST_API_KEY, ""),
-            )] = str
+            schema_fields[
+                vol.Optional(
+                    CONF_SOLAR_FORECAST_API_KEY,
+                    default=defaults.get(CONF_SOLAR_FORECAST_API_KEY, ""),
+                )
+            ] = str
         else:
-            schema_fields[vol.Optional(
-                CONF_SOLCAST_API_KEY,
-                default=defaults.get(CONF_SOLCAST_API_KEY, ""),
-            )] = str
+            schema_fields[
+                vol.Optional(
+                    CONF_SOLCAST_API_KEY,
+                    default=defaults.get(CONF_SOLCAST_API_KEY, ""),
+                )
+            ] = str
+            schema_fields[
+                vol.Optional(
+                    CONF_SOLCAST_SITE_ID,
+                    default=defaults.get(CONF_SOLCAST_SITE_ID, ""),
+                )
+            ] = str
 
         # String 1 parametry - zobrazit jen když je povolen
         if defaults.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, True):
@@ -1474,6 +1497,33 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         return vol.Schema(schema_fields)
 
+    def _validate_battery_config(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        """Validate battery configuration inputs."""
+        errors = {}
+
+        # Validace min < target
+        min_cap = user_input.get("min_capacity_percent", 20.0)
+        target_cap = user_input.get("target_capacity_percent", 80.0)
+        if min_cap >= target_cap:
+            errors["min_capacity_percent"] = "min_must_be_less_than_target"
+
+        # Validace max price
+        max_price = user_input.get("max_ups_price_czk", 10.0)
+        if max_price < 1.0 or max_price > 50.0:
+            errors["max_ups_price_czk"] = "invalid_price"
+
+        # Validace hysteresis
+        hysteresis = user_input.get("price_hysteresis_czk", 0.01)
+        if hysteresis < 0.0 or hysteresis > 5.0:
+            errors["price_hysteresis_czk"] = "invalid_hysteresis"
+
+        # Validace hw_min_hold
+        hw_min_hold = user_input.get("hw_min_hold_hours", 6.0)
+        if hw_min_hold < 1.0 or hw_min_hold > 24.0:
+            errors["hw_min_hold_hours"] = "invalid_hours"
+
+        return errors
+
     async def async_step_wizard_battery(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
@@ -1483,19 +1533,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_battery")
 
-            errors = {}
-
-            # Validace min < target
-            min_cap = user_input.get("min_capacity_percent", 20.0)
-            target_cap = user_input.get("target_capacity_percent", 80.0)
-
-            if min_cap >= target_cap:
-                errors["min_capacity_percent"] = "min_must_be_less_than_target"
-
-            # Validace max price
-            max_price = user_input.get("max_ups_price_czk", 10.0)
-            if max_price < 1.0 or max_price > 50.0:
-                errors["max_ups_price_czk"] = "invalid_price"
+            errors = self._validate_battery_config(user_input)
 
             if errors:
                 return self.async_show_form(
@@ -1550,6 +1588,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
             vol.Optional(
                 "max_ups_price_czk", default=defaults.get("max_ups_price_czk", 10.0)
             ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
+            vol.Optional(
+                "price_hysteresis_czk",
+                default=defaults.get("price_hysteresis_czk", 0.01),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+            vol.Optional(
+                "hw_min_hold_hours",
+                default=defaults.get("hw_min_hold_hours", 6.0),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
             # BATTERY BALANCING PARAMETERS
             vol.Optional(
                 "balancing_enabled",
@@ -1878,13 +1928,13 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if old_tariff_count != new_tariff_count:
             return True
 
-        old_weekend_same = self._wizard_data.get(
-            "tariff_weekend_same_as_weekday", True
-        )
+        old_weekend_same = self._wizard_data.get("tariff_weekend_same_as_weekday", True)
         new_weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
         return new_tariff_count == "dual" and old_weekend_same != new_weekend_same
 
-    def _validate_pricing_distribution(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+    def _validate_pricing_distribution(
+        self, user_input: Dict[str, Any]
+    ) -> Dict[str, str]:
         errors: Dict[str, str] = {}
 
         dist_vt = user_input.get("distribution_fee_vt_kwh", 1.42)
@@ -2042,33 +2092,35 @@ Kliknutím na "Odeslat" spustíte průvodce.
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
         """Wizard Step: Boiler module configuration."""
-        from .const import (CONF_BOILER_ALT_COST_KWH,
-                            CONF_BOILER_ALT_ENERGY_SENSOR,
-                            CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
-                            CONF_BOILER_COLD_INLET_TEMP_C,
-                            CONF_BOILER_DEADLINE_TIME,
-                            CONF_BOILER_HAS_ALTERNATIVE_HEATING,
-                            CONF_BOILER_HEATER_POWER_KW_ENTITY,
-                            CONF_BOILER_HEATER_SWITCH_ENTITY,
-                            CONF_BOILER_PLAN_SLOT_MINUTES,
-                            CONF_BOILER_PLANNING_HORIZON_HOURS,
-                            CONF_BOILER_SPOT_PRICE_SENSOR,
-                            CONF_BOILER_STRATIFICATION_MODE,
-                            CONF_BOILER_TARGET_TEMP_C,
-                            CONF_BOILER_TEMP_SENSOR_BOTTOM,
-                            CONF_BOILER_TEMP_SENSOR_POSITION,
-                            CONF_BOILER_TEMP_SENSOR_TOP,
-                            CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
-                            CONF_BOILER_VOLUME_L,
-                            DEFAULT_BOILER_COLD_INLET_TEMP_C,
-                            DEFAULT_BOILER_DEADLINE_TIME,
-                            DEFAULT_BOILER_HEATER_POWER_KW_ENTITY,
-                            DEFAULT_BOILER_PLAN_SLOT_MINUTES,
-                            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                            DEFAULT_BOILER_STRATIFICATION_MODE,
-                            DEFAULT_BOILER_TARGET_TEMP_C,
-                            DEFAULT_BOILER_TEMP_SENSOR_POSITION,
-                            DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO)
+        from .const import (
+            CONF_BOILER_ALT_COST_KWH,
+            CONF_BOILER_ALT_ENERGY_SENSOR,
+            CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+            CONF_BOILER_COLD_INLET_TEMP_C,
+            CONF_BOILER_DEADLINE_TIME,
+            CONF_BOILER_HAS_ALTERNATIVE_HEATING,
+            CONF_BOILER_HEATER_POWER_KW_ENTITY,
+            CONF_BOILER_HEATER_SWITCH_ENTITY,
+            CONF_BOILER_PLAN_SLOT_MINUTES,
+            CONF_BOILER_PLANNING_HORIZON_HOURS,
+            CONF_BOILER_SPOT_PRICE_SENSOR,
+            CONF_BOILER_STRATIFICATION_MODE,
+            CONF_BOILER_TARGET_TEMP_C,
+            CONF_BOILER_TEMP_SENSOR_BOTTOM,
+            CONF_BOILER_TEMP_SENSOR_POSITION,
+            CONF_BOILER_TEMP_SENSOR_TOP,
+            CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
+            CONF_BOILER_VOLUME_L,
+            DEFAULT_BOILER_COLD_INLET_TEMP_C,
+            DEFAULT_BOILER_DEADLINE_TIME,
+            DEFAULT_BOILER_HEATER_POWER_KW_ENTITY,
+            DEFAULT_BOILER_PLAN_SLOT_MINUTES,
+            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
+            DEFAULT_BOILER_STRATIFICATION_MODE,
+            DEFAULT_BOILER_TARGET_TEMP_C,
+            DEFAULT_BOILER_TEMP_SENSOR_POSITION,
+            DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO,
+        )
 
         if user_input is not None:
             # Kontrola tlačítka "Zpět"

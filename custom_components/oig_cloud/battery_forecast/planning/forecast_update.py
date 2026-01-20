@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 from typing import Any, List, Optional
 
@@ -25,6 +26,19 @@ from . import mode_guard as mode_guard_module
 _LOGGER = logging.getLogger(__name__)
 ISO_TZ_OFFSET = "+00:00"
 MODE_GUARD_MINUTES = 60
+
+
+def _round_trip_to_directional(efficiency: float) -> float:
+    """Convert round-trip efficiency to a single-direction factor."""
+    try:
+        eff_val = float(efficiency)
+    except (TypeError, ValueError):
+        return 0.0
+    if eff_val <= 0:
+        return 0.0
+    if eff_val > 1.0:
+        eff_val = 1.0
+    return math.sqrt(eff_val)
 
 
 def _bucket_start(now_aware: datetime) -> datetime:
@@ -332,14 +346,17 @@ def _run_planner(
         opts = sensor._config_entry.options if sensor._config_entry else {}
         max_ups_price_czk = float(opts.get("max_ups_price_czk", 10.0))
         efficiency = float(sensor._get_battery_efficiency())
+        directional_efficiency = _round_trip_to_directional(efficiency)
         home_charge_rate_kw = float(opts.get("home_charge_rate", 2.8))
+        price_hysteresis_czk = float(opts.get("price_hysteresis_czk", 0.01))
+        hw_min_hold_hours = float(opts.get("hw_min_hold_hours", 6.0))
         sim_config = SimulatorConfig(
             max_capacity_kwh=max_capacity,
             min_capacity_kwh=max_capacity * 0.20,
             charge_rate_kw=home_charge_rate_kw,
-            dc_dc_efficiency=efficiency,
-            dc_ac_efficiency=efficiency,
-            ac_dc_efficiency=efficiency,
+            dc_dc_efficiency=directional_efficiency,
+            dc_ac_efficiency=directional_efficiency,
+            ac_dc_efficiency=directional_efficiency,
         )
         disable_planning_min_guard = bool(
             opts.get("disable_planning_min_guard", False)
@@ -351,6 +368,9 @@ def _run_planner(
             planning_min_percent=planning_min_percent,
             target_percent=float(opts.get("target_capacity_percent", 80.0)),
             max_ups_price_czk=max_ups_price_czk,
+            price_hysteresis_czk=price_hysteresis_czk,
+            hw_min_hold_hours=hw_min_hold_hours,
+            round_trip_efficiency=efficiency,
         )
         export_price_values = _build_export_price_values(spot_prices, export_prices)
 
@@ -385,7 +405,7 @@ def _run_planner(
                 current_capacity=current_capacity,
                 max_capacity=max_capacity,
                 hw_min_capacity=hw_min_kwh,
-                efficiency=efficiency,
+                efficiency=directional_efficiency,
                 home_charge_rate_kw=home_charge_rate_kw,
                 planning_min_kwh=planning_min_kwh,
                 lock_modes=lock_modes,
@@ -402,7 +422,7 @@ def _run_planner(
             current_capacity=current_capacity,
             max_capacity=max_capacity,
             hw_min_capacity=hw_min_kwh,
-            efficiency=efficiency,
+            efficiency=directional_efficiency,
             home_charge_rate_kw=home_charge_rate_kw,
             log_rate_limited=sensor._log_rate_limited,
         )
@@ -412,7 +432,7 @@ def _run_planner(
             current_capacity=current_capacity,
             max_capacity=max_capacity,
             min_capacity=planning_min_kwh,
-            efficiency=float(efficiency),
+            efficiency=directional_efficiency,
         )
         mode_guard_module.apply_guard_reasons_to_timeline(
             timeline,

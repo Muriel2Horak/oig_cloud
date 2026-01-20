@@ -231,6 +231,7 @@ async def test_fetch_solcast_requires_kwp(monkeypatch):
         {
             "solar_forecast_provider": "solcast",
             "solcast_api_key": "key",
+            "solcast_site_id": "site-123",
             "solar_forecast_string1_enabled": False,
             "solar_forecast_string2_enabled": False,
         }
@@ -245,6 +246,7 @@ async def test_fetch_solcast_auth_failed(monkeypatch):
         {
             "solar_forecast_provider": "solcast",
             "solcast_api_key": "key",
+            "solcast_site_id": "site-123",
             "solar_forecast_string1_enabled": True,
             "solar_forecast_string1_kwp": 1.0,
         }
@@ -261,6 +263,7 @@ async def test_fetch_solcast_rate_limited(monkeypatch):
         {
             "solar_forecast_provider": "solcast",
             "solcast_api_key": "key",
+            "solcast_site_id": "site-123",
             "solar_forecast_string1_enabled": True,
             "solar_forecast_string1_kwp": 1.0,
         }
@@ -277,6 +280,7 @@ async def test_fetch_solcast_other_error(monkeypatch):
         {
             "solar_forecast_provider": "solcast",
             "solcast_api_key": "key",
+            "solcast_site_id": "site-123",
             "solar_forecast_string1_enabled": True,
             "solar_forecast_string1_kwp": 1.0,
         }
@@ -293,6 +297,7 @@ async def test_fetch_solcast_no_forecasts(monkeypatch):
         {
             "solar_forecast_provider": "solcast",
             "solcast_api_key": "key",
+            "solcast_site_id": "site-123",
             "solar_forecast_string1_enabled": True,
             "solar_forecast_string1_kwp": 1.0,
         }
@@ -309,6 +314,7 @@ async def test_fetch_solcast_success(monkeypatch):
         {
             "solar_forecast_provider": "solcast",
             "solcast_api_key": "key",
+            "solcast_site_id": "site-123",
             "solar_forecast_string1_enabled": True,
             "solar_forecast_string1_kwp": 1.0,
             "solar_forecast_string2_enabled": True,
@@ -346,6 +352,7 @@ async def test_fetch_solcast_success_sets_attr(monkeypatch):
         {
             "solar_forecast_provider": "solcast",
             "solcast_api_key": "key",
+            "solcast_site_id": "site-123",
             "solar_forecast_string1_enabled": True,
             "solar_forecast_string1_kwp": 1.0,
         }

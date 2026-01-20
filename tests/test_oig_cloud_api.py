@@ -99,6 +99,7 @@ class TestOigCloudApi:
             self.sample_data = json.load(f)
 
     async def test_ssl_context_cached(self):
+        await self.api._ensure_ssl_context_with_intermediate()
         ctx1 = self.api._get_ssl_context_with_intermediate()
         ctx2 = self.api._get_ssl_context_with_intermediate()
         assert ctx1 is ctx2

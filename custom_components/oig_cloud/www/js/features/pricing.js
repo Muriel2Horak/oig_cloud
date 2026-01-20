@@ -234,6 +234,18 @@ function debouncedUpdatePlannedConsumption() {
     }
 }
 
+function isPricingTabVisible() {
+    const pricingTab = document.getElementById('pricing-tab');
+    return Boolean(pricingTab?.classList?.contains('active'));
+}
+
+function refreshPricingOnForecastUpdate() {
+    if (!isPricingTabVisible()) return;
+    invalidatePricingTimelineCache();
+    debouncedLoadPricingData();
+    debouncedUpdatePlannedConsumption();
+}
+
 let combinedChart = null;
 
 // Helper funkce pro detekci theme a barvy
@@ -504,7 +516,7 @@ function getBoxId() {
     updateChartPlanIndicator();
 
     const hass = getHass();
-    if (!hass || !hass.states) return null;
+    if (!hass?.states) return null;
     for (const entityId in hass.states) {
         const match = /^sensor\.oig_(\d+)_/.exec(entityId);
         if (match) return match[1];
@@ -1024,7 +1036,7 @@ function togglePricingLoadingOverlay(isVisible) {
 
 function getPricingContext() {
     const hass = getHass();
-    if (!hass || !hass.states) {
+    if (!hass?.states) {
         return null;
     }
     const boxId = getBoxId();
@@ -2225,6 +2237,7 @@ async function updateWhatIfAnalysis() {
 
 globalThis.DashboardPricing = {
     debouncedLoadPricingData,
+    refreshPricingOnForecastUpdate,
     debouncedUpdatePlannedConsumption,
     loadPricingData,
     updatePlannedConsumptionStats,

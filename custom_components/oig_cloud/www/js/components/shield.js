@@ -201,6 +201,7 @@ function subscribeToShield() {
                 if (isPricingSensor(entityId)) {
                     if (entityId.includes('_battery_forecast')) {
                         debouncedTimelineRefresh();
+                        globalThis.DashboardPricing?.refreshPricingOnForecastUpdate?.();
                     }
 
                     if (shouldSkipPricingUpdate(entityId, newState, lastPricingPayload)) {
@@ -771,7 +772,7 @@ function updateShieldQueue() {
     try {
         // Use Hass states directly (instant, no API call needed!)
         const hass = getHass();
-        if (!hass || !hass.states) {
+        if (!hass?.states) {
             console.warn('[Queue] Hass not available');
             return;
         }
@@ -939,7 +940,7 @@ async function monitorShieldActivity() {
 
     try {
         const hass = getHass();
-        if (!hass || !hass.states) return;
+        if (!hass?.states) return;
 
         // Find activity sensor
         const sensorPrefix = `sensor.oig_${INVERTER_SN}_service_shield_activity`;

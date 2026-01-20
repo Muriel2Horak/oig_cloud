@@ -7,6 +7,7 @@
     "error": {
       "api_key_required_for_frequent_updates": "⚠️ For updates every 4 hours or every hour, API key from Forecast.Solar is required",
       "solcast_api_key_required": "⚠️ Solcast API key is required",
+      "solcast_site_id_required": "⚠️ Solcast site ID is required",
       "cannot_connect": "Failed to connect to OIG Cloud API",
       "dashboard_requires_all": "⚠️ Dashboard requires all other modules (Statistics, Solar forecast, Battery prediction, Price sensors, Spot prices, Extended sensors)",
       "endpoint_must_start_with_slash": "⚠️ Endpoint must start with slash (/)",
@@ -29,6 +30,8 @@
       "invalid_percentage": "⚠️ Invalid percentage (0.1-100%)",
       "invalid_port": "⚠️ Invalid port (1-65535)",
       "invalid_price": "⚠️ Invalid price (1-50 CZK/kWh)",
+      "invalid_hysteresis": "⚠️ Invalid price hysteresis (0-5 CZK/kWh)",
+      "invalid_hours": "⚠️ Invalid hours (1-24)",
       "invalid_string1_params": "Invalid parameters for String 1",
       "invalid_string2_params": "Invalid parameters for String 2",
       "invalid_vat": "⚠️ Invalid VAT rate (0-30%)",
@@ -97,6 +100,8 @@
           "min_capacity_percent": "Minimum battery capacity (%)",
           "disable_planning_min_guard": "Disable planning minimum guard",
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
+          "price_hysteresis_czk": "Price hysteresis (CZK/kWh)",
+          "hw_min_hold_hours": "Max hours at HW minimum",
           "target_capacity_percent": "Target battery capacity (%)"
         },
         "data_description": {
@@ -112,6 +117,8 @@
           "min_capacity_percent": "If capacity drops below this value, charging starts",
           "disable_planning_min_guard": "Allows the planner to go below the planning minimum (more aggressive optimization)",
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
+          "price_hysteresis_czk": "Minimum price delta for hold vs. wait decisions",
+          "hw_min_hold_hours": "Maximum time to stay at hardware minimum before forcing recharge",
           "target_capacity_percent": "Optimal capacity to charge to"
         },
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently optimizes home battery charging according to spot electricity prices and solar production forecast. Automatically charges during cheapest hours.\n\n🔧 **What is needed:**\n• ☀️ Solar forecast (must be enabled)\n• ⚡ Extended sensors (must be enabled)\n• 📈 Spot electricity prices\n\n⚠️ **Experimental feature** - may require fine-tuning of parameters\n\n⚠️ **This module is required for:**\n• 📊 Dashboard (web interface)",
@@ -315,6 +322,7 @@
           "solar_forecast_provider": "Forecast provider",
           "solar_forecast_api_key": "Forecast.Solar API key",
           "solcast_api_key": "Solcast API key",
+          "solcast_site_id": "Solcast site ID",
           "solar_forecast_latitude": "Installation GPS latitude",
           "solar_forecast_longitude": "Installation GPS longitude",
           "solar_forecast_mode": "Forecast update mode",
@@ -332,6 +340,7 @@
           "solar_forecast_provider": "Select the solar forecast data provider",
           "solar_forecast_api_key": "Optional for FREE modes. Required for frequent updates (4h, 1h)",
           "solcast_api_key": "Required for Solcast requests",
+          "solcast_site_id": "Rooftop site ID from Solcast (used for hobbyist/free plans)",
           "solar_forecast_latitude": "Range: -90° to 90° (Central Europe approx 48-51°)",
           "solar_forecast_longitude": "Range: -180° to 180° (Central Europe approx 12-19°)",
           "solar_forecast_mode": "🎯 Optimized = 3x daily at 6:00, 12:00, 16:00 (RECOMMENDED)\n🌅 Daily = 1x daily at 6:00\n🕐 4h/⚡1h = requires API key",
@@ -747,7 +756,10 @@
       "wizard_solar": {
         "data": {
           "go_back": "⬅️ I want to go back (check + click Submit)",
+          "solar_forecast_provider": "Forecast provider",
           "solar_forecast_api_key": "Forecast.Solar API key",
+          "solcast_api_key": "Solcast API key",
+          "solcast_site_id": "Solcast site ID",
           "solar_forecast_latitude": "Installation GPS latitude",
           "solar_forecast_longitude": "Installation GPS longitude",
           "solar_forecast_mode": "Forecast update mode",
@@ -762,7 +774,10 @@
         },
         "data_description": {
           "go_back": "Check this box and press 'Submit' - you will go back one step",
+          "solar_forecast_provider": "Select the solar forecast data provider",
           "solar_forecast_api_key": "Optional for FREE modes. Required for frequent updates (4h, 1h)",
+          "solcast_api_key": "Required for Solcast requests",
+          "solcast_site_id": "Rooftop site ID from Solcast (used for hobbyist/free plans)",
           "solar_forecast_latitude": "Range: -90° to 90° (Central Europe approx 48-51°)",
           "solar_forecast_longitude": "Range: -180° to 180° (Central Europe approx 12-19°)",
           "solar_forecast_mode": "🎯 Optimized = 3x daily at 6:00, 12:00, 16:00 (RECOMMENDED)\n🌅 Daily = 1x daily at 6:00\n🕐 4h/⚡1h = requires API key",

@@ -112,6 +112,11 @@ class HybridConfig:
     # Look-ahead for optimization
     look_ahead_hours: int = 24  # How far to optimize
 
+    # Economic guard rails
+    price_hysteresis_czk: float = 0.01  # Minimum delta when comparing prices
+    hw_min_hold_hours: float = 6.0  # Max hours to stay at HW minimum
+    round_trip_efficiency: float = 0.882  # Round-trip efficiency (0-1)
+
     def planning_min_kwh(self, max_capacity: float) -> float:
         """Calculate planning minimum in kWh."""
         return max_capacity * (self.planning_min_percent / 100.0)

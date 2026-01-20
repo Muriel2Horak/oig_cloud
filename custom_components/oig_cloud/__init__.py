@@ -162,6 +162,10 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
         "disable_planning_min_guard": False,
         # Hard cap for UPS charging (CZK/kWh).
         "max_ups_price_czk": 10.0,
+        # Price comparison hysteresis (CZK/kWh).
+        "price_hysteresis_czk": 0.01,
+        # Max hours to stay at HW minimum before force-recharge.
+        "hw_min_hold_hours": 6.0,
         # AC charging power (kW) used for UPS mode simulation.
         "home_charge_rate": 2.8,
         # Used by balancer window selection.

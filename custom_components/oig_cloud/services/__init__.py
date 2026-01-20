@@ -228,7 +228,11 @@ def get_box_id_from_device(
 
 
 # Schema pro update solární předpovědi
-SOLAR_FORECAST_UPDATE_SCHEMA = vol.Schema({})
+SOLAR_FORECAST_UPDATE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entity_id"): cv.entity_ids,
+    }
+)
 CHECK_BALANCING_SCHEMA = vol.Schema(
     {
         vol.Optional("box_id"): cv.string,
@@ -296,23 +300,71 @@ def _iter_entry_data(hass: HomeAssistant) -> Iterable[tuple[str, dict[str, Any]]
             yield entry_id, entry_data
 
 
-def _get_solar_forecast(entry_data: dict[str, Any]) -> Optional[Any]:
+def _get_entry_solar_sensors(entry_data: dict[str, Any]) -> list[Any]:
+    sensors = entry_data.get("solar_forecast_sensors")
+    if isinstance(sensors, list) and sensors:
+        return sensors
+    fallback = entry_data.get("solar_forecast")
+    if fallback is not None and hasattr(fallback, "async_update"):
+        return [fallback]
     coordinator = entry_data.get("coordinator")
-    if coordinator and hasattr(coordinator, "solar_forecast"):
-        return coordinator.solar_forecast
-    return None
+    if coordinator is not None:
+        coordinator_sensor = getattr(coordinator, "solar_forecast", None)
+        if coordinator_sensor is not None:
+            return [coordinator_sensor]
+    return []
 
 
-async def _update_solar_forecast_for_entry(entry_id: str, entry_data: dict[str, Any]) -> None:
-    solar_forecast = _get_solar_forecast(entry_data)
+def _get_primary_solar_sensor(entry_data: dict[str, Any]) -> Optional[Any]:
+    for sensor in _get_entry_solar_sensors(entry_data):
+        if getattr(sensor, "_sensor_type", None) == "solar_forecast":
+            return sensor
+    sensors = _get_entry_solar_sensors(entry_data)
+    return sensors[0] if sensors else None
+
+
+async def _update_solar_forecast_for_entry(
+    entry_id: str,
+    entry_data: dict[str, Any],
+    entity_ids: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    sensors = _get_entry_solar_sensors(entry_data)
+    if not sensors:
+        _LOGGER.debug("Config entry %s nemá solar forecast senzory", entry_id)
+        return {"entry_id": entry_id, "status": "no_sensors"}
+
+    if entity_ids:
+        sensor_entity_ids = {
+            sensor.entity_id
+            for sensor in sensors
+            if hasattr(sensor, "entity_id")
+        }
+        if not sensor_entity_ids.intersection(entity_ids):
+            return {"entry_id": entry_id, "status": "skipped"}
+
+    solar_forecast = _get_primary_solar_sensor(entry_data)
     if not solar_forecast:
-        _LOGGER.debug("Config entry %s nemá solární předpověď", entry_id)
-        return
+        return {"entry_id": entry_id, "status": "no_primary"}
     try:
-        await solar_forecast.async_update()
+        if hasattr(solar_forecast, "async_manual_update"):
+            success = await solar_forecast.async_manual_update()
+            if not success:
+                return {
+                    "entry_id": entry_id,
+                    "status": "error",
+                    "error": "manual_update_failed",
+                }
+        else:
+            await solar_forecast.async_update()
         _LOGGER.info("Manuálně aktualizována solární předpověď pro %s", entry_id)
+        return {
+            "entry_id": entry_id,
+            "status": "updated",
+            "entity_id": getattr(solar_forecast, "entity_id", None),
+        }
     except Exception as exc:
-        _LOGGER.error("Chyba při aktualizaci solární předpovědi: %s", exc)
+        _LOGGER.error("Chyba při aktualizaci solární předpovědi: %s", exc, exc_info=True)
+        return {"entry_id": entry_id, "status": "error", "error": str(exc)}
 
 
 def _register_service_definitions(
@@ -561,11 +613,25 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     """Nastavení základních služeb pro OIG Cloud."""
     await asyncio.sleep(0)
 
-    async def handle_update_solar_forecast(call: ServiceCall) -> None:
+    async def handle_update_solar_forecast(call: ServiceCall) -> dict[str, Any]:
         """Zpracování služby pro manuální aktualizaci solární předpovědi."""
-        _ = call
+        entity_ids: Optional[list[str]] = call.data.get("entity_id")
+        results: list[dict[str, Any]] = []
         for entry_id, entry_data in _iter_entry_data(hass):
-            await _update_solar_forecast_for_entry(entry_id, entry_data)
+            results.append(
+                await _update_solar_forecast_for_entry(
+                    entry_id, entry_data, entity_ids
+                )
+            )
+        updated = [item for item in results if item["status"] == "updated"]
+        skipped = [item for item in results if item["status"] == "skipped"]
+        errors = [item for item in results if item["status"] == "error"]
+        return {
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors,
+            "results": results,
+        }
 
     async def handle_save_dashboard_tiles(call: ServiceCall) -> None:
         """Zpracování služby pro uložení konfigurace dashboard tiles."""
@@ -584,7 +650,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             "update_solar_forecast",
             handle_update_solar_forecast,
             SOLAR_FORECAST_UPDATE_SCHEMA,
-            False,
+            True,
             f"Zaregistrovány základní služby pro {DOMAIN}",
         ),
         (
