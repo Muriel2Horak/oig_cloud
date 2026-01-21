@@ -19,7 +19,7 @@ from ..timeline.planner import (
     attach_planner_reasons,
     build_planner_timeline,
 )
-from ..types import CBB_MODE_NAMES
+from ..types import CBB_MODE_NAMES, MIN_MODE_DURATION
 from . import auto_switch as auto_switch_module
 from . import mode_guard as mode_guard_module
 
@@ -80,7 +80,10 @@ def _ensure_capacity(sensor: Any) -> tuple[float, float, float] | None:
 
 
 def _filter_price_timeline(
-    prices: list[dict[str, Any]], current_interval_naive: datetime, label: str, sensor: Any
+    prices: list[dict[str, Any]],
+    current_interval_naive: datetime,
+    label: str,
+    sensor: Any,
 ) -> list[dict[str, Any]]:
     filtered = [
         item
@@ -125,7 +128,9 @@ async def _fetch_prices(
         current_interval_naive.isoformat(),
         cooldown_s=600.0,
     )
-    spot_prices = _filter_price_timeline(spot_prices, current_interval_naive, "spot", sensor)
+    spot_prices = _filter_price_timeline(
+        spot_prices, current_interval_naive, "spot", sensor
+    )
 
     sensor._log_rate_limited(
         "forecast_export_fetch",
@@ -314,9 +319,7 @@ def _build_export_price_values(
     export_price_values: List[float] = []
     for i in range(len(spot_prices)):
         if i < len(export_prices):
-            export_price_values.append(
-                float(export_prices[i].get("price", 0.0) or 0.0)
-            )
+            export_price_values.append(float(export_prices[i].get("price", 0.0) or 0.0))
         else:
             export_price_values.append(0.0)
     return export_price_values
@@ -358,9 +361,7 @@ def _run_planner(
             dc_ac_efficiency=directional_efficiency,
             ac_dc_efficiency=directional_efficiency,
         )
-        disable_planning_min_guard = bool(
-            opts.get("disable_planning_min_guard", False)
-        )
+        disable_planning_min_guard = bool(opts.get("disable_planning_min_guard", False))
         planning_min_percent = float(opts.get("min_capacity_percent", 33.0))
         if disable_planning_min_guard:
             planning_min_percent = 0.0
@@ -413,6 +414,13 @@ def _run_planner(
                 log_rate_limited=sensor._log_rate_limited,
             )
         )
+        # Enforce minimum mode duration after guard (prevents short UPS blocks)
+        guarded_modes = mode_guard_module.enforce_min_mode_duration(
+            guarded_modes,
+            mode_names=CBB_MODE_NAMES,
+            min_mode_duration=MIN_MODE_DURATION,
+            logger=_LOGGER,
+        )
         timeline = build_planner_timeline(
             modes=guarded_modes,
             spot_prices=spot_prices,
@@ -441,7 +449,9 @@ def _run_planner(
             None,
             mode_names=CBB_MODE_NAMES,
         )
-        mode_recommendations = sensor._create_mode_recommendations(timeline, hours_ahead=48)
+        mode_recommendations = sensor._create_mode_recommendations(
+            timeline, hours_ahead=48
+        )
         mode_result = {
             "optimal_timeline": timeline,
             "optimal_modes": guarded_modes,
@@ -615,9 +625,7 @@ def _post_update_housekeeping(
     _schedule_precompute(sensor)
 
 
-async def _prepare_forecast_inputs(
-    sensor: Any, bucket_start: datetime
-) -> Optional[
+async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optional[
     tuple[
         float,
         float,
@@ -720,9 +728,7 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         # ONE PLANNER: single planning pipeline.
 
         # PHASE 2.8 + REFACTORING: Get target from new getter
-        _resolve_target_and_soc(
-            sensor, current_capacity, max_capacity, min_capacity
-        )
+        _resolve_target_and_soc(sensor, current_capacity, max_capacity, min_capacity)
 
         # Build load forecast list (kWh/15min for each interval)
         # PLANNER: build plan timeline with HybridStrategy.

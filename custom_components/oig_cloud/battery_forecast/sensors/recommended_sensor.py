@@ -23,6 +23,8 @@ _LOGGER = logging.getLogger(__name__)
 HOME_1_LABEL = "Home 1"
 HOME_2_LABEL = "Home 2"
 HOME_3_LABEL = "Home 3"
+# Minimum interval between mode changes in recommended sensor.
+# Must match MIN_MODE_DURATION for HOME UPS (2 intervals = 30 min).
 MIN_RECOMMENDED_INTERVAL_MINUTES = 30
 MODE_LABEL_HOME_UPS = "Home UPS"
 
@@ -75,7 +77,9 @@ def _build_precomputed_payload(precomputed: Dict[str, Any]) -> Optional[Dict[str
     timeline = precomputed.get("timeline") or precomputed.get("timeline_hybrid")
     if not isinstance(timeline, list) or not timeline:
         return None
-    detail_tabs = precomputed.get("detail_tabs") or precomputed.get("detail_tabs_hybrid")
+    detail_tabs = precomputed.get("detail_tabs") or precomputed.get(
+        "detail_tabs_hybrid"
+    )
     return {
         "timeline_data": timeline,
         "calculation_time": precomputed.get("last_update"),
@@ -217,7 +221,9 @@ class OigCloudPlannerRecommendedModeSensor(
         mode_label = self._normalize_mode_label(
             planned.get("mode_name"), planned.get("mode")
         )
-        mode_code = planned.get("mode") if isinstance(planned.get("mode"), int) else None
+        mode_code = (
+            planned.get("mode") if isinstance(planned.get("mode"), int) else None
+        )
         return mode_label, mode_code
 
     def _mode_from_interval(  # pragma: no cover
@@ -226,7 +232,9 @@ class OigCloudPlannerRecommendedModeSensor(
         mode_label = self._normalize_mode_label(
             interval.get("mode_name"), interval.get("mode")
         )
-        mode_code = interval.get("mode") if isinstance(interval.get("mode"), int) else None
+        mode_code = (
+            interval.get("mode") if isinstance(interval.get("mode"), int) else None
+        )
         return mode_label, mode_code
 
     def _parse_interval_start(
@@ -303,7 +311,12 @@ class OigCloudPlannerRecommendedModeSensor(
         if current_idx is not None:
             return current_idx, current_start, current_mode, current_mode_code
 
-        return closest_idx, closest_start, closest_mode, closest_mode_code  # pragma: no cover
+        return (
+            closest_idx,
+            closest_start,
+            closest_mode,
+            closest_mode_code,
+        )  # pragma: no cover
 
     def _interval_mode(
         self, item: Dict[str, Any], *, planned: bool
@@ -373,7 +386,9 @@ class OigCloudPlannerRecommendedModeSensor(
 
     @staticmethod
     def _interval_after_min_gap(start: datetime, current_start: datetime) -> bool:
-        return start >= current_start + timedelta(minutes=MIN_RECOMMENDED_INTERVAL_MINUTES)
+        return start >= current_start + timedelta(
+            minutes=MIN_RECOMMENDED_INTERVAL_MINUTES
+        )
 
     def _get_auto_switch_lead_seconds(
         self, from_mode: Optional[str], to_mode: Optional[str]
@@ -549,9 +564,7 @@ class OigCloudPlannerRecommendedModeSensor(
         }
         return json.dumps(payload, sort_keys=True, default=str)
 
-    def _extract_payload_intervals(
-        self, payload: Dict[str, Any]
-    ) -> tuple[
+    def _extract_payload_intervals(self, payload: Dict[str, Any]) -> tuple[
         Optional[list[Dict[str, Any]]],
         Optional[str],
         Any,
@@ -594,9 +607,7 @@ class OigCloudPlannerRecommendedModeSensor(
             return dt_obj.tzinfo
         return None
 
-    def _tzinfo_from_timeline(
-        self, timeline: Any
-    ) -> Optional[datetime.tzinfo]:
+    def _tzinfo_from_timeline(self, timeline: Any) -> Optional[datetime.tzinfo]:
         if not isinstance(timeline, list):
             return None
         for item in timeline:
@@ -618,9 +629,7 @@ class OigCloudPlannerRecommendedModeSensor(
         if not planned_detail:
             return [], False
         planned_only = [
-            item
-            for item in detail_intervals
-            if self._interval_has_planned_mode(item)
+            item for item in detail_intervals if self._interval_has_planned_mode(item)
         ]
         return planned_only, True
 
@@ -651,7 +660,9 @@ class OigCloudPlannerRecommendedModeSensor(
             )
             if current_idx is None and detail_intervals:  # pragma: no cover
                 fallback = detail_intervals[0]
-                fallback_mode, fallback_code = self._planned_mode_from_interval(fallback)
+                fallback_mode, fallback_code = self._planned_mode_from_interval(
+                    fallback
+                )
                 fallback_start = self._parse_interval_time(
                     fallback.get("time"),
                     detail_date,
