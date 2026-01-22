@@ -121,7 +121,9 @@ class BatteryHealthTracker:
         except Exception as e:
             _LOGGER.error(f"Error saving to storage: {e}")
 
-    async def analyze_last_10_days(self) -> List[CapacityMeasurement]:  # pragma: no cover
+    async def analyze_last_10_days(
+        self,
+    ) -> List[CapacityMeasurement]:  # pragma: no cover
         """
         Analyzovat posledních 10 dní a najít čisté nabíjecí cykly.
 
@@ -214,7 +216,9 @@ class BatteryHealthTracker:
             _LOGGER.error(f"Error analyzing history: {e}", exc_info=True)
             return []
 
-    async def backfill_from_statistics(self) -> List[CapacityMeasurement]:  # pragma: no cover
+    async def backfill_from_statistics(
+        self,
+    ) -> List[CapacityMeasurement]:  # pragma: no cover
         """Backfill starších dat z recorder statistics."""
         if self._stats_backfill_until is not None:
             return []
@@ -303,8 +307,9 @@ class BatteryHealthTracker:
         discharge_energy = None
         if discharge_start is not None and discharge_end is not None:
             discharge_energy = discharge_end - discharge_start
-        if discharge_energy is not None and discharge_energy > self._max_discharge_threshold(
-            charge_energy
+        if (
+            discharge_energy is not None
+            and discharge_energy > self._max_discharge_threshold(charge_energy)
         ):
             _LOGGER.debug(
                 "Interval rejected: discharge during charge (%.0f Wh)%s",
@@ -365,7 +370,9 @@ class BatteryHealthTracker:
         new_measurements.append(measurement)
         return True
 
-    def _find_monotonic_charging_intervals(self, soc_states: List) -> List[tuple]:  # pragma: no cover
+    def _find_monotonic_charging_intervals(
+        self, soc_states: List
+    ) -> List[tuple]:  # pragma: no cover
         """
         Najít intervaly kde SoC MONOTÓNNĚ ROSTE (nikdy neklesne) o ≥50%.
 
@@ -496,7 +503,9 @@ class BatteryHealthTracker:
         return sorted(points, key=lambda x: x[0])
 
     @staticmethod
-    def _parse_stat_time(item: Dict[str, Any]) -> Optional[datetime]:  # pragma: no cover
+    def _parse_stat_time(
+        item: Dict[str, Any],
+    ) -> Optional[datetime]:  # pragma: no cover
         value = item.get("start") or item.get("start_time")
         if value is None:
             return None
@@ -509,12 +518,16 @@ class BatteryHealthTracker:
         return None
 
     @staticmethod
-    def _nearest_value(points: List[tuple], target_time: datetime) -> Optional[float]:  # pragma: no cover
+    def _nearest_value(
+        points: List[tuple], target_time: datetime
+    ) -> Optional[float]:  # pragma: no cover
         if not points:
             return None
         return min(points, key=lambda p: abs((p[0] - target_time).total_seconds()))[1]
 
-    def _find_monotonic_intervals_from_points(self, points: List[tuple]) -> List[tuple]:  # pragma: no cover
+    def _find_monotonic_intervals_from_points(
+        self, points: List[tuple]
+    ) -> List[tuple]:  # pragma: no cover
         intervals: List[tuple] = []
         if not points:
             return intervals
@@ -592,8 +605,9 @@ class BatteryHealthTracker:
             discharge_end = self._get_value_at_time(discharge_states, end_time)
             if discharge_start is not None and discharge_end is not None:
                 discharge_energy = discharge_end - discharge_start
-        if discharge_energy is not None and discharge_energy > self._max_discharge_threshold(
-            charge_energy
+        if (
+            discharge_energy is not None
+            and discharge_energy > self._max_discharge_threshold(charge_energy)
         ):
             _LOGGER.debug(
                 "Interval rejected: discharge during charge (%.0f Wh)%s",
@@ -812,15 +826,21 @@ class BatteryHealthTracker:
 
         return self._get_percentile_capacity(80, window=20)
 
-    def _get_percentile_soh(self, percentile: int, window: int = 20) -> Optional[float]:  # pragma: no cover
+    def _get_percentile_soh(
+        self, percentile: int, window: int = 20
+    ) -> Optional[float]:  # pragma: no cover
         values = self._get_recent_values("soh", window)
         return _percentile(values, percentile)
 
-    def _get_percentile_capacity(self, percentile: int, window: int = 20) -> Optional[float]:  # pragma: no cover
+    def _get_percentile_capacity(
+        self, percentile: int, window: int = 20
+    ) -> Optional[float]:  # pragma: no cover
         values = self._get_recent_values("capacity", window)
         return _percentile(values, percentile)
 
-    def _get_recent_values(self, kind: str, window: int) -> List[float]:  # pragma: no cover
+    def _get_recent_values(
+        self, kind: str, window: int
+    ) -> List[float]:  # pragma: no cover
         recent = self._measurements[-window:]
         if len(recent) < 2:
             return []
@@ -829,7 +849,9 @@ class BatteryHealthTracker:
         return [m.soh_percent for m in recent]
 
 
-def _percentile(values: List[float], percentile: int) -> Optional[float]:  # pragma: no cover
+def _percentile(
+    values: List[float], percentile: int
+) -> Optional[float]:  # pragma: no cover
     if not values:
         return None
     sorted_values = sorted(values)
@@ -885,7 +907,9 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
         # Denní analýza
         self._daily_unsub = None  # pragma: no cover
 
-        _LOGGER.info(f"Battery Health sensor initialized for box {self._box_id}")  # pragma: no cover
+        _LOGGER.info(
+            f"Battery Health sensor initialized for box {self._box_id}"
+        )  # pragma: no cover
 
     async def async_added_to_hass(self) -> None:  # pragma: no cover
         """Při přidání do HA."""
