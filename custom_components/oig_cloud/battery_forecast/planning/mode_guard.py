@@ -24,7 +24,12 @@ def enforce_min_mode_duration(
     min_mode_duration: Dict[str, int],
     logger: logging.Logger = _LOGGER,
 ) -> List[int]:
-    """Enforce minimum duration of each mode in the plan."""
+    """Enforce minimum duration of each mode in the plan.
+
+    For short blocks that don't meet minimum duration:
+    - HOME UPS (mode 3) blocks are EXTENDED forward (we want to charge more)
+    - Other modes are REPLACED by adjacent mode (merged with neighbor)
+    """
     if not modes:
         return modes
 
@@ -32,6 +37,9 @@ def enforce_min_mode_duration(
     n = len(result)
     i = 0
     violations_fixed = 0
+
+    # HOME UPS mode code
+    HOME_UPS_MODE = 3
 
     while i < n:
         current_mode = result[i]
@@ -45,18 +53,36 @@ def enforce_min_mode_duration(
 
         if block_length < min_duration:
             violations_fixed += 1
-            replacement_mode = _pick_replacement_mode(result, block_start, block_end)
-            _apply_replacement(result, block_start, block_end, replacement_mode)
-            logger.debug(
-                "[MIN_DURATION] Fixed violation: %s block @ %s "
-                "(length %s < min %s) → %s",
-                mode_name,
-                block_start,
-                block_length,
-                min_duration,
-                mode_names.get(replacement_mode, "unknown"),
-            )
-            i = block_start
+            intervals_needed = min_duration - block_length
+
+            # For HOME UPS: extend forward (charge longer)
+            if current_mode == HOME_UPS_MODE:
+                new_end = min(block_end + intervals_needed, n)
+                for idx in range(block_end, new_end):
+                    result[idx] = current_mode
+                logger.debug(
+                    "[MIN_DURATION] Extended UPS block @ %s: %s → %s intervals",
+                    block_start,
+                    block_length,
+                    new_end - block_start,
+                )
+                i = new_end
+            else:
+                # For other modes: replace with adjacent mode
+                replacement_mode = _pick_replacement_mode(
+                    result, block_start, block_end
+                )
+                _apply_replacement(result, block_start, block_end, replacement_mode)
+                logger.debug(
+                    "[MIN_DURATION] Fixed violation: %s block @ %s "
+                    "(length %s < min %s) → %s",
+                    mode_name,
+                    block_start,
+                    block_length,
+                    min_duration,
+                    mode_names.get(replacement_mode, "unknown"),
+                )
+                i = block_start
         else:
             i = block_end
 
@@ -225,9 +251,7 @@ def _apply_guard_interval(
     charge_rate_kwh_15min: float,
     planning_min_kwh: float,
 ) -> tuple[int, float, Optional[Dict[str, Any]]]:
-    solar_kwh, load_kwh = _resolve_interval_loads(
-        idx, solar_kwh_list, load_forecast
-    )
+    solar_kwh, load_kwh = _resolve_interval_loads(idx, solar_kwh_list, load_forecast)
     forced_mode = locked_mode if locked_mode is not None else planned_mode
     next_soc = _simulate_guard_interval(
         forced_mode,
@@ -252,20 +276,28 @@ def _apply_guard_interval(
             efficiency,
             charge_rate_kwh_15min,
         )
-        return forced_mode, next_soc, {
-            "idx": idx,
-            "type": "guard_exception_soc",
-            "planned_mode": planned_mode,
-            "forced_mode": planned_mode,
-        }
+        return (
+            forced_mode,
+            next_soc,
+            {
+                "idx": idx,
+                "type": "guard_exception_soc",
+                "planned_mode": planned_mode,
+                "forced_mode": planned_mode,
+            },
+        )
 
     if planned_mode != forced_mode:
-        return forced_mode, next_soc, {
-            "idx": idx,
-            "type": "guard_locked_plan",
-            "planned_mode": planned_mode,
-            "forced_mode": forced_mode,
-        }
+        return (
+            forced_mode,
+            next_soc,
+            {
+                "idx": idx,
+                "type": "guard_locked_plan",
+                "planned_mode": planned_mode,
+                "forced_mode": forced_mode,
+            },
+        )
     return forced_mode, next_soc, None
 
 

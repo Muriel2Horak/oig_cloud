@@ -18,5 +18,9 @@
     "python.linting.flake8Enabled": false,
     "python.linting.mypyEnabled": true,
     "python.formatting.provider": "black",
-    "chatgpt.openOnStartup": true
+    "chatgpt.openOnStartup": true,
+    "sonarlint.connectedMode.project": {
+      "connectionId": "http-localhost-9001-",
+      "projectKey": "oig_cloud"
+    }
   }
