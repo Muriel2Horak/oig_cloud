@@ -243,7 +243,7 @@ class BatteryHealthTracker:
             self._hass,
             start_time,
             end_time,
-            {soc_sensor, charge_sensor},
+            {soc_sensor, charge_sensor, discharge_sensor},
             "day",
             None,
             {"mean", "max", "sum", "state"},
@@ -258,7 +258,11 @@ class BatteryHealthTracker:
         )
 
         if not soc_points or not charge_points:
-            _LOGGER.warning("Statistics backfill missing data")
+            _LOGGER.debug(
+                "Statistics backfill missing data (soc=%s, charge=%s)",
+                bool(soc_points),
+                bool(charge_points),
+            )
             return []
         if not discharge_points:
             _LOGGER.warning("Statistics backfill missing discharge data")
