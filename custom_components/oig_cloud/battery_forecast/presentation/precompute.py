@@ -9,6 +9,7 @@ from typing import Any, Dict
 from homeassistant.util import dt as dt_util
 
 from . import detail_tabs as detail_tabs_module
+from ..types import CBB_MODE_NAMES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +31,9 @@ async def precompute_ui_data(sensor: Any) -> None:
             detail_tabs, unified_cost_tile, timeline
         )
 
-        await sensor._precomputed_store.async_save(precomputed_data)  # pylint: disable=protected-access
+        await sensor._precomputed_store.async_save(
+            precomputed_data
+        )  # pylint: disable=protected-access
         sensor._last_precompute_hash = (
             sensor._data_hash
         )  # pylint: disable=protected-access
@@ -81,7 +84,9 @@ def _has_precomputed_store(sensor: Any) -> bool:
 
 async def _build_detail_tabs(sensor: Any) -> Dict[str, Any]:
     try:
-        return await detail_tabs_module.build_detail_tabs(sensor, plan="active")
+        return await detail_tabs_module.build_detail_tabs(
+            sensor, plan="active", mode_names=CBB_MODE_NAMES
+        )
     except Exception as err:
         _LOGGER.error("Failed to build detail_tabs: %s", err, exc_info=True)
         return {}
@@ -121,7 +126,9 @@ def _should_skip_precompute(sensor: Any, now: Any, force: bool) -> bool:
     if not sensor._last_precompute_at:  # pylint: disable=protected-access
         return False
     last_precompute = sensor._last_precompute_at  # pylint: disable=protected-access
-    if now - last_precompute < sensor._precompute_interval:  # pylint: disable=protected-access
+    if (
+        now - last_precompute < sensor._precompute_interval
+    ):  # pylint: disable=protected-access
         _LOGGER.debug(
             "[Precompute] Skipping (last run %ss ago)",
             (now - last_precompute).total_seconds(),

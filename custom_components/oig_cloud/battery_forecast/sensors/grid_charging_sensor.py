@@ -148,9 +148,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 detail_tabs.get("today", {}),
                 current_time,
             )
-            ups_blocks.extend(
-                _collect_tomorrow_blocks(detail_tabs.get("tomorrow", {}))
-            )
+            ups_blocks.extend(_collect_tomorrow_blocks(detail_tabs.get("tomorrow", {})))
 
             _LOGGER.debug(
                 "[GridChargingPlan] Found %s active/future UPS blocks (today + tomorrow)",
@@ -308,7 +306,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         return "off"
 
     @staticmethod
-    def _get_sorted_charging_blocks(charging_intervals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _get_sorted_charging_blocks(
+        charging_intervals: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
         return sorted(
             charging_intervals,
             key=lambda b: (0 if b.get("day") == "today" else 1, b.get("time_from", "")),
@@ -533,9 +533,7 @@ def _collect_today_blocks(
             continue
 
         cost_key = "cost_historical" if status == "completed" else "cost_planned"
-        ups_blocks.append(
-            _build_ups_block(block, "today", status, cost_key, end_time)
-        )
+        ups_blocks.append(_build_ups_block(block, "today", status, cost_key, end_time))
     return ups_blocks
 
 
@@ -551,7 +549,16 @@ def _collect_tomorrow_blocks(tomorrow: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _is_home_ups_mode(*modes: str) -> bool:
-    return any(HOME_UPS_LABEL in (mode or "") for mode in modes)
+    """Check if any of the modes is HOME UPS (handles both 'HOME UPS' and 'Mode 3' formats)."""
+    for mode in modes:
+        if mode:
+            # Check for standard format
+            if HOME_UPS_LABEL in mode:
+                return True
+            # Fallback for legacy "Mode 3" format
+            if mode == "Mode 3":
+                return True
+    return False
 
 
 def _build_ups_block(

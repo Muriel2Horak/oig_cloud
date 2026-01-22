@@ -81,9 +81,7 @@ def _make_sensor_with_config(monkeypatch, hass):
         "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
         lambda _coord: "123",
     )
-    dummy_module = type(sensor_types_module)(
-        "custom_components.oig_cloud.sensor_types"
-    )
+    dummy_module = type(sensor_types_module)("custom_components.oig_cloud.sensor_types")
     dummy_module.SENSOR_TYPES = {
         "grid_charge_plan": {
             "name": "Grid plan",
@@ -241,7 +239,11 @@ def test_dynamic_offset_with_tracker(monkeypatch):
     coordinator = DummyCoordinator(hass)
     coordinator.config_entry = SimpleNamespace(entry_id="entry")
     hass.data["oig_cloud"] = {
-        "entry": {"service_shield": SimpleNamespace(mode_tracker=SimpleNamespace(get_offset_for_scenario=lambda *_a: 120.0))}
+        "entry": {
+            "service_shield": SimpleNamespace(
+                mode_tracker=SimpleNamespace(get_offset_for_scenario=lambda *_a: 120.0)
+            )
+        }
     }
     sensor = _make_sensor(monkeypatch, hass)
     sensor.coordinator = coordinator
@@ -297,9 +299,7 @@ async def test_get_home_ups_blocks_from_detail_tabs(monkeypatch):
     }
 
     precomputed = DummyPrecomputedStore({"detail_tabs": detail_tabs})
-    battery_sensor = DummyBatterySensor(
-        "sensor.oig_123_battery_forecast", precomputed
-    )
+    battery_sensor = DummyBatterySensor("sensor.oig_123_battery_forecast", precomputed)
     component = DummyComponent([battery_sensor])
     hass = DummyHass(component)
 
@@ -317,9 +317,7 @@ async def test_get_home_ups_blocks_from_detail_tabs(monkeypatch):
 @pytest.mark.asyncio
 async def test_get_home_ups_blocks_without_detail_tabs(monkeypatch):
     precomputed = DummyPrecomputedStore({"detail_tabs": {}})
-    battery_sensor = DummyBatterySensor(
-        "sensor.oig_123_battery_forecast", precomputed
-    )
+    battery_sensor = DummyBatterySensor("sensor.oig_123_battery_forecast", precomputed)
     component = DummyComponent([battery_sensor])
     hass = DummyHass(component)
 
@@ -344,9 +342,7 @@ async def test_get_home_ups_blocks_tomorrow_non_ups(monkeypatch):
         }
     }
     precomputed = DummyPrecomputedStore({"detail_tabs": detail_tabs})
-    battery_sensor = DummyBatterySensor(
-        "sensor.oig_123_battery_forecast", precomputed
-    )
+    battery_sensor = DummyBatterySensor("sensor.oig_123_battery_forecast", precomputed)
     component = DummyComponent([battery_sensor])
     hass = DummyHass(component)
 
@@ -368,7 +364,9 @@ async def test_load_ups_blocks_updates_cache(monkeypatch):
     def fake_write():
         called["write"] += 1
 
-    monkeypatch.setattr(sensor, "_get_home_ups_blocks_from_detail_tabs", fake_get_blocks)
+    monkeypatch.setattr(
+        sensor, "_get_home_ups_blocks_from_detail_tabs", fake_get_blocks
+    )
     sensor.async_write_ha_state = fake_write
 
     await sensor._load_ups_blocks()
@@ -387,9 +385,7 @@ async def test_get_home_ups_blocks_empty_sources(monkeypatch):
     assert await sensor._get_home_ups_blocks_from_detail_tabs() == []
 
     precomputed = DummyPrecomputedStore(None)
-    battery_sensor = DummyBatterySensor(
-        "sensor.oig_123_battery_forecast", precomputed
-    )
+    battery_sensor = DummyBatterySensor("sensor.oig_123_battery_forecast", precomputed)
     component = DummyComponent([battery_sensor])
     hass = DummyHass(component)
     sensor = _make_sensor(monkeypatch, hass)
@@ -421,9 +417,7 @@ async def test_get_home_ups_blocks_skips_completed(monkeypatch):
         }
     }
     precomputed = DummyPrecomputedStore({"detail_tabs": detail_tabs})
-    battery_sensor = DummyBatterySensor(
-        "sensor.oig_123_battery_forecast", precomputed
-    )
+    battery_sensor = DummyBatterySensor("sensor.oig_123_battery_forecast", precomputed)
     component = DummyComponent([battery_sensor])
     hass = DummyHass(component)
     sensor = _make_sensor(monkeypatch, hass)
@@ -439,9 +433,7 @@ async def test_get_home_ups_blocks_handles_exception(monkeypatch):
             raise RuntimeError("boom")
 
     precomputed = BoomStore()
-    battery_sensor = DummyBatterySensor(
-        "sensor.oig_123_battery_forecast", precomputed
-    )
+    battery_sensor = DummyBatterySensor("sensor.oig_123_battery_forecast", precomputed)
     component = DummyComponent([battery_sensor])
     hass = DummyHass(component)
     sensor = _make_sensor(monkeypatch, hass)
@@ -640,8 +632,8 @@ async def test_handle_coordinator_update(monkeypatch):
         called["load"] += 1
 
     sensor._load_ups_blocks = fake_load
-    sensor.hass.async_create_task = (
-        lambda coro: asyncio.get_running_loop().create_task(coro)
+    sensor.hass.async_create_task = lambda coro: asyncio.get_running_loop().create_task(
+        coro
     )
     sensor._handle_coordinator_update()
     await asyncio.sleep(0)
@@ -699,3 +691,24 @@ def test_parse_time_to_datetime_tomorrow(monkeypatch):
     dt_value = sensor._parse_time_to_datetime("08:00", "tomorrow")
 
     assert dt_value.date() > fixed_now.date()
+
+
+def test_is_home_ups_mode_detects_home_ups():
+    """Test _is_home_ups_mode detects 'HOME UPS' in various formats."""
+    # Standard format
+    assert grid_module._is_home_ups_mode("HOME UPS") is True
+    assert grid_module._is_home_ups_mode("Planner: HOME UPS") is True
+    # Legacy fallback format
+    assert grid_module._is_home_ups_mode("Mode 3") is True
+    # Non-UPS modes
+    assert grid_module._is_home_ups_mode("HOME I") is False
+    assert grid_module._is_home_ups_mode("Mode 0") is False
+    assert grid_module._is_home_ups_mode("Mode 1") is False
+    assert grid_module._is_home_ups_mode("Mode 2") is False
+    # Empty/None handling
+    assert grid_module._is_home_ups_mode("") is False
+    assert grid_module._is_home_ups_mode(None) is False
+    # Multiple args (any match)
+    assert grid_module._is_home_ups_mode("HOME I", "HOME UPS") is True
+    assert grid_module._is_home_ups_mode("Mode 0", "Mode 3") is True
+    assert grid_module._is_home_ups_mode("Mode 0", "Mode 1") is False
