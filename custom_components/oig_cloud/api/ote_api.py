@@ -196,18 +196,20 @@ class OteApi:
             _LOGGER.info("Loaded cached OTE spot prices (%s)", self._cache_path)
         except FileNotFoundError:
             return
-        except Exception as err:
-            _LOGGER.warning("Failed to load cached OTE spot prices: %s", err)
+        except json.JSONDecodeError as err:
+            _LOGGER.debug("OTE cache JSON decode failed: %s", err)
             try:
                 if self._cache_path and os.path.exists(self._cache_path):
                     os.remove(self._cache_path)
-                    _LOGGER.warning(
+                    _LOGGER.info(
                         "Deleted corrupted OTE cache file: %s", self._cache_path
                     )
             except Exception as cleanup_err:
                 _LOGGER.warning(
                     "Failed to delete corrupted OTE cache file: %s", cleanup_err
                 )
+        except Exception as err:
+            _LOGGER.warning("Failed to load cached OTE spot prices: %s", err)
 
     async def async_load_cached_spot_prices(self) -> None:
         """Load cache from disk without blocking the event loop."""
