@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.7] - 2026-01-22
+
 ### Added
 
 - Battery planner wizard options: selector for Hybrid / Hybrid+Autonomy preview profiles + cheap-window and DP tuning fields (EN/CZ translations).
@@ -16,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Timeline dialog: plan toggle switches between live Hybrid control and Autonomy preview dataset.
 - Analytics tile action: “Autonomní plán” opens the timeline dialog pre-filtered to the Autonomy plan.
+
+### Fixed
+
+- Grid charging plan now maps UPS mode labels consistently in precomputed detail tabs.
+- Battery health statistics backfill includes discharge sensor and avoids noisy missing-data warnings.
 
 ## [2.1.6] - 2026-01-20
 
