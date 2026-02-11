@@ -14,10 +14,10 @@ class DummyServices:
         self.calls = []
         self._registered = set()
 
-    async def async_call(self, domain, service, data, blocking=False):
+    async def async_call(self, domain, service, data, blocking=False, schema=None):
         self.calls.append((domain, service, data, blocking))
 
-    def async_register(self, domain, services):
+    def async_register(self, domain, services, schema=None):
         self._registered.add(domain)
 
     def has_service(self, domain, service):
