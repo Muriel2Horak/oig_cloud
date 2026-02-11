@@ -531,3 +531,33 @@ async def test_restore_boiler_schedule_exception_handling(monkeypatch):
 
     await module._restore_boiler_schedule(hass, "entry1")
     assert scheduled == []
+
+
+@pytest.mark.asyncio
+async def test_setup_boiler_services_creates_plan_successfully(monkeypatch):
+    hass = DummyHass()
+    hass.services.async_register = lambda domain, services: None
+    
+    planner = SimpleNamespace()
+    planner.async_create_plan = asyncio.coroutine(lambda **kwargs: None)
+    
+    coordinator = SimpleNamespace()
+    coordinator._current_plan = None
+    coordinator._current_profile = SimpleNamespace()
+    coordinator._get_spot_prices = asyncio.coroutine(lambda: [])
+    coordinator._get_overflow_windows = asyncio.coroutine(lambda: [])
+    coordinator.planner = planner
+    coordinator.config = {}
+    coordinator.async_request_refresh = lambda: None
+    
+    async def _create_boiler_plan_mock(coordinator, entry_id, force, deadline_override):
+        pass
+    
+    monkeypatch.setattr(module, '_create_boiler_plan', _create_boiler_plan_mock)
+    
+    calls = []
+    planner.async_create_plan = lambda **kwargs: calls.append(kwargs)
+    
+    await module.setup_boiler_services(hass, coordinator, "test_entry", force=True, deadline="06:00")
+    
+    assert len(calls) == 1
