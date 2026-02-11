@@ -51,7 +51,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_CLOUD_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=Muriel2Horak_oig-cloud
+            -Dsonar.projectKey=Muriel2Horak_oig_cloud
             -Dsonar.organization=Muriel2Horak
             -Dsonar.sources=.
             -Dsonar.python.coverage.reportPaths=coverage.xml
