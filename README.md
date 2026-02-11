@@ -107,7 +107,29 @@ Integrace počítá metriky z dlouhodobých statistik (HA recorder), aby bylo vi
 5. Vyhledejte **"OIG Cloud"** a klikněte na **Download**
 6. **Restartujte Home Assistant**
 
-### Manuálně
+### 3. 📊 CI/CD & Quality
+
+Tento projekt používá komplexní CI/CD pipeline pro automatické testování, security scanning, quality assurance a code coverage.
+
+**Workflowy:**
+- `test.yml` - pytest + coverage (99% target)
+- `quality.yml` - Python linting (flake8, Pylint, Mypy) + Frontend lint
+- `maintainability.yml` - Radon complexity + Vulture dead code
+- `security.yml` - CodeQL + Bandit + Safety
+- `secret-scanning.yml` - Trivy + Gitleaks + Snyk
+- `sonarcloud.yml` - SonarCloud analýza
+- `dependency-check.yml` - Dependabot + pip-audit
+- `pre-commit.yml` - pre-commit hooks
+
+**Coverage:** 99% (35 missů z 23732 stmts)
+**Testy:** 3066 passed
+
+**Secrets:**
+- SONAR_TOKEN (volitelné) → SonarCloud
+
+**Detaily:** Viz `CI_CD.md`
+
+### 4. Manuálně
 
 1. Stáhněte nejnovější release
 2. Rozbalte do `custom_components/oig_cloud/`

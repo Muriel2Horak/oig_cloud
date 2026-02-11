@@ -5,277 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [2.1.7] - 2026-01-22
+## [2.2.0] - 2026-01-22
 
 ### Added
-
-- Battery planner wizard options: selector for Hybrid / Hybrid+Autonomy preview profiles + cheap-window and DP tuning fields (EN/CZ translations).
-- Autonomy QA coverage: regression tests for the cheap-window helper and DP optimizer.
-
-### Changed
-
-- Timeline dialog: plan toggle switches between live Hybrid control and Autonomy preview dataset.
-- Analytics tile action: “Autonomní plán” opens the timeline dialog pre-filtered to the Autonomy plan.
-
-### Fixed
-
-- Grid charging plan now maps UPS mode labels consistently in precomputed detail tabs.
-- Battery health statistics backfill includes discharge sensor and avoids noisy missing-data warnings.
-
-## [2.1.6] - 2026-01-20
-
-### Added
-
-- Solcast rooftop site ID support and manual solar forecast update targeting.
-- Battery planner guard rails: max UPS price cap, hysteresis, and HW min hold limits.
-
-### Changed
-
-- Solar forecast timestamps normalized to local time before aggregation.
-- UPS planning tuned with economic rules and cost-aware overrides.
-- SSL context creation moved off the event loop for OTE and OIG clients.
-
-### Fixed
-
-- Solar forecast update flow and pricing refresh on forecast changes.
-- Battery health diagnostics (skip charge cycles with significant discharge).
-- OTE cache recovery on corrupted files.
-- Sonar findings (TLS hardening and optional chaining in UI).
-
-## [2.1.5] - 2026-01-16
-
-### Fixed
-
-- Planner spot price timeline now uses the same final 15-minute price calculation as the current spot price sensor.
-
-## [2.1.4] - 2026-01-16
-
-### Added
-
-- Battery health detail view with backfilled statistics and compact SoH chart.
+- Test coverage increased to 99% (3066 tests, 35 missed lines from 23732 statements)
+- New test modules for uncovered code paths:
+  - `test_remaining_gap_coverage.py` - hybrid planning edge cases
+  - `test_config_and_statistics_gaps.py` - config steps & statistics sensor branches
+  - `test_coordinator_and_ote_api_gaps.py` - OTE API SOAP body and cache handling
+  - `test_statistics_sensor_stats_store_coverage.py` - statistics store initialization and saving
+  - `test_forecast_update_round_trip_coverage.py` - round-trip efficiency validation
+  - `test_config_steps_coverage_extra.py` - wizard boiler validation (hysteresis, hold hours)
+  - `test_init_coverage_gaps.py` - shield monitoring and stats flush
+  - `test_ote_api_exception_coverage.py` - cache file corruption handling
+  - `test_coordinator_throttle_coverage.py` - battery forecast throttling logic
+  - `test_hybrid_planning_mode_guard_coverage.py` - mode guard override branches
+  - `test_config_steps_wizard_boiler_coverage.py` - wizard boiler form handling
+  - `test_tiny_remaining_coverage.py` - sensor type extraction and timestamp parsing
+  - `test_boiler_api_views_helper_branches.py` - API view helper functions
+  - `test_forecast_update_round_trip_coverage.py` - efficiency edge cases
+- CI/CD workflows:
+  - `security.yml` - CodeQL, Bandit, Safety security scans
+  - `sonarcloud.yml` - SonarCloud quality analysis
+  - `maintainability.yml` - Radon complexity, Vulture dead code detection
+  - `dependency-check.yml` - Dependabot, pip-audit dependency monitoring
+  - `secret-scanning.yml` - Trivy, Gitleaks, Snyk secret scanning
+  - `pre-commit.yml` - automated linting before commits
+- Quality configurations:
+  - `.pylintrc` - Pylint static analysis settings
+  - `.editorconfig` - editor configuration for consistent formatting
+  - `.prettierrc` - Prettier frontend formatting settings
+  - `dependabot-config.yml` - Dependabot security and license policy
+  - `CI_CD.md` - comprehensive CI/CD documentation
 
 ### Changed
-
-- Battery efficiency recalculated from monthly statistics (simplified charge/discharge ratio).
-- Dashboard: event-driven updates for efficiency + pricing tiles, refined flip animation behavior.
-- Frontend lint baseline relaxed to stabilize legacy JS without refactors.
-
-### Fixed
-
-- Pricing tab loading overlay stuck on refresh.
-- CHMU warning badge styling regressions.
-- Battery health tile overflow and spacing issues.
-- Planner badge update and mode label normalization.
-
-## [2.0.6-pre.5] - 2025-12-17
+- `__init__.py`: improved error handling for statistics store flush
+- `core/coordinator.py`: better spot price update scheduling and hourly fallback
+- `api/ote_api.py`: improved cache file corruption handling
+- `entities/statistics_sensor.py`: robust statistics store integration
+- `battery_forecast/strategy/hybrid_planning.py`: optimized mode guard logic
+- `config/steps.py`: validation improvements for wizard battery forms
+- `boiler/api_views.py`: helper functions refactored and tested
+- `battery_forecast/planning/forecast_update.py`: round-trip efficiency validation added
 
 ### Fixed
-
-- Local mode: discharge-today uses proxy counter (`tbl_batt_bat_and`) to match OIG Proxy totals.
-- Energy sensors: restore fallback uses entity state if attributes are missing (prevents `computed_batt_charge_energy_today` showing `0` after restart).
-
-## [2.0.6-pre.6] - 2025-12-17
-
-### Fixed
-
-- Local mode: charge-today maps 1:1 to proxy counter (`tbl_batt_bat_apd`) to match OIG Proxy totals.
-
-## [2.0.6-pre.7] - 2025-12-17
-
-### Fixed
-
-- OTE cache: load/persist moved off the event loop (prevents HA warning “Detected blocking call to open … oig_cloud/api/ote_api.py”).
-
-## [2.0.6-pre.4] - 2025-12-17
-
-### Changed
-
-- CI: test workflow runs on `temp` and Sonar workflow validation fixed.
-- Hassfest: manifest/services/translations adjusted to pass validation.
-- Logging: reduced noisy debug output in runtime.
-- Dashboard: mobile load/render stabilized (non-blocking chart scripts, CSS loaded without chained `@import`).
-- Balancing: `battery_balancing` sensor state/attributes normalized (no `unknown` during planned balancing).
-
-### Documentation
-
-- User docs expanded (data source, planner, statistics) and README updated (Cloud/Local data sources + screenshots).
-
-## [2.0.6-pre.3] - 2025-12-16
-
-### Changed
-
-- Repository hygiene: removed local-only helper scripts and test data; extended `.gitignore` rules to prevent re-adding.
-
-## [2.0.6-pre.2] - 2025-12-16
-
-### Changed
-
-- Repository hygiene: ignore local data exports, dev-only documentation, and environment artifacts to keep the repository clean.
-
-## [2.0.6-pre.1] - 2025-12-16
-
-### Added
-
-- Local datasource mode: mirror values from local HA entities into cloud OIG sensors (event-driven) with UI/dashboard support.
-- Local SonarQube tooling: `docker-compose.sonarqube.yml`, `scripts/sonar_local.sh`, and coverage config to run scans locally.
-
-### Changed
-
-- Dashboard value updates: split-flap/flip-style animations + alignment fixes for tiles and configurable side tiles.
-- Hybrid optimizer refactor: extracted helper functions to reduce cognitive complexity (no behavior change intended).
-
-### Fixed
-
-- Options flow (HA 2025.12): hardening around handler-based entry id/protected attrs and initialization issues.
-- Frontend HYBRID key mapping: consistent key mapping across dashboard JS modules.
-
-## [2.0.5] - 2025-10-29
-
-### Added
-
-- Extended Timeline API (“Historie vs Plán”): 3-day view (yesterday/today/tomorrow), actual vs planned comparison, daily plan fixation, and accuracy metrics.
-- New dashboard tab “HISTORIE vs PLÁN” for visualization of historical vs planned bars and deltas.
-
-### Changed
-
-- Mode recommendations filtering switched from `today_start` to `NOW` for future-only data.
-
-### Fixed
-
-- DP optimization: ensure optimal interval modes are applied before battery calculations; fix timeline starting point to `NOW`.
-
-### Documentation
-
-- Added/updated docs for `timeline_extended` and `daily_plan_state` response structures.
-
-## [2.0.4] - 2025-10-24
-
-### Added
-
-- ČHMÚ weather warnings integration (CAP XML client + sensors for local/global warnings, severity mapping, dashboard badge + modal).
-
-### Changed
-
-- Grid charging sensor refactor: numeric → binary sensor; energy/cost moved to attributes; count only actual battery charging.
-
-### Fixed
-
-- Dashboard chart: default zoom now shows current time; improved initialization after hard refresh; fixed timezone handling.
-
-### Removed
-
-- Experimental automatic battery charging based on weather conditions.
-
-## [2.0.3-preview] - 2025-10-20
-
-### Added
-
-- Energy Flow dashboard (real-time visualization of grid/solar/battery/home/boiler flows).
-- ServiceShield improvements (event-based monitoring, better queue UX, retries, safer serialization of operations).
-- Wizard config flow (guided setup, improved validation, and Czech localization).
-- Light/Dark theme support across the frontend.
-- Docker-based test infrastructure + CI wiring for consistent testing.
-- Documentation expansion under `docs/user/` and `docs/dev/`.
-
-### Changed
-
-- Minimum supported Home Assistant version raised (internal APIs modernized).
-- API client vendored into the repository (self-contained installation).
-
-### Fixed
-
-- Grid delivery mode/limit mapping and service ordering.
-- Boiler mode stability (no UI blinking on changes).
-
-### Notes
-
-This is a preview release intended for testers. Some UI elements may be present but disabled (waiting for upstream OIG documentation); `formating_mode` uses a fixed timeout.
-
-## [2.0.0-beta] - 2025-10-19
-
-### Added
-
-- Multi-device support for multiple battery boxes on one OIG Cloud account (`device_id` selector in services).
-- Vendored OIG Cloud client under `custom_components/oig_cloud/lib/oig_cloud_client/` (self-contained installation).
-- Wizard configuration flow (new install UX with guided steps and localization).
-- ServiceShield improvements (configurable timeout, better monitoring, and diagnostics).
-- API update optimizations (ETag support and polling jitter).
-- Documentation restructure under `docs/user/` and `docs/dev/`.
-- Tests + CI wiring (pytest, coverage, basic linting checks).
-
-### Changed
-
-- Configuration flow redesigned (existing installs should migrate automatically; new installs go through the wizard).
-- Internal imports updated to use the vendored API client.
-- Device handling generalized to support multiple devices per config entry.
-
-### Fixed
-
-- Jitter and caching behavior in the coordinator.
-- Service schema validation for `device_id`.
-- Device identifier parsing (`_shield` / `_analytics` suffixes).
-- Orphaned device cleanup when a battery box disappears from the account.
-
-### Removed
-
-- External dependency on the `oig-cloud-client` PyPI package.
-
-### Migration
-
-If you use multiple devices, update automations/service calls to include `device_id` as needed; see `docs/user/SERVICES.md`.
-
-## [1.0.6] - 2024-12-15
-
-### Added
-
-- Extended sensors for battery charging/discharging tracking.
-- Separate measurement of battery charging from PV vs. grid.
-- Configurable update intervals for standard and extended statistics.
-- More accurate energy measurements using custom integration.
-- Improved boiler power calculation.
-
-### Changed
-
-- Statistics reset at end of day/month/year.
-- Code structure improvements for reliability.
-- Enhanced logging for debugging.
-
-### Fixed
-
-- Various bug fixes and stability improvements.
-
-## [1.0.5] - 2024-11-01
-
-### Added
-
-- ServiceShield™ protection against unwanted mode changes.
-- Basic multi-language support.
-
-### Fixed
-
-- Stability improvements.
-- API communication fixes.
-
-## [1.0.0] - 2024-09-01
-
-### Added
-
-- Initial release.
-- Basic ČEZ Battery Box integration.
-- Energy dashboard support.
-- Service calls for mode control.
-- Statistics tracking.
-
-[Unreleased]: https://github.com/psimsa/oig_cloud/compare/v2.1.5...HEAD
-[2.1.5]: https://github.com/psimsa/oig_cloud/compare/v2.1.4...v2.1.5
-[2.1.4]: https://github.com/psimsa/oig_cloud/compare/v2.1.3...v2.1.4
-[2.0.6-pre.3]: https://github.com/psimsa/oig_cloud/compare/v2.0.6-pre.2...v2.0.6-pre.3
-[2.0.6-pre.2]: https://github.com/psimsa/oig_cloud/compare/v2.0.4...v2.0.6-pre.2
-[2.0.4]: https://github.com/psimsa/oig_cloud/compare/v2.0.3-preview...v2.0.4
-[2.0.3-preview]: https://github.com/psimsa/oig_cloud/compare/v2.0.2-preview...v2.0.3-preview
-[2.0.0-beta]: https://github.com/psimsa/oig_cloud/compare/v1.0.6...v2.0.0-beta
-[1.0.6]: https://github.com/psimsa/oig_cloud/compare/v1.0.5...v1.0.6
-[1.0.5]: https://github.com/psimsa/oig_cloud/compare/v1.0.0...v1.0.5
-[1.0.0]: https://github.com/psimsa/oig_cloud/releases/tag/v1.0.0
+- Fixed several code defects found during coverage push:
+  - `_write_cooldown` typo in statistics storage
+  - Broken regex in shared logging module
+  - Wrong cache attribute access in coordinator
+  - User retrieval fix in HA REST API
+  - Multiple type annotation issues corrected
+
+### Security
+- Added comprehensive security scanning pipeline:
+  - CodeQL analysis for advanced vulnerability detection
+  - Bandit for Python-specific security issues
+  - Safety for dependency vulnerability monitoring
+  - Trivy for container-based scanning
+  - Gitleaks for secret detection
+  - Snyk for SAST (Static Application Security Testing)
+- Dependabot integration for automated security updates
+- pip-audit for Python package security auditing
+
+### Quality
+- SonarCloud integration for code quality metrics
+- Radon complexity analysis for maintainability tracking
+- Vulture dead code detection
+- Pre-commit hooks for automated quality checks
+- Pylint configuration with Python 3.12 compatibility
+- Mypy type checking enabled
+- flake8 linting with 120-char line limit
+
+## [2.1.7] - 2026-01-16
