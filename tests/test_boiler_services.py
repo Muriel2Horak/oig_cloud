@@ -539,13 +539,19 @@ async def test_setup_boiler_services_creates_plan_successfully(monkeypatch):
     hass.services.async_register = lambda domain, services: None
     
     planner = SimpleNamespace()
-    planner.async_create_plan = asyncio.coroutine(lambda **kwargs: None)
+    async def async_create_plan_mock(**kwargs):
+        pass
+    planner.async_create_plan = async_create_plan_mock
     
     coordinator = SimpleNamespace()
     coordinator._current_plan = None
     coordinator._current_profile = SimpleNamespace()
-    coordinator._get_spot_prices = asyncio.coroutine(lambda: [])
-    coordinator._get_overflow_windows = asyncio.coroutine(lambda: [])
+    async def _get_spot_prices_mock():
+        return []
+    coordinator._get_spot_prices = _get_spot_prices_mock
+    async def _get_overflow_windows_mock():
+        return []
+    coordinator._get_overflow_windows = _get_overflow_windows_mock
     coordinator.planner = planner
     coordinator.config = {}
     coordinator.async_request_refresh = lambda: None
@@ -556,7 +562,9 @@ async def test_setup_boiler_services_creates_plan_successfully(monkeypatch):
     monkeypatch.setattr(module, '_create_boiler_plan', _create_boiler_plan_mock)
     
     calls = []
-    planner.async_create_plan = lambda **kwargs: calls.append(kwargs)
+    async def _async_create_plan_for_calls(**kwargs):
+        calls.append(kwargs)
+    planner.async_create_plan = _async_create_plan_for_calls
     
     await module.setup_boiler_services(hass, coordinator, "test_entry", force=True, deadline="06:00")
     
