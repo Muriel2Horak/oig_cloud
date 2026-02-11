@@ -6,7 +6,7 @@ import pytest
 
 import custom_components.oig_cloud as init_module
 from homeassistant.config_entries import ConfigEntry
-from tests.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 @pytest.mark.asyncio
