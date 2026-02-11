@@ -445,6 +445,9 @@ class WizardMixin:
             "boiler_alt_heater_switch_entity": wizard_data.get(
                 "boiler_alt_heater_switch_entity", ""
             ),
+            "boiler_circulation_pump_switch_entity": wizard_data.get(
+                "boiler_circulation_pump_switch_entity", ""
+            ),
             "boiler_has_alternative_heating": wizard_data.get(
                 "boiler_has_alternative_heating", False
             ),
@@ -2092,10 +2095,11 @@ Kliknutím na "Odeslat" spustíte průvodce.
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:
         """Wizard Step: Boiler module configuration."""
-        from .const import (
+        from ..const import (
             CONF_BOILER_ALT_COST_KWH,
             CONF_BOILER_ALT_ENERGY_SENSOR,
             CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+            CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
             CONF_BOILER_COLD_INLET_TEMP_C,
             CONF_BOILER_DEADLINE_TIME,
             CONF_BOILER_HAS_ALTERNATIVE_HEATING,
@@ -2259,6 +2263,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     vol.Optional(
                         CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
                         default=defaults.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY, ""),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="switch")
+                    ),
+                    vol.Optional(
+                        CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
+                        default=defaults.get(
+                            CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY, ""
+                        ),
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="switch")
                     ),

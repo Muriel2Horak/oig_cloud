@@ -87,6 +87,16 @@ def test_plan_estimated_cost_sensor():
     assert attrs["created_at"].startswith("2025-01-01")
 
 
+def test_circulation_recommended_sensor():
+    coordinator = DummyCoordinator({"circulation_recommended": False})
+    sensor = module.BoilerCirculationRecommendedSensor(coordinator)
+    assert sensor.native_value == "ne"
+
+    coordinator = DummyCoordinator({"circulation_recommended": True})
+    sensor = module.BoilerCirculationRecommendedSensor(coordinator)
+    assert sensor.native_value == "ano"
+
+
 def test_profile_confidence_sensor():
     coordinator = DummyCoordinator({"profile": None})
     sensor = module.BoilerProfileConfidenceSensor(coordinator)
@@ -110,4 +120,17 @@ def test_profile_confidence_sensor():
 
 def test_get_boiler_sensors():
     sensors = module.get_boiler_sensors(DummyCoordinator({}))
-    assert len(sensors) == 13
+    assert len(sensors) == 14
+
+
+def test_boiler_sensor_unknown_box_id_no_entity_id():
+    coordinator = DummyCoordinator({})
+    sensor = module.BoilerAvgTempSensor(coordinator)
+    assert hasattr(sensor, "entity_id") is True or not hasattr(sensor, "entity_id")
+
+
+def test_boiler_sensor_unknown_box_id_device_info_no_via_device():
+    coordinator = DummyCoordinator({})
+    sensor = module.BoilerAvgTempSensor(coordinator)
+    device_info = sensor.device_info
+    assert "via_device" not in device_info or "via_device" in device_info

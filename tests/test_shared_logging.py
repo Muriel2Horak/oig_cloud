@@ -86,8 +86,10 @@ async def test_get_session_reuses_connector(monkeypatch):
             created["count"] += 1
             self.closed = False
 
-    monkeypatch.setattr(logging_module.aiohttp, "ClientSession", DummyClientSession)
-    monkeypatch.setattr(logging_module.aiohttp, "TCPConnector", lambda ssl: None)
+    # Patch the imported classes directly
+    import custom_components.oig_cloud.shared.logging as logging_module_real
+    monkeypatch.setattr(logging_module_real, "ClientSession", DummyClientSession)
+    monkeypatch.setattr(logging_module_real, "TCPConnector", lambda ssl: None)
 
     telemetry = logging_module.SimpleTelemetry("http://example.test", {})
     s1 = await telemetry._get_session()
@@ -105,8 +107,10 @@ async def test_get_session_recreates_when_closed(monkeypatch):
             created["count"] += 1
             self.closed = False
 
-    monkeypatch.setattr(logging_module.aiohttp, "ClientSession", DummyClientSession)
-    monkeypatch.setattr(logging_module.aiohttp, "TCPConnector", lambda ssl: None)
+    # Patch the imported classes directly
+    import custom_components.oig_cloud.shared.logging as logging_module_real
+    monkeypatch.setattr(logging_module_real, "ClientSession", DummyClientSession)
+    monkeypatch.setattr(logging_module_real, "TCPConnector", lambda ssl: None)
 
     telemetry = logging_module.SimpleTelemetry("http://example.test", {})
     telemetry.session = SimpleNamespace(closed=True)

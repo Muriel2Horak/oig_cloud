@@ -18,6 +18,7 @@ from ..const import DEFAULT_NAME, DOMAIN
 from ..core.data_source import (
     DATA_SOURCE_HYBRID,
     DATA_SOURCE_LOCAL_ONLY,
+    EVENT_DATA_SOURCE_CHANGED,
     PROXY_LAST_DATA_ENTITY_ID,
     get_data_source_state,
 )
@@ -86,7 +87,17 @@ class OigCloudDataSourceSensor(SensorEntity):
         def _refresh(*_: Any) -> None:
             self.async_write_ha_state()
 
-        # refresh on proxy sensor changes
+        # Event-driven: refresh on data source changed event (P1 optimalization)
+        @callback
+        def _on_data_source_changed(event: Any) -> None:
+            if event.data.get("entry_id") == self.entry.entry_id:
+                _refresh()
+
+        self._unsubs.append(
+            self.hass.bus.async_listen(EVENT_DATA_SOURCE_CHANGED, _on_data_source_changed)
+        )
+
+        # Event-driven: refresh on proxy sensor changes
         self._unsubs.append(
             async_track_state_change_event(
                 self.hass,
@@ -94,9 +105,10 @@ class OigCloudDataSourceSensor(SensorEntity):
                 _refresh,
             )
         )
-        # periodic refresh to catch controller changes
+
+        # Backup: periodic refresh to catch edge cases (P1 optimalization: 30s -> 120s)
         self._unsubs.append(
-            async_track_time_interval(self.hass, _refresh, timedelta(seconds=30))
+            async_track_time_interval(self.hass, _refresh, timedelta(seconds=120))
         )
         await super().async_added_to_hass()
 

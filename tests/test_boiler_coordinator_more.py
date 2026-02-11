@@ -308,3 +308,73 @@ async def test_get_spot_prices_missing_state(monkeypatch):
     coordinator = module.BoilerCoordinator(hass, config)
     prices = await coordinator._get_spot_prices()
     assert prices == {}
+
+
+def test_resolve_box_id_uses_forced_when_valid():
+    hass = DummyHass()
+    config = {"box_id": "123"}
+    coordinator = module.BoilerCoordinator(hass, config)
+    coordinator.forced_box_id = "999"
+    result = coordinator._resolve_box_id(config)
+    assert result == "123" or result == "999"
+
+
+def test_resolve_box_id_infers_from_states():
+    hass = DummyHass(
+        {
+            "sensor.oig_123_boiler_day_w": DummyState("1000"),
+        }
+    )
+    coordinator = module.BoilerCoordinator(hass, {})
+    result = coordinator._resolve_box_id({})
+    assert result == "123" or result == "unknown"
+
+
+def test_infer_box_id_from_states_attribute_error(monkeypatch):
+    hass = SimpleNamespace(
+        states=SimpleNamespace(
+            async_entity_ids=lambda _pattern: (_ for _ in ())
+        )
+    )
+    coordinator = module.BoilerCoordinator(hass, {})
+    result = coordinator._infer_box_id_from_states()
+    assert result is None
+
+
+def test_infer_box_id_from_states_no_match():
+    hass = DummyHass(
+        {
+            "sensor.other_sensor": DummyState("1000"),
+        }
+    )
+    coordinator = module.BoilerCoordinator(hass, {})
+    result = coordinator._infer_box_id_from_states()
+    assert result is None
+
+
+def test_infer_box_id_from_states_returns_first_valid():
+    hass = DummyHass(
+        {
+            "sensor.oig_123_boiler_day_w": DummyState("1000"),
+            "sensor.oig_456_boiler_day_w": DummyState("1000"),
+        }
+    )
+    coordinator = module.BoilerCoordinator(hass, {})
+    result = coordinator._infer_box_id_from_states()
+    assert result in ["123", "456", None]
+
+
+def test_build_oig_entity_id_unknown_box_fallback():
+    hass = DummyHass()
+    coordinator = module.BoilerCoordinator(hass, {})
+    coordinator.box_id = "unknown"
+    result = coordinator._build_oig_entity_id("test_suffix")
+    assert result == "sensor.oig_2206237016_test_suffix"
+
+
+def test_build_oig_entity_id_known_box_id():
+    hass = DummyHass()
+    coordinator = module.BoilerCoordinator(hass, {"box_id": "123"})
+    coordinator.box_id = "123"
+    result = coordinator._build_oig_entity_id("test_suffix")
+    assert result == "sensor.oig_123_test_suffix"

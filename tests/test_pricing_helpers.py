@@ -222,6 +222,47 @@ async def test_get_spot_price_timeline_missing_prices(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_spot_price_timeline_with_non_callable_sensor_price(monkeypatch):
+    sensor = DummySensor()
+
+    async def fake_spot(*_args, **_kwargs):
+        return {"prices15m_czk_kwh": {"2025-01-01T00:00:00": 1.0}}
+
+    async def fake_prices(*_args, **_kwargs):
+        return {"2025-01-01T00:00:00": 1.0}
+
+    # _calculate_interval_price exists but is not callable -> branch 234-236
+    bad_entity = SimpleNamespace(_calculate_interval_price=123)
+
+    monkeypatch.setattr(pricing_module, "_resolve_spot_data", fake_spot)
+    monkeypatch.setattr(pricing_module, "_resolve_prices_dict", fake_prices)
+    monkeypatch.setattr(pricing_module, "_get_price_sensor_entity", lambda *_a, **_k: bad_entity)
+
+    timeline = await pricing_module.get_spot_price_timeline(sensor)
+    assert len(timeline) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_spot_price_timeline_with_callable_sensor_price(monkeypatch):
+    sensor = DummySensor()
+
+    async def fake_spot(*_args, **_kwargs):
+        return {"prices15m_czk_kwh": {"2025-01-01T00:00:00": 1.0}}
+
+    async def fake_prices(*_args, **_kwargs):
+        return {"2025-01-01T00:00:00": 1.0}
+
+    entity = SimpleNamespace(_calculate_interval_price=lambda raw, dt: raw + 0.5)
+
+    monkeypatch.setattr(pricing_module, "_resolve_spot_data", fake_spot)
+    monkeypatch.setattr(pricing_module, "_resolve_prices_dict", fake_prices)
+    monkeypatch.setattr(pricing_module, "_get_price_sensor_entity", lambda *_a, **_k: entity)
+
+    timeline = await pricing_module.get_spot_price_timeline(sensor)
+    assert timeline[0]["price"] == 1.5
+
+
+@pytest.mark.asyncio
 async def test_get_export_price_timeline_derives(monkeypatch):
     sensor = DummySensor(options={}, spot_data={"prices15m_czk_kwh": {"2025-01-01T00:00:00": 1.0}})
     async def fake_resolve(*_args, **_kwargs):

@@ -12,7 +12,7 @@ from custom_components.oig_cloud.const import CONF_AUTO_MODE_SWITCH, DOMAIN
 
 class DummyRequest:
     def __init__(self, hass, query=None):
-        self.app = {"hass": hass}
+        self.app = {"hass": hass, "hass_user": SimpleNamespace(is_admin=True)}
         self.query = query or {}
 
 

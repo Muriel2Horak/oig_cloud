@@ -3705,7 +3705,7 @@ body.light-theme .status-exporting {
 
         .boiler-status-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 15px;
             margin-top: 15px;
         }
@@ -3740,6 +3740,13 @@ body.light-theme .status-exporting {
             cursor: pointer;
         }
 
+        #boiler-next-heating-value,
+        #boiler-recommended-source-value {
+            font-size: 1.05em;
+            line-height: 1.25;
+            white-space: normal;
+        }
+
         .boiler-plan-info {
             background: var(--bg-tertiary);
             border: 1px solid var(--border-secondary);
@@ -3767,7 +3774,10 @@ body.light-theme .status-exporting {
         .plan-info-value {
             color: var(--text-primary);
             font-weight: 600;
-            font-family: 'Courier New', monospace;
+            font-family: inherit;
+            text-align: right;
+            white-space: normal;
+            flex: 1;
         }
 
         .chart-section {
@@ -3879,6 +3889,18 @@ body.light-theme .status-exporting {
             position: relative;
         }
 
+        .ratio-fve {
+            background: linear-gradient(90deg, rgb(76, 175, 80, 0.6), rgb(76, 175, 80, 0.9));
+            height: 100%;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #0f172a;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+
         .ratio-grid {
             background: linear-gradient(90deg, rgb(33, 150, 243, 0.6), rgb(33, 150, 243, 0.8));
             height: 100%;
@@ -3909,6 +3931,8 @@ body.light-theme .status-exporting {
             margin-top: 8px;
             font-size: 0.9em;
             color: var(--text-secondary);
+            gap: 10px;
+            flex-wrap: wrap;
         }
 
         /* NEW: Predicted Usage */
@@ -3941,6 +3965,14 @@ body.light-theme .status-exporting {
         .usage-value {
             color: var(--text-primary);
             font-weight: bold;
+        }
+
+        .circulation-status.active {
+            color: var(--success-text);
+        }
+
+        .circulation-status.idle {
+            color: var(--text-secondary);
         }
 
         /* NEW: Grade Thermometer */
@@ -4125,7 +4157,9 @@ body.light-theme .status-exporting {
 
         .profile-stats {
             display: flex;
-            justify-content: space-around;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
             margin-top: 15px;
             padding: 15px;
             background: var(--bg-tertiary);

@@ -70,7 +70,7 @@ async def test_cleanup_invalid_empty_devices(monkeypatch):
     devices = [
         DummyDevice("dev1", {(DOMAIN, "spot_prices")}),
         DummyDevice("dev2", {(DOMAIN, "123")}),
-        DummyDevice("dev3", {(DOMAIN, "oig_bojler")}),
+        DummyDevice("dev3", {(DOMAIN, "boiler")}),
         DummyDevice("dev4", {(DOMAIN, "bad_analytics")}),
         DummyDevice("dev5", {(DOMAIN, "456_analytics")}),
         DummyDevice("dev6", {(DOMAIN, "bad_shield")}),

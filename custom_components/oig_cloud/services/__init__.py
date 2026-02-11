@@ -790,7 +790,7 @@ def _register_boiler_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     try:
         from .boiler import setup_boiler_services
 
-        setup_boiler_services(hass, boiler_coordinator)
+        setup_boiler_services(hass, entry.entry_id, boiler_coordinator)
         _LOGGER.info("Boiler services registered")
     except Exception as exc:
         _LOGGER.error("Failed to register boiler services: %s", exc, exc_info=True)

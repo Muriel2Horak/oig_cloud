@@ -128,6 +128,7 @@
         "data": {
           "boiler_alt_cost_kwh": "Alternative heating cost (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Alternative heat source switch - optional",
+          "boiler_circulation_pump_switch_entity": "Circulation pump switch - optional",
           "boiler_cold_inlet_temp_c": "Cold water inlet temperature (°C)",
           "boiler_deadline_time": "Deadline (time to have heated by)",
           "boiler_has_alternative_heating": "Does boiler have alternative heat source?",
@@ -146,6 +147,7 @@
         "data_description": {
           "boiler_alt_cost_kwh": "Cost per kWh from alternative source (e.g., 1.5 CZK/kWh for boiler). Electric heating will be used only when spot price is cheaper.",
           "boiler_alt_heater_switch_entity": "Entity ID of switch for alternative source (e.g., boiler, heat pump). Leave empty if you don't have one.",
+          "boiler_circulation_pump_switch_entity": "Entity ID of switch for circulation pump. Leave empty if you do not control circulation via a switch.",
           "boiler_cold_inlet_temp_c": "Temperature of incoming cold water from mains (typically 10-15°C)",
           "boiler_deadline_time": "Time by which you want boiler heated (format HH:MM, e.g., 20:00). Planning will always find cheapest slots BEFORE this time.",
           "boiler_has_alternative_heating": "Check if you have alternative heating method (boiler, HP) and want to use it when electricity is expensive",

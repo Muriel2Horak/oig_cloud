@@ -1003,7 +1003,14 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
         )
 
     async def post(self, request: web.Request, box_id: str) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
+        """Update planner settings (admin-only)."""
+        hass = request.app["hass"]
+        user = request.app.get("hass_user")
+
+        # Admin-only kontrola
+        if not user or not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+
         entry = _find_entry_for_box(hass, box_id)
         if not entry:
             return web.json_response({"error": "Box not found"}, status=404)

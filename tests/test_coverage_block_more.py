@@ -47,7 +47,7 @@ class DummyStore:
 
 class DummyRequest:
     def __init__(self, hass, query=None):
-        self.app = {"hass": hass}
+        self.app = {"hass": hass, "hass_user": SimpleNamespace(is_admin=True)}
         self.query = query or {}
 
 

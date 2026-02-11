@@ -22,7 +22,7 @@ JITTER_SECONDS = 5.0
 
 # HA storage snapshot (retain last-known values across restart)
 COORDINATOR_CACHE_VERSION = 1
-COORDINATOR_CACHE_SAVE_COOLDOWN_S = 30.0
+COORDINATOR_CACHE_SAVE_COOLDOWN_S = 900.0  # 15 minut (low-power default)
 COORDINATOR_CACHE_MAX_LIST_ITEMS = 1500
 COORDINATOR_CACHE_MAX_STR_LEN = 5000
 
@@ -65,6 +65,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         # Battery forecast data
         self.battery_forecast_data: Optional[Dict[str, Any]] = None
         self._battery_forecast_task: Optional[asyncio.Task] = None
+        self._battery_forecast_last_update: Optional[datetime] = None
+        self._battery_forecast_last_inputs_hash: Optional[int] = None
 
         # Spot price cache shared between scheduler/fallback and coordinator updates
         self._spot_prices_cache: Optional[Dict[str, Any]] = None
@@ -798,12 +800,27 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         except Exception as e:
             _LOGGER.debug(f"Standalone notification data fetch failed: {e}")
 
+    def _compute_battery_forecast_inputs_hash(self) -> int:
+        """Hash relevantnich vstupních entit pro battery forecast (change detection)."""
+        import hashlib
+        data_str = ""
+
+        if self.data and isinstance(self.data, dict):
+            data_str += str(sorted(self.data.get("box_id", "")))
+
+        if self._spot_prices_cache:
+            data_str += str(self._spot_prices_cache.get("hours_count", 0))
+
+        return int(hashlib.md5(data_str.encode()).hexdigest()[:8], 16)
+
     def _maybe_update_battery_forecast(self) -> None:
+        """Throttled battery forecast computation (low-power: 30 min)."""
         if not (
             self.config_entry
             and self.config_entry.options.get("enable_battery_prediction", False)
         ):
             return
+
         if not self._battery_forecast_task or self._battery_forecast_task.done():
             self._battery_forecast_task = self.hass.async_create_task(
                 self._update_battery_forecast()
@@ -896,7 +913,25 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         return time_diff > self.extended_interval
 
     async def _update_battery_forecast(self) -> None:
-        """Aktualizuje battery forecast data přímo v coordinatoru."""
+        """Aktualizuje battery forecast s throttlingem (low-power: 30 min)."""
+        # Throttling check (low-power default: 30 min)
+        now = datetime.now()
+        if (
+            self._battery_forecast_last_update
+            and (now - self._battery_forecast_last_update).total_seconds() < 1800
+        ):
+            _LOGGER.debug("Battery forecast throttled (skip, last update < 30m ago)")
+            return
+
+        # Check if inputs changed (hash)
+        inputs_hash = self._compute_battery_forecast_inputs_hash()
+        if (
+            self._battery_forecast_last_inputs_hash
+            and self._battery_forecast_last_inputs_hash == inputs_hash
+        ):
+            _LOGGER.debug("Battery forecast inputs unchanged, skipping")
+            return
+
         try:
             _LOGGER.debug("🔋 Starting battery forecast calculation in coordinator")
 
@@ -932,6 +967,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 return
 
             self.battery_forecast_data = forecast_payload
+            self._battery_forecast_last_update = now
+            self._battery_forecast_last_inputs_hash = inputs_hash
             _LOGGER.debug(
                 "🔋 Battery forecast data updated in coordinator: %s points",
                 len(temp_sensor._timeline_data or []),

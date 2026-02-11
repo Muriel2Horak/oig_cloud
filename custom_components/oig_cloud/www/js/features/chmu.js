@@ -148,103 +148,48 @@ function renderChmuWarningModal(container) {
         return;
     }
 
-    const icon = getWarningIcon(topEventType);
-    const severityLabel = getSeverityLabel(severity);
-    const onset = topOnset ? formatChmuDateTime(topOnset) : '--';
-    const expires = topExpires ? formatChmuDateTime(topExpires) : '--';
+        const icon = getWarningIcon(topEventType);
+        const severityLabel = getSeverityLabel(severity);
 
-    let etaText = '';
-    if (topEtaHours !== null && topEtaHours !== undefined) {
-        if (topEtaHours <= 0) {
-            etaText = '<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Status</div><div class="chmu-info-value" style="color: #ef4444; font-weight: 700;">PROBÍHÁ NYNÍ</div></div></div>';
-        } else if (topEtaHours < 24) {
-            etaText = `<div class="chmu-info-item"><div class="chmu-info-icon">⏱️</div><div class="chmu-info-content"><div class="chmu-info-label">Začátek za</div><div class="chmu-info-value">${Math.round(topEtaHours)} hodin</div></div></div>`;
+        container.textContent = '';
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'chmu-warning-item chmu-warning-top severity-' + severity;
+        container.appendChild(wrapper);
+
+        const header = document.createElement('div');
+        header.className = 'chmu-warning-header';
+        wrapper.appendChild(header);
+
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'chmu-warning-icon';
+        iconDiv.textContent = icon;
+        header.appendChild(iconDiv);
+
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'chmu-warning-title';
+        const h4 = document.createElement('h4');
+        h4.textContent = topEventType;
+        const severitySpan = document.createElement('span');
+        severitySpan.className = 'chmu-warning-severity severity-' + severity;
+        severitySpan.textContent = severityLabel;
+        titleDiv.appendChild(h4);
+        titleDiv.appendChild(severitySpan);
+        header.appendChild(titleDiv);
+
+        if (topDescription) {
+            const descDiv = document.createElement('div');
+            descDiv.className = 'chmu-warning-description';
+            descDiv.textContent = topDescription;
+            wrapper.appendChild(descDiv);
         }
-    }
 
-    // TOP WARNING (hlavní sekce)
-    let html = `
-        <div class="chmu-warning-item chmu-warning-top severity-${severity}">
-            <div class="chmu-warning-header">
-                <div class="chmu-warning-icon">${icon}</div>
-                <div class="chmu-warning-title">
-                    <h4>${topEventType}</h4>
-                    <span class="chmu-warning-severity severity-${severity}">${severityLabel}</span>
-                </div>
-            </div>
-
-            <div class="chmu-warning-info">
-                <div class="chmu-info-item">
-                    <div class="chmu-info-icon">⏰</div>
-                    <div class="chmu-info-content">
-                        <div class="chmu-info-label">Začátek</div>
-                        <div class="chmu-info-value">${onset}</div>
-                    </div>
-                </div>
-                <div class="chmu-info-item">
-                    <div class="chmu-info-icon">⏳</div>
-                    <div class="chmu-info-content">
-                        <div class="chmu-info-label">Konec</div>
-                        <div class="chmu-info-value">${expires}</div>
-                    </div>
-                </div>
-                ${etaText}
-            </div>
-
-            ${topDescription ? `
-                <div class="chmu-warning-description">
-                    <strong>📋 Popis</strong>
-                    <p>${topDescription}</p>
-                </div>
-            ` : ''}
-
-            ${topInstruction ? `
-                <div class="chmu-warning-description">
-                    <strong>💡 Doporučení</strong>
-                    <p>${topInstruction}</p>
-                </div>
-            ` : ''}
-        </div>
-    `;
-
-    // ALL WARNINGS (seznam všech aktivních)
-    if (allWarningsDetails.length > 1) {
-        html += '<div class="chmu-all-warnings-header"><h5>📋 Všechny aktivní výstrahy</h5></div>';
-
-        allWarningsDetails.forEach((warning, index) => {
-            const wEventType = warning.event || 'Varování';
-            const wSeverity = getSeverityLevelFromName(warning.severity);
-            const wOnset = warning.onset ? formatChmuDateTime(warning.onset) : '--';
-            const wExpires = warning.expires ? formatChmuDateTime(warning.expires) : '--';
-            const wRegions = (warning.regions || []).join(', ') || 'Celá ČR';
-            const wIcon = getWarningIcon(wEventType);
-            const wSeverityLabel = warning.severity || 'Neznámá';
-
-            html += `
-                <div class="chmu-warning-item chmu-warning-compact severity-${wSeverity}">
-                    <div class="chmu-warning-header">
-                        <div class="chmu-warning-icon">${wIcon}</div>
-                        <div class="chmu-warning-title">
-                            <h5>${wEventType}</h5>
-                            <span class="chmu-warning-severity severity-${wSeverity}">${wSeverityLabel}</span>
-                        </div>
-                    </div>
-                    <div class="chmu-warning-info-compact">
-                        <div class="chmu-info-row">
-                            <span class="chmu-info-label">📍 Regiony:</span>
-                            <span class="chmu-info-value">${wRegions}</span>
-                        </div>
-                        <div class="chmu-info-row">
-                            <span class="chmu-info-label">⏰ Platnost:</span>
-                            <span class="chmu-info-value">${wOnset} – ${wExpires}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-    }
-
-    container.innerHTML = html;
+        if (topInstruction) {
+            const instrDiv = document.createElement('div');
+            instrDiv.className = 'chmu-warning-instruction';
+            instrDiv.textContent = topInstruction;
+            wrapper.appendChild(instrDiv);
+        }
 }
 
 // Helper: Convert severity name to level

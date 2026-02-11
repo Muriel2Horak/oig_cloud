@@ -36,14 +36,24 @@ class BoilerSensorBase(CoordinatorEntity[BoilerCoordinator], SensorEntity):
     ) -> None:
         """Inicializace senzoru."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"oig_bojler_{unique_id_suffix}"
+        box_id = getattr(coordinator, "box_id", "unknown")
+        if not box_id or box_id == "unknown":
+            box_id = "unknown"
+
+        self._attr_unique_id = f"oig_cloud_{box_id}_boiler_{unique_id_suffix}"
+        if box_id != "unknown":
+            self.entity_id = f"sensor.oig_{box_id}_boiler_{unique_id_suffix}"
         self._attr_name = name
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, "oig_bojler")},
-            name="OIG Bojler",
-            manufacturer="OIG",
-            model="Boiler Control",
-        )
+        name_box = box_id if box_id != "unknown" else "neznámý"
+        device_kwargs = {
+            "identifiers": {(DOMAIN, f"{box_id}_boiler")},
+            "name": f"OIG Bojler {name_box}",
+            "manufacturer": "OIG",
+            "model": "Boiler Control",
+        }
+        if box_id != "unknown":
+            device_kwargs["via_device"] = (DOMAIN, box_id)
+        self._attr_device_info = DeviceInfo(**device_kwargs)
 
 
 # ========== TEPLOTNÍ SENZORY ==========
@@ -325,6 +335,20 @@ class BoilerPlanEstimatedCostSensor(BoilerSensorBase):
         }
 
 
+class BoilerCirculationRecommendedSensor(BoilerSensorBase):
+    """Doporučení oběhové cirkulace."""
+
+    _attr_icon = "mdi:water-pump"
+
+    def __init__(self, coordinator: BoilerCoordinator) -> None:
+        super().__init__(coordinator, "circulation_recommended", "Cirkulace doporučena")
+
+    @property
+    def native_value(self) -> str:
+        recommended = self.coordinator.data.get("circulation_recommended", False)
+        return "ano" if recommended else "ne"
+
+
 # ========== PROFILE SENSOR ==========
 
 
@@ -387,6 +411,7 @@ def get_boiler_sensors(coordinator: BoilerCoordinator) -> list[SensorEntity]:
         BoilerCurrentSourceSensor(coordinator),
         BoilerRecommendedSourceSensor(coordinator),
         BoilerChargingRecommendedSensor(coordinator),
+        BoilerCirculationRecommendedSensor(coordinator),
         BoilerPlanEstimatedCostSensor(coordinator),
         # Diagnostika
         BoilerProfileConfidenceSensor(coordinator),

@@ -15,6 +15,7 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
 
+from ..shared.logging import _redact_sensitive
 _LOGGER = logging.getLogger(__name__)
 
 # Session TTL: 30 minut (bezpečná rezerva)
@@ -95,13 +96,11 @@ class OigCloudSessionManager:
             return None
 
     def _log_session_headers(self, session: Any) -> None:
-        _LOGGER.info("📋 HTTP HEADERS sent by OigCloudApi:")
-
+        """Session headers nejsou logovány (citlivé údaje)."""
         headers = self._extract_session_headers(session)
         if headers:
             for key, value in headers.items():
-                _LOGGER.info(f"   {key}: {value}")
-            return
+                _LOGGER.debug("Session header: %s = %s", key, _redact_sensitive(value))
 
         _LOGGER.debug(
             "Could not find headers in session object, checking attributes..."
@@ -149,7 +148,7 @@ class OigCloudSessionManager:
                     # Log PHPSESSID before auth
                     old_session = getattr(self._api, "_phpsessid", None)
                     if old_session:
-                        _LOGGER.debug(f"📝 Old PHPSESSID: {old_session[:16]}...")
+                        _LOGGER.debug("📝 Old PHPSESSID detected (not logged for security)")
 
                     # Log authentication URL
                     base_url = getattr(self._api, "_base_url", None)
@@ -159,12 +158,10 @@ class OigCloudSessionManager:
                     await self._api.authenticate()
                     self._last_auth_time = datetime.now()
 
-                    # Log PHPSESSID after auth
+                    # Log PHPSESSID after auth (NOT logged for security)
                     new_session = getattr(self._api, "_phpsessid", None)
                     if new_session:
-                        _LOGGER.info(
-                            f"🍪 New PHPSESSID: {new_session[:16]}... (length: {len(new_session)})"
-                        )
+                        _LOGGER.debug("🍪 New PHPSESSID created (not logged for security)")
 
                     # Try to inspect session headers (if API creates session)
                     await self._log_api_session_info()

@@ -37,11 +37,11 @@ export class BoilerChartModule {
      */
     async loadAndRender() {
         // Načíst boiler sensory - Czech entity names
-        const planEntityId = 'sensor.oig_bojler_plan_ohrevu';
-        const socEntityId = 'sensor.oig_bojler_stav_nabiti';
-        const tempEntityId = 'sensor.oig_bojler_teplota_nahore';
-        const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
-        const costEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
+        const planEntityId = getSensorId('boiler_plan');
+        const socEntityId = getSensorId('boiler_soc');
+        const tempEntityId = getSensorId('boiler_temperature_top');
+        const energyEntityId = getSensorId('boiler_energy_required');
+        const costEntityId = getSensorId('boiler_plan_cost');
 
         const planSensor = this.hass.states[planEntityId];
         const socSensor = this.hass.states[socEntityId];

@@ -128,6 +128,7 @@
         "data": {
           "boiler_alt_cost_kwh": "Cena alternativního ohřevu (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Přepínač alternativního zdroje - volitelný",
+          "boiler_circulation_pump_switch_entity": "Přepínač cirkulačního čerpadla - volitelný",
           "boiler_cold_inlet_temp_c": "Teplota studené vody (°C)",
           "boiler_deadline_time": "Deadline (čas do kdy mít ohřáto)",
           "boiler_has_alternative_heating": "Má bojler alternativní zdroj tepla?",
@@ -146,6 +147,7 @@
         "data_description": {
           "boiler_alt_cost_kwh": "Kolik vás stojí 1 kWh z alternativního zdroje (např. 1.5 CZK/kWh pro kotel). Elektrický ohřev se použije jen když je spotová cena levnější.",
           "boiler_alt_heater_switch_entity": "Entity ID přepínače pro alternativní zdroj (např. kotel, tepelné čerpadlo). Nechte prázdné, pokud nemáte.",
+          "boiler_circulation_pump_switch_entity": "Entity ID přepínače pro cirkulační čerpadlo. Nechte prázdné, pokud cirkulaci neřídíte přes switch.",
           "boiler_cold_inlet_temp_c": "Teplota přítoku studené vody z vodovodu (typicky 10-15°C)",
           "boiler_deadline_time": "Do kdy chcete mít bojler ohřátý (formát HH:MM, např. 20:00). Plánování vždy najde nejlevnější sloty PŘED tímto časem.",
           "boiler_has_alternative_heating": "Zaškrtněte, pokud máte alternativní způsob ohřevu (kotel, TČ) a chcete ho využívat když je elektřina drahá",

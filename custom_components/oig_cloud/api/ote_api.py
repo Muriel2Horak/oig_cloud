@@ -528,9 +528,7 @@ class OteApi:
                 await self._persist_spot_cache(data)
                 return data
         except Exception as err:
-            _LOGGER.error(
-                "Error fetching spot prices from OTE: %s", err, exc_info=True
-            )
+            _LOGGER.error("Error fetching spot prices from OTE: %s", err, exc_info=True)
             return self._fallback_cached_prices()
 
         return {}
@@ -552,9 +550,7 @@ class OteApi:
         force_today_only: bool,
     ) -> Optional[Dict[str, Any]]:
         eur_czk_rate = await self._resolve_eur_czk_rate()
-        start_date, end_date = self._resolve_date_range(
-            date, now, force_today_only
-        )
+        start_date, end_date = self._resolve_date_range(date, now, force_today_only)
         qh_eur_kwh = await self._get_dam_period_prices(start_date, end_date)
         if not qh_eur_kwh:
             return self._fallback_cached_prices()
@@ -586,15 +582,11 @@ class OteApi:
         if force_today_only or now.hour < 13:
             start_date = date_value.date()
             end_date = date_value.date()
-            _LOGGER.info(
-                "Fetching PT15M prices for today only: %s", start_date
-            )
+            _LOGGER.info("Fetching PT15M prices for today only: %s", start_date)
         else:
             start_date = date_value.date() - timedelta(days=1)
             end_date = date_value.date() + timedelta(days=1)
-            _LOGGER.info(
-                "Fetching PT15M prices for %s to %s", start_date, end_date
-            )
+            _LOGGER.info("Fetching PT15M prices for %s to %s", start_date, end_date)
         return start_date, end_date
 
     async def _build_spot_data(
@@ -646,9 +638,7 @@ class OteApi:
             "OTE data missing tomorrow after 13:00; retrying tomorrow-only fetch"
         )
         try:
-            qh_eur_kwh_tomorrow = await self._get_dam_period_prices(
-                tomorrow, tomorrow
-            )
+            qh_eur_kwh_tomorrow = await self._get_dam_period_prices(tomorrow, tomorrow)
             if not qh_eur_kwh_tomorrow:
                 return data
             qh_eur_kwh.update(qh_eur_kwh_tomorrow)
@@ -716,9 +706,7 @@ class OteApi:
         for dt, price_czk in qh_rates_czk.items():
             local_dt = dt.astimezone(self.timezone)
             price_date = local_dt.date()
-            time_key = (
-                f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:{local_dt.minute:02d}:00"
-            )
+            time_key = f"{price_date.strftime('%Y-%m-%d')}T{local_dt.hour:02d}:{local_dt.minute:02d}:00"
             qh_prices_czk_kwh[time_key] = round(price_czk, 4)
             qh_prices_eur_mwh[time_key] = round(float(qh_rates_eur[dt]) * 1000.0, 2)
 

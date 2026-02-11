@@ -91,7 +91,7 @@ _LOGGER = logging.getLogger(__name__)
 if config_entries is None:  # pragma: no cover
     PLATFORMS = []
 else:
-    PLATFORMS = [Platform.SENSOR]
+    PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -485,6 +485,12 @@ def _is_boiler_unique_id(unique_id: str) -> bool:
     return "_boiler_" in unique_id
 
 
+async def _migrate_boiler_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Deprecated: no boiler entity migration (OIG Box sensors stay in base module)."""
+    _ = hass, entry
+    return
+
+
 def _maybe_rename_entity_id(
     entity_registry: Any,
     entity_id: str,
@@ -764,7 +770,7 @@ async def _cleanup_invalid_empty_devices(
         entity_registry = er.async_get(hass)
 
         # Non-numeric identifiers used by this integration that are still valid.
-        allowlisted_bases = {"oig_bojler"}
+        allowlisted_bases = {"oig_bojler", "boiler"}
 
         devices = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
         removed: list[str] = []
@@ -1137,6 +1143,9 @@ async def _init_boiler_coordinator(
         from .boiler.coordinator import BoilerCoordinator
 
         boiler_config = {**entry.data, **entry.options}
+        box_id = entry.options.get("box_id")
+        if isinstance(box_id, str) and box_id.isdigit():
+            boiler_config["box_id"] = box_id
         coordinator = BoilerCoordinator(hass, boiler_config)
         await coordinator.async_config_entry_first_refresh()
         _LOGGER.info("Boiler coordinator successfully initialized")
@@ -1278,6 +1287,7 @@ async def async_setup_entry(
     init_data_source_state(hass, entry)
     _maybe_persist_box_id_from_proxy_or_local(hass, entry)
 
+
     service_shield = await _start_service_shield(hass, entry)
 
     try:
@@ -1379,8 +1389,10 @@ async def async_setup_entry(
         # POZN: Plná migrace/cleanup device registry je riziková (může rozbít entity).
         # Děláme jen bezpečný úklid prázdných zařízení s neplatným box_id (např. spot_prices/unknown).
 
-        # Vždy registrovat sensor platform
-        await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+        # Vždy registrovat sensor + switch platform
+        await hass.config_entries.async_forward_entry_setups(
+            entry, ["sensor", "switch"]
+        )
 
         # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
         # that can be left behind after unique_id/device_id stabilization.
@@ -1543,6 +1555,22 @@ def _setup_service_shield_monitoring(
         async_track_time_interval(hass, test_shield_monitoring, timedelta(seconds=30))
     )
 
+    # StatisticsStore periodic flush (low-power optimalization)
+    async def flush_statistics_store(_now: Any) -> None:
+        await asyncio.sleep(0)
+        try:
+            from .shared.statistics_storage import StatisticsStore
+            stats_store = StatisticsStore.get_instance(hass)
+            if stats_store:
+                await stats_store.save_all()
+                _LOGGER.debug("[STATS] Periodic flush completed")
+        except Exception as err:
+            _LOGGER.debug("StatisticsStore periodic flush failed: %s", err)
+
+    entry.async_on_unload(
+        async_track_time_interval(hass, flush_statistics_store, timedelta(minutes=10))
+    )
+
 
 async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
     """Setup telemetry if enabled."""
@@ -1579,6 +1607,16 @@ async def async_unload_entry(
     """Unload a config entry."""
     # Odebrání dashboard panelu při unload
     await _remove_frontend_panel(hass, entry)
+
+    # Flush StatisticsStore data before unload (low-power optimalization)
+    try:
+        from .shared.statistics_storage import StatisticsStore
+        stats_store = StatisticsStore.get_instance(hass)
+        if stats_store:
+            await stats_store.save_all()
+            _LOGGER.debug(f"[UNLOAD] Flushed StatisticsStore for entry {entry.entry_id}")
+    except Exception as err:
+        _LOGGER.debug("StatisticsStore flush failed: %s", err)
 
     # PHASE 3: Cleanup Balancing Manager (no async_shutdown needed - just storage)
 

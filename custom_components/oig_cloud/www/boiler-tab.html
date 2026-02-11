@@ -51,62 +51,82 @@
             <!-- Boiler Status Info -->
             <div class="control-section">
                 <h4>Stav bojleru</h4>
-                <div class="boiler-status-grid">
-                    <div class="status-card">
-                        <div class="status-label">SOC</div>
-                        <button type="button" class="status-value entity-value button-reset" id="boiler-soc-value"
-                            data-entity="boiler_soc"
-                            data-tooltip="State of Charge - úroveň nabití (0-100%)"
-                            onclick="openEntityDialog(getSensorId('boiler_soc'))">
-                            -- %
-                        </button>
-                    </div>
-                    <div class="status-card">
-                        <div class="status-label">Teplota horní</div>
-                        <button type="button" class="status-value entity-value button-reset" id="boiler-temp-top-value"
-                            data-entity="boiler_temperature_top"
-                            data-tooltip="Teplota v horní zóně bojleru"
-                            onclick="openEntityDialog(getSensorId('boiler_temperature_top'))">
-                            -- °C
-                        </button>
-                    </div>
-                    <div class="status-card">
-                        <div class="status-label">Energie potřebná</div>
-                        <button type="button" class="status-value entity-value button-reset" id="boiler-energy-required-value"
-                            data-entity="boiler_energy_required"
-                            data-tooltip="Energie potřebná k dosažení cílové teploty"
-                            onclick="openEntityDialog(getSensorId('boiler_energy_required'))">
-                            -- kWh
-                        </button>
-                    </div>
-                    <div class="status-card">
-                        <div class="status-label">Náklady plánu</div>
-                        <button type="button" class="status-value entity-value button-reset" id="boiler-plan-cost-value"
-                            data-entity="boiler_plan_cost"
-                            data-tooltip="Celkové náklady na naplánovaný ohřev"
-                            onclick="openEntityDialog(getSensorId('boiler_plan_cost'))">
-                            -- Kč
-                        </button>
+                    <div class="boiler-status-grid">
+                        <div class="status-card">
+                            <div class="status-label">Nahřáto</div>
+                            <div class="status-value" id="boiler-soc-value"
+                                data-tooltip="Odhadované nahřátí vůči cílové teplotě">
+                                -- %
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">Teplota horní</div>
+                            <div class="status-value" id="boiler-temp-top-value"
+                                data-tooltip="Teplota v horní zóně bojleru">
+                                -- °C
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">Teplota spodní</div>
+                            <div class="status-value" id="boiler-temp-bottom-value"
+                                data-tooltip="Teplota ve spodní zóně bojleru">
+                                -- °C
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">Energie potřebná</div>
+                            <div class="status-value" id="boiler-energy-required-value"
+                                data-tooltip="Energie potřebná k dosažení cílové teploty">
+                                -- kWh
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">Náklady plánu</div>
+                            <div class="status-value" id="boiler-plan-cost-value"
+                                data-tooltip="Celkové náklady na naplánovaný ohřev">
+                                -- Kč
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">Další ohřev</div>
+                            <div class="status-value" id="boiler-next-heating-value"
+                                data-tooltip="Další plánovaný slot ohřevu">
+                                --
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-label">Doporučený zdroj</div>
+                            <div class="status-value" id="boiler-recommended-source-value"
+                                data-tooltip="Doporučený zdroj energie pro ohřev">
+                                --
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
 
             <!-- NEW: Energy Breakdown -->
             <div class="control-section">
                 <h4>Rozpad energie</h4>
                 <div class="boiler-status-grid">
                     <div class="status-card">
+                        <div class="status-label">Z FVE</div>
+                        <div class="status-value" id="boiler-fve-energy-value"
+                            data-tooltip="Energie z FVE">
+                            -- kWh
+                        </div>
+                    </div>
+                    <div class="status-card">
                         <div class="status-label">Ze sítě</div>
                         <div class="status-value" id="boiler-grid-energy-value"
                             data-tooltip="Energie ze sítě (kWh + náklady)">
-                            -- kWh (-- Kč)
+                            -- kWh
                         </div>
                     </div>
                     <div class="status-card">
                         <div class="status-label">Alternativa</div>
                         <div class="status-value" id="boiler-alt-energy-value"
                             data-tooltip="Energie z alternativního zdroje">
-                            -- kWh (-- Kč)
+                            -- kWh
                         </div>
                     </div>
                 </div>
@@ -128,6 +148,14 @@
                         <span class="usage-label">≈ objem vody (40°C):</span>
                         <span class="usage-value" id="boiler-water-liters">-- L</span>
                     </div>
+                    <div class="usage-item">
+                        <span class="usage-label">Doporučená cirkulace:</span>
+                        <span class="usage-value" id="boiler-circulation-windows">--</span>
+                    </div>
+                    <div class="usage-item">
+                        <span class="usage-label">Cirkulace právě teď:</span>
+                        <span class="usage-value circulation-status" id="boiler-circulation-now">--</span>
+                    </div>
                 </div>
             </div>
 
@@ -136,6 +164,9 @@
                 <h4>Poměr dohřevu</h4>
                 <div class="heating-ratio-container">
                     <div class="ratio-bar">
+                        <div class="ratio-fve" id="boiler-ratio-fve" style="width: 0%"
+                            data-tooltip="Podíl FVE energie">
+                        </div>
                         <div class="ratio-grid" id="boiler-ratio-grid" style="width: 0%"
                             data-tooltip="Podíl elektřiny ze sítě">
                         </div>
@@ -144,6 +175,7 @@
                         </div>
                     </div>
                     <div class="ratio-labels">
+                        <span id="boiler-ratio-fve-label">0% FVE</span>
                         <span id="boiler-ratio-grid-label">0% síť</span>
                         <span id="boiler-ratio-alt-label">0% alternativa</span>
                     </div>
@@ -155,7 +187,7 @@
                 <h4>Informace o plánu</h4>
                 <div class="boiler-plan-info" id="boiler-plan-info">
                     <div class="plan-info-row">
-                        <span class="plan-info-label">Digest:</span>
+                        <span class="plan-info-label">Mix zdrojů:</span>
                         <span class="plan-info-value" id="boiler-plan-digest">--</span>
                     </div>
                     <div class="plan-info-row">
@@ -165,6 +197,22 @@
                     <div class="plan-info-row">
                         <span class="plan-info-label">Topení aktivní:</span>
                         <span class="plan-info-value" id="boiler-plan-active-slots">--</span>
+                    </div>
+                    <div class="plan-info-row">
+                        <span class="plan-info-label">Nejlevnější spot:</span>
+                        <span class="plan-info-value" id="boiler-spot-min">--</span>
+                    </div>
+                    <div class="plan-info-row">
+                        <span class="plan-info-label">Nejdražší spot:</span>
+                        <span class="plan-info-value" id="boiler-spot-max">--</span>
+                    </div>
+                    <div class="plan-info-row">
+                        <span class="plan-info-label">FVE okna (forecast):</span>
+                        <span class="plan-info-value" id="boiler-forecast-fve-windows">--</span>
+                    </div>
+                    <div class="plan-info-row">
+                        <span class="plan-info-label">Grid okna (forecast):</span>
+                        <span class="plan-info-value" id="boiler-forecast-grid-windows">--</span>
                     </div>
                     <div class="plan-info-row">
                         <span class="plan-info-label">Od:</span>
@@ -267,6 +315,10 @@
                     <div class="stat-item">
                         <span class="stat-label">Píky:</span>
                         <span class="stat-value" id="profile-stat-peaks">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Spolehlivost:</span>
+                        <span class="stat-value" id="profile-stat-confidence">-- %</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">Sledováno:</span>

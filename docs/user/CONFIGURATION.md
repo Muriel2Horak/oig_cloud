@@ -137,6 +137,7 @@ Vyplňují se fyzikální a technické parametry bojleru, např.:
 - **boiler_target_temp_c** / **boiler_cold_inlet_temp_c**
 - Senzory teplot (top/bottom nebo single sensor + pozice)
 - Výkon topné patrony a spínací entita
+- Volitelná entita oběhového čerpadla (cirkulace)
 - Horizon plánování / slot minutes
 - Volitelné alternativní ohřívání
 

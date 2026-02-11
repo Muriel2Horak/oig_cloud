@@ -3,14 +3,42 @@
 import asyncio
 import json
 import logging
+import re
 import time
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-import aiohttp
+if TYPE_CHECKING:
+    from aiohttp import ClientSession, ClientTimeout, TCPConnector
+else:
+    try:
+        from aiohttp import ClientSession, ClientTimeout, TCPConnector
+    except ImportError:
+        ClientSession = None  # type: ignore
+        ClientTimeout = None  # type: ignore
+        TCPConnector = None  # type: ignore
 
-from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE
+from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE, OT_ENABLED
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _redact_sensitive(value: Any) -> Any:
+    """Redaguje citlivé údaje (tokeny, cookies, session IDs, API keys, hesla)."""
+    if value is None:
+        return "none"
+    if isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        # Krátit dlouhé stringy a tokeny
+        if len(value) > 100:
+            return f"{value[:20]}..."
+        # Redagovat tokeny a cookie-like vzory
+        token_pattern = re.compile(r'\b[a-z0-9]{20,}', re.IGNORECASE)
+        cookie_pattern = re.compile(r'\b(?:PHPSESSID|session|cookie|authorization|token|api_key|password|auth)\b', re.IGNORECASE)
+        if token_pattern.search(value) or cookie_pattern.search(value):
+            return "***REDACTED***"
+        return value
+    return str(value)
 
 
 class SimpleTelemetry:
@@ -19,14 +47,18 @@ class SimpleTelemetry:
     def __init__(self, url: str, headers: Dict[str, str]) -> None:
         self.url = url
         self.headers = headers
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: Optional[ClientSession] = None
+        self._aiohttp_available = ClientSession is not None and TCPConnector is not None
 
-    async def _get_session(self) -> aiohttp.ClientSession:
+    async def _get_session(self) -> Optional[ClientSession]:
         """Získá nebo vytvoří aiohttp session."""
+        if not self._aiohttp_available:
+            return None
+
         await asyncio.sleep(0)
         if self.session is None or self.session.closed:
-            connector = aiohttp.TCPConnector(ssl=not OT_INSECURE)
-            self.session = aiohttp.ClientSession(connector=connector)
+            connector = TCPConnector(ssl=not OT_INSECURE)
+            self.session = ClientSession(connector=connector)
         return self.session
 
     async def send_event(
@@ -55,12 +87,19 @@ class SimpleTelemetry:
             )
 
             session = await self._get_session()
+            if session is None:
+                _LOGGER.warning("[TELEMETRY] aiohttp not available, skipping telemetry")
+                return False
+
+            timeout_kw = {}
+            if ClientTimeout is not None:
+                timeout_kw = {"timeout": ClientTimeout(total=10)}
 
             async with session.post(
                 self.url,
                 json=payload,
                 headers=self.headers,
-                timeout=aiohttp.ClientTimeout(total=10),
+                **timeout_kw
             ) as response:
                 response_text = await response.text()
 

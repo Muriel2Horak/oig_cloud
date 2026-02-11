@@ -1,0 +1,29 @@
+version: 2
+registries:
+  - name: pypi
+    url: https://pypi.org/simple
+
+  - name: pip-audit
+    url: https://pypi.org/simple
+
+allow-licenses:
+  - BSD-3-Clause
+  - MIT
+  - Apache-2.0
+  - ISC
+  - LGPL-2.1
+
+  - name: pip-audit
+    type: approve
+    ignore:
+      - name: pytest
+        versions:
+          - version: "==8.0.0"
+            reason: pytest 8.0.0 has a known issue, we track separately
+            expires: "2026-12-31"
+
+      - name: pip
+        versions:
+          - version: "==24.0.0"
+            reason: pip 24.0.0 has a known issue, we track separately
+            expires: "2026-12-31"

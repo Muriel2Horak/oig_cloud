@@ -28,6 +28,7 @@ from ..const import (
 from .models import BoilerPlan, BoilerProfile, EnergySource
 from .planner import BoilerPlanner
 from .profiler import BoilerProfiler
+from .circulation import is_circulation_recommended
 from .utils import (
     calculate_energy_to_heat,
     calculate_stratified_temp,
@@ -64,14 +65,19 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         self.config = config
+        self.box_id = self._resolve_box_id(config)
         self._last_profile_update: Optional[datetime] = None
         self._current_profile: Optional[BoilerProfile] = None
         self._current_plan: Optional[BoilerPlan] = None
 
         # Inicializace komponent
+        self._oig_manual_mode_entity = self._build_oig_entity_id("boiler_manual_mode")
+        self._oig_current_cbb_entity = self._build_oig_entity_id("boiler_current_cbb_w")
+        self._oig_day_energy_entity = self._build_oig_entity_id("boiler_day_w")
+
         self.profiler = BoilerProfiler(
             hass=hass,
-            energy_sensor="sensor.oig_2206237016_boiler_day_w",  # OIG energy sensor (Wh)
+            energy_sensor=self._oig_day_energy_entity,  # OIG energy sensor (Wh)
             lookback_days=60,
         )
 
@@ -132,6 +138,9 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "current_slot": current_slot,
                 "charging_recommended": charging_recommended,
                 "recommended_source": recommended_source,
+                "circulation_recommended": is_circulation_recommended(
+                    self._current_profile, now
+                ),
                 "last_update": now,
             }
 
@@ -246,9 +255,9 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _track_energy_sources(self) -> dict[str, float]:
         """Trackuje energii z jednotlivých zdrojů."""
         # OIG senzory
-        manual_mode_entity = "sensor.oig_2206237016_boiler_manual_mode"
-        current_cbb_entity = "sensor.oig_2206237016_boiler_current_cbb_w"
-        day_energy_entity = "sensor.oig_2206237016_boiler_day_w"
+        manual_mode_entity = self._oig_manual_mode_entity
+        current_cbb_entity = self._oig_current_cbb_entity
+        day_energy_entity = self._oig_day_energy_entity
 
         # User alternativní senzor
         alt_energy_sensor = self.config.get(CONF_BOILER_ALT_ENERGY_SENSOR)
@@ -276,6 +285,43 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "grid_kwh": grid_kwh,
             "alt_kwh": alt_kwh,
         }
+
+    def _resolve_box_id(self, config: dict[str, Any]) -> str:
+        box_id = config.get("box_id")
+        if isinstance(box_id, str) and box_id.isdigit():
+            return box_id
+
+        forced = getattr(self, "forced_box_id", None)
+        if isinstance(forced, str) and forced.isdigit():
+            return forced
+
+        inferred = self._infer_box_id_from_states()
+        if inferred:
+            return inferred
+
+        return "unknown"
+
+    def _infer_box_id_from_states(self) -> Optional[str]:
+        entity_ids = []
+        try:
+            entity_ids = self.hass.states.async_entity_ids("sensor")
+        except AttributeError:
+            entity_ids = []
+
+        for entity_id in entity_ids:
+            if "_boiler_day_w" not in entity_id:
+                continue
+            parts = entity_id.split("_")
+            if len(parts) < 3:
+                continue
+            if parts[1] == "oig" and parts[2].isdigit():
+                return parts[2]
+        return None
+
+    def _build_oig_entity_id(self, suffix: str) -> str:
+        if self.box_id != "unknown":
+            return f"sensor.oig_{self.box_id}_{suffix}"
+        return f"sensor.oig_2206237016_{suffix}"
 
     def _get_energy_states(
         self, manual_mode_entity: str, current_cbb_entity: str, day_energy_entity: str

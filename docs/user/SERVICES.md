@@ -184,6 +184,11 @@ Vytvoří plán ohřevu podle spot cen.
 
 Aplikuje vytvořený plán a vytvoří automatizace.
 
+Poznámka: využívá `boiler_heater_switch_entity` (a volitelně
+`boiler_alt_heater_switch_entity` + `boiler_circulation_pump_switch_entity`).
+Plán se aplikuje přes wrapper switche integrace
+`switch.oig_<boxid>_bojler_top/alt/cirkulace`.
+
 ### cancel_boiler_plan
 
 Zruší plán a odstraní automatizace.

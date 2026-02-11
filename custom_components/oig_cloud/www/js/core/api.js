@@ -13,7 +13,7 @@
 let INVERTER_SN = new URLSearchParams(globalThis.location.search).get('inverter_sn') || '2206237016';
 
 // ============================================================================
-// HOME ASSISTANT ACCESS
+// HOME ASSISTANT API ACCESS (BEZPORNÍ BEZ MANUÁLNÍHO TOKENU)
 // ============================================================================
 
 /**
@@ -27,6 +27,55 @@ function getHass() {
         console.error('[API] Cannot access hass:', e);
         return null;
     }
+}
+
+/**
+ * Získá HA autentizační token (POZNÁMKA: nepoužívat přímo pro API volání!)
+ * Použijte hass.callApi/hass.callService, které token spravují uvnitř.
+ * @returns {string|null} Token nebo null
+ */
+function getHAToken() {
+    console.warn('[API] getHAToken() je zastaralé - nepoužívat pro API volání. Použijte hass.callApi/hass.callService.');
+    try {
+        const hass = getHass();
+        return hass?.auth?.data?.access_token || null;
+    } catch (e) {
+        console.error('[API] Cannot get HA token:', e);
+        return null;
+    }
+}
+
+/**
+ * HA API wrapper s tokenem (POUZE POUZE PRO RELATIVNÍ /api/... CESTY).
+ * Pro absolutní URL (mimo HA) token NENÍ PŘIDÁN.
+ * @param {string} url - Absolutní nebo relativní URL
+ * @param {object} options - Fetch options (credentials, headers atd.)
+ * @returns {Promise<Response>}
+ *
+ * TODO: Přepsat všechny fetchWithAuth('api/...') volání na hass.callApi()
+ *       - např. callHaApi('oig_cloud', 'get_config', { entry_id })
+ *       - tím zajistíme, že token spravuje Home Assistant uvnitř
+ */
+async function fetchWithAuth(url, options = {}) {
+    // Bezpečnost: blokovat absolutní URL (kromě localhost) k prevenci token exfiltrace
+    const hostname = new URL(url, globalThis.location.href).hostname;
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1' && !url.startsWith('/api/')) {
+        console.error('[API] fetchWithAuth zamítnut pro ne-localhost URL:', url);
+        throw new Error('Nepovoleno: fetchWithAuth je pouze pro HA API (/api/...). Absolutní URL nejsou bezpečné.');
+    }
+
+    const token = getHAToken();
+    const mergedHeaders = options.headers ? { ...options.headers } : {};
+
+    if (token && !mergedHeaders.Authorization && !mergedHeaders.authorization) {
+        mergedHeaders.Authorization = `Bearer ${token}`;
+    }
+
+    return await fetch(url, {
+        ...options,
+        headers: mergedHeaders
+    });
+}
 }
 
 /**

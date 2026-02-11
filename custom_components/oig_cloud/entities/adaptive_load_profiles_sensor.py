@@ -221,15 +221,14 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         """
         Profiling loop - vytváření adaptivní predikce spotřeby.
 
-        První běh okamžitě (s delay 10s), pak každých 15 minut.
-        Historické profily se loadují jednou denně v 00:30.
+        Low-power default: každých 6 hodin (odlehčí DB zátěž).
         """
         try:
             # První běh s delay aby HA dostal čas
             await asyncio.sleep(10)
 
             _LOGGER.info(
-                "📊 Adaptive profiling loop starting - matching every 15 minutes"
+                "📊 Adaptive profiling loop starting - matching every 6 hours (P2 optimalization)"
             )
 
             # První běh okamžitě
@@ -237,10 +236,11 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
 
             while True:
                 try:
-                    # Čekat 15 minut
-                    await asyncio.sleep(15 * 60)
+                    # Low-power: čekat 6 hodin (odlehčí DB zátěž)
+                    await asyncio.sleep(6 * 60 * 60)
 
-                    _LOGGER.debug("📊 Running adaptive matching (15min update)")
+                    _LOGGER.debug("📊 Running adaptive matching (6h update)")
+
                     await self._create_and_update_profile()
 
                 except Exception as e:

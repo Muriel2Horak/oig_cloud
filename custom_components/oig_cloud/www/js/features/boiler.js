@@ -8,6 +8,10 @@ const boilerState = {
     profiles: {},
     currentCategory: null,
     plan: null,
+    state: null,
+    profileSummary: null,
+    config: null,
+    batteryTimeline: null,
     charts: {},
     initialized: false,
     refreshTimer: null
@@ -75,7 +79,14 @@ async function loadBasicBoilerData() {
             const data = await profilesResp.json();
             boilerState.profiles = data.profiles || {};
             boilerState.currentCategory = data.current_category;
+            boilerState.profileSummary = data.summary || null;
+            boilerState.config = data.config || null;
             console.log(`🔥 [Boiler] Loaded ${Object.keys(boilerState.profiles).length} profiles`);
+        } else {
+            boilerState.profiles = {};
+            boilerState.currentCategory = null;
+            boilerState.profileSummary = null;
+            boilerState.config = null;
         }
 
         // Načíst plán
@@ -84,7 +95,16 @@ async function loadBasicBoilerData() {
         });
         if (planResp.ok) {
             boilerState.plan = await planResp.json();
+            boilerState.state = boilerState.plan.state || null;
             console.log('🔥 [Boiler] Plan loaded');
+        } else {
+            boilerState.plan = null;
+            boilerState.state = null;
+        }
+
+        if (globalThis.DashboardAPI?.loadBatteryTimeline && globalThis.INVERTER_SN) {
+            const timelineData = await globalThis.DashboardAPI.loadBatteryTimeline(globalThis.INVERTER_SN);
+            boilerState.batteryTimeline = timelineData?.active || null;
         }
 
         // Update UI
@@ -92,6 +112,9 @@ async function loadBasicBoilerData() {
         createBoilerHeatmap();
         createBoilerTimeline();
         updateBoilerStats();
+        updateBoilerOverview();
+        updateBoilerPlanInfo(boilerState.plan);
+        updateBoilerForecastWindows();
 
     } catch (err) {
         console.error('[Boiler] Failed to load data:', err);
@@ -124,6 +147,11 @@ function updateCategorySelector() {
 
     select.innerHTML = '';
 
+    if (!boilerState.currentCategory) {
+        const available = Object.keys(boilerState.profiles || {});
+        boilerState.currentCategory = available[0] || 'workday_summer';
+    }
+
     Object.keys(CATEGORY_LABELS).forEach(cat => {
         const option = document.createElement('option');
         option.value = cat;
@@ -144,6 +172,9 @@ function onBoilerCategoryChange() {
 
     boilerState.currentCategory = select.value;
     createBoilerHeatmap();
+    renderBoilerProfilingChart();
+    renderBoilerHeatmap();
+    updateBoilerPredictedUsage();
 }
 
 /**
@@ -171,18 +202,20 @@ function createBoilerHeatmap() {
     const datasets = [];
     const labels = [];
 
-    // Vytvoř dataset pro každý den
+    const heatmap = profile.heatmap || [];
+
     for (let day = 0; day < 7; day++) {
         const dayData = [];
         for (let hour = 0; hour < 24; hour++) {
-            const consumption = profile.hourly_avg[hour] || 0;
-            dayData.push(consumption);
+            const cell = heatmap?.[day]?.[hour];
+            const consumption = cell?.consumption ?? profile.hourly_avg?.[hour] ?? 0;
+            dayData.push(Number.parseFloat(consumption) || 0);
         }
 
         datasets.push({
             label: DAY_LABELS[day],
             data: dayData,
-            backgroundColor: `rgba(255, 152, 0, 0.${day + 3})`, // Různé opacity pro dny
+            backgroundColor: `rgba(255, 152, 0, 0.${day + 3})`,
             borderColor: 'rgba(255, 152, 0, 0.8)',
             borderWidth: 1,
         });
@@ -268,10 +301,11 @@ function createBoilerTimeline() {
     const fveData = [];
     const gridData = [];
     const altData = [];
+    const solarAvailability = [];
 
     boilerState.plan.slots.forEach(slot => {
         const x = new Date(slot.start).getTime();
-        const y = slot.avg_consumption_kwh;
+        const y = slot.consumption_kwh ?? slot.avg_consumption_kwh ?? 0;
 
         const point = { x, y };
 
@@ -283,6 +317,22 @@ function createBoilerTimeline() {
             altData.push(point);
         }
     });
+
+    const planStart = boilerState.plan.slots[0]?.start;
+    const planEnd = boilerState.plan.slots[boilerState.plan.slots.length - 1]?.end;
+    const timeline = boilerState.batteryTimeline || [];
+    if (planStart && planEnd && timeline.length) {
+        const startMs = new Date(planStart).getTime();
+        const endMs = new Date(planEnd).getTime();
+        timeline.forEach(entry => {
+            const ts = entry.timestamp || entry.time;
+            if (!ts) return;
+            const x = new Date(ts).getTime();
+            if (x < startMs || x > endMs) return;
+            const solar = Number.parseFloat(entry.solar_kwh ?? entry.solar_charge_kwh ?? 0) || 0;
+            solarAvailability.push({ x, y: solar });
+        });
+    }
 
     const ctx = canvas.getContext('2d');
     boilerState.charts.timeline = new Chart(ctx, {
@@ -309,6 +359,17 @@ function createBoilerTimeline() {
                     backgroundColor: SOURCE_COLORS.alternative,
                     borderColor: SOURCE_COLORS.alternative,
                     borderWidth: 1
+                },
+                {
+                    label: 'FVE dostupnost (forecast)',
+                    data: solarAvailability,
+                    borderColor: 'rgba(76, 175, 80, 0.7)',
+                    backgroundColor: 'rgba(76, 175, 80, 0.15)',
+                    borderWidth: 1,
+                    type: 'line',
+                    tension: 0.3,
+                    pointRadius: 0,
+                    yAxisID: 'y-solar'
                 }
             ]
         },
@@ -336,6 +397,19 @@ function createBoilerTimeline() {
                         text: 'Spotřeba (kWh)'
                     },
                     beginAtZero: true
+                },
+                'y-solar': {
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'FVE (kWh)'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    },
+                    ticks: {
+                        color: 'rgba(76, 175, 80, 0.8)'
+                    }
                 }
             },
             plugins: {
@@ -358,10 +432,15 @@ function updateBoilerStats() {
     const gridEl = document.getElementById('boiler-grid-consumption');
     const costEl = document.getElementById('boiler-estimated-cost');
 
-    if (totalEl) totalEl.textContent = `${boilerState.plan.total_consumption_kwh.toFixed(2)} kWh`;
-    if (fveEl) fveEl.textContent = `${boilerState.plan.fve_kwh.toFixed(2)} kWh`;
-    if (gridEl) gridEl.textContent = `${boilerState.plan.grid_kwh.toFixed(2)} kWh`;
-    if (costEl) costEl.textContent = `${boilerState.plan.estimated_cost_czk.toFixed(2)} Kč`;
+    const total = Number.parseFloat(boilerState.plan.total_consumption_kwh) || 0;
+    const fve = Number.parseFloat(boilerState.plan.fve_kwh) || 0;
+    const grid = Number.parseFloat(boilerState.plan.grid_kwh) || 0;
+    const cost = Number.parseFloat(boilerState.plan.estimated_cost_czk) || 0;
+
+    if (totalEl) totalEl.textContent = `${total.toFixed(2)} kWh`;
+    if (fveEl) fveEl.textContent = `${fve.toFixed(2)} kWh`;
+    if (gridEl) gridEl.textContent = `${grid.toFixed(2)} kWh`;
+    if (costEl) costEl.textContent = `${cost.toFixed(2)} Kč`;
 }
 
 /**
@@ -429,119 +508,379 @@ async function loadExtendedBoilerData() {
     }
 }
 
-function formatBoilerSensorValue(entityId, value) {
-    if (entityId.includes('stav_nabiti')) {
-        return `${value.toFixed(0)} %`;
+function formatTimeLabel(value) {
+    if (!value) return '--:--';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '--:--';
+    return date.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateTimeLabel(value) {
+    if (!value) return '--';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toLocaleString('cs-CZ', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatTimeRange(start, end) {
+    return `${formatTimeLabel(start)}–${formatTimeLabel(end)}`;
+}
+
+function formatSourceLabel(source) {
+    const map = { fve: 'FVE', grid: 'Síť', alternative: 'Alternativa' };
+    return map[source] || source || '--';
+}
+
+function clampNumber(value, min, max) {
+    if (Number.isNaN(value)) return min;
+    return Math.max(min, Math.min(max, value));
+}
+
+function computeHeatingPercent(avgTemp, targetTemp, coldInlet) {
+    if (avgTemp === null || avgTemp === undefined) return null;
+    const delta = targetTemp - coldInlet;
+    if (delta <= 0) return null;
+    const percent = ((avgTemp - coldInlet) / delta) * 100;
+    return clampNumber(percent, 0, 100);
+}
+
+function sumHourlyAvg(hourlyAvg) {
+    if (!hourlyAvg) return 0;
+    return Object.values(hourlyAvg).reduce((acc, val) => acc + (Number.parseFloat(val) || 0), 0);
+}
+
+function pickPeakHours(hourlyAvg) {
+    if (!hourlyAvg) return [];
+    const ranked = Object.entries(hourlyAvg)
+        .map(([hour, value]) => ({ hour: Number.parseInt(hour, 10), value: Number.parseFloat(value) || 0 }))
+        .filter(item => Number.isFinite(item.value))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 3)
+        .filter(item => item.value > 0)
+        .map(item => item.hour);
+    return ranked.sort((a, b) => a - b);
+}
+
+function temperatureToColor(temp) {
+    const minTemp = 10;
+    const maxTemp = 70;
+    const ratio = clampNumber((temp - minTemp) / (maxTemp - minTemp), 0, 1);
+    const cold = { r: 33, g: 150, b: 243 };
+    const hot = { r: 255, g: 87, b: 34 };
+    const mix = (a, b) => Math.round(a + (b - a) * ratio);
+    return `rgb(${mix(cold.r, hot.r)}, ${mix(cold.g, hot.g)}, ${mix(cold.b, hot.b)})`;
+}
+
+function parseTimeMinutes(label) {
+    if (!label) return null;
+    const [hour, minute] = label.split(':').map(part => Number.parseInt(part, 10));
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    return hour * 60 + minute;
+}
+
+function isNowInWindow(nowMinutes, startMinutes, endMinutes) {
+    if (startMinutes === null || endMinutes === null) return false;
+    if (startMinutes <= endMinutes) {
+        return nowMinutes >= startMinutes && nowMinutes < endMinutes;
     }
-    if (entityId.includes('teplota')) {
-        return `${value.toFixed(1)} °C`;
+    return nowMinutes >= startMinutes || nowMinutes < endMinutes;
+}
+
+function findNextWindow(windows, nowMinutes) {
+    if (!Array.isArray(windows) || !windows.length) return null;
+    let best = null;
+
+    windows.forEach(window => {
+        const start = parseTimeMinutes(window.start);
+        const end = parseTimeMinutes(window.end);
+        if (start === null || end === null) return;
+        let delta = start - nowMinutes;
+        if (delta < 0) {
+            delta += 24 * 60;
+        }
+        if (!best || delta < best.delta) {
+            best = { window, delta, start, end };
+        }
+    });
+
+    return best;
+}
+
+function buildWindowsFromTimeline(timeline, selector) {
+    if (!Array.isArray(timeline) || timeline.length === 0) return [];
+    const windows = [];
+    let current = null;
+
+    timeline.forEach(entry => {
+        const ts = entry.timestamp || entry.time;
+        if (!ts) return;
+        const time = new Date(ts);
+        const isActive = selector(entry);
+        if (isActive && !current) {
+            current = { start: time, end: time };
+        } else if (isActive && current) {
+            current.end = time;
+        } else if (!isActive && current) {
+            windows.push(current);
+            current = null;
+        }
+    });
+
+    if (current) {
+        windows.push(current);
     }
-    if (entityId.includes('energie')) {
-        return `${value.toFixed(2)} kWh`;
-    }
-    if (entityId.includes('cena')) {
-        return `${value.toFixed(2)} Kč`;
-    }
-    return null;
+
+    return windows.map(window => ({
+        start: formatTimeLabel(window.start),
+        end: formatTimeLabel(new Date(window.end.getTime() + 15 * 60000))
+    }));
+}
+
+function findNextHeatingSlot(slots) {
+    if (!Array.isArray(slots)) return null;
+    const now = Date.now();
+    return slots.find(slot => {
+        const end = new Date(slot.end || slot.end_time || slot.endTime).getTime();
+        const consumption = slot.consumption_kwh ?? slot.avg_consumption_kwh ?? 0;
+        return end > now && consumption > 0;
+    }) || null;
 }
 
 function updateBoilerPlanInfo(plan) {
-    const slots = plan.slots || [];
-    const activeSlots = slots.filter(s => s.heating).length;
-
-    document.getElementById('boiler-plan-digest').textContent = plan.digest || 'N/A';
-    document.getElementById('boiler-plan-slots').textContent = slots.length;
-    document.getElementById('boiler-plan-active-slots').textContent = activeSlots;
-
-    if (slots.length === 0) {
+    if (!plan) {
+        const ids = [
+            'boiler-plan-digest',
+            'boiler-plan-slots',
+            'boiler-plan-active-slots',
+            'boiler-plan-start',
+            'boiler-plan-end',
+            'boiler-spot-min',
+            'boiler-spot-max',
+            'boiler-forecast-fve-windows',
+            'boiler-forecast-grid-windows'
+        ];
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '--';
+        });
         return;
     }
 
-    const startTime = new Date(slots[0].start_time);
-    const endTime = new Date(slots[slots.length - 1].start_time);
+    const slots = plan.slots || [];
+    const heatingSlots = slots.filter(slot => slot.consumption_kwh > 0);
+    const start = slots[0]?.start;
+    const end = slots[slots.length - 1]?.end;
 
-    document.getElementById('boiler-plan-start').textContent = startTime.toLocaleString('cs-CZ', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-    document.getElementById('boiler-plan-end').textContent = endTime.toLocaleString('cs-CZ', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
+    const digestEl = document.getElementById('boiler-plan-digest');
+    if (digestEl) {
+        const total = Number.parseFloat(plan.total_consumption_kwh) || 0;
+        if (total > 0) {
+            const fveShare = Math.round(((plan.fve_kwh || 0) / total) * 100);
+            const gridShare = Math.round(((plan.grid_kwh || 0) / total) * 100);
+            const altShare = Math.round(((plan.alt_kwh || 0) / total) * 100);
+            digestEl.textContent = `Mix: FVE ${fveShare}% · Síť ${gridShare}% · Alt ${altShare}%`;
+        } else {
+            digestEl.textContent = 'Mix: --';
+        }
+    }
+
+    const slotsEl = document.getElementById('boiler-plan-slots');
+    if (slotsEl) slotsEl.textContent = slots.length;
+
+    const activeSlotsEl = document.getElementById('boiler-plan-active-slots');
+    if (activeSlotsEl) activeSlotsEl.textContent = heatingSlots.length;
+
+    const startEl = document.getElementById('boiler-plan-start');
+    if (startEl) startEl.textContent = formatDateTimeLabel(start);
+
+    const endEl = document.getElementById('boiler-plan-end');
+    if (endEl) endEl.textContent = formatDateTimeLabel(end);
+
+    const spotSlots = slots
+        .filter(slot => {
+            const consumption = slot.consumption_kwh ?? slot.avg_consumption_kwh ?? 0;
+            return consumption > 0;
+        })
+        .map(slot => ({
+            slot,
+            price: Number.parseFloat(slot.spot_price)
+        }))
+        .filter(item => Number.isFinite(item.price));
+
+    const minSpotEl = document.getElementById('boiler-spot-min');
+    const maxSpotEl = document.getElementById('boiler-spot-max');
+
+    if (!spotSlots.length) {
+        if (minSpotEl) minSpotEl.textContent = '--';
+        if (maxSpotEl) maxSpotEl.textContent = '--';
+        return;
+    }
+
+    const minSpot = spotSlots.reduce((best, current) =>
+        current.price < best.price ? current : best
+    );
+    const maxSpot = spotSlots.reduce((best, current) =>
+        current.price > best.price ? current : best
+    );
+
+    if (minSpotEl) {
+        minSpotEl.textContent = `${formatTimeRange(minSpot.slot.start, minSpot.slot.end)} (${minSpot.price.toFixed(2)} Kč/kWh)`;
+    }
+    if (maxSpotEl) {
+        maxSpotEl.textContent = `${formatTimeRange(maxSpot.slot.start, maxSpot.slot.end)} (${maxSpot.price.toFixed(2)} Kč/kWh)`;
+    }
 }
 
 async function updateBoilerSensors() {
-    const hass = getHass();
-    if (!hass) return;
-
-    // Boiler sensors have different naming: sensor.oig_bojler_*
-    const sensorMap = {
-        'boiler-soc-value': 'sensor.oig_bojler_stav_nabiti',
-        'boiler-temp-top-value': 'sensor.oig_bojler_teplota_nahore',
-        'boiler-energy-required-value': 'sensor.oig_bojler_pozadovana_energie',
-        'boiler-plan-cost-value': 'sensor.oig_bojler_cena_planu_ohrevu'
-    };
-
-    for (const [elementId, entityId] of Object.entries(sensorMap)) {
-        const state = hass?.states?.[entityId];
-
-        const element = document.getElementById(elementId);
-        if (!element || !state) {
-            continue;
-        }
-
-        const value = Number.parseFloat(state.state);
-        if (Number.isNaN(value)) {
-            continue;
-        }
-
-        const formattedValue = formatBoilerSensorValue(entityId, value);
-        if (formattedValue !== null) {
-            element.textContent = formattedValue;
-        }
-    }
-
-    // Update plan info
-    const planEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
-    const planState = hass?.states?.[planEntityId];
-
-    if (planState?.attributes?.plan) {
-        updateBoilerPlanInfo(planState.attributes.plan);
-    }
+    updateBoilerOverview();
 }
 
 async function updateBoilerProfile() {
-    // Get configuration from energy sensor attributes
-    const hass = getHass();
-    if (!hass) return;
+    const config = boilerState.config || {};
 
-    const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
-    const energyState = hass?.states?.[energyEntityId];
+    const volumeEl = document.getElementById('boiler-profile-volume');
+    if (volumeEl) volumeEl.textContent = `${config.volume_l || '--'} L`;
 
-    if (energyState?.attributes) {
-        const attrs = energyState.attributes;
+    const targetEl = document.getElementById('boiler-profile-target-temp');
+    if (targetEl) targetEl.textContent = `${config.target_temp_c ?? '--'} °C`;
 
-        document.getElementById('boiler-profile-volume').textContent = `${attrs.volume_l || '--'} L`;
-        document.getElementById('boiler-profile-target-temp').textContent = `${attrs.target_temp_c || '--'} °C`;
+    const deadlineEl = document.getElementById('boiler-profile-deadline');
+    if (deadlineEl) deadlineEl.textContent = config.deadline_time || '--:--';
 
-        // Deadline from plan or config
-        const planEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
-        const planState = hass?.states?.[planEntityId];
-        const deadline = planState?.attributes?.plan?.deadline || attrs.deadline || '--:--';
-        document.getElementById('boiler-profile-deadline').textContent = deadline;
+    const stratEl = document.getElementById('boiler-profile-stratification');
+    if (stratEl) stratEl.textContent = config.stratification_mode || '--';
 
-        document.getElementById('boiler-profile-stratification').textContent = attrs.stratification_mode || attrs.method || '--';
-        document.getElementById('boiler-profile-k-constant').textContent = attrs.k_constant?.toFixed(4) || '--';
+    const kConstantEl = document.getElementById('boiler-profile-k-constant');
+    if (kConstantEl) kConstantEl.textContent = config.volume_l ? (config.volume_l * 0.001163).toFixed(4) : '--';
 
-        // Heater power - hide if element doesn't exist
-        const heaterPowerEl = document.getElementById('boiler-profile-heater-power');
-        if (heaterPowerEl) {
-            heaterPowerEl.textContent = '--'; // Not available in attributes
+    const heaterPowerEl = document.getElementById('boiler-profile-heater-power');
+    if (heaterPowerEl) {
+        heaterPowerEl.textContent = '--';
+    }
+}
+
+function updateBoilerOverview() {
+    const config = boilerState.config || {};
+    const plan = boilerState.plan;
+    const state = boilerState.state || {};
+    const temps = state.temperatures || {};
+    const energyState = state.energy_state || {};
+
+    const topTempRaw = temps.upper_zone ?? temps.top ?? null;
+    const bottomTempRaw = temps.lower_zone ?? temps.bottom ?? null;
+    const topTemp = Number.isFinite(topTempRaw) ? topTempRaw : null;
+    const bottomTemp = Number.isFinite(bottomTempRaw) ? bottomTempRaw : null;
+    const hasTemps = topTemp !== null || bottomTemp !== null;
+    const avgTemp = hasTemps && Number.isFinite(energyState.avg_temp)
+        ? energyState.avg_temp
+        : null;
+    const energyNeeded = hasTemps && Number.isFinite(energyState.energy_needed_kwh)
+        ? energyState.energy_needed_kwh
+        : null;
+    const targetTemp = Number.isFinite(config.target_temp_c) ? config.target_temp_c : 60;
+    const coldInlet = Number.isFinite(config.cold_inlet_temp_c) ? config.cold_inlet_temp_c : 10;
+    const heatingPercent = computeHeatingPercent(avgTemp, targetTemp, coldInlet);
+
+    const heatingPercentEl = document.getElementById('boiler-soc-value');
+    if (heatingPercentEl) {
+        heatingPercentEl.textContent = heatingPercent === null ? '-- %' : `${heatingPercent.toFixed(0)} %`;
+    }
+
+    const topEl = document.getElementById('boiler-temp-top-value');
+    if (topEl) topEl.textContent = topTemp === null ? '-- °C' : `${topTemp.toFixed(1)} °C`;
+
+    const bottomEl = document.getElementById('boiler-temp-bottom-value');
+    if (bottomEl) {
+        bottomEl.textContent = bottomTemp === null ? '-- °C' : `${bottomTemp.toFixed(1)} °C`;
+        const bottomCard = bottomEl.closest('.status-card');
+        if (bottomCard) {
+            bottomCard.style.display = bottomTemp === null ? 'none' : '';
         }
+    }
+
+    const energyEl = document.getElementById('boiler-energy-required-value');
+    if (energyEl) energyEl.textContent = energyNeeded === null ? '-- kWh' : `${energyNeeded.toFixed(2)} kWh`;
+
+    const planCostEl = document.getElementById('boiler-plan-cost-value');
+    if (planCostEl) {
+        planCostEl.textContent = plan?.estimated_cost_czk === undefined
+            ? '-- Kč'
+            : `${plan.estimated_cost_czk.toFixed(2)} Kč`;
+    }
+
+    const nextHeatingEl = document.getElementById('boiler-next-heating-value');
+    if (nextHeatingEl) {
+        const nextSlot = plan?.next_slot || findNextHeatingSlot(plan?.slots || []);
+        if (nextSlot) {
+            const sourceLabel = formatSourceLabel(nextSlot.recommended_source);
+            nextHeatingEl.textContent = `${formatTimeRange(nextSlot.start, nextSlot.end)} (${sourceLabel})`;
+        } else {
+            nextHeatingEl.textContent = 'Neplánováno';
+        }
+    }
+
+    const sourceEl = document.getElementById('boiler-recommended-source-value');
+    if (sourceEl) {
+        const source = state.recommended_source || plan?.next_slot?.recommended_source;
+        sourceEl.textContent = formatSourceLabel(source);
+    }
+}
+
+function updateBoilerForecastWindows() {
+    const fveEl = document.getElementById('boiler-forecast-fve-windows');
+    const gridEl = document.getElementById('boiler-forecast-grid-windows');
+    if (!fveEl && !gridEl) return;
+
+    if (!boilerState.plan || !boilerState.plan.slots?.length) {
+        if (fveEl) fveEl.textContent = '--';
+        if (gridEl) gridEl.textContent = '--';
+        return;
+    }
+
+    const timeline = boilerState.batteryTimeline || [];
+    if (!timeline.length) {
+        if (fveEl) fveEl.textContent = '--';
+        if (gridEl) gridEl.textContent = '--';
+        return;
+    }
+
+    const planStart = boilerState.plan?.slots?.[0]?.start;
+    const planSlots = boilerState.plan?.slots || [];
+    const planEnd = planSlots[planSlots.length - 1]?.end;
+    const startMs = planStart ? new Date(planStart).getTime() : null;
+    const endMs = planEnd ? new Date(planEnd).getTime() : null;
+
+    const filtered = timeline.filter(entry => {
+        if (!startMs || !endMs) return true;
+        const ts = entry.timestamp || entry.time;
+        if (!ts) return false;
+        const t = new Date(ts).getTime();
+        return t >= startMs && t <= endMs;
+    });
+
+    const fveWindows = buildWindowsFromTimeline(filtered, entry => {
+        const solar = Number.parseFloat(entry.solar_kwh ?? entry.solar_charge_kwh ?? 0) || 0;
+        return solar > 0;
+    });
+    const gridWindows = buildWindowsFromTimeline(filtered, entry => {
+        const grid = Number.parseFloat(entry.grid_charge_kwh ?? 0) || 0;
+        return grid > 0;
+    });
+
+    if (fveEl) {
+        fveEl.textContent = fveWindows.length
+            ? fveWindows.map(w => `${w.start}–${w.end}`).join(', ')
+            : '--';
+    }
+    if (gridEl) {
+        gridEl.textContent = gridWindows.length
+            ? gridWindows.map(w => `${w.start}–${w.end}`).join(', ')
+            : '--';
     }
 }
 
@@ -549,6 +888,17 @@ async function initializeBoilerChart() {
     const canvas = document.getElementById('boiler-chart');
     if (!canvas) {
         console.warn('[Boiler] Chart canvas not found');
+        return;
+    }
+
+    const slots = boilerState.plan?.slots || [];
+    const hasDetailedSlots = slots.some(slot => slot.temp_top !== undefined || slot.soc !== undefined);
+
+    if (!slots.length || !hasDetailedSlots) {
+        const container = canvas.closest('.chart-container');
+        if (container) {
+            container.style.display = 'none';
+        }
         return;
     }
 
@@ -586,12 +936,8 @@ async function planBoilerHeating() {
     const hass = getHass();
     if (!hass) return;
 
-    const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
-
     try {
-        await hass.callService('oig_cloud', 'plan_boiler_heating', {
-            entity_id: entityId
-        });
+        await hass.callService('oig_cloud', 'plan_boiler_heating', {});
 
         showNotification('✅ Plán topení byl úspěšně vytvořen', 'success');
 
@@ -609,12 +955,8 @@ async function applyBoilerPlan() {
     const hass = getHass();
     if (!hass) return;
 
-    const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
-
     try {
-        await hass.callService('oig_cloud', 'apply_boiler_plan', {
-            entity_id: entityId
-        });
+        await hass.callService('oig_cloud', 'apply_boiler_plan', {});
 
         showNotification('✅ Plán topení byl aplikován', 'success');
 
@@ -632,12 +974,8 @@ async function cancelBoilerPlan() {
     const hass = getHass();
     if (!hass) return;
 
-    const entityId = 'sensor.oig_bojler_cena_planu_ohrevu';
-
     try {
-        await hass.callService('oig_cloud', 'cancel_boiler_plan', {
-            entity_id: entityId
-        });
+        await hass.callService('oig_cloud', 'cancel_boiler_plan', {});
 
         showNotification('✅ Plán topení byl zrušen', 'success');
 
@@ -651,101 +989,199 @@ async function cancelBoilerPlan() {
 
 // NEW: Update energy breakdown (grid vs alternative)
 async function updateBoilerEnergyBreakdown() {
-    const hass = getHass();
-    if (!hass) return;
+    const plan = boilerState.plan;
+    if (!plan) {
+        const gridEl = document.getElementById('boiler-grid-energy-value');
+        if (gridEl) gridEl.textContent = '-- kWh';
+        const altEl = document.getElementById('boiler-alt-energy-value');
+        if (altEl) altEl.textContent = '-- kWh';
+        const fveEl = document.getElementById('boiler-fve-energy-value');
+        if (fveEl) fveEl.textContent = '-- kWh';
+        return;
+    }
 
-    const planEntityId = 'sensor.oig_bojler_cena_planu_ohrevu';
-    const planState = hass?.states?.[planEntityId];
+    const gridEnergy = plan.grid_kwh || 0;
+    const altEnergy = plan.alt_kwh || 0;
+    const fveEnergy = plan.fve_kwh || 0;
 
-    if (planState?.attributes?.plan) {
-        const plan = planState.attributes.plan;
-        const gridEnergy = plan.grid_energy_kwh || 0;
-        const gridCost = plan.grid_cost_czk || 0;
-        const altEnergy = plan.alt_energy_kwh || 0;
-        const altCost = plan.alt_cost_czk || 0;
+    const gridEl = document.getElementById('boiler-grid-energy-value');
+    if (gridEl) gridEl.textContent = `${gridEnergy.toFixed(2)} kWh`;
 
-        // Update breakdown cards
-        document.getElementById('boiler-grid-energy-value').textContent =
-            `${gridEnergy.toFixed(2)} kWh (${gridCost.toFixed(2)} Kč)`;
-        document.getElementById('boiler-alt-energy-value').textContent =
-            `${altEnergy.toFixed(2)} kWh (${altCost.toFixed(2)} Kč)`;
+    const altEl = document.getElementById('boiler-alt-energy-value');
+    if (altEl) altEl.textContent = `${altEnergy.toFixed(2)} kWh`;
 
-        // Update heating ratio bar
-        const totalEnergy = gridEnergy + altEnergy;
-        if (totalEnergy > 0) {
-            const gridPercent = (gridEnergy / totalEnergy) * 100;
-            const altPercent = (altEnergy / totalEnergy) * 100;
+    const fveEl = document.getElementById('boiler-fve-energy-value');
+    if (fveEl) fveEl.textContent = `${fveEnergy.toFixed(2)} kWh`;
 
-            document.getElementById('boiler-ratio-grid').style.width = `${gridPercent}%`;
-            document.getElementById('boiler-ratio-alt').style.width = `${altPercent}%`;
-            document.getElementById('boiler-ratio-grid-label').textContent = `${gridPercent.toFixed(0)}% síť`;
-            document.getElementById('boiler-ratio-alt-label').textContent = `${altPercent.toFixed(0)}% alternativa`;
-        }
+    const totalEnergy = gridEnergy + altEnergy + fveEnergy;
+    if (totalEnergy > 0) {
+        const gridPercent = (gridEnergy / totalEnergy) * 100;
+        const altPercent = (altEnergy / totalEnergy) * 100;
+        const fvePercent = (fveEnergy / totalEnergy) * 100;
+
+        const ratioGrid = document.getElementById('boiler-ratio-grid');
+        const ratioAlt = document.getElementById('boiler-ratio-alt');
+        const ratioFve = document.getElementById('boiler-ratio-fve');
+
+        if (ratioGrid) ratioGrid.style.width = `${gridPercent}%`;
+        if (ratioAlt) ratioAlt.style.width = `${altPercent}%`;
+        if (ratioFve) ratioFve.style.width = `${fvePercent}%`;
+
+        const gridLabel = document.getElementById('boiler-ratio-grid-label');
+        if (gridLabel) gridLabel.textContent = `${gridPercent.toFixed(0)}% síť`;
+        const altLabel = document.getElementById('boiler-ratio-alt-label');
+        if (altLabel) altLabel.textContent = `${altPercent.toFixed(0)}% alternativa`;
+        const fveLabel = document.getElementById('boiler-ratio-fve-label');
+        if (fveLabel) fveLabel.textContent = `${fvePercent.toFixed(0)}% FVE`;
+    } else {
+        const ratioGrid = document.getElementById('boiler-ratio-grid');
+        const ratioAlt = document.getElementById('boiler-ratio-alt');
+        const ratioFve = document.getElementById('boiler-ratio-fve');
+        if (ratioGrid) ratioGrid.style.width = '0%';
+        if (ratioAlt) ratioAlt.style.width = '0%';
+        if (ratioFve) ratioFve.style.width = '0%';
     }
 }
 
 // NEW: Update predicted usage
 async function updateBoilerPredictedUsage() {
-    const hass = getHass();
-    if (!hass) return;
+    const summary = boilerState.profileSummary || {};
+    const profile = boilerState.profiles?.[boilerState.currentCategory] || {};
+    const hourlyAvg = profile.hourly_avg || {};
 
-    const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
-    const energyState = hass?.states?.[energyEntityId];
+    const predictedToday = summary.predicted_total_kwh ?? sumHourlyAvg(hourlyAvg);
+    const peakHours = summary.peak_hours ?? pickPeakHours(hourlyAvg);
+    const waterLiters = summary.water_liters_40c;
 
-    if (energyState?.attributes) {
-        const predictedToday = energyState.attributes.predicted_usage_today || 0;
-        const peakHours = energyState.attributes.peak_hours || [];
+    const predictedEl = document.getElementById('boiler-predicted-today');
+    if (predictedEl) predictedEl.textContent = `${predictedToday.toFixed(2)} kWh`;
 
-        document.getElementById('boiler-predicted-today').textContent = `${predictedToday.toFixed(2)} kWh`;
-        document.getElementById('boiler-peak-hours').textContent = peakHours.map(h => `${h}h`).join(', ') || '--';
+    const peaksEl = document.getElementById('boiler-peak-hours');
+    if (peaksEl) peaksEl.textContent = peakHours.map(h => `${h}h`).join(', ') || '--';
 
-        // Calculate approximate liters at 40°C
-        // Energy = Volume × (40 - 15) × 0.00116
-        // Volume = Energy / (25 × 0.00116)
-        const liters = predictedToday / (25 * 0.00116);
-        document.getElementById('boiler-water-liters').textContent = `${liters.toFixed(0)} L`;
+    const litersEl = document.getElementById('boiler-water-liters');
+    if (litersEl) {
+        if (Number.isFinite(waterLiters)) {
+            litersEl.textContent = `${waterLiters.toFixed(0)} L`;
+        } else {
+            litersEl.textContent = '-- L';
+        }
+    }
+
+    const circulationEl = document.getElementById('boiler-circulation-windows');
+    if (circulationEl) {
+        const windows = summary.circulation_windows || [];
+        circulationEl.textContent = windows.length
+            ? windows.map(w => `${w.start}–${w.end}`).join(', ')
+            : '--';
+    }
+
+    const circulationNowEl = document.getElementById('boiler-circulation-now');
+    if (circulationNowEl) {
+        const state = boilerState.state || {};
+        const recommended = state.circulation_recommended;
+        const windows = summary.circulation_windows || [];
+        if (!windows.length) {
+            circulationNowEl.textContent = '--';
+            circulationNowEl.classList.remove('active');
+            circulationNowEl.classList.remove('idle');
+        } else {
+            const now = new Date();
+            const nowMinutes = now.getHours() * 60 + now.getMinutes();
+            const isActive = windows.some(window => {
+                const start = parseTimeMinutes(window.start);
+                const end = parseTimeMinutes(window.end);
+                return isNowInWindow(nowMinutes, start, end);
+            });
+
+            if (isActive) {
+                const currentWindow = windows.find(window => {
+                    const start = parseTimeMinutes(window.start);
+                    const end = parseTimeMinutes(window.end);
+                    return isNowInWindow(nowMinutes, start, end);
+                });
+                circulationNowEl.textContent = currentWindow
+                    ? `ANO (do ${currentWindow.end})`
+                    : 'ANO';
+                circulationNowEl.classList.add('active');
+                circulationNowEl.classList.remove('idle');
+            } else {
+                const nextWindow = findNextWindow(windows, nowMinutes);
+                if (recommended && nextWindow) {
+                    circulationNowEl.textContent = `DOPORUČENO (${nextWindow.window.start}–${nextWindow.window.end})`;
+                } else {
+                    circulationNowEl.textContent = nextWindow
+                        ? `Ne (další ${nextWindow.window.start}–${nextWindow.window.end})`
+                        : 'Ne';
+                }
+                circulationNowEl.classList.add('idle');
+                circulationNowEl.classList.remove('active');
+            }
+        }
     }
 }
 
 // NEW: Update grade thermometer
 async function updateBoilerGradeThermometer() {
-    const hass = getHass();
-    if (!hass) return;
+    const config = boilerState.config || {};
+    const state = boilerState.state || {};
+    const temps = state.temperatures || {};
+    const energyState = state.energy_state || {};
 
-    const tempTopEntityId = 'sensor.oig_bojler_teplota_nahore';
-    const socEntityId = 'sensor.oig_bojler_stav_nabiti';
-    const energyEntityId = 'sensor.oig_bojler_pozadovana_energie';
+    const tempTopRaw = temps.upper_zone ?? temps.top ?? null;
+    const tempBottomRaw = temps.lower_zone ?? temps.bottom ?? null;
+    const tempTop = Number.isFinite(tempTopRaw) ? tempTopRaw : null;
+    const tempBottom = Number.isFinite(tempBottomRaw) ? tempBottomRaw : null;
+    const targetTemp = Number.isFinite(config.target_temp_c) ? config.target_temp_c : 60;
+    const coldInlet = Number.isFinite(config.cold_inlet_temp_c) ? config.cold_inlet_temp_c : 10;
+    const avgTemp = Number.isFinite(energyState.avg_temp) ? energyState.avg_temp : null;
+    const heatingPercent = computeHeatingPercent(avgTemp, targetTemp, coldInlet);
 
-    const tempTopState = hass?.states?.[tempTopEntityId];
-    const socState = hass?.states?.[socEntityId];
-    const energyState = hass?.states?.[energyEntityId];
+    const waterLevel = document.getElementById('boiler-water-level');
+    const gradeLabel = document.getElementById('boiler-grade-label');
+    const tank = document.querySelector('.boiler-tank');
 
-    if (tempTopState && socState) {
-        const tempTop = Number.parseFloat(tempTopState.state);
-        const soc = Number.parseFloat(socState.state);
-        const tempBottom = energyState?.attributes?.temp_bottom_c || tempTop * 0.8;
-        const targetTemp = energyState?.attributes?.target_temp_c || 60;
+    if (waterLevel && heatingPercent !== null) {
+        waterLevel.style.height = `${heatingPercent}%`;
+    }
+    if (gradeLabel) {
+        gradeLabel.textContent = heatingPercent === null ? '-- % nahřáto' : `${heatingPercent.toFixed(0)}% nahřáto`;
+    }
 
-        // Update water level (based on SOC)
-        document.getElementById('boiler-water-level').style.height = `${soc}%`;
+    const tempMin = 10;
+    const tempMax = 70;
+    const mapToPercent = (temp) => clampNumber(((temp - tempMin) / (tempMax - tempMin)) * 100, 0, 100);
 
-        // Update grade label
-        document.getElementById('boiler-grade-label').textContent = `${soc.toFixed(0)}% nahřáto`;
+    const topMarker = document.getElementById('boiler-sensor-top');
+    if (topMarker && tempTop !== null) {
+        topMarker.style.bottom = `${mapToPercent(tempTop)}%`;
+        topMarker.querySelector('.sensor-label').textContent = `${tempTop.toFixed(1)}°C`;
+    }
 
-        // Update sensor markers
-        // Temperature range: 10°C (bottom) to 70°C (top)
-        // Position calculation: (temp - 10) / (70 - 10) * 100
-        const topPosition = ((tempTop - 10) / 60) * 100;
-        const bottomPosition = ((tempBottom - 10) / 60) * 100;
-        const targetPosition = ((targetTemp - 10) / 60) * 100;
+    const bottomMarker = document.getElementById('boiler-sensor-bottom');
+    if (bottomMarker) {
+        if (tempBottom === null) {
+            bottomMarker.style.display = 'none';
+        } else {
+            bottomMarker.style.display = '';
+            bottomMarker.style.bottom = `${mapToPercent(tempBottom)}%`;
+            bottomMarker.querySelector('.sensor-label').textContent = `${tempBottom.toFixed(1)}°C`;
+        }
+    }
 
-        document.getElementById('boiler-sensor-top').style.bottom = `${topPosition}%`;
-        document.getElementById('boiler-sensor-top').querySelector('.sensor-label').textContent = `${tempTop.toFixed(1)}°C`;
+    if (tank) {
+        tank.classList.toggle('single-sensor', tempBottom === null);
+    }
 
-        document.getElementById('boiler-sensor-bottom').style.bottom = `${bottomPosition}%`;
-        document.getElementById('boiler-sensor-bottom').querySelector('.sensor-label').textContent = `${tempBottom.toFixed(1)}°C`;
+    const targetLine = document.getElementById('boiler-target-line');
+    if (targetLine) {
+        targetLine.style.bottom = `${mapToPercent(targetTemp)}%`;
+    }
 
-        document.getElementById('boiler-target-line').style.bottom = `${targetPosition}%`;
+    if (waterLevel) {
+        const topColor = temperatureToColor(tempTop ?? targetTemp);
+        const bottomColor = temperatureToColor(tempBottom ?? coldInlet);
+        waterLevel.style.background = `linear-gradient(180deg, ${topColor} 0%, ${bottomColor} 100%)`;
     }
 }
 
@@ -755,24 +1191,16 @@ async function renderBoilerProfilingChart() {
     if (!canvas) return;
 
     try {
-        const hass = getHass();
-        if (!hass) {
-            console.warn('[Boiler] Hass not available');
+        const profile = boilerState.profiles?.[boilerState.currentCategory];
+        if (!profile) {
+            console.warn('[Boiler] Profile not available');
             return;
         }
 
-        // Get data from sensor attributes
-        const energySensor = hass.states['sensor.oig_bojler_pozadovana_energie'];
-        if (!energySensor?.attributes) {
-            console.warn('[Boiler] Energy sensor not available');
-            return;
-        }
-
-        const attrs = energySensor.attributes;
-        const hourlyData = attrs.hourly_avg_kwh || {};
-        const peakHours = attrs.peak_hours || [];
-        const predictedToday = attrs.predicted_usage_today || 0;
-        const daysTracked = attrs.days_tracked || 7;
+        const hourlyData = profile.hourly_avg || {};
+        const predictedToday = boilerState.profileSummary?.predicted_total_kwh ?? sumHourlyAvg(hourlyData);
+        const peakHours = boilerState.profileSummary?.peak_hours ?? pickPeakHours(hourlyData);
+        const daysTracked = 7;
 
         // Prepare data for chart
         const labels = Array.from({ length: 24 }, (_, i) => `${i}h`);
@@ -835,9 +1263,20 @@ async function renderBoilerProfilingChart() {
         });
 
         // Update stats
-        document.getElementById('profile-stat-today').textContent = `${predictedToday.toFixed(2)} kWh`;
-        document.getElementById('profile-stat-peaks').textContent = peakHours.map(h => `${h}h`).join(', ') || '--';
-        document.getElementById('profile-stat-days').textContent = `${daysTracked} dní`;
+        const statToday = document.getElementById('profile-stat-today');
+        if (statToday) statToday.textContent = `${predictedToday.toFixed(2)} kWh`;
+        const statPeaks = document.getElementById('profile-stat-peaks');
+        if (statPeaks) statPeaks.textContent = peakHours.map(h => `${h}h`).join(', ') || '--';
+        const statConfidence = document.getElementById('profile-stat-confidence');
+        if (statConfidence) {
+            const confidence = boilerState.profileSummary?.avg_confidence;
+            statConfidence.textContent = Number.isFinite(confidence)
+                ? `${Math.round(confidence * 100)} %`
+                : '-- %';
+        }
+
+        const statDays = document.getElementById('profile-stat-days');
+        if (statDays) statDays.textContent = `${daysTracked} dní`;
 
     } catch (error) {
         console.error('[Boiler] Error rendering profiling chart:', error);
@@ -850,33 +1289,32 @@ async function renderBoilerHeatmap() {
     if (!container) return;
 
     try {
-        const hass = getHass();
-        if (!hass) {
-            console.warn('[Boiler] Hass not available');
+        const profile = boilerState.profiles?.[boilerState.currentCategory];
+        if (!profile) {
+            console.warn('[Boiler] Profile not available for heatmap');
             return;
         }
 
-        // Get data from sensor attributes
-        const energySensor = hass.states['sensor.oig_bojler_pozadovana_energie'];
-        if (!energySensor?.attributes) {
-            console.warn('[Boiler] Energy sensor not available for heatmap');
-            return;
-        }
-
-        const attrs = energySensor.attributes;
-        const heatmapData = attrs.heatmap_data || [];
-
-        // If no heatmap_data, build from hourly_avg_kwh
+        const heatmapData = profile.heatmap || [];
         let dataMatrix = heatmapData;
         if (!heatmapData || heatmapData.length === 0) {
-            const hourlyData = attrs.hourly_avg_kwh || {};
+            const hourlyData = profile.hourly_avg || {};
             dataMatrix = Array.from({ length: 7 }, () =>
                 Array.from({ length: 24 }, (_, hour) => Number.parseFloat(hourlyData[hour] || 0))
             );
         }
 
+        const numericMatrix = dataMatrix.map(day =>
+            day.map(cell => {
+                if (cell && typeof cell === 'object') {
+                    return Number.parseFloat(cell.consumption) || 0;
+                }
+                return Number.parseFloat(cell) || 0;
+            })
+        );
+
         // Calculate thresholds
-        const allValues = dataMatrix.flat();
+        const allValues = numericMatrix.flat();
         const maxValue = Math.max(...allValues, 0.1);
         const lowThreshold = maxValue * 0.3;
         const highThreshold = maxValue * 0.7;
@@ -907,7 +1345,7 @@ async function renderBoilerHeatmap() {
             container.appendChild(dayLabel);
 
             for (let hour = 0; hour < 24; hour++) {
-                const value = dataMatrix[dayIndex]?.[hour] || 0;
+                const value = numericMatrix[dayIndex]?.[hour] || 0;
                 const cell = document.createElement('div');
                 cell.className = 'heatmap-cell';
 

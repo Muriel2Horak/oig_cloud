@@ -18,6 +18,8 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ..shared.statistics_storage import StatisticsStore
+
 _LOGGER = logging.getLogger(__name__)
 MAX_HOURLY_DATA_POINTS = 168
 
@@ -119,6 +121,9 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         # Storage pro persistentní data
         self._storage_key = f"oig_stats_{self._data_key}_{sensor_type}"
 
+        # StatisticsStore pro batched writes (low-power optimalization)
+        self._stats_store: Optional[StatisticsStore] = None
+
         # Načtení konfigurace senzoru
         if hasattr(self, "_sensor_config"):
             config = self._sensor_config
@@ -144,6 +149,15 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
         # Načtení persistentních dat
         await self._load_statistics_data()
+
+        # Inicializace StatisticsStore pro batched writes (low-power optimalization)
+        try:
+            entry = getattr(self._coordinator, "config_entry", None)
+            if entry:
+                self._stats_store = StatisticsStore.get_instance(self.hass)
+                _LOGGER.debug(f"[{self.entity_id}] StatisticsStore initialized")
+        except Exception as e:
+            _LOGGER.warning(f"[{self.entity_id}] Failed to initialize StatisticsStore: {e}")
 
         # Nastavení pravidelných aktualizací
         if self._sensor_type == "battery_load_median":
@@ -251,8 +265,6 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
     async def _save_statistics_data(self) -> None:
         """Uloží statistická data do persistentního úložiště."""
         try:
-            store = Store(self.hass, version=1, key=self._storage_key)
-
             sampling_data_serializable = self._serialize_sampling_data()
             safe_hourly_data = self._serialize_hourly_data()
 
@@ -268,8 +280,21 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                 "last_update": datetime.now().isoformat(),
             }
 
+            # Použít StatisticsStore pro batched writes (low-power optimalization)
+            if self._stats_store:
+                entry = getattr(self._coordinator, "config_entry", None)
+                if entry:
+                    entry_id = entry.entry_id
+                    await self._stats_store.save_sensor_data(
+                        entry_id, self._sensor_type, save_data
+                    )
+                    _LOGGER.debug(f"[{self.entity_id}] Queued statistics data for batch write")
+                    return
+
+            # Fallback na přímý Store save pokud StatisticsStore není dostupný
+            store = Store(self.hass, version=1, key=self._storage_key)
             await store.async_save(save_data)
-            _LOGGER.debug(f"[{self.entity_id}] Saved statistics data")
+            _LOGGER.debug(f"[{self.entity_id}] Saved statistics data directly")
 
         except Exception as e:
             _LOGGER.warning(f"[{self.entity_id}] Failed to save statistics data: {e}")
@@ -871,12 +896,18 @@ def _should_update_hourly(now: datetime, last_reset: Optional[datetime]) -> bool
 
 def _current_hour_naive(now: datetime) -> datetime:
     current_hour = now.replace(minute=0, second=0, microsecond=0)
-    return _naive_dt(current_hour)
+    result = _naive_dt(current_hour)
+    if result is None:
+        return current_hour
+    return result
 
 
 def _previous_hour_naive(current_hour: datetime) -> datetime:
     previous_hour = current_hour - timedelta(hours=1)
-    return _naive_dt(previous_hour)
+    result = _naive_dt(previous_hour)
+    if result is None:
+        return previous_hour
+    return result
 
 
 def _naive_dt(value: Optional[datetime]) -> Optional[datetime]:

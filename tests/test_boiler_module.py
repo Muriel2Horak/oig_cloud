@@ -27,6 +27,7 @@ from custom_components.oig_cloud.boiler.profiler import (
 from custom_components.oig_cloud.boiler.sensors import (
     BoilerAltEnergySensor,
     BoilerAvgTempSensor,
+    BoilerCirculationRecommendedSensor,
     BoilerChargingRecommendedSensor,
     BoilerEnergyNeededSensor,
     BoilerFVEEnergySensor,
@@ -48,9 +49,11 @@ from custom_components.oig_cloud.boiler.utils import (
 from custom_components.oig_cloud.boiler.const import PROFILE_CATEGORIES
 from custom_components.oig_cloud.const import (
     CONF_BOILER_ALT_ENERGY_SENSOR,
+    CONF_BOILER_COLD_INLET_TEMP_C,
     CONF_BOILER_SPOT_PRICE_SENSOR,
     CONF_BOILER_TEMP_SENSOR_POSITION,
     CONF_BOILER_TEMP_SENSOR_TOP,
+    CONF_BOILER_TARGET_TEMP_C,
     CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
     CONF_BOILER_VOLUME_L,
     DOMAIN,
@@ -154,6 +157,85 @@ async def test_boiler_profile_view_exception():
     response = await view.get(None, "entry1")
     assert response.status == 500
     assert _response_json(response)["error"] == "boom"
+
+
+@pytest.mark.asyncio
+async def test_boiler_profile_view_success_payload():
+    profile = BoilerProfile(category="workday_winter")
+    profile.hourly_avg = {7: 1.5, 19: 0.9}
+    profile.confidence = {7: 0.8, 19: 0.6}
+    profile.sample_count = {7: 5, 19: 3}
+
+    profiler = SimpleNamespace(get_all_profiles=lambda: {"workday_winter": profile})
+    coordinator = SimpleNamespace(
+        profiler=profiler,
+        _current_profile=profile,
+        config={
+            CONF_BOILER_COLD_INLET_TEMP_C: 12.0,
+            CONF_BOILER_TARGET_TEMP_C: 60.0,
+            CONF_BOILER_VOLUME_L: 120.0,
+        },
+    )
+    hass = SimpleNamespace(
+        data={DOMAIN: {"entry1": {"boiler_coordinator": coordinator}}},
+        http=DummyHttp(),
+    )
+
+    view = BoilerProfileView(hass)
+    response = await view.get(None, "entry1")
+    payload = _response_json(response)
+
+    assert response.status == 200
+    assert payload["current_category"] == "workday_winter"
+    assert payload["summary"]["peak_hours"] == [7, 19]
+    assert payload["config"]["volume_l"] == 120.0
+
+
+@pytest.mark.asyncio
+async def test_boiler_plan_view_success_payload():
+    now = datetime.now(timezone.utc)
+    slot = BoilerSlot(
+        start=now + timedelta(minutes=15),
+        end=now + timedelta(minutes=30),
+        avg_consumption_kwh=1.1,
+        confidence=0.7,
+        recommended_source=EnergySource.GRID,
+        spot_price_kwh=2.4,
+        alt_price_kwh=3.2,
+        overflow_available=False,
+    )
+    plan = BoilerPlan(
+        created_at=now,
+        valid_until=now + timedelta(days=1),
+        slots=[slot],
+        total_consumption_kwh=1.1,
+        estimated_cost_czk=2.64,
+        fve_kwh=0.0,
+        grid_kwh=1.1,
+        alt_kwh=0.0,
+    )
+    coordinator = SimpleNamespace(
+        _current_plan=plan,
+        data={
+            "temperatures": {"upper_zone": 55.0, "lower_zone": 42.0},
+            "energy_state": {"avg_temp": 48.5, "energy_needed_kwh": 1.2},
+            "energy_tracking": {"total_kwh": 2.5},
+            "charging_recommended": True,
+            "recommended_source": "grid",
+        },
+    )
+    hass = SimpleNamespace(
+        data={DOMAIN: {"entry1": {"boiler_coordinator": coordinator}}},
+        http=DummyHttp(),
+    )
+
+    view = BoilerPlanView(hass)
+    response = await view.get(None, "entry1")
+    payload = _response_json(response)
+
+    assert response.status == 200
+    assert payload["next_slot"]["recommended_source"] == "grid"
+    assert payload["state"]["temperatures"]["upper_zone"] == 55.0
 
 
 @pytest.mark.asyncio
@@ -464,6 +546,7 @@ async def test_boiler_sensor_values_full(hass):
         },
         "recommended_source": "alternative",
         "charging_recommended": True,
+        "circulation_recommended": True,
         "current_slot": slot,
         "plan": plan,
         "profile": profile,
@@ -486,6 +569,7 @@ async def test_boiler_sensors_and_api_views():
             "energy_state": {"avg_temp": 50.0, "energy_needed_kwh": 2.5},
             "energy_tracking": {"current_source": "grid", "total_kwh": 1.2},
             "charging_recommended": True,
+            "circulation_recommended": True,
             "recommended_source": "fve",
         },
         async_add_listener=lambda _cb: lambda: None,
@@ -525,11 +609,12 @@ async def test_boiler_sensors_and_api_views():
     assert BoilerUpperZoneTempSensor(coordinator).native_value == 55.0
     assert BoilerRecommendedSourceSensor(coordinator).native_value == "FVE"
     assert BoilerChargingRecommendedSensor(coordinator).native_value == "ano"
+    assert BoilerCirculationRecommendedSensor(coordinator).native_value == "ano"
     assert BoilerPlanEstimatedCostSensor(coordinator).native_value == 3.0
     assert BoilerProfileConfidenceSensor(coordinator).native_value == 50.0
 
     sensors = get_boiler_sensors(coordinator)
-    assert len(sensors) == 13
+    assert len(sensors) == 14
 
     hass = SimpleNamespace(
         data={DOMAIN: {"entry1": {"boiler_coordinator": SimpleNamespace(profiler=SimpleNamespace(get_all_profiles=lambda: {"workday_winter": profile}), _current_profile=profile, _current_plan=plan)}}},

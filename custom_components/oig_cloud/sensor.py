@@ -149,7 +149,11 @@ def _is_oig_sensor_entity(entity_id: str) -> bool:
 
 
 def _is_boiler_entity(entity_id: str) -> bool:
-    return "_bojler_" in entity_id or entity_id.startswith("sensor.oig_bojler")
+    return (
+        "_bojler_" in entity_id
+        or "_boiler_" in entity_id
+        or entity_id.startswith("sensor.oig_bojler")
+    )
 
 
 def _extract_sensor_type(entity_id: str) -> Optional[str]:

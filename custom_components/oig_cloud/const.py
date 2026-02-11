@@ -32,6 +32,7 @@ CONF_BOILER_TWO_ZONE_SPLIT_RATIO = "boiler_two_zone_split_ratio"
 CONF_BOILER_HEATER_POWER_KW_ENTITY = "boiler_heater_power_kw_entity"
 CONF_BOILER_HEATER_SWITCH_ENTITY = "boiler_heater_switch_entity"
 CONF_BOILER_ALT_HEATER_SWITCH_ENTITY = "boiler_alt_heater_switch_entity"
+CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY = "boiler_circulation_pump_switch_entity"
 CONF_BOILER_HAS_ALTERNATIVE_HEATING = "boiler_has_alternative_heating"
 CONF_BOILER_ALT_COST_KWH = "boiler_alt_cost_kwh"
 CONF_BOILER_ALT_ENERGY_SENSOR = "boiler_alt_energy_sensor"  # NEW: Měřič alternativy
@@ -76,7 +77,7 @@ BOILER_ENERGY_CONSTANT_KWH_L_C = 0.001163  # ≈ 4.186 kJ/kg/°C / 3600
 DISABLE_STATISTICS_SENSORS = True  # Vypnout statistické senzory kvůli výkonu
 
 # Platforms
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "switch"]
 
 # Device info
 MANUFACTURER = "OIG"
@@ -96,13 +97,9 @@ SERVICE_CANCEL_BOILER_PLAN = "cancel_boiler_plan"
 
 # OpenTelemetry constants
 OT_ENDPOINT = "https://log-api.eu.newrelic.com"
-OT_HEADERS = [
-    (
-        "Api-Key",  # OPRAVA: Správný header pro New Relic
-        "eu01xxefc1a87820b35d1becb5efd5c5FFFFNRAL",
-    )
-]
+OT_HEADERS = []
 OT_INSECURE = False
+OT_ENABLED = False  # Telemetrie je vypnuta (budoucí řešení: lokální instance)
 
 # CBB Modes (Battery Box Control Modes) per BR-1
 HOME_I = 0  # Grid priority (normal operation)

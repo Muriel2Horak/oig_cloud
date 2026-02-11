@@ -70,7 +70,7 @@ class PrefixSensitiveEntityId:
         return ["sensor.oig", "box", "extra"]
 
     def startswith(self, prefix: str) -> bool:
-        return prefix != "sensor.oig_bojler"
+        return prefix not in {"sensor.oig_bojler", "sensor.oig_"}
 
     def __getitem__(self, _key):
         return self._after_prefix

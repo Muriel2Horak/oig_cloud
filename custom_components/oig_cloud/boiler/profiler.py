@@ -39,7 +39,7 @@ class BoilerProfiler:
 
         Args:
             hass: Home Assistant instance
-            energy_sensor: entity_id senzoru celkové energie (sensor.oig_bojler_day_w → Wh)
+        energy_sensor: entity_id senzoru celkové energie (sensor.oig_<boxid>_boiler_day_w → Wh)
             lookback_days: Počet dní historie k analýze
         """
         self.hass = hass

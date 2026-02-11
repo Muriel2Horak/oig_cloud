@@ -20,7 +20,7 @@ from . import validation as shield_validation
 _LOGGER = logging.getLogger(__name__)
 
 TIMEOUT_MINUTES = 15
-CHECK_INTERVAL_SECONDS = 30  # Zvýšeno z 15 na 30 sekund - slouží jen jako backup
+CHECK_INTERVAL_SECONDS = 120  # Backup check every 2 minutes (primary: event-driven)
 SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
 
 
