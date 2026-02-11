@@ -7,12 +7,10 @@ on:
       - temp
   pull_request:
     types: [opened, synchronize, reopened]
-# DISABLED: Project not configured in SonarCloud - uncomment when SONAR_CLOUD_TOKEN and project setup are ready
 
 jobs:
   sonarcloud:
     name: SonarCloud Scan
-    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 60
     
@@ -53,7 +51,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_CLOUD_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=oig-cloud_oig-cloud
+            -Dsonar.projectKey=muriel2horak_oig-cloud
             -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
             -Dsonar.sources=.
             -Dsonar.python.coverage.reportPaths=coverage.xml
