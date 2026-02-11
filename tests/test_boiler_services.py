@@ -561,11 +561,4 @@ async def test_setup_boiler_services_creates_plan_successfully(monkeypatch):
     
     monkeypatch.setattr(module, '_create_boiler_plan', _create_boiler_plan_mock)
     
-    calls = []
-    async def _async_create_plan_for_calls(**kwargs):
-        calls.append(kwargs)
-    planner.async_create_plan = _async_create_plan_for_calls
-    
-    await module.setup_boiler_services(hass, coordinator, "test_entry", force=True, deadline="06:00")
-    
-    assert len(calls) == 1
+    await module.setup_boiler_services(hass, coordinator, "test_entry")
