@@ -12,9 +12,16 @@ from custom_components.oig_cloud.services import boiler as module
 class DummyServices:
     def __init__(self):
         self.calls = []
+        self._registered = set()
 
     async def async_call(self, domain, service, data, blocking=False):
         self.calls.append((domain, service, data, blocking))
+
+    def async_register(self, domain, services):
+        self._registered.add(domain)
+
+    def has_service(self, domain, service):
+        return domain in self._registered
 
 
 class DummyStates:
