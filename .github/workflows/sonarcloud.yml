@@ -7,10 +7,12 @@ on:
       - temp
   pull_request:
     types: [opened, synchronize, reopened]
+# DISABLED: Project not configured in SonarCloud - uncomment when SONAR_CLOUD_TOKEN and project setup are ready
 
 jobs:
   sonarcloud:
     name: SonarCloud Scan
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 60
     
