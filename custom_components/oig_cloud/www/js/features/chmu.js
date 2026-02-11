@@ -133,9 +133,6 @@ function renderChmuWarningModal(container) {
     const topEventType = attrs.event_type;
     const topDescription = attrs.description;
     const topInstruction = attrs.instruction;
-    const topOnset = attrs.onset;
-    const topExpires = attrs.expires;
-    const topEtaHours = attrs.eta_hours;
 
     if (allWarningsDetails.length === 0) {
         container.innerHTML = `

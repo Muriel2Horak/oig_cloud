@@ -69,7 +69,6 @@ def setup_boiler_services(
             return
 
         await _create_boiler_plan(
-            hass,
             boiler_coordinator,
             entry_id,
             force=force,
@@ -96,7 +95,6 @@ def setup_boiler_services(
 
 
 async def _create_boiler_plan(
-    hass: HomeAssistant,
     coordinator: Any,
     entry_id: str,
     *,
