@@ -210,13 +210,13 @@ async def test_create_boiler_plan_skips_and_creates(monkeypatch):
     )
 
     await module._create_boiler_plan(
-        DummyHass(), coordinator, "entry1", force=False, deadline_override=None
+        coordinator, "entry1", force=False, deadline_override=None
     )
     assert planner_calls == []
 
     coordinator._current_plan = None
     await module._create_boiler_plan(
-        DummyHass(), coordinator, "entry1", force=True, deadline_override=None
+        coordinator, "entry1", force=True, deadline_override=None
     )
     assert planner_calls
 
@@ -348,7 +348,7 @@ async def test_create_boiler_plan_no_profile(monkeypatch):
     )
 
     await module._create_boiler_plan(
-        DummyHass(), coordinator, "entry1", force=False, deadline_override=None
+        coordinator, "entry1", force=False, deadline_override=None
     )
     assert coordinator._current_plan is None
 
