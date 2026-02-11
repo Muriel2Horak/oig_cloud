@@ -19,8 +19,11 @@ class DummyWizard(WizardMixin):
     async def _handle_back_button(self, step: str):
         return {"type": "form", "step_id": step}
 
-    async def _get_next_step(self, current_step: str):
+    def _get_next_step(self, current_step: str) -> str:
         return current_step.replace("wizard_", "")
+
+    async def async_step_boiler(self):
+        return {"type": "form", "step_id": "boiler"}
 
 
 @pytest.mark.asyncio

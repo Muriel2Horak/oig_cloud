@@ -91,7 +91,7 @@ async def test_battery_forecast_throttled_when_last_update_less_than_30m(monkeyp
         DummyOteApi(),
         30,
         300,
-        SimpleNamespace(entry_id="entry123"),
+        SimpleNamespace(entry_id="entry123", options={}),
     )
 
     coordinator._get_spot_price_timeline = DummySensor._get_spot_price_timeline
@@ -190,7 +190,7 @@ async def test_battery_forecast_throttled_when_inputs_unchanged(monkeypatch):
         DummyOteApi(),
         30,
         300,
-        SimpleNamespace(entry_id="entry123"),
+        SimpleNamespace(entry_id="entry123", options={}),
     )
 
     coordinator._get_spot_price_timeline = DummySensor._get_spot_price_timeline
@@ -226,7 +226,7 @@ async def test_spot_prices_cache_get_hours_count_returns_zero_when_cache_empty(m
         DummyOteApi(),
         30,
         300,
-        SimpleNamespace(entry_id="entry123"),
+        SimpleNamespace(entry_id="entry123", options={}),
     )
 
     coordinator._spot_prices_cache = {}

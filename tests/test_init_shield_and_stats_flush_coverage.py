@@ -56,8 +56,7 @@ async def test_setup_shield_monitoring_flush_stats_exception(hass, monkeypatch):
     hass.services = SimpleNamespace(async_register=lambda *a, **k: None)
 
     monkeypatch.setattr(
-        init_module,
-        "StatisticsStore",
+        "custom_components.oig_cloud.shared.statistics_storage.StatisticsStore",
         DummyStatsStore,
     )
 
@@ -109,8 +108,7 @@ async def test_unload_config_entry_flush_stats_exception(hass, monkeypatch):
     hass.config_entries = DummyConfigEntries()
 
     monkeypatch.setattr(
-        init_module,
-        "StatisticsStore",
+        "custom_components.oig_cloud.shared.statistics_storage.StatisticsStore",
         DummyStatsStore,
     )
 

@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 import custom_components.oig_cloud as init_module
-from homeassistant.config_entries import ConfigEntry, ConfigEntriesFlowManager
+from homeassistant.config_entries import ConfigEntry
+from tests.common import MockConfigEntry
 
 
 @pytest.mark.asyncio
@@ -49,7 +50,18 @@ async def test_setup_shield_monitoring_flush_stats_exception(monkeypatch):
             pass
 
     hass.services.async_register = lambda *a, **k: None
-    hass.config_entries = ConfigEntry()
+    hass.config_entries = MockConfigEntry(
+        domain="oig_cloud",
+        entry_id="test_entry",
+        title="Test Entry",
+        data={},
+        options={},
+        version=1,
+        minor_version=0,
+        unique_id="test_unique_id",
+        source="test",
+        discovery_keys={},
+    )
 
     monkeypatch.setattr(
         "custom_components.oig_cloud.shield.core.ServiceShield",
@@ -77,12 +89,18 @@ async def test_unload_config_entry_flush_stats_exception(monkeypatch):
         async def save_all(self):
             raise RuntimeError("unload stats flush boom")
 
-    entry = ConfigEntry(version="1.0", title="Test Entry", entry_id="test_entry", data={})
-
-    class DummyConfigEntries(ConfigEntry):
-        async def async_unload(self):
-            if hasattr(entry, "data"):
-                del entry.data
+    entry = MockConfigEntry(
+        domain="oig_cloud",
+        entry_id="test_entry",
+        title="Test Entry",
+        data={},
+        options={},
+        version=1,
+        minor_version=0,
+        unique_id="test_unique_id",
+        source="test",
+        discovery_keys={},
+    )
 
     hass = SimpleNamespace(
         data={},
