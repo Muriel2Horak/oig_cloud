@@ -77,40 +77,6 @@ async function fetchWithAuth(url, options = {}) {
     });
 }
 
-/**
- * Získá HA autentizační token
- * @returns {string|null} Token nebo null
- */
-function getHAToken() {
-    try {
-        return parent.document.querySelector('home-assistant').hass.auth.data.access_token;
-    } catch (e) {
-        console.error('[API] Cannot get HA token:', e);
-        return null;
-    }
-}
-
-/**
- * Wrapper around fetch() that attaches Home Assistant Bearer token when available.
- * @param {string} url - Absolute or relative URL
- * @param {object} options - Fetch options
- * @returns {Promise<Response>}
- */
-async function fetchWithAuth(url, options = {}) {
-    const token = getHAToken();
-    const mergedHeaders = options.headers ? { ...options.headers } : {};
-
-    // Add Bearer token if not already provided.
-    if (token && !mergedHeaders.Authorization && !mergedHeaders.authorization) {
-        mergedHeaders.Authorization = `Bearer ${token}`;
-    }
-
-    return await fetch(url, {
-        ...options,
-        headers: mergedHeaders
-    });
-}
-
 // ============================================================================
 // SENSOR ID HELPERS
 // ============================================================================
