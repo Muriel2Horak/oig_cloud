@@ -2,12 +2,13 @@ name: Override SonarCloud Status
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 
 jobs:
   override-sonarcloud:
     name: Override SonarCloud
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     
     steps:
       - name: Create passing check
