@@ -52,7 +52,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=Muriel2Horak_oig_cloud
-            -Dsonar.organization=Muriel2Horak
+            -Dsonar.organization=muriel2horak
             -Dsonar.sources=.
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sourceEncoding=UTF-8
