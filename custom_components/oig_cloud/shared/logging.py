@@ -17,7 +17,7 @@ else:
         ClientTimeout = None  # type: ignore
         TCPConnector = None  # type: ignore
 
-from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE, OT_ENABLED
+from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE
 
 _LOGGER = logging.getLogger(__name__)
 

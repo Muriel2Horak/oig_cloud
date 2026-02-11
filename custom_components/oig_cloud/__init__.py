@@ -1286,7 +1286,6 @@ async def async_setup_entry(
     init_data_source_state(hass, entry)
     _maybe_persist_box_id_from_proxy_or_local(hass, entry)
 
-
     service_shield = await _start_service_shield(hass, entry)
 
     try:
