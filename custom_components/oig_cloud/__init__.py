@@ -486,9 +486,7 @@ def _is_boiler_unique_id(unique_id: str) -> bool:
 
 
 async def _migrate_boiler_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Deprecated: no boiler entity migration (OIG Box sensors stay in base module)."""
-    _ = hass, entry
-    return
+    pass
 
 
 def _maybe_rename_entity_id(
