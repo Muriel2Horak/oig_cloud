@@ -31,6 +31,20 @@ _LOGGER = logging.getLogger(__name__)
 
 _BOILER_WRAPPER_SWITCH_ERROR = "Boiler wrapper switch not available: %s"
 
+# Storage constants
+STORAGE_VERSION = 1
+STORAGE_KEY = "boiler_schedule"
+
+# Service schemas
+PLAN_SCHEMA = vol.Schema(
+    {
+        vol.Optional("force", default=False): bool,
+        vol.Optional("deadline"): str,
+    }
+)
+APPLY_SCHEMA = vol.Schema({})
+CANCEL_SCHEMA = vol.Schema({})
+
 
 def setup_boiler_services(
     hass: HomeAssistant, entry_id: str, boiler_coordinator: Any
