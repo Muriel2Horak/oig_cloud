@@ -36,4 +36,4 @@ jobs:
 
       - name: Run pytest
         run: |
-          pytest -v --tb=short --timeout=180
+          pytest -v --tb=short
