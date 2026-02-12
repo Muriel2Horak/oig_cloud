@@ -47,7 +47,7 @@ async def _get_planning_inputs(coordinator: Any) -> tuple:
     profile = await _get_boiler_profile(coordinator, "")
     if not profile:
         return None, None, None
-    
+
     spot_prices = await coordinator._get_spot_prices()
     overflow_windows = await coordinator._get_overflow_windows()
     return profile, spot_prices, overflow_windows
