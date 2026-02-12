@@ -52,9 +52,6 @@ function getHAToken() {
  * @param {object} options - Fetch options (credentials, headers atd.)
  * @returns {Promise<Response>}
  *
- * NOTE: Future refactoring - consider replacing fetchWithAuth() with hass.callApi()
- *       for better token management within Home Assistant context
- */
 async function fetchWithAuth(url, options = {}) {
     // Bezpečnost: blokovat absolutní URL (kromě localhost) k prevenci token exfiltrace
     const hostname = new URL(url, globalThis.location.href).hostname;

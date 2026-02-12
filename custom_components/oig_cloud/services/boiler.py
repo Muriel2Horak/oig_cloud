@@ -31,6 +31,36 @@ _LOGGER = logging.getLogger(__name__)
 _BOILER_WRAPPER_SWITCH_ERROR = "Boiler wrapper switch not available: %s"
 
 
+async def _get_boiler_profile(coordinator: Any, entry_id: str) -> Optional[Any]:
+    """Get or create boiler profile for planning."""
+    profile = getattr(coordinator, "_current_profile", None)
+    if not profile:
+        await coordinator._update_profile()
+        profile = getattr(coordinator, "_current_profile", None)
+        if not profile:
+            _LOGGER.warning("Boiler profile not available for %s", entry_id)
+    return profile
+
+
+async def _get_planning_inputs(coordinator: Any) -> tuple:
+    """Get all required inputs for boiler planning."""
+    profile = await _get_boiler_profile(coordinator, "")
+    if not profile:
+        return None, None, None
+    
+    spot_prices = await coordinator._get_spot_prices()
+    overflow_windows = await coordinator._get_overflow_windows()
+    return profile, spot_prices, overflow_windows
+
+
+def _resolve_deadline(coordinator: Any, deadline_override: Optional[str]) -> str:
+    """Resolve planning deadline from override or config."""
+    config = getattr(coordinator, "config", {}) or {}
+    return deadline_override or config.get(
+        CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
+    )
+
+
 @dataclass
 class BoilerSchedule:
     cancel_callbacks: list[Callable[[], None]]
@@ -110,21 +140,12 @@ async def _create_boiler_plan(
         _LOGGER.debug("Boiler plan still valid for %s, skipping", entry_id)
         return
 
-    if not getattr(coordinator, "_current_profile", None):
-        await coordinator._update_profile()
-
-    profile = getattr(coordinator, "_current_profile", None)
+    profile = await _get_boiler_profile(coordinator, entry_id)
     if not profile:
-        _LOGGER.warning("Boiler profile not available for %s", entry_id)
         return
 
-    spot_prices = await coordinator._get_spot_prices()
-    overflow_windows = await coordinator._get_overflow_windows()
-
-    config = getattr(coordinator, "config", {}) or {}
-    deadline = deadline_override or config.get(
-        CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
-    )
+    _, spot_prices, overflow_windows = await _get_planning_inputs(coordinator)
+    deadline = _resolve_deadline(coordinator, deadline_override)
 
     coordinator._current_plan = await coordinator.planner.async_create_plan(
         profile=profile,
