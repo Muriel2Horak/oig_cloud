@@ -76,7 +76,6 @@ async function fetchWithAuth(url, options = {}) {
         headers: mergedHeaders
     });
 }
-}
 
 /**
  * Získá HA autentizační token
