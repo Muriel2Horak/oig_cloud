@@ -9,7 +9,6 @@ from typing import Any, Callable, Optional
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -29,14 +28,37 @@ from ..boiler.models import EnergySource
 
 _LOGGER = logging.getLogger(__name__)
 
-PLAN_SCHEMA = vol.Schema(
-    {
-        vol.Optional("force", default=False): cv.boolean,
-        vol.Optional("deadline"): cv.string,
-    }
-)
-APPLY_SCHEMA = vol.Schema({})
-CANCEL_SCHEMA = vol.Schema({})
+_BOILER_WRAPPER_SWITCH_ERROR = "Boiler wrapper switch not available: %s"
+
+
+async def _get_boiler_profile(coordinator: Any, entry_id: str) -> Optional[Any]:
+    """Get or create boiler profile for planning."""
+    profile = getattr(coordinator, "_current_profile", None)
+    if not profile:
+        await coordinator._update_profile()
+        profile = getattr(coordinator, "_current_profile", None)
+        if not profile:
+            _LOGGER.warning("Boiler profile not available for %s", entry_id)
+    return profile
+
+
+async def _get_planning_inputs(coordinator: Any) -> tuple:
+    """Get all required inputs for boiler planning."""
+    profile = await _get_boiler_profile(coordinator, "")
+    if not profile:
+        return None, None, None
+
+    spot_prices = await coordinator._get_spot_prices()
+    overflow_windows = await coordinator._get_overflow_windows()
+    return profile, spot_prices, overflow_windows
+
+
+def _resolve_deadline(coordinator: Any, deadline_override: Optional[str]) -> str:
+    """Resolve planning deadline from override or config."""
+    config = getattr(coordinator, "config", {}) or {}
+    return deadline_override or config.get(
+        CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
+    )
 
 
 @dataclass
@@ -47,8 +69,19 @@ class BoilerSchedule:
     windows: dict[str, list[dict[str, datetime]]]
 
 
+# Storage constants
 STORAGE_VERSION = 1
-STORAGE_KEY = "oig_cloud_boiler_schedules"
+STORAGE_KEY = "boiler_schedule"
+
+# Service schemas
+PLAN_SCHEMA = vol.Schema(
+    {
+        vol.Optional("force", default=False): bool,
+        vol.Optional("deadline"): str,
+    }
+)
+APPLY_SCHEMA = vol.Schema({})
+CANCEL_SCHEMA = vol.Schema({})
 
 
 def setup_boiler_services(
@@ -69,7 +102,6 @@ def setup_boiler_services(
             return
 
         await _create_boiler_plan(
-            hass,
             boiler_coordinator,
             entry_id,
             force=force,
@@ -96,7 +128,6 @@ def setup_boiler_services(
 
 
 async def _create_boiler_plan(
-    hass: HomeAssistant,
     coordinator: Any,
     entry_id: str,
     *,
@@ -109,21 +140,12 @@ async def _create_boiler_plan(
         _LOGGER.debug("Boiler plan still valid for %s, skipping", entry_id)
         return
 
-    if not getattr(coordinator, "_current_profile", None):
-        await coordinator._update_profile()
-
-    profile = getattr(coordinator, "_current_profile", None)
+    profile = await _get_boiler_profile(coordinator, entry_id)
     if not profile:
-        _LOGGER.warning("Boiler profile not available for %s", entry_id)
         return
 
-    spot_prices = await coordinator._get_spot_prices()
-    overflow_windows = await coordinator._get_overflow_windows()
-
-    config = getattr(coordinator, "config", {}) or {}
-    deadline = deadline_override or config.get(
-        CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
-    )
+    _, spot_prices, overflow_windows = await _get_planning_inputs(coordinator)
+    deadline = _resolve_deadline(coordinator, deadline_override)
 
     coordinator._current_plan = await coordinator.planner.async_create_plan(
         profile=profile,
@@ -161,15 +183,15 @@ async def _apply_boiler_plan(
         return
 
     if not _entity_exists(hass, main_switch):
-        _LOGGER.error("Boiler wrapper switch not available: %s", main_switch)
+        _LOGGER.error(_BOILER_WRAPPER_SWITCH_ERROR, main_switch)
         return
 
     if has_alt_config and not _entity_exists(hass, alt_switch):
-        _LOGGER.error("Boiler wrapper switch not available: %s", alt_switch)
+        _LOGGER.error(_BOILER_WRAPPER_SWITCH_ERROR, alt_switch)
         return
 
     if has_pump_config and not _entity_exists(hass, pump_switch):
-        _LOGGER.error("Boiler wrapper switch not available: %s", pump_switch)
+        _LOGGER.error(_BOILER_WRAPPER_SWITCH_ERROR, pump_switch)
         return
 
     windows = _build_heating_windows(plan.slots, has_alt_config)

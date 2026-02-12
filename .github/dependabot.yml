@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Enable version updates for Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    groups:
+      security-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "homeassistant*"
+          - "pytest-homeassistant-custom-component"
+        update-types:
+          - "version-update:semver-patch"
+          - "version-update:semver-minor"
+        applies-to: "version-update:semver-patch"
+        dependency-type: "all"
+
+  # Enable GitHub Actions updates
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5

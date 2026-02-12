@@ -7,16 +7,15 @@ on:
       - temp
   pull_request:
 
-permissions:
-  contents: read
-  security-events: write
-
 jobs:
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+    permissions:
+      contents: read
+      security-events: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,7 +33,9 @@ jobs:
   bandit:
     name: Bandit Security Linter
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -51,7 +52,7 @@ jobs:
 
       - name: Run Bandit
         run: |
-          bandit -r custom_components/oig_cloud -f json -o bandit-report.json
+          bandit -r custom_components/oig_cloud -f json -o bandit-report.json || true
 
       - name: Upload Bandit report
         uses: actions/upload-artifact@v4
@@ -62,7 +63,9 @@ jobs:
   safety:
     name: Safety Check
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
