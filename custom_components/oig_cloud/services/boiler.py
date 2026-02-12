@@ -29,26 +29,7 @@ from ..boiler.models import EnergySource
 
 _LOGGER = logging.getLogger(__name__)
 
-PLAN_SCHEMA = vol.Schema(
-    {
-        vol.Optional("force", default=False): cv.boolean,
-        vol.Optional("deadline"): cv.string,
-    }
-)
-APPLY_SCHEMA = vol.Schema({})
-CANCEL_SCHEMA = vol.Schema({})
-
-
-@dataclass
-class BoilerSchedule:
-    cancel_callbacks: list[Callable[[], None]]
-    entities: set[str]
-    created_at: datetime
-    windows: dict[str, list[dict[str, datetime]]]
-
-
-STORAGE_VERSION = 1
-STORAGE_KEY = "oig_cloud_boiler_schedules"
+_BOILER_WRAPPER_SWITCH_ERROR = "Boiler wrapper switch not available: %s"
 
 
 def setup_boiler_services(
@@ -159,15 +140,15 @@ async def _apply_boiler_plan(
         return
 
     if not _entity_exists(hass, main_switch):
-        _LOGGER.error("Boiler wrapper switch not available: %s", main_switch)
+        _LOGGER.error(_BOILER_WRAPPER_SWITCH_ERROR, main_switch)
         return
 
     if has_alt_config and not _entity_exists(hass, alt_switch):
-        _LOGGER.error("Boiler wrapper switch not available: %s", alt_switch)
+        _LOGGER.error(_BOILER_WRAPPER_SWITCH_ERROR, alt_switch)
         return
 
     if has_pump_config and not _entity_exists(hass, pump_switch):
-        _LOGGER.error("Boiler wrapper switch not available: %s", pump_switch)
+        _LOGGER.error(_BOILER_WRAPPER_SWITCH_ERROR, pump_switch)
         return
 
     windows = _build_heating_windows(plan.slots, has_alt_config)
