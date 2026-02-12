@@ -1,5 +1,10 @@
 import { bootstrap } from './core/bootstrap';
 import { oigLog } from './core/logger';
+import './ui/app';
+import './ui/features/flow';
+import './ui/features/pricing';
+import './ui/features/boiler';
+import './ui/features/control-panel';
 
 oigLog.info('V2 starting', { version: import.meta.env.VITE_VERSION });
 
@@ -17,14 +22,14 @@ async function main() {
     const container = document.getElementById('app');
     if (container) {
       container.innerHTML = `
-      <div style="padding: 20px; font-family: system-ui;">
-        <h2>Chyba načítání</h2>
-        <p>Nepodařilo se načíst dashboard. Zkuste obnovit stránku.</p>
-        <details>
-          <summary>Detaily</summary>
-          <pre>${(error as Error).message}</pre>
-        </details>
-      </div>`;
+        <div style="padding: 20px; font-family: system-ui;">
+          <h2>Chyba načítání</h2>
+          <p>Nepodařilo se načíst dashboard. Zkuste obnovit stránku.</p>
+          <details>
+            <summary>Detaily</summary>
+            <pre>${(error as Error).message}</pre>
+          </details>
+        </div>`;
     }
   }
 }
