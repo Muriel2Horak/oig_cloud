@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -30,6 +28,15 @@ from ..boiler.models import EnergySource
 _LOGGER = logging.getLogger(__name__)
 
 _BOILER_WRAPPER_SWITCH_ERROR = "Boiler wrapper switch not available: %s"
+
+
+@dataclass
+class BoilerSchedule:
+    cancel_callbacks: list[Callable[[], None]]
+    entities: set[str]
+    created_at: datetime
+    windows: dict[str, list[dict[str, datetime]]]
+
 
 # Storage constants
 STORAGE_VERSION = 1
