@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>OIG Dashboard V2</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    #app {
+      width: 100%;
+      height: 100%;
+    }
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      font-family: system-ui, sans-serif;
+      color: var(--primary-text-color, #333);
+    }
+    .loading::after {
+      content: 'Načítání...';
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+  </style>
+  <script>
+    (function() {
+      const log = (level, msg, data) => {
+        const prefix = '[V2]';
+        if (data) {
+          console[level](prefix, msg, data);
+        } else {
+          console[level](prefix, msg);
+        }
+      };
+      window.oigLog = {
+        debug: (m, d) => log('debug', m, d),
+        info: (m, d) => log('info', m, d),
+        warn: (m, d) => log('warn', m, d),
+        error: (m, e, d) => log('error', m, e, d)
+      };
+      oigLog.info('Bootstrap starting');
+    })();
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div class="loading"></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
