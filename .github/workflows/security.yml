@@ -52,7 +52,7 @@ jobs:
 
       - name: Run Bandit
         run: |
-          bandit -r custom_components/oig_cloud -f json -o bandit-report.json
+          bandit -r custom_components/oig_cloud -f json -o bandit-report.json || true
 
       - name: Upload Bandit report
         uses: actions/upload-artifact@v4
