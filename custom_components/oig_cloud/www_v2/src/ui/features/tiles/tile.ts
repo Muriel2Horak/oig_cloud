@@ -1,6 +1,7 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
+import { getIconEmoji } from '@/utils/format';
 import type { ResolvedTile } from './types';
 
 const u = unsafeCSS;
@@ -110,7 +111,8 @@ export class OigTile extends LitElement {
 
     const cfg = this.data.config;
     const color = cfg.color || '';
-    const icon = cfg.icon || '📊';
+    const rawIcon = cfg.icon || '📊';
+    const icon = rawIcon.startsWith('mdi:') ? getIconEmoji(rawIcon) : rawIcon;
 
     return html`
       ${color ? html`<style>:host { border-left: 3px solid ${u(color)}; }</style>` : null}

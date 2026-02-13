@@ -51,6 +51,7 @@ export class OigMiniSparkline extends LitElement {
 
   private chart: Chart | null = null;
   private lastDataKey = '';
+  private initializing = false;
 
   static styles = css`
     :host {
@@ -70,11 +71,16 @@ export class OigMiniSparkline extends LitElement {
 
   protected firstUpdated(): void {
     if (this.values.length > 0) {
-      requestAnimationFrame(() => this.createSparkline());
+      this.initializing = true;
+      requestAnimationFrame(() => {
+        this.createSparkline();
+        this.initializing = false;
+      });
     }
   }
 
   protected updated(changed: Map<string, unknown>): void {
+    if (this.initializing) return;
     if (changed.has('values') || changed.has('color')) {
       this.updateOrCreateSparkline();
     }
@@ -140,6 +146,9 @@ export class OigMiniSparkline extends LitElement {
 
   private createSparkline(): void {
     if (!this.canvas || this.values.length === 0) return;
+
+    // Safety: destroy any existing chart on this canvas
+    this.destroyChart();
 
     const significantPoints = this.getSignificantPoints();
     const color = this.color;

@@ -384,13 +384,19 @@ export class OigFlowCanvas extends LitElement {
   // ==========================================================================
 
   render() {
+    // Get dimensions for SVG overlay
+    const nodeEl = this.shadowRoot?.querySelector('oig-flow-node');
+    const wrapper = nodeEl?.shadowRoot?.querySelector('.flow-grid') as HTMLElement | null;
+    const w = wrapper?.offsetWidth || 0;
+    const h = wrapper?.offsetHeight || 0;
+
     return html`
       <div class="canvas-container">
         <div class="flow-grid-wrapper">
           <oig-flow-node .data=${this.data} .editMode=${this.editMode}></oig-flow-node>
         </div>
 
-        <svg class="connections-layer">
+        <svg class="connections-layer" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
           ${this.renderConnections()}
         </svg>
 
