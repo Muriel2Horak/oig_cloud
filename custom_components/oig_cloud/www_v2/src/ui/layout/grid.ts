@@ -1,3 +1,15 @@
+/**
+ * OIG Grid — Responsive layout wrapper with optional section reorder via drag & drop.
+ *
+ * Provides:
+ * - Breakpoint detection (mobile / tablet / desktop)
+ * - Adjusts grid columns per breakpoint
+ * - resetLayout() to clear per-breakpoint localStorage
+ *
+ * For **flow node** drag-and-drop, see oig-flow-node (node.ts) which handles
+ * absolute positioning of the 5 flow nodes independently.
+ */
+
 import { LitElement, html, css, unsafeCSS, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS, Breakpoint, getCurrentBreakpoint } from '@/ui/theme';
@@ -43,6 +55,7 @@ export class OigGrid extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    this.breakpoint = getCurrentBreakpoint(window.innerWidth);
     window.addEventListener('resize', this.onResize);
   }
 

@@ -1,13 +1,13 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
-import { TileData } from './types';
+import type { ResolvedTile } from './types';
 
 const u = unsafeCSS;
 
 @customElement('oig-tile')
 export class OigTile extends LitElement {
-  @property({ type: Object }) data: TileData | null = null;
+  @property({ type: Object }) data: ResolvedTile | null = null;
   @property({ type: Boolean }) editMode = false;
 
   static styles = css`
@@ -21,6 +21,11 @@ export class OigTile extends LitElement {
       box-shadow: ${u(CSS_VARS.cardShadow)};
       min-width: 80px;
       position: relative;
+      transition: opacity 0.2s;
+    }
+
+    :host(.inactive) {
+      opacity: 0.5;
     }
 
     .tile-icon {
@@ -38,6 +43,19 @@ export class OigTile extends LitElement {
       font-size: 11px;
       color: ${u(CSS_VARS.textSecondary)};
       margin-top: 2px;
+    }
+
+    .support-values {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      margin-top: 4px;
+    }
+
+    .support-value {
+      font-size: 10px;
+      color: ${u(CSS_VARS.textSecondary)};
     }
 
     .edit-actions {
@@ -75,39 +93,42 @@ export class OigTile extends LitElement {
 
   private onEdit(): void {
     this.dispatchEvent(new CustomEvent('edit-tile', {
-      detail: { id: this.data?.id },
+      detail: { entityId: this.data?.config.entity_id },
       bubbles: true,
     }));
   }
 
   private onDelete(): void {
     this.dispatchEvent(new CustomEvent('delete-tile', {
-      detail: { id: this.data?.id },
+      detail: { entityId: this.data?.config.entity_id },
       bubbles: true,
     }));
   }
 
-  private formatValue(): string {
-    if (!this.data) return '-';
-    
-    const value = this.data.value;
-    const unit = this.data.config.unit || '';
-    const decimals = this.data.config.decimals ?? 0;
-
-    if (typeof value === 'number') {
-      const formatted = decimals > 0 ? value.toFixed(decimals) : Math.round(value).toString();
-      return unit ? `${formatted} ${unit}` : formatted;
-    }
-    
-    return String(value);
-  }
-
   render() {
+    if (!this.data) return null;
+
+    const cfg = this.data.config;
+    const color = cfg.color || '';
+    const icon = cfg.icon || '📊';
+
     return html`
-      <span class="tile-icon">${this.data?.config.icon || '📊'}</span>
-      <span class="tile-value">${this.formatValue()}</span>
-      <span class="tile-label">${this.data?.config.label || ''}</span>
-      
+      ${color ? html`<style>:host { border-left: 3px solid ${u(color)}; }</style>` : null}
+      <span class="tile-icon">${icon}</span>
+      <span class="tile-value">${this.data.formattedValue}</span>
+      <span class="tile-label">${cfg.label || ''}</span>
+
+      ${(this.data.supportValues.topRight || this.data.supportValues.bottomRight) ? html`
+        <div class="support-values">
+          ${this.data.supportValues.topRight ? html`
+            <span class="support-value">${this.data.supportValues.topRight.value} ${this.data.supportValues.topRight.unit}</span>
+          ` : null}
+          ${this.data.supportValues.bottomRight ? html`
+            <span class="support-value">${this.data.supportValues.bottomRight.value} ${this.data.supportValues.bottomRight.unit}</span>
+          ` : null}
+        </div>
+      ` : null}
+
       ${this.editMode ? html`
         <div class="edit-actions">
           <button class="edit-btn" @click=${this.onEdit}>⚙️</button>
@@ -120,9 +141,9 @@ export class OigTile extends LitElement {
 
 @customElement('oig-tiles-container')
 export class OigTilesContainer extends LitElement {
-  @property({ type: Array }) tiles: TileData[] = [];
+  @property({ type: Array }) tiles: ResolvedTile[] = [];
   @property({ type: Boolean }) editMode = false;
-  @property({ type: String }) position: 'left' | 'right' = 'left';
+  @property({ type: String, reflect: true }) position: 'left' | 'right' = 'left';
 
   static styles = css`
     :host {
@@ -152,6 +173,7 @@ export class OigTilesContainer extends LitElement {
         <oig-tile
           .data=${tile}
           .editMode=${this.editMode}
+          class="${tile.isZero ? 'inactive' : ''}"
         ></oig-tile>
       `)}
     `;

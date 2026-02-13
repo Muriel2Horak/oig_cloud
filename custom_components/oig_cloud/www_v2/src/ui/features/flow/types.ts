@@ -1,6 +1,95 @@
+/**
+ * Flow Tab — Type definitions
+ * Complete data model matching V1 flow.js feature set
+ */
+
+// ============================================================================
+// FLOW DATA — extracted from HA sensors
+// ============================================================================
+
+export interface FlowData {
+  // Solar
+  solarPower: number;
+  solarP1: number;
+  solarP2: number;
+  solarV1: number;
+  solarV2: number;
+  solarI1: number;
+  solarI2: number;
+  solarPercent: number;
+  solarToday: number;      // Wh
+  solarForecastToday: number;
+  solarForecastTomorrow: number;
+
+  // Battery
+  batterySoC: number;
+  batteryPower: number;
+  batteryVoltage: number;
+  batteryCurrent: number;
+  batteryTemp: number;
+  batteryChargeTotal: number;   // Wh today
+  batteryDischargeTotal: number;
+  batteryChargeSolar: number;
+  batteryChargeGrid: number;
+  isGridCharging: boolean;
+  timeToEmpty: string;
+  timeToFull: string;
+
+  // Grid
+  gridPower: number;
+  gridVoltage: number;
+  gridFrequency: number;
+  gridImportToday: number;   // Wh
+  gridExportToday: number;   // Wh
+  gridL1V: number;
+  gridL2V: number;
+  gridL3V: number;
+  gridL1P: number;
+  gridL2P: number;
+  gridL3P: number;
+  spotPrice: number;
+  exportPrice: number;
+  currentTariff: string;
+
+  // House
+  housePower: number;
+  houseTodayWh: number;
+  houseL1: number;
+  houseL2: number;
+  houseL3: number;
+
+  // Inverter
+  inverterMode: string;
+  inverterGridMode: string;
+  inverterGridLimit: number;
+  inverterTemp: number;
+  bypassStatus: string;
+  notificationsUnread: number;
+  notificationsError: number;
+
+  // Boiler (in flow context)
+  boilerIsUse: boolean;
+  boilerPower: number;
+  boilerDayEnergy: number;
+  boilerManualMode: string;
+  boilerInstallPower: number;
+
+  // Planner
+  plannerAutoMode: boolean | null;
+
+  // Meta
+  lastUpdate: string;
+}
+
+// ============================================================================
+// FLOW NODE — visual node in flow canvas
+// ============================================================================
+
+export type FlowNodeType = 'solar' | 'battery' | 'inverter' | 'grid' | 'house';
+
 export interface FlowNode {
   id: string;
-  type: 'solar' | 'battery' | 'inverter' | 'grid' | 'house';
+  type: FlowNodeType;
   x: number;
   y: number;
   width: number;
@@ -10,6 +99,10 @@ export interface FlowNode {
   data: Record<string, any>;
 }
 
+// ============================================================================
+// FLOW CONNECTION
+// ============================================================================
+
 export interface FlowConnection {
   id: string;
   from: string;
@@ -18,14 +111,38 @@ export interface FlowConnection {
   direction: 'forward' | 'backward' | 'bidirectional';
 }
 
+// ============================================================================
+// PARTICLE SYSTEM
+// ============================================================================
+
 export interface ParticleConfig {
   color: string;
   speed: number;
   size: number;
   count: number;
+  opacity: number;
 }
 
-export const NODE_COLORS = {
+export interface FlowParams {
+  active: boolean;
+  intensity: number;
+  count: number;
+  speed: number;
+  size: number;
+  opacity: number;
+}
+
+export interface ParticleSource {
+  type: string;
+  power: number;
+  color: string;
+}
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+export const NODE_COLORS: Record<string, string> = {
   solar: '#ff9800',
   battery: '#4caf50',
   inverter: '#2196f3',
@@ -33,12 +150,31 @@ export const NODE_COLORS = {
   house: '#f44336',
 };
 
+export const FLOW_COLORS = {
+  solar: '#ffd54f',
+  battery: '#ff9800',
+  grid_import: '#f44336',
+  grid_export: '#4caf50',
+  house: '#f06292',
+} as const;
+
+export const FLOW_MAXIMUMS = {
+  solar: 5400,
+  battery: 7000,
+  grid: 17000,
+  house: 10000,
+} as const;
+
+// ============================================================================
+// DEFAULTS
+// ============================================================================
+
 export const DEFAULT_NODES: FlowNode[] = [
-  { id: 'solar', type: 'solar', x: 0, y: 0, width: 120, height: 80, label: 'Solár', power: 0, data: {} },
-  { id: 'battery', type: 'battery', x: 0, y: 120, width: 120, height: 80, label: 'Baterie', power: 0, data: { soc: 0 } },
-  { id: 'inverter', type: 'inverter', x: 200, y: 60, width: 120, height: 80, label: 'Střídač', power: 0, data: { mode: '' } },
-  { id: 'grid', type: 'grid', x: 400, y: 0, width: 120, height: 80, label: 'Síť', power: 0, data: {} },
-  { id: 'house', type: 'house', x: 400, y: 120, width: 120, height: 80, label: 'Spotřeba', power: 0, data: {} },
+  { id: 'solar', type: 'solar', x: 20, y: 20, width: 140, height: 100, label: 'Solar', power: 0, data: {} },
+  { id: 'battery', type: 'battery', x: 20, y: 150, width: 140, height: 100, label: 'Baterie', power: 0, data: { soc: 0 } },
+  { id: 'inverter', type: 'inverter', x: 200, y: 85, width: 140, height: 100, label: 'Střídač', power: 0, data: { mode: '' } },
+  { id: 'grid', type: 'grid', x: 380, y: 20, width: 140, height: 100, label: 'Síť', power: 0, data: {} },
+  { id: 'house', type: 'house', x: 380, y: 150, width: 140, height: 100, label: 'Spotřeba', power: 0, data: {} },
 ];
 
 export const DEFAULT_CONNECTIONS: FlowConnection[] = [
@@ -47,3 +183,20 @@ export const DEFAULT_CONNECTIONS: FlowConnection[] = [
   { id: 'grid-inverter', from: 'grid', to: 'inverter', power: 0, direction: 'bidirectional' },
   { id: 'inverter-house', from: 'inverter', to: 'house', power: 0, direction: 'forward' },
 ];
+
+export const EMPTY_FLOW_DATA: FlowData = {
+  solarPower: 0, solarP1: 0, solarP2: 0, solarV1: 0, solarV2: 0, solarI1: 0, solarI2: 0,
+  solarPercent: 0, solarToday: 0, solarForecastToday: 0, solarForecastTomorrow: 0,
+  batterySoC: 0, batteryPower: 0, batteryVoltage: 0, batteryCurrent: 0, batteryTemp: 0,
+  batteryChargeTotal: 0, batteryDischargeTotal: 0, batteryChargeSolar: 0, batteryChargeGrid: 0,
+  isGridCharging: false, timeToEmpty: '', timeToFull: '',
+  gridPower: 0, gridVoltage: 0, gridFrequency: 0, gridImportToday: 0, gridExportToday: 0,
+  gridL1V: 0, gridL2V: 0, gridL3V: 0, gridL1P: 0, gridL2P: 0, gridL3P: 0,
+  spotPrice: 0, exportPrice: 0, currentTariff: '',
+  housePower: 0, houseTodayWh: 0, houseL1: 0, houseL2: 0, houseL3: 0,
+  inverterMode: '', inverterGridMode: '', inverterGridLimit: 0, inverterTemp: 0,
+  bypassStatus: 'off', notificationsUnread: 0, notificationsError: 0,
+  boilerIsUse: false, boilerPower: 0, boilerDayEnergy: 0, boilerManualMode: '', boilerInstallPower: 3000,
+  plannerAutoMode: null,
+  lastUpdate: '',
+};

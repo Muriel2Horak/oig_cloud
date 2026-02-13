@@ -1,4 +1,4 @@
 export { OigFlowNode } from './node';
-export { OigFlowConnection } from './connection';
+export { OigBatteryGauge } from './battery-gauge';
 export { OigFlowCanvas } from './canvas';
 export * from './types';

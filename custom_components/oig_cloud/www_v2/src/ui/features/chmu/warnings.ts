@@ -1,13 +1,18 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
-import { ChmuWarning, LEVEL_COLORS, LEVEL_LABELS } from './types';
+import type { ChmuData, ChmuWarningDetail } from './types';
+import { SEVERITY_COLORS, SEVERITY_LABELS, getChmuIcon, EMPTY_CHMU_DATA } from './types';
 
 const u = unsafeCSS;
 
+// ============================================================================
+// oig-chmu-badge — compact badge for the header
+// ============================================================================
+
 @customElement('oig-chmu-badge')
 export class OigChmuBadge extends LitElement {
-  @property({ type: Array }) warnings: ChmuWarning[] = [];
+  @property({ type: Object }) data: ChmuData = EMPTY_CHMU_DATA;
   @property({ type: Boolean }) compact = false;
 
   static styles = css`
@@ -21,6 +26,7 @@ export class OigChmuBadge extends LitElement {
       font-weight: 500;
       cursor: pointer;
       transition: opacity 0.2s;
+      color: #fff;
     }
 
     :host(:hover) {
@@ -57,35 +63,33 @@ export class OigChmuBadge extends LitElement {
     this.dispatchEvent(new CustomEvent('badge-click', { bubbles: true }));
   };
 
-  private get highestLevel(): ChmuWarning['level'] {
-    if (this.warnings.some(w => w.level === 'extreme')) return 'extreme';
-    if (this.warnings.some(w => w.level === 'high')) return 'high';
-    if (this.warnings.some(w => w.level === 'medium')) return 'medium';
-    return 'low';
-  }
-
   render() {
-    const hasWarnings = this.warnings.length > 0;
-    const level = this.highestLevel;
-    const color = LEVEL_COLORS[level];
+    const sev = this.data.effectiveSeverity;
+    const color = SEVERITY_COLORS[sev] ?? SEVERITY_COLORS[0];
+    const hasWarnings = this.data.warningsCount > 0 && sev > 0;
+    const icon = hasWarnings ? getChmuIcon(this.data.eventType) : '✓';
 
     return html`
       <style>
-        :host { background: ${u(color)}; color: #fff; }
+        :host { background: ${u(color)}; }
       </style>
-      <span class="badge-icon">${hasWarnings ? '⚠️' : '✓'}</span>
+      <span class="badge-icon">${icon}</span>
       ${hasWarnings ? html`
-        <span class="badge-count">${this.warnings.length}</span>
+        <span class="badge-count">${this.data.warningsCount}</span>
       ` : null}
-      <span class="badge-label">${hasWarnings ? 'Výstrahy' : 'OK'}</span>
+      <span class="badge-label">${hasWarnings ? SEVERITY_LABELS[sev] ?? 'Výstraha' : 'OK'}</span>
     `;
   }
 }
 
+// ============================================================================
+// oig-chmu-modal — full overlay with all warnings
+// ============================================================================
+
 @customElement('oig-chmu-modal')
 export class OigChmuModal extends LitElement {
-  @property({ type: Boolean }) open = false;
-  @property({ type: Array }) warnings: ChmuWarning[] = [];
+  @property({ type: Boolean, reflect: true }) open = false;
+  @property({ type: Object }) data: ChmuData = EMPTY_CHMU_DATA;
 
   static styles = css`
     :host {
@@ -162,6 +166,8 @@ export class OigChmuModal extends LitElement {
       margin-bottom: 8px;
     }
 
+    .warning-icon { font-size: 18px; }
+
     .warning-type {
       font-size: 14px;
       font-weight: 600;
@@ -176,6 +182,13 @@ export class OigChmuModal extends LitElement {
 
     .warning-description {
       font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .warning-instruction {
+      font-size: 11px;
+      font-style: italic;
+      opacity: 0.85;
       margin-bottom: 8px;
     }
 
@@ -189,6 +202,15 @@ export class OigChmuModal extends LitElement {
       padding: 20px;
       color: ${u(CSS_VARS.textSecondary)};
     }
+
+    .eta-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 6px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 4px;
+      margin-left: 6px;
+    }
   `;
 
   private onClose(): void {
@@ -196,10 +218,42 @@ export class OigChmuModal extends LitElement {
   }
 
   private formatTime(dateStr: string): string {
+    if (!dateStr) return '—';
     return new Date(dateStr).toLocaleString('cs-CZ');
   }
 
+  private renderWarning(w: ChmuWarningDetail) {
+    const color = SEVERITY_COLORS[w.severity] ?? SEVERITY_COLORS[2];
+    const icon = getChmuIcon(w.event_type);
+    const levelLabel = SEVERITY_LABELS[w.severity] ?? 'Neznámá';
+
+    return html`
+      <div class="warning-item" style="background: ${color}">
+        <div class="warning-header">
+          <span class="warning-icon">${icon}</span>
+          <span class="warning-type">${w.event_type}</span>
+          <span class="warning-level">${levelLabel}</span>
+          ${w.eta_hours > 0 ? html`
+            <span class="eta-badge">za ${w.eta_hours.toFixed(0)}h</span>
+          ` : null}
+        </div>
+        ${w.description ? html`
+          <div class="warning-description">${w.description}</div>
+        ` : null}
+        ${w.instruction ? html`
+          <div class="warning-instruction">${w.instruction}</div>
+        ` : null}
+        <div class="warning-time">
+          ${this.formatTime(w.onset)} — ${this.formatTime(w.expires)}
+        </div>
+      </div>
+    `;
+  }
+
   render() {
+    const warnings = this.data.allWarnings;
+    const hasWarnings = warnings.length > 0 && this.data.effectiveSeverity > 0;
+
     return html`
       <div class="modal" @click=${(e: Event) => e.stopPropagation()}>
         <div class="modal-header">
@@ -207,23 +261,9 @@ export class OigChmuModal extends LitElement {
           <button class="close-btn" @click=${this.onClose}>✕</button>
         </div>
 
-        ${this.warnings.length === 0 ? html`
+        ${!hasWarnings ? html`
           <div class="empty-state">Žádné aktivní výstrahy</div>
-        ` : this.warnings.map(warning => html`
-          <div
-            class="warning-item"
-            style="background: ${u(LEVEL_COLORS[warning.level])}"
-          >
-            <div class="warning-header">
-              <span class="warning-type">${warning.type}</span>
-              <span class="warning-level">${LEVEL_LABELS[warning.level]}</span>
-            </div>
-            <div class="warning-description">${warning.description}</div>
-            <div class="warning-time">
-              ${this.formatTime(warning.start)} - ${this.formatTime(warning.end)}
-            </div>
-          </div>
-        `)}
+        ` : warnings.map(w => this.renderWarning(w))}
       </div>
     `;
   }

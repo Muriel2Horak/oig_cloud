@@ -16,9 +16,11 @@
   },
   "dependencies": {
     "chart.js": "^4.4.1",
+    "chartjs-adapter-date-fns": "^3.0.0",
     "chartjs-plugin-annotation": "^3.0.1",
     "chartjs-plugin-datalabels": "^2.2.0",
     "chartjs-plugin-zoom": "^2.0.1",
+    "date-fns": "^4.1.0",
     "lit": "^3.1.0"
   },
   "devDependencies": {

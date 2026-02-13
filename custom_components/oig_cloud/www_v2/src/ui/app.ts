@@ -1,16 +1,23 @@
-import { LitElement, html, css, unsafeCSS, PropertyValues } from 'lit';
+import { LitElement, html, css, nothing, unsafeCSS, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import { Tab } from '@/ui/layout/tabs';
-import { EntityStore } from '@/data/entity-store';
-import { HaClient } from '@/data/ha-client';
-import { extractFlowData, buildFlowNodes, buildFlowConnections } from '@/data/flow-data';
+import { createEntityStore, EntityStore } from '@/data/entity-store';
+import { stateWatcher } from '@/data/state-watcher';
+import { haClient } from '@/data/ha-client';
+import { extractFlowData } from '@/data/flow-data';
 import { loadPricingData } from '@/data/pricing-data';
 import { loadBoilerData } from '@/data/boiler-data';
-import { FlowNode, FlowConnection, DEFAULT_NODES, DEFAULT_CONNECTIONS } from '@/ui/features/flow/types';
-import { PricingData, PricingStats } from '@/ui/features/pricing/types';
+import { loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
+import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
+import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/timeline-data';
+import { loadTilesConfig, resolveTiles, type TilesConfig, type ResolvedTile } from '@/data/tiles-data';
+import { FlowData, EMPTY_FLOW_DATA } from '@/ui/features/flow/types';
+import { PricingData } from '@/ui/features/pricing/types';
 import { BoilerProfile, BoilerState, BoilerHourData } from '@/ui/features/boiler/types';
 import { oigLog } from '@/core/logger';
+import { throttle, withRetry } from '@/utils/format';
+import { shieldController } from '@/data/shield-controller';
 
 import '@/ui/components/header';
 import '@/ui/components/theme-provider';
@@ -19,8 +26,18 @@ import '@/ui/layout/grid';
 import '@/ui/features/flow';
 import '@/ui/features/pricing';
 import '@/ui/features/boiler';
+import '@/ui/features/control-panel';
+import '@/ui/features/analytics';
+import '@/ui/features/chmu';
+import '@/ui/features/timeline';
+import '@/ui/features/tiles';
 
 const u = unsafeCSS;
+
+/** OIG sensor prefix for this inverter */
+const params = new URLSearchParams(window.location.search);
+const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
+const OIG_SENSOR_PREFIX = `sensor.oig_${INVERTER_SN}_`;
 
 const DEFAULT_TABS: Tab[] = [
   { id: 'flow', label: 'Toky', icon: '⚡' },
@@ -36,19 +53,45 @@ export class OigApp extends LitElement {
   @state() private activeTab = 'flow';
   @state() private editMode = false;
   @state() private time = '';
-  @state() private flowNodes: FlowNode[] = DEFAULT_NODES;
-  @state() private flowConnections: FlowConnection[] = DEFAULT_CONNECTIONS;
+
+  // Flow
+  @state() private flowData: FlowData = EMPTY_FLOW_DATA;
+
+  // Pricing
   @state() private pricingData: PricingData | null = null;
-  @state() private pricingStats: PricingStats | null = null;
+  @state() private pricingLoading = false;
+
+  // Boiler
   @state() private boilerState: BoilerState | null = null;
   @state() private boilerProfiles: BoilerProfile[] = [];
   @state() private boilerHeatmap: BoilerHourData[] = [];
-  @state() private pricingLoading = false;
   @state() private boilerLoading = false;
+
+  // Analytics
+  @state() private analyticsData: AnalyticsData = EMPTY_ANALYTICS;
+
+  // ČHMÚ
+  @state() private chmuData: ChmuData = EMPTY_CHMU_DATA;
+  @state() private chmuModalOpen = false;
+
+  // Timeline
+  @state() private timelineOpen = false;
+  @state() private timelineTab: TimelineTab = 'today';
+  @state() private timelineData: TimelineDayData | null = null;
+
+  // Tiles
+  @state() private tilesConfig: TilesConfig | null = null;
+  @state() private tilesLeft: ResolvedTile[] = [];
+  @state() private tilesRight: ResolvedTile[] = [];
 
   private entityStore: EntityStore | null = null;
   private timeInterval: number | null = null;
-  private hassUnsubscribe: (() => void) | null = null;
+  private stateWatcherUnsub: (() => void) | null = null;
+
+  /** Throttled flow update — max once per 500ms to avoid jank from rapid state changes */
+  private throttledUpdateFlow = throttle(() => this.updateFlowData(), 500);
+  /** Throttled ČHMÚ + tiles update — these rely on entity store */
+  private throttledUpdateSensors = throttle(() => this.updateSensorData(), 1000);
 
   static styles = css`
     :host {
@@ -61,25 +104,63 @@ export class OigApp extends LitElement {
       background: ${u(CSS_VARS.bgPrimary)};
     }
 
+    /* ---- Loading & Error ---- */
     .loading {
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       height: 100%;
+      gap: 12px;
       font-size: 14px;
       color: ${u(CSS_VARS.textSecondary)};
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid ${u(CSS_VARS.divider)};
+      border-top-color: ${u(CSS_VARS.accent)};
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .spinner--small {
+      width: 14px;
+      height: 14px;
+      border-width: 2px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
 
     .error {
       padding: 20px;
       color: ${u(CSS_VARS.error)};
       text-align: center;
+      animation: fadeIn 0.3s ease;
     }
 
     .error h2 {
       margin-bottom: 8px;
     }
 
+    .error button {
+      margin-top: 12px;
+      padding: 8px 16px;
+      background: ${u(CSS_VARS.accent)};
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .error button:hover { opacity: 0.9; }
+
+    /* ---- Main layout ---- */
     main {
       flex: 1;
       overflow: auto;
@@ -93,46 +174,115 @@ export class OigApp extends LitElement {
 
     .tab-content.active {
       display: block;
+      animation: fadeIn 0.25s ease;
     }
 
-    .placeholder {
-      padding: 40px;
-      text-align: center;
+    /* ---- Flow tab layout ---- */
+    .flow-layout {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .flow-center {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ---- Pricing tab layout ---- */
+    .pricing-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+    }
+
+    .tab-loading-overlay {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: ${u(CSS_VARS.cardBg)};
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      font-size: 12px;
       color: ${u(CSS_VARS.textSecondary)};
+      z-index: 10;
+      animation: fadeIn 0.2s ease;
     }
 
-    .placeholder h3 {
-      margin-bottom: 8px;
-      color: ${u(CSS_VARS.textPrimary)};
+    .analytics-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    .timeline-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      background: ${u(CSS_VARS.accent)};
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .timeline-btn:hover { opacity: 0.9; }
+
+    /* ---- Animations ---- */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ---- Reduced motion ---- */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 768px) {
+      .flow-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .analytics-row {
+        grid-template-columns: 1fr;
+      }
     }
   `;
 
   connectedCallback(): void {
     super.connectedCallback();
-    this.initHass();
+    this.initApp();
     this.startTimeUpdate();
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this.entityStore?.destroy();
-    this.hassUnsubscribe?.();
-    if (this.timeInterval !== null) {
-      clearInterval(this.timeInterval);
-    }
+    this.cleanup();
   }
 
   protected updated(changed: PropertyValues): void {
-    if (changed.has('hass') && this.hass) {
-      this.entityStore = new EntityStore(this.hass);
-      this.updateFlowData();
-      this.loadPricingData();
-      this.loadBoilerDataAsync();
-      this.subscribeToHassChanges();
-    }
     if (changed.has('activeTab')) {
       if (this.activeTab === 'pricing' && !this.pricingData) {
         this.loadPricingData();
+      }
+      if (this.activeTab === 'pricing' && this.analyticsData === EMPTY_ANALYTICS) {
+        this.loadAnalyticsAsync();
       }
       if (this.activeTab === 'boiler' && !this.boilerState) {
         this.loadBoilerDataAsync();
@@ -140,47 +290,112 @@ export class OigApp extends LitElement {
     }
   }
 
-  private subscribeToHassChanges(): void {
-    this.hassUnsubscribe?.();
-    
-    if (this.hass?.connection?.subscribeEvents) {
-      this.hass.connection.subscribeEvents((event: any) => {
-        if (event.event_type === 'state_changed') {
-          this.updateFlowData();
-        }
-      }, 'state_changed').then((unsub: () => void) => {
-        this.hassUnsubscribe = unsub;
-      }).catch((err: Error) => {
-        oigLog.warn('Failed to subscribe to HA events', err);
+  // ==========================================================================
+  // INITIALIZATION
+  // ==========================================================================
+
+  private async initApp(): Promise<void> {
+    try {
+      const hass = await haClient.getHass();
+
+      if (!hass) {
+        throw new Error('Cannot access Home Assistant context');
+      }
+
+      this.hass = hass;
+
+      // Create entity store singleton
+      this.entityStore = createEntityStore(hass, INVERTER_SN);
+
+      // Start state watcher — watches all OIG sensors via prefix
+      await stateWatcher.start({
+        getHass: () => haClient.getHassSync(),
+        prefixes: [OIG_SENSOR_PREFIX],
       });
+
+      // Subscribe to entity changes for reactive updates
+      this.stateWatcherUnsub = stateWatcher.onEntityChange((_entityId, _newState) => {
+        this.throttledUpdateFlow();
+        this.throttledUpdateSensors();
+      });
+
+      // Start shield controller (reactive queue / service state)
+      shieldController.start();
+
+      // Initial data load
+      this.updateFlowData();
+      this.updateSensorData();
+      this.loadPricingData();
+      this.loadBoilerDataAsync();
+      this.loadAnalyticsAsync();
+      this.loadTilesAsync();
+
+      this.loading = false;
+      oigLog.info('App initialized', {
+        entities: Object.keys(hass.states || {}).length,
+        inverterSn: INVERTER_SN,
+      });
+    } catch (err) {
+      this.error = (err as Error).message;
+      this.loading = false;
+      oigLog.error('App init failed', err as Error);
     }
   }
 
-  private updateFlowData(): void {
-    if (!this.hass) {
-      oigLog.warn('updateFlowData: no hass');
-      return;
+  // ==========================================================================
+  // CLEANUP
+  // ==========================================================================
+
+  private cleanup(): void {
+    this.stateWatcherUnsub?.();
+    this.stateWatcherUnsub = null;
+
+    stateWatcher.stop();
+    shieldController.stop();
+
+    this.entityStore?.destroy();
+    this.entityStore = null;
+
+    if (this.timeInterval !== null) {
+      clearInterval(this.timeInterval);
+      this.timeInterval = null;
     }
-    
+  }
+
+  // ==========================================================================
+  // DATA LOADING
+  // ==========================================================================
+
+  private updateFlowData(): void {
+    if (!this.hass) return;
+
     try {
-      const data = extractFlowData(this.hass);
-      oigLog.info('Flow data extracted', data);
-      this.flowNodes = buildFlowNodes(data);
-      this.flowConnections = buildFlowConnections(data);
-      oigLog.info('Flow nodes updated', { nodes: this.flowNodes.length, firstNode: this.flowNodes[0] });
+      this.flowData = extractFlowData(this.hass);
     } catch (err) {
       oigLog.error('Failed to extract flow data', err as Error);
     }
   }
 
+  /** Update sensor-driven data: ČHMÚ + tiles */
+  private updateSensorData(): void {
+    // ČHMÚ
+    this.chmuData = extractChmuData(INVERTER_SN);
+
+    // Tiles
+    if (this.tilesConfig) {
+      const resolved = resolveTiles(this.tilesConfig);
+      this.tilesLeft = resolved.left;
+      this.tilesRight = resolved.right;
+    }
+  }
+
   private async loadPricingData(): Promise<void> {
     if (!this.hass || this.pricingLoading) return;
-    
+
     this.pricingLoading = true;
     try {
-      const data = await loadPricingData(this.hass);
+      const data = await withRetry(() => loadPricingData(this.hass));
       this.pricingData = data;
-      this.pricingStats = data?.stats || null;
     } catch (err) {
       oigLog.error('Failed to load pricing data', err as Error);
     } finally {
@@ -190,10 +405,10 @@ export class OigApp extends LitElement {
 
   private async loadBoilerDataAsync(): Promise<void> {
     if (!this.hass || this.boilerLoading) return;
-    
+
     this.boilerLoading = true;
     try {
-      const data = await loadBoilerData(this.hass);
+      const data = await withRetry(() => loadBoilerData(this.hass));
       this.boilerState = data.state;
       this.boilerProfiles = data.profiles;
       this.boilerHeatmap = data.heatmap;
@@ -204,31 +419,36 @@ export class OigApp extends LitElement {
     }
   }
 
-  private async initHass(): Promise<void> {
+  private async loadAnalyticsAsync(): Promise<void> {
     try {
-      const client = new HaClient();
-      const hass = await client.getHass();
-      
-      if (!hass) {
-        throw new Error('Cannot access Home Assistant context');
-      }
-      
-      this.hass = hass;
-      this.loading = false;
-      oigLog.info('App initialized', { entities: Object.keys(hass.states || {}).length });
-      
-      // Trigger data loading after hass is set
-      this.entityStore = new EntityStore(this.hass);
-      this.updateFlowData();
-      this.loadPricingData();
-      this.loadBoilerDataAsync();
-      this.subscribeToHassChanges();
+      this.analyticsData = await withRetry(() => loadAnalyticsData(INVERTER_SN));
     } catch (err) {
-      this.error = (err as Error).message;
-      this.loading = false;
-      oigLog.error('App init failed', err as Error);
+      oigLog.error('Failed to load analytics', err as Error);
     }
   }
+
+  private async loadTilesAsync(): Promise<void> {
+    try {
+      this.tilesConfig = await withRetry(() => loadTilesConfig());
+      const resolved = resolveTiles(this.tilesConfig);
+      this.tilesLeft = resolved.left;
+      this.tilesRight = resolved.right;
+    } catch (err) {
+      oigLog.error('Failed to load tiles config', err as Error);
+    }
+  }
+
+  private async loadTimelineTabData(tab: TimelineTab): Promise<void> {
+    try {
+      this.timelineData = await withRetry(() => loadTimelineTab(INVERTER_SN, tab));
+    } catch (err) {
+      oigLog.error(`Failed to load timeline tab: ${tab}`, err as Error);
+    }
+  }
+
+  // ==========================================================================
+  // UI EVENT HANDLERS
+  // ==========================================================================
 
   private startTimeUpdate(): void {
     const updateTime = () => {
@@ -247,15 +467,51 @@ export class OigApp extends LitElement {
   }
 
   private onResetClick(): void {
+    // Reset flow node positions
+    const canvas = this.shadowRoot?.querySelector('oig-flow-canvas') as any;
+    if (canvas?.resetLayout) canvas.resetLayout();
+    // Reset grid layout
     const grid = this.shadowRoot?.querySelector('oig-grid');
     if (grid) {
       (grid as any).resetLayout();
     }
   }
 
+  // ČHMÚ events
+  private onChmuBadgeClick(): void {
+    this.chmuModalOpen = true;
+  }
+
+  private onChmuModalClose(): void {
+    this.chmuModalOpen = false;
+  }
+
+  // Timeline events
+  private onTimelineOpen(): void {
+    this.timelineOpen = true;
+    this.loadTimelineTabData(this.timelineTab);
+  }
+
+  private onTimelineClose(): void {
+    this.timelineOpen = false;
+  }
+
+  private onTimelineTabChange(e: CustomEvent): void {
+    this.timelineTab = e.detail.tab;
+    this.loadTimelineTabData(e.detail.tab);
+  }
+
+  private onTimelineRefresh(): void {
+    this.loadTimelineTabData(this.timelineTab);
+  }
+
+  // ==========================================================================
+  // RENDER
+  // ==========================================================================
+
   render() {
     if (this.loading) {
-      return html`<div class="loading">Načítání...</div>`;
+      return html`<div class="loading"><div class="spinner"></div><span>Načítání...</span></div>`;
     }
 
     if (this.error) {
@@ -263,15 +519,12 @@ export class OigApp extends LitElement {
         <div class="error">
           <h2>Chyba připojení</h2>
           <p>${this.error}</p>
+          <button @click=${() => { this.error = null; this.loading = true; this.initApp(); }}>Zkusit znovu</button>
         </div>
       `;
     }
-    
-    oigLog.info('Rendering app', { 
-      flowNodesCount: this.flowNodes.length, 
-      firstNodePower: this.flowNodes[0]?.power,
-      activeTab: this.activeTab 
-    });
+
+    const chmuAlertCount = this.chmuData.effectiveSeverity > 0 ? this.chmuData.warningsCount : 0;
 
     return html`
       <oig-theme-provider>
@@ -279,10 +532,12 @@ export class OigApp extends LitElement {
           title="Energetické Toky"
           .time=${this.time}
           .showStatus=${true}
-          .alertCount=${0}
+          .alertCount=${chmuAlertCount}
           @edit-click=${this.onEditClick}
           @reset-click=${this.onResetClick}
-        ></oig-header>
+          @status-click=${this.onChmuBadgeClick}
+        >
+        </oig-header>
 
         <oig-tabs
           .tabs=${DEFAULT_TABS}
@@ -292,27 +547,93 @@ export class OigApp extends LitElement {
 
         <main>
           <oig-grid .editable=${this.editMode}>
+            <!-- ===== FLOW TAB ===== -->
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
-              <oig-flow-canvas
-                .nodes=${this.flowNodes}
-                .connections=${this.flowConnections}
-                particlesEnabled
-                .active=${this.activeTab === 'flow'}
-              ></oig-flow-canvas>
+              <div class="flow-layout">
+                <oig-tiles-container
+                  position="left"
+                  .tiles=${this.tilesLeft}
+                  .editMode=${this.editMode}
+                ></oig-tiles-container>
+
+                <div class="flow-center">
+                  <oig-flow-canvas
+                    .data=${this.flowData}
+                    particlesEnabled
+                    .active=${this.activeTab === 'flow'}
+                    .editMode=${this.editMode}
+                  ></oig-flow-canvas>
+                  <oig-control-panel></oig-control-panel>
+                </div>
+
+                <oig-tiles-container
+                  position="right"
+                  .tiles=${this.tilesRight}
+                  .editMode=${this.editMode}
+                ></oig-tiles-container>
+              </div>
             </div>
 
+            <!-- ===== PRICING TAB ===== -->
             <div class="tab-content ${this.activeTab === 'pricing' ? 'active' : ''}">
-              <oig-pricing-stats .stats=${this.pricingStats}></oig-pricing-stats>
-              <oig-pricing-chart .data=${this.pricingData}></oig-pricing-chart>
+              <div class="pricing-layout">
+                ${this.pricingLoading ? html`
+                  <div class="tab-loading-overlay">
+                    <div class="spinner spinner--small"></div>
+                    <span>Načítání cen...</span>
+                  </div>
+                ` : nothing}
+                <oig-pricing-stats .data=${this.pricingData}></oig-pricing-stats>
+                <oig-pricing-chart .data=${this.pricingData}></oig-pricing-chart>
+
+                <button class="timeline-btn" @click=${this.onTimelineOpen}>
+                  📅 Timeline režimů
+                </button>
+
+                <div class="analytics-row">
+                  <oig-analytics-block title="Účinnost baterie" icon="⚡">
+                    <oig-battery-efficiency .data=${this.analyticsData.efficiency}></oig-battery-efficiency>
+                  </oig-analytics-block>
+
+                  <oig-battery-health .data=${this.analyticsData.health}></oig-battery-health>
+
+                  <oig-battery-balancing .data=${this.analyticsData.balancing}></oig-battery-balancing>
+
+                  <oig-cost-comparison .data=${this.analyticsData.costComparison}></oig-cost-comparison>
+                </div>
+              </div>
             </div>
 
-            <div class="tab-content ${this.activeTab === 'boiler' ? 'active' : ''}">
+            <!-- ===== BOILER TAB ===== -->
+            <div class="tab-content ${this.activeTab === 'boiler' ? 'active' : ''}" style="position:relative">
+              ${this.boilerLoading ? html`
+                <div class="tab-loading-overlay">
+                  <div class="spinner spinner--small"></div>
+                  <span>Načítání bojleru...</span>
+                </div>
+              ` : nothing}
               <oig-boiler-state .state=${this.boilerState}></oig-boiler-state>
               <oig-boiler-heatmap .data=${this.boilerHeatmap}></oig-boiler-heatmap>
               <oig-boiler-profiles .profiles=${this.boilerProfiles} .editMode=${this.editMode}></oig-boiler-profiles>
             </div>
           </oig-grid>
         </main>
+
+        <!-- ===== GLOBAL OVERLAYS ===== -->
+        <oig-chmu-modal
+          ?open=${this.chmuModalOpen}
+          .data=${this.chmuData}
+          @close=${this.onChmuModalClose}
+        ></oig-chmu-modal>
+
+        <oig-timeline-dialog
+          ?open=${this.timelineOpen}
+          .activeTab=${this.timelineTab}
+          .data=${this.timelineData}
+          @close=${this.onTimelineClose}
+          @tab-change=${this.onTimelineTabChange}
+          @refresh=${this.onTimelineRefresh}
+        ></oig-timeline-dialog>
       </oig-theme-provider>
     `;
   }
