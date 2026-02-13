@@ -17,6 +17,11 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
+        // Disable file hashing for better HA compatibility
+        // Cache busting handled via query parameters in panel URL
+        entryFileNames: 'assets/[name].js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name].[ext]',
         manualChunks: {
           'vendor': ['lit'],
           'charts': ['chart.js', 'chartjs-plugin-zoom', 'chartjs-plugin-datalabels', 'chartjs-plugin-annotation']
