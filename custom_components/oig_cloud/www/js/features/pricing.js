@@ -2259,6 +2259,11 @@ if (typeof globalThis.DashboardPricing?.init === 'function') {
     globalThis.DashboardPricing.init();
 }
 async function fetchTimelineFromAPI(plan, boxId) {
+    if (typeof fetchWithAuth !== 'function') {
+        console.error('[Pricing] fetchWithAuth is not available');
+        return [];
+    }
+    
     const timelineUrl = `/api/oig_cloud/battery_forecast/${boxId}/timeline?type=active`;
     const fetchStart = performance.now();
     console.log(`[Pricing] Fetching ${plan} timeline from API...`);

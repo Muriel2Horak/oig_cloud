@@ -1,6 +1,7 @@
 import { PricePoint, PriceBlock, PricingStats, PricingData } from '@/ui/features/pricing/types';
 
-const INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
+const params = new URLSearchParams(window.location.search);
+const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
 
 export function getSensorId(sensor: string): string {
   return `sensor.oig_${INVERTER_SN}_${sensor}`;
@@ -18,14 +19,6 @@ function parseNumber(state: HassState | null | undefined): number {
   return isNaN(val) ? 0 : val;
 }
 
-interface SpotPriceAPIResponse {
-  prices?: Array<{
-    timestamp: string;
-    price: number;
-    export_price?: number;
-  }>;
-}
-
 interface TimelinePoint {
   timestamp: string;
   price?: number;
@@ -39,7 +32,7 @@ interface TimelinePoint {
 export async function fetchSpotPrices(hass: any): Promise<PricePoint[]> {
   try {
     if (hass?.callApi) {
-      const response = await hass.callApi('GET', `oig_cloud/spot_prices`);
+      const response = await hass.callApi('GET', `oig_cloud/spot_prices/${INVERTER_SN}/intervals`);
       return parseSpotPriceResponse(response);
     }
     
@@ -47,7 +40,7 @@ export async function fetchSpotPrices(hass: any): Promise<PricePoint[]> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
     
-    const response = await fetch(`/api/oig_cloud/spot_prices`, { headers });
+    const response = await fetch(`/api/oig_cloud/spot_prices/${INVERTER_SN}/intervals`, { headers });
     if (!response.ok) return [];
     
     const data = await response.json();
@@ -58,11 +51,13 @@ export async function fetchSpotPrices(hass: any): Promise<PricePoint[]> {
   }
 }
 
-function parseSpotPriceResponse(data: SpotPriceAPIResponse | null): PricePoint[] {
-  if (!data?.prices || !Array.isArray(data.prices)) return [];
+function parseSpotPriceResponse(data: any): PricePoint[] {
+  // Backend vrací { intervals: [{time, price}] }, fallback na { prices: [{timestamp, price}] }
+  const items = data?.intervals || data?.prices;
+  if (!items || !Array.isArray(items)) return [];
   
-  return data.prices.map(p => ({
-    time: p.timestamp,
+  return items.map((p: any) => ({
+    time: p.time || p.timestamp,
     buy: p.price ?? 0,
     sell: p.export_price ?? Math.round((p.price ?? 0) * 0.7 * 100) / 100,
   }));

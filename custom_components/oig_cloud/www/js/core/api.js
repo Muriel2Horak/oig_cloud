@@ -51,7 +51,7 @@ function getHAToken() {
  * @param {string} url - Absolutní nebo relativní URL
  * @param {object} options - Fetch options (credentials, headers atd.)
  * @returns {Promise<Response>}
- *
+ */
 async function fetchWithAuth(url, options = {}) {
     // Bezpečnost: blokovat absolutní URL (kromě localhost) k prevenci token exfiltrace
     const hostname = new URL(url, globalThis.location.href).hostname;
@@ -525,6 +525,7 @@ if (typeof globalThis !== 'undefined') {
         getSensorString,
         getSensorSafe,
         getSensorStringSafe,
+        fetchWithAuth,
         fetchOIGAPI,
         loadBatteryTimeline,
         loadUnifiedCostTile,
@@ -541,6 +542,7 @@ if (typeof globalThis !== 'undefined') {
 
     // Backward compatibility - expose getHass globally
     globalThis.getHass = getHass;
+    globalThis.fetchWithAuth = fetchWithAuth;
     globalThis.PlannerState = PlannerState;
     globalThis.PLAN_LABELS = PLAN_LABELS;
 }

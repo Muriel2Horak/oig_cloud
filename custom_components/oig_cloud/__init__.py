@@ -458,7 +458,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         v2_panel_id = f"{panel_id}_v2"
         v2_panel_title = f"{panel_title} V2 (BETA)"
         # Use same path as before but with cache busting params
-        v2_dashboard_url = f"/oig_cloud_static_v2/index.html?v={version}&t={cache_bust}&sn={inverter_sn}"
+        v2_dashboard_url = f"/oig_cloud_static_v2/index.html?v={version}&t={cache_bust}&sn={inverter_sn}&entry_id={entry.entry_id}"
         _remove_existing_panel(hass, v2_panel_id)
         _register_frontend_panel(hass, v2_panel_id, v2_panel_title, v2_dashboard_url)
         _LOGGER.info("V2 Panel URL: %s", v2_dashboard_url)

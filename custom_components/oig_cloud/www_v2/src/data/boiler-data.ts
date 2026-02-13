@@ -1,6 +1,8 @@
 import { BoilerProfile, BoilerState, BoilerHourData } from '@/ui/features/boiler/types';
 
-const INVERTER_SN = new URLSearchParams(window.location.search).get('inverter_sn') || '2206237016';
+const params = new URLSearchParams(window.location.search);
+const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
+const ENTRY_ID = params.get('entry_id') || '';
 
 export function getSensorId(sensor: string): string {
   return `sensor.oig_${INVERTER_SN}_${sensor}`;
@@ -56,7 +58,11 @@ interface BoilerPlanAPI {
 
 export async function fetchBoilerProfile(hass: any): Promise<BoilerPlanAPI | null> {
   try {
-    const entryId = INVERTER_SN;
+    const entryId = ENTRY_ID;
+    if (!entryId) {
+      console.warn('[Boiler] No entry_id available — cannot fetch boiler profile');
+      return null;
+    }
     
     if (hass?.callApi) {
       return await hass.callApi('GET', `oig_cloud/${entryId}/boiler_profile`);
@@ -78,7 +84,11 @@ export async function fetchBoilerProfile(hass: any): Promise<BoilerPlanAPI | nul
 
 export async function fetchBoilerPlan(hass: any): Promise<BoilerPlanAPI | null> {
   try {
-    const entryId = INVERTER_SN;
+    const entryId = ENTRY_ID;
+    if (!entryId) {
+      console.warn('[Boiler] No entry_id available — cannot fetch boiler plan');
+      return null;
+    }
     
     if (hass?.callApi) {
       return await hass.callApi('GET', `oig_cloud/${entryId}/boiler_plan`);

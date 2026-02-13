@@ -586,7 +586,13 @@ class TimelineDialog {
         }
 
         console.log(`[TimelineDialog] Loading ALL tabs data for plan ${plan}...`);
-
+        
+        if (typeof fetchWithAuth !== 'function') {
+            console.error('[TimelineDialog] fetchWithAuth is not available');
+            this.cache[plan] = this.createEmptyCache();
+            return;
+        }
+        
         try {
             const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?plan=${plan}`;
             const response = await fetchWithAuth(apiUrl);
@@ -3729,8 +3735,13 @@ function closeModeTimelineDialog() {
  * Shows clear comparison for completed intervals
  */
 async function buildExtendedTimeline() {
+    if (typeof fetchWithAuth !== 'function') {
+        console.error('[Extended Timeline] fetchWithAuth is not available');
+        return;
+    }
+    
     const apiUrl = `/api/oig_cloud/battery_forecast/${INVERTER_SN}/detail_tabs?tab=today`;
-
+    
     try {
         const response = await fetchWithAuth(apiUrl);
         if (!response.ok) {

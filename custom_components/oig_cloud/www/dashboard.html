@@ -1061,27 +1061,33 @@
             });
         </script>
 
-        <!-- Prefetch timeline data on load -->
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {
-                console.log('[Dashboard] Prefetching timeline data...');
-
-                // Prefetch detail_tabs for all days
-                const days = ['yesterday', 'today', 'tomorrow'];
-                const sn = INVERTER_SN;
-
-                days.forEach(day => {
-                    fetchWithAuth(`/api/oig_cloud/battery_forecast/${sn}/detail_tabs?tab=${day}`)
-                        .then(r => r.ok ? r.json() : null)
-                        .then(data => {
-                            if (data) {
-                                console.log(`[Dashboard] Prefetched ${day} data:`, data.mode_blocks?.length, 'blocks');
-                            }
-                        })
-                        .catch(err => console.warn(`[Dashboard] Prefetch ${day} failed:`, err));
-                });
-            });
-        </script>
+         <!-- Prefetch timeline data on load (deferred until api.js is loaded) -->
+         <script>
+             function prefetchTimelineData() {
+                 if (typeof fetchWithAuth !== 'function') {
+                     console.warn('[Dashboard] fetchWithAuth not available yet, retrying...');
+                     setTimeout(prefetchTimelineData, 200);
+                     return;
+                 }
+                 
+                 console.log('[Dashboard] Prefetching timeline data...');
+                 const days = ['yesterday', 'today', 'tomorrow'];
+                 const sn = INVERTER_SN;
+                 
+                 days.forEach(day => {
+                     fetchWithAuth(`/api/oig_cloud/battery_forecast/${sn}/detail_tabs?tab=${day}`)
+                         .then(r => r.ok ? r.json() : null)
+                         .then(data => {
+                             if (data) {
+                                 console.log(`[Dashboard] Prefetched ${day} data:`, data.mode_blocks?.length, 'blocks');
+                             }
+                         })
+                         .catch(err => console.warn(`[Dashboard] Prefetch ${day} failed:`, err));
+                 });
+             }
+             
+             setTimeout(prefetchTimelineData, 500);
+         </script>
 
         <!-- Ensure dashboard init runs even if core.js cache is stale -->
         <script>

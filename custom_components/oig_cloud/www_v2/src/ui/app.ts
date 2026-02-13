@@ -4,6 +4,12 @@ import { CSS_VARS } from '@/ui/theme';
 import { Tab } from '@/ui/layout/tabs';
 import { EntityStore } from '@/data/entity-store';
 import { HaClient } from '@/data/ha-client';
+import { extractFlowData, buildFlowNodes, buildFlowConnections } from '@/data/flow-data';
+import { loadPricingData } from '@/data/pricing-data';
+import { loadBoilerData } from '@/data/boiler-data';
+import { FlowNode, FlowConnection, DEFAULT_NODES, DEFAULT_CONNECTIONS } from '@/ui/features/flow/types';
+import { PricingData, PricingStats } from '@/ui/features/pricing/types';
+import { BoilerProfile, BoilerState, BoilerHourData } from '@/ui/features/boiler/types';
 import { oigLog } from '@/core/logger';
 
 import '@/ui/components/header';
@@ -30,9 +36,19 @@ export class OigApp extends LitElement {
   @state() private activeTab = 'flow';
   @state() private editMode = false;
   @state() private time = '';
+  @state() private flowNodes: FlowNode[] = DEFAULT_NODES;
+  @state() private flowConnections: FlowConnection[] = DEFAULT_CONNECTIONS;
+  @state() private pricingData: PricingData | null = null;
+  @state() private pricingStats: PricingStats | null = null;
+  @state() private boilerState: BoilerState | null = null;
+  @state() private boilerProfiles: BoilerProfile[] = [];
+  @state() private boilerHeatmap: BoilerHourData[] = [];
+  @state() private pricingLoading = false;
+  @state() private boilerLoading = false;
 
   private entityStore: EntityStore | null = null;
   private timeInterval: number | null = null;
+  private hassUnsubscribe: (() => void) | null = null;
 
   static styles = css`
     :host {
@@ -100,6 +116,7 @@ export class OigApp extends LitElement {
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.entityStore?.destroy();
+    this.hassUnsubscribe?.();
     if (this.timeInterval !== null) {
       clearInterval(this.timeInterval);
     }
@@ -108,6 +125,82 @@ export class OigApp extends LitElement {
   protected updated(changed: PropertyValues): void {
     if (changed.has('hass') && this.hass) {
       this.entityStore = new EntityStore(this.hass);
+      this.updateFlowData();
+      this.loadPricingData();
+      this.loadBoilerDataAsync();
+      this.subscribeToHassChanges();
+    }
+    if (changed.has('activeTab')) {
+      if (this.activeTab === 'pricing' && !this.pricingData) {
+        this.loadPricingData();
+      }
+      if (this.activeTab === 'boiler' && !this.boilerState) {
+        this.loadBoilerDataAsync();
+      }
+    }
+  }
+
+  private subscribeToHassChanges(): void {
+    this.hassUnsubscribe?.();
+    
+    if (this.hass?.connection?.subscribeEvents) {
+      this.hass.connection.subscribeEvents((event: any) => {
+        if (event.event_type === 'state_changed') {
+          this.updateFlowData();
+        }
+      }, 'state_changed').then((unsub: () => void) => {
+        this.hassUnsubscribe = unsub;
+      }).catch((err: Error) => {
+        oigLog.warn('Failed to subscribe to HA events', err);
+      });
+    }
+  }
+
+  private updateFlowData(): void {
+    if (!this.hass) {
+      oigLog.warn('updateFlowData: no hass');
+      return;
+    }
+    
+    try {
+      const data = extractFlowData(this.hass);
+      oigLog.info('Flow data extracted', data);
+      this.flowNodes = buildFlowNodes(data);
+      this.flowConnections = buildFlowConnections(data);
+      oigLog.info('Flow nodes updated', { nodes: this.flowNodes.length, firstNode: this.flowNodes[0] });
+    } catch (err) {
+      oigLog.error('Failed to extract flow data', err as Error);
+    }
+  }
+
+  private async loadPricingData(): Promise<void> {
+    if (!this.hass || this.pricingLoading) return;
+    
+    this.pricingLoading = true;
+    try {
+      const data = await loadPricingData(this.hass);
+      this.pricingData = data;
+      this.pricingStats = data?.stats || null;
+    } catch (err) {
+      oigLog.error('Failed to load pricing data', err as Error);
+    } finally {
+      this.pricingLoading = false;
+    }
+  }
+
+  private async loadBoilerDataAsync(): Promise<void> {
+    if (!this.hass || this.boilerLoading) return;
+    
+    this.boilerLoading = true;
+    try {
+      const data = await loadBoilerData(this.hass);
+      this.boilerState = data.state;
+      this.boilerProfiles = data.profiles;
+      this.boilerHeatmap = data.heatmap;
+    } catch (err) {
+      oigLog.error('Failed to load boiler data', err as Error);
+    } finally {
+      this.boilerLoading = false;
     }
   }
 
@@ -123,6 +216,13 @@ export class OigApp extends LitElement {
       this.hass = hass;
       this.loading = false;
       oigLog.info('App initialized', { entities: Object.keys(hass.states || {}).length });
+      
+      // Trigger data loading after hass is set
+      this.entityStore = new EntityStore(this.hass);
+      this.updateFlowData();
+      this.loadPricingData();
+      this.loadBoilerDataAsync();
+      this.subscribeToHassChanges();
     } catch (err) {
       this.error = (err as Error).message;
       this.loading = false;
@@ -166,6 +266,12 @@ export class OigApp extends LitElement {
         </div>
       `;
     }
+    
+    oigLog.info('Rendering app', { 
+      flowNodesCount: this.flowNodes.length, 
+      firstNodePower: this.flowNodes[0]?.power,
+      activeTab: this.activeTab 
+    });
 
     return html`
       <oig-theme-provider>
@@ -188,20 +294,22 @@ export class OigApp extends LitElement {
           <oig-grid .editable=${this.editMode}>
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
               <oig-flow-canvas
+                .nodes=${this.flowNodes}
+                .connections=${this.flowConnections}
                 particlesEnabled
                 .active=${this.activeTab === 'flow'}
               ></oig-flow-canvas>
             </div>
 
             <div class="tab-content ${this.activeTab === 'pricing' ? 'active' : ''}">
-              <oig-pricing-stats></oig-pricing-stats>
-              <oig-pricing-chart></oig-pricing-chart>
+              <oig-pricing-stats .stats=${this.pricingStats}></oig-pricing-stats>
+              <oig-pricing-chart .data=${this.pricingData}></oig-pricing-chart>
             </div>
 
             <div class="tab-content ${this.activeTab === 'boiler' ? 'active' : ''}">
-              <oig-boiler-state></oig-boiler-state>
-              <oig-boiler-heatmap></oig-boiler-heatmap>
-              <oig-boiler-profiles .editMode=${this.editMode}></oig-boiler-profiles>
+              <oig-boiler-state .state=${this.boilerState}></oig-boiler-state>
+              <oig-boiler-heatmap .data=${this.boilerHeatmap}></oig-boiler-heatmap>
+              <oig-boiler-profiles .profiles=${this.boilerProfiles} .editMode=${this.editMode}></oig-boiler-profiles>
             </div>
           </oig-grid>
         </main>
