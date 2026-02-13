@@ -14,7 +14,7 @@
 import { LitElement, html, css, nothing, unsafeCSS, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS, getCurrentBreakpoint } from '@/ui/theme';
-import { FlowData, EMPTY_FLOW_DATA, NODE_COLORS } from './types';
+import { FlowData, EMPTY_FLOW_DATA, NODE_GRADIENTS, NODE_BORDERS } from './types';
 import { formatPower, formatEnergy, getTariffDisplay, getHouseModeInfo, getGridExportDisplay } from '@/data/flow-data';
 import { haClient } from '@/data/ha-client';
 import { oigLog } from '@/core/logger';
@@ -64,8 +64,8 @@ export class OigFlowNode extends LitElement {
 
     .flow-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: auto auto;
+      grid-template-columns: 1fr 1.2fr 1fr;
+      grid-template-rows: auto 1fr auto;
       gap: 16px;
       width: 100%;
       min-height: 500px;
@@ -73,21 +73,23 @@ export class OigFlowNode extends LitElement {
       box-sizing: border-box;
     }
 
-    /* Position nodes in grid */
-    .node-solar { grid-column: 1; grid-row: 1; }
-    .node-battery { grid-column: 1; grid-row: 2; }
-    .node-inverter { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
-    .node-grid { grid-column: 3; grid-row: 1; }
-    .node-house { grid-column: 3; grid-row: 2; }
+    .node-solar { grid-column: 2; grid-row: 1; justify-self: center; }
+    .node-grid { grid-column: 1; grid-row: 2; align-self: center; }
+    .node-inverter { grid-column: 2; grid-row: 2; align-self: center; justify-self: center; }
+    .node-house { grid-column: 3; grid-row: 2; align-self: center; }
+    .node-battery { grid-column: 2; grid-row: 3; justify-self: center; }
 
     .node {
-      background: ${u(CSS_VARS.cardBg)};
+      background: var(--node-gradient);
+      border: 2px solid var(--node-border);
       border-radius: 12px;
-      box-shadow: ${u(CSS_VARS.cardShadow)};
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       padding: 14px;
       transition: transform 0.2s, box-shadow 0.2s;
       overflow: hidden;
       min-width: 0;
+      max-width: 280px;
     }
 
     .node:hover {
@@ -132,12 +134,12 @@ export class OigFlowNode extends LitElement {
       opacity: 0.6;
     }
 
-    /* Default absolute positions when entering edit mode (matching grid layout) */
-    :host([editmode]) .node-solar    { top: 0%;  left: 0%; }
-    :host([editmode]) .node-battery  { top: 50%; left: 0%; }
-    :host([editmode]) .node-inverter { top: 20%; left: 35%; }
-    :host([editmode]) .node-grid     { top: 0%;  left: 65%; }
-    :host([editmode]) .node-house    { top: 50%; left: 65%; }
+    /* Default absolute positions when entering edit mode (V1 cross layout) */
+    :host([editmode]) .node-solar    { top: 0%;  left: 35%; }
+    :host([editmode]) .node-grid     { top: 35%; left: 0%; }
+    :host([editmode]) .node-inverter { top: 35%; left: 35%; }
+    :host([editmode]) .node-house    { top: 35%; left: 65%; }
+    :host([editmode]) .node-battery  { top: 70%; left: 35%; }
 
     .node-header {
       display: flex;
@@ -357,13 +359,13 @@ export class OigFlowNode extends LitElement {
     @media (max-width: 768px) {
       .flow-grid {
         grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto auto auto;
+        grid-template-rows: auto auto auto auto;
       }
-      .node-solar { grid-column: 1; grid-row: 1; }
-      .node-battery { grid-column: 2; grid-row: 1; }
-      .node-inverter { grid-column: 1 / span 2; grid-row: 2; }
-      .node-grid { grid-column: 1; grid-row: 3; }
-      .node-house { grid-column: 2; grid-row: 3; }
+      .node-solar { grid-column: 1 / span 2; grid-row: 1; justify-self: center; }
+      .node-grid { grid-column: 1; grid-row: 2; }
+      .node-inverter { grid-column: 2; grid-row: 2; }
+      .node-house { grid-column: 1; grid-row: 3; }
+      .node-battery { grid-column: 2; grid-row: 3; }
     }
   `;
 
@@ -634,7 +636,7 @@ export class OigFlowNode extends LitElement {
     const icon = percent <= 5 ? '🌙' : '☀️';
 
     return html`
-      <div class="node node-solar" style="border-left: 3px solid ${NODE_COLORS.solar}">
+      <div class="node node-solar" style="--node-gradient: ${NODE_GRADIENTS.solar}; --node-border: ${NODE_BORDERS.solar}">
         <div class="node-header">
           <span class="node-icon">${icon}</span>
           <span class="node-label">Solár</span>
@@ -719,7 +721,7 @@ export class OigFlowNode extends LitElement {
     const tempIcon = d.batteryTemp > 25 ? '🌡️' : d.batteryTemp < 15 ? '🧊' : '🌡️';
 
     return html`
-      <div class="node node-battery" style="border-left: 3px solid ${NODE_COLORS.battery}">
+      <div class="node node-battery" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery}">
         <div class="node-header">
           <span class="node-icon">🔋</span>
           <span class="node-label">Baterie</span>
@@ -824,7 +826,7 @@ export class OigFlowNode extends LitElement {
     }
 
     return html`
-      <div class="node node-inverter" style="border-left: 3px solid ${NODE_COLORS.inverter}">
+      <div class="node node-inverter" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter}">
         <div class="node-header">
           <span class="node-icon">🔄</span>
           <span class="node-label">Střídač</span>
@@ -896,7 +898,7 @@ export class OigFlowNode extends LitElement {
     const status = this.getGridStatus();
 
     return html`
-      <div class="node node-grid" style="border-left: 3px solid ${NODE_COLORS.grid}">
+      <div class="node node-grid" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid}">
         <div class="node-header">
           <span class="node-icon">🔌</span>
           <span class="node-label">Síť</span>
@@ -969,7 +971,7 @@ export class OigFlowNode extends LitElement {
     const d = this.data;
 
     return html`
-      <div class="node node-house" style="border-left: 3px solid ${NODE_COLORS.house}">
+      <div class="node node-house" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house}">
         <div class="node-header">
           <span class="node-icon">🏠</span>
           <span class="node-label">Spotřeba</span>

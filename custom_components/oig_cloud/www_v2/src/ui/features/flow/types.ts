@@ -143,11 +143,27 @@ export interface ParticleSource {
 // ============================================================================
 
 export const NODE_COLORS: Record<string, string> = {
-  solar: '#ff9800',
+  solar: '#ffd54f',
   battery: '#4caf50',
-  inverter: '#2196f3',
-  grid: '#9c27b0',
-  house: '#f44336',
+  inverter: '#9575cd',
+  grid: '#42a5f5',
+  house: '#f06292',
+};
+
+export const NODE_GRADIENTS: Record<string, string> = {
+  solar: 'linear-gradient(135deg, rgba(255,213,79,0.15) 0%, rgba(255,179,0,0.08) 100%)',
+  battery: 'linear-gradient(135deg, rgba(76,175,80,0.15) 0%, rgba(56,142,60,0.08) 100%)',
+  grid: 'linear-gradient(135deg, rgba(66,165,245,0.15) 0%, rgba(33,150,243,0.08) 100%)',
+  house: 'linear-gradient(135deg, rgba(240,98,146,0.15) 0%, rgba(233,30,99,0.08) 100%)',
+  inverter: 'linear-gradient(135deg, rgba(149,117,205,0.15) 0%, rgba(126,87,194,0.08) 100%)',
+};
+
+export const NODE_BORDERS: Record<string, string> = {
+  solar: 'rgba(255,213,79,0.4)',
+  battery: 'rgba(76,175,80,0.4)',
+  grid: 'rgba(66,165,245,0.4)',
+  house: 'rgba(240,98,146,0.4)',
+  inverter: 'rgba(149,117,205,0.4)',
 };
 
 export const FLOW_COLORS = {

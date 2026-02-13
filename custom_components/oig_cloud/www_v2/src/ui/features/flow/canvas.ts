@@ -94,24 +94,7 @@ export class OigFlowCanvas extends LitElement {
       fill: none;
       stroke-width: 3;
       stroke-linecap: round;
-      opacity: 0.5;
-    }
-
-    .flow-line.active {
-      opacity: 0.8;
-      stroke-dasharray: 10 10;
-      animation: flow-dash 1s linear infinite;
-    }
-
-    @keyframes flow-dash {
-      0% { stroke-dashoffset: 20; }
-      100% { stroke-dashoffset: 0; }
-    }
-
-    .flow-label {
-      font-size: 10px;
-      font-weight: 600;
-      fill: ${u(CSS_VARS.textSecondary)};
+      opacity: 0.6;
     }
   `;
 
@@ -228,7 +211,6 @@ export class OigFlowCanvas extends LitElement {
     const svgEl = this.svgEl;
     if (!svgEl) return;
 
-    // Get the flow-node component and its internal grid
     const nodeEl = this.shadowRoot?.querySelector('oig-flow-node');
     if (!nodeEl?.shadowRoot) return;
 
@@ -238,7 +220,6 @@ export class OigFlowCanvas extends LitElement {
     const containerRect = wrapper.getBoundingClientRect();
     if (containerRect.width === 0 || containerRect.height === 0) return;
 
-    // Size SVG to match the wrapper
     const w = containerRect.width;
     const h = containerRect.height;
     svgEl.setAttribute('width', String(w));
@@ -255,7 +236,6 @@ export class OigFlowCanvas extends LitElement {
       };
     };
 
-    // Clear old SVG content
     svgEl.innerHTML = '';
 
     const NS = 'http://www.w3.org/2000/svg';
@@ -265,38 +245,18 @@ export class OigFlowCanvas extends LitElement {
       const to = getCenter(line.to);
       if (!from || !to) continue;
 
-      const midX = (from.x + to.x) / 2;
-      const d = `M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`;
-      const strokeWidth = 2 + line.params.intensity / 30;
-
-      // Create path
-      const path = document.createElementNS(NS, 'path');
-      path.setAttribute('d', d);
-      path.setAttribute('stroke', line.color);
-      path.setAttribute('stroke-width', String(strokeWidth));
-      path.setAttribute('fill', 'none');
-      path.setAttribute('stroke-linecap', 'round');
-      path.setAttribute('opacity', '0.7');
-      path.setAttribute('stroke-dasharray', '10 10');
-      path.classList.add('flow-line', 'active');
-      svgEl.appendChild(path);
-
-      // Create power label
-      const labelX = (from.x + to.x) / 2;
-      const labelY = (from.y + to.y) / 2 - 10;
-      const powerLabel = line.power >= 1000
-        ? `${(line.power / 1000).toFixed(1)}kW`
-        : `${Math.round(line.power)}W`;
-
-      const text = document.createElementNS(NS, 'text');
-      text.setAttribute('x', String(labelX));
-      text.setAttribute('y', String(labelY));
-      text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('font-size', '11');
-      text.setAttribute('font-weight', '600');
-      text.setAttribute('fill', 'var(--oig-text-secondary, #94a3b8)');
-      text.textContent = powerLabel;
-      svgEl.appendChild(text);
+      // Draw straight line (V1 style)
+      const svgLine = document.createElementNS(NS, 'line');
+      svgLine.setAttribute('x1', String(from.x));
+      svgLine.setAttribute('y1', String(from.y));
+      svgLine.setAttribute('x2', String(to.x));
+      svgLine.setAttribute('y2', String(to.y));
+      svgLine.setAttribute('stroke', line.color);
+      svgLine.setAttribute('stroke-width', '3');
+      svgLine.setAttribute('stroke-linecap', 'round');
+      svgLine.setAttribute('opacity', '0.6');
+      svgLine.classList.add('flow-line');
+      svgEl.appendChild(svgLine);
     }
   }
 
