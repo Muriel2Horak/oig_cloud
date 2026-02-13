@@ -179,16 +179,28 @@ export class OigApp extends LitElement {
 
     /* ---- Flow tab layout ---- */
     .flow-layout {
-      display: grid;
-      grid-template-columns: auto 1fr auto;
+      display: flex;
+      flex-direction: column;
       gap: 12px;
-      align-items: start;
+    }
+
+    .flow-tiles-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .flow-tiles-row oig-tiles-container {
+      display: contents;
     }
 
     .flow-center {
       display: flex;
       flex-direction: column;
       gap: 12px;
+      min-width: 0;
+      width: 100%;
     }
 
     /* ---- Pricing tab layout ---- */
@@ -255,10 +267,6 @@ export class OigApp extends LitElement {
 
     /* ---- Responsive ---- */
     @media (max-width: 768px) {
-      .flow-layout {
-        grid-template-columns: 1fr;
-      }
-
       .analytics-row {
         grid-template-columns: 1fr;
       }
@@ -550,11 +558,18 @@ export class OigApp extends LitElement {
             <!-- ===== FLOW TAB ===== -->
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
               <div class="flow-layout">
-                <oig-tiles-container
-                  position="left"
-                  .tiles=${this.tilesLeft}
-                  .editMode=${this.editMode}
-                ></oig-tiles-container>
+                <div class="flow-tiles-row">
+                  <oig-tiles-container
+                    position="left"
+                    .tiles=${this.tilesLeft}
+                    .editMode=${this.editMode}
+                  ></oig-tiles-container>
+                  <oig-tiles-container
+                    position="right"
+                    .tiles=${this.tilesRight}
+                    .editMode=${this.editMode}
+                  ></oig-tiles-container>
+                </div>
 
                 <div class="flow-center">
                   <oig-flow-canvas
@@ -565,12 +580,6 @@ export class OigApp extends LitElement {
                   ></oig-flow-canvas>
                   <oig-control-panel></oig-control-panel>
                 </div>
-
-                <oig-tiles-container
-                  position="right"
-                  .tiles=${this.tilesRight}
-                  .editMode=${this.editMode}
-                ></oig-tiles-container>
               </div>
             </div>
 

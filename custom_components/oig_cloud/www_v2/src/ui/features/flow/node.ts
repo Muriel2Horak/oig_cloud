@@ -66,8 +66,11 @@ export class OigFlowNode extends LitElement {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
       grid-template-rows: auto auto;
-      gap: 12px;
+      gap: 16px;
       width: 100%;
+      min-height: 500px;
+      padding: 8px;
+      box-sizing: border-box;
     }
 
     /* Position nodes in grid */
@@ -81,9 +84,10 @@ export class OigFlowNode extends LitElement {
       background: ${u(CSS_VARS.cardBg)};
       border-radius: 12px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
-      padding: 12px;
+      padding: 14px;
       transition: transform 0.2s, box-shadow 0.2s;
       overflow: hidden;
+      min-width: 0;
     }
 
     .node:hover {

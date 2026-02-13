@@ -16,13 +16,14 @@ export class OigTile extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 12px 16px;
+      padding: 8px 10px;
       background: ${u(CSS_VARS.cardBg)};
-      border-radius: 12px;
+      border-radius: 10px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
-      min-width: 80px;
+      min-width: 0;
       position: relative;
       transition: opacity 0.2s;
+      font-size: 11px;
     }
 
     :host(.inactive) {
@@ -30,20 +31,25 @@ export class OigTile extends LitElement {
     }
 
     .tile-icon {
-      font-size: 24px;
-      margin-bottom: 4px;
+      font-size: 18px;
+      margin-bottom: 2px;
     }
 
     .tile-value {
-      font-size: 18px;
+      font-size: 14px;
       font-weight: 600;
       color: ${u(CSS_VARS.textPrimary)};
     }
 
     .tile-label {
-      font-size: 11px;
+      font-size: 10px;
       color: ${u(CSS_VARS.textSecondary)};
-      margin-top: 2px;
+      margin-top: 1px;
+      text-align: center;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
     }
 
     .support-values {
@@ -149,13 +155,7 @@ export class OigTilesContainer extends LitElement {
 
   static styles = css`
     :host {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    :host([position='right']) {
-      align-items: flex-end;
+      display: contents;
     }
 
     .empty-state {

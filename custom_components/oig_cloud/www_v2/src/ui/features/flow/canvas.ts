@@ -9,7 +9,7 @@
  * Receives FlowData and calculates connection parameters internally.
  */
 
-import { LitElement, html, css, svg, unsafeCSS } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import { FlowData, EMPTY_FLOW_DATA, FLOW_COLORS, FLOW_MAXIMUMS, FlowParams } from './types';
@@ -37,6 +37,7 @@ export class OigFlowCanvas extends LitElement {
 
   @state() private lines: FlowLine[] = [];
   @query('.particles-layer') private particlesEl!: HTMLDivElement;
+  @query('.connections-layer') private svgEl!: SVGSVGElement;
 
   private animationId: number | null = null;
   private lastSpawnTime: Record<string, number> = {};
@@ -134,14 +135,21 @@ export class OigFlowCanvas extends LitElement {
     if (changed.has('active') || changed.has('particlesEnabled')) {
       this.updateAnimationState();
     }
+    // Always re-draw SVG connections after render (DOM is now laid out)
+    this.drawConnectionsDeferred();
   }
 
   protected firstUpdated(): void {
     this.updateLines();
     this.updateAnimationState();
     // Recalculate connection positions on resize
-    const ro = new ResizeObserver(() => this.requestUpdate());
+    const ro = new ResizeObserver(() => this.drawConnectionsDeferred());
     ro.observe(this);
+  }
+
+  /** Draw SVG connections after a frame so DOM positions are accurate */
+  private drawConnectionsDeferred(): void {
+    requestAnimationFrame(() => this.drawConnectionsSVG());
   }
 
   private onVisibilityChange = (): void => {
@@ -150,7 +158,7 @@ export class OigFlowCanvas extends LitElement {
 
   /** Redraw SVG connections when nodes are dragged */
   private onLayoutChanged = (): void => {
-    this.requestUpdate();
+    this.drawConnectionsDeferred();
   };
 
   // ==========================================================================
@@ -213,18 +221,29 @@ export class OigFlowCanvas extends LitElement {
   }
 
   // ==========================================================================
-  // SVG CONNECTIONS
+  // SVG CONNECTIONS — drawn imperatively after layout
   // ==========================================================================
 
-  private renderConnections() {
-    // We need actual DOM positions, so use the query
+  private drawConnectionsSVG(): void {
+    const svgEl = this.svgEl;
+    if (!svgEl) return;
+
+    // Get the flow-node component and its internal grid
     const nodeEl = this.shadowRoot?.querySelector('oig-flow-node');
-    if (!nodeEl?.shadowRoot) return null;
+    if (!nodeEl?.shadowRoot) return;
 
     const wrapper = nodeEl.shadowRoot.querySelector('.flow-grid') as HTMLElement;
-    if (!wrapper) return null;
+    if (!wrapper) return;
 
     const containerRect = wrapper.getBoundingClientRect();
+    if (containerRect.width === 0 || containerRect.height === 0) return;
+
+    // Size SVG to match the wrapper
+    const w = containerRect.width;
+    const h = containerRect.height;
+    svgEl.setAttribute('width', String(w));
+    svgEl.setAttribute('height', String(h));
+    svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
 
     const getCenter = (cls: string): { x: number; y: number } | null => {
       const el = wrapper.querySelector(`.node-${cls}`) as HTMLElement;
@@ -236,32 +255,49 @@ export class OigFlowCanvas extends LitElement {
       };
     };
 
-    return this.lines.map(line => {
+    // Clear old SVG content
+    svgEl.innerHTML = '';
+
+    const NS = 'http://www.w3.org/2000/svg';
+
+    for (const line of this.lines) {
       const from = getCenter(line.from);
       const to = getCenter(line.to);
-      if (!from || !to) return null;
+      if (!from || !to) continue;
 
       const midX = (from.x + to.x) / 2;
-      const path = `M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`;
+      const d = `M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`;
+      const strokeWidth = 2 + line.params.intensity / 30;
 
+      // Create path
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('d', d);
+      path.setAttribute('stroke', line.color);
+      path.setAttribute('stroke-width', String(strokeWidth));
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('opacity', '0.7');
+      path.setAttribute('stroke-dasharray', '10 10');
+      path.classList.add('flow-line', 'active');
+      svgEl.appendChild(path);
+
+      // Create power label
       const labelX = (from.x + to.x) / 2;
       const labelY = (from.y + to.y) / 2 - 10;
       const powerLabel = line.power >= 1000
         ? `${(line.power / 1000).toFixed(1)}kW`
         : `${Math.round(line.power)}W`;
 
-      return svg`
-        <path
-          class="flow-line active"
-          d="${path}"
-          stroke="${line.color}"
-          stroke-width="${2 + line.params.intensity / 30}"
-        />
-        <text class="flow-label" x="${labelX}" y="${labelY}" text-anchor="middle">
-          ${powerLabel}
-        </text>
-      `;
-    });
+      const text = document.createElementNS(NS, 'text');
+      text.setAttribute('x', String(labelX));
+      text.setAttribute('y', String(labelY));
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('font-size', '11');
+      text.setAttribute('font-weight', '600');
+      text.setAttribute('fill', 'var(--oig-text-secondary, #94a3b8)');
+      text.textContent = powerLabel;
+      svgEl.appendChild(text);
+    }
   }
 
   // ==========================================================================
@@ -384,21 +420,13 @@ export class OigFlowCanvas extends LitElement {
   // ==========================================================================
 
   render() {
-    // Get dimensions for SVG overlay
-    const nodeEl = this.shadowRoot?.querySelector('oig-flow-node');
-    const wrapper = nodeEl?.shadowRoot?.querySelector('.flow-grid') as HTMLElement | null;
-    const w = wrapper?.offsetWidth || 0;
-    const h = wrapper?.offsetHeight || 0;
-
     return html`
       <div class="canvas-container">
         <div class="flow-grid-wrapper">
           <oig-flow-node .data=${this.data} .editMode=${this.editMode}></oig-flow-node>
         </div>
 
-        <svg class="connections-layer" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-          ${this.renderConnections()}
-        </svg>
+        <svg class="connections-layer"></svg>
 
         <div class="particles-layer"></div>
       </div>
