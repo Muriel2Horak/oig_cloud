@@ -14,7 +14,11 @@ import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/
 import { loadTilesConfig, resolveTiles, type TilesConfig, type ResolvedTile } from '@/data/tiles-data';
 import { FlowData, EMPTY_FLOW_DATA } from '@/ui/features/flow/types';
 import { PricingData } from '@/ui/features/pricing/types';
-import { BoilerProfile, BoilerState, BoilerHourData } from '@/ui/features/boiler/types';
+import {
+  BoilerState,
+  BoilerPlan, BoilerEnergyBreakdown, BoilerPredictedUsage,
+  BoilerConfig, BoilerHeatmapRow, BoilerProfilingData,
+} from '@/ui/features/boiler/types';
 import { oigLog } from '@/core/logger';
 import { throttle, withRetry } from '@/utils/format';
 import { shieldController } from '@/data/shield-controller';
@@ -63,9 +67,17 @@ export class OigApp extends LitElement {
 
   // Boiler
   @state() private boilerState: BoilerState | null = null;
-  @state() private boilerProfiles: BoilerProfile[] = [];
-  @state() private boilerHeatmap: BoilerHourData[] = [];
   @state() private boilerLoading = false;
+  @state() private boilerPlan: BoilerPlan | null = null;
+  @state() private boilerEnergyBreakdown: BoilerEnergyBreakdown | null = null;
+  @state() private boilerPredictedUsage: BoilerPredictedUsage | null = null;
+  @state() private boilerConfig: BoilerConfig | null = null;
+  @state() private boilerHeatmap7x24: BoilerHeatmapRow[] = [];
+  @state() private boilerProfiling: BoilerProfilingData | null = null;
+  @state() private boilerCurrentCategory = '';
+  @state() private boilerAvailableCategories: string[] = [];
+  @state() private boilerForecastWindows: { fve: string; grid: string } = { fve: '--', grid: '--' };
+  private boilerRefreshTimer: number | null = null;
 
   // Analytics
   @state() private analyticsData: AnalyticsData = EMPTY_ANALYTICS;
@@ -177,6 +189,12 @@ export class OigApp extends LitElement {
       animation: fadeIn 0.25s ease;
     }
 
+    .tab-content.boiler-layout.active {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
     /* ---- Flow tab layout ---- */
     .flow-layout {
       display: flex;
@@ -269,6 +287,9 @@ export class OigApp extends LitElement {
     @media (max-width: 768px) {
       .analytics-row {
         grid-template-columns: 1fr;
+      }
+      .boiler-visual-grid {
+        grid-template-columns: 1fr !important;
       }
     }
   `;
@@ -368,6 +389,11 @@ export class OigApp extends LitElement {
       clearInterval(this.timeInterval);
       this.timeInterval = null;
     }
+
+    if (this.boilerRefreshTimer !== null) {
+      clearInterval(this.boilerRefreshTimer);
+      this.boilerRefreshTimer = null;
+    }
   }
 
   // ==========================================================================
@@ -418,8 +444,20 @@ export class OigApp extends LitElement {
     try {
       const data = await withRetry(() => loadBoilerData(this.hass));
       this.boilerState = data.state;
-      this.boilerProfiles = data.profiles;
-      this.boilerHeatmap = data.heatmap;
+      this.boilerPlan = data.plan;
+      this.boilerEnergyBreakdown = data.energyBreakdown;
+      this.boilerPredictedUsage = data.predictedUsage;
+      this.boilerConfig = data.config;
+      this.boilerHeatmap7x24 = data.heatmap7x24;
+      this.boilerProfiling = data.profiling;
+      this.boilerCurrentCategory = data.currentCategory;
+      this.boilerAvailableCategories = data.availableCategories;
+      this.boilerForecastWindows = data.forecastWindows;
+
+      // Start auto-refresh timer (5 min, like V1)
+      if (!this.boilerRefreshTimer) {
+        this.boilerRefreshTimer = window.setInterval(() => this.loadBoilerDataAsync(), 5 * 60 * 1000);
+      }
     } catch (err) {
       oigLog.error('Failed to load boiler data', err as Error);
     } finally {
@@ -511,6 +549,24 @@ export class OigApp extends LitElement {
 
   private onTimelineRefresh(): void {
     this.loadTimelineTabData(this.timelineTab);
+  }
+
+  // Boiler events
+  private onBoilerCategoryChange(e: CustomEvent): void {
+    const category = e.detail.category;
+    this.boilerCurrentCategory = category;
+    // Recompute category-dependent data without refetching API
+    // For now, just trigger a full reload
+    this.loadBoilerDataAsync();
+  }
+
+  private onBoilerActionDone(e: CustomEvent): void {
+    const { success, label } = e.detail;
+    oigLog.info(`[Boiler] Action ${label}: ${success ? 'OK' : 'FAIL'}`);
+    // Refresh boiler data after any action
+    if (success) {
+      setTimeout(() => this.loadBoilerDataAsync(), 2000);
+    }
   }
 
   // ==========================================================================
@@ -614,16 +670,66 @@ export class OigApp extends LitElement {
             </div>
 
             <!-- ===== BOILER TAB ===== -->
-            <div class="tab-content ${this.activeTab === 'boiler' ? 'active' : ''}" style="position:relative">
+            <div class="tab-content boiler-layout ${this.activeTab === 'boiler' ? 'active' : ''}" style="position:relative">
               ${this.boilerLoading ? html`
                 <div class="tab-loading-overlay">
                   <div class="spinner spinner--small"></div>
                   <span>Načítání bojleru...</span>
                 </div>
               ` : nothing}
+
+              <!-- State header (current temp + heating dot) -->
               <oig-boiler-state .state=${this.boilerState}></oig-boiler-state>
-              <oig-boiler-heatmap .data=${this.boilerHeatmap}></oig-boiler-heatmap>
-              <oig-boiler-profiles .profiles=${this.boilerProfiles} .editMode=${this.editMode}></oig-boiler-profiles>
+
+              <!-- Debug control panel (collapsible) -->
+              <oig-boiler-debug-panel
+                @action-done=${this.onBoilerActionDone}
+              ></oig-boiler-debug-panel>
+
+              <!-- Status grid (7 cards) -->
+              <oig-boiler-status-grid .data=${this.boilerState}></oig-boiler-status-grid>
+
+              <!-- Energy breakdown + ratio bar -->
+              <oig-boiler-energy-breakdown .data=${this.boilerEnergyBreakdown}></oig-boiler-energy-breakdown>
+
+              <!-- Predicted usage (5 items) -->
+              <oig-boiler-predicted-usage .data=${this.boilerPredictedUsage}></oig-boiler-predicted-usage>
+
+              <!-- Plan info (9 rows) -->
+              <oig-boiler-plan-info
+                .plan=${this.boilerPlan}
+                .forecastWindows=${this.boilerForecastWindows}
+              ></oig-boiler-plan-info>
+
+              <!-- Visual section: Tank + Profiling side by side -->
+              <div class="boiler-visual-grid" style="display:grid; grid-template-columns: 1fr 2fr; gap:16px;">
+                <!-- Tank thermometer -->
+                <oig-boiler-tank
+                  .boilerState=${this.boilerState}
+                  .targetTemp=${this.boilerConfig?.targetTempC ?? 60}
+                ></oig-boiler-tank>
+
+                <div>
+                  <!-- Category selector -->
+                  <oig-boiler-category-select
+                    .current=${this.boilerCurrentCategory}
+                    .available=${this.boilerAvailableCategories}
+                    @category-change=${this.onBoilerCategoryChange}
+                  ></oig-boiler-category-select>
+
+                  <!-- Profiling (CSS bar chart + stats) -->
+                  <oig-boiler-profiling .data=${this.boilerProfiling}></oig-boiler-profiling>
+                </div>
+              </div>
+
+              <!-- 7x24 heatmap grid -->
+              <oig-boiler-heatmap-grid .data=${this.boilerHeatmap7x24}></oig-boiler-heatmap-grid>
+
+              <!-- Stats cards (4 large) -->
+              <oig-boiler-stats-cards .plan=${this.boilerPlan}></oig-boiler-stats-cards>
+
+              <!-- Config section (6 cards) -->
+              <oig-boiler-config-section .config=${this.boilerConfig}></oig-boiler-config-section>
             </div>
           </oig-grid>
         </main>
