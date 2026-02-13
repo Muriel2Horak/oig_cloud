@@ -1,5 +1,6 @@
 import { bootstrap } from './core/bootstrap';
 import { oigLog } from './core/logger';
+import { initTheme } from './ui/theme';
 import './ui/app';
 import './ui/features/flow';
 import './ui/features/pricing';
@@ -7,6 +8,9 @@ import './ui/features/boiler';
 import './ui/features/control-panel';
 
 oigLog.info('V2 starting', { version: import.meta.env.VITE_VERSION });
+
+// Apply dark/light theme before rendering
+initTheme();
 
 async function main() {
   try {

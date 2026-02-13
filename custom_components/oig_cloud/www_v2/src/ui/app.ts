@@ -182,6 +182,7 @@ export class OigApp extends LitElement {
 
     .tab-content {
       display: none;
+      grid-column: 1 / -1;
     }
 
     .tab-content.active {
