@@ -63,21 +63,21 @@ export class OigFlowNode extends LitElement {
     }
 
     .flow-grid {
-      display: grid;
-      grid-template-columns: 1fr 1.2fr 1fr;
-      grid-template-rows: auto 1fr auto;
+      display: grid !important;
+      grid-template-columns: 1fr 1.2fr 1fr !important;
+      grid-template-rows: auto 1fr auto !important;
       gap: 16px;
       width: 100%;
-      min-height: 500px;
-      padding: 8px;
+      min-height: 600px !important;
+      padding: 20px;
       box-sizing: border-box;
     }
 
-    .node-solar { grid-column: 2; grid-row: 1; justify-self: center; }
-    .node-grid { grid-column: 1; grid-row: 2; align-self: center; }
+    .node-solar    { grid-column: 2; grid-row: 1; justify-self: center; }
+    .node-grid     { grid-column: 1; grid-row: 2; align-self: center; justify-self: start; }
     .node-inverter { grid-column: 2; grid-row: 2; align-self: center; justify-self: center; }
-    .node-house { grid-column: 3; grid-row: 2; align-self: center; }
-    .node-battery { grid-column: 2; grid-row: 3; justify-self: center; }
+    .node-house    { grid-column: 3; grid-row: 2; align-self: center; justify-self: end; }
+    .node-battery  { grid-column: 2; grid-row: 3; justify-self: center; }
 
     .node {
       background: var(--node-gradient);
@@ -97,10 +97,11 @@ export class OigFlowNode extends LitElement {
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
 
-    /* Edit mode: absolute positioning within relative container */
+    /* Edit mode: grid with draggable nodes */
     :host([editmode]) .flow-grid {
-      position: relative;
-      display: block;
+      display: grid !important;
+      grid-template-columns: 1fr 1.2fr 1fr;
+      grid-template-rows: auto 1fr auto;
       min-height: 500px;
     }
 

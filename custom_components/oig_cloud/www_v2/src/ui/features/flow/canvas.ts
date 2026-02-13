@@ -62,6 +62,7 @@ export class OigFlowCanvas extends LitElement {
     .flow-grid-wrapper {
       position: relative;
       z-index: 1;
+      min-height: 500px;
     }
 
     .connections-layer {
