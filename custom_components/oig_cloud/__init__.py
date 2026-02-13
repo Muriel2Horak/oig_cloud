@@ -240,16 +240,31 @@ async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
 
 async def _register_static_paths(hass: HomeAssistant) -> None:
     """Registrace statických cest pro HA 2024.5+."""
-    static_path = "/oig_cloud_static"
-    directory = hass.config.path("custom_components/oig_cloud/www")
-
-    _LOGGER.info("Registering static path: %s -> %s", static_path, directory)
-
-    # OPRAVA: Pouze moderní metoda
     from homeassistant.components.http import StaticPathConfig
 
-    static_config = StaticPathConfig(static_path, directory, cache_headers=False)
-    await hass.http.async_register_static_paths([static_config])
+    # V1 static path
+    v1_path = "/oig_cloud_static"
+    v1_dir = hass.config.path("custom_components/oig_cloud/www")
+    
+    # V2 static path
+    v2_path = "/oig_cloud_static_v2"
+    v2_dir = hass.config.path("custom_components/oig_cloud/www_v2/dist")
+
+    _LOGGER.info("Registering static paths:")
+    _LOGGER.info("  V1: %s -> %s", v1_path, v1_dir)
+    _LOGGER.info("  V2: %s -> %s", v2_path, v2_dir)
+
+    paths = [StaticPathConfig(v1_path, v1_dir, cache_headers=False)]
+    
+    # Add V2 if dist directory exists
+    import os
+    if os.path.isdir(v2_dir):
+        paths.append(StaticPathConfig(v2_path, v2_dir, cache_headers=False))
+        _LOGGER.info("  V2 dist found, registering")
+    else:
+        _LOGGER.warning("  V2 dist not found: %s", v2_dir)
+
+    await hass.http.async_register_static_paths(paths)
     _LOGGER.info("✅ Static paths registered successfully")
 
 
@@ -438,6 +453,15 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         # Prevent reload errors ("Overwriting panel ...") by removing any existing panel first.
         _remove_existing_panel(hass, panel_id)
         _register_frontend_panel(hass, panel_id, panel_title, dashboard_url)
+        
+        # Register V2 panel (parallel run)
+        v2_panel_id = f"{panel_id}_v2"
+        v2_panel_title = f"{panel_title} V2 (BETA)"
+        v2_dashboard_url = f"/oig_cloud_static_v2/index.html"
+        _remove_existing_panel(hass, v2_panel_id)
+        _register_frontend_panel(hass, v2_panel_id, v2_panel_title, v2_dashboard_url)
+        _LOGGER.info("V2 Panel URL: %s", v2_dashboard_url)
+        
         _log_dashboard_entities(hass, entry, inverter_sn)
 
     except Exception as e:

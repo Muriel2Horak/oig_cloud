@@ -6,6 +6,14 @@ import { EntityStore } from '@/data/entity-store';
 import { HaClient } from '@/data/ha-client';
 import { oigLog } from '@/core/logger';
 
+import '@/ui/components/header';
+import '@/ui/components/theme-provider';
+import '@/ui/layout/tabs';
+import '@/ui/layout/grid';
+import '@/ui/features/flow';
+import '@/ui/features/pricing';
+import '@/ui/features/boiler';
+
 const u = unsafeCSS;
 
 const DEFAULT_TABS: Tab[] = [
@@ -179,7 +187,10 @@ export class OigApp extends LitElement {
         <main>
           <oig-grid .editable=${this.editMode}>
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
-              <oig-flow-canvas particlesEnabled></oig-flow-canvas>
+              <oig-flow-canvas
+                particlesEnabled
+                .active=${this.activeTab === 'flow'}
+              ></oig-flow-canvas>
             </div>
 
             <div class="tab-content ${this.activeTab === 'pricing' ? 'active' : ''}">

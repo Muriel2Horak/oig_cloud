@@ -19,6 +19,6 @@ export default [
     },
   },
   {
-    ignores: ['dist/', 'node_modules/', 'coverage/', '*.config.ts', 'tests/setup.ts'],
+    ignores: ['dist/', 'node_modules/', 'coverage/', '*.config.ts', '**/*.d.ts', 'tests/setup.ts'],
   },
 ];

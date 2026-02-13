@@ -1,7 +1,6 @@
 import { LitElement, html, css, svg, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { CSS_VARS, getCurrentBreakpoint } from '@/ui/theme';
-import { debounce } from '@/utils/dom';
+import { CSS_VARS } from '@/ui/theme';
 import { FlowNode, FlowConnection, DEFAULT_NODES, DEFAULT_CONNECTIONS, NODE_COLORS } from './types';
 
 const u = unsafeCSS;
@@ -20,10 +19,14 @@ export class OigFlowCanvas extends LitElement {
   @property({ type: Array }) nodes: FlowNode[] = DEFAULT_NODES;
   @property({ type: Array }) connections: FlowConnection[] = DEFAULT_CONNECTIONS;
   @property({ type: Boolean }) particlesEnabled = true;
+  @property({ type: Boolean }) active = true;
   @state() private particles: Particle[] = [];
-  @state() private animationId: number | null = null;
 
+  private animationId: number | null = null;
+  private lastFrameTs = 0;
   private particleId = 0;
+  private readonly frameIntervalMs = 1000 / 15;
+  private readonly maxParticles = 60;
 
   static styles = css`
     :host {
@@ -79,26 +82,44 @@ export class OigFlowCanvas extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    window.addEventListener('resize', this.onResize);
-    
-    if (this.particlesEnabled) {
-      this.startAnimation();
-    }
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    this.updateAnimationState();
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    window.removeEventListener('resize', this.onResize);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.stopAnimation();
   }
 
-  private onResize = debounce((): void => {
-    getCurrentBreakpoint(window.innerWidth);
-  }, 100);
+  protected updated(changed: Map<string, unknown>): void {
+    if (changed.has('particlesEnabled') || changed.has('active')) {
+      this.updateAnimationState();
+    }
+  }
+
+  private onVisibilityChange = (): void => {
+    this.updateAnimationState();
+  };
+
+  private updateAnimationState(): void {
+    const shouldRun = this.particlesEnabled && this.active && !document.hidden;
+    if (shouldRun) {
+      this.startAnimation();
+    } else {
+      this.stopAnimation();
+    }
+  }
 
   private startAnimation(): void {
-    const animate = () => {
-      this.updateParticles();
+    if (this.animationId !== null) {
+      return;
+    }
+    const animate = (ts: number) => {
+      if (ts - this.lastFrameTs >= this.frameIntervalMs) {
+        this.lastFrameTs = ts;
+        this.updateParticles();
+      }
       this.animationId = requestAnimationFrame(animate);
     };
     this.animationId = requestAnimationFrame(animate);
@@ -109,37 +130,54 @@ export class OigFlowCanvas extends LitElement {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
     }
+    this.lastFrameTs = 0;
   }
 
   private updateParticles(): void {
     const activeConnections = this.connections.filter(c => Math.abs(c.power) > 0);
-    
+
+    if (activeConnections.length === 0 && this.particles.length === 0) {
+      return;
+    }
+
+    let nextParticles = this.particles
+      .map(p => ({ ...p, progress: p.progress + p.speed }))
+      .filter(p => p.progress <= 1);
+
     for (const conn of activeConnections) {
-      if (Math.random() < 0.05) {
-        this.createParticle(conn);
+      if (nextParticles.length >= this.maxParticles) {
+        break;
+      }
+      if (Math.random() < 0.02) {
+        const particle = this.createParticle(conn);
+        if (particle) {
+          nextParticles.push(particle);
+        }
       }
     }
 
-    this.particles = this.particles
-      .map(p => ({ ...p, progress: p.progress + p.speed }))
-      .filter(p => p.progress <= 1);
+    if (nextParticles.length > this.maxParticles) {
+      nextParticles = nextParticles.slice(nextParticles.length - this.maxParticles);
+    }
+
+    this.particles = nextParticles;
   }
 
-  private createParticle(conn: FlowConnection): void {
+  private createParticle(conn: FlowConnection): Particle | null {
     const fromNode = this.nodes.find(n => n.id === conn.from);
-    if (!fromNode) return;
+    if (!fromNode) return null;
 
     const speed = 0.005 + (Math.abs(conn.power) / 10000) * 0.01;
-    const size = 4 + Math.min(Math.abs(conn.power) / 500, 4);
+    const size = 2 + Math.min(Math.abs(conn.power) / 1000, 2);
 
-    this.particles.push({
+    return {
       id: ++this.particleId,
       connectionId: conn.id,
       progress: 0,
       speed: Math.min(speed, 0.03),
       size,
       color: NODE_COLORS[fromNode.type] || CSS_VARS.accent,
-    });
+    };
   }
 
   private getNodePosition(nodeId: string): { x: number; y: number } {
@@ -190,7 +228,7 @@ export class OigFlowCanvas extends LitElement {
         <path
           d="${path}"
           fill="none"
-          stroke="${u(color)}"
+          stroke="${color}"
           stroke-width="${isActive ? 3 : 2}"
           stroke-linecap="round"
           class="${isActive ? 'animated' : ''}"
@@ -200,7 +238,7 @@ export class OigFlowCanvas extends LitElement {
   }
 
   private renderParticles() {
-    if (!this.particlesEnabled) return null;
+    if (!this.particlesEnabled || !this.active) return null;
 
     return this.particles.map(p => {
       const pos = this.getParticlePosition(p);
@@ -209,7 +247,7 @@ export class OigFlowCanvas extends LitElement {
           cx="${pos.x}"
           cy="${pos.y}"
           r="${p.size}"
-          fill="${u(p.color)}"
+          fill="${p.color}"
           opacity="0.8"
         />
       `;
