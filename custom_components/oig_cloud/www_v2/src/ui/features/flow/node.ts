@@ -81,11 +81,12 @@ export class OigFlowNode extends LitElement {
 
     .node {
       background: var(--node-gradient);
-      border: 2px solid var(--node-border);
+      border: 1px solid rgba(255,255,255,0.08);
       border-radius: 12px;
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
       padding: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
       transition: transform 0.2s, box-shadow 0.2s;
       overflow: hidden;
       min-width: 0;
@@ -94,7 +95,7 @@ export class OigFlowNode extends LitElement {
 
     .node:hover {
       transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
     }
 
     /* Edit mode: grid with draggable nodes */

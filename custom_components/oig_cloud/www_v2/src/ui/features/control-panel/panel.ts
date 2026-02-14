@@ -35,6 +35,7 @@ import { oigLog } from '@/core/logger';
 
 // Import sub-components so they register
 import './selectors';
+import './shield';
 import './queue';
 import './confirm-dialog';
 import type { OigConfirmDialog } from './confirm-dialog';
@@ -397,6 +398,9 @@ export class OigControlPanel extends LitElement {
             ></oig-boiler-mode-selector>
           </div>
         </div>
+
+        <!-- Shield Status (always shown) -->
+        <oig-shield-status .shieldState=${s}></oig-shield-status>
 
         <!-- Shield Queue (always rendered, collapsible) -->
         ${hasQueue ? html`
