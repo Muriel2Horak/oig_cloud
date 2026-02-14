@@ -216,11 +216,23 @@ export class OigFlowCanvas extends LitElement {
     const wrapper = nodeEl.shadowRoot.querySelector('.flow-grid') as HTMLElement;
     if (!wrapper) return;
 
+    const canvasContainer = this.shadowRoot?.querySelector('.canvas-container') as HTMLElement;
+    if (!canvasContainer) return;
+
     const containerRect = wrapper.getBoundingClientRect();
+    const canvasRect = canvasContainer.getBoundingClientRect();
+    
     if (containerRect.width === 0 || containerRect.height === 0) return;
 
     const w = containerRect.width;
     const h = containerRect.height;
+    
+    // Position SVG to match flow-grid's offset within canvas-container
+    const offsetLeft = containerRect.left - canvasRect.left;
+    const offsetTop = containerRect.top - canvasRect.top;
+    
+    svgEl.style.left = `${offsetLeft}px`;
+    svgEl.style.top = `${offsetTop}px`;
     svgEl.setAttribute('width', String(w));
     svgEl.setAttribute('height', String(h));
     svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
@@ -296,6 +308,18 @@ export class OigFlowCanvas extends LitElement {
     if (!nodeEl?.shadowRoot) return;
     const wrapper = nodeEl.shadowRoot.querySelector('.flow-grid') as HTMLElement;
     if (!wrapper || !this.particlesEl) return;
+
+    // Position particles-layer to match flow-grid's offset within canvas-container
+    const canvasContainer = this.shadowRoot?.querySelector('.canvas-container') as HTMLElement;
+    if (!canvasContainer) return;
+
+    const gridRect = wrapper.getBoundingClientRect();
+    const canvasRect = canvasContainer.getBoundingClientRect();
+    const offsetLeft = gridRect.left - canvasRect.left;
+    const offsetTop = gridRect.top - canvasRect.top;
+    
+    this.particlesEl.style.left = `${offsetLeft}px`;
+    this.particlesEl.style.top = `${offsetTop}px`;
 
     const particlesRect = this.particlesEl.getBoundingClientRect();
 
