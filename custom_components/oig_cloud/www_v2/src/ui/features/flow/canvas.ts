@@ -321,15 +321,14 @@ export class OigFlowCanvas extends LitElement {
     this.particlesEl.style.left = `${offsetLeft}px`;
     this.particlesEl.style.top = `${offsetTop}px`;
 
-    const particlesRect = this.particlesEl.getBoundingClientRect();
-
+    // Use the same coordinate system as SVG - calculate relative to flow-grid
     const getCenter = (cls: string): { x: number; y: number } | null => {
       const el = wrapper.querySelector(`.node-${cls}`) as HTMLElement;
       if (!el) return null;
       const r = el.getBoundingClientRect();
       return {
-        x: r.left + r.width / 2 - particlesRect.left,
-        y: r.top + r.height / 2 - particlesRect.top,
+        x: r.left + r.width / 2 - gridRect.left,
+        y: r.top + r.height / 2 - gridRect.top,
       };
     };
 
