@@ -72,10 +72,10 @@ export class OigFlowNode extends LitElement {
     .flow-grid {
       display: grid !important;
       grid-template-columns: 1fr 1.2fr 1fr !important;
-      grid-template-rows: auto 1fr auto !important;
-      gap: 16px;
+      grid-template-rows: auto auto auto !important;
+      gap: 10px;
       width: 100%;
-      min-height: 600px !important;
+      min-height: auto;
       padding: 20px;
       box-sizing: border-box;
     }

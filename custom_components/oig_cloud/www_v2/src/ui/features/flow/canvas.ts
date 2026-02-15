@@ -249,6 +249,42 @@ export class OigFlowCanvas extends LitElement {
   // SVG CONNECTIONS — drawn imperatively after layout
   // ==========================================================================
 
+  /** Calculate where a line from center toward target exits the node's bounding rectangle */
+  private calcEdgePoint(
+    center: { x: number; y: number },
+    target: { x: number; y: number },
+    halfW: number,
+    halfH: number,
+  ): { x: number; y: number } {
+    const dx = target.x - center.x;
+    const dy = target.y - center.y;
+    if (dx === 0 && dy === 0) return { ...center };
+
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+    const scale = absDx * halfH > absDy * halfW
+      ? halfW / absDx
+      : halfH / absDy;
+
+    return { x: center.x + dx * scale, y: center.y + dy * scale };
+  }
+
+  private getNodeInfo(
+    grid: HTMLElement,
+    gridRect: DOMRect,
+    cls: string,
+  ): { x: number; y: number; hw: number; hh: number } | null {
+    const el = grid.querySelector(`.node-${cls}`) as HTMLElement;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      x: r.left + r.width / 2 - gridRect.left,
+      y: r.top + r.height / 2 - gridRect.top,
+      hw: r.width / 2,
+      hh: r.height / 2,
+    };
+  }
+
   private drawConnectionsSVG(): void {
     const svgEl = this.svgEl;
     if (!svgEl) return;
@@ -266,24 +302,19 @@ export class OigFlowCanvas extends LitElement {
       this.positionOverlayLayer(particlesLayer, gridRect, canvasRect);
     }
 
-    const getCenter = (cls: string): { x: number; y: number } | null => {
-      const el = grid.querySelector(`.node-${cls}`) as HTMLElement;
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return {
-        x: r.left + r.width / 2 - gridRect.left,
-        y: r.top + r.height / 2 - gridRect.top,
-      };
-    };
-
     svgEl.innerHTML = '';
 
     const NS = 'http://www.w3.org/2000/svg';
 
     for (const line of this.lines) {
-      const from = getCenter(line.from);
-      const to = getCenter(line.to);
-      if (!from || !to) continue;
+      const fromInfo = this.getNodeInfo(grid, gridRect, line.from);
+      const toInfo = this.getNodeInfo(grid, gridRect, line.to);
+      if (!fromInfo || !toInfo) continue;
+
+      const fromCenter = { x: fromInfo.x, y: fromInfo.y };
+      const toCenter = { x: toInfo.x, y: toInfo.y };
+      const from = this.calcEdgePoint(fromCenter, toCenter, fromInfo.hw, fromInfo.hh);
+      const to = this.calcEdgePoint(toCenter, fromCenter, toInfo.hw, toInfo.hh);
 
       // Draw straight line (V1 style)
       const svgLine = document.createElementNS(NS, 'line');
@@ -344,34 +375,26 @@ export class OigFlowCanvas extends LitElement {
 
     this.positionOverlayLayer(particlesLayer, gridRect, canvasRect);
 
-    // Use the same coordinate system as SVG - calculate relative to flow-grid
-    const getCenter = (cls: string): { x: number; y: number } | null => {
-      const el = grid.querySelector(`.node-${cls}`) as HTMLElement;
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return {
-        x: r.left + r.width / 2 - gridRect.left,
-        y: r.top + r.height / 2 - gridRect.top,
-      };
-    };
-
     const now = performance.now();
 
     for (const line of this.lines) {
       if (!line.params.active) continue;
 
-      // Spawn interval based on intensity
       const interval = line.params.speed;
       const lastSpawn = this.lastSpawnTime[line.id] || 0;
       if (now - lastSpawn < interval) continue;
 
-      const from = getCenter(line.from);
-      const to = getCenter(line.to);
-      if (!from || !to) continue;
+      const fromInfo = this.getNodeInfo(grid, gridRect, line.from);
+      const toInfo = this.getNodeInfo(grid, gridRect, line.to);
+      if (!fromInfo || !toInfo) continue;
+
+      const fromCenter = { x: fromInfo.x, y: fromInfo.y };
+      const toCenter = { x: toInfo.x, y: toInfo.y };
+      const from = this.calcEdgePoint(fromCenter, toCenter, fromInfo.hw, fromInfo.hh);
+      const to = this.calcEdgePoint(toCenter, fromCenter, toInfo.hw, toInfo.hh);
 
       this.lastSpawnTime[line.id] = now;
 
-      // Create particle element
       const count = line.params.count;
       for (let i = 0; i < count; i++) {
         if (this.particleCount >= this.MAX_PARTICLES) break;
