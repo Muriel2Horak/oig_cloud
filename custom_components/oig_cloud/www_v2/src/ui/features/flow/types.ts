@@ -34,6 +34,9 @@ export interface FlowData {
   isGridCharging: boolean;
   timeToEmpty: string;
   timeToFull: string;
+  balancingState: BalancingState;
+  balancingTimeRemaining: string;
+  gridChargingPlan: GridChargingPlanData;
 
   // Grid
   gridPower: number;
@@ -79,6 +82,33 @@ export interface FlowData {
 
   // Meta
   lastUpdate: string;
+}
+
+export type BalancingState = 'charging' | 'holding' | 'completed' | 'planned' | 'standby';
+
+export interface GridChargingBlock {
+  day?: 'today' | 'tomorrow';
+  time_from?: string;
+  time_to?: string;
+  status?: string;
+  grid_import_kwh?: number;
+  grid_charge_kwh?: number;
+  total_cost_czk?: number;
+  battery_start_kwh?: number;
+  battery_end_kwh?: number;
+  interval_count?: number;
+  avg_spot_price_czk?: number;
+}
+
+export interface GridChargingPlanData {
+  hasBlocks: boolean;
+  totalEnergyKwh: number;
+  totalCostCzk: number;
+  windowLabel: string | null;
+  durationMinutes: number;
+  currentBlockLabel: string | null;
+  nextBlockLabel: string | null;
+  blocks: GridChargingBlock[];
 }
 
 // ============================================================================
@@ -206,6 +236,17 @@ export const EMPTY_FLOW_DATA: FlowData = {
   batterySoC: 0, batteryPower: 0, batteryVoltage: 0, batteryCurrent: 0, batteryTemp: 0,
   batteryChargeTotal: 0, batteryDischargeTotal: 0, batteryChargeSolar: 0, batteryChargeGrid: 0,
   isGridCharging: false, timeToEmpty: '', timeToFull: '',
+  balancingState: 'standby', balancingTimeRemaining: '',
+  gridChargingPlan: {
+    hasBlocks: false,
+    totalEnergyKwh: 0,
+    totalCostCzk: 0,
+    windowLabel: null,
+    durationMinutes: 0,
+    currentBlockLabel: null,
+    nextBlockLabel: null,
+    blocks: [],
+  },
   gridPower: 0, gridVoltage: 0, gridFrequency: 0, gridImportToday: 0, gridExportToday: 0,
   gridL1V: 0, gridL2V: 0, gridL3V: 0, gridL1P: 0, gridL2P: 0, gridL3P: 0,
   spotPrice: 0, exportPrice: 0, currentTariff: '',

@@ -2,7 +2,7 @@ import { bootstrap } from './core/bootstrap';
 import { oigLog } from './core/logger';
 import { initTheme } from './ui/theme';
 import './ui/app';
-import './ui/features/flow';
+import './ui/features/flow/index';
 import './ui/features/pricing';
 import './ui/features/boiler';
 import './ui/features/control-panel';

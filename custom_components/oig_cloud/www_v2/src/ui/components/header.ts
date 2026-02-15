@@ -10,6 +10,8 @@ export class OigHeader extends LitElement {
   @property({ type: String }) time = '';
   @property({ type: Boolean }) showStatus = false;
   @property({ type: Number }) alertCount = 0;
+  @property({ type: Boolean }) leftPanelCollapsed = false;
+  @property({ type: Boolean }) rightPanelCollapsed = false;
 
   static styles = css`
     :host {
@@ -124,6 +126,14 @@ export class OigHeader extends LitElement {
     this.dispatchEvent(new CustomEvent('reset-click', { bubbles: true }));
   }
 
+  private onToggleLeftPanel(): void {
+    this.dispatchEvent(new CustomEvent('toggle-left-panel', { bubbles: true }));
+  }
+
+  private onToggleRightPanel(): void {
+    this.dispatchEvent(new CustomEvent('toggle-right-panel', { bubbles: true }));
+  }
+
   render() {
     const statusClass = this.alertCount > 0 ? 'warning' : 'ok';
 
@@ -146,14 +156,20 @@ export class OigHeader extends LitElement {
         </div>
       ` : null}
       
-      <div class="actions">
-        <button class="action-btn" @click=${this.onEditClick} title="Upravit layout">
-          ✏️
-        </button>
-        <button class="action-btn" @click=${this.onResetClick} title="Reset layout">
-          ↺
-        </button>
-      </div>
+       <div class="actions">
+         <button class="action-btn ${this.leftPanelCollapsed ? 'active' : ''}" @click=${this.onToggleLeftPanel} title="Přepnout levý panel">
+           ◀️
+         </button>
+         <button class="action-btn ${this.rightPanelCollapsed ? 'active' : ''}" @click=${this.onToggleRightPanel} title="Přepnout pravý panel">
+           ▶️
+         </button>
+         <button class="action-btn" @click=${this.onEditClick} title="Upravit layout">
+           ✏️
+         </button>
+         <button class="action-btn" @click=${this.onResetClick} title="Reset layout">
+           ↺
+         </button>
+       </div>
     `;
   }
 }

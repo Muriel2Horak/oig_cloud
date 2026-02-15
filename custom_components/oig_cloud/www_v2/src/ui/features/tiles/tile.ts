@@ -13,17 +13,20 @@ export class OigTile extends LitElement {
 
   static styles = css`
     :host {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      grid-template-rows: 1fr auto;
       align-items: center;
-      padding: 8px 10px;
+      padding: 6px 10px;
       background: ${u(CSS_VARS.cardBg)};
-      border-radius: 10px;
+      border-radius: 8px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
       min-width: 0;
       position: relative;
       transition: opacity 0.2s;
       font-size: 11px;
+      height: 50px;
+      gap: 0 8px;
     }
 
     :host(.inactive) {
@@ -31,38 +34,57 @@ export class OigTile extends LitElement {
     }
 
     .tile-icon {
-      font-size: 18px;
-      margin-bottom: 2px;
+      grid-row: 1 / -1;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .tile-main {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 3px;
+      min-width: 0;
     }
 
     .tile-value {
-      font-size: 14px;
-      font-weight: 600;
+      font-size: 20px;
+      font-weight: 700;
       color: ${u(CSS_VARS.textPrimary)};
+      line-height: 1.1;
+    }
+
+    .tile-unit {
+      font-size: 12px;
+      font-weight: 400;
+      color: ${u(CSS_VARS.textSecondary)};
     }
 
     .tile-label {
+      grid-column: 2;
       font-size: 10px;
       color: ${u(CSS_VARS.textSecondary)};
-      margin-top: 1px;
-      text-align: center;
+      text-align: left;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      max-width: 100%;
+      min-width: 0;
     }
 
     .support-values {
+      grid-row: 1 / -1;
+      grid-column: 3;
       display: flex;
       flex-direction: column;
-      align-items: center;
+      align-items: flex-end;
+      justify-content: center;
       gap: 2px;
-      margin-top: 4px;
     }
 
     .support-value {
       font-size: 10px;
       color: ${u(CSS_VARS.textSecondary)};
+      white-space: nowrap;
     }
 
     .edit-actions {
@@ -102,6 +124,7 @@ export class OigTile extends LitElement {
     this.dispatchEvent(new CustomEvent('edit-tile', {
       detail: { entityId: this.data?.config.entity_id },
       bubbles: true,
+      composed: true,
     }));
   }
 
@@ -109,6 +132,7 @@ export class OigTile extends LitElement {
     this.dispatchEvent(new CustomEvent('delete-tile', {
       detail: { entityId: this.data?.config.entity_id },
       bubbles: true,
+      composed: true,
     }));
   }
 
@@ -123,7 +147,10 @@ export class OigTile extends LitElement {
     return html`
       ${color ? html`<style>:host { border-left: 3px solid ${u(color)}; }</style>` : null}
       <span class="tile-icon">${icon}</span>
-      <span class="tile-value">${this.data.formattedValue}</span>
+      <div class="tile-main">
+    <span class="tile-value">${this.data.value}</span>
+    ${this.data.unit ? html`<span class="tile-unit">${this.data.unit}</span>` : null}
+  </div>
       <span class="tile-label">${cfg.label || ''}</span>
 
       ${(this.data.supportValues.topRight || this.data.supportValues.bottomRight) ? html`
@@ -155,7 +182,10 @@ export class OigTilesContainer extends LitElement {
 
   static styles = css`
     :host {
-      display: contents;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 8px;
+      align-items: stretch;
     }
 
     .empty-state {

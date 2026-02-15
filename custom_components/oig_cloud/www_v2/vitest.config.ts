@@ -5,18 +5,16 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      include: ['src/**/*.ts'],
-      exclude: ['src/main.ts'],
-    },
-    setupFiles: ['tests/setup.ts'],
+    include: ['src/__tests__/**/*.test.ts', 'tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
+    setupFiles: ['./src/__tests__/setup.ts'],
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
-    },
+      '@': resolve(__dirname, 'src')
+    }
   },
+  
+  define: {
+    'import.meta.env.VITE_VERSION': JSON.stringify(process.env.npm_package_version || '2.0.0')
+  }
 });

@@ -36,7 +36,6 @@ export class OigFlowCanvas extends LitElement {
   @property({ type: Boolean }) editMode = false;
 
   @state() private lines: FlowLine[] = [];
-  @query('.particles-layer') private particlesEl!: HTMLDivElement;
   @query('.connections-layer') private svgEl!: SVGSVGElement;
 
   private animationId: number | null = null;
@@ -51,7 +50,7 @@ export class OigFlowCanvas extends LitElement {
       width: 100%;
       background: ${u(CSS_VARS.bgSecondary)};
       border-radius: 12px;
-      overflow: hidden;
+      overflow: visible;
     }
 
     .canvas-container {
@@ -69,6 +68,8 @@ export class OigFlowCanvas extends LitElement {
       position: absolute;
       top: 0;
       left: 0;
+      width: unset;
+      height: unset;
       pointer-events: none;
       z-index: 2;
     }
@@ -113,6 +114,9 @@ export class OigFlowCanvas extends LitElement {
   protected updated(changed: Map<string, unknown>): void {
     if (changed.has('data')) {
       this.updateLines();
+      if (this.animationId !== null) {
+        this.spawnParticles();
+      }
     }
     if (changed.has('active') || changed.has('particlesEnabled')) {
       this.updateAnimationState();
@@ -132,6 +136,45 @@ export class OigFlowCanvas extends LitElement {
   /** Draw SVG connections after a frame so DOM positions are accurate */
   private drawConnectionsDeferred(): void {
     requestAnimationFrame(() => this.drawConnectionsSVG());
+  }
+
+  private getParticlesLayer(): HTMLDivElement | null {
+    return this.renderRoot?.querySelector('.particles-layer') as HTMLDivElement | null;
+  }
+
+  private getGridMetrics(): {
+    grid: HTMLElement;
+    gridRect: DOMRect;
+    canvasRect: DOMRect;
+  } | null {
+    const nodeEl = this.renderRoot?.querySelector('oig-flow-node') as HTMLElement | null;
+    if (!nodeEl) return null;
+
+    const nodeRoot = (nodeEl as any).renderRoot || nodeEl.shadowRoot || nodeEl;
+    const grid = nodeRoot.querySelector('.flow-grid') as HTMLElement | null;
+    if (!grid) return null;
+
+    const canvasContainer = this.renderRoot?.querySelector('.canvas-container') as HTMLElement | null;
+    if (!canvasContainer) return null;
+
+    const gridRect = grid.getBoundingClientRect();
+    if (gridRect.width === 0 || gridRect.height === 0) return null;
+
+    return { grid, gridRect, canvasRect: canvasContainer.getBoundingClientRect() };
+  }
+
+  private positionOverlayLayer(
+    layer: HTMLElement | SVGSVGElement,
+    gridRect: DOMRect,
+    canvasRect: DOMRect,
+  ): void {
+    const offsetLeft = gridRect.left - canvasRect.left;
+    const offsetTop = gridRect.top - canvasRect.top;
+
+    layer.style.left = `${offsetLeft}px`;
+    layer.style.top = `${offsetTop}px`;
+    layer.style.width = `${gridRect.width}px`;
+    layer.style.height = `${gridRect.height}px`;
   }
 
   private onVisibilityChange = (): void => {
@@ -210,40 +253,26 @@ export class OigFlowCanvas extends LitElement {
     const svgEl = this.svgEl;
     if (!svgEl) return;
 
-    const nodeEl = this.shadowRoot?.querySelector('oig-flow-node');
-    if (!nodeEl?.shadowRoot) return;
+    const metrics = this.getGridMetrics();
+    if (!metrics) return;
 
-    const wrapper = nodeEl.shadowRoot.querySelector('.flow-grid') as HTMLElement;
-    if (!wrapper) return;
+    const { grid, gridRect, canvasRect } = metrics;
 
-    const canvasContainer = this.shadowRoot?.querySelector('.canvas-container') as HTMLElement;
-    if (!canvasContainer) return;
+    this.positionOverlayLayer(svgEl, gridRect, canvasRect);
+    svgEl.setAttribute('viewBox', `0 0 ${gridRect.width} ${gridRect.height}`);
 
-    const containerRect = wrapper.getBoundingClientRect();
-    const canvasRect = canvasContainer.getBoundingClientRect();
-    
-    if (containerRect.width === 0 || containerRect.height === 0) return;
-
-    const w = containerRect.width;
-    const h = containerRect.height;
-    
-    // Position SVG to match flow-grid's offset within canvas-container
-    const offsetLeft = containerRect.left - canvasRect.left;
-    const offsetTop = containerRect.top - canvasRect.top;
-    
-    svgEl.style.left = `${offsetLeft}px`;
-    svgEl.style.top = `${offsetTop}px`;
-    svgEl.setAttribute('width', String(w));
-    svgEl.setAttribute('height', String(h));
-    svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    const particlesLayer = this.getParticlesLayer();
+    if (particlesLayer) {
+      this.positionOverlayLayer(particlesLayer, gridRect, canvasRect);
+    }
 
     const getCenter = (cls: string): { x: number; y: number } | null => {
-      const el = wrapper.querySelector(`.node-${cls}`) as HTMLElement;
+      const el = grid.querySelector(`.node-${cls}`) as HTMLElement;
       if (!el) return null;
       const r = el.getBoundingClientRect();
       return {
-        x: r.left + r.width / 2 - containerRect.left,
-        y: r.top + r.height / 2 - containerRect.top,
+        x: r.left + r.width / 2 - gridRect.left,
+        y: r.top + r.height / 2 - gridRect.top,
       };
     };
 
@@ -278,6 +307,7 @@ export class OigFlowCanvas extends LitElement {
   private updateAnimationState(): void {
     const shouldRun = this.particlesEnabled && this.active && !document.hidden;
     if (shouldRun) {
+      this.spawnParticles();
       this.startAnimation();
     } else {
       this.stopAnimation();
@@ -304,26 +334,19 @@ export class OigFlowCanvas extends LitElement {
   private spawnParticles(): void {
     if (this.particleCount >= this.MAX_PARTICLES) return;
 
-    const nodeEl = this.shadowRoot?.querySelector('oig-flow-node');
-    if (!nodeEl?.shadowRoot) return;
-    const wrapper = nodeEl.shadowRoot.querySelector('.flow-grid') as HTMLElement;
-    if (!wrapper || !this.particlesEl) return;
+    const particlesLayer = this.getParticlesLayer();
+    if (!particlesLayer) return;
 
-    // Position particles-layer to match flow-grid's offset within canvas-container
-    const canvasContainer = this.shadowRoot?.querySelector('.canvas-container') as HTMLElement;
-    if (!canvasContainer) return;
+    const metrics = this.getGridMetrics();
+    if (!metrics) return;
 
-    const gridRect = wrapper.getBoundingClientRect();
-    const canvasRect = canvasContainer.getBoundingClientRect();
-    const offsetLeft = gridRect.left - canvasRect.left;
-    const offsetTop = gridRect.top - canvasRect.top;
-    
-    this.particlesEl.style.left = `${offsetLeft}px`;
-    this.particlesEl.style.top = `${offsetTop}px`;
+    const { grid, gridRect, canvasRect } = metrics;
+
+    this.positionOverlayLayer(particlesLayer, gridRect, canvasRect);
 
     // Use the same coordinate system as SVG - calculate relative to flow-grid
     const getCenter = (cls: string): { x: number; y: number } | null => {
-      const el = wrapper.querySelector(`.node-${cls}`) as HTMLElement;
+      const el = grid.querySelector(`.node-${cls}`) as HTMLElement;
       if (!el) return null;
       const r = el.getBoundingClientRect();
       return {
@@ -352,12 +375,13 @@ export class OigFlowCanvas extends LitElement {
       const count = line.params.count;
       for (let i = 0; i < count; i++) {
         if (this.particleCount >= this.MAX_PARTICLES) break;
-        this.createParticle(from, to, line.color, line.params, i * (line.params.speed / count / 2));
+        this.createParticle(particlesLayer, from, to, line.color, line.params, i * (line.params.speed / count / 2));
       }
     }
   }
 
   private createParticle(
+    particlesLayer: HTMLDivElement,
     from: { x: number; y: number },
     to: { x: number; y: number },
     color: string,
@@ -373,27 +397,48 @@ export class OigFlowCanvas extends LitElement {
     particle.style.left = `${from.x}px`;
     particle.style.top = `${from.y}px`;
     particle.style.boxShadow = `0 0 ${size}px ${color}`;
+    particle.style.opacity = '0';
 
-    this.particlesEl.appendChild(particle);
+    particlesLayer.appendChild(particle);
     this.particleCount++;
 
     const duration = params.speed;
 
     setTimeout(() => {
-      const anim = particle.animate([
-        { left: `${from.x}px`, top: `${from.y}px`, opacity: 0, offset: 0 },
-        { opacity: params.opacity, offset: 0.1 },
-        { opacity: params.opacity, offset: 0.9 },
-        { left: `${to.x}px`, top: `${to.y}px`, opacity: 0, offset: 1 },
-      ], {
-        duration,
-        easing: 'linear',
-      });
-
-      anim.onfinish = () => {
-        particle.remove();
-        this.particleCount--;
+      let cleaned = false;
+      const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        if (particle.isConnected) {
+          particle.remove();
+        }
+        this.particleCount = Math.max(0, this.particleCount - 1);
       };
+
+      if (typeof particle.animate === 'function') {
+        const anim = particle.animate([
+          { left: `${from.x}px`, top: `${from.y}px`, opacity: 0, offset: 0 },
+          { opacity: params.opacity, offset: 0.1 },
+          { opacity: params.opacity, offset: 0.9 },
+          { left: `${to.x}px`, top: `${to.y}px`, opacity: 0, offset: 1 },
+        ], {
+          duration,
+          easing: 'linear',
+        });
+
+        anim.onfinish = cleanup;
+        anim.oncancel = cleanup;
+      } else {
+        particle.style.transition = `left ${duration}ms linear, top ${duration}ms linear, opacity ${duration}ms linear`;
+        particle.style.opacity = `${params.opacity}`;
+        requestAnimationFrame(() => {
+          particle.style.left = `${to.x}px`;
+          particle.style.top = `${to.y}px`;
+          particle.style.opacity = '0';
+        });
+        particle.addEventListener('transitionend', cleanup, { once: true });
+        window.setTimeout(cleanup, duration + 50);
+      }
     }, delay);
   }
 

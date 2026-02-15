@@ -11,7 +11,7 @@ import { loadBoilerData } from '@/data/boiler-data';
 import { loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
 import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
 import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/timeline-data';
-import { loadTilesConfig, resolveTiles, type TilesConfig, type ResolvedTile } from '@/data/tiles-data';
+import { loadTilesConfig, saveTilesConfig, resolveTiles, type TilesConfig, type TileConfig, type ResolvedTile } from '@/data/tiles-data';
 import { FlowData, EMPTY_FLOW_DATA } from '@/ui/features/flow/types';
 import { PricingData } from '@/ui/features/pricing/types';
 import {
@@ -35,6 +35,8 @@ import '@/ui/features/analytics';
 import '@/ui/features/chmu';
 import '@/ui/features/timeline';
 import '@/ui/features/tiles';
+import '@/ui/features/tiles/icon-picker';
+import '@/ui/features/tiles/tile-dialog';
 
 const u = unsafeCSS;
 
@@ -57,6 +59,8 @@ export class OigApp extends LitElement {
   @state() private activeTab = 'flow';
   @state() private editMode = false;
   @state() private time = '';
+  @state() private leftPanelCollapsed = false;
+  @state() private rightPanelCollapsed = false;
 
   // Flow
   @state() private flowData: FlowData = EMPTY_FLOW_DATA;
@@ -95,6 +99,11 @@ export class OigApp extends LitElement {
   @state() private tilesConfig: TilesConfig | null = null;
   @state() private tilesLeft: ResolvedTile[] = [];
   @state() private tilesRight: ResolvedTile[] = [];
+
+  @state() private tileDialogOpen = false;
+  @state() private editingTileIndex = -1;
+  @state() private editingTileSide: 'left' | 'right' = 'left';
+  @state() private editingTileConfig: TileConfig | null = null;
 
   private entityStore: EntityStore | null = null;
   private timeInterval: number | null = null;
@@ -201,17 +210,8 @@ export class OigApp extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 12px;
-    }
-
-    .flow-tiles-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-
-    .flow-tiles-row oig-tiles-container {
-      display: contents;
+      width: 100%;
+      height: 100%;
     }
 
     .flow-center {
@@ -220,6 +220,11 @@ export class OigApp extends LitElement {
       gap: 12px;
       min-width: 0;
       width: 100%;
+    }
+
+    .flow-tiles-stack {
+      width: 100%;
+      min-width: 0;
     }
 
     /* ---- Pricing tab layout ---- */
@@ -285,7 +290,18 @@ export class OigApp extends LitElement {
     }
 
     /* ---- Responsive ---- */
+    /* Tablet 768–1024: 2-column layout */
+    @media (min-width: 768px) and (max-width: 1024px) {
+      .flow-center {
+        gap: 8px;
+      }
+    }
+
+    /* Mobile <768: Single column, stacked */
     @media (max-width: 768px) {
+      .flow-center {
+        gap: 8px;
+      }
       .analytics-row {
         grid-template-columns: 1fr;
       }
@@ -524,6 +540,14 @@ export class OigApp extends LitElement {
     }
   }
 
+  protected onToggleLeftPanel(): void {
+    this.leftPanelCollapsed = !this.leftPanelCollapsed;
+  }
+
+  protected onToggleRightPanel(): void {
+    this.rightPanelCollapsed = !this.rightPanelCollapsed;
+  }
+
   // ČHMÚ events
   private onChmuBadgeClick(): void {
     this.chmuModalOpen = true;
@@ -570,6 +594,105 @@ export class OigApp extends LitElement {
     }
   }
 
+  private onEditTile(e: CustomEvent): void {
+    const { entityId } = e.detail;
+    let foundIndex = -1;
+    let foundSide: 'left' | 'right' = 'left';
+    let foundConfig: TileConfig | null = null;
+
+    if (this.tilesConfig) {
+      const leftIdx = this.tilesConfig.tiles_left.findIndex(
+        (t) => t && t.entity_id === entityId
+      );
+      if (leftIdx >= 0) {
+        foundIndex = leftIdx;
+        foundSide = 'left';
+        foundConfig = this.tilesConfig.tiles_left[leftIdx];
+      } else {
+        const rightIdx = this.tilesConfig.tiles_right.findIndex(
+          (t) => t && t.entity_id === entityId
+        );
+        if (rightIdx >= 0) {
+          foundIndex = rightIdx;
+          foundSide = 'right';
+          foundConfig = this.tilesConfig.tiles_right[rightIdx];
+        }
+      }
+    }
+
+    this.editingTileIndex = foundIndex;
+    this.editingTileSide = foundSide;
+    this.editingTileConfig = foundConfig;
+    this.tileDialogOpen = true;
+
+    if (foundConfig) {
+      requestAnimationFrame(() => {
+        const dialog = this.shadowRoot?.querySelector('oig-tile-dialog') as any;
+        dialog?.loadTileConfig(foundConfig!);
+      });
+    }
+  }
+
+  private onDeleteTile(e: CustomEvent): void {
+    const { entityId } = e.detail;
+    if (!this.tilesConfig || !entityId) return;
+
+    const config = { ...this.tilesConfig };
+    config.tiles_left = config.tiles_left.map((t) =>
+      t && t.entity_id === entityId ? null : t
+    );
+    config.tiles_right = config.tiles_right.map((t) =>
+      t && t.entity_id === entityId ? null : t
+    );
+
+    this.tilesConfig = config;
+    const resolved = resolveTiles(config);
+    this.tilesLeft = resolved.left;
+    this.tilesRight = resolved.right;
+    saveTilesConfig(config);
+  }
+
+  private onTileSaved(e: CustomEvent): void {
+    const { index, side, config: tileConfig } = e.detail as {
+      index: number;
+      side: 'left' | 'right';
+      config: TileConfig;
+    };
+    if (!this.tilesConfig) return;
+
+    const updated = { ...this.tilesConfig };
+    const arr = side === 'left' ? [...updated.tiles_left] : [...updated.tiles_right];
+
+    if (index >= 0 && index < arr.length) {
+      arr[index] = tileConfig;
+    } else {
+      const nullIdx = arr.findIndex((t) => t === null);
+      if (nullIdx >= 0) {
+        arr[nullIdx] = tileConfig;
+      } else {
+        arr.push(tileConfig);
+      }
+    }
+
+    if (side === 'left') {
+      updated.tiles_left = arr;
+    } else {
+      updated.tiles_right = arr;
+    }
+
+    this.tilesConfig = updated;
+    const resolved = resolveTiles(updated);
+    this.tilesLeft = resolved.left;
+    this.tilesRight = resolved.right;
+    saveTilesConfig(updated);
+  }
+
+  private onTileDialogClose(): void {
+    this.tileDialogOpen = false;
+    this.editingTileConfig = null;
+    this.editingTileIndex = -1;
+  }
+
   // ==========================================================================
   // RENDER
   // ==========================================================================
@@ -598,9 +721,13 @@ export class OigApp extends LitElement {
           .time=${this.time}
           .showStatus=${true}
           .alertCount=${chmuAlertCount}
+          .leftPanelCollapsed=${this.leftPanelCollapsed}
+          .rightPanelCollapsed=${this.rightPanelCollapsed}
           @edit-click=${this.onEditClick}
           @reset-click=${this.onResetClick}
           @status-click=${this.onChmuBadgeClick}
+          @toggle-left-panel=${this.onToggleLeftPanel}
+          @toggle-right-panel=${this.onToggleRightPanel}
         >
         </oig-header>
 
@@ -615,19 +742,6 @@ export class OigApp extends LitElement {
             <!-- ===== FLOW TAB ===== -->
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
               <div class="flow-layout">
-                <div class="flow-tiles-row">
-                  <oig-tiles-container
-                    position="left"
-                    .tiles=${this.tilesLeft}
-                    .editMode=${this.editMode}
-                  ></oig-tiles-container>
-                  <oig-tiles-container
-                    position="right"
-                    .tiles=${this.tilesRight}
-                    .editMode=${this.editMode}
-                  ></oig-tiles-container>
-                </div>
-
                 <div class="flow-center">
                   <oig-flow-canvas
                     .data=${this.flowData}
@@ -636,6 +750,15 @@ export class OigApp extends LitElement {
                     .editMode=${this.editMode}
                   ></oig-flow-canvas>
                   <oig-control-panel></oig-control-panel>
+                </div>
+
+                <div class="flow-tiles-stack">
+                  <oig-tiles-container
+                    .tiles=${[...this.tilesLeft, ...this.tilesRight]}
+                    .editMode=${this.editMode}
+                    @edit-tile=${this.onEditTile}
+                    @delete-tile=${this.onDeleteTile}
+                  ></oig-tiles-container>
                 </div>
               </div>
             </div>
@@ -750,6 +873,15 @@ export class OigApp extends LitElement {
           @tab-change=${this.onTimelineTabChange}
           @refresh=${this.onTimelineRefresh}
         ></oig-timeline-dialog>
+
+        <oig-tile-dialog
+          ?open=${this.tileDialogOpen}
+          .tileIndex=${this.editingTileIndex}
+          .tileSide=${this.editingTileSide}
+          .existingConfig=${this.editingTileConfig}
+          @tile-saved=${this.onTileSaved}
+          @close=${this.onTileDialogClose}
+        ></oig-tile-dialog>
       </oig-theme-provider>
     `;
   }

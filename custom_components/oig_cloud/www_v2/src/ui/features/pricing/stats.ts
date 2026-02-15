@@ -57,7 +57,7 @@ export class OigMiniSparkline extends LitElement {
     :host {
       display: block;
       width: 100%;
-      height: 40px;
+      height: 30px;
     }
     canvas {
       width: 100% !important;
@@ -429,6 +429,97 @@ export class OigPricingStats extends LitElement {
       margin-bottom: 16px;
     }
 
+    .hero-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .hero-card {
+      background: ${u(CSS_VARS.cardBg)};
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: ${u(CSS_VARS.cardShadow)};
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .hero-card.main {
+      background: linear-gradient(135deg, ${u(CSS_VARS.accent)}22 0%, ${u(CSS_VARS.accent)}11 100%);
+      border: 1px solid rgba(76, 175, 80, 0.3);
+    }
+
+    .hero-card.export {
+      background: linear-gradient(135deg, rgba(76, 175, 80, 0.2) 0%, rgba(76, 175, 80, 0.1) 100%);
+      border: 1px solid rgba(76, 175, 80, 0.3);
+    }
+
+    .hero-card.avg {
+      background: linear-gradient(135deg, rgba(33, 150, 243, 0.2) 0%, rgba(33, 150, 243, 0.1) 100%);
+      border: 1px solid rgba(33, 150, 243, 0.3);
+    }
+
+    .hero-card.solar {
+      background: linear-gradient(135deg, rgba(255, 167, 38, 0.2) 0%, rgba(255, 167, 38, 0.1) 100%);
+      border: 1px solid rgba(255, 167, 38, 0.3);
+    }
+
+    .hero-title {
+      font-size: 11px;
+      color: ${u(CSS_VARS.textSecondary)};
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      opacity: 0.8;
+    }
+
+    .hero-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: ${u(CSS_VARS.textPrimary)};
+      line-height: 1.2;
+      margin-bottom: 4px;
+    }
+
+    .hero-value .stat-unit {
+      font-size: 14px;
+      font-weight: 400;
+      color: ${u(CSS_VARS.textSecondary)};
+      opacity: 0.7;
+    }
+
+    .hero-subtitle {
+      font-size: 10px;
+      color: ${u(CSS_VARS.textSecondary)};
+      opacity: 0.6;
+    }
+
+    .stats-2x2-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .stats-2x2-item {
+      background: ${u(CSS_VARS.cardBg)};
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: ${u(CSS_VARS.cardShadow)};
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .stats-2x2-item h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: ${u(CSS_VARS.textSecondary)};
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     .section-title {
       font-size: 13px;
       font-weight: 600;
@@ -629,38 +720,40 @@ export class OigPricingStats extends LitElement {
     if (!this.data) return nothing;
 
     return html`
-      <div class="stats-grid">
-        <oig-stats-card
-          title="Aktuální spotová cena"
-          .value=${this.data.currentSpotPrice}
-          unit="Kč/kWh"
-          variant="info"
-        ></oig-stats-card>
+      <div class="hero-row">
+        <div class="hero-card main">
+          <div class="hero-title">Aktuální spotová cena</div>
+          <div class="hero-value">${this.data.currentSpotPrice.toFixed(2)} <span class="stat-unit">Kč/kWh</span></div>
+          <div class="hero-subtitle">Aktuální hodina</div>
+        </div>
 
-        <oig-stats-card
-          title="Výkupní cena"
-          .value=${this.data.currentExportPrice}
-          unit="Kč/kWh"
-          variant="success"
-        ></oig-stats-card>
+        <div class="hero-card export">
+          <div class="hero-title">Výkupní cena</div>
+          <div class="hero-value">${this.data.currentExportPrice.toFixed(2)} <span class="stat-unit">Kč/kWh</span></div>
+          <div class="hero-subtitle">Za přetok</div>
+        </div>
 
-        <oig-stats-card
-          title="Průměr spot (predikce)"
-          .value=${this.data.avgSpotPrice}
-          unit="Kč/kWh"
-          variant="default"
-        ></oig-stats-card>
+        <div class="hero-card avg">
+          <div class="hero-title">Průměr spot</div>
+          <div class="hero-value">${this.data.avgSpotPrice.toFixed(2)} <span class="stat-unit">Kč/kWh</span></div>
+          <div class="hero-subtitle">Denní průměr</div>
+        </div>
 
         ${this.data.solarForecastTotal > 0
           ? html`
-              <oig-stats-card
-                title="Solární předpověď dnes"
-                .value=${this.data.solarForecastTotal}
-                unit="kWh"
-                variant="warning"
-              ></oig-stats-card>
+              <div class="hero-card solar">
+                <div class="hero-title">Solární předpověď</div>
+                <div class="hero-value">${this.data.solarForecastTotal.toFixed(1)} <span class="stat-unit">kWh</span></div>
+                <div class="hero-subtitle">Dnes</div>
+              </div>
             `
-          : nothing}
+          : html`
+              <div class="hero-card avg">
+                <div class="hero-title">Předpověď</div>
+                <div class="hero-value">-- <span class="stat-unit">kWh</span></div>
+                <div class="hero-subtitle">Nedostupná</div>
+              </div>
+            `}
       </div>
     `;
   }

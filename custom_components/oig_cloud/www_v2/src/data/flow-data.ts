@@ -5,7 +5,16 @@
  * Returns a flat FlowData object with all values needed for the flow canvas.
  */
 
-import { FlowData, FlowNode, FlowConnection, FLOW_COLORS, type FlowParams } from '@/ui/features/flow/types';
+import {
+  FlowData,
+  FlowNode,
+  FlowConnection,
+  FLOW_COLORS,
+  type FlowParams,
+  type BalancingState,
+  type GridChargingBlock,
+  type GridChargingPlanData,
+} from '@/ui/features/flow/types';
 
 const params = new URLSearchParams(window.location.search);
 const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
@@ -35,6 +44,138 @@ function parseBool(state: HassState | null | undefined, onValue = 'on'): boolean
   if (!state?.state) return false;
   const v = state.state.toLowerCase();
   return v === onValue || v === '1' || v === 'zapnuto';
+}
+
+export function parseBalancingState(raw?: string): BalancingState {
+  const normalized = (raw || '').toLowerCase();
+  if (normalized === 'charging') return 'charging';
+  if (normalized === 'balancing') return 'holding';
+  if (normalized === 'holding') return 'holding';
+  if (normalized === 'completed') return 'completed';
+  if (normalized === 'planned') return 'planned';
+  return 'standby';
+}
+
+function getDayLabel(day?: string): string {
+  if (day === 'tomorrow') return 'zítra';
+  if (day === 'today') return 'dnes';
+  return '';
+}
+
+function parseHmToMinutes(value?: string): number | null {
+  if (!value) return null;
+  const [h, m] = value.split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+export function getBlockEnergyKwh(block: GridChargingBlock): number {
+  const energy = Number(block.grid_import_kwh ?? block.grid_charge_kwh ?? 0);
+  if (Number.isFinite(energy) && energy > 0) return energy;
+  const start = Number(block.battery_start_kwh ?? 0);
+  const end = Number(block.battery_end_kwh ?? 0);
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    return Math.max(0, end - start);
+  }
+  return 0;
+}
+
+function sortChargingBlocks(blocks: GridChargingBlock[] = []): GridChargingBlock[] {
+  return [...blocks].sort((a, b) => {
+    const dayScore = (a.day === 'tomorrow' ? 1 : 0) - (b.day === 'tomorrow' ? 1 : 0);
+    if (dayScore !== 0) return dayScore;
+    return (a.time_from || '').localeCompare(b.time_from || '');
+  });
+}
+
+export function formatPlanWindow(blocks: GridChargingBlock[]): string | null {
+  if (!Array.isArray(blocks) || blocks.length === 0) return null;
+  const sorted = sortChargingBlocks(blocks);
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  const startLabel = getDayLabel(first?.day);
+  const endLabel = getDayLabel(last?.day);
+
+  if (startLabel === endLabel) {
+    const prefix = startLabel ? `${startLabel} ` : '';
+    if (!first?.time_from || !last?.time_to) {
+      return prefix.trim() || null;
+    }
+    return `${prefix}${first.time_from} – ${last.time_to}`;
+  }
+
+  const startPrefix = startLabel ? `${startLabel} ` : '';
+  const endPrefix = endLabel ? `${endLabel} ` : '';
+  const startTime = first?.time_from || '--';
+  const endTime = last?.time_to || '--';
+  const startText = first ? `${startPrefix}${startTime}` : '--';
+  const endText = last ? `${endPrefix}${endTime}` : '--';
+  return `${startText} → ${endText}`;
+}
+
+export function computeBlocksDurationMinutes(blocks: GridChargingBlock[]): number {
+  if (!Array.isArray(blocks) || blocks.length === 0) return 0;
+  let total = 0;
+  blocks.forEach((b) => {
+    const a = parseHmToMinutes(b.time_from);
+    const z = parseHmToMinutes(b.time_to);
+    if (a === null || z === null) return;
+    const delta = z - a;
+    if (delta > 0) total += delta;
+  });
+  return total;
+}
+
+function formatBlockLabel(block: GridChargingBlock): string {
+  const label = getDayLabel(block.day);
+  const prefix = label ? `${label} ` : '';
+  const from = block.time_from || '--';
+  const to = block.time_to || '--';
+  return `${prefix}${from} - ${to}`;
+}
+
+function resolveUpcomingBlocks(blocks: GridChargingBlock[]): {
+  runningBlock: GridChargingBlock | null;
+  upcomingBlock: GridChargingBlock | null;
+  shouldShowNext: boolean;
+} {
+  const runningBlock = blocks.find((block) => {
+    const status = (block.status || '').toLowerCase();
+    return status === 'running' || status === 'active';
+  }) || null;
+  const upcomingBlock = runningBlock
+    ? blocks[blocks.indexOf(runningBlock) + 1] || null
+    : blocks[0] || null;
+  const shouldShowNext = !!(upcomingBlock && (!runningBlock || upcomingBlock !== runningBlock));
+  return { runningBlock, upcomingBlock, shouldShowNext };
+}
+
+export function buildGridChargingPlan(gridCharging: HassState | null): GridChargingPlanData {
+  const attrs = gridCharging?.attributes || {};
+  const rawBlocks = Array.isArray(attrs.charging_blocks) ? attrs.charging_blocks : [];
+  const blocks = sortChargingBlocks(rawBlocks as GridChargingBlock[]);
+  const totalsFromAttrs = Number(attrs.total_energy_kwh) || 0;
+  const totalEnergyKwh = totalsFromAttrs > 0
+    ? totalsFromAttrs
+    : blocks.reduce((sum, b) => sum + getBlockEnergyKwh(b), 0);
+  const totalsCostAttrs = Number(attrs.total_cost_czk) || 0;
+  const totalCostCzk = totalsCostAttrs > 0
+    ? totalsCostAttrs
+    : blocks.reduce((sum, b) => sum + Number(b.total_cost_czk || 0), 0);
+  const windowLabel = formatPlanWindow(blocks);
+  const durationMinutes = computeBlocksDurationMinutes(blocks);
+  const { runningBlock, upcomingBlock, shouldShowNext } = resolveUpcomingBlocks(blocks);
+
+  return {
+    hasBlocks: blocks.length > 0,
+    totalEnergyKwh,
+    totalCostCzk,
+    windowLabel,
+    durationMinutes,
+    currentBlockLabel: runningBlock ? formatBlockLabel(runningBlock) : null,
+    nextBlockLabel: shouldShowNext && upcomingBlock ? formatBlockLabel(upcomingBlock) : null,
+    blocks,
+  };
 }
 
 /**
@@ -73,6 +214,10 @@ export function extractFlowData(hass: any): FlowData {
   const isGridCharging = parseBool(gridCharging);
   const timeToEmpty = parseString(get('time_to_empty'));
   const timeToFull = parseString(get('time_to_full'));
+  const balancing = get('battery_balancing');
+  const balancingState = parseBalancingState(balancing?.attributes?.current_state);
+  const balancingTimeRemaining = parseString({ state: balancing?.attributes?.time_remaining } as HassState);
+  const gridChargingPlan = buildGridChargingPlan(gridCharging);
 
   // Grid — main
   const gridPower = parseNumber(get('actual_aci_wtotal'));
@@ -132,7 +277,7 @@ export function extractFlowData(hass: any): FlowData {
 
     batterySoC, batteryPower, batteryVoltage, batteryCurrent, batteryTemp,
     batteryChargeTotal, batteryDischargeTotal, batteryChargeSolar, batteryChargeGrid,
-    isGridCharging, timeToEmpty, timeToFull,
+    isGridCharging, timeToEmpty, timeToFull, balancingState, balancingTimeRemaining, gridChargingPlan,
 
     gridPower, gridVoltage, gridFrequency, gridImportToday, gridExportToday,
     gridL1V, gridL2V, gridL3V, gridL1P, gridL2P, gridL3P,

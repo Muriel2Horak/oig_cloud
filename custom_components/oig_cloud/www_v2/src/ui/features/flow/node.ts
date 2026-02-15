@@ -15,6 +15,9 @@ import { LitElement, html, css, nothing, unsafeCSS, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS, getCurrentBreakpoint } from '@/ui/theme';
 import { FlowData, EMPTY_FLOW_DATA, NODE_GRADIENTS, NODE_BORDERS } from './types';
+import { shieldController, ShieldListener } from '@/data/shield-controller';
+import type { ShieldServiceType } from '@/ui/features/control-panel/types';
+import { mapShieldPendingToFlowIndicators } from './pending';
 import { formatPower, formatEnergy, getTariffDisplay, getHouseModeInfo, getGridExportDisplay } from '@/data/flow-data';
 import { haClient } from '@/data/ha-client';
 import { oigLog } from '@/core/logger';
@@ -47,6 +50,10 @@ function openEntity(sensor: string): () => void {
 export class OigFlowNode extends LitElement {
   @property({ type: Object }) data: FlowData = EMPTY_FLOW_DATA;
   @property({ type: Boolean }) editMode = false;
+
+  @state() private pendingServices: Map<ShieldServiceType, string> = new Map();
+  @state() private changingServices: Set<ShieldServiceType> = new Set();
+  private shieldUnsub: (() => void) | null = null;
 
   // DnD state
   @state() private customPositions: SavedLayout = {};
@@ -85,12 +92,12 @@ export class OigFlowNode extends LitElement {
       border-radius: 12px;
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
-      padding: 14px;
+      padding: 10px 14px;
       box-shadow: 0 2px 12px rgba(0,0,0,0.15);
       transition: transform 0.2s, box-shadow 0.2s;
       overflow: hidden;
-      min-width: 0;
-      max-width: 280px;
+      min-width: 130px;
+      max-width: 250px;
     }
 
     .node:hover {
@@ -103,7 +110,7 @@ export class OigFlowNode extends LitElement {
       display: grid !important;
       grid-template-columns: 1fr 1.2fr 1fr;
       grid-template-rows: auto 1fr auto;
-      min-height: 500px;
+      min-height: 80vh;
     }
 
     :host([editmode]) .node {
@@ -195,6 +202,37 @@ export class OigFlowNode extends LitElement {
       margin: 4px 0;
     }
 
+    .pending-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: ${u(CSS_VARS.textSecondary)};
+      margin-top: 4px;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid ${u(CSS_VARS.divider)};
+      border-top-color: ${u(CSS_VARS.accent)};
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .spinner--small {
+      width: 12px;
+      height: 12px;
+      border-width: 2px;
+    }
+
+    .mode-changing {
+      border-color: rgba(255, 255, 255, 0.55);
+      box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35), 0 0 18px rgba(59, 130, 246, 0.25);
+      animation: modePulse 1.6s ease-in-out infinite;
+    }
+
     .status-charging { background: #e8f5e9; color: #2e7d32; }
     .status-discharging { background: #fff3e0; color: #e65100; }
     .status-importing { background: #fce4ec; color: #c62828; }
@@ -203,6 +241,27 @@ export class OigFlowNode extends LitElement {
 
     .pulse { animation: pulse 2s ease-in-out infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
+
+    @keyframes modePulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.78; }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .temp-hot { animation: pulse-hot 1s ease-in-out infinite; }
+    @keyframes pulse-hot { 
+      0%,100%{opacity:1; transform:scale(1);} 
+      50%{opacity:0.8; transform:scale(1.1); filter:hue-rotate(-10deg);} 
+    }
+    
+    .temp-cold { animation: pulse-cold 1.5s ease-in-out infinite; }
+    @keyframes pulse-cold { 
+      0%,100%{opacity:1; transform:scale(1);} 
+      50%{opacity:0.7; transform:scale(1.05); filter:hue-rotate(180deg);} 
+    }
 
     .detail-section {
       margin-top: 8px;
@@ -311,7 +370,67 @@ export class OigFlowNode extends LitElement {
       border-radius: 4px;
       background: #e3f2fd;
       color: #1565c0;
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .balancing-indicator {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid transparent;
+      margin-left: 6px;
+    }
+
+    .balancing-indicator.charging {
+      background: linear-gradient(135deg, rgba(255,193,7,0.25), rgba(255,152,0,0.18));
+      border-color: rgba(255,193,7,0.45);
+      color: #b26a00;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .balancing-indicator.holding {
+      background: linear-gradient(135deg, rgba(66,165,245,0.25), rgba(33,150,243,0.18));
+      border-color: rgba(66,165,245,0.45);
+      color: #0d47a1;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .balancing-indicator.completed {
+      background: linear-gradient(135deg, rgba(76,175,80,0.25), rgba(56,142,60,0.18));
+      border-color: rgba(76,175,80,0.45);
+      color: #1b5e20;
+    }
+
+    .grid-charging-plan {
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px dashed ${u(CSS_VARS.divider)};
+    }
+
+    .grid-charging-plan .detail-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .grid-charging-tag {
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 999px;
+      background: rgba(33,150,243,0.15);
+      color: #1565c0;
+      border: 1px solid rgba(33,150,243,0.35);
+      text-transform: none;
+    }
+
+    .grid-charging-empty {
+      font-size: 10px;
+      color: ${u(CSS_VARS.textSecondary)};
     }
 
     .energy-grid {
@@ -378,12 +497,20 @@ export class OigFlowNode extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this.loadSavedLayout();
+    this.shieldUnsub = shieldController.subscribe(this.onShieldUpdate);
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.removeDragListeners();
+    this.shieldUnsub?.();
+    this.shieldUnsub = null;
   }
+
+  private onShieldUpdate: ShieldListener = (state) => {
+    this.pendingServices = state.pendingServices;
+    this.changingServices = state.changingServices;
+  };
 
   protected updated(changed: PropertyValues): void {
     if (changed.has('editMode')) {
@@ -716,11 +843,31 @@ export class OigFlowNode extends LitElement {
     return { text: '◉ Klid', cls: 'status-idle' };
   }
 
+  private getBalancingIndicator(): { show: boolean; text: string; icon: string; cls: string } {
+    const d = this.data;
+    const state = d.balancingState;
+    if (state !== 'charging' && state !== 'holding' && state !== 'completed') {
+      return { show: false, text: '', icon: '', cls: '' };
+    }
+
+    if (state === 'charging') {
+      const suffix = d.balancingTimeRemaining ? ` (${d.balancingTimeRemaining})` : '';
+      return { show: true, text: `Nabíjení${suffix}`, icon: '⚡', cls: 'charging' };
+    }
+    if (state === 'holding') {
+      const suffix = d.balancingTimeRemaining ? ` (${d.balancingTimeRemaining})` : '';
+      return { show: true, text: `Držení${suffix}`, icon: '⏸️', cls: 'holding' };
+    }
+    return { show: true, text: 'Dokončeno', icon: '✅', cls: 'completed' };
+  }
+
   private renderBattery() {
     const d = this.data;
     const status = this.getBatteryStatus();
+    const balancing = this.getBalancingIndicator();
     const isCharging = d.batteryPower > 10;
     const tempIcon = d.batteryTemp > 25 ? '🌡️' : d.batteryTemp < 15 ? '🧊' : '🌡️';
+    const tempClass = d.batteryTemp > 25 ? 'temp-hot' : d.batteryTemp < 15 ? 'temp-cold' : '';
 
     return html`
       <div class="node node-battery" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery}">
@@ -750,6 +897,12 @@ export class OigFlowNode extends LitElement {
         ${d.isGridCharging ? html`
           <span class="grid-charging-badge">⚡🔌 Síťové nabíjení</span>
         ` : nothing}
+        ${balancing.show ? html`
+          <span class="balancing-indicator ${balancing.cls}">
+            <span>${balancing.icon}</span>
+            <span>${balancing.text}</span>
+          </span>
+        ` : nothing}
 
         <div class="battery-indicators">
           <button class="indicator" @click=${openEntity('extended_battery_voltage')}>
@@ -758,7 +911,7 @@ export class OigFlowNode extends LitElement {
           <button class="indicator" @click=${openEntity('extended_battery_current')}>
             〰️ ${d.batteryCurrent.toFixed(1)} A
           </button>
-          <button class="indicator" @click=${openEntity('extended_battery_temperature')}>
+          <button class="indicator ${tempClass}" @click=${openEntity('extended_battery_temperature')}>
             ${tempIcon} ${d.batteryTemp.toFixed(1)} °C
           </button>
         </div>
@@ -791,6 +944,46 @@ export class OigFlowNode extends LitElement {
               </button>
             </div>
           </div>
+
+          <div class="grid-charging-plan">
+            <div class="detail-header">🔌 Plánované <span class="grid-charging-tag">Grid</span></div>
+            ${d.gridChargingPlan.hasBlocks ? html`
+              <div class="detail-row">
+                <span class="icon">⚡</span>
+                <span>Dobití: ${d.gridChargingPlan.totalEnergyKwh.toFixed(1)} kWh</span>
+              </div>
+              <div class="detail-row">
+                <span class="icon">💰</span>
+                <span>Cena: ~${d.gridChargingPlan.totalCostCzk.toFixed(2)} Kč</span>
+              </div>
+              ${d.gridChargingPlan.windowLabel ? html`
+                <div class="detail-row">
+                  <span class="icon">🪟</span>
+                  <span>Okno: ${d.gridChargingPlan.windowLabel}</span>
+                </div>
+              ` : nothing}
+              ${d.gridChargingPlan.durationMinutes > 0 ? html`
+                <div class="detail-row">
+                  <span class="icon">⏱️</span>
+                  <span>Délka: ${Math.round(d.gridChargingPlan.durationMinutes)} min</span>
+                </div>
+              ` : nothing}
+              ${d.gridChargingPlan.currentBlockLabel ? html`
+                <div class="detail-row">
+                  <span class="icon">▶️</span>
+                  <span>Probíhá: ${d.gridChargingPlan.currentBlockLabel}</span>
+                </div>
+              ` : nothing}
+              ${d.gridChargingPlan.nextBlockLabel ? html`
+                <div class="detail-row">
+                  <span class="icon">⏭️</span>
+                  <span>Další: ${d.gridChargingPlan.nextBlockLabel}</span>
+                </div>
+              ` : nothing}
+            ` : html`
+              <div class="grid-charging-empty">Žádné plánované nabíjení.</div>
+            `}
+          </div>
         </div>
       </div>
     `;
@@ -813,9 +1006,10 @@ export class OigFlowNode extends LitElement {
     const d = this.data;
     const modeInfo = getHouseModeInfo(d.inverterMode);
     const bypassActive = d.bypassStatus.toLowerCase() === 'on' || d.bypassStatus === '1';
-    const tempIcon = d.inverterTemp > 50 ? '🔥' : '🌡️';
+    const tempIcon = d.inverterTemp > 35 ? '🔥' : '🌡️';
     const gridExport = getGridExportDisplay(d.inverterGridMode);
     const limitKw = (d.inverterGridLimit / 1000).toFixed(1);
+    const pending = mapShieldPendingToFlowIndicators(this.pendingServices, this.changingServices);
 
     let plannerCls = 'planner-unknown';
     let plannerText = 'Plánovač: N/A';
@@ -828,19 +1022,23 @@ export class OigFlowNode extends LitElement {
     }
 
     return html`
-      <div class="node node-inverter" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter}">
+      <div class="node node-inverter ${pending.inverterModeChanging ? 'mode-changing' : ''}" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter}">
         <div class="node-header">
           <span class="node-icon">🔄</span>
           <span class="node-label">Střídač</span>
           ${bypassActive ? html`
-            <button class="bypass-active" @click=${openEntity('bypass_status')}>🔴 Bypass</button>
+            <button class="bypass-active bypass-warning" @click=${openEntity('bypass_status')}>
+              <span id="inverter-bypass-icon">🔴</span> Bypass
+            </button>
           ` : nothing}
         </div>
 
         <div class="node-value" @click=${openEntity('box_prms_mode')}>
+          ${pending.inverterModeChanging ? html`<span class="spinner spinner--small"></span>` : nothing}
           ${modeInfo.icon} ${modeInfo.text}
         </div>
         <div class="node-subvalue">${this.getInverterModeDesc()}</div>
+        ${pending.inverterModeText ? html`<div class="pending-text">${pending.inverterModeText}</div>` : nothing}
 
         <div class="planner-badge ${plannerCls}">${plannerText}</div>
 
@@ -848,8 +1046,8 @@ export class OigFlowNode extends LitElement {
           <button class="indicator" @click=${openEntity('box_temp')}>
             ${tempIcon} ${d.inverterTemp.toFixed(1)} °C
           </button>
-          <button class="indicator" @click=${openEntity('bypass_status')}>
-            ${bypassActive ? '🔴' : '🟢'} Bypass: ${bypassActive ? 'ON' : 'OFF'}
+          <button class="indicator ${bypassActive ? 'bypass-warning' : ''}" @click=${openEntity('bypass_status')}>
+            <span id="inverter-bypass-icon">${bypassActive ? '🔴' : '🟢'}</span> Bypass: ${bypassActive ? 'ON' : 'OFF'}
           </button>
         </div>
 
@@ -898,9 +1096,10 @@ export class OigFlowNode extends LitElement {
   private renderGrid() {
     const d = this.data;
     const status = this.getGridStatus();
+    const pending = mapShieldPendingToFlowIndicators(this.pendingServices, this.changingServices);
 
     return html`
-      <div class="node node-grid" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid}">
+      <div class="node node-grid ${pending.gridExportChanging ? 'mode-changing' : ''}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid}">
         <div class="node-header">
           <span class="node-icon">🔌</span>
           <span class="node-label">Síť</span>
@@ -914,6 +1113,12 @@ export class OigFlowNode extends LitElement {
         </div>
 
         <div class="node-status ${status.cls}">${status.text}</div>
+        ${pending.gridExportText ? html`
+          <div class="pending-text">
+            <span class="spinner spinner--small"></span>
+            ${pending.gridExportText}
+          </div>
+        ` : nothing}
 
         <button class="indicator" @click=${openEntity('ac_in_aci_f')}>
           〰️ ${d.gridFrequency.toFixed(2)} Hz

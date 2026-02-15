@@ -13,7 +13,6 @@ export default defineConfig({
   
   build: {
     outDir: 'dist',
-    emptyDirBeforeWrite: true,
     sourcemap: true,
     rollupOptions: {
       output: {
