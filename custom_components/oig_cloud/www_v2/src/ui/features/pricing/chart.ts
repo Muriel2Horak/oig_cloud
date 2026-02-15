@@ -563,6 +563,7 @@ export class OigPricingChart extends LitElement {
       position: relative;
       width: 100%;
       height: 380px;
+      max-height: 400px;
     }
 
     @media (max-width: 768px) {

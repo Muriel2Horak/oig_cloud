@@ -698,6 +698,9 @@ export class OigPricingStats extends LitElement {
       .stats-grid {
         grid-template-columns: repeat(2, 1fr);
       }
+      .hero-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
       .planned-details {
         grid-template-columns: 1fr 1fr;
       }

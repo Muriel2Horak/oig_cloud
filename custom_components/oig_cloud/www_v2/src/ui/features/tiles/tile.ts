@@ -183,9 +183,15 @@ export class OigTilesContainer extends LitElement {
   static styles = css`
     :host {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      grid-template-columns: repeat(2, 1fr);
       gap: 8px;
       align-items: stretch;
+    }
+
+    @media (max-width: 768px) {
+      :host {
+        grid-template-columns: 1fr;
+      }
     }
 
     .empty-state {
