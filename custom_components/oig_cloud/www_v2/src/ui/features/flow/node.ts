@@ -53,6 +53,8 @@ export class OigFlowNode extends LitElement {
 
   @state() private pendingServices: Map<ShieldServiceType, string> = new Map();
   @state() private changingServices: Set<ShieldServiceType> = new Set();
+  @state() private shieldStatus: 'idle' | 'running' = 'idle';
+  @state() private shieldQueueCount: number = 0;
   private shieldUnsub: (() => void) | null = null;
 
   // DnD state
@@ -454,6 +456,30 @@ export class OigFlowNode extends LitElement {
     .planner-off { background: #fff3e0; color: #e65100; }
     .planner-unknown { background: #f5f5f5; color: #757575; }
 
+    .shield-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .shield-idle {
+      background: rgba(76, 175, 80, 0.15);
+      color: #4caf50;
+    }
+    .shield-running {
+      background: rgba(33, 150, 243, 0.15);
+      color: #2196f3;
+    }
+    .shield-queue {
+      font-weight: 400;
+      opacity: 0.8;
+    }
+
     .bypass-active {
       background: #fce4ec;
       color: #c62828;
@@ -510,6 +536,8 @@ export class OigFlowNode extends LitElement {
   private onShieldUpdate: ShieldListener = (state) => {
     this.pendingServices = state.pendingServices;
     this.changingServices = state.changingServices;
+    this.shieldStatus = state.status;
+    this.shieldQueueCount = state.queueCount;
   };
 
   protected updated(changed: PropertyValues): void {
@@ -1041,6 +1069,9 @@ export class OigFlowNode extends LitElement {
         ${pending.inverterModeText ? html`<div class="pending-text">${pending.inverterModeText}</div>` : nothing}
 
         <div class="planner-badge ${plannerCls}">${plannerText}</div>
+        <div class="shield-badge ${this.shieldStatus === 'running' ? 'shield-running' : 'shield-idle'}">
+          🛡️ ${this.shieldStatus === 'running' ? 'Zpracovávám' : 'Nečinný'}${this.shieldQueueCount > 0 ? html` <span class="shield-queue">(${this.shieldQueueCount})</span>` : nothing}
+        </div>
 
         <div class="battery-indicators" style="margin-top:6px">
           <button class="indicator" @click=${openEntity('box_temp')}>
