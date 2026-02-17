@@ -27,6 +27,7 @@ interface FlowLine {
   color: string;
   power: number;
   params: FlowParams;
+  active: boolean;  // false = inactive (grey line, no particles)
 }
 
 @customElement('oig-flow-canvas')
@@ -214,53 +215,53 @@ export class OigFlowCanvas extends LitElement {
     const d = this.data;
     const lines: FlowLine[] = [];
 
-    // Solar → Inverter
-    if (d.solarPower > 50) {
-      lines.push({
-        id: 'solar-inverter',
-        from: 'solar', to: 'inverter',
-        color: FLOW_COLORS.solar,
-        power: d.solarPower,
-        params: calculateFlowParams(d.solarPower, FLOW_MAXIMUMS.solar, 'solar'),
-      });
-    }
+    // Solar → Inverter (always draw; active when power > 50W)
+    const solarActive = d.solarPower > 50;
+    lines.push({
+      id: 'solar-inverter',
+      from: 'solar', to: 'inverter',
+      color: FLOW_COLORS.solar,
+      power: solarActive ? d.solarPower : 0,
+      params: solarActive ? calculateFlowParams(d.solarPower, FLOW_MAXIMUMS.solar, 'solar') : { active: false, intensity: 0, count: 0, speed: 0, size: 0, opacity: 0 },
+      active: solarActive,
+    });
 
-    // Battery ↔ Inverter
-    if (Math.abs(d.batteryPower) > 50) {
-      const isCharging = d.batteryPower > 0;
-      lines.push({
-        id: 'battery-inverter',
-        from: isCharging ? 'inverter' : 'battery',
-        to: isCharging ? 'battery' : 'inverter',
-        color: FLOW_COLORS.battery,
-        power: Math.abs(d.batteryPower),
-        params: calculateFlowParams(d.batteryPower, FLOW_MAXIMUMS.battery, 'battery'),
-      });
-    }
+    // Battery ↔ Inverter (always draw; direction depends on power sign)
+    const batteryActive = Math.abs(d.batteryPower) > 50;
+    const isCharging = d.batteryPower > 0;
+    lines.push({
+      id: 'battery-inverter',
+      from: batteryActive ? (isCharging ? 'inverter' : 'battery') : 'battery',
+      to: batteryActive ? (isCharging ? 'battery' : 'inverter') : 'inverter',
+      color: FLOW_COLORS.battery,
+      power: batteryActive ? Math.abs(d.batteryPower) : 0,
+      params: batteryActive ? calculateFlowParams(d.batteryPower, FLOW_MAXIMUMS.battery, 'battery') : { active: false, intensity: 0, count: 0, speed: 0, size: 0, opacity: 0 },
+      active: batteryActive,
+    });
 
-    // Grid ↔ Inverter
-    if (Math.abs(d.gridPower) > 50) {
-      const isImport = d.gridPower > 0;
-      lines.push({
-        id: 'grid-inverter',
-        from: isImport ? 'grid' : 'inverter',
-        to: isImport ? 'inverter' : 'grid',
-        color: isImport ? FLOW_COLORS.grid_import : FLOW_COLORS.grid_export,
-        power: Math.abs(d.gridPower),
-        params: calculateFlowParams(d.gridPower, FLOW_MAXIMUMS.grid, 'grid'),
-      });
-    }
+    // Grid ↔ Inverter (always draw; direction depends on power sign)
+    const gridActive = Math.abs(d.gridPower) > 50;
+    const isImport = d.gridPower > 0;
+    lines.push({
+      id: 'grid-inverter',
+      from: gridActive ? (isImport ? 'grid' : 'inverter') : 'grid',
+      to: gridActive ? (isImport ? 'inverter' : 'grid') : 'inverter',
+      color: gridActive ? (isImport ? FLOW_COLORS.grid_import : FLOW_COLORS.grid_export) : FLOW_COLORS.grid_import,
+      power: gridActive ? Math.abs(d.gridPower) : 0,
+      params: gridActive ? calculateFlowParams(d.gridPower, FLOW_MAXIMUMS.grid, 'grid') : { active: false, intensity: 0, count: 0, speed: 0, size: 0, opacity: 0 },
+      active: gridActive,
+    });
 
-    // Inverter → House
-    if (d.housePower > 50) {
-      lines.push({
-        id: 'inverter-house',
-        from: 'inverter', to: 'house',
-        color: FLOW_COLORS.house,
-        power: d.housePower,
-        params: calculateFlowParams(d.housePower, FLOW_MAXIMUMS.house, 'house'),
-      });
-    }
+    // Inverter → House (always draw; active when power > 50W)
+    const houseActive = d.housePower > 50;
+    lines.push({
+      id: 'inverter-house',
+      from: 'inverter', to: 'house',
+      color: FLOW_COLORS.house,
+      power: houseActive ? d.housePower : 0,
+      params: houseActive ? calculateFlowParams(d.housePower, FLOW_MAXIMUMS.house, 'house') : { active: false, intensity: 0, count: 0, speed: 0, size: 0, opacity: 0 },
+      active: houseActive,
+    });
 
     this.lines = lines;
   }
@@ -336,17 +337,18 @@ export class OigFlowCanvas extends LitElement {
       const from = this.calcEdgePoint(fromCenter, toCenter, fromInfo.hw, fromInfo.hh);
       const to = this.calcEdgePoint(toCenter, fromCenter, toInfo.hw, toInfo.hh);
 
-      // Draw straight line (V1 style)
+      // Draw straight line — active: colored at 0.6 opacity, inactive: grey at 0.18 opacity
       const svgLine = document.createElementNS(NS, 'line');
       svgLine.setAttribute('x1', String(from.x));
       svgLine.setAttribute('y1', String(from.y));
       svgLine.setAttribute('x2', String(to.x));
       svgLine.setAttribute('y2', String(to.y));
-      svgLine.setAttribute('stroke', line.color);
-      svgLine.setAttribute('stroke-width', '3');
+      svgLine.setAttribute('stroke', line.active ? line.color : '#888');
+      svgLine.setAttribute('stroke-width', line.active ? '3' : '2');
       svgLine.setAttribute('stroke-linecap', 'round');
-      svgLine.setAttribute('opacity', '0.6');
+      svgLine.setAttribute('opacity', line.active ? '0.6' : '0.18');
       svgLine.classList.add('flow-line');
+      if (!line.active) svgLine.classList.add('flow-line--inactive');
       svgEl.appendChild(svgLine);
     }
   }

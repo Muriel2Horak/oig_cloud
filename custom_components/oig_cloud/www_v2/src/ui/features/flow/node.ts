@@ -485,31 +485,46 @@ export class OigFlowNode extends LitElement {
       color: #1b5e20;
     }
 
-    .grid-charging-plan {
-      margin-top: 8px;
-      padding-top: 6px;
-      border-top: 1px dashed ${u(CSS_VARS.divider)};
+    /* Grid charging plan — compact clickable badge (opens popup) */
+    .grid-charging-plan-summary {
+      margin-top: 6px;
+      text-align: center;
     }
 
-    .grid-charging-plan .detail-header {
-      display: flex;
+    .gc-plan-btn {
+      display: inline-flex;
       align-items: center;
-      gap: 6px;
-    }
-
-    .grid-charging-tag {
-      font-size: 9px;
-      padding: 1px 5px;
+      gap: 5px;
+      padding: 4px 10px;
       border-radius: 999px;
-      background: rgba(33,150,243,0.15);
-      color: #1565c0;
-      border: 1px solid rgba(33,150,243,0.35);
-      text-transform: none;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid ${u(CSS_VARS.divider)};
+      background: transparent;
+      color: ${u(CSS_VARS.textSecondary)};
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
     }
 
-    .grid-charging-empty {
-      font-size: 10px;
-      color: ${u(CSS_VARS.textSecondary)};
+    .gc-plan-btn:hover {
+      background: rgba(255,255,255,0.06);
+      color: ${u(CSS_VARS.textPrimary)};
+    }
+
+    .gc-plan-btn.has-plan {
+      border-color: rgba(33,150,243,0.4);
+      color: #42a5f5;
+      background: rgba(33,150,243,0.08);
+    }
+
+    .gc-plan-btn.has-plan:hover {
+      background: rgba(33,150,243,0.15);
+    }
+
+    .gc-plan-arrow {
+      font-size: 14px;
+      opacity: 0.6;
+      line-height: 1;
     }
 
     .energy-grid {
@@ -1001,6 +1016,15 @@ export class OigFlowNode extends LitElement {
   // BATTERY
   // ==========================================================================
 
+  /** Dispatch event to open grid charging dialog */
+  private openGridChargingDialog(): void {
+    this.dispatchEvent(new CustomEvent('oig-grid-charging-open', {
+      bubbles: true,
+      composed: true,
+      detail: { data: this.data.gridChargingPlan },
+    }));
+  }
+
   private getBatteryStatus(): { text: string; cls: string } {
     const d = this.data;
     if (d.batteryPower > 10) {
@@ -1117,44 +1141,16 @@ export class OigFlowNode extends LitElement {
             </div>
           </div>
 
-          <div class="grid-charging-plan">
-            <div class="detail-header">🔌 Plánované <span class="grid-charging-tag">Grid</span></div>
-            ${d.gridChargingPlan.hasBlocks ? html`
-              <div class="detail-row">
-                <span class="icon">⚡</span>
-                <span>Dobití: ${d.gridChargingPlan.totalEnergyKwh.toFixed(1)} kWh</span>
-              </div>
-              <div class="detail-row">
-                <span class="icon">💰</span>
-                <span>Cena: ~${d.gridChargingPlan.totalCostCzk.toFixed(2)} Kč</span>
-              </div>
-              ${d.gridChargingPlan.windowLabel ? html`
-                <div class="detail-row">
-                  <span class="icon">🪟</span>
-                  <span>Okno: ${d.gridChargingPlan.windowLabel}</span>
-                </div>
-              ` : nothing}
-              ${d.gridChargingPlan.durationMinutes > 0 ? html`
-                <div class="detail-row">
-                  <span class="icon">⏱️</span>
-                  <span>Délka: ${Math.round(d.gridChargingPlan.durationMinutes)} min</span>
-                </div>
-              ` : nothing}
-              ${d.gridChargingPlan.currentBlockLabel ? html`
-                <div class="detail-row">
-                  <span class="icon">▶️</span>
-                  <span>Probíhá: ${d.gridChargingPlan.currentBlockLabel}</span>
-                </div>
-              ` : nothing}
-              ${d.gridChargingPlan.nextBlockLabel ? html`
-                <div class="detail-row">
-                  <span class="icon">⏭️</span>
-                  <span>Další: ${d.gridChargingPlan.nextBlockLabel}</span>
-                </div>
-              ` : nothing}
-            ` : html`
-              <div class="grid-charging-empty">Žádné plánované nabíjení.</div>
-            `}
+          <!-- Grid charging plan moved to popup — show as summary badge instead -->
+          <div class="grid-charging-plan-summary">
+            <button class="gc-plan-btn ${d.gridChargingPlan.hasBlocks ? 'has-plan' : ''}"
+              @click=${(e: Event) => { e.stopPropagation(); this.openGridChargingDialog(); }}>
+              🔌
+              ${d.gridChargingPlan.hasBlocks
+                ? html`Plán: ${d.gridChargingPlan.totalEnergyKwh.toFixed(1)} kWh`
+                : html`Plán nabíjení`}
+              <span class="gc-plan-arrow">›</span>
+            </button>
           </div>
         </div>
       </div>
