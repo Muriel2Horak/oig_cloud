@@ -208,25 +208,33 @@ export class OigApp extends LitElement {
       gap: 16px;
     }
 
-    /* ---- Flow tab layout ---- */
+    /* ---- Flow tab layout: tiles | canvas+control ---- */
     .flow-layout {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      grid-template-rows: 1fr;
       gap: 12px;
       width: 100%;
-      height: 100%;
-    }
-
-    .flow-center {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      min-width: 0;
-      width: 100%;
+      min-height: 0;
+      align-items: start;
     }
 
     .flow-tiles-stack {
-      width: 100%;
+      grid-column: 1;
+      grid-row: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .flow-center {
+      grid-column: 2;
+      grid-row: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
       min-width: 0;
     }
 
@@ -293,16 +301,30 @@ export class OigApp extends LitElement {
     }
 
     /* ---- Responsive ---- */
-    /* Tablet 768–1024: 2-column layout */
+    /* Tablet 768–1024: užší tiles sloupec */
     @media (min-width: 768px) and (max-width: 1024px) {
+      .flow-layout {
+        grid-template-columns: 200px 1fr;
+        gap: 8px;
+      }
       .flow-center {
         gap: 8px;
       }
     }
 
-    /* Mobile <768: Single column, stacked */
+    /* Mobile <768: Single column, tiles nahoře */
     @media (max-width: 768px) {
+      .flow-layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto;
+      }
+      .flow-tiles-stack {
+        grid-column: 1;
+        grid-row: 1;
+      }
       .flow-center {
+        grid-column: 1;
+        grid-row: 2;
         gap: 8px;
       }
       .analytics-row {
@@ -750,6 +772,17 @@ export class OigApp extends LitElement {
             <!-- ===== FLOW TAB ===== -->
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
               <div class="flow-layout">
+                <!-- Tiles: sloupec vlevo -->
+                <div class="flow-tiles-stack">
+                  <oig-tiles-container
+                    .tiles=${[...this.tilesLeft, ...this.tilesRight]}
+                    .editMode=${this.editMode}
+                    @edit-tile=${this.onEditTile}
+                    @delete-tile=${this.onDeleteTile}
+                  ></oig-tiles-container>
+                </div>
+
+                <!-- Canvas + control panel: hlavní obsah vpravo -->
                 <div class="flow-center">
                   <oig-flow-canvas
                     .data=${this.flowData}
@@ -759,15 +792,6 @@ export class OigApp extends LitElement {
                     @oig-grid-charging-open=${this.onGridChargingOpen}
                   ></oig-flow-canvas>
                   <oig-control-panel></oig-control-panel>
-                </div>
-
-                <div class="flow-tiles-stack">
-                  <oig-tiles-container
-                    .tiles=${[...this.tilesLeft, ...this.tilesRight]}
-                    .editMode=${this.editMode}
-                    @edit-tile=${this.onEditTile}
-                    @delete-tile=${this.onDeleteTile}
-                  ></oig-tiles-container>
                 </div>
               </div>
             </div>
