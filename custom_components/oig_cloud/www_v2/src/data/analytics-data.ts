@@ -71,6 +71,14 @@ export interface BatteryBalancingData {
   lastBalancing: string;
   cost: number;
   nextScheduled: string | null;
+  /** Days remaining until next scheduled balancing */
+  daysRemaining: number | null;
+  /** Progress percentage (0-100) between last and next balancing */
+  progressPercent: number | null;
+  /** Interval in days between balancings */
+  intervalDays: number | null;
+  /** Estimated cost for next balancing */
+  estimatedNextCost: number | null;
 }
 
 export interface CostComparisonData {
@@ -208,6 +216,33 @@ function extractHealth(_inverterSn: string): BatteryHealthData | null {
 // BATTERY BALANCING — from HA sensor attributes (on battery_health or separate)
 // ============================================================================
 
+/** Compute days remaining and progress between last and next balancing */
+function computeBalancingProgress(
+  lastStr: string,
+  nextStr: string | null,
+  intervalDays: number,
+): { daysRemaining: number | null; progressPercent: number | null; intervalDays: number | null } {
+  if (!lastStr || !nextStr) {
+    return { daysRemaining: null, progressPercent: null, intervalDays: intervalDays || null };
+  }
+  try {
+    const lastDate = new Date(lastStr);
+    const nextDate = new Date(nextStr);
+    const now = new Date();
+    if (isNaN(lastDate.getTime()) || isNaN(nextDate.getTime())) {
+      return { daysRemaining: null, progressPercent: null, intervalDays: intervalDays || null };
+    }
+    const totalMs = nextDate.getTime() - lastDate.getTime();
+    const elapsedMs = now.getTime() - lastDate.getTime();
+    const daysRemaining = Math.max(0, Math.round((nextDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+    const progressPercent = totalMs > 0 ? Math.min(100, Math.max(0, Math.round((elapsedMs / totalMs) * 100))) : null;
+    const computedInterval = intervalDays || Math.round(totalMs / (1000 * 60 * 60 * 24));
+    return { daysRemaining, progressPercent, intervalDays: computedInterval || null };
+  } catch {
+    return { daysRemaining: null, progressPercent: null, intervalDays: intervalDays || null };
+  }
+}
+
 function extractBalancing(_inverterSn: string): BatteryBalancingData | null {
   const store = getEntityStore();
   if (!store) return null;
@@ -221,22 +256,32 @@ function extractBalancing(_inverterSn: string): BatteryBalancingData | null {
     const healthEntity = store.get(store.findSensorId(`battery_health`));
     const hAttrs: any = healthEntity?.attributes;
     if (hAttrs?.balancing_status) {
+      const lastStr = String(hAttrs.last_balancing ?? '');
+      const nextStr = hAttrs.next_balancing ? String(hAttrs.next_balancing) : null;
+      const computed = computeBalancingProgress(lastStr, nextStr, Number(hAttrs.balancing_interval_days ?? 0));
       return {
         status: String(hAttrs.balancing_status ?? 'unknown'),
-        lastBalancing: String(hAttrs.last_balancing ?? ''),
+        lastBalancing: lastStr,
         cost: Number(hAttrs.balancing_cost ?? 0),
-        nextScheduled: hAttrs.next_balancing ? String(hAttrs.next_balancing) : null,
+        nextScheduled: nextStr,
+        ...computed,
+        estimatedNextCost: hAttrs.estimated_next_cost != null ? Number(hAttrs.estimated_next_cost) : null,
       };
     }
     return null;
   }
 
   const attrs: any = entity.attributes || {};
+  const lastStr = String(attrs.last_balancing ?? '');
+  const nextStr = attrs.next_scheduled ? String(attrs.next_scheduled) : null;
+  const computed = computeBalancingProgress(lastStr, nextStr, Number(attrs.interval_days ?? 0));
   return {
     status: entity.state || 'unknown',
-    lastBalancing: String(attrs.last_balancing ?? ''),
+    lastBalancing: lastStr,
     cost: Number(attrs.cost ?? 0),
-    nextScheduled: attrs.next_scheduled ? String(attrs.next_scheduled) : null,
+    nextScheduled: nextStr,
+    ...computed,
+    estimatedNextCost: attrs.estimated_next_cost != null ? Number(attrs.estimated_next_cost) : null,
   };
 }
 

@@ -1,5 +1,6 @@
 import { LitElement, html, css, nothing, unsafeCSS, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import type { OigGridChargingDialog } from '@/ui/features/flow/grid-charging-dialog';
 import { CSS_VARS } from '@/ui/theme';
 import { Tab } from '@/ui/layout/tabs';
 import { createEntityStore, EntityStore } from '@/data/entity-store';
@@ -28,6 +29,7 @@ import '@/ui/components/theme-provider';
 import '@/ui/layout/tabs';
 import '@/ui/layout/grid';
 import '@/ui/features/flow';
+import '@/ui/features/flow/grid-charging-dialog';
 import '@/ui/features/pricing';
 import '@/ui/features/boiler';
 import '@/ui/features/control-panel';
@@ -104,6 +106,7 @@ export class OigApp extends LitElement {
   @state() private editingTileIndex = -1;
   @state() private editingTileSide: 'left' | 'right' = 'left';
   @state() private editingTileConfig: TileConfig | null = null;
+
 
   private entityStore: EntityStore | null = null;
   private timeInterval: number | null = null;
@@ -525,6 +528,11 @@ export class OigApp extends LitElement {
     this.activeTab = e.detail.tabId;
   }
 
+  private onGridChargingOpen(): void {
+    const dialog = this.shadowRoot?.querySelector('oig-grid-charging-dialog') as OigGridChargingDialog | null;
+    dialog?.show();
+  }
+
   private onEditClick(): void {
     this.editMode = !this.editMode;
   }
@@ -748,6 +756,7 @@ export class OigApp extends LitElement {
                     particlesEnabled
                     .active=${this.activeTab === 'flow'}
                     .editMode=${this.editMode}
+                    @oig-grid-charging-open=${this.onGridChargingOpen}
                   ></oig-flow-canvas>
                   <oig-control-panel></oig-control-panel>
                 </div>
@@ -882,6 +891,10 @@ export class OigApp extends LitElement {
           @tile-saved=${this.onTileSaved}
           @close=${this.onTileDialogClose}
         ></oig-tile-dialog>
+
+        <oig-grid-charging-dialog
+          .data=${this.flowData.gridChargingPlan}
+        ></oig-grid-charging-dialog>
       </oig-theme-provider>
     `;
   }

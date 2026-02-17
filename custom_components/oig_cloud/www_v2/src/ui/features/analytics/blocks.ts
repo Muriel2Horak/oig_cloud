@@ -393,7 +393,45 @@ export class OigBatteryBalancing extends LitElement {
   static styles = css`
     :host { display: block; }
     ${METRIC_STYLES}
+
+    .progress-container {
+      margin: 8px 0;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--divider-color, rgba(255,255,255,0.1));
+    }
+
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--secondary-text-color, #999);
+      margin-bottom: 4px;
+    }
+
+    .progress-bar {
+      height: 6px;
+      background: var(--divider-color, rgba(255,255,255,0.15));
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    .progress-fill.ok { background: #4caf50; }
+    .progress-fill.due-soon { background: #ff9800; }
+    .progress-fill.overdue { background: #f44336; }
   `;
+
+  private getProgressClass(percent: number | null): string {
+    if (percent == null) return 'ok';
+    if (percent >= 95) return 'overdue';
+    if (percent >= 80) return 'due-soon';
+    return 'ok';
+  }
 
   render() {
     if (!this.data) return html`<div>Načítání...</div>`;
@@ -416,6 +454,32 @@ export class OigBatteryBalancing extends LitElement {
           <div class="metric">
             <span class="metric-label">Plánováno</span>
             <span class="metric-value">${this.data.nextScheduled}</span>
+          </div>
+        ` : null}
+
+        ${this.data.progressPercent != null ? html`
+          <div class="progress-container">
+            <div class="progress-label">
+              <span>Průběh cyklu</span>
+              <span>${this.data.daysRemaining != null ? `${this.data.daysRemaining} dní zbývá` : `${this.data.progressPercent}%`}</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill ${this.getProgressClass(this.data.progressPercent)}"
+                   style="width: ${this.data.progressPercent}%"></div>
+            </div>
+          </div>
+        ` : null}
+
+        ${this.data.intervalDays != null ? html`
+          <div class="metric">
+            <span class="metric-label">Interval</span>
+            <span class="metric-value">${this.data.intervalDays} dní</span>
+          </div>
+        ` : null}
+        ${this.data.estimatedNextCost != null ? html`
+          <div class="metric">
+            <span class="metric-label">Odhad dalších nákladů</span>
+            <span class="metric-value">${formatCurrency(this.data.estimatedNextCost)}</span>
           </div>
         ` : null}
       </oig-analytics-block>
