@@ -13,86 +13,118 @@ export class OigTile extends LitElement {
 
   static styles = css`
     :host {
-      display: grid;
-      grid-template-columns: auto 1fr auto;
-      grid-template-rows: 1fr auto;
-      align-items: center;
-      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      padding: 8px 10px;
       background: ${u(CSS_VARS.cardBg)};
-      border-radius: 8px;
+      border-radius: 10px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
       min-width: 0;
       position: relative;
-      transition: opacity 0.2s;
-      font-size: 11px;
-      height: 50px;
-      gap: 0 8px;
+      transition: opacity 0.2s, transform 0.15s;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+
+    :host(:hover) {
+      transform: translateY(-1px);
     }
 
     :host(.inactive) {
-      opacity: 0.5;
+      opacity: 0.45;
+    }
+
+    /* Barevný pruh vlevo */
+    :host::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: var(--tile-color, transparent);
+      border-radius: 10px 0 0 10px;
+    }
+
+    /* Horní řádek: ikona + label + support values */
+    .tile-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      margin-bottom: 2px;
     }
 
     .tile-icon {
-      grid-row: 1 / -1;
-      font-size: 20px;
+      font-size: 18px;
       line-height: 1;
-    }
-
-    .tile-main {
-      display: flex;
-      align-items: baseline;
-      justify-content: center;
-      gap: 3px;
-      min-width: 0;
-    }
-
-    .tile-value {
-      font-size: 20px;
-      font-weight: 700;
-      color: ${u(CSS_VARS.textPrimary)};
-      line-height: 1.1;
-    }
-
-    .tile-unit {
-      font-size: 12px;
-      font-weight: 400;
-      color: ${u(CSS_VARS.textSecondary)};
+      flex-shrink: 0;
+      width: 22px;
+      text-align: center;
     }
 
     .tile-label {
-      grid-column: 2;
+      flex: 1;
       font-size: 10px;
+      font-weight: 500;
       color: ${u(CSS_VARS.textSecondary)};
-      text-align: left;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       min-width: 0;
+      line-height: 1.2;
     }
 
     .support-values {
-      grid-row: 1 / -1;
-      grid-column: 3;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      justify-content: center;
-      gap: 2px;
+      gap: 1px;
+      flex-shrink: 0;
     }
 
     .support-value {
-      font-size: 10px;
+      font-size: 9px;
       color: ${u(CSS_VARS.textSecondary)};
       white-space: nowrap;
+      line-height: 1.2;
     }
 
+    /* Spodní řádek: hlavní hodnota */
+    .tile-main {
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .tile-value {
+      font-size: 19px;
+      font-weight: 700;
+      color: ${u(CSS_VARS.textPrimary)};
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .tile-unit {
+      font-size: 11px;
+      font-weight: 400;
+      color: ${u(CSS_VARS.textSecondary)};
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* Edit actions */
     .edit-actions {
       position: absolute;
       top: 4px;
       right: 4px;
       display: flex;
-      gap: 4px;
+      gap: 3px;
       opacity: 0;
       transition: opacity 0.2s;
     }
@@ -101,17 +133,19 @@ export class OigTile extends LitElement {
       opacity: 1;
     }
 
-    .edit-btn, .delete-btn {
-      width: 20px;
-      height: 20px;
+    .edit-btn,
+    .delete-btn {
+      width: 18px;
+      height: 18px;
       border: none;
       background: ${u(CSS_VARS.bgSecondary)};
       border-radius: 50%;
-      font-size: 10px;
+      font-size: 9px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 0;
     }
 
     .delete-btn:hover {
@@ -144,29 +178,34 @@ export class OigTile extends LitElement {
     const rawIcon = cfg.icon || '📊';
     const icon = rawIcon.startsWith('mdi:') ? getIconEmoji(rawIcon) : rawIcon;
 
-    return html`
-      ${color ? html`<style>:host { border-left: 3px solid ${u(color)}; }</style>` : null}
-      <span class="tile-icon">${icon}</span>
-      <div class="tile-main">
-    <span class="tile-value">${this.data.value}</span>
-    ${this.data.unit ? html`<span class="tile-unit">${this.data.unit}</span>` : null}
-  </div>
-      <span class="tile-label">${cfg.label || ''}</span>
+    const hasSupportValues = this.data.supportValues.topRight || this.data.supportValues.bottomRight;
 
-      ${(this.data.supportValues.topRight || this.data.supportValues.bottomRight) ? html`
-        <div class="support-values">
-          ${this.data.supportValues.topRight ? html`
-            <span class="support-value">${this.data.supportValues.topRight.value} ${this.data.supportValues.topRight.unit}</span>
-          ` : null}
-          ${this.data.supportValues.bottomRight ? html`
-            <span class="support-value">${this.data.supportValues.bottomRight.value} ${this.data.supportValues.bottomRight.unit}</span>
-          ` : null}
-        </div>
-      ` : null}
+    return html`
+      ${color ? html`<style>:host { --tile-color: ${u(color)}; }</style>` : null}
+
+      <div class="tile-top">
+        <span class="tile-icon">${icon}</span>
+        <span class="tile-label">${cfg.label || ''}</span>
+        ${hasSupportValues ? html`
+          <div class="support-values">
+            ${this.data.supportValues.topRight ? html`
+              <span class="support-value">${this.data.supportValues.topRight.value} ${this.data.supportValues.topRight.unit}</span>
+            ` : null}
+            ${this.data.supportValues.bottomRight ? html`
+              <span class="support-value">${this.data.supportValues.bottomRight.value} ${this.data.supportValues.bottomRight.unit}</span>
+            ` : null}
+          </div>
+        ` : null}
+      </div>
+
+      <div class="tile-main">
+        <span class="tile-value">${this.data.value}</span>
+        ${this.data.unit ? html`<span class="tile-unit">${this.data.unit}</span>` : null}
+      </div>
 
       ${this.editMode ? html`
         <div class="edit-actions">
-          <button class="edit-btn" @click=${this.onEdit}>⚙️</button>
+          <button class="edit-btn" @click=${this.onEdit}>⚙</button>
           <button class="delete-btn" @click=${this.onDelete}>✕</button>
         </div>
       ` : null}
@@ -182,22 +221,19 @@ export class OigTilesContainer extends LitElement {
 
   static styles = css`
     :host {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      align-items: stretch;
-    }
-
-    @media (max-width: 768px) {
-      :host {
-        grid-template-columns: 1fr;
-      }
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+      overflow: hidden;
     }
 
     .empty-state {
       font-size: 12px;
       color: ${u(CSS_VARS.textSecondary)};
       padding: 8px;
+      text-align: center;
+      opacity: 0.6;
     }
   `;
 

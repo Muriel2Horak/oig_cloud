@@ -22,6 +22,11 @@ import { formatPower, formatEnergy, getTariffDisplay, getHouseModeInfo, getGridE
 import { haClient } from '@/data/ha-client';
 import { oigLog } from '@/core/logger';
 import './battery-gauge';
+import './icons/solar-icon';
+import './icons/battery-icon';
+import './icons/grid-icon';
+import './icons/house-icon';
+import './icons/inverter-icon';
 
 const u = unsafeCSS;
 
@@ -597,6 +602,124 @@ export class OigFlowNode extends LitElement {
       border-top: 1px dashed ${u(CSS_VARS.divider)};
     }
 
+    /* ---- SVG ikony ---- */
+    .node-svg-icon {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 2px;
+    }
+
+    /* ---- Grid node: 3-fázové hodnoty jako symetrická tabulka ---- */
+    .phases-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 2px 4px;
+      text-align: center;
+      margin: 4px 0;
+    }
+    .phase-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+    }
+    .phase-label {
+      font-size: 8px;
+      color: ${u(CSS_VARS.textSecondary)};
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .phase-val {
+      font-size: 11px;
+      font-weight: 600;
+      color: ${u(CSS_VARS.textPrimary)};
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    .phase-val:hover { text-decoration: underline; }
+    .phase-divider {
+      border: none;
+      border-top: 1px solid ${u(CSS_VARS.divider)};
+      margin: 2px 0;
+    }
+
+    /* ---- Energie symetricky (odběr vlevo, dodávka vpravo) ---- */
+    .energy-symmetric {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 0;
+    }
+    .energy-side {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      flex: 1;
+    }
+    .energy-side-label {
+      font-size: 9px;
+      color: ${u(CSS_VARS.textSecondary)};
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .energy-side-val {
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      color: ${u(CSS_VARS.textPrimary)};
+    }
+    .energy-side-val:hover { text-decoration: underline; }
+    .energy-import { color: #ef5350; }
+    .energy-export { color: #66bb6a; }
+    .energy-divider-v {
+      width: 1px;
+      height: 28px;
+      background: ${u(CSS_VARS.divider)};
+      flex-shrink: 0;
+    }
+
+    /* ---- Ceny vedle sebe ---- */
+    .prices-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 0;
+    }
+    .price-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      flex: 1;
+    }
+    .price-label {
+      font-size: 8px;
+      color: ${u(CSS_VARS.textSecondary)};
+      text-transform: uppercase;
+    }
+    .price-val {
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      color: ${u(CSS_VARS.textPrimary)};
+    }
+    .price-val:hover { text-decoration: underline; }
+    .price-spot { color: #ef5350; }
+    .price-export { color: #66bb6a; }
+
     /* ---- Tablet (768-1024px) ---- */
     @media (min-width: 769px) and (max-width: 1024px) {
       .node {
@@ -975,13 +1098,12 @@ export class OigFlowNode extends LitElement {
     const d = this.data;
     const isActive = d.solarPower > 50;
     const percent = d.solarPercent;
-    const icon = percent <= 5 ? '🌙' : '☀️';
 
     return html`
       <div class="${this.nodeClass('solar')}" style="--node-gradient: ${NODE_GRADIENTS.solar}; --node-border: ${NODE_BORDERS.solar}"
         @click=${(e: Event) => this.toggleExpand('solar', e)}>
         <div class="node-header">
-          <span class="node-icon">${icon}</span>
+          <oig-solar-icon .power=${d.solarPower} .percent=${percent} .maxPower=${5400}></oig-solar-icon>
           <span class="node-label">Solár</span>
         </div>
         <div class="node-value" @click=${openEntity('actual_fv_total')}>
@@ -1095,25 +1217,23 @@ export class OigFlowNode extends LitElement {
     return html`
       <div class="${this.nodeClass('battery')}" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery}"
         @click=${(e: Event) => this.toggleExpand('battery', e)}>
+
         <div class="node-header">
-          <span class="node-icon">🔋</span>
+          <!-- Jediná ikona: SVG baterie nahrazuje gauge + emoji -->
+          <oig-battery-icon
+            .soc=${d.batterySoC}
+            ?charging=${isCharging && !d.isGridCharging}
+            ?gridCharging=${d.isGridCharging && isCharging}
+            ?discharging=${d.batteryPower < -10}
+          ></oig-battery-icon>
           <span class="node-label">Baterie</span>
         </div>
 
-        <div class="battery-center">
-          <oig-battery-gauge
-            .soc=${d.batterySoC}
-            ?charging=${isCharging}
-            ?gridCharging=${d.isGridCharging && isCharging}
-          ></oig-battery-gauge>
-          <div>
-            <div class="node-value" @click=${openEntity('batt_bat_c')}>
-              ${Math.round(d.batterySoC)} %
-            </div>
-            <div class="node-subvalue" @click=${openEntity('batt_batt_comp_p')}>
-              ${formatPower(d.batteryPower)}
-            </div>
-          </div>
+        <div class="node-value" @click=${openEntity('batt_bat_c')}>
+          ${Math.round(d.batterySoC)} %
+        </div>
+        <div class="node-subvalue" @click=${openEntity('batt_batt_comp_p')}>
+          ${formatPower(d.batteryPower)}
         </div>
 
         <div class="node-status ${status.cls}">${status.text}</div>
@@ -1221,7 +1341,12 @@ export class OigFlowNode extends LitElement {
       <div class="${this.nodeClass('inverter', pending.inverterModeChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter}"
         @click=${(e: Event) => this.toggleExpand('inverter', e)}>
         <div class="node-header">
-          <span class="node-icon">🔄</span>
+          <oig-inverter-icon
+            .mode=${d.inverterMode}
+            ?bypassActive=${bypassActive}
+            ?hasAlarm=${d.notificationsError > 0}
+            ?plannerAuto=${d.plannerAutoMode === true}
+          ></oig-inverter-icon>
           <span class="node-label">Střídač</span>
         </div>
         ${bypassActive ? html`
@@ -1301,18 +1426,26 @@ export class OigFlowNode extends LitElement {
     return html`
       <div class="${this.nodeClass('grid', pending.gridExportChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid}"
         @click=${(e: Event) => this.toggleExpand('grid', e)}>
-        <div class="node-header">
-          <span class="node-icon">🔌</span>
-          <span class="node-label">Síť</span>
-        </div>
+
+        <!-- Tarif badge vlevo nahoře -->
         <button class="indicator" style="position:absolute;top:4px;left:6px;font-size:9px" @click=${openEntity('current_tariff')}>
           ${getTariffDisplay(d.currentTariff)}
         </button>
+        <!-- Frekvence vpravo nahoře -->
+        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${openEntity('ac_in_aci_f')}>
+          ${d.gridFrequency.toFixed(1)} Hz
+        </button>
 
+        <!-- SVG ikona -->
+        <div class="node-svg-icon" style="margin-top:14px">
+          <oig-grid-icon .power=${d.gridPower} style="width:44px;height:44px"></oig-grid-icon>
+        </div>
+        <div class="node-label" style="margin-bottom:2px">Síť</div>
+
+        <!-- Hlavní hodnota -->
         <div class="node-value" @click=${openEntity('actual_aci_wtotal')}>
           ${formatPower(d.gridPower)}
         </div>
-
         <div class="node-status ${status.cls}">${status.text}</div>
         ${pending.gridExportText ? html`
           <div class="pending-text">
@@ -1321,50 +1454,59 @@ export class OigFlowNode extends LitElement {
           </div>
         ` : nothing}
 
-        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${openEntity('ac_in_aci_f')}>
-          〰️ ${d.gridFrequency.toFixed(2)} Hz
-        </button>
-
-        <!-- 3-phase power -->
-        <div class="phases">
-          <button class="clickable" @click=${openEntity('actual_aci_wr')}>${Math.round(d.gridL1P)}W</button>
-          <span class="phase-sep">|</span>
-          <button class="clickable" @click=${openEntity('actual_aci_ws')}>${Math.round(d.gridL2P)}W</button>
-          <span class="phase-sep">|</span>
-          <button class="clickable" @click=${openEntity('actual_aci_wt')}>${Math.round(d.gridL3P)}W</button>
-        </div>
-        <!-- 3-phase voltage -->
-        <div class="phases">
-          <button class="clickable" @click=${openEntity('ac_in_aci_vr')}>${Math.round(d.gridL1V)}V</button>
-          <span class="phase-sep">|</span>
-          <button class="clickable" @click=${openEntity('ac_in_aci_vs')}>${Math.round(d.gridL2V)}V</button>
-          <span class="phase-sep">|</span>
-          <button class="clickable" @click=${openEntity('ac_in_aci_vt')}>${Math.round(d.gridL3V)}V</button>
-        </div>
-
-        <div class="detail-section">
-          <div class="detail-header">⚡ Energie dnes</div>
-          <div class="detail-row">
-            <span class="icon">⬇️</span>
-            <button class="clickable" @click=${openEntity('ac_in_ac_ad')}>${formatEnergy(d.gridImportToday)}</button>
-            <span style="margin-left:8px" class="icon">⬆️</span>
-            <button class="clickable" @click=${openEntity('ac_in_ac_pd')}>${formatEnergy(d.gridExportToday)}</button>
+        <!-- 3 fáze — symetrická tabulka (W + V vedle sebe) -->
+        <div class="phases-grid" style="margin-top:6px">
+          <div class="phase-cell">
+            <span class="phase-label">L1</span>
+            <button class="phase-val" @click=${openEntity('actual_aci_wr')}>${Math.round(d.gridL1P)}W</button>
+            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('ac_in_aci_vr')}>${Math.round(d.gridL1V)}V</button>
+          </div>
+          <div class="phase-cell">
+            <span class="phase-label">L2</span>
+            <button class="phase-val" @click=${openEntity('actual_aci_ws')}>${Math.round(d.gridL2P)}W</button>
+            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('ac_in_aci_vs')}>${Math.round(d.gridL2V)}V</button>
+          </div>
+          <div class="phase-cell">
+            <span class="phase-label">L3</span>
+            <button class="phase-val" @click=${openEntity('actual_aci_wt')}>${Math.round(d.gridL3P)}W</button>
+            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('ac_in_aci_vt')}>${Math.round(d.gridL3V)}V</button>
           </div>
         </div>
 
         <div class="detail-section">
-          <div class="detail-header">💰 Ceny</div>
-          <div class="detail-row">
-            <span class="icon">⬇️</span>
-            <button class="clickable" @click=${openEntity('spot_price_current_15min')}>
-              ${d.spotPrice.toFixed(2)} Kč/kWh
-            </button>
+          <!-- Energie dnes — odběr vlevo, dodávka vpravo -->
+          <div class="energy-symmetric">
+            <div class="energy-side">
+              <span class="energy-side-label">⬇ Odběr</span>
+              <button class="energy-side-val energy-import" @click=${openEntity('ac_in_ac_ad')}>
+                ${formatEnergy(d.gridImportToday)}
+              </button>
+            </div>
+            <div class="energy-divider-v"></div>
+            <div class="energy-side">
+              <span class="energy-side-label">⬆ Dodávka</span>
+              <button class="energy-side-val energy-export" @click=${openEntity('ac_in_ac_pd')}>
+                ${formatEnergy(d.gridExportToday)}
+              </button>
+            </div>
           </div>
-          <div class="detail-row">
-            <span class="icon">⬆️</span>
-            <button class="clickable" @click=${openEntity('export_price_current_15min')}>
-              ${d.exportPrice.toFixed(2)} Kč/kWh
-            </button>
+
+          <!-- Ceny vedle sebe -->
+          <hr class="phase-divider"/>
+          <div class="prices-row">
+            <div class="price-cell">
+              <span class="price-label">⬇ Spot</span>
+              <button class="price-val price-spot" @click=${openEntity('spot_price_current_15min')}>
+                ${d.spotPrice.toFixed(2)} Kč
+              </button>
+            </div>
+            <div class="energy-divider-v"></div>
+            <div class="price-cell">
+              <span class="price-label">⬆ Výkup</span>
+              <button class="price-val price-export" @click=${openEntity('export_price_current_15min')}>
+                ${d.exportPrice.toFixed(2)} Kč
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1382,7 +1524,11 @@ export class OigFlowNode extends LitElement {
       <div class="${this.nodeClass('house')}" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house}"
         @click=${(e: Event) => this.toggleExpand('house', e)}>
         <div class="node-header">
-          <span class="node-icon">🏠</span>
+          <oig-house-icon
+            .power=${d.housePower}
+            .maxPower=${d.boilerInstallPower > 0 ? 10000 : 8000}
+            ?boilerActive=${d.boilerIsUse}
+          ></oig-house-icon>
           <span class="node-label">Spotřeba</span>
         </div>
 
