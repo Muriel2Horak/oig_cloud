@@ -287,8 +287,11 @@ export class HaClient {
         return false;
       }
 
-      const event = new Event('hass-more-info', { bubbles: true, composed: true });
-      (event as any).detail = { entityId };
+      const event = new CustomEvent('hass-more-info', {
+        bubbles: true,
+        composed: true,
+        detail: { entityId },
+      });
       ha.dispatchEvent(event);
       return true;
     } catch (e) {

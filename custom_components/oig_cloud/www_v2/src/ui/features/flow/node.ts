@@ -55,6 +55,9 @@ export class OigFlowNode extends LitElement {
   @state() private changingServices: Set<ShieldServiceType> = new Set();
   private shieldUnsub: (() => void) | null = null;
 
+  // Expand/collapse state for mobile/tablet
+  @state() private expandedNodes = new Set<NodeId>();
+
   // DnD state
   @state() private customPositions: SavedLayout = {};
   private draggedNodeId: NodeId | null = null;
@@ -73,10 +76,10 @@ export class OigFlowNode extends LitElement {
       display: grid !important;
       grid-template-columns: 1fr 1.2fr 1fr !important;
       grid-template-rows: auto auto auto !important;
-      gap: 10px;
+      gap: 8px;
       width: 100%;
       min-height: auto;
-      padding: 20px;
+      padding: 16px;
       box-sizing: border-box;
     }
 
@@ -87,17 +90,20 @@ export class OigFlowNode extends LitElement {
     .node-battery  { grid-column: 2; grid-row: 3; justify-self: center; }
 
     .node {
+      position: relative;
       background: var(--node-gradient);
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 12px;
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
-      padding: 10px 14px;
+      padding: 10px 12px;
       box-shadow: 0 2px 12px rgba(0,0,0,0.15);
       transition: transform 0.2s, box-shadow 0.2s;
       overflow: hidden;
-      min-width: 130px;
-      max-width: 250px;
+      width: fit-content;
+      min-width: 170px;
+      max-width: 230px;
+      text-align: center;
     }
 
     .node:hover {
@@ -152,30 +158,32 @@ export class OigFlowNode extends LitElement {
 
     .node-header {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 6px;
-      margin-bottom: 6px;
+      gap: 2px;
+      margin-bottom: 4px;
     }
 
     .node-icon {
-      font-size: 18px;
+      font-size: 24px;
     }
 
     .node-label {
-      font-size: 12px;
+      font-size: 10px;
       font-weight: 600;
       color: ${u(CSS_VARS.textSecondary)};
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.4px;
     }
 
     .node-value {
-      font-size: 20px;
+      font-size: 22px;
       font-weight: 700;
       color: ${u(CSS_VARS.textPrimary)};
       cursor: pointer;
       padding: 0;
       margin: 2px 0;
+      line-height: 1;
     }
 
     .node-value:hover {
@@ -183,7 +191,7 @@ export class OigFlowNode extends LitElement {
     }
 
     .node-subvalue {
-      font-size: 12px;
+      font-size: 10px;
       color: ${u(CSS_VARS.textSecondary)};
       cursor: pointer;
       padding: 0;
@@ -194,12 +202,12 @@ export class OigFlowNode extends LitElement {
     }
 
     .node-status {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 500;
       padding: 2px 6px;
       border-radius: 4px;
       display: inline-block;
-      margin: 4px 0;
+      margin: 3px 0;
     }
 
     .pending-text {
@@ -263,10 +271,79 @@ export class OigFlowNode extends LitElement {
       50%{opacity:0.7; transform:scale(1.05); filter:hue-rotate(180deg);} 
     }
 
+    /* ---- Collapsible detail sections ---- */
     .detail-section {
-      margin-top: 8px;
-      padding-top: 8px;
+      margin-top: 6px;
+      padding-top: 6px;
       border-top: 1px solid ${u(CSS_VARS.divider)};
+      text-align: left;
+    }
+
+    /* On tablet/mobile: details are collapsed by default */
+    @media (max-width: 1024px) {
+      .detail-section {
+        max-height: 0;
+        overflow: hidden;
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+        transition: max-height 0.3s ease, margin-top 0.15s ease, padding-top 0.15s ease;
+      }
+
+      .node.expanded .detail-section {
+        max-height: 500px;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid ${u(CSS_VARS.divider)};
+      }
+
+      /* Expand indicator arrow */
+      .node::after {
+        content: '▼';
+        position: absolute;
+        bottom: 2px;
+        right: 5px;
+        font-size: 8px;
+        opacity: 0.35;
+        transition: transform 0.3s ease, opacity 0.2s ease;
+        pointer-events: none;
+      }
+
+      .node.expanded::after {
+        transform: rotate(180deg);
+        opacity: 0.65;
+      }
+
+      .node:hover::after {
+        opacity: 0.6;
+      }
+    }
+
+    /* Also collapse forecast-badges and boiler-section on mobile */
+    @media (max-width: 1024px) {
+      .forecast-badges,
+      .boiler-section,
+      .grid-charging-plan {
+        max-height: 0;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+        border: none;
+        transition: max-height 0.3s ease;
+      }
+
+      .node.expanded .forecast-badges,
+      .node.expanded .boiler-section,
+      .node.expanded .grid-charging-plan {
+        max-height: 500px;
+        margin-top: 6px;
+        padding-top: 6px;
+      }
+
+      .node.expanded .boiler-section,
+      .node.expanded .grid-charging-plan {
+        border-top: 1px dashed ${u(CSS_VARS.divider)};
+      }
     }
 
     .detail-header {
@@ -339,16 +416,18 @@ export class OigFlowNode extends LitElement {
 
     .battery-center {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 8px;
+      gap: 4px;
       margin: 4px 0;
     }
 
     .battery-indicators {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 4px;
       margin-top: 4px;
+      justify-content: center;
     }
 
     .indicator {
@@ -477,16 +556,82 @@ export class OigFlowNode extends LitElement {
       border-top: 1px dashed ${u(CSS_VARS.divider)};
     }
 
+    /* ---- Tablet (768-1024px) ---- */
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .node {
+        min-width: 140px;
+        max-width: 200px;
+        padding: 8px 10px;
+      }
+      .node-icon { font-size: 20px; }
+      .node-value { font-size: 18px; }
+      .node-label { font-size: 9px; }
+      .node-subvalue { font-size: 9px; }
+      .node-status { font-size: 9px; }
+      .indicator { font-size: 9px; }
+      .phases { font-size: 10px; }
+      .flow-grid { gap: 6px; padding: 12px; }
+    }
+
+    /* ---- Mobile (<768px) ---- */
     @media (max-width: 768px) {
       .flow-grid {
         grid-template-columns: 1fr 1fr;
         grid-template-rows: auto auto auto auto;
+        gap: 6px;
+        padding: 8px;
       }
       .node-solar { grid-column: 1 / span 2; grid-row: 1; justify-self: center; }
       .node-grid { grid-column: 1; grid-row: 2; }
       .node-inverter { grid-column: 2; grid-row: 2; }
       .node-house { grid-column: 1; grid-row: 3; }
       .node-battery { grid-column: 2; grid-row: 3; }
+
+      .node {
+        min-width: 120px;
+        max-width: 170px;
+        padding: 8px 8px;
+      }
+      .node-icon { font-size: 20px; }
+      .node-value { font-size: 18px; }
+      .node-label { font-size: 9px; }
+      .node-subvalue { font-size: 9px; }
+      .node-status { font-size: 8px; padding: 1px 4px; }
+      .phases { font-size: 9px; gap: 2px; }
+      .indicator { font-size: 9px; padding: 1px 3px; }
+      .battery-indicators { gap: 3px; }
+    }
+
+    /* ---- Nest Hub landscape (769-1200px landscape) ---- */
+    @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
+      .flow-grid {
+        transform: scale(0.82);
+        transform-origin: top center;
+      }
+      .node {
+        min-width: 130px;
+        max-width: 180px;
+        padding: 8px 10px;
+      }
+      .node-icon { font-size: 20px; }
+      .node-value { font-size: 20px; }
+      .node-label { font-size: 9px; }
+    }
+
+    /* ---- Extra small (<380px) ---- */
+    @media (max-width: 380px) {
+      .flow-grid {
+        transform: scale(0.88);
+        transform-origin: top center;
+      }
+      .node {
+        min-width: 100px;
+        max-width: 150px;
+        padding: 6px;
+      }
+      .node-icon { font-size: 18px; }
+      .node-value { font-size: 16px; }
+      .node-label { font-size: 8px; }
     }
   `;
 
@@ -577,6 +722,31 @@ export class OigFlowNode extends LitElement {
       localStorage.setItem(key, JSON.stringify(this.customPositions));
       oigLog.debug('[FlowNode] Saved layout for ' + bp);
     } catch { /* ignore */ }
+  }
+
+  /** Toggle expand/collapse for a node (on mobile/tablet) */
+  private toggleExpand(nodeId: NodeId, e: Event): void {
+    // Don't toggle if clicking a clickable value/button
+    const target = e.target as HTMLElement;
+    if (target.closest('.clickable') || target.closest('.indicator') || target.closest('.forecast-badge') || target.closest('.node-value') || target.closest('.node-subvalue')) {
+      return;
+    }
+    // Only toggle on tablet/mobile
+    if (window.innerWidth > 1024) return;
+
+    const next = new Set(this.expandedNodes);
+    if (next.has(nodeId)) {
+      next.delete(nodeId);
+    } else {
+      next.add(nodeId);
+    }
+    this.expandedNodes = next;
+  }
+
+  /** Get CSS class string for a node (includes expanded state) */
+  private nodeClass(nodeId: NodeId, extra = ''): string {
+    const expanded = this.expandedNodes.has(nodeId) ? ' expanded' : '';
+    return `node node-${nodeId}${expanded}${extra ? ' ' + extra : ''}`;
   }
 
   resetLayout(): void {
@@ -765,7 +935,8 @@ export class OigFlowNode extends LitElement {
     const icon = percent <= 5 ? '🌙' : '☀️';
 
     return html`
-      <div class="node node-solar" style="--node-gradient: ${NODE_GRADIENTS.solar}; --node-border: ${NODE_BORDERS.solar}">
+      <div class="${this.nodeClass('solar')}" style="--node-gradient: ${NODE_GRADIENTS.solar}; --node-border: ${NODE_BORDERS.solar}"
+        @click=${(e: Event) => this.toggleExpand('solar', e)}>
         <div class="node-header">
           <span class="node-icon">${icon}</span>
           <span class="node-label">Solár</span>
@@ -870,7 +1041,8 @@ export class OigFlowNode extends LitElement {
     const tempClass = d.batteryTemp > 25 ? 'temp-hot' : d.batteryTemp < 15 ? 'temp-cold' : '';
 
     return html`
-      <div class="node node-battery" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery}">
+      <div class="${this.nodeClass('battery')}" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery}"
+        @click=${(e: Event) => this.toggleExpand('battery', e)}>
         <div class="node-header">
           <span class="node-icon">🔋</span>
           <span class="node-label">Baterie</span>
@@ -1022,16 +1194,17 @@ export class OigFlowNode extends LitElement {
     }
 
     return html`
-      <div class="node node-inverter ${pending.inverterModeChanging ? 'mode-changing' : ''}" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter}">
+      <div class="${this.nodeClass('inverter', pending.inverterModeChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter}"
+        @click=${(e: Event) => this.toggleExpand('inverter', e)}>
         <div class="node-header">
           <span class="node-icon">🔄</span>
           <span class="node-label">Střídač</span>
-          ${bypassActive ? html`
-            <button class="bypass-active bypass-warning" @click=${openEntity('bypass_status')}>
-              <span id="inverter-bypass-icon">🔴</span> Bypass
-            </button>
-          ` : nothing}
         </div>
+        ${bypassActive ? html`
+          <button class="bypass-active bypass-warning" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${openEntity('bypass_status')}>
+            🔴 Bypass
+          </button>
+        ` : nothing}
 
         <div class="node-value" @click=${openEntity('box_prms_mode')}>
           ${pending.inverterModeChanging ? html`<span class="spinner spinner--small"></span>` : nothing}
@@ -1099,14 +1272,15 @@ export class OigFlowNode extends LitElement {
     const pending = mapShieldPendingToFlowIndicators(this.pendingServices, this.changingServices);
 
     return html`
-      <div class="node node-grid ${pending.gridExportChanging ? 'mode-changing' : ''}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid}">
+      <div class="${this.nodeClass('grid', pending.gridExportChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid}"
+        @click=${(e: Event) => this.toggleExpand('grid', e)}>
         <div class="node-header">
           <span class="node-icon">🔌</span>
           <span class="node-label">Síť</span>
-          <button class="indicator" style="margin-left:auto" @click=${openEntity('current_tariff')}>
-            ${getTariffDisplay(d.currentTariff)}
-          </button>
         </div>
+        <button class="indicator" style="position:absolute;top:4px;left:6px;font-size:9px" @click=${openEntity('current_tariff')}>
+          ${getTariffDisplay(d.currentTariff)}
+        </button>
 
         <div class="node-value" @click=${openEntity('actual_aci_wtotal')}>
           ${formatPower(d.gridPower)}
@@ -1120,7 +1294,7 @@ export class OigFlowNode extends LitElement {
           </div>
         ` : nothing}
 
-        <button class="indicator" @click=${openEntity('ac_in_aci_f')}>
+        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${openEntity('ac_in_aci_f')}>
           〰️ ${d.gridFrequency.toFixed(2)} Hz
         </button>
 
@@ -1178,7 +1352,8 @@ export class OigFlowNode extends LitElement {
     const d = this.data;
 
     return html`
-      <div class="node node-house" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house}">
+      <div class="${this.nodeClass('house')}" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house}"
+        @click=${(e: Event) => this.toggleExpand('house', e)}>
         <div class="node-header">
           <span class="node-icon">🏠</span>
           <span class="node-label">Spotřeba</span>

@@ -14,6 +14,7 @@ import { customElement, property, state, query } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import { FlowData, EMPTY_FLOW_DATA, FLOW_COLORS, FLOW_MAXIMUMS, FlowParams } from './types';
 import { calculateFlowParams } from '@/data/flow-data';
+import { OIG_RUNTIME } from '@/core/bootstrap';
 import './node';
 
 const u = unsafeCSS;
@@ -61,8 +62,27 @@ export class OigFlowCanvas extends LitElement {
     .flow-grid-wrapper {
       position: relative;
       z-index: 1;
-      min-height: 500px;
+      min-height: 420px;
     }
+
+    /* Tablet: reduce min-height */
+    @media (min-width: 769px) and (max-width: 1024px) {
+      .flow-grid-wrapper { min-height: 360px; }
+    }
+
+    /* Mobile: compact */
+    @media (max-width: 768px) {
+      .flow-grid-wrapper { min-height: auto; }
+    }
+
+    /* Nest Hub landscape */
+    @media (min-width: 769px) and (max-width: 1200px) and (orientation: landscape) {
+      :host { max-height: 600px; overflow: auto; }
+      .flow-grid-wrapper { min-height: auto; }
+    }
+
+    /* HA App / reduced motion — no particles via CSS */
+    :host(.no-particles) .particles-layer { display: none; }
 
     .connections-layer {
       position: absolute;
@@ -336,7 +356,8 @@ export class OigFlowCanvas extends LitElement {
   // ==========================================================================
 
   private updateAnimationState(): void {
-    const shouldRun = this.particlesEnabled && this.active && !document.hidden;
+    // Disable particles in HA app or when reduce-motion is preferred
+    const shouldRun = this.particlesEnabled && this.active && !document.hidden && !OIG_RUNTIME.reduceMotion;
     if (shouldRun) {
       this.spawnParticles();
       this.startAnimation();
