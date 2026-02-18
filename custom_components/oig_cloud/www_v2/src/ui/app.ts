@@ -208,20 +208,18 @@ export class OigApp extends LitElement {
       gap: 16px;
     }
 
-    /* ---- Flow tab layout: tiles | canvas+control ---- */
+    /* ---- Flow tab layout: tiles | canvas | control ---- */
     .flow-layout {
       display: grid;
-      grid-template-columns: 240px 1fr;
-      grid-template-rows: 1fr;
+      grid-template-columns: 220px 1fr 260px;
+      grid-template-areas: 'tiles canvas control';
       gap: 12px;
       width: 100%;
-      min-height: 0;
       align-items: start;
     }
 
     .flow-tiles-stack {
-      grid-column: 1;
-      grid-row: 1;
+      grid-area: tiles;
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -230,11 +228,12 @@ export class OigApp extends LitElement {
     }
 
     .flow-center {
-      grid-column: 2;
-      grid-row: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+      grid-area: canvas;
+      min-width: 0;
+    }
+
+    .flow-control {
+      grid-area: control;
       min-width: 0;
     }
 
@@ -301,30 +300,22 @@ export class OigApp extends LitElement {
     }
 
     /* ---- Responsive ---- */
-    /* Tablet 768–1024: užší tiles sloupec */
-    @media (min-width: 768px) and (max-width: 1024px) {
+    /* Tablet 768–1200: canvas + control, tiles skryté nebo nahoře */
+    @media (max-width: 1200px) {
       .flow-layout {
-        grid-template-columns: 200px 1fr;
-        gap: 8px;
-      }
-      .flow-center {
+        grid-template-columns: 180px 1fr 220px;
         gap: 8px;
       }
     }
 
-    /* Mobile <768: Single column, tiles nahoře */
+    /* Mobile <768: Single column */
     @media (max-width: 768px) {
       .flow-layout {
         grid-template-columns: 1fr;
-        grid-template-rows: auto auto;
-      }
-      .flow-tiles-stack {
-        grid-column: 1;
-        grid-row: 1;
-      }
-      .flow-center {
-        grid-column: 1;
-        grid-row: 2;
+        grid-template-areas:
+          'canvas'
+          'control'
+          'tiles';
         gap: 8px;
       }
       .analytics-row {
@@ -782,7 +773,7 @@ export class OigApp extends LitElement {
                   ></oig-tiles-container>
                 </div>
 
-                <!-- Canvas + control panel: hlavní obsah vpravo -->
+                <!-- Canvas: střed -->
                 <div class="flow-center">
                   <oig-flow-canvas
                     .data=${this.flowData}
@@ -791,6 +782,10 @@ export class OigApp extends LitElement {
                     .editMode=${this.editMode}
                     @oig-grid-charging-open=${this.onGridChargingOpen}
                   ></oig-flow-canvas>
+                </div>
+
+                <!-- Ovládací panel: pravý sloupec -->
+                <div class="flow-control">
                   <oig-control-panel></oig-control-panel>
                 </div>
               </div>

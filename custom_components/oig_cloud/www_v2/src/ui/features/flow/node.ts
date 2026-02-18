@@ -280,79 +280,68 @@ export class OigFlowNode extends LitElement {
       50%{opacity:0.7; transform:scale(1.05); filter:hue-rotate(180deg);} 
     }
 
-    /* ---- Collapsible detail sections ---- */
+    /* ---- Collapsible detail sections — vždy collapsed, rozbalí se klikem ---- */
     .detail-section {
-      margin-top: 6px;
-      padding-top: 6px;
-      border-top: 1px solid ${u(CSS_VARS.divider)};
+      max-height: 0;
+      overflow: hidden;
+      margin-top: 0;
+      padding-top: 0;
+      border-top: none;
+      transition: max-height 0.3s ease, margin-top 0.15s ease, padding-top 0.15s ease;
       text-align: left;
     }
 
-    /* On tablet/mobile: details are collapsed by default */
-    @media (max-width: 1024px) {
-      .detail-section {
-        max-height: 0;
-        overflow: hidden;
-        margin-top: 0;
-        padding-top: 0;
-        border-top: none;
-        transition: max-height 0.3s ease, margin-top 0.15s ease, padding-top 0.15s ease;
-      }
-
-      .node.expanded .detail-section {
-        max-height: 500px;
-        margin-top: 6px;
-        padding-top: 6px;
-        border-top: 1px solid ${u(CSS_VARS.divider)};
-      }
-
-      /* Expand indicator arrow */
-      .node::after {
-        content: '▼';
-        position: absolute;
-        bottom: 2px;
-        right: 5px;
-        font-size: 8px;
-        opacity: 0.35;
-        transition: transform 0.3s ease, opacity 0.2s ease;
-        pointer-events: none;
-      }
-
-      .node.expanded::after {
-        transform: rotate(180deg);
-        opacity: 0.65;
-      }
-
-      .node:hover::after {
-        opacity: 0.6;
-      }
+    .node.expanded .detail-section {
+      max-height: 500px;
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid ${u(CSS_VARS.divider)};
     }
 
-    /* Also collapse forecast-badges and boiler-section on mobile */
-    @media (max-width: 1024px) {
-      .forecast-badges,
-      .boiler-section,
-      .grid-charging-plan {
-        max-height: 0;
-        overflow: hidden;
-        margin: 0;
-        padding: 0;
-        border: none;
-        transition: max-height 0.3s ease;
-      }
+    /* Expand indicator arrow — vždy viditelný */
+    .node::after {
+      content: '▼';
+      position: absolute;
+      bottom: 2px;
+      right: 5px;
+      font-size: 8px;
+      opacity: 0.35;
+      transition: transform 0.3s ease, opacity 0.2s ease;
+      pointer-events: none;
+    }
 
-      .node.expanded .forecast-badges,
-      .node.expanded .boiler-section,
-      .node.expanded .grid-charging-plan {
-        max-height: 500px;
-        margin-top: 6px;
-        padding-top: 6px;
-      }
+    .node.expanded::after {
+      transform: rotate(180deg);
+      opacity: 0.65;
+    }
 
-      .node.expanded .boiler-section,
-      .node.expanded .grid-charging-plan {
-        border-top: 1px dashed ${u(CSS_VARS.divider)};
-      }
+    .node:hover::after {
+      opacity: 0.6;
+    }
+
+    /* forecast-badges a boiler-section — vždy collapsed */
+    .forecast-badges,
+    .boiler-section,
+    .grid-charging-plan {
+      max-height: 0;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      border: none;
+      transition: max-height 0.3s ease;
+    }
+
+    .node.expanded .forecast-badges,
+    .node.expanded .boiler-section,
+    .node.expanded .grid-charging-plan {
+      max-height: 500px;
+      margin-top: 6px;
+      padding-top: 6px;
+    }
+
+    .node.expanded .boiler-section,
+    .node.expanded .grid-charging-plan {
+      border-top: 1px dashed ${u(CSS_VARS.divider)};
     }
 
     .detail-header {
@@ -925,15 +914,13 @@ export class OigFlowNode extends LitElement {
     } catch { /* ignore */ }
   }
 
-  /** Toggle expand/collapse for a node (on mobile/tablet) */
+  /** Toggle expand/collapse for a node — vždy funkční */
   private toggleExpand(nodeId: NodeId, e: Event): void {
     // Don't toggle if clicking a clickable value/button
     const target = e.target as HTMLElement;
-    if (target.closest('.clickable') || target.closest('.indicator') || target.closest('.forecast-badge') || target.closest('.node-value') || target.closest('.node-subvalue')) {
+    if (target.closest('.clickable') || target.closest('.indicator') || target.closest('.forecast-badge') || target.closest('.node-value') || target.closest('.node-subvalue') || target.closest('.gc-plan-btn')) {
       return;
     }
-    // Only toggle on tablet/mobile
-    if (window.innerWidth > 1024) return;
 
     const next = new Set(this.expandedNodes);
     if (next.has(nodeId)) {
@@ -1415,30 +1402,22 @@ export class OigFlowNode extends LitElement {
           </button>
         </div>
 
-        <div class="detail-section">
-          <div class="detail-header">🌊 Přetoky do sítě</div>
-          <div class="detail-row">
-            <span class="icon">${gridExport.icon}</span>
-            <button class="clickable" @click=${openEntity('invertor_prms_to_grid')}>
-              ${gridExport.display}
-            </button>
-            <span style="margin-left:8px">LIMIT:</span>
-            <button class="clickable" @click=${openEntity('invertor_prm1_p_max_feed_grid')}>
-              ${limitKw} kW
-            </button>
-          </div>
+        <!-- Přetoky + notifikace — vždy viditelné -->
+        <div class="battery-indicators" style="margin-top:4px">
+          <button class="indicator" @click=${openEntity('invertor_prms_to_grid')}>
+            ${gridExport.icon} ${gridExport.display}
+          </button>
+          <button class="clickable notif-badge ${d.notificationsError > 0 ? 'has-error' : d.notificationsUnread > 0 ? 'has-unread' : 'indicator'}"
+            @click=${openEntity('notification_count_unread')}>
+            🔔 ${d.notificationsUnread}/${d.notificationsError}
+          </button>
         </div>
 
         <div class="detail-section">
-          <div class="detail-header">🔔 Notifikace</div>
+          <div class="detail-header">🌊 Přetoky — limit</div>
           <div class="detail-row">
-            <button class="clickable notif-badge ${d.notificationsUnread > 0 ? 'has-unread' : ''}"
-              @click=${openEntity('notification_count_unread')}>
-              📨 ${d.notificationsUnread}
-            </button>
-            <button class="clickable notif-badge ${d.notificationsError > 0 ? 'has-error' : ''}"
-              @click=${openEntity('notification_count_error')}>
-              ❌ ${d.notificationsError}
+            <button class="clickable" @click=${openEntity('invertor_prm1_p_max_feed_grid')}>
+              Limit: ${limitKw} kW
             </button>
           </div>
         </div>
@@ -1493,7 +1472,24 @@ export class OigFlowNode extends LitElement {
           </div>
         ` : nothing}
 
-        <!-- 3 fáze — symetrická tabulka (W + V vedle sebe) -->
+        <!-- Ceny — vždy viditelné jako rychlý přehled -->
+        <div class="prices-row" style="margin-top:4px">
+          <div class="price-cell">
+            <span class="price-label">⬇ Spot</span>
+            <button class="price-val price-spot" @click=${openEntity('spot_price_current_15min')}>
+              ${d.spotPrice.toFixed(2)} Kč
+            </button>
+          </div>
+          <div class="energy-divider-v"></div>
+          <div class="price-cell">
+            <span class="price-label">⬆ Výkup</span>
+            <button class="price-val price-export" @click=${openEntity('export_price_current_15min')}>
+              ${d.exportPrice.toFixed(2)} Kč
+            </button>
+          </div>
+        </div>
+
+        <!-- 3 fáze — vždy viditelné -->
         <div class="phases-grid" style="margin-top:6px">
           <div class="phase-cell">
             <span class="phase-label">L1</span>
@@ -1530,23 +1526,6 @@ export class OigFlowNode extends LitElement {
             </div>
           </div>
 
-          <!-- Ceny vedle sebe -->
-          <hr class="phase-divider"/>
-          <div class="prices-row">
-            <div class="price-cell">
-              <span class="price-label">⬇ Spot</span>
-              <button class="price-val price-spot" @click=${openEntity('spot_price_current_15min')}>
-                ${d.spotPrice.toFixed(2)} Kč
-              </button>
-            </div>
-            <div class="energy-divider-v"></div>
-            <div class="price-cell">
-              <span class="price-label">⬆ Výkup</span>
-              <button class="price-val price-export" @click=${openEntity('export_price_current_15min')}>
-                ${d.exportPrice.toFixed(2)} Kč
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     `;
