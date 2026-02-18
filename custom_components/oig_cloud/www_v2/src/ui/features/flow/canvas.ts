@@ -63,7 +63,7 @@ export class OigFlowCanvas extends LitElement {
     .flow-grid-wrapper {
       position: relative;
       z-index: 1;
-      min-height: 420px;
+      min-height: 560px;
     }
 
     /* Tablet: reduce min-height */
