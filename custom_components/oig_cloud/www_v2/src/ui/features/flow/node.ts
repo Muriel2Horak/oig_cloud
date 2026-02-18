@@ -106,7 +106,7 @@ export class OigFlowNode extends LitElement {
       padding: 10px 12px;
       box-shadow: 0 2px 12px rgba(0,0,0,0.15);
       transition: transform 0.2s, box-shadow 0.2s;
-      overflow: hidden;
+      overflow: visible;
       width: fit-content;
       min-width: 170px;
       max-width: 230px;
@@ -1096,7 +1096,6 @@ export class OigFlowNode extends LitElement {
 
   private renderSolar() {
     const d = this.data;
-    const isActive = d.solarPower > 50;
     const percent = d.solarPercent;
 
     return html`
@@ -1113,42 +1112,40 @@ export class OigFlowNode extends LitElement {
           Dnes: ${(d.solarToday / 1000).toFixed(2)} kWh
         </div>
 
-        ${isActive || d.solarP1 > 0 || d.solarP2 > 0 ? html`
-          <div class="detail-section">
-            <div class="solar-strings">
-              <div>
-                <div class="detail-header">🏭 String 1</div>
-                <div class="detail-row">
-                  <span class="icon">⚡</span>
-                  <button class="clickable" @click=${openEntity('extended_fve_voltage_1')}>${Math.round(d.solarV1)}V</button>
-                </div>
-                <div class="detail-row">
-                  <span class="icon">〰️</span>
-                  <button class="clickable" @click=${openEntity('extended_fve_current_1')}>${d.solarI1.toFixed(1)}A</button>
-                </div>
-                <div class="detail-row">
-                  <span class="icon">⚡</span>
-                  <button class="clickable" @click=${openEntity('dc_in_fv_p1')}>${Math.round(d.solarP1)} W</button>
-                </div>
+        <div class="detail-section">
+          <div class="solar-strings">
+            <div>
+              <div class="detail-header">🏭 String 1</div>
+              <div class="detail-row">
+                <span class="icon">⚡</span>
+                <button class="clickable" @click=${openEntity('extended_fve_voltage_1')}>${Math.round(d.solarV1)}V</button>
               </div>
-              <div>
-                <div class="detail-header">🏭 String 2</div>
-                <div class="detail-row">
-                  <span class="icon">⚡</span>
-                  <button class="clickable" @click=${openEntity('extended_fve_voltage_2')}>${Math.round(d.solarV2)}V</button>
-                </div>
-                <div class="detail-row">
-                  <span class="icon">〰️</span>
-                  <button class="clickable" @click=${openEntity('extended_fve_current_2')}>${d.solarI2.toFixed(1)}A</button>
-                </div>
-                <div class="detail-row">
-                  <span class="icon">⚡</span>
-                  <button class="clickable" @click=${openEntity('dc_in_fv_p2')}>${Math.round(d.solarP2)} W</button>
-                </div>
+              <div class="detail-row">
+                <span class="icon">〰️</span>
+                <button class="clickable" @click=${openEntity('extended_fve_current_1')}>${d.solarI1.toFixed(1)}A</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">⚡</span>
+                <button class="clickable" @click=${openEntity('dc_in_fv_p1')}>${Math.round(d.solarP1)} W</button>
+              </div>
+            </div>
+            <div>
+              <div class="detail-header">🏭 String 2</div>
+              <div class="detail-row">
+                <span class="icon">⚡</span>
+                <button class="clickable" @click=${openEntity('extended_fve_voltage_2')}>${Math.round(d.solarV2)}V</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">〰️</span>
+                <button class="clickable" @click=${openEntity('extended_fve_current_2')}>${d.solarI2.toFixed(1)}A</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">⚡</span>
+                <button class="clickable" @click=${openEntity('dc_in_fv_p2')}>${Math.round(d.solarP2)} W</button>
               </div>
             </div>
           </div>
-        ` : nothing}
+        </div>
 
         <div class="forecast-badges">
           <button class="forecast-badge" @click=${openEntity('solar_forecast')}>
