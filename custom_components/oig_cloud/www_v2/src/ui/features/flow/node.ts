@@ -490,6 +490,14 @@ export class OigFlowNode extends LitElement {
       color: #1b5e20;
     }
 
+    /* Battery energie section — always visible (never collapsed) */
+    .battery-energy-section {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid ${u(CSS_VARS.divider)};
+      text-align: left;
+    }
+
     /* Grid charging plan — compact clickable badge (opens popup) */
     .grid-charging-plan-summary {
       margin-top: 6px;
@@ -1229,7 +1237,8 @@ export class OigFlowNode extends LitElement {
           </button>
         </div>
 
-        <div class="detail-section">
+        <!-- Energie + gc-plan vždy viditelné (ne v detail-section) -->
+        <div class="battery-energy-section">
           <div class="detail-header">⚡ Energie dnes</div>
           <div class="energy-grid">
             <div class="detail-row">
@@ -1258,7 +1267,7 @@ export class OigFlowNode extends LitElement {
             </div>
           </div>
 
-          <!-- Grid charging plan moved to popup — show as summary badge instead -->
+          <!-- Grid charging plan — always visible badge -->
           <div class="grid-charging-plan-summary">
             <button class="gc-plan-btn ${d.gridChargingPlan.hasBlocks ? 'has-plan' : ''}"
               @click=${(e: Event) => { e.stopPropagation(); this.openGridChargingDialog(); }}>
