@@ -42,6 +42,8 @@ type NodeId = typeof NODE_IDS[number];
 interface NodePosition {
   top: string;
   left: string;
+  gridColumn?: string;
+  gridRow?: string;
 }
 
 type SavedLayout = Partial<Record<NodeId, NodePosition>>;
@@ -83,7 +85,7 @@ export class OigFlowNode extends LitElement {
       display: grid !important;
       grid-template-columns: 1fr 1.2fr 1fr !important;
       grid-template-rows: auto auto auto !important;
-      gap: 8px;
+      gap: 16px;
       width: 100%;
       min-height: auto;
       padding: 16px;
@@ -618,6 +620,12 @@ export class OigFlowNode extends LitElement {
       margin-bottom: 2px;
     }
 
+    /* Explicitní velikosti ikon v node-header */
+    .node-header oig-solar-icon    { display: block; width: 48px; height: 48px; }
+    .node-header oig-battery-icon  { display: block; width: 32px; height: 52px; }
+    .node-header oig-inverter-icon { display: block; width: 48px; height: 48px; }
+    .node-header oig-house-icon    { display: block; width: 48px; height: 48px; }
+
     /* ---- Grid node: 3-fázové hodnoty jako symetrická tabulka ---- */
     .phases-grid {
       display: grid;
@@ -855,6 +863,8 @@ export class OigFlowNode extends LitElement {
       if (saved) {
         this.customPositions = JSON.parse(saved);
         oigLog.debug('[FlowNode] Loaded layout for ' + bp);
+        // Aplikuj grid pozice po prvním renderu (pokud nejsme v editMode)
+        this.updateComplete.then(() => this.applyGridPositions());
       }
     } catch { /* ignore */ }
   }
@@ -882,10 +892,27 @@ export class OigFlowNode extends LitElement {
     if (!container) return;
     for (const id of NODE_IDS) {
       const el = container.querySelector(`.node-${id}`) as HTMLElement;
-      if (el) {
-        el.style.top = '';
-        el.style.left = '';
-      }
+      if (!el) continue;
+      el.style.top = '';
+      el.style.left = '';
+      // Aplikuj uloženou grid pozici (pokud existuje) — přetáčí CSS třídu
+      const pos = this.customPositions[id];
+      el.style.gridColumn = pos?.gridColumn || '';
+      el.style.gridRow = pos?.gridRow || '';
+    }
+  }
+
+  /** Aplikuj uložené grid pozice na nody (volat při editMode=false po loadu) */
+  private applyGridPositions(): void {
+    if (this.editMode) return;
+    const container = this.shadowRoot?.querySelector('.flow-grid') as HTMLElement;
+    if (!container) return;
+    for (const id of NODE_IDS) {
+      const el = container.querySelector(`.node-${id}`) as HTMLElement;
+      if (!el) continue;
+      const pos = this.customPositions[id];
+      el.style.gridColumn = pos?.gridColumn || '';
+      el.style.gridRow = pos?.gridRow || '';
     }
   }
 
@@ -1088,10 +1115,16 @@ export class OigFlowNode extends LitElement {
     el.style.left = `${relLeft}%`;
     el.style.top = `${relTop}%`;
 
-    // Store position
+    // Konverze procentuální pozice → nejbližší grid buňka (col 1-3, row 1-3)
+    const gridCol = relLeft < 33 ? 1 : relLeft < 66 ? 2 : 3;
+    const gridRow = relTop < 30 ? 1 : relTop < 65 ? 2 : 3;
+
+    // Store position (absolutní i grid)
     this.customPositions[this.draggedNodeId] = {
       top: `${relTop}%`,
       left: `${relLeft}%`,
+      gridColumn: String(gridCol),
+      gridRow: String(gridRow),
     };
 
     // Live connection redraw

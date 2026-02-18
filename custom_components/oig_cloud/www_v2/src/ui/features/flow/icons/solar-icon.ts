@@ -36,6 +36,16 @@ export class OigSolarIcon extends LitElement {
     .cloud {
       transition: opacity 0.6s ease;
     }
+
+    /* Pomalá rotace paprsků při výkonu ≥ 20 % */
+    :host(.solar-active) .rays-group {
+      animation: solar-rotate 20s linear infinite;
+      transform-origin: 24px 24px;
+    }
+    @keyframes solar-rotate {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
   `;
 
   private get isNight(): boolean { return this.percent < 2; }
@@ -115,7 +125,10 @@ export class OigSolarIcon extends LitElement {
     const showCloud = this.level === 'low';
 
     return svg`
-      ${rays}
+      <!-- Paprsky obaleny v <g> pro CSS rotaci -->
+      <g class="rays-group">
+        ${rays}
+      </g>
       <circle class="sun-core" cx="${cx}" cy="${cy}" r="${r}" fill="${color}" />
       ${showCloud ? svg`
         <!-- Jednoduchý obláček -->
@@ -129,6 +142,13 @@ export class OigSolarIcon extends LitElement {
   }
 
   render() {
+    // Nastav třídu solar-active na :host pro CSS animaci rotace
+    if (this.percent >= 20) {
+      this.classList.add('solar-active');
+    } else {
+      this.classList.remove('solar-active');
+    }
+
     return html`
       <svg viewBox="0 0 48 48">
         ${this.isNight ? this.renderMoon() : this.renderSun()}
