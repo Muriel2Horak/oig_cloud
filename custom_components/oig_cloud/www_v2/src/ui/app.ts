@@ -211,7 +211,7 @@ export class OigApp extends LitElement {
     /* ---- Flow tab layout: tiles | canvas | control ---- */
     .flow-layout {
       display: grid;
-      grid-template-columns: 220px 1fr 260px;
+      grid-template-columns: 200px 1fr 300px;
       grid-template-areas: 'tiles canvas control';
       gap: 12px;
       width: 100%;
@@ -303,7 +303,7 @@ export class OigApp extends LitElement {
     /* Tablet 768–1200: canvas + control, tiles skryté nebo nahoře */
     @media (max-width: 1200px) {
       .flow-layout {
-        grid-template-columns: 180px 1fr 220px;
+        grid-template-columns: 160px 1fr 260px;
         gap: 8px;
       }
     }
