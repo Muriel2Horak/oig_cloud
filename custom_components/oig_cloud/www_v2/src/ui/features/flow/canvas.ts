@@ -63,12 +63,12 @@ export class OigFlowCanvas extends LitElement {
     .flow-grid-wrapper {
       position: relative;
       z-index: 1;
-      min-height: 560px;
+      min-height: 700px;
     }
 
     /* Tablet: reduce min-height */
     @media (min-width: 769px) and (max-width: 1024px) {
-      .flow-grid-wrapper { min-height: 360px; }
+      .flow-grid-wrapper { min-height: 500px; }
     }
 
     /* Mobile: compact */
