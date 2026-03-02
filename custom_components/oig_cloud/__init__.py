@@ -245,7 +245,7 @@ async def _register_static_paths(hass: HomeAssistant) -> None:
     # V1 static path
     v1_path = "/oig_cloud_static"
     v1_dir = hass.config.path("custom_components/oig_cloud/www")
-    
+
     # V2 static path - keep same path name, just ensure it points to dist/
     v2_path = "/oig_cloud_static_v2"
     v2_dir = hass.config.path("custom_components/oig_cloud/www_v2/dist")
@@ -255,7 +255,7 @@ async def _register_static_paths(hass: HomeAssistant) -> None:
     _LOGGER.info("  V2: %s -> %s", v2_path, v2_dir)
 
     paths = [StaticPathConfig(v1_path, v1_dir, cache_headers=False)]
-    
+
     # Add V2 if dist directory exists
     import os
     if os.path.isdir(v2_dir):
@@ -453,7 +453,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         # Prevent reload errors ("Overwriting panel ...") by removing any existing panel first.
         _remove_existing_panel(hass, panel_id)
         _register_frontend_panel(hass, panel_id, panel_title, dashboard_url)
-        
+
         # Register V2 panel (parallel run)
         v2_panel_id = f"{panel_id}_v2"
         v2_panel_title = f"{panel_title} V2 (BETA)"
@@ -462,7 +462,7 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         _remove_existing_panel(hass, v2_panel_id)
         _register_frontend_panel(hass, v2_panel_id, v2_panel_title, v2_dashboard_url)
         _LOGGER.info("V2 Panel URL: %s", v2_dashboard_url)
-        
+
         _log_dashboard_entities(hass, entry, inverter_sn)
 
     except Exception as e:
