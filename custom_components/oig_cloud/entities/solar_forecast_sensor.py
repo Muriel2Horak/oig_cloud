@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, Optional, Union
 
 import aiohttp
@@ -63,6 +63,53 @@ def _normalize_hourly_keys(hourly: Dict[str, float]) -> Dict[str, float]:
             normalized[hour_key] = power
 
     return normalized
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _daily_value_for_date(daily: Dict[str, Any], target_date: date) -> float:
+    if not isinstance(daily, dict):
+        return 0.0
+    return _safe_float(daily.get(target_date.isoformat(), 0))
+
+
+def _daily_value_for_date_or_latest(daily: Dict[str, Any], target_date: date) -> float:
+    """Return value for target_date, or the most recent date's value as fallback."""
+    if not isinstance(daily, dict) or not daily:
+        return 0.0
+    key = target_date.isoformat()
+    if key in daily:
+        return _safe_float(daily[key])
+    # Fallback: use the most recent available date
+    latest_key = max(daily.keys())
+    return _safe_float(daily[latest_key])
+
+
+def _get_today_tomorrow() -> tuple[date, date]:
+    today = dt_util.now().date()
+    return today, today + timedelta(days=1)
+
+
+def _cached_today_value(
+    previous: Optional[Dict[str, Any]],
+    *,
+    today: date,
+    daily_key: str,
+    value_key: str,
+) -> float:
+    if not isinstance(previous, dict):
+        return 0.0
+    previous_daily = previous.get(daily_key)
+    if not isinstance(previous_daily, dict):
+        return 0.0
+    if today.isoformat() not in previous_daily:
+        return 0.0
+    return _safe_float(previous_daily[today.isoformat()])
 
 
 class OigCloudSolarForecastSensor(OigCloudSensor):
@@ -732,24 +779,57 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         """Build final forecast result from parsed data."""
         total_hourly = self._convert_to_hourly(watts_data)
         total_daily = daily_kwh
+        today, tomorrow = _get_today_tomorrow()
+        today_key = today.isoformat()
+        previous = self._last_forecast_data
 
         string1_hourly = {k: v * ratio1 for k, v in total_hourly.items()}
         string2_hourly = {k: v * ratio2 for k, v in total_hourly.items()}
         string1_daily = {k: v * ratio1 for k, v in total_daily.items()}
         string2_daily = {k: v * ratio2 for k, v in total_daily.items()}
 
+        total_today_kwh = _daily_value_for_date_or_latest(total_daily, today)
+        if total_today_kwh <= 0 and today_key not in total_daily:
+            total_today_kwh = _cached_today_value(
+                previous,
+                today=today,
+                daily_key="total_daily",
+                value_key="total_today_kwh",
+            )
+
+        string1_today_kwh = _daily_value_for_date_or_latest(string1_daily, today)
+        if string1_today_kwh <= 0 and today_key not in string1_daily:
+            string1_today_kwh = _cached_today_value(
+                previous,
+                today=today,
+                daily_key="string1_daily",
+                value_key="string1_today_kwh",
+            )
+
+        string2_today_kwh = _daily_value_for_date_or_latest(string2_daily, today)
+        if string2_today_kwh <= 0 and today_key not in string2_daily:
+            string2_today_kwh = _cached_today_value(
+                previous,
+                today=today,
+                daily_key="string2_daily",
+                value_key="string2_today_kwh",
+            )
+
         return {
             "response_time": datetime.now().isoformat(),
             "provider": "solcast",
             "string1_hourly": string1_hourly,
             "string1_daily": string1_daily,
-            "string1_today_kwh": next(iter(string1_daily.values()), 0),
+            "string1_today_kwh": string1_today_kwh,
+            "string1_tomorrow_kwh": _daily_value_for_date(string1_daily, tomorrow),
             "string2_hourly": string2_hourly,
             "string2_daily": string2_daily,
-            "string2_today_kwh": next(iter(string2_daily.values()), 0),
+            "string2_today_kwh": string2_today_kwh,
+            "string2_tomorrow_kwh": _daily_value_for_date(string2_daily, tomorrow),
             "total_hourly": total_hourly,
             "total_daily": total_daily,
-            "total_today_kwh": next(iter(total_daily.values()), 0),
+            "total_today_kwh": total_today_kwh,
+            "total_tomorrow_kwh": _daily_value_for_date(total_daily, tomorrow),
             "solcast_raw_data": forecasts,
         }
 
@@ -848,6 +928,8 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
     ) -> Dict[str, Any]:
         """Zpracuje data z forecast.solar API."""
         result = {"response_time": datetime.now().isoformat()}
+        today, tomorrow = _get_today_tomorrow()
+        today_key = today.isoformat()
 
         _LOGGER.info("🌞 PROCESS DEBUG: String1 has data: %s", data_string1 is not None)
         _LOGGER.info("🌞 PROCESS DEBUG: String2 has data: %s", data_string2 is not None)
@@ -863,12 +945,36 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             result.update(_build_string_payload("string1", data_string1, string1_data))
             result.update(_build_string_payload("string2", data_string2, string2_data))
 
+            if _safe_float(result.get("string1_today_kwh", 0)) <= 0 and today_key not in string1_data["daily"]:
+                result["string1_today_kwh"] = _cached_today_value(
+                    self._last_forecast_data,
+                    today=today,
+                    daily_key="string1_daily",
+                    value_key="string1_today_kwh",
+                )
+            if _safe_float(result.get("string2_today_kwh", 0)) <= 0 and today_key not in string2_data["daily"]:
+                result["string2_today_kwh"] = _cached_today_value(
+                    self._last_forecast_data,
+                    today=today,
+                    daily_key="string2_daily",
+                    value_key="string2_today_kwh",
+                )
+
             total_hourly, total_daily = _merge_totals(string1_data, string2_data)
+            total_today_kwh = _daily_value_for_date_or_latest(total_daily, today)
+            if total_today_kwh <= 0 and today_key not in total_daily:
+                total_today_kwh = _cached_today_value(
+                    self._last_forecast_data,
+                    today=today,
+                    daily_key="total_daily",
+                    value_key="total_today_kwh",
+                )
             result.update(
                 {
                     "total_hourly": total_hourly,
                     "total_daily": total_daily,
-                    "total_today_kwh": next(iter(total_daily.values()), 0),
+                    "total_today_kwh": total_today_kwh,
+                    "total_tomorrow_kwh": _daily_value_for_date(total_daily, tomorrow),
                 }
             )
 
@@ -1013,8 +1119,14 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
         return {
             "today_total_kwh": self._last_forecast_data.get("total_today_kwh", 0),
+            "tomorrow_total_kwh": self._last_forecast_data.get("total_tomorrow_kwh", 0),
             "string1_today_kwh": self._last_forecast_data.get("string1_today_kwh", 0),
+            "string1_tomorrow_kwh": self._last_forecast_data.get("string1_tomorrow_kwh", 0),
             "string2_today_kwh": self._last_forecast_data.get("string2_today_kwh", 0),
+            "string2_tomorrow_kwh": self._last_forecast_data.get("string2_tomorrow_kwh", 0),
+            "total_daily": self._last_forecast_data.get("total_daily", {}),
+            "string1_daily": self._last_forecast_data.get("string1_daily", {}),
+            "string2_daily": self._last_forecast_data.get("string2_daily", {}),
             "current_hour_kw": self._current_hour_kw(total_hourly, current_hour),
             "today_hourly_total_kw": today_total,
             "tomorrow_hourly_total_kw": tomorrow_total,
@@ -1042,6 +1154,8 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
         return {
             "today_kwh": self._last_forecast_data.get(f"{key}_today_kwh", 0),
+            "tomorrow_kwh": self._last_forecast_data.get(f"{key}_tomorrow_kwh", 0),
+            "daily_kwh": self._last_forecast_data.get(f"{key}_daily", {}),
             "current_hour_kw": self._current_hour_kw(hourly, current_hour),
             "today_hourly_kw": today_hours,
             "tomorrow_hourly_kw": tomorrow_hours,
@@ -1103,10 +1217,12 @@ def _build_string_payload(
 ) -> Dict[str, Any]:
     hourly = string_data["hourly"]
     daily = string_data["daily"]
+    today, tomorrow = _get_today_tomorrow()
     payload = {
         f"{prefix}_hourly": hourly,
         f"{prefix}_daily": daily,
-        f"{prefix}_today_kwh": next(iter(daily.values()), 0),
+        f"{prefix}_today_kwh": _daily_value_for_date_or_latest(daily, today),
+        f"{prefix}_tomorrow_kwh": _daily_value_for_date(daily, tomorrow),
     }
     if raw_data is not None:
         payload[f"{prefix}_raw_data"] = raw_data

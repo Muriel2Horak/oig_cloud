@@ -271,3 +271,5 @@ custom_components/oig_cloud/config_flow_legacy.py
 
 # Frontend internal notes (keep repo clean)
 custom_components/oig_cloud/www/**/*.md
+.deploy_manifest.json
+.deploy_manifest_v2.json

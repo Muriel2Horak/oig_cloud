@@ -55,6 +55,11 @@ async function loadCostComparisonTile(force = false) {
 }
 
 async function fetchCostComparisonTileData(retryCount = 0, maxRetries = 3) {
+    if (typeof fetchWithAuth !== 'function') {
+        console.error('[Cost Comparison] fetchWithAuth is not available');
+        return { hybrid: null };
+    }
+    
     try {
         console.log(`[Cost Comparison] Loading data (attempt ${retryCount + 1}/${maxRetries + 1})`);
         const hybridRes = await fetchWithAuth(

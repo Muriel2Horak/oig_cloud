@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.vite/
+*.log
+.DS_Store
+Thumbs.db
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
