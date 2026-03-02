@@ -23,6 +23,11 @@ HOME_UPS = "Home UPS"
 HOME_5 = "Home 5"
 HOME_6 = "Home 6"
 HOME_MODE_LABELS = (HOME_1, HOME_2, HOME_3, HOME_UPS, HOME_5, HOME_6)
+HOME_MODE_ALL_KEYS = (
+    HOME_1, HOME_2, HOME_3, HOME_UPS, HOME_5, HOME_6,
+    "home_1", "home_2", "home_3", "home_ups", "home_5", "home_6",
+    "home1", "home2", "home3", "homeups", "home5", "home6",
+)
 
 GRID_OFF_LABEL = "Vypnuto / Off"
 GRID_ON_LABEL = "Zapnuto / On"
@@ -41,7 +46,7 @@ SHIELD_LOG_PREFIX = "[SHIELD]"
 SET_BOX_MODE_SCHEMA = vol.Schema(
     {
         vol.Optional("device_id"): cv.string,
-        vol.Required("mode"): vol.In(HOME_MODE_LABELS),
+        vol.Required("mode"): vol.In(HOME_MODE_ALL_KEYS),
         vol.Required("acknowledgement"): vol.In([True]),
     }
 )
