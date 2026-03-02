@@ -243,7 +243,7 @@ export class OigShieldQueue extends LitElement {
 
     try {
       const date = new Date(timestamp);
-      const now = new Date();
+      const now = new Date(this._now);
       const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
 
       const hours = String(date.getHours()).padStart(2, '0');

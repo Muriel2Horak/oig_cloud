@@ -6,7 +6,7 @@ Soubory mají read-only práva, Samba/SCP nefungují. Musíme použít HA File E
 ## Postup
 
 ### Krok 1: Získat HA Token
-1. Otevřít: **http://10.0.0.143:8123**
+1. Otevřít: **http://<HA_HOST>:8123**
 2. Kliknout na uživatelský profil (dole vlevo)
 3. Scrollovat dolů: **"Long-Lived Access Tokens"**
 4. Kliknout: **"Create Token"**

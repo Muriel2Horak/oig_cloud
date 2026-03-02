@@ -52,7 +52,7 @@ Inline `DOMContentLoaded` event listener in `dashboard.html` was running BEFORE 
 ### Step 1: Reload OIG Cloud Integration
 
 **Option A: Via HA UI (Recommended)**
-1. Open Home Assistant: http://10.0.0.143:8123
+1. Open Home Assistant: http://<HA_HOST>:8123
 2. Go to: Settings → Devices & Services
 3. Find: OIG Cloud integration
 4. Click: ⚙️ (three dots) → Reload
@@ -144,7 +144,7 @@ ha config entries reload <entry_id>
 **Check:**
 1. API is accessible:
    ```bash
-   curl http://10.0.0.143:8123/api/oig_cloud/battery_forecast/2206237016/detail_tabs?tab=today
+   curl http://<HA_HOST>:8123/api/oig_cloud/battery_forecast/2206237016/detail_tabs?tab=today
    ```
    Should return JSON data
 

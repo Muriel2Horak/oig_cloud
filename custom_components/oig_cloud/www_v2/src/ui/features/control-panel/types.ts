@@ -11,14 +11,15 @@
 // BOX MODE
 // ============================================================================
 
-export type BoxMode = 'home_1' | 'home_2' | 'home_3' | 'home_ups';
+export type BoxMode = 'home_1' | 'home_2' | 'home_3' | 'home_ups' | 'home_5' | 'home_6';
 
 export const BOX_MODE_LABELS: Record<BoxMode, string> = {
   home_1: 'Home 1',
   home_2: 'Home 2',
   home_3: 'Home 3',
   home_ups: 'Home UPS',
-};
+  home_5: 'Home 5',
+  home_6: 'Home 6',
 
 /** V1 sensor value → BoxMode mapping */
 export const BOX_MODE_SENSOR_MAP: Record<string, BoxMode> = {
@@ -46,7 +47,8 @@ export const BOX_MODE_SERVICE_MAP: Record<BoxMode, string> = {
   home_2: 'Home 2',
   home_3: 'Home 3',
   home_ups: 'Home UPS',
-};
+  home_5: 'Home 5',
+  home_6: 'Home 6',
 
 // ============================================================================
 // GRID DELIVERY

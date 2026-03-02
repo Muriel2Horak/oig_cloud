@@ -28,7 +28,7 @@ Root cause: Race condition - inline `DOMContentLoaded` listener was running befo
 ## Deployment Methods:
 
 ### Method 1: HA File Editor (Recommended)
-1. Open HA: http://10.0.0.143:8123
+1. Open HA: http://<HA_HOST>:8123
 2. Go to: Settings → File editor
 3. Navigate to: `/config/custom_components/oig_cloud/www/`
 4. Open `dashboard.html`
@@ -45,7 +45,7 @@ Root cause: Race condition - inline `DOMContentLoaded` listener was running befo
 12. Wait 10-20 seconds
 
 ### Method 2: Samba/CIFS Share
-1. Mount HA share: `//10.0.0.143/config`
+1. Mount HA share: `//<HA_HOST>/config`
 2. Navigate to: `custom_components/oig_cloud/www/`
 3. Copy modified files:
    - `dashboard.html`
@@ -57,11 +57,11 @@ Root cause: Race condition - inline `DOMContentLoaded` listener was running befo
 ### Method 3: Terminal Access (if permissions allow)
 ```bash
 # Check if homeassistant user can write
-ssh hassio@10.0.0.143 "whoami"
-ssh hassio@10.0.0.143 "touch /config/test_write && rm /config/test_write"
+ssh hassio@<HA_HOST> "whoami"
+ssh hassio@<HA_HOST> "touch /config/test_write && rm /config/test_write"
 
 # If write works, deploy:
-cat dashboard.html | ssh hassio@10.0.0.143 "cat > /config/custom_components/oig_cloud/www/dashboard.html"
+cat dashboard.html | ssh hassio@<HA_HOST> "cat > /config/custom_components/oig_cloud/www/dashboard.html"
 ```
 
 ### Method 4: HA Terminal Add-on
@@ -91,7 +91,7 @@ python test_dashboard_fixes.py
 ```bash
 # Test detail_tabs API
 curl -H "Authorization: Bearer <YOUR_TOKEN>" \
-  http://10.0.0.143:8123/api/oig_cloud/battery_forecast/2206237016/detail_tabs?tab=today
+  http://<HA_HOST>:8123/api/oig_cloud/battery_forecast/2206237016/detail_tabs?tab=today
 ```
 
 ## Expected Results:

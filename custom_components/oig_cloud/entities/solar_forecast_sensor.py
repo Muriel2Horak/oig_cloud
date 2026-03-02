@@ -109,7 +109,7 @@ def _cached_today_value(
         return 0.0
     if today.isoformat() not in previous_daily:
         return 0.0
-    return _safe_float(previous.get(value_key, previous_daily.get(today.isoformat(), 0)))
+    return _safe_float(previous_daily[today.isoformat()])
 
 
 class OigCloudSolarForecastSensor(OigCloudSensor):

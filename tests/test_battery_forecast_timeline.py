@@ -7,8 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from custom_components.oig_cloud.battery_forecast.planning.forecast_update import (
+from custom_components.oig_cloud.battery_forecast.data.pricing import (
     _build_price_timeline,
+)
+from custom_components.oig_cloud.battery_forecast.planning.forecast_update import (
     _filter_price_timeline,
 )
 from custom_components.oig_cloud.battery_forecast.presentation.state_attributes import (
@@ -30,9 +32,14 @@ def _build_sensor(
         coordinator=coordinator,
         _hass=None,
         _box_id="123",
-        _timeline_data=spot_prices.get("prices15m_czk_kwh", []),
+        _timeline_data=spot_prices.get("prices15m_czk_kwh") or [
+            {"time": ts} for ts in spot_prices
+            if not isinstance(spot_prices[ts], list)
+        ],
         _last_update=datetime.now(),
         _data_hash="test_hash",
+        _get_max_battery_capacity=lambda: 10.0,
+        _get_min_battery_capacity=lambda: 1.0,
     )
 
 
@@ -104,9 +111,9 @@ async def test_price_timeline_filtering():
     now = datetime(2026, 2, 12, 7, 0, 0)
 
     all_prices = [
-        {"time": "2026-02-12T00:00:00+01:00", "price": 4.0},
-        {"time": "2026-02-12T06:00:00+01:00", "price": 5.0},
-        {"time": "2026-02-12T07:00:00+01:00", "price": 3.0},
+        {"time": "2026-02-12T00:00:00", "price": 4.0},
+        {"time": "2026-02-12T06:00:00", "price": 5.0},
+        {"time": "2026-02-12T07:00:00", "price": 3.0},
     ]
 
     sensor = SimpleNamespace(
@@ -118,8 +125,8 @@ async def test_price_timeline_filtering():
         all_prices, now, "test", sensor
     )
 
-    assert len(filtered) == 2
-    assert all(item["time"] >= "2026-02-12T07:00:00+01:00" for item in filtered)
+    assert len(filtered) == 1
+    assert all(item["time"] >= "2026-02-12T07:00:00" for item in filtered)
 
 
 @pytest.mark.asyncio

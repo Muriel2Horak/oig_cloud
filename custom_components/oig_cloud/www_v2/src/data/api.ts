@@ -50,7 +50,7 @@ export class ApiClient {
 
     if (this.pendingRequests.has(cacheKey)) {
       oigLog.debug('Dedup request', { path });
-      return this.pendingRequests.get(cacheKey);
+      return this.pendingRequests.get(cacheKey) as Promise<T>;
     }
 
     const promise = this.doFetch<T>(url, { token, method, body, signal })

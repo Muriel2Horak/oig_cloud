@@ -20,6 +20,8 @@ export class OigBatteryIcon extends LitElement {
   @property({ type: Boolean }) gridCharging = false;
   @property({ type: Boolean }) discharging = false;
 
+  private readonly _clipId = `batt-clip-${Math.random().toString(36).slice(2)}`;
+
   static styles = css`
     :host { display: inline-block; width: 32px; height: 52px; }
     svg { width: 100%; height: 100%; overflow: visible; }
@@ -95,7 +97,7 @@ export class OigBatteryIcon extends LitElement {
 
         <!-- Clippath pro výplň -->
         <defs>
-          <clipPath id="batt-clip-${this.soc}">
+          <clipPath id="${this._clipId}">
             <rect x="4" y="7" width="24" height="58" rx="3"/>
           </clipPath>
         </defs>
@@ -109,7 +111,7 @@ export class OigBatteryIcon extends LitElement {
           height="${this.fillHeight}"
           rx="2"
           fill="${this.fillColor}"
-          clip-path="url(#batt-clip-${this.soc})"
+          clip-path="url(#${this._clipId})"
         />
 
         <!-- Animovaný pruh při nabíjení -->
@@ -118,7 +120,7 @@ export class OigBatteryIcon extends LitElement {
             class="charge-stripe active"
             x="4" y="52" width="24" height="8" rx="2"
             fill="${this.stripeColor}"
-            clip-path="url(#batt-clip-${this.soc})"
+            clip-path="url(#${this._clipId})"
           />
         ` : ''}
 
