@@ -617,7 +617,12 @@ def _history_value(states: Optional[list[Any]]) -> Optional[float]:
         return None
     last_state = states[-1]
     try:
-        return float(last_state.state)
+        if isinstance(last_state, dict):
+            # HA 2026.x compressed_state_format: 's' = state value
+            state_val = last_state.get("s") or last_state.get("state")
+        else:
+            state_val = last_state.state
+        return float(state_val) if state_val is not None else None
     except (ValueError, TypeError):
         return None
 

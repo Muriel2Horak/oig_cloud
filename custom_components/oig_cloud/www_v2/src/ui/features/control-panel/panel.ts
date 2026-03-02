@@ -164,6 +164,8 @@ export class OigControlPanel extends LitElement {
       home_2: shieldController.getBoxModeButtonState('home_2'),
       home_3: shieldController.getBoxModeButtonState('home_3'),
       home_ups: shieldController.getBoxModeButtonState('home_ups'),
+      home_5: shieldController.getBoxModeButtonState('home_5'),
+      home_6: shieldController.getBoxModeButtonState('home_6'),
     };
   }
 

@@ -1,0 +1,55 @@
+name: Build Frontend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'custom_components/oig_cloud/www_v2/src/**'
+      - 'custom_components/oig_cloud/www_v2/package.json'
+      - 'custom_components/oig_cloud/www_v2/package-lock.json'
+      - 'custom_components/oig_cloud/www_v2/vite.config.ts'
+      - 'custom_components/oig_cloud/www_v2/tsconfig.json'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Prevent infinite loop when the bot commits the built dist
+    if: github.actor != 'github-actions[bot]'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: custom_components/oig_cloud/www_v2/package-lock.json
+
+      - name: Install dependencies
+        working-directory: custom_components/oig_cloud/www_v2
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: custom_components/oig_cloud/www_v2
+        run: npm run build
+
+      - name: Commit and push dist
+        working-directory: custom_components/oig_cloud/www_v2
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add dist/
+          if git diff --staged --quiet; then
+            echo "No changes to dist/, skipping commit."
+          else
+            git commit -m "build: update www_v2 dist [skip ci]"
+            git push
+          fi

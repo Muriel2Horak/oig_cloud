@@ -139,6 +139,8 @@ export class OigBoxModeSelector extends LitElement {
     home_2: 'idle',
     home_3: 'idle',
     home_ups: 'idle',
+    home_5: 'idle',
+    home_6: 'idle',
   };
 
   static styles = [sharedButtonStyles];

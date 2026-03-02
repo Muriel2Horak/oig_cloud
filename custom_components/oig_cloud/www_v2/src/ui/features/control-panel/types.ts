@@ -20,7 +20,7 @@ export const BOX_MODE_LABELS: Record<BoxMode, string> = {
   home_ups: 'Home UPS',
   home_5: 'Home 5',
   home_6: 'Home 6',
-
+};
 /** V1 sensor value → BoxMode mapping */
 export const BOX_MODE_SENSOR_MAP: Record<string, BoxMode> = {
   'Home 1': 'home_1',
@@ -49,7 +49,7 @@ export const BOX_MODE_SERVICE_MAP: Record<BoxMode, string> = {
   home_ups: 'Home UPS',
   home_5: 'Home 5',
   home_6: 'Home 6',
-
+};
 // ============================================================================
 // GRID DELIVERY
 // ============================================================================
