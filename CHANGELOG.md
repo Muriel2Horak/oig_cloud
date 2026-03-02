@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `battery_efficiency` sensor crash (`AttributeError: 'dict' object has no attribute 'state'`)
-  — `_history_value()` now handles HA 2026.x compressed state format (dict with `s` key)
-- Ship built `www_v2/dist/` in repository so HACS installations receive the dashboard frontend
-- Add GitHub Actions workflow to auto-rebuild `www_v2/dist` on every push to main
+  - `_history_value()` now handles HA 2026.x compressed state format (dict with `s` key)
+- Shipped built `www_v2/dist/` in repository so HACS installations receive the dashboard frontend
+- Added GitHub Actions workflow to auto-rebuild `www_v2/dist` on every push to main
 
 ## [2.2.0] - 2026-01-22
 
