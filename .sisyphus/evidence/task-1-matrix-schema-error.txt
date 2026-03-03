@@ -1,0 +1,55 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.3, pytest-9.0.2, pluggy-1.6.0 -- /opt/homebrew/opt/python@3.14/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Downloads/oig_cloud
+configfile: pytest.ini
+plugins: mock-3.15.1, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 44 items
+
+tests/test_rule_matrix_baseline.py::TestMatrixFileExists::test_matrix_file_exists PASSED [  2%]
+tests/test_rule_matrix_baseline.py::TestMatrixFileExists::test_matrix_file_not_empty PASSED [  4%]
+tests/test_rule_matrix_baseline.py::TestMatrixFileExists::test_matrix_is_markdown PASSED [  6%]
+tests/test_rule_matrix_baseline.py::TestMatrixSections::test_has_executive_summary PASSED [  9%]
+tests/test_rule_matrix_baseline.py::TestMatrixSections::test_has_precedence_hierarchy PASSED [ 11%]
+tests/test_rule_matrix_baseline.py::TestMatrixSections::test_has_rule_definitions PASSED [ 13%]
+tests/test_rule_matrix_baseline.py::TestMatrixSections::test_has_conflict_hotspots PASSED [ 15%]
+tests/test_rule_matrix_baseline.py::TestMatrixSections::test_has_execution_order PASSED [ 18%]
+tests/test_rule_matrix_baseline.py::TestMatrixSections::test_has_ambiguous_behavior PASSED [ 20%]
+tests/test_rule_matrix_baseline.py::TestRuleIdFormat::test_has_protection_rules PASSED [ 22%]
+tests/test_rule_matrix_baseline.py::TestRuleIdFormat::test_has_soc_rules PASSED [ 25%]
+tests/test_rule_matrix_baseline.py::TestRuleIdFormat::test_has_grid_rules PASSED [ 27%]
+tests/test_rule_matrix_baseline.py::TestRuleIdFormat::test_has_balancing_rules PASSED [ 29%]
+tests/test_rule_matrix_baseline.py::TestRuleIdFormat::test_has_boiler_rules PASSED [ 31%]
+tests/test_rule_matrix_baseline.py::TestRuleIdFormat::test_has_autoswitch_rules PASSED [ 34%]
+tests/test_rule_matrix_baseline.py::TestRuleIdFormat::test_has_modeguard_rules PASSED [ 36%]
+tests/test_rule_matrix_baseline.py::TestRuleIdFormat::test_rule_ids_unique PASSED [ 38%]
+tests/test_rule_matrix_baseline.py::TestRuleRequiredFields::test_rules_have_module_reference PASSED [ 40%]
+tests/test_rule_matrix_baseline.py::TestRuleRequiredFields::test_rules_have_condition PASSED [ 43%]
+tests/test_rule_matrix_baseline.py::TestRuleRequiredFields::test_rules_have_action PASSED [ 45%]
+tests/test_rule_matrix_baseline.py::TestRuleRequiredFields::test_rules_have_priority PASSED [ 47%]
+tests/test_rule_matrix_baseline.py::TestConflictHotspots::test_protection_vs_economic_conflict PASSED [ 50%]
+tests/test_rule_matrix_baseline.py::TestConflictHotspots::test_balancing_vs_economic_conflict PASSED [ 52%]
+tests/test_rule_matrix_baseline.py::TestConflictHotspots::test_modeguard_vs_autoswitch_conflict PASSED [ 54%]
+tests/test_rule_matrix_baseline.py::TestConflictHotspots::test_hwhold_vs_cost_conflict PASSED [ 56%]
+tests/test_rule_matrix_baseline.py::TestTODOMarkers::test_balancing_todos_documented PASSED [ 59%]
+tests/test_rule_matrix_baseline.py::TestTODOMarkers::test_balancing_core_todos PASSED [ 61%]
+tests/test_rule_matrix_baseline.py::TestTODOMarkers::test_balancing_plan_todos PASSED [ 63%]
+tests/test_rule_matrix_baseline.py::TestKnownIssues::test_pv_forecast_gap_documented PASSED [ 65%]
+tests/test_rule_matrix_baseline.py::TestKnownIssues::test_boiler_grid_default_documented PASSED [ 68%]
+tests/test_rule_matrix_baseline.py::TestRuleCount::test_minimum_protection_rules PASSED [ 70%]
+tests/test_rule_matrix_baseline.py::TestRuleCount::test_minimum_soc_rules PASSED [ 72%]
+tests/test_rule_matrix_baseline.py::TestRuleCount::test_minimum_grid_rules PASSED [ 75%]
+tests/test_rule_matrix_baseline.py::TestRuleCount::test_minimum_balancing_rules PASSED [ 77%]
+tests/test_rule_matrix_baseline.py::TestRuleCount::test_minimum_boiler_rules PASSED [ 79%]
+tests/test_rule_matrix_baseline.py::TestRuleCount::test_minimum_total_rules PASSED [ 81%]
+tests/test_rule_matrix_baseline.py::TestPrecedenceHierarchy::test_has_nine_priority_levels PASSED [ 84%]
+tests/test_rule_matrix_baseline.py::TestPrecedenceHierarchy::test_protection_is_highest_priority PASSED [ 86%]
+tests/test_rule_matrix_baseline.py::TestExecutionOrder::test_charging_plan_order_documented PASSED [ 88%]
+tests/test_rule_matrix_baseline.py::TestExecutionOrder::test_hybrid_planning_order_documented PASSED [ 90%]
+tests/test_rule_matrix_baseline.py::TestExecutionOrder::test_balancing_order_documented PASSED [ 93%]
+tests/test_rule_matrix_baseline.py::TestMatrixCompleteness::test_matrix_has_all_modules PASSED [ 95%]
+tests/test_rule_matrix_baseline.py::TestMatrixCompleteness::test_matrix_has_generation_date PASSED [ 97%]
+tests/test_rule_matrix_baseline.py::TestMatrixCompleteness::test_matrix_has_purpose_statement PASSED [100%]
+
+============================== 44 passed in 0.08s ==============================

@@ -1,0 +1,55 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.4, pytest-8.4.2, pluggy-1.6.0 -- /Users/martinhorak/Downloads/oig_cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Downloads/oig_cloud
+configfile: pytest.ini
+plugins: respx-0.22.0, pytest_freezer-0.4.9, unordered-0.7.0, asyncio-1.2.0, anyio-4.11.0, syrupy-4.9.1, sugar-1.0.0, socket-0.7.0, xdist-3.8.0, timeout-2.4.0, github-actions-annotate-failures-0.3.0, homeassistant-custom-component-0.13.288, aiohttp-1.1.0, picked-0.5.1, requests-mock-1.12.1, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 3 items
+
+tests/test_pv_first_incident.py::test_grid_charge_is_deferred_when_pv_expected FAILED [ 33%]
+tests/test_pv_first_incident.py::test_grid_charge_considers_pv_forecast_before_expensive_charging FAILED [ 66%]
+tests/test_pv_first_incident.py::test_combined_battery_boiler_incident_scenario FAILED [100%]
+
+=================================== FAILURES ===================================
+________________ test_grid_charge_is_deferred_when_pv_expected _________________
+tests/test_pv_first_incident.py:172: in test_grid_charge_is_deferred_when_pv_expected
+    assert "pv_forecast" in params or "solar_forecast" in params or "pv_data" in params, (
+E   AssertionError: ARCHITECTURAL GAP: economic_charging_plan() lacks PV forecast parameter. Current params: ['timeline_data', 'plan']. Cannot enforce PV_FIRST (1000) > ECONOMIC_CHARGING (400) precedence without PV context. INCIDENT ROOT CAUSE: Charging plan cannot defer to PV it doesn't know about.
+E   assert ('pv_forecast' in ['timeline_data', 'plan'] or 'solar_forecast' in ['timeline_data', 'plan'] or 'pv_data' in ['timeline_data', 'plan'])
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: KqueueSelector
+DEBUG:asyncio:Using selector: KqueueSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: KqueueSelector
+DEBUG    asyncio:selector_events.py:64 Using selector: KqueueSelector
+_______ test_grid_charge_considers_pv_forecast_before_expensive_charging _______
+tests/test_pv_first_incident.py:201: in test_grid_charge_considers_pv_forecast_before_expensive_charging
+    assert len(pv_fields) > 0, (
+E   AssertionError: ARCHITECTURAL GAP: EconomicChargingPlanConfig lacks PV forecast fields. Current fields: ['min_capacity_kwh', 'min_capacity_floor', 'effective_minimum_kwh', 'target_capacity_kwh', 'max_charging_price', 'min_savings_margin', 'charging_power_kw', 'max_capacity', 'battery_efficiency', 'config', 'iso_tz_offset', 'mode_label_home_ups', 'mode_label_home_i', 'target_reason']. Cannot configure PV-first policy (pv_forecast_threshold, pv_confidence_min) without PV-related configuration. INCIDENT ROOT CAUSE: No way to configure when PV deferral should activate.
+E   assert 0 > 0
+E    +  where 0 = len([])
+________________ test_combined_battery_boiler_incident_scenario ________________
+tests/test_pv_first_incident.py:386: in test_combined_battery_boiler_incident_scenario
+    assert battery_has_pv or boiler_has_pv, (
+E   AssertionError: COMBINED ARCHITECTURAL GAP:
+E     Battery config fields: ['min_capacity_kwh', 'min_capacity_floor', 'effective_minimum_kwh', 'target_capacity_kwh', 'max_charging_price', 'min_savings_margin', 'charging_power_kw', 'max_capacity', 'battery_efficiency', 'config', 'iso_tz_offset', 'mode_label_home_ups', 'mode_label_home_i', 'target_reason'] (PV fields: [])
+E     Boiler params: ['overflow_available', 'spot_price', 'alt_price'] (PV params: [])
+E     NEITHER system has PV forecast integration.
+E     INCIDENT: Both can choose expensive Grid without knowing PV is coming.
+E     PRECEDENCE CONTRACT VIOLATION: PV_FIRST (1000) cannot be enforced.
+E   assert (False or False)
+=========================== short test summary info ============================
+FAILED tests/test_pv_first_incident.py::test_grid_charge_is_deferred_when_pv_expected - AssertionError: ARCHITECTURAL GAP: economic_charging_plan() lacks PV forecast parameter. Current params: ['timeline_data', 'plan']. Cannot enforce PV_FIRST (1000) > ECONOMIC_CHARGING (400) precedence without PV context. INCIDENT ROOT CAUSE: Charging plan cannot defer to PV it doesn't know about.
+assert ('pv_forecast' in ['timeline_data', 'plan'] or 'solar_forecast' in ['timeline_data', 'plan'] or 'pv_data' in ['timeline_data', 'plan'])
+FAILED tests/test_pv_first_incident.py::test_grid_charge_considers_pv_forecast_before_expensive_charging - AssertionError: ARCHITECTURAL GAP: EconomicChargingPlanConfig lacks PV forecast fields. Current fields: ['min_capacity_kwh', 'min_capacity_floor', 'effective_minimum_kwh', 'target_capacity_kwh', 'max_charging_price', 'min_savings_margin', 'charging_power_kw', 'max_capacity', 'battery_efficiency', 'config', 'iso_tz_offset', 'mode_label_home_ups', 'mode_label_home_i', 'target_reason']. Cannot configure PV-first policy (pv_forecast_threshold, pv_confidence_min) without PV-related configuration. INCIDENT ROOT CAUSE: No way to configure when PV deferral should activate.
+assert 0 > 0
+ +  where 0 = len([])
+FAILED tests/test_pv_first_incident.py::test_combined_battery_boiler_incident_scenario - AssertionError: COMBINED ARCHITECTURAL GAP:
+  Battery config fields: ['min_capacity_kwh', 'min_capacity_floor', 'effective_minimum_kwh', 'target_capacity_kwh', 'max_charging_price', 'min_savings_margin', 'charging_power_kw', 'max_capacity', 'battery_efficiency', 'config', 'iso_tz_offset', 'mode_label_home_ups', 'mode_label_home_i', 'target_reason'] (PV fields: [])
+  Boiler params: ['overflow_available', 'spot_price', 'alt_price'] (PV params: [])
+  NEITHER system has PV forecast integration.
+  INCIDENT: Both can choose expensive Grid without knowing PV is coming.
+  PRECEDENCE CONTRACT VIOLATION: PV_FIRST (1000) cannot be enforced.
+assert (False or False)
+============================== 3 failed in 0.20s ===============================

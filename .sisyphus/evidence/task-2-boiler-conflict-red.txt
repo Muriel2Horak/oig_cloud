@@ -1,0 +1,53 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.4, pytest-8.4.2, pluggy-1.6.0 -- /Users/martinhorak/Downloads/oig_cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Downloads/oig_cloud
+configfile: pytest.ini
+plugins: respx-0.22.0, pytest_freezer-0.4.9, unordered-0.7.0, asyncio-1.2.0, anyio-4.11.0, syrupy-4.9.1, sugar-1.0.0, socket-0.7.0, xdist-3.8.0, timeout-2.4.0, github-actions-annotate-failures-0.3.0, homeassistant-custom-component-0.13.288, aiohttp-1.1.0, picked-0.5.1, requests-mock-1.12.1, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 3 items
+
+tests/test_pv_first_incident.py::test_boiler_does_not_force_early_grid_charge FAILED [ 33%]
+tests/test_pv_first_incident.py::test_boiler_defers_to_pv_when_forecast_available FAILED [ 66%]
+tests/test_pv_first_incident.py::test_boiler_source_recommendation_lacks_pv_context FAILED [100%]
+
+=================================== FAILURES ===================================
+_________________ test_boiler_does_not_force_early_grid_charge _________________
+tests/test_pv_first_incident.py:254: in test_boiler_does_not_force_early_grid_charge
+    assert recommended != EnergySource.GRID, (
+E   AssertionError: PV-FIRST VIOLATION: Boiler recommends Grid at 5.0CZK/kWh without checking PV forecast. When PV is expected, boiler should defer or wait for PV. INCIDENT REPRODUCED: Boiler forces early grid charging.
+E   assert <EnergySource.GRID: 'grid'> != <EnergySource.GRID: 'grid'>
+E    +  where <EnergySource.GRID: 'grid'> = EnergySource.GRID
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: KqueueSelector
+DEBUG:asyncio:Using selector: KqueueSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: KqueueSelector
+DEBUG    asyncio:selector_events.py:64 Using selector: KqueueSelector
+_______________ test_boiler_defers_to_pv_when_forecast_available _______________
+tests/test_pv_first_incident.py:292: in test_boiler_defers_to_pv_when_forecast_available
+    assert recommended != EnergySource.GRID or recommended == EnergySource.FVE, (
+E   AssertionError: BOILER PV-COORDINATION MISSING: Recommended grid at expensive price (4.5 CZK/kWh) without PV forecast check. Should defer to PV when production is expected.
+E   assert (<EnergySource.GRID: 'grid'> != <EnergySource.GRID: 'grid'> or <EnergySource.GRID: 'grid'> == <EnergySource.FVE: 'fve'>
+E    +  where <EnergySource.GRID: 'grid'> = EnergySource.GRID
+E     
+E     - fve
+E     + grid)
+______________ test_boiler_source_recommendation_lacks_pv_context ______________
+tests/test_pv_first_incident.py:341: in test_boiler_source_recommendation_lacks_pv_context
+    assert "pv_forecast" in params or "pv_expected" in params or "pv_available" in params, (
+E   AssertionError: ARCHITECTURAL GAP: _recommend_source() lacks PV forecast parameter. Current params: ['overflow_available', 'spot_price', 'alt_price']. Cannot implement PV-first policy without PV context. INCIDENT ROOT CAUSE: Boiler cannot defer to PV it doesn't know about.
+E   assert ('pv_forecast' in ['overflow_available', 'spot_price', 'alt_price'] or 'pv_expected' in ['overflow_available', 'spot_price', 'alt_price'] or 'pv_available' in ['overflow_available', 'spot_price', 'alt_price'])
+=========================== short test summary info ============================
+FAILED tests/test_pv_first_incident.py::test_boiler_does_not_force_early_grid_charge - AssertionError: PV-FIRST VIOLATION: Boiler recommends Grid at 5.0CZK/kWh without checking PV forecast. When PV is expected, boiler should defer or wait for PV. INCIDENT REPRODUCED: Boiler forces early grid charging.
+assert <EnergySource.GRID: 'grid'> != <EnergySource.GRID: 'grid'>
+ +  where <EnergySource.GRID: 'grid'> = EnergySource.GRID
+FAILED tests/test_pv_first_incident.py::test_boiler_defers_to_pv_when_forecast_available - AssertionError: BOILER PV-COORDINATION MISSING: Recommended grid at expensive price (4.5 CZK/kWh) without PV forecast check. Should defer to PV when production is expected.
+assert (<EnergySource.GRID: 'grid'> != <EnergySource.GRID: 'grid'> or <EnergySource.GRID: 'grid'> == <EnergySource.FVE: 'fve'>
+ +  where <EnergySource.GRID: 'grid'> = EnergySource.GRID
+  
+  - fve
+  + grid)
+FAILED tests/test_pv_first_incident.py::test_boiler_source_recommendation_lacks_pv_context - AssertionError: ARCHITECTURAL GAP: _recommend_source() lacks PV forecast parameter. Current params: ['overflow_available', 'spot_price', 'alt_price']. Cannot implement PV-first policy without PV context. INCIDENT ROOT CAUSE: Boiler cannot defer to PV it doesn't know about.
+assert ('pv_forecast' in ['overflow_available', 'spot_price', 'alt_price'] or 'pv_expected' in ['overflow_available', 'spot_price', 'alt_price'] or 'pv_available' in ['overflow_available', 'spot_price', 'alt_price'])
+============================== 3 failed in 0.20s ===============================
