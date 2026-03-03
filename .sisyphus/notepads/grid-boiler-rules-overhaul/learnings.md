@@ -487,3 +487,44 @@ When updating function signatures with new optional parameters, existing mocks m
 
 ### Key Insight
 The parameter is named `pv_forecast` (not `pv_forecast_kwh`) because test 5 explicitly checks for parameter name matching `pv_forecast`, `pv_expected`, or `pv_available`. This naming convention is now part of the API contract.
+
+
+## [2026-03-03] Task 13 — Observability Pack for Aggressive Rollout
+
+### Implementation Summary
+- Created `observability.py` pure Python module with no HA dependencies
+- `RolloutMetrics` dataclass: tracks pv_defer_count, grid_charge_count, protection_bypass_count, boiler_source_outcomes, decision_reason_counts
+- `RolloutGate` dataclass: evaluates rollout health with status (HEALTHY/DEGRADED/UNHEALTHY), alerts, recommendations
+- `AlertCondition` dataclass: defines threshold + comparison + message + severity
+- Pure functions: evaluate_rollout_health(), format_metrics_summary(), create_metrics_from_dict(), merge_metrics()
+
+### Threshold Constants
+- MAX_PROTECTION_BYPASS_RATE = 0.05 (5%) - critical alert if exceeded
+- MIN_PV_DEFER_RATE = 0.10 (10%) - warning if below when PV-first enabled
+- MAX_GRID_CHARGE_RATE = 0.30 (30%) - warning if exceeded when PV-first enabled
+
+### Health Status Logic
+- HEALTHY: No alerts triggered
+- DEGRADED: Warning-level alerts only
+- UNHEALTHY: Any critical-level alert (triggers should_pause=True)
+
+### Design Patterns
+- Mutable counters for incremental updates during decision cycle
+- Rate calculations handle zero-decision edge case (return 0.0)
+- Metrics snapshot isolation: snapshot is a copy, not affected by later changes
+- merge_metrics() finds MAX timestamp (not first in reverse order)
+
+### Test Coverage
+- 29 tests in test_observability.py
+- Key tests: test_pv_defer_counter_increments, test_protection_bypass_alerts_threshold, test_boiler_source_outcome_tracking
+- Acceptance tests: test_rollout_gate_passes_healthy_metrics, test_rollout_gate_fails_on_high_bypass_rate
+- Full suite: 2964 passed (2935 baseline + 29 new)
+
+### Evidence Files
+- `.sisyphus/evidence/task-13-observability-counters.txt` — full test output
+- `.sisyphus/evidence/task-13-rollout-gate.txt` — rollout gate acceptance tests
+
+### Integration Considerations
+- Module is standalone (no integration in decision loop yet — Task 14)
+- Consumes: RolloutFlags, PrecedenceLevel (for reason codes)
+- Will be consumed by: hybrid_planning.py for metrics collection during charging decisions

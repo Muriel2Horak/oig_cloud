@@ -1,0 +1,40 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.4, pytest-8.4.2, pluggy-1.6.0 -- /Users/martinhorak/Downloads/oig_cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Downloads/oig_cloud
+configfile: pytest.ini
+plugins: respx-0.22.0, pytest_freezer-0.4.9, unordered-0.7.0, asyncio-1.2.0, anyio-4.11.0, syrupy-4.9.1, sugar-1.0.0, socket-0.7.0, xdist-3.8.0, timeout-2.4.0, github-actions-annotate-failures-0.3.0, homeassistant-custom-component-0.13.288, aiohttp-1.1.0, picked-0.5.1, requests-mock-1.12.1, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 29 items
+
+tests/test_observability.py::TestRolloutMetrics::test_pv_defer_counter_increments PASSED [  3%]
+tests/test_observability.py::TestRolloutMetrics::test_grid_charge_counter_increments PASSED [  6%]
+tests/test_observability.py::TestRolloutMetrics::test_protection_bypass_counter_increments PASSED [ 10%]
+tests/test_observability.py::TestRolloutMetrics::test_boiler_source_outcome_tracking PASSED [ 13%]
+tests/test_observability.py::TestRolloutMetrics::test_decision_reason_tracking PASSED [ 17%]
+tests/test_observability.py::TestRolloutMetrics::test_rate_calculations_with_no_decisions PASSED [ 20%]
+tests/test_observability.py::TestRolloutMetrics::test_rate_calculations_with_decisions PASSED [ 24%]
+tests/test_observability.py::TestRolloutMetrics::test_reset_clears_all_counters PASSED [ 27%]
+tests/test_observability.py::TestAlertCondition::test_gt_comparison PASSED [ 31%]
+tests/test_observability.py::TestAlertCondition::test_lt_comparison PASSED [ 34%]
+tests/test_observability.py::TestAlertCondition::test_gte_comparison PASSED [ 37%]
+tests/test_observability.py::TestAlertCondition::test_lte_comparison PASSED [ 41%]
+tests/test_observability.py::TestRolloutGate::test_rollout_gate_passes_healthy_metrics PASSED [ 44%]
+tests/test_observability.py::TestRolloutGate::test_rollout_gate_fails_on_high_bypass_rate PASSED [ 48%]
+tests/test_observability.py::TestRolloutGate::test_protection_bypass_alerts_threshold PASSED [ 51%]
+tests/test_observability.py::TestRolloutGate::test_low_pv_defer_rate_triggers_warning PASSED [ 55%]
+tests/test_observability.py::TestRolloutGate::test_high_grid_charge_rate_triggers_warning PASSED [ 58%]
+tests/test_observability.py::TestRolloutGate::test_pv_first_disabled_skips_pv_checks PASSED [ 62%]
+tests/test_observability.py::TestRolloutGate::test_multiple_alerts_triggers_unhealthy PASSED [ 65%]
+tests/test_observability.py::TestFormatMetricsSummary::test_format_empty_metrics PASSED [ 68%]
+tests/test_observability.py::TestFormatMetricsSummary::test_format_metrics_with_data PASSED [ 72%]
+tests/test_observability.py::TestCreateMetricsFromDict::test_create_from_empty_dict PASSED [ 75%]
+tests/test_observability.py::TestCreateMetricsFromDict::test_create_from_dict_with_values PASSED [ 79%]
+tests/test_observability.py::TestMergeMetrics::test_merge_empty_list PASSED [ 82%]
+tests/test_observability.py::TestMergeMetrics::test_merge_single_metrics PASSED [ 86%]
+tests/test_observability.py::TestMergeMetrics::test_merge_multiple_metrics PASSED [ 89%]
+tests/test_observability.py::TestMergeMetrics::test_merge_uses_latest_timestamp PASSED [ 93%]
+tests/test_observability.py::TestMetricsSnapshot::test_snapshot_contains_all_fields PASSED [ 96%]
+tests/test_observability.py::TestMetricsSnapshot::test_snapshot_isolation PASSED [100%]
+
+============================== 29 passed in 0.14s ==============================
