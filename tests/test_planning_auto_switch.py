@@ -274,7 +274,7 @@ async def test_auto_switch_watchdog_tick(monkeypatch):
 
     called = {}
 
-    async def _ensure(_sensor, _mode, _reason):
+    async def _ensure(_sensor, _mode, _reason, context=None):
         called["ok"] = True
 
     monkeypatch.setattr(auto_switch, "ensure_current_mode", _ensure)
@@ -419,7 +419,7 @@ async def test_ensure_current_mode(monkeypatch):
 
     called = {}
 
-    async def _execute(_s, _mode, _reason):
+    async def _execute(_s, _mode, _reason, context=None):
         called["ok"] = True
 
     monkeypatch.setattr(auto_switch, "get_current_box_mode", lambda _s: "Home 2")
@@ -444,7 +444,7 @@ async def test_ensure_current_mode_min_interval(monkeypatch):
 
     called = {}
 
-    async def _execute(_s, _mode, _reason):
+    async def _execute(_s, _mode, _reason, context=None):
         called["ok"] = True
 
     monkeypatch.setattr(auto_switch, "get_current_box_mode", lambda _s: "Home 2")
@@ -502,7 +502,7 @@ async def test_update_auto_switch_schedule(monkeypatch):
     sensor._auto_switch_handles = []
     sensor._auto_switch_ready_at = None
 
-    async def _ensure(_s, _mode, _reason):
+    async def _ensure(_s, _mode, _reason, context=None):
         called["ensure"] = True
 
     monkeypatch.setattr(auto_switch, "ensure_current_mode", _ensure)

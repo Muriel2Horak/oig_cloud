@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -25,9 +26,40 @@ from ..types import (
     SERVICE_MODE_HOME_UPS,
 )
 from ..utils_common import parse_timeline_timestamp
+from .precedence_contract import PrecedenceLevel
+
 
 _LOGGER = logging.getLogger(__name__)
 MIN_AUTO_SWITCH_INTERVAL_MINUTES = 30
+
+
+# Reason code constants for switch decisions
+REASON_WATCHDOG_ENFORCEMENT = "watchdog_enforcement"
+REASON_SCHEDULED_SWITCH = "scheduled_switch"
+REASON_CURRENT_BLOCK = "current_planned_block"
+REASON_MANUAL_OVERRIDE = "manual_override"
+REASON_GUARD_LOCK = "guard_lock"
+
+
+@dataclass(slots=True)
+class SwitchContext:
+    """Context for a mode switch decision with precedence information.
+
+    Propagates reason codes and precedence levels from decision engine
+    to switch executor for debugging and race condition prevention.
+    """
+
+    reason_code: str
+    precedence_level: int = PrecedenceLevel.AUTO_SWITCH
+    precedence_name: str = "AUTO_SWITCH"
+    decision_source: str = "auto_switch"  # auto_switch | mode_guard | watchdog | manual
+    locked_by_higher_precedence: bool = False
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def to_log_string(self) -> str:
+        """Return human-readable context for logging."""
+        locked = " [LOCKED]" if self.locked_by_higher_precedence else ""
+        return f"{self.reason_code} ({self.decision_source}, precedence={self.precedence_name}){locked}"
 
 
 def _get_last_mode_change_time(sensor: Any) -> Optional[datetime]:
@@ -184,12 +216,23 @@ async def auto_switch_watchdog_tick(sensor: Any, now: datetime) -> None:
     if current_mode == desired_mode:
         return
 
+    context = SwitchContext(
+        reason_code=REASON_WATCHDOG_ENFORCEMENT,
+        precedence_level=PrecedenceLevel.AUTO_SWITCH,
+        precedence_name=PrecedenceLevel.AUTO_SWITCH.name,
+        decision_source="watchdog",
+        details={
+            "current_mode": current_mode,
+            "desired_mode": desired_mode,
+        },
+    )
     _LOGGER.warning(
-        "[AutoModeSwitch] Watchdog correcting mode from %s -> %s",
+        "[AutoModeSwitch] Watchdog correcting mode from %s -> %s (%s)",
         current_mode or "unknown",
         desired_mode,
+        context.to_log_string(),
     )
-    await ensure_current_mode(sensor, desired_mode, "watchdog enforcement")
+    await ensure_current_mode(sensor, desired_mode, "watchdog enforcement", context=context)
 
 
 def get_planned_mode_for_time(
@@ -303,11 +346,27 @@ def get_service_shield(sensor: Any) -> Optional[Any]:
     return entry.get("service_shield")
 
 
-async def execute_mode_change(sensor: Any, target_mode: str, reason: str) -> None:
+async def execute_mode_change(
+    sensor: Any,
+    target_mode: str,
+    reason: str,
+    context: Optional[SwitchContext] = None,
+) -> Optional[SwitchContext]:
+    """Execute a mode change with optional precedence context.
+
+    Args:
+        sensor: The sensor instance
+        target_mode: Target mode to switch to
+        reason: Human-readable reason string
+        context: Optional SwitchContext with precedence information
+
+    Returns:
+        The SwitchContext used (or created) for this switch, for chaining
+    """
     if (
         not sensor._hass or not sensor._side_effects_enabled
     ):  # pylint: disable=protected-access
-        return
+        return context
 
     now = dt_util.now()
     service_shield = get_service_shield(sensor)
@@ -318,7 +377,7 @@ async def execute_mode_change(sensor: Any, target_mode: str, reason: str) -> Non
                 target_mode,
                 reason,
             )
-            return
+            return context
 
     if (
         sensor._last_auto_switch_request  # pylint: disable=protected-access
@@ -332,7 +391,16 @@ async def execute_mode_change(sensor: Any, target_mode: str, reason: str) -> Non
             target_mode,
             reason,
         )
-        return
+        return context
+
+    # Create default context if not provided
+    if context is None:
+        context = SwitchContext(
+            reason_code=reason,
+            precedence_level=PrecedenceLevel.AUTO_SWITCH,
+            precedence_name=PrecedenceLevel.AUTO_SWITCH.name,
+            decision_source="auto_switch",
+        )
 
     try:
         await sensor._hass.services.async_call(  # pylint: disable=protected-access
@@ -348,7 +416,12 @@ async def execute_mode_change(sensor: Any, target_mode: str, reason: str) -> Non
             target_mode,
             now,
         )  # pylint: disable=protected-access
-        _LOGGER.info("[AutoModeSwitch] Requested mode '%s' (%s)", target_mode, reason)
+        _LOGGER.info(
+            "[AutoModeSwitch] Requested mode '%s' - %s",
+            target_mode,
+            context.to_log_string(),
+        )
+        return context
     except Exception as err:
         _LOGGER.error(
             "[AutoModeSwitch] Failed to switch to %s: %s",
@@ -356,15 +429,21 @@ async def execute_mode_change(sensor: Any, target_mode: str, reason: str) -> Non
             err,
             exc_info=True,
         )
+        return context
 
 
-async def ensure_current_mode(sensor: Any, desired_mode: str, reason: str) -> None:
+async def ensure_current_mode(
+    sensor: Any,
+    desired_mode: str,
+    reason: str,
+    context: Optional[SwitchContext] = None,
+) -> Optional[SwitchContext]:
     current_mode = get_current_box_mode(sensor)
     if current_mode == desired_mode:
         _LOGGER.debug(
             "[AutoModeSwitch] Mode already %s (%s), no action", desired_mode, reason
         )
-        return
+        return context
     last_changed = _get_last_mode_change_time(sensor)
     if last_changed:
         now = dt_util.now()
@@ -374,8 +453,8 @@ async def ensure_current_mode(sensor: Any, desired_mode: str, reason: str) -> No
                 desired_mode,
                 reason,
             )
-            return
-    await execute_mode_change(sensor, desired_mode, reason)
+            return context
+    return await execute_mode_change(sensor, desired_mode, reason, context=context)
 
 
 def get_mode_switch_timeline(sensor: Any) -> Tuple[List[Dict[str, Any]], str]:
@@ -493,7 +572,14 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
     )
 
     if current_mode:
-        await ensure_current_mode(sensor, current_mode, "current planned block")
+        context = SwitchContext(
+            reason_code=REASON_CURRENT_BLOCK,
+            precedence_level=PrecedenceLevel.AUTO_SWITCH,
+            precedence_name=PrecedenceLevel.AUTO_SWITCH.name,
+            decision_source="auto_switch",
+            details={"timeline_source": timeline_source},
+        )
+        await ensure_current_mode(sensor, current_mode, "current planned block", context=context)
 
     if not scheduled_events:
         _LOGGER.debug("[AutoModeSwitch] No upcoming mode changes to schedule")
@@ -546,8 +632,15 @@ def _schedule_auto_switch_events(
         )
 
         async def _callback(event_time: datetime, desired_mode: str = mode) -> None:
+            context = SwitchContext(
+                reason_code=REASON_SCHEDULED_SWITCH,
+                precedence_level=PrecedenceLevel.AUTO_SWITCH,
+                precedence_name=PrecedenceLevel.AUTO_SWITCH.name,
+                decision_source="auto_switch",
+                details={"scheduled_time": event_time.isoformat()},
+            )
             await execute_mode_change(
-                sensor, desired_mode, f"scheduled {event_time.isoformat()}"
+                sensor, desired_mode, f"scheduled {event_time.isoformat()}", context=context
             )
 
         unsub = async_track_point_in_time(

@@ -11,10 +11,15 @@ from homeassistant.util import dt as dt_util
 
 from ..physics import simulate_interval
 from ..utils_common import format_time_label, parse_timeline_timestamp
+from .precedence_contract import PrecedenceLevel
 
 _LOGGER = logging.getLogger(__name__)
 
 GetCurrentMode = Callable[[], int]
+
+# Reason code constants for guard decisions
+REASON_GUARD_LOCK = "guard_lock"
+REASON_GUARD_EXCEPTION_SOC = "guard_exception_soc"
 
 
 def enforce_min_mode_duration(
@@ -284,6 +289,9 @@ def _apply_guard_interval(
                 "type": "guard_exception_soc",
                 "planned_mode": planned_mode,
                 "forced_mode": planned_mode,
+                "reason_code": REASON_GUARD_EXCEPTION_SOC,
+                "precedence_level": PrecedenceLevel.MODE_GUARD,
+                "precedence_name": PrecedenceLevel.MODE_GUARD.name,
             },
         )
 
@@ -296,6 +304,9 @@ def _apply_guard_interval(
                 "type": "guard_locked_plan",
                 "planned_mode": planned_mode,
                 "forced_mode": forced_mode,
+                "reason_code": REASON_GUARD_LOCK,
+                "precedence_level": PrecedenceLevel.MODE_GUARD,
+                "precedence_name": PrecedenceLevel.MODE_GUARD.name,
             },
         )
     return forced_mode, next_soc, None

@@ -165,43 +165,90 @@ class BoilerPlanner:
 
         return None
 
+    # PV-first thresholds (consistent with Task 7's should_defer_for_pv)
+    PV_FORECAST_MIN_KWH = 0.5
+    PV_CONFIDENCE_MIN = 0.3
+
     def _recommend_source(
         self,
         overflow_available: bool,
         spot_price: Optional[float],
         alt_price: float,
+        pv_forecast: float = 0.0,
+        pv_confidence: float = 0.0,
     ) -> EnergySource:
         """
         Doporučí zdroj podle priority a ceny.
 
         Priorita:
         1. FVE overflow (zdarma) - pokud dostupné
-        2. Grid vs Alternative - podle ceny
+        2. PV-first: Pokud je očekávána FVE produkce, odložit nabíjení
+        3. Grid vs Alternative - podle ceny
 
         Args:
             overflow_available: Je FVE overflow k dispozici?
             spot_price: Spotová cena ze sítě [Kč/kWh]
             alt_price: Cena alternativního zdroje [Kč/kWh]
+            pv_forecast: Predikovaná FVE produkce [kWh] (default 0.0)
+            pv_confidence: Confidence predikce (0.0-1.0, default 0.0)
 
         Returns:
             Doporučený zdroj
         """
         # Priorita 1: FVE overflow (0 Kč)
         if overflow_available:
+            _LOGGER.debug(
+                "Boiler source: FVE (overflow available), reason=overflow"
+            )
             return EnergySource.FVE
 
-        # Priorita 2: Porovnat Grid vs Alternative
+        # Priorita 2: PV-first policy
+        # When PV forecast shows expected production AND confidence is sufficient,
+        # defer to PV instead of choosing expensive grid
+        if (
+            pv_forecast >= self.PV_FORECAST_MIN_KWH
+            and pv_confidence >= self.PV_CONFIDENCE_MIN
+        ):
+            _LOGGER.debug(
+                "Boiler source: FVE (PV-first defer), "
+                "pv_forecast=%.2f kWh, pv_confidence=%.2f, reason=pv_first_defer",
+                pv_forecast,
+                pv_confidence,
+            )
+            return EnergySource.FVE
+
+        # Priorita 3: Porovnat Grid vs Alternative
         if not self.has_alternative:
+            _LOGGER.debug(
+                "Boiler source: GRID (no alternative), reason=no_alternative"
+            )
             return EnergySource.GRID
 
         if spot_price is None:
             # Bez spotové ceny - použít alternativu pokud dostupná
-            return EnergySource.ALTERNATIVE if alt_price > 0 else EnergySource.GRID
+            if alt_price > 0:
+                _LOGGER.debug(
+                    "Boiler source: ALTERNATIVE (no spot price), reason=no_spot_price"
+                )
+                return EnergySource.ALTERNATIVE
+            _LOGGER.debug(
+                "Boiler source: GRID (no spot price, no alt), reason=fallback"
+            )
+            return EnergySource.GRID
 
         # Porovnat ceny
         if alt_price > 0 and alt_price < spot_price:
+            _LOGGER.debug(
+                "Boiler source: ALTERNATIVE (cheaper), alt=%.2f < spot=%.2f CZK/kWh, reason=alt_cheaper",
+                alt_price,
+                spot_price,
+            )
             return EnergySource.ALTERNATIVE
 
+        _LOGGER.debug(
+            "Boiler source: GRID (fallback), spot=%.2f CZK/kWh, reason=grid_fallback",
+            spot_price if spot_price else 0.0,
+        )
         return EnergySource.GRID
 
     def _calculate_plan_totals(self, plan: BoilerPlan) -> None:

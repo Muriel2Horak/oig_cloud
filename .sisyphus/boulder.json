@@ -1,6 +1,9 @@
 {
-  "active_plan": "/Users/martinhorak/Downloads/oig_cloud/.sisyphus/plans/v2-flow-modernization.md",
-  "started_at": "2026-02-15T22:11:00Z",
-  "session_ids": ["ses_3a21bd530ffePVl0EOzwXsh0sN"],
-  "plan_name": "v2-flow-modernization"
+  "active_plan": "/Users/martinhorak/Downloads/oig_cloud/.sisyphus/plans/grid-boiler-rules-overhaul.md",
+  "started_at": "2026-03-03T10:34:14.455Z",
+  "session_ids": [
+    "ses_34cda6a12ffeM2HSLGyhSvo2eu"
+  ],
+  "plan_name": "grid-boiler-rules-overhaul",
+  "agent": "atlas"
 }
