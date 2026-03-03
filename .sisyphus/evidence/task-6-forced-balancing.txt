@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.4, pytest-8.4.2, pluggy-1.6.0 -- /Users/martinhorak/Downloads/oig_cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Downloads/oig_cloud
+configfile: pytest.ini
+plugins: respx-0.22.0, pytest_freezer-0.4.9, unordered-0.7.0, asyncio-1.2.0, anyio-4.11.0, syrupy-4.9.1, sugar-1.0.0, socket-0.7.0, xdist-3.8.0, timeout-2.4.0, github-actions-annotate-failures-0.3.0, homeassistant-custom-component-0.13.288, aiohttp-1.1.0, picked-0.5.1, requests-mock-1.12.1, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 7 items
+
+tests/test_balancing_state_map.py::test_forced_balancing_transition PASSED [ 14%]
+tests/test_balancing_state_map.py::test_forced_balancing_override_markers PASSED [ 28%]
+tests/test_balancing_state_map.py::test_opportunistic_does_not_break_pv_first_contract PASSED [ 42%]
+tests/test_balancing_state_map.py::test_opportunistic_contract_allows_pv_first_deference PASSED [ 57%]
+tests/test_balancing_state_map.py::test_state_machine_order_natural_before_forced PASSED [ 71%]
+tests/test_balancing_state_map.py::test_state_machine_order_forced_overrides_opportunistic PASSED [ 85%]
+tests/test_balancing_state_map.py::test_balancing_plan_serialization_for_precedence_engine PASSED [100%]
+
+============================== 7 passed in 0.27s ===============================
