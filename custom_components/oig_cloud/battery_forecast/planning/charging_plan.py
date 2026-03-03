@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -14,8 +14,34 @@ from .charging_plan_utils import (
     recalculate_timeline_from_index,
     simulate_forward,
 )
+from .precedence_contract import PrecedenceLevel
+from .rollout_flags import RolloutFlags, is_pv_first_active
 
 _LOGGER = logging.getLogger(__name__)
+
+
+# Precedence reason string constants matching PrecedenceLevel enum
+REASON_DEATH_VALLEY = "death_valley"
+REASON_PROTECTION_SAFETY = "protection_safety"
+REASON_ECONOMIC_CHARGING = "economic_charging"
+REASON_PV_FIRST = "pv_first"
+
+
+@dataclass(slots=True)
+class DecisionTrace:
+    """Trace entry for a charging decision with precedence context.
+
+    Lightweight trace structure for debugging and testing.
+    Does not need to be stored in HA state - returned alongside metrics.
+    """
+
+    index: int
+    timestamp: str
+    action: str  # "charge" | "skip" | "defer"
+    reason_code: str  # Human-readable reason
+    precedence_level: int  # Numeric PrecedenceLevel value
+    precedence_name: str  # PrecedenceLevel enum name
+    details: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -34,25 +60,139 @@ class EconomicChargingPlanConfig:
     mode_label_home_ups: str
     mode_label_home_i: str
     target_reason: str = "default"
+    pv_forecast_kwh: float = 0.0
+    pv_forecast_confidence: float = 0.0
+    pv_forecast_lookahead_hours: int = 6
+
+
+def should_defer_for_pv(
+    pv_forecast_kwh: float,
+    pv_forecast_confidence: float,
+    current_soc_kwh: float,
+    death_valley_threshold_kwh: float,
+    protection_override_active: bool,
+    flags: RolloutFlags,
+) -> bool:
+    if not is_pv_first_active(flags):
+        return False
+
+    if protection_override_active:
+        return False
+
+    if current_soc_kwh < death_valley_threshold_kwh:
+        return False
+
+    min_confidence = 0.3
+    min_forecast_kwh = 0.5
+
+    if pv_forecast_kwh <= min_forecast_kwh:
+        return False
+
+    if pv_forecast_confidence < min_confidence:
+        return False
+
+    return True
 
 
 def economic_charging_plan(
     *,
     timeline_data: List[Dict[str, Any]],
     plan: EconomicChargingPlanConfig,
+    pv_forecast: Optional[Dict[str, Any]] = None,
+    rollout_flags: Optional[RolloutFlags] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Economic charging plan with forward simulation."""
     timeline = [dict(point) for point in timeline_data]
+    decision_trace: List[DecisionTrace] = []
 
     charge_per_interval = plan.charging_power_kw / 4.0
     current_time = datetime.now()
 
-    protection_soc_kwh = _apply_protection_override(
+    protection_soc_kwh, protection_trace = _apply_protection_override(
         timeline,
         plan,
         current_time=current_time,
         charge_per_interval=charge_per_interval,
     )
+    decision_trace.extend(protection_trace)
+
+    current_soc = timeline[0].get("battery_capacity_kwh", 0) if timeline else 0
+    protection_active = protection_soc_kwh is not None
+
+    flags = rollout_flags or RolloutFlags()
+
+    pv_forecast_kwh = plan.pv_forecast_kwh
+    pv_forecast_confidence = plan.pv_forecast_confidence
+
+    if pv_forecast:
+        pv_forecast_kwh = pv_forecast.get("pv_forecast_kwh", pv_forecast_kwh)
+        pv_forecast_confidence = pv_forecast.get("pv_forecast_confidence", pv_forecast_confidence)
+
+    defer_for_pv = should_defer_for_pv(
+        pv_forecast_kwh=pv_forecast_kwh,
+        pv_forecast_confidence=pv_forecast_confidence,
+        current_soc_kwh=current_soc,
+        death_valley_threshold_kwh=plan.effective_minimum_kwh,
+        protection_override_active=protection_active,
+        flags=flags,
+    )
+
+    if defer_for_pv:
+        _LOGGER.info(
+            "PV-FIRST: Deferring grid charging (PV forecast: %.2fkWh, confidence: %.2f, SOC: %.2fkWh)",
+            pv_forecast_kwh,
+            pv_forecast_confidence,
+            current_soc,
+        )
+        decision_trace.append(
+            DecisionTrace(
+                index=0,
+                timestamp=timeline[0].get("timestamp", "") if timeline else "",
+                action="defer",
+                reason_code=REASON_PV_FIRST,
+                precedence_level=PrecedenceLevel.PV_FIRST,
+                precedence_name=PrecedenceLevel.PV_FIRST.name,
+                details={
+                    "pv_forecast_kwh": pv_forecast_kwh,
+                    "pv_forecast_confidence": pv_forecast_confidence,
+                    "current_soc_kwh": current_soc,
+                },
+            )
+        )
+        final_capacity = timeline[-1].get("battery_capacity_kwh", 0) if timeline else 0
+        metrics = {
+            "algorithm": "economic",
+            "pv_first_deferred": True,
+            "pv_forecast_kwh": pv_forecast_kwh,
+            "pv_forecast_confidence": pv_forecast_confidence,
+            "target_capacity_kwh": plan.target_capacity_kwh,
+            "effective_minimum_kwh": plan.effective_minimum_kwh,
+            "final_capacity_kwh": final_capacity,
+            "min_capacity_kwh": plan.min_capacity_kwh,
+            "target_achieved": final_capacity >= plan.target_capacity_kwh,
+            "min_achieved": final_capacity >= plan.min_capacity_kwh,
+            "shortage_kwh": max(0, plan.target_capacity_kwh - final_capacity),
+            "protection_enabled": plan.config.get("enable_blackout_protection", False)
+            or plan.config.get("enable_weather_risk", False),
+            "protection_soc_kwh": protection_soc_kwh,
+            "optimal_target_info": {
+                "target_kwh": plan.target_capacity_kwh,
+                "target_percent": (plan.target_capacity_kwh / plan.max_capacity * 100),
+                "reason": plan.target_reason,
+            },
+            "decision_trace": [
+                {
+                    "index": t.index,
+                    "timestamp": t.timestamp,
+                    "action": t.action,
+                    "reason_code": t.reason_code,
+                    "precedence_level": t.precedence_level,
+                    "precedence_name": t.precedence_name,
+                    "details": t.details,
+                }
+                for t in decision_trace
+            ],
+        }
+        return timeline, metrics
 
     candidates = get_candidate_intervals(
         timeline,
@@ -71,12 +211,14 @@ def economic_charging_plan(
     _LOGGER.info("Found %s economic charging candidates", len(candidates))
 
     for candidate in candidates:
-        _apply_economic_candidate(
+        trace = _apply_economic_candidate(
             timeline,
             plan,
             candidate=candidate,
             charge_per_interval=charge_per_interval,
         )
+        if trace is not None:
+            decision_trace.append(trace)
 
     final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
     target_achieved = final_capacity >= plan.target_capacity_kwh
@@ -101,6 +243,18 @@ def economic_charging_plan(
             "target_percent": (plan.target_capacity_kwh / plan.max_capacity * 100),
             "reason": plan.target_reason,
         },
+        "decision_trace": [
+            {
+                "index": t.index,
+                "timestamp": t.timestamp,
+                "action": t.action,
+                "reason_code": t.reason_code,
+                "precedence_level": t.precedence_level,
+                "precedence_name": t.precedence_name,
+                "details": t.details,
+            }
+            for t in decision_trace
+        ],
     }
 
     _LOGGER.info(
@@ -200,20 +354,22 @@ def _apply_protection_override(
     *,
     current_time: datetime,
     charge_per_interval: float,
-) -> Optional[float]:
+) -> Tuple[Optional[float], List[DecisionTrace]]:
     protection_soc_kwh = calculate_protection_requirement(
         timeline,
         plan.max_capacity,
         config=plan.config,
         iso_tz_offset=plan.iso_tz_offset,
     )
+    decision_trace: List[DecisionTrace] = []
+
     if protection_soc_kwh is None:
-        return None
+        return None, decision_trace
 
     current_soc = timeline[0].get("battery_capacity_kwh", 0)
     protection_shortage = protection_soc_kwh - current_soc
     if protection_shortage <= 0:
-        return protection_soc_kwh  # pragma: no cover
+        return protection_soc_kwh, decision_trace
 
     _LOGGER.warning(
         "PROTECTION OVERRIDE: Need %.2fkWh to reach protection target %.2fkWh (current: %.2fkWh)",
@@ -233,7 +389,7 @@ def _apply_protection_override(
             "PROTECTION FAILED: No charging candidates under max_price=%sCZK",
             plan.max_charging_price,
         )
-        return protection_soc_kwh
+        return protection_soc_kwh, decision_trace
 
     charged = 0.0
     for candidate in candidates:
@@ -245,7 +401,21 @@ def _apply_protection_override(
         timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
         if timeline[idx].get("reason") == "normal":
             timeline[idx]["reason"] = "protection_charge"
+        timeline[idx]["precedence_reason"] = REASON_PROTECTION_SAFETY
+        timeline[idx]["precedence_level"] = PrecedenceLevel.PROTECTION_SAFETY
         charged += charge_per_interval
+
+        decision_trace.append(
+            DecisionTrace(
+                index=idx,
+                timestamp=candidate["timestamp"],
+                action="charge",
+                reason_code=REASON_PROTECTION_SAFETY,
+                precedence_level=PrecedenceLevel.PROTECTION_SAFETY,
+                precedence_name=PrecedenceLevel.PROTECTION_SAFETY.name,
+                details={"price": candidate["price"], "kwh": charge_per_interval},
+            )
+        )
 
         _LOGGER.info(
             "PROTECTION: Adding %.2fkWh at %s (price %.2fCZK)",
@@ -269,7 +439,7 @@ def _apply_protection_override(
         charged,
         protection_shortage,
     )
-    return protection_soc_kwh
+    return protection_soc_kwh, decision_trace
 
 
 def _apply_economic_candidate(
@@ -278,7 +448,7 @@ def _apply_economic_candidate(
     *,
     candidate: Dict[str, Any],
     charge_per_interval: float,
-) -> None:
+) -> Optional[DecisionTrace]:
     idx = candidate["index"]
     price = candidate["price"]
     timestamp = candidate["timestamp"]
@@ -328,6 +498,8 @@ def _apply_economic_candidate(
             timeline[idx]["grid_charge_kwh"] = old_charge + min_charge
             if timeline[idx].get("reason") == "normal":
                 timeline[idx]["reason"] = "death_valley_fix"
+            timeline[idx]["precedence_reason"] = REASON_DEATH_VALLEY
+            timeline[idx]["precedence_level"] = PrecedenceLevel.DEATH_VALLEY
 
             recalculate_timeline_from_index(
                 timeline,
@@ -345,7 +517,15 @@ def _apply_economic_candidate(
                 timestamp,
                 price,
             )
-            return
+            return DecisionTrace(
+                index=idx,
+                timestamp=timestamp,
+                action="charge",
+                reason_code=REASON_DEATH_VALLEY,
+                precedence_level=PrecedenceLevel.DEATH_VALLEY,
+                precedence_name=PrecedenceLevel.DEATH_VALLEY.name,
+                details={"price": price, "kwh": min_charge, "shortage": shortage},
+            )
 
     savings_per_kwh = (cost_wait - cost_charge) / charge_per_interval
     if savings_per_kwh >= plan.min_savings_margin:
@@ -353,6 +533,8 @@ def _apply_economic_candidate(
         timeline[idx]["grid_charge_kwh"] = old_charge + charge_per_interval
         if timeline[idx].get("reason") == "normal":
             timeline[idx]["reason"] = "economic_charge"
+        timeline[idx]["precedence_reason"] = REASON_ECONOMIC_CHARGING
+        timeline[idx]["precedence_level"] = PrecedenceLevel.ECONOMIC_CHARGING
 
         recalculate_timeline_from_index(
             timeline,
@@ -372,7 +554,15 @@ def _apply_economic_candidate(
             savings_per_kwh,
             plan.min_savings_margin,
         )
-        return
+        return DecisionTrace(
+            index=idx,
+            timestamp=timestamp,
+            action="charge",
+            reason_code=REASON_ECONOMIC_CHARGING,
+            precedence_level=PrecedenceLevel.ECONOMIC_CHARGING,
+            precedence_name=PrecedenceLevel.ECONOMIC_CHARGING.name,
+            details={"price": price, "kwh": charge_per_interval, "savings_per_kwh": savings_per_kwh},
+        )
 
     _LOGGER.debug(
         "ECONOMIC: Skipping %s (price %.2fCZK, savings %.3fCZK/kWh < %.3fCZK/kWh)",
@@ -380,6 +570,15 @@ def _apply_economic_candidate(
         price,
         savings_per_kwh,
         plan.min_savings_margin,
+    )
+    return DecisionTrace(
+        index=idx,
+        timestamp=timestamp,
+        action="skip",
+        reason_code="insufficient_savings",
+        precedence_level=PrecedenceLevel.ECONOMIC_CHARGING,
+        precedence_name=PrecedenceLevel.ECONOMIC_CHARGING.name,
+        details={"price": price, "savings_per_kwh": savings_per_kwh, "margin_required": plan.min_savings_margin},
     )
 
 

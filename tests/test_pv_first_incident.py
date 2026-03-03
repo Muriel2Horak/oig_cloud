@@ -213,17 +213,17 @@ def test_grid_charge_considers_pv_forecast_before_expensive_charging():
 
 
 def test_boiler_does_not_force_early_grid_charge():
-    """FAILING TEST: Proves boiler defaults to Grid without PV coordination.
+    """PASSING TEST: Verifies boiler defers to PV when forecast available.
 
-    INCIDENT REPRODUCTION:
+    INCIDENT FIX VERIFICATION:
     - Boiler needs heating
-    - PV expected next morning
+    - PV expected next morning (forecast > threshold)
     - Current: expensive grid price
-    - Expected: Boiler defers to PV OR returns DEFER source
-    - Actual (BUG): Boiler recommends Grid immediately
+    - Expected: Boiler defers to PV (returns FVE)
+    - Fixed: _recommend_source() now accepts pv_forecast parameter
 
-    This test FAILS because boiler/planner.py _recommend_source() only
-    checks for battery overflow, not PV forecast availability.
+    This test now PASSES because _recommend_source() has PV forecast context
+    and returns FVE when PV forecast exceeds thresholds.
     """
     # Setup: Create a BoilerPlanner
     planner = BoilerPlanner(
@@ -237,39 +237,37 @@ def test_boiler_does_not_force_early_grid_charge():
     overflow_available = False  # No current overflow
     spot_price = 5.0  # Expensive grid price
     alt_price = 2.0  # (not used since has_alternative=False)
+    pv_forecast = 2.0  # Strong PV forecast (> 0.5 kWh threshold)
+    pv_confidence = 0.8  # High confidence (> 0.3 threshold)
 
-    # Execute: Get recommendation
+    # Execute: Get recommendation WITH PV forecast
     recommended = planner._recommend_source(
         overflow_available=overflow_available,
         spot_price=spot_price,
         alt_price=alt_price,
+        pv_forecast=pv_forecast,
+        pv_confidence=pv_confidence,
     )
 
-    # FAILING ASSERTION: Should NOT recommend Grid when PV is expected
-    #
-    # Current behavior: Returns Grid because overflow_available=False
-    # Expected behavior: Should check PV forecast and defer if PV expected
-    #
-    # This FAILS because _recommend_source() doesn't have PV forecast context
-    assert recommended != EnergySource.GRID, (
-        f"PV-FIRST VIOLATION: Boiler recommends Grid at {spot_price}CZK/kWh "
-        f"without checking PV forecast. "
-        f"When PV is expected, boiler should defer or wait for PV. "
-        f"INCIDENT REPRODUCED: Boiler forces early grid charging."
+    # PASSING ASSERTION: Should return FVE when PV is expected
+    # Fixed behavior: Returns FVE because pv_forecast > threshold
+    assert recommended == EnergySource.FVE, (
+        f"PV-FIRST VERIFICATION: Boiler should return FVE when PV forecast "
+        f"({pv_forecast} kWh, {pv_confidence} confidence) exceeds thresholds. "
+        f"Got {recommended.value} instead. "
+        f"INCIDENT FIX: Boiler now defers to PV instead of expensive grid."
     )
 
 
 def test_boiler_defers_to_pv_when_forecast_available():
-    """FAILING TEST: Boiler should defer to PV when forecast shows production.
+    """PASSING TEST: Verifies boiler defers to PV when forecast shows production.
 
-    This test demonstrates that the boiler planner lacks integration with
-    PV forecast data. When PV production is expected, the boiler should:
-    1. Return FVE if overflow is imminent
-    2. Return a DEFER source if PV is coming but not yet available
-    3. NOT return Grid when PV is expected and current price is expensive
+    This test verifies that the boiler planner correctly integrates with
+    PV forecast data. When PV production is expected with sufficient
+    confidence, the boiler should return FVE instead of Grid.
 
-    Current behavior: Only checks overflow_available (current state),
-    ignores future PV forecast.
+    Fixed behavior: _recommend_source() now checks pv_forecast parameter
+    and returns FVE when forecast exceeds thresholds.
     """
     planner = BoilerPlanner(
         hass=SimpleNamespace(),
@@ -278,47 +276,47 @@ def test_boiler_defers_to_pv_when_forecast_available():
         has_alternative=False,
     )
 
-    # Test multiple scenarios where PV-first should apply
-
     # Scenario 1: No overflow now, but PV expected soon
-    # Expected: Defer or wait, NOT Grid
+    # Expected: Return FVE (defer to PV), NOT Grid
     recommended = planner._recommend_source(
         overflow_available=False,
         spot_price=4.5,  # Expensive
         alt_price=2.0,
+        pv_forecast=1.5,  # PV forecast > 0.5 kWh threshold
+        pv_confidence=0.6,  # Confidence > 0.3 threshold
     )
 
-    # FAILING: Returns Grid instead of deferring
-    assert recommended != EnergySource.GRID or recommended == EnergySource.FVE, (
-        f"BOILER PV-COORDINATION MISSING: "
-        f"Recommended {recommended.value} at expensive price (4.5 CZK/kWh) "
-        f"without PV forecast check. "
-        f"Should defer to PV when production is expected."
+    # PASSING: Returns FVE because PV forecast exceeds thresholds
+    assert recommended == EnergySource.FVE, (
+        f"BOILER PV-COORDINATION VERIFIED: "
+        f"Returns {recommended.value} when PV forecast available. "
+        f"INCIDENT FIX: Boiler now defers to PV instead of expensive grid."
     )
 
-    # Scenario 2: Very expensive grid, should definitely defer
+    # Scenario 2: Very expensive grid with PV forecast - should defer to PV
     recommended_expensive = planner._recommend_source(
         overflow_available=False,
         spot_price=8.0,  # Very expensive
         alt_price=2.0,
+        pv_forecast=3.0,  # Strong PV forecast
+        pv_confidence=0.9,  # High confidence
     )
 
-    # FAILING: Returns Grid even at 8 CZK/kWh
-    assert recommended_expensive != EnergySource.GRID, (
-        f"BOILER COST BLINDNESS: "
-        f"Recommends Grid at 8 CZK/kWh without PV consideration. "
-        f"This is the exact incident: expensive grid charging "
-        f"when PV would have been cheaper (free)."
+    # PASSING: Returns FVE because PV forecast exceeds thresholds
+    assert recommended_expensive == EnergySource.FVE, (
+        f"BOILER COST AWARENESS VERIFIED: "
+        f"Returns FVE at 8 CZK/kWh grid price when PV forecast available. "
+        f"INCIDENT FIX: No more expensive grid charging when PV is coming."
     )
 
 
 def test_boiler_source_recommendation_lacks_pv_context():
-    """FAILING TEST: Documents that _recommend_source lacks PV forecast parameter.
+    """PASSING TEST: Verifies _recommend_source has PV forecast parameter.
 
-    This is a specification test that documents the missing PV forecast
+    This is a specification test that verifies the PV forecast
     integration in the boiler planner.
 
-    The _recommend_source() method signature should include a PV forecast
+    The _recommend_source() method signature now includes a PV forecast
     parameter to enable PV-first decision making.
     """
     import inspect
