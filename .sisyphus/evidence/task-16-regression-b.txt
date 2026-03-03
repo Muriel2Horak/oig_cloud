@@ -1,0 +1,24 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.4, pytest-8.4.2, pluggy-1.6.0 -- /Users/martinhorak/Downloads/oig_cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Downloads/oig_cloud
+configfile: pytest.ini
+plugins: respx-0.22.0, pytest_freezer-0.4.9, unordered-0.7.0, asyncio-1.2.0, anyio-4.11.0, syrupy-4.9.1, sugar-1.0.0, socket-0.7.0, xdist-3.8.0, timeout-2.4.0, github-actions-annotate-failures-0.3.0, homeassistant-custom-component-0.13.288, aiohttp-1.1.0, picked-0.5.1, requests-mock-1.12.1, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 13 items
+
+tests/test_regression_cluster_b.py::TestBoilerCoordinationEdgeCases::test_boiler_pv_forecast_exactly_at_minimum PASSED [  7%]
+tests/test_regression_cluster_b.py::TestBoilerCoordinationEdgeCases::test_boiler_pv_forecast_below_minimum_falls_back_to_grid PASSED [ 15%]
+tests/test_regression_cluster_b.py::TestBoilerCoordinationEdgeCases::test_boiler_with_zero_confidence_no_defer PASSED [ 23%]
+tests/test_regression_cluster_b.py::TestBoilerCoordinationEdgeCases::test_boiler_overflow_always_wins_over_pv_forecast PASSED [ 30%]
+tests/test_regression_cluster_b.py::TestBoilerCoordinationEdgeCases::test_boiler_alternative_source_beats_grid_even_without_pv PASSED [ 38%]
+tests/test_regression_cluster_b.py::TestObservabilityGateCanaryChecks::test_canary_healthy_run_metrics_passes_gate PASSED [ 46%]
+tests/test_regression_cluster_b.py::TestObservabilityGateCanaryChecks::test_canary_high_bypass_rate_fails_gate PASSED [ 53%]
+tests/test_regression_cluster_b.py::TestObservabilityGateCanaryChecks::test_canary_low_pv_defer_when_pv_enabled_fails PASSED [ 61%]
+tests/test_regression_cluster_b.py::TestObservabilityGateCanaryChecks::test_canary_grid_charge_rate_above_threshold_with_pv_fails PASSED [ 69%]
+tests/test_regression_cluster_b.py::TestObservabilityGateCanaryChecks::test_canary_zero_decisions_with_pv_enabled_warns PASSED [ 76%]
+tests/test_regression_cluster_b.py::TestObservabilityGateCanaryChecks::test_canary_zero_decisions_pv_disabled_passes PASSED [ 84%]
+tests/test_regression_cluster_b.py::TestRolloutFlagCombinationChecks::test_all_flags_enabled_full_policy_active PASSED [ 92%]
+tests/test_regression_cluster_b.py::TestRolloutFlagCombinationChecks::test_emergency_rollback_disables_all_policy PASSED [100%]
+
+============================== 13 passed in 0.16s ==============================

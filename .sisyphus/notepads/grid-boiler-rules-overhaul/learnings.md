@@ -528,3 +528,57 @@ The parameter is named `pv_forecast` (not `pv_forecast_kwh`) because test 5 expl
 - Module is standalone (no integration in decision loop yet — Task 14)
 - Consumes: RolloutFlags, PrecedenceLevel (for reason codes)
 - Will be consumed by: hybrid_planning.py for metrics collection during charging decisions
+
+
+## [2026-03-03] Task 16 — Regression Hardening Edge-Case Cluster B + Rollout Canary Checks
+
+### Implementation Summary
+- Created `tests/test_regression_cluster_b.py` with 13 tests (exceeds 12 minimum)
+- Three test classes: boiler coordination edge cases, observability canary checks, rollout flag combinations
+
+### Test Categories
+
+#### Boiler Coordination Edge Cases (5 tests)
+- `test_boiler_pv_forecast_exactly_at_minimum` — 0.5 kWh exactly at threshold → FVE
+- `test_boiler_pv_forecast_below_minimum_falls_back_to_grid` — 0.49 kWh → Grid
+- `test_boiler_with_zero_confidence_no_defer` — 0.0 confidence → Grid
+- `test_boiler_overflow_always_wins_over_pv_forecast` — overflow takes priority
+- `test_boiler_alternative_source_beats_grid_even_without_pv` — economic fallback works
+
+#### Observability Gate Canary Checks (6 tests)
+- `test_canary_healthy_run_metrics_passes_gate` — realistic 80/20 split → HEALTHY
+- `test_canary_high_bypass_rate_fails_gate` — 10% bypass → UNHEALTHY
+- `test_canary_low_pv_defer_when_pv_enabled_fails` — 0% defer → DEGRADED
+- `test_canary_grid_charge_rate_above_threshold_with_pv_fails` — 35% grid → DEGRADED
+- `test_canary_zero_decisions_with_pv_enabled_warns` — 0 decisions + PV enabled → DEGRADED
+- `test_canary_zero_decisions_pv_disabled_passes` — 0 decisions + PV disabled → HEALTHY
+
+#### Rollout Flag Combination Checks (2 tests)
+- `test_all_flags_enabled_full_policy_active` — all flags True → full new policy
+- `test_emergency_rollback_disables_all_policy` — emergency_rollback=True → all disabled
+
+### Key Finding: Zero Decisions Edge Case
+- When `total_decisions == 0`, rate calculations return 0.0
+- This triggers `min_pv_defer_rate` warning when `pv_first_enabled=True` (0.0 < 0.1)
+- **Current behavior**: Fresh installations with PV-first enabled see warnings until decisions are made
+- **Mitigation**: With `pv_first_enabled=False`, gate passes (PV checks skipped)
+- This is documented in test `test_canary_zero_decisions_with_pv_enabled_warns`
+
+### Threshold Constants Verified
+From `boiler/planner.py`:
+- `PV_FORECAST_MIN_KWH = 0.5`
+- `PV_CONFIDENCE_MIN = 0.3`
+
+From `observability.py`:
+- `MAX_PROTECTION_BYPASS_RATE = 0.05` (5%)
+- `MIN_PV_DEFER_RATE = 0.10` (10%)
+- `MAX_GRID_CHARGE_RATE = 0.30` (30%)
+
+### Test Results
+- 13 new tests: ALL GREEN
+- Full suite: 3016 passed, 2 failed (pre-existing in test_regression_cluster_a.py)
+- No regressions introduced by new tests
+
+### Evidence Files
+- `.sisyphus/evidence/task-16-regression-b.txt` — full test output
+- `.sisyphus/evidence/task-16-canary-checks.txt` — canary-specific tests
