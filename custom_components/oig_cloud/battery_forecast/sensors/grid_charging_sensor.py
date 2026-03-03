@@ -427,15 +427,22 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         except (ValueError, AttributeError):
             return now
 
+    def _get_decision_trace(self) -> List[Dict[str, Any]]:
+        battery_forecast_data = getattr(self.coordinator, "battery_forecast_data", None)
+        if battery_forecast_data:
+            return battery_forecast_data.get("decision_trace", [])
+        return []
+
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Vrátí atributy senzoru - nabíjecí bloky z detail_tabs API."""
         charging_intervals, total_energy, total_cost = (
             self._calculate_charging_intervals()
         )
 
+        decision_trace = self._get_decision_trace()
+
         if not charging_intervals:
-            return {
+            attrs = {
                 "charging_blocks": [],
                 "total_energy_kwh": 0.0,
                 "total_cost_czk": 0.0,
@@ -443,6 +450,9 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
                 "next_charging_duration": None,
                 "is_charging_planned": False,
             }
+            if decision_trace:
+                attrs["decision_trace"] = decision_trace
+            return attrs
 
         next_charging_block = None
         for interval in charging_intervals:
@@ -493,6 +503,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             "next_charging_time_range": next_charging_time_range,
             "next_charging_duration": next_charging_duration,
             "is_charging_planned": len(charging_blocks) > 0,
+            **({"decision_trace": decision_trace} if decision_trace else {}),
         }
 
 

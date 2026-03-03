@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.4, pytest-8.4.2, pluggy-1.6.0 -- /Users/martinhorak/Downloads/oig_cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Downloads/oig_cloud
+configfile: pytest.ini
+plugins: respx-0.22.0, pytest_freezer-0.4.9, unordered-0.7.0, asyncio-1.2.0, anyio-4.11.0, syrupy-4.9.1, sugar-1.0.0, socket-0.7.0, xdist-3.8.0, timeout-2.4.0, github-actions-annotate-failures-0.3.0, homeassistant-custom-component-0.13.288, aiohttp-1.1.0, picked-0.5.1, requests-mock-1.12.1, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 8 items
+
+tests/test_forecast_update_trace.py::test_trace_propagates_to_outputs PASSED [ 12%]
+tests/test_forecast_update_trace.py::test_legacy_consumer_contract_still_valid PASSED [ 25%]
+tests/test_forecast_update_trace.py::test_trace_absent_when_metrics_missing PASSED [ 37%]
+tests/test_forecast_update_trace.py::test_grid_sensor_reads_trace_from_coordinator PASSED [ 50%]
+tests/test_forecast_update_trace.py::test_grid_sensor_handles_missing_trace PASSED [ 62%]
+tests/test_forecast_update_trace.py::test_grid_sensor_handles_missing_forecast_data PASSED [ 75%]
+tests/test_forecast_update_trace.py::test_grid_sensor_extra_state_attributes_includes_trace PASSED [ 87%]
+tests/test_forecast_update_trace.py::test_grid_sensor_extra_state_attributes_no_trace_when_absent PASSED [100%]
+
+============================== 8 passed in 0.13s ===============================

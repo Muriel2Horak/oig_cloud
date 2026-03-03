@@ -482,7 +482,7 @@ def _update_timeline_hash(sensor: Any, timeline: list[dict[str, Any]]) -> None:
 
 def _save_forecast_to_coordinator(sensor: Any) -> None:
     if hasattr(sensor.coordinator, "battery_forecast_data"):
-        sensor.coordinator.battery_forecast_data = {
+        forecast_data = {
             "timeline_data": sensor._timeline_data,
             "calculation_time": sensor._last_update.isoformat(),
             "data_source": "simplified_calculation",
@@ -493,6 +493,12 @@ def _save_forecast_to_coordinator(sensor: Any) -> None:
             ),
             "mode_recommendations": sensor._mode_recommendations or [],
         }
+        # Propagate decision_trace from charging metrics if present (backward compatible)
+        if hasattr(sensor, "_charging_metrics") and sensor._charging_metrics:
+            decision_trace = sensor._charging_metrics.get("decision_trace")
+            if decision_trace is not None:
+                forecast_data["decision_trace"] = decision_trace
+        sensor.coordinator.battery_forecast_data = forecast_data
         _LOGGER.info(
             " Battery forecast data saved to coordinator - grid_charging_planned will update"
         )
