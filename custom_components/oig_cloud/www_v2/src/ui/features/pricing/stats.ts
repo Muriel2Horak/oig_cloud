@@ -28,7 +28,6 @@ import { CSS_VARS } from '@/ui/theme';
 import type {
   PricingData,
   PriceBlock,
-  WhatIfAlternative,
 } from './types';
 
 const u = unsafeCSS;
@@ -91,38 +90,12 @@ export class OigMiniSparkline extends LitElement {
     this.destroyChart();
   }
 
-  private getSignificantPoints(): number[] {
-    const values = this.values;
-    if (values.length < 2) return [];
-
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min;
-    const threshold = range * 0.25;
-
-    const significant: number[] = [];
-    values.forEach((value, idx) => {
-      const prevValue = idx > 0 ? values[idx - 1] : value;
-      const nextValue = idx < values.length - 1 ? values[idx + 1] : value;
-      const change = Math.max(Math.abs(value - prevValue), Math.abs(value - nextValue));
-      const isExtreme = value >= max - threshold || value <= min + threshold;
-      const isBigChange = change > threshold;
-      if (isExtreme || isBigChange) {
-        significant.push(idx);
-      }
-    });
-
-    return significant;
-  }
-
   private updateOrCreateSparkline(): void {
     if (!this.canvas || this.values.length === 0) return;
 
     const dataKey = JSON.stringify({ v: this.values, c: this.color });
     if (dataKey === this.lastDataKey && this.chart) return;
     this.lastDataKey = dataKey;
-
-    const significantPoints = this.getSignificantPoints();
 
     if (this.chart?.data?.datasets?.[0]) {
       const dataset = this.chart.data.datasets[0] as any;
@@ -132,9 +105,6 @@ export class OigMiniSparkline extends LitElement {
         dataset.data = this.values;
         dataset.borderColor = this.color;
         dataset.backgroundColor = this.color.replace('1)', '0.2)');
-        dataset.pointBackgroundColor = this.values.map((_: number, i: number) =>
-          significantPoints.includes(i) ? this.color : 'transparent',
-        );
         this.chart.update('none');
         return;
       }
@@ -150,7 +120,6 @@ export class OigMiniSparkline extends LitElement {
     // Safety: destroy any existing chart on this canvas
     this.destroyChart();
 
-    const significantPoints = this.getSignificantPoints();
     const color = this.color;
     const values = this.values;
 
@@ -172,12 +141,8 @@ export class OigMiniSparkline extends LitElement {
             borderWidth: 2,
             fill: true,
             tension: 0.3,
-            pointRadius: (context: any) =>
-              significantPoints.includes(context.dataIndex) ? 4 : 0,
-            pointBackgroundColor: color,
-            pointBorderColor: '#fff',
-            pointBorderWidth: 1,
-            pointHoverRadius: 6,
+            pointRadius: 0,
+            pointHoverRadius: 5,
           } as any,
         ],
       },
@@ -201,15 +166,7 @@ export class OigMiniSparkline extends LitElement {
             },
           },
           datalabels: {
-            display: (context: any) => significantPoints.includes(context.dataIndex),
-            align: 'top' as const,
-            offset: 4,
-            color: '#fff',
-            font: { size: 8, weight: 'bold' as const },
-            formatter: (value: number) => value.toFixed(2),
-            backgroundColor: color.replace('1)', '0.8)'),
-            borderRadius: 3,
-            padding: { top: 2, bottom: 2, left: 4, right: 4 },
+            display: false,
           },
           zoom: {
             pan: { enabled: true, mode: 'x' as const, modifierKey: 'shift' as const },
@@ -272,7 +229,7 @@ export class OigStatsCard extends LitElement {
       display: block;
       background: ${u(CSS_VARS.cardBg)};
       border-radius: 12px;
-      padding: 14px 16px;
+      padding: 10px 12px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
       transition: transform 0.2s, box-shadow 0.2s;
       border: 1px solid transparent;
@@ -301,7 +258,7 @@ export class OigStatsCard extends LitElement {
     }
 
     .card-value {
-      font-size: 22px;
+      font-size: 16px;
       font-weight: 700;
       color: ${u(CSS_VARS.textPrimary)};
       line-height: 1.2;
@@ -393,21 +350,6 @@ function formatBlockTimeRange(block: PriceBlock): string {
   return `${startDate} ${startTimeStr} - ${endTimeStr}`;
 }
 
-function formatWhatIfDelta(alt: WhatIfAlternative | undefined): string {
-  if (!alt || alt.delta_czk === undefined) return '--';
-  const delta = alt.delta_czk;
-  if (delta > 0.01) return `+${delta.toFixed(2)} Kč`;
-  if (delta < -0.01) return `${delta.toFixed(2)} Kč`;
-  return '~0 Kč';
-}
-
-function whatIfDeltaClass(alt: WhatIfAlternative | undefined): string {
-  if (!alt || alt.delta_czk === undefined) return '';
-  if (alt.delta_czk > 0.01) return 'danger';
-  if (alt.delta_czk < -0.01) return 'success';
-  return '';
-}
-
 // ============================================================================
 // MAIN PRICING STATS CONTAINER
 // ============================================================================
@@ -422,121 +364,88 @@ export class OigPricingStats extends LitElement {
       margin-bottom: 16px;
     }
 
-    .stats-grid {
+    /* Top row: price tiles + extreme blocks in one line */
+    .top-row {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
+      grid-template-columns: auto auto auto 1fr 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+      align-items: stretch;
     }
 
-    .hero-row {
-      display: grid;
-      grid-template-columns: 2fr 1fr 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 20px;
-    }
-
-    .hero-card {
+    /* Compact price tiles: spot, export, solar */
+    .price-tile {
       background: ${u(CSS_VARS.cardBg)};
-      border-radius: 16px;
-      padding: 20px;
+      border-radius: 10px;
+      padding: 10px 12px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
-      position: relative;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 76px;
     }
 
-    .hero-card.main {
+    .price-tile.spot {
       background: linear-gradient(135deg, ${u(CSS_VARS.accent)}22 0%, ${u(CSS_VARS.accent)}11 100%);
-      border: 1px solid rgba(76, 175, 80, 0.3);
+      border-color: rgba(76, 175, 80, 0.3);
     }
 
-    .hero-card.export {
+    .price-tile.export {
       background: linear-gradient(135deg, rgba(76, 175, 80, 0.2) 0%, rgba(76, 175, 80, 0.1) 100%);
-      border: 1px solid rgba(76, 175, 80, 0.3);
+      border-color: rgba(76, 175, 80, 0.3);
     }
 
-    .hero-card.avg {
-      background: linear-gradient(135deg, rgba(33, 150, 243, 0.2) 0%, rgba(33, 150, 243, 0.1) 100%);
-      border: 1px solid rgba(33, 150, 243, 0.3);
-    }
-
-    .hero-card.solar {
+    .price-tile.solar {
       background: linear-gradient(135deg, rgba(255, 167, 38, 0.2) 0%, rgba(255, 167, 38, 0.1) 100%);
-      border: 1px solid rgba(255, 167, 38, 0.3);
+      border-color: rgba(255, 167, 38, 0.3);
     }
 
-    .hero-title {
-      font-size: 11px;
+    .price-tile-label {
+      font-size: 10px;
       color: ${u(CSS_VARS.textSecondary)};
-      margin-bottom: 8px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       opacity: 0.8;
-    }
-
-    .hero-value {
-      font-size: 28px;
-      font-weight: 700;
-      color: ${u(CSS_VARS.textPrimary)};
-      line-height: 1.2;
       margin-bottom: 4px;
     }
 
-    .hero-value .stat-unit {
-      font-size: 14px;
+    .price-tile-value {
+      font-size: 16px;
+      font-weight: 700;
+      color: ${u(CSS_VARS.textPrimary)};
+      line-height: 1.2;
+    }
+
+    .price-tile-unit {
+      font-size: 10px;
       font-weight: 400;
       color: ${u(CSS_VARS.textSecondary)};
       opacity: 0.7;
     }
 
-    .hero-subtitle {
+    .price-tile-sub {
+      font-size: 9px;
+      color: ${u(CSS_VARS.textSecondary)};
+      opacity: 0.55;
+      margin-top: 3px;
+    }
+
+    .section-label {
       font-size: 10px;
-      color: ${u(CSS_VARS.textSecondary)};
-      opacity: 0.6;
-    }
-
-    .stats-2x2-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 20px;
-    }
-
-    .stats-2x2-item {
-      background: ${u(CSS_VARS.cardBg)};
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: ${u(CSS_VARS.cardShadow)};
-      border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .stats-2x2-item h3 {
-      font-size: 12px;
       font-weight: 600;
       color: ${u(CSS_VARS.textSecondary)};
-      margin-bottom: 12px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-    }
-
-    .section-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: ${u(CSS_VARS.textSecondary)};
-      margin-bottom: 10px;
-      margin-top: 16px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      opacity: 0.7;
     }
 
     /* Planned consumption */
     .planned-section {
       background: ${u(CSS_VARS.cardBg)};
       border-radius: 12px;
-      padding: 14px 16px;
+      padding: 12px 14px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
-      margin-bottom: 12px;
     }
 
     .planned-header {
@@ -621,88 +530,16 @@ export class OigPricingStats extends LitElement {
       color: ${u(CSS_VARS.textSecondary)};
     }
 
-    /* What-if analysis */
-    .whatif-section {
-      background: ${u(CSS_VARS.cardBg)};
-      border-radius: 12px;
-      padding: 14px 16px;
-      box-shadow: ${u(CSS_VARS.cardShadow)};
-      margin-bottom: 12px;
-    }
 
-    .whatif-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-
-    .whatif-cost {
-      font-size: 20px;
-      font-weight: 700;
-      color: ${u(CSS_VARS.textPrimary)};
-    }
-
-    .whatif-savings {
-      font-size: 13px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 4px;
-    }
-
-    .whatif-savings.positive {
-      color: #4CAF50;
-      background: rgba(76, 175, 80, 0.15);
-    }
-
-    .whatif-savings.negative {
-      color: #F44336;
-      background: rgba(244, 67, 54, 0.15);
-    }
-
-    .whatif-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-
-    .whatif-table th {
-      text-align: left;
-      color: ${u(CSS_VARS.textSecondary)};
-      font-weight: 500;
-      padding: 6px 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      font-size: 10px;
-      text-transform: uppercase;
-    }
-
-    .whatif-table td {
-      padding: 6px 8px;
-      color: ${u(CSS_VARS.textPrimary)};
-    }
-
-    .whatif-row {
-      border-radius: 4px;
-      transition: background 0.2s;
-    }
-
-    .whatif-row.active-mode {
-      background: rgba(76, 175, 80, 0.15);
-      border: 1px solid rgba(76, 175, 80, 0.3);
-    }
-
-    .whatif-delta.success { color: #4CAF50; }
-    .whatif-delta.danger { color: #F44336; }
-
-    @media (max-width: 600px) {
-      .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      .hero-row {
-        grid-template-columns: repeat(2, 1fr);
+    @media (max-width: 700px) {
+      .top-row {
+        grid-template-columns: repeat(4, 1fr);
       }
       .planned-details {
         grid-template-columns: 1fr 1fr;
+      }
+      .bottom-row {
+        grid-template-columns: 1fr;
       }
     }
   `;
@@ -717,46 +554,34 @@ export class OigPricingStats extends LitElement {
     );
   }
 
-  // ---- Current Prices ----
+  // ---- Current Prices (compact tiles, part of top-row) ----
 
-  private renderCurrentPrices() {
+  private renderPriceTiles() {
     if (!this.data) return nothing;
 
+    const solarAvailable = this.data.solarForecastTotal > 0;
+
     return html`
-      <div class="hero-row">
-        <div class="hero-card main">
-          <div class="hero-title">Aktuální spotová cena</div>
-          <div class="hero-value">${this.data.currentSpotPrice.toFixed(2)} <span class="stat-unit">Kč/kWh</span></div>
-          <div class="hero-subtitle">Aktuální hodina</div>
-        </div>
+      <div class="price-tile spot">
+        <div class="price-tile-label">Spot</div>
+        <div class="price-tile-value">${this.data.currentSpotPrice.toFixed(2)} <span class="price-tile-unit">Kč/kWh</span></div>
+        <div class="price-tile-sub">Aktuální hodina</div>
+      </div>
 
-        <div class="hero-card export">
-          <div class="hero-title">Výkupní cena</div>
-          <div class="hero-value">${this.data.currentExportPrice.toFixed(2)} <span class="stat-unit">Kč/kWh</span></div>
-          <div class="hero-subtitle">Za přetok</div>
-        </div>
+      <div class="price-tile export">
+        <div class="price-tile-label">Výkup</div>
+        <div class="price-tile-value">${this.data.currentExportPrice.toFixed(2)} <span class="price-tile-unit">Kč/kWh</span></div>
+        <div class="price-tile-sub">Za přetok</div>
+      </div>
 
-        <div class="hero-card avg">
-          <div class="hero-title">Průměr spot</div>
-          <div class="hero-value">${this.data.avgSpotPrice.toFixed(2)} <span class="stat-unit">Kč/kWh</span></div>
-          <div class="hero-subtitle">Denní průměr</div>
+      <div class="price-tile solar">
+        <div class="price-tile-label">☀ Solar dnes</div>
+        <div class="price-tile-value">
+          ${solarAvailable
+            ? html`${this.data.solarForecastTotal.toFixed(1)} <span class="price-tile-unit">kWh</span>`
+            : html`-- <span class="price-tile-unit">kWh</span>`}
         </div>
-
-        ${this.data.solarForecastTotal > 0
-          ? html`
-              <div class="hero-card solar">
-                <div class="hero-title">Solární předpověď</div>
-                <div class="hero-value">${this.data.solarForecastTotal.toFixed(1)} <span class="stat-unit">kWh</span></div>
-                <div class="hero-subtitle">Dnes</div>
-              </div>
-            `
-          : html`
-              <div class="hero-card avg">
-                <div class="hero-title">Předpověď</div>
-                <div class="hero-value">-- <span class="stat-unit">kWh</span></div>
-                <div class="hero-subtitle">Nedostupná</div>
-              </div>
-            `}
+        <div class="price-tile-sub">${solarAvailable ? 'Předpověď' : 'Nedostupná'}</div>
       </div>
     `;
   }
@@ -798,38 +623,32 @@ export class OigPricingStats extends LitElement {
       worstExportBlock,
     } = this.data;
 
-    const hasBlocks =
-      cheapestBuyBlock || expensiveBuyBlock || bestExportBlock || worstExportBlock;
-    if (!hasBlocks) return nothing;
-
+    // Return individual cards (no wrapper — they sit directly in .top-row)
     return html`
-      <div class="section-title">Cenové bloky (3h okna)</div>
-      <div class="stats-grid">
-        ${this.renderBlockCard(
-          'Nejlevnější nákup',
-          cheapestBuyBlock,
-          'success',
-          'rgba(76, 175, 80, 1)',
-        )}
-        ${this.renderBlockCard(
-          'Nejdražší nákup',
-          expensiveBuyBlock,
-          'danger',
-          'rgba(244, 67, 54, 1)',
-        )}
-        ${this.renderBlockCard(
-          'Nejlepší výkup',
-          bestExportBlock,
-          'success',
-          'rgba(76, 175, 80, 1)',
-        )}
-        ${this.renderBlockCard(
-          'Nejhorší výkup',
-          worstExportBlock,
-          'warning',
-          'rgba(255, 167, 38, 1)',
-        )}
-      </div>
+      ${this.renderBlockCard(
+        'Nejlevnější nákup',
+        cheapestBuyBlock,
+        'success',
+        'rgba(76, 175, 80, 1)',
+      )}
+      ${this.renderBlockCard(
+        'Nejdražší nákup',
+        expensiveBuyBlock,
+        'danger',
+        'rgba(244, 67, 54, 1)',
+      )}
+      ${this.renderBlockCard(
+        'Nejlepší výkup',
+        bestExportBlock,
+        'success',
+        'rgba(76, 175, 80, 1)',
+      )}
+      ${this.renderBlockCard(
+        'Nejhorší výkup',
+        worstExportBlock,
+        'warning',
+        'rgba(255, 167, 38, 1)',
+      )}
     `;
   }
 
@@ -846,8 +665,8 @@ export class OigPricingStats extends LitElement {
     const tomorrowPercent = total > 0 ? ((tomorrow || 0) / total) * 100 : 50;
 
     return html`
-      <div class="section-title">Plánovaná spotřeba</div>
       <div class="planned-section">
+        <div class="section-label" style="margin-bottom: 8px;">Plánovaná spotřeba</div>
         <div class="planned-header">
           <div>
             <div class="planned-main-value">
@@ -897,87 +716,27 @@ export class OigPricingStats extends LitElement {
     `;
   }
 
-  // ---- What-If Analysis ----
-
-  private renderWhatIfAnalysis() {
-    const wi = this.data?.whatIf;
-    if (!wi) return nothing;
-
-    const alts = wi.alternatives;
-    const homeI = alts['HOME I'];
-    const homeII = alts['HOME II'];
-    const homeIII = alts['HOME III'];
-    const homeUps = alts['HOME UPS'] || alts['FULL HOME UPS'];
-
-    const savingsClass = wi.totalSavings > 0 ? 'positive' : wi.totalSavings < 0 ? 'negative' : '';
-    const savingsText =
-      wi.totalSavings > 0
-        ? `+${wi.totalSavings.toFixed(2)} Kč`
-        : wi.totalSavings < 0
-          ? `${wi.totalSavings.toFixed(2)} Kč`
-          : '0 Kč';
-
-    const modeRow = (
-      name: string,
-      icon: string,
-      alt: WhatIfAlternative | undefined,
-      modeName: string,
-    ) => {
-      const isActive = wi.activeMode === modeName;
-      return html`
-        <tr class="whatif-row ${isActive ? 'active-mode' : ''}">
-          <td>${icon} ${name}</td>
-          <td class="whatif-delta ${whatIfDeltaClass(alt)}">${formatWhatIfDelta(alt)}</td>
-        </tr>
-      `;
-    };
-
-    return html`
-      <div class="section-title">Co kdyby...?</div>
-      <div class="whatif-section">
-        <div class="whatif-header">
-          <div>
-            <div style="font-size: 10px; color: ${CSS_VARS.textSecondary}; text-transform: uppercase; margin-bottom: 4px;">
-              Optimalizované náklady
-            </div>
-            <div class="whatif-cost">${wi.totalCost.toFixed(2)} Kč</div>
-          </div>
-          <div class="whatif-savings ${savingsClass}">
-            Úspora: ${savingsText}
-          </div>
-        </div>
-
-        <table class="whatif-table">
-          <thead>
-            <tr>
-              <th>Režim</th>
-              <th>Rozdíl vs. optimální</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${modeRow('HOME I', '\u{1F3E0}', homeI, 'HOME I')}
-            ${modeRow('HOME II', '\u26A1', homeII, 'HOME II')}
-            ${modeRow('HOME III', '\u{1F50B}', homeIII, 'HOME III')}
-            ${modeRow('HOME UPS', '\u{1F6E1}\uFE0F', homeUps, 'HOME UPS')}
-          </tbody>
-        </table>
-      </div>
-    `;
-  }
-
   // ---- Main Render ----
+
+  @property({ type: Boolean }) topOnly = false;
 
   render() {
     if (!this.data || this.data.timeline.length === 0) {
+      if (this.topOnly) return nothing;
       return html`<div style="color: ${CSS_VARS.textSecondary}; padding: 16px;">Načítání cenových dat...</div>`;
     }
 
-    return html`
-      ${this.renderCurrentPrices()}
-      ${this.renderExtremeBlocks()}
-      ${this.renderPlannedConsumption()}
-      ${this.renderWhatIfAnalysis()}
-    `;
+    if (this.topOnly) {
+      return html`
+        <div class="top-row">
+          ${this.renderPriceTiles()}
+          ${this.renderExtremeBlocks()}
+        </div>
+      `;
+    }
+
+    // Bottom only: planned consumption
+    return html`${this.renderPlannedConsumption()}`;
   }
 }
 

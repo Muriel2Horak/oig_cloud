@@ -99,20 +99,39 @@ def plan_charging_intervals(
     )
 
     if not recovery_mode:
-        _apply_economic_charging(
+        _pre_economic_trajectory = simulate_trajectory(
             strategy,
             initial_battery_kwh=initial_battery_kwh,
             solar_forecast=solar_forecast,
             consumption_forecast=consumption_forecast,
-            charging_intervals=charging_intervals,
-            blocked_indices=blocked_indices,
-            prices=prices,
-            add_ups_interval=add_ups_interval,
-            n=n,
-            eps_kwh=eps_kwh,
+            charging_intervals=set(),
         )
+        _pre_economic_max_soc = (
+            max(_pre_economic_trajectory) if _pre_economic_trajectory else initial_battery_kwh
+        )
+        _target_effective = strategy._target if getattr(strategy, "_target", None) is not None else 0.0
+        if _pre_economic_max_soc >= _target_effective - eps_kwh:
+            _LOGGER.debug(
+                "Skipping economic charging: solar+plan reaches target SOC "
+                "(max_soc=%.3f >= target=%.3f)",
+                _pre_economic_max_soc,
+                strategy._target,
+            )
+        else:
+            _apply_economic_charging(
+                strategy,
+                initial_battery_kwh=initial_battery_kwh,
+                solar_forecast=solar_forecast,
+                consumption_forecast=consumption_forecast,
+                charging_intervals=charging_intervals,
+                blocked_indices=blocked_indices,
+                prices=prices,
+                add_ups_interval=add_ups_interval,
+                n=n,
+                eps_kwh=eps_kwh,
+            )
 
-        if _apply_cost_aware_override(
+        if _pre_economic_max_soc < _target_effective - eps_kwh and _apply_cost_aware_override(
             strategy,
             initial_battery_kwh=initial_battery_kwh,
             solar_forecast=solar_forecast,
@@ -126,7 +145,7 @@ def plan_charging_intervals(
         ):
             infeasible_reason = None
 
-        if _apply_hw_min_hold_limit(
+        if _pre_economic_max_soc < _target_effective - eps_kwh and _apply_hw_min_hold_limit(
             strategy,
             initial_battery_kwh=initial_battery_kwh,
             solar_forecast=solar_forecast,
@@ -617,9 +636,13 @@ def _find_cheapest_candidate(
         price = prices[idx]
         if price > max_price:
             continue
-        if candidate is None or price < candidate_price:
+        if candidate is None:
             candidate = idx
             candidate_price = price
+        else:
+            if candidate_price is not None and price < candidate_price:
+                candidate = idx
+                candidate_price = price
     return candidate
 
 

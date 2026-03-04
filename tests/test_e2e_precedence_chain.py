@@ -56,10 +56,15 @@ def _make_timeline(
     initial_soc_kwh: float = 6.0,
     price: float = 5.0,
     max_capacity_kwh: float = 15.0,
+    start_offset_hours: int = 1,
 ) -> List[Dict[str, Any]]:
-    """Create a timeline with n intervals (default 24h of 15-min blocks)."""
+    """Create a timeline with n intervals (default 24h of 15-min blocks).
+
+    Args:
+        start_offset_hours: Hours to offset start from now (default 1 = future)
+    """
     timeline = []
-    now = datetime(2025, 1, 15, 18, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc) + timedelta(hours=start_offset_hours)
 
     for i in range(n):
         ts = now + timedelta(minutes=15 * i)

@@ -33,12 +33,12 @@ class TestPrecedenceLevel:
         values = [level.value for level in PrecedenceLevel]
         assert len(values) == len(set(values)), "Duplicate values found"
 
-    def test_values_are_spaced_by_100(self):
-        """Values should be spaced by 100 to allow intermediate levels."""
+    def test_values_are_spaced_by_multiples_of_50(self):
+        """Values should be spaced by multiples of 50 to allow intermediate levels."""
         values = sorted([level.value for level in PrecedenceLevel], reverse=True)
         for i in range(len(values) - 1):
             diff = values[i] - values[i + 1]
-            assert diff == 100, f"Gap between {values[i]} and {values[i+1]} is {diff}, expected 100"
+            assert diff % 50 == 0 and diff >= 50, f"Gap between {values[i]} and {values[i+1]} is {diff}, expected multiple of 50 and >= 50"
 
     def test_pv_first_is_highest(self):
         """PV_FIRST must have the highest numeric value."""
@@ -55,8 +55,8 @@ class TestPrecedenceLevel:
                 assert level > PrecedenceLevel.PLANNING_TARGET
 
     def test_level_count(self):
-        """There should be exactly 10 precedence levels."""
-        assert len(list(PrecedenceLevel)) == 10
+        """There should be exactly 11 precedence levels (including PRE_PEAK_AVOIDANCE)."""
+        assert len(list(PrecedenceLevel)) == 11
 
 
 class TestPrecedenceLadder:
@@ -79,6 +79,7 @@ class TestPrecedenceLadder:
         expected_order = [
             PrecedenceLevel.PV_FIRST,
             PrecedenceLevel.PROTECTION_SAFETY,
+            PrecedenceLevel.PRE_PEAK_AVOIDANCE,
             PrecedenceLevel.DEATH_VALLEY,
             PrecedenceLevel.BALANCING_OVERRIDE,
             PrecedenceLevel.MODE_GUARD,
@@ -264,7 +265,7 @@ class TestHelperFunctions:
     def test_get_precedence_rank(self):
         """get_precedence_rank should return correct 1-indexed position."""
         assert get_precedence_rank(PrecedenceLevel.PV_FIRST) == 1
-        assert get_precedence_rank(PrecedenceLevel.PLANNING_TARGET) == 10
+        assert get_precedence_rank(PrecedenceLevel.PLANNING_TARGET) == 11
         assert get_precedence_rank(PrecedenceLevel.PROTECTION_SAFETY) == 2
 
     def test_is_higher_priority(self):
@@ -296,7 +297,7 @@ class TestHelperFunctions:
         summary = get_precedence_summary()
         assert "PRECEDENCE CONTRACT SUMMARY" in summary
         assert "PV_FIRST" in summary
-        assert "Total levels: 10" in summary
+        assert "Total levels: 11" in summary
         assert "Total order valid: True" in summary
 
 

@@ -1,0 +1,163 @@
+Production Baseline CSS Snapshot
+Generated: 2026-02-16T13:21:21.929Z
+URL: https://ha.muriel-cz.cz/oig_cloud_dashboard_aab05107e596a3ee794f37a9be7294ac_v2
+Viewport: 1280x800
+
+=== BODY STYLES ===
+Display: block
+Position: static
+Width: 1280px
+Height: 800px
+Flex Direction: row
+Flex Wrap: nowrap
+Justify Content: normal
+Align Items: normal
+Gap: normal
+Padding: 0px
+Margin: 0px
+Overflow: visible
+Background Color: rgba(0, 0, 0, 0)
+Font Family: Roboto, Noto, sans-serif
+Font Size: 14px
+Line Height: normal
+Color: rgb(225, 225, 225)
+
+=== IFRAME INFO ===
+No iframe found in main document context
+
+=== MAIN ELEMENTS ===
+HTML Element:
+- Display: block
+- Position: static
+- Width: 1280px
+- Height: 800px
+- Background Color: rgb(17, 17, 17)
+
+Body Element:
+- Display: block
+- Position: static
+- Width: 1280px
+- Height: 800px
+- Background Color: rgba(0, 0, 0, 0)
+
+=== CUSTOM COMPONENTS ===
+HOME-ASSISTANT:
+- Display: inline
+- Position: static
+- Width: auto
+- Height: auto
+- Background Color: rgba(0, 0, 0, 0)
+
+ACTION-HANDLER:
+- Display: block
+- Position: fixed
+- Width: 50px
+- Height: 50px
+- Background Color: rgb(0, 154, 199)
+- Border Radius: 50%
+- Box Shadow: none
+
+=== KEY CSS VARIABLES ===
+Primary Color: #009ac7
+Primary Background Color: #111111
+Secondary Background Color: #282828
+Text Primary Color: #ffffff
+Text Secondary Color: #cccccc
+Card Background Color: #1c1c1c
+Error Color: #db4437
+Success Color: #43a047
+Warning Color: #ffa600
+Accent Color: #ff9800
+
+=== HOME ASSISTANT THEME VARIABLES ===
+--mdc-theme-primary: #009ac7
+--mdc-theme-secondary: #ff9800
+--mdc-theme-background: #111111
+--mdc-theme-surface: #1c1c1c
+--mdc-theme-on-primary: #ffffff
+--mdc-theme-on-secondary: #ffffff
+--mdc-theme-text-primary-on-background: #e1e1e1
+--mdc-theme-text-secondary-on-background: #9b9b9b
+
+=== ENERGY COLORS ===
+--energy-solar-color: #ff9800
+--energy-grid-consumption-color: #488fc2
+--energy-grid-return-color: #a280db
+--energy-battery-in-color: #f06292
+--energy-battery-out-color: #4db6ac
+--energy-water-color: #00bcd4
+--energy-gas-color: #8e021b
+--energy-non-fossil-color: #0f9d58
+
+=== LAYOUT VARIABLES ===
+--header-height: 56px
+--sidebar-background-color: #1c1c1c
+--sidebar-text-color: #e1e1e1
+--sidebar-selected-text-color: #009ac7
+--sidebar-selected-icon-color: #009ac7
+--sidebar-icon-color: rgba(225,225,225, 0.6)
+
+=== SPACING SCALE ===
+--ha-space-1: 4px
+--ha-space-2: 8px
+--ha-space-3: 12px
+--ha-space-4: 16px
+--ha-space-5: 20px
+--ha-space-6: 24px
+--ha-space-7: 28px
+--ha-space-8: 32px
+--ha-space-9: 36px
+--ha-space-10: 40px
+--ha-space-11: 44px
+--ha-space-12: 48px
+--ha-space-13: 52px
+--ha-space-14: 56px
+--ha-space-15: 60px
+--ha-space-16: 64px
+--ha-space-17: 68px
+--ha-space-18: 72px
+--ha-space-19: 76px
+--ha-space-20: 80px
+
+=== BORDER RADIUS ===
+--ha-border-radius-sm: 4px
+--ha-border-radius-md: 8px
+--ha-border-radius-lg: 12px
+--ha-border-radius-xl: 16px
+--ha-border-radius-2xl: 20px
+--ha-border-radius-3xl: 24px
+--ha-border-radius-4xl: 28px
+--ha-border-radius-5xl: 32px
+--ha-border-radius-6xl: 36px
+--ha-border-radius-circle: 50%
+--ha-border-radius-pill: 9999px
+
+=== SHADOWS ===
+--ha-box-shadow-s: 0 2px 4px 0 #00000046
+--ha-box-shadow-m: 0 4px 8px 0 #00000046
+--ha-box-shadow-l: 0 8px 12px 0 #00000046
+
+=== TYPOGRAPHY ===
+--ha-font-family-body: Roboto,Noto,sans-serif
+--ha-font-family-heading: Roboto,Noto,sans-serif
+--ha-font-family-code: monospace
+--ha-font-size-xs: 10px
+--ha-font-size-s: 12px
+--ha-font-size-m: 14px
+--ha-font-size-l: 16px
+--ha-font-size-xl: 20px
+--ha-font-size-2xl: 24px
+--ha-font-size-3xl: 28px
+--ha-font-size-4xl: 32px
+--ha-font-size-5xl: 40px
+--ha-line-height-condensed: 1.2
+--ha-line-height-normal: 1.6
+--ha-line-height-expanded: 2.0
+
+=== NOTES ===
+- .flow-layout element not found in main document
+- oig-control-panel element not found in main document
+- Content appears to be loaded in iframe with restricted access
+- Dashboard uses Home Assistant theming system with dark theme
+- Custom web components present: HOME-ASSISTANT, ACTION-HANDLER
+- Responsive design with viewport-based sizing

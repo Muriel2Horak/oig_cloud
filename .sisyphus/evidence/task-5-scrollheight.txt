@@ -1,0 +1,10 @@
+ScrollHeight verification:
+- oig-app element inside iframe
+- JavaScript evaluation requires iframe context
+- Visual comparison screenshots saved
+
+Screenshots taken:
+- task-5-pricing-compacted-top.png (top section)
+- task-5-pricing-compacted-full.png (full page)
+
+Evidence collected.

@@ -1,0 +1,31 @@
+custom_components/oig_cloud/battery_forecast/planning/charging_plan_adjustments.py:8:from .charging_plan_utils import recalculate_timeline_from_index
+custom_components/oig_cloud/battery_forecast/planning/charging_plan_adjustments.py:64:        recalculate_timeline_from_index(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan_adjustments.py:136:        recalculate_timeline_from_index(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:11:    calculate_minimum_charge,
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:12:    calculate_protection_requirement,
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:13:    get_candidate_intervals,
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:14:    recalculate_timeline_from_index,
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:15:    simulate_forward,
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:57:    candidates = get_candidate_intervals(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:204:    protection_soc_kwh = calculate_protection_requirement(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:225:    candidates = get_candidate_intervals(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:257:        recalculate_timeline_from_index(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:288:    result_charge = simulate_forward(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:299:    result_wait = simulate_forward(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:315:            min_charge = calculate_minimum_charge(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:332:            recalculate_timeline_from_index(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:357:        recalculate_timeline_from_index(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:452:        recalculate_timeline_from_index(
+custom_components/oig_cloud/battery_forecast/planning/charging_plan.py:556:        recalculate_timeline_from_index(
+
+=== DEAD CODE AUDIT RESULTS === 
+Functions checked in charging_plan_utils.py:
+1. get_candidate_intervals - USED in charging_plan.py (lines 57, 225)
+2. simulate_forward - USED in charging_plan.py (lines 288, 299)
+3. calculate_minimum_charge - USED in charging_plan.py (line 315)
+4. calculate_protection_requirement - USED in charging_plan.py (line 204)
+5. recalculate_timeline_from_index - USED in charging_plan.py (lines 257, 332, 357, 452, 556) AND charging_plan_adjustments.py (lines 64, 136)
+
+RESULT: NO DEAD CODE FOUND
+All 5 functions are actively used in production code.
+

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from .charging_plan_utils import recalculate_timeline_from_index
+
+if TYPE_CHECKING:
+    from .charging_plan import EconomicChargingPlanConfig, PrePeakDecision
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -217,3 +220,48 @@ def find_cheapest_suitable_hour(
 
     candidates.sort(key=lambda x: x[1])
     return candidates[0][0]
+
+
+def schedule_pre_peak_charging(
+    intervals: List[Dict[str, Any]],
+    decision: "PrePeakDecision",
+    config: "EconomicChargingPlanConfig",
+) -> List[Dict[str, Any]]:
+    """Post-generation adjustment: přidá grid_charge_kwh do vybraných pre-peak intervalů.
+
+    Vzor: fix_minimum_capacity_violations() v tomto souboru.
+    Nemodifikuje intervaly mimo decision.cheapest_intervals.
+    Nezdvojuje nabíjení kde grid_charge_kwh > 0.
+    """
+    # Early return pokud should_charge=False
+    if not decision.should_charge:
+        return intervals
+
+    # Pro každý index v decision.cheapest_intervals:
+    for idx in decision.cheapest_intervals:
+        if idx < 0 or idx >= len(intervals):
+            continue
+
+        interval = intervals[idx]
+
+        # No-duplicate check
+        if interval.get("grid_charge_kwh", 0) > 0:
+            _LOGGER.debug(
+                "Skipping interval %s — already has economic charging", idx
+            )
+            continue
+
+        # Nastav charging
+        charge_kwh = config.charging_power_kw / 4.0  # 15min interval
+        intervals[idx]["grid_charge_kwh"] = charge_kwh
+        intervals[idx]["decision_reason"] = f"pre_peak_avoidance: {decision.reason}"
+
+        _LOGGER.debug(
+            "Pre-peak charging: %.2fkWh at index %s (price=%.2fCZK)",
+            charge_kwh,
+            idx,
+            interval.get("spot_price_czk", 0),
+        )
+
+    # Return modifikované intervals
+    return intervals

@@ -1,0 +1,43 @@
+Playwright E2E Tests Output - Task 9
+=====================================
+
+Test Command: npm run test:fe:e2e
+
+Test Results:
+- Total tests: 77
+- Failed tests: 7
+- Skipped tests: 7  
+- Passed tests: 63
+- Exit code: NOT 0 (FAILED)
+
+Failed Tests:
+All 7 failed tests are the same test across different environments:
+- [cloud] › tests/fe/specs/dashboard.spec.js:97:1 › dashboard loads and shows CHMU badge
+- [local] › tests/fe/specs/dashboard.spec.js:97:1 › dashboard loads and shows CHMU badge  
+- [proxy] › tests/fe/specs/dashboard.spec.js:97:1 › dashboard loads and shows CHMU badge
+- [cloud-mobile] › tests/fe/specs/dashboard.spec.js:97:1 › dashboard loads and shows CHMU badge
+- [cloud-tablet] › tests/fe/specs/dashboard.spec.js:97:1 › dashboard loads and shows CHMU badge
+- [cloud-nest] › tests/fe/specs/dashboard.spec.js:97:1 › dashboard loads and shows CHMU badge
+- [cloud-nest-max] › tests/fe/specs/dashboard.spec.js:97:1 › dashboard loads and shows CHMU badge
+
+Root Cause:
+All failed tests have the same error:
+- Expected consoleMessages to be empty array []
+- But received array with warning messages about deprecated API usage
+
+Error Details:
+- Warning message: "[API] getHAToken() je zastaralé - nepoužívat pro API volání. Použijte hass.callApi/hass.callService."
+- This translates to: "[API] getHAToken() is deprecated - do not use for API calls. Use hass.callApi/hass.callService."
+- Different environments have different counts of these warnings (14-54 warnings)
+
+Additional Issues:
+- [cloud-nest] environment also had "Failed to load resource: net::ERR_INTERNET_DISCONNECTED" errors
+
+Environment Coverage:
+- Tests run across: local, cloud, proxy, cloud-mobile, cloud-tablet, cloud-nest, cloud-nest-max
+- Most functionality tests passed (63/70 runnable tests)
+- Issue is specifically with console message expectations
+
+CONCLUSION: PLAYWRIGHT E2E TESTS FAILED
+Exit code: NOT 0
+7 failed tests due to deprecated API warnings appearing in console

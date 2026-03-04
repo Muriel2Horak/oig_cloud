@@ -12,10 +12,17 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
-import { FlowData, EMPTY_FLOW_DATA, FLOW_COLORS, FLOW_MAXIMUMS, FlowParams } from './types';
+import { FlowData, EMPTY_FLOW_DATA, FLOW_COLORS, FLOW_MAXIMUMS, FlowParams, NODE_COLORS } from './types';
 import { calculateFlowParams } from '@/data/flow-data';
 import { OIG_RUNTIME } from '@/core/bootstrap';
 import './node';
+
+function getGradientColors(from: string, to: string): { fromColor: string; toColor: string } {
+  return {
+    fromColor: NODE_COLORS[from] || '#9e9e9e',
+    toColor: NODE_COLORS[to] || '#9e9e9e',
+  };
+}
 
 const u = unsafeCSS;
 
@@ -63,7 +70,7 @@ export class OigFlowCanvas extends LitElement {
     .flow-grid-wrapper {
       position: relative;
       z-index: 1;
-      min-height: 700px;
+      min-height: 500px;
     }
 
     /* Tablet: reduce min-height */
@@ -113,9 +120,7 @@ export class OigFlowCanvas extends LitElement {
 
     .flow-line {
       fill: none;
-      stroke-width: 3;
       stroke-linecap: round;
-      opacity: 0.6;
     }
   `;
 
@@ -327,6 +332,29 @@ export class OigFlowCanvas extends LitElement {
 
     const NS = 'http://www.w3.org/2000/svg';
 
+    const defs = document.createElementNS(NS, 'defs');
+    const filter = document.createElementNS(NS, 'filter');
+    filter.setAttribute('id', 'neon-glow');
+    filter.setAttribute('x', '-50%');
+    filter.setAttribute('y', '-50%');
+    filter.setAttribute('width', '200%');
+    filter.setAttribute('height', '200%');
+    const blur = document.createElementNS(NS, 'feGaussianBlur');
+    blur.setAttribute('in', 'SourceGraphic');
+    blur.setAttribute('stdDeviation', '3');
+    blur.setAttribute('result', 'blur');
+    filter.appendChild(blur);
+    const merge = document.createElementNS(NS, 'feMerge');
+    const mergeBlur = document.createElementNS(NS, 'feMergeNode');
+    mergeBlur.setAttribute('in', 'blur');
+    merge.appendChild(mergeBlur);
+    const mergeOrig = document.createElementNS(NS, 'feMergeNode');
+    mergeOrig.setAttribute('in', 'SourceGraphic');
+    merge.appendChild(mergeOrig);
+    filter.appendChild(merge);
+    defs.appendChild(filter);
+    svgEl.appendChild(defs);
+
     for (const line of this.lines) {
       const fromInfo = this.getNodeInfo(grid, gridRect, line.from);
       const toInfo = this.getNodeInfo(grid, gridRect, line.to);
@@ -337,19 +365,67 @@ export class OigFlowCanvas extends LitElement {
       const from = this.calcEdgePoint(fromCenter, toCenter, fromInfo.hw, fromInfo.hh);
       const to = this.calcEdgePoint(toCenter, fromCenter, toInfo.hw, toInfo.hh);
 
-      // Draw straight line — active: colored at 0.6 opacity, inactive: grey at 0.18 opacity
-      const svgLine = document.createElementNS(NS, 'line');
-      svgLine.setAttribute('x1', String(from.x));
-      svgLine.setAttribute('y1', String(from.y));
-      svgLine.setAttribute('x2', String(to.x));
-      svgLine.setAttribute('y2', String(to.y));
-      svgLine.setAttribute('stroke', line.active ? line.color : '#888');
-      svgLine.setAttribute('stroke-width', line.active ? '3' : '2');
-      svgLine.setAttribute('stroke-linecap', 'round');
-      svgLine.setAttribute('opacity', line.active ? '0.6' : '0.18');
-      svgLine.classList.add('flow-line');
-      if (!line.active) svgLine.classList.add('flow-line--inactive');
-      svgEl.appendChild(svgLine);
+      // Calculate Bezier control points
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const curveOffset = Math.min(dist * 0.2, 40);
+      const nx = -dy / dist;
+      const ny = dx / dist;
+      const mx = (from.x + to.x) / 2;
+      const my = (from.y + to.y) / 2;
+      const cx = mx + nx * curveOffset;
+      const cy = my + ny * curveOffset;
+
+      // Create gradient for this connection
+      const gradientId = `grad-${line.id}`;
+      const { fromColor, toColor } = getGradientColors(line.from, line.to);
+      const gradient = document.createElementNS(NS, 'linearGradient');
+      gradient.setAttribute('id', gradientId);
+      gradient.setAttribute('x1', '0%');
+      gradient.setAttribute('y1', '0%');
+      gradient.setAttribute('x2', '100%');
+      gradient.setAttribute('y2', '0%');
+      const stop1 = document.createElementNS(NS, 'stop');
+      stop1.setAttribute('offset', '0%');
+      stop1.setAttribute('stop-color', fromColor);
+      const stop2 = document.createElementNS(NS, 'stop');
+      stop2.setAttribute('offset', '100%');
+      stop2.setAttribute('stop-color', toColor);
+      gradient.appendChild(stop1);
+      gradient.appendChild(stop2);
+      defs.appendChild(gradient);
+
+      // Draw Bezier curve path with gradient and glow
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('d', `M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}`);
+      path.setAttribute('stroke', `url(#${gradientId})`);
+      path.setAttribute('stroke-width', '3');
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('opacity', line.active ? '0.8' : '0.18');
+      if (line.active) path.setAttribute('filter', 'url(#neon-glow)');
+      path.classList.add('flow-line');
+      if (!line.active) path.classList.add('flow-line--inactive');
+      svgEl.appendChild(path);
+
+      // Direction indicator — animated chevron along path
+      if (line.params.active) {
+        const chevronSize = 6;
+        const chevron = document.createElementNS(NS, 'polygon');
+        chevron.setAttribute('points', `0,${-chevronSize} ${chevronSize * 1.2},0 0,${chevronSize}`);
+        chevron.setAttribute('fill', line.color);
+        chevron.setAttribute('opacity', '0.9');
+        
+        const animateMotion = document.createElementNS(NS, 'animateMotion');
+        animateMotion.setAttribute('dur', `${Math.max(1, line.params.speed / 1000)}s`);
+        animateMotion.setAttribute('repeatCount', 'indefinite');
+        animateMotion.setAttribute('path', `M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}`);
+        animateMotion.setAttribute('rotate', 'auto');
+        
+        chevron.appendChild(animateMotion);
+        svgEl.appendChild(chevron);
+      }
     }
   }
 

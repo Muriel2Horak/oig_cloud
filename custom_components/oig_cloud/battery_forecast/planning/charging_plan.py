@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from .charging_plan_adjustments import schedule_pre_peak_charging
 from .charging_plan_utils import (
     calculate_minimum_charge,
     calculate_protection_requirement,
@@ -25,6 +26,7 @@ REASON_DEATH_VALLEY = "death_valley"
 REASON_PROTECTION_SAFETY = "protection_safety"
 REASON_ECONOMIC_CHARGING = "economic_charging"
 REASON_PV_FIRST = "pv_first"
+REASON_PRE_PEAK_AVOIDANCE = "pre_peak_avoidance"
 
 
 @dataclass(slots=True)
@@ -63,6 +65,25 @@ class EconomicChargingPlanConfig:
     pv_forecast_kwh: float = 0.0
     pv_forecast_confidence: float = 0.0
     pv_forecast_lookahead_hours: int = 6
+    peak_start_hour: int = 6
+    peak_end_hour: int = 8
+    pre_peak_window_hours: int = 2
+    hw_min_soc_kwh: float = 2.05
+    round_trip_efficiency: float = 0.87
+    peak_price_ratio_threshold: float = 1.2
+    max_charge_fraction: float = 0.95
+
+
+@dataclass(slots=True)
+class PrePeakDecision:
+    should_charge: bool
+    reason: str
+    soc_at_peak_start_kwh: float
+    cheapest_intervals: list[int]  # indexy intervalů k nabíjení
+    expected_charge_kwh: float
+    estimated_saving_czk: float
+    peak_avg_price: float
+    pre_peak_avg_price: float
 
 
 def should_defer_for_pv(
@@ -193,6 +214,43 @@ def economic_charging_plan(
             ],
         }
         return timeline, metrics
+
+    # Pre-peak avoidance: check if we should pre-charge before morning peak
+    pre_peak_decision = should_pre_charge_for_peak_avoidance(
+        config=plan,
+        flags=flags,
+        intervals=timeline,
+        current_hour=datetime.now().hour,
+        current_soc_kwh=current_soc,
+    )
+
+    if pre_peak_decision.should_charge:
+        schedule_pre_peak_charging(
+            intervals=timeline,
+            decision=pre_peak_decision,
+            config=plan,
+        )
+        decision_trace.append(
+            DecisionTrace(
+                index=0,
+                timestamp=timeline[0].get("timestamp", "") if timeline else "",
+                action="charge",
+                reason_code=REASON_PRE_PEAK_AVOIDANCE,
+                precedence_level=PrecedenceLevel.PRE_PEAK_AVOIDANCE,
+                precedence_name=PrecedenceLevel.PRE_PEAK_AVOIDANCE.name,
+                details={
+                    "expected_charge_kwh": pre_peak_decision.expected_charge_kwh,
+                    "estimated_saving_czk": pre_peak_decision.estimated_saving_czk,
+                    "cheapest_intervals": pre_peak_decision.cheapest_intervals,
+                },
+            )
+        )
+        if current_soc < flags.pre_peak_charging_canary_soc_threshold_kwh:
+            _LOGGER.warning(
+                "PRE_PEAK_CANARY: SOC %.2fkWh below canary threshold %.2fkWh",
+                current_soc,
+                flags.pre_peak_charging_canary_soc_threshold_kwh,
+            )
 
     candidates = get_candidate_intervals(
         timeline,
@@ -798,3 +856,217 @@ def _collect_target_candidates(
         )
     charging_candidates.sort(key=lambda x: x["price"])
     return charging_candidates
+
+
+def _get_hour_from_interval(interval: dict) -> int:
+    """Extract hour from interval timestamp."""
+    ts = interval.get("timestamp", "")
+    try:
+        dt = datetime.fromisoformat(ts)
+        return dt.hour
+    except (ValueError, TypeError):
+        return -1
+
+
+def should_pre_charge_for_peak_avoidance(
+    config: EconomicChargingPlanConfig,
+    flags: RolloutFlags,
+    intervals: list[dict],
+    current_hour: int,
+    current_soc_kwh: float,
+) -> PrePeakDecision:
+    """Decide whether to pre-charge before morning peak hours.
+
+    This function implements the morning peak avoidance logic that prevents
+    expensive charging during peak hours (typically 06:00-08:00) by pre-charging
+    during cheaper pre-peak hours.
+
+    Args:
+        config: EconomicChargingPlanConfig with peak parameters
+        flags: RolloutFlags for feature toggles
+        intervals: List of interval dicts with timestamps, prices, SOC
+        current_hour: Current hour (0-23)
+        current_soc_kwh: Current battery SOC in kWh
+
+    Returns:
+        PrePeakDecision with charging recommendation and details
+    """
+    # Step 1: Feature flag check
+    if not flags.enable_pre_peak_charging:
+        return PrePeakDecision(
+            should_charge=False,
+            reason="flag_disabled",
+            soc_at_peak_start_kwh=current_soc_kwh,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=0.0,
+            pre_peak_avg_price=0.0,
+        )
+
+    # Step 2: Time window validation - check if too close to peak
+    # intervals_to_peak = (peak_start_hour - current_hour) * 4
+    # If <= 4 intervals, too close to peak
+    intervals_to_peak = (config.peak_start_hour - current_hour) * 4
+    if intervals_to_peak <= 4:
+        return PrePeakDecision(
+            should_charge=False,
+            reason="too_close_to_peak",
+            soc_at_peak_start_kwh=current_soc_kwh,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=0.0,
+            pre_peak_avg_price=0.0,
+        )
+
+    # Step 3: Identify peak intervals
+    peak_intervals = []
+    for i, interval in enumerate(intervals):
+        hour = _get_hour_from_interval(interval)
+        if config.peak_start_hour <= hour < config.peak_end_hour:
+            peak_intervals.append((i, interval))
+
+    if not peak_intervals:
+        return PrePeakDecision(
+            should_charge=False,
+            reason="no_peak_intervals",
+            soc_at_peak_start_kwh=current_soc_kwh,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=0.0,
+            pre_peak_avg_price=0.0,
+        )
+
+    # Step 4: Identify pre-peak intervals
+    pre_peak_start_hour = config.peak_start_hour - config.pre_peak_window_hours
+    pre_peak_intervals = []
+    for i, interval in enumerate(intervals):
+        hour = _get_hour_from_interval(interval)
+        if pre_peak_start_hour <= hour < config.peak_start_hour:
+            pre_peak_intervals.append((i, interval))
+
+    if not pre_peak_intervals:
+        return PrePeakDecision(
+            should_charge=False,
+            reason="no_pre_peak_intervals",
+            soc_at_peak_start_kwh=current_soc_kwh,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=0.0,
+            pre_peak_avg_price=0.0,
+        )
+
+    # Step 5: PV-first check
+    total_solar_kwh = sum(
+        i.get("solar_wh", 0) / 1000 for _, i in pre_peak_intervals
+    )
+    if total_solar_kwh >= 0.5 and flags.pv_first_policy_enabled:
+        return PrePeakDecision(
+            should_charge=False,
+            reason="pv_first_deferred",
+            soc_at_peak_start_kwh=current_soc_kwh,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=0.0,
+            pre_peak_avg_price=0.0,
+        )
+
+    # Step 6 & 7: SOC sufficient check
+    # Estimate SOC at peak start (use current_soc_kwh as approximation)
+    soc_at_peak_start = current_soc_kwh
+    soc_threshold = config.hw_min_soc_kwh * 1.1
+    if soc_at_peak_start >= soc_threshold:
+        return PrePeakDecision(
+            should_charge=False,
+            reason="soc_sufficient",
+            soc_at_peak_start_kwh=soc_at_peak_start,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=0.0,
+            pre_peak_avg_price=0.0,
+        )
+
+    # Step 8: Economic calculation with round-trip efficiency
+    peak_prices = [i["spot_price_czk"] for _, i in peak_intervals if "spot_price_czk" in i]
+    pre_peak_prices = [i["spot_price_czk"] for _, i in pre_peak_intervals if "spot_price_czk" in i]
+
+    if not peak_prices or not pre_peak_prices:
+        return PrePeakDecision(
+            should_charge=False,
+            reason="no_price_data",
+            soc_at_peak_start_kwh=current_soc_kwh,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=0.0,
+            pre_peak_avg_price=0.0,
+        )
+
+    peak_avg = sum(peak_prices) / len(peak_prices)
+    pre_peak_avg = sum(pre_peak_prices) / len(pre_peak_prices)
+
+    # Breakeven calculation with round-trip efficiency
+    breakeven = pre_peak_avg / config.round_trip_efficiency
+    if peak_avg < breakeven * config.peak_price_ratio_threshold:
+        return PrePeakDecision(
+            should_charge=False,
+            reason="not_economical",
+            soc_at_peak_start_kwh=current_soc_kwh,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=peak_avg,
+            pre_peak_avg_price=pre_peak_avg,
+        )
+
+    # Step 9: Select cheapest intervals for charging
+    # Calculate target SOC (don't exceed max_capacity * max_charge_fraction)
+    target_soc = min(
+        config.hw_min_soc_kwh * 1.2,
+        config.max_capacity * config.max_charge_fraction
+    )
+    needed_kwh = max(0, target_soc - current_soc_kwh)
+
+    # Sort pre-peak intervals by price, filter out those with existing economic charging
+    available_intervals = []
+    for idx, interval in pre_peak_intervals:
+        existing_charge = interval.get("grid_charge_kwh", 0)
+        # Skip intervals that already have economic charging scheduled
+        if existing_charge > 0:
+            continue
+        price = interval.get("spot_price_czk", float("inf"))
+        available_intervals.append((idx, price))
+
+    # Sort by price (cheapest first)
+    available_intervals.sort(key=lambda x: x[1])
+
+    # Select cheapest intervals needed for charging
+    charge_per_interval = config.charging_power_kw / 4.0  # 15-minute intervals
+    selected_indices = []
+    total_charge = 0.0
+
+    for idx, price in available_intervals:
+        if total_charge >= needed_kwh:
+            break
+        selected_indices.append(idx)
+        total_charge += charge_per_interval
+
+    # Step 10: Return positive decision
+    actual_charge_kwh = min(total_charge, needed_kwh)
+    estimated_saving = (peak_avg - pre_peak_avg / config.round_trip_efficiency) * actual_charge_kwh
+
+    return PrePeakDecision(
+        should_charge=True,
+        reason="economical_pre_peak",
+        soc_at_peak_start_kwh=current_soc_kwh + actual_charge_kwh,
+        cheapest_intervals=selected_indices,
+        expected_charge_kwh=actual_charge_kwh,
+        estimated_saving_czk=estimated_saving,
+        peak_avg_price=peak_avg,
+        pre_peak_avg_price=pre_peak_avg,
+    )

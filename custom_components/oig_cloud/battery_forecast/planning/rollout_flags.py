@@ -3,6 +3,7 @@
 This module provides feature flag definitions for safe rollout of new policies:
 - PV-first policy: defer grid charging when PV available
 - Boiler coordination: battery-aware routing for boiler optimization
+- Morning peak avoidance: conservative pre-charge before morning peak
 - Emergency rollback: restore legacy decision path
 
 IMPORTABLE WITHOUT RUNTIME DEPENDENCIES:
@@ -25,18 +26,24 @@ class RolloutFlags:
             when PV forecast is available with sufficient confidence
         boiler_coordination_enabled: Enable boiler coordination policy that
             optimizes battery usage for boiler heating
+        enable_pre_peak_charging: Enable morning peak avoidance (conservative default)
+        pre_peak_charging_canary_soc_threshold_kwh: Alarm pokud SOC po pre-charge < 1.5 kWh
         emergency_rollback: When True, restore legacy decision path immediately,
             bypassing all new policies regardless of other flag states
     """
 
     pv_first_policy_enabled: bool = False
     boiler_coordination_enabled: bool = False
+    enable_pre_peak_charging: bool = False  # Morning peak avoidance (conservative default)
+    pre_peak_charging_canary_soc_threshold_kwh: float = 1.5  # Alarm pokud SOC po pre-charge < 1.5 kWh
     emergency_rollback: bool = False
 
     @property
     def any_new_policy_enabled(self) -> bool:
         """Check if any new policy is enabled (excluding rollback)."""
-        return self.pv_first_policy_enabled or self.boiler_coordination_enabled
+        return (self.pv_first_policy_enabled or 
+                self.boiler_coordination_enabled or 
+                self.enable_pre_peak_charging)
 
     @property
     def is_legacy_mode(self) -> bool:
@@ -51,6 +58,7 @@ DEFAULT_FLAGS = RolloutFlags()
 AGGRESSIVE_FLAGS = RolloutFlags(
     pv_first_policy_enabled=True,
     boiler_coordination_enabled=True,
+    enable_pre_peak_charging=True,
 )
 
 
@@ -76,6 +84,8 @@ def get_flags_from_config(options: Dict[str, Any]) -> RolloutFlags:
     return RolloutFlags(
         pv_first_policy_enabled=bool(options.get("pv_first_policy_enabled", False)),
         boiler_coordination_enabled=bool(options.get("boiler_coordination_enabled", False)),
+        enable_pre_peak_charging=bool(options.get("enable_pre_peak_charging", False)),
+        pre_peak_charging_canary_soc_threshold_kwh=float(options.get("pre_peak_charging_canary_soc_threshold_kwh", 1.5)),
         emergency_rollback=bool(options.get("emergency_rollback", False)),
     )
 
@@ -98,6 +108,8 @@ def get_config_from_flags(flags: RolloutFlags) -> Dict[str, Any]:
     return {
         "pv_first_policy_enabled": flags.pv_first_policy_enabled,
         "boiler_coordination_enabled": flags.boiler_coordination_enabled,
+        "enable_pre_peak_charging": flags.enable_pre_peak_charging,
+        "pre_peak_charging_canary_soc_threshold_kwh": flags.pre_peak_charging_canary_soc_threshold_kwh,
         "emergency_rollback": flags.emergency_rollback,
     }
 
@@ -152,6 +164,8 @@ def get_effective_flags(flags: RolloutFlags) -> RolloutFlags:
         return RolloutFlags(
             pv_first_policy_enabled=False,
             boiler_coordination_enabled=False,
+            enable_pre_peak_charging=False,
+            pre_peak_charging_canary_soc_threshold_kwh=1.5,
             emergency_rollback=True,
         )
     
@@ -170,6 +184,12 @@ def is_boiler_coordination_active(flags: RolloutFlags) -> bool:
     """Check if boiler coordination policy is active (not rolled back)."""
     effective = get_effective_flags(flags)
     return effective.boiler_coordination_enabled
+
+
+def is_pre_peak_charging_active(flags: RolloutFlags) -> bool:
+    """Check if pre-peak charging policy is active (not rolled back)."""
+    effective = get_effective_flags(flags)
+    return effective.enable_pre_peak_charging
 
 
 def is_any_new_policy_active(flags: RolloutFlags) -> bool:

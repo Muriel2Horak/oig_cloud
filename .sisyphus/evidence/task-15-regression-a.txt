@@ -1,0 +1,33 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.4, pytest-8.4.2, pluggy-1.6.0 -- /Users/martinhorak/Downloads/oig_cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Downloads/oig_cloud
+configfile: pytest.ini
+plugins: respx-0.22.0, pytest_freezer-0.4.9, unordered-0.7.0, asyncio-1.2.0, anyio-4.11.0, syrupy-4.9.1, sugar-1.0.0, socket-0.7.0, xdist-3.8.0, timeout-2.4.0, github-actions-annotate-failures-0.3.0, homeassistant-custom-component-0.13.288, aiohttp-1.1.0, picked-0.5.1, requests-mock-1.12.1, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 22 items
+
+tests/test_regression_cluster_a.py::TestPVGateBoundaryConditions::test_pv_defer_with_exactly_minimum_forecast_kwh PASSED [  4%]
+tests/test_regression_cluster_a.py::TestPVGateBoundaryConditions::test_pv_defer_with_exactly_minimum_confidence PASSED [  9%]
+tests/test_regression_cluster_a.py::TestPVGateBoundaryConditions::test_pv_defer_below_minimum_forecast_no_defer PASSED [ 13%]
+tests/test_regression_cluster_a.py::TestPVGateBoundaryConditions::test_pv_defer_below_minimum_confidence_no_defer PASSED [ 18%]
+tests/test_regression_cluster_a.py::TestPVGateBoundaryConditions::test_pv_defer_when_death_valley_active_no_defer PASSED [ 22%]
+tests/test_regression_cluster_a.py::TestPVGateBoundaryConditions::test_pv_defer_when_below_death_valley_no_defer PASSED [ 27%]
+tests/test_regression_cluster_a.py::TestPVGateBoundaryConditions::test_pv_defer_when_protection_override_no_defer PASSED [ 31%]
+tests/test_regression_cluster_a.py::TestDynamicDayPolicyBoundaryConditions::test_policy_selector_with_zero_pv_forecast PASSED [ 36%]
+tests/test_regression_cluster_a.py::TestDynamicDayPolicyBoundaryConditions::test_policy_selector_with_degraded_quality PASSED [ 40%]
+tests/test_regression_cluster_a.py::TestDynamicDayPolicyBoundaryConditions::test_policy_selector_flags_disabled_returns_legacy PASSED [ 45%]
+tests/test_regression_cluster_a.py::TestDynamicDayPolicyBoundaryConditions::test_policy_selector_strong_pv_boundary PASSED [ 50%]
+tests/test_regression_cluster_a.py::TestInputQualityBoundaryConditions::test_stale_forecast_at_exact_threshold PASSED [ 54%]
+tests/test_regression_cluster_a.py::TestInputQualityBoundaryConditions::test_price_at_exact_range_boundary PASSED [ 59%]
+tests/test_regression_cluster_a.py::TestInputQualityBoundaryConditions::test_both_stale_blocks_economic PASSED [ 63%]
+tests/test_regression_cluster_a.py::TestInputQualityBoundaryConditions::test_forecast_stale_price_fresh_blocks_economic PASSED [ 68%]
+tests/test_regression_cluster_a.py::TestInputQualityBoundaryConditions::test_forecast_fresh_price_stale_blocks_economic PASSED [ 72%]
+tests/test_regression_cluster_a.py::TestProductionSafetyEdgeCases::test_pv_defer_just_above_forecast_threshold PASSED [ 77%]
+tests/test_regression_cluster_a.py::TestProductionSafetyEdgeCases::test_pv_defer_just_above_confidence_threshold PASSED [ 81%]
+tests/test_regression_cluster_a.py::TestProductionSafetyEdgeCases::test_pv_defer_flags_disabled_no_defer PASSED [ 86%]
+tests/test_regression_cluster_a.py::TestProductionSafetyEdgeCases::test_pv_defer_emergency_rollback_no_defer PASSED [ 90%]
+tests/test_regression_cluster_a.py::TestProductionSafetyEdgeCases::test_price_stale_at_exact_threshold PASSED [ 95%]
+tests/test_regression_cluster_a.py::TestProductionSafetyEdgeCases::test_policy_selector_cost_aware_conditions PASSED [100%]
+
+============================== 22 passed in 0.20s ==============================

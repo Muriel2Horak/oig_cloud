@@ -41,7 +41,6 @@ import { oigLog } from '@/core/logger';
 import type { PricingData, DatalabelMode, DetailLevel, ChartZoomState } from './types';
 import {
   pricingModeIconPlugin,
-  buildModeIconPluginOptions,
   applyModeIconPadding,
 } from './mode-icon-plugin';
 
@@ -710,7 +709,7 @@ export class OigPricingChart extends LitElement {
 
     const data = this.data;
     const datasets = buildAllDatasets(data);
-    const modeIconOptions = buildModeIconPluginOptions(data.modeSegments);
+    const modeIconOptions = null; // mode blocks now shown in Timeline tile
 
     const chartOptions: any = {
       responsive: true,
@@ -929,7 +928,7 @@ export class OigPricingChart extends LitElement {
 
     const data = this.data;
     const newDatasets = buildAllDatasets(data);
-    const modeIconOptions = buildModeIconPluginOptions(data.modeSegments);
+    const modeIconOptions = null; // mode blocks now shown in Timeline tile
 
     const labelsChanged =
       this.chart.data.labels?.length !== data.labels.length;

@@ -131,6 +131,8 @@ class TestConfigParsing:
             "pv_first_policy_enabled": True,
             "boiler_coordination_enabled": False,
             "emergency_rollback": True,
+            "enable_pre_peak_charging": False,
+            "pre_peak_charging_canary_soc_threshold_kwh": 1.5,
         }
         assert config == expected
 
@@ -140,6 +142,8 @@ class TestConfigParsing:
             "pv_first_policy_enabled": True,
             "boiler_coordination_enabled": False,
             "emergency_rollback": True,
+            "enable_pre_peak_charging": False,
+            "pre_peak_charging_canary_soc_threshold_kwh": 1.5,
         }
         
         flags = get_flags_from_config(original_config)

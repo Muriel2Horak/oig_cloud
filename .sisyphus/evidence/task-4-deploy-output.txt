@@ -1,0 +1,36 @@
+[0;34m🚀 Starting SMB deploy...[0m
+📍 Repo: /Users/martinhorak/Downloads/oig_cloud
+📁 Source: /Users/martinhorak/Downloads/oig_cloud/custom_components/oig_cloud
+💾 SMB mount: /Volumes/config
+📦 Target: /Volumes/config/custom_components/oig_cloud
+🧾 Manifest: /Users/martinhorak/Downloads/oig_cloud/.deploy_manifest.json
+
+[1;33m🔨 Building V2...[0m
+
+> oig-dashboard-v2@2.0.0-beta.1 build
+> tsc && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 394 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html          1.73 kB │ gzip:  0.80 kB
+dist/assets/vendor.js   16.58 kB │ gzip:  6.22 kB │ map:    37.13 kB
+dist/assets/charts.js  227.27 kB │ gzip: 79.83 kB │ map: 1,063.63 kB
+dist/assets/index.js   373.59 kB │ gzip: 89.09 kB │ map: 1,146.12 kB
+✓ built in 1.30s
+[0;32m✅ V2 build complete[0m
+
+[0;32m✅ Deployment completed[0m
+  Files copied: 5
+  Files deleted: 0
+
+🔄 Restarting Home Assistant...
+  ✅ Restarted via HA API (http://10.0.0.143:8123)
+
+Next steps:
+  1. Wait ~60s for Home Assistant to restart
+  2. Check logs: http://10.0.0.143:8123/config/logs
+  3. Verify integration: http://10.0.0.143:8123/config/integrations
+  4. Hard refresh browser (Ctrl+F5 / Cmd+Shift+R) for V2 dashboard

@@ -30,14 +30,15 @@ class PrecedenceLevel(IntEnum):
     ORDERING (highest to lowest):
     1. PV_FIRST (1000) - PV-first policy, defer grid charge when PV available
     2. PROTECTION_SAFETY (900) - Hardware protection, safety limits
-    3. DEATH_VALLEY (800) - Minimum SOC enforcement
-    4. BALANCING_OVERRIDE (700) - Balancing mode overrides
-    5. MODE_GUARD (600) - Mode guard/stability enforcement
-    6. RECOVERY_MODE (500) - Recovery from error states
-    7. ECONOMIC_CHARGING (400) - Economic grid charging (dynamic-by-day)
-    8. OPPORTUNISTIC (300) - Natural/opportunistic balancing
-    9. AUTO_SWITCH (200) - Auto-switch enforcement
-    10. PLANNING_TARGET (100) - Planning target/minimum achieved
+    3. PRE_PEAK_AVOIDANCE (850) - Morning peak pre-charge/avoidance
+    4. DEATH_VALLEY (800) - Minimum SOC enforcement
+    5. BALANCING_OVERRIDE (700) - Balancing mode overrides
+    6. MODE_GUARD (600) - Mode guard/stability enforcement
+    7. RECOVERY_MODE (500) - Recovery from error states
+    8. ECONOMIC_CHARGING (400) - Economic grid charging (dynamic-by-day)
+    9. OPPORTUNISTIC (300) - Natural/opportunistic balancing
+    10. AUTO_SWITCH (200) - Auto-switch enforcement
+    11. PLANNING_TARGET (100) - Planning target/minimum achieved
     """
 
     # HIGHEST PRIORITY: PV-first policy
@@ -48,6 +49,10 @@ class PrecedenceLevel(IntEnum):
     # Protection/Safety layer - hardware limits, critical safety
     # GR-010, SOC-003, SOC-006, SOC-013, BA-001
     PROTECTION_SAFETY = 900
+
+    # Morning Peak Avoidance / Pre-peak charging
+    # PRE-001, PRE-002 - conservative pre-charge before morning peak
+    PRE_PEAK_AVOIDANCE = 850  # Mezi PROTECTION_SAFETY(900) a DEATH_VALLEY(800) — morning peak pre-charge
 
     # Death Valley / Minimum SOC enforcement
     # SOC-004, SOC-016, BA-019 - prevent battery from hitting HW minimum
@@ -92,6 +97,7 @@ PrecedenceValue = int
 PRECEDENCE_LADDER: List[PrecedenceLevel] = [
     PrecedenceLevel.PV_FIRST,
     PrecedenceLevel.PROTECTION_SAFETY,
+    PrecedenceLevel.PRE_PEAK_AVOIDANCE,
     PrecedenceLevel.DEATH_VALLEY,
     PrecedenceLevel.BALANCING_OVERRIDE,
     PrecedenceLevel.MODE_GUARD,

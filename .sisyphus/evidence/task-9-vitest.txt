@@ -1,0 +1,46 @@
+V2 Unit Tests Output - Task 9
+===================================
+
+Test Command: npm --prefix custom_components/oig_cloud/www_v2 run test:unit
+
+Test Results:
+- Total tests: Many
+- Failed tests: 19
+- Exit code: NOT 0 (FAILED)
+
+Key Failed Tests:
+1. tests/unit/utils/format.test.ts > formatPercent tests (2 failed)
+   - Expected '75%' but got '75 %' (spacing issue)
+   - Expected '75.57%' but got '75.57 %' (spacing issue)
+
+2. tests/unit/ui/chmu/types.test.ts > LEVEL_COLORS tests (3 failed)
+   - Cannot read properties of undefined (reading 'low')
+   - LEVEL_COLORS undefined
+
+3. tests/unit/ui/flow/types.test.ts > DEFAULT_NODES test (1 failed)
+   - Expected 'Solár' but got 'Solar' (accent issue)
+
+4. tests/unit/ui/control-panel/types.test.ts > QUEUE_STATUS_COLORS test (1 failed)
+   - QUEUE_STATUS_COLORS.pending undefined
+
+5. tests/unit/ui/layout/flow-layout.test.ts > FlowLayout tests (6 failed)
+   - Tablet layout issues
+   - Mobile layout issues  
+   - Breakpoint consistency issues
+
+6. tests/unit/ui/tiles/types.test.ts > DEFAULT_TILES tests (3 failed)
+   - DEFAULT_TILES undefined
+
+7. tests/unit/ui/timeline/types.test.ts > TIMELINE_TAB_LABELS test (1 failed)
+   - Expected 'Včera' but got '📊 Včera' (emoji issue)
+
+8. tests/unit/ui/timeline/types.test.ts > MODE_COLORS tests (2 failed)
+   - MODE_COLORS undefined
+
+Additional Issues:
+- 55 unhandled errors during test run
+- Vitest caught many unhandled errors that might cause false positives
+
+CONCLUSION: V2 UNIT TESTS FAILED
+Exit code: NOT 0
+19 failed tests with various undefined constants and formatting issues

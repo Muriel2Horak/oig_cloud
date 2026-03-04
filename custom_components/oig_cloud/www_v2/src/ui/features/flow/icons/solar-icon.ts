@@ -31,7 +31,18 @@ export class OigSolarIcon extends LitElement {
       transition: stroke-dasharray 0.8s ease, stroke 0.8s ease, opacity 0.8s ease;
     }
     .moon-body {
-      transition: opacity 0.6s ease;
+      animation: moon-pulse 4s ease-in-out infinite;
+    }
+    @keyframes moon-pulse {
+      0%, 100% { opacity: 0.85; }
+      50% { opacity: 1; }
+    }
+    .star {
+      animation: star-twinkle 3s ease-in-out infinite;
+    }
+    @keyframes star-twinkle {
+      0%, 100% { opacity: 0.25; }
+      50% { opacity: 1; }
     }
     .cloud {
       transition: opacity 0.6s ease;
@@ -86,14 +97,15 @@ export class OigSolarIcon extends LitElement {
 
   private renderMoon() {
     return svg`
+      <circle cx="24" cy="24" r="20" fill="#3949ab" opacity="0.28"/>
       <g class="moon-body">
-        <!-- Srp měsíce -->
-        <path
-          d="M24 10 A14 14 0 1 0 24 38 A10 10 0 1 1 24 10Z"
-          fill="#78909c"
-          opacity="0.9"
-        />
+        <path d="M24 6 A18 18 0 1 0 24 42 A13 13 0 1 1 24 6Z" fill="#cfd8dc" opacity="0.95"/>
       </g>
+      <circle class="star" cx="7" cy="10" r="1.5" fill="#e8eaf6" style="animation-delay:0s"/>
+      <circle class="star" cx="41" cy="7" r="1.8" fill="#e8eaf6" style="animation-delay:0.7s"/>
+      <circle class="star" cx="5" cy="30" r="1.2" fill="#c5cae9" style="animation-delay:1.4s"/>
+      <circle class="star" cx="6" cy="44" r="1.0" fill="#c5cae9" style="animation-delay:2.1s"/>
+      <circle class="star" cx="42" cy="39" r="1.3" fill="#e8eaf6" style="animation-delay:2.8s"/>
     `;
   }
 

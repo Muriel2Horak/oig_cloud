@@ -42,9 +42,15 @@ type NodeId = typeof NODE_IDS[number];
 interface NodePosition {
   top: string;
   left: string;
-  gridColumn?: string;
-  gridRow?: string;
 }
+
+const DEFAULT_POSITIONS: Record<NodeId, NodePosition> = {
+  solar:    { top: '0%',   left: '0%'   },
+  house:    { top: '0%',   left: '65%'  },
+  inverter: { top: '35%',  left: '35%'  },
+  grid:     { top: '70%',  left: '0%'   },
+  battery:  { top: '70%',  left: '65%'  },
+};
 
 type SavedLayout = Partial<Record<NodeId, NodePosition>>;
 
@@ -85,18 +91,20 @@ export class OigFlowNode extends LitElement {
       display: grid !important;
       grid-template-columns: 1fr 1.2fr 1fr !important;
       grid-template-rows: auto auto auto !important;
-      gap: 16px;
+      gap: 12px;
       width: 100%;
+      max-width: 860px;
+      margin: 0 auto;
       min-height: auto;
       padding: 16px;
       box-sizing: border-box;
     }
 
-    .node-solar    { grid-column: 2; grid-row: 1; justify-self: center; }
-    .node-grid     { grid-column: 1; grid-row: 2; align-self: center; justify-self: start; }
+    .node-solar    { grid-column: 1; grid-row: 1; justify-self: center; }
+    .node-house    { grid-column: 3; grid-row: 1; justify-self: center; }
     .node-inverter { grid-column: 2; grid-row: 2; align-self: center; justify-self: center; }
-    .node-house    { grid-column: 3; grid-row: 2; align-self: center; justify-self: end; }
-    .node-battery  { grid-column: 2; grid-row: 3; justify-self: center; }
+    .node-grid     { grid-column: 1; grid-row: 3; justify-self: center; }
+    .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
 
     .node {
       position: relative;
@@ -118,6 +126,17 @@ export class OigFlowNode extends LitElement {
     .node:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+
+    .flow-grid.custom-layout {
+      position: relative;
+      min-height: 650px;
+      display: block !important;
+    }
+
+    .flow-grid.custom-layout .node {
+      position: absolute;
+      width: 30%;
     }
 
     /* Edit mode: grid with draggable nodes */
@@ -158,12 +177,11 @@ export class OigFlowNode extends LitElement {
       opacity: 0.6;
     }
 
-    /* Default absolute positions when entering edit mode (V1 cross layout) */
-    :host([editmode]) .node-solar    { top: 0%;  left: 35%; }
-    :host([editmode]) .node-grid     { top: 35%; left: 0%; }
+    :host([editmode]) .node-solar    { top: 0%;  left: 0%; }
+    :host([editmode]) .node-house    { top: 0%;  left: 65%; }
     :host([editmode]) .node-inverter { top: 35%; left: 35%; }
-    :host([editmode]) .node-house    { top: 35%; left: 65%; }
-    :host([editmode]) .node-battery  { top: 70%; left: 35%; }
+    :host([editmode]) .node-grid     { top: 70%; left: 0%; }
+    :host([editmode]) .node-battery  { top: 70%; left: 65%; }
 
     .node-header {
       display: flex;
@@ -725,6 +743,29 @@ export class OigFlowNode extends LitElement {
     .price-spot { color: #ef5350; }
     .price-export { color: #66bb6a; }
 
+    @media (min-width: 1025px) {
+      .detail-section {
+        max-height: 500px;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid ${u(CSS_VARS.divider)};
+      }
+      .node-solar .detail-section {
+        max-height: 0;
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+      }
+      .boiler-section,
+      .grid-charging-plan {
+        max-height: 500px;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px dashed ${u(CSS_VARS.divider)};
+      }
+      .node::after { display: none; }
+    }
+
     /* ---- Tablet (768-1024px) ---- */
     @media (min-width: 769px) and (max-width: 1024px) {
       .node {
@@ -750,10 +791,10 @@ export class OigFlowNode extends LitElement {
         gap: 6px;
         padding: 8px;
       }
-      .node-solar { grid-column: 1 / span 2; grid-row: 1; justify-self: center; }
-      .node-grid { grid-column: 1; grid-row: 2; }
-      .node-inverter { grid-column: 2; grid-row: 2; }
-      .node-house { grid-column: 1; grid-row: 3; }
+      .node-solar { grid-column: 1; grid-row: 1; justify-self: center; }
+      .node-house { grid-column: 2; grid-row: 1; justify-self: center; }
+      .node-inverter { grid-column: 1 / span 2; grid-row: 2; justify-self: center; }
+      .node-grid { grid-column: 1; grid-row: 3; }
       .node-battery { grid-column: 2; grid-row: 3; }
 
       .node {
@@ -834,13 +875,16 @@ export class OigFlowNode extends LitElement {
         this.setAttribute('editmode', '');
         this.loadSavedLayout();
         this.requestUpdate();
-        // Apply saved positions after render
         this.updateComplete.then(() => this.applySavedPositions());
       } else {
         this.removeAttribute('editmode');
         this.removeDragListeners();
         this.clearInlinePositions();
+        this.updateComplete.then(() => this.applyCustomPositions());
       }
+    }
+    if (!this.editMode && this.hasCustomLayout) {
+      this.updateComplete.then(() => this.applyCustomPositions());
     }
   }
 
@@ -852,8 +896,6 @@ export class OigFlowNode extends LitElement {
       if (saved) {
         this.customPositions = JSON.parse(saved);
         oigLog.debug('[FlowNode] Loaded layout for ' + bp);
-        // Aplikuj grid pozice po prvním renderu (pokud nejsme v editMode)
-        this.updateComplete.then(() => this.applyGridPositions());
       }
     } catch { /* ignore */ }
   }
@@ -884,24 +926,6 @@ export class OigFlowNode extends LitElement {
       if (!el) continue;
       el.style.top = '';
       el.style.left = '';
-      // Aplikuj uloženou grid pozici (pokud existuje) — přetáčí CSS třídu
-      const pos = this.customPositions[id];
-      el.style.gridColumn = pos?.gridColumn || '';
-      el.style.gridRow = pos?.gridRow || '';
-    }
-  }
-
-  /** Aplikuj uložené grid pozice na nody (volat při editMode=false po loadu) */
-  private applyGridPositions(): void {
-    if (this.editMode) return;
-    const container = this.shadowRoot?.querySelector('.flow-grid') as HTMLElement;
-    if (!container) return;
-    for (const id of NODE_IDS) {
-      const el = container.querySelector(`.node-${id}`) as HTMLElement;
-      if (!el) continue;
-      const pos = this.customPositions[id];
-      el.style.gridColumn = pos?.gridColumn || '';
-      el.style.gridRow = pos?.gridRow || '';
     }
   }
 
@@ -935,6 +959,26 @@ export class OigFlowNode extends LitElement {
   private nodeClass(nodeId: NodeId, extra = ''): string {
     const expanded = this.expandedNodes.has(nodeId) ? ' expanded' : '';
     return `node node-${nodeId}${expanded}${extra ? ' ' + extra : ''}`;
+  }
+
+  private get hasCustomLayout(): boolean {
+    return NODE_IDS.some(id => {
+      const pos = this.customPositions[id];
+      return pos?.top != null && pos?.left != null;
+    });
+  }
+
+  private applyCustomPositions(): void {
+    if (this.editMode || !this.hasCustomLayout) return;
+    const container = this.shadowRoot?.querySelector('.flow-grid') as HTMLElement;
+    if (!container) return;
+    for (const id of NODE_IDS) {
+      const el = container.querySelector(`.node-${id}`) as HTMLElement;
+      if (!el) continue;
+      const pos = this.customPositions[id] ?? DEFAULT_POSITIONS[id];
+      el.style.top = pos.top;
+      el.style.left = pos.left;
+    }
   }
 
   resetLayout(): void {
@@ -1102,16 +1146,9 @@ export class OigFlowNode extends LitElement {
     el.style.left = `${relLeft}%`;
     el.style.top = `${relTop}%`;
 
-    // Konverze procentuální pozice → nejbližší grid buňka (col 1-3, row 1-3)
-    const gridCol = relLeft < 33 ? 1 : relLeft < 66 ? 2 : 3;
-    const gridRow = relTop < 30 ? 1 : relTop < 65 ? 2 : 3;
-
-    // Store position (absolutní i grid)
     this.customPositions[this.draggedNodeId] = {
       top: `${relTop}%`,
       left: `${relLeft}%`,
-      gridColumn: String(gridCol),
-      gridRow: String(gridRow),
     };
 
     // Live connection redraw
@@ -1125,11 +1162,24 @@ export class OigFlowNode extends LitElement {
   private renderSolar() {
     const d = this.data;
     const percent = d.solarPercent;
+    const isNight = percent < 2;
+
+    const gradient = isNight
+      ? 'linear-gradient(135deg, rgba(57,73,171,0.25) 0%, rgba(26,35,126,0.18) 100%)'
+      : NODE_GRADIENTS.solar;
+    const border = isNight ? 'rgba(121,134,203,0.5)' : NODE_BORDERS.solar;
+
+    const badgeL = isNight
+      ? 'position:absolute;top:4px;left:6px;font-size:11px;background:rgba(57,73,171,0.35);color:#9fa8da;padding:3px 8px;border-radius:4px;border:1px solid rgba(121,134,203,0.4)'
+      : 'position:absolute;top:4px;left:6px;font-size:9px';
+    const badgeR = isNight
+      ? 'position:absolute;top:4px;right:6px;font-size:11px;background:rgba(57,73,171,0.35);color:#9fa8da;padding:3px 8px;border-radius:4px;border:1px solid rgba(121,134,203,0.4)'
+      : 'position:absolute;top:4px;right:6px;font-size:9px';
 
     return html`
-      <div class="${this.nodeClass('solar')}" style="--node-gradient: ${NODE_GRADIENTS.solar}; --node-border: ${NODE_BORDERS.solar}"
+      <div class="${this.nodeClass('solar', isNight ? 'night' : '')}" style="--node-gradient: ${gradient}; --node-border: ${border};"
         @click=${(e: Event) => this.toggleExpand('solar', e)}>
-        <div class="node-header">
+        <div class="node-header" style="margin-top:16px">
           <oig-solar-icon .power=${d.solarPower} .percent=${percent} .maxPower=${5400}></oig-solar-icon>
           <span class="node-label">Solár</span>
         </div>
@@ -1139,6 +1189,16 @@ export class OigFlowNode extends LitElement {
         <div class="node-subvalue" @click=${openEntity('dc_in_fv_ad')}>
           Dnes: ${(d.solarToday / 1000).toFixed(2)} kWh
         </div>
+        <div class="node-subvalue" @click=${openEntity('solar_forecast')}>
+          Zítra: ${d.solarForecastTomorrow.toFixed(1)} kWh
+        </div>
+
+        <button class="indicator" style="${badgeL}" @click=${openEntity('solar_forecast')}>
+          🔮 ${d.solarForecastToday.toFixed(1)} kWh
+        </button>
+        <button class="indicator" style="${badgeR}" @click=${openEntity('solar_forecast')}>
+          🌅 ${d.solarForecastTomorrow.toFixed(1)} kWh
+        </button>
 
         <div class="detail-section">
           <div class="solar-strings">
@@ -1173,15 +1233,6 @@ export class OigFlowNode extends LitElement {
               </div>
             </div>
           </div>
-        </div>
-
-        <div class="forecast-badges">
-          <button class="forecast-badge" @click=${openEntity('solar_forecast')}>
-            🔮 ${d.solarForecastToday.toFixed(2)} kWh
-          </button>
-          <button class="forecast-badge" @click=${openEntity('solar_forecast')}>
-            🌅 ${d.solarForecastTomorrow.toFixed(2)} kWh
-          </button>
         </div>
       </div>
     `;
@@ -1240,7 +1291,7 @@ export class OigFlowNode extends LitElement {
     const tempClass = d.batteryTemp > 25 ? 'temp-hot' : d.batteryTemp < 15 ? 'temp-cold' : '';
 
     return html`
-      <div class="${this.nodeClass('battery')}" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery}"
+      <div class="${this.nodeClass('battery')}" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery};"
         @click=${(e: Event) => this.toggleExpand('battery', e)}>
 
         <div class="node-header">
@@ -1364,7 +1415,7 @@ export class OigFlowNode extends LitElement {
     }
 
     return html`
-      <div class="${this.nodeClass('inverter', pending.inverterModeChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter}"
+      <div class="${this.nodeClass('inverter', pending.inverterModeChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter};"
         @click=${(e: Event) => this.toggleExpand('inverter', e)}>
         <div class="node-header">
           <oig-inverter-icon
@@ -1442,7 +1493,7 @@ export class OigFlowNode extends LitElement {
     const pending = mapShieldPendingToFlowIndicators(this.pendingServices, this.changingServices);
 
     return html`
-      <div class="${this.nodeClass('grid', pending.gridExportChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid}"
+      <div class="${this.nodeClass('grid', pending.gridExportChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid};"
         @click=${(e: Event) => this.toggleExpand('grid', e)}>
 
         <!-- Tarif badge vlevo nahoře -->
@@ -1539,7 +1590,7 @@ export class OigFlowNode extends LitElement {
     const d = this.data;
 
     return html`
-      <div class="${this.nodeClass('house')}" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house}"
+      <div class="${this.nodeClass('house')}" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house};"
         @click=${(e: Event) => this.toggleExpand('house', e)}>
         <div class="node-header">
           <oig-house-icon
@@ -1604,7 +1655,7 @@ export class OigFlowNode extends LitElement {
 
   render() {
     return html`
-      <div class="flow-grid">
+      <div class="flow-grid ${this.hasCustomLayout && !this.editMode ? 'custom-layout' : ''}">
         ${this.renderSolar()}
         ${this.renderBattery()}
         ${this.renderInverter()}

@@ -1,9 +1,10 @@
 {
-  "active_plan": "/Users/martinhorak/Downloads/oig_cloud/.sisyphus/plans/grid-boiler-rules-overhaul.md",
-  "started_at": "2026-03-03T10:34:14.455Z",
+  "active_plan": "/Users/martinhorak/Downloads/oig_cloud/.sisyphus/plans/morning-peak-avoidance.md",
+  "started_at": "2026-03-03T15:51:31.445Z",
   "session_ids": [
     "ses_34cda6a12ffeM2HSLGyhSvo2eu"
   ],
-  "plan_name": "grid-boiler-rules-overhaul",
+  "plan_name": "morning-peak-avoidance",
+  "worktree_path": "/Users/martinhorak/Downloads/oig_cloud-worktrees/morning-peak-avoidance",
   "agent": "atlas"
 }

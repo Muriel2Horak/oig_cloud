@@ -93,7 +93,6 @@ export class OigApp extends LitElement {
   @state() private chmuModalOpen = false;
 
   // Timeline
-  @state() private timelineOpen = false;
   @state() private timelineTab: TimelineTab = 'today';
   @state() private timelineData: TimelineDayData | null = null;
 
@@ -111,6 +110,7 @@ export class OigApp extends LitElement {
   private entityStore: EntityStore | null = null;
   private timeInterval: number | null = null;
   private stateWatcherUnsub: (() => void) | null = null;
+  private tileEntityUnsubs: Array<() => void> = [];
 
   /** Throttled flow update — max once per 500ms to avoid jank from rapid state changes */
   private throttledUpdateFlow = throttle(() => this.updateFlowData(), 500);
@@ -268,21 +268,11 @@ export class OigApp extends LitElement {
       gap: 12px;
     }
 
-    .timeline-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 14px;
-      background: ${u(CSS_VARS.accent)};
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 13px;
-      cursor: pointer;
-      transition: opacity 0.2s;
+    .below-chart-pair {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 12px;
     }
-
-    .timeline-btn:hover { opacity: 0.9; }
 
     /* ---- Animations ---- */
     @keyframes fadeIn {
@@ -321,6 +311,9 @@ export class OigApp extends LitElement {
       .analytics-row {
         grid-template-columns: 1fr;
       }
+      .below-chart-pair {
+        grid-template-columns: 1fr;
+      }
       .boiler-visual-grid {
         grid-template-columns: 1fr !important;
       }
@@ -345,6 +338,9 @@ export class OigApp extends LitElement {
       }
       if (this.activeTab === 'pricing' && this.analyticsData === EMPTY_ANALYTICS) {
         this.loadAnalyticsAsync();
+      }
+      if (this.activeTab === 'pricing' && !this.timelineData) {
+        this.loadTimelineTabData(this.timelineTab);
       }
       if (this.activeTab === 'boiler' && !this.boilerState) {
         this.loadBoilerDataAsync();
@@ -415,6 +411,9 @@ export class OigApp extends LitElement {
     stateWatcher.stop();
     shieldController.stop();
 
+    this.tileEntityUnsubs.forEach(fn => fn());
+    this.tileEntityUnsubs = [];
+
     this.entityStore?.destroy();
     this.entityStore = null;
 
@@ -453,6 +452,37 @@ export class OigApp extends LitElement {
       const resolved = resolveTiles(this.tilesConfig);
       this.tilesLeft = resolved.left;
       this.tilesRight = resolved.right;
+    }
+  }
+
+  /** Immediate (no throttle) tile re-resolution — called from entity store subscriptions */
+  private updateTilesImmediate(): void {
+    if (!this.tilesConfig) return;
+    const resolved = resolveTiles(this.tilesConfig);
+    this.tilesLeft = resolved.left;
+    this.tilesRight = resolved.right;
+  }
+
+  /** Subscribe to all tile entity IDs via entity store — ensures live updates for any entity domain */
+  private subscribeTileEntities(): void {
+    this.tileEntityUnsubs.forEach(fn => fn());
+    this.tileEntityUnsubs = [];
+
+    if (!this.tilesConfig || !this.entityStore) return;
+
+    const entityIds = new Set<string>();
+    [...this.tilesConfig.tiles_left, ...this.tilesConfig.tiles_right].forEach(t => {
+      if (!t) return;
+      entityIds.add(t.entity_id);
+      if (t.support_entities?.top_right) entityIds.add(t.support_entities.top_right);
+      if (t.support_entities?.bottom_right) entityIds.add(t.support_entities.bottom_right);
+    });
+
+    for (const entityId of entityIds) {
+      const unsub = this.entityStore.subscribe(entityId, () => {
+        this.updateTilesImmediate();
+      });
+      this.tileEntityUnsubs.push(unsub);
     }
   }
 
@@ -512,6 +542,7 @@ export class OigApp extends LitElement {
       const resolved = resolveTiles(this.tilesConfig);
       this.tilesLeft = resolved.left;
       this.tilesRight = resolved.right;
+      this.subscribeTileEntities();
     } catch (err) {
       oigLog.error('Failed to load tiles config', err as Error);
     }
@@ -579,15 +610,6 @@ export class OigApp extends LitElement {
   }
 
   // Timeline events
-  private onTimelineOpen(): void {
-    this.timelineOpen = true;
-    this.loadTimelineTabData(this.timelineTab);
-  }
-
-  private onTimelineClose(): void {
-    this.timelineOpen = false;
-  }
-
   private onTimelineTabChange(e: CustomEvent): void {
     this.timelineTab = e.detail.tab;
     this.loadTimelineTabData(e.detail.tab);
@@ -671,6 +693,7 @@ export class OigApp extends LitElement {
     this.tilesLeft = resolved.left;
     this.tilesRight = resolved.right;
     saveTilesConfig(config);
+    this.subscribeTileEntities();
   }
 
   private onTileSaved(e: CustomEvent): void {
@@ -706,6 +729,7 @@ export class OigApp extends LitElement {
     this.tilesLeft = resolved.left;
     this.tilesRight = resolved.right;
     saveTilesConfig(updated);
+    this.subscribeTileEntities();
   }
 
   private onTileDialogClose(): void {
@@ -800,12 +824,18 @@ export class OigApp extends LitElement {
                     <span>Načítání cen...</span>
                   </div>
                 ` : nothing}
-                <oig-pricing-stats .data=${this.pricingData}></oig-pricing-stats>
+                <oig-pricing-stats ?topOnly=${true} .data=${this.pricingData}></oig-pricing-stats>
                 <oig-pricing-chart .data=${this.pricingData}></oig-pricing-chart>
 
-                <button class="timeline-btn" @click=${this.onTimelineOpen}>
-                  📅 Timeline režimů
-                </button>
+                <div class="below-chart-pair">
+                  <oig-pricing-stats .data=${this.pricingData}></oig-pricing-stats>
+                  <oig-timeline-tile
+                    .data=${this.timelineData}
+                    .activeTab=${this.timelineTab}
+                    @tab-change=${this.onTimelineTabChange}
+                    @refresh=${this.onTimelineRefresh}
+                  ></oig-timeline-tile>
+                </div>
 
                 <div class="analytics-row">
                   <oig-analytics-block title="Účinnost baterie" icon="⚡">
@@ -892,15 +922,6 @@ export class OigApp extends LitElement {
           .data=${this.chmuData}
           @close=${this.onChmuModalClose}
         ></oig-chmu-modal>
-
-        <oig-timeline-dialog
-          ?open=${this.timelineOpen}
-          .activeTab=${this.timelineTab}
-          .data=${this.timelineData}
-          @close=${this.onTimelineClose}
-          @tab-change=${this.onTimelineTabChange}
-          @refresh=${this.onTimelineRefresh}
-        ></oig-timeline-dialog>
 
         <oig-tile-dialog
           ?open=${this.tileDialogOpen}

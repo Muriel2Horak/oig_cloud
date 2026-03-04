@@ -1,0 +1,24 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.3, pytest-9.0.2, pluggy-1.6.0 -- /opt/homebrew/opt/python@3.14/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Downloads/oig_cloud
+configfile: pytest.ini
+plugins: mock-3.15.1, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 13 items
+
+tests/test_hybrid_scoring_more2.py::test_analyze_future_prices_no_future_data PASSED [  7%]
+tests/test_hybrid_scoring_more2.py::test_analyze_future_prices_profitable_and_night PASSED [ 15%]
+tests/test_hybrid_scoring_more2.py::test_analyze_future_prices_night_preparation PASSED [ 23%]
+tests/test_hybrid_scoring_more2.py::test_select_best_mode_reason_branches PASSED [ 30%]
+tests/test_hybrid_scoring_more2.py::test_score_mode_branches PASSED      [ 38%]
+tests/test_hybrid_scoring_more2.py::test_handle_negative_price_auto_variants PASSED [ 46%]
+tests/test_hybrid_scoring_more2.py::test_apply_smoothing_protected_and_short PASSED [ 53%]
+tests/test_hybrid_scoring_helpers.py::test_extract_prices PASSED         [ 61%]
+tests/test_hybrid_scoring_helpers.py::test_analyze_future_prices_negative PASSED [ 69%]
+tests/test_hybrid_scoring_helpers.py::test_handle_negative_price_variants PASSED [ 76%]
+tests/test_hybrid_scoring_helpers.py::test_apply_smoothing_merges_short_runs PASSED [ 84%]
+tests/test_hybrid_scoring_helpers.py::test_score_mode_ups_penalized_when_disabled PASSED [ 92%]
+tests/test_hybrid_scoring_helpers.py::test_calculate_baseline_cost PASSED [100%]
+
+============================== 13 passed in 0.31s ==============================

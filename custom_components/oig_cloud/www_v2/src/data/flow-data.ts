@@ -194,10 +194,16 @@ export function extractFlowData(hass: any): FlowData {
   const solarI1 = parseNumber(get('extended_fve_current_1'));
   const solarI2 = parseNumber(get('extended_fve_current_2'));
   const solarForecast = get('solar_forecast');
-  const forecastToday = parseNumber(solarForecast);
+  const forecastToday = solarForecast?.attributes?.today_total_kwh
+    ? parseFloat(solarForecast.attributes.today_total_kwh) || 0
+    : (solarForecast?.attributes?.today_total_sum_kw
+      ? parseFloat(solarForecast.attributes.today_total_sum_kw) || 0
+      : parseNumber(solarForecast));
   const forecastTomorrow = solarForecast?.attributes?.tomorrow_total_sum_kw
     ? parseFloat(solarForecast.attributes.tomorrow_total_sum_kw) || 0
-    : 0;
+    : (solarForecast?.attributes?.total_tomorrow_kwh
+      ? parseFloat(solarForecast.attributes.total_tomorrow_kwh) || 0
+      : 0);
 
   // Battery — main
   const batterySoC = parseNumber(get('batt_bat_c'));
