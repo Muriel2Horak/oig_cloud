@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..const import DEFAULT_NAME, DOMAIN
 from .sensor_setup import get_sensor_definition
@@ -77,13 +77,14 @@ class OigCloudSensorRuntimeMixin:
                 via_device=(DOMAIN, self._box_id),
             )
 
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._box_id)},
-            name=f"{model_name} {self._box_id}",
-            manufacturer="OIG",
-            model=model_name,
-            sw_version=pv_data.get("box_prms", {}).get("sw", None),
-        )
+    return DeviceInfo(
+        identifiers={(DOMAIN, self._box_id)},
+        name=f"{model_name} {self._box_id}",
+        manufacturer="OIG",
+        model=model_name,
+        sw_version=pv_data.get("box_prms", {}).get("sw", None),
+        battery=f"sensor.oig_{self._box_id}_batt_bat_c",
+    )
 
     @property
     def should_poll(self) -> bool:
