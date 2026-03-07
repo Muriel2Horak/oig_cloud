@@ -39,11 +39,15 @@ except ModuleNotFoundError:  # pragma: no cover
     OigCloudApi = Any  # type: ignore[misc,assignment]
 from .const import (
     CONF_AUTO_MODE_SWITCH,
+    CONF_CHARGE_RATE_KW,
     CONF_EXTENDED_SCAN_INTERVAL,
     CONF_NO_TELEMETRY,
     CONF_PASSWORD,
+    CONF_PLANNING_MIN_PERCENT,
     CONF_STANDARD_SCAN_INTERVAL,
     CONF_USERNAME,
+    DEFAULT_CHARGE_RATE_KW,
+    DEFAULT_PLANNING_MIN_PERCENT,
     DOMAIN,
 )
 
@@ -156,7 +160,8 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
     defaults = {
         CONF_AUTO_MODE_SWITCH: False,
         # Planner parameters (percentages are of max capacity).
-        "min_capacity_percent": 33.0,
+        "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
+        CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
         "target_capacity_percent": 80.0,
         # Allow disabling planning-min guard if the user wants more aggressive optimization.
         "disable_planning_min_guard": False,
@@ -167,12 +172,28 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
         # Max hours to stay at HW minimum before force-recharge.
         "hw_min_hold_hours": 6.0,
         # AC charging power (kW) used for UPS mode simulation.
-        "home_charge_rate": 2.8,
+        "home_charge_rate": DEFAULT_CHARGE_RATE_KW,
+        CONF_CHARGE_RATE_KW: DEFAULT_CHARGE_RATE_KW,
         # Used by balancer window selection.
         "cheap_window_percentile": 30,
     }
 
     options = dict(entry.options)
+    if options.get(CONF_PLANNING_MIN_PERCENT) is None:
+        legacy_min = options.get("min_capacity_percent")
+        options[CONF_PLANNING_MIN_PERCENT] = (
+            legacy_min
+            if isinstance(legacy_min, (int, float))
+            else defaults[CONF_PLANNING_MIN_PERCENT]
+        )
+    if options.get(CONF_CHARGE_RATE_KW) is None:
+        legacy_rate = options.get("home_charge_rate")
+        options[CONF_CHARGE_RATE_KW] = (
+            legacy_rate
+            if isinstance(legacy_rate, (int, float))
+            else defaults[CONF_CHARGE_RATE_KW]
+        )
+
     # Migrate and purge removed/obsolete planner options.
     obsolete_keys = {
         "enable_cheap_window_ups",

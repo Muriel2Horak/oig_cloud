@@ -13,8 +13,8 @@ from custom_components.oig_cloud.battery_forecast.planning import (
 class DummySensor:
     def __init__(self):
         self._forecast_in_progress = False
-        self._last_forecast_bucket = None
-        self._current_capacity = 5.0
+        self._last_forecast_bucket: datetime | None = None
+        self._current_capacity: float | None = 5.0
         self._max_capacity = 10.0
         self._min_capacity = 2.0
         self._retry_delay = None
@@ -25,7 +25,7 @@ class DummySensor:
         self._hybrid_timeline = []
         self._mode_optimization_result = None
         self._mode_recommendations = []
-        self._data_hash = None
+        self._data_hash: str | None = None
         self._last_update = None
         self._consumption_summary = None
         self._first_update = True
@@ -201,14 +201,9 @@ async def test_async_update_happy_path(monkeypatch):
         infeasible = False
         infeasible_reason = None
 
-    class DummyStrategy:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def optimize(self, *_args, **_kwargs):
-            return DummyResult()
-
-    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(
+        forecast_update_module, "plan_battery_schedule", lambda *_a, **_k: DummyResult()
+    )
     monkeypatch.setattr(
         forecast_update_module.mode_guard_module,
         "build_plan_lock",
@@ -255,7 +250,7 @@ async def test_async_update_happy_path(monkeypatch):
     "disable_guard,expected_min_percent",
     [
         (False, 30.0),
-        (True, 0.0),
+        (True, 30.0),
     ],
 )
 async def test_async_update_planner_options(monkeypatch, disable_guard, expected_min_percent):
@@ -313,15 +308,11 @@ async def test_async_update_planner_options(monkeypatch, disable_guard, expected
 
     captured = {}
 
-    class DummyStrategy:
-        def __init__(self, hybrid_config, sim_config):
-            captured["hybrid"] = hybrid_config
-            captured["sim"] = sim_config
+    def _fake_plan(inputs):
+        captured["inputs"] = inputs
+        return DummyResult()
 
-        def optimize(self, *_args, **_kwargs):
-            return DummyResult()
-
-    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(forecast_update_module, "plan_battery_schedule", _fake_plan)
     monkeypatch.setattr(
         forecast_update_module.mode_guard_module,
         "build_plan_lock",
@@ -355,7 +346,5 @@ async def test_async_update_planner_options(monkeypatch, disable_guard, expected
 
     await forecast_update_module.async_update(sensor)
 
-    assert captured["hybrid"].planning_min_percent == expected_min_percent
-    assert captured["hybrid"].target_percent == 85.0
-    assert captured["hybrid"].max_ups_price_czk == 12.5
-    assert captured["sim"].charge_rate_kw == 4.2
+    assert captured["inputs"].planning_min_percent == expected_min_percent
+    assert captured["inputs"].charge_rate_kw == 4.2

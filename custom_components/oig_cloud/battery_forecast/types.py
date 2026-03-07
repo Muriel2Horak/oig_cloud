@@ -84,6 +84,7 @@ INTERVALS_PER_DAY: int = 96
 # Default battery efficiency if sensor unavailable
 # Based on CBB 3F Home Plus Premium specs: DC/AC 88.2%, AC/DC 95%, DC/DC 95%
 DEFAULT_EFFICIENCY: float = 0.882
+DEFAULT_CHARGE_EFFICIENCY: float = 0.95
 
 # Default AC charging rate if not configured
 # CBB 3F: ~2.8 kW max → 0.7 kWh per 15min interval

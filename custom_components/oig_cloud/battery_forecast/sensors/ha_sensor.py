@@ -18,7 +18,6 @@ from ..data import battery_state as battery_state_module
 from ..data import load_profiles as load_profiles_module
 from ..data import pricing as pricing_module
 from ..data import solar_forecast as solar_forecast_module
-from ..planning import charging_helpers as charging_helpers_module
 from ..planning import forecast_update as forecast_update_module
 from ..planning import interval_grouping as interval_grouping_module
 from ..planning import mode_recommendations as mode_recommendations_module
@@ -728,50 +727,3 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
     def _get_load_avg_sensors(self) -> Dict[str, Any]:
         """Proxy to load profile helpers."""
         return load_profiles_module.get_load_avg_sensors(self)
-
-    def _economic_charging_plan(
-        self,
-        timeline_data: List[Dict[str, Any]],
-        min_capacity_kwh: float,
-        effective_minimum_kwh: float,
-        target_capacity_kwh: float,
-        max_charging_price: float,
-        min_savings_margin: float,
-        charging_power_kw: float,
-        max_capacity: float,
-        target_reason: str = "default",
-    ) -> List[Dict[str, Any]]:
-        """Proxy to charging helpers."""
-        return charging_helpers_module.economic_charging_plan(
-            self,
-            timeline_data=timeline_data,
-            min_capacity_kwh=min_capacity_kwh,
-            effective_minimum_kwh=effective_minimum_kwh,
-            target_capacity_kwh=target_capacity_kwh,
-            max_charging_price=max_charging_price,
-            min_savings_margin=min_savings_margin,
-            charging_power_kw=charging_power_kw,
-            max_capacity=max_capacity,
-            iso_tz_offset=ISO_TZ_OFFSET,
-            target_reason=target_reason,
-        )
-
-    def _smart_charging_plan(
-        self,
-        timeline: List[Dict[str, Any]],
-        min_capacity: float,
-        target_capacity: float,
-        max_price: float,
-        charging_power_kw: float,
-        max_capacity: float,
-    ) -> List[Dict[str, Any]]:
-        """Proxy to charging helpers."""
-        return charging_helpers_module.smart_charging_plan(
-            self,
-            timeline=timeline,
-            min_capacity=min_capacity,
-            target_capacity=target_capacity,
-            max_price=max_price,
-            charging_power_kw=charging_power_kw,
-            max_capacity=max_capacity,
-        )

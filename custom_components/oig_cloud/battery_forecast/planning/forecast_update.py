@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, List, Optional
 
 from homeassistant.util import dt as dt_util
 
 from ...const import DOMAIN
-from ..config import HybridConfig, SimulatorConfig
 from ..data.adaptive_consumption import AdaptiveConsumptionHelper
 from ..data.input import get_load_avg_for_timestamp, get_solar_for_timestamp
-from ..strategy import HybridStrategy
+from ..economic_planner import plan_battery_schedule
+from ..economic_planner_types import PlannerInputs
 from ..timeline.planner import (
     add_decision_reasons_to_timeline,
     attach_planner_reasons,
@@ -183,7 +183,7 @@ def _append_load_for_price(
     *,
     adaptive_profiles: dict[str, Any] | None,
     load_avg_sensors: Any,
-    today: datetime.date,
+    today: date,
     load_forecast: list[float],
 ) -> None:
     try:
@@ -227,7 +227,7 @@ def _resolve_load_kwh(
     adaptive_profiles: dict[str, Any] | None,
     load_avg_sensors: Any,
     *,
-    today: datetime.date,
+    today: date,
 ) -> float:
     if not adaptive_profiles:
         return get_load_avg_for_timestamp(
@@ -244,7 +244,7 @@ def _resolve_load_kwh(
 def _select_adaptive_profile(
     adaptive_profiles: dict[str, Any],
     timestamp: datetime,
-    today: datetime.date,
+    today: date,
 ) -> dict[str, Any]:
     if timestamp.date() == today:
         return adaptive_profiles["today_profile"]
@@ -294,37 +294,6 @@ def _build_solar_kwh_list(
     return solar_kwh_list
 
 
-def _get_active_balancing_plan(sensor: Any) -> Any:
-    try:
-        entry_id = sensor._config_entry.entry_id if sensor._config_entry else None
-        if (
-            entry_id
-            and DOMAIN in sensor._hass.data
-            and entry_id in sensor._hass.data[DOMAIN]
-        ):
-            balancing_manager = sensor._hass.data[DOMAIN][entry_id].get(
-                "balancing_manager"
-            )
-            if balancing_manager:
-                return balancing_manager.get_active_plan()
-    except Exception as err:
-        _LOGGER.debug("Could not load BalancingManager plan: %s", err)
-    return None
-
-
-def _build_export_price_values(
-    spot_prices: list[dict[str, Any]],
-    export_prices: list[dict[str, Any]],
-) -> list[float]:
-    export_price_values: List[float] = []
-    for i in range(len(spot_prices)):
-        if i < len(export_prices):
-            export_price_values.append(float(export_prices[i].get("price", 0.0) or 0.0))
-        else:
-            export_price_values.append(0.0)
-    return export_price_values
-
-
 def _run_planner(
     sensor: Any,
     spot_prices: list[dict[str, Any]],
@@ -335,7 +304,6 @@ def _run_planner(
     max_capacity: float,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, list[dict[str, Any]]]:
     try:
-        active_balancing_plan = _get_active_balancing_plan(sensor)
         max_intervals = 36 * 4
         if len(spot_prices) > max_intervals:
             spot_prices = spot_prices[:max_intervals]
@@ -343,50 +311,32 @@ def _run_planner(
             load_forecast = load_forecast[:max_intervals]
             solar_kwh_list = solar_kwh_list[:max_intervals]
 
-        balancing_plan = sensor._build_strategy_balancing_plan(
-            spot_prices, active_balancing_plan
-        )
         opts = sensor._config_entry.options if sensor._config_entry else {}
-        max_ups_price_czk = float(opts.get("max_ups_price_czk", 10.0))
         efficiency = float(sensor._get_battery_efficiency())
         directional_efficiency = _round_trip_to_directional(efficiency)
         home_charge_rate_kw = float(opts.get("home_charge_rate", 2.8))
-        price_hysteresis_czk = float(opts.get("price_hysteresis_czk", 0.01))
-        hw_min_hold_hours = float(opts.get("hw_min_hold_hours", 6.0))
-        sim_config = SimulatorConfig(
-            max_capacity_kwh=max_capacity,
-            min_capacity_kwh=max_capacity * 0.20,
-            charge_rate_kw=home_charge_rate_kw,
-            dc_dc_efficiency=directional_efficiency,
-            dc_ac_efficiency=directional_efficiency,
-            ac_dc_efficiency=directional_efficiency,
-        )
-        disable_planning_min_guard = bool(opts.get("disable_planning_min_guard", False))
-        planning_min_percent = float(opts.get("min_capacity_percent", 33.0))
-        if disable_planning_min_guard:
-            planning_min_percent = 0.0
-        hybrid_config = HybridConfig(
-            planning_min_percent=planning_min_percent,
-            target_percent=float(opts.get("target_capacity_percent", 80.0)),
-            max_ups_price_czk=max_ups_price_czk,
-            price_hysteresis_czk=price_hysteresis_czk,
-            hw_min_hold_hours=hw_min_hold_hours,
-            round_trip_efficiency=efficiency,
-        )
-        export_price_values = _build_export_price_values(spot_prices, export_prices)
-
-        strategy = HybridStrategy(hybrid_config, sim_config)
-        result = strategy.optimize(
-            initial_battery_kwh=current_capacity,
-            spot_prices=spot_prices,
-            solar_forecast=solar_kwh_list,
-            consumption_forecast=load_forecast,
-            balancing_plan=balancing_plan,
-            export_prices=export_price_values,
-        )
-
         hw_min_kwh = max_capacity * 0.20
-        planning_min_kwh = hybrid_config.planning_min_kwh(max_capacity)
+        hw_min_percent = (hw_min_kwh / max_capacity) * 100.0 if max_capacity > 0 else 20.0
+        planning_min_percent = max(
+            float(opts.get("min_capacity_percent", 33.0)),
+            hw_min_percent,
+        )
+
+        planner_inputs = PlannerInputs(
+            current_soc_kwh=current_capacity,
+            max_capacity_kwh=max_capacity,
+            hw_min_kwh=hw_min_kwh,
+            planning_min_percent=planning_min_percent,
+            charge_rate_kw=home_charge_rate_kw,
+            intervals=[{"index": i, "time": spot_prices[i].get("time")} for i in range(len(spot_prices))],
+            prices=[float(point.get("price", 0.0) or 0.0) for point in spot_prices],
+            solar_forecast=list(solar_kwh_list),
+            load_forecast=list(load_forecast),
+        )
+
+        result = plan_battery_schedule(planner_inputs)
+
+        planning_min_kwh = planner_inputs.planning_min_kwh
         lock_until, lock_modes = mode_guard_module.build_plan_lock(
             now=dt_util.now(),
             spot_prices=spot_prices,
@@ -455,11 +405,11 @@ def _run_planner(
         mode_result = {
             "optimal_timeline": timeline,
             "optimal_modes": guarded_modes,
-            "planner": "planner",
+            "planner": "economic_planner",
             "planning_min_kwh": planning_min_kwh,
-            "target_kwh": hybrid_config.target_kwh(max_capacity),
-            "infeasible": result.infeasible,
-            "infeasible_reason": result.infeasible_reason,
+            "target_kwh": max_capacity,
+            "infeasible": False,
+            "infeasible_reason": None,
         }
         return timeline, mode_result, mode_recommendations
     except Exception as err:
@@ -641,7 +591,6 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
         Any,
         Any,
         AdaptiveConsumptionHelper,
-        Any,
         list[float],
     ]
 ]:
@@ -696,9 +645,8 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
 
 async def async_update(sensor: Any) -> None:  # noqa: C901
     """Update sensor data."""
-
+    mark_bucket_done = False
     try:
-        mark_bucket_done = False
         now_aware = dt_util.now()
         bucket_start = _bucket_start(now_aware)
 
@@ -737,7 +685,6 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         _resolve_target_and_soc(sensor, current_capacity, max_capacity, min_capacity)
 
         # Build load forecast list (kWh/15min for each interval)
-        # PLANNER: build plan timeline with HybridStrategy.
         solar_kwh_list = _build_solar_kwh_list(sensor, spot_prices, solar_forecast)
         timeline, mode_result, recommendations = _run_planner(
             sensor,

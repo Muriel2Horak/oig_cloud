@@ -49,6 +49,8 @@ CONF_AUTO_MODE_PLAN = "auto_mode_plan"
 
 # Battery Planning constants (BR-0.2)
 CONF_THRESHOLD_CHEAP_CZK = "threshold_cheap_czk"  # Threshold for "cheap" electricity
+CONF_PLANNING_MIN_PERCENT = "planning_min_percent"
+CONF_CHARGE_RATE_KW = "charge_rate_kw"
 
 # Default values
 DEFAULT_UPDATE_INTERVAL = 20
@@ -56,6 +58,9 @@ DEFAULT_NAME = "ČEZ Battery Box"
 DEFAULT_STANDARD_SCAN_INTERVAL = 30
 DEFAULT_EXTENDED_SCAN_INTERVAL = 300
 DEFAULT_THRESHOLD_CHEAP_CZK = 1.5  # Default 1.5 CZK/kWh
+DEFAULT_HW_MIN_PERCENT = 20.0
+DEFAULT_PLANNING_MIN_PERCENT = 33.0
+DEFAULT_CHARGE_RATE_KW = 2.8
 
 # Boiler defaults
 DEFAULT_BOILER_TARGET_TEMP_C = 60.0
