@@ -16,6 +16,57 @@ from .types import CBBMode, DEFAULT_CHARGE_EFFICIENCY, DEFAULT_EFFICIENCY
 _LOGGER = logging.getLogger(__name__)
 
 
+def _simulate_interval(
+    soc: float,
+    solar: float,
+    load: float,
+    price: float,
+    inputs: PlannerInputs,
+    mode: int = CBBMode.HOME_I.value,
+) -> tuple[float, float, float, float]:
+    grid_import = 0.0
+    grid_export = 0.0
+    new_soc = soc
+
+    solar_to_load = min(solar, load)
+    remaining_load = max(0.0, load - solar_to_load)
+    solar_surplus = max(0.0, solar - solar_to_load)
+
+    max_storable_input = (
+        (inputs.max_capacity_kwh - new_soc) / DEFAULT_CHARGE_EFFICIENCY
+        if DEFAULT_CHARGE_EFFICIENCY > 0
+        else 0.0
+    )
+    charge_from_solar = min(solar_surplus, max(0.0, max_storable_input))
+    new_soc = min(inputs.max_capacity_kwh, new_soc + (charge_from_solar * DEFAULT_CHARGE_EFFICIENCY))
+    grid_export = max(0.0, solar_surplus - charge_from_solar)
+
+    if mode == CBBMode.HOME_UPS.value:
+        max_storable_input = (
+            (inputs.max_capacity_kwh - new_soc) / DEFAULT_CHARGE_EFFICIENCY
+            if DEFAULT_CHARGE_EFFICIENCY > 0
+            else 0.0
+        )
+        grid_charge_input = min(
+            inputs.charge_rate_per_interval,
+            max(0.0, max_storable_input),
+        )
+        new_soc = min(inputs.max_capacity_kwh, new_soc + (grid_charge_input * DEFAULT_CHARGE_EFFICIENCY))
+        grid_import = remaining_load + grid_charge_input
+    else:
+        available_storage = max(0.0, new_soc - inputs.hw_min_kwh)
+        available_output = available_storage * DEFAULT_EFFICIENCY
+        battery_to_load = min(remaining_load, available_output)
+
+        if battery_to_load > 0.0 and DEFAULT_EFFICIENCY > 0:
+            discharge_from_storage = battery_to_load / DEFAULT_EFFICIENCY
+            new_soc = max(inputs.hw_min_kwh, new_soc - discharge_from_storage)
+
+        grid_import = max(0.0, remaining_load - battery_to_load)
+
+    return new_soc, grid_import, grid_export, grid_import * price
+
+
 def simulate_home_i_detailed(inputs: PlannerInputs) -> List[SimulatedState]:
     states: List[SimulatedState] = []
     soc = max(inputs.hw_min_kwh, min(inputs.current_soc_kwh, inputs.max_capacity_kwh))
@@ -25,34 +76,14 @@ def simulate_home_i_detailed(inputs: PlannerInputs) -> List[SimulatedState]:
         load = max(0.0, inputs.load_forecast[i])
         price = max(0.0, inputs.prices[i])
 
-        grid_import = 0.0
-        grid_export = 0.0
-
-        if solar >= load:
-            surplus = solar - load
-            max_storable_input = (
-                (inputs.max_capacity_kwh - soc) / DEFAULT_CHARGE_EFFICIENCY
-                if DEFAULT_CHARGE_EFFICIENCY > 0
-                else 0.0
-            )
-            charge_input = min(surplus, max(0.0, max_storable_input))
-            soc = min(
-                inputs.max_capacity_kwh,
-                soc + (charge_input * DEFAULT_CHARGE_EFFICIENCY),
-            )
-            grid_export = max(0.0, surplus - charge_input)
-        else:
-            deficit = load - solar
-            available_storage = max(0.0, soc - inputs.hw_min_kwh)
-            available_output = available_storage * DEFAULT_EFFICIENCY
-            battery_to_load = min(deficit, available_output)
-
-            if battery_to_load > 0.0 and DEFAULT_EFFICIENCY > 0:
-                discharge_from_storage = battery_to_load / DEFAULT_EFFICIENCY
-                soc = max(inputs.hw_min_kwh, soc - discharge_from_storage)
-            grid_import = max(0.0, deficit - battery_to_load)
-
-        cost = grid_import * price
+        soc, grid_import, grid_export, cost = _simulate_interval(
+            soc=soc,
+            solar=solar,
+            load=load,
+            price=price,
+            inputs=inputs,
+            mode=CBBMode.HOME_I.value,
+        )
 
         states.append(
             SimulatedState(
@@ -110,32 +141,15 @@ def calculate_cost_use_battery(moment: CriticalMoment, inputs: PlannerInputs) ->
         load = max(0.0, inputs.load_forecast[i])
         price = max(0.0, inputs.prices[i])
 
-        grid_import = 0.0
-
-        if solar >= load:
-            surplus = solar - load
-            max_storable_input = (
-                (inputs.max_capacity_kwh - soc) / DEFAULT_CHARGE_EFFICIENCY
-                if DEFAULT_CHARGE_EFFICIENCY > 0
-                else 0.0
-            )
-            charge_input = min(surplus, max(0.0, max_storable_input))
-            soc = min(
-                inputs.max_capacity_kwh,
-                soc + (charge_input * DEFAULT_CHARGE_EFFICIENCY),
-            )
-        else:
-            deficit = load - solar
-            available_storage = max(0.0, soc - inputs.hw_min_kwh)
-            available_output = available_storage * DEFAULT_EFFICIENCY
-            battery_to_load = min(deficit, available_output)
-
-            if battery_to_load > 0.0 and DEFAULT_EFFICIENCY > 0:
-                discharge_from_storage = battery_to_load / DEFAULT_EFFICIENCY
-                soc = max(inputs.hw_min_kwh, soc - discharge_from_storage)
-            grid_import = max(0.0, deficit - battery_to_load)
-
-        total_cost += grid_import * price
+        soc, _, _, cost = _simulate_interval(
+            soc=soc,
+            solar=solar,
+            load=load,
+            price=price,
+            inputs=inputs,
+            mode=CBBMode.HOME_I.value,
+        )
+        total_cost += cost
 
     return total_cost
 
@@ -162,32 +176,15 @@ def calculate_cost_wait_for_solar(moment: CriticalMoment, inputs: PlannerInputs)
         load = max(0.0, inputs.load_forecast[i])
         price = max(0.0, inputs.prices[i])
 
-        grid_import = 0.0
-
-        if solar >= load:
-            surplus = solar - load
-            max_storable_input = (
-                (inputs.max_capacity_kwh - soc) / DEFAULT_CHARGE_EFFICIENCY
-                if DEFAULT_CHARGE_EFFICIENCY > 0
-                else 0.0
-            )
-            charge_input = min(surplus, max(0.0, max_storable_input))
-            soc = min(
-                inputs.max_capacity_kwh,
-                soc + (charge_input * DEFAULT_CHARGE_EFFICIENCY),
-            )
-        else:
-            deficit = load - solar
-            available_storage = max(0.0, soc - inputs.hw_min_kwh)
-            available_output = available_storage * DEFAULT_EFFICIENCY
-            battery_to_load = min(deficit, available_output)
-
-            if battery_to_load > 0.0 and DEFAULT_EFFICIENCY > 0:
-                discharge_from_storage = battery_to_load / DEFAULT_EFFICIENCY
-                soc = max(inputs.hw_min_kwh, soc - discharge_from_storage)
-            grid_import = max(0.0, deficit - battery_to_load)
-
-        total_cost += grid_import * price
+        soc, _, _, cost = _simulate_interval(
+            soc=soc,
+            solar=solar,
+            load=load,
+            price=price,
+            inputs=inputs,
+            mode=CBBMode.HOME_I.value,
+        )
+        total_cost += cost
 
     return total_cost
 
@@ -293,44 +290,14 @@ def _simulate_with_modes(modes: List[int], inputs: PlannerInputs) -> List[Simula
         load = max(0.0, inputs.load_forecast[i])
         price = max(0.0, inputs.prices[i])
 
-        grid_import = 0.0
-        grid_export = 0.0
-
-        solar_to_load = min(solar, load)
-        remaining_load = max(0.0, load - solar_to_load)
-        solar_surplus = max(0.0, solar - solar_to_load)
-
-        max_storable_input = (
-            (inputs.max_capacity_kwh - soc) / DEFAULT_CHARGE_EFFICIENCY
-            if DEFAULT_CHARGE_EFFICIENCY > 0
-            else 0.0
+        soc, grid_import, grid_export, cost = _simulate_interval(
+            soc=soc,
+            solar=solar,
+            load=load,
+            price=price,
+            inputs=inputs,
+            mode=mode,
         )
-        charge_from_solar = min(solar_surplus, max(0.0, max_storable_input))
-        soc = min(inputs.max_capacity_kwh, soc + (charge_from_solar * DEFAULT_CHARGE_EFFICIENCY))
-        grid_export = max(0.0, solar_surplus - charge_from_solar)
-
-        if mode == CBBMode.HOME_UPS.value:
-            max_storable_input = (
-                (inputs.max_capacity_kwh - soc) / DEFAULT_CHARGE_EFFICIENCY
-                if DEFAULT_CHARGE_EFFICIENCY > 0
-                else 0.0
-            )
-            grid_charge_input = min(
-                inputs.charge_rate_per_interval,
-                max(0.0, max_storable_input),
-            )
-            soc = min(inputs.max_capacity_kwh, soc + (grid_charge_input * DEFAULT_CHARGE_EFFICIENCY))
-            grid_import = remaining_load + grid_charge_input
-        else:
-            available_storage = max(0.0, soc - inputs.hw_min_kwh)
-            available_output = available_storage * DEFAULT_EFFICIENCY
-            battery_to_load = min(remaining_load, available_output)
-
-            if battery_to_load > 0.0 and DEFAULT_EFFICIENCY > 0:
-                discharge_from_storage = battery_to_load / DEFAULT_EFFICIENCY
-                soc = max(inputs.hw_min_kwh, soc - discharge_from_storage)
-
-            grid_import = max(0.0, remaining_load - battery_to_load)
 
         states.append(
             SimulatedState(
@@ -340,7 +307,7 @@ def _simulate_with_modes(modes: List[int], inputs: PlannerInputs) -> List[Simula
                 load_kwh=load,
                 grid_import_kwh=grid_import,
                 grid_export_kwh=grid_export,
-                cost_czk=grid_import * price,
+                cost_czk=cost,
                 mode=mode,
             )
         )

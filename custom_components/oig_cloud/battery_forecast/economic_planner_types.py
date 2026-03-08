@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
-from .types import INTERVAL_MINUTES
+from .types import CBBMode, INTERVAL_MINUTES
 
-IntervalData = Dict[str, Any]
+
+class IntervalData(TypedDict):
+    """Data for a single planning interval.
+
+    Attributes:
+        index: Interval index in the planning timeline
+    """
+
+    index: int
 
 
 @dataclass

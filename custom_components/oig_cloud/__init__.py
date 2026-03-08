@@ -1347,14 +1347,6 @@ async def async_setup_entry(
             _LOGGER.error("Username or password is missing from configuration")
             return False
 
-        # DEBUG: DOČASNĚ ZAKÁZAT telemetrii kvůli problémům s výkonem
-        # OPRAVA: Telemetrie způsobovala nekonečnou smyčku
-        # if not no_telemetry:
-        #     _LOGGER.debug("Telemetry enabled, setting up...")
-        #     await _setup_telemetry(hass, username)
-        # else:
-        #     _LOGGER.debug("Telemetry disabled by configuration")
-
         _LOGGER.debug("Telemetry handled only by ServiceShield, not main module")
 
         coordinator, session_manager = await _init_session_manager_and_coordinator(

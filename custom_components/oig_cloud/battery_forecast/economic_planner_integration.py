@@ -7,17 +7,21 @@ and Home Assistant's coordinator pattern.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.template import Template
+from homeassistant.util import dt as dt_util
 
 from ..const import (
     CONF_CHARGE_RATE_KW,
+    DOMAIN,
     CONF_PLANNING_MIN_PERCENT,
     DEFAULT_CHARGE_RATE_KW,
     DEFAULT_PLANNING_MIN_PERCENT,
 )
+from ..sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
+from .data.input import get_load_avg_for_timestamp
 from .economic_planner import plan_battery_schedule
 from .economic_planner_types import PlannerInputs
 from .types import CBBMode
@@ -26,6 +30,229 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+_FORECAST_INTERVALS = 96
+_DEFAULT_SOLAR_KWH_15MIN = 0.0
+_DEFAULT_LOAD_KWH_15MIN = 0.5
+_DEFAULT_PRICE_CZK_KWH = 5.0
+
+
+def _state_float(hass: HomeAssistant, entity_id: str) -> float | None:
+    state = hass.states.get(entity_id)
+    if not state:
+        return None
+    raw = str(state.state).strip().lower()
+    if raw in {"unknown", "unavailable", "none", ""}:
+        return None
+    try:
+        return float(state.state)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_parse_iso(ts_str: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _pad_or_trim(values: list[float], *, length: int, fill: float) -> list[float]:
+    if len(values) >= length:
+        return values[:length]
+    if not values:
+        return [fill] * length
+    return values + [values[-1]] * (length - len(values))
+
+
+def _sorted_dict_values(data: dict[str, Any]) -> list[float]:
+    parsed: list[tuple[datetime, float]] = []
+    for ts_str, value in data.items():
+        dt_value = _safe_parse_iso(str(ts_str))
+        if dt_value is None:
+            continue
+        try:
+            parsed.append((dt_value, float(value)))
+        except (TypeError, ValueError):
+            continue
+    parsed.sort(key=lambda item: item[0])
+    return [max(0.0, item[1]) for item in parsed]
+
+
+def _quarter_hour_from_hourly_kw(hourly_kw: dict[str, Any]) -> list[float]:
+    hourly_values_kw = _sorted_dict_values(hourly_kw)
+    quarter_hour_kwh: list[float] = []
+    for kw in hourly_values_kw:
+        quarter_hour_kwh.extend([kw / 4.0] * 4)
+    return quarter_hour_kwh
+
+
+def fetch_solar_forecast(hass: HomeAssistant, box_id: str) -> list[float]:
+    candidates = []
+    if box_id:
+        candidates.extend(
+            [
+                f"sensor.oig_{box_id}_solar_forecast",
+                f"sensor.oig_{box_id}_solar_forecast_string1",
+            ]
+        )
+    candidates.append("sensor.solcast_forecast")
+
+    for entity_id in candidates:
+        state = hass.states.get(entity_id)
+        if not state or not state.attributes:
+            continue
+
+        attrs = state.attributes
+        today_hourly = attrs.get("today_hourly_total_kw")
+        tomorrow_hourly = attrs.get("tomorrow_hourly_total_kw")
+        if isinstance(today_hourly, dict) or isinstance(tomorrow_hourly, dict):
+            today_series = (
+                _quarter_hour_from_hourly_kw(today_hourly)
+                if isinstance(today_hourly, dict)
+                else []
+            )
+            tomorrow_series = (
+                _quarter_hour_from_hourly_kw(tomorrow_hourly)
+                if isinstance(tomorrow_hourly, dict)
+                else []
+            )
+            merged = today_series + tomorrow_series
+            if merged:
+                _LOGGER.debug(
+                    "Solar forecast loaded from %s (%d points)",
+                    entity_id,
+                    len(merged),
+                )
+                return _pad_or_trim(
+                    merged,
+                    length=_FORECAST_INTERVALS,
+                    fill=_DEFAULT_SOLAR_KWH_15MIN,
+                )
+
+    _LOGGER.warning(
+        "Solar forecast sensor unavailable for box_id=%s, using fallback defaults",
+        box_id or "default",
+    )
+    return [_DEFAULT_SOLAR_KWH_15MIN] * _FORECAST_INTERVALS
+
+
+def _collect_load_avg_sensors(hass: HomeAssistant, box_id: str) -> dict[str, Any]:
+    load_sensors: dict[str, Any] = {}
+    for sensor_type, config in SENSOR_TYPES_STATISTICS.items():
+        if not sensor_type.startswith("load_avg_"):
+            continue
+        if "time_range" not in config or "day_type" not in config:
+            continue
+
+        if box_id:
+            entity_id = f"sensor.oig_{box_id}_{sensor_type}"
+        else:
+            entity_id = f"sensor.{sensor_type}"
+
+        value = _state_float(hass, entity_id)
+        if value is None:
+            continue
+
+        load_sensors[entity_id] = {
+            "value": value,
+            "time_range": config["time_range"],
+            "day_type": config["day_type"],
+        }
+
+    return load_sensors
+
+
+def fetch_load_forecast(hass: HomeAssistant, box_id: str) -> list[float]:
+    load_avg_sensors = _collect_load_avg_sensors(hass, box_id)
+    if not load_avg_sensors:
+        _LOGGER.warning(
+            "No load_avg sensors available for box_id=%s, using fallback defaults",
+            box_id or "default",
+        )
+        return [_DEFAULT_LOAD_KWH_15MIN] * _FORECAST_INTERVALS
+
+    now = dt_util.now()
+    start = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
+    forecast: list[float] = []
+    for i in range(_FORECAST_INTERVALS):
+        ts = start + timedelta(minutes=15 * i)
+        kwh_15min = get_load_avg_for_timestamp(ts, load_avg_sensors)
+        forecast.append(max(0.0, float(kwh_15min)))
+
+    _LOGGER.debug(
+        "Load forecast calculated from %d load_avg sensors",
+        len(load_avg_sensors),
+    )
+    return _pad_or_trim(
+        forecast,
+        length=_FORECAST_INTERVALS,
+        fill=_DEFAULT_LOAD_KWH_15MIN,
+    )
+
+
+def _prices_from_coordinator(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+) -> list[float]:
+    try:
+        domain_data = hass.data.get(DOMAIN, {})
+        entry_data = domain_data.get(config_entry.entry_id, {})
+        coordinator = entry_data.get("coordinator")
+        data = getattr(coordinator, "data", None) if coordinator else None
+        spot_data = data.get("spot_prices", {}) if isinstance(data, dict) else {}
+        prices15m = (
+            spot_data.get("prices15m_czk_kwh", {})
+            if isinstance(spot_data, dict)
+            else {}
+        )
+        if not isinstance(prices15m, dict) or not prices15m:
+            return []
+
+        prices = _sorted_dict_values(prices15m)
+        if prices:
+            _LOGGER.debug(
+                "Prices loaded from coordinator spot cache (%d points)",
+                len(prices),
+            )
+        return prices
+    except Exception as err:
+        _LOGGER.debug("Failed to read prices from coordinator cache: %s", err)
+        return []
+
+
+def fetch_prices(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    box_id: str,
+) -> list[float]:
+    prices = _prices_from_coordinator(hass, config_entry)
+    if prices:
+        return _pad_or_trim(
+            prices,
+            length=_FORECAST_INTERVALS,
+            fill=_DEFAULT_PRICE_CZK_KWH,
+        )
+
+    sensor_candidates = []
+    if box_id:
+        sensor_candidates.append(f"sensor.oig_{box_id}_spot_price_current_15min")
+    sensor_candidates.append("sensor.spot_price_current_15min")
+
+    for entity_id in sensor_candidates:
+        current_price = _state_float(hass, entity_id)
+        if current_price is None:
+            continue
+        _LOGGER.warning(
+            "Using flat spot price from %s because interval prices are unavailable",
+            entity_id,
+        )
+        return [max(0.0, current_price)] * _FORECAST_INTERVALS
+
+    _LOGGER.warning(
+        "Spot prices unavailable for box_id=%s, using fallback defaults",
+        box_id or "default",
+    )
+    return [_DEFAULT_PRICE_CZK_KWH] * _FORECAST_INTERVALS
 
 
 def load_planner_inputs(
@@ -84,18 +311,10 @@ def load_planner_inputs(
         )
         planning_min_percent = hw_min_percent
 
-    # Get forecast data (these would come from forecast sensors)
-    # For now, use placeholder - in real implementation these would be
-    # fetched from forecast sensors or services
-    intervals = [{"index": i} for i in range(96)]
-
-    # Placeholder forecasts - in production these come from:
-    # - Solar forecast sensor (e.g., sensor.solcast_forecast)
-    # - Load forecast (calculated from history)
-    # - Spot prices (OTE API)
-    solar_forecast = [0.0] * 96  # TODO: Fetch from forecast sensor
-    load_forecast = [0.5] * 96    # TODO: Calculate from history
-    prices = [5.0] * 96           # TODO: Fetch from OTE API
+    intervals = [{"index": i} for i in range(_FORECAST_INTERVALS)]
+    solar_forecast = fetch_solar_forecast(hass, box_id)
+    load_forecast = fetch_load_forecast(hass, box_id)
+    prices = fetch_prices(hass, config_entry, box_id)
 
     return PlannerInputs(
         current_soc_kwh=current_soc_kwh,
