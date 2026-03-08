@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, TypedDict
+from typing import List, Optional, Tuple, TypedDict
 
 from .types import CBBMode, INTERVAL_MINUTES
 

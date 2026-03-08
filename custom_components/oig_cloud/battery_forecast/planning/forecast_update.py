@@ -9,7 +9,6 @@ from typing import Any, List, Optional
 
 from homeassistant.util import dt as dt_util
 
-from ...const import DOMAIN
 from ..data.adaptive_consumption import AdaptiveConsumptionHelper
 from ..data.input import get_load_avg_for_timestamp, get_solar_for_timestamp
 from ..economic_planner import plan_battery_schedule

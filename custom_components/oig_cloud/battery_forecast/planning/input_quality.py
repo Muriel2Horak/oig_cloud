@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Union
 
 
 class InputQualityStatus(Enum):
