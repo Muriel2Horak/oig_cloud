@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 class RolloutHealthStatus(Enum):
     """Health status of the rollout.
-    
+
     HEALTHY: All metrics within acceptable thresholds
     DEGRADED: Some metrics outside preferred range but still acceptable
     UNHEALTHY: Metrics exceed alert thresholds - rollout should be paused
@@ -30,7 +30,7 @@ class RolloutHealthStatus(Enum):
 @dataclass
 class AlertCondition:
     """Definition of an alert condition for rollout monitoring.
-    
+
     Attributes:
         name: Unique identifier for this alert condition
         threshold: The threshold value that triggers the alert
@@ -43,13 +43,13 @@ class AlertCondition:
     comparison: str  # 'gt', 'lt', 'gte', 'lte', 'eq'
     message: str
     severity: str = "warning"
-    
+
     def evaluate(self, value: float) -> bool:
         """Check if this condition is triggered by the given value.
-        
+
         Args:
             value: The metric value to check
-            
+
         Returns:
             True if the condition is triggered (alert should fire)
         """
@@ -69,10 +69,10 @@ class AlertCondition:
 @dataclass
 class RolloutMetrics:
     """Tracks metrics for aggressive rollout monitoring.
-    
+
     All counters are mutable to allow incremental updates during
     the decision cycle. Use reset() to clear all counters.
-    
+
     Attributes:
         pv_defer_count: Number of times grid charging was deferred for PV
         grid_charge_count: Number of times grid charging was chosen
@@ -91,24 +91,24 @@ class RolloutMetrics:
     total_decisions: int = 0
     pv_first_enabled: bool = False
     timestamp: Optional[str] = None
-    
+
     def increment_pv_defer(self) -> None:
         """Increment the PV defer counter."""
         self.pv_defer_count += 1
         self.total_decisions += 1
-    
+
     def increment_grid_charge(self) -> None:
         """Increment the grid charge counter."""
         self.grid_charge_count += 1
         self.total_decisions += 1
-    
+
     def increment_protection_bypass(self) -> None:
         """Increment the protection bypass counter."""
         self.protection_bypass_count += 1
-    
+
     def record_boiler_source(self, source: str) -> None:
         """Record a boiler source decision.
-        
+
         Args:
             source: The energy source chosen (e.g., "fve", "grid", "alternative")
         """
@@ -116,17 +116,17 @@ class RolloutMetrics:
         self.boiler_source_outcomes[source_lower] = (
             self.boiler_source_outcomes.get(source_lower, 0) + 1
         )
-    
+
     def record_decision_reason(self, reason: str) -> None:
         """Record a decision reason code.
-        
+
         Args:
             reason: The reason code (e.g., "pv_first", "economic_charging", "death_valley")
         """
         self.decision_reason_counts[reason] = (
             self.decision_reason_counts.get(reason, 0) + 1
         )
-    
+
     def reset(self) -> None:
         """Reset all counters to zero."""
         self.pv_defer_count = 0
@@ -136,43 +136,43 @@ class RolloutMetrics:
         self.decision_reason_counts = {}
         self.total_decisions = 0
         self.timestamp = None
-    
+
     def get_pv_defer_rate(self) -> float:
         """Calculate the PV defer rate as a fraction of total decisions.
-        
+
         Returns:
             PV defer rate (0.0 to 1.0), or 0.0 if no decisions
         """
         if self.total_decisions == 0:
             return 0.0
         return self.pv_defer_count / self.total_decisions
-    
+
     def get_grid_charge_rate(self) -> float:
         """Calculate the grid charge rate as a fraction of total decisions.
-        
+
         Returns:
             Grid charge rate (0.0 to 1.0), or 0.0 if no decisions
         """
         if self.total_decisions == 0:
             return 0.0
         return self.grid_charge_count / self.total_decisions
-    
+
     def get_protection_bypass_rate(self) -> float:
         """Calculate the protection bypass rate as a fraction of total decisions.
-        
+
         Returns:
             Protection bypass rate (0.0 to 1.0), or 0.0 if no decisions
         """
         if self.total_decisions == 0:
             return 0.0
         return self.protection_bypass_count / self.total_decisions
-    
+
     def get_boiler_source_rate(self, source: str) -> float:
         """Calculate the rate for a specific boiler source.
-        
+
         Args:
             source: The energy source to check (e.g., "fve", "grid")
-            
+
         Returns:
             Source rate (0.0 to 1.0), or 0.0 if no boiler decisions
         """
@@ -211,10 +211,10 @@ DEFAULT_THRESHOLDS: Dict[str, AlertCondition] = {
 @dataclass
 class RolloutGate:
     """Evaluates rollout health based on metrics and thresholds.
-    
+
     Provides a go/no-go decision for continuing aggressive rollout
     based on observed metrics vs defined thresholds.
-    
+
     Attributes:
         status: Current health status (HEALTHY, DEGRADED, UNHEALTHY)
         alerts: List of triggered alert conditions
@@ -225,22 +225,22 @@ class RolloutGate:
     alerts: List[AlertCondition]
     metrics_snapshot: Dict[str, Any]
     recommendations: List[str]
-    
+
     @property
     def is_healthy(self) -> bool:
         """Check if rollout is healthy enough to continue."""
         return self.status == RolloutHealthStatus.HEALTHY
-    
+
     @property
     def should_pause(self) -> bool:
         """Check if rollout should be paused due to health issues."""
         return self.status == RolloutHealthStatus.UNHEALTHY
-    
+
     @property
     def has_warnings(self) -> bool:
         """Check if there are any warning-level alerts."""
         return any(a.severity == "warning" for a in self.alerts)
-    
+
     @property
     def has_critical_alerts(self) -> bool:
         """Check if there are any critical-level alerts."""
@@ -253,24 +253,24 @@ def evaluate_rollout_health(
     pv_first_enabled: bool = True,
 ) -> RolloutGate:
     """Evaluate rollout health based on current metrics.
-    
+
     Pure function that checks metrics against thresholds and returns
     a RolloutGate with health status and any triggered alerts.
-    
+
     Args:
         metrics: Current rollout metrics
         thresholds: Custom thresholds (uses defaults if None)
         pv_first_enabled: Whether PV-first policy is currently enabled
-        
+
     Returns:
         RolloutGate with health status and alerts
     """
     if thresholds is None:
         thresholds = DEFAULT_THRESHOLDS
-    
+
     alerts: List[AlertCondition] = []
     recommendations: List[str] = []
-    
+
     # Check protection bypass rate (always relevant)
     bypass_rate = metrics.get_protection_bypass_rate()
     if "max_protection_bypass_rate" in thresholds:
@@ -280,7 +280,7 @@ def evaluate_rollout_health(
             recommendations.append(
                 "Investigate protection layer - high bypass rate detected"
             )
-    
+
     # Only check PV-first metrics if policy is enabled
     if pv_first_enabled:
         # Check PV defer rate
@@ -292,7 +292,7 @@ def evaluate_rollout_health(
                 recommendations.append(
                     "Check PV forecast input - PV-first may not be activating"
                 )
-        
+
         # Check grid charge rate
         grid_rate = metrics.get_grid_charge_rate()
         if "max_grid_charge_rate" in thresholds:
@@ -302,7 +302,7 @@ def evaluate_rollout_health(
                 recommendations.append(
                     "Review charging decisions - excessive grid charging detected"
                 )
-    
+
     # Determine overall health status
     if not alerts:
         status = RolloutHealthStatus.HEALTHY
@@ -310,7 +310,7 @@ def evaluate_rollout_health(
         status = RolloutHealthStatus.UNHEALTHY
     else:
         status = RolloutHealthStatus.DEGRADED
-    
+
     # Create metrics snapshot
     metrics_snapshot = {
         "pv_defer_count": metrics.pv_defer_count,
@@ -324,7 +324,7 @@ def evaluate_rollout_health(
         "decision_reason_counts": dict(metrics.decision_reason_counts),
         "pv_first_enabled": pv_first_enabled,
     }
-    
+
     return RolloutGate(
         status=status,
         alerts=alerts,
@@ -335,12 +335,12 @@ def evaluate_rollout_health(
 
 def format_metrics_summary(metrics: RolloutMetrics) -> str:
     """Format metrics as a human-readable summary string.
-    
+
     Pure function for logging and debugging.
-    
+
     Args:
         metrics: Rollout metrics to format
-        
+
     Returns:
         Multi-line string summary of metrics
     """
@@ -353,44 +353,44 @@ def format_metrics_summary(metrics: RolloutMetrics) -> str:
         "",
         "Boiler Source Outcomes:",
     ]
-    
+
     if metrics.boiler_source_outcomes:
         for source, count in sorted(metrics.boiler_source_outcomes.items()):
             rate = metrics.get_boiler_source_rate(source)
             lines.append(f"  {source}: {count} ({rate:.1%})")
     else:
         lines.append("  (no boiler decisions)")
-    
+
     lines.extend([
         "",
         "Decision Reason Counts:",
     ])
-    
+
     if metrics.decision_reason_counts:
         for reason, count in sorted(metrics.decision_reason_counts.items()):
             lines.append(f"  {reason}: {count}")
     else:
         lines.append("  (no decision reasons recorded)")
-    
+
     if metrics.timestamp:
         lines.extend([
             "",
             f"Timestamp: {metrics.timestamp}",
         ])
-    
+
     lines.append("=" * 30)
-    
+
     return "\n".join(lines)
 
 
 def create_metrics_from_dict(data: Dict[str, Any]) -> RolloutMetrics:
     """Create RolloutMetrics from a dictionary (e.g., from HA state).
-    
+
     Factory function for reconstructing metrics from persisted state.
-    
+
     Args:
         data: Dictionary with metric values
-        
+
     Returns:
         RolloutMetrics instance
     """
@@ -408,35 +408,35 @@ def create_metrics_from_dict(data: Dict[str, Any]) -> RolloutMetrics:
 
 def merge_metrics(metrics_list: List[RolloutMetrics]) -> RolloutMetrics:
     """Merge multiple RolloutMetrics instances into one.
-    
+
     Useful for aggregating metrics from multiple decision cycles.
-    
+
     Args:
         metrics_list: List of RolloutMetrics to merge
-        
+
     Returns:
         New RolloutMetrics with aggregated values
     """
     merged = RolloutMetrics()
-    
+
     for m in metrics_list:
         merged.pv_defer_count += m.pv_defer_count
         merged.grid_charge_count += m.grid_charge_count
         merged.protection_bypass_count += m.protection_bypass_count
         merged.total_decisions += m.total_decisions
-        
+
         # Merge boiler source outcomes
         for source, count in m.boiler_source_outcomes.items():
             merged.boiler_source_outcomes[source] = (
                 merged.boiler_source_outcomes.get(source, 0) + count
             )
-        
+
         # Merge decision reason counts
         for reason, count in m.decision_reason_counts.items():
             merged.decision_reason_counts[reason] = (
                 merged.decision_reason_counts.get(reason, 0) + count
             )
-    
+
     # Find the most recent timestamp if available
     latest_timestamp = None
     for m in metrics_list:
@@ -444,5 +444,5 @@ def merge_metrics(metrics_list: List[RolloutMetrics]) -> RolloutMetrics:
             if latest_timestamp is None or m.timestamp > latest_timestamp:
                 latest_timestamp = m.timestamp
     merged.timestamp = latest_timestamp
-    
+
     return merged
