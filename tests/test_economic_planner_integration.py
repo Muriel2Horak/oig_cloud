@@ -141,3 +141,54 @@ class TestApplyEconomicPlan:
 
         assert "Economic plan generated" in caplog.text
         assert "96 intervals" in caplog.text
+
+
+class TestFetchLoadForecast:
+    """Test fetch_load_forecast function."""
+
+    def test_fetch_load_forecast_no_sensors(self) -> None:
+        """Test fallback when no load sensors available."""
+        hass = MagicMock()
+        hass.states.get.return_value = None
+
+        from custom_components.oig_cloud.battery_forecast.economic_planner_integration import fetch_load_forecast
+        result = fetch_load_forecast(hass, "12345")
+
+        assert len(result) == 96
+
+
+class TestFetchPrices:
+    """Test fetch_prices function."""
+
+    def test_fetch_prices_no_data(self) -> None:
+        """Test fallback when no price data available."""
+        hass = MagicMock()
+        hass.data = {}
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+
+        from custom_components.oig_cloud.battery_forecast.economic_planner_integration import fetch_prices
+        result = fetch_prices(hass, config_entry, "12345")
+
+        assert len(result) == 96
+
+
+class TestLoadPlannerInputs:
+    """Test load_planner_inputs function."""
+
+    def test_load_planner_inputs_basic(self) -> None:
+        """Test basic input loading."""
+        hass = MagicMock()
+        mock_state = MagicMock()
+        mock_state.state = "5.0"
+        hass.states.get.return_value = mock_state
+
+        config_entry = MagicMock()
+        config_entry.data = {"box_id": "12345"}
+        config_entry.options = {}
+
+        from custom_components.oig_cloud.battery_forecast.economic_planner_integration import load_planner_inputs
+        result = load_planner_inputs(hass, config_entry)
+
+        assert result.current_soc_kwh == 5.0
+        assert result.max_capacity_kwh == 10.24
