@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, TypedDict
 
-from .types import CBBMode, INTERVAL_MINUTES
+from .types import INTERVAL_MINUTES
 
 
 class IntervalData(TypedDict):
