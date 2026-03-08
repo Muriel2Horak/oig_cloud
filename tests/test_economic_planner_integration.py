@@ -34,7 +34,12 @@ class TestSolarForecastHelpers:
 
     def test_quarter_hour_from_hourly_kw(self) -> None:
         """Test conversion from hourly to quarter-hourly."""
-        hourly = {"0": 1.0, "1": 2.0, "2": 3.0}
+        from datetime import datetime
+        hourly = {
+            datetime(2025, 3, 1, 0, 0).isoformat(): 1.0,
+            datetime(2025, 3, 1, 1, 0).isoformat(): 2.0,
+            datetime(2025, 3, 1, 2, 0).isoformat(): 3.0,
+        }
         result = _quarter_hour_from_hourly_kw(hourly)
         assert len(result) == 12  # 3 hours * 4 quarters
         assert result[0] == 0.25  # 1.0 / 4
@@ -50,7 +55,11 @@ class TestSolarForecastHelpers:
         """Test padding when list is too short."""
         result = _pad_or_trim([1.0, 2.0], length=5, fill=0.0)
         assert len(result) == 5
-        assert result == [1.0, 2.0, 0.0, 0.0, 0.0]
+        assert result[0] == 1.0
+        assert result[1] == 2.0
+        assert result[2] == 0.0
+        assert result[3] == 0.0
+        assert result[4] == 0.0
 
     def test_pad_or_trim_trim(self) -> None:
         """Test trimming when list is too long."""
@@ -104,10 +113,14 @@ class TestFetchSolarForecast:
 
     def test_fetch_solar_forecast_with_valid_sensor(self) -> None:
         """Test loading from valid sensor."""
+        from datetime import datetime
         hass = MagicMock()
         mock_state = MagicMock()
         mock_state.attributes = {
-            "today_hourly_total_kw": {"0": 4.0, "1": 8.0},
+            "today_hourly_total_kw": {
+                datetime(2025, 3, 1, 0, 0).isoformat(): 4.0,
+                datetime(2025, 3, 1, 1, 0).isoformat(): 8.0,
+            },
         }
         hass.states.get.return_value = mock_state
 
