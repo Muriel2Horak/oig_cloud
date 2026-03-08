@@ -3,8 +3,12 @@ from __future__ import annotations
 import pytest
 
 from custom_components.oig_cloud.battery_forecast.economic_planner import (
+    calculate_cost_charge_cheapest,
+    calculate_cost_use_battery,
+    calculate_cost_wait_for_solar,
     find_critical_moments,
     generate_plan,
+    make_economic_decisions,
     plan_battery_schedule,
     simulate_home_i_detailed,
 )
@@ -403,3 +407,159 @@ def test_plan_battery_schedule_logs_error_on_exception(caplog: pytest.LogCapture
     assert isinstance(result, PlannerResult)
     assert len(result.modes) == 96
     assert result.decisions == []
+
+
+def test_calculate_cost_use_battery_returns_zero_when_moment_out_of_range() -> None:
+    inputs = _build_inputs(current_soc_kwh=5.0, intervals_count=2)
+    moment = CriticalMoment(
+        type="PLANNING_MIN",
+        interval=2,
+        deficit_kwh=0.2,
+        intervals_needed=1,
+        must_start_charging=1,
+        soc_kwh=3.0,
+    )
+
+    assert calculate_cost_use_battery(moment, inputs) == 0.0
+
+
+def test_calculate_cost_use_battery_uses_current_soc_when_moment_soc_is_none() -> None:
+    inputs = _build_inputs(
+        current_soc_kwh=6.0,
+        intervals_count=2,
+        prices=[4.0, 4.0],
+        solar_forecast=[0.0, 0.0],
+        load_forecast=[0.0, 0.0],
+    )
+    moment = CriticalMoment(
+        type="PLANNING_MIN",
+        interval=0,
+        deficit_kwh=0.2,
+        intervals_needed=1,
+        must_start_charging=0,
+        soc_kwh=None,
+    )
+
+    assert calculate_cost_use_battery(moment, inputs) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_calculate_cost_wait_for_solar_returns_infinity_when_no_solar_surplus() -> None:
+    inputs = _build_inputs(
+        current_soc_kwh=5.0,
+        intervals_count=3,
+        solar_forecast=[0.0, 0.1, 0.2],
+        load_forecast=[0.5, 0.5, 0.5],
+    )
+    moment = CriticalMoment(
+        type="PLANNING_MIN",
+        interval=0,
+        deficit_kwh=0.1,
+        intervals_needed=1,
+        must_start_charging=0,
+        soc_kwh=3.0,
+    )
+
+    assert calculate_cost_wait_for_solar(moment, inputs) == float("inf")
+
+
+def test_calculate_cost_wait_for_solar_uses_current_soc_when_moment_soc_is_none() -> None:
+    inputs = _build_inputs(
+        current_soc_kwh=7.0,
+        intervals_count=4,
+        prices=[8.0, 8.0, 1.0, 1.0],
+        solar_forecast=[0.0, 0.0, 1.2, 0.0],
+        load_forecast=[0.4, 0.4, 0.2, 0.2],
+    )
+    moment = CriticalMoment(
+        type="PLANNING_MIN",
+        interval=0,
+        deficit_kwh=0.3,
+        intervals_needed=1,
+        must_start_charging=0,
+        soc_kwh=None,
+    )
+
+    cost = calculate_cost_wait_for_solar(moment, inputs)
+
+    assert cost >= 0.0
+    assert cost < float("inf")
+
+
+def test_calculate_cost_charge_cheapest_handles_invalid_ranges_and_breaks_when_filled() -> None:
+    inputs = _build_inputs(
+        current_soc_kwh=5.0,
+        intervals_count=3,
+        prices=[5.0, 1.0, 7.0],
+        solar_forecast=[0.0, 0.0, 0.0],
+        load_forecast=[0.0, 0.0, 0.0],
+    )
+
+    zero_cost, zero_intervals = calculate_cost_charge_cheapest(0, 1, 0.0, inputs)
+    assert zero_cost == 0.0
+    assert zero_intervals == []
+
+    bounded_cost, bounded_intervals = calculate_cost_charge_cheapest(10, 12, 1.0, inputs)
+    assert bounded_cost == 0.0
+    assert bounded_intervals == []
+
+    cost, intervals = calculate_cost_charge_cheapest(0, 3, 0.1, inputs)
+    assert intervals == [1]
+    assert cost == pytest.approx(0.1 / 0.882, rel=1e-6)
+
+
+def test_make_economic_decisions_emergency_when_all_strategies_non_finite() -> None:
+    from unittest.mock import patch
+
+    inputs = _build_inputs(current_soc_kwh=5.0, intervals_count=2)
+    moment = CriticalMoment(
+        type="PLANNING_MIN",
+        interval=0,
+        deficit_kwh=0.5,
+        intervals_needed=1,
+        must_start_charging=0,
+        soc_kwh=3.0,
+    )
+
+    with (
+        patch(
+            "custom_components.oig_cloud.battery_forecast.economic_planner.calculate_cost_use_battery",
+            return_value=float("inf"),
+        ),
+        patch(
+            "custom_components.oig_cloud.battery_forecast.economic_planner.calculate_cost_charge_cheapest",
+            return_value=(float("inf"), []),
+        ),
+        patch(
+            "custom_components.oig_cloud.battery_forecast.economic_planner.calculate_cost_wait_for_solar",
+            return_value=float("inf"),
+        ),
+    ):
+        decisions = make_economic_decisions([moment], inputs)
+
+    assert len(decisions) == 1
+    assert decisions[0].strategy == "USE_BATTERY"
+    assert decisions[0].reason == "EMERGENCY_NO_FINITE_STRATEGY"
+    assert decisions[0].cost == float("inf")
+
+
+def test_generate_plan_raises_on_safety_validation_failure() -> None:
+    from unittest.mock import patch
+
+    inputs = _build_inputs(current_soc_kwh=5.0, intervals_count=1)
+    unsafe_state = SimulatedState(
+        interval_index=0,
+        soc_kwh=inputs.hw_min_kwh * 0.9,
+        solar_kwh=0.0,
+        load_kwh=0.0,
+        grid_import_kwh=0.0,
+        grid_export_kwh=0.0,
+        cost_czk=0.0,
+        mode=CBBMode.HOME_I.value,
+    )
+
+    with patch(
+        "custom_components.oig_cloud.battery_forecast.economic_planner._simulate_with_modes",
+        return_value=[unsafe_state],
+    ):
+        with pytest.raises(ValueError, match="Safety validation failed"):
+            generate_plan([], inputs)
