@@ -1,10 +1,10 @@
 {
-  "active_plan": "/Users/martinhorak/Downloads/oig_cloud/.sisyphus/plans/morning-peak-avoidance.md",
-  "started_at": "2026-03-03T15:51:31.445Z",
+  "active_plan": "/Users/martinhorak/Downloads/oig_cloud/.sisyphus/plans/economic-planner-mitigation-plan.md",
+  "started_at": "2026-03-07T07:11:26.526Z",
   "session_ids": [
-    "ses_34cda6a12ffeM2HSLGyhSvo2eu"
+    "ses_33bcc66d7ffeLbiG09vHZ3XptG"
   ],
-  "plan_name": "morning-peak-avoidance",
-  "worktree_path": "/Users/martinhorak/Downloads/oig_cloud-worktrees/morning-peak-avoidance",
-  "agent": "atlas"
+  "plan_name": "economic-planner-mitigation-plan",
+  "agent": "atlas",
+  "worktree_path": "/Users/martinhorak/Downloads/oig_cloud-worktrees/economic-battery-planner-final"
 }

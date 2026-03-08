@@ -77,14 +77,14 @@ class OigCloudSensorRuntimeMixin:
                 via_device=(DOMAIN, self._box_id),
             )
 
-    return DeviceInfo(
-        identifiers={(DOMAIN, self._box_id)},
-        name=f"{model_name} {self._box_id}",
-        manufacturer="OIG",
-        model=model_name,
-        sw_version=pv_data.get("box_prms", {}).get("sw", None),
-        battery=f"sensor.oig_{self._box_id}_batt_bat_c",
-    )
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._box_id)},
+            name=f"{model_name} {self._box_id}",
+            manufacturer="OIG",
+            model=model_name,
+            sw_version=pv_data.get("box_prms", {}).get("sw", None),
+            battery=f"sensor.oig_{self._box_id}_batt_bat_c",
+        )
 
     @property
     def should_poll(self) -> bool:
