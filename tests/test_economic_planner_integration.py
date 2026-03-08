@@ -57,9 +57,9 @@ class TestSolarForecastHelpers:
         assert len(result) == 5
         assert result[0] == 1.0
         assert result[1] == 2.0
-        assert result[2] == 0.0
-        assert result[3] == 0.0
-        assert result[4] == 0.0
+        assert result[2] == 2.0
+        assert result[3] == 2.0
+        assert result[4] == 2.0
 
     def test_pad_or_trim_trim(self) -> None:
         """Test trimming when list is too long."""
