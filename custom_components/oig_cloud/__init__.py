@@ -151,50 +151,47 @@ def _infer_box_id_from_local_entities(hass: HomeAssistant) -> str | None:
         return None
 
 
-def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Ensure planner-related options exist on legacy config entries.
-
-    Legacy multi-planner options were removed; only the single planner is supported.
-    """
-
-    defaults = {
+def _get_planner_defaults() -> dict[str, Any]:
+    """Return default planner options."""
+    return {
         CONF_AUTO_MODE_SWITCH: False,
-        # Planner parameters (percentages are of max capacity).
         "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
         CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
         "target_capacity_percent": 80.0,
-        # Allow disabling planning-min guard if the user wants more aggressive optimization.
         "disable_planning_min_guard": False,
-        # Hard cap for UPS charging (CZK/kWh).
         "max_ups_price_czk": 10.0,
-        # Price comparison hysteresis (CZK/kWh).
         "price_hysteresis_czk": 0.01,
-        # Max hours to stay at HW minimum before force-recharge.
         "hw_min_hold_hours": 6.0,
-        # AC charging power (kW) used for UPS mode simulation.
         "home_charge_rate": DEFAULT_CHARGE_RATE_KW,
         CONF_CHARGE_RATE_KW: DEFAULT_CHARGE_RATE_KW,
-        # Used by balancer window selection.
         "cheap_window_percentile": 30,
     }
 
-    options = dict(entry.options)
+
+def _migrate_legacy_planner_options(options: dict[str, Any]) -> None:
+    """Migrate legacy planner options to new format."""
     if options.get(CONF_PLANNING_MIN_PERCENT) is None:
         legacy_min = options.get("min_capacity_percent")
         options[CONF_PLANNING_MIN_PERCENT] = (
-            legacy_min
-            if isinstance(legacy_min, (int, float))
-            else defaults[CONF_PLANNING_MIN_PERCENT]
+            legacy_min if isinstance(legacy_min, (int, float)) else DEFAULT_PLANNING_MIN_PERCENT
         )
     if options.get(CONF_CHARGE_RATE_KW) is None:
         legacy_rate = options.get("home_charge_rate")
         options[CONF_CHARGE_RATE_KW] = (
-            legacy_rate
-            if isinstance(legacy_rate, (int, float))
-            else defaults[CONF_CHARGE_RATE_KW]
+            legacy_rate if isinstance(legacy_rate, (int, float)) else DEFAULT_CHARGE_RATE_KW
         )
 
-    # Migrate and purge removed/obsolete planner options.
+    if "max_price_conf" in options and "max_ups_price_czk" not in options:
+        try:
+            options["max_ups_price_czk"] = float(options.get("max_price_conf", 10.0))
+        except (TypeError, ValueError) as err:
+            _LOGGER.debug("Planner option conversion failed: %s", err, exc_info=True)
+            options["max_ups_price_czk"] = 10.0
+        options.pop("max_price_conf", None)
+
+
+def _purge_obsolete_planner_options(options: dict[str, Any]) -> list[str]:
+    """Remove obsolete planner options and return list of removed keys."""
     obsolete_keys = {
         "enable_cheap_window_ups",
         "cheap_window_max_intervals",
@@ -204,26 +201,31 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> 
         "safety_margin_percent",
         "percentile_conf",
     }
-
-    if "max_price_conf" in options and "max_ups_price_czk" not in options:
-        try:
-            options["max_ups_price_czk"] = float(options.get("max_price_conf", 10.0))
-        except (TypeError, ValueError) as err:
-            _LOGGER.debug("Planner option conversion failed: %s", err, exc_info=True)
-            options["max_ups_price_czk"] = defaults["max_ups_price_czk"]
-        options.pop("max_price_conf", None)
-
     removed = [k for k in options if k in obsolete_keys]
     for k in removed:
         options.pop(k, None)
+    return removed
 
+
+def _apply_planner_defaults(entry: ConfigEntry, options: dict[str, Any], defaults: dict[str, Any]) -> tuple[bool, list[str]]:
+    """Apply default values to missing options. Returns (updated, missing_keys)."""
     missing_keys = [key for key in defaults.keys() if entry.options.get(key) is None]
     updated = False
-
     for key, default in defaults.items():
         if options.get(key) is None:
             options[key] = default
             updated = True
+    return updated, missing_keys
+
+
+def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Ensure planner-related options exist on legacy config entries."""
+    defaults = _get_planner_defaults()
+    options = dict(entry.options)
+
+    _migrate_legacy_planner_options(options)
+    removed = _purge_obsolete_planner_options(options)
+    updated, missing_keys = _apply_planner_defaults(entry, options, defaults)
 
     if updated or removed:
         _LOGGER.info(

@@ -86,48 +86,50 @@ def _quarter_hour_from_hourly_kw(hourly_kw: dict[str, Any]) -> list[float]:
     return quarter_hour_kwh
 
 
-def fetch_solar_forecast(hass: HomeAssistant, box_id: str) -> list[float]:
+def _get_solar_candidates(box_id: str) -> list[str]:
+    """Build list of solar forecast sensor candidates."""
     candidates = []
     if box_id:
-        candidates.extend(
-            [
-                f"sensor.oig_{box_id}_solar_forecast",
-                f"sensor.oig_{box_id}_solar_forecast_string1",
-            ]
-        )
+        candidates.extend([
+            f"sensor.oig_{box_id}_solar_forecast",
+            f"sensor.oig_{box_id}_solar_forecast_string1",
+        ])
     candidates.append("sensor.solcast_forecast")
+    return candidates
+
+
+def _try_load_solar_from_entity(hass: HomeAssistant, entity_id: str) -> list[float] | None:
+    """Try to load solar forecast from a single entity."""
+    state = hass.states.get(entity_id)
+    if not state or not state.attributes:
+        return None
+
+    attrs = state.attributes
+    today_hourly = attrs.get("today_hourly_total_kw")
+    tomorrow_hourly = attrs.get("tomorrow_hourly_total_kw")
+
+    if not isinstance(today_hourly, dict) and not isinstance(tomorrow_hourly, dict):
+        return None
+
+    today_series = _quarter_hour_from_hourly_kw(today_hourly) if isinstance(today_hourly, dict) else []
+    tomorrow_series = _quarter_hour_from_hourly_kw(tomorrow_hourly) if isinstance(tomorrow_hourly, dict) else []
+    merged = today_series + tomorrow_series
+
+    if not merged:
+        return None
+
+    _LOGGER.debug("Solar forecast loaded from %s (%d points)", entity_id, len(merged))
+    return _pad_or_trim(merged, length=_FORECAST_INTERVALS, fill=_DEFAULT_SOLAR_KWH_15MIN)
+
+
+def fetch_solar_forecast(hass: HomeAssistant, box_id: str) -> list[float]:
+    """Fetch solar forecast from available sensors."""
+    candidates = _get_solar_candidates(box_id)
 
     for entity_id in candidates:
-        state = hass.states.get(entity_id)
-        if not state or not state.attributes:
-            continue
-
-        attrs = state.attributes
-        today_hourly = attrs.get("today_hourly_total_kw")
-        tomorrow_hourly = attrs.get("tomorrow_hourly_total_kw")
-        if isinstance(today_hourly, dict) or isinstance(tomorrow_hourly, dict):
-            today_series = (
-                _quarter_hour_from_hourly_kw(today_hourly)
-                if isinstance(today_hourly, dict)
-                else []
-            )
-            tomorrow_series = (
-                _quarter_hour_from_hourly_kw(tomorrow_hourly)
-                if isinstance(tomorrow_hourly, dict)
-                else []
-            )
-            merged = today_series + tomorrow_series
-            if merged:
-                _LOGGER.debug(
-                    "Solar forecast loaded from %s (%d points)",
-                    entity_id,
-                    len(merged),
-                )
-                return _pad_or_trim(
-                    merged,
-                    length=_FORECAST_INTERVALS,
-                    fill=_DEFAULT_SOLAR_KWH_15MIN,
-                )
+        result = _try_load_solar_from_entity(hass, entity_id)
+        if result is not None:
+            return result
 
     _LOGGER.warning(
         "Solar forecast sensor unavailable for box_id=%s, using fallback defaults",
@@ -329,7 +331,19 @@ def load_planner_inputs(
     )
 
 
-async def run_economic_planning(
+def _mode_to_name(mode: int) -> str:
+    """Convert mode value to name."""
+    if mode == CBBMode.HOME_I.value:
+        return "HOME_I"
+    elif mode == CBBMode.HOME_III.value:
+        return "HOME_III"
+    elif mode == CBBMode.HOME_UPS.value:
+        return "HOME_UPS"
+    else:
+        return f"UNKNOWN({mode})"
+
+
+def run_economic_planning(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
 ) -> dict[str, Any]:
@@ -343,13 +357,9 @@ async def run_economic_planning(
         Dictionary with planning results including modes and decisions
     """
     try:
-        # Load inputs
         inputs = load_planner_inputs(hass, config_entry)
-
-        # Run planner
         result = plan_battery_schedule(inputs)
 
-        # Log decisions
         for decision in result.decisions:
             _LOGGER.info(
                 "Economic decision at interval %d: %s (cost: %.2f Kč)",
@@ -358,17 +368,7 @@ async def run_economic_planning(
                 decision.cost
             )
 
-        # Convert modes to mode names
-        mode_names = []
-        for mode in result.modes:
-            if mode == CBBMode.HOME_I.value:
-                mode_names.append("HOME_I")
-            elif mode == CBBMode.HOME_III.value:
-                mode_names.append("HOME_III")
-            elif mode == CBBMode.HOME_UPS.value:
-                mode_names.append("HOME_UPS")
-            else:
-                mode_names.append(f"UNKNOWN({mode})")
+        mode_names = [_mode_to_name(mode) for mode in result.modes]
 
         return {
             "success": True,
@@ -387,20 +387,10 @@ async def run_economic_planning(
         }
 
 
-async def apply_economic_plan(
-    hass: HomeAssistant,
+def apply_economic_plan(
     modes: list[int],
-    box_id: str = "",
 ) -> None:
-    """Apply economic plan modes to battery box.
-
-    Args:
-        hass: Home Assistant instance
-        modes: List of mode values for each interval
-        box_id: Battery box ID
-    """
-    # This would integrate with the existing mode switching logic
-    # For now, just log the planned modes
+    """Apply economic plan modes to battery box."""
     _LOGGER.info("Economic plan generated with %d intervals", len(modes))
 
     # Count mode distribution
