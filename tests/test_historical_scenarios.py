@@ -23,8 +23,8 @@ VALID_MODES = {CBBMode.HOME_I.value, CBBMode.HOME_III.value, CBBMode.HOME_UPS.va
 def _load_historical_scenarios() -> list[dict[str, Any]]:
     scenarios_path = Path(__file__).parent / "data" / "historical_scenarios.json"
     with scenarios_path.open("r", encoding="utf-8") as file_handle:
-        scenarios = json.load(file_handle)
-    return scenarios
+        data = json.load(file_handle)
+    return data.get("scenarios", []) if isinstance(data, dict) else data
 
 
 def _expected_max_cost(load: list[float], prices: list[float]) -> float:
