@@ -179,9 +179,24 @@ class TestLoadPlannerInputs:
     def test_load_planner_inputs_basic(self) -> None:
         """Test basic input loading."""
         hass = MagicMock()
-        mock_state = MagicMock()
-        mock_state.state = "5.0"
-        hass.states.get.return_value = mock_state
+
+        battery_state = MagicMock()
+        battery_state.state = "5.0"
+        capacity_state = MagicMock()
+        capacity_state.state = "10.24"
+        hw_min_state = MagicMock()
+        hw_min_state.state = "1.0"
+
+        def _mock_get_state(entity_id: str):
+            if entity_id == "sensor.oig_12345_battery_level":
+                return battery_state
+            if entity_id == "sensor.oig_12345_installed_battery_capacity_kwh":
+                return capacity_state
+            if entity_id == "sensor.oig_12345_batt_bat_min":
+                return hw_min_state
+            return None
+
+        hass.states.get.side_effect = _mock_get_state
 
         config_entry = MagicMock()
         config_entry.data = {"box_id": "12345"}
