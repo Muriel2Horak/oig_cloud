@@ -154,7 +154,7 @@ def _infer_box_id_from_local_entities(hass: HomeAssistant) -> str | None:
 def _get_planner_defaults() -> dict[str, Any]:
     """Return default planner options."""
     return {
-        CONF_AUTO_MODE_SWITCH: True,
+        CONF_AUTO_MODE_SWITCH: False,
         "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
         CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
         "target_capacity_percent": 80.0,
