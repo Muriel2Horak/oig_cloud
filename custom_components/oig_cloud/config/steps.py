@@ -54,9 +54,6 @@ class WizardMixin:
         hass: HomeAssistant
         config_entry: ConfigEntry
 
-    def async_show_form(self, *args: Any, **kwargs: Any) -> FlowResult:  # pragma: no cover
-        raise NotImplementedError
-
     @staticmethod
     def _sanitize_data_source_mode(mode: Optional[str]) -> str:
         """Map legacy/alias values to supported ones."""
