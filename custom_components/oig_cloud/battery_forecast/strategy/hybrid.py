@@ -23,9 +23,6 @@ from .balancing import StrategyBalancingPlan
 
 _LOGGER = logging.getLogger(__name__)
 
-HOME_III_LABEL = "HOME III"
-HOME_UPS_LABEL = "HOME UPS"
-
 
 @dataclass
 class IntervalDecision:
@@ -273,7 +270,7 @@ class HybridStrategy:
             total_grid_export_kwh=totals["export"],
             final_battery_kwh=battery,
             mode_counts=mode_counts,
-            ups_intervals=mode_counts[HOME_UPS_LABEL],
+            ups_intervals=mode_counts.get("HOME UPS", 0),
             calculation_time_ms=calc_time,
             negative_prices_detected=has_negative,
             balancing_applied=balancing_plan is not None and balancing_plan.is_active,
@@ -369,9 +366,7 @@ class HybridStrategy:
         totals = {"cost": 0.0, "import": 0.0, "export": 0.0}
         mode_counts = {
             "HOME I": 0,
-            "HOME II": 0,
-            HOME_III_LABEL: 0,
-            HOME_UPS_LABEL: 0,
+            "HOME UPS": 0,
         }
         battery = initial_battery_kwh
         for i, decision in enumerate(decisions):
@@ -464,7 +459,7 @@ class HybridStrategy:
         totals["cost"] += cost
         totals["import"] += result.grid_import
         totals["export"] += result.grid_export
-        mode_counts[CBB_MODE_NAMES.get(decision.mode, HOME_III_LABEL)] += 1
+        mode_counts[CBB_MODE_NAMES.get(decision.mode, "HOME I")] += 1
 
         return result.battery_end
 

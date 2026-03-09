@@ -396,8 +396,9 @@ async def start_call(
         context=context,
     )
 
+    actual_params = data.get("params", data)
     await original_call(
-        domain, service, service_data=data, blocking=blocking, context=context
+        domain, service, service_data=actual_params, blocking=blocking, context=context
     )
 
     await _refresh_coordinator_after_call(shield, service_name)

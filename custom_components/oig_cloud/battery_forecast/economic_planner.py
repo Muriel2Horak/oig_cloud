@@ -325,10 +325,8 @@ def generate_plan(decisions: List[Decision], inputs: PlannerInputs) -> PlannerRe
             if 0 <= idx < len(modes):
                 modes[idx] = CBBMode.HOME_UPS.value
 
-    for i, mode in enumerate(modes):
-        if mode == CBBMode.HOME_I.value and inputs.solar_forecast[i] > 0.0:
-            modes[i] = CBBMode.HOME_III.value
-
+    # Keep HOME_I as default - HOME_III is economically disadvantageous
+    # (forces grid import for load while solar charges battery)
     states = _simulate_with_modes(modes, inputs)
 
     safety_min_kwh = inputs.hw_min_kwh * 0.95
@@ -362,9 +360,6 @@ def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:
     except Exception as e:
         _LOGGER.error("Economic planning failed: %s", e, exc_info=True)
         fallback_modes = [CBBMode.HOME_I.value] * len(inputs.intervals)
-        for i, mode in enumerate(fallback_modes):
-            if mode == CBBMode.HOME_I.value and inputs.solar_forecast[i] > 0.0:
-                fallback_modes[i] = CBBMode.HOME_III.value
 
         fallback_states = _simulate_with_modes(fallback_modes, inputs)
         fallback_total_cost = sum(state.cost_czk for state in fallback_states)

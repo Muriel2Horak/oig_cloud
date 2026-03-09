@@ -7,8 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..config import ChargingStrategy, NegativePriceStrategy
 from ..types import (
     CBB_MODE_HOME_I,
-    CBB_MODE_HOME_II,
-    CBB_MODE_HOME_III,
     CBB_MODE_HOME_UPS,
     CBB_MODE_NAMES,
     SpotPrice,
@@ -171,12 +169,7 @@ def _score_modes(
     is_relatively_cheap = future_info.get("is_relatively_cheap", False)
     expected_saving = future_info.get("expected_saving", 0.0)
 
-    for mode in (
-        CBB_MODE_HOME_I,
-        CBB_MODE_HOME_II,
-        CBB_MODE_HOME_III,
-        CBB_MODE_HOME_UPS,
-    ):
+    for mode in (CBB_MODE_HOME_I, CBB_MODE_HOME_UPS):
         scores[mode] = score_mode(
             strategy,
             mode=mode,
@@ -209,10 +202,6 @@ def _select_mode_reason(
         if battery < strategy._planning_min:
             return "low_battery_charge"
         return "opportunistic_charge"
-    if best_mode == CBB_MODE_HOME_III:
-        return "maximize_solar_storage" if solar > load else "preserve_battery_high_solar"
-    if best_mode == CBB_MODE_HOME_II:
-        return "preserve_battery_day"
     return "expensive_use_battery" if price >= expensive_threshold else "normal_operation"
 
 
@@ -286,16 +275,8 @@ def handle_negative_price(
 
     if strategy_mode == NegativePriceStrategy.CHARGE_GRID:
         return CBB_MODE_HOME_UPS, "negative_price_charge"
-    if strategy_mode == NegativePriceStrategy.CURTAIL:
-        return CBB_MODE_HOME_III, "negative_price_curtail"
-    if strategy_mode == NegativePriceStrategy.CONSUME:
-        return CBB_MODE_HOME_I, "negative_price_consume"
-
-    if battery < strategy._max - 1.0:
-        return CBB_MODE_HOME_UPS, "auto_negative_charge"
-    if solar > 0.5:
-        return CBB_MODE_HOME_III, "auto_negative_curtail"
-    return CBB_MODE_HOME_I, "auto_negative_consume"
+    # CURTAIL and CONSUME both use HOME_I for economic reasons
+    return CBB_MODE_HOME_I, "negative_price_consume"
 
 
 def apply_smoothing(
