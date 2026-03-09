@@ -42,8 +42,8 @@ class PlannerInputs:
         if self.max_capacity_kwh <= 0:
             raise ValueError("Max capacity must be positive")
 
-        if self.current_soc_kwh <= 0:
-            raise ValueError("Current SOC must be positive")
+        if self.current_soc_kwh < 0:
+            raise ValueError("Current SOC cannot be negative")
 
         if self.current_soc_kwh > self.max_capacity_kwh:
             raise ValueError("Current SOC exceeds capacity")

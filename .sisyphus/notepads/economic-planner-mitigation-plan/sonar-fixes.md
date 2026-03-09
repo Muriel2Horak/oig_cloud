@@ -65,3 +65,53 @@
 - All tests in file pass after changes.
 - LSP diagnostics clean for changed file `tests/test_economic_planner.py`.
 - No source changes in `economic_planner.py`; test-only coverage uplift.
+
+## 2026-03-09 - Home Assistant startup crash after PR #22
+
+- Investigated `PlannerInputs` construction path in `planning/forecast_update.py` (lines 324-334) and validation in `economic_planner_types.py`.
+- Root cause identified: `PlannerInputs.__post_init__` rejected `current_soc_kwh <= 0` with `ValueError("Current SOC must be positive")`.
+- This is too strict for real HA startup conditions where battery SOC can legitimately be `0.0 kWh`.
+
+### Applied fix
+
+- File changed: `custom_components/oig_cloud/battery_forecast/economic_planner_types.py`
+- Validation relaxed from `current_soc_kwh <= 0` to `current_soc_kwh < 0`.
+- Error message updated to `"Current SOC cannot be negative"`.
+
+### Why this is safe
+
+- `0.0` SOC is physically valid and should not crash planner initialization.
+- Negative SOC remains blocked.
+- Existing `current_soc_kwh > max_capacity_kwh` guard remains intact.
+- Forecast length and negative forecast guards are unchanged.
+- `IntervalData` currently includes only `index`; runtime planner logic does not validate TypedDict keys at runtime, so extra `time` key in `forecast_update.py` is not the startup crash trigger.
+
+### Verification
+
+- LSP diagnostics: clean for changed source file.
+- Syntax compile check passed:
+  - `python3 -m py_compile custom_components/oig_cloud/battery_forecast/economic_planner_types.py`
+  - `python3 -m py_compile custom_components/oig_cloud/battery_forecast/planning/forecast_update.py`
+- Environment note: direct import smoke test via package root failed locally due to missing Home Assistant runtime dependency (`ModuleNotFoundError: homeassistant`), not due to planner code syntax.
+
+## 2026-03-09 - Config flow handler registration fix
+
+- Investigated persistent HA error: `Flow handler not found for entry ... for oig_cloud` after SOC validation fix.
+- Confirmed `manifest.json` still has `"config_flow": true` and `config/steps.py` defines `ConfigFlow` with `domain = DOMAIN`.
+- Root cause: `custom_components/oig_cloud/config_flow.py` only re-exported `ConfigFlow` imported from `config.steps`; in HA startup/import chain this can miss explicit domain-bound class registration expected by loader.
+
+### Applied fix
+
+- File changed: `custom_components/oig_cloud/config_flow.py`
+- Added explicit local entrypoint class bound to domain:
+  - `from .config.steps import ConfigFlow as StepsConfigFlow, OigCloudOptionsFlowHandler`
+  - `from .const import DOMAIN`
+  - `class ConfigFlow(StepsConfigFlow, domain=DOMAIN): pass`
+- Kept `__all__ = ["ConfigFlow", "OigCloudOptionsFlowHandler"]` so HA resolves flow handler directly from module export.
+
+### Verification
+
+- LSP diagnostics clean for changed file: `custom_components/oig_cloud/config_flow.py`.
+- Syntax/build check passed:
+  - `python3 -m py_compile custom_components/oig_cloud/config_flow.py`
+- Import smoke command for full HA flow chain remains blocked locally by missing dev deps (`homeassistant`, `voluptuous`) in this shell, but no syntax/import-structure regressions introduced in changed file.
