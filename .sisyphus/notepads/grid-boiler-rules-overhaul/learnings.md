@@ -855,3 +855,15 @@ The e2e tests confirm that the PV-first precedence contract (from Task 3) is cor
 - Death valley and protection override PV-first as expected
 - Legacy path works unchanged when no PV forecast provided
 - Observability correctly captures all decision outcomes
+
+
+## [2026-03-09] Auto-switch watchdog investigation
+
+### Auto-switch enable flag source behavior
+- `auto_mode_switch_enabled()` previously read only `config_entry.options`.
+- In field state where `entry.options == {}` but UI had been enabled before, watchdog/scheduler path treats auto-switch as disabled.
+- `sensor_lifecycle._maybe_start_auto_switch()` is called from `async_added_to_hass()`, so watchdog startup depends entirely on that flag check.
+
+### Watchdog scheduling path
+- `_maybe_start_auto_switch()` starts watchdog and schedules initial sync only when `auto_mode_switch_enabled(sensor)` returns true.
+- If flag lookup fails, neither watchdog tick nor scheduled switch sync is activated.
