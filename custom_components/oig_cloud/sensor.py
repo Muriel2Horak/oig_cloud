@@ -1469,6 +1469,8 @@ async def async_setup_entry(  # noqa: C901
     # ================================================================
     all_sensors.extend(_register_data_source_sensor(hass, coordinator, entry))
 
+    await asyncio.sleep(0)
+
     # ================================================================
     # SECTION 1: BASIC DATA SENSORS (kategorie: "data")
     # ================================================================
@@ -1477,6 +1479,7 @@ async def async_setup_entry(  # noqa: C901
     # Třída: OigCloudDataSensor
     # ================================================================
     all_sensors.extend(_create_basic_sensors(coordinator))
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 2: COMPUTED SENSORS (kategorie: "computed")
@@ -1486,6 +1489,7 @@ async def async_setup_entry(  # noqa: C901
     # Třída: OigCloudComputedSensor
     # ================================================================
     all_sensors.extend(_create_computed_sensors(coordinator))
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 3: EXTENDED SENSORS (kategorie: "extended")
@@ -1495,6 +1499,7 @@ async def async_setup_entry(  # noqa: C901
     # Třída: OigCloudDataSensor (s extended=True)
     # ================================================================
     all_sensors.extend(_create_extended_sensors(coordinator, entry))
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 4: STATISTICS SENSORS (kategorie: "statistics")
@@ -1506,6 +1511,7 @@ async def async_setup_entry(  # noqa: C901
     all_sensors.extend(
         _create_statistics_sensors(hass, coordinator, entry, analytics_device_info)
     )
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 5: SOLAR FORECAST SENSORS (kategorie: "solar_forecast")
@@ -1519,6 +1525,7 @@ async def async_setup_entry(  # noqa: C901
             hass, coordinator, entry, analytics_device_info
         )
     )
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 6: SERVICESHIELD SENSORS (kategorie: "shield")
@@ -1528,6 +1535,7 @@ async def async_setup_entry(  # noqa: C901
     # Třída: OigCloudShieldSensor
     # ================================================================
     all_sensors.extend(_create_shield_sensors(coordinator))
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 7: NOTIFICATION SENSORS (kategorie: "notification")
@@ -1537,6 +1545,7 @@ async def async_setup_entry(  # noqa: C901
     # Třída: OigCloudDataSensor (s notification=True)
     # ================================================================
     all_sensors.extend(_create_notification_sensors(coordinator))
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 8: BATTERY PREDICTION SENSORS (kategorie: "battery_prediction")
@@ -1550,6 +1559,7 @@ async def async_setup_entry(  # noqa: C901
             hass, coordinator, entry, analytics_device_info
         )
     )
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 9: PRICING & SPOT PRICE SENSORS (kategorie: "pricing")
@@ -1561,6 +1571,7 @@ async def async_setup_entry(  # noqa: C901
     all_sensors.extend(
         _create_pricing_sensors(coordinator, entry, analytics_device_info)
     )
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 10: ČHMÚ WEATHER WARNINGS (kategorie: "chmu_warnings")
@@ -1572,6 +1583,7 @@ async def async_setup_entry(  # noqa: C901
     all_sensors.extend(
         _create_chmu_sensors(coordinator, entry, analytics_device_info)
     )
+    await asyncio.sleep(0)
 
     # ================================================================
     # SECTION 11: BOILER SENSORS (kategorie: "boiler")

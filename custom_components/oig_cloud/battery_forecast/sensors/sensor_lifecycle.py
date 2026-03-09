@@ -8,6 +8,8 @@ import json
 import logging
 from datetime import timedelta
 
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -170,8 +172,6 @@ def _restore_daily_plan_state(sensor, last_state) -> None:
 
 
 def _schedule_forecast_refresh(sensor) -> None:
-    from homeassistant.helpers.event import async_track_time_change
-
     async def _forecast_refresh_job(now):
         _LOGGER.info(" Forecast refresh triggered at %s", now.strftime("%H:%M"))
         try:
@@ -190,8 +190,6 @@ def _schedule_forecast_refresh(sensor) -> None:
 
 
 def _subscribe_profiles(sensor) -> None:
-    from homeassistant.helpers.dispatcher import async_dispatcher_connect
-
     async def _on_profiles_updated():
         await asyncio.sleep(0)
         sensor._profiles_dirty = True
@@ -208,8 +206,6 @@ def _subscribe_profiles(sensor) -> None:
 
 
 def _schedule_initial_refresh(sensor) -> None:
-    from homeassistant.helpers.dispatcher import async_dispatcher_connect
-
     async def _delayed_initial_refresh():
         _LOGGER.info(" Waiting for AdaptiveLoadProfiles to complete (max 60s)...")
         profiles_ready = False
@@ -243,8 +239,6 @@ def _schedule_initial_refresh(sensor) -> None:
 
 
 def _schedule_aggregations(sensor) -> None:
-    from homeassistant.helpers.event import async_track_time_change
-
     async def _daily_aggregation_job(now):
         yesterday = (now.date() - timedelta(days=1)).strftime(DATE_FMT)
         _LOGGER.info(" Daily aggregation job triggered for %s", yesterday)

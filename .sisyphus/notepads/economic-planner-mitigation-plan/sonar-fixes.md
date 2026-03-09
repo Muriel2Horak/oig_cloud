@@ -115,3 +115,41 @@
 - Syntax/build check passed:
   - `python3 -m py_compile custom_components/oig_cloud/config_flow.py`
 - Import smoke command for full HA flow chain remains blocked locally by missing dev deps (`homeassistant`, `voluptuous`) in this shell, but no syntax/import-structure regressions introduced in changed file.
+
+## 2026-03-09 - HA logbook runtime check after latest deployment
+
+- Investigated HA logbook JSON dump: `/Users/martinhorak/.local/share/opencode/tool-output/tool_cd22af285001eByY9VCIKOsaFT`.
+- File structure confirmed as list of `19439` logbook entries with keys: `when`, `name`, `message`, `domain`, `entity_id`, `source`, `context_id`.
+- Determined latest deployment marker from HA lifecycle events:
+  - `homeassistant started` at `2026-03-09T10:31:07.760755+00:00` (used as post-deploy boundary).
+
+### Scope filters used
+
+- Integration/entity relevance terms: `oig_cloud`, `battery_forecast`, `economic_planner`, `battery`, `economic`, `planner`.
+- Error/warning terms: `error`, `warning`, `warn`, `exception`, `traceback`, `failed`, `failure`, `validation`, `importerror`, `setup`, `timeout`, `časový limit`, `vypršel`.
+
+### Findings
+
+- Relevant entries after latest deploy: `17`.
+- ERROR/WARNING-like entries after latest deploy: **`0`**.
+- `oig_cloud` domain entries after latest deploy: **`0`**.
+
+### Notable warning-like events in full captured window (pre-latest-deploy)
+
+- Found repeated OIG Shield timeout warnings (Czech message):
+  - `Časový limit vypršel – Režim FVE stále není 'Home 1' (aktuální: 'Home UPS')`
+- Occurrences: `9` total in this logbook window, timestamps:
+  - `2026-03-09T04:31:44.419813+00:00`
+  - `2026-03-09T04:47:44.446026+00:00`
+  - `2026-03-09T05:03:44.463361+00:00`
+  - `2026-03-09T05:19:44.453867+00:00`
+  - `2026-03-09T05:36:02.835121+00:00`
+  - `2026-03-09T05:52:01.762747+00:00`
+  - `2026-03-09T06:08:01.772367+00:00`
+  - `2026-03-09T06:24:01.779798+00:00`
+  - `2026-03-09T06:40:01.787474+00:00`
+
+### Conclusion
+
+- No `ERROR`/`WARNING` logbook entries matching `oig_cloud`/`battery_forecast`/`economic_planner` were observed **after** the latest deployment start (`10:31:07Z`).
+- The only relevant warning pattern in the broader capture window is repeated pre-deployment ServiceShield timeout behavior for mode convergence (`Home 1` vs `Home UPS`).
