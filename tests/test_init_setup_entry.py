@@ -8,7 +8,7 @@ import pytest
 import custom_components.oig_cloud as init_module
 from custom_components.oig_cloud.const import CONF_PASSWORD, CONF_USERNAME, DOMAIN
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 
 class DummyConfigEntries:
@@ -17,8 +17,11 @@ class DummyConfigEntries:
         self.forwarded = []
         self.unloaded = []
 
-    def async_update_entry(self, entry, options=None):
-        entry.options = options or {}
+    def async_update_entry(self, entry, options=None, data=None):
+        if options is not None:
+            entry.options = options
+        if data is not None:
+            entry.data = data
         self.updated.append(entry)
 
     async def async_forward_entry_setups(self, entry, platforms):
@@ -195,9 +198,81 @@ async def test_async_setup_entry_missing_credentials(monkeypatch):
     entry = DummyEntry(data={}, options={})
     hass.data[DOMAIN] = {entry.entry_id: {}}
 
-    result = await init_module.async_setup_entry(hass, entry)
+    with pytest.raises(ConfigEntryAuthFailed):
+        await init_module.async_setup_entry(hass, entry)
 
-    assert result is False
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_migrates_legacy_credentials_from_options(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.shield.core.ServiceShield", DummyShield
+    )
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_services", _noop
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.services.async_setup_entry_services_with_shield",
+        _noop,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.planning_api.setup_planning_api_views",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_interval",
+        lambda *_a, **_k: lambda: None,
+    )
+
+    hass = DummyHass()
+    entry = DummyEntry(
+        data={},
+        options={
+            CONF_USERNAME: "legacy_user",
+            CONF_PASSWORD: "legacy_pass",
+            "enable_cloud_notifications": False,
+            "enable_solar_forecast": False,
+            "enable_statistics": True,
+            "enable_pricing": False,
+            "enable_boiler": False,
+            "enable_battery_prediction": False,
+            "enable_dashboard": False,
+            "enable_chmu_warnings": False,
+            "enable_extended_sensors": False,
+            "balancing_enabled": False,
+        },
+    )
+
+    ok = await init_module.async_setup_entry(hass, entry)
+    assert ok is True
+    assert entry.data[CONF_USERNAME] == "legacy_user"
+    assert entry.data[CONF_PASSWORD] == "legacy_pass"
 
 
 @pytest.mark.asyncio

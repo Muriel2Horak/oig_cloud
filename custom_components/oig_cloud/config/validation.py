@@ -9,7 +9,7 @@ from typing import Any, Dict
 import aiohttp
 
 from ..const import CONF_PASSWORD, CONF_USERNAME, DEFAULT_NAME
-from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
+from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,8 +35,11 @@ async def validate_input(hass: Any, data: Dict[str, Any]) -> Dict[str, Any]:
     _ = hass
     api = OigCloudApi(data[CONF_USERNAME], data[CONF_PASSWORD], False)
 
-    if not await api.authenticate():
-        raise InvalidAuth
+    try:
+        if not await api.authenticate():
+            raise InvalidAuth
+    except OigCloudAuthError as err:
+        raise InvalidAuth from err
 
     try:
         stats = await api.get_stats()

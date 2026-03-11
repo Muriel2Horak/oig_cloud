@@ -13,7 +13,7 @@ try:
     from homeassistant.config_entries import ConfigEntry, ConfigEntryState
     from homeassistant.const import Platform
     from homeassistant.core import HomeAssistant
-    from homeassistant.exceptions import ConfigEntryNotReady
+    from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
     from homeassistant.helpers import config_validation as cv
 except ModuleNotFoundError:  # pragma: no cover
     # Allow importing submodules (e.g., planner) outside a Home Assistant runtime.
@@ -24,6 +24,7 @@ except ModuleNotFoundError:  # pragma: no cover
     Platform = Any  # type: ignore[misc,assignment]
     HomeAssistant = Any  # type: ignore[misc,assignment]
     ConfigEntryNotReady = Exception  # type: ignore[assignment]
+    ConfigEntryAuthFailed = Exception  # type: ignore[assignment]
 
     class _CvStub:  # pragma: no cover - only used outside HA
         @staticmethod
@@ -33,10 +34,11 @@ except ModuleNotFoundError:  # pragma: no cover
     cv = _CvStub()  # type: ignore[assignment]
 
 try:
-    from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
+    from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
 except ModuleNotFoundError:  # pragma: no cover
     # Allow importing submodules outside HA / without runtime deps.
     OigCloudApi = Any  # type: ignore[misc,assignment]
+    OigCloudAuthError = Exception  # type: ignore[misc,assignment]
 from .const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_EXTENDED_SCAN_INTERVAL,
@@ -886,6 +888,29 @@ async def _start_service_shield(
     return service_shield
 
 
+def _migrate_legacy_credentials_from_options(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    updated_data = dict(entry.data)
+    changed = False
+
+    if not updated_data.get(CONF_USERNAME):
+        legacy_username = entry.options.get(CONF_USERNAME)
+        if isinstance(legacy_username, str) and legacy_username.strip():
+            updated_data[CONF_USERNAME] = legacy_username
+            changed = True
+
+    if not updated_data.get(CONF_PASSWORD):
+        legacy_password = entry.options.get(CONF_PASSWORD)
+        if isinstance(legacy_password, str) and legacy_password:
+            updated_data[CONF_PASSWORD] = legacy_password
+            changed = True
+
+    if changed:
+        hass.config_entries.async_update_entry(entry, data=updated_data)
+        _LOGGER.info("Migrated legacy credentials from options to entry.data")
+
+
 def _load_entry_auth_config(
     entry: ConfigEntry,
 ) -> tuple[str | None, str | None, bool, int, int]:
@@ -1310,6 +1335,7 @@ async def async_setup_entry(
     _init_entry_storage(hass, entry)
     init_data_source_state(hass, entry)
     _maybe_persist_box_id_from_proxy_or_local(hass, entry)
+    _migrate_legacy_credentials_from_options(hass, entry)
 
     service_shield = await _start_service_shield(hass, entry)
 
@@ -1324,7 +1350,7 @@ async def async_setup_entry(
 
         if not username or not password:
             _LOGGER.error("Username or password is missing from configuration")
-            return False
+            raise ConfigEntryAuthFailed("Missing credentials")
 
         # DEBUG: DOČASNĚ ZAKÁZAT telemetrii kvůli problémům s výkonem
         # OPRAVA: Telemetrie způsobovala nekonečnou smyčku
@@ -1439,6 +1465,11 @@ async def async_setup_entry(
         _LOGGER.debug("OIG Cloud integration setup complete")
         return True
 
+    except OigCloudAuthError as e:
+        _LOGGER.error("Authentication failed during OIG Cloud setup: %s", e)
+        raise ConfigEntryAuthFailed("Authentication failed") from e
+    except ConfigEntryAuthFailed:
+        raise
     except Exception as e:
         _LOGGER.error("Error initializing OIG Cloud: %s", e, exc_info=True)
         raise ConfigEntryNotReady(f"Error initializing OIG Cloud: {e}") from e

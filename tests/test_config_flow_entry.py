@@ -32,6 +32,68 @@ async def test_step_user_form():
 
 
 @pytest.mark.asyncio
+async def test_step_reauth_confirm_shows_form_with_existing_username():
+    entry = SimpleNamespace(data={"username": "stored_user"}, entry_id="entry-1")
+
+    class _ConfigEntries:
+        def async_get_entry(self, entry_id):
+            assert entry_id == "entry-1"
+            return entry
+
+    flow = DummyConfigFlow()
+    flow.context = {"entry_id": "entry-1"}
+    flow.hass = SimpleNamespace(config_entries=_ConfigEntries())
+
+    result = await flow.async_step_reauth_confirm()
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reauth_confirm"
+
+
+@pytest.mark.asyncio
+async def test_step_reauth_confirm_updates_entry_and_reloads(monkeypatch):
+    async def _fake_validate_input(_hass, _data):
+        return {"title": "OIG Cloud"}
+
+    monkeypatch.setattr(steps_module, "validate_input", _fake_validate_input)
+
+    entry = SimpleNamespace(
+        data={"username": "old_user", "password": "old_pass"},
+        entry_id="entry-2",
+    )
+    calls: dict[str, object] = {}
+
+    class _ConfigEntries:
+        def async_get_entry(self, entry_id):
+            assert entry_id == "entry-2"
+            return entry
+
+        def async_update_entry(self, existing_entry, data=None, options=None):
+            calls["updated_entry"] = existing_entry
+            calls["updated_data"] = data
+            calls["updated_options"] = options
+
+        async def async_reload(self, entry_id):
+            calls["reloaded_entry_id"] = entry_id
+            return True
+
+    flow = DummyConfigFlow()
+    flow.context = {"entry_id": "entry-2"}
+    flow.hass = SimpleNamespace(config_entries=_ConfigEntries())
+
+    result = await flow.async_step_reauth_confirm(
+        {"username": "new_user", "password": "new_pass"}
+    )
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reauth_successful"
+    assert calls["updated_entry"] is entry
+    assert calls["updated_data"] == {"username": "new_user", "password": "new_pass"}
+    assert calls["updated_options"] is None
+    assert calls["reloaded_entry_id"] == "entry-2"
+
+
+@pytest.mark.asyncio
 async def test_step_user_quick_setup():
     flow = DummyConfigFlow()
     result = await flow.async_step_user({"setup_type": "quick"})

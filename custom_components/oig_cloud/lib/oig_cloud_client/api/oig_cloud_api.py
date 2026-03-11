@@ -58,7 +58,7 @@ class OigCloudApi:
     """API client for OIG Cloud."""
 
     # API endpoints
-    _base_url: str = "https://www.oigpower.cz/cez/"
+    _base_url: str = "https://portal.oigpower.cz/"
     _login_url: str = "inc/php/scripts/Login.php"
     _get_stats_url: str = "json.php"
     _set_mode_url: str = "inc/php/scripts/Device.Set.Value.php"
@@ -222,33 +222,32 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                 async with aiohttp.ClientSession(
                     timeout=self._timeout, connector=connector
                 ) as session:
-                    url: str = self._base_url + self._login_url
                     data: str = json.dumps(login_command)
                     headers: Dict[str, str] = {"Content-Type": "application/json"}
 
-                    async with session.post(
-                        url, data=data, headers=headers
-                    ) as response:
+                    url: str = self._base_url + self._login_url
+                    async with session.post(url, data=data, headers=headers) as response:
                         responsecontent: str = await response.text()
-                        if response.status == 200:
-                            if responsecontent == '[[2,"",false]]':
-                                base_url = URL(self._base_url)
-                                self._phpsessid = (
-                                    session.cookie_jar.filter_cookies(base_url)
-                                    .get("PHPSESSID")
-                                    .value
+                        if response.status == 200 and responsecontent == '[[2,"",false]]':
+                            cookie_base = URL(self._base_url)
+                            cookie = session.cookie_jar.filter_cookies(cookie_base).get(
+                                "PHPSESSID"
+                            )
+                            if cookie is not None:
+                                self._phpsessid = cookie.value
+                            if mode > 0:
+                                mode_names = ["normal", "intermediate cert", "disabled"]
+                                self._logger.info(
+                                    f"✅ Authentication successful with SSL mode: {mode_names[mode]}"
                                 )
-                                if mode > 0:
-                                    mode_names = [
-                                        "normal",
-                                        "intermediate cert",
-                                        "disabled",
-                                    ]
-                                    self._logger.info(
-                                        f"✅ Authentication successful with SSL mode: {mode_names[mode]}"
-                                    )
-                                return True
-                        raise OigCloudAuthError("Authentication failed")
+                            return True
+                        self._logger.debug(
+                            "Authentication attempt failed for %s status=%s body=%s",
+                            url,
+                            response.status,
+                            responsecontent,
+                        )
+                    raise OigCloudAuthError("Authentication failed")
 
             except (asyncio.TimeoutError, ServerTimeoutError) as e:
                 self._logger.error(f"Authentication timeout: {e}")
@@ -292,8 +291,8 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
             "Accept-Encoding": "gzip, deflate, br, zstd",
             "Accept-Language": "cs-CZ,cs;q=0.9,en;q=0.8",
             "Connection": "keep-alive",
-            "Referer": "https://www.oigpower.cz/cez/",
-            "Origin": "https://www.oigpower.cz",
+            "Referer": "https://portal.oigpower.cz/",
+            "Origin": "https://portal.oigpower.cz",
             "Sec-Ch-Ua": '"Not)A;Brand";v="99", "Google Chrome";v="141", "Chromium";v="141"',
             "Sec-Ch-Ua-Mobile": "?1",
             "Sec-Ch-Ua-Platform": '"Android"',
