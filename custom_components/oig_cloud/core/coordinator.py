@@ -621,7 +621,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                     from .oig_cloud_notification import OigNotificationManager
 
                     self.notification_manager = OigNotificationManager(
-                        self.hass, self.api, "https://www.oigpower.cz"
+                        self.hass, self.api, "https://portal.oigpower.cz"
                     )
                     _LOGGER.debug("Notification manager initialized with API session")
                 except Exception as e:
