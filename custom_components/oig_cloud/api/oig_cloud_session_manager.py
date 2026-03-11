@@ -67,7 +67,7 @@ class OigCloudSessionManager:
     async def _log_api_session_info(self) -> None:
         """Log information about API session configuration and headers."""
         try:
-            base_url = getattr(self._api, "_base_url", "https://www.oigpower.cz/cez")
+            base_url = getattr(self._api, "_base_url", "https://portal.oigpower.cz/")
             _LOGGER.info(f"🌐 Base URL: {base_url}")
 
             session = self._open_debug_session()

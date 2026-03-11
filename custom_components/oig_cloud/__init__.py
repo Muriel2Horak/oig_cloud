@@ -1056,7 +1056,7 @@ async def _init_notification_manager(
         )
 
         manager = OigNotificationManager(
-            hass, session_manager.api, "https://www.oigpower.cz/cez/"
+            hass, session_manager.api, "https://portal.oigpower.cz/"
         )
 
         device_id = _resolve_entry_box_id(entry, coordinator)
