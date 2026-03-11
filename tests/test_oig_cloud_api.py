@@ -1,7 +1,7 @@
 """Tests for the OIG Cloud API client."""
 
 import asyncio
-import importlib
+import importlib.util
 import ssl
 import json
 import sys
@@ -548,7 +548,7 @@ class TestOigCloudApi:
             result = await self.api.set_box_params_internal("table", "column", "value")
         assert result is True
 
-        expected_url = f"https://www.oigpower.cz/cez/inc/php/scripts/Device.Set.Value.php?_nonce={nonce}"
+        expected_url = f"https://portal.oigpower.cz/inc/php/scripts/Device.Set.Value.php?_nonce={nonce}"
         expected_data = json.dumps(
             {
                 "id_device": "test_box_id",
@@ -602,7 +602,7 @@ class TestOigCloudApi:
             result = await self.api.set_grid_delivery(1)
         assert result is True
 
-        expected_url = f"https://www.oigpower.cz/cez/inc/php/scripts/ToGrid.Toggle.php?_nonce={nonce}"
+        expected_url = f"https://portal.oigpower.cz/inc/php/scripts/ToGrid.Toggle.php?_nonce={nonce}"
         expected_data = json.dumps(
             {
                 "id_device": "test_box_id",
@@ -661,7 +661,7 @@ class TestOigCloudApi:
             result = await self.api.set_battery_formating("1", 80)
         assert result is True
 
-        expected_url = f"https://www.oigpower.cz/cez/inc/php/scripts/Battery.Format.Save.php?_nonce={nonce}"
+        expected_url = f"https://portal.oigpower.cz/inc/php/scripts/Battery.Format.Save.php?_nonce={nonce}"
         session.post.assert_called_once()
         assert expected_url in session.post.call_args[0][0]
 
@@ -693,7 +693,7 @@ class TestOigCloudApi:
             result = await self.api.set_formating_mode("1")
         assert result is True
 
-        expected_url = f"https://www.oigpower.cz/cez/inc/php/scripts/Battery.Format.Save.php?_nonce={nonce}"
+        expected_url = f"https://portal.oigpower.cz/inc/php/scripts/Battery.Format.Save.php?_nonce={nonce}"
         expected_data = json.dumps(
             {
                 "bat_ac": "1",
