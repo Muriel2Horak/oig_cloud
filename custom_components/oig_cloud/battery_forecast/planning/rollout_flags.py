@@ -41,8 +41,8 @@ class RolloutFlags:
     @property
     def any_new_policy_enabled(self) -> bool:
         """Check if any new policy is enabled (excluding rollback)."""
-        return (self.pv_first_policy_enabled or 
-                self.boiler_coordination_enabled or 
+        return (self.pv_first_policy_enabled or
+                self.boiler_coordination_enabled or
                 self.enable_pre_peak_charging)
 
     @property
@@ -168,7 +168,7 @@ def get_effective_flags(flags: RolloutFlags) -> RolloutFlags:
             pre_peak_charging_canary_soc_threshold_kwh=1.5,
             emergency_rollback=True,
         )
-    
+
     # No rollback, return original flags
     return flags
 
