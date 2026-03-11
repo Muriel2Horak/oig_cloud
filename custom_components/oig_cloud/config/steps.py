@@ -2400,6 +2400,74 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders=self._get_step_placeholders("user"),
         )
 
+    async def async_step_reauth(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        return await self.async_step_reauth_confirm(user_input)
+
+    async def async_step_reauth_confirm(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        reauth_entry_id = self.context.get("entry_id")
+        existing_entry = (
+            self.hass.config_entries.async_get_entry(reauth_entry_id)
+            if reauth_entry_id
+            else None
+        )
+
+        if existing_entry is None:
+            return self.async_abort(reason="unknown")
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="reauth_confirm",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_USERNAME,
+                            default=existing_entry.data.get(CONF_USERNAME, ""),
+                        ): str,
+                        vol.Required(CONF_PASSWORD): str,
+                    }
+                ),
+            )
+
+        errors: Dict[str, str] = {}
+        try:
+            await validate_input(self.hass, user_input)
+        except LiveDataNotEnabled:
+            errors["base"] = "live_data_not_enabled"
+        except CannotConnect:
+            errors["base"] = "cannot_connect"
+        except InvalidAuth:
+            errors["base"] = "invalid_auth"
+        except Exception:
+            _LOGGER.exception("Unexpected exception during reauth")
+            errors["base"] = "unknown"
+
+        if errors:
+            return self.async_show_form(
+                step_id="reauth_confirm",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_USERNAME,
+                            default=user_input.get(CONF_USERNAME, ""),
+                        ): str,
+                        vol.Required(CONF_PASSWORD): str,
+                    }
+                ),
+                errors=errors,
+            )
+
+        updated_data = dict(existing_entry.data)
+        updated_data[CONF_USERNAME] = user_input[CONF_USERNAME]
+        updated_data[CONF_PASSWORD] = user_input[CONF_PASSWORD]
+
+        self.hass.config_entries.async_update_entry(existing_entry, data=updated_data)
+        await self.hass.config_entries.async_reload(existing_entry.entry_id)
+        return self.async_abort(reason="reauth_successful")
+
     async def async_step_quick_setup(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> FlowResult:

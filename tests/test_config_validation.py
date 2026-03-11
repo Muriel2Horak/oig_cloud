@@ -7,6 +7,9 @@ import pytest
 from custom_components.oig_cloud.config import validation as validation_module
 from custom_components.oig_cloud.config.validation import InvalidAuth, LiveDataNotEnabled
 from custom_components.oig_cloud.const import CONF_PASSWORD, CONF_USERNAME
+from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import (
+    OigCloudAuthError,
+)
 
 
 class DummyApi:
@@ -30,6 +33,28 @@ async def test_validate_input_invalid_auth(monkeypatch):
     with pytest.raises(InvalidAuth):
         await validation_module.validate_input(
             SimpleNamespace(), {CONF_USERNAME: "u", CONF_PASSWORD: "p"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_validate_input_maps_oig_auth_error_to_invalid_auth(monkeypatch):
+    class FailingAuthApi:
+        async def authenticate(self):
+            raise OigCloudAuthError("Authentication failed")
+
+        async def get_stats(self):
+            return {"box": {"actual": {}}}
+
+    monkeypatch.setattr(
+        validation_module,
+        "OigCloudApi",
+        lambda *_a, **_k: FailingAuthApi(),
+    )
+
+    with pytest.raises(InvalidAuth):
+        await validation_module.validate_input(
+            SimpleNamespace(),
+            {CONF_USERNAME: "u", CONF_PASSWORD: "p"},
         )
 
 

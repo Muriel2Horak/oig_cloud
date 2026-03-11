@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.5] - 2026-03-11
+
+### Fixed
+- Added full reauthentication flow (`reauth` + `reauth_confirm`) so failed auth can be recovered directly from UI without deleting the integration.
+- Mapped `OigCloudAuthError` to `InvalidAuth` in config validation to prevent unexpected exception crashes during reauth.
+- Standardized OIG Cloud base URL to `https://portal.oigpower.cz/` (no fallback) and aligned API headers/endpoints with the new host.
+- Added regression tests for reauth handling, credential persistence paths, and portal-only authentication behavior.
+
 ## [2.3.4] - 2026-03-11
 
 ### Fixed
