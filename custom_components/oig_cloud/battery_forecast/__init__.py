@@ -2,7 +2,7 @@
 
 This module provides:
 - Timeline building and SoC simulation
-- HYBRID multi-mode optimization algorithm
+- Economic planning algorithm
 - Balancing plan execution
 - Mode management (HOME I/II/III/UPS)
 
@@ -19,13 +19,14 @@ Architecture (modular layout):
     ├── storage/             # Storage helpers for plans
     ├── sensors/             # HA entity adapters
     ├── physics/             # Physics simulation
-    ├── strategy/            # Optimization strategies
+    ├── strategy/            # Legacy optimization strategies
     ├── timeline/
     ├── balancing/           # Balancing logic
 """
 
 from .physics import IntervalResult, IntervalSimulator
-from .strategy import HybridResult, HybridStrategy
+from .economic_planner import plan_battery_schedule
+from .economic_planner_types import PlannerInputs, PlannerResult
 from .types import (  # Mode constants; TypedDicts; Constants; Helper functions
     AC_CHARGING_DISABLED_MODES,
     CBB_MODE_HOME_I,
@@ -77,7 +78,7 @@ __all__ = [
     # NEW: Physics layer
     "IntervalSimulator",
     "IntervalResult",
-    # NEW: Strategy layer
-    "HybridStrategy",
-    "HybridResult",
+    "PlannerInputs",
+    "PlannerResult",
+    "plan_battery_schedule",
 ]

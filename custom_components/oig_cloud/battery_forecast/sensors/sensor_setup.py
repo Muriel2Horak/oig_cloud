@@ -12,6 +12,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ...entities.base_sensor import resolve_box_id
+from ...sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -37,8 +40,6 @@ def initialize_sensor(
 
     # Resolve box id for stable entity identifiers.
     try:
-        from ...entities.base_sensor import resolve_box_id
-
         sensor._box_id = resolve_box_id(coordinator)
     except Exception:
         sensor._box_id = "unknown"
@@ -56,8 +57,6 @@ def initialize_sensor(
     sensor._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
     sensor._attr_state_class = SensorStateClass.MEASUREMENT
     sensor._attr_entity_category = None
-
-    from ...sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
 
     sensor_config = SENSOR_TYPES_STATISTICS.get(sensor_type, {})
     name_cs = sensor_config.get("name_cs")

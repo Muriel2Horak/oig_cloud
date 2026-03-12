@@ -83,7 +83,6 @@ class OigCloudSensorRuntimeMixin:
             manufacturer="OIG",
             model=model_name,
             sw_version=pv_data.get("box_prms", {}).get("sw", None),
-            battery=f"sensor.oig_{self._box_id}_batt_bat_c",
         )
 
     @property

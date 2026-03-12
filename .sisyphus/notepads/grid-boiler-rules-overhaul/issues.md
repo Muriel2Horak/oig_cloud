@@ -48,3 +48,14 @@ Tests in `test_balancing_state_map.py` mock several methods to work around the d
 - `_calculate_immediate_balancing_cost`
 - `_calculate_total_balancing_cost`
 - `_select_best_window`
+
+
+## [2026-03-09] Auto-switch watchdog incident
+
+### Reproduced constraints during investigation
+- HA API check from this environment returned `401 Unauthorized` (missing/invalid runtime token), so remote entry payload could not be validated live.
+- Existing user-reported state (`options: {}`) is consistent with code-path failure where auto-switch flag lookup in `options` returns false.
+
+### Root-cause hypothesis confirmed in code
+- Auto-switch gating was hard-coupled to `entry.options[auto_mode_switch_enabled]` only.
+- When `options` is empty, watchdog startup path exits early as disabled, even if legacy value may still exist in `entry.data`.

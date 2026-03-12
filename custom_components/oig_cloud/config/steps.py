@@ -10,9 +10,14 @@ from homeassistant.helpers import selector
 
 from ..const import (
     CONF_AUTO_MODE_SWITCH,
+    CONF_CHARGE_RATE_KW,
     CONF_PASSWORD,
+    CONF_PLANNING_MIN_PERCENT,
     CONF_USERNAME,
+    DEFAULT_CHARGE_RATE_KW,
+    DEFAULT_HW_MIN_PERCENT,
     DEFAULT_NAME,
+    DEFAULT_PLANNING_MIN_PERCENT,
     DOMAIN,
 )
 from ..core.data_source import PROXY_BOX_ID_ENTITY_ID, PROXY_LAST_DATA_ENTITY_ID
@@ -32,7 +37,8 @@ from .schema import (
 from .validation import CannotConnect, InvalidAuth, LiveDataNotEnabled, validate_input
 
 if TYPE_CHECKING:  # pragma: no cover
-    pass
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +49,10 @@ class WizardMixin:
     Sdílená mezi ConfigFlow (nová instalace) a OptionsFlow (rekonfigurace).
     Poskytuje konzistentní UX pro oba případy.
     """
+
+    if TYPE_CHECKING:  # pragma: no cover
+        hass: HomeAssistant
+        config_entry: ConfigEntry
 
     @staticmethod
     def _sanitize_data_source_mode(mode: Optional[str]) -> str:
@@ -390,10 +400,20 @@ class WizardMixin:
 
     @staticmethod
     def _build_battery_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        planning_min_percent = wizard_data.get(
+            CONF_PLANNING_MIN_PERCENT,
+            wizard_data.get("min_capacity_percent", DEFAULT_PLANNING_MIN_PERCENT),
+        )
+        charge_rate_kw = wizard_data.get(
+            CONF_CHARGE_RATE_KW,
+            wizard_data.get("home_charge_rate", DEFAULT_CHARGE_RATE_KW),
+        )
         return {
             "min_capacity_percent": wizard_data.get("min_capacity_percent", 20.0),
             "target_capacity_percent": wizard_data.get("target_capacity_percent", 80.0),
-            "home_charge_rate": wizard_data.get("home_charge_rate", 2.8),
+            "home_charge_rate": charge_rate_kw,
+            CONF_PLANNING_MIN_PERCENT: planning_min_percent,
+            CONF_CHARGE_RATE_KW: charge_rate_kw,
             CONF_AUTO_MODE_SWITCH: wizard_data.get(CONF_AUTO_MODE_SWITCH, False),
             "disable_planning_min_guard": wizard_data.get(
                 "disable_planning_min_guard", False
@@ -1510,10 +1530,18 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if min_cap >= target_cap:
             errors["min_capacity_percent"] = "min_must_be_less_than_target"
 
+        planning_min = user_input.get(CONF_PLANNING_MIN_PERCENT, DEFAULT_PLANNING_MIN_PERCENT)
+        if planning_min < DEFAULT_HW_MIN_PERCENT:
+            errors[CONF_PLANNING_MIN_PERCENT] = "planning_min_below_hw"
+
         # Validace max price
         max_price = user_input.get("max_ups_price_czk", 10.0)
         if max_price < 1.0 or max_price > 50.0:
             errors["max_ups_price_czk"] = "invalid_price"
+
+        charge_rate_kw = user_input.get(CONF_CHARGE_RATE_KW, DEFAULT_CHARGE_RATE_KW)
+        if charge_rate_kw < 0.5 or charge_rate_kw > 10.0:
+            errors[CONF_CHARGE_RATE_KW] = "invalid_charge_rate_kw"
 
         # Validace hysteresis
         hysteresis = user_input.get("price_hysteresis_czk", 0.01)
@@ -1577,6 +1605,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 default=defaults.get("min_capacity_percent", 20.0),
             ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=95.0)),
             vol.Optional(
+                CONF_PLANNING_MIN_PERCENT,
+                default=defaults.get(
+                    CONF_PLANNING_MIN_PERCENT,
+                    defaults.get("min_capacity_percent", DEFAULT_PLANNING_MIN_PERCENT),
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=DEFAULT_HW_MIN_PERCENT,
+                    max=100,
+                    step=1,
+                    mode=selector.NumberSelectorMode.SLIDER,
+                )
+            ),
+            vol.Optional(
                 "disable_planning_min_guard",
                 default=defaults.get("disable_planning_min_guard", False),
             ): selector.BooleanSelector(),
@@ -1587,6 +1629,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
             vol.Optional(
                 "home_charge_rate", default=defaults.get("home_charge_rate", 2.8)
             ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
+            vol.Optional(
+                CONF_CHARGE_RATE_KW,
+                default=defaults.get(
+                    CONF_CHARGE_RATE_KW,
+                    defaults.get("home_charge_rate", DEFAULT_CHARGE_RATE_KW),
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.5,
+                    max=10.0,
+                    step=0.1,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
             # SAFETY LIMIT (applies to planner)
             vol.Optional(
                 "max_ups_price_czk", default=defaults.get("max_ups_price_czk", 10.0)
@@ -2354,10 +2410,11 @@ Kliknutím na "Odeslat" spustíte průvodce.
         raise NotImplementedError("Must be implemented in subclass")
 
 
-class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
     """Handle a config flow for OIG Cloud."""
 
     VERSION = 1
+    domain = DOMAIN
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -2547,6 +2604,10 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow, domain=DOMAIN):
                     "enable_pricing": False,
                     "enable_battery_prediction": False,
                     "enable_dashboard": False,
+                    "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
+                    "home_charge_rate": DEFAULT_CHARGE_RATE_KW,
+                    CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
+                    CONF_CHARGE_RATE_KW: DEFAULT_CHARGE_RATE_KW,
                 },
             )
 

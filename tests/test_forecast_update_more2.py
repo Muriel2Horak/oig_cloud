@@ -14,7 +14,7 @@ from custom_components.oig_cloud.const import DOMAIN
 class DummySensor:
     def __init__(self):
         self._forecast_in_progress = False
-        self._last_forecast_bucket = None
+        self._last_forecast_bucket: datetime | None = None
         self._current_capacity = 5.0
         self._max_capacity = 10.0
         self._min_capacity = 2.0
@@ -26,7 +26,7 @@ class DummySensor:
         self._hybrid_timeline = []
         self._mode_optimization_result = None
         self._mode_recommendations = []
-        self._data_hash = None
+        self._data_hash: str | None = None
         self._last_update = None
         self._consumption_summary = None
         self._first_update = True
@@ -37,7 +37,7 @@ class DummySensor:
         self._box_id = "123"
         self._config_entry = SimpleNamespace(options={}, entry_id="entry1")
         self._hass = SimpleNamespace(data={DOMAIN: {"entry1": {}}})
-        self.hass = SimpleNamespace()
+        self.hass: SimpleNamespace | None = SimpleNamespace()
         self.coordinator = SimpleNamespace(battery_forecast_data=None)
         self._write_called = False
         self._precompute_called = False
@@ -161,14 +161,9 @@ async def test_async_update_adaptive_profiles_and_filters(monkeypatch):
         infeasible = False
         infeasible_reason = None
 
-    class DummyStrategy:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def optimize(self, *_args, **_kwargs):
-            return DummyResult()
-
-    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(
+        forecast_update_module, "plan_battery_schedule", lambda *_a, **_k: DummyResult()
+    )
     monkeypatch.setattr(
         forecast_update_module.mode_guard_module,
         "build_plan_lock",
@@ -254,14 +249,9 @@ async def test_async_update_skips_write_without_hass(monkeypatch):
         infeasible = False
         infeasible_reason = None
 
-    class DummyStrategy:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def optimize(self, *_args, **_kwargs):
-            return DummyResult()
-
-    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(
+        forecast_update_module, "plan_battery_schedule", lambda *_a, **_k: DummyResult()
+    )
     monkeypatch.setattr(
         forecast_update_module.mode_guard_module,
         "build_plan_lock",
@@ -338,14 +328,9 @@ async def test_async_update_warns_on_empty_spot_prices(monkeypatch):
         infeasible = False
         infeasible_reason = None
 
-    class DummyStrategy:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def optimize(self, *_args, **_kwargs):
-            return DummyResult()
-
-    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(
+        forecast_update_module, "plan_battery_schedule", lambda *_a, **_k: DummyResult()
+    )
     monkeypatch.setattr(
         forecast_update_module.mode_guard_module,
         "build_plan_lock",
@@ -447,14 +432,11 @@ async def test_async_update_tomorrow_profile_and_padding(monkeypatch):
             self.infeasible = False
             self.infeasible_reason = None
 
-    class DummyStrategy:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def optimize(self, *_args, **kwargs):
-            return DummyResult([0] * len(kwargs["spot_prices"]))
-
-    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(
+        forecast_update_module,
+        "plan_battery_schedule",
+        lambda inputs: DummyResult([0] * len(inputs.intervals)),
+    )
     monkeypatch.setattr(
         forecast_update_module.mode_guard_module,
         "build_plan_lock",
@@ -543,14 +525,9 @@ async def test_async_update_load_forecast_exception_and_solar_error(monkeypatch)
         infeasible = False
         infeasible_reason = None
 
-    class DummyStrategy:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def optimize(self, *_args, **_kwargs):
-            return DummyResult()
-
-    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(
+        forecast_update_module, "plan_battery_schedule", lambda *_a, **_k: DummyResult()
+    )
     monkeypatch.setattr(
         forecast_update_module.mode_guard_module,
         "build_plan_lock",
@@ -644,14 +621,11 @@ async def test_async_update_truncates_horizon(monkeypatch):
             self.infeasible = False
             self.infeasible_reason = None
 
-    class DummyStrategy:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def optimize(self, *_args, **kwargs):
-            return DummyResult([0] * len(kwargs["spot_prices"]))
-
-    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(
+        forecast_update_module,
+        "plan_battery_schedule",
+        lambda inputs: DummyResult([0] * len(inputs.intervals)),
+    )
     monkeypatch.setattr(
         forecast_update_module.mode_guard_module,
         "build_plan_lock",
@@ -723,14 +697,11 @@ async def test_async_update_planner_failure(monkeypatch):
         forecast_update_module, "AdaptiveConsumptionHelper", DummyAdaptiveHelper
     )
 
-    class DummyStrategy:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def optimize(self, *_args, **_kwargs):
-            raise RuntimeError("boom")
-
-    monkeypatch.setattr(forecast_update_module, "HybridStrategy", DummyStrategy)
+    monkeypatch.setattr(
+        forecast_update_module,
+        "plan_battery_schedule",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     await forecast_update_module.async_update(sensor)
 

@@ -539,7 +539,7 @@ def map_mode_name_to_id(mode_name: str) -> int:
     normalized = str(mode_name or "").strip()
     if not normalized:
         return CBB_MODE_HOME_I
-    if normalized.lower() in {"unknown", "neznámý", "neznamy"}:
+    if normalized.lower() in {"unknown", "unavailable", "neznámý", "neznamy"}:
         return CBB_MODE_HOME_I
 
     mode_id = mode_mapping.get(normalized)

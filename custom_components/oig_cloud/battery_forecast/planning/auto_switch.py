@@ -85,10 +85,38 @@ def _get_last_mode_change_time(sensor: Any) -> Optional[datetime]:
 
 
 def auto_mode_switch_enabled(sensor: Any) -> bool:
-    options = (
-        (sensor._config_entry.options or {}) if sensor._config_entry else {}
-    )  # pylint: disable=protected-access
-    return bool(options.get(CONF_AUTO_MODE_SWITCH, False))
+    if not sensor._config_entry:  # pylint: disable=protected-access
+        _LOGGER.debug("[AutoModeSwitch] Disabled: sensor has no config_entry")
+        return False
+
+    entry = sensor._config_entry  # pylint: disable=protected-access
+    options = getattr(entry, "options", None) or {}
+    data = getattr(entry, "data", None) or {}
+
+    if CONF_AUTO_MODE_SWITCH in options:
+        enabled = bool(options.get(CONF_AUTO_MODE_SWITCH, False))
+        _LOGGER.debug(
+            "[AutoModeSwitch] Config source=options, %s=%s",
+            CONF_AUTO_MODE_SWITCH,
+            enabled,
+        )
+        return enabled
+
+    if CONF_AUTO_MODE_SWITCH in data:
+        enabled = bool(data.get(CONF_AUTO_MODE_SWITCH, False))
+        _LOGGER.warning(
+            "[AutoModeSwitch] Using legacy config source=data for %s=%s (entry.options missing key)",
+            CONF_AUTO_MODE_SWITCH,
+            enabled,
+        )
+        return enabled
+
+    _LOGGER.debug(
+        "[AutoModeSwitch] Disabled: %s not found in options/data (options_keys=%s)",
+        CONF_AUTO_MODE_SWITCH,
+        sorted(options.keys()),
+    )
+    return False
 
 
 def normalize_service_mode(
@@ -164,6 +192,12 @@ def start_auto_switch_watchdog(sensor: Any) -> None:
         or sensor._auto_switch_watchdog_unsub  # pylint: disable=protected-access
         or not auto_mode_switch_enabled(sensor)
     ):
+        if not sensor._hass:  # pylint: disable=protected-access
+            _LOGGER.debug("[AutoModeSwitch] Watchdog not started: hass unavailable")
+        elif sensor._auto_switch_watchdog_unsub:  # pylint: disable=protected-access
+            _LOGGER.debug("[AutoModeSwitch] Watchdog already running")
+        else:
+            _LOGGER.debug("[AutoModeSwitch] Watchdog not started: auto switch disabled")
         return
 
     if _async_track_time_interval is None:

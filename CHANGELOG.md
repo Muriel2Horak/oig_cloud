@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized OIG Cloud base URL to `https://portal.oigpower.cz/` (no fallback) and aligned API headers/endpoints with the new host.
 - Added regression tests for reauth handling, credential persistence paths, and portal-only authentication behavior.
 
+
 ## [2.3.4] - 2026-03-11
 
 ### Fixed
