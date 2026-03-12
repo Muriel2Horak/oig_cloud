@@ -180,10 +180,11 @@ Parallel Speedup: ~50% faster than sequential
 ### Agent Dispatch Summary
 
 - **Wave 1**: 3 tasks — all `quick` (config flow changes)
-- **Wave 2**: 5 tasks — `quick` x2, `unspecified-high` x3 (backend logic)
+- **Wave 1**: 3 tasks — all `quick` (config flow changes)
+- **Wave 2**: 5 tasks — `quick` x4, `unspecified-high` x1 (backend logic; Tasks 4,5 are one-liners)
 - **Wave 3**: 3 tasks — all `visual-engineering` (Lit/frontend)
-- **Wave 4**: 3 tasks — `unspecified-high` x2, `visual-engineering` x1
-- **FINAL**: 4 tasks — `oracle`, `unspecified-high` x2, `deep` x1
+- **Wave 4**: 3 tasks — `unspecified-low` x2, `visual-engineering` x1
+- **FINAL**: 4 tasks — `oracle`, `unspecified-low` x2, `deep` x1
 
 ---
 
@@ -351,7 +352,7 @@ Evidence: .sisyphus/evidence/task-3-backwards-compat.txt
 - Neměnit výchozí chování pro existující uživatele (two_zone zůstává default)
 
 **Recommended Agent Profile**:
-- **Category**: `unspecified-high`
+- **Category**: `quick`
 - **Skills**: []
 
 **Parallelization**:
@@ -408,7 +409,7 @@ Evidence: .sisyphus/evidence/task-4-stratification-default.txt
 - Nepovolit extrémní hodnoty (omezení 12-72h)
 
 **Recommended Agent Profile**:
-- **Category**: `unspecified-high`
+- **Category**: `quick`
 - **Skills**: []
 
 **Parallelization**:
@@ -786,7 +787,7 @@ Evidence: .sisyphus/evidence/task-11-config-section.png
 - Nezapomínat na žádnou část (config + backend + UI)
 
 **Recommended Agent Profile**:
-- **Category**: `unspecified-high`
+- **Category**: `unspecified-low`
 - **Skills**: []
 
 **Parallelization**:
@@ -834,7 +835,7 @@ Evidence: .sisyphus/evidence/task-12-integration.txt + screenshot
 - Nenarušit existující instalace
 
 **Recommended Agent Profile**:
-- **Category**: `unspecified-high`
+- **Category**: `unspecified-low`
 - **Skills**: []
 
 **Parallelization**:
@@ -926,10 +927,10 @@ Evidence: .sisyphus/evidence/task-14-ui-*.png (více screenshotů)
 - [ ] F1. **Plan Compliance Audit** — `oracle`
 Read the plan end-to-end. For each "Must Have": verify implementation exists (read file, curl endpoint, run command). For each "Must NOT Have": search codebase for forbidden patterns — reject with file:line if found. Check evidence files exist in .sisyphus/evidence/. Compare deliverables against plan. Output: `Must Have [N/N] | Must NOT Have [N/N] | Tasks [N/N] | VERDICT: APPROVE/REJECT`
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [ ] F2. **Code Quality Review** — `unspecified-low`
 Run `tsc --noEmit` + linter + `bun test`. Review all changed files for: `as any`/`@ts-ignore`, empty catches, console.log in prod, commented-out code, unused imports. Check AI slop: excessive comments, over-abstraction, generic names (data/result/item/temp). Output: `Build [PASS/FAIL] | Lint [PASS/FAIL] | Tests [N pass/N fail] | Files [N clean/N issues] | VERDICT`
 
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill if UI)
+- [ ] F3. **Real Manual QA** — `unspecified-low` (+ `playwright` skill if UI)
 Start from clean state. Execute EVERY QA scenario from EVERY task — follow exact steps, capture evidence. Test cross-task integration (features working together, not isolation). Test edge cases: empty state, invalid input, rapid actions. Save to `.sisyphus/evidence/final-qa/`. Output: `Scenarios [N/N pass] | Integration [N/N] | Edge Cases [N tested] | VERDICT`
 
 - [ ] F4. **Scope Fidelity Check** — `deep`
