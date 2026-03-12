@@ -187,11 +187,11 @@ def test_ac_charging_limit(hass):
 
 def test_get_current_mode(hass):
     sensor = DummySensor(None)
-    assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_III
+    assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_I
 
     sensor = DummySensor(hass)
     hass.states.async_set("sensor.oig_123_box_prms_mode", "unknown")
-    assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_III
+    assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_I
 
     hass.states.async_set("sensor.oig_123_box_prms_mode", MODE_LABEL_HOME_I)
     assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_I
@@ -209,10 +209,10 @@ def test_get_current_mode(hass):
     assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_I
 
     hass.states.async_set("sensor.oig_123_box_prms_mode", "99")
-    assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_III
+    assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_I
 
     hass.states.async_set("sensor.oig_123_box_prms_mode", "bad")
-    assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_III
+    assert battery_state.get_current_mode(sensor) == CBB_MODE_HOME_I
 
     class DummyState:
         def __init__(self, value):

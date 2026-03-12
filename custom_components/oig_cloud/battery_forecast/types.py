@@ -364,7 +364,7 @@ def get_mode_name(mode: int) -> str:
 
 def get_service_name(mode: int) -> str:
     """Get HA service name from mode number."""
-    return CBB_MODE_SERVICE_MAP.get(mode, "Home 3")  # Default to HOME III
+    return CBB_MODE_SERVICE_MAP.get(mode, "Home 1")  # Default to HOME I
 
 
 def is_charging_mode(mode: int) -> bool:
@@ -392,7 +392,7 @@ def mode_from_name(name: str) -> int:
     }
     if name_upper in legacy:
         return legacy[name_upper]
-    return CBB_MODE_HOME_III  # Default
+    return CBB_MODE_HOME_I  # Default
 
 
 def safe_nested_get(obj: Optional[Dict[str, Any]], *keys: str, default: Any = 0) -> Any:

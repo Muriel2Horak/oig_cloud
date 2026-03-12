@@ -12,7 +12,7 @@ from ..data import history as history_module
 from .plan_storage_io import plan_exists_in_storage, save_plan_to_storage
 
 DATE_FMT = "%Y-%m-%d"
-MODE_HOME_III = "HOME III"
+MODE_HOME_I = "HOME I"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -214,8 +214,8 @@ def _build_interval_from_hybrid(
         "battery_kwh": round(hybrid_interval.get("battery_capacity_kwh", 7.68), 2),
         "grid_import_kwh": round(hybrid_interval.get("grid_import", 0), 4),
         "grid_export_kwh": round(hybrid_interval.get("grid_export", 0), 4),
-        "mode": hybrid_interval.get("mode", 2),
-        "mode_name": hybrid_interval.get("mode_name", MODE_HOME_III),
+        "mode": hybrid_interval.get("mode", 0),
+        "mode_name": hybrid_interval.get("mode_name", MODE_HOME_I),
         "spot_price": round(hybrid_interval.get("spot_price", 3.45), 2),
         "net_cost": round(hybrid_interval.get("net_cost", 0), 2),
     }
@@ -252,8 +252,8 @@ def _build_interval_from_history(
         "battery_kwh": round(historical_data.get("battery_kwh", 7.68), 2),
         "grid_import_kwh": round(historical_data.get("grid_import_kwh", 0), 4),
         "grid_export_kwh": round(historical_data.get("grid_export_kwh", 0), 4),
-        "mode": historical_data.get("mode", 2),
-        "mode_name": historical_data.get("mode_name", MODE_HOME_III),
+        "mode": historical_data.get("mode", 0),
+        "mode_name": historical_data.get("mode_name", MODE_HOME_I),
         "spot_price": round(historical_data.get("spot_price", 3.45), 2),
         "net_cost": round(historical_data.get("net_cost", 0), 2),
     }
@@ -263,13 +263,13 @@ def _build_default_interval(
     interval_time_str: str, hybrid_timeline: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     first_soc = 50.0
-    first_mode = 2
-    first_mode_name = MODE_HOME_III
+    first_mode = 0
+    first_mode_name = MODE_HOME_I
     if hybrid_timeline:
         first_hi = hybrid_timeline[0]
         first_soc = first_hi.get("battery_soc", 50.0)
-        first_mode = first_hi.get("mode", 2)
-        first_mode_name = first_hi.get("mode_name", MODE_HOME_III)
+        first_mode = first_hi.get("mode", 0)
+        first_mode_name = first_hi.get("mode_name", MODE_HOME_I)
 
     return {
         "time": interval_time_str,

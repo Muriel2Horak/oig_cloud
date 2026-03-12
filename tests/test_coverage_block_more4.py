@@ -17,7 +17,7 @@ from custom_components.oig_cloud.battery_forecast.strategy import hybrid_scoring
 from custom_components.oig_cloud.battery_forecast.types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
-    CBB_MODE_HOME_III,
+    CBB_MODE_HOME_I,
     CBB_MODE_HOME_UPS,
 )
 from custom_components.oig_cloud.battery_forecast.timeline import extended as extended_module
@@ -246,7 +246,7 @@ def test_hybrid_scoring_reason_branches(monkeypatch):
     assert analysis[0]["charge_reason"]
 
     def _score(_strategy, mode, **_k):
-        return {CBB_MODE_HOME_UPS: 4, CBB_MODE_HOME_III: 3, CBB_MODE_HOME_II: 2, CBB_MODE_HOME_I: 1}[mode]
+        return {CBB_MODE_HOME_UPS: 4, CBB_MODE_HOME_I: 3, CBB_MODE_HOME_II: 2, CBB_MODE_HOME_I: 1}[mode]
 
     monkeypatch.setattr(hybrid_scoring, "score_mode", _score)
     mode, reason, _ = hybrid_scoring.select_best_mode(
@@ -264,7 +264,7 @@ def test_hybrid_scoring_reason_branches(monkeypatch):
     assert reason == "opportunistic_charge"
 
     def _score_home3(_strategy, mode, **_k):
-        return {CBB_MODE_HOME_III: 5, CBB_MODE_HOME_UPS: 4, CBB_MODE_HOME_II: 1, CBB_MODE_HOME_I: 0}[mode]
+        return {CBB_MODE_HOME_I: 5, CBB_MODE_HOME_UPS: 4, CBB_MODE_HOME_II: 1, CBB_MODE_HOME_I: 0}[mode]
 
     monkeypatch.setattr(hybrid_scoring, "score_mode", _score_home3)
     mode, reason, _ = hybrid_scoring.select_best_mode(

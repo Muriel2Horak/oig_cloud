@@ -409,7 +409,17 @@ async def _action_set_box_mode(
         mode,
         mode_value,
     )
-    await client.set_box_mode(mode_value)
+    try:
+        await client.set_box_mode(mode_value)
+    except Exception as err:
+        # Check if this is a 500 error for Home 5/6 (unsupported modes on some boxes)
+        err_str = str(err)
+        if "500" in err_str and mode in ("home_5", "home_6", "Home 5", "Home 6"):
+            raise vol.Invalid(
+                "Režimy Home 5 a Home 6 nejsou na tomto boxu dostupné. "
+                "Tyto režimy podporují pouze novější typy battery boxů."
+            ) from err
+        raise
 
 
 async def _action_set_boiler_mode(

@@ -27,10 +27,14 @@ export const BOX_MODE_SENSOR_MAP: Record<string, BoxMode> = {
   'Home 2': 'home_2',
   'Home 3': 'home_3',
   'Home UPS': 'home_ups',
+  'Home 5': 'home_5',
+  'Home 6': 'home_6',
   'Mode 0': 'home_1',
   'Mode 1': 'home_2',
   'Mode 2': 'home_3',
   'Mode 3': 'home_ups',
+  'Mode 4': 'home_5',
+  'Mode 5': 'home_6',
   'HOME I': 'home_1',
   'HOME II': 'home_2',
   'HOME III': 'home_3',
@@ -39,6 +43,8 @@ export const BOX_MODE_SENSOR_MAP: Record<string, BoxMode> = {
   '1': 'home_2',
   '2': 'home_3',
   '3': 'home_ups',
+  '4': 'home_5',
+  '5': 'home_6',
 };
 
 /** BoxMode → service call mode value */

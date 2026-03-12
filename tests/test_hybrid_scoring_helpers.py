@@ -9,7 +9,7 @@ from custom_components.oig_cloud.battery_forecast.config import (
 )
 from custom_components.oig_cloud.battery_forecast.types import (
     CBB_MODE_HOME_I,
-    CBB_MODE_HOME_III,
+    CBB_MODE_HOME_I,
     CBB_MODE_HOME_UPS,
 )
 
@@ -74,7 +74,7 @@ def test_handle_negative_price_variants():
 
     strategy.config.negative_price_strategy = NegativePriceStrategy.CURTAIL
     mode, reason = module.handle_negative_price(strategy, battery=10, solar=1, load=0, price=-1, export_price=0)
-    assert mode == CBB_MODE_HOME_III
+    assert mode == CBB_MODE_HOME_I
     assert reason == "negative_price_curtail"
 
 

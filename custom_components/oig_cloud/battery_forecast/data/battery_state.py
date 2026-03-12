@@ -235,17 +235,17 @@ def get_ac_charging_limit_kwh_15min(sensor: Any) -> float:
 def get_current_mode(sensor: Any) -> int:
     """Return current CBB mode (0-3) based on sensor state."""
     if not sensor._hass:
-        _LOGGER.debug("HASS not available, using fallback mode HOME III")
-        return CBB_MODE_HOME_III
+        _LOGGER.debug("HASS not available, using fallback mode HOME I")
+        return CBB_MODE_HOME_I
 
     sensor_id = f"sensor.oig_{sensor._box_id}_box_prms_mode"
     state = sensor._hass.states.get(sensor_id)
 
     if not state or state.state in ["unknown", "unavailable"]:
         _LOGGER.debug(
-            "Mode sensor %s not available, using fallback HOME III", sensor_id
+            "Mode sensor %s not available, using fallback HOME I", sensor_id
         )
-        return CBB_MODE_HOME_III
+        return CBB_MODE_HOME_I
 
     try:
         mode_value = state.state
@@ -276,8 +276,8 @@ def get_current_mode(sensor: Any) -> int:
             CBB_MODE_HOME_III,
             CBB_MODE_HOME_UPS,
         ):
-            _LOGGER.warning("Invalid mode %s, using fallback HOME III", mode)
-            return CBB_MODE_HOME_III
+            _LOGGER.warning("Invalid mode %s, using fallback HOME I", mode)
+            return CBB_MODE_HOME_I
 
         mode_name = CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
         _LOGGER.debug("Current CBB mode: %s (%s)", mode_name, mode)
@@ -285,7 +285,7 @@ def get_current_mode(sensor: Any) -> int:
 
     except (ValueError, TypeError) as err:
         _LOGGER.error("Error parsing CBB mode from '%s': %s", state.state, err)
-        return CBB_MODE_HOME_III
+        return CBB_MODE_HOME_I
 
 
 def get_boiler_available_capacity(sensor: Any) -> float:
