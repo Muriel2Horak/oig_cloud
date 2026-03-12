@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.6] - 2026-03-12
+
+### Added
+- Economic battery planner: optimizes battery charging/discharging based on spot prices, PV forecast, and home consumption profile.
+- New sensor exposing the planner's economic score and recommended mode schedule.
+- Integration tests and 9,000+ historical scenario dataset for planner validation.
+- Documentation: `docs/user/ECONOMIC_PLANNER.md`.
+
 ## [2.3.5] - 2026-03-11
 
 ### Fixed
