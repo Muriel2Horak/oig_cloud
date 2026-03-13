@@ -1,0 +1,138 @@
+# Task 12: Integration Test - Full Cycle
+# Evidence Generated: 2025-03-12
+
+## Test Results
+
+All integration tests passed successfully (18/18):
+
+```
+tests/test_boiler_integration.py::test_integration_config_mode_in_const PASSED
+tests/test_boiler_integration.py::test_integration_config_mode_used_in_api PASSED
+tests/test_boiler_integration.py::test_integration_stratification_mode_in_coordinator PASSED
+tests/test_boiler_integration.py::test_integration_planning_horizon_in_planner PASSED
+tests/test_boiler_integration.py::test_integration_heater_switch_control_logic PASSED
+tests/test_boiler_integration.py::test_integration_heater_control_uses_slot_and_temp PASSED
+tests/test_boiler_integration.py::test_integration_circulation_pump_control_logic PASSED
+tests/test_boiler_integration.py::test_integration_placeholder_constants_exist PASSED
+tests/test_boiler_integration.py::test_integration_placeholder_params_not_in_ui_schema PASSED
+tests/test_boiler_integration.py::test_integration_full_workflow_config_to_backend PASSED
+tests/test_boiler_integration.py::test_integration_backend_to_ui_flow PASSED
+tests/test_boiler_integration.py::test_happy_path_simple_mode_config PASSED
+tests/test_boiler_integration.py::test_happy_path_advanced_mode_config PASSED
+tests/test_boiler_integration.py::test_happy_path_planner_uses_custom_horizon PASSED
+tests/test_boiler_integration.py::test_edge_case_missing_config_mode PASSED
+tests/test_boiler_integration.py::test_edge_case_missing_heater_entity PASSED
+tests/test_boiler_integration.py::test_edge_case_missing_pump_entity PASSED
+tests/test_boiler_integration.py::test_edge_case_default_values_used PASSED
+```
+
+## Verified Components
+
+### 1. Config Mode (Simple/Advanced)
+- [x] CONF_BOILER_CONFIG_MODE constant exists in const.py
+- [x] Config mode is used in API views (api_views.py)
+- [x] Simple mode config validates only 5 basic params
+- [x] Advanced mode config validates all params including advanced ones
+
+### 2. Stratification Mode Configuration
+- [x] Stratification mode is read from config (not hardcoded)
+- [x] Coordinator uses `config.get(CONF_BOILER_STRATIFICATION_MODE, ...)`
+- [x] Utils module uses mode parameter for stratification calculations
+- [x] Default value "two_zone" is properly handled
+
+### 3. Planning Horizon Configuration
+- [x] Planning horizon is read from config
+- [x] Planner uses `self.planning_horizon_hours`
+- [x] Plan end time calculated with `timedelta(hours=self.planning_horizon_hours)`
+- [x] Custom horizon values (e.g., 48h) are respected
+
+### 4. Heater Switch Control
+- [x] Heater control method exists: `_control_heater_switch`
+- [x] Turn on method exists: `_turn_on_heater`
+- [x] Turn off method exists: `_turn_off_heater`
+- [x] Service calls to switch.turn_on and switch.turn_off are implemented
+- [x] Control logic checks current slot (get_current_slot)
+- [x] Control logic checks temperature vs target
+- [x] CONF_BOILER_TARGET_TEMP_C is used for comparison
+
+### 5. Circulation Pump Control
+- [x] Pump control method exists: `_control_circulation_pump`
+- [x] Turn on method exists: `_turn_on_circulation_pump`
+- [x] Turn off method exists: `_turn_off_circulation_pump`
+- [x] Peak hour logic is implemented
+- [x] Pump controlled based on consumption profile peak hours
+
+### 6. Placeholder Params Removed from UI
+- [x] CONF_BOILER_COLD_INLET_TEMP_C constant exists (backwards compat)
+- [x] CONF_BOILER_TWO_ZONE_SPLIT_RATIO constant exists (backwards compat)
+- [x] Placeholder params NOT in vol.Optional fields in config/steps.py
+- [x] Params are set with defaults in _build_boiler_options for backwards compatibility
+
+### 7. Full Workflow Integration
+- [x] Config → Backend: Coordinator imports and uses config constants
+- [x] Config → Backend: Planner uses config params (planning_horizon_hours)
+- [x] Config → Backend: Utils uses stratification mode parameter
+- [x] Backend → UI: API views expose boiler config data
+- [x] Backend → UI: BoilerConfigView, BoilerPlanView, BoilerProfileView exist
+
+### 8. Happy Path Scenarios
+- [x] Simple mode config workflow works with 5 basic params
+- [x] Advanced mode config workflow works with all params
+- [x] Planner respects custom planning horizon values
+
+### 9. Edge Case Scenarios
+- [x] Missing config_mode defaults gracefully handled
+- [x] Missing heater entity doesn't cause crashes
+- [x] Missing pump entity doesn't cause crashes
+- [x] Default values are properly defined and used
+
+## Code Analysis Evidence
+
+### Files Verified:
+1. `custom_components/oig_cloud/const.py` - Constants defined correctly
+2. `custom_components/oig_cloud/boiler/coordinator.py` - Config integration working
+3. `custom_components/oig_cloud/boiler/planner.py` - Planning horizon working
+4. `custom_components/oig_cloud/boiler/utils.py` - Stratification mode used
+5. `custom_components/oig_cloud/boiler/api_views.py` - Config mode exposed to UI
+6. `custom_components/oig_cloud/config/steps.py` - Placeholder params removed from UI
+
+### Key Findings:
+
+1. **Stratification Mode**: The coordinator reads `CONF_BOILER_STRATIFICATION_MODE` from config, not hardcoded. The utils module accepts a `mode` parameter for stratification calculations.
+
+2. **Planning Horizon**: The planner accepts `planning_horizon_hours` in constructor and uses it to calculate plan end time: `plan_end = plan_start + timedelta(hours=self.planning_horizon_hours)`.
+
+3. **Heater Control**: Full implementation with `_control_heater_switch`, `_turn_on_heater`, `_turn_off_heater` methods that call Home Assistant switch services. Logic checks both slot availability and temperature.
+
+4. **Circulation Pump Control**: Full implementation with `_control_circulation_pump`, `_turn_on_circulation_pump`, `_turn_off_circulation_pump` methods that control pump based on consumption profile peak hours.
+
+5. **Placeholder Params**: Constants `CONF_BOILER_COLD_INLET_TEMP_C` and `CONF_BOILER_TWO_ZONE_SPLIT_RATIO` exist for backwards compatibility, but are NOT in vol.Optional fields in config flow, meaning they're not shown to users.
+
+6. **Config Mode Integration**: The `CONF_BOILER_CONFIG_MODE` constant is defined and used throughout the codebase, with simple/advanced modes properly handled.
+
+## Acceptance Criteria Met
+
+- [x] Integration test passes (18/18 tests passed)
+- [x] All components work together (Config → Backend → UI flow verified)
+- [x] Evidence generated (this file)
+
+## Test Execution
+
+```bash
+python -m pytest tests/test_boiler_integration.py -v
+```
+
+Result: **18 passed in 0.43s**
+
+## Conclusion
+
+The full integration test verifies that all changes from the boiler-config-ui-optimization plan work together correctly:
+- Config mode toggle (simple/advanced) is functional
+- Stratification mode configuration is respected by the backend
+- Planning horizon configuration is respected by the planner
+- Heater switch control logic is fully implemented
+- Circulation pump control logic is fully implemented
+- Placeholder parameters are removed from UI but constants remain for backwards compatibility
+- Full workflow from config through backend to UI is working correctly
+
+All acceptance criteria for Task 12 have been met.

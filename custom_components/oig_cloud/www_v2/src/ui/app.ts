@@ -628,15 +628,6 @@ export class OigApp extends LitElement {
     this.loadBoilerDataAsync();
   }
 
-  private onBoilerActionDone(e: CustomEvent): void {
-    const { success, label } = e.detail;
-    oigLog.info(`[Boiler] Action ${label}: ${success ? 'OK' : 'FAIL'}`);
-    // Refresh boiler data after any action
-    if (success) {
-      setTimeout(() => this.loadBoilerDataAsync(), 2000);
-    }
-  }
-
   private onEditTile(e: CustomEvent): void {
     const { entityId } = e.detail;
     let foundIndex = -1;
@@ -862,11 +853,6 @@ export class OigApp extends LitElement {
 
               <!-- State header (current temp + heating dot) -->
               <oig-boiler-state .state=${this.boilerState}></oig-boiler-state>
-
-              <!-- Debug control panel (collapsible) -->
-              <oig-boiler-debug-panel
-                @action-done=${this.onBoilerActionDone}
-              ></oig-boiler-debug-panel>
 
               <!-- Status grid (7 cards) -->
               <oig-boiler-status-grid .data=${this.boilerState}></oig-boiler-status-grid>

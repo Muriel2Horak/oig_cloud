@@ -140,9 +140,11 @@ class TestApplyEconomicPlan:
 
     def test_apply_economic_plan_logs_info(self, caplog: pytest.LogCaptureFixture) -> None:
         """Test that function logs plan info."""
+        import logging
         modes = [0] * 96
 
-        apply_economic_plan(modes)
+        with caplog.at_level(logging.INFO):
+            apply_economic_plan(modes)
 
         assert "Economic plan generated" in caplog.text
         assert "96 intervals" in caplog.text

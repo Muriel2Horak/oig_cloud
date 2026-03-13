@@ -80,6 +80,7 @@ export interface BoilerConfig {
   stratificationMode: string;
   kCoefficient: string;
   coldInletTempC: number;
+  configMode: string;
 }
 
 // --- Profile ---

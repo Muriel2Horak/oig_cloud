@@ -1,0 +1,12 @@
+Task 5: Wire planning_horizon_hours to planner (fix hardcoded)
+
+Date: 2026-03-13
+File Modified: custom_components/oig_cloud/const.py
+
+Change Made:
+- Line 76: DEFAULT_BOILER_PLANNING_HORIZON_HOURS changed from 36 to 24
+
+Verification (grep output):
+  76: DEFAULT_BOILER_PLANNING_HORIZON_HOURS = 24
+
+Status: COMPLETED

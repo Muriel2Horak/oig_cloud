@@ -40,6 +40,7 @@ CONF_BOILER_SPOT_PRICE_SENSOR = "boiler_spot_price_sensor"
 CONF_BOILER_DEADLINE_TIME = "boiler_deadline_time"
 CONF_BOILER_PLANNING_HORIZON_HOURS = "boiler_planning_horizon_hours"
 CONF_BOILER_PLAN_SLOT_MINUTES = "boiler_plan_slot_minutes"
+CONF_BOILER_CONFIG_MODE = "boiler_config_mode"
 
 # Auto Module constants
 CONF_ENABLE_AUTO = "enable_auto"
@@ -72,7 +73,7 @@ DEFAULT_BOILER_STRATIFICATION_MODE = "two_zone"  # Changed from simple_avg
 DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO = 0.5
 DEFAULT_BOILER_HEATER_POWER_KW_ENTITY = "sensor.oig_2206237016_boiler_install_power"
 DEFAULT_BOILER_DEADLINE_TIME = "20:00"
-DEFAULT_BOILER_PLANNING_HORIZON_HOURS = 36
+DEFAULT_BOILER_PLANNING_HORIZON_HOURS = 24
 DEFAULT_BOILER_PLAN_SLOT_MINUTES = 15  # Changed from 30 to 15min intervals
 
 # Energetic constant for water heating (kWh per liter per °C)

@@ -1,10 +1,12 @@
 {
-  "active_plan": "/Users/martinhorak/Downloads/oig_cloud/.sisyphus/plans/economic-planner-mitigation-plan.md",
-  "started_at": "2026-03-07T07:11:26.526Z",
+  "active_plan": "/repos/oig-cloud/.sisyphus/plans/battery-planner-logic-cleanup.md",
+  "started_at": "2026-03-12T22:33:50.659Z",
   "session_ids": [
-    "ses_33bcc66d7ffeLbiG09vHZ3XptG"
+    "ses_31bf9a0ebffekePduMA9irL3al",
+    "ses_31a692df3ffeJBeMdL89b6LvfH",
+    "ses_3199b586affeH1KsHfqrHa3M8D",
+    "ses_31970b447ffeP4EqOm7iZhuIiL"
   ],
-  "plan_name": "economic-planner-mitigation-plan",
-  "agent": "atlas",
-  "worktree_path": "/Users/martinhorak/Downloads/oig_cloud-worktrees/economic-battery-planner-final"
+  "plan_name": "battery-planner-logic-cleanup",
+  "agent": "atlas"
 }

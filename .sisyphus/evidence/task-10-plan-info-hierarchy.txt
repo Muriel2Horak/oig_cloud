@@ -1,0 +1,49 @@
+Task 10: Improve Plan Info visual hierarchy
+==========================================
+Date: 2026-03-12
+File modified: custom_components/oig_cloud/www_v2/src/ui/features/boiler/components.ts
+
+CHANGES MADE
+------------
+Modified OigBoilerPlanInfo class (lines 332-467):
+
+1. STYLES — replaced flat `.rows` with grouped `.sections` layout:
+   - Added `.sections` flex container
+   - Added `.section` with padding (8px top, 4px bottom)
+   - Added `.section + .section` rule: border-top separator + 10px padding-top
+   - Added `.section-label`: 10px uppercase, font-weight 700, accent color, 0.85 opacity
+   - Removed `.row:last-child { border-bottom: none }` (no longer needed)
+   - Removed per-row `border-bottom` divider (replaced by section-level separators)
+
+2. RENDER — reorganized 9 rows into 4 logical sections:
+   - Základní info:  Mix zdrojů, Slotů, Topení aktivní  (3 rows)
+   - Cenové info:    Nejlevnější spot, Nejdražší spot    (2 rows)
+   - Forecast info:  FVE okna, Grid okna                (2 rows)
+   - Časové info:    Od, Do                             (2 rows)
+
+3. LABELS — fixed diacritic typos:
+   - "Mix zdroju" → "Mix zdrojů"
+   - "Slotu"      → "Slotů"
+   - "Topeni aktivni" → "Topení aktivní"
+   - "Nejlevnejsi spot" → "Nejlevnější spot"
+   - "Nejdrazsi spot"  → "Nejdražší spot"
+   - "FVE okna (forecast)" → "FVE okna"
+   - "Grid okna (forecast)" → "Grid okna"
+
+ACCEPTANCE CRITERIA
+-------------------
+[x] Plan Info má jasné vizuální sekce  — 4 sections with uppercase accent-colored headings
+[x] Všechny 9 řádků jsou zobrazeny     — All 9 rows present across 4 sections
+[x] Lepší čitelnost a hierarchie       — Section labels provide scannable hierarchy
+
+DESIGN TOKENS USED
+------------------
+- CSS_VARS.divider     → section border-top separator
+- CSS_VARS.accent      → section-label color
+- CSS_VARS.textSecondary → row-label color
+- CSS_VARS.textPrimary  → row-value color
+No hardcoded colors or magic spacing values introduced.
+
+LSP DIAGNOSTICS
+---------------
+lsp_diagnostics on the file: No errors found.

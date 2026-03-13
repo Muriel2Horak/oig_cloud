@@ -36,7 +36,11 @@ class DummySensor:
         self._side_effects_enabled = True
         self._box_id = "123"
         self._config_entry = SimpleNamespace(options={}, entry_id="entry1")
-        self._hass = SimpleNamespace(data={DOMAIN: {"entry1": {}}})
+        _mock_hw_min_state = SimpleNamespace(state="20")
+        self._hass = SimpleNamespace(
+            data={DOMAIN: {"entry1": {}}},
+            states=SimpleNamespace(get=lambda entity_id: _mock_hw_min_state),
+        )
         self.hass: SimpleNamespace | None = SimpleNamespace()
         self.coordinator = SimpleNamespace(battery_forecast_data=None)
         self._write_called = False

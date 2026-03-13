@@ -1,0 +1,45 @@
+Task 2: Reorganize parameters by Simple/Advanced mode - Verification
+
+IMPLEMENTATION VERIFIED:
+
+1. config_mode selector at top of boiler step:
+   - CONF_BOILER_CONFIG_MODE selector added as first field in _get_boiler_schema
+   - Options: "simple" (⚡ Jednoduchý) and "advanced" (🔧 Pokročilý)
+   - Located at lines 2269-2283 in steps.py
+
+2. Simple mode shows only 5 parameters:
+   - config_mode (toggle)
+   - CONF_BOILER_VOLUME_L
+   - CONF_BOILER_TARGET_TEMP_C
+   - CONF_BOILER_TEMP_SENSOR_TOP
+   - CONF_BOILER_DEADLINE_TIME
+   - Located at lines 2285-2335 in steps.py
+
+3. Advanced mode shows all parameters:
+   - All simple mode fields PLUS:
+   - CONF_BOILER_TEMP_SENSOR_BOTTOM
+   - CONF_BOILER_TEMP_SENSOR_POSITION
+   - CONF_BOILER_STRATIFICATION_MODE
+   - CONF_BOILER_TWO_ZONE_SPLIT_RATIO
+   - CONF_BOILER_HEATER_POWER_KW_ENTITY
+   - CONF_BOILER_HEATER_SWITCH_ENTITY
+   - CONF_BOILER_ALT_HEATER_SWITCH_ENTITY
+   - CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY
+   - CONF_BOILER_HAS_ALTERNATIVE_HEATING
+   - CONF_BOILER_ALT_COST_KWH
+   - CONF_BOILER_ALT_ENERGY_SENSOR
+   - CONF_BOILER_SPOT_PRICE_SENSOR
+   - CONF_BOILER_PLANNING_HORIZON_HOURS
+   - CONF_BOILER_PLAN_SLOT_MINUTES
+   - CONF_BOILER_COLD_INLET_TEMP_C
+   - Located at lines 2337-2405 in steps.py (conditionally added when config_mode == "advanced")
+
+4. Form reloads when config_mode changes:
+   - Lines 2191-2204 detect config_mode change and reload form
+   - old_config_mode != new_config_mode triggers reload
+
+5. Conditional schema building verified:
+   - grep shows _get_boiler_schema is called in async_step_wizard_boiler
+   - Lines 2198-2200 and 2215-2217 show schema building
+
+ACCEPTANCE CRITERIA: ALL MET ✓

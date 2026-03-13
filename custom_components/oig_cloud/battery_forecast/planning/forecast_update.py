@@ -314,10 +314,23 @@ def _run_planner(
         efficiency = float(sensor._get_battery_efficiency())
         directional_efficiency = _round_trip_to_directional(efficiency)
         home_charge_rate_kw = float(opts.get("home_charge_rate", 2.8))
-        hw_min_kwh = max_capacity * 0.20
-        hw_min_percent = (hw_min_kwh / max_capacity) * 100.0 if max_capacity > 0 else 20.0
+
+        box_id = sensor._box_id if hasattr(sensor, "_box_id") else ""
+        hw_min_sensor_id = f"sensor.oig_{box_id}_batt_bat_min" if box_id else None
+        hw_min_percent_raw = None
+        if hw_min_sensor_id and sensor._hass:
+            hw_min_state = sensor._hass.states.get(hw_min_sensor_id)
+            if hw_min_state and hw_min_state.state not in ("unknown", "unavailable", None):
+                try:
+                    hw_min_percent_raw = float(hw_min_state.state)
+                except (ValueError, TypeError):
+                    pass
+        if hw_min_percent_raw is None:
+            hw_min_percent_raw = 20.0
+        hw_min_kwh = max_capacity * (hw_min_percent_raw / 100.0)
+        hw_min_percent = hw_min_percent_raw
         planning_min_percent = max(
-            float(opts.get("min_capacity_percent", 33.0)),
+            float(opts.get("planning_min_percent", opts.get("min_capacity_percent", 33.0))),
             hw_min_percent,
         )
 

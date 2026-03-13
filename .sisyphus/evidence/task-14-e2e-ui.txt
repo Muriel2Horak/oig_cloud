@@ -1,0 +1,96 @@
+TASK-14 END-TO-END UI VERIFICATION — EVIDENCE REPORT
+=====================================================
+Date: 2026-03-12T23:03:57Z
+Plan: boiler-config-ui-optimization
+Task: 14 — End-to-end UI verification of V2 dashboard boiler tab
+
+VERDICT: APPROVE
+================
+
+TEST SUITE RESULTS
+------------------
+Spec file:  tests/fe/specs/v2/boiler-v2.spec.js
+Browser:    Chromium (/usr/bin/chromium)
+Server:     Vite dev server @ http://localhost:4173
+Runner:     @playwright/test
+
+Results: 9/9 PASSED (49.3s total)
+
+  ✓  1  app loads without error and shows tabs                          (4.4s)
+  ✓  2  boiler tab is accessible and boiler components render           (2.9s)
+  ✓  3  debug panel is NOT present in DOM                               (3.0s)
+  ✓  4  plan info section has 4 sections with correct labels            (4.4s)
+  ✓  5  config section shows config_mode as Pokrocily for advanced      (6.4s)
+  ✓  6  simple config mode shows Jednoduchy                             (5.0s)
+  ✓  7  heater control elements are present                             (8.3s)
+  ✓  8  circulation pump control elements are present                   (5.3s)
+  ✓  9  full boiler tab screenshot with all sections                    (5.2s)
+
+VERIFICATION CRITERIA MET
+--------------------------
+1. DEBUG PANEL ABSENT
+   - oig-boiler-debug-panel NOT present in app shadowRoot          ✓ CONFIRMED
+   - oig-boiler-debug-panel NOT present in document root           ✓ CONFIRMED
+   - Test 3 PASSES
+
+2. PLAN INFO — 4 SECTIONS WITH CORRECT LABELS
+   - Section count: 4                                               ✓ CONFIRMED
+   - Labels present: 'Základní info', 'Cenové info',
+                     'Forecast info', 'Časové info'                ✓ CONFIRMED
+   - Test 4 PASSES
+
+3. CONFIG SECTION — config_mode DISPLAY
+   - advanced → renders 'Pokrocily'                                 ✓ CONFIRMED (test 5)
+   - simple  → renders 'Jednoduchy'                                 ✓ CONFIRMED (test 6)
+
+4. HEATER CONTROL ELEMENTS
+   - oig-boiler-state present                                       ✓ CONFIRMED
+   - oig-boiler-status-grid present                                 ✓ CONFIRMED
+   - Test 7 PASSES
+
+5. CIRCULATION PUMP ELEMENTS
+   - oig-boiler-predicted-usage present                             ✓ CONFIRMED
+   - Test 8 PASSES
+
+6. FULL COMPONENT INVENTORY (test 9)
+   - oig-boiler-state              present                          ✓
+   - oig-boiler-status-grid        present                          ✓
+   - oig-boiler-energy-breakdown   present                          ✓
+   - oig-boiler-predicted-usage    present                          ✓
+   - oig-boiler-plan-info          present                          ✓
+   - oig-boiler-tank               present                          ✓
+   - oig-boiler-heatmap-grid       present                          ✓
+   - oig-boiler-stats-cards        present                          ✓
+   - oig-boiler-config-section     present                          ✓
+   - oig-boiler-debug-panel        ABSENT                           ✓
+
+SCREENSHOTS CAPTURED
+--------------------
+All screenshots at: tests/fe/reports/v2/screenshots/
+  01-app-loaded.png              — V2 app loaded, tabs visible
+  02-boiler-tab-active.png       — Boiler tab active
+  03-plan-info.png               — Plan info with 4 sections
+  04-config-section-advanced.png — Config section showing Pokrocily (advanced)
+  05-heater-control.png          — Heater control elements
+  06-circulation-pump.png        — Circulation pump / predicted usage
+  07-boiler-full-tab.png         — Full boiler tab (fullPage screenshot)
+
+INFRASTRUCTURE NOTES
+--------------------
+- Vite dev server used (vite build has date-fns external issue with rollup CJS bundles)
+- date-fns node_modules synthesized: package.json + stub .cjs files
+- Route mocking: Playwright LIFO ordering applied (catch-all registered first,
+  specific routes last to ensure correct override precedence)
+- Mock hass: window.hass with auth token, states, stub connection
+- Fixture: tests/fe/mock/fixtures/boiler-v2.json (config_mode: advanced)
+
+ROOT CAUSE FIXED DURING VERIFICATION
+--------------------------------------
+Test 5 was failing: boiler_profile/boiler_plan routes were intercepted by catch-all
+route because Playwright uses LIFO route matching. Fixed by registering catch-all
+FIRST and specific routes LAST in mockBoilerApis().
+
+FINAL VERDICT: APPROVE
+All 9 E2E tests pass. V2 boiler tab meets all specified acceptance criteria:
+debug panel removed, plan info has 4 sections, config_mode displayed correctly
+in both simple and advanced modes, heater and circulation pump elements present.

@@ -12,6 +12,7 @@ from ..const import DOMAIN
 from ..const import (
     BOILER_ENERGY_CONSTANT_KWH_L_C,
     CONF_BOILER_COLD_INLET_TEMP_C,
+    CONF_BOILER_CONFIG_MODE,
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
     CONF_BOILER_DEADLINE_TIME,
     CONF_BOILER_PLAN_SLOT_MINUTES,
@@ -224,6 +225,7 @@ def _build_boiler_config_summary(coordinator) -> dict:
         "circulation_pump_switch_entity": config.get(
             CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY
         ),
+        "config_mode": config.get(CONF_BOILER_CONFIG_MODE, "simple"),
     }
 
 

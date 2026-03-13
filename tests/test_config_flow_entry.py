@@ -427,13 +427,13 @@ async def test_wizard_summary_defaults_for_boiler_fields():
     assert options["boiler_volume_l"] == 120
     assert options["boiler_target_temp_c"] == 60.0
     assert options["boiler_cold_inlet_temp_c"] == 10.0
-    assert options["boiler_stratification_mode"] == "simple_avg"
+    assert options["boiler_stratification_mode"] == "two_zone"
     assert options["boiler_two_zone_split_ratio"] == 0.5
     assert options["boiler_temp_sensor_position"] == "top"
     assert options["boiler_alt_energy_sensor"] == ""
     assert options["boiler_deadline_time"] == "20:00"
-    assert options["boiler_planning_horizon_hours"] == 36
-    assert options["boiler_plan_slot_minutes"] == 30
+    assert options["boiler_planning_horizon_hours"] == 24
+    assert options["boiler_plan_slot_minutes"] == 15
 
 
 @pytest.mark.asyncio

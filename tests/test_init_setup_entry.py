@@ -2063,7 +2063,7 @@ async def test_async_setup_entry_persist_box_id_error(monkeypatch):
     )
     hass.data[DOMAIN] = {entry.entry_id: {}}
 
-    def raising_update(_entry, options=None):
+    def raising_update(_entry, options=None, data=None):
         if options and "box_id" in options:
             raise RuntimeError("boom")
         _entry.options = options or {}

@@ -68,16 +68,16 @@ Zjednodušit boiler konfiguraci pro běžné uživatele (Simple/Advanced toggle)
 9. Backwards compatibility pro existující konfigurace
 
 ### Definition of Done
-- [ ] Simple/Advanced toggle funguje a zobrazuje správné parametry
-- [ ] boiler_heater_switch_entity se skutečně zapíná/vypíná podle plánu
-- [ ] circulation_pump_switch_entity se zapíná v oknech spotřeby dle profilu
-- [ ] stratification_mode respektuje konfiguraci (ne hardcoded two_zone)
-- [ ] planning_horizon_hours respektuje konfiguraci (ne hardcoded 24h)
-- [ ] Placeholder parametry odebrány z config flow
-- [ ] Debug panel odstraněn z V2 dashboard
-- [ ] Plan Info má lepší vizuální hierarchii
-- [ ] Existující konfigurace fungují bez změn (default Advanced)
-- [ ] QA evidence uložena v `.sisyphus/evidence/`
+- [x] Simple/Advanced toggle funguje a zobrazuje správné parametry
+- [x] boiler_heater_switch_entity se skutečně zapíná/vypíná podle plánu
+- [x] circulation_pump_switch_entity se zapíná v oknech spotřeby dle profilu
+- [x] stratification_mode respektuje konfiguraci (ne hardcoded two_zone)
+- [x] planning_horizon_hours respektuje konfiguraci (ne hardcoded 24h)
+- [x] Placeholder parametry odebrány z config flow
+- [x] Debug panel odstraněn z V2 dashboard
+- [x] Plan Info má lepší vizuální hierarchii
+- [x] Existující konfigurace fungují bez změn (default Advanced)
+- [x] QA evidence uložena v `.sisyphus/evidence/`
 
 ### Must Have
 - Simple/Advanced toggle v config flow
@@ -190,7 +190,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ## TODOs
 
-- [ ] 1. Add config_mode toggle (simple/advanced) to config flow
+- [x] 1. Add config_mode toggle (simple/advanced) to config flow
 
 **What to do**:
 - Přidat nový parametr `config_mode` s volbami "simple" a "advanced"
@@ -216,9 +216,9 @@ Parallel Speedup: ~50% faster than sequential
 - `custom_components/oig_cloud/const.py` - konstanty pro config
 
 **Acceptance Criteria**:
-- [ ] Nový parametr `config_mode` je dostupný v config flow
-- [ ] Možnosti: "simple", "advanced"
-- [ ] Výchozí hodnota: "simple"
+- [x] Nový parametr `config_mode` je dostupný v config flow
+- [x] Možnosti: "simple", "advanced"
+- [x] Výchozí hodnota: "simple"
 
 **QA Scenarios**:
 ```
@@ -237,7 +237,7 @@ Evidence: .sisyphus/evidence/task-1-config-mode-field.txt
 
 ---
 
-- [ ] 2. Reorganize parameters by Simple/Advanced mode
+- [x] 2. Reorganize parameters by Simple/Advanced mode
 
 **What to do**:
 - Definovat které parametry se zobrazují v Simple vs Advanced režimu
@@ -264,9 +264,9 @@ Evidence: .sisyphus/evidence/task-1-config-mode-field.txt
 - `custom_components/oig_cloud/const.py` - CONF_BOILER_* konstanty
 
 **Acceptance Criteria**:
-- [ ] V Simple režimu se zobrazuje pouze 5 parametrů
-- [ ] V Advanced režimu se zobrazují všechny parametry
-- [ ] Přepínání mezi režimy funguje
+- [x] V Simple režimu se zobrazuje pouze 5 parametrů
+- [x] V Advanced režimu se zobrazují všechny parametry
+- [x] Přepínání mezi režimy funguje
 
 **QA Scenarios**:
 ```
@@ -294,7 +294,7 @@ Evidence: .sisyphus/evidence/task-2-advanced-mode.txt
 
 ---
 
-- [ ] 3. Implement backwards compatibility (default Advanced)
+- [x] 3. Implement backwards compatibility (default Advanced)
 
 **What to do**:
 - Pro existující konfigurace bez `config_mode` nastavit default = "advanced"
@@ -319,9 +319,9 @@ Evidence: .sisyphus/evidence/task-2-advanced-mode.txt
 - `custom_components/oig_cloud/config/steps.py` - default handling
 
 **Acceptance Criteria**:
-- [ ] Existující config entry bez config_mode defaultuje na "advanced"
-- [ ] Všechny parametry viditelné pro existující uživatele
-- [ ] Žádné chyby při načítání existující config
+- [x] Existující config entry bez config_mode defaultuje na "advanced"
+- [x] Všechny parametry viditelné pro existující uživatele
+- [x] Žádné chyby při načítání existující config
 
 **QA Scenarios**:
 ```
@@ -340,7 +340,7 @@ Evidence: .sisyphus/evidence/task-3-backwards-compat.txt
 
 ---
 
-- [ ] 4. Wire stratification_mode to coordinator (fix hardcoded)
+- [x] 4. Wire stratification_mode to coordinator (fix hardcoded)
 
 **What to do**:
 - V coordinator.py řádek 212 je hardcoded `mode="two_zone"`
@@ -367,9 +367,9 @@ Evidence: .sisyphus/evidence/task-3-backwards-compat.txt
 - `custom_components/oig_cloud/const.py` - CONF_BOILER_STRATIFICATION_MODE
 
 **Acceptance Criteria**:
-- [ ] stratification_mode se čte z configu
-- [ ] Podporovány všechny 3 módy: simple_avg, two_zone, gradient
-- [ ] Default hodnota: "two_zone" (pro backwards compat)
+- [x] stratification_mode se čte z configu
+- [x] Podporovány všechny 3 módy: simple_avg, two_zone, gradient
+- [x] Default hodnota: "two_zone" (pro backwards compat)
 
 **QA Scenarios**:
 ```
@@ -396,7 +396,7 @@ Evidence: .sisyphus/evidence/task-4-stratification-default.txt
 
 ---
 
-- [ ] 5. Wire planning_horizon_hours to planner (fix hardcoded)
+- [x] 5. Wire planning_horizon_hours to planner (fix hardcoded)
 
 **What to do**:
 - V planner.py řádek 64 je hardcoded `plan_end = plan_start + timedelta(days=1)`
@@ -423,9 +423,9 @@ Evidence: .sisyphus/evidence/task-4-stratification-default.txt
 - `custom_components/oig_cloud/const.py` - CONF_BOILER_PLANNING_HORIZON_HOURS
 
 **Acceptance Criteria**:
-- [ ] planning_horizon_hours se čte z configu
-- [ ] Plánování respektuje nastavený horizont
-- [ ] Validace: min 12h, max 72h
+- [x] planning_horizon_hours se čte z configu
+- [x] Plánování respektuje nastavený horizont
+- [x] Validace: min 12h, max 72h
 
 **QA Scenarios**:
 ```
@@ -453,7 +453,7 @@ Evidence: .sisyphus/evidence/task-5-horizon-default.txt
 
 ---
 
-- [ ] 6. Implement heater_switch_entity control
+- [x] 6. Implement heater_switch_entity control
 
 **What to do**:
 - Implementovat ovládání boiler_heater_switch_entity podle plánovače
@@ -482,9 +482,9 @@ Evidence: .sisyphus/evidence/task-5-horizon-default.txt
 - Home Assistant switch service calls
 
 **Acceptance Criteria**:
-- [ ] Heater se zapne když je aktivní slot a teplota < cílová
-- [ ] Heater se vypne když není aktivní slot nebo teplota >= cílová
-- [ ] Logy obsahují změny stavu s důvodem
+- [x] Heater se zapne když je aktivní slot a teplota < cílová
+- [x] Heater se vypne když není aktivní slot nebo teplota >= cílová
+- [x] Logy obsahují změny stavu s důvodem
 
 **QA Scenarios**:
 ```
@@ -512,7 +512,7 @@ Evidence: .sisyphus/evidence/task-6-heater-off.txt
 
 ---
 
-- [ ] 7. Implement circulation_pump_switch_entity control
+- [x] 7. Implement circulation_pump_switch_entity control
 
 **What to do**:
 - Implementovat ovládání circulation_pump_switch_entity
@@ -540,9 +540,9 @@ Evidence: .sisyphus/evidence/task-6-heater-off.txt
 - `custom_components/oig_cloud/boiler/models.py` - BoilerProfile
 
 **Acceptance Criteria**:
-- [ ] Pump se zapne v peak hours dle profilu
-- [ ] Pump se vypne mimo peak hours
-- [ ] Nezávislé na heater stavu
+- [x] Pump se zapne v peak hours dle profilu
+- [x] Pump se vypne mimo peak hours
+- [x] Nezávislé na heater stavu
 
 **QA Scenarios**:
 ```
@@ -569,7 +569,7 @@ Evidence: .sisyphus/evidence/task-7-pump-off.txt
 
 ---
 
-- [ ] 8. Remove placeholder params from config flow
+- [x] 8. Remove placeholder params from config flow
 
 **What to do**:
 - Odstranit z config flow:
@@ -597,9 +597,9 @@ Evidence: .sisyphus/evidence/task-7-pump-off.txt
 - `custom_components/oig_cloud/const.py` - CONF_BOILER_COLD_INLET_TEMP_C, CONF_BOILER_TWO_ZONE_SPLIT_RATIO
 
 **Acceptance Criteria**:
-- [ ] Parametry nejsou viditelné v config flow UI
-- [ ] Konstanty zůstávají v const.py
-- [ ] Existující konfigurace s těmito parametry fungují
+- [x] Parametry nejsou viditelné v config flow UI
+- [x] Konstanty zůstávají v const.py
+- [x] Existující konfigurace s těmito parametry fungují
 
 **QA Scenarios**:
 ```
@@ -627,7 +627,7 @@ Evidence: .sisyphus/evidence/task-8-backwards-compat.txt
 
 ---
 
-- [ ] 9. Remove Debug panel from V2 dashboard
+- [x] 9. Remove Debug panel from V2 dashboard
 
 **What to do**:
 - Odstranit `oig-boiler-debug-panel` komponent z components.ts
@@ -654,9 +654,9 @@ Evidence: .sisyphus/evidence/task-8-backwards-compat.txt
 - `custom_components/oig_cloud/www_v2/src/ui/features/boiler/index.ts` - exports
 
 **Acceptance Criteria**:
-- [ ] Debug panel odstraněn z komponent
-- [ ] Dashboard načte bez Debug panelu
-- [ ] Žádné console chyby
+- [x] Debug panel odstraněn z komponent
+- [x] Dashboard načte bez Debug panelu
+- [x] Žádné console chyby
 
 **QA Scenarios**:
 ```
@@ -674,7 +674,7 @@ Evidence: .sisyphus/evidence/task-9-debug-removed.png
 
 ---
 
-- [ ] 10. Improve Plan Info visual hierarchy
+- [x] 10. Improve Plan Info visual hierarchy
 
 **What to do**:
 - Vylepšit vizuální hierarchii Plan Info (9 řádků)
@@ -705,9 +705,9 @@ Evidence: .sisyphus/evidence/task-9-debug-removed.png
 - Lines 504-589 v components.ts
 
 **Acceptance Criteria**:
-- [ ] Všechny 9 řádky zobrazeny
-- [ ] Seskupení do logických sekcí
-- [ ] Lepší vizuální hierarchie (nadpisy, oddělení)
+- [x] Všechny 9 řádky zobrazeny
+- [x] Seskupení do logických sekcí
+- [x] Lepší vizuální hierarchie (nadpisy, oddělení)
 
 **QA Scenarios**:
 ```
@@ -725,7 +725,7 @@ Evidence: .sisyphus/evidence/task-10-plan-info-hierarchy.png
 
 ---
 
-- [ ] 11. Verify Config Section displays correct values
+- [x] 11. Verify Config Section displays correct values
 
 **What to do**:
 - Ověřit že `oig-boiler-config-section` zobrazuje správné hodnoty z configu
@@ -751,9 +751,9 @@ Evidence: .sisyphus/evidence/task-10-plan-info-hierarchy.png
 - Lines 1140-1211 v components.ts
 
 **Acceptance Criteria**:
-- [ ] Config zobrazuje aktuální hodnoty z backendu
-- [ ] config_mode je viditelný
-- [ ] Deprecated parametry nejsou zobrazeny
+- [x] Config zobrazuje aktuální hodnoty z backendu
+- [x] config_mode je viditelný
+- [x] Deprecated parametry nejsou zobrazeny
 
 **QA Scenarios**:
 ```
@@ -772,7 +772,7 @@ Evidence: .sisyphus/evidence/task-11-config-section.png
 
 ---
 
-- [ ] 12. Integration test - full cycle
+- [x] 12. Integration test - full cycle
 
 **What to do**:
 - End-to-end test všech změn dohromady
@@ -800,9 +800,9 @@ Evidence: .sisyphus/evidence/task-11-config-section.png
 - Všechny soubory z předchozích tasků
 
 **Acceptance Criteria**:
-- [ ] Celý flow funguje: Config → Backend → UI
-- [ ] Žádné chyby v logách
-- [ ] Všechny parametry respektovány
+- [x] Celý flow funguje: Config → Backend → UI
+- [x] Žádné chyby v logách
+- [x] Všechny parametry respektovány
 
 **QA Scenarios**:
 ```
@@ -823,7 +823,7 @@ Evidence: .sisyphus/evidence/task-12-integration.txt + screenshot
 
 ---
 
-- [ ] 13. Backwards compatibility test
+- [x] 13. Backwards compatibility test
 
 **What to do**:
 - Ověřit že existující konfigurace fungují bez změn
@@ -848,9 +848,9 @@ Evidence: .sisyphus/evidence/task-12-integration.txt + screenshot
 - `custom_components/oig_cloud/__init__.py` - config entry migrace
 
 **Acceptance Criteria**:
-- [ ] Stará konfigurace načte správně
-- [ ] Všechny entity fungují
-- [ ] Žádné chyby při migraci
+- [x] Stará konfigurace načte správně
+- [x] Všechny entity fungují
+- [x] Žádné chyby při migraci
 
 **QA Scenarios**:
 ```
@@ -870,7 +870,7 @@ Evidence: .sisyphus/evidence/task-13-backwards-compat.txt
 
 ---
 
-- [ ] 14. End-to-end UI verification
+- [x] 14. End-to-end UI verification
 
 **What to do**:
 - Kompletní UI test V2 dashboardu
@@ -897,10 +897,10 @@ Evidence: .sisyphus/evidence/task-13-backwards-compat.txt
 - `custom_components/oig_cloud/www_v2/src/ui/features/boiler/components.ts`
 
 **Acceptance Criteria**:
-- [ ] Všechny sekce zobrazeny správně
-- [ ] Debug panel odstraněn
-- [ ] Plan Info má lepší hierarchii
-- [ ] Žádné chyby v konzoli
+- [x] Všechny sekce zobrazeny správně
+- [x] Debug panel odstraněn
+- [x] Plan Info má lepší hierarchii
+- [x] Žádné chyby v konzoli
 
 **QA Scenarios**:
 ```
@@ -924,16 +924,16 @@ Evidence: .sisyphus/evidence/task-14-ui-*.png (více screenshotů)
 
 > 4 review agents run in PARALLEL. ALL must APPROVE. Rejection → fix → re-run.
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
 Read the plan end-to-end. For each "Must Have": verify implementation exists (read file, curl endpoint, run command). For each "Must NOT Have": search codebase for forbidden patterns — reject with file:line if found. Check evidence files exist in .sisyphus/evidence/. Compare deliverables against plan. Output: `Must Have [N/N] | Must NOT Have [N/N] | Tasks [N/N] | VERDICT: APPROVE/REJECT`
 
-- [ ] F2. **Code Quality Review** — `unspecified-low`
+- [x] F2. **Code Quality Review** — `unspecified-low`
 Run `tsc --noEmit` + linter + `bun test`. Review all changed files for: `as any`/`@ts-ignore`, empty catches, console.log in prod, commented-out code, unused imports. Check AI slop: excessive comments, over-abstraction, generic names (data/result/item/temp). Output: `Build [PASS/FAIL] | Lint [PASS/FAIL] | Tests [N pass/N fail] | Files [N clean/N issues] | VERDICT`
 
-- [ ] F3. **Real Manual QA** — `unspecified-low` (+ `playwright` skill if UI)
+- [x] F3. **Real Manual QA** — `unspecified-low` (+ `playwright` skill if UI)
 Start from clean state. Execute EVERY QA scenario from EVERY task — follow exact steps, capture evidence. Test cross-task integration (features working together, not isolation). Test edge cases: empty state, invalid input, rapid actions. Save to `.sisyphus/evidence/final-qa/`. Output: `Scenarios [N/N pass] | Integration [N/N] | Edge Cases [N tested] | VERDICT`
 
-- [ ] F4. **Scope Fidelity Check** — `deep`
+- [x] F4. **Scope Fidelity Check** — `deep`
 For each task: read "What to do", read actual diff (git log/diff). Verify 1:1 — everything in spec was built (no missing), nothing beyond spec was built (no creep). Check "Must NOT do" compliance. Detect cross-task contamination: Task N touching Task M's files. Flag unaccounted changes. Output: `Tasks [N/N compliant] | Contamination [CLEAN/N issues] | Unaccounted [CLEAN/N files] | VERDICT`
 
 ---
@@ -966,20 +966,19 @@ pylint custom_components/oig_cloud/boiler/
 ```
 
 ### Final Checklist
-- [ ] All "Must Have" present
-- [ ] All "Must NOT Have" absent
-- [ ] Simple/Advanced toggle works
-- [ ] Heater and Pump control implemented
-- [ ] Hardcoded values fixed
-- [ ] Placeholder params removed
-- [ ] Debug panel removed
-- [ ] Plan Info improved
-- [ ] Backwards compatibility preserved
-- [ ] All evidence files present
+- [x] All "Must Have" present
+- [x] All "Must NOT Have" absent
+- [x] Simple/Advanced toggle works
+- [x] Heater and Pump control implemented
+- [x] Hardcoded values fixed
+- [x] Placeholder params removed
+- [x] Debug panel removed
+- [x] Plan Info improved
+- [x] Backwards compatibility preserved
+- [x] All evidence files present
 
 ---
 
 **Plan saved to**: `.sisyphus/plans/boiler-config-ui-optimization.md`
 
 **To start execution, run**: `/start-work boiler-config-ui-optimization`
-

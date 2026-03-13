@@ -1,5 +1,4 @@
 export {
-  OigBoilerDebugPanel,
   OigBoilerStatusGrid,
   OigBoilerEnergyBreakdown,
   OigBoilerPredictedUsage,

@@ -1,0 +1,53 @@
+Task 6: Implement heater_switch_entity control - COMPLETED
+
+## Changes Made
+
+### File: custom_components/oig_cloud/boiler/coordinator.py
+
+1. **Added imports:**
+   - CONF_BOILER_HEATER_SWITCH_ENTITY
+   - CONF_BOILER_TARGET_TEMP_C
+   - DEFAULT_BOILER_TARGET_TEMP_C
+
+2. **Added instance variables in __init__:**
+   - self._heater_switch_entity: Optional[str] - stores the heater switch entity ID
+   - self._heater_last_state: Optional[bool] - tracks previous state to avoid unnecessary calls
+
+3. **Added heater control call in _async_update_data:**
+   - Added await self._control_heater_switch(now, temperatures) after circulation pump control
+
+4. **Added methods:**
+   - _control_heater_switch(now, temperatures): Main control logic
+   - _turn_on_heater(): Turns on the heater switch via hass.services.async_call
+   - _turn_off_heater(): Turns off the heater switch via hass.services.async_call
+
+## Control Logic
+
+The heater switch is controlled based on:
+
+1. **Turn ON when:**
+   - There is an active slot in the plan (current_slot is not None)
+   - Current temperature < target temperature - hysteresis (2.0°C)
+
+2. **Turn OFF when:**
+   - No active slot in plan
+   - Current temperature >= target temperature
+
+3. **Hysteresis handling:**
+   - When temperature is between (target - hysteresis) and target, maintain current state
+   - This prevents rapid on/off cycling
+
+4. **State tracking:**
+   - Previous state is tracked in self._heater_last_state
+   - Service calls are only made when state actually changes
+   - All state changes are logged
+
+## Logging
+
+- Debug logs for decision making process
+- Info logs when heater is turned on/off
+- Error logs for service call failures
+
+## Syntax Verification
+
+Python syntax check passed: python3 -m py_compile coordinator.py

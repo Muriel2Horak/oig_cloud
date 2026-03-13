@@ -23,6 +23,7 @@ class BoilerPlanner:
         slot_minutes: int = 15,
         alt_cost_kwh: float = 0.0,
         has_alternative: bool = False,
+        planning_horizon_hours: int = 24,
     ) -> None:
         """
         Inicializace plánovače.
@@ -32,11 +33,13 @@ class BoilerPlanner:
             slot_minutes: Délka slotu v minutách (15)
             alt_cost_kwh: Cena alternativního zdroje [Kč/kWh]
             has_alternative: Je k dispozici alternativní zdroj?
+            planning_horizon_hours: Plánovací horizont v hodinách (24)
         """
         self.hass = hass
         self.slot_minutes = slot_minutes
         self.alt_cost_kwh = alt_cost_kwh
         self.has_alternative = has_alternative
+        self.planning_horizon_hours = planning_horizon_hours
 
     async def async_create_plan(
         self,
@@ -61,7 +64,7 @@ class BoilerPlanner:
         _ = deadline_time
         now = dt_util.now()
         plan_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        plan_end = plan_start + timedelta(days=1)
+        plan_end = plan_start + timedelta(hours=self.planning_horizon_hours)
 
         plan = BoilerPlan(
             created_at=now,

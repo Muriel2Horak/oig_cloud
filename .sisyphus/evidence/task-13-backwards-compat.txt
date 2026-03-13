@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.4.2, pluggy-1.6.0 -- /usr/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 17 items
+
+tests/test_boiler_backwards_compat.py::test_backwards_compat_migration_function_exists PASSED [  5%]
+tests/test_boiler_backwards_compat.py::test_backwards_compat_migration_sets_advanced PASSED [ 11%]
+tests/test_boiler_backwards_compat.py::test_backwards_compat_old_config_structure PASSED [ 17%]
+tests/test_boiler_backwards_compat.py::test_backwards_compat_migration_result PASSED [ 23%]
+tests/test_boiler_backwards_compat.py::test_backwards_compat_advanced_mode_shows_all_params PASSED [ 29%]
+tests/test_boiler_backwards_compat.py::test_backwards_compat_entity_names_unchanged PASSED [ 35%]
+tests/test_boiler_backwards_compat.py::test_backwards_compat_constants_exist PASSED [ 41%]
+tests/test_boiler_backwards_compat.py::test_backwards_compat_api_views_support_old_config PASSED [ 47%]
+tests/test_boiler_backwards_compat.py::test_backwards_compat_coordinator_handles_migration PASSED [ 52%]
+tests/test_boiler_backwards_compat.py::test_backwards_compat_planner_handles_migration PASSED [ 58%]
+tests/test_boiler_backwards_compat.py::test_happy_path_old_config_migrates_to_advanced PASSED [ 64%]
+tests/test_boiler_backwards_compat.py::test_happy_path_advanced_mode_for_old_users PASSED [ 70%]
+tests/test_boiler_backwards_compat.py::test_edge_case_new_config_with_mode PASSED [ 76%]
+tests/test_boiler_backwards_compat.py::test_edge_case_minimal_old_config PASSED [ 82%]
+tests/test_boiler_backwards_compat.py::test_edge_case_invalid_config_mode PASSED [ 88%]
+tests/test_boiler_backwards_compat.py::test_integration_backwards_compat_full_workflow PASSED [ 94%]
+tests/test_boiler_backwards_compat.py::test_entity_names_preserved PASSED [100%]
+
+============================== 17 passed in 0.34s ==============================

@@ -27,7 +27,7 @@ def calculate_stratified_temp(
     Args:
         measured_temp: Naměřená teplota [°C]
         sensor_position: "top", "upper_quarter", "middle", "lower_quarter"
-        mode: "two_zone" nebo "simple_avg"
+        mode: "simple_avg", "two_zone" nebo "gradient"
         split_ratio: Poměr horní zóny (0.5 = polovina)
         boiler_height_m: Výška bojleru [m]
 
@@ -44,6 +44,22 @@ def calculate_stratified_temp(
     # Gradient: °C/m
     gradient_per_meter = TEMP_GRADIENT_PER_10CM * 10.0
 
+    if mode == "gradient":
+        # Gradient režim: lineární extrapolace z měřené teploty
+        # Horní zóna = teplota v horní části bojleru (接近 top)
+        # Dolní zóna = teplota v dolní části bojleru (接近 bottom)
+        upper_zone_height = 1.0 - (split_ratio / 2.0)  # Horní hranice zóny
+        lower_zone_height = split_ratio / 2.0  # Dolní hranice zóny
+
+        height_diff_upper = (upper_zone_height - sensor_height_ratio) * boiler_height_m
+        temp_upper = measured_temp + (gradient_per_meter * height_diff_upper)
+
+        height_diff_lower = (lower_zone_height - sensor_height_ratio) * boiler_height_m
+        temp_lower = measured_temp + (gradient_per_meter * height_diff_lower)
+
+        return (temp_upper, temp_lower)
+
+    # two_zone režim (výchozí): používá středy zón
     # Střed horní zóny
     upper_zone_center = 1.0 - (1.0 - split_ratio) / 2.0
     # Střed dolní zóny

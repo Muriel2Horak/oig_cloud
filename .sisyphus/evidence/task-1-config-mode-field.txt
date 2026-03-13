@@ -1,0 +1,28 @@
+# Task 1: config_mode toggle implementation evidence
+
+## Files Modified
+
+### 1. custom_components/oig_cloud/const.py
+- Added: CONF_BOILER_CONFIG_MODE = "boiler_config_mode" (line 43)
+- Location: After CONF_BOILER_PLAN_SLOT_MINUTES, before Auto Module constants
+
+### 2. custom_components/oig_cloud/config/steps.py
+- Added: "config_mode": wizard_data.get("config_mode", "simple") (line 439)
+- Location: First item in _build_boiler_options dict, before enable_boiler
+
+## Verification
+
+CONF_BOILER_CONFIG_MODE found in const.py:
+  43: CONF_BOILER_CONFIG_MODE = "boiler_config_mode"
+
+config_mode with default "simple" found in steps.py:
+  439: "config_mode": wizard_data.get("config_mode", "simple"),
+
+## Requirements Met
+- [x] New parameter config_mode with choices "simple" and "advanced"
+- [x] Default value for new installations: "simple"
+- [x] Stored in config entry data via _build_boiler_options
+- [x] Existing parameters unchanged
+- [x] No new config flow steps created
+- [x] config_mode placed as first item in _build_boiler_options dict
+- [x] CONF_BOILER_CONFIG_MODE placed near other boiler constants in const.py

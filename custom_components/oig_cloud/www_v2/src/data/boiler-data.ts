@@ -424,6 +424,7 @@ function parseConfig(profileData: BoilerPlanAPI | null): BoilerConfig {
     stratificationMode: (config as any).stratification_mode || '--',
     kCoefficient: volumeL ? (volumeL * 0.001163).toFixed(4) : '--',
     coldInletTempC: isFinite(config.cold_inlet_temp_c as any) ? (config.cold_inlet_temp_c ?? 10) : 10,
+    configMode: (config as any).config_mode || 'simple',
   };
 }
 

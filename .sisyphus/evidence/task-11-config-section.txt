@@ -1,0 +1,44 @@
+# Task 11: Verify Config Section displays correct values
+
+## Changes Made
+
+### 1. Added configMode to BoilerConfig interface (types.ts)
+- Added `configMode: string` to the BoilerConfig interface
+
+### 2. Added config_mode to API config summary (api_views.py)
+- Added `"config_mode": config.get(CONF_BOILER_CONFIG_MODE, "simple")` to _build_boiler_config_summary
+- Added import for CONF_BOILER_CONFIG_MODE
+
+### 3. Parse config_mode in boiler-data.ts
+- Added `configMode: (config as any).config_mode || 'simple'` to parseConfig function
+
+### 4. Display configMode in OigBoilerConfigSection component (components.ts)
+- Added configModeLabel variable: `const configModeLabel = c.configMode === 'advanced' ? 'Pokrocily' : 'Jednoduchy'`
+- Added "Rezim" card at the beginning of the grid displaying configModeLabel
+
+## Verification
+
+### Config Section now displays (7 cards):
+1. **Rezim** - Shows "Pokrocily" or "Jednoduchy" based on configMode
+2. **Objem** - volumeL in liters
+3. **Vykon topeni** - heaterPowerW in watts
+4. **Cilova teplota** - targetTempC in °C
+5. **Deadline** - deadlineTime
+6. **Stratifikace** - stratificationMode
+7. **Koeficient K** - kCoefficient
+
+### Deprecated params NOT displayed:
+- coldInletTempC - NOT in the display (correct)
+- two_zone_split_ratio - NOT in the interface or display (correct)
+
+## Acceptance Criteria Status
+- [x] Config Section shows config_mode (Rezim card)
+- [x] Config Section does NOT show cold_inlet_temp
+- [x] Config Section does NOT show two_zone_split_ratio
+- [x] All displayed values match actual config (via parseConfig)
+
+## Files Modified
+1. custom_components/oig_cloud/www_v2/src/ui/features/boiler/types.ts
+2. custom_components/oig_cloud/www_v2/src/data/boiler-data.ts
+3. custom_components/oig_cloud/www_v2/src/ui/features/boiler/components.ts
+4. custom_components/oig_cloud/boiler/api_views.py

@@ -292,7 +292,14 @@ def load_planner_inputs(
     # Parse values
     current_soc_kwh = float(soc_state.state) if soc_state else 5.0
     max_capacity_kwh = float(capacity_state.state) if capacity_state else 10.24
-    hw_min_kwh = float(hw_min_state.state) if hw_min_state else (max_capacity_kwh * 0.20)
+    if hw_min_state and hw_min_state.state not in ("unknown", "unavailable"):
+        try:
+            hw_min_percent_val = float(hw_min_state.state)
+            hw_min_kwh = max_capacity_kwh * (hw_min_percent_val / 100.0)
+        except (ValueError, TypeError):
+            hw_min_kwh = max_capacity_kwh * 0.20
+    else:
+        hw_min_kwh = max_capacity_kwh * 0.20
 
     # Get config values
     planning_min_percent = config_entry.options.get(

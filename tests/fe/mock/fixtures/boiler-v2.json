@@ -1,0 +1,155 @@
+{
+  "boiler_plan": {
+    "state": {
+      "current_temp": 48.5,
+      "target_temp": 55.0,
+      "heating": true,
+      "next_profile": "Letni_vsedni",
+      "next_start": "2026-03-12T06:00:00+01:00",
+      "temperatures": {
+        "upper_zone": 52.0,
+        "lower_zone": 44.0
+      },
+      "energy_state": {
+        "avg_temp": 48.5,
+        "energy_needed_kwh": 1.2
+      },
+      "recommended_source": "fve",
+      "circulation_recommended": true
+    },
+    "config": {
+      "volume_l": 120,
+      "target_temp_c": 55,
+      "deadline_time": "07:00",
+      "stratification_mode": "two_zone",
+      "cold_inlet_temp_c": 10,
+      "config_mode": "advanced"
+    },
+    "slots": [
+      {
+        "start": "2026-03-12T05:00:00+01:00",
+        "end": "2026-03-12T06:00:00+01:00",
+        "consumption_kwh": 0.85,
+        "avg_consumption_kwh": 0.82,
+        "recommended_source": "fve",
+        "spot_price": 3.2,
+        "temp_top": 50.0,
+        "soc": 60
+      },
+      {
+        "start": "2026-03-12T06:00:00+01:00",
+        "end": "2026-03-12T07:00:00+01:00",
+        "consumption_kwh": 0.90,
+        "avg_consumption_kwh": 0.88,
+        "recommended_source": "fve",
+        "spot_price": 3.5,
+        "temp_top": 53.0,
+        "soc": 65
+      }
+    ],
+    "profiles": {
+      "Letni_vsedni": {
+        "name": "Letni vsedni",
+        "target_temp": 55,
+        "start_time": "06:00",
+        "end_time": "22:00",
+        "days": [1, 1, 1, 1, 1, 0, 0],
+        "enabled": true,
+        "hourly_avg": {
+          "6": 0.85,
+          "7": 0.90,
+          "8": 0.75,
+          "18": 0.80,
+          "19": 0.85
+        },
+        "heatmap": [
+          [0,0,0,0,0,0,0.85,0.90,0.75,0,0,0,0,0,0,0,0,0,0.80,0.85,0,0,0,0],
+          [0,0,0,0,0,0,0.85,0.90,0.75,0,0,0,0,0,0,0,0,0,0.80,0.85,0,0,0,0],
+          [0,0,0,0,0,0,0.85,0.90,0.75,0,0,0,0,0,0,0,0,0,0.80,0.85,0,0,0,0],
+          [0,0,0,0,0,0,0.85,0.90,0.75,0,0,0,0,0,0,0,0,0,0.80,0.85,0,0,0,0],
+          [0,0,0,0,0,0,0.85,0.90,0.75,0,0,0,0,0,0,0,0,0,0.80,0.85,0,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        ]
+      }
+    },
+    "current_category": "Letni_vsedni",
+    "summary": {
+      "today_hours": [6, 7, 8, 18, 19],
+      "predicted_total_kwh": 2.5,
+      "predicted_cost": 8.75,
+      "peak_hours": [6, 7, 18],
+      "water_liters_40c": 85,
+      "avg_confidence": 0.82,
+      "circulation_windows": [
+        { "start": "07:00", "end": "08:00" }
+      ]
+    },
+    "total_consumption_kwh": 1.75,
+    "fve_kwh": 1.2,
+    "grid_kwh": 0.55,
+    "alt_kwh": 0.0,
+    "estimated_cost_czk": 5.5,
+    "next_slot": {
+      "start": "2026-03-12T06:00:00+01:00",
+      "end": "2026-03-12T07:00:00+01:00",
+      "consumption_kwh": 0.90,
+      "recommended_source": "fve",
+      "spot_price": 3.5
+    }
+  },
+  "boiler_profile": {
+    "state": {
+      "current_temp": 48.5,
+      "target_temp": 55.0,
+      "heating": true,
+      "temperatures": {
+        "upper_zone": 52.0,
+        "lower_zone": 44.0
+      },
+      "energy_state": {
+        "avg_temp": 48.5,
+        "energy_needed_kwh": 1.2
+      },
+      "recommended_source": "fve",
+      "circulation_recommended": true
+    },
+    "config": {
+      "volume_l": 120,
+      "target_temp_c": 55,
+      "deadline_time": "07:00",
+      "stratification_mode": "two_zone",
+      "cold_inlet_temp_c": 10,
+      "config_mode": "advanced"
+    },
+    "profiles": {
+      "Letni_vsedni": {
+        "name": "Letni vsedni",
+        "target_temp": 55,
+        "start_time": "06:00",
+        "end_time": "22:00",
+        "days": [1, 1, 1, 1, 1, 0, 0],
+        "enabled": true,
+        "hourly_avg": {
+          "6": 0.85,
+          "7": 0.90,
+          "8": 0.75,
+          "18": 0.80,
+          "19": 0.85
+        }
+      }
+    },
+    "current_category": "Letni_vsedni",
+    "summary": {
+      "today_hours": [6, 7, 8, 18, 19],
+      "predicted_total_kwh": 2.5,
+      "predicted_cost": 8.75,
+      "peak_hours": [6, 7, 18],
+      "water_liters_40c": 85,
+      "avg_confidence": 0.82,
+      "circulation_windows": [
+        { "start": "07:00", "end": "08:00" }
+      ]
+    }
+  }
+}

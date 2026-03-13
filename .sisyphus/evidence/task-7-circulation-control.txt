@@ -1,0 +1,95 @@
+# Task 7: Circulation Pump Control Implementation
+
+## Summary
+Successfully implemented circulation pump control based on consumption profile in the boiler coordinator.
+
+## Changes Made
+
+### File: custom_components/oig_cloud/boiler/coordinator.py
+
+1. **Added import** (line 14):
+   - Added `CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY` to imports from `..const`
+
+2. **Added circulation pump control call** (line 130):
+   - Added `await self._control_circulation_pump(now)` in `_async_update_data()` method
+   - Positioned after plan update (step 5) and before current slot processing (step 7)
+
+3. **Added helper methods** (lines 449-496):
+   - `_control_circulation_pump(self, now: datetime) -> None`
+     - Gets pump entity from config
+     - Checks if profile is available
+     - Extracts hourly_avg from profile
+     - Uses `_pick_peak_hours()` from circulation.py to determine peak hours
+     - Turns pump ON during peak hours, OFF during off-peak hours
+     - Logs debug messages for state changes
+
+   - `_turn_on_circulation_pump(self, pump_entity: str) -> None`
+     - Calls `hass.services.async_call("switch", "turn_on", ...)`
+     - Logs debug message when pump is turned on
+     - Catches and logs exceptions
+
+   - `_turn_off_circulation_pump(self, pump_entity: str) -> None`
+     - Calls `hass.services.async_call("switch", "turn_off", ...)`
+     - Logs debug message when pump is turned off
+     - Catches and logs exceptions
+
+## Implementation Logic
+
+```python
+async def _control_circulation_pump(self, now: datetime) -> None:
+    pump_entity = self.config.get(CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY)
+    if not pump_entity:
+        return
+
+    if not self._current_profile:
+        return
+
+    hourly_avg = getattr(self._current_profile, "hourly_avg", None)
+    if not hourly_avg:
+        return
+
+    from .circulation import _pick_peak_hours
+    peak_hours = _pick_peak_hours(hourly_avg)  # Returns top 3 hours
+    current_hour = now.hour
+    is_peak = current_hour in peak_hours
+
+    if is_peak:
+        await self._turn_on_circulation_pump(pump_entity)
+    else:
+        await self._turn_off_circulation_pump(pump_entity)
+```
+
+## Acceptance Criteria Verification
+
+- [x] Circulation pump turns ON during peak consumption hours
+  - Uses `_pick_peak_hours()` from circulation.py which returns top 3 hours with highest consumption
+  - Calls `_turn_on_circulation_pump()` when current hour is in peak hours
+
+- [x] Circulation pump turns OFF during off-peak hours
+  - Calls `_turn_off_circulation_pump()` when current hour is NOT in peak hours
+
+- [x] Independent of heater switch state
+  - The circulation pump control is called separately from any heater switch logic
+  - No dependency on heater state in the implementation
+
+- [x] State changes are logged
+  - Debug log when pump is turned on: "Cirkulační čerpadlo zapnuto (peak hour): {entity}"
+  - Debug log when pump is turned off: "Cirkulační čerpadlo vypnuto (off-peak): {entity}"
+  - Error logs for any exceptions during service calls
+
+## Technical Details
+
+- **Peak Hours Determination**: Uses existing `_pick_peak_hours()` function from circulation.py
+  - Sorts hourly consumption data by value (descending)
+  - Returns top 3 hours with positive consumption values
+
+- **Service Calls**: Uses `hass.services.async_call()` with `blocking=False` for non-blocking operation
+
+- **Error Handling**: Each service call is wrapped in try-except to prevent coordinator failure
+
+- **Configuration**: Reads `CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY` from config
+  - Gracefully handles missing configuration (returns early if not set)
+
+## LSP Diagnostics
+- No errors or warnings in coordinator.py after implementation
+- Python syntax validation passed

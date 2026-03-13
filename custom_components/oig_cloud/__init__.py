@@ -41,6 +41,7 @@ except ModuleNotFoundError:  # pragma: no cover
     OigCloudAuthError = Exception  # type: ignore[misc,assignment]
 from .const import (
     CONF_AUTO_MODE_SWITCH,
+    CONF_BOILER_CONFIG_MODE,
     CONF_CHARGE_RATE_KW,
     CONF_EXTENDED_SCAN_INTERVAL,
     CONF_NO_TELEMETRY,
@@ -860,6 +861,23 @@ def _migrate_enable_spot_prices_option(hass: HomeAssistant, entry: ConfigEntry) 
     _LOGGER.info("✅ Migration completed - enable_spot_prices removed from config")
 
 
+def _migrate_boiler_config_mode(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Migrate boiler_config_mode for existing configurations.
+
+    Existing configs without config_mode get default "advanced" to ensure
+    all parameters are visible (backwards compatibility).
+    New configs will default to "simple" (set in config flow).
+    """
+    if CONF_BOILER_CONFIG_MODE not in entry.data:
+        _LOGGER.info(
+            "🔄 Migrating boiler_config_mode: setting default 'advanced' for existing config"
+        )
+        new_data = dict(entry.data)
+        new_data[CONF_BOILER_CONFIG_MODE] = "advanced"
+        hass.config_entries.async_update_entry(entry, data=new_data)
+        _LOGGER.info("✅ Migration completed - boiler_config_mode='advanced'")
+
+
 def _init_entry_storage(hass: HomeAssistant, entry: ConfigEntry) -> None:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault(entry.entry_id, {})
@@ -1349,6 +1367,7 @@ async def async_setup_entry(
     _ensure_planner_option_defaults(hass, entry)
     _ensure_data_source_option_defaults(hass, entry)
     _migrate_enable_spot_prices_option(hass, entry)
+    _migrate_boiler_config_mode(hass, entry)
 
     # POZN: Automatická migrace entity/device registry při startu je riziková (může mazat/rozbíjet entity).
     # Pokud je potřeba cleanup/migrace, dělejme ji explicitně (script / servis), ne automaticky v setupu.

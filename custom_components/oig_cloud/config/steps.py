@@ -428,13 +428,20 @@ class WizardMixin:
                 "balancing_opportunistic_threshold", 1.1
             ),
             "balancing_economic_threshold": wizard_data.get(
-                "balancing_economic_threshold", 2.5
-            ),
-            "cheap_window_percentile": wizard_data.get("cheap_window_percentile", 30),
-        }
+"balancing_economic_threshold", 2.5
+),
+"cheap_window_percentile": wizard_data.get("cheap_window_percentile", 30),
+}
 
     @staticmethod
     def _build_boiler_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        from ..const import (
+            CONF_BOILER_CONFIG_MODE,
+            DEFAULT_BOILER_PLAN_SLOT_MINUTES,
+            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
+            DEFAULT_BOILER_STRATIFICATION_MODE,
+        )
+
         return {
             "enable_boiler": wizard_data.get("enable_boiler", False),
             "boiler_volume_l": wizard_data.get("boiler_volume_l", 120),
@@ -450,7 +457,7 @@ class WizardMixin:
                 "boiler_temp_sensor_position", "top"
             ),
             "boiler_stratification_mode": wizard_data.get(
-                "boiler_stratification_mode", "simple_avg"
+                "boiler_stratification_mode", DEFAULT_BOILER_STRATIFICATION_MODE
             ),
             "boiler_two_zone_split_ratio": wizard_data.get(
                 "boiler_two_zone_split_ratio", 0.5
@@ -472,13 +479,19 @@ class WizardMixin:
                 "boiler_has_alternative_heating", False
             ),
             "boiler_alt_cost_kwh": wizard_data.get("boiler_alt_cost_kwh", 0.0),
-            "boiler_alt_energy_sensor": wizard_data.get("boiler_alt_energy_sensor", ""),
+            "boiler_alt_energy_sensor": wizard_data.get(
+                "boiler_alt_energy_sensor", ""
+            ),
             "boiler_spot_price_sensor": wizard_data.get("boiler_spot_price_sensor", ""),
             "boiler_deadline_time": wizard_data.get("boiler_deadline_time", "20:00"),
             "boiler_planning_horizon_hours": wizard_data.get(
-                "boiler_planning_horizon_hours", 36
+                "boiler_planning_horizon_hours", DEFAULT_BOILER_PLANNING_HORIZON_HOURS
             ),
-            "boiler_plan_slot_minutes": wizard_data.get("boiler_plan_slot_minutes", 30),
+            "boiler_plan_slot_minutes": wizard_data.get("boiler_plan_slot_minutes", DEFAULT_BOILER_PLAN_SLOT_MINUTES),
+            # Persist boiler_config_mode from wizard input into built payload
+            CONF_BOILER_CONFIG_MODE: wizard_data.get(
+                CONF_BOILER_CONFIG_MODE, "simple"
+            ),
         }
 
     @staticmethod
@@ -2282,7 +2295,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
                         ),
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=["simple_avg", "two_zone"],
+                            options=["simple_avg", "two_zone", "gradient"],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),

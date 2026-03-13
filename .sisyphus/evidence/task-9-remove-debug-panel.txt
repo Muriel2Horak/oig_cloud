@@ -1,0 +1,34 @@
+Task 9: Remove Debug panel from V2 dashboard
+=============================================
+Date: 2026-03-12
+
+CHANGES MADE:
+-------------
+
+1. custom_components/oig_cloud/www_v2/src/ui/features/boiler/components.ts
+   - Removed entire OigBoilerDebugPanel class (was lines 65-232)
+   - Removed @customElement('oig-boiler-debug-panel') decorator
+   - Removed 'oig-boiler-debug-panel': OigBoilerDebugPanel from HTMLElementTagNameMap
+   - Removed unused `state` from lit/decorators.js import
+   - Removed unused boiler-data imports (planBoilerHeating, applyBoilerPlan, cancelBoilerPlan)
+   - Updated section comment numbering (removed item 1: Debug Control Panel)
+
+2. custom_components/oig_cloud/www_v2/src/ui/features/boiler/index.ts
+   - Removed OigBoilerDebugPanel from export list
+
+3. custom_components/oig_cloud/www_v2/src/ui/app.ts
+   - Removed <oig-boiler-debug-panel> usage (was lines 866-869)
+   - Removed onBoilerActionDone method (was only used by debug panel @action-done event)
+
+ACCEPTANCE CRITERIA:
+--------------------
+[x] OigBoilerDebugPanel class removed from components.ts
+[x] Component not exported from index.ts
+[x] No references to oig-boiler-debug-panel in app.ts
+[x] No references to OigBoilerDebugPanel anywhere in www_v2/src
+
+VERIFICATION:
+-------------
+grep result for 'OigBoilerDebugPanel|oig-boiler-debug-panel' across www_v2/src: 0 matches
+Pre-existing LSP errors (module resolution for 'lit', shadowRoot type issues) remain unchanged.
+No new errors introduced.

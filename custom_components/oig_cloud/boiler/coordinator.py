@@ -1,4 +1,4 @@
-"""Coordinator pro bojlerový modul."""
+"""Coordinator pro bojlerovy modul."""
 
 import logging
 from datetime import datetime, timedelta
@@ -11,10 +11,15 @@ from homeassistant.util import dt as dt_util
 from ..const import (
     CONF_BOILER_ALT_COST_KWH,
     CONF_BOILER_ALT_ENERGY_SENSOR,
+    CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
     CONF_BOILER_DEADLINE_TIME,
     CONF_BOILER_HAS_ALTERNATIVE_HEATING,
+    CONF_BOILER_HEATER_SWITCH_ENTITY,
     CONF_BOILER_PLAN_SLOT_MINUTES,
+    CONF_BOILER_PLANNING_HORIZON_HOURS,
     CONF_BOILER_SPOT_PRICE_SENSOR,
+    CONF_BOILER_STRATIFICATION_MODE,
+    CONF_BOILER_TARGET_TEMP_C,
     CONF_BOILER_TEMP_SENSOR_BOTTOM,
     CONF_BOILER_TEMP_SENSOR_POSITION,
     CONF_BOILER_TEMP_SENSOR_TOP,
@@ -22,6 +27,8 @@ from ..const import (
     CONF_BOILER_VOLUME_L,
     DEFAULT_BOILER_DEADLINE_TIME,
     DEFAULT_BOILER_PLAN_SLOT_MINUTES,
+    DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
+    DEFAULT_BOILER_TARGET_TEMP_C,
     DEFAULT_BOILER_TEMP_SENSOR_POSITION,
     DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO,
 )
@@ -43,7 +50,7 @@ PROFILE_UPDATE_INTERVAL = timedelta(hours=24)
 
 
 class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator pro bojlerový modul - update každých 5 minut."""
+    """Coordinator pro bojlerovy modul - update kazdych 5 minut."""
 
     def __init__(
         self,
@@ -70,6 +77,10 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._current_profile: Optional[BoilerProfile] = None
         self._current_plan: Optional[BoilerPlan] = None
 
+        # Heater switch state tracking
+        self._heater_switch_entity: Optional[str] = config.get(CONF_BOILER_HEATER_SWITCH_ENTITY)
+        self._heater_last_state: Optional[bool] = None
+
         # Inicializace komponent
         self._oig_manual_mode_entity = self._build_oig_entity_id("boiler_manual_mode")
         self._oig_current_cbb_entity = self._build_oig_entity_id("boiler_current_cbb_w")
@@ -77,7 +88,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.profiler = BoilerProfiler(
             hass=hass,
-            energy_sensor=self._oig_day_energy_entity,  # OIG energy sensor (Wh)
+            energy_sensor=self._oig_day_energy_entity,
             lookback_days=60,
         )
 
@@ -88,11 +99,14 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
             alt_cost_kwh=config.get(CONF_BOILER_ALT_COST_KWH, 0.0),
             has_alternative=config.get(CONF_BOILER_HAS_ALTERNATIVE_HEATING, False),
+            planning_horizon_hours=config.get(
+                CONF_BOILER_PLANNING_HORIZON_HOURS, DEFAULT_BOILER_PLANNING_HORIZON_HOURS
+            ),
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
         """
-        Update každých 5 minut.
+        Update kazdych 5 minut.
 
         Returns:
             Data pro senzory
@@ -100,24 +114,30 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             now = dt_util.now()
 
-            # 1. Update profilu (1× denně)
+            # 1. Update profilu (1x denne)
             if self._should_update_profile(now):
                 await self._update_profile()
 
-            # 2. Načíst aktuální teploty
+            # 2. Nacist aktualni teploty
             temperatures = await self._read_temperatures()
 
-            # 3. Vypočítat energetický stav
+            # 3. Vypocitat energeticky stav
             energy_state = self._calculate_energy_state(temperatures)
 
-            # 4. Trackování energie
+            # 4. Trackovani energie
             energy_tracking = await self._track_energy_sources()
 
-            # 5. Update plánu (pokud je profil dostupný)
+            # 5. Update planu (pokud je profil dostupny)
             if self._current_profile:
                 await self._update_plan()
 
-            # 6. Aktuální slot a doporučení
+            # 6. Rízení cirkulacního cerpadla podle profilu spotreby
+            await self._control_circulation_pump(now)
+
+            # 7. Rízení topneho telesa podle planu a teploty
+            await self._control_heater_switch(now, temperatures)
+
+            # 8. Aktualní slot a doporucení
             current_slot = None
             charging_recommended = False
             recommended_source = None
@@ -147,11 +167,11 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return data
 
         except Exception as err:
-            _LOGGER.error("Chyba při update bojleru: %s", err, exc_info=True)
+            _LOGGER.error("Chyba pri update bojleru: %s", err, exc_info=True)
             raise UpdateFailed(f"Update selhal: {err}") from err
 
     def _should_update_profile(self, now: datetime) -> bool:
-        """Kontrola, zda je potřeba aktualizovat profil."""
+        """Kontrola, zda je potreba aktualizovat profil."""
         if self._last_profile_update is None:
             return True
 
@@ -159,23 +179,23 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return time_since_update >= PROFILE_UPDATE_INTERVAL
 
     async def _update_profile(self) -> None:
-        """Aktualizuje profilování z SQL historie."""
-        _LOGGER.info("Aktualizace profilů bojleru...")
+        """Aktualizuje profilovani z SQL historie."""
+        _LOGGER.info("Aktualizace profilu bojleru...")
         try:
             profiles = await self.profiler.async_update_profiles()
 
-            # Vybrat profil pro aktuální čas
+            # Vybrat profil pro aktualni cas
             now = dt_util.now()
             self._current_profile = self.profiler.get_profile_for_datetime(now)
 
             self._last_profile_update = now
-            _LOGGER.info("Profily aktualizovány, celkem kategorií: %s", len(profiles))
+            _LOGGER.info("Profily aktualizovany, celkem kategorii: %s", len(profiles))
 
         except Exception as err:
-            _LOGGER.error("Chyba při aktualizaci profilů: %s", err)
+            _LOGGER.error("Chyba pri aktualizaci profilu: %s", err)
 
     async def _read_temperatures(self) -> dict[str, Optional[float]]:
-        """Načte teploty z teploměrů."""
+        """Nacte teploty z teplomeru."""
         config = self.config
 
         top_sensor = config.get(CONF_BOILER_TEMP_SENSOR_TOP)
@@ -187,12 +207,12 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         temp_top = None
         temp_bottom = None
 
-        # Horní senzor
+        # Horni senzor
         if top_sensor:
             state = self.hass.states.get(top_sensor)
             temp_top = validate_temperature_sensor(state, top_sensor)
 
-        # Dolní senzor
+        # Dolni senzor
         if bottom_sensor:
             state = self.hass.states.get(bottom_sensor)
             temp_bottom = validate_temperature_sensor(state, bottom_sensor)
@@ -202,18 +222,19 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         temp_lower_zone = None
 
         if temp_top is not None and temp_bottom is None:
-            # Extrapolace z horního
+            # Extrapolace z horniho
             split_ratio = config.get(
                 CONF_BOILER_TWO_ZONE_SPLIT_RATIO, DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO
             )
+            stratification_mode = config.get(CONF_BOILER_STRATIFICATION_MODE, "two_zone")
             temp_upper_zone, temp_lower_zone = calculate_stratified_temp(
                 measured_temp=temp_top,
                 sensor_position=sensor_position,
-                mode="two_zone",
+                mode=stratification_mode,
                 split_ratio=split_ratio,
             )
         elif temp_top is not None and temp_bottom is not None:
-            # Dva senzory - použít přímo
+            # Dva senzory - pouzit primo
             temp_upper_zone = temp_top
             temp_lower_zone = temp_bottom
 
@@ -227,7 +248,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _calculate_energy_state(
         self, temperatures: dict[str, Optional[float]]
     ) -> dict[str, float]:
-        """Vypočítá energetický stav bojleru."""
+        """Vypocita energeticky stav bojleru."""
         volume_l = self.config.get(CONF_BOILER_VOLUME_L, 200.0)
         target_temp = self.config.get("boiler_target_temp_c", 60.0)
 
@@ -240,7 +261,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if temp_upper is not None and temp_lower is not None:
             avg_temp = (temp_upper + temp_lower) / 2.0
 
-            # Energie potřebná k ohřevu
+            # Energie potrebna k ohrevu
             energy_needed_kwh = calculate_energy_to_heat(
                 volume_liters=volume_l,
                 temp_current=avg_temp,
@@ -253,13 +274,13 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     async def _track_energy_sources(self) -> dict[str, float]:
-        """Trackuje energii z jednotlivých zdrojů."""
+        """Trackuje energii z jednotlivych zdroju."""
         # OIG senzory
         manual_mode_entity = self._oig_manual_mode_entity
         current_cbb_entity = self._oig_current_cbb_entity
         day_energy_entity = self._oig_day_energy_entity
 
-        # User alternativní senzor
+        # User alternativni senzor
         alt_energy_sensor = self.config.get(CONF_BOILER_ALT_ENERGY_SENSOR)
 
         manual_mode_state, current_cbb_state, day_energy_state = self._get_energy_states(
@@ -270,7 +291,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         total_energy_kwh = self._read_total_energy_kwh(day_energy_state)
 
-        # FVE a Grid energie (placeholder - potřeba trackování v čase)
+        # FVE a Grid energie (placeholder - potreba trackovani v case)
         fve_kwh = 0.0
         grid_kwh = 0.0
 
@@ -355,7 +376,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
         alt_state = self.hass.states.get(alt_energy_sensor)
         if not alt_state:
-            return None  # pragma: no cover
+            return None
         try:
             alt_kwh = float(alt_state.state)
             if alt_state.attributes.get("unit_of_measurement") == "Wh":
@@ -365,15 +386,15 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return None
 
     async def _update_plan(self) -> None:
-        """Aktualizuje plán ohřevu."""
+        """Aktualizuje plan ohrevu."""
         if not self._current_profile:
             return
 
         try:
-            # Načíst spotové ceny
+            # Nacist spotove ceny
             spot_prices = await self._get_spot_prices()
 
-            # Načíst overflow okna z battery_forecast
+            # Nacist overflow okna z battery_forecast
             overflow_windows = await self._get_overflow_windows()
 
             # Deadline
@@ -381,7 +402,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
             )
 
-            # Vytvořit plán
+            # Vytvorit plan
             self._current_plan = await self.planner.async_create_plan(
                 profile=self._current_profile,
                 spot_prices=spot_prices,
@@ -390,10 +411,10 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
         except Exception as err:
-            _LOGGER.error("Chyba při tvorbě plánu: %s", err)
+            _LOGGER.error("Chyba pri tvorbe planu: %s", err)
 
     async def _get_spot_prices(self) -> dict[datetime, float]:
-        """Načte spotové ceny ze senzoru."""
+        """Nacte spotove ceny ze senzoru."""
         spot_sensor = self.config.get(CONF_BOILER_SPOT_PRICE_SENSOR)
         if not spot_sensor:
             return {}
@@ -402,7 +423,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not state:
             return {}
 
-        # Očekáváme atribut 'prices' jako list [{datetime, price}, ...]
+        # Ocekavame atribut 'prices' jako list [{datetime, price}, ...]
         prices_attr = state.attributes.get("prices", [])
 
         result = {}
@@ -419,15 +440,163 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return result
 
     async def _get_overflow_windows(self) -> list[tuple[datetime, datetime]]:
-        """Načte overflow okna z battery_forecast coordinatoru."""
-        # Pokus o získání dat z battery_forecast coordinatoru
+        """Nacte overflow okna z battery_forecast coordinatoru."""
+        # Pokus o ziskani dat z battery_forecast coordinatoru
         battery_coordinator = self.hass.data.get("oig_cloud", {}).get(
             "battery_forecast_coordinator"
         )
 
         if not battery_coordinator:
-            _LOGGER.debug("Battery forecast coordinator není dostupný")
+            _LOGGER.debug("Battery forecast coordinator neni dostupny")
             return []
 
         battery_data = battery_coordinator.data
         return await self.planner.async_get_overflow_windows(battery_data)
+
+    async def _control_circulation_pump(self, now: datetime) -> None:
+        """
+        Ridi cirkulacni cerpadlo podle profilu spotreby.
+        Zapne behem spickovych hodin, vypne mimo ne.
+        """
+        pump_entity = self.config.get(CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY)
+        if not pump_entity:
+            return
+
+        if not self._current_profile:
+            _LOGGER.debug("Cirkulacni cerpadlo: neni dostupny profil")
+            return
+
+        hourly_avg = getattr(self._current_profile, "hourly_avg", None)
+        if not hourly_avg:
+            _LOGGER.debug("Cirkulacni cerpadlo: profil nema hourly_avg data")
+            return
+
+        from .circulation import _pick_peak_hours
+
+        peak_hours = _pick_peak_hours(hourly_avg)
+        current_hour = now.hour
+        is_peak = current_hour in peak_hours
+
+        if is_peak:
+            await self._turn_on_circulation_pump(pump_entity)
+        else:
+            await self._turn_off_circulation_pump(pump_entity)
+
+    async def _turn_on_circulation_pump(self, pump_entity: str) -> None:
+        """Zapne cirkulacni cerpadlo."""
+        try:
+            await self.hass.services.async_call(
+                "switch", "turn_on", {"entity_id": pump_entity}, blocking=False
+            )
+            _LOGGER.debug("Cirkulacni cerpadlo zapnuto (peak hour): %s", pump_entity)
+        except Exception as err:
+            _LOGGER.error("Chyba pri zapinani cirkulacniho cerpadla: %s", err)
+
+    async def _turn_off_circulation_pump(self, pump_entity: str) -> None:
+        """Vypne cirkulacni cerpadlo."""
+        try:
+            await self.hass.services.async_call(
+                "switch", "turn_off", {"entity_id": pump_entity}, blocking=False
+            )
+            _LOGGER.debug("Cirkulacni cerpadlo vypnuto (off-peak): %s", pump_entity)
+        except Exception as err:
+            _LOGGER.error("Chyba pri vypinani cirkulacniho cerpadla: %s", err)
+
+    async def _control_heater_switch(
+        self, now: datetime, temperatures: dict[str, Optional[float]]
+    ) -> None:
+        """
+        Ridi topne teleso podle planu a teploty.
+        Zapne kdyz: aktivni slot v planu AND teplota < cilova - hysteresis
+        Vypne kdyz: zadny aktivni slot OR teplota >= cilova
+        """
+        if not self._heater_switch_entity:
+            _LOGGER.debug("Topne teleso: neni nakonfigurovano")
+            return
+
+        # Ziskat aktualni slot
+        current_slot = None
+        if self._current_plan:
+            current_slot = self._current_plan.get_current_slot(now)
+
+        # Ziskat aktualni teplotu (prumer horni a dolni zony)
+        avg_temp = temperatures.get("avg_temp")
+        if avg_temp is None:
+            temp_upper = temperatures.get("upper_zone")
+            temp_lower = temperatures.get("lower_zone")
+            if temp_upper is not None and temp_lower is not None:
+                avg_temp = (temp_upper + temp_lower) / 2.0
+            elif temp_upper is not None:
+                avg_temp = temp_upper
+            elif temp_lower is not None:
+                avg_temp = temp_lower
+
+        if avg_temp is None:
+            _LOGGER.debug("Topne teleso: neni dostupna teplota")
+            return
+
+        # Ziskat cilovou teplotu a hysteresis
+        target_temp = self.config.get(CONF_BOILER_TARGET_TEMP_C, DEFAULT_BOILER_TARGET_TEMP_C)
+        hysteresis = 2.0  # °C hysteresis
+
+        # Logika rizeni
+        should_be_on = False
+        if current_slot:
+            # Je aktivni slot - zapnout pokud teplota < cilova - hysteresis
+            if avg_temp < (target_temp - hysteresis):
+                should_be_on = True
+                _LOGGER.debug(
+                    "Topne teleso: zapnout (slot aktivni, teplota %.1fC < cil %.1fC - hysteresis %.1fC)",
+                    avg_temp, target_temp, hysteresis
+                )
+            elif avg_temp >= target_temp:
+                should_be_on = False
+                _LOGGER.debug(
+                    "Topne teleso: vypnout (teplota %.1fC >= cil %.1fC)",
+                    avg_temp, target_temp
+                )
+            else:
+                # V hysteresis - ponechat stavajici stav
+                should_be_on = self._heater_last_state if self._heater_last_state is not None else False
+                _LOGGER.debug(
+                    "Topne teleso: ponechat stav (teplota %.1fC v hysteresis, cil %.1fC)",
+                    avg_temp, target_temp
+                )
+        else:
+            # Neni aktivni slot - vypnout
+            should_be_on = False
+            _LOGGER.debug("Topne teleso: vypnout (zadny aktivni slot)")
+
+        # Provedeni akce pouze pri zmene stavu
+        if should_be_on != self._heater_last_state:
+            if should_be_on:
+                await self._turn_on_heater()
+            else:
+                await self._turn_off_heater()
+            self._heater_last_state = should_be_on
+        else:
+            _LOGGER.debug("Topne teleso: stav beze zmeny (%s)", "ON" if should_be_on else "OFF")
+
+    async def _turn_on_heater(self) -> None:
+        """Zapne topne teleso."""
+        if not self._heater_switch_entity:
+            return
+        try:
+            await self.hass.services.async_call(
+                "switch", "turn_on", {"entity_id": self._heater_switch_entity}, blocking=False
+            )
+            _LOGGER.info("Topne teleso zapnuto: %s", self._heater_switch_entity)
+        except Exception as err:
+            _LOGGER.error("Chyba pri zapinani topneho telesa: %s", err)
+
+    async def _turn_off_heater(self) -> None:
+        """Vypne topne teleso."""
+        if not self._heater_switch_entity:
+            return
+        try:
+            await self.hass.services.async_call(
+                "switch", "turn_off", {"entity_id": self._heater_switch_entity}, blocking=False
+            )
+            _LOGGER.info("Topne teleso vypnuto: %s", self._heater_switch_entity)
+        except Exception as err:
+            _LOGGER.error("Chyba pri vypinani topneho telesa: %s", err)

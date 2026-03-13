@@ -1,0 +1,182 @@
+F1 Compliance Audit — boiler-config-ui-optimization
+Date: 2026-03-12
+Audited by: Sisyphus-Junior
+
+Method
+- Read plan: .sisyphus/plans/boiler-config-ui-optimization.md
+- Audited implementation in:
+  - custom_components/oig_cloud/config/steps.py
+  - custom_components/oig_cloud/const.py
+  - custom_components/oig_cloud/__init__.py
+  - custom_components/oig_cloud/boiler/coordinator.py
+  - custom_components/oig_cloud/boiler/planner.py
+  - custom_components/oig_cloud/boiler/utils.py
+  - custom_components/oig_cloud/boiler/api_views.py
+  - custom_components/oig_cloud/www_v2/src/ui/features/boiler/components.ts
+  - custom_components/oig_cloud/www_v2/src/data/boiler-data.ts
+  - custom_components/oig_cloud/www_v2/src/ui/app.ts
+  - tests/test_boiler_integration.py
+- Re-ran integration test command:
+  - python -m pytest tests/test_boiler_integration.py -q
+  - Result: 18 passed
+- Audited evidence presence in .sisyphus/evidence/
+
+Task-by-task compliance (1–14)
+
+1) config_mode toggle exists
+Status: MISSING
+Findings:
+- CONF_BOILER_CONFIG_MODE constant exists (const.py:43)
+- BUT config flow does not expose config_mode field in wizard schema
+- _build_boiler_options does not persist config_mode (steps.py:437-482)
+Acceptance: NOT MET
+
+2) Simple/Advanced mode reorganized
+Status: MISSING
+Findings:
+- No mode-based parameter filtering in boiler config step
+- No simple/advanced switch logic in steps.py schema
+Acceptance: NOT MET
+
+3) Backwards compatibility implemented (default Advanced)
+Status: PARTIAL
+Findings:
+- Migration exists: _migrate_boiler_config_mode sets advanced when missing (__init__.py:864-878)
+- Depends on Task 1/2 flow behavior, which is not implemented
+Acceptance: PARTIALLY MET
+
+4) stratification_mode wired (not hardcoded)
+Status: COMPLETE (with caveat)
+Findings:
+- coordinator reads config: config.get(CONF_BOILER_STRATIFICATION_MODE, "two_zone") (coordinator.py:229)
+- utils supports simple_avg/two_zone/gradient (utils.py:37-75)
+- Caveat: wizard selector exposes only simple_avg/two_zone (steps.py:2275)
+Acceptance: MOSTLY MET
+
+5) planning_horizon_hours wired (not hardcoded)
+Status: PARTIAL
+Findings:
+- Planner uses dynamic horizon: timedelta(hours=self.planning_horizon_hours) (planner.py:67)
+- Coordinator passes configured horizon (coordinator.py:102-104)
+- UI range validation 12..72 exists (steps.py:2358)
+- BUT default behavior changed from plan expectation: constant default is 36 (const.py:76), while task spec required preserving 24h default
+Acceptance: PARTIALLY MET
+
+6) heater_switch_entity control implemented
+Status: COMPLETE
+Findings:
+- _control_heater_switch implemented (coordinator.py:505+)
+- Uses active slot + temperature + hysteresis logic
+- Calls switch.turn_on/off and logs decisions (coordinator.py:586, 598)
+Acceptance: MET
+
+7) circulation_pump_switch_entity control implemented
+Status: COMPLETE
+Findings:
+- _control_circulation_pump implemented (coordinator.py:456+)
+- Uses profile peak hours via _pick_peak_hours
+- Calls switch.turn_on/off independently of heater
+Acceptance: MET
+
+8) placeholder params removed from config flow
+Status: COMPLETE
+Findings:
+- Placeholder fields are not shown in boiler wizard schema (no vol.Optional for CONF_BOILER_COLD_INLET_TEMP_C / CONF_BOILER_TWO_ZONE_SPLIT_RATIO)
+- Constants remain for compatibility (const.py:24,31)
+Acceptance: MET
+
+9) Debug panel removed from V2
+Status: COMPLETE
+Findings:
+- No references to oig-boiler-debug-panel / OigBoilerDebugPanel in V2 boiler UI source
+- app.ts boiler tab has no debug panel component
+Acceptance: MET (console-clean criterion not revalidated in this audit)
+
+10) Plan Info visual hierarchy improved
+Status: COMPLETE
+Findings:
+- Grouped sections present: Základní info, Cenové info, Forecast info, Časové info
+- 9 rows retained and grouped in components.ts
+Acceptance: MET
+
+11) Config Section displays correct values
+Status: PARTIAL
+Findings:
+- configMode is displayed (components.ts:1060-1066)
+- Deprecated params are not displayed in Config Section UI
+- Backend config summary still includes deprecated cold_inlet and split_ratio fields (api_views.py:209, 222)
+- Core display works, but plan-level “correct values after Task 4/5” is only partially evidenced
+Acceptance: PARTIALLY MET
+
+12) Integration test created
+Status: COMPLETE
+Findings:
+- tests/test_boiler_integration.py exists
+- Local re-run in this audit: 18/18 passed
+Acceptance: MET
+
+13) Backwards compatibility test created
+Status: PARTIAL
+Findings:
+- Some backwards-compat assertions exist inside tests/test_boiler_integration.py
+- No dedicated backwards-compat test artifact per plan naming (missing task-13-backwards-compat.txt)
+- No focused test found for _migrate_boiler_config_mode path
+Acceptance: PARTIALLY MET
+
+14) End-to-end UI verification done
+Status: MISSING
+Findings:
+- Required evidence pattern task-14-ui-*.png is absent
+- Existing task-14-e2e-*.txt files reference different E2E suites, not requested boiler UI screenshot verification set
+Acceptance: NOT MET
+
+Evidence audit (plan-required filenames)
+- Expected named artifacts checked: 19
+- Present: 1
+- Missing: 18
+- Missing task-14-ui-*.png count: 0
+
+Missing required filenames from plan QA scenarios:
+- task-2-simple-mode.txt
+- task-2-advanced-mode.txt
+- task-3-backwards-compat.txt
+- task-4-stratification-mode.txt
+- task-4-stratification-default.txt
+- task-5-horizon-respected.txt
+- task-5-horizon-default.txt
+- task-6-heater-on.txt
+- task-6-heater-off.txt
+- task-7-pump-on.txt
+- task-7-pump-off.txt
+- task-8-placeholder-removed.txt
+- task-8-backwards-compat.txt
+- task-9-debug-removed.png
+- task-10-plan-info-hierarchy.png
+- task-11-config-section.png
+- task-12-integration.txt
+- task-13-backwards-compat.txt
+
+Must Have / Must NOT Have compliance
+
+Must Have (7 total from plan):
+- PASS: heater_switch control, circulation_pump control, stratification hardcode fix, Debug panel removed
+- FAIL/PARTIAL: Simple/Advanced toggle, planning_horizon default-preserving fix, backwards-compat rollout completeness
+
+Must NOT Have (5 total from plan):
+- Potential violation found: default planning horizon behavior changed from 24h expectation to 36h default path
+- No evidence found of entity-name renaming or major algorithm rewrite in audited scope
+
+Final acceptance criteria (request-level)
+- [ ] All 14 tasks implemented
+- [ ] All acceptance criteria met
+- [x] Compliance report generated
+- [x] Verdict provided
+
+Summary line (required format)
+Must Have [4/7] | Must NOT Have [4/5] | Tasks [7/14 complete, 4/14 partial, 3/14 missing] | VERDICT: REJECT
+
+REJECT reasons (blocking)
+1) Task 1 and Task 2 core config_mode flow/switch behavior are not implemented in config flow schema/persistence.
+2) Task 14 required UI evidence artifacts are missing.
+3) Plan-required evidence filename matrix is largely missing (18/19 absent).
+4) Task 5 default-preservation expectation (24h) is not satisfied in current defaults.

@@ -15,6 +15,7 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
     rollupOptions: {
+      external: ['date-fns'],
       output: {
         // Disable file hashing for better HA compatibility
         // Cache busting handled via query parameters in panel URL
@@ -23,7 +24,7 @@ export default defineConfig({
         assetFileNames: 'assets/[name].[ext]',
         manualChunks: {
           'vendor': ['lit'],
-          'charts': ['chart.js', 'chartjs-plugin-zoom', 'chartjs-plugin-datalabels', 'chartjs-plugin-annotation']
+          'charts': ['chart.js', 'chartjs-plugin-zoom', 'chartjs-plugin-datalabels', 'chartjs-plugin-annotation', 'chartjs-adapter-date-fns']
         }
       }
     }

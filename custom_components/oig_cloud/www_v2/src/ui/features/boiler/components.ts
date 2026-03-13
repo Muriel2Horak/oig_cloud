@@ -3,8 +3,7 @@
 // ============================================================================
 //
 // Sections (matching V1 boiler-tab.html + boiler.js):
-//   1. Debug Control Panel  (collapsible, Plan/Apply/Cancel)
-//   2. Status Grid          (7 cards: SOC%, temps, energy, cost, next, source)
+//   1. Status Grid          (7 cards: SOC%, temps, energy, cost, next, source)
 //   3. Energy Breakdown     (3 cards + ratio bar)
 //   4. Predicted Usage      (5 items)
 //   5. Plan Info            (9 rows)
@@ -18,7 +17,7 @@
 // ============================================================================
 
 import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import {
   BoilerState, BoilerPlan, BoilerEnergyBreakdown, BoilerPredictedUsage,
@@ -26,7 +25,6 @@ import {
   BoilerProfile, BoilerHourData,
   CATEGORY_LABELS,
 } from './types';
-import { planBoilerHeating, applyBoilerPlan, cancelBoilerPlan } from '@/data/boiler-data';
 
 const u = unsafeCSS;
 
@@ -63,178 +61,7 @@ function tempToColor(temp: number): string {
 }
 
 // ============================================================================
-// 1. DEBUG CONTROL PANEL
-// ============================================================================
-
-@customElement('oig-boiler-debug-panel')
-export class OigBoilerDebugPanel extends LitElement {
-  @state() private collapsed = true;
-  @state() private busy = false;
-
-  static styles = css`
-    :host { display: block; }
-
-    .panel {
-      ${cardBase};
-      overflow: hidden;
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      user-select: none;
-      padding: 0;
-      background: none;
-      border: none;
-      width: 100%;
-      text-align: left;
-      color: ${u(CSS_VARS.textPrimary)};
-      font: inherit;
-    }
-
-    .panel-header:hover { opacity: 0.85; }
-
-    .panel-title {
-      font-size: 14px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .info-bubble {
-      position: relative;
-      cursor: help;
-      font-size: 12px;
-      color: ${u(CSS_VARS.textSecondary)};
-    }
-
-    .info-bubble .tooltip {
-      display: none;
-      position: absolute;
-      left: 0;
-      top: 24px;
-      width: 280px;
-      padding: 10px;
-      background: ${u(CSS_VARS.cardBg)};
-      border: 1px solid ${u(CSS_VARS.divider)};
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-      font-size: 11px;
-      line-height: 1.5;
-      color: ${u(CSS_VARS.textSecondary)};
-      z-index: 100;
-      white-space: normal;
-    }
-
-    .info-bubble:hover .tooltip { display: block; }
-
-    .toggle-icon {
-      font-size: 18px;
-      font-weight: bold;
-      color: ${u(CSS_VARS.textSecondary)};
-      transition: transform 0.2s;
-    }
-
-    .panel-content {
-      display: none;
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid ${u(CSS_VARS.divider)};
-    }
-
-    .panel-content.open { display: block; }
-
-    .section-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: ${u(CSS_VARS.textSecondary)};
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .button-group {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .action-btn {
-      padding: 8px 14px;
-      border: 1px solid ${u(CSS_VARS.divider)};
-      border-radius: 8px;
-      background: ${u(CSS_VARS.bgSecondary)};
-      color: ${u(CSS_VARS.textPrimary)};
-      font-size: 12px;
-      cursor: pointer;
-      transition: background 0.15s, opacity 0.15s;
-      white-space: nowrap;
-    }
-
-    .action-btn:hover { background: ${u(CSS_VARS.divider)}; }
-    .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  `;
-
-  private toggle() { this.collapsed = !this.collapsed; }
-
-  private async doAction(action: () => Promise<boolean>, label: string) {
-    this.busy = true;
-    try {
-      const ok = await action();
-      this.dispatchEvent(new CustomEvent('action-done', {
-        detail: { success: ok, label },
-        bubbles: true, composed: true,
-      }));
-    } finally {
-      this.busy = false;
-    }
-  }
-
-  render() {
-    return html`
-      <div class="panel">
-        <button class="panel-header" @click=${this.toggle}>
-          <span class="panel-title">
-            Pokrocile ovladani (Debug)
-            <span class="info-bubble">?
-              <span class="tooltip">
-                <strong>Automaticky rezim</strong><br/>
-                Bojler funguje plne automaticky! System automaticky planuje ohrev kazdych 5 minut,
-                optimalizuje podle spotovych cen a profilu spotreby.<br/><br/>
-                <strong>Tlacitka nize jsou jen pro debug/override.</strong>
-              </span>
-            </span>
-          </span>
-          <span class="toggle-icon">${this.collapsed ? '+' : '\u2212'}</span>
-        </button>
-
-        <div class="panel-content ${this.collapsed ? '' : 'open'}">
-          <div class="section-label">Manualni akce (override)</div>
-          <div class="button-group">
-            <button class="action-btn" ?disabled=${this.busy}
-              @click=${() => this.doAction(planBoilerHeating, 'plan')}>
-              Preplanovat (debug)
-            </button>
-            <button class="action-btn" ?disabled=${this.busy}
-              @click=${() => this.doAction(applyBoilerPlan, 'apply')}>
-              Aplikovat rucne
-            </button>
-            <button class="action-btn" ?disabled=${this.busy}
-              @click=${() => this.doAction(cancelBoilerPlan, 'cancel')}>
-              Zrusit plan
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-}
-
-// ============================================================================
-// 2. STATUS GRID  (7 cards)
+// 1. STATUS GRID  (7 cards)
 // ============================================================================
 
 @customElement('oig-boiler-status-grid')
@@ -511,22 +338,45 @@ export class OigBoilerPlanInfo extends LitElement {
 
     h3 { ${sectionTitle}; }
 
+    .sections {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .section {
+      padding: 8px 0 4px;
+    }
+
+    .section + .section {
+      border-top: 1px solid ${u(CSS_VARS.divider)};
+      padding-top: 10px;
+      margin-top: 4px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: ${u(CSS_VARS.accent)};
+      margin-bottom: 6px;
+      opacity: 0.85;
+    }
+
     .rows {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 0;
     }
 
     .row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 5px 0;
-      border-bottom: 1px solid ${u(CSS_VARS.divider)};
+      padding: 4px 0;
       font-size: 13px;
     }
-
-    .row:last-child { border-bottom: none; }
 
     .row-label { color: ${u(CSS_VARS.textSecondary)}; }
     .row-value {
@@ -546,43 +396,72 @@ export class OigBoilerPlanInfo extends LitElement {
 
     return html`
       <h3>Informace o planu</h3>
-      <div class="rows">
-        <div class="row">
-          <span class="row-label">Mix zdroju:</span>
-          <span class="row-value">${v(p?.sourceDigest)}</span>
+      <div class="sections">
+
+        <!-- Základní info -->
+        <div class="section">
+          <div class="section-label">Základní info</div>
+          <div class="rows">
+            <div class="row">
+              <span class="row-label">Mix zdrojů:</span>
+              <span class="row-value">${v(p?.sourceDigest)}</span>
+            </div>
+            <div class="row">
+              <span class="row-label">Slotů:</span>
+              <span class="row-value">${p?.slots?.length ?? '--'}</span>
+            </div>
+            <div class="row">
+              <span class="row-label">Topení aktivní:</span>
+              <span class="row-value">${v(p?.activeSlotCount)}</span>
+            </div>
+          </div>
         </div>
-        <div class="row">
-          <span class="row-label">Slotu:</span>
-          <span class="row-value">${p?.slots?.length ?? '--'}</span>
+
+        <!-- Cenové info -->
+        <div class="section">
+          <div class="section-label">Cenové info</div>
+          <div class="rows">
+            <div class="row">
+              <span class="row-label">Nejlevnější spot:</span>
+              <span class="row-value">${v(p?.cheapestSpot)}</span>
+            </div>
+            <div class="row">
+              <span class="row-label">Nejdražší spot:</span>
+              <span class="row-value">${v(p?.mostExpensiveSpot)}</span>
+            </div>
+          </div>
         </div>
-        <div class="row">
-          <span class="row-label">Topeni aktivni:</span>
-          <span class="row-value">${v(p?.activeSlotCount)}</span>
+
+        <!-- Forecast info -->
+        <div class="section">
+          <div class="section-label">Forecast info</div>
+          <div class="rows">
+            <div class="row">
+              <span class="row-label">FVE okna:</span>
+              <span class="row-value">${fw.fve}</span>
+            </div>
+            <div class="row">
+              <span class="row-label">Grid okna:</span>
+              <span class="row-value">${fw.grid}</span>
+            </div>
+          </div>
         </div>
-        <div class="row">
-          <span class="row-label">Nejlevnejsi spot:</span>
-          <span class="row-value">${v(p?.cheapestSpot)}</span>
+
+        <!-- Časové info -->
+        <div class="section">
+          <div class="section-label">Časové info</div>
+          <div class="rows">
+            <div class="row">
+              <span class="row-label">Od:</span>
+              <span class="row-value">${v(p?.planStart)}</span>
+            </div>
+            <div class="row">
+              <span class="row-label">Do:</span>
+              <span class="row-value">${v(p?.planEnd)}</span>
+            </div>
+          </div>
         </div>
-        <div class="row">
-          <span class="row-label">Nejdrazsi spot:</span>
-          <span class="row-value">${v(p?.mostExpensiveSpot)}</span>
-        </div>
-        <div class="row">
-          <span class="row-label">FVE okna (forecast):</span>
-          <span class="row-value">${fw.fve}</span>
-        </div>
-        <div class="row">
-          <span class="row-label">Grid okna (forecast):</span>
-          <span class="row-value">${fw.grid}</span>
-        </div>
-        <div class="row">
-          <span class="row-label">Od:</span>
-          <span class="row-value">${v(p?.planStart)}</span>
-        </div>
-        <div class="row">
-          <span class="row-label">Do:</span>
-          <span class="row-value">${v(p?.planEnd)}</span>
-        </div>
+
       </div>
     `;
   }
@@ -1178,9 +1057,14 @@ export class OigBoilerConfigSection extends LitElement {
     const v = (val: string | number | null | undefined, unit = '') =>
       val !== null && val !== undefined ? `${val}${unit ? ' ' + unit : ''}` : `--${unit ? ' ' + unit : ''}`;
 
+    const configModeLabel = c.configMode === 'advanced' ? 'Pokrocily' : 'Jednoduchy';
     return html`
       <h3>Profil bojleru</h3>
       <div class="grid">
+ <div class="card">
+        <div class="card-label">Rezim</div>
+        <div class="card-value">${configModeLabel}</div>
+ </div>
         <div class="card">
           <div class="card-label">Objem</div>
           <div class="card-value">${v(c.volumeL, 'L')}</div>
@@ -1333,7 +1217,6 @@ export class OigBoilerProfiles extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'oig-boiler-debug-panel': OigBoilerDebugPanel;
     'oig-boiler-status-grid': OigBoilerStatusGrid;
     'oig-boiler-energy-breakdown': OigBoilerEnergyBreakdown;
     'oig-boiler-predicted-usage': OigBoilerPredictedUsage;
