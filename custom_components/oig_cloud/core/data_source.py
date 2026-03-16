@@ -258,9 +258,12 @@ def _get_latest_local_entity_update(
 
 def _iter_local_entities(hass: HomeAssistant, box_id: str):
     for domain in ("sensor", "binary_sensor"):
-        prefix = f"{domain}.oig_local_{box_id}_"
+        prefixes = (
+            f"{domain}.oig_local_{box_id}_",
+            f"{domain}.{box_id}_",
+        )
         for st in hass.states.async_all(domain):
-            if st.entity_id.startswith(prefix):
+            if any(st.entity_id.startswith(p) for p in prefixes):
                 yield st
 
 
@@ -406,10 +409,26 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
     return state
 
 
+def _is_local_proxy_entity(entity_id: str) -> bool:
+    for domain in ("sensor", "binary_sensor"):
+        prefix = f"{domain}."
+        if not entity_id.startswith(prefix):
+            continue
+        suffix = entity_id[len(prefix):]
+        if suffix.startswith("oig_local_"):
+            return True
+        parts = suffix.split("_", 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            return True
+    return False
+
+
 class DataSourceController:
     """Controls effective data source mode based on local proxy health."""
 
-    _LOCAL_ENTITY_RE = re.compile(r"^(?:sensor|binary_sensor)\.oig_local_(\d+)_")
+    _LOCAL_ENTITY_RE = re.compile(
+        r"^(?:sensor|binary_sensor)\.(?:oig_local_)?(\d+)_"
+    )
 
     def __init__(
         self,
@@ -530,10 +549,7 @@ class DataSourceController:
         entity_id = event.data.get("entity_id")
         if not isinstance(entity_id, str):
             return
-        if not (
-            entity_id.startswith("sensor.oig_local_")
-            or entity_id.startswith("binary_sensor.oig_local_")
-        ):
+        if not _is_local_proxy_entity(entity_id):
             return
 
         # Ensure the local update belongs to this entry's box_id (prevents cross-device wiring).

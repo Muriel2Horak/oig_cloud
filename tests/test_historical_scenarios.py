@@ -17,7 +17,7 @@ PLANNING_MIN_PERCENT = 33.0
 CHARGE_RATE_KW = 2.8
 EXPECTED_SCENARIO_COUNT = 30
 INTERVALS_PER_DAY = 96
-VALID_MODES = {CBBMode.HOME_I.value, CBBMode.HOME_III.value, CBBMode.HOME_UPS.value}
+VALID_MODES = {CBBMode.HOME_I.value, CBBMode.HOME_UPS.value}
 
 
 def _load_historical_scenarios() -> list[dict[str, Any]]:

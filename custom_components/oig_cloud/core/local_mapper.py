@@ -297,7 +297,10 @@ def _parse_local_entity_id(
     for candidate_domain in ("sensor", "binary_sensor"):
         prefix = f"{candidate_domain}.oig_local_{box_id}_"
         if entity_id.startswith(prefix):
-            return candidate_domain, entity_id[len(prefix) :]
+            return candidate_domain, entity_id[len(prefix):]
+        prefix2 = f"{candidate_domain}.{box_id}_"
+        if entity_id.startswith(prefix2):
+            return candidate_domain, entity_id[len(prefix2):]
     return None
 
 

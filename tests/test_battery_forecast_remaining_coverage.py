@@ -274,7 +274,7 @@ def test_hybrid_scoring_extract_prices_and_reasons():
         expensive_threshold=4.0,
         very_cheap=1.0,
     )
-    assert mode in {CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III, CBB_MODE_HOME_UPS}
+    assert mode in {CBB_MODE_HOME_I, CBB_MODE_HOME_UPS}
     assert reason
 
 
@@ -303,8 +303,8 @@ def test_hybrid_scoring_negative_price_strategies():
         price=-1.0,
         export_price=0.0,
     )
-    assert mode == CBB_MODE_HOME_III
-    assert reason == "negative_price_curtail"
+    assert mode == CBB_MODE_HOME_I
+    assert reason == "negative_price_consume"
 
     strategy.config.negative_price_strategy = NegativePriceStrategy.CONSUME
     mode, reason = hybrid_scoring.handle_negative_price(
@@ -381,7 +381,7 @@ def test_calculate_optimal_mode():
         config=config,
         sim_config=sim_config,
     )
-    assert mode in {CBB_MODE_HOME_I, CBB_MODE_HOME_II, CBB_MODE_HOME_III, CBB_MODE_HOME_UPS}
+    assert mode in {CBB_MODE_HOME_I, CBB_MODE_HOME_UPS}
     assert reason
 
 

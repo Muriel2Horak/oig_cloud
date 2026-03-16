@@ -15,7 +15,6 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
     rollupOptions: {
-      external: ['date-fns'],
       output: {
         // Disable file hashing for better HA compatibility
         // Cache busting handled via query parameters in panel URL

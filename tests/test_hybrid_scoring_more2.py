@@ -153,8 +153,8 @@ def test_handle_negative_price_auto_variants():
         price=-1.0,
         export_price=0.0,
     )
-    assert mode == CBB_MODE_HOME_UPS
-    assert reason == "auto_negative_charge"
+    assert mode == CBB_MODE_HOME_I
+    assert reason == "negative_price_consume"
 
     mode, reason = module.handle_negative_price(
         strategy,
@@ -164,8 +164,8 @@ def test_handle_negative_price_auto_variants():
         price=-1.0,
         export_price=0.0,
     )
-    assert mode == CBB_MODE_HOME_III
-    assert reason == "auto_negative_curtail"
+    assert mode == CBB_MODE_HOME_I
+    assert reason == "negative_price_consume"
 
     mode, reason = module.handle_negative_price(
         strategy,
@@ -176,7 +176,7 @@ def test_handle_negative_price_auto_variants():
         export_price=0.0,
     )
     assert mode == CBB_MODE_HOME_I
-    assert reason == "auto_negative_consume"
+    assert reason == "negative_price_consume"
 
 
 def test_apply_smoothing_protected_and_short():

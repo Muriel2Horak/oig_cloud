@@ -2290,9 +2290,40 @@ globalThis.DashboardFlow = {
     debouncedLoadNodeDetails,
     init: function() {
         console.log('[DashboardFlow] Initialized');
-        // Start periodic updates
         setInterval(updateTime, 1000);
+        _startFlowStateWatcher();
     }
 };
+
+const FLOW_WATCHED_ENTITIES = [
+    'actual_fv_total', 'actual_fv_p1', 'actual_fv_p2', 'dc_in_fv_ad', 'dc_in_fv_proc',
+    'batt_bat_c', 'batt_batt_comp_p', 'extended_battery_voltage', 'extended_battery_current', 'extended_battery_temperature',
+    'actual_aci_wtotal', 'extended_grid_consumption', 'extended_grid_delivery',
+    'actual_aco_p', 'ac_out_en_day',
+    'box_prms_mode', 'box_temp', 'bypass_status',
+    'boiler_current_cbb_w', 'boiler_manual_mode',
+    'real_data_update', 'time_to_empty', 'time_to_full',
+    'grid_charging_planned'
+];
+
+function _startFlowStateWatcher() {
+    const watcher = globalThis.DashboardStateWatcher;
+    if (!watcher) {
+        console.warn('[DashboardFlow] StateWatcher not available, retrying...');
+        setTimeout(_startFlowStateWatcher, 1000);
+        return;
+    }
+
+    const entityIds = FLOW_WATCHED_ENTITIES.map(e => getSensorId(e));
+    watcher.registerEntities(entityIds);
+
+    watcher.onEntityChange((entityId, newState) => {
+        if (FLOW_WATCHED_ENTITIES.some(e => entityId === getSensorId(e))) {
+            debouncedLoadData();
+        }
+    });
+
+    console.log('[DashboardFlow] StateWatcher subscribed to', entityIds.length, 'entities');
+}
 
 console.log('[DashboardFlow] Module loaded');

@@ -372,7 +372,10 @@ export class OigApp extends LitElement {
       });
 
       // Subscribe to entity changes for reactive updates
-      this.stateWatcherUnsub = stateWatcher.onEntityChange((_entityId, _newState) => {
+      this.stateWatcherUnsub = stateWatcher.onEntityChange((entityId, newState) => {
+        if (this.hass?.states && newState) {
+          this.hass = { ...this.hass, states: { ...this.hass.states, [entityId]: newState } };
+        }
         this.throttledUpdateFlow();
         this.throttledUpdateSensors();
       });

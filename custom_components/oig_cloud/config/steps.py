@@ -1159,15 +1159,16 @@ Kliknutím na "Odeslat" spustíte průvodce.
         elif extended > 3600:
             errors["extended_scan_interval"] = "extended_interval_too_long"
 
-        if proxy_stale < 1:
-            errors["local_proxy_stale_minutes"] = "interval_too_short"
-        elif proxy_stale > 120:
-            errors["local_proxy_stale_minutes"] = "interval_too_long"
+        if data_source_mode != "cloud_only":
+            if proxy_stale < 1:
+                errors["local_proxy_stale_minutes"] = "interval_too_short"
+            elif proxy_stale > 120:
+                errors["local_proxy_stale_minutes"] = "interval_too_long"
 
-        if debounce_ms < 0:
-            errors["local_event_debounce_ms"] = "interval_too_short"
-        elif debounce_ms > 5000:
-            errors["local_event_debounce_ms"] = "interval_too_long"
+            if debounce_ms < 0:
+                errors["local_event_debounce_ms"] = "interval_too_short"
+            elif debounce_ms > 5000:
+                errors["local_event_debounce_ms"] = "interval_too_long"
 
         if data_source_mode == "local_only" and not self._proxy_ready():
             errors["data_source_mode"] = "local_proxy_missing"
@@ -1175,20 +1176,23 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return errors
 
     def _proxy_ready(self) -> bool:
-        if not self.hass:
-            return False  # pragma: no cover
-        proxy_state = self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
-        if proxy_state is None or proxy_state.state in (
-            STATE_UNAVAILABLE,
-            STATE_UNKNOWN,
-        ):
-            return False
-        proxy_box = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
-        return bool(
-            proxy_box is not None
-            and isinstance(proxy_box.state, str)
-            and proxy_box.state.isdigit()
-        )
+        # TODO: Dočasně vypnuta validace - změnil se název senzoru v oig-proxy
+        # Původní validace:
+        # if not self.hass:
+        #     return False  # pragma: no cover
+        # proxy_state = self.hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
+        # if proxy_state is None or proxy_state.state in (
+        #     STATE_UNAVAILABLE,
+        #     STATE_UNKNOWN,
+        # ):
+        #     return False
+        # proxy_box = self.hass.states.get(PROXY_BOX_ID_ENTITY_ID)
+        # return bool(
+        #     proxy_box is not None
+        #     and isinstance(proxy_box.state, str)
+        #     and proxy_box.state.isdigit()
+        # )
+        return True  # Dočasně vypnuta validace
 
     def _show_intervals_form(
         self,

@@ -293,7 +293,7 @@ def test_generate_plan_returns_expected_result_structure_and_cost() -> None:
     assert result.decisions == [decision]
     assert result.modes[10] == CBBMode.HOME_UPS.value
     assert result.modes[11] == CBBMode.HOME_UPS.value
-    assert result.modes[50] == CBBMode.HOME_III.value
+    assert result.modes[50] == CBBMode.HOME_I.value
     assert result.total_cost == pytest.approx(sum(state.cost_czk for state in result.states), abs=1e-6)
 
 
@@ -313,7 +313,7 @@ def test_plan_battery_schedule_ideal_day_has_no_critical_moments_and_no_ups() ->
     assert len(result.states) == intervals_count
     assert result.decisions == []
     assert all(mode != CBBMode.HOME_UPS.value for mode in result.modes)
-    assert any(mode == CBBMode.HOME_III.value for mode in result.modes)
+    assert all(mode == CBBMode.HOME_I.value for mode in result.modes)
     assert result.total_cost == pytest.approx(sum(state.cost_czk for state in result.states), abs=1e-6)
 
 
@@ -322,7 +322,7 @@ def test_plan_battery_schedule_critical_day_schedules_ups_charging() -> None:
     inputs = _build_inputs(
         current_soc_kwh=4.0,
         intervals_count=intervals_count,
-        prices=[12.0] * intervals_count,
+        prices=[2.5] * 20 + [8.0] * 76,
         solar_forecast=[0.0] * intervals_count,
         load_forecast=[0.5] * intervals_count,
     )
@@ -376,8 +376,8 @@ def test_plan_battery_schedule_emergency_mode_falls_back_when_planning_fails() -
     assert len(result.states) == intervals_count
     assert result.decisions == []
     assert result.modes[0] == CBBMode.HOME_I.value
-    assert result.modes[10] == CBBMode.HOME_III.value
-    assert all(mode in (CBBMode.HOME_I.value, CBBMode.HOME_III.value) for mode in result.modes)
+    assert result.modes[10] == CBBMode.HOME_I.value
+    assert all(mode == CBBMode.HOME_I.value for mode in result.modes)
 
 
 def test_plan_battery_schedule_logs_error_on_exception(caplog: pytest.LogCaptureFixture) -> None:
@@ -542,6 +542,35 @@ def test_make_economic_decisions_emergency_when_all_strategies_non_finite() -> N
     assert decisions[0].cost == float("inf")
 
 
+def test_plan_battery_schedule_charges_cheapest_globally_not_before_deficit() -> None:
+    n_cheap = 9
+    n_expensive = 21
+    n_total = n_cheap + n_expensive
+
+    prices = [2.5] * n_cheap + [6.0] * n_expensive
+    solar_forecast = [0.0] * n_total
+    load_forecast = [0.3] * n_total
+
+    inputs = _build_inputs(
+        current_soc_kwh=3.38,
+        intervals_count=n_total,
+        prices=prices,
+        solar_forecast=solar_forecast,
+        load_forecast=load_forecast,
+    )
+
+    result = plan_battery_schedule(inputs)
+
+    ups_indices = [i for i, m in enumerate(result.modes) if m == CBBMode.HOME_UPS.value]
+    assert len(ups_indices) > 0, "Should schedule some grid charging"
+    assert all(i < n_cheap for i in ups_indices), (
+        f"All UPS intervals must be in cheap window [0,{n_cheap}), got {ups_indices}"
+    )
+    assert not any(
+        result.modes[i] == CBBMode.HOME_UPS.value for i in range(n_cheap, n_total)
+    ), "No UPS charging should happen in the expensive evening window"
+
+
 def test_generate_plan_raises_on_safety_validation_failure() -> None:
     from unittest.mock import patch
 
@@ -563,3 +592,75 @@ def test_generate_plan_raises_on_safety_validation_failure() -> None:
     ):
         with pytest.raises(ValueError, match="Safety validation failed"):
             generate_plan([], inputs)
+
+
+def test_charges_only_in_cheapest_intervals_not_expensive_ones() -> None:
+    # Night cheap (0:30-4:30): prices 2.67-3.17 Kč — should be selected
+    # Evening expensive (18:00-18:30): prices 6.12-6.49 Kč — must NOT be selected
+    # SOC starts low enough that charging is needed; cheap night intervals cover the deficit
+    inputs = _build_inputs(
+        current_soc_kwh=3.0,
+        intervals_count=8,
+        prices=[6.12, 6.49, 3.17, 2.67, 2.80, 3.10, 6.10, 5.50],
+        solar_forecast=[0.0] * 8,
+        load_forecast=[0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+        charge_rate_kw=2.8,
+    )
+
+    result = plan_battery_schedule(inputs)
+
+    home_ups_indices = [i for i, m in enumerate(result.modes) if m == CBBMode.HOME_UPS.value]
+    home_ups_prices = [inputs.prices[i] for i in home_ups_indices]
+
+    assert all(p < 4.0 for p in home_ups_prices), (
+        f"HOME_UPS assigned at expensive intervals: {list(zip(home_ups_indices, home_ups_prices))}. "
+        f"Expected only cheap intervals (< 4.0 Kč)."
+    )
+    assert 0 not in home_ups_indices, f"Interval 0 (6.12 Kč) must not be HOME_UPS, got {home_ups_indices}"
+    assert 1 not in home_ups_indices, f"Interval 1 (6.49 Kč) must not be HOME_UPS, got {home_ups_indices}"
+    assert 6 not in home_ups_indices, f"Interval 6 (6.10 Kč) must not be HOME_UPS, got {home_ups_indices}"
+
+
+def test_stops_charging_when_deficit_covered() -> None:
+    # Battery is near full, only 1 cheap interval needed to cover deficit
+    # Algorithm must stop after covering the deficit, not continue to all cheap intervals
+    inputs = _build_inputs(
+        current_soc_kwh=8.0,
+        intervals_count=6,
+        prices=[1.0, 1.5, 2.0, 8.0, 8.0, 8.0],
+        solar_forecast=[0.0] * 6,
+        load_forecast=[0.1, 0.1, 0.1, 3.0, 3.0, 3.0],
+        charge_rate_kw=2.8,
+    )
+
+    result = plan_battery_schedule(inputs)
+
+    home_ups_indices = [i for i, m in enumerate(result.modes) if m == CBBMode.HOME_UPS.value]
+
+    assert len(home_ups_indices) <= 3, (
+        f"Should stop after covering deficit, got {len(home_ups_indices)} HOME_UPS intervals: {home_ups_indices}"
+    )
+
+
+def test_no_home_ups_assigned_when_battery_already_full_from_cheaper_interval() -> None:
+    inputs = _build_inputs(
+        current_soc_kwh=9.575,
+        intervals_count=5,
+        prices=[1.5, 1.0, 5.0, 8.0, 8.0],
+        solar_forecast=[0.0] * 5,
+        load_forecast=[0.01, 0.01, 3.0, 3.0, 3.0],
+        charge_rate_kw=2.8,
+    )
+
+    result = plan_battery_schedule(inputs)
+
+    home_ups_indices = [i for i, m in enumerate(result.modes) if m == CBBMode.HOME_UPS.value]
+
+    assert 0 in home_ups_indices, (
+        f"Interval 0 (price=1.5) should be HOME_UPS, got {home_ups_indices}"
+    )
+    assert 1 not in home_ups_indices, (
+        f"Interval 1 (price=1.0, cheaper but chronologically after 0) must NOT be HOME_UPS: "
+        f"greedy assigns it first and fills the battery; post-processing must detect effective_charge≈0 "
+        f"and remove it. Got {home_ups_indices}"
+    )

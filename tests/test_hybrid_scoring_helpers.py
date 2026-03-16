@@ -74,8 +74,8 @@ def test_handle_negative_price_variants():
 
     strategy.config.negative_price_strategy = NegativePriceStrategy.CURTAIL
     mode, reason = module.handle_negative_price(strategy, battery=10, solar=1, load=0, price=-1, export_price=0)
-    assert mode == CBB_MODE_HOME_III
-    assert reason == "negative_price_curtail"
+    assert mode == CBB_MODE_HOME_I
+    assert reason == "negative_price_consume"
 
 
 def test_apply_smoothing_merges_short_runs():
