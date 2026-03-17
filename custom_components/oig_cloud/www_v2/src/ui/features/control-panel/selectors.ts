@@ -156,7 +156,7 @@ export class OigBoxModeSelector extends LitElement {
   }
 
   render() {
-    const modes: BoxMode[] = ['home_1', 'home_2', 'home_3', 'home_ups'];
+    const modes: BoxMode[] = ['home_1', 'home_2', 'home_3', 'home_ups', 'home_5', 'home_6'];
 
     return html`
       <div class="selector-label">

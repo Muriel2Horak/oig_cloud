@@ -42,7 +42,7 @@ class DummySensor:
 def test_initialize_sensor_sets_defaults(monkeypatch):
     monkeypatch.setattr(sensor_setup, "Store", DummyStore)
     monkeypatch.setattr(
-        "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
+        "custom_components.oig_cloud.battery_forecast.sensors.sensor_setup.resolve_box_id",
         lambda _coord: "box123",
     )
 

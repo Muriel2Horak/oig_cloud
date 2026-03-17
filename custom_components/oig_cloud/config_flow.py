@@ -7,4 +7,5 @@ from .const import DOMAIN
 class ConfigFlow(StepsConfigFlow, domain=DOMAIN):
     pass
 
+
 __all__ = ["ConfigFlow", "OigCloudOptionsFlowHandler"]

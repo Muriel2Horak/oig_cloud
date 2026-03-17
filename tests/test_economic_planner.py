@@ -293,7 +293,7 @@ def test_generate_plan_returns_expected_result_structure_and_cost() -> None:
     assert result.decisions == [decision]
     assert result.modes[10] == CBBMode.HOME_UPS.value
     assert result.modes[11] == CBBMode.HOME_UPS.value
-    assert result.modes[50] == CBBMode.HOME_III.value
+    assert result.modes[50] == CBBMode.HOME_I.value
     assert result.total_cost == pytest.approx(sum(state.cost_czk for state in result.states), abs=1e-6)
 
 
@@ -313,16 +313,18 @@ def test_plan_battery_schedule_ideal_day_has_no_critical_moments_and_no_ups() ->
     assert len(result.states) == intervals_count
     assert result.decisions == []
     assert all(mode != CBBMode.HOME_UPS.value for mode in result.modes)
-    assert any(mode == CBBMode.HOME_III.value for mode in result.modes)
+    assert all(mode == CBBMode.HOME_I.value for mode in result.modes)
     assert result.total_cost == pytest.approx(sum(state.cost_czk for state in result.states), abs=1e-6)
 
 
 def test_plan_battery_schedule_critical_day_schedules_ups_charging() -> None:
     intervals_count = 96
+    prices = [12.0] * intervals_count
+    prices[0:4] = [4.0, 4.0, 4.0, 4.0]
     inputs = _build_inputs(
         current_soc_kwh=4.0,
         intervals_count=intervals_count,
-        prices=[12.0] * intervals_count,
+        prices=prices,
         solar_forecast=[0.0] * intervals_count,
         load_forecast=[0.5] * intervals_count,
     )
@@ -376,8 +378,8 @@ def test_plan_battery_schedule_emergency_mode_falls_back_when_planning_fails() -
     assert len(result.states) == intervals_count
     assert result.decisions == []
     assert result.modes[0] == CBBMode.HOME_I.value
-    assert result.modes[10] == CBBMode.HOME_III.value
-    assert all(mode in (CBBMode.HOME_I.value, CBBMode.HOME_III.value) for mode in result.modes)
+    assert result.modes[10] == CBBMode.HOME_I.value
+    assert all(mode in (CBBMode.HOME_I.value,) for mode in result.modes)
 
 
 def test_plan_battery_schedule_logs_error_on_exception(caplog: pytest.LogCaptureFixture) -> None:

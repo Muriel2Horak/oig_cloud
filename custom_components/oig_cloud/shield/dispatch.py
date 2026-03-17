@@ -397,9 +397,25 @@ async def start_call(
     )
 
     actual_params = data.get("params", data)
-    await original_call(
-        domain, service, service_data=actual_params, blocking=blocking, context=context
-    )
+    try:
+        await original_call(
+            domain, service, service_data=actual_params, blocking=blocking, context=context
+        )
+    except Exception as err:
+        _LOGGER.error("[OIG Shield] Service call %s failed: %s", service_name, err)
+        shield.pending.pop(service_name, None)
+        shield.running = None
+        await shield._log_event(
+            "error",
+            service_name,
+            {"params": data, "entities": expected_entities, "error": str(err)},
+            reason=f"Služba selhala: {err}",
+            context=context,
+        )
+        shield._notify_state_change()
+        if shield.queue:
+            shield.hass.async_create_task(shield._check_loop(datetime.now()))
+        return
 
     await _refresh_coordinator_after_call(shield, service_name)
 

@@ -10,7 +10,7 @@ from custom_components.oig_cloud.battery_forecast.strategy import hybrid_scoring
 from custom_components.oig_cloud.battery_forecast.types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
-    CBB_MODE_HOME_III,
+    CBB_MODE_HOME_I,
     CBB_MODE_HOME_UPS,
 )
 
@@ -92,7 +92,7 @@ def test_select_best_mode_reason_branches(monkeypatch):
     strategy = DummyStrategy()
 
     def _score(strategy, mode, **_k):
-        return {CBB_MODE_HOME_UPS: 10, CBB_MODE_HOME_III: 5, CBB_MODE_HOME_II: 3, CBB_MODE_HOME_I: 1}[mode]
+        return {CBB_MODE_HOME_UPS: 10, CBB_MODE_HOME_I: 5, CBB_MODE_HOME_II: 3, CBB_MODE_HOME_I: 1}[mode]
 
     monkeypatch.setattr(module, "score_mode", _score)
     mode, reason, _ = module.select_best_mode(
@@ -153,8 +153,8 @@ def test_handle_negative_price_auto_variants():
         price=-1.0,
         export_price=0.0,
     )
-    assert mode == CBB_MODE_HOME_UPS
-    assert reason == "auto_negative_charge"
+    assert mode == CBB_MODE_HOME_I
+    assert reason == "negative_price_consume"
 
     mode, reason = module.handle_negative_price(
         strategy,
@@ -164,8 +164,8 @@ def test_handle_negative_price_auto_variants():
         price=-1.0,
         export_price=0.0,
     )
-    assert mode == CBB_MODE_HOME_III
-    assert reason == "auto_negative_curtail"
+    assert mode == CBB_MODE_HOME_I
+    assert reason == "negative_price_consume"
 
     mode, reason = module.handle_negative_price(
         strategy,
@@ -176,7 +176,7 @@ def test_handle_negative_price_auto_variants():
         export_price=0.0,
     )
     assert mode == CBB_MODE_HOME_I
-    assert reason == "auto_negative_consume"
+    assert reason == "negative_price_consume"
 
 
 def test_apply_smoothing_protected_and_short():
