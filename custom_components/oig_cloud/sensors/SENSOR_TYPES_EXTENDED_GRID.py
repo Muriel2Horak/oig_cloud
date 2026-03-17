@@ -28,10 +28,10 @@ SENSOR_TYPES_EXTENDED_GRID: Dict[str, Dict[str, Any]] = {
     },
     "extended_grid_consumption": {
         "name": "Extended Grid Consumption",
-        "name_cs": "Rozšířená spotřeba ze sítě",
+        "name_cs": "Rozšířená spotřeba z sítě",
         "unit_of_measurement": UnitOfEnergy.WATT_HOUR,
         "device_class": SensorDeviceClass.ENERGY,
-        "state_class": SensorStateClass.TOTAL_INCREASING,
+        "state_class": SensorStateClass.TOTAL,
         "node_id": None,
         "node_key": None,
         "sensor_type_category": "extended",

@@ -706,7 +706,7 @@ class BatteryHealthTracker:
         soh_percent = (capacity_kwh / self._nominal_capacity_kwh) * 100.0
 
         if soh_percent > 105.0:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Interval rejected: SoH %.1f%% > 105%% (measurement error), "
                 "capacity=%.2f kWh, ΔSoC=%.0f%%, charge=%.0f Wh, eff=%.1f%%%s",
                 soh_percent,
@@ -718,7 +718,7 @@ class BatteryHealthTracker:
             )
             return None
         if soh_percent < 70.0:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Interval rejected: SoH %.1f%% < 70%% (extreme degradation or error), "
                 "capacity=%.2f kWh, ΔSoC=%.0f%%, charge=%.0f Wh, eff=%.1f%%%s",
                 soh_percent,
