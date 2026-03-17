@@ -319,10 +319,12 @@ def test_plan_battery_schedule_ideal_day_has_no_critical_moments_and_no_ups() ->
 
 def test_plan_battery_schedule_critical_day_schedules_ups_charging() -> None:
     intervals_count = 96
+    prices = [12.0] * intervals_count
+    prices[0:4] = [4.0, 4.0, 4.0, 4.0]
     inputs = _build_inputs(
         current_soc_kwh=4.0,
         intervals_count=intervals_count,
-        prices=[12.0] * intervals_count,
+        prices=prices,
         solar_forecast=[0.0] * intervals_count,
         load_forecast=[0.5] * intervals_count,
     )

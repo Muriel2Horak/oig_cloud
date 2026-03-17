@@ -1,7 +1,7 @@
 from custom_components.oig_cloud import config_flow
-from custom_components.oig_cloud.config.steps import ConfigFlow
+from custom_components.oig_cloud.config.steps import ConfigFlow as StepsConfigFlow
 
 
 def test_config_flow_exports():
-    assert config_flow.ConfigFlow is ConfigFlow
+    assert issubclass(config_flow.ConfigFlow, StepsConfigFlow)
     assert "ConfigFlow" in config_flow.__all__

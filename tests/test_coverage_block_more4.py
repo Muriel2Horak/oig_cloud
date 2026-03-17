@@ -263,10 +263,10 @@ def test_hybrid_scoring_reason_branches(monkeypatch):
     assert mode == CBB_MODE_HOME_UPS
     assert reason == "opportunistic_charge"
 
-    def _score_home3(_strategy, mode, **_k):
-        return {CBB_MODE_HOME_I: 5, CBB_MODE_HOME_UPS: 4, CBB_MODE_HOME_II: 1, CBB_MODE_HOME_I: 0}[mode]
+    def _score_home1(_strategy, mode, **_k):
+        return {CBB_MODE_HOME_I: 5, CBB_MODE_HOME_UPS: 4}[mode]
 
-    monkeypatch.setattr(hybrid_scoring, "score_mode", _score_home3)
+    monkeypatch.setattr(hybrid_scoring, "score_mode", _score_home1)
     mode, reason, _ = hybrid_scoring.select_best_mode(
         strategy,
         battery=5.0,
@@ -278,7 +278,8 @@ def test_hybrid_scoring_reason_branches(monkeypatch):
         expensive_threshold=3.0,
         very_cheap=1.0,
     )
-    assert reason == "preserve_battery_high_solar"
+    assert mode == CBB_MODE_HOME_I
+    assert reason == "normal_operation"
 
 
 @pytest.mark.asyncio

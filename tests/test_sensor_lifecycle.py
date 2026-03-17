@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -28,6 +29,8 @@ class DummyLastState:
 class DummyHass:
     def __init__(self):
         self.created = []
+        self.loop = asyncio.get_event_loop()
+        self.data = {}
 
     def async_create_task(self, coro):
         self.created.append(coro)
@@ -126,7 +129,8 @@ async def test_async_added_to_hass_restores_and_schedules(monkeypatch):
         scheduled.append(kwargs)
 
     monkeypatch.setattr(
-        "homeassistant.helpers.event.async_track_time_change", _track
+        "custom_components.oig_cloud.battery_forecast.sensors.sensor_lifecycle.async_track_time_change",
+        _track,
     )
 
     async def _maybe_call(cb):
@@ -235,7 +239,8 @@ async def test_async_added_to_hass_callbacks(monkeypatch):
         scheduled.append(cb)
 
     monkeypatch.setattr(
-        "homeassistant.helpers.event.async_track_time_change", _track
+        "custom_components.oig_cloud.battery_forecast.sensors.sensor_lifecycle.async_track_time_change",
+        _track,
     )
 
     dispatcher_callbacks = []
@@ -245,7 +250,8 @@ async def test_async_added_to_hass_callbacks(monkeypatch):
         return lambda: None
 
     monkeypatch.setattr(
-        "homeassistant.helpers.dispatcher.async_dispatcher_connect", _connect
+        "custom_components.oig_cloud.battery_forecast.sensors.sensor_lifecycle.async_dispatcher_connect",
+        _connect,
     )
 
     async def _sleep(_seconds):

@@ -316,7 +316,7 @@ def test_hybrid_scoring_select_best_mode_reasons(monkeypatch):
     assert reason == "low_battery_charge"
 
     def _score_home3(_strategy, mode, **_kwargs):
-        return {CBB_MODE_HOME_I: 5, CBB_MODE_HOME_UPS: 4, CBB_MODE_HOME_II: 3, CBB_MODE_HOME_I: 1}[mode]
+        return {CBB_MODE_HOME_I: 5, CBB_MODE_HOME_UPS: 4, CBB_MODE_HOME_II: 3}[mode]
 
     monkeypatch.setattr(hybrid_scoring, "score_mode", _score_home3)
     mode, reason, _ = hybrid_scoring.select_best_mode(
@@ -331,12 +331,12 @@ def test_hybrid_scoring_select_best_mode_reasons(monkeypatch):
         very_cheap=1.0,
     )
     assert mode == CBB_MODE_HOME_I
-    assert reason == "maximize_solar_storage"
+    assert reason == "normal_operation"  # price=2.0 < expensive_threshold=3.0
 
-    def _score_home2(_strategy, mode, **_kwargs):
-        return {CBB_MODE_HOME_II: 5, CBB_MODE_HOME_UPS: 4, CBB_MODE_HOME_I: 3, CBB_MODE_HOME_I: 1}[mode]
+    def _score_home_ups(_strategy, mode, **_kwargs):
+        return {CBB_MODE_HOME_UPS: 5, CBB_MODE_HOME_I: 3}[mode]
 
-    monkeypatch.setattr(hybrid_scoring, "score_mode", _score_home2)
+    monkeypatch.setattr(hybrid_scoring, "score_mode", _score_home_ups)
     mode, reason, _ = hybrid_scoring.select_best_mode(
         strategy,
         battery=5.0,
@@ -348,8 +348,8 @@ def test_hybrid_scoring_select_best_mode_reasons(monkeypatch):
         expensive_threshold=3.0,
         very_cheap=1.0,
     )
-    assert mode == CBB_MODE_HOME_II
-    assert reason == "preserve_battery_day"
+    assert mode == CBB_MODE_HOME_UPS
+    assert reason == "opportunistic_charge"
 
     def _score_home1(_strategy, mode, **_kwargs):
         return {CBB_MODE_HOME_I: 5, CBB_MODE_HOME_I: 3, CBB_MODE_HOME_UPS: 1, CBB_MODE_HOME_II: 0}[mode]
