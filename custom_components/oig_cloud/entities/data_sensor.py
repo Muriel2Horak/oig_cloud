@@ -426,13 +426,19 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             last_values = extended_fve["items"][-1]["values"]
 
             if sensor_type == "extended_fve_current_1":
-                # Index 3 = power_1, Index 0 = voltage_1
-                power = float(last_values[3])  # extended_fve_power_1
-                voltage = float(last_values[0])  # extended_fve_voltage_1
+                power_raw = last_values[3]
+                voltage_raw = last_values[0]
+                if power_raw is None or voltage_raw is None:
+                    return None
+                power = float(power_raw)
+                voltage = float(voltage_raw)
             elif sensor_type == "extended_fve_current_2":
-                # Index 4 = power_2, Index 1 = voltage_2
-                power = float(last_values[4])  # extended_fve_power_2
-                voltage = float(last_values[1])  # extended_fve_voltage_2
+                power_raw = last_values[4]
+                voltage_raw = last_values[1]
+                if power_raw is None or voltage_raw is None:
+                    return None
+                power = float(power_raw)
+                voltage = float(voltage_raw)
             else:
                 return None
 
