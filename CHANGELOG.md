@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.10] - 2026-03-17
+
+### Fixed
+- Battery health sensor now reads actual battery capacity from `installed_battery_capacity_kwh` sensor instead of hardcoded 15.3 kWh value
+- SoH calculations now correctly reflect the real battery capacity when it differs from the default
+
 ## [2.3.9] - 2026-03-17
 
 ### Fixed
