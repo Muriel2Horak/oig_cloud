@@ -79,6 +79,23 @@ class BatteryHealthTracker:
             f"BatteryHealthTracker initialized, nominal capacity: {nominal_capacity_kwh:.2f} kWh"
         )
 
+    def _get_nominal_capacity_kwh(self) -> float:
+        """Get nominal battery capacity from sensor, fallback to stored value."""
+        if not self._hass:
+            return self._nominal_capacity_kwh
+
+        installed_sensor = f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
+        state = self._hass.states.get(installed_sensor)
+        if state and state.state not in (None, "unknown", "unavailable"):
+            try:
+                capacity_kwh = float(state.state)
+                if capacity_kwh > 0:
+                    return capacity_kwh
+            except (ValueError, TypeError):
+                pass
+
+        return self._nominal_capacity_kwh
+
     async def async_load_from_storage(self) -> None:  # pragma: no cover
         """Načíst uložená měření ze storage."""
         try:
@@ -703,7 +720,8 @@ class BatteryHealthTracker:
             return None
 
         capacity_kwh = (stored_energy / 1000.0) / (delta_soc / 100.0)
-        soh_percent = (capacity_kwh / self._nominal_capacity_kwh) * 100.0
+        nominal_capacity = self._get_nominal_capacity_kwh()
+        soh_percent = (capacity_kwh / nominal_capacity) * 100.0
 
         if soh_percent > 105.0:
             _LOGGER.debug(
@@ -898,8 +916,8 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
         self.entity_id = f"sensor.oig_{self._box_id}_{sensor_type}"  # pragma: no cover
         self._attr_name = "Battery Health (SoH)"
 
-        # Nominální kapacita
-        self._nominal_capacity_kwh: float = 15.3  # kWh - skutečná kapacita baterie
+        # Nominální kapacita - fallback, bude aktualizována ze sensoru
+        self._nominal_capacity_kwh: float = 15.3  # kWh - fallback hodnota
 
         # Tracker - bude inicializován v async_added_to_hass
         self._tracker: Optional[BatteryHealthTracker] = None
@@ -911,9 +929,34 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
             f"Battery Health sensor initialized for box {self._box_id}"
         )  # pragma: no cover
 
+    def _get_nominal_capacity_kwh(self) -> float:
+        """Get nominal battery capacity from sensor, fallback to default."""
+        if not self._hass_ref:
+            return self._nominal_capacity_kwh
+
+        installed_sensor = f"sensor.oig_{self._box_id}_installed_battery_capacity_kwh"
+        state = self._hass_ref.states.get(installed_sensor)
+        if state and state.state not in (None, "unknown", "unavailable"):
+            try:
+                capacity_kwh = float(state.state)
+                if capacity_kwh > 0:
+                    return capacity_kwh
+            except (ValueError, TypeError):
+                pass
+
+        return self._nominal_capacity_kwh
+
     async def async_added_to_hass(self) -> None:  # pragma: no cover
         """Při přidání do HA."""
         await super().async_added_to_hass()
+
+        # Aktualizovat nominální kapacitu ze sensoru
+        actual_capacity = self._get_nominal_capacity_kwh()
+        if actual_capacity != self._nominal_capacity_kwh:
+            _LOGGER.info(
+                f"Battery nominal capacity updated from sensor: {actual_capacity} kWh (was {self._nominal_capacity_kwh} kWh)"
+            )
+            self._nominal_capacity_kwh = actual_capacity
 
         # Inicializovat tracker
         self._tracker = BatteryHealthTracker(
