@@ -724,6 +724,46 @@ def _device_has_entities(entity_registry: Any, device_id: str) -> bool:
     return bool(er.async_entries_for_device(entity_registry, device_id))
 
 
+def _is_legacy_name_migration_candidate(entity: Any) -> bool:
+    entity_id = getattr(entity, "entity_id", "")
+    if not entity_id.startswith(("sensor.oig_", "switch.oig_")):
+        return False
+
+    name = getattr(entity, "name", None)
+    original_name = getattr(entity, "original_name", None)
+    return name is None and isinstance(original_name, str) and bool(original_name.strip())
+
+
+async def _migrate_entity_names_to_legacy_short_names(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    try:
+        from homeassistant.helpers import entity_registry as er
+
+        entity_registry = er.async_get(hass)
+        entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+        migrated = 0
+
+        for entity in entities:
+            if not _is_legacy_name_migration_candidate(entity):
+                continue
+
+            entity_registry.async_update_entity(
+                entity.entity_id,
+                name=entity.original_name,
+                has_entity_name=False,
+            )
+            migrated += 1
+
+        if migrated:
+            _LOGGER.info(
+                "Applied legacy short-name migration to %s OIG entities",
+                migrated,
+            )
+    except Exception as err:
+        _LOGGER.debug("Entity name migration skipped (non-critical): %s", err)
+
+
 def _is_valid_device_base(bases: set[str], allowlisted_bases: set[str]) -> bool:
     if not bases:
         return True
@@ -1461,6 +1501,7 @@ async def async_setup_entry(
         # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
         # that can be left behind after unique_id/device_id stabilization.
         await _cleanup_invalid_empty_devices(hass, entry)
+        await _migrate_entity_names_to_legacy_short_names(hass, entry)
 
         await _sync_dashboard_panel(hass, entry, dashboard_enabled)
 
