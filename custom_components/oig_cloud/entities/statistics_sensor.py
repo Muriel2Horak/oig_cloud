@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from statistics import median
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -127,8 +127,12 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         # Načtení konfigurace senzoru
         if hasattr(self, "_sensor_config"):
             config = self._sensor_config
-            self._sampling_minutes = config.get("sampling_minutes", 10)
-            self._max_sampling_size = config.get("sampling_size", 1000)
+            sampling_minutes = config.get("sampling_minutes", 10)
+            if isinstance(sampling_minutes, int):
+                self._sampling_minutes = sampling_minutes
+            sampling_size = config.get("sampling_size", 1000)
+            if isinstance(sampling_size, int):
+                self._max_sampling_size = sampling_size
             self._time_range = config.get("time_range")
             self._day_type = config.get("day_type")
             self._statistic = config.get("statistic", "median")
@@ -146,9 +150,6 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
         await super().async_added_to_hass()
-
-        # Načtení persistentních dat
-        await self._load_statistics_data()
 
         # Inicializace StatisticsStore pro batched writes (low-power optimalization)
         try:
@@ -185,6 +186,25 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
             )
             # První výpočet po startu (neblokuj setup – může to trvat dlouho kvůli recorder historii)
             self.hass.async_create_task(self._daily_statistics_update(None))
+
+        self._schedule_startup_load()
+
+    def _schedule_startup_load(self) -> None:
+        if not self.hass:
+            return
+
+        async def _startup_load() -> None:
+            await self._load_statistics_data()
+
+        create_background = getattr(self.hass, "async_create_background_task", None)
+        if callable(create_background):
+            create_background(
+                _startup_load(),
+                name=f"oig_cloud_statistics_startup_load_{self._sensor_type}",
+            )
+            return
+
+        self.hass.async_create_task(_startup_load())
 
     async def _load_statistics_data(self) -> None:
         """Načte statistická data z persistentního úložiště."""
@@ -224,6 +244,13 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                         f"[{self.entity_id}] Restored hourly state: {self._current_hourly_value} kWh"
                     )
                     self.async_write_ha_state()
+                elif self._interval_data and hasattr(self, "_time_range"):
+                    restored_state = self._calculate_statistics_value()
+                    if restored_state is not None:
+                        _LOGGER.debug(
+                            f"[{self.entity_id}] Restored interval state: {restored_state}"
+                        )
+                        self.async_write_ha_state()
 
         except Exception as e:
             _LOGGER.warning(f"[{self.entity_id}] Failed to load statistics data: {e}")
@@ -580,7 +607,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                 )
         return daily_medians
 
-    def _should_include_day(self, day_date: datetime.date) -> bool:
+    def _should_include_day(self, day_date: date) -> bool:
         day_datetime = datetime.combine(day_date, datetime.min.time())
         is_weekend = day_datetime.weekday() >= 5
 
@@ -594,7 +621,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
     def _extract_day_values(
         self,
         state_list: List[Any],
-        day_date: datetime.date,
+        day_date: date,
         start_hour: int,
         end_hour: int,
     ) -> List[float]:
