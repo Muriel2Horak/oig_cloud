@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -39,8 +40,8 @@ class DummyHass:
 
 class DummySensor:
     def __init__(self):
-        self._plans_store = None
-        self._precomputed_store = None
+        self._plans_store: Any = None
+        self._precomputed_store: Any = None
         self._hass = DummyHass()
         self.hass = self._hass
         self._config_entry = None
@@ -356,3 +357,50 @@ async def test_async_added_to_hass_initial_refresh_error(monkeypatch):
                 pass
         elif hasattr(coro, "close"):
             coro.close()
+
+
+@pytest.mark.asyncio
+async def test_profiles_updated_triggers_immediate_refresh(monkeypatch):
+    sensor = DummySensor()
+    sensor._precomputed_store = DummyStore()
+    sensor._plans_store = DummyStore()
+
+    monkeypatch.setattr(
+        sensor_lifecycle.auto_switch_module, "auto_mode_switch_enabled", lambda _s: False
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.event.async_track_time_change", lambda *_a, **_k: None
+    )
+
+    dispatcher_callbacks = []
+
+    def _connect(_hass, _signal, callback):
+        dispatcher_callbacks.append(callback)
+        return lambda: None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.sensors.sensor_lifecycle.async_dispatcher_connect",
+        _connect,
+    )
+
+    async def _sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(sensor_lifecycle.asyncio, "sleep", _sleep)
+
+    await sensor_lifecycle.async_added_to_hass(sensor)
+
+    assert sensor.hass.created
+    initial_refresh = sensor.hass.created.pop(0)
+    await initial_refresh
+    assert sensor._update_calls == 1
+
+    assert dispatcher_callbacks
+    await dispatcher_callbacks[0]()
+
+    assert sensor.hass.created
+    profiles_refresh = sensor.hass.created.pop(0)
+    await profiles_refresh
+
+    assert sensor._profiles_dirty is True
+    assert sensor._update_calls == 2

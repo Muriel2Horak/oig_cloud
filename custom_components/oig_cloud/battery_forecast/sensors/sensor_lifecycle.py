@@ -6,7 +6,7 @@ import asyncio
 import copy
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import async_track_time_change
@@ -99,7 +99,7 @@ def _parse_last_update(last_update: str | None):
     if isinstance(last_update, str) and last_update:
         try:
             parsed = dt_util.parse_datetime(last_update)
-            return parsed or dt_util.dt.datetime.fromisoformat(last_update)
+            return parsed or datetime.fromisoformat(last_update)
         except Exception:
             return dt_util.now()
     return dt_util.now()  # pragma: no cover
@@ -194,10 +194,15 @@ def _subscribe_profiles(sensor) -> None:
         await asyncio.sleep(0)
         sensor._profiles_dirty = True
         sensor._log_rate_limited(
-            "profiles_updated_deferred",
+            "profiles_updated_refresh",
             "info",
-            " profiles_updated received - deferring forecast refresh to next 15-min tick",
+            " profiles_updated received - scheduling immediate forecast refresh",
             cooldown_s=300.0,
+        )
+        _create_background_task(
+            sensor,
+            _refresh_forecast(sensor, "Profiles-driven forecast refresh failed"),
+            "oig_cloud_battery_forecast_profiles_refresh",
         )
 
     signal_name = f"oig_cloud_{sensor._box_id}_profiles_updated"
@@ -206,36 +211,47 @@ def _subscribe_profiles(sensor) -> None:
 
 
 def _schedule_initial_refresh(sensor) -> None:
-    async def _delayed_initial_refresh():
-        _LOGGER.info(" Waiting for AdaptiveLoadProfiles to complete (max 60s)...")
-        profiles_ready = False
+    _create_background_task(
+        sensor,
+        _refresh_forecast(
+            sensor,
+            "Initial forecast failed",
+            start_message=" Starting initial forecast asynchronously without waiting for AdaptiveLoadProfiles",
+            success_message=" Initial forecast completed",
+        ),
+        "oig_cloud_battery_forecast_initial_refresh",
+    )
 
-        async def _mark_ready():
-            nonlocal profiles_ready
-            await asyncio.sleep(0)
-            profiles_ready = True
 
-        temp_unsub = async_dispatcher_connect(
-            sensor.hass, f"oig_cloud_{sensor._box_id}_profiles_updated", _mark_ready
-        )
+async def _refresh_forecast(
+    sensor,
+    error_message: str,
+    *,
+    start_message: str | None = None,
+    success_message: str | None = None,
+):
+    try:
+        if start_message:
+            _LOGGER.info(start_message)
+        await asyncio.sleep(0)
+        await sensor.async_update()
+        if success_message:
+            _LOGGER.info(success_message)
+    except Exception as err:
+        _LOGGER.error("%s: %s", error_message, err, exc_info=True)
 
-        try:
-            for _ in range(60):
-                if profiles_ready:
-                    _LOGGER.info(" Profiles ready - starting initial forecast")
-                    break
-                await asyncio.sleep(1)
-            else:
-                _LOGGER.info("Profiles not ready after 60s - starting forecast anyway")
 
-            await sensor.async_update()
-            _LOGGER.info(" Initial forecast completed")
-        except Exception as err:
-            _LOGGER.error("Initial forecast failed: %s", err, exc_info=True)
-        finally:
-            temp_unsub()
+def _create_background_task(sensor, coro, name: str):
+    hass = getattr(sensor, "hass", None)
+    if not hass:
+        if hasattr(coro, "close"):
+            coro.close()
+        return None
 
-    sensor.hass.async_create_task(_delayed_initial_refresh())
+    create_background = getattr(hass, "async_create_background_task", None)
+    if callable(create_background):
+        return create_background(coro, name=name)
+    return hass.async_create_task(coro)
 
 
 def _schedule_aggregations(sensor) -> None:
