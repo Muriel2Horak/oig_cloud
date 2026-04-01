@@ -74,6 +74,7 @@ async def test_boiler_switch_wrapper_turns_on_and_off():
 
     assert wrapper.entity_id == "switch.oig_123_bojler_top"
     assert wrapper.unique_id == "oig_cloud_123_boiler_bojler_top"
+    assert wrapper._attr_has_entity_name is False
 
     await wrapper.async_turn_on()
     await wrapper.async_turn_off()

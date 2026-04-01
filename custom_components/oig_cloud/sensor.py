@@ -1420,6 +1420,7 @@ def _register_all_sensors(
     async_add_entities: AddEntitiesCallback, all_sensors: List[Any]
 ) -> None:
     if all_sensors:
+        _apply_legacy_entity_naming(all_sensors)
         _LOGGER.info(
             f"🚀 Registering {len(all_sensors)} sensors in one batch (PERFORMANCE OPTIMIZATION)"
         )
@@ -1427,6 +1428,17 @@ def _register_all_sensors(
         _LOGGER.info(f"✅ All {len(all_sensors)} sensors registered successfully")
     else:
         _LOGGER.warning("⚠️ No sensors were created during setup")
+
+
+def _apply_legacy_entity_naming(entities: List[Any]) -> None:
+    for entity in entities:
+        try:
+            setattr(entity, "_attr_has_entity_name", False)
+        except Exception:
+            _LOGGER.debug(
+                "Could not enforce legacy naming for entity %s",
+                getattr(entity, "entity_id", "unknown"),
+            )
 
 
 async def async_setup_entry(  # noqa: C901
