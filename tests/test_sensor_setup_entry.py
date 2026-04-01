@@ -50,6 +50,7 @@ class DummySensor:
         self.entity_id = "sensor.oig_123_dummy"
         self.device_info = {"identifiers": {("oig_cloud", "123")}}
         self.unique_id = "dummy"
+        self._attr_has_entity_name = True
 
 
 @pytest.mark.asyncio
@@ -169,6 +170,17 @@ async def test_sensor_async_setup_entry(monkeypatch):
 
     assert added
     assert entry.options.get("box_id") == "123"
+    assert all(getattr(entity, "_attr_has_entity_name", None) is False for entity in added)
+
+
+def test_apply_legacy_entity_naming_sets_short_name_mode():
+    first = SimpleNamespace(entity_id="sensor.one", _attr_has_entity_name=True)
+    second = SimpleNamespace(entity_id="sensor.two")
+
+    sensor_module._apply_legacy_entity_naming([first, second])
+
+    assert first._attr_has_entity_name is False
+    assert second._attr_has_entity_name is False
 
 
 @pytest.mark.asyncio

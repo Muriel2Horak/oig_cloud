@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -20,11 +21,11 @@ class DummyStore:
 
 class DummySensor:
     def __init__(self):
-        self._precomputed_store = DummyStore()
+        self._precomputed_store: Any = DummyStore()
         self._timeline_data = [{"time": "t"}]
         self._data_hash = "hash"
         self._last_precompute_hash = None
-        self._last_precompute_at = None
+        self._last_precompute_at: Any = None
         self._precompute_interval = timedelta(seconds=60)
         self._precompute_task = None
         self._box_id = "123"
@@ -106,3 +107,31 @@ def test_schedule_precompute_creates_task(monkeypatch):
 
     assert created["coro"] is not None
     assert sensor._precompute_task is not None
+
+
+def test_schedule_precompute_prefers_background_task(monkeypatch):
+    sensor = DummySensor()
+    created = {"background": None}
+
+    def _create_background_task(coro, name=None):
+        created["background"] = (coro, name)
+        if hasattr(coro, "close"):
+            coro.close()
+        return SimpleNamespace(done=lambda: False)
+
+    sensor.hass = SimpleNamespace(
+        async_create_background_task=_create_background_task,
+        async_create_task=lambda coro: (_ for _ in ()).throw(
+            AssertionError("fallback should not be used")
+        ),
+    )
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.presentation.precompute.precompute_ui_data",
+        lambda *_a, **_k: None,
+    )
+
+    precompute_module.schedule_precompute(sensor, force=True)
+
+    assert created["background"] is not None
+    assert created["background"][1] == "oig_cloud_battery_forecast_precompute"

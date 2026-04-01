@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from typing import Any, ClassVar
 
 import pytest
 
@@ -54,14 +56,15 @@ def test_statistics_processor_process_hourly_data():
 class DummyCoordinator:
     def __init__(self):
         self.data = {"123": {}}
+        self.config_entry: Any = None
 
     def async_add_listener(self, *_args, **_kwargs):
         return lambda: None
 
 
 class DummyStore:
-    data = None
-    saved = None
+    data: ClassVar[Any] = None
+    saved: ClassVar[Any] = None
 
     def __init__(self, hass, version, key):
         self.hass = hass
@@ -73,6 +76,25 @@ class DummyStore:
 
     async def async_save(self, data):
         DummyStore.saved = data
+
+
+class DummyHass:
+    def __init__(self, state_map=None):
+        self.states = DummyStates(state_map or {})
+        self.background_created = []
+        self.created = []
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
+
+    def async_create_task(self, coro):
+        self.created.append(coro)
+        return coro
+
+    def async_create_background_task(self, coro, name=None):
+        self.background_created.append((coro, name))
+        return coro
 
 
 class DummyStates:
@@ -100,7 +122,7 @@ def _make_sensor(sensor_type="battery_load_median", state_map=None, options=None
     coordinator.config_entry = SimpleNamespace(options=options)
     device_info = {"identifiers": {("oig_cloud", "123")}}
     sensor = OigCloudStatisticsSensor(coordinator, sensor_type, device_info)
-    sensor.hass = SimpleNamespace(states=DummyStates(state_map or {}))
+    sensor.hass = DummyHass(state_map or {})
     sensor.async_write_ha_state = lambda: None
     return sensor
 
@@ -136,6 +158,29 @@ async def test_load_statistics_data(monkeypatch):
     assert sensor._interval_data[today_key] == [1.0, 2.0]
     assert len(sensor._hourly_data) == 1
     assert sensor._current_hourly_value == 0.7
+
+
+@pytest.mark.asyncio
+async def test_async_added_to_hass_backgrounds_startup_load(monkeypatch):
+    sensor = _make_sensor()
+    calls = {"load": 0}
+
+    async def fake_load():
+        calls["load"] += 1
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.entities.statistics_sensor.StatisticsStore.get_instance",
+        lambda _hass: SimpleNamespace(),
+    )
+    monkeypatch.setattr(sensor, "_load_statistics_data", fake_load)
+
+    await sensor.async_added_to_hass()
+
+    assert sensor.hass.background_created
+    coro, name = sensor.hass.background_created[0]
+    assert name == "oig_cloud_statistics_startup_load_battery_load_median"
+    await coro
+    assert calls["load"] == 1
 
 
 @pytest.mark.asyncio
@@ -390,12 +435,12 @@ async def test_calculate_interval_statistics_from_history_cross_midnight(monkeyp
         min = datetime.min
 
         @classmethod
-        def now(cls):
+        def now(cls, tz=None):
             return fixed_now
 
         @classmethod
-        def combine(cls, date, time_obj):
-            return datetime.combine(date, time_obj)
+        def combine(cls, date, time, tzinfo=None):
+            return datetime.combine(date, time, tzinfo)
 
     monkeypatch.setattr(
         "custom_components.oig_cloud.entities.statistics_sensor.datetime", FixedDatetime

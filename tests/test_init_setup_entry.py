@@ -170,11 +170,86 @@ class DummyModeTracker:
         return None
 
 
+class DummyEntityRegistry:
+    def __init__(self):
+        self.updated = []
+
+    def async_update_entity(self, entity_id, **changes):
+        self.updated.append((entity_id, changes))
+
+
 class RaisingOptions(dict):
     def get(self, key, default=None):
         if key == "box_id":
             raise RuntimeError("boom")
         return super().get(key, default)
+
+
+@pytest.mark.asyncio
+async def test_migrate_entity_names_to_legacy_short_names(monkeypatch):
+    registry = DummyEntityRegistry()
+    entities = [
+        SimpleNamespace(
+            entity_id="sensor.oig_123_actual_aco_p",
+            name=None,
+            original_name="Zátěž celkem (live)",
+        ),
+        SimpleNamespace(
+            entity_id="switch.oig_123_bojler_top",
+            name="Custom boiler",
+            original_name="Bojler top",
+        ),
+        SimpleNamespace(
+            entity_id="sensor.other_domain_sensor",
+            name=None,
+            original_name="Ignored",
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: registry,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_entries_for_config_entry",
+        lambda _registry, _entry_id: entities,
+    )
+
+    await init_module._migrate_entity_names_to_legacy_short_names(
+        DummyHass(),
+        DummyEntry(),
+    )
+
+    assert registry.updated == [
+        (
+            "sensor.oig_123_actual_aco_p",
+            {"name": "Zátěž celkem (live)", "has_entity_name": False},
+        )
+    ]
+
+
+def test_is_legacy_name_migration_candidate():
+    assert init_module._is_legacy_name_migration_candidate(
+        SimpleNamespace(
+            entity_id="sensor.oig_123_data_source",
+            name=None,
+            original_name="Data source",
+        )
+    )
+    assert not init_module._is_legacy_name_migration_candidate(
+        SimpleNamespace(
+            entity_id="sensor.oig_123_data_source",
+            name="Custom name",
+            original_name="Data source",
+        )
+    )
+    assert not init_module._is_legacy_name_migration_candidate(
+        SimpleNamespace(
+            entity_id="sensor.other_domain",
+            name=None,
+            original_name="Ignored",
+        )
+    )
 
 
 @pytest.mark.asyncio

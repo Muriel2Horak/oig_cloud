@@ -73,8 +73,10 @@ def schedule_precompute(sensor: Any, *, force: bool = False) -> None:
     async def _runner():
         await _run_precompute_task(sensor)
 
-    sensor._precompute_task = sensor.hass.async_create_task(
-        _runner()
+    sensor._precompute_task = _create_background_task(
+        sensor,
+        _runner(),
+        "oig_cloud_battery_forecast_precompute",
     )  # pylint: disable=protected-access
 
 
@@ -144,3 +146,16 @@ async def _run_precompute_task(sensor: Any) -> None:
         _LOGGER.error("[Precompute] Job failed: %s", err, exc_info=True)
     finally:
         sensor._precompute_task = None  # pylint: disable=protected-access
+
+
+def _create_background_task(sensor: Any, coro: Any, name: str) -> Any:
+    hass = getattr(sensor, "hass", None)
+    if not hass:
+        if hasattr(coro, "close"):
+            coro.close()
+        return None
+
+    create_background = getattr(hass, "async_create_background_task", None)
+    if callable(create_background):
+        return create_background(coro, name=name)
+    return hass.async_create_task(coro)
