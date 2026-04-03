@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -878,6 +878,8 @@ def _create_battery_prediction_sensors(
     _LOGGER.info(f"Battery prediction enabled: {battery_prediction_enabled}")
     if not battery_prediction_enabled:
         _LOGGER.info("Battery prediction sensors disabled - skipping creation")
+        if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+            hass.data[DOMAIN][entry.entry_id]["battery_forecast_sensors"] = []
         return []
 
     try:
@@ -971,6 +973,9 @@ def _connect_balancing_manager(
     if not battery_forecast_sensors:
         return
     try:
+        hass.data[DOMAIN][entry.entry_id]["battery_forecast_sensors"] = (
+            battery_forecast_sensors
+        )
         balancing_manager = hass.data[DOMAIN][entry.entry_id].get("balancing_manager")
         if balancing_manager:
             forecast_sensor = battery_forecast_sensors[0]
@@ -1441,6 +1446,32 @@ def _apply_legacy_entity_naming(entities: List[Any]) -> None:
             )
 
 
+def _schedule_deferred_sensor_registration(
+    hass: HomeAssistant,
+    async_add_entities: AddEntitiesCallback,
+    deferred_factories: List[Callable[[], List[Any]]],
+) -> None:
+    if not deferred_factories:
+        return
+
+    async def _register_later() -> None:
+        await asyncio.sleep(0)
+        deferred_sensors: List[Any] = []
+        for factory in deferred_factories:
+            deferred_sensors.extend(factory())
+            await asyncio.sleep(0)
+        _register_all_sensors(async_add_entities, deferred_sensors)
+
+    if getattr(hass, "loop", None) is None:
+        deferred_sensors: List[Any] = []
+        for factory in deferred_factories:
+            deferred_sensors.extend(factory())
+        _register_all_sensors(async_add_entities, deferred_sensors)
+        return
+
+    hass.async_create_task(_register_later())
+
+
 async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -1450,8 +1481,8 @@ async def async_setup_entry(  # noqa: C901
 
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
 
-    # PERFORMANCE FIX: Collect all sensors in one list instead of calling async_add_entities 17 times
-    all_sensors: List[Any] = []
+    core_sensors: List[Any] = []
+    deferred_factories: List[Callable[[], List[Any]]] = []
 
     _log_coordinator_data_status(coordinator)
 
@@ -1479,7 +1510,7 @@ async def async_setup_entry(  # noqa: C901
     # ================================================================
     # SECTION 0: DATA SOURCE STATE SENSOR (always on)
     # ================================================================
-    all_sensors.extend(_register_data_source_sensor(hass, coordinator, entry))
+    core_sensors.extend(_register_data_source_sensor(hass, coordinator, entry))
 
     await asyncio.sleep(0)
 
@@ -1490,7 +1521,7 @@ async def async_setup_entry(  # noqa: C901
     # Device: main_device_info (OIG Cloud {box_id})
     # Třída: OigCloudDataSensor
     # ================================================================
-    all_sensors.extend(_create_basic_sensors(coordinator))
+    core_sensors.extend(_create_basic_sensors(coordinator))
     await asyncio.sleep(0)
 
     # ================================================================
@@ -1500,7 +1531,7 @@ async def async_setup_entry(  # noqa: C901
     # Device: main_device_info (OIG Cloud {box_id})
     # Třída: OigCloudComputedSensor
     # ================================================================
-    all_sensors.extend(_create_computed_sensors(coordinator))
+    core_sensors.extend(_create_computed_sensors(coordinator))
     await asyncio.sleep(0)
 
     # ================================================================
@@ -1510,7 +1541,7 @@ async def async_setup_entry(  # noqa: C901
     # Device: main_device_info (OIG Cloud {box_id})
     # Třída: OigCloudDataSensor (s extended=True)
     # ================================================================
-    all_sensors.extend(_create_extended_sensors(coordinator, entry))
+    deferred_factories.append(lambda: _create_extended_sensors(coordinator, entry))
     await asyncio.sleep(0)
 
     # ================================================================
@@ -1520,8 +1551,10 @@ async def async_setup_entry(  # noqa: C901
     # Device: analytics_device_info (Analytics & Predictions {box_id})
     # Třída: OigCloudStatisticsSensor
     # ================================================================
-    all_sensors.extend(
-        _create_statistics_sensors(hass, coordinator, entry, analytics_device_info)
+    deferred_factories.append(
+        lambda: _create_statistics_sensors(
+            hass, coordinator, entry, analytics_device_info
+        )
     )
     await asyncio.sleep(0)
 
@@ -1532,8 +1565,8 @@ async def async_setup_entry(  # noqa: C901
     # Device: analytics_device_info (Analytics & Predictions {box_id})
     # Třída: OigCloudSolarForecastSensor
     # ================================================================
-    all_sensors.extend(
-        _create_solar_forecast_sensors(
+    deferred_factories.append(
+        lambda: _create_solar_forecast_sensors(
             hass, coordinator, entry, analytics_device_info
         )
     )
@@ -1546,7 +1579,7 @@ async def async_setup_entry(  # noqa: C901
     # Device: shield_device_info (ServiceShield {box_id})
     # Třída: OigCloudShieldSensor
     # ================================================================
-    all_sensors.extend(_create_shield_sensors(coordinator))
+    core_sensors.extend(_create_shield_sensors(coordinator))
     await asyncio.sleep(0)
 
     # ================================================================
@@ -1556,7 +1589,7 @@ async def async_setup_entry(  # noqa: C901
     # Device: main_device_info (OIG Cloud {box_id})
     # Třída: OigCloudDataSensor (s notification=True)
     # ================================================================
-    all_sensors.extend(_create_notification_sensors(coordinator))
+    core_sensors.extend(_create_notification_sensors(coordinator))
     await asyncio.sleep(0)
 
     # ================================================================
@@ -1566,8 +1599,8 @@ async def async_setup_entry(  # noqa: C901
     # Device: analytics_device_info (Analytics & Predictions {box_id})
     # Třída: OigCloudBatteryForecastSensor
     # ================================================================
-    all_sensors.extend(
-        _create_battery_prediction_sensors(
+    deferred_factories.append(
+        lambda: _create_battery_prediction_sensors(
             hass, coordinator, entry, analytics_device_info
         )
     )
@@ -1580,8 +1613,8 @@ async def async_setup_entry(  # noqa: C901
     # Device: analytics_device_info (Analytics & Predictions {box_id})
     # Třídy: OigCloudAnalyticsSensor, SpotPrice15MinSensor, ExportPrice15MinSensor
     # ================================================================
-    all_sensors.extend(
-        _create_pricing_sensors(coordinator, entry, analytics_device_info)
+    deferred_factories.append(
+        lambda: _create_pricing_sensors(coordinator, entry, analytics_device_info)
     )
     await asyncio.sleep(0)
 
@@ -1592,8 +1625,8 @@ async def async_setup_entry(  # noqa: C901
     # Device: analytics_device_info (Analytics & Predictions {box_id})
     # Třída: OigCloudChmuSensor
     # ================================================================
-    all_sensors.extend(
-        _create_chmu_sensors(coordinator, entry, analytics_device_info)
+    deferred_factories.append(
+        lambda: _create_chmu_sensors(coordinator, entry, analytics_device_info)
     )
     await asyncio.sleep(0)
 
@@ -1604,12 +1637,13 @@ async def async_setup_entry(  # noqa: C901
     # Device: OIG Bojler (samostatné zařízení)
     # Třída: BoilerSensor* (13 senzorů)
     # ================================================================
-    all_sensors.extend(_create_boiler_sensors(hass, entry))
+    deferred_factories.append(lambda: _create_boiler_sensors(hass, entry))
 
     # ================================================================
     # PERFORMANCE FIX: Register all sensors at once instead of 17 separate calls
     # ================================================================
-    _register_all_sensors(async_add_entities, all_sensors)
+    _register_all_sensors(async_add_entities, core_sensors)
+    _schedule_deferred_sensor_registration(hass, async_add_entities, deferred_factories)
 
     _LOGGER.info("OIG Cloud sensor setup completed")
 
