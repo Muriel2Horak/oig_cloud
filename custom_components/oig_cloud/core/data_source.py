@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -23,6 +24,7 @@ DATA_SOURCE_LOCAL_ONLY = "local_only"
 DEFAULT_DATA_SOURCE_MODE = DATA_SOURCE_CLOUD_ONLY
 DEFAULT_PROXY_STALE_MINUTES = 10
 DEFAULT_LOCAL_EVENT_DEBOUNCE_MS = 300
+DEFAULT_LOCAL_PAYLOAD_PUBLISH_INTERVAL_S = 5.0
 
 # Fired on hass.bus when effective data source changes for a config entry.
 # Payload: {"entry_id": str, "configured_mode": str, "effective_mode": str, "local_available": bool, "reason": str}
@@ -423,9 +425,12 @@ class DataSourceController:
         self.coordinator = coordinator
         self.telemetry_store = telemetry_store
 
-        self._unsubs: list[callable] = []
-        self._last_local_entity_update: Optional[dt_util.dt.datetime] = None
+        self._unsubs: list[Callable[[], None]] = []
+        self._last_local_entity_update: Optional[datetime] = None
         self._pending_local_entities: set[str] = set()
+        self._pending_snapshot_publish = False
+        self._snapshot_publish_handle: Optional[Any] = None
+        self._last_snapshot_publish_monotonic: Optional[float] = None
         self._debouncer = Debouncer(
             hass,
             _LOGGER,
@@ -444,9 +449,14 @@ class DataSourceController:
                 get_configured_mode(self.entry) != DATA_SOURCE_CLOUD_ONLY
                 and self.telemetry_store
             ):
+                state = get_data_source_state(self.hass, self.entry.entry_id)
                 did_seed = self.telemetry_store.seed_from_existing_local_states()
-                if did_seed and getattr(
-                    self.coordinator, "async_set_updated_data", None
+                if (
+                    did_seed
+                    and state.effective_mode != DATA_SOURCE_CLOUD_ONLY
+                    and getattr(
+                        self.coordinator, "async_set_updated_data", None
+                    )
                 ):
                     snap = self.telemetry_store.get_snapshot()
                     self.coordinator.async_set_updated_data(snap.payload)
@@ -492,6 +502,12 @@ class DataSourceController:
 
     async def async_stop(self) -> None:
         await asyncio.sleep(0)
+        if self._snapshot_publish_handle is not None:
+            try:
+                self._snapshot_publish_handle.cancel()
+            except Exception as err:
+                _LOGGER.debug("Failed to cancel snapshot publish handle: %s", err)
+            self._snapshot_publish_handle = None
         for unsub in self._unsubs:
             try:
                 unsub()
@@ -588,13 +604,75 @@ class DataSourceController:
                 self._pending_local_entities.clear()
                 if pending:
                     changed = self.telemetry_store.apply_local_events(pending)
-                    if changed and getattr(
-                        self.coordinator, "async_set_updated_data", None
-                    ):
-                        snap = self.telemetry_store.get_snapshot()
-                        self.coordinator.async_set_updated_data(snap.payload)
+                    if changed:
+                        self._schedule_snapshot_publish()
         except Exception as err:
             _LOGGER.debug("Failed to handle local telemetry event: %s", err)
+
+    @callback
+    def _schedule_snapshot_publish(self) -> None:
+        if not (
+            self.telemetry_store
+            and self.coordinator
+            and getattr(self.coordinator, "async_set_updated_data", None)
+        ):
+            return
+
+        self._pending_snapshot_publish = True
+
+        now = self._monotonic_time()
+        last = self._last_snapshot_publish_monotonic
+        if last is None or (now - last) >= DEFAULT_LOCAL_PAYLOAD_PUBLISH_INTERVAL_S:
+            self._publish_pending_snapshot()
+            return
+
+        if self._snapshot_publish_handle is not None:
+            return
+
+        delay = max(0.0, DEFAULT_LOCAL_PAYLOAD_PUBLISH_INTERVAL_S - (now - last))
+        loop = getattr(self.hass, "loop", None)
+        if loop is None or not hasattr(loop, "call_later"):
+            self._publish_pending_snapshot()
+            return
+
+        self._snapshot_publish_handle = loop.call_later(
+            delay, self._publish_pending_snapshot
+        )
+
+    @callback
+    def _publish_pending_snapshot(self) -> None:
+        self._snapshot_publish_handle = None
+        if not self._pending_snapshot_publish:
+            return
+        if not (
+            self.telemetry_store
+            and self.coordinator
+            and getattr(self.coordinator, "async_set_updated_data", None)
+        ):
+            self._pending_snapshot_publish = False
+            return
+
+        try:
+            state = get_data_source_state(self.hass, self.entry.entry_id)
+            if state.effective_mode == DATA_SOURCE_CLOUD_ONLY:
+                self._pending_snapshot_publish = False
+                return
+        except Exception as err:
+            _LOGGER.debug("Failed to re-check data source state before publish: %s", err)
+
+        self._pending_snapshot_publish = False
+        self._last_snapshot_publish_monotonic = self._monotonic_time()
+        snap = self.telemetry_store.get_snapshot()
+        self.coordinator.async_set_updated_data(snap.payload)
+
+    def _monotonic_time(self) -> float:
+        loop = getattr(self.hass, "loop", None)
+        if loop is not None and hasattr(loop, "time"):
+            try:
+                return float(loop.time())
+            except Exception:
+                pass
+        return time.monotonic()
 
     @callback
     def _update_state(self, force: bool = False) -> tuple[bool, bool]:
