@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any, Awaitable, Callable, cast
 
 import pytest
 
@@ -37,11 +38,22 @@ class DummyHass:
         self.data = {}
         self.states = SimpleNamespace(get=lambda _eid: None)
         self.config_entries = DummyConfigEntries()
-        self.loop = None
+        self.loop: object | None = None
+        self.config: Any | None = None
 
     def async_create_task(self, coro):
         if hasattr(coro, "close"):
             coro.close()
+
+
+class TrackingHass(DummyHass):
+    def __init__(self):
+        super().__init__()
+        self.created_tasks: list[Awaitable[Any]] = []
+
+    def async_create_task(self, coro):
+        self.created_tasks.append(coro)
+        return coro
 
 
 class DummyEntry:
@@ -50,6 +62,7 @@ class DummyEntry:
         self.data = data or {}
         self.options = options or {}
         self.title = title
+        self.state: Any = None
         self._unload = []
         self._listener = None
 
@@ -114,10 +127,13 @@ class DummyCoordinator:
 
 
 class DummyCoordinatorWithRefresh(DummyCoordinator):
+    startup_cache_loaded = False
+
     def __init__(self, hass, session_manager, *_args, **_kwargs):
         super().__init__(hass, session_manager, *_args, **_kwargs)
         self.first_refresh_called = False
         self.refresh_called = False
+        self.hydrate_called = False
 
     async def async_config_entry_first_refresh(self):
         self.first_refresh_called = True
@@ -126,6 +142,10 @@ class DummyCoordinatorWithRefresh(DummyCoordinator):
     async def async_refresh(self):
         self.refresh_called = True
         return None
+
+    async def async_hydrate_startup_cache(self):
+        self.hydrate_called = True
+        return self.startup_cache_loaded
 
 
 class DummyDataSourceController:
@@ -183,6 +203,218 @@ class RaisingOptions(dict):
         if key == "box_id":
             raise RuntimeError("boom")
         return super().get(key, default)
+
+
+class TrackingCoordinator:
+    def __init__(self):
+        self.refresh_called = False
+        self.first_refresh_called = False
+
+    async def async_refresh(self):
+        self.refresh_called = True
+
+    async def async_config_entry_first_refresh(self):
+        self.first_refresh_called = True
+
+
+class TrackingBalancingManager:
+    def __init__(self):
+        self.forecast_sensor = None
+        self.coordinator = None
+
+    def set_forecast_sensor(self, sensor):
+        self.forecast_sensor = sensor
+
+    def set_coordinator(self, coordinator):
+        self.coordinator = coordinator
+
+
+AsyncEventCallback = Callable[[Any], Awaitable[Any]]
+
+
+@pytest.mark.asyncio
+async def test_complete_entry_startup_cloud_initializes_deferred_components(
+    monkeypatch,
+):
+    hass = DummyHass()
+    entry = DummyEntry()
+    coordinator = TrackingCoordinator()
+    session_manager = DummySessionManager(DummyApi())
+    balancing_manager = TrackingBalancingManager()
+    controller = object()
+    live_data_checked = {"called": False}
+
+    hass.data[DOMAIN] = {
+        entry.entry_id: {"battery_forecast_sensors": ["forecast-sensor"]}
+    }
+
+    async def fake_live_data_check(_api):
+        live_data_checked["called"] = True
+
+    async def fake_init_notification_manager(*_args, **_kwargs):
+        return "notification-manager"
+
+    async def fake_init_balancing_manager(*_args, **_kwargs):
+        return balancing_manager
+
+    async def fake_start_data_source_controller(*_args, **_kwargs):
+        return controller
+
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+        ),
+    )
+    monkeypatch.setattr(init_module, "_ensure_live_data_enabled", fake_live_data_check)
+    monkeypatch.setattr(
+        init_module,
+        "_init_notification_manager",
+        fake_init_notification_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_init_balancing_manager",
+        fake_init_balancing_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_start_data_source_controller",
+        fake_start_data_source_controller,
+    )
+
+    await init_module._complete_entry_startup(
+        hass,
+        entry,
+        coordinator,
+        session_manager,
+        service_shield=None,
+        telemetry_store=None,
+        battery_prediction_enabled=True,
+    )
+
+    assert session_manager.ensure_called is True
+    assert live_data_checked["called"] is True
+    assert coordinator.refresh_called is True
+    assert coordinator.first_refresh_called is False
+    assert hass.data[DOMAIN][entry.entry_id]["notification_manager"] == "notification-manager"
+    assert hass.data[DOMAIN][entry.entry_id]["balancing_manager"] is balancing_manager
+    assert hass.data[DOMAIN][entry.entry_id]["data_source_controller"] is controller
+    assert balancing_manager.forecast_sensor == "forecast-sensor"
+    assert balancing_manager.coordinator is coordinator
+
+
+@pytest.mark.asyncio
+async def test_complete_entry_startup_local_skips_cloud_refresh(monkeypatch):
+    hass = DummyHass()
+    entry = DummyEntry()
+    coordinator = TrackingCoordinator()
+    session_manager = DummySessionManager(DummyApi())
+
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    async def fake_init_notification_manager(*_args, **_kwargs):
+        return None
+
+    async def fake_init_balancing_manager(*_args, **_kwargs):
+        return None
+
+    async def fake_start_data_source_controller(*_args, **_kwargs):
+        return None
+
+    async def fail_live_data_check(_api):
+        raise AssertionError("live-data check should be skipped in local mode")
+
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(effective_mode="local_only"),
+    )
+    monkeypatch.setattr(init_module, "_ensure_live_data_enabled", fail_live_data_check)
+    monkeypatch.setattr(
+        init_module,
+        "_init_notification_manager",
+        fake_init_notification_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_init_balancing_manager",
+        fake_init_balancing_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_start_data_source_controller",
+        fake_start_data_source_controller,
+    )
+
+    await init_module._complete_entry_startup(
+        hass,
+        entry,
+        coordinator,
+        session_manager,
+        service_shield=None,
+        telemetry_store=None,
+        battery_prediction_enabled=False,
+    )
+
+    assert session_manager.ensure_called is False
+    assert coordinator.refresh_called is False
+    assert coordinator.first_refresh_called is False
+
+
+@pytest.mark.asyncio
+async def test_schedule_entry_startup_completion_runs_inline_without_loop(monkeypatch):
+    hass = DummyHass()
+    entry = DummyEntry()
+    calls = []
+
+    async def fake_complete(*_args, **_kwargs):
+        calls.append("done")
+
+    monkeypatch.setattr(init_module, "_complete_entry_startup", fake_complete)
+
+    await init_module._schedule_entry_startup_completion(
+        hass,
+        entry,
+        coordinator=object(),
+        session_manager=object(),
+        service_shield=None,
+        telemetry_store=None,
+        battery_prediction_enabled=False,
+    )
+
+    assert calls == ["done"]
+
+
+@pytest.mark.asyncio
+async def test_schedule_entry_startup_completion_uses_background_task(monkeypatch):
+    hass = TrackingHass()
+    hass.loop = object()
+    entry = DummyEntry()
+    calls = []
+
+    async def fake_complete(*_args, **_kwargs):
+        calls.append("done")
+
+    monkeypatch.setattr(init_module, "_complete_entry_startup", fake_complete)
+
+    await init_module._schedule_entry_startup_completion(
+        hass,
+        entry,
+        coordinator=object(),
+        session_manager=object(),
+        service_shield=None,
+        telemetry_store=None,
+        battery_prediction_enabled=True,
+    )
+
+    assert calls == []
+    assert len(hass.created_tasks) == 1
+
+    await hass.created_tasks[0]
+
+    assert calls == ["done"]
 
 
 @pytest.mark.asyncio
@@ -495,6 +727,95 @@ async def test_init_session_manager_uses_first_refresh_during_setup(monkeypatch)
         extended_scan_interval=300,
     )
 
+    assert coordinator.first_refresh_called is True
+    assert coordinator.refresh_called is False
+
+
+@pytest.mark.asyncio
+async def test_init_session_manager_defers_refresh_during_setup_when_cache_available(
+    monkeypatch,
+):
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(
+        init_module, "OigCloudCoordinator", DummyCoordinatorWithRefresh
+    )
+    monkeypatch.setattr(DummyCoordinatorWithRefresh, "startup_cache_loaded", True)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only",
+            configured_mode="local_only",
+            local_available=True,
+        ),
+    )
+
+    hass = DummyHass()
+    hass.loop = asyncio.get_running_loop()
+    entry = DummyEntry(data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"})
+    entry.state = ConfigEntryState.SETUP_IN_PROGRESS
+
+    coordinator, _session_manager = await init_module._init_session_manager_and_coordinator(
+        hass=hass,
+        entry=entry,
+        username="user",
+        password="pass",
+        no_telemetry=True,
+        standard_scan_interval=30,
+        extended_scan_interval=300,
+    )
+
+    assert coordinator.hydrate_called is True
+    assert coordinator.first_refresh_called is False
+    assert coordinator.refresh_called is False
+
+
+@pytest.mark.asyncio
+async def test_init_session_manager_uses_first_refresh_when_only_box_id_exists(
+    monkeypatch,
+):
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(
+        init_module, "OigCloudCoordinator", DummyCoordinatorWithRefresh
+    )
+    monkeypatch.setattr(DummyCoordinatorWithRefresh, "startup_cache_loaded", False)
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+            configured_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+            local_available=False,
+        ),
+    )
+
+    hass = DummyHass()
+    hass.loop = asyncio.get_running_loop()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={"box_id": "2206237016"},
+    )
+    entry.state = ConfigEntryState.SETUP_IN_PROGRESS
+
+    coordinator, _session_manager = await init_module._init_session_manager_and_coordinator(
+        hass=hass,
+        entry=entry,
+        username="user",
+        password="pass",
+        no_telemetry=True,
+        standard_scan_interval=30,
+        extended_scan_interval=300,
+    )
+
+    assert coordinator.hydrate_called is True
     assert coordinator.first_refresh_called is True
     assert coordinator.refresh_called is False
 
@@ -1396,7 +1717,7 @@ async def test_async_setup_entry_optional_modules(monkeypatch):
         lambda _coord: "123",
     )
 
-    callbacks = {"interval": None}
+    callbacks: dict[str, AsyncEventCallback | None] = {"interval": None}
 
     def fake_track_interval(_hass, callback, _delta):
         callbacks["interval"] = callback
@@ -1460,8 +1781,8 @@ async def test_async_setup_entry_optional_modules(monkeypatch):
     result = await init_module.async_setup_entry(hass, entry)
 
     assert result is True
-    assert callbacks["interval"] is not None
-    await callbacks["interval"](None)
+    interval_cb = cast(AsyncEventCallback, callbacks["interval"])
+    await interval_cb(None)
 
 
 @pytest.mark.asyncio
@@ -2138,10 +2459,11 @@ async def test_async_setup_entry_persist_box_id_error(monkeypatch):
     )
     hass.data[DOMAIN] = {entry.entry_id: {}}
 
-    def raising_update(_entry, options=None):
+    def raising_update(entry, options=None, data=None):
+        del data
         if options and "box_id" in options:
             raise RuntimeError("boom")
-        _entry.options = options or {}
+        entry.options = options or {}
 
     hass.config_entries.async_update_entry = raising_update
 
@@ -2263,7 +2585,10 @@ async def test_async_setup_entry_balancing_manager_paths(monkeypatch):
     )
     monkeypatch.setattr(init_module, "BalancingManager", DummyBalancingManager)
 
-    callbacks = {"interval": None, "later": None}
+    callbacks: dict[str, Callable[[Any], Awaitable[None]] | None] = {
+        "interval": None,
+        "later": None,
+    }
 
     def fake_track_interval(_hass, callback, _delta):
         callbacks["interval"] = callback
@@ -2313,7 +2638,9 @@ async def test_async_setup_entry_balancing_manager_paths(monkeypatch):
     result = await init_module.async_setup_entry(hass, entry)
 
     assert result is True
-    await callbacks["interval"](None)
+    interval_cb = callbacks["interval"]
+    assert interval_cb is not None
+    await interval_cb(None)
 
 
 @pytest.mark.asyncio
@@ -2445,7 +2772,10 @@ async def test_async_setup_entry_balancing_manager_executes(monkeypatch):
     )
     monkeypatch.setattr(init_module, "BalancingManager", DummyBalancingManager)
 
-    callbacks = {"interval": None, "later": None}
+    callbacks: dict[str, AsyncEventCallback | None] = {
+        "interval": None,
+        "later": None,
+    }
 
     def fake_track_interval(_hass, callback, _delta):
         callbacks["interval"] = callback
@@ -2496,8 +2826,10 @@ async def test_async_setup_entry_balancing_manager_executes(monkeypatch):
     result = await init_module.async_setup_entry(hass, entry)
 
     assert result is True
-    await callbacks["interval"](None)
-    await callbacks["later"](None)
+    interval_cb = cast(AsyncEventCallback, callbacks["interval"])
+    later_cb = cast(AsyncEventCallback, callbacks["later"])
+    await interval_cb(None)
+    await later_cb(None)
 
 
 @pytest.mark.asyncio
@@ -2912,7 +3244,7 @@ async def test_async_setup_entry_shield_monitoring_no_telemetry(monkeypatch):
         ),
     )
 
-    callbacks = {"interval": None}
+    callbacks: dict[str, Callable[[Any], Awaitable[None]] | None] = {"interval": None}
 
     def fake_track_interval(_hass, callback, _delta):
         callbacks["interval"] = callback
@@ -2954,4 +3286,6 @@ async def test_async_setup_entry_shield_monitoring_no_telemetry(monkeypatch):
     result = await init_module.async_setup_entry(hass, entry)
 
     assert result is True
-    await callbacks["interval"](None)
+    interval_cb = callbacks["interval"]
+    assert interval_cb is not None
+    await interval_cb(None)
