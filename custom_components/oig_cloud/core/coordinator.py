@@ -94,6 +94,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         # Last jitter value (for diagnostics/tests).
         self._next_jitter: Optional[float] = None
+        self._skip_next_jitter: bool = False
 
         # Startup grace period to avoid loading-heavy work during HA bootstrap
         self._startup_ts: datetime = self._utcnow()
@@ -195,6 +196,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         while the coordinator is still doing the first network/local refresh.
         """
         await self.async_hydrate_startup_cache()
+        self.skip_next_jitter()
 
         try:
             await super().async_config_entry_first_refresh()
@@ -526,7 +528,13 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("🔄 _async_update_data called - starting update cycle")
 
         # Apply jitter - random delay at start of update
-        jitter = self._calculate_jitter()
+        if self._skip_next_jitter:
+            self._skip_next_jitter = False
+            jitter = 0.0
+            self._next_jitter = jitter
+            _LOGGER.debug("⏱️  Skipping jitter for first refresh")
+        else:
+            jitter = self._calculate_jitter()
 
         # Only sleep for positive jitter (negative means update sooner, handled by next cycle)
         if jitter > 0:
@@ -578,6 +586,9 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(
                 f"Error communicating with OIG API: {exception}"
             ) from exception
+
+    def skip_next_jitter(self) -> None:
+        self._skip_next_jitter = True
 
     def _resolve_use_cloud(self) -> bool:
         use_cloud = True

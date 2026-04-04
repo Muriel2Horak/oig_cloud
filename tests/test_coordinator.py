@@ -249,6 +249,63 @@ async def test_async_update_data_jitter_positive(monkeypatch, coordinator, mock_
 
 
 @pytest.mark.asyncio
+async def test_async_update_data_skips_one_shot_jitter(monkeypatch, coordinator, mock_api):
+    mock_api.get_stats = AsyncMock(return_value={})
+    coordinator._startup_grace_seconds = 0
+    coordinator._skip_next_jitter = True
+    sleeps = []
+
+    async def _sleep(seconds):
+        sleeps.append(seconds)
+
+    def _unexpected_uniform(*_args, **_kwargs):
+        raise AssertionError("random.uniform should not be called when skipping jitter")
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.random.uniform",
+        _unexpected_uniform,
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.asyncio.sleep", _sleep
+    )
+
+    await coordinator._async_update_data()
+
+    assert sleeps == []
+    assert coordinator._skip_next_jitter is False
+    assert coordinator._next_jitter == 0.0
+
+
+@pytest.mark.asyncio
+async def test_async_update_data_applies_jitter_after_one_shot_skip(
+    monkeypatch, coordinator, mock_api
+):
+    mock_api.get_stats = AsyncMock(return_value={})
+    coordinator._startup_grace_seconds = 0
+    coordinator._skip_next_jitter = True
+    sleeps = []
+    jitter_values = iter([2.0])
+
+    async def _sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.random.uniform",
+        lambda *_a, **_k: next(jitter_values),
+    )
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.core.coordinator.asyncio.sleep", _sleep
+    )
+
+    await coordinator._async_update_data()
+    await coordinator._async_update_data()
+
+    assert sleeps == [2.0]
+    assert coordinator._skip_next_jitter is False
+    assert coordinator._next_jitter == 2.0
+
+
+@pytest.mark.asyncio
 async def test_async_update_data_data_source_state_exception(monkeypatch, coordinator):
     coordinator._startup_grace_seconds = 0
     monkeypatch.setattr(coordinator, "_try_get_stats", AsyncMock(return_value={}))
@@ -2145,6 +2202,7 @@ async def test_async_config_entry_first_refresh_cache_load(monkeypatch, coordina
     await coordinator.async_config_entry_first_refresh()
 
     assert coordinator.data["foo"]["bar"] == 1
+    assert coordinator._skip_next_jitter is True
 
 
 @pytest.mark.asyncio
@@ -2160,6 +2218,8 @@ async def test_async_config_entry_first_refresh_cache_load_error(monkeypatch, co
     )
 
     await coordinator.async_config_entry_first_refresh()
+
+    assert coordinator._skip_next_jitter is True
 
 
 @pytest.mark.asyncio
@@ -2182,6 +2242,7 @@ async def test_async_config_entry_first_refresh_failure_with_cache(
     await coordinator.async_config_entry_first_refresh()
 
     assert coordinator.last_update_success is True
+    assert coordinator._skip_next_jitter is True
 
 
 @pytest.mark.asyncio
@@ -2199,3 +2260,5 @@ async def test_async_config_entry_first_refresh_failure_no_cache(
 
     with pytest.raises(RuntimeError):
         await coordinator.async_config_entry_first_refresh()
+
+    assert coordinator._skip_next_jitter is True
