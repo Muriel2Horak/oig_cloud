@@ -260,6 +260,9 @@ async def test_complete_entry_startup_cloud_initializes_deferred_components(
     async def fake_start_data_source_controller(*_args, **_kwargs):
         return controller
 
+    async def fake_sync_dashboard_panel(_hass, _entry, enabled):
+        assert enabled is True
+
     monkeypatch.setattr(
         init_module,
         "get_data_source_state",
@@ -283,6 +286,7 @@ async def test_complete_entry_startup_cloud_initializes_deferred_components(
         "_start_data_source_controller",
         fake_start_data_source_controller,
     )
+    monkeypatch.setattr(init_module, "_sync_dashboard_panel", fake_sync_dashboard_panel)
 
     await init_module._complete_entry_startup(
         hass,
@@ -323,6 +327,9 @@ async def test_complete_entry_startup_local_skips_cloud_refresh(monkeypatch):
     async def fake_start_data_source_controller(*_args, **_kwargs):
         return None
 
+    async def fake_sync_dashboard_panel(_hass, _entry, enabled):
+        assert enabled is False
+
     async def fail_live_data_check(_api):
         raise AssertionError("live-data check should be skipped in local mode")
 
@@ -347,6 +354,7 @@ async def test_complete_entry_startup_local_skips_cloud_refresh(monkeypatch):
         "_start_data_source_controller",
         fake_start_data_source_controller,
     )
+    monkeypatch.setattr(init_module, "_sync_dashboard_panel", fake_sync_dashboard_panel)
 
     await init_module._complete_entry_startup(
         hass,
@@ -361,6 +369,60 @@ async def test_complete_entry_startup_local_skips_cloud_refresh(monkeypatch):
     assert session_manager.ensure_called is False
     assert coordinator.refresh_called is False
     assert coordinator.first_refresh_called is False
+
+
+@pytest.mark.asyncio
+async def test_complete_entry_startup_handles_dashboard_sync_failure(monkeypatch):
+    hass = DummyHass()
+    entry = DummyEntry()
+    coordinator = TrackingCoordinator()
+    session_manager = DummySessionManager(DummyApi())
+
+    hass.data[DOMAIN] = {entry.entry_id: {"dashboard_enabled": True}}
+
+    async def fake_init_notification_manager(*_args, **_kwargs):
+        return None
+
+    async def fake_init_balancing_manager(*_args, **_kwargs):
+        return None
+
+    async def fake_start_data_source_controller(*_args, **_kwargs):
+        return None
+
+    async def fake_sync_dashboard_panel(*_args, **_kwargs):
+        raise RuntimeError("dashboard boom")
+
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(effective_mode="local_only"),
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_init_notification_manager",
+        fake_init_notification_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_init_balancing_manager",
+        fake_init_balancing_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_start_data_source_controller",
+        fake_start_data_source_controller,
+    )
+    monkeypatch.setattr(init_module, "_sync_dashboard_panel", fake_sync_dashboard_panel)
+
+    await init_module._complete_entry_startup(
+        hass,
+        entry,
+        coordinator,
+        session_manager,
+        service_shield=None,
+        telemetry_store=None,
+        battery_prediction_enabled=False,
+    )
 
 
 @pytest.mark.asyncio

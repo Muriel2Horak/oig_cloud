@@ -1434,6 +1434,10 @@ async def _complete_entry_startup(
     battery_prediction_enabled: bool,
 ) -> None:
     try:
+        dashboard_enabled = bool(
+            hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("dashboard_enabled", False)
+        )
+
         state = get_data_source_state(hass, entry.entry_id)
         should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
 
@@ -1477,7 +1481,14 @@ async def _complete_entry_startup(
                 "data_source_controller"
             ] = data_source_controller
 
+        await _sync_dashboard_panel(hass, entry, dashboard_enabled)
+
         _LOGGER.info("Background startup completion finished for entry %s", entry.entry_id)
+    except asyncio.CancelledError:
+        _LOGGER.debug(
+            "Background startup completion cancelled for entry %s", entry.entry_id
+        )
+        raise
     except Exception as err:
         _LOGGER.warning(
             "Background startup completion failed for entry %s: %s",
@@ -1627,8 +1638,6 @@ async def async_setup_entry(
         # that can be left behind after unique_id/device_id stabilization.
         await _schedule_invalid_device_cleanup(hass, entry)
         await _migrate_entity_names_to_legacy_short_names(hass, entry)
-
-        await _sync_dashboard_panel(hass, entry, dashboard_enabled)
 
         # Přidáme listener pro změny konfigurace - OPRAVEN callback na async funkci
         entry.async_on_unload(entry.add_update_listener(async_update_options))
