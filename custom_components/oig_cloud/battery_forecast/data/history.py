@@ -281,11 +281,13 @@ async def fetch_interval_from_history(  # noqa: C901
 
     try:
         from homeassistant.components.recorder.history import get_significant_states
+        from homeassistant.helpers.recorder import get_instance
 
         box_id = sensor._box_id  # pylint: disable=protected-access
         entity_ids = _build_history_entity_ids(box_id)
 
-        states = await sensor._hass.async_add_executor_job(  # pylint: disable=protected-access
+        recorder_instance = get_instance(sensor._hass)  # pylint: disable=protected-access
+        states = await recorder_instance.async_add_executor_job(
             get_significant_states,
             sensor._hass,
             start_time,
@@ -469,8 +471,10 @@ async def fetch_mode_history_from_recorder(
 
     try:
         from homeassistant.components.recorder import history
+        from homeassistant.helpers.recorder import get_instance
 
-        history_data = await sensor._hass.async_add_executor_job(  # pylint: disable=protected-access
+        recorder_instance = get_instance(sensor._hass)  # pylint: disable=protected-access
+        history_data = await recorder_instance.async_add_executor_job(
             history.state_changes_during_period,
             sensor._hass,
             start_time,

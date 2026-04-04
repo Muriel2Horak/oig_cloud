@@ -1,6 +1,7 @@
 import builtins
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -24,11 +25,15 @@ class DummySensor:
     def __init__(self, hass):
         self._hass = hass
         self._box_id = "123"
+        self._daily_plan_state: dict[str, Any] | None = None
 
     def _get_total_battery_capacity(self):
         return 10.0
 
     def _log_rate_limited(self, *args, **kwargs):
+        return None
+
+    async def _load_plan_from_storage(self, *_args, **_kwargs) -> dict[str, Any] | None:
         return None
 
 
@@ -37,6 +42,15 @@ class DummyHass:
         self.data = {}
 
     async def async_add_executor_job(self, func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+
+class DummyRecorderInstance:
+    def __init__(self):
+        self.calls = []
+
+    async def async_add_executor_job(self, func, *args, **kwargs):
+        self.calls.append((func, args, kwargs))
         return func(*args, **kwargs)
 
 
@@ -118,7 +132,7 @@ def test_build_actual_interval_entry_rounding():
 
 
 @pytest.mark.asyncio
-async def test_fetch_interval_from_history_basic(hass, monkeypatch):
+async def test_fetch_interval_from_history_basic(monkeypatch):
     start = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
     end = start + timedelta(minutes=15)
 
@@ -139,12 +153,15 @@ async def test_fetch_interval_from_history_basic(hass, monkeypatch):
     def fake_get_significant_states(*_args, **_kwargs):
         return states
 
+    recorder_instance = DummyRecorderInstance()
+
     monkeypatch.setattr(
         "homeassistant.components.recorder.history.get_significant_states",
         fake_get_significant_states,
     )
+    monkeypatch.setattr("homeassistant.helpers.recorder.get_instance", lambda _hass: recorder_instance)
 
-    sensor = DummySensor(hass)
+    sensor = DummySensor(DummyHass())
     result = await history_module.fetch_interval_from_history(sensor, start, end)
 
     assert result is not None
@@ -159,6 +176,7 @@ async def test_fetch_interval_from_history_basic(hass, monkeypatch):
     assert result["net_cost"] == 1.3
     assert result["mode"] == CBB_MODE_HOME_UPS
     assert result["mode_name"] == CBB_MODE_NAMES[CBB_MODE_HOME_UPS]
+    assert len(recorder_instance.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -175,7 +193,7 @@ async def test_fetch_interval_from_history_no_hass():
 
 
 @pytest.mark.asyncio
-async def test_fetch_interval_from_history_no_states(hass, monkeypatch):
+async def test_fetch_interval_from_history_no_states(monkeypatch):
     def fake_get_significant_states(*_args, **_kwargs):
         return {}
 
@@ -183,7 +201,8 @@ async def test_fetch_interval_from_history_no_states(hass, monkeypatch):
         "homeassistant.components.recorder.history.get_significant_states",
         fake_get_significant_states,
     )
-    sensor = DummySensor(hass)
+    monkeypatch.setattr("homeassistant.helpers.recorder.get_instance", lambda _hass: DummyRecorderInstance())
+    sensor = DummySensor(DummyHass())
     result = await history_module.fetch_interval_from_history(
         sensor,
         datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc),
@@ -193,7 +212,7 @@ async def test_fetch_interval_from_history_no_states(hass, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_interval_from_history_exception(hass, monkeypatch):
+async def test_fetch_interval_from_history_exception(monkeypatch):
     def fake_get_significant_states(*_args, **_kwargs):
         raise RuntimeError("boom")
 
@@ -201,13 +220,40 @@ async def test_fetch_interval_from_history_exception(hass, monkeypatch):
         "homeassistant.components.recorder.history.get_significant_states",
         fake_get_significant_states,
     )
-    sensor = DummySensor(hass)
+    monkeypatch.setattr("homeassistant.helpers.recorder.get_instance", lambda _hass: DummyRecorderInstance())
+    sensor = DummySensor(DummyHass())
     result = await history_module.fetch_interval_from_history(
         sensor,
         datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc),
         datetime(2025, 1, 1, 0, 15, tzinfo=timezone.utc),
     )
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_mode_history_uses_recorder_executor(monkeypatch):
+    start = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+    end = start + timedelta(minutes=15)
+    sensor_id = "sensor.oig_123_box_prms_mode"
+    recorder_instance = DummyRecorderInstance()
+
+    def fake_state_changes(*_args, **_kwargs):
+        return {
+            sensor_id: [DummyState(SERVICE_MODE_HOME_UPS, end)],
+        }
+
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.history.state_changes_during_period",
+        fake_state_changes,
+    )
+    monkeypatch.setattr("homeassistant.helpers.recorder.get_instance", lambda _hass: recorder_instance)
+
+    sensor = DummySensor(DummyHass())
+    result = await history_module.fetch_mode_history_from_recorder(sensor, start, end)
+
+    assert len(result) == 1
+    assert result[0]["mode"] == CBB_MODE_HOME_UPS
+    assert len(recorder_instance.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -294,15 +340,18 @@ async def test_fetch_mode_history_from_recorder_no_hass():
 
 
 @pytest.mark.asyncio
-async def test_fetch_mode_history_from_recorder_empty(hass, monkeypatch):
+async def test_fetch_mode_history_from_recorder_empty(monkeypatch):
     def fake_state_changes(*_args, **_kwargs):
         return {}
+
+    recorder_instance = DummyRecorderInstance()
 
     monkeypatch.setattr(
         "homeassistant.components.recorder.history.state_changes_during_period",
         fake_state_changes,
     )
-    sensor = DummySensor(hass)
+    monkeypatch.setattr("homeassistant.helpers.recorder.get_instance", lambda _hass: recorder_instance)
+    sensor = DummySensor(DummyHass())
     result = await history_module.fetch_mode_history_from_recorder(
         sensor,
         datetime(2025, 1, 1, 0, 0),
@@ -332,8 +381,9 @@ async def test_fetch_mode_history_from_recorder_import_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_mode_history_from_recorder_empty_states(hass, monkeypatch):
+async def test_fetch_mode_history_from_recorder_empty_states(monkeypatch):
     sensor_id = "sensor.oig_123_box_prms_mode"
+    recorder_instance = DummyRecorderInstance()
 
     def fake_state_changes(*_args, **_kwargs):
         return {sensor_id: []}
@@ -342,7 +392,8 @@ async def test_fetch_mode_history_from_recorder_empty_states(hass, monkeypatch):
         "homeassistant.components.recorder.history.state_changes_during_period",
         fake_state_changes,
     )
-    sensor = DummySensor(hass)
+    monkeypatch.setattr("homeassistant.helpers.recorder.get_instance", lambda _hass: recorder_instance)
+    sensor = DummySensor(DummyHass())
     result = await history_module.fetch_mode_history_from_recorder(
         sensor,
         datetime(2025, 1, 1, 0, 0),
@@ -352,7 +403,9 @@ async def test_fetch_mode_history_from_recorder_empty_states(hass, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_mode_history_from_recorder_exception(hass, monkeypatch):
+async def test_fetch_mode_history_from_recorder_exception(monkeypatch):
+    recorder_instance = DummyRecorderInstance()
+
     def fake_state_changes(*_args, **_kwargs):
         raise RuntimeError("boom")
 
@@ -360,7 +413,8 @@ async def test_fetch_mode_history_from_recorder_exception(hass, monkeypatch):
         "homeassistant.components.recorder.history.state_changes_during_period",
         fake_state_changes,
     )
-    sensor = DummySensor(hass)
+    monkeypatch.setattr("homeassistant.helpers.recorder.get_instance", lambda _hass: recorder_instance)
+    sensor = DummySensor(DummyHass())
     result = await history_module.fetch_mode_history_from_recorder(
         sensor,
         datetime(2025, 1, 1, 0, 0),
@@ -370,8 +424,9 @@ async def test_fetch_mode_history_from_recorder_exception(hass, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_mode_history_from_recorder_filters_states(hass, monkeypatch):
+async def test_fetch_mode_history_from_recorder_filters_states(monkeypatch):
     sensor_id = "sensor.oig_123_box_prms_mode"
+    recorder_instance = DummyRecorderInstance()
     states = [
         SimpleNamespace(state="unavailable", last_changed=datetime(2025, 1, 1, 0, 0)),
         SimpleNamespace(state="Home 1", last_changed=datetime(2025, 1, 1, 0, 15)),
@@ -384,7 +439,8 @@ async def test_fetch_mode_history_from_recorder_filters_states(hass, monkeypatch
         "homeassistant.components.recorder.history.state_changes_during_period",
         fake_state_changes,
     )
-    sensor = DummySensor(hass)
+    monkeypatch.setattr("homeassistant.helpers.recorder.get_instance", lambda _hass: recorder_instance)
+    sensor = DummySensor(DummyHass())
     result = await history_module.fetch_mode_history_from_recorder(
         sensor,
         datetime(2025, 1, 1, 0, 0),

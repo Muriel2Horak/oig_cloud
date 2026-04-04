@@ -2767,7 +2767,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             new_options = self._build_options_payload(self._wizard_data)
 
             # Přidat debug log
-            _LOGGER.warning(
+            _LOGGER.debug(
                 f"🔧 OptionsFlow wizard_summary: Updating config entry with {len(new_options)} options"
             )
             _LOGGER.debug(
@@ -2776,20 +2776,20 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
             try:
                 # Aktualizovat entry
-                _LOGGER.warning("🔍 About to call async_update_entry")
+                _LOGGER.debug("🔍 About to call async_update_entry")
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, options=new_options
                 )
-                _LOGGER.warning("🔍 async_update_entry completed")
+                _LOGGER.debug("🔍 async_update_entry completed")
 
                 # Automaticky reloadnout integraci pro aplikování změn
-                _LOGGER.warning("🔍 About to reload integration")
+                _LOGGER.debug("🔍 About to reload integration")
                 await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-                _LOGGER.warning("🔍 Integration reload completed")
+                _LOGGER.debug("🔍 Integration reload completed")
 
                 # CRITICAL: V OptionsFlow NESMÍME volat async_create_entry,
                 # protože by to přepsalo options! Místo toho ukončit flow.
-                _LOGGER.warning(
+                _LOGGER.info(
                     "🔍 OptionsFlow wizard completed - showing success message"
                 )
                 return self.async_abort(reason="reconfigure_successful")

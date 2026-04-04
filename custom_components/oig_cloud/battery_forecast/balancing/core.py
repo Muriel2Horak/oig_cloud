@@ -286,7 +286,10 @@ class BalancingManager:
         _LOGGER.debug(f"BalancingManager: check_balancing() CALLED (force={force})")
 
         if not self._forecast_sensor:
-            _LOGGER.warning("Forecast sensor not set, cannot check balancing")
+            _LOGGER.debug(
+                "Forecast sensor not set yet for box %s, skipping balancing check",
+                self.box_id,
+            )
             return None
 
         if await self._handle_recent_balancing():
