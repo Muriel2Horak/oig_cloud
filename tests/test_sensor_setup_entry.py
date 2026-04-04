@@ -176,6 +176,92 @@ async def test_sensor_async_setup_entry(monkeypatch):
     assert all(getattr(entity, "_attr_has_entity_name", None) is False for entity in added)
 
 
+@pytest.mark.asyncio
+async def test_sensor_async_setup_entry_defers_noncritical_groups(monkeypatch):
+    entry = DummyEntry()
+
+    class LoopHass(DummyHass):
+        def __init__(self, entry_id):
+            super().__init__(entry_id)
+            self.loop = object()
+            self.tasks = []
+
+        def async_create_task(self, coro):
+            self.tasks.append(coro)
+            return coro
+
+    hass = LoopHass(entry.entry_id)
+    added = []
+
+    monkeypatch.setattr(sensor_module, "resolve_box_id", lambda _c: "123")
+    monkeypatch.setattr(sensor_module, "_register_data_source_sensor", lambda *_a, **_k: [DummySensor()])
+    monkeypatch.setattr(sensor_module, "_create_basic_sensors", lambda *_a, **_k: [DummySensor()])
+    monkeypatch.setattr(sensor_module, "_create_computed_sensors", lambda *_a, **_k: [DummySensor()])
+    monkeypatch.setattr(sensor_module, "_create_shield_sensors", lambda *_a, **_k: [DummySensor()])
+    monkeypatch.setattr(sensor_module, "_create_notification_sensors", lambda *_a, **_k: [DummySensor()])
+    monkeypatch.setattr(sensor_module, "_create_extended_sensors", lambda *_a, **_k: [])
+    monkeypatch.setattr(sensor_module, "_create_statistics_sensors", lambda *_a, **_k: [])
+    monkeypatch.setattr(sensor_module, "_create_solar_forecast_sensors", lambda *_a, **_k: [])
+    monkeypatch.setattr(sensor_module, "_create_battery_prediction_sensors", lambda *_a, **_k: [])
+    monkeypatch.setattr(sensor_module, "_create_pricing_sensors", lambda *_a, **_k: [])
+    monkeypatch.setattr(sensor_module, "_create_chmu_sensors", lambda *_a, **_k: [])
+    monkeypatch.setattr(sensor_module, "_create_boiler_sensors", lambda *_a, **_k: [])
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    await sensor_module.async_setup_entry(hass, entry, _add_entities)
+
+    assert len(added) == 4
+    assert len(hass.tasks) == 1
+
+    await hass.tasks[0]
+
+    assert len(added) == 5
+
+
+@pytest.mark.asyncio
+async def test_schedule_deferred_sensor_registration_retries_until_data_ready():
+    class LoopHass(DummyHass):
+        def __init__(self, entry_id):
+            super().__init__(entry_id)
+            self.loop = object()
+            self.tasks = []
+
+        def async_create_task(self, coro):
+            self.tasks.append(coro)
+            return coro
+
+    hass = LoopHass("entry1")
+    hass.data[DOMAIN]["entry1"]["coordinator"].data = None
+    added = []
+    attempts = {"count": 0}
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    def _factory():
+        attempts["count"] += 1
+        if hass.data[DOMAIN]["entry1"]["coordinator"].data is None:
+            hass.data[DOMAIN]["entry1"]["coordinator"].data = {"123": {}}
+            return []
+        return [DummySensor()]
+
+    sensor_module._schedule_deferred_sensor_registration(
+        hass,
+        "entry1",
+        _add_entities,
+        [_factory],
+    )
+
+    assert len(hass.tasks) == 1
+
+    await hass.tasks[0]
+
+    assert attempts["count"] >= 2
+    assert len(added) == 1
+
+
 def test_apply_legacy_entity_naming_sets_short_name_mode():
     first = SimpleNamespace(entity_id="sensor.one", _attr_has_entity_name=True)
     second = SimpleNamespace(entity_id="sensor.two")

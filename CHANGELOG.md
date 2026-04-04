@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.15] - 2026-04-04
+
+### Fixed
+- Startup now skips the custom coordinator jitter on the first refresh, including the cached-startup path, so initial coordinator updates no longer pay a random startup delay.
+- Sensor setup now keeps only the essential immediate groups in the blocking startup path while deferring computed sensors, reducing time to initial entity registration.
+- Deferred computed sensor registration now retries briefly when coordinator data is not ready yet, preventing those sensors from being skipped permanently on slow startup.
+
 ## [2.3.14] - 2026-04-04
 
 ### Fixed

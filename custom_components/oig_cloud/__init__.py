@@ -1106,6 +1106,8 @@ async def _init_session_manager_and_coordinator(
             and entry_state != ConfigEntryState.SETUP_IN_PROGRESS
             and hasattr(coordinator, "async_refresh")
         ):
+            if hasattr(coordinator, "skip_next_jitter"):
+                coordinator.skip_next_jitter()
             await coordinator.async_refresh()
         else:
             await coordinator.async_config_entry_first_refresh()

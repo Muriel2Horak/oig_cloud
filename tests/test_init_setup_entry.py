@@ -134,6 +134,7 @@ class DummyCoordinatorWithRefresh(DummyCoordinator):
         self.first_refresh_called = False
         self.refresh_called = False
         self.hydrate_called = False
+        self.skip_next_jitter_called = False
 
     async def async_config_entry_first_refresh(self):
         self.first_refresh_called = True
@@ -142,6 +143,9 @@ class DummyCoordinatorWithRefresh(DummyCoordinator):
     async def async_refresh(self):
         self.refresh_called = True
         return None
+
+    def skip_next_jitter(self):
+        self.skip_next_jitter_called = True
 
     async def async_hydrate_startup_cache(self):
         self.hydrate_called = True
@@ -950,6 +954,7 @@ async def test_init_session_manager_uses_first_refresh_during_setup(monkeypatch)
 
     assert coordinator.first_refresh_called is True
     assert coordinator.refresh_called is False
+    assert coordinator.skip_next_jitter_called is False
 
 
 @pytest.mark.asyncio
@@ -993,6 +998,7 @@ async def test_init_session_manager_defers_refresh_during_setup_when_cache_avail
     assert coordinator.hydrate_called is True
     assert coordinator.first_refresh_called is False
     assert coordinator.refresh_called is False
+    assert coordinator.skip_next_jitter_called is False
 
 
 @pytest.mark.asyncio
@@ -1039,6 +1045,7 @@ async def test_init_session_manager_uses_first_refresh_when_only_box_id_exists(
     assert coordinator.hydrate_called is True
     assert coordinator.first_refresh_called is True
     assert coordinator.refresh_called is False
+    assert coordinator.skip_next_jitter_called is False
 
 
 @pytest.mark.asyncio
