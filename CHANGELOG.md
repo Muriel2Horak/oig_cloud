@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.14] - 2026-04-04
+
+### Fixed
+- Boiler coordinator refresh now runs in deferred startup without blocking config-entry setup, while boiler refresh failures no longer abort the rest of background startup completion.
+- Boiler energy-needed sensor metadata no longer triggers Home Assistant energy state-class warnings during runtime.
+- Auto-switch watchdog corrections are now rate-limited, reducing repeated warning spam when the watchdog keeps the box aligned with the planned mode.
+- Expected telemetry delivery failures (HTTP 400/401/403) are now rate-limited and downgraded from warning spam while preserving diagnostics for unexpected failures.
+
 ## [2.3.13] - 2026-04-04
 
 ### Fixed
