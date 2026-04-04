@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+import logging
 
 import pytest
 
@@ -59,6 +60,18 @@ async def test_check_balancing_requires_forecast_sensor(monkeypatch):
 
     result = await manager.check_balancing()
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_check_balancing_without_forecast_sensor_logs_debug(monkeypatch, caplog):
+    monkeypatch.setattr(core_module, "Store", DummyStore)
+    manager = core_module.BalancingManager(SimpleNamespace(), "123", "path", DummyEntry())
+
+    with caplog.at_level(logging.DEBUG):
+        result = await manager.check_balancing()
+
+    assert result is None
+    assert "Forecast sensor not set yet for box 123" in caplog.text
 
 
 @pytest.mark.asyncio
