@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.13] - 2026-04-04
+
+### Fixed
+- Dashboard panel registration no longer blocks config entry bootstrap, preventing setup cancellation during Home Assistant startup on fresh installs.
+- Battery balancing startup now treats missing forecast sensor wiring as a transient deferred-registration race, avoiding false warning logs during initial setup.
+- Recorder history queries for battery forecast interval data now run through the recorder executor, eliminating repeated Home Assistant database access warnings.
+- Options-flow wizard progress logging was reduced from warning-level noise to normal debug/info output.
+
 ## [2.3.12] - 2026-04-03
 
 ### Fixed
