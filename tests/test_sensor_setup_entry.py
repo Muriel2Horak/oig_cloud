@@ -31,6 +31,9 @@ class DummyHass:
         self.data = {DOMAIN: {entry_id: {"coordinator": DummyCoordinator(), "statistics_enabled": True}}}
         self.config_entries = DummyConfigEntries()
 
+    def async_create_task(self, coro):
+        return coro
+
 
 class DummyEntry:
     def __init__(self, entry_id="entry1"):
@@ -235,3 +238,96 @@ async def test_sensor_async_setup_entry_no_box_id(monkeypatch):
     await sensor_module.async_setup_entry(hass, entry, _add_entities)
 
     assert not added
+
+
+@pytest.mark.asyncio
+async def test_schedule_deferred_sensor_registration_runs_inline_without_loop():
+    hass = DummyHass("entry1")
+    added = []
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    sensor_module._schedule_deferred_sensor_registration(
+        hass,
+        "entry1",
+        _add_entities,
+        [lambda: [DummySensor()], lambda: [DummySensor()]],
+    )
+
+    assert len(added) == 2
+    assert all(getattr(entity, "_attr_has_entity_name", None) is False for entity in added)
+
+
+@pytest.mark.asyncio
+async def test_schedule_deferred_sensor_registration_uses_background_task():
+    class LoopHass(DummyHass):
+        def __init__(self, entry_id):
+            super().__init__(entry_id)
+            self.loop = object()
+            self.tasks = []
+
+        def async_create_task(self, coro):
+            self.tasks.append(coro)
+            return coro
+
+    hass = LoopHass("entry1")
+    added = []
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    sensor_module._schedule_deferred_sensor_registration(
+        hass,
+        "entry1",
+        _add_entities,
+        [lambda: [DummySensor()]],
+    )
+
+    assert added == []
+    assert len(hass.tasks) == 1
+
+    await hass.tasks[0]
+
+    assert len(added) == 1
+    assert added[0]._attr_has_entity_name is False
+
+
+@pytest.mark.asyncio
+async def test_schedule_deferred_sensor_registration_skips_unloaded_entry():
+    hass = DummyHass("entry1")
+    added = []
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    sensor_module._schedule_deferred_sensor_registration(
+        hass,
+        "missing-entry",
+        _add_entities,
+        [lambda: [DummySensor()]],
+    )
+
+    assert added == []
+
+
+@pytest.mark.asyncio
+async def test_schedule_deferred_sensor_registration_continues_after_factory_error():
+    hass = DummyHass("entry1")
+    added = []
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    def _boom():
+        raise RuntimeError("factory failed")
+
+    sensor_module._schedule_deferred_sensor_registration(
+        hass,
+        "entry1",
+        _add_entities,
+        [_boom, lambda: [DummySensor()]],
+    )
+
+    assert len(added) == 1
+    assert added[0]._attr_has_entity_name is False

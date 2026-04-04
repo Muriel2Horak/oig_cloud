@@ -886,6 +886,16 @@ async def _cleanup_invalid_empty_devices(
         _LOGGER.debug("Device registry cleanup failed (non-critical): %s", err)
 
 
+async def _schedule_invalid_device_cleanup(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    if getattr(hass, "loop", None) is None:
+        await _cleanup_invalid_empty_devices(hass, entry)
+        return
+
+    hass.async_create_task(_cleanup_invalid_empty_devices(hass, entry))
+
+
 def _migrate_enable_spot_prices_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if "enable_spot_prices" not in entry.options:
         return
@@ -1055,32 +1065,67 @@ async def _init_session_manager_and_coordinator(
 
     state = get_data_source_state(hass, entry.entry_id)
     should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
-    if should_check_cloud_now:
-        _LOGGER.debug("Initial authentication via session manager")
-        await session_manager._ensure_auth()
-        await _ensure_live_data_enabled(oig_api)
-    else:
+
+    coordinator = OigCloudCoordinator(
+        hass, session_manager, standard_scan_interval, extended_scan_interval, entry
+    )
+    startup_cache_loaded = False
+    try:
+        startup_cache_loaded = await coordinator.async_hydrate_startup_cache()
+    except Exception as err:
+        _LOGGER.debug("Coordinator startup cache hydrate failed: %s", err)
+
+    has_box_id = False
+    try:
+        box_id = entry.options.get("box_id")
+        has_box_id = isinstance(box_id, str) and box_id.isdigit()
+    except Exception:
+        has_box_id = False
+
+    can_defer_cloud_refresh = startup_cache_loaded
+
+    if not should_check_cloud_now:
         _LOGGER.info(
             "Local telemetry mode active (configured=%s, local_ok=%s) – skipping initial cloud authentication and live-data check",
             state.configured_mode,
             state.local_available,
         )
 
-    coordinator = OigCloudCoordinator(
-        hass, session_manager, standard_scan_interval, extended_scan_interval, entry
-    )
-    _LOGGER.debug("Waiting for initial coordinator data...")
-    entry_state = getattr(entry, "state", None)
-    if entry_state == ConfigEntryState.SETUP_IN_PROGRESS:
-        await coordinator.async_config_entry_first_refresh()
-    elif hasattr(coordinator, "async_refresh"):
-        await coordinator.async_refresh()
-    else:
-        await coordinator.async_config_entry_first_refresh()
-    if coordinator.data is None:
+    _LOGGER.debug("Priming coordinator startup data...")
+    try:
+        entry_state = getattr(entry, "state", None)
+        if can_defer_cloud_refresh:
+            _LOGGER.info(
+                "Startup using cached coordinator state; deferring initial refresh "
+                "(cloud_now=%s, has_box_id=%s)",
+                should_check_cloud_now,
+                has_box_id,
+            )
+        elif (
+            not should_check_cloud_now
+            and entry_state != ConfigEntryState.SETUP_IN_PROGRESS
+            and hasattr(coordinator, "async_refresh")
+        ):
+            await coordinator.async_refresh()
+        else:
+            await coordinator.async_config_entry_first_refresh()
+    except Exception as err:
+        if (should_check_cloud_now and not can_defer_cloud_refresh) and coordinator.data is None:
+            _LOGGER.error("Initial coordinator refresh failed without cached data: %s", err)
+            raise ConfigEntryNotReady("No data received from OIG Cloud API") from err
+        _LOGGER.warning(
+            "Initial coordinator refresh failed but startup will continue with cached/local data: %s",
+            err,
+        )
+
+    if (should_check_cloud_now and not can_defer_cloud_refresh) and coordinator.data is None:
         _LOGGER.error("Failed to get initial data from coordinator")
         raise ConfigEntryNotReady("No data received from OIG Cloud API")
-    _LOGGER.debug("Coordinator data received: %s devices", len(coordinator.data))
+
+    if isinstance(coordinator.data, dict):
+        _LOGGER.debug("Coordinator startup data ready: %s devices", len(coordinator.data))
+    else:
+        _LOGGER.debug("Coordinator startup data not yet available; continuing setup")
 
     try:
         options = dict(entry.options)
@@ -1259,7 +1304,9 @@ async def _init_boiler_coordinator(
         if isinstance(box_id, str) and box_id.isdigit():
             boiler_config["box_id"] = box_id
         coordinator = BoilerCoordinator(hass, boiler_config)
+
         await coordinator.async_config_entry_first_refresh()
+
         _LOGGER.info("Boiler coordinator successfully initialized")
         return coordinator
     except Exception as err:
@@ -1291,6 +1338,7 @@ async def _init_balancing_manager(
         box_id = _resolve_entry_box_id(entry, coordinator)
         if not box_id:
             _LOGGER.warning("oig_cloud: No box_id available for BalancingManager")
+            return None
 
         storage_path = hass.config.path(".storage")
         balancing_manager = BalancingManager(hass, box_id, storage_path, entry)
@@ -1376,6 +1424,95 @@ async def _start_data_source_controller(
         return None
 
 
+async def _complete_entry_startup(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: OigCloudCoordinator,
+    session_manager: Any,
+    service_shield: Any | None,
+    telemetry_store: Any | None,
+    battery_prediction_enabled: bool,
+) -> None:
+    try:
+        state = get_data_source_state(hass, entry.entry_id)
+        should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
+
+        if should_check_cloud_now:
+            _LOGGER.info("Background startup: ensuring cloud auth and live-data access")
+            await session_manager._ensure_auth()
+            await _ensure_live_data_enabled(session_manager.api)
+            if hasattr(coordinator, "async_refresh"):
+                await coordinator.async_refresh()
+            else:
+                await coordinator.async_config_entry_first_refresh()
+
+        notification_manager = await _init_notification_manager(
+            hass, entry, coordinator, session_manager, service_shield
+        )
+        hass.data[DOMAIN][entry.entry_id]["notification_manager"] = notification_manager
+
+        balancing_manager = await _init_balancing_manager(
+            hass, entry, coordinator, battery_prediction_enabled
+        )
+        hass.data[DOMAIN][entry.entry_id]["balancing_manager"] = balancing_manager
+        if balancing_manager:
+            forecast_sensors = hass.data[DOMAIN][entry.entry_id].get(
+                "battery_forecast_sensors"
+            )
+            if isinstance(forecast_sensors, list) and forecast_sensors:
+                try:
+                    balancing_manager.set_forecast_sensor(forecast_sensors[0])
+                    balancing_manager.set_coordinator(coordinator)
+                except Exception as err:
+                    _LOGGER.debug(
+                        "Deferred BalancingManager forecast sensor wiring failed: %s",
+                        err,
+                    )
+
+        data_source_controller = await _start_data_source_controller(
+            hass, entry, coordinator, telemetry_store
+        )
+        if data_source_controller:
+            hass.data[DOMAIN][entry.entry_id][
+                "data_source_controller"
+            ] = data_source_controller
+
+        _LOGGER.info("Background startup completion finished for entry %s", entry.entry_id)
+    except Exception as err:
+        _LOGGER.warning(
+            "Background startup completion failed for entry %s: %s",
+            entry.entry_id,
+            err,
+            exc_info=True,
+        )
+
+
+async def _schedule_entry_startup_completion(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: OigCloudCoordinator,
+    session_manager: Any,
+    service_shield: Any | None,
+    telemetry_store: Any | None,
+    battery_prediction_enabled: bool,
+) -> None:
+    coro = _complete_entry_startup(
+        hass,
+        entry,
+        coordinator,
+        session_manager,
+        service_shield,
+        telemetry_store,
+        battery_prediction_enabled,
+    )
+
+    if getattr(hass, "loop", None) is None:
+        await coro
+        return
+
+    hass.async_create_task(coro)
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> bool:  # noqa: C901
@@ -1427,9 +1564,7 @@ async def async_setup_entry(
             extended_scan_interval,
         )
 
-        notification_manager = await _init_notification_manager(
-            hass, entry, coordinator, session_manager, service_shield
-        )
+        notification_manager = None
 
         solar_forecast = _init_solar_forecast(entry)
 
@@ -1451,9 +1586,7 @@ async def async_setup_entry(
         battery_prediction_enabled = entry.options.get(
             "enable_battery_prediction", False
         )
-        balancing_manager = await _init_balancing_manager(
-            hass, entry, coordinator, battery_prediction_enabled
-        )
+        balancing_manager = None
 
         telemetry_store = _init_telemetry_store(hass, entry, coordinator)
 
@@ -1480,14 +1613,6 @@ async def async_setup_entry(
             },
         }
 
-        data_source_controller = await _start_data_source_controller(
-            hass, entry, coordinator, telemetry_store
-        )
-        if data_source_controller:
-            hass.data[DOMAIN][entry.entry_id][
-                "data_source_controller"
-            ] = data_source_controller
-
         _setup_service_shield_data(hass, entry, coordinator, service_shield)
 
         # POZN: Plná migrace/cleanup device registry je riziková (může rozbít entity).
@@ -1500,7 +1625,7 @@ async def async_setup_entry(
 
         # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
         # that can be left behind after unique_id/device_id stabilization.
-        await _cleanup_invalid_empty_devices(hass, entry)
+        await _schedule_invalid_device_cleanup(hass, entry)
         await _migrate_entity_names_to_legacy_short_names(hass, entry)
 
         await _sync_dashboard_panel(hass, entry, dashboard_enabled)
@@ -1512,6 +1637,16 @@ async def async_setup_entry(
         _register_api_endpoints(hass, boiler_coordinator)
 
         _setup_service_shield_monitoring(hass, entry, service_shield)
+
+        await _schedule_entry_startup_completion(
+            hass,
+            entry,
+            coordinator,
+            session_manager,
+            service_shield,
+            telemetry_store,
+            battery_prediction_enabled,
+        )
 
         # OPRAVA: ODSTRANĚNÍ duplicitní registrace služeb - způsobovala přepsání správného schématu
         # Služby se už registrovaly výše v async_setup_entry_services_with_shield

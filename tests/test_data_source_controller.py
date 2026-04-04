@@ -44,13 +44,38 @@ class DummyBus:
 
 
 class DummyHass:
-    def __init__(self, states):
+    def __init__(self, states, loop=None):
         self.states = DummyStates(states)
         self.data = {module.DOMAIN: {}}
         self.bus = DummyBus()
+        self.loop = loop
 
     def async_create_task(self, _coro):
         return None
+
+
+class DummyHandle:
+    def __init__(self, delay, callback):
+        self.delay = delay
+        self.callback = callback
+        self.cancelled = False
+
+    def cancel(self):
+        self.cancelled = True
+
+
+class DummyLoop:
+    def __init__(self, now_time=0.0):
+        self.now_time = now_time
+        self.scheduled = []
+
+    def time(self):
+        return self.now_time
+
+    def call_later(self, delay, callback):
+        handle = DummyHandle(delay, callback)
+        self.scheduled.append(handle)
+        return handle
 
 
 def _make_entry(mode, box_id="123"):
@@ -240,7 +265,8 @@ def test_on_effective_mode_changed_handles_errors():
         )
     }
 
-    def _raise_fire(_event, _data):
+    def _raise_fire(event, data):
+        del event, data
         raise RuntimeError("fail")
 
     hass.bus.async_fire = _raise_fire
@@ -303,10 +329,158 @@ async def test_handle_local_event_updates_coordinator():
 
 
 @pytest.mark.asyncio
+async def test_handle_local_event_throttles_snapshot_publish():
+    now = dt_util.utcnow()
+    loop = DummyLoop(now_time=12.0)
+    hass = DummyHass([], loop=loop)
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
+
+    class DummyStore:
+        def apply_local_events(self, _pending):
+            return True
+
+        def get_snapshot(self):
+            return SimpleNamespace(payload={"123": {"box_prms": {"mode": 1}}})
+
+    class DummyCoordinator:
+        def __init__(self):
+            self.updates = []
+
+        def async_set_updated_data(self, data):
+            self.updates.append(data)
+
+    controller = module.DataSourceController(
+        hass, entry, coordinator=DummyCoordinator(), telemetry_store=DummyStore()
+    )
+    controller._pending_local_entities = {"sensor.oig_local_123_ac_out"}
+    controller._last_snapshot_publish_monotonic = 10.0
+    hass.data[module.DOMAIN][entry.entry_id] = {
+        "data_source_state": module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=now,
+            reason="local_ok",
+        )
+    }
+
+    controller._update_state = lambda: (False, False)
+    await controller._handle_local_event()
+
+    assert controller.coordinator.updates == []
+    assert controller._pending_snapshot_publish is True
+    assert len(loop.scheduled) == 1
+    assert loop.scheduled[0].delay == pytest.approx(3.0)
+
+    loop.now_time = 15.0
+    loop.scheduled[0].callback()
+
+    assert controller.coordinator.updates == [{"123": {"box_prms": {"mode": 1}}}]
+    assert controller._pending_snapshot_publish is False
+
+
+def test_schedule_snapshot_publish_coalesces_pending_updates():
+    now = dt_util.utcnow()
+    loop = DummyLoop(now_time=12.0)
+    hass = DummyHass([], loop=loop)
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
+
+    class DummyStore:
+        def get_snapshot(self):
+            return SimpleNamespace(payload={"123": {"box_prms": {"mode": 1}}})
+
+    class DummyCoordinator:
+        def __init__(self):
+            self.updates = []
+
+        def async_set_updated_data(self, data):
+            self.updates.append(data)
+
+    controller = module.DataSourceController(
+        hass, entry, coordinator=DummyCoordinator(), telemetry_store=DummyStore()
+    )
+    controller._last_snapshot_publish_monotonic = 10.0
+    hass.data[module.DOMAIN][entry.entry_id] = {
+        "data_source_state": module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=now,
+            reason="local_ok",
+        )
+    }
+
+    controller._schedule_snapshot_publish()
+    controller._schedule_snapshot_publish()
+
+    assert len(loop.scheduled) == 1
+    loop.now_time = 15.0
+    loop.scheduled[0].callback()
+    assert controller.coordinator.updates == [{"123": {"box_prms": {"mode": 1}}}]
+
+
+def test_publish_pending_snapshot_skips_when_effective_cloud(monkeypatch):
+    now = dt_util.utcnow()
+    loop = DummyLoop(now_time=12.0)
+    hass = DummyHass([], loop=loop)
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
+
+    class DummyStore:
+        def get_snapshot(self):
+            return SimpleNamespace(payload={"123": {"box_prms": {"mode": 1}}})
+
+    class DummyCoordinator:
+        def __init__(self):
+            self.updates = []
+
+        def async_set_updated_data(self, data):
+            self.updates.append(data)
+
+    controller = module.DataSourceController(
+        hass, entry, coordinator=DummyCoordinator(), telemetry_store=DummyStore()
+    )
+    controller._pending_snapshot_publish = True
+
+    monkeypatch.setattr(
+        module,
+        "get_data_source_state",
+        lambda *_a, **_k: module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_CLOUD_ONLY,
+            local_available=False,
+            last_local_data=now,
+            reason="cloud_only",
+        ),
+    )
+
+    controller._publish_pending_snapshot()
+
+    assert controller.coordinator.updates == []
+    assert controller._pending_snapshot_publish is False
+
+
+@pytest.mark.asyncio
+async def test_async_stop_cancels_snapshot_publish_handle():
+    loop = DummyLoop(now_time=12.0)
+    hass = DummyHass([], loop=loop)
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
+    controller = module.DataSourceController(hass, entry, coordinator=None)
+
+    handle = DummyHandle(1.0, lambda: None)
+    controller._snapshot_publish_handle = handle
+
+    await controller.async_stop()
+
+    assert handle.cancelled is True
+    assert controller._snapshot_publish_handle is None
+
+
+@pytest.mark.asyncio
 async def test_async_start_fallback_listeners(monkeypatch):
     now = dt_util.utcnow()
     states = [
         DummyState(module.PROXY_LAST_DATA_ENTITY_ID, now.isoformat(), last_updated=now),
+        DummyState(module.PROXY_BOX_ID_ENTITY_ID, "123", last_updated=now),
     ]
     hass = DummyHass(states)
     entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
@@ -335,6 +509,52 @@ async def test_async_start_fallback_listeners(monkeypatch):
     await controller.async_start()
 
     assert controller.coordinator.updated == {"123": {"box_prms": {"mode": 1}}}
+
+
+@pytest.mark.asyncio
+async def test_async_start_seed_skips_publish_when_effective_cloud(monkeypatch):
+    now = dt_util.utcnow()
+    states = [
+        DummyState(module.PROXY_LAST_DATA_ENTITY_ID, now.isoformat(), last_updated=now),
+    ]
+    hass = DummyHass(states)
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
+
+    class DummyStore:
+        def seed_from_existing_local_states(self):
+            return True
+
+        def get_snapshot(self):
+            return SimpleNamespace(payload={"123": {"box_prms": {"mode": 1}}})
+
+    class DummyCoordinator:
+        def __init__(self):
+            self.updated = None
+
+        def async_set_updated_data(self, data):
+            self.updated = data
+
+    controller = module.DataSourceController(
+        hass, entry, coordinator=DummyCoordinator(), telemetry_store=DummyStore()
+    )
+
+    monkeypatch.setattr(module, "_async_track_state_change_event", None)
+    monkeypatch.setattr(module, "_async_track_time_interval", None)
+    monkeypatch.setattr(
+        module,
+        "get_data_source_state",
+        lambda *_a, **_k: module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_CLOUD_ONLY,
+            local_available=False,
+            last_local_data=now,
+            reason="cloud_only",
+        ),
+    )
+
+    await controller.async_start()
+
+    assert controller.coordinator.updated is None
 
 
 def test_init_data_source_state_entry_options_error():

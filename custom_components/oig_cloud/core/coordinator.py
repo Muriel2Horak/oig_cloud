@@ -194,19 +194,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         This makes entities render immediately with last-known values (retain-like behavior),
         while the coordinator is still doing the first network/local refresh.
         """
-        if self._cache_store is not None:
-            try:
-                cached = await self._cache_store.async_load()
-                cached_data = cached.get("data") if isinstance(cached, dict) else None
-                if isinstance(cached_data, dict) and cached_data:
-                    self.data = cached_data
-                    self.last_update_success = True
-                    _LOGGER.debug(
-                        "Loaded cached coordinator data (%d keys) before first refresh",
-                        len(cached_data),
-                    )
-            except Exception as err:
-                _LOGGER.debug("Failed to load coordinator cache: %s", err)
+        await self.async_hydrate_startup_cache()
 
         try:
             await super().async_config_entry_first_refresh()
@@ -220,6 +208,28 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 )
                 return
             raise
+
+    async def async_hydrate_startup_cache(self) -> bool:
+        if self._cache_store is None:
+            return False
+
+        try:
+            cached = await self._cache_store.async_load()
+        except Exception as err:
+            _LOGGER.debug("Failed to load coordinator cache: %s", err)
+            return False
+
+        cached_data = cached.get("data") if isinstance(cached, dict) else None
+        if not isinstance(cached_data, dict) or not cached_data:
+            return False
+
+        self.data = cached_data
+        self.last_update_success = True
+        _LOGGER.debug(
+            "Loaded cached coordinator data (%d keys) before refresh",
+            len(cached_data),
+        )
+        return True
 
     def _prune_for_cache(self, value: Any, *, _depth: int = 0) -> Any:
         """Reduce payload size before saving to HA storage."""
