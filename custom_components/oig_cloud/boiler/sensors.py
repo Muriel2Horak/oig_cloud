@@ -23,6 +23,11 @@ from .coordinator import BoilerCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
+def _coordinator_data(coordinator: BoilerCoordinator) -> dict[str, Any]:
+    data = getattr(coordinator, "data", None)
+    return data if isinstance(data, dict) else {}
+
+
 class BoilerSensorBase(CoordinatorEntity[BoilerCoordinator], SensorEntity):
     """Základní třída pro bojlerové senzory."""
 
@@ -124,7 +129,6 @@ class BoilerEnergyNeededSensor(BoilerSensorBase):
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:flash"
 
     def __init__(self, coordinator: BoilerCoordinator) -> None:
@@ -134,7 +138,7 @@ class BoilerEnergyNeededSensor(BoilerSensorBase):
     @property
     def native_value(self) -> Optional[float]:
         """Vrátí energii potřebnou k ohřevu."""
-        energy_state = self.coordinator.data.get("energy_state", {})
+        energy_state = _coordinator_data(self.coordinator).get("energy_state", {})
         return energy_state.get("energy_needed_kwh")
 
 
@@ -153,7 +157,7 @@ class BoilerTotalEnergySensor(BoilerSensorBase):
     @property
     def native_value(self) -> Optional[float]:
         """Vrátí celkovou energii."""
-        tracking = self.coordinator.data.get("energy_tracking", {})
+        tracking = _coordinator_data(self.coordinator).get("energy_tracking", {})
         return tracking.get("total_kwh")
 
 
@@ -172,7 +176,7 @@ class BoilerFVEEnergySensor(BoilerSensorBase):
     @property
     def native_value(self) -> Optional[float]:
         """Vrátí energii z FVE."""
-        tracking = self.coordinator.data.get("energy_tracking", {})
+        tracking = _coordinator_data(self.coordinator).get("energy_tracking", {})
         return tracking.get("fve_kwh")
 
 
@@ -191,7 +195,7 @@ class BoilerGridEnergySensor(BoilerSensorBase):
     @property
     def native_value(self) -> Optional[float]:
         """Vrátí energii ze sítě."""
-        tracking = self.coordinator.data.get("energy_tracking", {})
+        tracking = _coordinator_data(self.coordinator).get("energy_tracking", {})
         return tracking.get("grid_kwh")
 
 
@@ -210,7 +214,7 @@ class BoilerAltEnergySensor(BoilerSensorBase):
     @property
     def native_value(self) -> Optional[float]:
         """Vrátí alternativní energii."""
-        tracking = self.coordinator.data.get("energy_tracking", {})
+        tracking = _coordinator_data(self.coordinator).get("energy_tracking", {})
         return tracking.get("alt_kwh")
 
 
@@ -229,7 +233,7 @@ class BoilerCurrentSourceSensor(BoilerSensorBase):
     @property
     def native_value(self) -> Optional[str]:
         """Vrátí aktuální zdroj."""
-        tracking = self.coordinator.data.get("energy_tracking", {})
+        tracking = _coordinator_data(self.coordinator).get("energy_tracking", {})
         source = tracking.get("current_source", "grid")
 
         # Překlad do češtiny
@@ -253,7 +257,7 @@ class BoilerRecommendedSourceSensor(BoilerSensorBase):
     @property
     def native_value(self) -> Optional[str]:
         """Vrátí doporučený zdroj."""
-        recommended = self.coordinator.data.get("recommended_source")
+        recommended = _coordinator_data(self.coordinator).get("recommended_source")
         if not recommended:
             return None
 
@@ -278,13 +282,15 @@ class BoilerChargingRecommendedSensor(BoilerSensorBase):
     @property
     def native_value(self) -> str:
         """Vrátí ano/ne."""
-        recommended = self.coordinator.data.get("charging_recommended", False)
+        recommended = _coordinator_data(self.coordinator).get(
+            "charging_recommended", False
+        )
         return "ano" if recommended else "ne"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Atributy s detaily aktuálního slotu."""
-        current_slot = self.coordinator.data.get("current_slot")
+        current_slot = _coordinator_data(self.coordinator).get("current_slot")
         if not current_slot:
             return {}
 
@@ -313,7 +319,7 @@ class BoilerPlanEstimatedCostSensor(BoilerSensorBase):
     @property
     def native_value(self) -> Optional[float]:
         """Vrátí odhadovanou cenu."""
-        plan = self.coordinator.data.get("plan")
+        plan = _coordinator_data(self.coordinator).get("plan")
         if not plan:
             return None
         return round(plan.estimated_cost_czk, 2)
@@ -321,7 +327,7 @@ class BoilerPlanEstimatedCostSensor(BoilerSensorBase):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Atributy s rozpisem plánu."""
-        plan = self.coordinator.data.get("plan")
+        plan = _coordinator_data(self.coordinator).get("plan")
         if not plan:
             return {}
 
