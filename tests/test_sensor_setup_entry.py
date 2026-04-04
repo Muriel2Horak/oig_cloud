@@ -4,8 +4,6 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("numpy")
-
 from custom_components.oig_cloud.const import DOMAIN
 from custom_components.oig_cloud import sensor as sensor_module
 
@@ -252,6 +250,7 @@ async def test_schedule_deferred_sensor_registration_runs_inline_without_loop():
 
     sensor_module._schedule_deferred_sensor_registration(
         hass,
+        "entry1",
         _add_entities,
         [lambda: [DummySensor()], lambda: [DummySensor()]],
     )
@@ -280,6 +279,7 @@ async def test_schedule_deferred_sensor_registration_uses_background_task():
 
     sensor_module._schedule_deferred_sensor_registration(
         hass,
+        "entry1",
         _add_entities,
         [lambda: [DummySensor()]],
     )
@@ -288,6 +288,46 @@ async def test_schedule_deferred_sensor_registration_uses_background_task():
     assert len(hass.tasks) == 1
 
     await hass.tasks[0]
+
+    assert len(added) == 1
+    assert added[0]._attr_has_entity_name is False
+
+
+@pytest.mark.asyncio
+async def test_schedule_deferred_sensor_registration_skips_unloaded_entry():
+    hass = DummyHass("entry1")
+    added = []
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    sensor_module._schedule_deferred_sensor_registration(
+        hass,
+        "missing-entry",
+        _add_entities,
+        [lambda: [DummySensor()]],
+    )
+
+    assert added == []
+
+
+@pytest.mark.asyncio
+async def test_schedule_deferred_sensor_registration_continues_after_factory_error():
+    hass = DummyHass("entry1")
+    added = []
+
+    def _add_entities(entities, _update=False):
+        added.extend(entities)
+
+    def _boom():
+        raise RuntimeError("factory failed")
+
+    sensor_module._schedule_deferred_sensor_registration(
+        hass,
+        "entry1",
+        _add_entities,
+        [_boom, lambda: [DummySensor()]],
+    )
 
     assert len(added) == 1
     assert added[0]._attr_has_entity_name is False

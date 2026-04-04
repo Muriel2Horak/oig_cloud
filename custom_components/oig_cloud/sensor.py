@@ -1448,25 +1448,85 @@ def _apply_legacy_entity_naming(entities: List[Any]) -> None:
 
 def _schedule_deferred_sensor_registration(
     hass: HomeAssistant,
+    entry_id: str,
     async_add_entities: AddEntitiesCallback,
     deferred_factories: List[Callable[[], List[Any]]],
 ) -> None:
     if not deferred_factories:
         return
 
+    def _entry_still_loaded() -> bool:
+        domain_data = hass.data.get(DOMAIN)
+        return isinstance(domain_data, dict) and entry_id in domain_data
+
+    def _build_deferred_sensors() -> List[Any]:
+        deferred_sensors: List[Any] = []
+        for factory in deferred_factories:
+            try:
+                deferred_sensors.extend(factory())
+            except Exception as err:
+                _LOGGER.warning(
+                    "Deferred sensor factory failed for entry %s during setup: %s",
+                    entry_id,
+                    err,
+                    exc_info=True,
+                )
+        return deferred_sensors
+
     async def _register_later() -> None:
         await asyncio.sleep(0)
-        deferred_sensors: List[Any] = []
-        for factory in deferred_factories:
-            deferred_sensors.extend(factory())
+        if not _entry_still_loaded():
+            _LOGGER.debug(
+                "Skipping deferred sensor registration because entry %s is no longer loaded",
+                entry_id,
+            )
+            return
+
+        deferred_sensors = _build_deferred_sensors()
+
+        if not _entry_still_loaded():
+            _LOGGER.debug(
+                "Skipping deferred sensor registration because entry %s was unloaded",
+                entry_id,
+            )
+            return
+
+        if not deferred_sensors:
+            return
+
+        try:
+            _register_all_sensors(async_add_entities, deferred_sensors)
+        except Exception as err:
+            _LOGGER.warning(
+                "Deferred sensor registration failed for entry %s: %s",
+                entry_id,
+                err,
+                exc_info=True,
+            )
             await asyncio.sleep(0)
-        _register_all_sensors(async_add_entities, deferred_sensors)
 
     if getattr(hass, "loop", None) is None:
-        deferred_sensors: List[Any] = []
-        for factory in deferred_factories:
-            deferred_sensors.extend(factory())
-        _register_all_sensors(async_add_entities, deferred_sensors)
+        if not _entry_still_loaded():
+            _LOGGER.debug(
+                "Skipping deferred sensor registration because entry %s is no longer loaded",
+                entry_id,
+            )
+            return
+
+        deferred_sensors = _build_deferred_sensors()
+
+        if not _entry_still_loaded() or not deferred_sensors:
+            return
+
+        try:
+            _register_all_sensors(async_add_entities, deferred_sensors)
+        except Exception as err:
+            _LOGGER.warning(
+                "Deferred sensor registration failed for entry %s: %s",
+                entry_id,
+                err,
+                exc_info=True,
+            )
         return
 
     hass.async_create_task(_register_later())
@@ -1643,7 +1703,9 @@ async def async_setup_entry(  # noqa: C901
     # PERFORMANCE FIX: Register all sensors at once instead of 17 separate calls
     # ================================================================
     _register_all_sensors(async_add_entities, core_sensors)
-    _schedule_deferred_sensor_registration(hass, async_add_entities, deferred_factories)
+    _schedule_deferred_sensor_registration(
+        hass, entry.entry_id, async_add_entities, deferred_factories
+    )
 
     _LOGGER.info("OIG Cloud sensor setup completed")
 
