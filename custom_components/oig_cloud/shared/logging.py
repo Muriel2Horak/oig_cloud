@@ -49,6 +49,15 @@ class SimpleTelemetry:
         self.headers = headers
         self.session: Optional[ClientSession] = None
         self._aiohttp_available = ClientSession is not None and TCPConnector is not None
+        self._last_failure_log: dict[str, float] = {}
+
+    def _should_log_failure(self, key: str, cooldown_s: float = 300.0) -> bool:
+        now = time.monotonic()
+        last = self._last_failure_log.get(key)
+        if last is not None and (now - last) < cooldown_s:
+            return False
+        self._last_failure_log[key] = now
+        return True
 
     async def _get_session(self) -> Optional[ClientSession]:
         """Získá nebo vytvoří aiohttp session."""
@@ -113,16 +122,26 @@ class SimpleTelemetry:
                     )
                     return True
                 else:
-                    _LOGGER.warning(
-                        f"[TELEMETRY] Failed to send {event_type}: HTTP {response.status} - {response_text[:100]}"
+                    log_message = (
+                        f"[TELEMETRY] Failed to send {event_type}: "
+                        f"HTTP {response.status} - {response_text[:100]}"
                     )
+                    failure_key = f"{event_type}:{response.status}"
+                    if response.status in {400, 401, 403}:
+                        if self._should_log_failure(failure_key):
+                            _LOGGER.info(log_message)
+                        else:
+                            _LOGGER.debug(log_message)
+                    else:
+                        _LOGGER.warning(log_message)
                     return False
 
         except Exception as e:
-            _LOGGER.error(
-                f"[TELEMETRY] Exception while sending {event_type} for {service_name}: {e}",
-                exc_info=True,
-            )
+            log_message = f"[TELEMETRY] Exception while sending {event_type} for {service_name}: {e}"
+            if self._should_log_failure(f"exception:{event_type}"):
+                _LOGGER.warning(log_message, exc_info=True)
+            else:
+                _LOGGER.debug(log_message, exc_info=True)
             return False
 
     async def close(self) -> None:

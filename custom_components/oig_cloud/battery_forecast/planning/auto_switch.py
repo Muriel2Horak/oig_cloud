@@ -31,6 +31,7 @@ from .precedence_contract import PrecedenceLevel
 
 _LOGGER = logging.getLogger(__name__)
 MIN_AUTO_SWITCH_INTERVAL_MINUTES = 30
+WATCHDOG_WARNING_COOLDOWN_SECONDS = 300.0
 
 
 # Reason code constants for switch decisions
@@ -232,6 +233,28 @@ def stop_auto_switch_watchdog(sensor: Any) -> None:
         _LOGGER.debug("[AutoModeSwitch] Watchdog stopped")
 
 
+def _log_watchdog_correction(sensor: Any, current_mode: Optional[str], desired_mode: str, context: SwitchContext) -> None:
+    log_rl = getattr(sensor, "_log_rate_limited", None)
+    if log_rl:
+        log_rl(
+            "auto_mode_switch_watchdog_correction",
+            "warning",
+            "[AutoModeSwitch] Watchdog correcting mode from %s -> %s (%s)",
+            current_mode or "unknown",
+            desired_mode,
+            context.to_log_string(),
+            cooldown_s=WATCHDOG_WARNING_COOLDOWN_SECONDS,
+        )
+        return
+
+    _LOGGER.debug(
+        "[AutoModeSwitch] Watchdog correcting mode from %s -> %s (%s)",
+        current_mode or "unknown",
+        desired_mode,
+        context.to_log_string(),
+    )
+
+
 async def auto_switch_watchdog_tick(sensor: Any, now: datetime) -> None:
     """Periodic check that correct mode is applied."""
     if not auto_mode_switch_enabled(sensor):
@@ -260,12 +283,7 @@ async def auto_switch_watchdog_tick(sensor: Any, now: datetime) -> None:
             "desired_mode": desired_mode,
         },
     )
-    _LOGGER.warning(
-        "[AutoModeSwitch] Watchdog correcting mode from %s -> %s (%s)",
-        current_mode or "unknown",
-        desired_mode,
-        context.to_log_string(),
-    )
+    _log_watchdog_correction(sensor, current_mode, desired_mode, context)
     await ensure_current_mode(sensor, desired_mode, "watchdog enforcement", context=context)
 
 

@@ -7,6 +7,7 @@ import logging
 import pytest
 
 from custom_components.oig_cloud.battery_forecast.balancing import core as core_module
+from custom_components.oig_cloud.battery_forecast.planning import auto_switch as auto_switch_module
 from custom_components.oig_cloud.battery_forecast.balancing.plan import (
     BalancingMode,
     BalancingPlan,
@@ -31,6 +32,14 @@ class DummyStore:
 class DummyEntry:
     def __init__(self, options=None):
         self.options = options or {}
+
+
+class DummyRateLimitedSensor:
+    def __init__(self):
+        self.calls = []
+
+    def _log_rate_limited(self, key, level, message, *args, cooldown_s=None):
+        self.calls.append((key, level, message, args, cooldown_s))
 
 
 def _make_plan(start: datetime, end: datetime) -> BalancingPlan:
@@ -72,6 +81,27 @@ async def test_check_balancing_without_forecast_sensor_logs_debug(monkeypatch, c
 
     assert result is None
     assert "Forecast sensor not set yet for box 123" in caplog.text
+
+
+def test_log_watchdog_correction_uses_rate_limited_warning():
+    sensor = DummyRateLimitedSensor()
+    context = auto_switch_module.SwitchContext(
+        reason_code=auto_switch_module.REASON_WATCHDOG_ENFORCEMENT,
+        precedence_level=1,
+        precedence_name="AUTO_SWITCH",
+        decision_source="watchdog",
+    )
+
+    auto_switch_module._log_watchdog_correction(sensor, "Home UPS", "Home 1", context)
+
+    assert len(sensor.calls) == 1
+    key, level, message, args, cooldown_s = sensor.calls[0]
+    assert key == "auto_mode_switch_watchdog_correction"
+    assert level == "warning"
+    assert "Watchdog correcting mode" in message
+    assert args[0] == "Home UPS"
+    assert args[1] == "Home 1"
+    assert cooldown_s == auto_switch_module.WATCHDOG_WARNING_COOLDOWN_SECONDS
 
 
 @pytest.mark.asyncio
