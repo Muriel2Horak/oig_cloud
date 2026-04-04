@@ -14,6 +14,8 @@ from .entities.data_source_sensor import OigCloudDataSourceSensor
 
 _LOGGER = logging.getLogger(__name__)
 
+DEFERRED_SENSOR_RETRY_DELAYS_S = (0.0, 0.5, 2.0)
+
 try:
     _LOGGER.debug("Attempting to import SENSOR_TYPES from sensor_types.py")
     from .sensor_types import SENSOR_TYPES
@@ -1474,36 +1476,47 @@ def _schedule_deferred_sensor_registration(
         return deferred_sensors
 
     async def _register_later() -> None:
-        await asyncio.sleep(0)
-        if not _entry_still_loaded():
-            _LOGGER.debug(
-                "Skipping deferred sensor registration because entry %s is no longer loaded",
-                entry_id,
-            )
+        for attempt, delay in enumerate(DEFERRED_SENSOR_RETRY_DELAYS_S, start=1):
+            await asyncio.sleep(delay)
+
+            if not _entry_still_loaded():
+                _LOGGER.debug(
+                    "Skipping deferred sensor registration because entry %s is no longer loaded",
+                    entry_id,
+                )
+                return
+
+            deferred_sensors = _build_deferred_sensors()
+
+            if not _entry_still_loaded():
+                _LOGGER.debug(
+                    "Skipping deferred sensor registration because entry %s was unloaded",
+                    entry_id,
+                )
+                return
+
+            if not deferred_sensors:
+                if attempt < len(DEFERRED_SENSOR_RETRY_DELAYS_S):
+                    _LOGGER.debug(
+                        "Deferred sensor registration yielded no sensors for entry %s; retrying (%s/%s)",
+                        entry_id,
+                        attempt,
+                        len(DEFERRED_SENSOR_RETRY_DELAYS_S),
+                    )
+                    continue
+                return
+
+            try:
+                _register_all_sensors(async_add_entities, deferred_sensors)
+            except Exception as err:
+                _LOGGER.warning(
+                    "Deferred sensor registration failed for entry %s: %s",
+                    entry_id,
+                    err,
+                    exc_info=True,
+                )
+                await asyncio.sleep(0)
             return
-
-        deferred_sensors = _build_deferred_sensors()
-
-        if not _entry_still_loaded():
-            _LOGGER.debug(
-                "Skipping deferred sensor registration because entry %s was unloaded",
-                entry_id,
-            )
-            return
-
-        if not deferred_sensors:
-            return
-
-        try:
-            _register_all_sensors(async_add_entities, deferred_sensors)
-        except Exception as err:
-            _LOGGER.warning(
-                "Deferred sensor registration failed for entry %s: %s",
-                entry_id,
-                err,
-                exc_info=True,
-            )
-            await asyncio.sleep(0)
 
     if getattr(hass, "loop", None) is None:
         if not _entry_still_loaded():
@@ -1591,7 +1604,7 @@ async def async_setup_entry(  # noqa: C901
     # Device: main_device_info (OIG Cloud {box_id})
     # Třída: OigCloudComputedSensor
     # ================================================================
-    core_sensors.extend(_create_computed_sensors(coordinator))
+    deferred_factories.append(lambda: _create_computed_sensors(coordinator))
     await asyncio.sleep(0)
 
     # ================================================================
