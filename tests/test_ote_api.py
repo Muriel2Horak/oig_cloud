@@ -428,7 +428,7 @@ async def test_cnb_rate_get_day_rates_failure(monkeypatch):
 @pytest.mark.asyncio
 async def test_cnb_rate_get_current_rates_cache(monkeypatch):
     rate = CnbRate()
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(rate._timezone).date()
     rate._rates = {"EUR": Decimal("25")}
     rate._last_checked_date = today
     rates = await rate.get_current_rates()
@@ -438,7 +438,7 @@ async def test_cnb_rate_get_current_rates_cache(monkeypatch):
 @pytest.mark.asyncio
 async def test_cnb_rate_get_current_rates_updates(monkeypatch):
     rate = CnbRate()
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(rate._timezone).date()
 
     async def fake_day_rates(_day):
         return {"EUR": Decimal("26")}

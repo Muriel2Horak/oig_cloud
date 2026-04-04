@@ -1613,8 +1613,6 @@ async def async_setup_entry(
             },
         }
 
-        data_source_controller = None
-
         _setup_service_shield_data(hass, entry, coordinator, service_shield)
 
         # POZN: Plná migrace/cleanup device registry je riziková (může rozbít entity).
