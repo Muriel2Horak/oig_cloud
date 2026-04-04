@@ -1305,9 +1305,7 @@ async def _init_boiler_coordinator(
             boiler_config["box_id"] = box_id
         coordinator = BoilerCoordinator(hass, boiler_config)
 
-        await coordinator.async_config_entry_first_refresh()
-
-        _LOGGER.info("Boiler coordinator successfully initialized")
+        _LOGGER.info("Boiler coordinator created; deferring initial refresh")
         return coordinator
     except Exception as err:
         _LOGGER.error("Failed to initialize Boiler coordinator: %s", err)
@@ -1437,6 +1435,21 @@ async def _complete_entry_startup(
         dashboard_enabled = bool(
             hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("dashboard_enabled", False)
         )
+        boiler_coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get(
+            "boiler_coordinator"
+        )
+
+        if boiler_coordinator is not None:
+            try:
+                await boiler_coordinator.async_config_entry_first_refresh()
+                _LOGGER.info("Boiler coordinator successfully initialized")
+            except Exception as err:
+                _LOGGER.warning(
+                    "Boiler coordinator deferred refresh failed for entry %s: %s",
+                    entry.entry_id,
+                    err,
+                    exc_info=True,
+                )
 
         state = get_data_source_state(hass, entry.entry_id)
         should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY

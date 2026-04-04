@@ -217,6 +217,23 @@ class TrackingCoordinator:
         self.first_refresh_called = True
 
 
+class TrackingBoilerCoordinator:
+    def __init__(self):
+        self.first_refresh_called = False
+
+    async def async_config_entry_first_refresh(self):
+        self.first_refresh_called = True
+
+
+class FailingBoilerCoordinator:
+    def __init__(self):
+        self.first_refresh_called = False
+
+    async def async_config_entry_first_refresh(self):
+        self.first_refresh_called = True
+        raise RuntimeError("boiler boom")
+
+
 class TrackingBalancingManager:
     def __init__(self):
         self.forecast_sensor = None
@@ -423,6 +440,148 @@ async def test_complete_entry_startup_handles_dashboard_sync_failure(monkeypatch
         telemetry_store=None,
         battery_prediction_enabled=False,
     )
+
+
+@pytest.mark.asyncio
+async def test_complete_entry_startup_refreshes_boiler_coordinator(monkeypatch):
+    hass = DummyHass()
+    entry = DummyEntry()
+    coordinator = TrackingCoordinator()
+    session_manager = DummySessionManager(DummyApi())
+    boiler_coordinator = TrackingBoilerCoordinator()
+
+    hass.data[DOMAIN] = {
+        entry.entry_id: {
+            "dashboard_enabled": False,
+            "boiler_coordinator": boiler_coordinator,
+        }
+    }
+
+    async def fake_init_notification_manager(*_args, **_kwargs):
+        return None
+
+    async def fake_init_balancing_manager(*_args, **_kwargs):
+        return None
+
+    async def fake_start_data_source_controller(*_args, **_kwargs):
+        return None
+
+    async def fake_sync_dashboard_panel(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(effective_mode="local_only"),
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_init_notification_manager",
+        fake_init_notification_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_init_balancing_manager",
+        fake_init_balancing_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_start_data_source_controller",
+        fake_start_data_source_controller,
+    )
+    monkeypatch.setattr(init_module, "_sync_dashboard_panel", fake_sync_dashboard_panel)
+
+    await init_module._complete_entry_startup(
+        hass,
+        entry,
+        coordinator,
+        session_manager,
+        service_shield=None,
+        telemetry_store=None,
+        battery_prediction_enabled=False,
+    )
+
+    assert boiler_coordinator.first_refresh_called is True
+
+
+@pytest.mark.asyncio
+async def test_complete_entry_startup_continues_after_boiler_refresh_failure(monkeypatch):
+    hass = DummyHass()
+    entry = DummyEntry()
+    coordinator = TrackingCoordinator()
+    session_manager = DummySessionManager(DummyApi())
+    boiler_coordinator = FailingBoilerCoordinator()
+    balancing_manager = TrackingBalancingManager()
+    controller = object()
+    live_data_checked = {"called": False}
+    dashboard_synced = {"called": False}
+
+    hass.data[DOMAIN] = {
+        entry.entry_id: {
+            "dashboard_enabled": True,
+            "boiler_coordinator": boiler_coordinator,
+            "battery_forecast_sensors": ["forecast-sensor"],
+        }
+    }
+
+    async def fake_live_data_check(_api):
+        live_data_checked["called"] = True
+
+    async def fake_init_notification_manager(*_args, **_kwargs):
+        return "notification-manager"
+
+    async def fake_init_balancing_manager(*_args, **_kwargs):
+        return balancing_manager
+
+    async def fake_start_data_source_controller(*_args, **_kwargs):
+        return controller
+
+    async def fake_sync_dashboard_panel(_hass, _entry, enabled):
+        dashboard_synced["called"] = enabled
+
+    monkeypatch.setattr(
+        init_module,
+        "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode=init_module.DATA_SOURCE_CLOUD_ONLY,
+        ),
+    )
+    monkeypatch.setattr(init_module, "_ensure_live_data_enabled", fake_live_data_check)
+    monkeypatch.setattr(
+        init_module,
+        "_init_notification_manager",
+        fake_init_notification_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_init_balancing_manager",
+        fake_init_balancing_manager,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_start_data_source_controller",
+        fake_start_data_source_controller,
+    )
+    monkeypatch.setattr(init_module, "_sync_dashboard_panel", fake_sync_dashboard_panel)
+
+    await init_module._complete_entry_startup(
+        hass,
+        entry,
+        coordinator,
+        session_manager,
+        service_shield=None,
+        telemetry_store=None,
+        battery_prediction_enabled=True,
+    )
+
+    assert boiler_coordinator.first_refresh_called is True
+    assert live_data_checked["called"] is True
+    assert hass.data[DOMAIN][entry.entry_id]["notification_manager"] == "notification-manager"
+    assert hass.data[DOMAIN][entry.entry_id]["balancing_manager"] is balancing_manager
+    assert hass.data[DOMAIN][entry.entry_id]["data_source_controller"] is controller
+    assert balancing_manager.forecast_sensor == "forecast-sensor"
+    assert balancing_manager.coordinator is coordinator
+    assert dashboard_synced["called"] is True
 
 
 @pytest.mark.asyncio
@@ -1956,7 +2115,7 @@ async def test_async_setup_entry_runtime_flags(
     assert (data.get("solar_forecast") is not None) is enable_solar
     assert (data.get("boiler_coordinator") is not None) is enable_boiler
     assert DummyOteApi.created == (1 if enable_pricing else 0)
-    assert DummyBoilerCoordinator.refresh_calls == (1 if enable_boiler else 0)
+    assert DummyBoilerCoordinator.refresh_calls == 0
     if enable_solar:
         assert data["solar_forecast"]["enabled"] is True
 
