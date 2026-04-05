@@ -280,6 +280,100 @@ describe('Dashboard API auth handling', () => {
     expect(result).toBeNull();
   });
 
+  it('blocks non-/api absolute URLs in fetchWithAuth', async () => {
+    await expect(
+      globalThis.DashboardAPI.fetchWithAuth('https://evil.com/api/data')
+    ).rejects.toThrow('Nepovoleno: fetchWithAuth je pouze pro HA API');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('preserves existing Authorization header in fetchWithAuth', async () => {
+    setParentQueryResult({
+      hass: {
+        auth: {
+          data: {
+            access_token: 'token-123'
+          }
+        }
+      }
+    });
+    globalThis.fetch.mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+
+    await globalThis.DashboardAPI.fetchWithAuth('/api/oig_cloud/test', {
+      headers: {
+        Authorization: 'Bearer existing-token'
+      }
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/api/oig_cloud/test',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer existing-token'
+        })
+      })
+    );
+  });
+
+  it('falls back to raw fetch when hass exists but callApi is unavailable', async () => {
+    setParentQueryResult({
+      hass: {
+        auth: {
+          data: {
+            access_token: 'token-123'
+          }
+        }
+      }
+    });
+    globalThis.fetch.mockResolvedValue({ ok: true, json: async () => ({ data: 'test' }) });
+
+    const response = await globalThis.DashboardAPI.fetchWithAuth('/api/oig_cloud/test-endpoint');
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(response.ok).toBe(true);
+  });
+
+  it('handles empty-string POST body without JSON.parse error', async () => {
+    const callApi = vi.fn().mockResolvedValue({ ok: true });
+    setParentQueryResult({
+      hass: {
+        callApi,
+        auth: {
+          data: {}
+        }
+      }
+    });
+
+    await globalThis.DashboardAPI.fetchWithAuth('/api/oig_cloud/test', {
+      method: 'POST',
+      body: ''
+    });
+
+    expect(callApi).toHaveBeenCalledWith('POST', 'oig_cloud/test', undefined);
+  });
+
+  it('returns null when PlannerState fallback receives malformed JSON', async () => {
+    setParentQueryResult({
+      hass: {
+        auth: {
+          data: {
+            access_token: 'token-123'
+          }
+        }
+      }
+    });
+    globalThis.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new Error('Invalid JSON');
+      }
+    });
+
+    const result = await globalThis.PlannerState.fetchSettings(true);
+
+    expect(result).toBeNull();
+  });
+
   it('returns the default hybrid plan label from PlannerState', async () => {
     setParentQueryResult({
       hass: {

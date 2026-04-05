@@ -519,6 +519,78 @@ def test_compute_metrics_invalid_values():
     assert metrics["efficiency_pct"] == 100.0
 
 
+def test_stat_value_with_object_and_getattr(monkeypatch):
+    """Cover _stat_value with object (not dict) and getattr path."""
+    # Test with object having sum attribute (prefer_sum=True)
+    class StatItem:
+        def __init__(self, sum_val, state_val):
+            self.sum = sum_val
+            self.state = state_val
+
+    item = StatItem(1000.0, 500.0)
+    result = eff_module._stat_value(item, prefer_sum=True)
+    assert result == 1000.0
+
+    # Test with object missing sum but having state (prefer_sum=True)
+    item2 = StatItem(None, 750.0)
+    result2 = eff_module._stat_value(item2, prefer_sum=True)
+    assert result2 == 750.0
+
+    # Test prefer_sum=False path with state key
+    item3 = StatItem(1000.0, 600.0)
+    result3 = eff_module._stat_value(item3, prefer_sum=False)
+    assert result3 == 600.0
+
+    # Test with dict and prefer_sum=False
+    dict_item = {"state": 800.0, "mean": 700.0}
+    result4 = eff_module._stat_value(dict_item, prefer_sum=False)
+    assert result4 == 800.0
+
+    # Test with invalid value that can't be converted to float
+    class BadItem:
+        def __init__(self):
+            self.state = "not-a-number"
+
+    bad = BadItem()
+    result5 = eff_module._stat_value(bad, prefer_sum=False)
+    assert result5 is None
+
+
+def test_reset_last_month_metrics_clears_on_different_key(monkeypatch):
+    """Cover _reset_last_month_metrics clearing when key is different."""
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+    # Set up existing metrics for a different month
+    sensor._last_month_key = "2026-01"
+    sensor._last_month_metrics = {"efficiency_pct": 80.0}
+
+    # Call with a different key - should clear
+    different_key = "2026-02"
+    sensor._reset_last_month_metrics(different_key)
+    assert sensor._last_month_metrics is None
+    assert sensor._last_month_key is None
+
+
+def test_rollover_month_clears_matching_snapshot(monkeypatch):
+    """Cover _rollover_month clearing snapshot when month_key matches."""
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+
+    # Set up a snapshot for the previous month
+    prev_key = "2026-01"
+    sensor._month_snapshot = {"month_key": prev_key, "charge_wh": 10000}
+    sensor._current_month_key = "2026-01"
+
+    # Call on day 1 with matching snapshot
+    now_local = datetime(2026, 2, 1, 0, 10, tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    sensor._rollover_month(now_local, prev_key)
+
+    # Snapshot should be cleared
+    assert sensor._month_snapshot is None
+    # Current month key should be updated
+    assert sensor._current_month_key == "2026-02"
+
+
 def test_previous_month_and_range():
     year, month = eff_module._previous_month(datetime(2026, 1, 15, tzinfo=timezone.utc))
     assert (year, month) == (2025, 12)

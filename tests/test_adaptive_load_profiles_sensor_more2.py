@@ -459,6 +459,31 @@ async def test_load_hourly_series_filters_out_of_range(monkeypatch):
     ]
 
 
+def test_build_current_match_at_midnight_current_hour_zero(monkeypatch):
+    """Cover _build_current_match at exactly midnight (current_hour == 0)."""
+    sensor = _make_sensor(monkeypatch)
+
+    # Set now to exactly midnight (hour 0)
+    now = datetime(2025, 1, 2, 0, 5, tzinfo=timezone.utc)
+    monkeypatch.setattr(module.dt_util, "now", lambda: now)
+
+    yesterday = now.date() - timedelta(days=1)
+    series = [
+        (
+            datetime.combine(yesterday, datetime.min.time(), tzinfo=timezone.utc)
+            + timedelta(hours=i),
+            1.0,
+        )
+        for i in range(24)
+    ]
+    hour_medians = {i: 1.0 for i in range(24)}
+
+    # At midnight, should return match with only yesterday's data
+    result = sensor._build_current_match(series, hour_medians)
+    assert result is not None
+    assert len(result) == 24  # Only yesterday's 24 hours
+
+
 def test_build_current_match_missing_today_values(monkeypatch):
     sensor = _make_sensor(monkeypatch)
 
