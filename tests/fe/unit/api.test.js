@@ -21,6 +21,8 @@ describe('Dashboard API auth handling', () => {
     globalThis.fetch = vi.fn();
     globalThis.INVERTER_SN = '123';
     setParentQueryResult(null);
+    globalThis.DashboardAPI.setInverterSN('123');
+    globalThis.PlannerState.invalidate();
   });
 
   it('blocks authenticated HA API requests when token is missing', async () => {
@@ -90,6 +92,7 @@ describe('Dashboard API auth handling', () => {
       undefined
     );
     await expect(response.json()).resolves.toEqual({ today: [] });
+    await expect(response.text()).resolves.toBe(JSON.stringify({ today: [] }));
   });
 
   it('passes parsed JSON body to hass.callApi for non-GET HA API requests', async () => {
@@ -153,5 +156,170 @@ describe('Dashboard API auth handling', () => {
       globalThis.DashboardAPI.fetchWithAuth = originalDashboardFetch;
       globalThis.fetchWithAuth = originalGlobalFetchWithAuth;
     }
+  });
+
+  it('returns null when PlannerState has no inverter serial number', async () => {
+    globalThis.DashboardAPI.setInverterSN('');
+
+    await expect(globalThis.PlannerState.fetchSettings(true)).resolves.toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses hass.callApi for PlannerState when available', async () => {
+    const callApi = vi.fn().mockResolvedValue({ mode: 'hybrid' });
+    setParentQueryResult({
+      hass: {
+        callApi,
+        auth: {
+          data: {}
+        }
+      }
+    });
+
+    await expect(globalThis.PlannerState.fetchSettings(true)).resolves.toEqual({ mode: 'hybrid' });
+    expect(callApi).toHaveBeenCalledWith('GET', 'oig_cloud/battery_forecast/123/planner_settings');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses authenticated fetch fallback for PlannerState success path', async () => {
+    setParentQueryResult({
+      hass: {
+        auth: {
+          data: {
+            access_token: 'token-123'
+          }
+        }
+      }
+    });
+    globalThis.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ mode: 'hybrid' })
+    });
+
+    const result = await globalThis.PlannerState.fetchSettings(true);
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/api/oig_cloud/battery_forecast/123/planner_settings',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer token-123'
+        })
+      })
+    );
+    expect(result).toEqual({ mode: 'hybrid' });
+  });
+
+  it('reuses cached PlannerState settings without refetch when force is false', async () => {
+    setParentQueryResult({
+      hass: {
+        auth: {
+          data: {
+            access_token: 'token-123'
+          }
+        }
+      }
+    });
+    globalThis.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ mode: 'hybrid' })
+    });
+
+    await expect(globalThis.PlannerState.fetchSettings(true)).resolves.toEqual({ mode: 'hybrid' });
+    await expect(globalThis.PlannerState.fetchSettings(false)).resolves.toEqual({ mode: 'hybrid' });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares the inflight PlannerState request across callers', async () => {
+    setParentQueryResult({
+      hass: {
+        auth: {
+          data: {
+            access_token: 'token-123'
+          }
+        }
+      }
+    });
+
+    let resolveResponse;
+    globalThis.fetch.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveResponse = resolve;
+      })
+    );
+
+    const first = globalThis.PlannerState.fetchSettings(true);
+    const second = globalThis.PlannerState.fetchSettings(false);
+
+    resolveResponse({
+      ok: true,
+      json: async () => ({ mode: 'hybrid' })
+    });
+
+    await expect(first).resolves.toEqual({ mode: 'hybrid' });
+    await expect(second).resolves.toEqual({ mode: 'hybrid' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null when authenticated PlannerState fallback gets non-ok response', async () => {
+    setParentQueryResult({
+      hass: {
+        auth: {
+          data: {
+            access_token: 'token-123'
+          }
+        }
+      }
+    });
+    globalThis.fetch.mockResolvedValue({ ok: false, status: 500 });
+
+    const result = await globalThis.PlannerState.fetchSettings(true);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns the default hybrid plan label from PlannerState', async () => {
+    setParentQueryResult({
+      hass: {
+        auth: {
+          data: {
+            access_token: 'token-123'
+          }
+        }
+      }
+    });
+    globalThis.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ mode: 'hybrid' })
+    });
+
+    await expect(globalThis.PlannerState.getDefaultPlan(true)).resolves.toBe('hybrid');
+    expect(globalThis.PlannerState.getCachedSettings()).toEqual({ mode: 'hybrid' });
+    expect(globalThis.PlannerState.getLabels('missing')).toEqual({ short: 'Plán', long: 'Plánování' });
+  });
+
+  it('clears cached PlannerState settings when invalidated', async () => {
+    setParentQueryResult({
+      hass: {
+        auth: {
+          data: {
+            access_token: 'token-123'
+          }
+        }
+      }
+    });
+    globalThis.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ mode: 'hybrid' })
+    });
+
+    await globalThis.PlannerState.fetchSettings(true);
+    expect(globalThis.PlannerState.getCachedSettings()).toEqual({ mode: 'hybrid' });
+
+    globalThis.PlannerState.invalidate();
+
+    expect(globalThis.PlannerState.getCachedSettings()).toBeNull();
   });
 });

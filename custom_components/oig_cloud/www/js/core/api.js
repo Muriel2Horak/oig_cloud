@@ -486,7 +486,7 @@ const PlannerState = (() => {
         }
 
         inflight = (async () => {
-            if (!globalThis.INVERTER_SN) {
+            if (!INVERTER_SN) {
                 return null;
             }
 
@@ -532,12 +532,19 @@ const PlannerState = (() => {
 
     const getCachedSettings = () => cache;
 
+    const invalidate = () => {
+        cache = null;
+        lastFetch = 0;
+        inflight = null;
+    };
+
     const getLabels = (plan = 'hybrid') => PLAN_LABELS[plan] || PLAN_LABELS.hybrid;
 
     return {
         fetchSettings,
         getDefaultPlan,
         getCachedSettings,
+        invalidate,
         resolveActivePlan,
         getLabels
     };
