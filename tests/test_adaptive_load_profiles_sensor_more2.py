@@ -523,6 +523,41 @@ def test_build_current_match_empty_today_values(monkeypatch):
     assert sensor._build_current_match(series, {}) is None
 
 
+def test_coerce_stat_timestamp_variants(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    naive = datetime(2025, 1, 1, 12, 0)
+    coerced_naive = sensor._coerce_stat_timestamp(naive)
+    assert coerced_naive is not None
+    assert coerced_naive.tzinfo is not None
+
+    coerced_iso = sensor._coerce_stat_timestamp("2025-01-01T12:00:00+00:00")
+    assert coerced_iso == datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    coerced_ms = sensor._coerce_stat_timestamp(1735732800000)
+    assert coerced_ms == datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    assert sensor._coerce_stat_timestamp("not-a-date") is None
+
+
+def test_parse_hourly_row_tuple_and_state_fallback(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    tuple_row = (None, None, 4.0, 1735732800)
+    parsed_tuple = sensor._parse_hourly_row(tuple_row, "sum", 0.001)
+    assert parsed_tuple == (
+        datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+        0.004,
+    )
+
+    dict_row = {"start_time": "2025-01-01T13:00:00+00:00", "state": 5.0}
+    parsed_dict = sensor._parse_hourly_row(dict_row, "sum", 0.001)
+    assert parsed_dict == (
+        datetime(2025, 1, 1, 13, 0, tzinfo=timezone.utc),
+        0.005,
+    )
+
+
 @pytest.mark.asyncio
 async def test_load_hourly_series_no_recorder(monkeypatch):
     sensor = _make_sensor(monkeypatch)

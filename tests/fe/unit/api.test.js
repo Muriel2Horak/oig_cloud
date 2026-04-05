@@ -91,4 +91,67 @@ describe('Dashboard API auth handling', () => {
     );
     await expect(response.json()).resolves.toEqual({ today: [] });
   });
+
+  it('passes parsed JSON body to hass.callApi for non-GET HA API requests', async () => {
+    const callApi = vi.fn().mockResolvedValue({ ok: true });
+    setParentQueryResult({
+      hass: {
+        callApi,
+        auth: {
+          data: {}
+        }
+      }
+    });
+
+    const response = await globalThis.DashboardAPI.fetchWithAuth(
+      '/api/oig_cloud/battery_forecast/123/timeline',
+      {
+        method: 'POST',
+        body: JSON.stringify({ plan: 'hybrid', day: 'today' })
+      }
+    );
+
+    expect(callApi).toHaveBeenCalledWith(
+      'POST',
+      'oig_cloud/battery_forecast/123/timeline',
+      { plan: 'hybrid', day: 'today' }
+    );
+    await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it('passes object body through to hass.callApi unchanged', async () => {
+    const callApi = vi.fn().mockResolvedValue({ ok: true });
+    const body = { plan: 'hybrid', force: true };
+    setParentQueryResult({
+      hass: {
+        callApi,
+        auth: {
+          data: {}
+        }
+      }
+    });
+
+    await globalThis.DashboardAPI.fetchWithAuth('/api/oig_cloud/test-endpoint', {
+      method: 'POST',
+      body
+    });
+
+    expect(callApi).toHaveBeenCalledWith('POST', 'oig_cloud/test-endpoint', body);
+  });
+
+  it('throws when authenticated fetch helper is missing for PlannerState fallback', async () => {
+    const originalDashboardFetch = globalThis.DashboardAPI.fetchWithAuth;
+    const originalGlobalFetchWithAuth = globalThis.fetchWithAuth;
+
+    globalThis.DashboardAPI.fetchWithAuth = undefined;
+    globalThis.fetchWithAuth = undefined;
+
+    try {
+      const result = await globalThis.PlannerState.fetchSettings(true);
+      expect(result).toBeNull();
+    } finally {
+      globalThis.DashboardAPI.fetchWithAuth = originalDashboardFetch;
+      globalThis.fetchWithAuth = originalGlobalFetchWithAuth;
+    }
+  });
 });
