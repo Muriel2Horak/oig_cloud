@@ -559,6 +559,30 @@ def test_parse_hourly_row_tuple_and_state_fallback(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_earliest_statistics_start_accepts_start_time_key(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return func()
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {
+            "sensor.test": [{"start_time": "2025-01-01T00:00:00+00:00", "sum": 1.0}]
+        },
+    )
+
+    earliest = await sensor._get_earliest_statistics_start("sensor.test")
+    assert earliest == datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
 async def test_load_hourly_series_no_recorder(monkeypatch):
     sensor = _make_sensor(monkeypatch)
     sensor._hass = SimpleNamespace(states=SimpleNamespace(get=lambda _eid: None))

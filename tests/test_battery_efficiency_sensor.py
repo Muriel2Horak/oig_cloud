@@ -583,6 +583,32 @@ async def test_fallback_to_statistics_fills_missing_battery_bounds(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_fallback_to_statistics_keeps_complete_values_without_lookup(monkeypatch):
+    called = {"count": 0}
+
+    async def fake_stats(*_a, **_k):
+        called["count"] += 1
+        return None
+
+    monkeypatch.setattr(eff_module, "_load_month_metrics_from_statistics", fake_stats)
+
+    out = await eff_module._fallback_to_statistics(
+        DummyHass(),
+        dt_util.utcnow(),
+        dt_util.utcnow(),
+        "sensor.charge",
+        "sensor.discharge",
+        "sensor.batt",
+        12000.0,
+        9000.0,
+        5.0,
+        6.0,
+    )
+    assert out == (12000.0, 9000.0, 5.0, 6.0)
+    assert called["count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_load_month_metrics_history_wrapper_compat_kwargs(monkeypatch):
     hass = DummyHass()
     captured = {}
@@ -727,3 +753,21 @@ async def test_load_month_metrics_from_statistics_missing_meta_for_battery(monke
     assert result is not None
     assert result["battery_start_kwh"] is None
     assert result["battery_end_kwh"] is None
+
+
+@pytest.mark.asyncio
+async def test_load_month_metrics_from_statistics_no_recorder_instance(monkeypatch):
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result = await eff_module._load_month_metrics_from_statistics(
+        DummyHass(),
+        dt_util.utcnow(),
+        dt_util.utcnow(),
+        "sensor.c",
+        "sensor.d",
+        "sensor.b",
+    )
+    assert result is None
