@@ -60,8 +60,39 @@ async function fetchWithAuth(url, options = {}) {
         throw new Error('Nepovoleno: fetchWithAuth je pouze pro HA API (/api/...). Absolutní URL nejsou bezpečné.');
     }
 
+    if (url.startsWith('/api/')) {
+        const hass = getHass();
+        if (hass && typeof hass.callApi === 'function') {
+            const resolvedUrl = new URL(url, globalThis.location.href);
+            const endpoint = `${resolvedUrl.pathname.slice('/api/'.length)}${resolvedUrl.search}`;
+            const method = (options.method || 'GET').toUpperCase();
+            let payload;
+
+            if (options.body !== undefined && options.body !== null && method !== 'GET') {
+                if (typeof options.body === 'string') {
+                    payload = options.body ? JSON.parse(options.body) : undefined;
+                } else {
+                    payload = options.body;
+                }
+            }
+
+            const result = await hass.callApi(method, endpoint, payload);
+            return {
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                json: async () => result,
+                text: async () => JSON.stringify(result)
+            };
+        }
+    }
+
     const token = getHAToken();
     const mergedHeaders = options.headers ? { ...options.headers } : {};
+
+    if (!token && url.startsWith('/api/')) {
+        throw new Error('No Home Assistant access token available for authenticated API request.');
+    }
 
     if (token && !mergedHeaders.Authorization && !mergedHeaders.authorization) {
         mergedHeaders.Authorization = `Bearer ${token}`;
@@ -71,6 +102,14 @@ async function fetchWithAuth(url, options = {}) {
         ...options,
         headers: mergedHeaders
     });
+}
+
+function getAuthenticatedFetch() {
+    const authFetch = globalThis.DashboardAPI?.fetchWithAuth || globalThis.fetchWithAuth;
+    if (typeof authFetch !== 'function') {
+        throw new Error('Authenticated HA fetch helper is not available.');
+    }
+    return authFetch;
 }
 
 // ============================================================================
@@ -447,7 +486,7 @@ const PlannerState = (() => {
         }
 
         inflight = (async () => {
-            if (!globalThis.INVERTER_SN) {
+            if (!INVERTER_SN) {
                 return null;
             }
 
@@ -460,15 +499,9 @@ const PlannerState = (() => {
                 if (hass && typeof hass.callApi === 'function') {
                     payload = await hass.callApi('GET', endpoint);
                 } else {
-                    const headers = { 'Content-Type': 'application/json' };
-                    const token = globalThis.DashboardAPI?.getHAToken?.();
-                    if (token) {
-                        headers.Authorization = `Bearer ${token}`;
-                    }
-
-                    const response = await fetch(`/api/${endpoint}`, {
+                    const response = await getAuthenticatedFetch()(`/api/${endpoint}`, {
                         method: 'GET',
-                        headers,
+                        headers: { 'Content-Type': 'application/json' },
                         credentials: 'same-origin'
                     });
 
@@ -494,11 +527,16 @@ const PlannerState = (() => {
     };
 
     const getDefaultPlan = async (force = false) => {
-        const settings = await fetchSettings(force);
-        return resolveActivePlan(settings);
+        return resolveActivePlan(await fetchSettings(force));
     };
 
     const getCachedSettings = () => cache;
+
+    const invalidate = () => {
+        cache = null;
+        lastFetch = 0;
+        inflight = null;
+    };
 
     const getLabels = (plan = 'hybrid') => PLAN_LABELS[plan] || PLAN_LABELS.hybrid;
 
@@ -506,6 +544,7 @@ const PlannerState = (() => {
         fetchSettings,
         getDefaultPlan,
         getCachedSettings,
+        invalidate,
         resolveActivePlan,
         getLabels
     };
