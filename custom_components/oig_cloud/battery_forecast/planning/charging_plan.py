@@ -1242,13 +1242,6 @@ def should_pre_charge_for_peak_avoidance(
     )
     peak_end_idx = peak_intervals[-1][0]
 
-    projected_soc_after_peak = _estimate_soc_after_peak_window(
-        current_soc_kwh=current_soc_kwh,
-        intervals=intervals,
-        peak_end_idx=peak_end_idx,
-        round_trip_efficiency=config.round_trip_efficiency,
-        max_capacity_kwh=config.max_capacity,
-    )
     future_soc_without_charge, min_soc_without_charge = _project_soc_until_index(
         current_soc_kwh=current_soc_kwh,
         intervals=intervals,
