@@ -132,7 +132,11 @@ def test_pv_first_defers_pre_peak_when_solar_available(freeze_planner_now: None)
 
 
 def test_pre_peak_does_not_interfere_with_pv_first_decision(freeze_planner_now: None):
-    timeline = _make_pre_peak_intervals(initial_soc_kwh=2.1, solar_kwh_pre_peak=0.0)
+    timeline = _make_pre_peak_intervals(
+        initial_soc_kwh=2.1,
+        solar_kwh_pre_peak=0.0,
+        pre_peak_price=3.0,
+    )
     plan = _make_config(pv_forecast_kwh=2.5, pv_forecast_confidence=0.9)
     flags = RolloutFlags(enable_pre_peak_charging=True, pv_first_policy_enabled=True)
 

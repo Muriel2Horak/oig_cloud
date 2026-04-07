@@ -25,6 +25,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
@@ -38,12 +44,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install coverage
+          npm ci --ignore-scripts
 
-      - name: Run tests with coverage
+      - name: Run Python tests with coverage
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest -v --tb=short --cov=custom_components/oig_cloud --cov-report=xml --cov-report=term-missing:skip-covered
+
+      - name: Run frontend tests with coverage
+        run: |
+          npm run test:fe:unit:coverage
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
@@ -56,6 +67,7 @@ jobs:
             -Dsonar.organization=muriel2horak
             -Dsonar.sources=.
             -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.sourceEncoding=UTF-8
             -Dsonar.python.pylintConfigFile=.pylintrc
             -Dsonar.python.bandit.reportPaths=bandit-report.json

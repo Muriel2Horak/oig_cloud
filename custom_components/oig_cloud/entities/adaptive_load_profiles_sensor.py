@@ -357,46 +357,61 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
     def _query_hourly_statistics(
         self, sensor_entity_id: str, start_ts: int, end_ts: int
     ):
-        """Query statistics rows for hourly values."""
-        from homeassistant.helpers.recorder import get_instance, session_scope
-        from sqlalchemy import text
+        from homeassistant.components.recorder.statistics import statistics_during_period
 
-        instance = get_instance(self._hass)
-        with session_scope(hass=self._hass, session=instance.get_session()) as session:
-            query = text(
-                """
-                SELECT s.sum, s.mean, s.state, s.start_ts
-                FROM statistics s
-                INNER JOIN statistics_meta sm ON s.metadata_id = sm.id
-                WHERE sm.statistic_id = :statistic_id
-                AND s.start_ts >= :start_ts
-                AND s.start_ts < :end_ts
-                ORDER BY s.start_ts
-                """
-            )
-            result = session.execute(
-                query,
-                {
-                    "statistic_id": sensor_entity_id,
-                    "start_ts": start_ts,
-                    "end_ts": end_ts,
-                },
-            )
-            return result.fetchall()
+        start_time = datetime.fromtimestamp(start_ts, tz=dt_util.UTC)
+        end_time = datetime.fromtimestamp(end_ts, tz=dt_util.UTC)
+        stats = statistics_during_period(
+            self._hass,
+            start_time,
+            end_time,
+            {sensor_entity_id},
+            "hour",
+            None,
+            {"sum", "mean", "state"},
+        )
+        return stats.get(sensor_entity_id, []) if stats else []
+
+    @staticmethod
+    def _coerce_stat_timestamp(value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=dt_util.UTC)
+        if isinstance(value, str):
+            parsed = dt_util.parse_datetime(value)
+            if parsed:
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt_util.UTC)
+            return None
+        if isinstance(value, (int, float)):
+            timestamp = float(value)
+            if timestamp > 1_000_000_000_000:
+                timestamp /= 1000.0
+            return datetime.fromtimestamp(timestamp, tz=dt_util.UTC)
+        return None
 
     def _parse_hourly_row(
         self, row: Tuple[Any, ...], value_field: str, unit_factor: float
     ) -> Optional[Tuple[datetime, float]]:
         """Normalize a statistics row into a local timestamp and value."""
-        try:
-            sum_val = row[0]
-            mean_val = row[1]
-            state_val = row[2]
-            timestamp_ts = float(row[3])
-        except (ValueError, AttributeError, IndexError, TypeError):
-            return None
+        if isinstance(row, dict):
+            sum_val = row.get("sum")
+            mean_val = row.get("mean")
+            state_val = row.get("state")
+            timestamp = self._coerce_stat_timestamp(
+                row.get("start") or row.get("start_time")
+            )
+            if timestamp is None:
+                return None
+        else:
+            try:
+                sum_val = row[0]
+                mean_val = row[1]
+                state_val = row[2]
+                timestamp = datetime.fromtimestamp(float(row[3]), tz=dt_util.UTC)
+            except (ValueError, AttributeError, IndexError, TypeError):
+                return None
 
-        timestamp = datetime.fromtimestamp(timestamp_ts, tz=dt_util.UTC)
         if value_field == "mean":
             if mean_val is None:
                 return None
@@ -466,35 +481,40 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             return None
 
         try:
-            from homeassistant.helpers.recorder import get_instance, session_scope
-            from sqlalchemy import text
+            from homeassistant.components.recorder.statistics import (
+                statistics_during_period,
+            )
+            from homeassistant.helpers.recorder import get_instance
 
             recorder_instance = get_instance(self._hass)
             if not recorder_instance:
                 _LOGGER.error("Recorder instance not available")
                 return None
 
-            def get_min_start_ts() -> Optional[float]:
-                instance = get_instance(self._hass)
-                with session_scope(
-                    hass=self._hass, session=instance.get_session()
-                ) as session:
-                    query = text(
-                        """
-                        SELECT MIN(s.start_ts)
-                        FROM statistics s
-                        INNER JOIN statistics_meta sm ON s.metadata_id = sm.id
-                        WHERE sm.statistic_id = :statistic_id
-                        """
-                    )
-                    result = session.execute(query, {"statistic_id": sensor_entity_id})
-                    return result.scalar()
+            def get_earliest_stat_start() -> Optional[datetime]:
+                stats = statistics_during_period(
+                    self._hass,
+                    datetime.fromtimestamp(0, tz=dt_util.UTC),
+                    dt_util.utcnow(),
+                    {sensor_entity_id},
+                    "day",
+                    None,
+                    {"sum", "mean", "state"},
+                )
+                rows = stats.get(sensor_entity_id) if stats else None
+                if not rows:
+                    return None
+                first_row = rows[0]
+                return self._coerce_stat_timestamp(
+                    first_row.get("start") or first_row.get("start_time")
+                )
 
-            min_ts = await recorder_instance.async_add_executor_job(get_min_start_ts)
-            if min_ts is None:
+            earliest = await recorder_instance.async_add_executor_job(
+                get_earliest_stat_start
+            )
+            if earliest is None:
                 return None
 
-            earliest = datetime.fromtimestamp(float(min_ts), tz=dt_util.UTC)
             local = dt_util.as_local(earliest)
             return datetime.combine(
                 local.date(), datetime.min.time(), tzinfo=local.tzinfo

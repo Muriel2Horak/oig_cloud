@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.16] - 2026-04-05
+
+### Fixed
+- Legacy V1 dashboard API calls now prefer Home Assistant's authenticated `hass.callApi` path and no longer send unauthenticated fallback requests to `/api/oig_cloud/...`, reducing invalid-auth ban noise while preserving valid embedded dashboard flows.
+- Adaptive load profile statistics and battery efficiency fallback lookups now use Home Assistant recorder/statistics helper APIs via the recorder executor instead of direct database/session access, removing the remaining database-access warning paths.
+- Battery efficiency fallback now fills missing battery start/end bounds from recorder statistics even when charge/discharge history is already available, keeping monthly efficiency calculations consistent.
+
 ## [2.3.15] - 2026-04-04
 
 ### Fixed

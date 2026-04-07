@@ -19,8 +19,14 @@ _LOGGER = logging.getLogger(__name__)
 if TYPE_CHECKING:  # pragma: no cover
     from ...core.coordinator import OigCloudCoordinator
 
+    class _EfficiencyEntityBase(CoordinatorEntity):
+        pass
+else:
+    class _EfficiencyEntityBase(CoordinatorEntity, SensorEntity):
+        pass
 
-class OigCloudBatteryEfficiencySensor(CoordinatorEntity, SensorEntity):
+
+class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
     """
     Battery round-trip efficiency calculator.
 
@@ -422,7 +428,12 @@ async def _fallback_to_statistics(
     battery_end: Optional[float],
 ) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     """Fallback to statistics if history values are missing."""
-    if charge_wh is None or discharge_wh is None:
+    if (
+        charge_wh is None
+        or discharge_wh is None
+        or battery_start is None
+        or battery_end is None
+    ):
         stats_metrics = await _load_month_metrics_from_statistics(
             hass, start_utc, end_utc, charge_sensor, discharge_sensor, battery_sensor
         )
@@ -527,80 +538,59 @@ async def _load_month_metrics_from_statistics(
     battery_sensor: str,
 ) -> Optional[Dict[str, Optional[float]]]:
     try:
-        from homeassistant.components.recorder.db_schema import (
-            Statistics,
-            StatisticsMeta,
+        from homeassistant.components.recorder.statistics import (
+            statistics_during_period,
         )
-        from homeassistant.components.recorder.util import session_scope
+        from homeassistant.helpers.recorder import get_instance
     except ImportError:
         _LOGGER.warning("Recorder statistics not available")
         return None
 
-    start_ts = dt_util.as_timestamp(start_utc)
-    end_ts = dt_util.as_timestamp(end_utc)
     sensor_ids = {charge_sensor, discharge_sensor, battery_sensor}
+    try:
+        recorder_instance = get_instance(hass)
+    except (KeyError, AttributeError):
+        recorder_instance = None
+    if recorder_instance is None:
+        _LOGGER.warning("Recorder instance not available for efficiency statistics")
+        return None
 
-    def _query_stats() -> Dict[str, Optional[float]]:
-        try:
-            with session_scope(hass=hass) as session:
-                meta_rows = (
-                    session.query(StatisticsMeta.statistic_id, StatisticsMeta.id)
-                    .filter(StatisticsMeta.statistic_id.in_(sensor_ids))
-                    .all()
-                )
-                meta_map = {row[0]: row[1] for row in meta_rows}
+    try:
+        stats_by_sensor = await recorder_instance.async_add_executor_job(
+            statistics_during_period,
+            hass,
+            start_utc,
+            end_utc,
+            sensor_ids,
+            "hour",
+            None,
+            {"sum", "state", "mean"},
+        )
+    except Exception as err:
+        _LOGGER.warning("Efficiency stats query failed: %s", err)
+        return None
 
-                def _last_row(stat_id: str) -> Optional[Any]:
-                    meta_id = meta_map.get(stat_id)
-                    if not meta_id:
-                        return None
-                    return (
-                        session.query(Statistics)
-                        .filter(
-                            Statistics.metadata_id == meta_id,
-                            Statistics.start_ts >= start_ts,
-                            Statistics.start_ts < end_ts,
-                        )
-                        .order_by(Statistics.start_ts.desc())
-                        .first()
-                    )
+    def _first_row(stat_id: str) -> Optional[Any]:
+        rows = stats_by_sensor.get(stat_id) if stats_by_sensor else None
+        return rows[0] if rows else None
 
-                def _first_row(stat_id: str) -> Optional[Any]:
-                    meta_id = meta_map.get(stat_id)
-                    if not meta_id:
-                        return None
-                    return (
-                        session.query(Statistics)
-                        .filter(
-                            Statistics.metadata_id == meta_id,
-                            Statistics.start_ts >= start_ts,
-                            Statistics.start_ts < end_ts,
-                        )
-                        .order_by(Statistics.start_ts.asc())
-                        .first()
-                    )
+    def _last_row(stat_id: str) -> Optional[Any]:
+        rows = stats_by_sensor.get(stat_id) if stats_by_sensor else None
+        return rows[-1] if rows else None
 
-                result = {
-                    "charge_wh": _stat_value(_last_row(charge_sensor), True),
-                    "discharge_wh": _stat_value(_last_row(discharge_sensor), True),
-                    "battery_start_kwh": _stat_value(_first_row(battery_sensor), False),
-                    "battery_end_kwh": _stat_value(_last_row(battery_sensor), False),
-                }
-                _LOGGER.debug(
-                    "Efficiency stats lookup %s: charge=%s discharge=%s",
-                    start_utc.date(),
-                    result["charge_wh"],
-                    result["discharge_wh"],
-                )
-                return result
-        except Exception as err:
-            _LOGGER.warning("Efficiency stats query failed: %s", err)
-            return {}
-
-    stats = await hass.async_add_executor_job(_query_stats)
-    if not stats or (
-        stats.get("charge_wh") is None and stats.get("discharge_wh") is None
-    ):
+    stats = {
+        "charge_wh": _stat_value(_last_row(charge_sensor), True),
+        "discharge_wh": _stat_value(_last_row(discharge_sensor), True),
+        "battery_start_kwh": _stat_value(_first_row(battery_sensor), False),
+        "battery_end_kwh": _stat_value(_last_row(battery_sensor), False),
+    }
+    _LOGGER.debug(
+        "Efficiency stats lookup %s: charge=%s discharge=%s",
+        start_utc.date(),
+        stats["charge_wh"],
+        stats["discharge_wh"],
+    )
+    if stats.get("charge_wh") is None and stats.get("discharge_wh") is None:
         return None
     return stats
 
@@ -650,7 +640,7 @@ def _compute_metrics_from_wh(
     discharge_wh: Optional[float],
     battery_start_kwh: Optional[float],
     battery_end_kwh: Optional[float],
-) -> Optional[Dict[str, float]]:
+) -> Optional[Dict[str, Optional[float]]]:
     if charge_wh is None or discharge_wh is None:
         return None
 
@@ -719,7 +709,7 @@ def _empty_metrics(
 
 
 def _log_last_month_success(
-    last_month: int, last_month_year: int, metrics: Dict[str, float]
+    last_month: int, last_month_year: int, metrics: Dict[str, Optional[float]]
 ) -> None:
     delta_kwh = metrics.get("delta_kwh")
     delta_label = f"{delta_kwh:.2f}" if delta_kwh is not None else "n/a"

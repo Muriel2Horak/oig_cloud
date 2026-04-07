@@ -4,9 +4,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['tests/fe/unit/**/*.test.js'],
-    exclude: ['tests/fe/specs/**', 'tests/e2e/**']
-  },
-  coverage: {
-    provider: 'v8'
+    exclude: ['tests/fe/specs/**', 'tests/e2e/**'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      reportsDirectory: './coverage'
+    }
   }
 });

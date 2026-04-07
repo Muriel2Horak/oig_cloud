@@ -275,11 +275,15 @@ async def test_load_hourly_series_empty_rows(monkeypatch):
 
     class DummyRecorder:
         async def async_add_executor_job(self, func):
-            return []
+            return func()
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
         lambda *_a, **_k: DummyRecorder(),
+    )
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {},
     )
     series = await sensor._load_hourly_series(
         "sensor.test",
@@ -297,15 +301,25 @@ async def test_load_hourly_series_value_filters(monkeypatch):
 
     class DummyRecorder:
         async def async_add_executor_job(self, func):
-            return [
-                (None, None, None, 1),
-                (None, None, None, 2),
-                (1.0, 2.0, None, 3),
-            ]
+            return func()
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
         lambda *_a, **_k: DummyRecorder(),
+    )
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {
+            "sensor.test": [
+                {"start": datetime(2025, 1, 1, 1, tzinfo=timezone.utc)},
+                {"start": datetime(2025, 1, 1, 2, tzinfo=timezone.utc)},
+                {
+                    "start": datetime(2025, 1, 1, 3, tzinfo=timezone.utc),
+                    "sum": 1.0,
+                    "mean": 2.0,
+                },
+            ]
+        },
     )
 
     series = await sensor._load_hourly_series(
@@ -314,7 +328,7 @@ async def test_load_hourly_series_value_filters(monkeypatch):
         datetime(2025, 1, 2, tzinfo=timezone.utc),
         value_field="mean",
     )
-    assert series == [(datetime(1970, 1, 1, 0, 0, 3, tzinfo=timezone.utc), 0.002)]
+    assert series == [(datetime(2025, 1, 1, 3, 0, tzinfo=timezone.utc), 0.002)]
 
     series = await sensor._load_hourly_series(
         "sensor.test",
@@ -322,7 +336,7 @@ async def test_load_hourly_series_value_filters(monkeypatch):
         datetime(2025, 1, 2, tzinfo=timezone.utc),
         value_field="sum",
     )
-    assert series == [(datetime(1970, 1, 1, 0, 0, 3, tzinfo=timezone.utc), 0.001)]
+    assert series == [(datetime(2025, 1, 1, 3, 0, tzinfo=timezone.utc), 0.001)]
 
 
 @pytest.mark.asyncio
@@ -357,11 +371,15 @@ async def test_get_earliest_statistics_start_no_data(monkeypatch):
 
     class DummyRecorder:
         async def async_add_executor_job(self, func):
-            return None
+            return func()
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
         lambda *_a, **_k: DummyRecorder(),
+    )
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {},
     )
     assert await sensor._get_earliest_statistics_start("sensor.test") is None
 
@@ -410,17 +428,23 @@ async def test_load_hourly_series_filters_out_of_range(monkeypatch):
 
     class DummyRecorder:
         async def async_add_executor_job(self, func):
-            return [
-                (1.0, None, None, 1),
-                (None, None, None, 2),
-                (-1.0, None, None, 3),
-                (20001.0, None, None, 4),
-                (1.0, None, None, 5),
-            ]
+            return func()
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
         lambda *_a, **_k: DummyRecorder(),
+    )
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {
+            "sensor.test": [
+                {"start": datetime(2025, 1, 1, 1, tzinfo=timezone.utc), "sum": 1.0},
+                {"start": datetime(2025, 1, 1, 2, tzinfo=timezone.utc)},
+                {"start": datetime(2025, 1, 1, 3, tzinfo=timezone.utc), "sum": -1.0},
+                {"start": datetime(2025, 1, 1, 4, tzinfo=timezone.utc), "sum": 20001.0},
+                {"start": datetime(2025, 1, 1, 5, tzinfo=timezone.utc), "sum": 1.0},
+            ]
+        },
     )
 
     series = await sensor._load_hourly_series(
@@ -430,9 +454,34 @@ async def test_load_hourly_series_filters_out_of_range(monkeypatch):
         value_field="sum",
     )
     assert series == [
-        (datetime(1970, 1, 1, 0, 0, 1, tzinfo=timezone.utc), 0.001),
-        (datetime(1970, 1, 1, 0, 0, 5, tzinfo=timezone.utc), 0.001),
+        (datetime(2025, 1, 1, 1, 0, tzinfo=timezone.utc), 0.001),
+        (datetime(2025, 1, 1, 5, 0, tzinfo=timezone.utc), 0.001),
     ]
+
+
+def test_build_current_match_at_midnight_current_hour_zero(monkeypatch):
+    """Cover _build_current_match at exactly midnight (current_hour == 0)."""
+    sensor = _make_sensor(monkeypatch)
+
+    # Set now to exactly midnight (hour 0)
+    now = datetime(2025, 1, 2, 0, 5, tzinfo=timezone.utc)
+    monkeypatch.setattr(module.dt_util, "now", lambda: now)
+
+    yesterday = now.date() - timedelta(days=1)
+    series = [
+        (
+            datetime.combine(yesterday, datetime.min.time(), tzinfo=timezone.utc)
+            + timedelta(hours=i),
+            1.0,
+        )
+        for i in range(24)
+    ]
+    hour_medians = {i: 1.0 for i in range(24)}
+
+    # At midnight, should return match with only yesterday's data
+    result = sensor._build_current_match(series, hour_medians)
+    assert result is not None
+    assert len(result) == 24  # Only yesterday's 24 hours
 
 
 def test_build_current_match_missing_today_values(monkeypatch):
@@ -499,6 +548,65 @@ def test_build_current_match_empty_today_values(monkeypatch):
     assert sensor._build_current_match(series, {}) is None
 
 
+def test_coerce_stat_timestamp_variants(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    naive = datetime(2025, 1, 1, 12, 0)
+    coerced_naive = sensor._coerce_stat_timestamp(naive)
+    assert coerced_naive is not None
+    assert coerced_naive.tzinfo is not None
+
+    coerced_iso = sensor._coerce_stat_timestamp("2025-01-01T12:00:00+00:00")
+    assert coerced_iso == datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    coerced_ms = sensor._coerce_stat_timestamp(1735732800000)
+    assert coerced_ms == datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    assert sensor._coerce_stat_timestamp("not-a-date") is None
+
+
+def test_parse_hourly_row_tuple_and_state_fallback(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+
+    tuple_row = (None, None, 4.0, 1735732800)
+    parsed_tuple = sensor._parse_hourly_row(tuple_row, "sum", 0.001)
+    assert parsed_tuple == (
+        datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+        0.004,
+    )
+
+    dict_row = {"start_time": "2025-01-01T13:00:00+00:00", "state": 5.0}
+    parsed_dict = sensor._parse_hourly_row(dict_row, "sum", 0.001)
+    assert parsed_dict == (
+        datetime(2025, 1, 1, 13, 0, tzinfo=timezone.utc),
+        0.005,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_earliest_statistics_start_accepts_start_time_key(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return func()
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {
+            "sensor.test": [{"start_time": "2025-01-01T00:00:00+00:00", "sum": 1.0}]
+        },
+    )
+
+    earliest = await sensor._get_earliest_statistics_start("sensor.test")
+    assert earliest == datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+
+
 @pytest.mark.asyncio
 async def test_load_hourly_series_no_recorder(monkeypatch):
     sensor = _make_sensor(monkeypatch)
@@ -520,42 +628,18 @@ async def test_load_hourly_series_invalid_rows(monkeypatch):
     sensor = _make_sensor(monkeypatch)
     sensor._hass = SimpleNamespace(states=SimpleNamespace(get=lambda _eid: None))
 
-    class DummyResult:
-        def fetchall(self):
-            return [(None, None, None, "bad")]
-
-    class DummySession:
-        def execute(self, *_args, **_kwargs):
-            return DummyResult()
-
     class DummyRecorder:
         async def async_add_executor_job(self, func):
             return func()
-
-        def get_session(self):
-            return DummySession()
-
-    def _session_scope(*_args, **_kwargs):
-        session = _kwargs.get("session")
-
-        class _Ctx:
-            def __enter__(self_inner):
-                return session
-
-            def __exit__(self_inner, *_exc):
-                return False
-
-        return _Ctx()
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
         lambda *_a, **_k: DummyRecorder(),
     )
     monkeypatch.setattr(
-        "homeassistant.helpers.recorder.session_scope",
-        _session_scope,
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {"sensor.test": [{"start": "bad", "sum": 1.0}]},
     )
-    monkeypatch.setattr("sqlalchemy.text", lambda _q: _q)
     series = await sensor._load_hourly_series(
         "sensor.test",
         datetime(2025, 1, 1, tzinfo=timezone.utc),

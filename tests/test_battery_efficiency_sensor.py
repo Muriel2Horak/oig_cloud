@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -520,6 +519,78 @@ def test_compute_metrics_invalid_values():
     assert metrics["efficiency_pct"] == 100.0
 
 
+def test_stat_value_with_object_and_getattr(monkeypatch):
+    """Cover _stat_value with object (not dict) and getattr path."""
+    # Test with object having sum attribute (prefer_sum=True)
+    class StatItem:
+        def __init__(self, sum_val, state_val):
+            self.sum = sum_val
+            self.state = state_val
+
+    item = StatItem(1000.0, 500.0)
+    result = eff_module._stat_value(item, prefer_sum=True)
+    assert result == 1000.0
+
+    # Test with object missing sum but having state (prefer_sum=True)
+    item2 = StatItem(None, 750.0)
+    result2 = eff_module._stat_value(item2, prefer_sum=True)
+    assert result2 == 750.0
+
+    # Test prefer_sum=False path with state key
+    item3 = StatItem(1000.0, 600.0)
+    result3 = eff_module._stat_value(item3, prefer_sum=False)
+    assert result3 == 600.0
+
+    # Test with dict and prefer_sum=False
+    dict_item = {"state": 800.0, "mean": 700.0}
+    result4 = eff_module._stat_value(dict_item, prefer_sum=False)
+    assert result4 == 800.0
+
+    # Test with invalid value that can't be converted to float
+    class BadItem:
+        def __init__(self):
+            self.state = "not-a-number"
+
+    bad = BadItem()
+    result5 = eff_module._stat_value(bad, prefer_sum=False)
+    assert result5 is None
+
+
+def test_reset_last_month_metrics_clears_on_different_key(monkeypatch):
+    """Cover _reset_last_month_metrics clearing when key is different."""
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+    # Set up existing metrics for a different month
+    sensor._last_month_key = "2026-01"
+    sensor._last_month_metrics = {"efficiency_pct": 80.0}
+
+    # Call with a different key - should clear
+    different_key = "2026-02"
+    sensor._reset_last_month_metrics(different_key)
+    assert sensor._last_month_metrics is None
+    assert sensor._last_month_key is None
+
+
+def test_rollover_month_clears_matching_snapshot(monkeypatch):
+    """Cover _rollover_month clearing snapshot when month_key matches."""
+    hass = DummyHass()
+    sensor = _make_sensor(monkeypatch, hass)
+
+    # Set up a snapshot for the previous month
+    prev_key = "2026-01"
+    sensor._month_snapshot = {"month_key": prev_key, "charge_wh": 10000}
+    sensor._current_month_key = "2026-01"
+
+    # Call on day 1 with matching snapshot
+    now_local = datetime(2026, 2, 1, 0, 10, tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    sensor._rollover_month(now_local, prev_key)
+
+    # Snapshot should be cleared
+    assert sensor._month_snapshot is None
+    # Current month key should be updated
+    assert sensor._current_month_key == "2026-02"
+
+
 def test_previous_month_and_range():
     year, month = eff_module._previous_month(datetime(2026, 1, 15, tzinfo=timezone.utc))
     assert (year, month) == (2025, 12)
@@ -554,6 +625,59 @@ async def test_fallback_to_statistics_fills_missing_values(monkeypatch):
         None,
     )
     assert out == (12000.0, 9000.0, 5.0, 6.0)
+
+
+@pytest.mark.asyncio
+async def test_fallback_to_statistics_fills_missing_battery_bounds(monkeypatch):
+    async def fake_stats(*_a, **_k):
+        return {
+            "charge_wh": 12000.0,
+            "discharge_wh": 9000.0,
+            "battery_start_kwh": 5.0,
+            "battery_end_kwh": 6.0,
+        }
+
+    monkeypatch.setattr(eff_module, "_load_month_metrics_from_statistics", fake_stats)
+
+    out = await eff_module._fallback_to_statistics(
+        DummyHass(),
+        dt_util.utcnow(),
+        dt_util.utcnow(),
+        "sensor.charge",
+        "sensor.discharge",
+        "sensor.batt",
+        12000.0,
+        9000.0,
+        None,
+        None,
+    )
+    assert out == (12000.0, 9000.0, 5.0, 6.0)
+
+
+@pytest.mark.asyncio
+async def test_fallback_to_statistics_keeps_complete_values_without_lookup(monkeypatch):
+    called = {"count": 0}
+
+    async def fake_stats(*_a, **_k):
+        called["count"] += 1
+        return None
+
+    monkeypatch.setattr(eff_module, "_load_month_metrics_from_statistics", fake_stats)
+
+    out = await eff_module._fallback_to_statistics(
+        DummyHass(),
+        dt_util.utcnow(),
+        dt_util.utcnow(),
+        "sensor.charge",
+        "sensor.discharge",
+        "sensor.batt",
+        12000.0,
+        9000.0,
+        5.0,
+        6.0,
+    )
+    assert out == (12000.0, 9000.0, 5.0, 6.0)
+    assert called["count"] == 0
 
 
 @pytest.mark.asyncio
@@ -612,7 +736,7 @@ async def test_load_month_metrics_from_statistics_import_error(monkeypatch):
     orig_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
-        if name == "homeassistant.components.recorder.db_schema":
+        if name == "homeassistant.components.recorder.statistics":
             raise ImportError("boom")
         return orig_import(name, *args, **kwargs)
 
@@ -631,81 +755,27 @@ async def test_load_month_metrics_from_statistics_import_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_load_month_metrics_from_statistics_query_success(monkeypatch):
-    class Col:
-        def in_(self, _v):
-            return self
+    class DummyRecorder:
+        async def async_add_executor_job(self, func, *args):
+            return func(*args)
 
-        def __eq__(self, _v):
-            return True
-
-        def __ge__(self, _v):
-            return self
-
-        def __lt__(self, _v):
-            return self
-
-        def desc(self):
-            return self
-
-        def asc(self):
-            return self
-
-    class FakeStatisticsMeta:
-        statistic_id = Col()
-        id = Col()
-
-    class FakeStatistics:
-        metadata_id = Col()
-        start_ts = Col()
-
-    class Query:
-        def __init__(self, kind):
-            self.kind = kind
-            self._meta_id = None
-
-        def filter(self, *args):
-            if self.kind == "stats" and args:
-                self._meta_id = 1
-            return self
-
-        def order_by(self, _arg):
-            return self
-
-        def all(self):
-            return [
-                ("sensor.c", 1),
-                ("sensor.d", 2),
-                ("sensor.b", 3),
-            ]
-
-        def first(self):
-            if self._meta_id == 1:
-                return SimpleNamespace(sum=12000.0)
-            if self._meta_id == 2:
-                return SimpleNamespace(sum=9000.0)
-            return SimpleNamespace(state=5.5)
-
-    class Session:
-        def query(self, *args):
-            if len(args) == 2:
-                return Query("meta")
-            return Query("stats")
-
-    @contextmanager
-    def fake_session_scope(**_kwargs):
-        yield Session()
+    def fake_stats(_hass, _start, _end, _ids, _period, _units, _types):
+        return {
+            "sensor.c": [{"start": dt_util.utcnow(), "sum": 12000.0}],
+            "sensor.d": [{"start": dt_util.utcnow(), "sum": 9000.0}],
+            "sensor.b": [
+                {"start": dt_util.utcnow(), "state": 5.5},
+                {"start": dt_util.utcnow(), "state": 6.0},
+            ],
+        }
 
     monkeypatch.setattr(
-        "homeassistant.components.recorder.db_schema.Statistics",
-        FakeStatistics,
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_args, **_kwargs: DummyRecorder(),
     )
     monkeypatch.setattr(
-        "homeassistant.components.recorder.db_schema.StatisticsMeta",
-        FakeStatisticsMeta,
-    )
-    monkeypatch.setattr(
-        "homeassistant.components.recorder.util.session_scope",
-        fake_session_scope,
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        fake_stats,
     )
 
     result = await eff_module._load_month_metrics_from_statistics(
@@ -718,78 +788,30 @@ async def test_load_month_metrics_from_statistics_query_success(monkeypatch):
     )
     assert result is not None
     assert result["charge_wh"] == 12000.0
-    assert result["discharge_wh"] == 12000.0
+    assert result["discharge_wh"] == 9000.0
+    assert result["battery_start_kwh"] == 5.5
+    assert result["battery_end_kwh"] == 6.0
 
 
 @pytest.mark.asyncio
 async def test_load_month_metrics_from_statistics_missing_meta_for_battery(monkeypatch):
-    class Col:
-        def in_(self, _v):
-            return self
+    class DummyRecorder:
+        async def async_add_executor_job(self, func, *args):
+            return func(*args)
 
-        def __eq__(self, _v):
-            return True
-
-        def __ge__(self, _v):
-            return self
-
-        def __lt__(self, _v):
-            return self
-
-        def desc(self):
-            return self
-
-        def asc(self):
-            return self
-
-    class FakeStatisticsMeta:
-        statistic_id = Col()
-        id = Col()
-
-    class FakeStatistics:
-        metadata_id = Col()
-        start_ts = Col()
-
-    class Query:
-        def __init__(self, kind):
-            self.kind = kind
-
-        def filter(self, *_args):
-            return self
-
-        def order_by(self, _arg):
-            return self
-
-        def all(self):
-            return [
-                ("sensor.c", 1),
-                ("sensor.d", 2),
-            ]
-
-        def first(self):
-            return SimpleNamespace(sum=5000.0)
-
-    class Session:
-        def query(self, *args):
-            if len(args) == 2:
-                return Query("meta")
-            return Query("stats")
-
-    @contextmanager
-    def fake_session_scope(**_kwargs):
-        yield Session()
+    def fake_stats(_hass, _start, _end, _ids, _period, _units, _types):
+        return {
+            "sensor.c": [{"start": dt_util.utcnow(), "sum": 5000.0}],
+            "sensor.d": [{"start": dt_util.utcnow(), "sum": 4000.0}],
+        }
 
     monkeypatch.setattr(
-        "homeassistant.components.recorder.db_schema.Statistics",
-        FakeStatistics,
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_args, **_kwargs: DummyRecorder(),
     )
     monkeypatch.setattr(
-        "homeassistant.components.recorder.db_schema.StatisticsMeta",
-        FakeStatisticsMeta,
-    )
-    monkeypatch.setattr(
-        "homeassistant.components.recorder.util.session_scope",
-        fake_session_scope,
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        fake_stats,
     )
 
     result = await eff_module._load_month_metrics_from_statistics(
@@ -803,3 +825,21 @@ async def test_load_month_metrics_from_statistics_missing_meta_for_battery(monke
     assert result is not None
     assert result["battery_start_kwh"] is None
     assert result["battery_end_kwh"] is None
+
+
+@pytest.mark.asyncio
+async def test_load_month_metrics_from_statistics_no_recorder_instance(monkeypatch):
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result = await eff_module._load_month_metrics_from_statistics(
+        DummyHass(),
+        dt_util.utcnow(),
+        dt_util.utcnow(),
+        "sensor.c",
+        "sensor.d",
+        "sensor.b",
+    )
+    assert result is None

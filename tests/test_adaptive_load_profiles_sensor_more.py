@@ -273,56 +273,36 @@ def test_get_energy_unit_factor(monkeypatch):
 async def test_load_hourly_series_and_earliest_start(monkeypatch):
     sensor = _make_sensor(monkeypatch)
 
-    class DummyResult:
-        def __init__(self, rows):
-            self._rows = rows
-
-        def fetchall(self):
-            return self._rows
-
-        def scalar(self):
-            return self._rows
-
-    class DummySession:
-        def __init__(self, rows):
-            self._rows = rows
-
-        def execute(self, *_args, **_kwargs):
-            return DummyResult(self._rows)
-
     class DummyRecorder:
-        def __init__(self, rows):
-            self._rows = rows
-
         async def async_add_executor_job(self, func):
             return func()
 
-        def get_session(self):
-            return DummySession(self._rows)
+    def fake_stats(_hass, _start, _end, ids, period, _units, _types):
+        sensor_id = next(iter(ids))
+        if period == "hour":
+            return {
+                sensor_id: [
+                    {
+                        "start": datetime(2025, 1, 1, tzinfo=timezone.utc),
+                        "sum": 1000.0,
+                        "mean": 500.0,
+                        "state": None,
+                    }
+                ]
+            }
+        return {
+            sensor_id: [{"start": datetime(2025, 1, 1, tzinfo=timezone.utc), "sum": 1.0}]
+        }
 
-    def _session_scope(*_args, **_kwargs):
-        session = _kwargs.get("session")
-
-        class _Ctx:
-            def __enter__(self_inner):
-                return session
-
-            def __exit__(self_inner, *_exc):
-                return False
-
-        return _Ctx()
-
-    rows = [(1000.0, 500.0, None, 1000.0)]
     sensor._hass = SimpleNamespace(states=SimpleNamespace(get=lambda _eid: None))
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
-        lambda *_args, **_kwargs: DummyRecorder(rows),
+        lambda *_args, **_kwargs: DummyRecorder(),
     )
     monkeypatch.setattr(
-        "homeassistant.helpers.recorder.session_scope",
-        _session_scope,
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        fake_stats,
     )
-    monkeypatch.setattr("sqlalchemy.text", lambda _q: _q)
     series = await sensor._load_hourly_series(
         "sensor.test",
         datetime(2025, 1, 1, tzinfo=timezone.utc),
@@ -331,11 +311,6 @@ async def test_load_hourly_series_and_earliest_start(monkeypatch):
     )
     assert series
 
-    min_ts = 1234.0
-    monkeypatch.setattr(
-        "homeassistant.helpers.recorder.get_instance",
-        lambda *_args, **_kwargs: DummyRecorder(min_ts),
-    )
     earliest = await sensor._get_earliest_statistics_start("sensor.test")
     assert earliest is not None
 

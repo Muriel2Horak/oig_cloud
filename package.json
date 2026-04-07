@@ -20,9 +20,6 @@
       "include": [
         "tests/fe/unit/**/*.test.js"
       ]
-    },
-    "coverage": {
-      "provider": "v8"
     }
   },
   "devDependencies": {

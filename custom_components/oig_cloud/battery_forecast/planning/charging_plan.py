@@ -868,6 +868,221 @@ def _get_hour_from_interval(interval: dict) -> int:
         return -1
 
 
+def _get_interval_solar_kwh(interval: dict) -> float:
+    solar_kwh = interval.get("solar_production_kwh")
+    if solar_kwh is not None:
+        try:
+            return max(0.0, float(solar_kwh))
+        except (TypeError, ValueError):
+            return 0.0
+
+    solar_wh = interval.get("solar_wh")
+    if solar_wh is not None:
+        try:
+            return max(0.0, float(solar_wh) / 1000.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    return 0.0
+
+
+def _get_interval_load_kwh(interval: dict) -> float:
+    try:
+        return max(0.0, float(interval.get("consumption_kwh", 0.0) or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _get_interval_price_czk(interval: dict) -> Optional[float]:
+    try:
+        return float(interval.get("spot_price_czk", float("inf")))
+    except (TypeError, ValueError):
+        return None
+
+
+def _get_interval_grid_charge_kwh(interval: dict) -> float:
+    try:
+        return max(0.0, float(interval.get("grid_charge_kwh", 0.0) or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _project_soc_until_index(
+    *,
+    current_soc_kwh: float,
+    intervals: list[dict],
+    end_idx_exclusive: int,
+    round_trip_efficiency: float,
+    max_capacity_kwh: float,
+    extra_charge_by_index: Optional[dict[int, float]] = None,
+) -> tuple[float, float]:
+    if round_trip_efficiency <= 0:
+        return current_soc_kwh, current_soc_kwh
+
+    battery_soc = current_soc_kwh
+    min_soc = current_soc_kwh
+    extra_charge_by_index = extra_charge_by_index or {}
+
+    for idx, interval in enumerate(intervals[:end_idx_exclusive]):
+        solar_kwh = _get_interval_solar_kwh(interval)
+        load_kwh = _get_interval_load_kwh(interval)
+        grid_charge_kwh = _get_interval_grid_charge_kwh(interval) + extra_charge_by_index.get(idx, 0.0)
+
+        if grid_charge_kwh > 0.0:
+            battery_soc += solar_kwh + grid_charge_kwh
+        elif solar_kwh >= load_kwh:
+            battery_soc += solar_kwh - load_kwh
+        else:
+            battery_soc -= (load_kwh - solar_kwh) / round_trip_efficiency
+
+        battery_soc = max(0.0, min(max_capacity_kwh, battery_soc))
+        min_soc = min(min_soc, battery_soc)
+
+    return battery_soc, min_soc
+
+
+def _estimate_soc_after_peak_window(
+    *,
+    current_soc_kwh: float,
+    intervals: list[dict],
+    peak_end_idx: int,
+    round_trip_efficiency: float,
+    max_capacity_kwh: float,
+) -> float:
+    projected_soc, _ = _project_soc_until_index(
+        current_soc_kwh=current_soc_kwh,
+        intervals=intervals,
+        end_idx_exclusive=peak_end_idx + 1,
+        round_trip_efficiency=round_trip_efficiency,
+        max_capacity_kwh=max_capacity_kwh,
+    )
+    return projected_soc
+
+
+def _find_cheapest_future_interval(
+    intervals: list[dict],
+    *,
+    start_idx: int,
+) -> tuple[Optional[int], Optional[float]]:
+    cheapest_idx: Optional[int] = None
+    cheapest_price: Optional[float] = None
+    for idx in range(start_idx, len(intervals)):
+        price = _get_interval_price_czk(intervals[idx])
+        if price is None:
+            continue
+        if cheapest_price is None or price < cheapest_price:
+            cheapest_price = price
+            cheapest_idx = idx
+    return cheapest_idx, cheapest_price
+
+
+def _has_future_negative_price_headroom_risk(
+    intervals: list[dict],
+    *,
+    start_idx: int,
+    current_soc_kwh: float,
+    round_trip_efficiency: float,
+    max_capacity_kwh: float,
+    hw_min_soc_kwh: float,
+    extra_charge_by_index: Optional[dict[int, float]] = None,
+) -> bool:
+    tolerance = 1e-9
+
+    for idx in range(start_idx, len(intervals)):
+        interval = intervals[idx]
+        price = _get_interval_price_czk(interval)
+        if price is None or price >= 0.0:
+            continue
+
+        future_surplus_kwh = max(0.0, _get_interval_solar_kwh(interval) - _get_interval_load_kwh(interval))
+        if future_surplus_kwh <= 0.0:
+            continue
+
+        soc_without, min_soc_without = _project_soc_until_index(
+            current_soc_kwh=current_soc_kwh,
+            intervals=intervals,
+            end_idx_exclusive=idx,
+            round_trip_efficiency=round_trip_efficiency,
+            max_capacity_kwh=max_capacity_kwh,
+        )
+        if min_soc_without < hw_min_soc_kwh:
+            continue
+
+        soc_with, _ = _project_soc_until_index(
+            current_soc_kwh=current_soc_kwh,
+            intervals=intervals,
+            end_idx_exclusive=idx,
+            round_trip_efficiency=round_trip_efficiency,
+            max_capacity_kwh=max_capacity_kwh,
+            extra_charge_by_index=extra_charge_by_index,
+        )
+
+        headroom_without = max(0.0, max_capacity_kwh - soc_without)
+        headroom_with = max(0.0, max_capacity_kwh - soc_with)
+        if (
+            headroom_without + tolerance >= future_surplus_kwh
+            and headroom_with + tolerance < future_surplus_kwh
+        ):
+            return True
+
+    return False
+
+
+def _select_pre_peak_intervals(
+    *,
+    pre_peak_intervals: list[tuple[int, dict]],
+    current_soc_kwh: float,
+    config: EconomicChargingPlanConfig,
+) -> tuple[list[int], float, float]:
+    target_soc = min(
+        config.hw_min_soc_kwh * 1.2,
+        config.max_capacity * config.max_charge_fraction,
+    )
+    needed_kwh = max(0.0, target_soc - current_soc_kwh)
+
+    available_intervals = []
+    for idx, interval in pre_peak_intervals:
+        if _get_interval_grid_charge_kwh(interval) > 0.0:
+            continue
+        price = _get_interval_price_czk(interval)
+        if price is None:
+            continue
+        available_intervals.append((idx, price))
+
+    available_intervals.sort(key=lambda item: item[1])
+
+    charge_per_interval = config.charging_power_kw / 4.0
+    selected_indices: list[int] = []
+    total_charge = 0.0
+
+    for idx, _price in available_intervals:
+        if total_charge >= needed_kwh:
+            break
+        selected_indices.append(idx)
+        total_charge += charge_per_interval
+
+    return selected_indices, min(total_charge, needed_kwh), charge_per_interval
+
+
+def _build_extra_charge_by_index(
+    *,
+    selected_indices: list[int],
+    actual_charge_kwh: float,
+    charge_per_interval: float,
+) -> dict[int, float]:
+    remaining_charge = actual_charge_kwh
+    charge_map: dict[int, float] = {}
+
+    for idx in selected_indices:
+        if remaining_charge <= 0.0:
+            break
+        planned_charge = min(charge_per_interval, remaining_charge)
+        charge_map[idx] = planned_charge
+        remaining_charge -= planned_charge
+
+    return charge_map
+
+
 def should_pre_charge_for_peak_avoidance(
     config: EconomicChargingPlanConfig,
     flags: RolloutFlags,
@@ -960,9 +1175,7 @@ def should_pre_charge_for_peak_avoidance(
         )
 
     # Step 5: PV-first check
-    total_solar_kwh = sum(
-        i.get("solar_wh", 0) / 1000 for _, i in pre_peak_intervals
-    )
+    total_solar_kwh = sum(_get_interval_solar_kwh(interval) for _, interval in pre_peak_intervals)
     if total_solar_kwh >= 0.5 and flags.pv_first_policy_enabled:
         return PrePeakDecision(
             should_charge=False,
@@ -975,9 +1188,16 @@ def should_pre_charge_for_peak_avoidance(
             pre_peak_avg_price=0.0,
         )
 
+    peak_start_idx = peak_intervals[0][0]
+    soc_at_peak_start, _ = _project_soc_until_index(
+        current_soc_kwh=current_soc_kwh,
+        intervals=intervals,
+        end_idx_exclusive=peak_start_idx,
+        round_trip_efficiency=config.round_trip_efficiency,
+        max_capacity_kwh=config.max_capacity,
+    )
+
     # Step 6 & 7: SOC sufficient check
-    # Estimate SOC at peak start (use current_soc_kwh as approximation)
-    soc_at_peak_start = current_soc_kwh
     soc_threshold = config.hw_min_soc_kwh * 1.1
     if soc_at_peak_start >= soc_threshold:
         return PrePeakDecision(
@@ -1010,6 +1230,79 @@ def should_pre_charge_for_peak_avoidance(
     peak_avg = sum(peak_prices) / len(peak_prices)
     pre_peak_avg = sum(pre_peak_prices) / len(pre_peak_prices)
 
+    selected_indices, actual_charge_kwh, charge_per_interval = _select_pre_peak_intervals(
+        pre_peak_intervals=pre_peak_intervals,
+        current_soc_kwh=current_soc_kwh,
+        config=config,
+    )
+    extra_charge_by_index = _build_extra_charge_by_index(
+        selected_indices=selected_indices,
+        actual_charge_kwh=actual_charge_kwh,
+        charge_per_interval=charge_per_interval,
+    )
+    peak_end_idx = peak_intervals[-1][0]
+
+    future_soc_without_charge, min_soc_without_charge = _project_soc_until_index(
+        current_soc_kwh=current_soc_kwh,
+        intervals=intervals,
+        end_idx_exclusive=peak_end_idx + 1,
+        round_trip_efficiency=config.round_trip_efficiency,
+        max_capacity_kwh=config.max_capacity,
+    )
+    survives_peak_without_precharge = min_soc_without_charge >= config.hw_min_soc_kwh
+
+    cheapest_future_idx, cheapest_future_price = _find_cheapest_future_interval(
+        intervals,
+        start_idx=peak_end_idx + 1,
+    )
+    if (
+        survives_peak_without_precharge
+        and actual_charge_kwh > 0.0
+        and _has_future_negative_price_headroom_risk(
+            intervals,
+            start_idx=peak_end_idx + 1,
+            current_soc_kwh=current_soc_kwh,
+            round_trip_efficiency=config.round_trip_efficiency,
+            max_capacity_kwh=config.max_capacity,
+            hw_min_soc_kwh=config.hw_min_soc_kwh,
+            extra_charge_by_index=extra_charge_by_index,
+        )
+    ):
+        return PrePeakDecision(
+            should_charge=False,
+            reason="future_negative_price_headroom",
+            soc_at_peak_start_kwh=soc_at_peak_start,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=peak_avg,
+            pre_peak_avg_price=pre_peak_avg,
+        )
+
+    if (
+        cheapest_future_idx is not None
+        and actual_charge_kwh > 0.0
+        and cheapest_future_price is not None
+        and cheapest_future_price < pre_peak_avg
+        and _project_soc_until_index(
+            current_soc_kwh=current_soc_kwh,
+            intervals=intervals,
+            end_idx_exclusive=cheapest_future_idx,
+            round_trip_efficiency=config.round_trip_efficiency,
+            max_capacity_kwh=config.max_capacity,
+        )[1] >= config.hw_min_soc_kwh
+    ):
+        return PrePeakDecision(
+            should_charge=False,
+            reason="cheaper_post_peak_available",
+            soc_at_peak_start_kwh=soc_at_peak_start,
+            cheapest_intervals=[],
+            expected_charge_kwh=0.0,
+            estimated_saving_czk=0.0,
+            peak_avg_price=peak_avg,
+            pre_peak_avg_price=pre_peak_avg,
+        )
+
     # Breakeven calculation with round-trip efficiency
     breakeven = pre_peak_avg / config.round_trip_efficiency
     if peak_avg < breakeven * config.peak_price_ratio_threshold:
@@ -1024,40 +1317,7 @@ def should_pre_charge_for_peak_avoidance(
             pre_peak_avg_price=pre_peak_avg,
         )
 
-    # Step 9: Select cheapest intervals for charging
-    # Calculate target SOC (don't exceed max_capacity * max_charge_fraction)
-    target_soc = min(
-        config.hw_min_soc_kwh * 1.2,
-        config.max_capacity * config.max_charge_fraction
-    )
-    needed_kwh = max(0, target_soc - current_soc_kwh)
-
-    # Sort pre-peak intervals by price, filter out those with existing economic charging
-    available_intervals = []
-    for idx, interval in pre_peak_intervals:
-        existing_charge = interval.get("grid_charge_kwh", 0)
-        # Skip intervals that already have economic charging scheduled
-        if existing_charge > 0:
-            continue
-        price = interval.get("spot_price_czk", float("inf"))
-        available_intervals.append((idx, price))
-
-    # Sort by price (cheapest first)
-    available_intervals.sort(key=lambda x: x[1])
-
-    # Select cheapest intervals needed for charging
-    charge_per_interval = config.charging_power_kw / 4.0  # 15-minute intervals
-    selected_indices = []
-    total_charge = 0.0
-
-    for idx, price in available_intervals:
-        if total_charge >= needed_kwh:
-            break
-        selected_indices.append(idx)
-        total_charge += charge_per_interval
-
     # Step 10: Return positive decision
-    actual_charge_kwh = min(total_charge, needed_kwh)
     estimated_saving = (peak_avg - pre_peak_avg / config.round_trip_efficiency) * actual_charge_kwh
 
     return PrePeakDecision(

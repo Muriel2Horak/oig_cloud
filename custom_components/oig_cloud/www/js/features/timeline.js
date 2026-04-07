@@ -418,17 +418,14 @@ class TimelineDialog {
             return hass.callApi(method, endpoint, method === 'GET' ? undefined : payload || {});
         }
 
-        const headers = { 'Content-Type': 'application/json' };
-        const token = globalThis.DashboardAPI?.getHAToken?.();
-        if (token) {
-            headers.Authorization = `Bearer ${token}`;
-        } else {
-            console.warn('[TimelineDialog] HA token not available, relying on cookies for auth');
+        const authFetch = globalThis.DashboardAPI?.fetchWithAuth || globalThis.fetchWithAuth;
+        if (typeof authFetch !== 'function') {
+            throw new Error('Authenticated HA fetch helper is not available');
         }
 
-        const response = await fetch(`/api/${endpoint}`, {
+        const response = await authFetch(`/api/${endpoint}`, {
             method,
-            headers,
+            headers: { 'Content-Type': 'application/json' },
             body: method === 'GET' ? undefined : JSON.stringify(payload || {}),
             credentials: 'same-origin'
         });
