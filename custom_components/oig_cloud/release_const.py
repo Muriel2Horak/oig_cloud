@@ -1,0 +1,2 @@
+COMPONENT_VERSION = "2.3.17"
+SERVICE_NAME = "oig_cloud"
