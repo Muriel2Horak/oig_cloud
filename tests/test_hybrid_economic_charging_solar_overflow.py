@@ -52,6 +52,7 @@ class DummyConfig:
     negative_price_strategy = NegativePriceStrategy.CHARGE_GRID
     round_trip_efficiency = 0.9
     price_hysteresis_czk = 0.0
+    min_export_price_czk = -0.5
 
 
 class DummySimConfig:
@@ -68,6 +69,7 @@ class DummyStrategy:
         self.simulator = DummySimulator()
         self._planning_min = 2.0
         self._target = 3.0
+        self._max = 5.0
 
 
 def test_economic_charging_skipped_when_solar_reaches_target():
@@ -99,4 +101,46 @@ def test_economic_charging_skipped_when_solar_reaches_target():
         f"After 1st interval: {initial_battery_kwh + solar_forecast[0] - consumption_forecast[0]}kWh "
         f"(exceeds target {strategy._target}kWh). "
         f"Economic charging should NOT add intervals when solar is sufficient."
+    )
+
+
+def test_target_fill_preserves_headroom_when_future_surplus_has_zero_export_value():
+    strategy = DummyStrategy()
+    strategy._target = 5.0
+
+    charging_intervals, _, _ = module.plan_charging_intervals(
+        strategy,
+        initial_battery_kwh=3.2,
+        solar_forecast=[0.0] * 4 + [0.35] * 8,
+        consumption_forecast=[0.15] * 12,
+        export_prices=[0.0] * 12,
+        prices=[0.6] * 12,
+        balancing_plan=None,
+        negative_price_intervals=None,
+    )
+
+    assert charging_intervals == set(), (
+        "Planner should preserve battery headroom for upcoming low-value solar surplus "
+        "instead of topping battery to 100% before solar ramp-up."
+    )
+
+
+def test_target_fill_still_charges_when_future_surplus_can_be_exported_profitably():
+    strategy = DummyStrategy()
+    strategy._target = 5.0
+
+    charging_intervals, _, _ = module.plan_charging_intervals(
+        strategy,
+        initial_battery_kwh=3.2,
+        solar_forecast=[0.0] * 4 + [0.35] * 8,
+        consumption_forecast=[0.15] * 12,
+        export_prices=[0.6] * 12,
+        prices=[0.6] * 12,
+        balancing_plan=None,
+        negative_price_intervals=None,
+    )
+
+    assert charging_intervals, (
+        "When export remains economically viable, planner may still top up to target "
+        "instead of preserving daytime headroom."
     )

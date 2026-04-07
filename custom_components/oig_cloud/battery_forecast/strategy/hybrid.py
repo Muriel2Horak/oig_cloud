@@ -209,6 +209,7 @@ class HybridStrategy:
             prices=prices,
             solar_forecast=solar_forecast,
             consumption_forecast=consumption_forecast,
+            export_prices=exports,
             balancing_plan=balancing_plan,
             negative_price_intervals=negative_prices,
         )
@@ -469,6 +470,7 @@ class HybridStrategy:
         prices: List[float],
         solar_forecast: List[float],
         consumption_forecast: List[float],
+        export_prices: List[float],
         balancing_plan: Optional[StrategyBalancingPlan] = None,
         negative_price_intervals: Optional[List[int]] = None,
     ) -> Tuple[set[int], Optional[str], set[int]]:
@@ -479,6 +481,7 @@ class HybridStrategy:
             prices=prices,
             solar_forecast=solar_forecast,
             consumption_forecast=consumption_forecast,
+            export_prices=export_prices,
             balancing_plan=balancing_plan,
             negative_price_intervals=negative_price_intervals,
         )

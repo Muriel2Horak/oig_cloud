@@ -12,6 +12,10 @@ from .balancing import StrategyBalancingPlan
 
 _LOGGER = logging.getLogger(__name__)
 
+_SOLAR_HEADROOM_ACTIVITY_KWH = 0.05
+_SOLAR_HEADROOM_MIN_SURPLUS_KWH = 0.5
+_SOLAR_HEADROOM_WINDOW_INTERVALS = 48
+
 
 def plan_charging_intervals(
     strategy,
@@ -20,6 +24,7 @@ def plan_charging_intervals(
     prices: List[float],
     solar_forecast: List[float],
     consumption_forecast: List[float],
+    export_prices: Optional[List[float]] = None,
     balancing_plan: Optional[StrategyBalancingPlan] = None,
     negative_price_intervals: Optional[List[int]] = None,
 ) -> Tuple[set[int], Optional[str], set[int]]:
@@ -83,6 +88,15 @@ def plan_charging_intervals(
         target_price_cap = float("inf")
         target_kwh = strategy._max
         target_limit = min(balancing_plan.holding_intervals)
+    else:
+        target_kwh = _resolve_target_soc_goal(
+            strategy,
+            initial_battery_kwh=initial_battery_kwh,
+            solar_forecast=solar_forecast,
+            consumption_forecast=consumption_forecast,
+            export_prices=export_prices,
+            eps_kwh=eps_kwh,
+        )
     _reach_target_soc(
         strategy,
         initial_battery_kwh=initial_battery_kwh,
@@ -107,15 +121,17 @@ def plan_charging_intervals(
             charging_intervals=set(),
         )
         _pre_economic_max_soc = (
-            max(_pre_economic_trajectory) if _pre_economic_trajectory else initial_battery_kwh
+            max([initial_battery_kwh, *_pre_economic_trajectory])
+            if _pre_economic_trajectory
+            else initial_battery_kwh
         )
-        _target_effective = strategy._target if getattr(strategy, "_target", None) is not None else 0.0
+        _target_effective = target_kwh if target_kwh is not None else 0.0
         if _pre_economic_max_soc >= _target_effective - eps_kwh:
             _LOGGER.debug(
                 "Skipping economic charging: solar+plan reaches target SOC "
                 "(max_soc=%.3f >= target=%.3f)",
                 _pre_economic_max_soc,
-                strategy._target,
+                _target_effective,
             )
         else:
             _apply_economic_charging(
@@ -179,6 +195,81 @@ def plan_charging_intervals(
     )
 
     return charging_intervals, infeasible_reason, price_band_intervals
+
+
+def _resolve_target_soc_goal(
+    strategy,
+    *,
+    initial_battery_kwh: float,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    export_prices: Optional[List[float]],
+    eps_kwh: float,
+) -> float:
+    target = getattr(strategy, "_target", initial_battery_kwh)
+    planning_min = getattr(strategy, "_planning_min", 0.0)
+    if target <= planning_min + eps_kwh:
+        return target
+
+    preserved_headroom_kwh = _estimate_poor_export_solar_surplus(
+        strategy,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        export_prices=export_prices,
+    )
+    if preserved_headroom_kwh < _SOLAR_HEADROOM_MIN_SURPLUS_KWH:
+        return target
+
+    max_softening = max(0.0, target - planning_min)
+    effective_target = max(
+        planning_min,
+        target - min(max_softening, preserved_headroom_kwh),
+    )
+    if effective_target < target - eps_kwh:
+        _LOGGER.debug(
+            "Softening target SOC from %.3f to %.3f to preserve %.3f kWh headroom for low-value solar surplus",
+            target,
+            effective_target,
+            target - effective_target,
+        )
+    return effective_target
+
+
+def _estimate_poor_export_solar_surplus(
+    strategy,
+    *,
+    solar_forecast: List[float],
+    consumption_forecast: List[float],
+    export_prices: Optional[List[float]],
+) -> float:
+    if not solar_forecast or not export_prices:
+        return 0.0
+
+    try:
+        export_threshold = max(
+            0.0,
+            float(getattr(strategy.config, "min_export_price_czk", 0.0) or 0.0),
+        )
+    except (TypeError, ValueError):
+        export_threshold = 0.0
+
+    surplus_kwh = 0.0
+    limit = min(
+        len(solar_forecast),
+        len(export_prices),
+        _SOLAR_HEADROOM_WINDOW_INTERVALS,
+    )
+    for idx in range(limit):
+        solar_kwh = solar_forecast[idx] if idx < len(solar_forecast) else 0.0
+        if solar_kwh <= _SOLAR_HEADROOM_ACTIVITY_KWH:
+            continue
+        export_price = export_prices[idx]
+        if export_price > export_threshold:
+            continue
+        load_kwh = consumption_forecast[idx] if idx < len(consumption_forecast) else 0.125
+        surplus_kwh += max(0.0, solar_kwh - load_kwh)
+
+    return surplus_kwh
 
 
 def _build_add_ups_interval(
@@ -546,7 +637,7 @@ def _reach_target_soc(
         if limit_idx <= 0:
             return
         max_soc = (
-            max(battery_trajectory[:limit_idx])
+            max([initial_battery_kwh, *battery_trajectory[:limit_idx]])
             if battery_trajectory
             else initial_battery_kwh
         )

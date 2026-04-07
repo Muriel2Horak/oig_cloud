@@ -78,6 +78,23 @@ def test_handle_negative_price_variants():
     assert reason == "negative_price_consume"
 
 
+def test_handle_negative_price_charge_grid_skips_ups_when_battery_at_target():
+    strategy = DummyStrategy()
+    strategy.config.negative_price_strategy = NegativePriceStrategy.CHARGE_GRID
+
+    mode, reason = module.handle_negative_price(
+        strategy,
+        battery=strategy._target,
+        solar=1.2,
+        load=0.1,
+        price=-1,
+        export_price=0,
+    )
+
+    assert mode == CBB_MODE_HOME_I
+    assert reason == "negative_price_consume"
+
+
 def test_apply_smoothing_merges_short_runs():
     strategy = DummyStrategy()
     decisions = [
