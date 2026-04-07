@@ -268,12 +268,19 @@ def handle_negative_price(
     export_price: float,
 ) -> Tuple[int, str]:
     """Handle negative price intervals."""
-    _ = load
+    eps_kwh = 0.01
     _ = price
     _ = export_price
     strategy_mode = strategy.config.negative_price_strategy
+    target_kwh = getattr(strategy, "_target", None)
+    max_capacity_kwh = getattr(strategy, "_max", None)
+
+    battery_at_target = target_kwh is not None and battery >= target_kwh - eps_kwh
+    battery_full = max_capacity_kwh is not None and battery >= max_capacity_kwh - eps_kwh
 
     if strategy_mode == NegativePriceStrategy.CHARGE_GRID:
+        if battery_at_target or battery_full:
+            return CBB_MODE_HOME_I, "negative_price_consume"
         return CBB_MODE_HOME_UPS, "negative_price_charge"
     # CURTAIL and CONSUME both use HOME_I for economic reasons
     return CBB_MODE_HOME_I, "negative_price_consume"
