@@ -30,6 +30,9 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            custom_components/oig_cloud/www_v2/package-lock.json
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -45,6 +48,10 @@ jobs:
           pip install -r requirements-dev.txt
           pip install coverage
           npm ci --ignore-scripts
+
+      - name: Install frontend dependencies
+        working-directory: custom_components/oig_cloud/www_v2
+        run: npm ci --ignore-scripts
 
       - name: Run Python tests with coverage
         env:
