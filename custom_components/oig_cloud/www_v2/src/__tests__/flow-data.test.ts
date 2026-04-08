@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBalancingState, buildGridChargingPlan } from '@/data/flow-data';
+import { parseBalancingState, buildGridChargingPlan, extractFlowData } from '@/data/flow-data';
 
 describe('Flow data extraction helpers', () => {
   it('maps balancing states to V1-compatible indicators', () => {
@@ -52,5 +52,18 @@ describe('Flow data extraction helpers', () => {
     expect(plan.durationMinutes).toBe(60);
     expect(plan.currentBlockLabel).toBe(null);
     expect(plan.nextBlockLabel).toBe('dnes 23:00 - 23:30');
+  });
+
+  it('extracts flow data from a direct states map', () => {
+    const data = extractFlowData({
+      sensor: 'ignored',
+      'sensor.oig_2206237016_actual_aco_p': { state: '790' },
+      'sensor.oig_2206237016_actual_aci_wtotal': { state: '29' },
+      'sensor.oig_2206237016_batt_bat_c': { state: '64' },
+    });
+
+    expect(data.housePower).toBe(790);
+    expect(data.gridPower).toBe(29);
+    expect(data.batterySoC).toBe(64);
   });
 });

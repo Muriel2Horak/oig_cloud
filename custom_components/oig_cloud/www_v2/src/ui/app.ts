@@ -7,9 +7,9 @@ import { createEntityStore, EntityStore } from '@/data/entity-store';
 import { stateWatcher } from '@/data/state-watcher';
 import { haClient } from '@/data/ha-client';
 import { extractFlowData } from '@/data/flow-data';
-import { loadPricingData } from '@/data/pricing-data';
+import { invalidateTimelineCache, loadPricingData } from '@/data/pricing-data';
 import { loadBoilerData } from '@/data/boiler-data';
-import { loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
+import { extractAnalyticsSensors, loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
 import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
 import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/timeline-data';
 import { loadTilesConfig, saveTilesConfig, resolveTiles, type TilesConfig, type TileConfig, type ResolvedTile } from '@/data/tiles-data';
@@ -111,11 +111,17 @@ export class OigApp extends LitElement {
   private timeInterval: number | null = null;
   private stateWatcherUnsub: (() => void) | null = null;
   private tileEntityUnsubs: Array<() => void> = [];
+  private pricingDirty = false;
+  private timelineDirty = false;
+  private analyticsDirty = false;
+  private boilerDirty = false;
+  private reconnecting = false;
 
   /** Throttled flow update — max once per 500ms to avoid jank from rapid state changes */
   private throttledUpdateFlow = throttle(() => this.updateFlowData(), 500);
   /** Throttled ČHMÚ + tiles update — these rely on entity store */
   private throttledUpdateSensors = throttle(() => this.updateSensorData(), 1000);
+  private throttledRefreshDerivedData = throttle(() => this.refreshDerivedData(), 5000);
 
   static styles = css`
     :host {
@@ -322,27 +328,34 @@ export class OigApp extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    window.addEventListener('pageshow', this.onPageShow);
+    document.addEventListener('visibilitychange', this.onDocumentVisibilityChange);
     this.initApp();
     this.startTimeUpdate();
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    window.removeEventListener('pageshow', this.onPageShow);
+    document.removeEventListener('visibilitychange', this.onDocumentVisibilityChange);
     this.cleanup();
   }
 
   protected updated(changed: PropertyValues): void {
+    if (changed.has('hass') && !changed.has('loading')) {
+      void this.rebindHassContext();
+    }
     if (changed.has('activeTab')) {
-      if (this.activeTab === 'pricing' && !this.pricingData) {
+      if (this.activeTab === 'pricing' && (!this.pricingData || this.pricingDirty)) {
         this.loadPricingData();
       }
-      if (this.activeTab === 'pricing' && this.analyticsData === EMPTY_ANALYTICS) {
+      if (this.activeTab === 'pricing' && (this.analyticsData === EMPTY_ANALYTICS || this.analyticsDirty)) {
         this.loadAnalyticsAsync();
       }
-      if (this.activeTab === 'pricing' && !this.timelineData) {
+      if (this.activeTab === 'pricing' && (!this.timelineData || this.timelineDirty)) {
         this.loadTimelineTabData(this.timelineTab);
       }
-      if (this.activeTab === 'boiler' && !this.boilerState) {
+      if (this.activeTab === 'boiler' && (!this.boilerState || this.boilerDirty)) {
         this.loadBoilerDataAsync();
       }
     }
@@ -372,9 +385,11 @@ export class OigApp extends LitElement {
       });
 
       // Subscribe to entity changes for reactive updates
-      this.stateWatcherUnsub = stateWatcher.onEntityChange((_entityId, _newState) => {
+      this.stateWatcherUnsub = stateWatcher.onEntityChange((entityId, newState) => {
+        this.syncHassState(entityId, newState);
         this.throttledUpdateFlow();
         this.throttledUpdateSensors();
+        this.throttledRefreshDerivedData();
       });
 
       // Start shield controller (reactive queue / service state)
@@ -428,6 +443,41 @@ export class OigApp extends LitElement {
     }
   }
 
+  private onPageShow = (): void => {
+    void this.rebindHassContext();
+  };
+
+  private onDocumentVisibilityChange = (): void => {
+    if (document.visibilityState === 'visible') {
+      void this.rebindHassContext();
+    }
+  };
+
+  private async rebindHassContext(): Promise<void> {
+    if (this.reconnecting) return;
+    this.reconnecting = true;
+
+    try {
+      const hass = await haClient.refreshHass();
+      if (!hass) return;
+
+      this.hass = hass;
+      this.entityStore?.updateHass(hass);
+
+      await stateWatcher.start({
+        getHass: () => haClient.getHassSync(),
+        prefixes: [OIG_SENSOR_PREFIX],
+      });
+
+      this.updateFlowData();
+      this.updateSensorData();
+    } catch (err) {
+      oigLog.error('Failed to rebind hass context', err as Error);
+    } finally {
+      this.reconnecting = false;
+    }
+  }
+
   // ==========================================================================
   // DATA LOADING
   // ==========================================================================
@@ -436,7 +486,8 @@ export class OigApp extends LitElement {
     if (!this.hass) return;
 
     try {
-      this.flowData = extractFlowData(this.hass);
+      const liveStates = this.entityStore?.getAll() ?? this.hass;
+      this.flowData = extractFlowData(liveStates);
     } catch (err) {
       oigLog.error('Failed to extract flow data', err as Error);
     }
@@ -446,6 +497,13 @@ export class OigApp extends LitElement {
   private updateSensorData(): void {
     // ČHMÚ
     this.chmuData = extractChmuData(INVERTER_SN);
+
+    if (this.activeTab === 'pricing') {
+      this.analyticsData = {
+        ...this.analyticsData,
+        ...extractAnalyticsSensors(INVERTER_SN),
+      };
+    }
 
     // Tiles
     if (this.tilesConfig) {
@@ -493,6 +551,7 @@ export class OigApp extends LitElement {
     try {
       const data = await withRetry(() => loadPricingData(this.hass));
       this.pricingData = data;
+      this.pricingDirty = false;
     } catch (err) {
       oigLog.error('Failed to load pricing data', err as Error);
     } finally {
@@ -516,6 +575,7 @@ export class OigApp extends LitElement {
       this.boilerCurrentCategory = data.currentCategory;
       this.boilerAvailableCategories = data.availableCategories;
       this.boilerForecastWindows = data.forecastWindows;
+      this.boilerDirty = false;
 
       // Start auto-refresh timer (5 min, like V1)
       if (!this.boilerRefreshTimer) {
@@ -531,6 +591,7 @@ export class OigApp extends LitElement {
   private async loadAnalyticsAsync(): Promise<void> {
     try {
       this.analyticsData = await withRetry(() => loadAnalyticsData(INVERTER_SN));
+      this.analyticsDirty = false;
     } catch (err) {
       oigLog.error('Failed to load analytics', err as Error);
     }
@@ -551,8 +612,43 @@ export class OigApp extends LitElement {
   private async loadTimelineTabData(tab: TimelineTab): Promise<void> {
     try {
       this.timelineData = await withRetry(() => loadTimelineTab(INVERTER_SN, tab));
+      this.timelineDirty = false;
     } catch (err) {
       oigLog.error(`Failed to load timeline tab: ${tab}`, err as Error);
+    }
+  }
+
+  private syncHassState(entityId: string, newState: any): void {
+    if (!this.hass) return;
+
+    if (!this.hass.states) {
+      this.hass.states = {};
+    }
+
+    if (newState) {
+      this.hass.states[entityId] = newState;
+      return;
+    }
+
+    delete this.hass.states[entityId];
+  }
+
+  private refreshDerivedData(): void {
+    this.pricingDirty = true;
+    this.timelineDirty = true;
+    this.analyticsDirty = true;
+    this.boilerDirty = true;
+
+    if (this.activeTab === 'pricing') {
+      invalidateTimelineCache();
+      void this.loadPricingData();
+      void this.loadTimelineTabData(this.timelineTab);
+      void this.loadAnalyticsAsync();
+      return;
+    }
+
+    if (this.activeTab === 'boiler') {
+      void this.loadBoilerDataAsync();
     }
   }
 

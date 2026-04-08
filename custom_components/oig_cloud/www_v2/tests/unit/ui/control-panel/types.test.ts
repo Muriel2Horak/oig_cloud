@@ -16,10 +16,12 @@ describe('Control Panel types', () => {
       expect(BOX_MODE_LABELS.home_2).toBe('Home 2');
       expect(BOX_MODE_LABELS.home_3).toBe('Home 3');
       expect(BOX_MODE_LABELS.home_ups).toBe('Home UPS');
+      expect(BOX_MODE_LABELS.home_5).toBe('Home 5');
+      expect(BOX_MODE_LABELS.home_6).toBe('Home 6');
     });
 
-    it('should have 4 modes', () => {
-      expect(Object.keys(BOX_MODE_LABELS)).toHaveLength(4);
+    it('should have 6 modes', () => {
+      expect(Object.keys(BOX_MODE_LABELS)).toHaveLength(6);
     });
   });
 
@@ -37,10 +39,8 @@ describe('Control Panel types', () => {
 
   describe('QUEUE_STATUS_COLORS', () => {
     it('should have colors for all statuses', () => {
-      expect(QUEUE_STATUS_COLORS.pending).toBeDefined();
+      expect(QUEUE_STATUS_COLORS.queued).toBeDefined();
       expect(QUEUE_STATUS_COLORS.running).toBeDefined();
-      expect(QUEUE_STATUS_COLORS.completed).toBeDefined();
-      expect(QUEUE_STATUS_COLORS.failed).toBeDefined();
     });
 
     it('should use hex colors', () => {
@@ -55,35 +55,38 @@ describe('Control Panel types', () => {
       const item: ShieldQueueItem = {
         id: '123',
         type: 'mode_change',
-        status: 'pending',
+        status: 'queued',
+        service: 'set_box_mode',
+        targetValue: 'Home 2',
+        changes: ['mode'],
         createdAt: '2024-01-15T14:00:00',
-        params: { mode: 'home_2' },
+        position: 1,
       };
 
       expect(item.id).toBe('123');
       expect(item.type).toBe('mode_change');
-      expect(item.status).toBe('pending');
+      expect(item.status).toBe('queued');
     });
 
     it('should support all item types', () => {
       const types: ShieldQueueItem['type'][] = [
         'mode_change',
         'grid_delivery',
-        'battery_charge',
+        'grid_limit',
+        'boiler_mode',
+        'battery_formating',
       ];
 
-      expect(types).toHaveLength(3);
+      expect(types).toHaveLength(5);
     });
 
     it('should support all statuses', () => {
       const statuses: ShieldQueueItem['status'][] = [
-        'pending',
+        'queued',
         'running',
-        'completed',
-        'failed',
       ];
 
-      expect(statuses).toHaveLength(4);
+      expect(statuses).toHaveLength(2);
     });
   });
 

@@ -73,12 +73,12 @@ describe('format utils', () => {
 
   describe('formatPercent', () => {
     it('should format with default decimals', () => {
-      expect(formatPercent(75)).toBe('75%');
-      expect(formatPercent(75.5)).toBe('76%');
+      expect(formatPercent(75)).toBe('75 %');
+      expect(formatPercent(75.5)).toBe('76 %');
     });
 
     it('should format with custom decimals', () => {
-      expect(formatPercent(75.567, 2)).toBe('75.57%');
+      expect(formatPercent(75.567, 2)).toBe('75.57 %');
     });
   });
 

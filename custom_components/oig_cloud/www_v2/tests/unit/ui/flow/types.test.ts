@@ -32,7 +32,7 @@ describe('Flow types', () => {
       const solar = DEFAULT_NODES.find(n => n.id === 'solar');
       expect(solar).toBeDefined();
       expect(solar?.type).toBe('solar');
-      expect(solar?.label).toBe('Solár');
+      expect(solar?.label).toBe('Solar');
     });
 
     it('should have battery node with soc data', () => {

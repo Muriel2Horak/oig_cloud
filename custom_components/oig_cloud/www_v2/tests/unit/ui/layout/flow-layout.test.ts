@@ -23,39 +23,39 @@ describe('FlowLayout', () => {
 
   describe('Desktop Layout (≥1024px)', () => {
     it('should have 3-column grid layout for desktop', () => {
-      expect(styleText).toContain('minmax(280px, 350px) 1fr minmax(280px, 350px)');
+      expect(styleText).toContain('grid-template-columns: 200px 1fr 300px');
+      expect(styleText).toContain("grid-template-areas: 'tiles canvas control'");
     });
 
     it('should have proper grid column assignments for 3-column layout', () => {
-      expect(styleText).toContain('.flow-tiles-left');
-      expect(styleText).toContain('grid-column: 1');
+      expect(styleText).toContain('.flow-tiles-stack');
+      expect(styleText).toContain('grid-area: tiles');
       expect(styleText).toContain('.flow-center');
-      expect(styleText).toContain('grid-column: 2');
-      expect(styleText).toContain('.flow-control-right');
-      expect(styleText).toContain('grid-column: 3');
+      expect(styleText).toContain('grid-area: canvas');
+      expect(styleText).toContain('.flow-control');
+      expect(styleText).toContain('grid-area: control');
     });
   });
 
-  describe('Tablet Layout (768px-1023px)', () => {
-    it('should have 2-column grid layout for tablet', () => {
-      const tabletMediaQuery = styleText.match(/@media \(min-width: 769px\) and \(max-width: 1024px\) \{([\s\S]*?)\}/);
+  describe('Tablet Layout (≤1200px)', () => {
+    it('should keep 3 columns with narrower side panels on tablet', () => {
+      const tabletMediaQuery = styleText.match(/@media \(max-width: 1200px\) \{([\s\S]*?)\}/);
       expect(tabletMediaQuery).toBeTruthy();
       
       if (tabletMediaQuery) {
         const tabletStyles = tabletMediaQuery[1];
-        expect(tabletStyles).toContain('grid-template-columns: minmax(200px, 280px) 1fr');
-        expect(tabletStyles).not.toContain('minmax(200px, 280px) 1fr minmax(200px, 280px)');
+        expect(tabletStyles).toContain('grid-template-columns: 160px 1fr 260px');
+        expect(tabletStyles).toContain('gap: 8px');
       }
     });
 
-    it('should adjust column span for 2-column layout', () => {
-      const tabletMediaQuery = styleText.match(/@media \(min-width: 769px\) and \(max-width: 1024px\) \{([\s\S]*?)\}/);
+    it('should not switch away from grid areas on tablet', () => {
+      const tabletMediaQuery = styleText.match(/@media \(max-width: 1200px\) \{([\s\S]*?)\}/);
       expect(tabletMediaQuery).toBeTruthy();
       
       if (tabletMediaQuery) {
         const tabletStyles = tabletMediaQuery[1];
-        expect(tabletStyles).toContain('.flow-control-right');
-        expect(tabletStyles).toContain('grid-column: 2');
+        expect(tabletStyles).not.toContain('grid-template-areas');
       }
     });
   });
@@ -77,52 +77,35 @@ describe('FlowLayout', () => {
       
       if (mobileMediaQuery) {
         const mobileStyles = mobileMediaQuery[1];
-        expect(mobileStyles).toContain('.flow-tiles-left');
-        expect(mobileStyles).toContain('grid-column: 1');
-        expect(mobileStyles).toContain('.flow-center');
-        expect(mobileStyles).toContain('grid-column: 1');
-        expect(mobileStyles).toContain('.flow-control-right');
-        expect(mobileStyles).toContain('grid-column: 1');
+        expect(mobileStyles).toContain("'canvas'");
+        expect(mobileStyles).toContain("'control'");
+        expect(mobileStyles).toContain("'tiles'");
       }
     });
   });
 
-  describe('Nest Device Height Override', () => {
-    it('should handle Nest Hub Max (1280x800) with 3 columns', () => {
-      expect(styleText).toContain('minmax(280px, 350px) 1fr minmax(280px, 350px)');
+  describe('Desktop Defaults', () => {
+    it('should use desktop columns by default', () => {
+      expect(styleText).toContain('grid-template-columns: 200px 1fr 300px');
     });
 
-    it('should handle Nest (1024x600) with 3 columns by default', () => {
-      const desktopMediaQuery = styleText.match(/@media \(min-width: 1024px\) \{([\s\S]*?)\}/);
-      expect(desktopMediaQuery).toBeTruthy();
-      
-      if (desktopMediaQuery) {
-        const desktopStyles = desktopMediaQuery[1];
-        expect(desktopStyles).toContain('minmax(280px, 350px) 1fr minmax(280px, 350px)');
-      }
-    });
-
-    it('should document default max-height: 700px → 3 columns behavior', () => {
-      expect(styleText).toContain('minmax(280px, 350px) 1fr minmax(280px, 350px)');
-      expect(true).toBe(true);
+    it('should not require a dedicated desktop media query', () => {
+      expect(styleText).not.toContain('@media (min-width: 1024px)');
     });
   });
 
   describe('Breakpoint Consistency', () => {
     it('should have consistent breakpoint definitions', () => {
       expect(styleText).toContain('@media (max-width: 768px)');
-      expect(styleText).toContain('@media (min-width: 769px) and (max-width: 1024px)');
-      expect(styleText).toContain('@media (min-width: 1024px)');
+      expect(styleText).toContain('@media (max-width: 1200px)');
     });
 
     it('should not have overlapping breakpoints', () => {
       const mobileQueries = (styleText.match(/@media \(max-width: 768px\)/g) || []).length;
-      const tabletQueries = (styleText.match(/@media \(min-width: 769px\) and \(max-width: 1024px\)/g) || []).length;
-      const desktopQueries = (styleText.match(/@media \(min-width: 1024px\)/g) || []).length;
+      const tabletQueries = (styleText.match(/@media \(max-width: 1200px\)/g) || []).length;
       
       expect(mobileQueries).toBe(1);
       expect(tabletQueries).toBe(1); 
-      expect(desktopQueries).toBeGreaterThanOrEqual(1);
     });
   });
 });
