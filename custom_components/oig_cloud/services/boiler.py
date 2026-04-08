@@ -397,9 +397,9 @@ def _pop_schedule(hass: HomeAssistant, entry_id: str) -> Optional[BoilerSchedule
 async def _persist_schedule(
     hass: HomeAssistant, entry_id: str, schedule: BoilerSchedule
 ) -> None:
-    store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    existing = await store.async_load() or {}
-    serialized = {
+    store: Store[dict[str, dict[str, Any]]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    existing: dict[str, dict[str, Any]] = await store.async_load() or {}
+    serialized: dict[str, Any] = {
         "created_at": schedule.created_at.isoformat(),
         "entities": sorted(schedule.entities),
         "windows": [],
@@ -421,16 +421,16 @@ async def _persist_schedule(
 
 
 async def _clear_persisted_schedule(hass: HomeAssistant, entry_id: str) -> None:
-    store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    existing = await store.async_load() or {}
+    store: Store[dict[str, dict[str, Any]]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    existing: dict[str, dict[str, Any]] = await store.async_load() or {}
     if entry_id in existing:
         existing.pop(entry_id, None)
         await store.async_save(existing)
 
 
 async def _restore_boiler_schedule(hass: HomeAssistant, entry_id: str) -> None:
-    store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    existing = await store.async_load() or {}
+    store: Store[dict[str, dict[str, Any]]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+    existing: dict[str, dict[str, Any]] = await store.async_load() or {}
     data = existing.get(entry_id)
     if not data:
         return

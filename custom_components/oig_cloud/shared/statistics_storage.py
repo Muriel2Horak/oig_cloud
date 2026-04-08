@@ -4,8 +4,11 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+import homeassistant.helpers.storage as storage_module
+
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.storage import Store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -13,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 class StatisticsStore:
     """Shared storage manager pro statistické senzory (low-power: 1 Store per entry, batch writes)."""
 
-    _instance = None
+    _instance: Optional["StatisticsStore"] = None
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
@@ -22,7 +25,7 @@ class StatisticsStore:
         self._last_batch_time: Optional[float] = None
 
     @classmethod
-    def get_instance(cls, hass):
+    def get_instance(cls, hass: HomeAssistant) -> "StatisticsStore":
         if cls._instance is None:
             cls._instance = StatisticsStore(hass)
             _LOGGER.debug("StatisticsStore instance created")
@@ -71,16 +74,14 @@ class StatisticsStore:
         await self.save_all()
         self._last_batch_time = now
 
-    def _get_store(self, entry_id: str):
-        from homeassistant.helpers.storage import Store
+    def _get_store(self, entry_id: str) -> Store[Dict[str, Any]]:
         key = f"oig_stats_{entry_id}"
-        return Store(self._hass, version=1, key=key)
+        return storage_module.Store(self._hass, version=1, key=key)
 
 
 async def save_statistics_data(hass, entry_id: str, data: Dict[str, Any]) -> None:
-    from homeassistant.helpers.storage import Store
     key = f"oig_stats_{entry_id}"
-    store = Store(hass, version=1, key=key)
+    store: Store[Dict[str, Any]] = storage_module.Store(hass, version=1, key=key)
     await store.async_save(data)
 
 

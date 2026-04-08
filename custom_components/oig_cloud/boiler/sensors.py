@@ -50,15 +50,21 @@ class BoilerSensorBase(CoordinatorEntity[BoilerCoordinator], SensorEntity):
             self.entity_id = f"sensor.oig_{box_id}_boiler_{unique_id_suffix}"
         self._attr_name = name
         name_box = box_id if box_id != "unknown" else "neznámý"
-        device_kwargs = {
-            "identifiers": {(DOMAIN, f"{box_id}_boiler")},
-            "name": f"OIG Bojler {name_box}",
-            "manufacturer": "OIG",
-            "model": "Boiler Control",
-        }
         if box_id != "unknown":
-            device_kwargs["via_device"] = (DOMAIN, box_id)
-        self._attr_device_info = DeviceInfo(**device_kwargs)
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{box_id}_boiler")},
+                name=f"OIG Bojler {name_box}",
+                manufacturer="OIG",
+                model="Boiler Control",
+                via_device=(DOMAIN, box_id),
+            )
+        else:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, f"{box_id}_boiler")},
+                name=f"OIG Bojler {name_box}",
+                manufacturer="OIG",
+                model="Boiler Control",
+            )
 
 
 # ========== TEPLOTNÍ SENZORY ==========

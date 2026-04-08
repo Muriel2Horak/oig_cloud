@@ -2,10 +2,11 @@
 
 import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -13,8 +14,6 @@ from .entities.base_sensor import resolve_box_id
 from .entities.data_source_sensor import OigCloudDataSourceSensor
 
 _LOGGER = logging.getLogger(__name__)
-
-DEFERRED_SENSOR_RETRY_DELAYS_S = (0.0, 0.5, 2.0)
 
 try:
     _LOGGER.debug("Attempting to import SENSOR_TYPES from sensor_types.py")
@@ -548,10 +547,11 @@ def _create_computed_sensors(coordinator: Any) -> List[Any]:
 
                 sensor = OigCloudComputedSensor(coordinator, sensor_type)
 
-                if hasattr(sensor, "device_info") and sensor.device_info is not None:
-                    if not isinstance(sensor.device_info, dict):
+                sensor_device_info = getattr(sensor, "device_info", None)
+                if sensor_device_info is not None:
+                    if not isinstance(sensor_device_info, dict):
                         _LOGGER.error(
-                            f"Computed sensor {sensor_type} has invalid device_info type: {type(sensor.device_info)}"
+                            f"Computed sensor {sensor_type} has invalid device_info type: {type(sensor_device_info)}"
                         )
                         continue
 
@@ -975,10 +975,10 @@ def _connect_balancing_manager(
     if not battery_forecast_sensors:
         return
     try:
+        balancing_manager = hass.data[DOMAIN][entry.entry_id].get("balancing_manager")
         hass.data[DOMAIN][entry.entry_id]["battery_forecast_sensors"] = (
             battery_forecast_sensors
         )
-        balancing_manager = hass.data[DOMAIN][entry.entry_id].get("balancing_manager")
         if balancing_manager:
             forecast_sensor = battery_forecast_sensors[0]
             balancing_manager.set_forecast_sensor(forecast_sensor)
@@ -1046,7 +1046,7 @@ def _create_battery_health_sensor(
             coordinator,
             "battery_health",
             entry,
-            analytics_device_info,
+            cast(DeviceInfo, analytics_device_info),
             hass,
         )
         _LOGGER.info("✅ Registered Battery Health sensor")
@@ -1076,7 +1076,7 @@ def _create_battery_balancing_sensors(
             coordinator,
             sensor_type,
             entry,
-            analytics_device_info,
+            cast(DeviceInfo, analytics_device_info),
             hass,
         )
         balancing_sensors.append(sensor)
@@ -1106,7 +1106,7 @@ def _create_grid_charging_plan_sensors(
         if config.get("sensor_type_category") != "grid_charging_plan":
             continue
         sensor = OigCloudGridChargingPlanSensor(
-            coordinator, sensor_type, analytics_device_info
+            coordinator, sensor_type, cast(DeviceInfo, analytics_device_info)
         )
         grid_charging_sensors.append(sensor)
         _LOGGER.debug("Created grid charging plan sensor: %s", sensor_type)
@@ -1176,7 +1176,7 @@ def _create_planner_status_sensors(
             coordinator,
             sensor_type,
             entry,
-            analytics_device_info,
+            cast(DeviceInfo, analytics_device_info),
             hass,
         )
         planner_status_sensors.append(sensor)
@@ -1257,18 +1257,25 @@ def _create_pricing_sensors(
 
         for sensor_type, config in pricing_sensors.items():
             try:
+                sensor: Any
                 _LOGGER.debug(f"Creating analytics sensor: {sensor_type}")
 
                 if sensor_type == "spot_price_current_15min":
                     sensor = SpotPrice15MinSensor(
-                        coordinator, entry, sensor_type, analytics_device_info
+                        coordinator,
+                        entry,
+                        sensor_type,
+                        cast(DeviceInfo, analytics_device_info),
                     )
                     _LOGGER.debug(
                         f"Created 15min spot price sensor: {sensor_type}"
                     )
                 elif sensor_type == "export_price_current_15min":
                     sensor = ExportPrice15MinSensor(
-                        coordinator, entry, sensor_type, analytics_device_info
+                        coordinator,
+                        entry,
+                        sensor_type,
+                        cast(DeviceInfo, analytics_device_info),
                     )
                     _LOGGER.debug(
                         f"Created 15min export price sensor: {sensor_type}"
@@ -1343,7 +1350,10 @@ def _create_chmu_sensors(
                 _LOGGER.debug(f"Creating ČHMÚ sensor: {sensor_type}")
 
                 sensor = OigCloudChmuSensor(
-                    coordinator, sensor_type, entry, analytics_device_info
+                    coordinator,
+                    sensor_type,
+                    entry,
+                    cast(DeviceInfo, analytics_device_info),
                 )
                 chmu_sensors.append(sensor)
                 _LOGGER.debug(f"Created ČHMÚ sensor: {sensor_type}")
@@ -1437,6 +1447,32 @@ def _register_all_sensors(
         _LOGGER.warning("⚠️ No sensors were created during setup")
 
 
+def _schedule_deferred_sensor_registration(
+    hass: HomeAssistant,
+    async_add_entities: AddEntitiesCallback,
+    deferred_factories: List[Callable[[], List[Any]]],
+) -> None:
+    if not deferred_factories:
+        return
+
+    async def _register_later() -> None:
+        await asyncio.sleep(0)
+        deferred_sensors: List[Any] = []
+        for factory in deferred_factories:
+            deferred_sensors.extend(factory())
+            await asyncio.sleep(0)
+        _register_all_sensors(async_add_entities, deferred_sensors)
+
+    if getattr(hass, "loop", None) is None:
+        deferred_sensors: List[Any] = []
+        for factory in deferred_factories:
+            deferred_sensors.extend(factory())
+        _register_all_sensors(async_add_entities, deferred_sensors)
+        return
+
+    hass.async_create_task(_register_later())
+
+
 def _apply_legacy_entity_naming(entities: List[Any]) -> None:
     for entity in entities:
         try:
@@ -1446,103 +1482,6 @@ def _apply_legacy_entity_naming(entities: List[Any]) -> None:
                 "Could not enforce legacy naming for entity %s",
                 getattr(entity, "entity_id", "unknown"),
             )
-
-
-def _schedule_deferred_sensor_registration(
-    hass: HomeAssistant,
-    entry_id: str,
-    async_add_entities: AddEntitiesCallback,
-    deferred_factories: List[Callable[[], List[Any]]],
-) -> None:
-    if not deferred_factories:
-        return
-
-    def _entry_still_loaded() -> bool:
-        domain_data = hass.data.get(DOMAIN)
-        return isinstance(domain_data, dict) and entry_id in domain_data
-
-    def _build_deferred_sensors() -> List[Any]:
-        deferred_sensors: List[Any] = []
-        for factory in deferred_factories:
-            try:
-                deferred_sensors.extend(factory())
-            except Exception as err:
-                _LOGGER.warning(
-                    "Deferred sensor factory failed for entry %s during setup: %s",
-                    entry_id,
-                    err,
-                    exc_info=True,
-                )
-        return deferred_sensors
-
-    async def _register_later() -> None:
-        for attempt, delay in enumerate(DEFERRED_SENSOR_RETRY_DELAYS_S, start=1):
-            await asyncio.sleep(delay)
-
-            if not _entry_still_loaded():
-                _LOGGER.debug(
-                    "Skipping deferred sensor registration because entry %s is no longer loaded",
-                    entry_id,
-                )
-                return
-
-            deferred_sensors = _build_deferred_sensors()
-
-            if not _entry_still_loaded():
-                _LOGGER.debug(
-                    "Skipping deferred sensor registration because entry %s was unloaded",
-                    entry_id,
-                )
-                return
-
-            if not deferred_sensors:
-                if attempt < len(DEFERRED_SENSOR_RETRY_DELAYS_S):
-                    _LOGGER.debug(
-                        "Deferred sensor registration yielded no sensors for entry %s; retrying (%s/%s)",
-                        entry_id,
-                        attempt,
-                        len(DEFERRED_SENSOR_RETRY_DELAYS_S),
-                    )
-                    continue
-                return
-
-            try:
-                _register_all_sensors(async_add_entities, deferred_sensors)
-            except Exception as err:
-                _LOGGER.warning(
-                    "Deferred sensor registration failed for entry %s: %s",
-                    entry_id,
-                    err,
-                    exc_info=True,
-                )
-                await asyncio.sleep(0)
-            return
-
-    if getattr(hass, "loop", None) is None:
-        if not _entry_still_loaded():
-            _LOGGER.debug(
-                "Skipping deferred sensor registration because entry %s is no longer loaded",
-                entry_id,
-            )
-            return
-
-        deferred_sensors = _build_deferred_sensors()
-
-        if not _entry_still_loaded() or not deferred_sensors:
-            return
-
-        try:
-            _register_all_sensors(async_add_entities, deferred_sensors)
-        except Exception as err:
-            _LOGGER.warning(
-                "Deferred sensor registration failed for entry %s: %s",
-                entry_id,
-                err,
-                exc_info=True,
-            )
-        return
-
-    hass.async_create_task(_register_later())
 
 
 async def async_setup_entry(  # noqa: C901
@@ -1604,7 +1543,7 @@ async def async_setup_entry(  # noqa: C901
     # Device: main_device_info (OIG Cloud {box_id})
     # Třída: OigCloudComputedSensor
     # ================================================================
-    deferred_factories.append(lambda: _create_computed_sensors(coordinator))
+    core_sensors.extend(_create_computed_sensors(coordinator))
     await asyncio.sleep(0)
 
     # ================================================================
@@ -1716,9 +1655,7 @@ async def async_setup_entry(  # noqa: C901
     # PERFORMANCE FIX: Register all sensors at once instead of 17 separate calls
     # ================================================================
     _register_all_sensors(async_add_entities, core_sensors)
-    _schedule_deferred_sensor_registration(
-        hass, entry.entry_id, async_add_entities, deferred_factories
-    )
+    _schedule_deferred_sensor_registration(hass, async_add_entities, deferred_factories)
 
     _LOGGER.info("OIG Cloud sensor setup completed")
 
@@ -1745,14 +1682,6 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
             if hasattr(coordinator, "async_shutdown"):
                 await coordinator.async_shutdown()
             _LOGGER.debug(f"Coordinator shut down for entry {config_entry.entry_id}")
-
-        # Vyčistíme prázdná zařízení (použijeme novou interní funkci)
-        from homeassistant.helpers import device_registry as dr
-        from homeassistant.helpers import entity_registry as er
-
-        device_reg = dr.async_get(hass)
-        entity_reg = er.async_get(hass)
-        await _cleanup_empty_devices_internal(device_reg, entity_reg, config_entry)
 
         # Vyčistíme data pro tuto config entry
         del hass.data[DOMAIN][config_entry.entry_id]

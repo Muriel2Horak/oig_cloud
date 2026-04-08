@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..pricing.spot_price_15min_base import BasePrice15MinSensor
 
@@ -21,9 +22,13 @@ class ExportPrice15MinSensor(BasePrice15MinSensor):
         coordinator: Any,
         entry: ConfigEntry,
         sensor_type: str,
-        device_info: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         super().__init__(coordinator, entry, sensor_type, device_info)
+
+    @property
+    def device_info(self) -> Any:
+        return self._analytics_device_info
 
     async def _on_remove_hook(self) -> None:
         await self._ote_api.close()
@@ -92,29 +97,3 @@ class ExportPrice15MinSensor(BasePrice15MinSensor):
             export_price = spot_price_czk - export_fixed_fee_czk
 
         return round(export_price, 2)
-
-    @property
-    def state(self) -> Optional[float]:
-        """Aktuální výkupní cena pro 15min interval (BEZ DPH, BEZ distribuce)."""
-        return self._cached_state
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Cached attributes to avoid expensive work on every state update."""
-        return self._cached_attributes
-
-    @property
-    def unique_id(self) -> str:
-        """Jedinečné ID senzoru."""
-        box_id = self._resolve_box_id()
-        return f"oig_cloud_{box_id}_{self._sensor_type}"
-
-    @property
-    def device_info(self) -> Dict[str, Any]:
-        """Vrátit analytics device info."""
-        return self._analytics_device_info
-
-    @property
-    def should_poll(self) -> bool:
-        """Nepoužívat polling - máme vlastní scheduler."""
-        return False

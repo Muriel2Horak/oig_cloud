@@ -252,7 +252,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "energy_needed_kwh": energy_needed_kwh,
         }
 
-    async def _track_energy_sources(self) -> dict[str, float]:
+    async def _track_energy_sources(self) -> dict[str, Any]:
         """Trackuje energii z jednotlivých zdrojů."""
         # OIG senzory
         manual_mode_entity = self._oig_manual_mode_entity
@@ -431,3 +431,6 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         battery_data = battery_coordinator.data
         return await self.planner.async_get_overflow_windows(battery_data)
+
+    async def async_shutdown(self) -> None:
+        return None

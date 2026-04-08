@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
+from json import JSONDecodeError
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import aiohttp
@@ -86,10 +87,13 @@ class _NotificationHtmlParser(HTMLParser):
         self._folder_depth = 1
 
     def _update_capture_target(self, classes: List[str]) -> None:
+        current = self._current
+        if current is None:
+            return
         if "point" in classes:
             for cls in classes:
                 if cls.startswith("level-"):
-                    self._current["severity_level"] = cls.split("-", 1)[1]
+                    current["severity_level"] = cls.split("-", 1)[1]
                     break
             return
         if "date" in classes:
@@ -229,8 +233,6 @@ class OigNotificationParser:
         """Extract HTML content from JSON wrapper response."""
         try:
             # Zkusit parsovat jako JSON array: [[11,"ctrl-notifs"," HTML ",null]]
-            import json
-
             data = json.loads(content)
             if isinstance(data, list) and len(data) > 0:
                 first_item = data[0]
@@ -249,7 +251,7 @@ class OigNotificationParser:
 
             return None
 
-        except (json.JSONDecodeError, IndexError, TypeError) as e:
+        except (JSONDecodeError, IndexError, TypeError) as e:
             _LOGGER.debug(f"Content is not JSON wrapper format: {e}")
             return None
         except Exception as e:
@@ -397,7 +399,10 @@ class OigNotificationParser:
     def parse_notification(self, notif_data: Dict[str, Any]) -> OigNotification:
         """Parse notification from API response data."""
         try:
-            return self._create_notification_from_json(notif_data)
+            notification = self._create_notification_from_json(notif_data)
+            if notification is not None:
+                return notification
+            raise ValueError("Notification payload produced no notification")
         except Exception as e:
             _LOGGER.warning(f"Error parsing notification from API data: {e}")
             # Return fallback notification
@@ -629,15 +634,15 @@ class OigNotificationParser:
             date_part, time_part = date_str.split(" | ")
 
             # Parsovat datum "25. 6. 2025"
-            day, month, year = date_part.split(". ")
-            day = int(day)
-            month = int(month)
-            year = int(year)
+            day_text, month_text, year_text = date_part.split(". ")
+            day = int(day_text)
+            month = int(month_text)
+            year = int(year_text)
 
             # Parsovat čas "8:13"
-            hour, minute = time_part.split(":")
-            hour = int(hour)
-            minute = int(minute)
+            hour_text, minute_text = time_part.split(":")
+            hour = int(hour_text)
+            minute = int(minute_text)
 
             return datetime(year, month, day, hour, minute)
 
@@ -858,7 +863,7 @@ class OigNotificationManager:
     ) -> None:
         """Save notifications to storage."""
         try:
-            store = Store(self.hass, 1, self._storage_key)
+            store: Store[dict[str, Any]] = Store(self.hass, 1, self._storage_key)
 
             # Převést notifikace na dict pro storage
             notifications_data = []
@@ -892,7 +897,7 @@ class OigNotificationManager:
     async def _load_notifications_from_storage(self) -> List[OigNotification]:
         """Load notifications from storage."""
         try:
-            store = Store(self.hass, 1, self._storage_key)
+            store: Store[dict[str, Any]] = Store(self.hass, 1, self._storage_key)
             data = await store.async_load()
 
             if not data or "notifications" not in data:
@@ -959,6 +964,8 @@ class OigNotificationManager:
 
     async def _update_from_notification_api(self) -> bool:
         _LOGGER.debug("API object has get_notifications method, calling...")
+        if isinstance(self._api, aiohttp.ClientSession):
+            return await self._handle_missing_notification_api()
         result = await self._api.get_notifications(self._device_id)
 
         if result.get("status") == "success" and "content" in result:

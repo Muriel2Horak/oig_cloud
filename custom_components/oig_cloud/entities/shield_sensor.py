@@ -2,10 +2,10 @@
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from ..const import DOMAIN
-from .base_sensor import OigCloudSensor, _get_sensor_definition, resolve_box_id
+from .base_sensor import _get_sensor_definition, resolve_box_id
 
 _LOGGER = logging.getLogger(__name__)
 SERVICE_PREFIX = f"{DOMAIN}."
@@ -47,16 +47,27 @@ def translate_shield_state(state: str) -> str:
     return SERVICESHIELD_STATE_TRANSLATIONS.get(state.lower(), state)
 
 
-class OigCloudShieldSensor(OigCloudSensor):
+if TYPE_CHECKING:
+
+    class _ShieldBase:
+        hass: Any
+        coordinator: Any
+        entity_id: str
+
+        def __init__(self) -> None: ...
+        async def async_added_to_hass(self) -> None: ...
+        async def async_will_remove_from_hass(self) -> None: ...
+        def schedule_update_ha_state(self) -> None: ...
+
+else:
+    from homeassistant.components.sensor import SensorEntity as _ShieldBase
+
+
+class OigCloudShieldSensor(_ShieldBase):
     """Senzor pro ServiceShield monitoring - REAL-TIME bez coordinator delay."""
 
     def __init__(self, coordinator: Any, sensor_type: str) -> None:
-        # KRITICKÁ OPRAVA: Shield senzory NESMÍ dědit z CoordinatorEntity!
-        # CoordinatorEntity má built-in debounce (30s interval), který zpozdí updates.
-        # Shield senzory potřebují OKAMŽITÉ updaty (<100ms), proto používáme jen SensorEntity.
-        from homeassistant.components.sensor import SensorEntity
-
-        SensorEntity.__init__(self)
+        super().__init__()
 
         self.coordinator = coordinator  # Uložíme pro přístup k box_id
         self._sensor_type = sensor_type
@@ -167,7 +178,7 @@ class OigCloudShieldSensor(OigCloudSensor):
         return sensor_def.get("device_class")
 
     @property
-    def state(self) -> Optional[Union[str, int, datetime]]:
+    def state(self) -> Optional[Union[str, int, float, datetime]]:
         """Stav senzoru."""
         try:
             shield = self.hass.data[DOMAIN].get("shield")
@@ -224,7 +235,7 @@ class OigCloudShieldSensor(OigCloudSensor):
         """Return stable box_id/inverter_sn (avoid spot_prices/unknown)."""
         from .base_sensor import resolve_box_id
 
-        box_id = resolve_box_id(self.coordinator)
+        box_id: Optional[str] = resolve_box_id(self.coordinator)
         if not box_id or box_id == "unknown":
             try:
                 import re
@@ -250,7 +261,7 @@ class OigCloudShieldSensor(OigCloudSensor):
         return shield is not None
 
 
-def _get_shield_state(sensor_type: str, shield: Any) -> Optional[Union[str, int, datetime]]:
+def _get_shield_state(sensor_type: str, shield: Any) -> Optional[Union[str, int, float, datetime]]:
     if sensor_type == "service_shield_status":
         return translate_shield_state("active")
     if sensor_type == "service_shield_queue":

@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from aiohttp import web
 from homeassistant.helpers.http import HomeAssistantView
@@ -61,7 +62,7 @@ class BoilerProfileView(HomeAssistantView):
             profiles = boiler_coordinator.profiler.get_all_profiles()
 
             # Formátovat data pro frontend
-            response_data = {
+            response_data: dict[str, Any] = {
                 "profiles": {},
                 "current_category": None,
                 "summary": None,

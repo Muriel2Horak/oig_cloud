@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Union
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -112,7 +112,27 @@ def _cached_today_value(
     return _safe_float(previous_daily[today.isoformat()])
 
 
-class OigCloudSolarForecastSensor(OigCloudSensor):
+if TYPE_CHECKING:
+
+    class _SolarForecastBase:
+        coordinator: Any
+        hass: Any
+        entity_id: str
+        _box_id: str
+        _sensor_type: str
+
+        def __init__(self, coordinator: Any, sensor_type: str) -> None: ...
+        async def async_added_to_hass(self) -> None: ...
+        async def async_will_remove_from_hass(self) -> None: ...
+        def async_write_ha_state(self) -> None: ...
+
+else:
+
+    class _SolarForecastBase(OigCloudSensor):
+        pass
+
+
+class OigCloudSolarForecastSensor(_SolarForecastBase):
     """Senzor pro solar forecast data."""
 
     def __init__(
@@ -149,6 +169,18 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit periodické aktualizace podle konfigurace."""
         await super().async_added_to_hass()
+
+        if not hasattr(self.hass, "loop_thread_id"):
+            await self._async_initialize_after_add()
+            return
+
+        startup_task = self.hass.async_create_task(self._async_initialize_after_add())
+        if startup_task is None:
+            await self._async_initialize_after_add()
+        elif asyncio.iscoroutine(startup_task):
+            await startup_task
+
+    async def _async_initialize_after_add(self) -> None:
 
         # Načtení posledního času API volání a dat z persistentního úložiště
         await self._load_persistent_data()
@@ -189,10 +221,13 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
                     f"🌞 Loaded forecast data from storage (last call: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S')}), skipping immediate fetch"
                 )
 
+        if hasattr(self.hass, "loop_thread_id"):
+            self.async_write_ha_state()
+
     async def _load_persistent_data(self) -> None:
         """Načte čas posledního API volání a forecast data z persistentního úložiště."""
         try:
-            store = Store(
+            store: Store[Dict[str, Any]] = Store(
                 self.hass,
                 version=1,
                 key=self._storage_key,
@@ -233,7 +268,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
     async def _save_persistent_data(self) -> None:
         """Uloží čas posledního API volání a forecast data do persistentního úložiště."""
         try:
-            store = Store(
+            store: Store[Dict[str, Any]] = Store(
                 self.hass,
                 version=1,
                 key=self._storage_key,
@@ -544,7 +579,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             kwp=kwp,
         )
         _LOGGER.info("🌞 Calling forecast.solar API for %s: %s", label, url)
-        async with session.get(url, timeout=30) as response:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
             if response.status == 200:
                 data = await response.json()
                 _LOGGER.debug("🌞 %s data received successfully", label)
@@ -706,7 +741,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         _LOGGER.info("🌞 Calling Solcast API: %s", safe_url)
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=30) as response:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
                 if response.status == 200:
                     data = await response.json()
                 elif response.status in (401, 403):
@@ -760,6 +795,8 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
             except (TypeError, ValueError):
                 return None
         else:
+            if not isinstance(ghi, (int, float, str)):
+                return None
             try:
                 ghi_value = float(ghi)
             except (TypeError, ValueError):
@@ -927,7 +964,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         data_string2: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Zpracuje data z forecast.solar API."""
-        result = {"response_time": datetime.now().isoformat()}
+        result: Dict[str, Any] = {"response_time": datetime.now().isoformat()}
         today, tomorrow = _get_today_tomorrow()
         today_key = today.isoformat()
 
@@ -993,7 +1030,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
     def _convert_to_hourly(self, watts_data: Dict[str, float]) -> Dict[str, float]:
         """Převede forecast data na hodinová data."""
-        hourly_data = {}
+        hourly_data: Dict[str, float] = {}
 
         _LOGGER.info(
             f"🌞 CONVERT DEBUG: Input watts_data has {len(watts_data)} timestamps"
@@ -1026,7 +1063,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         return hourly_data
 
     @property
-    def device_info(self) -> Optional[Dict[str, Any]]:
+    def device_info(self) -> Any:
         """Return device info - Analytics Module."""
         return self._device_info
 
@@ -1100,9 +1137,10 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
     def _build_main_attrs(self) -> Dict[str, Any]:
         current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
-        total_hourly = self._last_forecast_data.get("total_hourly", {})
-        string1_hourly = self._last_forecast_data.get("string1_hourly", {})
-        string2_hourly = self._last_forecast_data.get("string2_hourly", {})
+        forecast_data = self._last_forecast_data or {}
+        total_hourly = forecast_data.get("total_hourly", {})
+        string1_hourly = forecast_data.get("string1_hourly", {})
+        string2_hourly = forecast_data.get("string2_hourly", {})
 
         today = datetime.now().date()
         tomorrow = today + timedelta(days=1)
@@ -1118,15 +1156,15 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         )
 
         return {
-            "today_total_kwh": self._last_forecast_data.get("total_today_kwh", 0),
-            "tomorrow_total_kwh": self._last_forecast_data.get("total_tomorrow_kwh", 0),
-            "string1_today_kwh": self._last_forecast_data.get("string1_today_kwh", 0),
-            "string1_tomorrow_kwh": self._last_forecast_data.get("string1_tomorrow_kwh", 0),
-            "string2_today_kwh": self._last_forecast_data.get("string2_today_kwh", 0),
-            "string2_tomorrow_kwh": self._last_forecast_data.get("string2_tomorrow_kwh", 0),
-            "total_daily": self._last_forecast_data.get("total_daily", {}),
-            "string1_daily": self._last_forecast_data.get("string1_daily", {}),
-            "string2_daily": self._last_forecast_data.get("string2_daily", {}),
+            "today_total_kwh": forecast_data.get("total_today_kwh", 0),
+            "tomorrow_total_kwh": forecast_data.get("total_tomorrow_kwh", 0),
+            "string1_today_kwh": forecast_data.get("string1_today_kwh", 0),
+            "string1_tomorrow_kwh": forecast_data.get("string1_tomorrow_kwh", 0),
+            "string2_today_kwh": forecast_data.get("string2_today_kwh", 0),
+            "string2_tomorrow_kwh": forecast_data.get("string2_tomorrow_kwh", 0),
+            "total_daily": forecast_data.get("total_daily", {}),
+            "string1_daily": forecast_data.get("string1_daily", {}),
+            "string2_daily": forecast_data.get("string2_daily", {}),
             "current_hour_kw": self._current_hour_kw(total_hourly, current_hour),
             "today_hourly_total_kw": today_total,
             "tomorrow_hourly_total_kw": tomorrow_total,
@@ -1144,7 +1182,8 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
     def _build_string_attrs(self, key: str) -> Dict[str, Any]:
         current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
-        hourly = self._last_forecast_data.get(f"{key}_hourly", {})
+        forecast_data = self._last_forecast_data or {}
+        hourly = forecast_data.get(f"{key}_hourly", {})
         today = datetime.now().date()
         tomorrow = today + timedelta(days=1)
 
@@ -1153,9 +1192,9 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
         )
 
         return {
-            "today_kwh": self._last_forecast_data.get(f"{key}_today_kwh", 0),
-            "tomorrow_kwh": self._last_forecast_data.get(f"{key}_tomorrow_kwh", 0),
-            "daily_kwh": self._last_forecast_data.get(f"{key}_daily", {}),
+            "today_kwh": forecast_data.get(f"{key}_today_kwh", 0),
+            "tomorrow_kwh": forecast_data.get(f"{key}_tomorrow_kwh", 0),
+            "daily_kwh": forecast_data.get(f"{key}_daily", {}),
             "current_hour_kw": self._current_hour_kw(hourly, current_hour),
             "today_hourly_kw": today_hours,
             "tomorrow_hourly_kw": tomorrow_hours,
@@ -1170,7 +1209,7 @@ class OigCloudSolarForecastSensor(OigCloudSensor):
 
     @staticmethod
     def _split_hourly(
-        hourly: Dict[str, Any], today: datetime.date, tomorrow: datetime.date
+        hourly: Dict[str, Any], today: date, tomorrow: date
     ) -> tuple[Dict[str, float], Dict[str, float], float, float]:
         today_hours: Dict[str, float] = {}
         tomorrow_hours: Dict[str, float] = {}

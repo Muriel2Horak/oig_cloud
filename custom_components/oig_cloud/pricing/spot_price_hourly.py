@@ -1,11 +1,12 @@
 """Senzory pro spotové ceny elektřiny z OTE (spot hourly)."""
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, cast
 
 from homeassistant.core import callback
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util.dt import now as dt_now
 
 from ..api.ote_api import OteApi
@@ -23,9 +24,40 @@ from .spot_price_shared import (
 
 _LOGGER = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
 
-class SpotPriceSensor(OigCloudSensor, RestoreEntity):
+    class RestoreEntityBase:
+        async def async_get_last_state(self) -> Any: ...
+
+else:
+    from homeassistant.helpers.restore_state import RestoreEntity as RestoreEntityBase
+
+
+class SpotPriceSensor(OigCloudSensor, RestoreEntityBase):
     """Senzor pro spotové ceny elektřiny."""
+
+    _attr_should_poll = False
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "state":
+            return object.__getattribute__(self, "_calculate_native_value")()
+        if name == "extra_state_attributes":
+            return object.__getattribute__(self, "_build_extra_state_attributes")()
+        if name == "unit_of_measurement":
+            sensor_config = object.__getattribute__(self, "_sensor_config")
+            return sensor_config.get("unit") or sensor_config.get("unit_of_measurement")
+        if name == "device_class":
+            return object.__getattribute__(self, "_sensor_config").get("device_class")
+        if name == "state_class":
+            return object.__getattribute__(self, "_sensor_config").get("state_class")
+        if name == "name":
+            try:
+                attr_name = object.__getattribute__(self, "_attr_name")
+            except AttributeError:
+                attr_name = None
+            if attr_name is not None:
+                return attr_name
+        return super().__getattribute__(name)
 
     def __init__(self, coordinator: Any, sensor_type: str) -> None:
         super().__init__(coordinator, sensor_type)
@@ -41,6 +73,28 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
         self._retry_remove: Optional[Any] = None
         self._retry_attempt: int = 0
 
+        box_id = _resolve_box_id_from_coordinator(self.coordinator)
+        base = self._sensor_config.get("name", self._sensor_type)
+        self._attr_name = f"OIG {box_id} {base}" if box_id != "unknown" else f"OIG {base}"
+        self._attr_icon = self._sensor_config.get("icon", "mdi:flash")
+        self._attr_native_unit_of_measurement = self._sensor_config.get(
+            "unit_of_measurement"
+        )
+        self._attr_device_class = cast(Any, self._sensor_config.get("device_class"))
+        self._attr_state_class = cast(Any, self._sensor_config.get("state_class"))
+        self._attr_unique_id = f"oig_cloud_{box_id}_{self._sensor_type}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={("oig_cloud", box_id)},
+            name=f"ČEZ Battery Box {box_id}",
+            manufacturer="OIG",
+            model="Spot Price Analytics",
+        )
+        self._refresh_entity_state()
+
+    def _refresh_entity_state(self) -> None:
+        self._attr_native_value = self._calculate_native_value()
+        self._attr_extra_state_attributes = self._build_extra_state_attributes()
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -48,6 +102,7 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
         if self.coordinator.data and "spot_prices" in self.coordinator.data:
             self._spot_data = self.coordinator.data["spot_prices"]
             self._last_update = dt_now()
+            self._refresh_entity_state()
             _LOGGER.debug(
                 f"[{self.entity_id}] Updated spot price data from coordinator: "
                 f"{self._spot_data.get('hours_count', 0)} hours"
@@ -58,7 +113,20 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
         """Při přidání do HA - nastavit tracking a stáhnout data."""
         await super().async_added_to_hass()
 
-        # Load cached OTE spot prices without blocking the event loop
+        # Nastavit pravidelné stahování
+        self._setup_time_tracking()
+
+        if not hasattr(self.hass, "loop_thread_id"):
+            await self._async_initialize_after_add()
+            return
+
+        startup_task = self.hass.async_create_task(self._async_initialize_after_add())
+        if startup_task is None:
+            await self._async_initialize_after_add()
+        elif asyncio.iscoroutine(startup_task):
+            await startup_task
+
+    async def _async_initialize_after_add(self) -> None:
         await self._ote_api.async_load_cached_spot_prices()
 
         _LOGGER.info(
@@ -67,9 +135,6 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
 
         # Obnovit data ze stavu
         await self._restore_data()
-
-        # Nastavit pravidelné stahování
-        self._setup_time_tracking()
 
         # Okamžitě stáhnout aktuální data, pokud _setup_time_tracking už nespustil fetch
         now = dt_now()
@@ -83,6 +148,10 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
             except Exception as e:
                 _LOGGER.error(f"[{self.entity_id}] Error in initial data fetch: {e}")
 
+        self._refresh_entity_state()
+        if hasattr(self.hass, "loop_thread_id"):
+            self.async_write_ha_state()
+
     async def _restore_data(self) -> None:
         """Obnovení dat z uloženého stavu."""
         old_state = await self.async_get_last_state()
@@ -92,6 +161,7 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
                     self._last_update = datetime.fromisoformat(
                         old_state.attributes["last_update"]
                     )
+                self._refresh_entity_state()
                 _LOGGER.info(f"[{self.entity_id}] Restored spot price data")
             except Exception as e:
                 _LOGGER.error(f"[{self.entity_id}] Error restoring data: {e}")
@@ -141,6 +211,7 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
                 )
 
                 # Aktualizovat stav senzoru
+                self._refresh_entity_state()
                 self.async_write_ha_state()
 
                 # Úspěch jen pokud máme všechna potřebná data (cache je validní)
@@ -222,50 +293,22 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
         """Legacy metoda - přesměrování na novou retry logiku."""
         await self._fetch_spot_data_with_retry()
 
-    @property
-    def name(self) -> str:
-        """Jméno senzoru."""
-        box_id = _resolve_box_id_from_coordinator(self.coordinator)
-        base = self._sensor_config.get("name", self._sensor_type)
-        return f"OIG {box_id} {base}" if box_id != "unknown" else f"OIG {base}"
-
-    @property
-    def icon(self) -> str:
-        """Ikona senzoru."""
-        return self._sensor_config.get("icon", "mdi:flash")
-
-    @property
-    def unit_of_measurement(self) -> Optional[str]:
-        """Jednotka měření."""
-        return self._sensor_config.get("unit_of_measurement")
-
-    @property
-    def device_class(self) -> Optional[str]:
-        """Třída zařízení."""
-        return self._sensor_config.get("device_class")
-
-    @property
-    def state_class(self) -> Optional[str]:
-        """Třída stavu."""
-        return self._sensor_config.get("state_class")
-
-    @property
-    def state(self) -> Optional[Union[float, int]]:
+    def _calculate_native_value(self) -> Optional[float]:
         """Hlavní stav senzoru - aktuální spotová cena."""
         try:
             if self._sensor_type == "spot_price_current_czk_kwh":
                 return self._get_current_price_czk_kwh()
-            elif self._sensor_type == "spot_price_current_eur_mwh":
+            if self._sensor_type == "spot_price_current_eur_mwh":
                 return self._get_current_price_eur_mwh()
-            elif self._sensor_type == "spot_price_tomorrow_avg":
+            if self._sensor_type == "spot_price_tomorrow_avg":
                 return self._get_tomorrow_average()
-            elif self._sensor_type == "spot_price_today_min":
+            if self._sensor_type == "spot_price_today_min":
                 return self._get_today_min()
-            elif self._sensor_type == "spot_price_today_max":
+            if self._sensor_type == "spot_price_today_max":
                 return self._get_today_max()
-            elif self._sensor_type == "spot_price_today_avg":
+            if self._sensor_type == "spot_price_today_avg":
                 return self._get_today_average()
-            elif self._sensor_type == "spot_price_hourly_all":
+            if self._sensor_type == "spot_price_hourly_all":
                 return self._get_current_price_czk_kwh()
         except Exception as e:
             _LOGGER.error(f"[{self.entity_id}] Error getting state: {e}")
@@ -321,8 +364,7 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
             return self._spot_data["today_stats"].get("max_czk")
         return None
 
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def _build_extra_state_attributes(self) -> Dict[str, Any]:
         """Dodatečné atributy senzoru."""
         attrs = {}
 
@@ -360,16 +402,25 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
                 attrs.update(self._get_all_hourly_prices())
 
         # Společné atributy
-        attrs.update(
-            {
-                "last_update": (
-                    self._last_update.isoformat() if self._last_update else None
-                ),
-                "source": "spotovaelektrina.cz",
-            }
-        )
+        common_attrs: Dict[str, Any] = {
+            "last_update": (
+                self._last_update.isoformat() if self._last_update else None
+            ),
+            "source": "spotovaelektrina.cz",
+        }
+        attrs.update(common_attrs)
 
         return attrs
+
+    @property
+    def device_info(self) -> Any:
+        box_id = _resolve_box_id_from_coordinator(self.coordinator)
+        return {
+            "identifiers": {("oig_cloud", box_id)},
+            "name": f"ČEZ Battery Box {box_id}",
+            "manufacturer": "OIG",
+            "model": "Spot Price Analytics",
+        }
 
     def _get_hourly_prices(self) -> Dict[str, Any]:
         """Hodinové ceny - jen dnes/zítřek pro UI."""
@@ -381,8 +432,8 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
         today_str = now.strftime("%Y-%m-%d")
         tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
 
-        today_prices = {}
-        tomorrow_prices = {}
+        today_prices: Dict[str, float] = {}
+        tomorrow_prices: Dict[str, float] = {}
 
         for time_key, price in self._spot_data["prices_czk_kwh"].items():
             if time_key.startswith(today_str):
@@ -436,28 +487,7 @@ class SpotPriceSensor(OigCloudSensor, RestoreEntity):
             },
         }
 
-    @property
-    def unique_id(self) -> str:
-        """Jedinečné ID senzoru."""
-        box_id = _resolve_box_id_from_coordinator(self.coordinator)
-        return f"oig_cloud_{box_id}_{self._sensor_type}"
-
-    @property
-    def device_info(self) -> Dict[str, Any]:
-        """Informace o zařízení."""
-        box_id = _resolve_box_id_from_coordinator(self.coordinator)
-        return {
-            "identifiers": {("oig_cloud", box_id)},
-            "name": f"ČEZ Battery Box {box_id}",
-            "manufacturer": "OIG",
-            "model": "Spot Price Analytics",
-        }
-
-    @property
-    def should_poll(self) -> bool:
-        """Nepoužívat polling - máme vlastní scheduler."""
-        return False
-
     async def async_update(self) -> None:
         """Update senzoru."""
+        self._refresh_entity_state()
         self.async_write_ha_state()

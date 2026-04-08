@@ -42,9 +42,12 @@ def schedule_daily_fetch(hass, fetch_coro: Callable[[], Any]) -> Any:
     if current_minutes >= daily_update_time:
         hass.async_create_task(fetch_coro())
 
+    async def _scheduled_fetch(_now) -> None:
+        await fetch_coro()
+
     return async_track_time_change(
         hass,
-        fetch_coro,
+        _scheduled_fetch,
         hour=DAILY_FETCH_HOUR,
         minute=DAILY_FETCH_MINUTE,
         second=0,

@@ -498,7 +498,9 @@ async def log_event(
         if state and state.attributes.get("friendly_name"):
             friendly_name = state.attributes.get("friendly_name")
 
-    is_limit_change = entity_id and entity_id.endswith("_invertor_prm1_p_max_feed_grid")
+    is_limit_change = bool(
+        entity_id and entity_id.endswith("_invertor_prm1_p_max_feed_grid")
+    )
     message = _build_log_message(
         event_type,
         service,

@@ -5,22 +5,39 @@ This sensor only displays information, all planning logic is in BalancingManager
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
 
-class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
+    class _BatteryBalancingBase(SensorEntity):
+        coordinator: Any
+        hass: HomeAssistant
+
+        def __init__(self, coordinator: Any) -> None: ...
+        def _handle_coordinator_update(self) -> None: ...
+        async def async_added_to_hass(self) -> None: ...
+        async def async_get_last_state(self) -> Any: ...
+
+else:
+    from homeassistant.helpers.restore_state import RestoreEntity
+    from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+    class _BatteryBalancingBase(RestoreEntity, CoordinatorEntity, SensorEntity):
+        pass
+
+
+class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
     """Battery balancing status sensor - displays BalancingManager state."""
 
     def __init__(
@@ -28,7 +45,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         coordinator: Any,
         sensor_type: str,
         config_entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info: DeviceInfo,
         hass: Optional[HomeAssistant] = None,
     ) -> None:
         """Initialize the battery balancing sensor."""
@@ -36,7 +53,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
         self._sensor_type = sensor_type
         self._config_entry = config_entry
-        self._device_info = device_info
+        self._attr_device_info = device_info
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
         # Box ID (stabilní: config entry → proxy → coordinator numeric keys)
@@ -82,6 +99,32 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
         self._holding_hours: int = 3
         self._soc_threshold: int = 80
 
+        self._refresh_entity_state()
+
+    def _refresh_entity_state(self) -> None:
+        self._attr_native_value = self._status
+        self._attr_extra_state_attributes = {
+            "last_balancing": (
+                self._last_balancing.isoformat() if self._last_balancing else None
+            ),
+            "days_since_last": self._days_since_last,
+            "status": self._status,
+            "current_state": self._current_state,
+            "time_remaining": getattr(self, "_time_remaining", None),
+            "planned": self._planned_window,
+            "last_planning_check": (
+                self._last_planning_check.isoformat()
+                if self._last_planning_check
+                else None
+            ),
+            "cycle_days": getattr(self, "_cycle_days", 7),
+            "holding_hours": getattr(self, "_holding_hours", 3),
+            "soc_threshold": getattr(self, "_soc_threshold", 80),
+            "cost_immediate_czk": getattr(self, "_cost_immediate", None),
+            "cost_selected_czk": getattr(self, "_cost_selected", None),
+            "cost_savings_czk": getattr(self, "_cost_savings", None),
+        }
+
     def _get_balancing_manager(self) -> Optional[Any]:
         """Get BalancingManager from hass.data."""
         if not self._hass:
@@ -126,6 +169,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
 
         # Last planning check
         self._last_planning_check = dt_util.now()
+        self._refresh_entity_state()
 
     def _apply_config_params(self, manager: Any) -> None:
         self._cycle_days = self._safe_get_int(manager, "_get_cycle_days", 7)
@@ -250,44 +294,6 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 return True
         return False
 
-    @property
-    def native_value(self) -> str:
-        """Return the state of the sensor."""
-        return self._status
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return sensor attributes."""
-        attrs = {
-            "last_balancing": (
-                self._last_balancing.isoformat() if self._last_balancing else None
-            ),
-            "days_since_last": self._days_since_last,
-            "status": self._status,
-            "current_state": self._current_state,
-            "time_remaining": getattr(self, "_time_remaining", None),
-            "planned": self._planned_window,
-            "last_planning_check": (
-                self._last_planning_check.isoformat()
-                if self._last_planning_check
-                else None
-            ),
-            # Configuration
-            "cycle_days": getattr(self, "_cycle_days", 7),
-            "holding_hours": getattr(self, "_holding_hours", 3),
-            "soc_threshold": getattr(self, "_soc_threshold", 80),
-            # Cost tracking
-            "cost_immediate_czk": getattr(self, "_cost_immediate", None),
-            "cost_selected_czk": getattr(self, "_cost_selected", None),
-            "cost_savings_czk": getattr(self, "_cost_savings", None),
-        }
-        return attrs
-
-    @property
-    def device_info(self) -> Dict[str, Any]:
-        """Return device info."""
-        return self._device_info
-
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self._update_from_manager()
@@ -300,7 +306,7 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         await super().async_added_to_hass()
-        self._hass = self.hass
+        self._hass = getattr(self, "hass", None) or self._hass
 
         # Restore previous attributes/state if available (helps during startup).
         try:
@@ -312,9 +318,10 @@ class OigCloudBatteryBalancingSensor(RestoreEntity, CoordinatorEntity, SensorEnt
                 if isinstance(last, str):
                     dt = _parse_dt_local(last)
                     self._last_balancing = dt if dt else self._last_balancing
-                if attrs.get("days_since_last") is not None:
+                days_since_last = attrs.get("days_since_last")
+                if days_since_last is not None:
                     try:
-                        self._days_since_last = int(attrs.get("days_since_last"))
+                        self._days_since_last = int(days_since_last)
                     except Exception as err:
                         _LOGGER.debug("Failed to restore days_since_last: %s", err)
                 self._planned_window = attrs.get("planned") or self._planned_window

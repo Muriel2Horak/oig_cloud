@@ -361,21 +361,22 @@ class OIGCloudSpotPricesView(HomeAssistantView):
             ]
 
             # Build response
-            response_data = {
+            metadata: dict[str, Any] = {
+                "box_id": box_id,
+                "type": price_type,
+                "intervals_count": len(intervals),
+                "last_update": last_update.isoformat() if last_update else None,
+                "currency": currency,
+            }
+            response_data: dict[str, Any] = {
                 "intervals": intervals,
-                "metadata": {
-                    "box_id": box_id,
-                    "type": price_type,
-                    "intervals_count": len(intervals),
-                    "last_update": last_update.isoformat() if last_update else None,
-                    "currency": currency,
-                },
+                "metadata": metadata,
             }
 
             # Add size info
             import sys
 
-            response_data["metadata"]["size_kb"] = round(
+            metadata["size_kb"] = round(
                 sys.getsizeof(str(response_data)) / 1024, 1
             )
 
@@ -576,9 +577,10 @@ class OIGCloudBalancingDecisionsView(HomeAssistantView):
         }
         """
         try:
+            hass: HomeAssistant = getattr(self, "hass", request.app["hass"])
             # Find battery_balancing sensor entity
             entity_id = f"sensor.oig_{box_id}_battery_balancing"
-            entity_component = _get_sensor_component(self.hass)
+            entity_component = _get_sensor_component(hass)
 
             if not entity_component:
                 return web.json_response(
@@ -726,7 +728,7 @@ async def _load_precomputed_data(
 ) -> Optional[Dict[str, Any]]:
     from homeassistant.helpers.storage import Store
 
-    store = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
+    store: Store[Dict[str, Any]] = Store(hass, 1, f"oig_cloud.precomputed_data_{box_id}")
     try:
         return await store.async_load()
     except Exception:
@@ -846,12 +848,16 @@ async def _load_detail_tabs_from_entity_store(
         if not detail_tabs:
             _LOGGER.debug("API: detail_tabs missing in precomputed store")
             return None
+        last_update_raw = precomputed_data.get("last_update")
+        last_update = dt_util.parse_datetime(last_update_raw) if last_update_raw else None
+        age_info = (
+            f"age={(dt_util.now() - last_update).total_seconds():.0f}s"
+            if last_update is not None
+            else "unknown age"
+        )
         _LOGGER.debug(
             f"API: Serving detail tabs ({plan_key}) from precomputed storage for {box_id}, "
-            f"tab_filter={tab}, "
-            f"age={(dt_util.now() - dt_util.parse_datetime(precomputed_data.get('last_update', ''))).total_seconds():.0f}s"
-            if precomputed_data.get("last_update")
-            else "unknown age"
+            f"tab_filter={tab}, {age_info}"
         )
         return detail_tabs
     except Exception as storage_error:
@@ -1071,7 +1077,7 @@ class OIGCloudDashboardModulesView(HomeAssistantView):
         if not entry or entry.domain != DOMAIN:
             return web.json_response({"error": "Entry not found"}, status=404)
 
-        opts = entry.options or {}
+        opts: dict[str, Any] = dict(entry.options)
         return web.json_response(
             {
                 "enable_boiler": bool(opts.get("enable_boiler", False)),

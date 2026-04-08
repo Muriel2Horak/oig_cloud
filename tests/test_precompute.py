@@ -121,9 +121,7 @@ def test_schedule_precompute_prefers_background_task(monkeypatch):
 
     sensor.hass = SimpleNamespace(
         async_create_background_task=_create_background_task,
-        async_create_task=lambda coro: (_ for _ in ()).throw(
-            AssertionError("fallback should not be used")
-        ),
+        async_create_task=lambda coro: (_ for _ in ()).throw(AssertionError("fallback should not be used")),
     )
 
     monkeypatch.setattr(

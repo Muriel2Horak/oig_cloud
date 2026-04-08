@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..pricing.spot_price_15min_base import BasePrice15MinSensor
 
@@ -21,10 +22,14 @@ class SpotPrice15MinSensor(BasePrice15MinSensor):
         coordinator: Any,
         entry: ConfigEntry,
         sensor_type: str,
-        device_info: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         super().__init__(coordinator, entry, sensor_type, device_info)
         self._data_hash: Optional[str] = None
+
+    @property
+    def device_info(self) -> Any:
+        return self._analytics_device_info
 
     def _calculate_interval_price(
         self, spot_price_czk: float, target_datetime: datetime
@@ -131,33 +136,3 @@ class SpotPrice15MinSensor(BasePrice15MinSensor):
 
         price_without_vat = commercial_price + distribution_fee
         return round(price_without_vat * (1 + vat_rate / 100.0), 2)
-
-    @property
-    def state(self) -> Optional[float]:
-        """Aktuální finální cena pro 15min interval včetně distribuce a DPH."""
-        if self._cached_state is not None or self._cached_attributes:
-            return self._cached_state
-        return self._calculate_current_state()
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Cached attributes to avoid expensive work on every state update."""
-        if self._cached_attributes:
-            return self._cached_attributes
-        return self._calculate_attributes()
-
-    @property
-    def unique_id(self) -> str:
-        """Jedinečné ID senzoru."""
-        box_id = self._resolve_box_id()
-        return f"oig_cloud_{box_id}_{self._sensor_type}"
-
-    @property
-    def device_info(self) -> Dict[str, Any]:
-        """Vrátit analytics device info."""
-        return self._analytics_device_info
-
-    @property
-    def should_poll(self) -> bool:
-        """Nepoužívat polling - máme vlastní scheduler."""
-        return False

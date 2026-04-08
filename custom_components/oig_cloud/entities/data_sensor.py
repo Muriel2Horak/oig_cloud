@@ -1,11 +1,10 @@
 import logging
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import callback
-from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.device_registry import DeviceInfo
 
 
 # Importujeme pouze GridMode bez zbytku shared modulu
@@ -31,7 +30,30 @@ _LANGS: Dict[str, Dict[str, str]] = {
 _STATE_NOT_HANDLED = object()
 
 
-class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
+if TYPE_CHECKING:
+
+    class _DataSensorBase:
+        coordinator: Any
+        hass: Any
+        entity_id: str
+
+        def __init__(self, coordinator: Any) -> None: ...
+        @property
+        def available(self) -> bool: ...
+        async def async_added_to_hass(self) -> None: ...
+        async def async_will_remove_from_hass(self) -> None: ...
+        async def async_get_last_state(self) -> Any: ...
+        def async_write_ha_state(self) -> None: ...
+
+else:
+    from homeassistant.helpers.restore_state import RestoreEntity
+    from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+    class _DataSensorBase(CoordinatorEntity, SensorEntity, RestoreEntity):
+        pass
+
+
+class OigCloudDataSensor(_DataSensorBase):
     """Representation of an OIG Cloud sensor."""
 
     def __init__(
@@ -54,9 +76,23 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
 
         # Načteme sensor config
         try:
-            from ..sensor_types import SENSOR_TYPES
+            import sys
 
-            self._sensor_config = SENSOR_TYPES.get(sensor_type, {})
+            sensor_types_key = "custom_components.oig_cloud.sensor_types"
+            # Check if package attribute exists but sys.modules entry is missing
+            # (happens when earlier tests pop sys.modules but leave package attribute)
+            if sensor_types_key not in sys.modules:
+                import custom_components.oig_cloud
+
+                if hasattr(custom_components.oig_cloud, "sensor_types"):
+                    # Re-sync the stale module object back into sys.modules
+                    sys.modules[sensor_types_key] = (
+                        custom_components.oig_cloud.sensor_types
+                    )
+            sensor_types = __import__(
+                sensor_types_key, globals(), locals(), ["SENSOR_TYPES"], 0
+            )
+            self._sensor_config = sensor_types.SENSOR_TYPES.get(sensor_type, {})
         except ImportError:
             self._sensor_config = {}
 
@@ -143,8 +179,6 @@ class OigCloudDataSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
     @property
     def device_info(self) -> Any:
         """Return device info."""
-        from homeassistant.helpers.entity import DeviceInfo
-
         from ..const import DEFAULT_NAME, DOMAIN
 
         box_id = self._box_id
