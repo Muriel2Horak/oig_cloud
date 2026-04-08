@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, ClassVar
@@ -83,10 +82,6 @@ class DummyHass:
         self.states = DummyStates(state_map or {})
         self.background_created = []
         self.created = []
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
 
     def async_create_task(self, coro):
         self.created.append(coro)
@@ -204,6 +199,7 @@ async def test_save_statistics_data(monkeypatch):
 
     await sensor._save_statistics_data()
 
+    assert DummyStore.saved is not None
     assert DummyStore.saved["sampling_data"][0][1] == 2.0
     assert DummyStore.saved["interval_data"]["2025-01-01"] == [1.0]
     assert DummyStore.saved["current_hourly_value"] == 1.5

@@ -11,7 +11,7 @@ from homeassistant.util import dt as dt_util
 
 from ..data.adaptive_consumption import AdaptiveConsumptionHelper
 from ..data.input import get_load_avg_for_timestamp, get_solar_for_timestamp
-from ..economic_planner import plan_battery_schedule
+from ..economic_planner import build_planner_decision_trace, plan_battery_schedule
 from ..economic_planner_types import PlannerInputs
 from ..timeline.planner import (
     add_decision_reasons_to_timeline,
@@ -327,13 +327,18 @@ def _run_planner(
             hw_min_kwh=hw_min_kwh,
             planning_min_percent=planning_min_percent,
             charge_rate_kw=home_charge_rate_kw,
-            intervals=[{"index": i, "time": spot_prices[i].get("time")} for i in range(len(spot_prices))],
+            intervals=[{"index": i} for i in range(len(spot_prices))],
             prices=[float(point.get("price", 0.0) or 0.0) for point in spot_prices],
             solar_forecast=list(solar_kwh_list),
             load_forecast=list(load_forecast),
         )
 
         result = plan_battery_schedule(planner_inputs)
+        charging_metrics = dict(getattr(sensor, "_charging_metrics", {}) or {})
+        charging_metrics["planner_decision_trace"] = build_planner_decision_trace(
+            result.decisions, planner_inputs
+        )
+        sensor._charging_metrics = charging_metrics
 
         planning_min_kwh = planner_inputs.planning_min_kwh
         lock_until, lock_modes = mode_guard_module.build_plan_lock(
@@ -406,7 +411,7 @@ def _run_planner(
             "optimal_modes": guarded_modes,
             "planner": "economic_planner",
             "planning_min_kwh": planning_min_kwh,
-            "target_kwh": max_capacity,
+            "target_kwh": planning_min_kwh,
             "infeasible": False,
             "infeasible_reason": None,
         }
@@ -447,6 +452,9 @@ def _save_forecast_to_coordinator(sensor: Any) -> None:
             decision_trace = sensor._charging_metrics.get("decision_trace")
             if decision_trace is not None:
                 forecast_data["decision_trace"] = decision_trace
+            planner_decision_trace = sensor._charging_metrics.get("planner_decision_trace")
+            if planner_decision_trace is not None:
+                forecast_data["planner_decision_trace"] = planner_decision_trace
         sensor.coordinator.battery_forecast_data = forecast_data
         _LOGGER.info(
             " Battery forecast data saved to coordinator - grid_charging_planned will update"

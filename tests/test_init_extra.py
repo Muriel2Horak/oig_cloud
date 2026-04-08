@@ -7,6 +7,7 @@ import pytest
 
 import custom_components.oig_cloud as init_module
 from custom_components.oig_cloud.const import DOMAIN
+from custom_components.oig_cloud.shield.core import ServiceShield
 
 
 class DummyDevice:
@@ -341,6 +342,33 @@ async def test_async_unload_entry_handles_stop_error(monkeypatch):
 
     assert result is True
     assert entry.entry_id not in hass.data[DOMAIN]
+
+
+@pytest.mark.asyncio
+async def test_service_shield_cleanup_reraises_cancelled_check_task():
+    shield = ServiceShield.__new__(ServiceShield)
+    shield.mode_tracker = None
+    shield._state_listener_unsub = None
+    shield._telemetry_handler = None
+    shield._logger = SimpleNamespace(info=lambda *_a, **_k: None)
+
+    class CancelledTask:
+        def done(self):
+            return False
+
+        def cancel(self):
+            return None
+
+        def __await__(self):
+            async def _raise():
+                raise asyncio.CancelledError
+
+            return _raise().__await__()
+
+    shield.check_task = CancelledTask()
+
+    with pytest.raises(asyncio.CancelledError):
+        await ServiceShield.cleanup(shield)
 
 
 @pytest.mark.asyncio

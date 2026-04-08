@@ -1,16 +1,17 @@
 """Zjednodušený senzor pro predikci nabití baterie v průběhu dne."""
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional, Union, cast
 
-from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
+from propcache import cached_property
 
+from ...entities.base_sensor import OigCloudSensor
 from .. import storage as plan_storage_module
 from .. import task_utils as task_utils_module
 from ..balancing import helpers as balancing_helpers_module
@@ -40,6 +41,14 @@ from . import sensor_runtime as sensor_runtime_module
 from . import sensor_setup as sensor_setup_module
 
 _LOGGER = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+
+    class RestoreEntityBase:
+        async def async_get_last_state(self) -> Any: ...
+
+else:
+    from homeassistant.helpers.restore_state import RestoreEntity as RestoreEntityBase
 
 AUTO_SWITCH_STARTUP_DELAY = timedelta(seconds=0)
 
@@ -137,7 +146,7 @@ def _collect_holding_intervals(
     return holding_intervals
 
 
-class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEntity):
+class OigCloudBatteryForecastSensor(OigCloudSensor, RestoreEntityBase):
     """Zjednodušený senzor pro predikci nabití baterie."""
 
     # Shared log throttling across instances (dashboard/API can trigger multiple computations).
@@ -154,7 +163,9 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         side_effects_enabled: bool = True,
     ) -> None:
         """Initialize the battery forecast sensor."""
-        super().__init__(coordinator)
+        if not hasattr(coordinator, "last_update_success"):
+            setattr(coordinator, "last_update_success", True)
+        super().__init__(coordinator, sensor_type)
 
         sensor_setup_module.initialize_sensor(
             self,
@@ -166,6 +177,10 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
             side_effects_enabled=side_effects_enabled,
             auto_switch_startup_delay=AUTO_SWITCH_STARTUP_DELAY,
         )
+        raw_device_info = getattr(self, "_device_info", device_info)
+        device_info_payload = raw_device_info if isinstance(raw_device_info, dict) else device_info
+        self._attr_device_info = cast(DeviceInfo, device_info_payload)
+        self._attr_available = True
 
     # Legacy attributes kept for backward compatibility (single planner only).
     # NOTE: Single planner only.
@@ -187,7 +202,24 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         """Proxy to lifecycle helpers."""
         await super().async_added_to_hass()
         self._hass = self.hass
-        await sensor_lifecycle_module.async_added_to_hass(self)
+        if not hasattr(self.hass, "loop_thread_id"):
+            await sensor_lifecycle_module.async_added_to_hass(self)
+            return
+        startup_task = self.hass.async_create_task(
+            sensor_lifecycle_module.async_added_to_hass(self)
+        )
+        if startup_task is None:
+            await sensor_lifecycle_module.async_added_to_hass(self)
+        elif asyncio.iscoroutine(startup_task):
+            await startup_task
+
+    @property
+    def device_info(self) -> Any:
+        return getattr(self, "_device_info", None)
+
+    @property
+    def available(self) -> bool:
+        return sensor_runtime_module.is_available(self)
 
     async def async_will_remove_from_hass(self) -> None:
         """Při odebrání z HA."""
@@ -207,36 +239,19 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         - Manuálně přes service call
         """
         # Jen zavolat parent pro refresh HA state (rychlé)
+        for attr_name in ("native_value", "available", "extra_state_attributes"):
+            try:
+                delattr(self, attr_name)
+            except AttributeError:
+                pass
+        self._attr_available = sensor_runtime_module.is_available(self)
         sensor_runtime_module.handle_coordinator_update(self)
 
-    @property
-    def device_info(self) -> Optional[Dict[str, Any]]:
-        """Return device info - Analytics Module."""
-        return self._device_info
-
-    @property
-    def state(self) -> Optional[Union[float, str]]:
-        """
-        State = current battery capacity in kWh.
-
-        Dashboard graph needs numeric value to display battery timeline.
-
-        Returns:
-            Current battery capacity (kWh) or 0 if no data
-        """
+    @cached_property
+    def native_value(self) -> Optional[Union[float, str]]:
         return sensor_runtime_module.get_state(self)
 
-    @property
-    def available(self) -> bool:
-        """Return if sensor is available.
-
-        CRITICAL FIX: Override CoordinatorEntity.available to prevent 'unavailable' state.
-        Sensor should always be available if it has run at least once (has timeline data).
-        """
-        # If we have timeline data from successful calculation, sensor is available
-        return sensor_runtime_module.is_available(self)
-
-    @property
+    @cached_property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Proxy to state attribute helpers."""
         return state_attributes_module.build_extra_state_attributes(
@@ -265,7 +280,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         charge_efficiency: float = 0.95,
         discharge_efficiency: float = 0.95,
         home_charge_rate_kwh_15min: float = 0.7,
-        planning_min_capacity_kwh: float = None,
+        planning_min_capacity_kwh: float | None = None,
     ) -> dict:
         """Proxy to scenario analysis helpers."""
         return scenario_analysis_module.simulate_interval(
@@ -309,7 +324,7 @@ class OigCloudBatteryForecastSensor(RestoreEntity, CoordinatorEntity, SensorEnti
         solar_forecast: Dict[str, Any],
         load_forecast: List[float],
         physical_min_capacity: float | None = None,
-    ) -> float:
+    ) -> Dict[str, Any]:
         """Proxy to scenario analysis helpers."""
         return scenario_analysis_module.calculate_fixed_mode_cost(
             self,

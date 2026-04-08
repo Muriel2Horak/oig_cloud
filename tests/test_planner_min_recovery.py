@@ -4,11 +4,12 @@ from custom_components.oig_cloud.battery_forecast.config import (
     HybridConfig, SimulatorConfig)
 from custom_components.oig_cloud.battery_forecast.strategy.hybrid import \
     HybridStrategy
+from custom_components.oig_cloud.battery_forecast.types import SpotPrice
 from custom_components.oig_cloud.battery_forecast.types import (
     CBB_MODE_HOME_I, CBB_MODE_HOME_UPS)
 
 
-def _make_prices(n: int, price: float) -> list[dict]:
+def _make_prices(n: int, price: float) -> list[SpotPrice]:
     return [{"price": price} for _ in range(n)]
 
 
@@ -55,7 +56,7 @@ def test_recover_from_below_planning_min_schedules_earliest_ups() -> None:
 
 def test_recover_from_below_planning_min_respects_max_ups_price() -> None:
     strategy = _make_strategy()
-    spot_prices = [{"price": 12.0}, {"price": 5.0}]
+    spot_prices: list[SpotPrice] = [{"price": 12.0}, {"price": 5.0}]
 
     result = strategy.optimize(
         initial_battery_kwh=3.0,

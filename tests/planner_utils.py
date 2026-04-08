@@ -120,8 +120,8 @@ def optimize_modes(
         idx = int(round(value / soc_step_kwh))
         return max(0, min(len(levels) - 1, idx))
 
-    INF = 10**12
-    dp = [[INF] * len(levels) for _ in range(n + 1)]
+    INF = 1e12
+    dp: List[List[float]] = [[INF] * len(levels) for _ in range(n + 1)]
     choice: List[List[int]] = [[-1] * len(levels) for _ in range(n)]
 
     for s_idx, soc in enumerate(levels):

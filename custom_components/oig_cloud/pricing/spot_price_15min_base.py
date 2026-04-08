@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_change
-from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.dt import now as dt_now
 
 from ..api.ote_api import OteApi
@@ -27,25 +28,57 @@ from .spot_price_shared import (
 
 _LOGGER = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
 
-class BasePrice15MinSensor(OigCloudSensor, RestoreEntity):
+    class RestoreEntityBase:
+        async def async_get_last_state(self) -> Any: ...
+
+else:
+    from homeassistant.helpers.restore_state import RestoreEntity as RestoreEntityBase
+
+
+class BasePrice15MinSensor(OigCloudSensor, RestoreEntityBase):
     """Base sensor for 15-minute spot/export pricing sensors."""
 
     _log_label: str = "15min price"
+    _attr_should_poll = False
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "state":
+            cached_state = object.__getattribute__(self, "_cached_state")
+            spot_data = object.__getattribute__(self, "_spot_data_15min")
+            if cached_state is None:
+                object.__getattribute__(self, "_refresh_cached_state_and_attributes")()
+                cached_state = object.__getattribute__(self, "_cached_state")
+            elif spot_data:
+                object.__getattribute__(self, "_refresh_cached_state_and_attributes")()
+                cached_state = object.__getattribute__(self, "_cached_state")
+            return cached_state
+        if name == "extra_state_attributes":
+            cached_attrs = object.__getattribute__(self, "_cached_attributes")
+            spot_data = object.__getattribute__(self, "_spot_data_15min")
+            if not cached_attrs and spot_data:
+                object.__getattribute__(self, "_refresh_cached_state_and_attributes")()
+                cached_attrs = object.__getattribute__(self, "_cached_attributes")
+            elif not cached_attrs and object.__getattribute__(self, "_cached_state") is None:
+                object.__getattribute__(self, "_refresh_cached_state_and_attributes")()
+                cached_attrs = object.__getattribute__(self, "_cached_attributes")
+            return cached_attrs
+        return super().__getattribute__(name)
 
     def __init__(
         self,
         coordinator: Any,
         entry: ConfigEntry,
         sensor_type: str,
-        device_info: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         super().__init__(coordinator, sensor_type)
 
         self._sensor_type: str = sensor_type
         self._sensor_config: Dict[str, Any] = SENSOR_TYPES_SPOT.get(sensor_type, {})
         self._entry: ConfigEntry = entry
-        self._analytics_device_info: Dict[str, Any] = device_info
+        self._analytics_device_info: DeviceInfo = device_info
         cache_path = _ote_cache_path(coordinator.hass)
         self._ote_api: OteApi = OteApi(cache_path=cache_path)
 
@@ -58,12 +91,54 @@ class BasePrice15MinSensor(OigCloudSensor, RestoreEntity):
         self._cached_state: Optional[float] = None
         self._cached_attributes: Dict[str, Any] = {}
 
+        box_id = self._resolve_box_id()
+        base = self._sensor_config.get("name", self._sensor_type)
+        self._attr_name = f"OIG {box_id} {base}" if box_id != "unknown" else f"OIG {base}"
+        self._attr_icon = self._sensor_config.get("icon", "mdi:flash")
+        self._attr_native_unit_of_measurement = self._sensor_config.get(
+            "unit_of_measurement"
+        )
+        self._attr_device_class = self._sensor_config.get("device_class")
+        self._attr_state_class = self._sensor_config.get("state_class")
+        self._attr_unique_id = f"oig_cloud_{box_id}_{self._sensor_type}"
+        self._attr_device_info = device_info
+
+        self._refresh_cached_state_and_attributes()
+
     def _resolve_box_id(self) -> str:
-        return _resolve_box_id_from_coordinator(self.coordinator)
+        box_id = _resolve_box_id_from_coordinator(self.coordinator)
+        if box_id != "unknown":
+            return box_id
+        info = getattr(self, "_analytics_device_info", None)
+        if isinstance(info, dict):
+            identifiers = info.get("identifiers")
+            if isinstance(identifiers, set):
+                for ident in identifiers:
+                    if (
+                        isinstance(ident, tuple)
+                        and len(ident) >= 2
+                        and isinstance(ident[1], str)
+                    ):
+                        return ident[1]
+        return box_id
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit tracking a stáhnout data."""
         await super().async_added_to_hass()
+        self._setup_daily_tracking()
+        self._setup_15min_tracking()
+
+        if not hasattr(self.hass, "loop_thread_id"):
+            await self._async_initialize_after_add()
+            return
+
+        startup_task = self.hass.async_create_task(self._async_initialize_after_add())
+        if startup_task is None:
+            await self._async_initialize_after_add()
+        elif asyncio.iscoroutine(startup_task):
+            await startup_task
+
+    async def _async_initialize_after_add(self) -> None:
         await self._ote_api.async_load_cached_spot_prices()
 
         _LOGGER.info(
@@ -73,8 +148,6 @@ class BasePrice15MinSensor(OigCloudSensor, RestoreEntity):
         )
 
         await self._restore_data()
-        self._setup_daily_tracking()
-        self._setup_15min_tracking()
 
         now = dt_now()
         current_minutes = now.hour * 60 + now.minute
@@ -85,6 +158,10 @@ class BasePrice15MinSensor(OigCloudSensor, RestoreEntity):
                 await self._fetch_spot_data_with_retry()
             except Exception as e:  # pragma: no cover - safety net
                 _LOGGER.error("[%s] Error in initial data fetch: %s", self.entity_id, e)
+
+        self._refresh_cached_state_and_attributes()
+        if hasattr(self.hass, "loop_thread_id"):
+            self.async_write_ha_state()
 
     async def _restore_data(self) -> None:
         """Obnovení dat z uloženého stavu."""

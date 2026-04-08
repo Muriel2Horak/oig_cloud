@@ -41,7 +41,7 @@ class OigCloudSessionManager:
         self._request_lock = asyncio.Lock()
 
         # Statistics tracking
-        self._stats = {
+        self._stats: Dict[str, Any] = {
             "total_requests": 0,
             "successful_requests": 0,
             "failed_requests": 0,
@@ -173,7 +173,10 @@ class OigCloudSessionManager:
                     _LOGGER.error(f"❌ Authentication #{auth_num} failed: {e}")
                     raise
             else:
-                elapsed = datetime.now() - self._last_auth_time
+                # At this point _last_auth_time is not None because _is_session_expired() returned False
+                last_auth = self._last_auth_time
+                assert last_auth is not None
+                elapsed = datetime.now() - last_auth
                 remaining = SESSION_TTL - elapsed
                 _LOGGER.debug(
                     f"✓ Session still valid (age: {elapsed.total_seconds() / 60:.1f}min, "
@@ -321,8 +324,11 @@ class OigCloudSessionManager:
         end_time: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Set battery working mode with retry logic."""
+        method: Callable[..., Awaitable[Any]] = getattr(
+            self._api, "set_battery_working_mode"
+        )
         return await self._call_with_retry(
-            self._api.set_battery_working_mode,
+            method,
             box_sn,
             mode,
             start_time,
@@ -354,8 +360,9 @@ class OigCloudSessionManager:
         command: int,
     ) -> Dict[str, Any]:
         """Format battery with retry logic."""
+        method: Callable[..., Awaitable[Any]] = getattr(self._api, "format_battery")
         return await self._call_with_retry(
-            self._api.format_battery,
+            method,
             command,
         )
 
@@ -364,8 +371,11 @@ class OigCloudSessionManager:
         capacity_ah: float,
     ) -> Dict[str, Any]:
         """Set battery capacity with retry logic."""
+        method: Callable[..., Awaitable[Any]] = getattr(
+            self._api, "set_battery_capacity"
+        )
         return await self._call_with_retry(
-            self._api.set_battery_capacity,
+            method,
             capacity_ah,
         )
 

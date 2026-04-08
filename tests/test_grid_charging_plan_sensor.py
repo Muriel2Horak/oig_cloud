@@ -46,7 +46,7 @@ class DummyHass:
 class DummyCoordinator:
     def __init__(self, hass):
         self.hass = hass
-        self.config_entry = None
+        self.config_entry: SimpleNamespace | None = None
         self.data = {}
 
     def async_add_listener(self, *_args, **_kwargs):
@@ -642,6 +642,15 @@ async def test_handle_coordinator_update(monkeypatch):
 
 def test_extra_state_attributes(monkeypatch):
     sensor = _make_sensor(monkeypatch, DummyHass())
+    sensor.coordinator.battery_forecast_data = {
+        "planner_decision_trace": [
+            {
+                "interval_idx": 4,
+                "action": "defer",
+                "strategy": "WAIT_FOR_SOLAR",
+            }
+        ]
+    }
     sensor._cached_ups_blocks = [
         {
             "time_from": "11:00",
@@ -660,6 +669,7 @@ def test_extra_state_attributes(monkeypatch):
     attrs = sensor.extra_state_attributes
     assert attrs["total_energy_kwh"] == 2.0
     assert attrs["is_charging_planned"] is True
+    assert attrs["planner_decision_trace"][0]["strategy"] == "WAIT_FOR_SOLAR"
 
 
 def test_constructor_with_config(monkeypatch):
@@ -671,11 +681,21 @@ def test_constructor_with_config(monkeypatch):
 
 def test_extra_state_attributes_empty(monkeypatch):
     sensor = _make_sensor(monkeypatch, DummyHass())
+    sensor.coordinator.battery_forecast_data = {
+        "planner_decision_trace": [
+            {
+                "interval_idx": 1,
+                "action": "defer",
+                "strategy": "USE_BATTERY",
+            }
+        ]
+    }
     sensor._cached_ups_blocks = []
     attrs = sensor.extra_state_attributes
 
     assert attrs["charging_blocks"] == []
     assert attrs["is_charging_planned"] is False
+    assert attrs["planner_decision_trace"][0]["interval_idx"] == 1
 
 
 def test_current_mode_fallback(monkeypatch):

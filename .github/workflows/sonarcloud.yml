@@ -30,6 +30,9 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            custom_components/oig_cloud/www_v2/package-lock.json
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -46,6 +49,10 @@ jobs:
           pip install coverage
           npm ci --ignore-scripts
 
+      - name: Install frontend dependencies
+        working-directory: custom_components/oig_cloud/www_v2
+        run: npm ci --ignore-scripts
+
       - name: Run Python tests with coverage
         env:
           PYTHONPATH: ${{ github.workspace }}
@@ -54,7 +61,7 @@ jobs:
 
       - name: Run frontend tests with coverage
         run: |
-          npm run test:fe:unit:coverage
+          npm --prefix custom_components/oig_cloud/www_v2 run test:unit:coverage
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
@@ -67,9 +74,11 @@ jobs:
             -Dsonar.organization=muriel2horak
             -Dsonar.sources=.
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.javascript.lcov.reportPaths=custom_components/oig_cloud/www_v2/coverage/lcov.info
             -Dsonar.sourceEncoding=UTF-8
             -Dsonar.python.pylintConfigFile=.pylintrc
             -Dsonar.python.bandit.reportPaths=bandit-report.json
+            -Dsonar.tests=tests,custom_components/oig_cloud/www_v2/src/__tests__,custom_components/oig_cloud/www_v2/tests
+            -Dsonar.test.inclusions=tests/**/*.py,custom_components/oig_cloud/www_v2/src/__tests__/**/*.test.ts,custom_components/oig_cloud/www_v2/tests/**/*.test.ts
             -Dsonar.exclusions=**/test*.py,**/tests/**,**/__pycache__/**,**/*.pyc
-            -Dsonar.coverage.exclusions=**/test*.py,**/tests/**,**/__init__.py
+            -Dsonar.coverage.exclusions=**/test*.py,**/tests/**,**/__init__.py,custom_components/oig_cloud/www_v2/src/__tests__/**/*.test.ts,custom_components/oig_cloud/www_v2/tests/**/*.test.ts

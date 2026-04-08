@@ -22,6 +22,23 @@ from ..models import OigCloudData
 # Conditional import of opentelemetry
 _logger = logging.getLogger(__name__)
 
+
+def _extract_response_message(response_json: Any) -> str:
+    if (
+        isinstance(response_json, list)
+        and response_json
+        and isinstance(response_json[0], list)
+        and len(response_json[0]) > 2
+        and isinstance(response_json[0][2], str)
+    ):
+        return response_json[0][2]
+    if isinstance(response_json, dict):
+        message = response_json.get("message")
+        if isinstance(message, str):
+            return message
+    return str(response_json)
+
+
 try:
     from opentelemetry import trace
     from opentelemetry.trace import SpanKind
@@ -405,9 +422,15 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                             # Fallback: retry without If-None-Match
                             async with session.get(url) as retry_response:
                                 if retry_response.status == 200:
-                                    result = await retry_response.json()
-                                    self._update_cache(endpoint, retry_response, result)
-                                    return result
+                                    retry_data = await retry_response.json()
+                                    if isinstance(retry_data, dict):
+                                        self._update_cache(endpoint, retry_response, retry_data)
+                                        return retry_data
+                                    if not dependent:
+                                        self._logger.info("Retrying authentication")
+                                        if await self.authenticate():
+                                            return await self._try_get_stats(True)
+                                    return None
                                 else:
                                     raise ClientResponseError(
                                         request_info=retry_response.request_info,
@@ -417,16 +440,19 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                                     )
 
                     if response.status == 200:
-                        result: Dict[str, Any] = await response.json()
+                        response_data = await response.json()
 
-                        # Update cache with new data and ETag
-                        self._update_cache(endpoint, response, result)
-
-                        if not isinstance(result, dict) and not dependent:
+                        if not isinstance(response_data, dict) and not dependent:
                             self._logger.info("Retrying authentication")
                             if await self.authenticate():
                                 return await self._try_get_stats(True)
-                        return result
+                            return None
+
+                        if isinstance(response_data, dict):
+                            # Update cache with new data and ETag
+                            self._update_cache(endpoint, response, response_data)
+                            return response_data
+                        return None
                     else:
                         raise ClientResponseError(
                             request_info=response.request_info,
@@ -524,8 +550,8 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
             ) as response:
                 response_content: str = await response.text()
                 if response.status == 200:
-                    response_json: Dict[str, Any] = json.loads(response_content)
-                    message: str = response_json[0][2]
+                    response_json = json.loads(response_content)
+                    message = _extract_response_message(response_json)
                     self._logger.info(f"Response: {message}")
                     return True
                 else:
@@ -614,8 +640,8 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                 ) as response:
                     response_content: str = await response.text()
                     if response.status == 200:
-                        response_json: Dict[str, Any] = json.loads(response_content)
-                        message: str = response_json[0][2]
+                        response_json = json.loads(response_content)
+                        message = _extract_response_message(response_json)
                         self._logger.info(f"Response: {message}")
                         return True
                     else:
@@ -719,22 +745,25 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
                                 headers={"Content-Type": "application/json"},
                             ) as retry_response:
                                 if retry_response.status == 200:
-                                    result = await retry_response.json()
-                                    self._update_cache(endpoint, retry_response, result)
-                                    return result
+                                    retry_data = await retry_response.json()
+                                    if isinstance(retry_data, dict):
+                                        self._update_cache(endpoint, retry_response, retry_data)
+                                        return retry_data
                                 return {}
 
                     if response.status == 200:
                         try:
-                            result: Dict[str, Any] = await response.json()
+                            response_data = await response.json()
+                            if not isinstance(response_data, dict):
+                                return {}
 
                             # Update cache with new data and ETag
-                            self._update_cache(endpoint, response, result)
+                            self._update_cache(endpoint, response, response_data)
 
                             self._logger.debug(
-                                f"Extended stats '{name}' retrieved successfully, data size: {len(str(result))}"
+                                f"Extended stats '{name}' retrieved successfully, data size: {len(str(response_data))}"
                             )
-                            return result
+                            return response_data
                         except Exception as e:
                             self._logger.error(
                                 f"Failed to parse JSON response for {name}: {e}"

@@ -1,8 +1,8 @@
 """Analytics senzor pro spotové ceny a další analytické funkce."""
 
 import logging
-from datetime import datetime, time, timedelta
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union  # PŘIDÁNO: Union
+from datetime import date, datetime, time, timedelta
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.util import dt as dt_util
@@ -48,36 +48,43 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         self._attr_name = name_cs or name_en or sensor_type
 
     @property
-    def device_info(self) -> Optional[Dict[str, Any]]:
+    def device_info(self) -> Any:
         """Return device info."""
         return self._device_info
 
     @property
     def native_value(self) -> Any:
         """Return the state of the sensor."""
-        # OPRAVA: Kontrola dostupnosti na začátku
-        if not self.available:
-            _LOGGER.debug(f"💰 [{self.entity_id}] Not available, returning None")
-            return None
+        try:
+            # OPRAVA: Kontrola dostupnosti na začátku
+            if not self.available:
+                _LOGGER.debug(f"💰 [{self.entity_id}] Not available, returning None")
+                return None
 
-        # Debug - zkontrolujme coordinator data
-        _LOGGER.debug(
-            f"💰 [{self.entity_id}] Coordinator data keys: {list(self.coordinator.data.keys()) if self.coordinator.data else 'None'}"
-        )
-
-        # Pro tarifní senzor
-        if self._sensor_type == "current_tariff":
-            return self._calculate_current_tariff()
-
-        # OPRAVA: Načíst spotové ceny z coordinator.data místo ote_api.spot_data
-        if self.coordinator.data and "spot_prices" in self.coordinator.data:
-            spot_data = self.coordinator.data["spot_prices"]
+            # Debug - zkontrolujme coordinator data
             _LOGGER.debug(
-                f"💰 [{self.entity_id}] Spot data keys: {list(spot_data.keys()) if spot_data else 'None'}"
+                f"💰 [{self.entity_id}] Coordinator data keys: {list(self.coordinator.data.keys()) if self.coordinator.data else 'None'}"
             )
-            return self._get_spot_price_value(spot_data)
-        else:
+
+            # Pro tarifní senzor
+            if self._sensor_type == "current_tariff":
+                return self._calculate_current_tariff()
+
+            # OPRAVA: Načíst spotové ceny z coordinator.data místo ote_api.spot_data
+            if self.coordinator.data and "spot_prices" in self.coordinator.data:
+                spot_data = self.coordinator.data["spot_prices"]
+                _LOGGER.debug(
+                    f"💰 [{self.entity_id}] Spot data keys: {list(spot_data.keys()) if spot_data else 'None'}"
+                )
+                return self._get_spot_price_value(spot_data)
+
             _LOGGER.debug(f"💰 [{self.entity_id}] No spot_prices in coordinator data")
+        except Exception as err:
+            _LOGGER.error(
+                f"💰 [{self.entity_id}] Error getting native value: {err}",
+                exc_info=True,
+            )
+            return None
 
         return None
 
@@ -123,7 +130,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         return changes
 
     def _get_next_change_for_day(
-        self, change_hours: List[Tuple[int, str]], current_hour: int, day_date: datetime.date
+        self, change_hours: List[Tuple[int, str]], current_hour: int, day_date: date
     ) -> Optional[Tuple[str, datetime]]:
         for hour, tariff in sorted(change_hours):
             if hour > current_hour:
@@ -132,7 +139,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         return None
 
     def _get_first_change_for_day(
-        self, change_hours: List[Tuple[int, str]], day_date: datetime.date
+        self, change_hours: List[Tuple[int, str]], day_date: date
     ) -> Optional[Tuple[str, datetime]]:
         if not change_hours:
             return None
@@ -208,7 +215,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
     def _append_day_intervals(
         self,
         intervals: Dict[str, List[str]],
-        check_date: datetime.date,
+        check_date: date,
         nt_times: List[int],
         vt_times: List[int],
     ) -> None:
@@ -312,7 +319,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
         dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
         vat_rate = self._entry.options.get("vat_rate", 21.0)
 
-        def calculate_fixed_final_price(target_datetime: datetime = None) -> float:
+        def calculate_fixed_final_price(target_datetime: Optional[datetime] = None) -> float:
             return self._calculate_fixed_final_price(
                 target_datetime,
                 dual_tariff_enabled=dual_tariff_enabled,
@@ -428,7 +435,7 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             candidate = fixed_price_vt + distribution_fee_vt_kwh
         return round(candidate * (1 + vat_rate / 100.0), 2)
 
-    def _calculate_fixed_daily_average(self, target_date: datetime.date) -> float:
+    def _calculate_fixed_daily_average(self, target_date: date) -> float:
         """Vypočítat vážený průměr fixních cen pro daný den podle tarifních pásem."""
         dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
         vat_rate = self._entry.options.get("vat_rate", 21.0)
@@ -859,20 +866,6 @@ class OigCloudAnalyticsSensor(OigCloudSensor):
             timestamps[-1].replace("Z", ISO_TZ_OFFSET)
         ).strftime("%Y-%m-%d")
         return {"start": start_date, "end": end_date}
-
-    @property
-    def state(self) -> Optional[Union[str, float]]:
-        """Return the state of the sensor."""
-        try:
-            _LOGGER.debug(
-                f"💰 [{self.entity_id}] Getting state for sensor: {self._sensor_type}"
-            )
-            return self.native_value
-        except Exception as err:
-            _LOGGER.error(
-                f"💰 [{self.entity_id}] Error getting state: {err}", exc_info=True
-            )
-            return None
 
     @property
     def sensor_type(self) -> str:

@@ -102,7 +102,7 @@ SERVICE_CANCEL_BOILER_PLAN = "cancel_boiler_plan"
 
 # OpenTelemetry constants
 OT_ENDPOINT = "https://log-api.eu.newrelic.com"
-OT_HEADERS = []
+OT_HEADERS: list[tuple[str, str]] = []
 OT_INSECURE = False
 OT_ENABLED = False  # Telemetrie je vypnuta (budoucí řešení: lokální instance)
 

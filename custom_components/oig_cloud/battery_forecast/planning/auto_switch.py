@@ -5,17 +5,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple, Union
 
 from homeassistant.helpers.event import async_call_later, async_track_point_in_time
 from homeassistant.util import dt as dt_util
-
-try:
-    from homeassistant.helpers.event import (
-        async_track_time_interval as _async_track_time_interval,
-    )  # type: ignore
-except Exception:  # pragma: no cover
-    _async_track_time_interval = None
 
 from ...const import CONF_AUTO_MODE_SWITCH, DOMAIN
 from ..types import (
@@ -27,6 +20,24 @@ from ..types import (
 )
 from ..utils_common import parse_timeline_timestamp
 from .precedence_contract import PrecedenceLevel
+
+_async_track_time_interval: Optional[
+    Callable[
+        [
+            Any,
+            Callable[[datetime], Coroutine[Any, Any, None] | None],
+            timedelta,
+        ],
+        Callable[[], None],
+    ]
+]
+
+try:
+    from homeassistant.helpers.event import (
+        async_track_time_interval as _async_track_time_interval,
+    )  # type: ignore
+except Exception:  # pragma: no cover
+    _async_track_time_interval = None
 
 
 _LOGGER = logging.getLogger(__name__)

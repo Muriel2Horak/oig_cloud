@@ -225,7 +225,7 @@ def _append_updates(
     updates: List[LocalUpdate] = entry["updates"]
     node_id = cfg.get("node_id")
     node_key = cfg.get("node_key")
-    if _is_valid_node_pair(node_id, node_key):
+    if isinstance(node_id, str) and node_id and isinstance(node_key, str) and node_key:
         updates.append(_NodeUpdate(node_id=node_id, node_key=node_key))
 
     ext = _EXTENDED_INDEX_BY_SENSOR_TYPE.get(sensor_type)
@@ -235,7 +235,7 @@ def _append_updates(
 
 
 def _is_valid_node_pair(node_id: Any, node_key: Any) -> bool:
-    return (
+    return bool(
         isinstance(node_id, str)
         and isinstance(node_key, str)
         and node_id

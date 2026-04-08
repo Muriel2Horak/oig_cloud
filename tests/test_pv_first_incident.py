@@ -52,7 +52,7 @@ def _make_incident_timeline(
     - Current SOC: 40% (6 kWh of 15 kWh)
     - Price pattern: expensive now (5 CZK), cheap later (0.8 CZK)
     """
-    timeline = []
+    timeline: list[Dict[str, Any]] = []
     now = datetime(2025, 1, 15, current_hour, 0, tzinfo=timezone.utc)
 
     for i in range(intervals_count):

@@ -453,7 +453,7 @@ async def _load_today_intervals(
 
 
 def _extract_spot_prices_today(sensor: Any, now: datetime) -> List[Dict[str, Any]]:
-    spot_prices_today = []
+    spot_prices_today: List[Dict[str, Any]] = []
     if not (sensor.coordinator and sensor.coordinator.data):
         return spot_prices_today
 
@@ -944,7 +944,7 @@ async def build_tomorrow_cost_data(
         interval.get("planned", {}).get("net_cost", 0) for interval in intervals
     )
 
-    mode_distribution = {}
+    mode_distribution: Dict[str, int] = {}
     for interval in intervals:
         if interval is None:
             continue

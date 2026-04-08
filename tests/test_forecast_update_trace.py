@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -28,7 +29,7 @@ class DummySensor:
         self._timeline_data = [{"battery_capacity_kwh": 5.0}]
         self._last_update = datetime(2025, 1, 1, 12, 0, 0)
         self._mode_recommendations = [{"mode": "HOME I"}]
-        self._charging_metrics = None
+        self._charging_metrics: dict[str, Any] | None = None
 
 
 class DummyGridHass:
@@ -79,6 +80,30 @@ def test_trace_propagates_to_outputs():
     assert trace[0]["action"] == "charge"
     assert trace[0]["reason_code"] == "economic_charging"
     assert trace[0]["precedence_level"] == 400
+
+
+def test_planner_decision_trace_propagates_to_outputs():
+    sensor = DummySensor()
+    sensor._charging_metrics = {
+        "algorithm": "economic",
+        "planner_decision_trace": [
+            {
+                "interval_idx": 4,
+                "action": "block",
+                "reason": "future_solar_will_fill",
+                "price_czk": 1.2,
+            }
+        ],
+    }
+
+    forecast_update_module._save_forecast_to_coordinator(sensor)
+
+    assert sensor.coordinator.battery_forecast_data is not None
+    assert "planner_decision_trace" in sensor.coordinator.battery_forecast_data
+    trace = sensor.coordinator.battery_forecast_data["planner_decision_trace"]
+    assert len(trace) == 1
+    assert trace[0]["interval_idx"] == 4
+    assert trace[0]["reason"] == "future_solar_will_fill"
 
 
 def test_legacy_consumer_contract_still_valid():

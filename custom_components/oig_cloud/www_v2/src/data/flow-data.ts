@@ -182,7 +182,7 @@ export function buildGridChargingPlan(gridCharging: HassState | null): GridCharg
  * Extract ALL flow data from hass.states — covers both loadData() and loadNodeDetails() from V1
  */
 export function extractFlowData(hass: any): FlowData {
-  const states = hass?.states || {};
+  const states = hass?.states || hass || {};
   const get = (sensor: string): HassState | null => states[getSensorId(sensor)] || null;
 
   // Solar — main

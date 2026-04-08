@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from homeassistant.core import HomeAssistant
@@ -136,7 +136,7 @@ class AdaptiveConsumptionHelper:
     @staticmethod
     def _calculate_charging_cost_today(
         timeline_data: List[Dict[str, Any]],
-        today_date: datetime.date,
+        today_date: date,
         iso_tz_offset: str,
     ) -> float:
         total = 0.0
@@ -373,6 +373,7 @@ class AdaptiveConsumptionHelper:
 
             if self._hass is None:
                 return []
+            hass = self._hass
 
             from homeassistant.components.recorder.statistics import (
                 statistics_during_period,
@@ -383,15 +384,16 @@ class AdaptiveConsumptionHelper:
             )
             end_time = dt_util.now()
 
-            stats = await self._hass.async_add_executor_job(
-                statistics_during_period,
-                self._hass,
-                start_time,
-                end_time,
-                {consumption_sensor},
-                "hour",
-                None,
-                {"mean"},
+            stats = await hass.async_add_executor_job(
+                lambda: statistics_during_period(
+                    hass,
+                    start_time,
+                    end_time,
+                    {consumption_sensor},
+                    "hour",
+                    None,
+                    {"mean"},
+                )
             )
 
             if not stats or consumption_sensor not in stats:
@@ -399,8 +401,9 @@ class AdaptiveConsumptionHelper:
 
             hourly_values = []
             for stat in stats[consumption_sensor]:
-                if stat.get("mean") is not None:
-                    hourly_values.append(stat["mean"] / 1000)
+                mean_value = stat.get("mean")
+                if mean_value is not None:
+                    hourly_values.append(mean_value / 1000)
 
             return hourly_values
 
@@ -595,7 +598,10 @@ class AdaptiveConsumptionHelper:
             valid_values = []
             for state in consumption_states:
                 try:
-                    value = float(state.state)
+                    state_value = state.get("state") if isinstance(state, dict) else state.state
+                    if state_value is None:
+                        continue
+                    value = float(state_value)
                     if 0 <= value <= 20000:
                         valid_values.append(value)
                 except (ValueError, AttributeError):

@@ -14,6 +14,7 @@ from .economic_planner_types import (
 from .types import CBBMode, DEFAULT_CHARGE_EFFICIENCY, DEFAULT_EFFICIENCY
 
 _LOGGER = logging.getLogger(__name__)
+_SOLAR_HEADROOM_EPS_KWH = 0.05
 
 
 def _simulate_interval(
@@ -309,61 +310,91 @@ def _deficit_interval_prices(modes: List[int], inputs: PlannerInputs) -> List[fl
     return prices
 
 
+def _estimate_future_storable_surplus_kwh(
+    inputs: PlannerInputs,
+    *,
+    start_idx: int,
+    end_idx: int,
+) -> float:
+    surplus_kwh = 0.0
+    bounded_end = min(end_idx, len(inputs.intervals))
+    for idx in range(max(0, start_idx), bounded_end):
+        solar = max(0.0, inputs.solar_forecast[idx])
+        load = max(0.0, inputs.load_forecast[idx])
+        surplus_kwh += max(0.0, solar - load) * DEFAULT_CHARGE_EFFICIENCY
+    return surplus_kwh
+
+
+def _pick_greedy_candidate_for_moment(
+    *,
+    moment: CriticalMoment,
+    modes: List[int],
+    inputs: PlannerInputs,
+) -> int | None:
+    candidate_range = range(0, min(moment.interval, len(inputs.intervals)))
+    candidates = sorted(candidate_range, key=lambda idx: inputs.prices[idx])
+    soc_traj = _compute_soc_trajectory(modes, inputs)
+    min_useful_charge_kwh = inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY * 0.1
+
+    for candidate_idx in candidates:
+        if modes[candidate_idx] == CBBMode.HOME_UPS.value:
+            continue
+
+        headroom_before_charge = inputs.max_capacity_kwh - soc_traj[candidate_idx]
+        effective_charge_kwh = min(
+            inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY,
+            max(0.0, headroom_before_charge),
+        )
+        if effective_charge_kwh < min_useful_charge_kwh:
+            continue
+
+        future_surplus_kwh = _estimate_future_storable_surplus_kwh(
+            inputs,
+            start_idx=candidate_idx + 1,
+            end_idx=moment.interval,
+        )
+        remaining_headroom_after_charge = max(
+            0.0,
+            headroom_before_charge - effective_charge_kwh,
+        )
+        if future_surplus_kwh > remaining_headroom_after_charge + _SOLAR_HEADROOM_EPS_KWH:
+            continue
+
+        return candidate_idx
+
+    return None
+
+
 def _global_greedy_charge_intervals(inputs: PlannerInputs) -> List[int]:
     n = len(inputs.intervals)
     if n == 0 or inputs.charge_rate_per_interval <= 0.0:
         return []
 
     modes = [CBBMode.HOME_I.value] * n
-    deficit_prices = _deficit_interval_prices(modes, inputs)
-
-    if not deficit_prices:
-        return []
-
-    sorted_intervals = sorted(range(n), key=lambda i: inputs.prices[i])
     ups_intervals: List[int] = []
-    min_useful_charge_kwh = inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY * 0.1
 
-    for candidate_idx in sorted_intervals:
-        candidate_price = inputs.prices[candidate_idx]
-
-        # Only charge when the round-trip cost is below the deficit price.
-        # Accounts for charge and discharge efficiency losses so we never pre-charge
-        # at a price where the round-trip loss makes it more expensive than direct import.
-        min_dp = min(deficit_prices)
-        max_dp = max(deficit_prices)
-        round_trip_eff = DEFAULT_CHARGE_EFFICIENCY * DEFAULT_EFFICIENCY
-        if min_dp < max_dp:
-            price_ceiling = max_dp * round_trip_eff
-        else:
-            price_ceiling = max_dp * round_trip_eff if round_trip_eff < 1.0 else float("inf")
-
-        if candidate_price >= price_ceiling:
+    for _ in range(n):
+        states = _simulate_with_modes(modes, inputs)
+        critical_moments = find_critical_moments(states, inputs)
+        if not critical_moments:
             break
 
-        soc_traj = _compute_soc_trajectory(modes, inputs)
-        headroom = inputs.max_capacity_kwh - soc_traj[candidate_idx]
-
-        if headroom < inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY * 0.5:
-            continue
+        worst_moment = max(
+            critical_moments,
+            key=lambda moment: (moment.deficit_kwh, moment.interval),
+        )
+        candidate_idx = _pick_greedy_candidate_for_moment(
+            moment=worst_moment,
+            modes=modes,
+            inputs=inputs,
+        )
+        if candidate_idx is None:
+            break
 
         modes[candidate_idx] = CBBMode.HOME_UPS.value
         ups_intervals.append(candidate_idx)
 
-        deficit_prices = _deficit_interval_prices(modes, inputs)
-        if not deficit_prices:
-            break
-
-    soc_traj_final = _compute_soc_trajectory(modes, inputs)
-    verified: List[int] = []
-    for idx in ups_intervals:
-        effective_charge = soc_traj_final[idx + 1] - soc_traj_final[idx]
-        if effective_charge >= min_useful_charge_kwh:
-            verified.append(idx)
-        else:
-            modes[idx] = CBBMode.HOME_I.value
-
-    return verified
+    return sorted(ups_intervals)
 
 
 def _simulate_with_modes(modes: List[int], inputs: PlannerInputs) -> List[SimulatedState]:
@@ -429,6 +460,55 @@ def generate_plan(decisions: List[Decision], inputs: PlannerInputs) -> PlannerRe
         total_cost=total_cost,
         decisions=decisions,
     )
+
+
+def build_planner_decision_trace(
+    decisions: List[Decision],
+    inputs: PlannerInputs,
+) -> List[dict[str, object]]:
+    trace: List[dict[str, object]] = []
+    for decision in decisions:
+        if (
+            decision.strategy == "CHARGE_CHEAPEST"
+            and decision.reason == "GLOBAL_GREEDY"
+            and len(decision.charge_intervals) > 1
+        ):
+            for charge_interval in decision.charge_intervals:
+                trace.append(
+                    {
+                        "interval_idx": decision.moment.interval,
+                        "must_start_charging_idx": decision.moment.must_start_charging,
+                        "action": "charge",
+                        "strategy": decision.strategy,
+                        "reason": decision.reason,
+                        "deficit_kwh": round(decision.moment.deficit_kwh, 3),
+                        "planning_min_kwh": round(inputs.planning_min_kwh, 3),
+                        "charge_intervals": [charge_interval],
+                        "alternatives": [
+                            {"strategy": name, "cost": cost}
+                            for name, cost in (decision.alternatives or [])
+                        ],
+                    }
+                )
+            continue
+
+        trace.append(
+            {
+                "interval_idx": decision.moment.interval,
+                "must_start_charging_idx": decision.moment.must_start_charging,
+                "action": "charge" if decision.charge_intervals else "defer",
+                "strategy": decision.strategy,
+                "reason": decision.reason or decision.strategy.lower(),
+                "deficit_kwh": round(decision.moment.deficit_kwh, 3),
+                "planning_min_kwh": round(inputs.planning_min_kwh, 3),
+                "charge_intervals": list(decision.charge_intervals),
+                "alternatives": [
+                    {"strategy": name, "cost": cost}
+                    for name, cost in (decision.alternatives or [])
+                ],
+            }
+        )
+    return trace
 
 
 def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:

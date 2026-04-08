@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from custom_components.oig_cloud.battery_forecast.economic_planner import (
+    build_planner_decision_trace,
     calculate_cost_charge_cheapest,
     calculate_cost_use_battery,
     calculate_cost_wait_for_solar,
@@ -15,6 +16,7 @@ from custom_components.oig_cloud.battery_forecast.economic_planner import (
 from custom_components.oig_cloud.battery_forecast.economic_planner_types import (
     CriticalMoment,
     Decision,
+    IntervalData,
     PlannerInputs,
     PlannerResult,
     SimulatedState,
@@ -31,7 +33,7 @@ def _build_inputs(
     load_forecast: list[float] | None = None,
     charge_rate_kw: float = 2.8,
 ) -> PlannerInputs:
-    intervals = [{"index": i} for i in range(intervals_count)]
+    intervals: list[IntervalData] = [{"index": i} for i in range(intervals_count)]
     return PlannerInputs(
         current_soc_kwh=current_soc_kwh,
         max_capacity_kwh=10.24,
@@ -356,6 +358,56 @@ def test_plan_battery_schedule_detects_tuv_heating_spike_as_critical() -> None:
     assert len(result.decisions) > 0
     assert any(decision.moment.interval == 60 for decision in result.decisions)
     assert result.total_cost >= 0.0
+
+
+def test_plan_battery_schedule_preserves_headroom_before_strong_solar_surplus() -> None:
+    intervals_count = 16
+    prices = [1.0] * 8 + [6.0] * 8
+    solar_forecast = [0.0] * 6 + [1.8] * 6 + [0.0] * 4
+    load_forecast = [0.45] * intervals_count
+    inputs = _build_inputs(
+        current_soc_kwh=7.0,
+        intervals_count=intervals_count,
+        prices=prices,
+        solar_forecast=solar_forecast,
+        load_forecast=load_forecast,
+    )
+
+    result = plan_battery_schedule(inputs)
+
+    early_ups = [idx for idx, mode in enumerate(result.modes[:6]) if mode == CBBMode.HOME_UPS.value]
+    assert early_ups == [], (
+        "Planner should preserve headroom before a strong daytime solar surplus instead of "
+        f"charging early at indices {early_ups}."
+    )
+    assert any(state.grid_export_kwh > 0 for state in result.states[6:12]), (
+        "Scenario sanity check failed: midday solar surplus should be strong enough to create export pressure "
+        "if headroom is consumed too early."
+    )
+
+
+def test_plan_battery_schedule_emits_trace_for_each_greedy_pick() -> None:
+    intervals_count = 96
+    prices = [4.0] * 4 + [12.0] * (intervals_count - 4)
+    inputs = _build_inputs(
+        current_soc_kwh=4.0,
+        intervals_count=intervals_count,
+        prices=prices,
+        solar_forecast=[0.0] * intervals_count,
+        load_forecast=[0.5] * intervals_count,
+    )
+
+    result = plan_battery_schedule(inputs)
+
+    ups_intervals = [
+        idx for idx, mode in enumerate(result.modes) if mode == CBBMode.HOME_UPS.value
+    ]
+    trace = build_planner_decision_trace(result.decisions, inputs)
+
+    assert len(ups_intervals) > 1
+    assert len(trace) == len(ups_intervals)
+    assert [entry["charge_intervals"] for entry in trace] == [[idx] for idx in ups_intervals]
+    assert all(entry["reason"] == "GLOBAL_GREEDY" for entry in trace)
 
 
 def test_plan_battery_schedule_emergency_mode_falls_back_when_planning_fails() -> None:

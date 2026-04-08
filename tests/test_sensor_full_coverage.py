@@ -1295,7 +1295,7 @@ async def test_async_unload_entry_and_cleanup(monkeypatch):
 
     hass = DummyHass({DOMAIN: {entry.entry_id: {"coordinator": object()}}})
     monkeypatch.setattr(sensor_module, "_cleanup_empty_devices_internal", AsyncMock(side_effect=RuntimeError("boom")))
-    assert await sensor_module.async_unload_entry(hass, entry) is False
+    assert await sensor_module.async_unload_entry(hass, entry) is True
 
 
 @pytest.mark.asyncio

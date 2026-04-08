@@ -2,11 +2,17 @@
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional
+from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, List, Optional
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Context, HomeAssistant, ServiceCall, callback
+from homeassistant.core import (
+    Context,
+    HomeAssistant,
+    ServiceCall,
+    SupportsResponse,
+    callback,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from opentelemetry import trace
@@ -15,6 +21,9 @@ from ..const import DOMAIN
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
+
+OigResponse = dict[str, Any]
+OigResponseHandler = Callable[[ServiceCall], Coroutine[Any, Any, OigResponse | None]]
 
 HOME_1 = "Home 1"
 HOME_2 = "Home 2"
@@ -131,9 +140,9 @@ def _extract_box_id_from_device(device: dr.DeviceEntry, device_id: str) -> Optio
 def _register_service_if_missing(
     hass: HomeAssistant,
     name: str,
-    handler: Callable[[ServiceCall], Awaitable[Any]],
+    handler: OigResponseHandler,
     schema: vol.Schema,
-    supports_response: bool = False,
+    supports_response: SupportsResponse = SupportsResponse.NONE,
 ) -> bool:
     if hass.services.has_service(DOMAIN, name):
         return False
@@ -375,7 +384,7 @@ async def _update_solar_forecast_for_entry(
 def _register_service_definitions(
     hass: HomeAssistant,
     service_definitions: Iterable[
-        tuple[str, Callable[[ServiceCall], Awaitable[Any]], vol.Schema, bool, str]
+        tuple[str, OigResponseHandler, vol.Schema, SupportsResponse, str]
     ],
 ) -> None:
     for name, handler, schema, supports_response, log_message in service_definitions:
@@ -410,6 +419,8 @@ async def _action_set_box_mode(
         mode_value,
     )
     try:
+        if mode_value is None:
+            raise vol.Invalid("Neplatný režim boxu.")
         await client.set_box_mode(mode_value)
     except Exception as err:
         # Check if this is a 500 error for Home 5/6 (unsupported modes on some boxes)
@@ -442,7 +453,9 @@ async def _action_set_boiler_mode(
         mode,
         mode_value,
     )
-    await client.set_boiler_mode(mode_value)
+    if mode_value is None:
+        raise vol.Invalid("Neplatný režim bojleru.")
+    await client.set_boiler_mode(str(mode_value))
 
 
 async def _action_set_grid_delivery(
@@ -471,6 +484,8 @@ async def _action_set_grid_delivery(
 
     if grid_mode is not None:
         mode_value: Optional[int] = GRID_DELIVERY.get(grid_mode)
+        if mode_value is None:
+            raise vol.Invalid("Neplatný režim přetoků.")
         await client.set_grid_delivery(mode_value)
     if limit is not None:
         success = await client.set_grid_delivery_limit(int(limit))
@@ -574,7 +589,7 @@ def _make_shield_action(
     hass: HomeAssistant,
     entry: ConfigEntry,
     action: Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
-) -> Callable[[str, str, Dict[str, Any], bool, Optional[Context]], Awaitable[None]]:
+) -> Callable[[str, str, Dict[str, Any], bool, Optional[Context]], Coroutine[Any, Any, None]]:
     @callback
     async def handler(
         domain: str,
@@ -595,7 +610,7 @@ def _wrap_with_shield(
     shield: Any,
     service_name: str,
     action: Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
-) -> Callable[[ServiceCall], Awaitable[None]]:
+) -> Callable[[ServiceCall], Coroutine[Any, Any, None]]:
     shield_handler = _make_shield_action(hass, entry, action)
 
     async def wrapper(call: ServiceCall) -> None:
@@ -616,7 +631,7 @@ def _make_fallback_handler(
     hass: HomeAssistant,
     entry: ConfigEntry,
     action: Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
-) -> Callable[[ServiceCall], Awaitable[None]]:
+) -> Callable[[ServiceCall], Coroutine[Any, Any, None]]:
     async def handler(call: ServiceCall) -> None:
         data: Dict[str, Any] = dict(call.data)
         await action(hass, entry, data)
@@ -628,7 +643,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     """Nastavení základních služeb pro OIG Cloud."""
     await asyncio.sleep(0)
 
-    async def handle_update_solar_forecast(call: ServiceCall) -> dict[str, Any]:
+    async def handle_update_solar_forecast(call: ServiceCall) -> OigResponse:
         """Zpracování služby pro manuální aktualizaci solární předpovědi."""
         entity_ids: Optional[list[str]] = call.data.get("entity_id")
         results: list[dict[str, Any]] = []
@@ -652,11 +667,11 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         """Zpracování služby pro uložení konfigurace dashboard tiles."""
         await _save_dashboard_tiles_config(hass, call.data.get("config"))
 
-    async def handle_get_dashboard_tiles(call: ServiceCall) -> dict:
+    async def handle_get_dashboard_tiles(call: ServiceCall) -> OigResponse:
         """Služba pro načtení konfigurace dashboard tiles."""
         return await _load_dashboard_tiles_config(hass)
 
-    async def handle_check_balancing(call: ServiceCall) -> dict:
+    async def handle_check_balancing(call: ServiceCall) -> OigResponse:
         """Manuálně spustí balancing kontrolu přes BalancingManager."""
         return await _run_manual_balancing_checks(hass, call)
 
@@ -665,28 +680,28 @@ async def async_setup_services(hass: HomeAssistant) -> None:
             "update_solar_forecast",
             handle_update_solar_forecast,
             SOLAR_FORECAST_UPDATE_SCHEMA,
-            True,
+            SupportsResponse.OPTIONAL,
             f"Zaregistrovány základní služby pro {DOMAIN}",
         ),
         (
             "save_dashboard_tiles",
             handle_save_dashboard_tiles,
             vol.Schema({vol.Required("config"): cv.string}),
-            False,
+            SupportsResponse.NONE,
             "Registered save_dashboard_tiles service",
         ),
         (
             "get_dashboard_tiles",
             handle_get_dashboard_tiles,
             vol.Schema({}),
-            True,
+            SupportsResponse.OPTIONAL,
             "Registered get_dashboard_tiles service",
         ),
         (
             "check_balancing",
             handle_check_balancing,
             CHECK_BALANCING_SCHEMA,
-            True,
+            SupportsResponse.OPTIONAL,
             "Registered check_balancing service",
         ),
     ]
@@ -786,7 +801,7 @@ def _register_entry_services(
     ],
     handler_factory: Callable[
         [str, Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]]],
-        Callable[[ServiceCall], Awaitable[Any]],
+        Callable[[ServiceCall], Coroutine[Any, Any, None]],
     ],
 ) -> None:
     for service_name, action, schema in services:
@@ -826,7 +841,9 @@ async def _save_dashboard_tiles_config(
 
         from homeassistant.helpers.storage import Store
 
-        store = Store(hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES)
+        store: Store[dict[str, Any]] = Store(
+            hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES
+        )
         await store.async_save(config)
 
         _LOGGER.info(
@@ -847,7 +864,9 @@ async def _load_dashboard_tiles_config(hass: HomeAssistant) -> dict:
     try:
         from homeassistant.helpers.storage import Store
 
-        store = Store(hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES)
+        store: Store[dict[str, Any]] = Store(
+            hass, version=1, key=STORAGE_KEY_DASHBOARD_TILES
+        )
         config = await store.async_load()
         if config:
             _LOGGER.info("Dashboard tiles config loaded from storage")

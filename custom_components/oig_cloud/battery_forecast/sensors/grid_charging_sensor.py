@@ -14,8 +14,10 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import EntityCategory
 from homeassistant.core import callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
+from propcache import cached_property
 
 from ...const import DOMAIN
 
@@ -26,14 +28,14 @@ _LOGGER = logging.getLogger(__name__)
 HOME_UPS_LABEL = "HOME UPS"
 
 
-class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
+class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
     """Sensor pro plánované nabíjení ze sítě - odvozený z battery_forecast."""
 
     def __init__(
         self,
         coordinator: Any,
         sensor_type: str,
-        device_info: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize sensor."""
         super().__init__(coordinator)
@@ -74,8 +76,21 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
 
         self._last_offset_start = None
         self._last_offset_end = None
-        self._cached_ups_blocks: List[Dict[str, Any]] = []
+        self._cached_ups_blocks_internal: List[Dict[str, Any]] = []
         self._log_rl_last: Dict[str, float] = {}
+
+    @property
+    def _cached_ups_blocks(self) -> List[Dict[str, Any]]:
+        return self._cached_ups_blocks_internal
+
+    @_cached_ups_blocks.setter
+    def _cached_ups_blocks(self, value: List[Dict[str, Any]]) -> None:
+        self._cached_ups_blocks_internal = value
+        for attr_name in ("native_value", "extra_state_attributes"):
+            try:
+                delattr(self, attr_name)
+            except AttributeError:
+                pass
 
     def _log_rate_limited(
         self,
@@ -264,7 +279,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             )
             return 300.0
 
-    @property
+    @cached_property
     def native_value(self) -> str:
         """Vrátí ON pokud právě běží nebo brzy začne UPS (s offsetem)."""
         charging_intervals, _, _ = self._calculate_charging_intervals()
@@ -372,10 +387,13 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
         next_start = next_block.get("time_from", "")
         if next_start == blocks[idx].get("time_to", ""):
             return True
+        day = next_block.get("day")
+        if not isinstance(day, str):
+            return False
         return (
             abs(
                 (
-                    self._parse_time_to_datetime(next_start, next_block.get("day"))
+                    self._parse_time_to_datetime(next_start, day)
                     - end_time
                 ).total_seconds()
             )
@@ -433,13 +451,20 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             return battery_forecast_data.get("decision_trace", [])
         return []
 
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def _get_planner_decision_trace(self) -> List[Dict[str, Any]]:
+        battery_forecast_data = getattr(self.coordinator, "battery_forecast_data", None)
+        if battery_forecast_data:
+            return battery_forecast_data.get("planner_decision_trace", [])
+        return []
+
+    @cached_property
+    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
         charging_intervals, total_energy, total_cost = (
             self._calculate_charging_intervals()
         )
 
         decision_trace = self._get_decision_trace()
+        planner_decision_trace = self._get_planner_decision_trace()
 
         if not charging_intervals:
             attrs = {
@@ -452,6 +477,8 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             }
             if decision_trace:
                 attrs["decision_trace"] = decision_trace
+            if planner_decision_trace:
+                attrs["planner_decision_trace"] = planner_decision_trace
             return attrs
 
         next_charging_block = None
@@ -504,6 +531,7 @@ class OigCloudGridChargingPlanSensor(CoordinatorEntity, SensorEntity):
             "next_charging_duration": next_charging_duration,
             "is_charging_planned": len(charging_blocks) > 0,
             **({"decision_trace": decision_trace} if decision_trace else {}),
+            **({"planner_decision_trace": planner_decision_trace} if planner_decision_trace else {}),
         }
 
 

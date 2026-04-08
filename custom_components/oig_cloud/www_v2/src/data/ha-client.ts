@@ -73,6 +73,16 @@ export class HaClient {
     return this.hass;
   }
 
+  async refreshHass(): Promise<Hass | null> {
+    const next = await this.findHass();
+    if (next) {
+      this.hass = next;
+      oigLog.info('HASS client refreshed');
+      return next;
+    }
+    return this.hass;
+  }
+
   private async initHass(): Promise<Hass | null> {
     oigLog.debug('Initializing HASS client');
 

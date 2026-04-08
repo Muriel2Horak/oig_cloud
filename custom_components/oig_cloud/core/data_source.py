@@ -33,19 +33,24 @@ EVENT_DATA_SOURCE_CHANGED = "oig_cloud_data_source_changed"
 PROXY_LAST_DATA_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_last_data"
 PROXY_BOX_ID_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_box_device_id"
 
-try:
-    from homeassistant.helpers.event import (
-        async_track_state_change_event as _async_track_state_change_event,
-    )  # type: ignore
-except Exception:  # pragma: no cover
-    _async_track_state_change_event = None
+_async_track_state_change_event: Optional[Callable[..., Any]] = None
+_async_track_time_interval: Optional[Callable[..., Any]] = None
 
 try:
     from homeassistant.helpers.event import (
-        async_track_time_interval as _async_track_time_interval,
-    )  # type: ignore
+        async_track_state_change_event as _async_track_state_change_event_import,
+    )
+    _async_track_state_change_event = _async_track_state_change_event_import
 except Exception:  # pragma: no cover
-    _async_track_time_interval = None
+    pass
+
+try:
+    from homeassistant.helpers.event import (
+        async_track_time_interval as _async_track_time_interval_import,
+    )
+    _async_track_time_interval = _async_track_time_interval_import
+except Exception:  # pragma: no cover
+    pass
 
 
 @dataclass(slots=True)
@@ -106,7 +111,7 @@ def get_local_event_debounce_ms(entry: ConfigEntry) -> int:
         return DEFAULT_LOCAL_EVENT_DEBOUNCE_MS
 
 
-def _get_proxy_state(hass: HomeAssistant) -> tuple[Any, Optional[dt_util.dt.datetime]]:
+def _get_proxy_state(hass: HomeAssistant) -> tuple[Any, Optional[datetime]]:
     proxy_state = hass.states.get(PROXY_LAST_DATA_ENTITY_ID)
     proxy_last_dt = _parse_dt(proxy_state.state if proxy_state else None)
     if proxy_state and proxy_last_dt is None:
@@ -118,7 +123,7 @@ def _get_proxy_state(hass: HomeAssistant) -> tuple[Any, Optional[dt_util.dt.date
     return proxy_state, proxy_last_dt
 
 
-def _get_proxy_entity_timestamp(proxy_state: Any) -> Optional[dt_util.dt.datetime]:
+def _get_proxy_entity_timestamp(proxy_state: Any) -> Optional[datetime]:
     if proxy_state is None:
         return None
     try:
@@ -145,8 +150,8 @@ def _get_proxy_box_id(hass: HomeAssistant) -> Optional[str]:
 def _determine_local_entities_dt(
     hass: HomeAssistant,
     box_id_for_scan: Optional[str],
-    last_local_entity_update: Optional[dt_util.dt.datetime] = None,
-) -> Optional[dt_util.dt.datetime]:
+    last_local_entity_update: Optional[datetime] = None,
+) -> Optional[datetime]:
     if last_local_entity_update is not None:
         return last_local_entity_update
     if not box_id_for_scan:
@@ -154,19 +159,19 @@ def _determine_local_entities_dt(
     return _get_latest_local_entity_update(hass, box_id_for_scan)
 
 
-def _parse_dt(value: Any) -> Optional[dt_util.dt.datetime]:
+def _parse_dt(value: Any) -> Optional[datetime]:
     if value in (None, "", "unknown", "unavailable"):
         return None
     if isinstance(value, (int, float)):
         return _parse_timestamp(value)
-    if isinstance(value, dt_util.dt.datetime):
+    if isinstance(value, datetime):
         return _normalize_datetime(value)
     if isinstance(value, str):
         return _parse_datetime_str(value)
     return None
 
 
-def _parse_timestamp(value: float | int) -> Optional[dt_util.dt.datetime]:
+def _parse_timestamp(value: float | int) -> Optional[datetime]:
     try:
         ts = float(value)
     except (TypeError, ValueError):  # pragma: no cover
@@ -174,16 +179,16 @@ def _parse_timestamp(value: float | int) -> Optional[dt_util.dt.datetime]:
     if ts > 1_000_000_000_000:  # ms epoch
         ts = ts / 1000.0
     try:
-        return dt_util.dt.datetime.fromtimestamp(ts, tz=dt_util.UTC)
+        return datetime.fromtimestamp(ts, tz=dt_util.UTC)
     except Exception:
         return None
 
 
-def _normalize_datetime(value: dt_util.dt.datetime) -> dt_util.dt.datetime:
+def _normalize_datetime(value: datetime) -> datetime:
     return dt_util.as_utc(value) if value.tzinfo else value.replace(tzinfo=dt_util.UTC)
 
 
-def _parse_datetime_str(value: str) -> Optional[dt_util.dt.datetime]:
+def _parse_datetime_str(value: str) -> Optional[datetime]:
     value = value.strip()
     if value.isdigit():
         try:
@@ -196,7 +201,7 @@ def _parse_datetime_str(value: str) -> Optional[dt_util.dt.datetime]:
     dt = dt_util.parse_datetime(value)
     if dt is None:
         try:
-            dt = dt_util.dt.datetime.fromisoformat(value)
+            dt = datetime.fromisoformat(value)
         except Exception:
             return None
     if dt.tzinfo is None:
@@ -242,12 +247,12 @@ def _coerce_box_id_str(value: str) -> Optional[str]:
 
 def _get_latest_local_entity_update(
     hass: HomeAssistant, box_id: str
-) -> Optional[dt_util.dt.datetime]:
+) -> Optional[datetime]:
     """Return the most recent update timestamp among local telemetry entities for a box."""
     if not (isinstance(box_id, str) and box_id.isdigit()):
         return None
     try:
-        latest: Optional[dt_util.dt.datetime] = None
+        latest: Optional[datetime] = None
         for st in _iter_local_entities(hass, box_id):
             dt_utc = _extract_state_timestamp(st)
             if dt_utc is None:
@@ -266,7 +271,7 @@ def _iter_local_entities(hass: HomeAssistant, box_id: str):
                 yield st
 
 
-def _extract_state_timestamp(state: Any) -> Optional[dt_util.dt.datetime]:
+def _extract_state_timestamp(state: Any) -> Optional[datetime]:
     if state.state in (None, "", "unknown", "unavailable"):
         return None
     dt = state.last_updated or state.last_changed
@@ -276,11 +281,11 @@ def _extract_state_timestamp(state: Any) -> Optional[dt_util.dt.datetime]:
 
 
 def _pick_latest_source(
-    proxy_last_dt: Optional[dt_util.dt.datetime],
-    proxy_entity_dt: Optional[dt_util.dt.datetime],
-    local_entities_dt: Optional[dt_util.dt.datetime],
-) -> tuple[str, Optional[dt_util.dt.datetime]]:
-    candidates: list[tuple[str, dt_util.dt.datetime]] = []
+    proxy_last_dt: Optional[datetime],
+    proxy_entity_dt: Optional[datetime],
+    local_entities_dt: Optional[datetime],
+) -> tuple[str, Optional[datetime]]:
+    candidates: list[tuple[str, datetime]] = []
     if proxy_last_dt:
         candidates.append(("proxy_last_data", proxy_last_dt))
     if proxy_entity_dt:
@@ -295,8 +300,8 @@ def _pick_latest_source(
 
 def _evaluate_local_freshness(
     *,
-    last_dt: Optional[dt_util.dt.datetime],
-    now: dt_util.dt.datetime,
+    last_dt: Optional[datetime],
+    now: datetime,
     stale_minutes: int,
     source: str,
 ) -> tuple[bool, str]:
@@ -313,7 +318,7 @@ def _validate_expected_box_id(
     local_available: bool,
     expected_box_id: Optional[str],
     proxy_box_id: Optional[str],
-    local_entities_dt: Optional[dt_util.dt.datetime],
+    local_entities_dt: Optional[datetime],
 ) -> tuple[bool, Optional[str]]:
     if not local_available or not expected_box_id:
         return local_available, None
@@ -340,12 +345,12 @@ def _evaluate_local_state(
     configured: str,
     expected_box_id: Optional[str],
     proxy_box_id: Optional[str],
-    proxy_last_dt: Optional[dt_util.dt.datetime],
-    proxy_entity_dt: Optional[dt_util.dt.datetime],
-    local_entities_dt: Optional[dt_util.dt.datetime],
-    now: dt_util.dt.datetime,
+    proxy_last_dt: Optional[datetime],
+    proxy_entity_dt: Optional[datetime],
+    local_entities_dt: Optional[datetime],
+    now: datetime,
     stale_minutes: int,
-) -> tuple[bool, Optional[dt_util.dt.datetime], str, str]:
+) -> tuple[bool, Optional[datetime], str, str]:
     source, last_dt = _pick_latest_source(
         proxy_last_dt, proxy_entity_dt, local_entities_dt
     )
@@ -453,7 +458,7 @@ class DataSourceController:
                 did_seed = self.telemetry_store.seed_from_existing_local_states()
                 if (
                     did_seed
-                    and state.effective_mode != DATA_SOURCE_CLOUD_ONLY
+                    and not self._should_block_local_snapshot_publish(state)
                     and getattr(
                         self.coordinator, "async_set_updated_data", None
                     )
@@ -654,7 +659,7 @@ class DataSourceController:
 
         try:
             state = get_data_source_state(self.hass, self.entry.entry_id)
-            if state.effective_mode == DATA_SOURCE_CLOUD_ONLY:
+            if self._should_block_local_snapshot_publish(state):
                 self._pending_snapshot_publish = False
                 return
         except Exception as err:
@@ -673,6 +678,15 @@ class DataSourceController:
             except Exception:
                 pass
         return time.monotonic()
+
+    def _should_block_local_snapshot_publish(self, state: DataSourceState) -> bool:
+        configured_mode = get_configured_mode(self.entry)
+        if configured_mode == DATA_SOURCE_CLOUD_ONLY:
+            return True
+        return (
+            state.effective_mode == DATA_SOURCE_CLOUD_ONLY
+            and state.reason == "cloud_only"
+        )
 
     @callback
     def _update_state(self, force: bool = False) -> tuple[bool, bool]:

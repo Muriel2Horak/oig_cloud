@@ -910,16 +910,17 @@ async def _select_day_intervals(
     mode_names: Dict[int, str],
     historical_modes_lookup: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
+    storage_plans_dict = storage_plans or {}
     if source == "historical_only":
         return await _build_historical_only_intervals(
-            sensor, day, day_start, storage_plans, date_str, historical_modes_lookup
+            sensor, day, day_start, storage_plans_dict, date_str, historical_modes_lookup
         )
     if source == "mixed":
         return await _build_mixed_intervals(
             sensor,
             day,
             day_start,
-            storage_plans,
+            storage_plans_dict,
             date_str,
             now,
             mode_names,

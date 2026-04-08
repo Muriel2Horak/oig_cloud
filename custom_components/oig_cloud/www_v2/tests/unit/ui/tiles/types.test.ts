@@ -1,29 +1,41 @@
 import { describe, it, expect } from 'vitest';
-import { TileConfig, TileData, DEFAULT_TILES } from '@/ui/features/tiles/types';
+import { DEFAULT_TILES_CONFIG, TileConfig } from '@/ui/features/tiles/types';
 
 describe('Tiles types', () => {
-  describe('DEFAULT_TILES', () => {
-    it('should have 4 default tiles', () => {
-      expect(DEFAULT_TILES).toHaveLength(4);
+  describe('DEFAULT_TILES_CONFIG', () => {
+    it('should default to 4 visible tile slots per side', () => {
+      expect(DEFAULT_TILES_CONFIG.left_count).toBe(4);
+      expect(DEFAULT_TILES_CONFIG.right_count).toBe(4);
     });
 
-    it('should have required properties', () => {
-      DEFAULT_TILES.forEach(tile => {
-        expect(tile).toHaveProperty('id');
-        expect(tile).toHaveProperty('entityId');
-        expect(tile).toHaveProperty('label');
-        expect(tile).toHaveProperty('icon');
-        expect(tile).toHaveProperty('position');
-        expect(tile).toHaveProperty('order');
-      });
+    it('should allocate six tile placeholders per side', () => {
+      expect(DEFAULT_TILES_CONFIG.tiles_left).toHaveLength(6);
+      expect(DEFAULT_TILES_CONFIG.tiles_right).toHaveLength(6);
+      expect(DEFAULT_TILES_CONFIG.tiles_left.every(tile => tile === null)).toBe(true);
+      expect(DEFAULT_TILES_CONFIG.tiles_right.every(tile => tile === null)).toBe(true);
     });
 
-    it('should have left and right positions', () => {
-      const leftTiles = DEFAULT_TILES.filter(t => t.position === 'left');
-      const rightTiles = DEFAULT_TILES.filter(t => t.position === 'right');
-      
-      expect(leftTiles.length).toBeGreaterThan(0);
-      expect(rightTiles.length).toBeGreaterThan(0);
+    it('should expose config metadata', () => {
+      expect(DEFAULT_TILES_CONFIG.visible).toBe(true);
+      expect(DEFAULT_TILES_CONFIG.version).toBe(1);
+    });
+  });
+
+  describe('TileConfig', () => {
+    it('should support entity tiles with support entities', () => {
+      const tile: TileConfig = {
+        type: 'entity',
+        entity_id: 'sensor.test_power',
+        label: 'Test',
+        icon: 'mdi:flash',
+        support_entities: {
+          top_right: 'sensor.test_top',
+          bottom_right: 'sensor.test_bottom',
+        },
+      };
+
+      expect(tile.entity_id).toBe('sensor.test_power');
+      expect(tile.support_entities?.top_right).toBe('sensor.test_top');
     });
   });
 });

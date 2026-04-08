@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import Context, Event, HomeAssistant, callback
+from homeassistant.core import Context, HomeAssistant, callback
 from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
@@ -26,6 +26,46 @@ SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
 
 class ServiceShield:
     """OIG Cloud Service Shield - ochrana před neočekávanými změnami."""
+
+    def extract_expected_entities(
+        self, service_name: str, data: Dict[str, Any]
+    ) -> Dict[str, str]:
+        return shield_validation.extract_expected_entities(self, service_name, data)
+
+    def _check_entity_state_change(self, entity_id: str, expected_value: Any) -> bool:
+        return shield_validation.check_entity_state_change(self, entity_id, expected_value)
+
+    async def _log_event(
+        self,
+        event_type: str,
+        service: str,
+        data: Dict[str, Any],
+        reason: Optional[str] = None,
+        context: Optional[Context] = None,
+    ) -> None:
+        await shield_dispatch.log_event(self, event_type, service, data, reason, context)
+
+    async def _safe_call_service(
+        self, service_name: str, service_data: Dict[str, Any]
+    ) -> bool:
+        return await shield_dispatch.safe_call_service(self, service_name, service_data)
+
+    def _start_monitoring_task(
+        self, task_id: str, expected_entities: Dict[str, str], timeout: int
+    ) -> None:
+        shield_queue.start_monitoring_task(self, task_id, expected_entities, timeout)
+
+    async def _check_entities_periodically(self, task_id: str) -> None:
+        await shield_queue.check_entities_periodically(self, task_id)
+
+    async def _check_loop(self, _now: datetime) -> None:
+        await shield_queue.check_loop(self, _now)
+
+    def start_monitoring(self) -> None:
+        shield_queue.start_monitoring(self)
+
+    async def _async_check_loop(self) -> None:
+        await shield_queue.async_check_loop(self)
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass: HomeAssistant = hass
@@ -252,7 +292,7 @@ class ServiceShield:
         return entity_ids
 
     @callback
-    def _on_entity_state_changed(self, event: Event) -> None:
+    def _on_entity_state_changed(self, event: Any) -> None:
         """Callback když se změní stav sledované entity - SYNC verze."""
         entity_id = event.data.get("entity_id")
         new_state = event.data.get("new_state")
@@ -390,6 +430,15 @@ class ServiceShield:
 
     async def cleanup(self) -> None:
         """Vyčistí ServiceShield při ukončení."""
+        check_task = getattr(self, "check_task", None)
+        if check_task and not check_task.done():
+            check_task.cancel()
+            try:
+                await check_task
+            except asyncio.CancelledError:
+                raise
+        self.check_task = None
+
         # Cleanup mode tracker
         if self.mode_tracker:
             await self.mode_tracker.cleanup()
@@ -432,18 +481,6 @@ class ServiceShield:
                 self._logger.debug(f"Error cleaning up telemetry: {e}")
 
         self._logger.debug("[OIG Shield] ServiceShield cleaned up")
-
-
-# Delegated methods (queue/validation/dispatch)
-ServiceShield.extract_expected_entities = shield_validation.extract_expected_entities
-ServiceShield._check_entity_state_change = shield_validation.check_entity_state_change
-ServiceShield._log_event = shield_dispatch.log_event
-ServiceShield._safe_call_service = shield_dispatch.safe_call_service
-ServiceShield._start_monitoring_task = shield_queue.start_monitoring_task
-ServiceShield._check_entities_periodically = shield_queue.check_entities_periodically
-ServiceShield._check_loop = shield_queue.check_loop
-ServiceShield.start_monitoring = shield_queue.start_monitoring
-ServiceShield._async_check_loop = shield_queue.async_check_loop
 
 
 class ModeTransitionTracker:
@@ -511,7 +548,7 @@ class ModeTransitionTracker:
         )
 
     @callback
-    def _async_mode_changed(self, event: Event) -> None:
+    def _async_mode_changed(self, event: Any) -> None:
         """Callback when box_prms_mode state changes."""
         new_state = event.data.get("new_state")
         old_state = event.data.get("old_state")
@@ -667,10 +704,10 @@ class ModeTransitionTracker:
         end_time = dt_now()
         start_time = end_time - timedelta(days=30)
 
-        from homeassistant.components import recorder
+        from homeassistant.components.recorder.history import state_changes_during_period
 
         states = await self.hass.async_add_executor_job(
-            recorder.history.state_changes_during_period,
+            state_changes_during_period,
             self.hass,
             start_time,
             end_time,

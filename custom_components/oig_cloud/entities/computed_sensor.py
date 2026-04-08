@@ -3,10 +3,9 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Awaitable, Dict, Iterable, Optional, Union, cast
 
 from homeassistant.helpers.event import async_track_time_change
-from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -23,6 +22,7 @@ _energy_stores: Dict[str, Store] = {}
 _energy_data_cache: Dict[str, Dict[str, float]] = {}
 _energy_last_update_cache: Dict[str, datetime] = {}
 _energy_cache_loaded: Dict[str, bool] = {}
+_energy_restore_tasks: Dict[str, asyncio.Task[None]] = {}
 PROXY_LAST_DATA_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_last_data"
 
 _LANGS: Dict[str, Dict[str, str]] = {
@@ -33,7 +33,30 @@ _LANGS: Dict[str, Dict[str, str]] = {
 }
 
 
-class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
+if TYPE_CHECKING:
+
+    class _ComputedBase:
+        coordinator: Any
+        hass: Any
+        entity_id: str
+        _box_id: str
+        _sensor_type: str
+
+        def __init__(self, coordinator: Any, sensor_type: str) -> None: ...
+        async def async_added_to_hass(self) -> None: ...
+        async def async_will_remove_from_hass(self) -> None: ...
+        async def async_get_last_state(self) -> Any: ...
+        def async_write_ha_state(self) -> None: ...
+        async def async_update(self) -> None: ...
+
+else:
+    from homeassistant.helpers.restore_state import RestoreEntity
+
+    class _ComputedBase(OigCloudSensor, RestoreEntity):
+        pass
+
+
+class OigCloudComputedSensor(_ComputedBase):
     def __init__(self, coordinator: Any, sensor_type: str) -> None:
         super().__init__(coordinator, sensor_type)
 
@@ -78,7 +101,7 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
             self._is_real_update_sensor = False
 
         # Unsubscribe handle for daily reset callback
-        self._daily_reset_unsub = None
+        self._daily_reset_unsub: Optional[Any] = None
 
     def _get_entity_number(self, entity_id: str) -> Optional[float]:
         """Read numeric value from HA state."""
@@ -148,15 +171,16 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         except Exception:
             return None
 
-    def _iter_oig_states(self, domain: str, box: str):
+    def _iter_oig_states(self, domain: str, box: str) -> Iterable[Any]:
         states_obj = getattr(self.hass, "states", None)
         async_all = getattr(states_obj, "async_all", None)
         if not callable(async_all):
             return []
         prefix = f"{domain}.oig_{box}_"
+        raw_states = cast(list[Any], async_all(domain))
         return [
             st
-            for st in async_all(domain)
+            for st in raw_states
             if getattr(st, "entity_id", "").startswith(prefix)
             and st.state not in (None, "unknown", "unavailable", "")
         ]
@@ -444,17 +468,71 @@ class OigCloudComputedSensor(OigCloudSensor, RestoreEntity):
         self._daily_reset_unsub = async_track_time_change(
             self.hass, self._reset_daily, hour=0, minute=0, second=0
         )
+        await self._schedule_startup_restore()
 
-        # Priority 1: Load from persistent storage (more reliable than restore_state)
-        loaded_from_storage = await self._load_energy_from_storage()
+    async def _schedule_startup_restore(self) -> None:
+        if not getattr(self, "hass", None):
+            return
 
-        # Priority 2: Fallback to restore_state if storage was empty
-        if not loaded_from_storage:
+        async def _startup_restore() -> None:
+            await self._ensure_energy_initialized()
+            self.async_write_ha_state()
+
+        create_task = getattr(self.hass, "async_create_task", None)
+        if not callable(create_task):
+            await _startup_restore()
+            return
+        task = create_task(_startup_restore())
+        if task is None:
+            return
+
+    async def _ensure_energy_initialized(self) -> None:
+        box_id = self._box_id
+        if not box_id or box_id == "unknown":
             await self._restore_energy_from_state()
+            return
 
-        # Po inicializaci (load/restore + dependency listeners) hned přepiš stav,
-        # aby se uživatelům neukazovala dočasná nula po restartu.
-        self.async_write_ha_state()
+        if _energy_cache_loaded.get(box_id):
+            cached = _energy_data_cache.get(box_id)
+            if isinstance(cached, dict):
+                self._energy = cached
+            return
+
+        existing_task = _energy_restore_tasks.get(box_id)
+        if existing_task is not None:
+            await existing_task
+            cached = _energy_data_cache.get(box_id)
+            if isinstance(cached, dict):
+                self._energy = cached
+            return
+
+        async def _restore_shared_energy() -> None:
+            loaded_from_storage = await self._load_energy_from_storage()
+            if not loaded_from_storage:
+                await self._restore_energy_from_state()
+            _energy_cache_loaded[box_id] = True
+
+        create_task = getattr(self.hass, "async_create_task", None)
+        if not callable(create_task):
+            await _restore_shared_energy()
+            return
+        restore_task = create_task(_restore_shared_energy())
+        if restore_task is None:
+            return
+        if not isinstance(restore_task, Awaitable):
+            await _restore_shared_energy()
+            return
+
+        typed_restore_task = cast(asyncio.Task[None], restore_task)
+        _energy_restore_tasks[box_id] = typed_restore_task
+        try:
+            await typed_restore_task
+        finally:
+            if _energy_restore_tasks.get(box_id) is typed_restore_task:
+                _energy_restore_tasks.pop(box_id, None)
+        cached = _energy_data_cache.get(box_id)
+        if isinstance(cached, dict):
+            self._energy = cached
 
     async def _restore_energy_from_state(self) -> None:
         old_state = await self.async_get_last_state()

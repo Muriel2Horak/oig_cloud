@@ -417,7 +417,7 @@ def generate_alternatives(  # noqa: C901
     today_start = dt_util.as_local(today_start)
     tomorrow_end = today_start + timedelta(hours=48)
 
-    home_i_timeline_cache = []
+    home_i_timeline_cache: List[Dict[str, Any]] = []
 
     def simulate_mode(mode: int) -> float:
         return _simulate_mode_cost(

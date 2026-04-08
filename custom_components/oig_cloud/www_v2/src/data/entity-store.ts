@@ -174,6 +174,15 @@ export class EntityStore {
   updateHass(hass: any): void {
     this.hass = hass;
     if (hass?.states) {
+      const nextIds = new Set(Object.keys(hass.states));
+
+      for (const id of Array.from(this.cache.keys())) {
+        if (!nextIds.has(id)) {
+          this.cache.delete(id);
+          this.notifySubscribers(id, null);
+        }
+      }
+
       for (const [id, entity] of Object.entries(hass.states)) {
         const oldState = this.cache.get(id);
         const newState = entity as HassState;

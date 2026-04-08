@@ -3,23 +3,58 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.const import EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..const import DEFAULT_NAME, DOMAIN
 from .sensor_setup import get_sensor_definition
 
+if TYPE_CHECKING:  # pragma: no cover
+    from homeassistant.core import HomeAssistant
+
+
+class _EntityBase:
+    """Stub for parent class to satisfy super().async_update() call."""
+
+    async def async_update(self) -> None:
+        """Cooperative super call to support MRO chaining."""
+        # Use super() to ensure cooperative multiple inheritance works
+        # when this class is mixed with concrete implementations
+        parent = super()
+        method = getattr(parent, "async_update", None)
+        if method is None:
+            return
+        result = method()
+        if result is not None:
+            await result
+
+
 _LOGGER = logging.getLogger(__name__)
 
 
-class OigCloudSensorRuntimeMixin:
+class OigCloudSensorRuntimeMixin(_EntityBase):
     """Runtime properties for OIG Cloud sensors."""
+
+    hass: "HomeAssistant"
+    entity_id: str
+    _node_id: Optional[str]
+    _box_id: str
+    _sensor_type: str
+    _node_key: Optional[str]
+
+    def _get_runtime_coordinator(self) -> Any:
+        return getattr(self, "_coordinator", getattr(self, "coordinator", None))
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        if not self.coordinator.last_update_success or not self.coordinator.data:
+        coordinator = self._get_runtime_coordinator()
+        if coordinator is None:
+            return False
+        if not coordinator.last_update_success or not coordinator.data:
             return False
 
         if self._node_id is not None:
@@ -27,8 +62,8 @@ class OigCloudSensorRuntimeMixin:
             if not box_id or box_id == "unknown":
                 return False
             box_data = (
-                self.coordinator.data.get(box_id, {})
-                if isinstance(self.coordinator.data, dict)
+                coordinator.data.get(box_id, {})
+                if isinstance(coordinator.data, dict)
                 else {}
             )
             if self._node_id not in box_data:
@@ -37,9 +72,17 @@ class OigCloudSensorRuntimeMixin:
         return True
 
     @property
-    def entity_category(self) -> Optional[str]:
+    def entity_category(self) -> Optional[EntityCategory]:
         """Return the entity category of the sensor."""
-        return get_sensor_definition(self._sensor_type).get("entity_category")
+        value = get_sensor_definition(self._sensor_type).get("entity_category")
+        if isinstance(value, EntityCategory):
+            return value
+        if isinstance(value, str):
+            try:
+                return EntityCategory(value)
+            except ValueError:
+                return None
+        return None
 
     @property
     def unique_id(self) -> str:
@@ -49,8 +92,9 @@ class OigCloudSensorRuntimeMixin:
     @property
     def device_info(self) -> DeviceInfo:
         """Return information about the device."""
+        coordinator = self._get_runtime_coordinator()
         box_id = self._box_id
-        data: Dict[str, Any] = self.coordinator.data or {}
+        data: Dict[str, Any] = coordinator.data if coordinator and coordinator.data else {}
         pv_data: Dict[str, Any] = data.get(box_id, {}) if isinstance(data, dict) else {}
 
         is_queen: bool = bool(pv_data.get("queen", False))
@@ -111,18 +155,35 @@ class OigCloudSensorRuntimeMixin:
         return get_sensor_definition(self._sensor_type).get("icon")
 
     @property
-    def device_class(self) -> Optional[str]:
+    def device_class(self) -> Optional[SensorDeviceClass]:
         """Return the device class."""
-        return get_sensor_definition(self._sensor_type).get("device_class")
+        value = get_sensor_definition(self._sensor_type).get("device_class")
+        if isinstance(value, SensorDeviceClass):
+            return value
+        if isinstance(value, str):
+            try:
+                return SensorDeviceClass(value)
+            except ValueError:
+                return None
+        return None
 
     @property
-    def state_class(self) -> Optional[str]:
+    def state_class(self) -> Optional[SensorStateClass]:
         """Return the state class of the sensor."""
-        return get_sensor_definition(self._sensor_type).get("state_class")
+        value = get_sensor_definition(self._sensor_type).get("state_class")
+        if isinstance(value, SensorStateClass):
+            return value
+        if isinstance(value, str):
+            try:
+                return SensorStateClass(value)
+            except ValueError:
+                return None
+        return None
 
     def get_node_value(self) -> Any:
         """Safely extract node value from coordinator data."""
-        if not self.coordinator.data or not self._node_id or not self._node_key:
+        coordinator = self._get_runtime_coordinator()
+        if coordinator is None or not coordinator.data or not self._node_id or not self._node_key:
             return None
 
         box_id = self._box_id
@@ -130,7 +191,7 @@ class OigCloudSensorRuntimeMixin:
             return None
         try:
             data: Dict[str, Any] = (
-                self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
+                coordinator.data if isinstance(coordinator.data, dict) else {}
             )
             return data[box_id][self._node_id][self._node_key]
         except (KeyError, TypeError):

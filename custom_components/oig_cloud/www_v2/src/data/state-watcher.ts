@@ -48,6 +48,7 @@ class StateWatcher {
   private unsub: (() => void) | null = null;
   private running = false;
   private getHass: (() => Hass | null) | null = null;
+  private activeConnection: HassConnection | null = null;
 
   /**
    * Register specific entity IDs to watch.
@@ -92,8 +93,6 @@ class StateWatcher {
     getHass: () => Hass | null;
     prefixes?: string[];
   }): Promise<void> {
-    if (this.running) return;
-
     this.getHass = options.getHass;
     const hass = this.getHass();
 
@@ -104,7 +103,20 @@ class StateWatcher {
       return;
     }
 
+    if (this.running && this.activeConnection === hass.connection) {
+      const prefixes = options.prefixes ?? [];
+      for (const p of prefixes) {
+        this.registerPrefix(p);
+      }
+      return;
+    }
+
+    if (this.running) {
+      this.stop();
+    }
+
     this.running = true;
+    this.activeConnection = hass.connection;
 
     // Register initial prefixes
     const prefixes = options.prefixes ?? [];
@@ -124,6 +136,7 @@ class StateWatcher {
       });
     } catch (err) {
       this.running = false;
+      this.activeConnection = null;
       oigLog.error('StateWatcher failed to subscribe', err as Error);
     }
   }
@@ -133,6 +146,7 @@ class StateWatcher {
    */
   stop(): void {
     this.running = false;
+    this.activeConnection = null;
     if (this.unsub) {
       try {
         this.unsub();

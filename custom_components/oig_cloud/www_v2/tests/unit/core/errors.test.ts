@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   setupErrorHandling,
   teardownErrorHandling,
@@ -11,39 +11,85 @@ import {
   isRecoverable,
   formatError,
 } from '@/core/errors';
+import { oigLog } from '@/core/logger';
 
 describe('errors', () => {
+  let windowErrorListeners: Array<(event: ErrorEvent) => void>;
+  let rejectionListeners: Array<(event: PromiseRejectionEvent) => void>;
+  let errorLogSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     clearErrorHistory();
     teardownErrorHandling();
+    windowErrorListeners = [];
+    rejectionListeners = [];
+    errorLogSpy = vi.spyOn(oigLog, 'error').mockImplementation(() => {});
+
+    vi.spyOn(window, 'addEventListener').mockImplementation(((type: string, listener: EventListenerOrEventListenerObject) => {
+      if (type === 'error') {
+        windowErrorListeners.push(listener as (event: ErrorEvent) => void);
+      }
+      if (type === 'unhandledrejection') {
+        rejectionListeners.push(listener as (event: PromiseRejectionEvent) => void);
+      }
+    }) as typeof window.addEventListener);
+
+    vi.spyOn(window, 'removeEventListener').mockImplementation(((type: string, listener: EventListenerOrEventListenerObject) => {
+      if (type === 'error') {
+        windowErrorListeners = windowErrorListeners.filter((fn) => fn !== listener);
+      }
+      if (type === 'unhandledrejection') {
+        rejectionListeners = rejectionListeners.filter((fn) => fn !== listener);
+      }
+    }) as typeof window.removeEventListener);
+  });
+
+  afterEach(() => {
+    teardownErrorHandling();
+    vi.restoreAllMocks();
   });
 
   describe('setupErrorHandling', () => {
     it('should capture global errors', () => {
       setupErrorHandling();
-      
-      window.dispatchEvent(new ErrorEvent('error', {
+
+      expect(windowErrorListeners).toHaveLength(1);
+
+      const preventDefault = vi.fn();
+      windowErrorListeners[0]({
         error: new Error('Test error'),
         message: 'Test error',
-      }));
+        filename: '',
+        lineno: 0,
+        colno: 0,
+        preventDefault,
+      } as unknown as ErrorEvent);
 
       const history = getErrorHistory();
       expect(history.length).toBeGreaterThan(0);
+      expect(preventDefault).toHaveBeenCalledTimes(1);
+      expect(errorLogSpy).toHaveBeenCalledTimes(1);
     });
 
     it('should capture unhandled rejections', async () => {
       if (typeof PromiseRejectionEvent === 'undefined') {
         return;
       }
-      
+
       setupErrorHandling();
-      
-      window.dispatchEvent(new PromiseRejectionEvent('unhandledrejection', {
+
+      expect(rejectionListeners).toHaveLength(1);
+
+      const preventDefault = vi.fn();
+      rejectionListeners[0]({
         reason: new Error('Promise error'),
-      }));
+        preventDefault,
+      } as unknown as PromiseRejectionEvent);
 
       const history = getErrorHistory();
       expect(history.length).toBeGreaterThan(0);
+      expect(preventDefault).toHaveBeenCalledTimes(1);
+      expect(errorLogSpy).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -117,23 +163,34 @@ describe('errors', () => {
 
   describe('error history', () => {
     it('should limit history to MAX_ERRORS', () => {
+      setupErrorHandling();
+
       for (let i = 0; i < 55; i++) {
-        window.dispatchEvent(new ErrorEvent('error', {
+        windowErrorListeners[0]({
           error: new Error(`Error ${i}`),
           message: `Error ${i}`,
-        }));
+          filename: '',
+          lineno: 0,
+          colno: 0,
+          preventDefault: vi.fn(),
+        } as unknown as ErrorEvent);
       }
 
       const history = getErrorHistory();
       expect(history.length).toBeLessThanOrEqual(50);
+      expect(errorLogSpy).toHaveBeenCalledTimes(55);
     });
 
     it('clearErrorHistory should clear all errors', () => {
       setupErrorHandling();
-      window.dispatchEvent(new ErrorEvent('error', {
+      windowErrorListeners[0]({
         error: new Error('Test'),
         message: 'Test',
-      }));
+        filename: '',
+        lineno: 0,
+        colno: 0,
+        preventDefault: vi.fn(),
+      } as unknown as ErrorEvent);
       
       expect(getErrorHistory().length).toBeGreaterThan(0);
       

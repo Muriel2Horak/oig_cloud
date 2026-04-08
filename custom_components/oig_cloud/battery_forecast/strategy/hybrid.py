@@ -344,8 +344,8 @@ class HybridStrategy:
                     grid_import=result.grid_import,
                     grid_export=result.grid_export,
                     cost_czk=cost,
-                    is_balancing=is_balancing,
-                    is_holding=is_holding,
+                    is_balancing=bool(is_balancing),
+                    is_holding=bool(is_holding),
                     is_negative_price=is_negative,
                 )
             )

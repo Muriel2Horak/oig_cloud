@@ -411,8 +411,8 @@ def apply_guard_reasons_to_timeline(
         forced_mode = override.get("forced_mode")
         override_type = override.get("type")
 
-        planned_name = mode_names.get(planned_mode, "HOME I")
-        forced_name = mode_names.get(forced_mode, planned_name)
+        planned_name = mode_names.get(planned_mode, "HOME I") if isinstance(planned_mode, int) else "HOME I"
+        forced_name = mode_names.get(forced_mode, planned_name) if isinstance(forced_mode, int) else planned_name
         reason = _build_guard_reason(
             override_type,
             planned_name,

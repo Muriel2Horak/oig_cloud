@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
 )
+from propcache import cached_property
 
 from ..const import DEFAULT_NAME, DOMAIN
 from ..core.data_source import (
@@ -33,7 +34,11 @@ class OigCloudDataSourceSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = None
     _attr_icon = "mdi:database-sync"
-    _attr_translation_key = "data_source"
+
+    def __getattribute__(self, name: str) -> Any:
+        if name in {"native_value", "extra_state_attributes"}:
+            object.__getattribute__(self, "__dict__").pop(name, None)
+        return super().__getattribute__(name)
 
     def __init__(self, hass: HomeAssistant, coordinator: Any, entry: Any) -> None:
         self.hass = hass
@@ -42,24 +47,18 @@ class OigCloudDataSourceSensor(SensorEntity):
         # Použij stejnou autodetekci jako ostatní senzory
         self._box_id = resolve_box_id(coordinator)
         self._attr_name = "Data source"
-        self.entity_id = f"sensor.oig_{self._box_id}_data_source"
-        self._unsubs: list[callable] = []
-
-    @property
-    def unique_id(self) -> str:
-        return f"oig_cloud_{self._box_id}_data_source"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
+        self._attr_unique_id = f"oig_cloud_{self._box_id}_data_source"
+        self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._box_id)},
             name=f"{DEFAULT_NAME} {self._box_id}",
             manufacturer="OIG",
             model=DEFAULT_NAME,
         )
+        self.entity_id = f"sensor.oig_{self._box_id}_data_source"
+        self._unsubs: list[Callable[[], None]] = []
 
-    @property
-    def state(self) -> str:
+    @cached_property
+    def native_value(self) -> str:
         ds = get_data_source_state(self.hass, self.entry.entry_id)
         if (
             ds.effective_mode in (DATA_SOURCE_LOCAL_ONLY, DATA_SOURCE_HYBRID)
@@ -68,7 +67,7 @@ class OigCloudDataSourceSensor(SensorEntity):
             return "local"
         return "cloud"
 
-    @property
+    @cached_property
     def extra_state_attributes(self) -> Dict[str, Any]:
         ds = get_data_source_state(self.hass, self.entry.entry_id)
         last_dt: Optional[str] = (
@@ -85,6 +84,11 @@ class OigCloudDataSourceSensor(SensorEntity):
     async def async_added_to_hass(self) -> None:
         @callback
         def _refresh(*_: Any) -> None:
+            for attr_name in ("native_value", "extra_state_attributes"):
+                try:
+                    delattr(self, attr_name)
+                except AttributeError:
+                    pass
             self.async_write_ha_state()
 
         # Event-driven: refresh on data source changed event (P1 optimalization)

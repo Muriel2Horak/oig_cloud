@@ -13,7 +13,7 @@ import asyncio
 import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -22,12 +22,27 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+
+    class CoordinatorEntityBase(SensorEntity):
+        coordinator: Any
+        hass: HomeAssistant
+
+        def __init__(self, coordinator: Any) -> None: ...
+        async def async_added_to_hass(self) -> None: ...
+        def async_write_ha_state(self) -> None: ...
+
+else:
+    from homeassistant.helpers.update_coordinator import (
+        CoordinatorEntity as CoordinatorEntityBase,
+    )
 
 # Storage version
 STORAGE_VERSION = 1
@@ -70,7 +85,9 @@ class BatteryHealthTracker:
         self._nominal_capacity_kwh = nominal_capacity_kwh
 
         # HA Storage
-        self._store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{box_id}")
+        self._store: Store[Dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}_{box_id}"
+        )
         self._measurements: List[CapacityMeasurement] = []
         self._last_analysis: Optional[datetime] = None
         self._stats_backfill_until: Optional[datetime] = None
@@ -147,8 +164,9 @@ class BatteryHealthTracker:
         Returns:
             List nových měření
         """
-        from homeassistant.components.recorder import get_instance
+        from homeassistant.components import recorder as recorder_module
         from homeassistant.components.recorder.history import get_significant_states
+        from homeassistant.helpers.recorder import get_instance as recorder_get_instance
 
         end_time = dt_util.now()
         start_time = end_time - timedelta(days=self._recorder_days)
@@ -164,7 +182,10 @@ class BatteryHealthTracker:
 
         try:
             # Načíst historii z recorder
-            history = await get_instance(self._hass).async_add_executor_job(
+            recorder_instance_factory = getattr(
+                recorder_module, "get_instance", recorder_get_instance
+            )
+            history = await recorder_instance_factory(self._hass).async_add_executor_job(
                 get_significant_states,
                 self._hass,
                 start_time,
@@ -259,8 +280,9 @@ class BatteryHealthTracker:
             _LOGGER.warning("Statistics not available: %s", exc)
             return []
 
-        stats = await self._hass.async_add_executor_job(
-            statistics_during_period,
+        statistics_during_period_fn: Any = statistics_during_period
+        stats: Any = await self._hass.async_add_executor_job(
+            statistics_during_period_fn,
             self._hass,
             start_time,
             end_time,
@@ -474,7 +496,7 @@ class BatteryHealthTracker:
         )
 
     def _extract_soc_points(  # pragma: no cover
-        self, stats: Optional[List[Dict[str, Any]]]
+        self, stats: Optional[List[Any]]
     ) -> List[tuple]:
         if not stats:
             return []
@@ -495,7 +517,7 @@ class BatteryHealthTracker:
         return sorted(points, key=lambda x: x[0])
 
     def _extract_charge_points(  # pragma: no cover
-        self, stats: Optional[List[Dict[str, Any]]]
+        self, stats: Optional[List[Any]]
     ) -> List[tuple]:
         if not stats:
             return []
@@ -877,8 +899,13 @@ def _percentile(
     return sorted_values[idx]
 
 
-class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
+class BatteryHealthSensor(CoordinatorEntityBase, SensorEntity):
     """Sensor pro zobrazení zdraví baterie."""
+
+    def __getattribute__(self, name: str) -> Any:
+        if name in {"native_value", "extra_state_attributes"}:
+            object.__getattribute__(self, "_refresh_entity_state")()
+        return super().__getattribute__(name)
 
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = "%"  # pragma: no cover
@@ -891,7 +918,7 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
         coordinator: Any,
         sensor_type: str,
         config_entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info: DeviceInfo,
         hass: Optional[HomeAssistant] = None,
     ) -> None:
         """Initialize battery health sensor."""
@@ -899,7 +926,7 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
 
         self._sensor_type = sensor_type
         self._config_entry = config_entry
-        self._device_info_dict = device_info
+        self._attr_device_info = device_info
         self._hass_ref: Optional[HomeAssistant] = hass or getattr(
             coordinator, "hass", None
         )
@@ -923,11 +950,133 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
         self._tracker: Optional[BatteryHealthTracker] = None
 
         # Denní analýza
-        self._daily_unsub = None  # pragma: no cover
+        self._daily_unsub: Optional[Any] = None  # pragma: no cover
+
+        self._refresh_entity_state()
 
         _LOGGER.info(
             f"Battery Health sensor initialized for box {self._box_id}"
         )  # pragma: no cover
+
+    def _refresh_entity_state(self) -> None:
+        soh: Optional[float] = None
+        if self._tracker and hasattr(self._tracker, "get_current_soh"):
+            current_soh = self._tracker.get_current_soh()
+            soh = round(current_soh, 1) if current_soh else None
+        self._attr_native_value = soh
+
+        if not self._tracker:
+            self._attr_extra_state_attributes = {
+                "nominal_capacity_kwh": self._nominal_capacity_kwh
+            }
+            return
+
+        measurements = getattr(self._tracker, "_measurements", [])
+        last_analysis = getattr(self._tracker, "_last_analysis", None)
+        stats_backfill_until = getattr(self._tracker, "_stats_backfill_until", None)
+
+        attrs: Dict[str, Any] = {
+            "nominal_capacity_kwh": self._nominal_capacity_kwh,
+            "measurement_count": len(measurements),
+            "last_analysis": (
+                last_analysis.isoformat()
+                if last_analysis
+                else None
+            ),
+        }
+
+        capacity = (
+            self._tracker.get_current_capacity()
+            if hasattr(self._tracker, "get_current_capacity")
+            else None
+        )
+        if capacity:
+            attrs["current_capacity_kwh"] = round(capacity, 2)
+            attrs["capacity_loss_kwh"] = round(self._nominal_capacity_kwh - capacity, 2)
+
+        if measurements:
+            recent = measurements[-5:]
+            attrs["recent_measurements"] = [
+                {
+                    "timestamp": m.timestamp,
+                    "capacity_kwh": m.capacity_kwh,
+                    "soh_percent": m.soh_percent,
+                    "delta_soc": m.delta_soc,
+                    "charge_wh": m.charge_energy_wh,
+                }
+                for m in recent
+            ]
+
+        window = 20
+        attrs["measurement_window"] = window
+        attrs["soh_p20_last_20"] = (
+            self._tracker._get_percentile_soh(20, window)
+            if hasattr(self._tracker, "_get_percentile_soh")
+            else None
+        )
+        attrs["soh_p50_last_20"] = (
+            self._tracker._get_percentile_soh(50, window)
+            if hasattr(self._tracker, "_get_percentile_soh")
+            else None
+        )
+        attrs["soh_p80_last_20"] = (
+            self._tracker._get_percentile_soh(80, window)
+            if hasattr(self._tracker, "_get_percentile_soh")
+            else None
+        )
+        attrs["capacity_p20_last_20"] = (
+            self._tracker._get_percentile_capacity(20, window)
+            if hasattr(self._tracker, "_get_percentile_capacity")
+            else None
+        )
+        attrs["capacity_p50_last_20"] = (
+            self._tracker._get_percentile_capacity(50, window)
+            if hasattr(self._tracker, "_get_percentile_capacity")
+            else None
+        )
+        attrs["capacity_p80_last_20"] = (
+            self._tracker._get_percentile_capacity(80, window)
+            if hasattr(self._tracker, "_get_percentile_capacity")
+            else None
+        )
+        attrs["soh_selection_method"] = "p80_last_20"
+        attrs["filters"] = {
+            "min_delta_soc": getattr(self._tracker, "_min_delta_soc", None),
+            "min_duration_hours": getattr(self._tracker, "_min_duration_hours", None),
+            "min_charge_wh": getattr(self._tracker, "_min_charge_wh", None),
+            "min_discharge_wh": getattr(self._tracker, "_min_discharge_wh", None),
+            "max_discharge_ratio": getattr(self._tracker, "_max_discharge_ratio", None),
+            "soc_drop_tolerance": getattr(self._tracker, "_soc_drop_tolerance", None),
+        }
+        attrs["data_sources"] = {
+            "recorder_days": getattr(self._tracker, "_recorder_days", None),
+            "stats_backfill_days": getattr(self._tracker, "_stats_backfill_days", None),
+            "stats_backfill_until": (
+                stats_backfill_until.isoformat()
+                if stats_backfill_until
+                else None
+            ),
+        }
+        attrs["measurement_history"] = [
+            {
+                "timestamp": m.timestamp,
+                "start_soc": m.start_soc,
+                "end_soc": m.end_soc,
+                "delta_soc": m.delta_soc,
+                "charge_wh": m.charge_energy_wh,
+                "capacity_kwh": m.capacity_kwh,
+                "soh_percent": m.soh_percent,
+                "duration_hours": m.duration_hours,
+            }
+            for m in measurements
+        ]
+        attrs["soh_method_description"] = (
+            "SoH počítáme z čistých nabíjecích cyklů (ΔSoC>=50%) "
+            "a energie z měsíčního nabíjecího senzoru. "
+            "Výsledek je p80 z posledních 20 měření. "
+            "Cykly s krátkou délkou nebo malou energií jsou filtrovány."
+        )
+        self._attr_extra_state_attributes = attrs
 
     def _get_nominal_capacity_kwh(self) -> float:
         """Get nominal battery capacity from sensor, fallback to default."""
@@ -965,17 +1114,31 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
             nominal_capacity_kwh=self._nominal_capacity_kwh,
         )
 
-        # Načíst ze storage
-        await self._tracker.async_load_from_storage()
-
         # Naplánovat denní analýzu v 01:00
         self._daily_unsub = async_track_time_change(
             self.hass, self._daily_analysis, hour=1, minute=0, second=0
         )
         _LOGGER.info("Scheduled daily battery health analysis at 01:00")
 
+        if not hasattr(self.hass, "loop_thread_id"):
+            await self._async_initialize_tracker()
+        else:
+            startup_task = self.hass.async_create_task(self._async_initialize_tracker())
+            if startup_task is None:
+                await self._async_initialize_tracker()
+            elif asyncio.iscoroutine(startup_task):
+                await startup_task
+
         # Spustit analýzu na pozadí (po startu HA)
         self.hass.async_create_task(self._initial_analysis())
+
+    async def _async_initialize_tracker(self) -> None:
+        if not self._tracker:
+            return
+        await self._tracker.async_load_from_storage()
+        self._refresh_entity_state()
+        if hasattr(self.hass, "loop_thread_id"):
+            self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:  # pragma: no cover
         """Při odstranění z HA."""
@@ -986,8 +1149,11 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
         """Počáteční analýza po startu."""
         # Počkat 60 sekund na stabilizaci HA
         await asyncio.sleep(60)
+        if not self._tracker:
+            return
         await self._tracker.backfill_from_statistics()
         await self._tracker.analyze_last_10_days()
+        self._refresh_entity_state()
         self.async_write_ha_state()
 
     async def _daily_analysis(self, _now: datetime) -> None:  # pragma: no cover
@@ -995,108 +1161,5 @@ class BatteryHealthSensor(CoordinatorEntity, SensorEntity):
         _LOGGER.info("Starting daily battery health analysis")
         if self._tracker:
             await self._tracker.analyze_last_10_days()
+            self._refresh_entity_state()
             self.async_write_ha_state()
-
-    @property
-    def device_info(self) -> Dict[str, Any]:  # pragma: no cover
-        """Device info."""
-        return self._device_info_dict
-
-    @property
-    def native_value(self) -> Optional[float]:  # pragma: no cover
-        """Vrátit aktuální SoH."""
-        if not self._tracker:
-            return None
-        soh = self._tracker.get_current_soh()
-        return round(soh, 1) if soh else None
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:  # pragma: no cover
-        """Extra atributy."""
-        if not self._tracker:
-            return {"nominal_capacity_kwh": self._nominal_capacity_kwh}
-
-        attrs = {
-            "nominal_capacity_kwh": self._nominal_capacity_kwh,
-            "measurement_count": len(self._tracker._measurements),
-            "last_analysis": (
-                self._tracker._last_analysis.isoformat()
-                if self._tracker._last_analysis
-                else None
-            ),
-        }
-
-        # Aktuální kapacita
-        capacity = self._tracker.get_current_capacity()
-        if capacity:
-            attrs["current_capacity_kwh"] = round(capacity, 2)
-            attrs["capacity_loss_kwh"] = round(self._nominal_capacity_kwh - capacity, 2)
-
-        # Poslední měření
-        if self._tracker._measurements:
-            recent = self._tracker._measurements[-5:]
-            attrs["recent_measurements"] = [
-                {
-                    "timestamp": m.timestamp,
-                    "capacity_kwh": m.capacity_kwh,
-                    "soh_percent": m.soh_percent,
-                    "delta_soc": m.delta_soc,
-                    "charge_wh": m.charge_energy_wh,
-                }
-                for m in recent
-            ]
-
-        # Detailní statistiky a metodika (pro FE popup)
-        window = 20
-        attrs["measurement_window"] = window
-        attrs["soh_p20_last_20"] = self._tracker._get_percentile_soh(20, window)
-        attrs["soh_p50_last_20"] = self._tracker._get_percentile_soh(50, window)
-        attrs["soh_p80_last_20"] = self._tracker._get_percentile_soh(80, window)
-        attrs["capacity_p20_last_20"] = self._tracker._get_percentile_capacity(
-            20, window
-        )
-        attrs["capacity_p50_last_20"] = self._tracker._get_percentile_capacity(
-            50, window
-        )
-        attrs["capacity_p80_last_20"] = self._tracker._get_percentile_capacity(
-            80, window
-        )
-        attrs["soh_selection_method"] = "p80_last_20"
-        attrs["filters"] = {
-            "min_delta_soc": self._tracker._min_delta_soc,
-            "min_duration_hours": self._tracker._min_duration_hours,
-            "min_charge_wh": self._tracker._min_charge_wh,
-            "min_discharge_wh": getattr(self._tracker, "_min_discharge_wh", None),
-            "max_discharge_ratio": getattr(self._tracker, "_max_discharge_ratio", None),
-            "soc_drop_tolerance": getattr(self._tracker, "_soc_drop_tolerance", None),
-        }
-        attrs["data_sources"] = {
-            "recorder_days": self._tracker._recorder_days,
-            "stats_backfill_days": self._tracker._stats_backfill_days,
-            "stats_backfill_until": (
-                self._tracker._stats_backfill_until.isoformat()
-                if self._tracker._stats_backfill_until
-                else None
-            ),
-        }
-        attrs["measurement_history"] = [
-            {
-                "timestamp": m.timestamp,
-                "start_soc": m.start_soc,
-                "end_soc": m.end_soc,
-                "delta_soc": m.delta_soc,
-                "charge_wh": m.charge_energy_wh,
-                "capacity_kwh": m.capacity_kwh,
-                "soh_percent": m.soh_percent,
-                "duration_hours": m.duration_hours,
-            }
-            for m in self._tracker._measurements
-        ]
-        attrs["soh_method_description"] = (
-            "SoH počítáme z čistých nabíjecích cyklů (ΔSoC>=50%) "
-            "a energie z měsíčního nabíjecího senzoru. "
-            "Výsledek je p80 z posledních 20 měření. "
-            "Cykly s krátkou délkou nebo malou energií jsou filtrovány."
-        )
-
-        return attrs

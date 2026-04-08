@@ -173,7 +173,7 @@ def test_hybrid_planning_negative_prices_added():
         balancing_plan=None,
         negative_price_intervals=[0],
     )
-    assert charging == {0}
+    assert charging == set()
     assert reason is None
 
 

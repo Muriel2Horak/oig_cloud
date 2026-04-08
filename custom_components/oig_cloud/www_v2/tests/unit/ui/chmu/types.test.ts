@@ -1,47 +1,48 @@
 import { describe, it, expect } from 'vitest';
-import { ChmuWarning, LEVEL_COLORS, LEVEL_LABELS } from '@/ui/features/chmu/types';
+import { ChmuWarningDetail, SEVERITY_COLORS, SEVERITY_LABELS } from '@/ui/features/chmu/types';
 
 describe('CHMU types', () => {
-  describe('LEVEL_COLORS', () => {
+  describe('SEVERITY_COLORS', () => {
     it('should have colors for all levels', () => {
-      expect(LEVEL_COLORS.low).toBeDefined();
-      expect(LEVEL_COLORS.medium).toBeDefined();
-      expect(LEVEL_COLORS.high).toBeDefined();
-      expect(LEVEL_COLORS.extreme).toBeDefined();
+      expect(SEVERITY_COLORS[0]).toBeDefined();
+      expect(SEVERITY_COLORS[1]).toBeDefined();
+      expect(SEVERITY_COLORS[2]).toBeDefined();
+      expect(SEVERITY_COLORS[3]).toBeDefined();
+      expect(SEVERITY_COLORS[4]).toBeDefined();
     });
 
     it('should use hex colors', () => {
-      Object.values(LEVEL_COLORS).forEach(color => {
+      Object.values(SEVERITY_COLORS).forEach(color => {
         expect(color).toMatch(/^#[0-9a-f]{6}$/i);
       });
     });
   });
 
-  describe('LEVEL_LABELS', () => {
+  describe('SEVERITY_LABELS', () => {
     it('should have Czech labels', () => {
-      expect(LEVEL_LABELS.low).toBe('Nízká');
-      expect(LEVEL_LABELS.medium).toBe('Střední');
-      expect(LEVEL_LABELS.high).toBe('Vysoká');
-      expect(LEVEL_LABELS.extreme).toBe('Extrémní');
+      expect(SEVERITY_LABELS[0]).toBe('Bez výstrahy');
+      expect(SEVERITY_LABELS[1]).toBe('Nízká');
+      expect(SEVERITY_LABELS[2]).toBe('Zvýšená');
+      expect(SEVERITY_LABELS[3]).toBe('Vysoká');
+      expect(SEVERITY_LABELS[4]).toBe('Extrémní');
     });
   });
 
-  describe('ChmuWarning', () => {
+  describe('ChmuWarningDetail', () => {
     it('should have required properties', () => {
-      const warning: ChmuWarning = {
-        id: '1',
-        type: 'wind',
-        level: 'high',
-        title: 'Vítr',
+      const warning: ChmuWarningDetail = {
+        event_type: 'Vítr',
+        severity: 3,
         description: 'Silný vítr',
-        start: '2024-01-15T12:00:00',
-        end: '2024-01-15T18:00:00',
-        regions: ['Praha', 'Středočeský'],
+        instruction: 'Nevycházet',
+        onset: '2024-01-15T12:00:00',
+        expires: '2024-01-15T18:00:00',
+        eta_hours: 2,
       };
 
-      expect(warning.id).toBe('1');
-      expect(warning.level).toBe('high');
-      expect(warning.regions).toHaveLength(2);
+      expect(warning.event_type).toBe('Vítr');
+      expect(warning.severity).toBe(3);
+      expect(warning.eta_hours).toBe(2);
     });
   });
 });

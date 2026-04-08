@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import aiohttp_client
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 
@@ -22,16 +23,27 @@ CHMU_NONE_LABEL = "Žádné"
 class OigCloudChmuSensor(OigCloudSensor):
     """Senzor pro ČHMÚ meteorologická varování."""
 
+    def __getattribute__(self, name: str) -> Any:
+        if name == "icon":
+            return object.__getattribute__(self, "_icon_for_severity")(
+                object.__getattribute__(self, "_compute_severity")()
+            )
+        if name in {"state", "native_value", "extra_state_attributes"}:
+            object.__getattribute__(self, "_refresh_entity_state")()
+            object.__getattribute__(self, "__dict__").pop(name, None)
+        return super().__getattribute__(name)
+
     def __init__(
         self,
         coordinator: Any,
         sensor_type: str,
         config_entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         super().__init__(coordinator, sensor_type)
         self._config_entry = config_entry
         self._device_info = device_info
+        self._attr_device_info = device_info
 
         # Nastavit název podle name_cs
         from ..sensors.SENSOR_TYPES_CHMU import SENSOR_TYPES_CHMU
@@ -48,6 +60,8 @@ class OigCloudChmuSensor(OigCloudSensor):
 
         # Storage key pro persistentní uložení
         self._storage_key = f"oig_chmu_warnings_{self._box_id}"
+
+        self._refresh_entity_state()
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - nastavit periodické aktualizace."""
@@ -73,14 +87,8 @@ class OigCloudChmuSensor(OigCloudSensor):
         else:
             # Pokud máme načtená data z úložiště, sdílíme je s koordinátorem
             if self._last_warning_data:
-                if hasattr(self.coordinator, "chmu_warning_data"):
-                    self.coordinator.chmu_warning_data = self._last_warning_data
-                else:
-                    setattr(
-                        self.coordinator,
-                        "chmu_warning_data",
-                        self._last_warning_data,
-                    )
+                setattr(self.coordinator, "chmu_warning_data", self._last_warning_data)
+            self._refresh_entity_state()
             _LOGGER.debug(
                 f"🌦️ Loaded warning data from storage (last call: {datetime.fromtimestamp(self._last_api_call).strftime('%Y-%m-%d %H:%M:%S')}), skipping immediate fetch"
             )
@@ -88,7 +96,7 @@ class OigCloudChmuSensor(OigCloudSensor):
     async def _load_persistent_data(self) -> None:
         """Načte data z persistentního úložiště."""
         try:
-            store = Store(
+            store: Store[Dict[str, Any]] = Store(
                 self.hass,
                 version=1,
                 key=self._storage_key,
@@ -112,15 +120,18 @@ class OigCloudChmuSensor(OigCloudSensor):
             else:
                 _LOGGER.debug("🌦️ No previous data found in storage")
 
+            self._refresh_entity_state()
+
         except Exception as e:
             _LOGGER.warning(f"🌦️ Failed to load persistent data: {e}")
             self._last_api_call = 0
             self._last_warning_data = None
+            self._refresh_entity_state()
 
     async def _save_persistent_data(self) -> None:
         """Uloží data do persistentního úložiště."""
         try:
-            store = Store(
+            store: Store[Dict[str, Any]] = Store(
                 self.hass,
                 version=1,
                 key=self._storage_key,
@@ -177,33 +188,31 @@ class OigCloudChmuSensor(OigCloudSensor):
                 return
 
             # Získat ČHMÚ API klienta z coordinatoru
-            if (
-                not hasattr(self.coordinator, "chmu_api")
-                or not self.coordinator.chmu_api
-            ):
+            chmu_api = getattr(self.coordinator, "chmu_api", None)
+            if not chmu_api:
                 _LOGGER.error("🌦️ ČHMÚ API not initialized in coordinator")
                 self._attr_available = False
+                self._refresh_entity_state()
                 return
 
             # Fetch data pomocí aiohttp session z HA
             session = aiohttp_client.async_get_clientsession(self.hass)
 
-            warning_data = await self.coordinator.chmu_api.get_warnings(
-                latitude, longitude, session
-            )
+            warning_data = await chmu_api.get_warnings(latitude, longitude, session)
 
             # Uložit data
             self._last_warning_data = warning_data
             self._last_api_call = time.time()
 
             # Sdílet data s koordinátorem
-            self.coordinator.chmu_warning_data = warning_data
+            setattr(self.coordinator, "chmu_warning_data", warning_data)
 
             # Uložit do persistentního úložiště
             await self._save_persistent_data()
 
             # Označit jako dostupný
             self._attr_available = True
+            self._refresh_entity_state()
 
             _LOGGER.debug(
                 f"🌦️ ČHMÚ warnings updated: "
@@ -232,6 +241,43 @@ class OigCloudChmuSensor(OigCloudSensor):
             else:
                 # Nemáme žádná data - označíme jako nedostupný
                 self._attr_available = False
+            self._refresh_entity_state()
+
+    def _refresh_entity_state(self) -> None:
+        warning_data = self._get_warning_data()
+        severity = self._compute_severity()
+        self._attr_native_value = severity
+        self._attr_icon = self._icon_for_severity(severity)
+        if not warning_data:
+            self._attr_extra_state_attributes = _empty_warning_attrs()
+            return
+
+        severity_distribution = self._get_severity_distribution()
+        if self._sensor_type == "chmu_warning_level_global":
+            self._attr_extra_state_attributes = _build_global_warning_attrs(
+                warning_data, severity_distribution
+            )
+            return
+
+        self._attr_extra_state_attributes = _build_local_warning_attrs(
+            warning_data, severity_distribution
+        )
+
+    @staticmethod
+    def _icon_for_severity(severity: int) -> str:
+        if severity >= 4:
+            return "mdi:alert-octagon"
+        if severity >= 3:
+            return "mdi:alert"
+        if severity >= 2:
+            return "mdi:alert-circle"
+        if severity >= 1:
+            return "mdi:alert-circle-outline"
+        return "mdi:check-circle-outline"
+
+    def _handle_coordinator_update(self) -> None:
+        self._refresh_entity_state()
+        super()._handle_coordinator_update()
 
     def _get_gps_coordinates(self) -> tuple[Optional[float], Optional[float]]:
         """
@@ -279,6 +325,10 @@ class OigCloudChmuSensor(OigCloudSensor):
             return True
         return super().available
 
+    @property
+    def device_info(self) -> Any:
+        return self._device_info
+
     def _compute_severity(self) -> int:
         """Compute severity level (0-4)."""
         data = self._get_warning_data()
@@ -295,32 +345,6 @@ class OigCloudChmuSensor(OigCloudSensor):
             return 0
         return int(data.get("severity_level", 0) or 0)
 
-    @property
-    def native_value(self) -> int:
-        return self._compute_severity()
-
-    # Backward-compat for older dashboards/HA versions
-    @property
-    def state(self) -> int:  # pragma: no cover - HA compatibility
-        return self._compute_severity()
-
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Vrátí atributy senzoru."""
-        if not self._get_warning_data():
-            return _empty_warning_attrs()
-
-        severity_distribution = self._get_severity_distribution()
-
-        if self._sensor_type == "chmu_warning_level_global":
-            return _build_global_warning_attrs(
-                self._last_warning_data, severity_distribution
-            )
-
-        return _build_local_warning_attrs(
-            self._last_warning_data, severity_distribution
-        )
-
     def _get_severity_distribution(self) -> Dict[str, int]:
         """Vrátí rozdělení severity pro všechna varování."""
         if not self._last_warning_data:
@@ -335,27 +359,6 @@ class OigCloudChmuSensor(OigCloudSensor):
                 distribution[severity] += 1
 
         return distribution
-
-    @property
-    def icon(self) -> str:
-        """Vrátí ikonu podle severity."""
-        severity = self.state
-
-        if severity >= 4:
-            return "mdi:alert-octagon"  # Extreme - červená osmihran
-        elif severity >= 3:
-            return "mdi:alert"  # Severe - výkřičník
-        elif severity >= 2:
-            return "mdi:alert-circle"  # Moderate - kolečko
-        elif severity >= 1:
-            return "mdi:alert-circle-outline"  # Minor - outline
-        else:
-            return "mdi:check-circle-outline"  # Žádné varování - check
-
-    @property
-    def device_info(self) -> Dict[str, Any]:
-        """Vrátí device info."""
-        return self._device_info
 
 
 def _empty_warning_attrs() -> Dict[str, Any]:

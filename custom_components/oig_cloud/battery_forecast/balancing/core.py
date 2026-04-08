@@ -76,7 +76,7 @@ class BalancingManager:
         self._logger = _LOGGER
 
         # Storage for balancing state
-        self._store = Store(
+        self._store: Store = Store(
             hass,
             version=1,
             key=f"oig_cloud_balancing_{box_id}",
@@ -540,25 +540,21 @@ class BalancingManager:
             return 30 * 24
         return int(holding_time_hours + 1)
 
-    async def _load_soc_stats(
-        self,
-        battery_sensor_id: str,
-        start_time: datetime,
-        end_time: datetime,
-    ) -> Optional[List[Dict[str, Any]]]:
+    async def _load_soc_stats(self, battery_sensor_id: str, start_time: datetime, end_time: datetime) -> Optional[List[Any]]:
         from homeassistant.components.recorder.statistics import (
             statistics_during_period,
         )
 
         stats = await self.hass.async_add_executor_job(
-            statistics_during_period,
-            self.hass,
-            start_time,
-            end_time,
-            {battery_sensor_id},
-            "hour",
-            None,
-            {"mean", "max"},
+            lambda: statistics_during_period(
+                self.hass,
+                start_time,
+                end_time,
+                {battery_sensor_id},
+                "hour",
+                None,
+                {"mean", "max"},
+            )
         )
         if not stats or battery_sensor_id not in stats:
             return None
@@ -743,6 +739,10 @@ class BalancingManager:
                 # Found 3-hour window?
                 if window_count >= 12:  # 12 intervals = 3 hours
                     window_end_ts = interval.get("timestamp")
+                    if not isinstance(window_start, str) or not isinstance(
+                        window_end_ts, str
+                    ):
+                        return None
                     window_end = datetime.fromisoformat(window_end_ts)
 
                     return create_natural_plan(
@@ -970,9 +970,7 @@ class BalancingManager:
         # Start holding when charging completes
         # Round to next 15-min interval
         minutes_from_now = int(charging_hours * 60)
-        minutes_rounded = (
-            (minutes_from_now + 14) // 15
-        ) * 15  # Round up to nearest 15min
+        minutes_rounded = ((minutes_from_now + 14) // 15) * 15  # Round up to nearest 15min
         holding_start = now + timedelta(minutes=minutes_rounded)
         holding_end = holding_start + timedelta(hours=holding_time_hours)
 
@@ -1350,7 +1348,8 @@ class BalancingManager:
 
         try:
             capacity_raw = float(state.state)
-            unit = (state.attributes or {}).get("unit_of_measurement")
+            attributes: dict[str, Any] = dict(state.attributes or {})
+            unit = attributes.get("unit_of_measurement")
             capacity = capacity_raw
 
             # Some installations expose this sensor in Wh, not kWh.

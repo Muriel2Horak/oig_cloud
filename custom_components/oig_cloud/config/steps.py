@@ -3,9 +3,9 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from ..const import (
@@ -37,7 +37,6 @@ from .schema import (
 from .validation import CannotConnect, InvalidAuth, LiveDataNotEnabled, validate_input
 
 if TYPE_CHECKING:  # pragma: no cover
-    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,7 +51,11 @@ class WizardMixin:
 
     if TYPE_CHECKING:  # pragma: no cover
         hass: HomeAssistant
-        config_entry: ConfigEntry
+
+    # Methods below are provided by ConfigFlow/OptionsFlow parent classes
+    async_show_form: Any
+    async_create_entry: Any
+    async_abort: Any
 
     @staticmethod
     def _sanitize_data_source_mode(mode: Optional[str]) -> str:
@@ -592,14 +595,16 @@ class WizardMixin:
 
     def _is_reconfiguration(self) -> bool:
         """Check if this is a reconfiguration (Options Flow)."""
-        return hasattr(self, "config_entry") and self.config_entry is not None
+        return hasattr(self, "config_entry") and getattr(self, "config_entry") is not None
 
     def _get_defaults(self) -> Dict[str, Any]:
         """Get default values from existing config (for reconfiguration)."""
         if self._is_reconfiguration():
             # Migrovat stará data při načítání
-            old_data = dict(self.config_entry.options)
-            return self._migrate_old_pricing_data(old_data)
+            entry = getattr(self, "config_entry")
+            if entry is not None:
+                old_data = dict(entry.options)
+                return self._migrate_old_pricing_data(old_data)
         return {}
 
     def _get_planner_mode_value(self, data: Optional[Dict[str, Any]] = None) -> str:
@@ -607,7 +612,7 @@ class WizardMixin:
         _ = data
         return "hybrid"
 
-    async def _handle_back_button(self, current_step: str) -> FlowResult:
+    async def _handle_back_button(self, current_step: str) -> ConfigFlowResult:
         """Handle back button - return to previous step."""
         if len(self._step_history) > 0:
             # Odebrat současný krok z historie
@@ -705,7 +710,7 @@ class WizardMixin:
 
     async def async_step_wizard_welcome(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard: Welcome screen with overview."""
         if user_input is not None:
             return await self.async_step_wizard_credentials()
@@ -733,7 +738,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_credentials(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 1: Credentials."""
         if user_input is not None:
             # Kontrola tlačítka "Zpět" - musí být PRVNÍ, bez validace
@@ -766,7 +771,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     def _show_credentials_form(
         self, errors: Optional[Dict[str, str]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         return self.async_show_form(
             step_id="wizard_credentials",
             data_schema=self._get_credentials_schema(),
@@ -787,7 +792,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_modules(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 2: Select modules to enable."""
         if user_input is not None:
             # Kontrola tlačítka "Zpět"
@@ -818,7 +823,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         self,
         defaults: Optional[Dict[str, Any]] = None,
         errors: Optional[Dict[str, str]] = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         return self.async_show_form(
             step_id="wizard_modules",
             data_schema=self._get_modules_schema(defaults),
@@ -1013,7 +1018,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         steps.append("wizard_summary")
         return steps
 
-    def _get_step_placeholders(self, step_id: str = None, **kwargs) -> dict[str, str]:
+    def _get_step_placeholders(self, step_id: Optional[str] = None, **kwargs) -> Dict[str, str]:
         """Get placeholders for step description.
 
         Args:
@@ -1088,7 +1093,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_intervals(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 3: Configure scan intervals."""
         if user_input is not None:
             # Kontrola tlačítka "Zpět"
@@ -1181,7 +1186,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         self,
         values: Optional[Dict[str, Any]] = None,
         errors: Optional[Dict[str, str]] = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         if values is None:
             data_source_mode = self._sanitize_data_source_mode(
                 self._wizard_data.get("data_source_mode", "cloud_only")
@@ -1195,11 +1200,13 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
-                                {"value": "cloud_only", "label": "☁️ Cloud only"},
-                                {
-                                    "value": "local_only",
-                                    "label": "🏠 Local only (fallback na cloud při výpadku)",
-                                },
+                                selector.SelectOptionDict(
+                                    value="cloud_only", label="☁️ Cloud only"
+                                ),
+                                selector.SelectOptionDict(
+                                    value="local_only",
+                                    label="🏠 Local only (fallback na cloud při výpadku)",
+                                ),
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
@@ -1218,22 +1225,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
         else:
             data_schema = vol.Schema(
                 {
-                    vol.Optional(
-                        "standard_scan_interval", default=values["standard"]
-                    ): int,
-                    vol.Optional(
-                        "extended_scan_interval", default=values["extended"]
-                    ): int,
+                    vol.Optional("standard_scan_interval", default=values["standard"]): int,
+                    vol.Optional("extended_scan_interval", default=values["extended"]): int,
                     vol.Optional(
                         "data_source_mode", default=values["data_source_mode"]
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
-                                {"value": "cloud_only", "label": "☁️ Cloud only"},
-                                {
-                                    "value": "local_only",
-                                    "label": "🏠 Local only (fallback na cloud při výpadku)",
-                                },
+                                selector.SelectOptionDict(
+                                    value="cloud_only", label="☁️ Cloud only"
+                                ),
+                                selector.SelectOptionDict(
+                                    value="local_only",
+                                    label="🏠 Local only (fallback na cloud při výpadku)",
+                                ),
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
@@ -1258,7 +1263,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_solar(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 4: Solar forecast configuration."""
         if user_input is not None:
             # Kontrola tlačítka "Zpět"
@@ -1293,7 +1298,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         user_input: Optional[Dict[str, Any]] = None,
         *,
         errors: Optional[Dict[str, str]] = None,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         return self.async_show_form(
             step_id="wizard_solar",
             data_schema=self._get_solar_schema(user_input),
@@ -1557,7 +1562,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_battery(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 5: Battery prediction configuration."""
         if user_input is not None:
             # Kontrola tlačítka "Zpět"
@@ -1716,7 +1721,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_pricing_import(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 6a: Import (purchase) pricing configuration."""
         if user_input is not None:
             return await self._handle_pricing_flow(
@@ -1745,7 +1750,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         scenario = defaults.get("import_pricing_scenario", "spot_percentage")
 
-        schema_fields = {
+        schema_fields: Dict[vol.Optional, Any] = {
             vol.Optional("import_pricing_scenario", default=scenario): vol.In(
                 {
                     "spot_percentage": "💰 SPOT + procento",
@@ -1790,7 +1795,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_pricing_export(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 6b: Export (sell) pricing configuration."""
         if user_input is not None:
             return await self._handle_pricing_flow(
@@ -1819,7 +1824,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
         scenario = defaults.get("export_pricing_scenario", "spot_percentage")
 
-        schema_fields = {
+        schema_fields: Dict[vol.Optional, Any] = {
             vol.Optional("export_pricing_scenario", default=scenario): vol.In(
                 {
                     "spot_percentage": "💰 SPOT - procento",
@@ -1865,7 +1870,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         schema_builder,
         validator,
         default_scenario: str,
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         if user_input.get("go_back", False):
             return await self._handle_back_button(step_id)
 
@@ -1939,7 +1944,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_pricing_distribution(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 6c: Distribution fees, VT/NT hours, and VAT."""
         if user_input is not None:
             # Kontrola tlačítka "Zpět"
@@ -2032,7 +2037,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         vt_starts = user_input.get("tariff_vt_start_weekday", "6")
         nt_starts = user_input.get("tariff_nt_start_weekday", "22,2")
         is_valid, error_key = validate_tariff_hours(vt_starts, nt_starts)
-        if not is_valid:
+        if not is_valid and error_key is not None:
             errors["tariff_vt_start_weekday"] = error_key
 
         weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
@@ -2042,7 +2047,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             is_valid, error_key = validate_tariff_hours(
                 vt_weekend, nt_weekend, allow_single_tariff=True
             )
-            if not is_valid:
+            if not is_valid and error_key is not None:
                 errors["tariff_vt_start_weekend"] = error_key
 
     def _get_pricing_distribution_schema(
@@ -2149,7 +2154,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_boiler(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step: Boiler module configuration."""
         from ..const import (
             CONF_BOILER_ALT_COST_KWH,
@@ -2260,16 +2265,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
-                                {"value": "top", "label": "Přímo nahoře (100%)"},
-                                {
-                                    "value": "upper_quarter",
-                                    "label": "Horní čtvrtina (75%)",
-                                },
-                                {"value": "middle", "label": "Polovina (50%)"},
-                                {
-                                    "value": "lower_quarter",
-                                    "label": "Dolní čtvrtina (25%)",
-                                },
+                                selector.SelectOptionDict(
+                                    value="top", label="Přímo nahoře (100%)"
+                                ),
+                                selector.SelectOptionDict(
+                                    value="upper_quarter",
+                                    label="Horní čtvrtina (75%)",
+                                ),
+                                selector.SelectOptionDict(
+                                    value="middle", label="Polovina (50%)"
+                                ),
+                                selector.SelectOptionDict(
+                                    value="lower_quarter",
+                                    label="Dolní čtvrtina (25%)",
+                                ),
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
@@ -2404,7 +2413,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     async def async_step_wizard_summary(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 9: Summary and confirmation."""
         # This will be overridden in ConfigFlow and OptionsFlow
         raise NotImplementedError("Must be implemented in subclass")
@@ -2429,7 +2438,7 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
 
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the initial step - choose setup type."""
         if user_input is not None:
             setup_type = user_input.get("setup_type", "wizard")
@@ -2459,12 +2468,12 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
 
     async def async_step_reauth(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         return await self.async_step_reauth_confirm(user_input)
 
     async def async_step_reauth_confirm(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         reauth_entry_id = self.context.get("entry_id")
         existing_entry = (
             self.hass.config_entries.async_get_entry(reauth_entry_id)
@@ -2527,7 +2536,7 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
 
     async def async_step_quick_setup(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Quick setup - just credentials and defaults."""
         if user_input is None:
             return self.async_show_form(
@@ -2627,14 +2636,14 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
 
     async def async_step_import_yaml(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Import from YAML configuration."""
         # NOTE: YAML import is not implemented yet.
         return self.async_abort(reason="not_implemented")
 
     async def async_step_wizard_summary(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Wizard Step 9: Summary and confirmation - ConfigFlow implementation."""
         if user_input is not None:
             # Zkontrolovat, jestli uživatel chce jít zpět
@@ -2686,15 +2695,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
 class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     """Handle options flow for OIG Cloud - uses wizard for better UX."""
 
-    @property
-    def config_entry(self) -> config_entries.ConfigEntry:
-        """Return config entry, even if hass isn't attached yet."""
-        try:
-            # Try native property (works after HA attaches hass)
-            return super().config_entry  # type: ignore[attr-defined]
-        except Exception:
-            return getattr(self, "_config_entry_cache", None)
-
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         # IMPORTANT (HA 2025.12+):
@@ -2736,13 +2736,13 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Entry point for options flow - redirect to wizard welcome."""
         return await self.async_step_wizard_welcome_reconfigure()
 
     async def async_step_wizard_welcome_reconfigure(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Welcome screen for reconfiguration - replaces wizard_welcome."""
         if user_input is not None:
             # Přeskočit credentials a jít přímo na moduly
@@ -2756,8 +2756,16 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
     async def async_step_wizard_summary(
         self, user_input: Optional[Dict[str, Any]] = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Override summary step for options flow - update entry instead of creating new."""
+        # Use _config_entry_cache to avoid triggering HA property machinery
+        # that requires hass.config_entries.async_get_known_entry (unavailable in tests)
+        entry: Optional[config_entries.ConfigEntry] = getattr(
+            self, "_config_entry_cache", None
+        )
+        if entry is None:
+            return self.async_abort(reason="no_entry")
+
         if user_input is not None:
             # Zkontrolovat, jestli uživatel chce jít zpět
             if user_input.get("go_back", False):
@@ -2767,7 +2775,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             new_options = self._build_options_payload(self._wizard_data)
 
             # Přidat debug log
-            _LOGGER.debug(
+            _LOGGER.warning(
                 f"🔧 OptionsFlow wizard_summary: Updating config entry with {len(new_options)} options"
             )
             _LOGGER.debug(
@@ -2776,20 +2784,20 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
             try:
                 # Aktualizovat entry
-                _LOGGER.debug("🔍 About to call async_update_entry")
+                _LOGGER.warning("🔍 About to call async_update_entry")
                 self.hass.config_entries.async_update_entry(
-                    self.config_entry, options=new_options
+                    entry, options=new_options
                 )
-                _LOGGER.debug("🔍 async_update_entry completed")
+                _LOGGER.warning("🔍 async_update_entry completed")
 
                 # Automaticky reloadnout integraci pro aplikování změn
-                _LOGGER.debug("🔍 About to reload integration")
-                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-                _LOGGER.debug("🔍 Integration reload completed")
+                _LOGGER.warning("🔍 About to reload integration")
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                _LOGGER.warning("🔍 Integration reload completed")
 
                 # CRITICAL: V OptionsFlow NESMÍME volat async_create_entry,
                 # protože by to přepsalo options! Místo toho ukončit flow.
-                _LOGGER.info(
+                _LOGGER.warning(
                     "🔍 OptionsFlow wizard completed - showing success message"
                 )
                 return self.async_abort(reason="reconfigure_successful")
@@ -2800,7 +2808,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         # Zobrazit summary se stejnou logikou jako v ConfigFlow
         summary_lines = [
             "**Přihlášení:**",
-            f"- Uživatel: {self.config_entry.data.get(CONF_USERNAME, 'N/A')}",
+            f"- Uživatel: {entry.data.get(CONF_USERNAME, 'N/A')}",
             "",
             "**Zapnuté moduly:**",
         ]

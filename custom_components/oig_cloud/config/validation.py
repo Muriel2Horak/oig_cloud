@@ -77,7 +77,7 @@ async def validate_solar_forecast_api_key(
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(test_url, timeout=10) as response:
+            async with session.get(test_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
                     _LOGGER.info("🔑 Solar Forecast API key validation: SUCCESS")
                     return True

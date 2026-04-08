@@ -8,37 +8,14 @@ import logging
 import re
 from typing import Any, Dict
 
-try:
-    from homeassistant import config_entries, core
-    from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-    from homeassistant.const import Platform
-    from homeassistant.core import HomeAssistant
-    from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-    from homeassistant.helpers import config_validation as cv
-except ModuleNotFoundError:  # pragma: no cover
-    # Allow importing submodules (e.g., planner) outside a Home Assistant runtime.
-    config_entries = None  # type: ignore[assignment]
-    core = None  # type: ignore[assignment]
-    ConfigEntry = Any  # type: ignore[misc,assignment]
-    ConfigEntryState = Any  # type: ignore[misc,assignment]
-    Platform = Any  # type: ignore[misc,assignment]
-    HomeAssistant = Any  # type: ignore[misc,assignment]
-    ConfigEntryNotReady = Exception  # type: ignore[assignment]
-    ConfigEntryAuthFailed = Exception  # type: ignore[assignment]
+from homeassistant import config_entries, core
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 
-    class _CvStub:  # pragma: no cover - only used outside HA
-        @staticmethod
-        def config_entry_only_config_schema(_domain: str) -> object:
-            return object()
-
-    cv = _CvStub()  # type: ignore[assignment]
-
-try:
-    from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
-except ModuleNotFoundError:  # pragma: no cover
-    # Allow importing submodules outside HA / without runtime deps.
-    OigCloudApi = Any  # type: ignore[misc,assignment]
-    OigCloudAuthError = Exception  # type: ignore[misc,assignment]
+from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
 from .const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
@@ -53,40 +30,29 @@ from .const import (
     DOMAIN,
 )
 
-try:
-    from .core.coordinator import OigCloudCoordinator
-    from .core.data_source import (
-        DATA_SOURCE_CLOUD_ONLY,
-        DEFAULT_DATA_SOURCE_MODE,
-        DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
-        DEFAULT_PROXY_STALE_MINUTES,
-        DataSourceController,
-        get_data_source_state,
-        init_data_source_state,
-    )
-except ModuleNotFoundError:  # pragma: no cover
-    OigCloudCoordinator = Any  # type: ignore[misc,assignment]
-    DataSourceController = Any  # type: ignore[misc,assignment]
-    DATA_SOURCE_CLOUD_ONLY = "cloud_only"
-    DEFAULT_DATA_SOURCE_MODE = "cloud_only"
-    DEFAULT_PROXY_STALE_MINUTES = 15
-    DEFAULT_LOCAL_EVENT_DEBOUNCE_MS = 250
+from .core.coordinator import OigCloudCoordinator
+from .core.data_source import (
+    DATA_SOURCE_CLOUD_ONLY,
+    DEFAULT_DATA_SOURCE_MODE,
+    DEFAULT_LOCAL_EVENT_DEBOUNCE_MS,
+    DEFAULT_PROXY_STALE_MINUTES,
+    DataSourceController,
+    get_data_source_state,
+    init_data_source_state,
+)
 
-    def get_data_source_state(*_args: Any, **_kwargs: Any) -> Any:  # type: ignore[misc]
-        return None
 
-    def init_data_source_state(*_args: Any, **_kwargs: Any) -> Any:  # type: ignore[misc]
-        return None
-
+BalancingManager: Any = None
 
 # OPRAVA: Bezpečný import BalancingManager s try/except
 try:
-    from .battery_forecast.balancing import BalancingManager
+    from .battery_forecast.balancing import BalancingManager as ImportedBalancingManager
+
+    BalancingManager = ImportedBalancingManager
 
     _LOGGER_TEMP = logging.getLogger(__name__)
     _LOGGER_TEMP.debug("oig_cloud: BalancingManager import OK")
 except Exception as err:
-    BalancingManager = None
     _LOGGER_TEMP = logging.getLogger(__name__)
     _LOGGER_TEMP.error(
         "oig_cloud: Failed to import BalancingManager: %s", err, exc_info=True
@@ -94,10 +60,7 @@ except Exception as err:
 
 _LOGGER = logging.getLogger(__name__)
 
-if config_entries is None:  # pragma: no cover
-    PLATFORMS = []
-else:
-    PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -724,46 +687,6 @@ def _device_has_entities(entity_registry: Any, device_id: str) -> bool:
     return bool(er.async_entries_for_device(entity_registry, device_id))
 
 
-def _is_legacy_name_migration_candidate(entity: Any) -> bool:
-    entity_id = getattr(entity, "entity_id", "")
-    if not entity_id.startswith(("sensor.oig_", "switch.oig_")):
-        return False
-
-    name = getattr(entity, "name", None)
-    original_name = getattr(entity, "original_name", None)
-    return name is None and isinstance(original_name, str) and bool(original_name.strip())
-
-
-async def _migrate_entity_names_to_legacy_short_names(
-    hass: HomeAssistant, entry: ConfigEntry
-) -> None:
-    try:
-        from homeassistant.helpers import entity_registry as er
-
-        entity_registry = er.async_get(hass)
-        entities = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
-        migrated = 0
-
-        for entity in entities:
-            if not _is_legacy_name_migration_candidate(entity):
-                continue
-
-            entity_registry.async_update_entity(
-                entity.entity_id,
-                name=entity.original_name,
-                has_entity_name=False,
-            )
-            migrated += 1
-
-        if migrated:
-            _LOGGER.info(
-                "Applied legacy short-name migration to %s OIG entities",
-                migrated,
-            )
-    except Exception as err:
-        _LOGGER.debug("Entity name migration skipped (non-critical): %s", err)
-
-
 def _is_valid_device_base(bases: set[str], allowlisted_bases: set[str]) -> bool:
     if not bases:
         return True
@@ -1049,8 +972,8 @@ async def _ensure_live_data_enabled(
 
 
 async def _init_session_manager_and_coordinator(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
+    hass: "HomeAssistant",
+    entry: "ConfigEntry",
     username: str,
     password: str,
     no_telemetry: bool,
@@ -1106,8 +1029,6 @@ async def _init_session_manager_and_coordinator(
             and entry_state != ConfigEntryState.SETUP_IN_PROGRESS
             and hasattr(coordinator, "async_refresh")
         ):
-            if hasattr(coordinator, "skip_next_jitter"):
-                coordinator.skip_next_jitter()
             await coordinator.async_refresh()
         else:
             await coordinator.async_config_entry_first_refresh()
@@ -1254,12 +1175,14 @@ def _init_solar_forecast(entry: ConfigEntry) -> Any | None:
 def _build_analytics_device_info(
     entry: ConfigEntry, coordinator: OigCloudCoordinator
 ) -> Dict[str, Any]:
+    box_id_for_devices: str | None
     try:
         from .entities.base_sensor import resolve_box_id
 
         box_id_for_devices = resolve_box_id(coordinator)
     except Exception:
-        box_id_for_devices = entry.options.get("box_id")
+        option_box_id = entry.options.get("box_id")
+        box_id_for_devices = option_box_id if isinstance(option_box_id, str) else None
     if not (isinstance(box_id_for_devices, str) and box_id_for_devices.isdigit()):
         box_id_for_devices = "unknown"
 
@@ -1307,7 +1230,12 @@ async def _init_boiler_coordinator(
             boiler_config["box_id"] = box_id
         coordinator = BoilerCoordinator(hass, boiler_config)
 
-        _LOGGER.info("Boiler coordinator created; deferring initial refresh")
+        if getattr(hass, "loop", None) is None:
+            await coordinator.async_config_entry_first_refresh()
+        else:
+            hass.async_create_task(coordinator.async_config_entry_first_refresh())
+
+        _LOGGER.info("Boiler coordinator successfully initialized")
         return coordinator
     except Exception as err:
         _LOGGER.error("Failed to initialize Boiler coordinator: %s", err)
@@ -1434,25 +1362,6 @@ async def _complete_entry_startup(
     battery_prediction_enabled: bool,
 ) -> None:
     try:
-        dashboard_enabled = bool(
-            hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("dashboard_enabled", False)
-        )
-        boiler_coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get(
-            "boiler_coordinator"
-        )
-
-        if boiler_coordinator is not None:
-            try:
-                await boiler_coordinator.async_config_entry_first_refresh()
-                _LOGGER.info("Boiler coordinator successfully initialized")
-            except Exception as err:
-                _LOGGER.warning(
-                    "Boiler coordinator deferred refresh failed for entry %s: %s",
-                    entry.entry_id,
-                    err,
-                    exc_info=True,
-                )
-
         state = get_data_source_state(hass, entry.entry_id)
         should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
 
@@ -1496,14 +1405,7 @@ async def _complete_entry_startup(
                 "data_source_controller"
             ] = data_source_controller
 
-        await _sync_dashboard_panel(hass, entry, dashboard_enabled)
-
         _LOGGER.info("Background startup completion finished for entry %s", entry.entry_id)
-    except asyncio.CancelledError:
-        _LOGGER.debug(
-            "Background startup completion cancelled for entry %s", entry.entry_id
-        )
-        raise
     except Exception as err:
         _LOGGER.warning(
             "Background startup completion failed for entry %s: %s",
@@ -1652,7 +1554,8 @@ async def async_setup_entry(
         # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
         # that can be left behind after unique_id/device_id stabilization.
         await _schedule_invalid_device_cleanup(hass, entry)
-        await _migrate_entity_names_to_legacy_short_names(hass, entry)
+
+        await _sync_dashboard_panel(hass, entry, dashboard_enabled)
 
         # Přidáme listener pro změny konfigurace - OPRAVEN callback na async funkci
         entry.async_on_unload(entry.add_update_listener(async_update_options))
@@ -1702,12 +1605,14 @@ def _setup_service_shield_data(
     hass.data[DOMAIN]["shield"] = service_shield
 
     # Vytvoříme device info pro ServiceShield (per-box service device)
+    shield_box_id: str | None
     try:
         from .entities.base_sensor import resolve_box_id
 
         shield_box_id = resolve_box_id(coordinator)
     except Exception:
-        shield_box_id = entry.options.get("box_id")
+        option_box_id = entry.options.get("box_id")
+        shield_box_id = option_box_id if isinstance(option_box_id, str) else None
     if not (isinstance(shield_box_id, str) and shield_box_id.isdigit()):
         shield_box_id = "unknown"
     shield_device_info = {
@@ -1877,20 +1782,16 @@ async def async_unload_entry(
     # Odebrání dashboard panelu při unload
     await _remove_frontend_panel(hass, entry)
 
-    # Flush StatisticsStore data before unload (low-power optimalization)
-    try:
-        from .shared.statistics_storage import StatisticsStore
-        stats_store = StatisticsStore.get_instance(hass)
-        if stats_store:
-            await stats_store.save_all()
-            _LOGGER.debug(f"[UNLOAD] Flushed StatisticsStore for entry {entry.entry_id}")
-    except Exception as err:
-        _LOGGER.debug("StatisticsStore flush failed: %s", err)
-
-    # PHASE 3: Cleanup Balancing Manager (no async_shutdown needed - just storage)
-
-    # NOVÉ: Cleanup session manageru
     if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
+        entry_data = hass.data[DOMAIN][entry.entry_id]
+
+        service_shield = entry_data.get("service_shield")
+        if service_shield and hasattr(service_shield, "cleanup"):
+            try:
+                await service_shield.cleanup()
+            except Exception as err:
+                _LOGGER.debug("ServiceShield cleanup failed: %s", err)
+
         data_source_controller = hass.data[DOMAIN][entry.entry_id].get(
             "data_source_controller"
         )
@@ -1899,6 +1800,20 @@ async def async_unload_entry(
                 await data_source_controller.async_stop()
             except Exception as err:
                 _LOGGER.debug("DataSourceController stop failed: %s", err)
+
+        boiler_coordinator = entry_data.get("boiler_coordinator")
+        if boiler_coordinator and hasattr(boiler_coordinator, "async_shutdown"):
+            try:
+                await boiler_coordinator.async_shutdown()
+            except Exception as err:
+                _LOGGER.debug("BoilerCoordinator shutdown failed: %s", err)
+
+        from .services import async_unload_services
+
+        try:
+            await async_unload_services(hass)
+        except Exception as err:
+            _LOGGER.debug("Service unload failed: %s", err)
 
         session_manager = hass.data[DOMAIN][entry.entry_id].get("session_manager")
         if session_manager:
@@ -1940,11 +1855,15 @@ async def async_remove_config_entry_device(
         return False
 
 
-async def async_reload_entry(config_entry: config_entries.ConfigEntry) -> None:
+async def async_reload_entry(
+    config_entry: config_entries.ConfigEntry, hass: "HomeAssistant | None" = None
+) -> None:
     """Reload config entry."""
-    hass = config_entry.hass
-    await async_unload_entry(hass, config_entry)
-    await async_setup_entry(hass, config_entry)
+    target_hass = hass if hass is not None else getattr(config_entry, "hass", None)
+    if target_hass is None:
+        return
+    await async_unload_entry(target_hass, config_entry)
+    await async_setup_entry(target_hass, config_entry)
 
 
 async def async_update_options(

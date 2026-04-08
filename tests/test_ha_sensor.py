@@ -61,6 +61,12 @@ def test_sensor_proxy_properties(monkeypatch):
     assert sensor._calculate_data_hash([]) == "hash"
 
 
+def test_battery_forecast_sensor_exposes_restore_state(monkeypatch):
+    sensor = _setup_sensor(monkeypatch)
+
+    assert callable(getattr(sensor, "async_get_last_state", None))
+
+
 @pytest.mark.asyncio
 async def test_sensor_async_update_proxy(monkeypatch):
     sensor = _setup_sensor(monkeypatch)
