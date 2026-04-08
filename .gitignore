@@ -193,6 +193,7 @@ custom_components/oig_cloud/sensor_dump.json
 .DS_Store
 .npmrc
 node_modules/
+/.opencode/
 
 # Development and deployment scripts (local only)
 backup_from_ha.sh

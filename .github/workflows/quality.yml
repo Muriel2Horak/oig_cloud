@@ -76,7 +76,7 @@ jobs:
 
       - name: Run mypy
         run: |
-          mypy custom_components/oig_cloud --ignore-missing-imports --output=json > mypy-report.json || true
+          mypy custom_components/oig_cloud --ignore-missing-imports --explicit-package-bases --output=json > mypy-report.json || true
 
       - name: Upload mypy report
         uses: actions/upload-artifact@v4
