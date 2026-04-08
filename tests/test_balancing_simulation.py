@@ -21,6 +21,7 @@ from custom_components.oig_cloud.battery_forecast.strategy.hybrid import (
     HybridResult, HybridStrategy)
 from custom_components.oig_cloud.battery_forecast.types import (
     CBB_MODE_HOME_UPS, get_mode_name)
+from custom_components.oig_cloud.battery_forecast.types import SpotPrice
 
 TZ = ZoneInfo("Europe/Prague")
 
@@ -31,14 +32,14 @@ def create_spot_prices(
     base_price: float = 3.5,
     cheap_hours: List[int] | None = None,
     expensive_hours: List[int] | None = None,
-) -> List[Dict[str, Any]]:
+) -> List[SpotPrice]:
     """Vytvoří spot ceny pro simulaci."""
     if cheap_hours is None:
         cheap_hours = [2, 3, 4, 5, 14, 15]
     if expensive_hours is None:
         expensive_hours = [7, 8, 18, 19, 20]
 
-    prices = []
+    prices: List[SpotPrice] = []
     for i in range(n_intervals):
         ts = start + timedelta(minutes=i * 15)
         hour = ts.hour
@@ -86,7 +87,7 @@ def create_load_forecast(n_intervals: int = 96) -> List[float]:
 
 def print_result_summary(
     result: HybridResult,
-    spot_prices: List[Dict[str, Any]],
+    spot_prices: List[SpotPrice],
     title: str,
 ) -> None:
     """Vytiskne souhrn výsledku."""
@@ -119,7 +120,7 @@ def print_result_summary(
     if ups_intervals:
         print(f"\n⚡ UPS intervaly ({len(ups_intervals)}):")
         # Seskupíme po hodinách
-        ups_hours = {}
+        ups_hours: Dict[int, int] = {}
         for idx in ups_intervals:
             ts = datetime.fromisoformat(spot_prices[idx]["time"])
             hour = ts.hour

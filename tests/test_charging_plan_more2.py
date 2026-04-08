@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
 from custom_components.oig_cloud.battery_forecast.planning import charging_plan
 from custom_components.oig_cloud.battery_forecast.planning.charging_plan import (
@@ -19,7 +20,7 @@ def _timeline_point(ts: str, battery: float, price: float = 2.0):
 
 
 def _make_plan(**overrides) -> EconomicChargingPlanConfig:
-    base = dict(
+    base: dict[str, Any] = dict(
         min_capacity_kwh=1.0,
         min_capacity_floor=0.5,
         effective_minimum_kwh=1.0,

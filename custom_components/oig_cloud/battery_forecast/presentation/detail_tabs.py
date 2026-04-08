@@ -44,14 +44,17 @@ async def build_hybrid_detail_tabs(
 ) -> Dict[str, Any]:
     """Internal helper that builds hybrid detail tabs."""
     result: Dict[str, Any] = {}
-    if timeline_extended is None:
-        timeline_extended = await sensor.build_timeline_extended()
+    timeline_data = timeline_extended
+    if timeline_data is None:
+        timeline_data = await sensor.build_timeline_extended()
+    if timeline_data is None:
+        return result
 
     mode_names = mode_names or {}
     tabs_to_process = _resolve_tabs(tab)
 
     for tab_name in tabs_to_process:
-        tab_data = timeline_extended.get(tab_name, {})
+        tab_data = timeline_data.get(tab_name, {})
         intervals = tab_data.get("intervals", [])
         date_str = tab_data.get("date", "")
 

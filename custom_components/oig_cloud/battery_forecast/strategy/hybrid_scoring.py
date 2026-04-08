@@ -29,10 +29,10 @@ def analyze_future_prices(
     prices: List[float],
     export_prices: List[float],
     consumption_forecast: List[float],
-) -> Dict[int, Dict[str, float]]:
+) -> Dict[int, Dict[str, Any]]:
     """Analyze future prices for forward-looking optimization."""
     _ = export_prices
-    analysis: Dict[int, Dict[str, float]] = {}
+    analysis: Dict[int, Dict[str, Any]] = {}
     n = len(prices)
 
     # Efficiency constants
@@ -163,7 +163,7 @@ def _score_modes(
     price: float,
     export_price: float,
     cheap_threshold: float,
-    future_info: Dict[str, float],
+    future_info: Dict[str, Any],
 ) -> Dict[int, float]:
     scores: Dict[int, float] = {}
     is_relatively_cheap = future_info.get("is_relatively_cheap", False)

@@ -54,7 +54,7 @@ def _make_pre_peak_intervals(
     Struktura: pre-peak okno (levné ceny) + peak okno (drahé ceny) + zbytek dne
     Interval structure matches economic_charging_plan() input format.
     """
-    timeline = []
+    timeline: list[dict[str, Any]] = []
     now = datetime(2025, 1, 15, 4, 0, tzinfo=timezone.utc)  # Start at 04:00
     
     # Calculate intervals

@@ -155,11 +155,30 @@ def test_find_cheapest_none_when_above_max_price():
     assert result is None
 
 
+def test_should_charge_now_uses_round_trip_cost_gate():
+    assert not module._should_charge_now(
+        4.80,
+        min_future_price=4.48,
+        round_trip_eff=0.84,
+        hysteresis=0.0,
+    )
+
+
+def test_should_charge_now_allows_cheaper_precharge():
+    assert module._should_charge_now(
+        3.00,
+        min_future_price=4.48,
+        round_trip_eff=0.84,
+        hysteresis=0.0,
+    )
+
+
 # =============================================================================
 # Task 9 Tests: Economic Branch Precedence Contract Integration
 # =============================================================================
 
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from typing import Any, Dict, List
 
 from custom_components.oig_cloud.battery_forecast.planning import charging_plan
@@ -187,7 +206,7 @@ def _make_timeline_point(ts: str, battery: float, price: float = 2.0) -> Dict[st
 
 
 def _make_plan_config(**overrides) -> EconomicChargingPlanConfig:
-    base = dict(
+    base: dict[str, Any] = dict(
         min_capacity_kwh=1.0,
         min_capacity_floor=0.5,
         effective_minimum_kwh=1.0,

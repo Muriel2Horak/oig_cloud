@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, List
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -23,7 +23,7 @@ from ..const import (
 from ..sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
 from .data.input import get_load_avg_for_timestamp
 from .economic_planner import plan_battery_schedule
-from .economic_planner_types import PlannerInputs
+from .economic_planner_types import IntervalData, PlannerInputs
 from .types import CBBMode
 
 if TYPE_CHECKING:
@@ -320,7 +320,7 @@ def load_planner_inputs(
         )
         planning_min_percent = hw_min_percent
 
-    intervals = [{"index": i} for i in range(_FORECAST_INTERVALS)]
+    intervals: List[IntervalData] = [{"index": i} for i in range(_FORECAST_INTERVALS)]
     solar_forecast = fetch_solar_forecast(hass, box_id)
     load_forecast = fetch_load_forecast(hass, box_id)
     prices = fetch_prices(hass, config_entry, box_id)

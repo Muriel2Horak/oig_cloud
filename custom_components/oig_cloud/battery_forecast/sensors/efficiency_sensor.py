@@ -618,7 +618,7 @@ def _history_value(states: Optional[list[Any]]) -> Optional[float]:
 
 
 def _stat_value(
-    item: Dict[str, Any], prefer_sum: bool
+    item: Any, prefer_sum: bool
 ) -> Optional[float]:  # pragma: no cover
     keys = ("sum", "state", "max", "mean") if prefer_sum else ("state", "mean", "max")
     for key in keys:

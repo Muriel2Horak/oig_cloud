@@ -26,6 +26,7 @@ HOME UPS (mode=3):
 """
 
 from dataclasses import dataclass
+from typing import Any
 from ...physics import simulate_interval
 from ..config import SimulatorConfig
 from ..types import CBB_MODE_HOME_I, CBB_MODE_HOME_II
@@ -192,7 +193,7 @@ class IntervalSimulator:
 def create_simulator(
     max_capacity: float = 15.36,
     min_capacity: float = 3.07,
-    **kwargs: float,
+    **kwargs: Any,
 ) -> IntervalSimulator:
     """Create an IntervalSimulator with given parameters.
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from homeassistant.util import dt as dt_util
 
@@ -432,7 +432,12 @@ async def update_actual_from_history(sensor: Any) -> None:
     existing_actual = await _patch_existing_actual(sensor, existing_actual)
     plan_data["actual"] = existing_actual
 
-    existing_times = {interval.get("time") for interval in existing_actual}
+    existing_times: Set[str] = {
+        interval_time
+        for interval in existing_actual
+        for interval_time in [interval.get("time")]
+        if isinstance(interval_time, str)
+    }
 
     _LOGGER.debug("Found %s existing actual intervals", len(existing_actual))
 

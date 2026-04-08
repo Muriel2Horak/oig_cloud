@@ -352,7 +352,7 @@ def summarize_block_reason(
 
 
 def _resolve_block_reason(
-    dominant_code: str,
+    dominant_code: Optional[str],
     avg_data: Dict[str, Any],
     delta_kwh: Optional[float],
     max_ups_price: Optional[float],
@@ -403,26 +403,25 @@ def _resolve_reason_from_code(
     dominant_code: Optional[str],
     avg_price: Optional[float],
     avg_future_ups: Optional[float],
-    band_pct: float,
+    band_pct: Optional[float],
 ) -> Optional[str]:
     if not dominant_code:
         return None
-    return _summarize_dominant_code(dominant_code, avg_price, avg_future_ups, band_pct)
+    band_pct_value = band_pct if band_pct is not None else 0.0
+    return _summarize_dominant_code(dominant_code, avg_price, avg_future_ups, band_pct_value)
 
 
 def _resolve_reason_from_mode(
     mode_upper: str,
     avg_data: Dict[str, Optional[float]],
     delta_kwh: Optional[float],
-    max_ups_price: float,
+    max_ups_price: Optional[float],
 ) -> Optional[str]:
+    max_ups_price_value = max_ups_price if max_ups_price is not None else 0.0
     if "UPS" in mode_upper:
         charge_kwh = _resolve_charge_kwh(avg_data["avg_grid_charge"], delta_kwh)
         return _summarize_ups_mode(
-            avg_data["avg_price"],
-            max_ups_price,
-            charge_kwh,
-            avg_data["avg_future_ups"],
+            avg_data["avg_price"], max_ups_price_value, charge_kwh, avg_data["avg_future_ups"]
         )
     if "HOME II" in mode_upper or "HOME 2" in mode_upper:
         return _summarize_home2_mode(
@@ -432,12 +431,7 @@ def _resolve_reason_from_mode(
         return _summarize_home3_mode(avg_data["avg_solar"], avg_data["avg_load"])
     if "HOME I" in mode_upper or "HOME 1" in mode_upper:
         return _summarize_home1_mode(
-            delta_kwh,
-            avg_data["avg_price"],
-            avg_data["avg_future_ups"],
-            max_ups_price,
-            avg_data["avg_solar"],
-            avg_data["avg_load"],
+            delta_kwh, avg_data["avg_price"], avg_data["avg_future_ups"], max_ups_price_value, avg_data["avg_solar"], avg_data["avg_load"]
         )
     return None
 
@@ -454,14 +448,15 @@ def _resolve_fallback_reason(entries_source: List[Dict[str, Any]]) -> Optional[s
 def _select_block_entries(
     group_intervals: List[Dict[str, Any]]
 ) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]], list[Dict[str, Any]]]:
-    planned_entries = [
-        iv.get("planned")
-        for iv in group_intervals
-        if isinstance(iv.get("planned"), dict)
-    ]
-    actual_entries = [
-        iv.get("actual") for iv in group_intervals if isinstance(iv.get("actual"), dict)
-    ]
+    planned_entries: List[Dict[str, Any]] = []
+    actual_entries: List[Dict[str, Any]] = []
+    for iv in group_intervals:
+        planned = iv.get("planned")
+        if isinstance(planned, dict):
+            planned_entries.append(planned)
+        actual = iv.get("actual")
+        if isinstance(actual, dict):
+            actual_entries.append(actual)
     entries_source = planned_entries if planned_entries else actual_entries
     return planned_entries, actual_entries, entries_source
 

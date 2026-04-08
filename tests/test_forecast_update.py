@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -40,6 +41,7 @@ class DummySensor:
         self.coordinator = SimpleNamespace(battery_forecast_data=None)
         self._write_called = False
         self._precompute_called = False
+        self._charging_metrics: dict[str, Any] = {}
 
     def _log_rate_limited(self, key, level, message, *args, **kwargs):
         self._log_entries.append((key, level, message))
@@ -243,6 +245,10 @@ async def test_async_update_happy_path(monkeypatch):
     assert sensor._forecast_in_progress is False
     assert sensor._write_called is True
     assert sensor._precompute_called is True
+    assert sensor._charging_metrics["planner_decision_trace"] == []
+    mode_optimization_result = sensor._mode_optimization_result
+    assert mode_optimization_result is not None
+    assert mode_optimization_result["target_kwh"] == pytest.approx(3.3)
 
 
 @pytest.mark.asyncio

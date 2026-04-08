@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta, tzinfo
+from typing import Any, Callable, Dict, Optional
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -97,7 +98,7 @@ class OigCloudPlannerRecommendedModeSensor(
         coordinator: Any,
         sensor_type: str,
         config_entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info: DeviceInfo,
         hass: Optional[HomeAssistant] = None,
     ) -> None:
         super().__init__(coordinator)
@@ -144,7 +145,7 @@ class OigCloudPlannerRecommendedModeSensor(
         self._attr_native_value: Optional[str] = None
         self._attr_extra_state_attributes: Dict[str, Any] = {}
         self._last_signature: Optional[str] = None
-        self._unsubs: list[callable] = []
+        self._unsubs: list[Callable[..., Any]] = []
 
     async def _async_refresh_precomputed_payload(self) -> None:
         precomputed = await self._load_precomputed()
@@ -189,7 +190,7 @@ class OigCloudPlannerRecommendedModeSensor(
         self,
         ts: Any,
         date_hint: Optional[str] = None,
-        tzinfo: Optional[datetime.tzinfo] = None,
+        tzinfo: Optional[tzinfo] = None,
     ) -> Optional[datetime]:
         if not ts:
             return None
@@ -241,7 +242,7 @@ class OigCloudPlannerRecommendedModeSensor(
         self,
         item: Dict[str, Any],
         date_hint: Optional[str],
-        tzinfo: Optional[datetime.tzinfo],
+        tzinfo: Optional[tzinfo],
         *,
         planned: bool,
     ) -> Optional[datetime]:
@@ -255,7 +256,7 @@ class OigCloudPlannerRecommendedModeSensor(
         intervals: list[Dict[str, Any]],
         now: datetime,
         date_hint: Optional[str],
-        tzinfo: Optional[datetime.tzinfo],
+        tzinfo: Optional[tzinfo],
         *,
         planned: bool,
     ) -> tuple[Optional[int], Optional[datetime], Optional[str], Optional[int]]:
@@ -360,7 +361,7 @@ class OigCloudPlannerRecommendedModeSensor(
         current_mode: str,
         current_start: datetime,
         date_hint: Optional[str],
-        tzinfo: Optional[datetime.tzinfo],
+        tzinfo: Optional[tzinfo],
         *,
         planned: bool,
     ) -> tuple[Optional[datetime], Optional[str], Optional[int]]:
@@ -513,7 +514,7 @@ class OigCloudPlannerRecommendedModeSensor(
         source_intervals: list[Dict[str, Any]],
         detail_intervals: list[Dict[str, Any]],
         detail_date: Optional[str],
-        payload_timezone: datetime.tzinfo,
+        payload_timezone: tzinfo,
         planned_detail: bool,
         current_idx: Optional[int],
         current_mode: Optional[str],
@@ -568,7 +569,7 @@ class OigCloudPlannerRecommendedModeSensor(
         Optional[list[Dict[str, Any]]],
         Optional[str],
         Any,
-        datetime.tzinfo,
+        tzinfo,
     ]:
         detail_tabs = (
             payload.get("detail_tabs")
@@ -590,7 +591,7 @@ class OigCloudPlannerRecommendedModeSensor(
         self,
         payload: Dict[str, Any],
         timeline: Any,
-    ) -> datetime.tzinfo:
+    ) -> tzinfo:
         for ts in (payload.get("calculation_time"), payload.get("last_update")):
             tzinfo = self._tzinfo_from_timestamp(ts)
             if tzinfo:
@@ -599,7 +600,7 @@ class OigCloudPlannerRecommendedModeSensor(
         return tzinfo or dt_util.DEFAULT_TIME_ZONE
 
     @staticmethod
-    def _tzinfo_from_timestamp(ts: Any) -> Optional[datetime.tzinfo]:
+    def _tzinfo_from_timestamp(ts: Any) -> Optional[tzinfo]:
         if not ts:
             return None
         dt_obj = dt_util.parse_datetime(str(ts))
@@ -607,7 +608,7 @@ class OigCloudPlannerRecommendedModeSensor(
             return dt_obj.tzinfo
         return None
 
-    def _tzinfo_from_timeline(self, timeline: Any) -> Optional[datetime.tzinfo]:
+    def _tzinfo_from_timeline(self, timeline: Any) -> Optional[tzinfo]:
         if not isinstance(timeline, list):
             return None
         for item in timeline:
@@ -628,6 +629,7 @@ class OigCloudPlannerRecommendedModeSensor(
         planned_detail = bool(detail_intervals and isinstance(detail_intervals, list))
         if not planned_detail:
             return [], False
+        assert detail_intervals is not None
         planned_only = [
             item for item in detail_intervals if self._interval_has_planned_mode(item)
         ]
@@ -643,7 +645,7 @@ class OigCloudPlannerRecommendedModeSensor(
         source_intervals: list[Dict[str, Any]],
         detail_intervals: list[Dict[str, Any]],
         detail_date: Optional[str],
-        payload_timezone: datetime.tzinfo,
+        payload_timezone: tzinfo,
         now: datetime,
         planned_detail: bool,
         timeline: Any,
@@ -679,7 +681,7 @@ class OigCloudPlannerRecommendedModeSensor(
         source_intervals: list[Dict[str, Any]],
         detail_intervals: list[Dict[str, Any]],
         detail_date: Optional[str],
-        payload_timezone: datetime.tzinfo,
+        payload_timezone: tzinfo,
         planned_detail: bool,
         current_idx: int,
         current_mode: str,

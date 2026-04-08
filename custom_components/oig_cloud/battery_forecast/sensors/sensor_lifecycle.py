@@ -194,15 +194,10 @@ def _subscribe_profiles(sensor) -> None:
         await asyncio.sleep(0)
         sensor._profiles_dirty = True
         sensor._log_rate_limited(
-            "profiles_updated_refresh",
+            "profiles_updated_deferred",
             "info",
-            " profiles_updated received - scheduling immediate forecast refresh",
+            " profiles_updated received - deferring forecast refresh to next 15-min tick",
             cooldown_s=300.0,
-        )
-        _create_background_task(
-            sensor,
-            _refresh_forecast(sensor, "Profiles-driven forecast refresh failed"),
-            "oig_cloud_battery_forecast_profiles_refresh",
         )
 
     signal_name = f"oig_cloud_{sensor._box_id}_profiles_updated"
@@ -211,34 +206,18 @@ def _subscribe_profiles(sensor) -> None:
 
 
 def _schedule_initial_refresh(sensor) -> None:
-    _create_background_task(
-        sensor,
-        _refresh_forecast(
-            sensor,
-            "Initial forecast failed",
-            start_message=" Starting initial forecast asynchronously without waiting for AdaptiveLoadProfiles",
-            success_message=" Initial forecast completed",
-        ),
-        "oig_cloud_battery_forecast_initial_refresh",
-    )
+    async def _initial_refresh():
+        try:
+            _LOGGER.info(
+                " Starting initial forecast asynchronously without waiting for AdaptiveLoadProfiles"
+            )
+            await asyncio.sleep(0)
+            await sensor.async_update()
+            _LOGGER.info(" Initial forecast completed")
+        except Exception as err:
+            _LOGGER.error("Initial forecast failed: %s", err, exc_info=True)
 
-
-async def _refresh_forecast(
-    sensor,
-    error_message: str,
-    *,
-    start_message: str | None = None,
-    success_message: str | None = None,
-):
-    try:
-        if start_message:
-            _LOGGER.info(start_message)
-        await asyncio.sleep(0)
-        await sensor.async_update()
-        if success_message:
-            _LOGGER.info(success_message)
-    except Exception as err:
-        _LOGGER.error("%s: %s", error_message, err, exc_info=True)
+    _create_background_task(sensor, _initial_refresh(), "oig_cloud_battery_forecast_initial_refresh")
 
 
 def _create_background_task(sensor, coro, name: str):
