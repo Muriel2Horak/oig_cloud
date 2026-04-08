@@ -3,15 +3,15 @@
 import asyncio
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
@@ -141,7 +141,7 @@ def _profile_spike_name(day_name: str, stats: Dict[str, float]) -> str:
     return f"{day_name} - běžný"
 
 
-class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
+class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
     """
     Sensor pro automatickou analýzu a tvorbu profilů spotřeby.
 
@@ -149,6 +149,15 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
     - Persistence profilů v attributes
     - UI-friendly zobrazení
     """
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        super().__setattr__(name, value)
+        try:
+            if object.__getattribute__(self, "_initialized"):
+                if name in ("_current_prediction", "_profiling_status", "_profiling_error", "_last_profile_reason", "_last_profile_created"):
+                    self._refresh_attrs()
+        except AttributeError:
+            pass
 
     def __init__(
         self,
@@ -159,11 +168,11 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         hass: Optional[HomeAssistant] = None,
     ) -> None:
         """Initialize the adaptive profiles sensor."""
-        super().__init__(coordinator)
+        super().__init__()
 
         self._sensor_type = sensor_type
         self._config_entry = config_entry
-        self._device_info = device_info
+        self._attr_device_info = cast(Optional[DeviceInfo], device_info)
         self._hass: Optional[HomeAssistant] = hass or getattr(coordinator, "hass", None)
 
         # Stabilní box_id resolution (config entry → proxy → coordinator numeric keys)
@@ -199,6 +208,8 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
 
         # Current consumption prediction (from coordinator)
         self._current_prediction: Optional[Dict[str, Any]] = None
+        self._initialized = True
+        self._refresh_attrs()
 
     async def async_added_to_hass(self) -> None:
         """Při přidání do HA - spustit profiling loop."""
@@ -315,10 +326,11 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 self._profiling_error = "Failed to create profile"
                 _LOGGER.warning("❌ Failed to update consumption profile")
 
+        self._refresh_attrs()
         if self._hass:
             self.async_write_ha_state()
 
-            # Notify dependent sensors (BatteryForecast) that profiles are ready
+    # Notify dependent sensors (BatteryForecast) that profiles are ready
             if prediction:  # Only signal if we have valid data
                 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -357,12 +369,15 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
     def _query_hourly_statistics(
         self, sensor_entity_id: str, start_ts: int, end_ts: int
     ):
+        hass = self._hass
+        if hass is None:
+            return []
         from homeassistant.components.recorder.statistics import statistics_during_period
 
         start_time = datetime.fromtimestamp(start_ts, tz=dt_util.UTC)
         end_time = datetime.fromtimestamp(end_ts, tz=dt_util.UTC)
         stats = statistics_during_period(
-            self._hass,
+            hass,
             start_time,
             end_time,
             {sensor_entity_id},
@@ -479,6 +494,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         """Najít nejstarší dostupný hodinový záznam pro senzor."""
         if not self._hass:
             return None
+        hass = self._hass
 
         try:
             from homeassistant.components.recorder.statistics import (
@@ -486,14 +502,14 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             )
             from homeassistant.helpers.recorder import get_instance
 
-            recorder_instance = get_instance(self._hass)
+            recorder_instance = get_instance(hass)
             if not recorder_instance:
                 _LOGGER.error("Recorder instance not available")
                 return None
 
             def get_earliest_stat_start() -> Optional[datetime]:
                 stats = statistics_during_period(
-                    self._hass,
+                    hass,
                     datetime.fromtimestamp(0, tz=dt_util.UTC),
                     dt_util.utcnow(),
                     {sensor_entity_id},
@@ -529,13 +545,13 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
     def _build_daily_profiles(
         self, hourly_series: List[Tuple[datetime, float]]
     ) -> Tuple[
-        Dict[datetime.date, List[float]], Dict[int, float], Dict[datetime.date, int]
+        Dict[date, List[float]], Dict[int, float], Dict[date, int]
     ]:
         """Zarovnat hodinová data na kalendářní dny a dopočítat chybějící hodiny."""
         if not hourly_series:
             return {}, {}, {}
 
-        day_map: Dict[datetime.date, Dict[int, float]] = defaultdict(dict)
+        day_map: Dict[date, Dict[int, float]] = defaultdict(dict)
         all_values: List[float] = []
 
         for ts, value in hourly_series:
@@ -546,14 +562,14 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
 
         hour_medians: Dict[int, float] = {}
         for hour in range(24):
-            values = [v.get(hour) for v in day_map.values() if hour in v]
+            values: List[float] = [v[hour] for v in day_map.values() if hour in v]
             if values:
                 hour_medians[hour] = float(np.median(values))
 
         global_median = float(np.median(all_values)) if all_values else 0.0
 
-        daily_profiles: Dict[datetime.date, List[float]] = {}
-        interpolated_counts: Dict[datetime.date, int] = {}
+        daily_profiles: Dict[date, List[float]] = {}
+        interpolated_counts: Dict[date, int] = {}
 
         for day, hours in day_map.items():
             day_values: List[Optional[float]] = [
@@ -600,7 +616,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         hour_offset: int = 0,
     ) -> Tuple[List[float], int]:
         """Dopočítat chybějící hodnoty v libovolně dlouhém seznamu."""
-        filled = list(values)
+        filled: List[float] = [float(v) if v is not None else 0.0 for v in values]
         interpolated = 0
         length = len(values)
 
@@ -618,22 +634,33 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             )
 
             if prev_idx is not None and next_idx is not None:
-                prev_val = float(values[prev_idx])  # type: ignore[arg-type]
-                next_val = float(values[next_idx])  # type: ignore[arg-type]
-                ratio = (idx - prev_idx) / (next_idx - prev_idx)
-                fill_value = prev_val + (next_val - prev_val) * ratio
+                prev_raw = values[prev_idx]
+                next_raw = values[next_idx]
+                if prev_raw is not None and next_raw is not None:
+                    prev_val = float(prev_raw)
+                    next_val = float(next_raw)
+                    ratio = (idx - prev_idx) / (next_idx - prev_idx)
+                    fill_value: float = prev_val + (next_val - prev_val) * ratio
+                else:
+                    median_val = hour_medians.get(idx + hour_offset)
+                    if median_val is not None:
+                        fill_value = median_val
+                    else:
+                        fill_value = day_avg if day_avg is not None else global_median
             else:
-                fill_value = hour_medians.get(idx + hour_offset)
-                if fill_value is None:
+                median_val = hour_medians.get(idx + hour_offset)
+                if median_val is not None:
+                    fill_value = median_val
+                else:
                     fill_value = day_avg if day_avg is not None else global_median
 
-            filled[idx] = float(fill_value)
+            filled[idx] = fill_value
             interpolated += 1
 
         return filled, interpolated
 
     def _build_72h_profiles(
-        self, daily_profiles: Dict[datetime.date, List[float]]
+        self, daily_profiles: Dict[date, List[float]]
     ) -> List[Dict[str, Any]]:
         """Sestavit historické 72h profily z po sobě jdoucích dnů."""
         profiles: List[Dict[str, Any]] = []
@@ -674,7 +701,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         today = now.date()
         yesterday = today - timedelta(days=1)
 
-        day_map: Dict[datetime.date, Dict[int, float]] = defaultdict(dict)
+        day_map: Dict[date, Dict[int, float]] = defaultdict(dict)
         all_values: List[float] = []
 
         for ts, value in hourly_series:
@@ -890,7 +917,7 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         hourly_series: List[Tuple[datetime, float]],
         window: Dict[str, int],
     ) -> Optional[
-        Tuple[List[Dict[str, Any]], Dict[int, float], Dict[datetime.date, int], List[float]]
+        Tuple[List[Dict[str, Any]], Dict[int, float], Dict[date, int], List[float]]
     ]:
         daily_profiles, hour_medians, interpolated = self._build_daily_profiles(
             hourly_series
@@ -899,6 +926,10 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             return None
 
         current_match = self._build_current_match(hourly_series, hour_medians)
+        if current_match is None:
+            self._last_profile_reason = "no_current_match"
+            _LOGGER.debug("No current match data available")
+            return None
         if not _has_enough_current_match(
             self, current_match, window["match_hours"]
         ):
@@ -990,17 +1021,13 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
             self._last_profile_reason = "error"
             return None
 
-    @property
-    def native_value(self) -> Optional[str]:
-        """Return profiling status."""
+    def _compute_native_value(self) -> Optional[str]:
         if self._current_prediction:
             total = self._current_prediction.get("predicted_total_kwh", 0)
             return f"{total:.1f} kWh"
         return "no_data"
 
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return attributes."""
+    def _compute_extra_state_attributes(self) -> Dict[str, Any]:
         attrs = {
             "profiling_status": self._profiling_status,
             "profiling_error": self._profiling_error,
@@ -1011,10 +1038,14 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
                 else None
             ),
         }
-
         attrs.update(self._build_prediction_attributes())
-
         return attrs
+
+    def _refresh_attrs(self) -> None:
+        object.__setattr__(self, "_attr_native_value", self._compute_native_value())
+        object.__setattr__(
+            self, "_attr_extra_state_attributes", self._compute_extra_state_attributes()
+        )
 
     def _build_prediction_attributes(self) -> Dict[str, Any]:
         prediction = self._current_prediction
@@ -1206,11 +1237,6 @@ class OigCloudAdaptiveLoadProfilesSensor(CoordinatorEntity, SensorEntity):
         """Get current consumption prediction for use by other components."""
         return self._current_prediction
 
-    @property
-    def device_info(self) -> Dict[str, Any]:
-        """Return device info."""
-        return self._device_info
-
 
 def _resolve_profile_window(now: datetime) -> Dict[str, int]:
     """Resolve matching/prediction window sizes based on current hour."""
@@ -1246,7 +1272,7 @@ async def _resolve_history_window(
 
 def _has_enough_daily_profiles(
     sensor: OigCloudAdaptiveLoadProfilesSensor,
-    daily_profiles: Dict[datetime.date, List[float]],
+    daily_profiles: Dict[date, List[float]],
 ) -> bool:
     """Verify we have at least three days of daily profiles."""
     if len(daily_profiles) >= 3:
@@ -1315,7 +1341,8 @@ def _average_profiles(profiles: List[Dict[str, Any]]) -> List[float]:
         data = profile.get("consumption_kwh") or []
         total += np.array(data[:length], dtype=float)
     avg = total / len(profiles)
-    return [float(value) for value in avg.tolist()]
+    avg_list = cast(List[float], avg.tolist())
+    return [float(value) for value in avg_list]
 
 
 def _build_profile_prediction(
@@ -1325,7 +1352,7 @@ def _build_profile_prediction(
     hour_medians: Dict[int, float],
     current_match: List[float],
     sensor_entity_id: str,
-    interpolated: Dict[datetime.date, int],
+    interpolated: Dict[date, int],
     apply_floor,
 ) -> Dict[str, Any]:
     """Build prediction payload from selected profiles."""

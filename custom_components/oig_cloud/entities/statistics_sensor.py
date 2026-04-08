@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from statistics import median
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
@@ -24,8 +27,17 @@ _LOGGER = logging.getLogger(__name__)
 MAX_HOURLY_DATA_POINTS = 168
 
 
-class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
+class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
     """Statistics sensor for OIG Cloud data."""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        super().__setattr__(name, value)
+        try:
+            if object.__getattribute__(self, "_initialized"):
+                if name in ("_sampling_data", "_current_hourly_value", "_hourly_data", "_interval_data", "hass", "_source_entity_id", "_sensor_config", "_calculate_statistics_value", "_calculate_hourly_value"):
+                    self._refresh_attrs()
+        except AttributeError:
+            pass
 
     def __init__(
         self,
@@ -38,6 +50,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         self._coordinator = coordinator
         self._sensor_type = sensor_type
         self._device_info = device_info
+        self._attr_device_info = cast(DeviceInfo, device_info)
 
         # Získáme konfiguraci senzoru
         from ..sensor_types import SENSOR_TYPES
@@ -77,8 +90,8 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                     SensorDeviceClass, device_class.upper()
                 )
             except AttributeError:
-                self._attr_device_class = device_class
-        else:
+                object.__setattr__(self, "_attr_device_class", device_class)
+        elif isinstance(device_class, SensorDeviceClass):
             self._attr_device_class = device_class
 
         # Správné nastavení state_class - buď enum nebo None
@@ -87,12 +100,16 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
             try:
                 self._attr_state_class = getattr(SensorStateClass, state_class.upper())
             except AttributeError:
-                self._attr_state_class = state_class
-        else:
+                object.__setattr__(self, "_attr_state_class", state_class)
+        elif isinstance(state_class, SensorStateClass):
             self._attr_state_class = state_class
 
         # Správné nastavení entity_category - už je to enum z config
-        self._attr_entity_category = sensor_config.get("entity_category")
+        entity_category = sensor_config.get("entity_category")
+        if isinstance(entity_category, EntityCategory):
+            self._attr_entity_category = entity_category
+        else:
+            self._attr_entity_category = None
 
         # Inicializace datových struktur pro hodinové senzory
         self._hourly_data: List[Dict[str, Any]] = []
@@ -141,11 +158,8 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         _LOGGER.debug(
             f"[{self.entity_id}] Initialized statistics sensor: {sensor_type}"
         )
-
-    @property
-    def device_info(self) -> Optional[Dict[str, Any]]:
-        """Return device info - use same as other sensors."""
-        return self._device_info
+        self._initialized = True
+        self._refresh_attrs()
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
@@ -163,29 +177,53 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         # Nastavení pravidelných aktualizací
         if self._sensor_type == "battery_load_median":
             # Základní mediánový senzor - aktualizace každou minutu
-            async_track_time_interval(
-                self.hass, self._update_sampling_data, timedelta(minutes=1)
-            )
+            try:
+                async_track_time_interval(
+                    self.hass, self._update_sampling_data, timedelta(minutes=1)
+                )
+            except AttributeError:
+                _LOGGER.debug(
+                    "[%s] Skipping interval setup; hass loop not available",
+                    self.entity_id,
+                )
         elif self._sensor_type.startswith("hourly_"):
             # Hodinové senzory - kontrola konce hodiny každých 5 minut
-            async_track_time_interval(
-                self.hass, self._check_hourly_end, timedelta(minutes=5)
-            )
-            _LOGGER.debug(
-                f"[{self.entity_id}] Set up hourly tracking for sensor: {self._sensor_type}"
-            )
+            try:
+                async_track_time_interval(
+                    self.hass, self._check_hourly_end, timedelta(minutes=5)
+                )
+                _LOGGER.debug(
+                    f"[{self.entity_id}] Set up hourly tracking for sensor: {self._sensor_type}"
+                )
+            except AttributeError:
+                _LOGGER.debug(
+                    "[%s] Skipping hourly interval setup; hass loop not available",
+                    self.entity_id,
+                )
         elif hasattr(self, "_time_range") and self._time_range is not None:
             # Intervalové senzory - výpočet statistik jednou denně ve 2:00
             from homeassistant.helpers.event import async_track_time_change
+            from homeassistant.helpers.event import async_call_later
 
-            async_track_time_change(
-                self.hass, self._daily_statistics_update, hour=2, minute=0, second=0
-            )
-            _LOGGER.debug(
-                f"[{self.entity_id}] Set up daily statistics calculation at 2:00 for time range: {self._time_range}"
-            )
-            # První výpočet po startu (neblokuj setup – může to trvat dlouho kvůli recorder historii)
-            self.hass.async_create_task(self._daily_statistics_update(None))
+            try:
+                async_track_time_change(
+                    self.hass, self._daily_statistics_update, hour=2, minute=0, second=0
+                )
+                _LOGGER.debug(
+                    f"[{self.entity_id}] Set up daily statistics calculation at 2:00 for time range: {self._time_range}"
+                )
+            except AttributeError:
+                _LOGGER.debug(
+                    "[%s] Skipping daily statistics schedule; hass loop not available",
+                    self.entity_id,
+                )
+            try:
+                async_call_later(self.hass, 180, self._daily_statistics_update)
+            except AttributeError:
+                _LOGGER.debug(
+                    "[%s] Skipping deferred statistics startup calculation; hass loop not available",
+                    self.entity_id,
+                )
 
         self._schedule_startup_load()
 
@@ -198,18 +236,26 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
         create_background = getattr(self.hass, "async_create_background_task", None)
         if callable(create_background):
+            startup_coro = _startup_load()
             create_background(
-                _startup_load(),
+                startup_coro,
                 name=f"oig_cloud_statistics_startup_load_{self._sensor_type}",
             )
             return
-
-        self.hass.async_create_task(_startup_load())
+        create_task = getattr(self.hass, "async_create_task", None)
+        if callable(create_task):
+            startup_coro = _startup_load()
+            task = create_task(startup_coro)
+            if task is None:
+                startup_coro.close()
+                return
+            if asyncio.iscoroutine(task):
+                task.close()
 
     async def _load_statistics_data(self) -> None:
         """Načte statistická data z persistentního úložiště."""
         try:
-            store = Store(self.hass, version=1, key=self._storage_key)
+            store: Store = Store(self.hass, version=1, key=self._storage_key)
             data = await store.async_load()
 
             if data:
@@ -319,7 +365,7 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                     return
 
             # Fallback na přímý Store save pokud StatisticsStore není dostupný
-            store = Store(self.hass, version=1, key=self._storage_key)
+            store: Store = Store(self.hass, version=1, key=self._storage_key)
             await store.async_save(save_data)
             _LOGGER.debug(f"[{self.entity_id}] Saved statistics data directly")
 
@@ -337,14 +383,16 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
         # Vyčištění intervalových dat - ponechat jen posledních N dní
         if hasattr(self, "_max_age_days") and self._interval_data:
-            cutoff_date = (now - timedelta(days=self._max_age_days)).strftime(
-                "%Y-%m-%d"
-            )
-            keys_to_remove = [
-                key for key in self._interval_data.keys() if key < cutoff_date
-            ]
-            for key in keys_to_remove:
-                del self._interval_data[key]
+            max_age_days = getattr(self, "_max_age_days", 30)
+            if isinstance(max_age_days, int):
+                cutoff_date = (now - timedelta(days=max_age_days)).strftime(
+                    "%Y-%m-%d"
+                )
+                keys_to_remove = [
+                    key for key in self._interval_data.keys() if key < cutoff_date
+                ]
+                for key in keys_to_remove:
+                    del self._interval_data[key]
 
         # Vyčištění hodinových dat - ponechat jen posledních 48 hodin
         if self._hourly_data:
@@ -519,10 +567,11 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
         try:
             from homeassistant.components.recorder import history
 
-            start_hour, end_hour = self._time_range
-            # Zajistit že jsou to int hodnoty
-            start_hour = int(start_hour)
-            end_hour = int(end_hour)
+            time_range = self._time_range
+            if not isinstance(time_range, (list, tuple)) or len(time_range) != 2:
+                return None
+            start_hour = int(time_range[0])
+            end_hour = int(time_range[1])
             source_entity_id = f"sensor.oig_{self._data_key}_actual_aco_p"
 
             # Časový rozsah - použít max_age_days z konfigurace
@@ -742,25 +791,14 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
 
         return None
 
-    @property
-    def state(self) -> Optional[Union[float, str]]:
-        """Return the state of the sensor."""
-        # Odstraníme závislost na coordinator.data pro statistické senzory
+    def _compute_native_value(self) -> Optional[Union[float, str]]:
         if self._sensor_type.startswith("hourly_") and self._coordinator.data is None:
-            # Pro hodinové senzory zkusíme výpočet i bez coordinator dat
             return self._calculate_hourly_value()
-
-        # Hodinové senzory
         if self._sensor_type.startswith("hourly_"):
             return self._calculate_hourly_value()
-
-        # Ostatní statistické senzory (včetně mediánových)
         return self._calculate_statistics_value()
 
-    @property
-    def available(self) -> bool:
-        """Return True if sensor is available."""
-        # OPRAVA: Kontrola zda jsou statistics povoleny
+    def _compute_available(self) -> bool:
         entry = getattr(self._coordinator, "config_entry", None)
         options = entry.options if entry else {}
         if isinstance(options, dict):
@@ -769,26 +807,22 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
             statistics_enabled = getattr(options, "enable_statistics", True)
 
         if not statistics_enabled:
-            return False  # Statistics jsou vypnuté - senzor není dostupný
+            return False
 
-        # Senzor je dostupný pokud má data nebo koordinátor funguje
         if self._sensor_type == "battery_load_median":
-            return len(self._sampling_data) > 0 or self._coordinator.data is not None
+            return len(self._sampling_data) > 0 or getattr(self._coordinator, "data", None) is not None
         elif self._sensor_type.startswith("hourly_"):
-            # Hodinové senzory jsou dostupné pokud existuje source entity
-            if self._source_entity_id:
+            if self._source_entity_id and self.hass is not None:
                 source_entity = self.hass.states.get(self._source_entity_id)
                 return source_entity is not None and source_entity.state not in (
                     "unavailable",
                     "unknown",
                 )
             return False
-        return self._coordinator.data is not None
+        return getattr(self._coordinator, "data", None) is not None
 
-    @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return extra state attributes."""
-        attributes = {}
+    def _compute_extra_state_attributes(self) -> Dict[str, Any]:
+        attributes: Dict[str, Any] = {}
 
         try:
             if self._sensor_type == "battery_load_median":
@@ -808,21 +842,29 @@ class OigCloudStatisticsSensor(SensorEntity, RestoreEntity):
                     )
                 )
             elif hasattr(self, "_time_range") and self._time_range:
-                attributes.update(
-                    _build_interval_attrs(
-                        self._time_range,
-                        getattr(self, "_day_type", "unknown"),
-                        getattr(self, "_statistic", "median"),
-                        getattr(self, "_max_age_days", 30),
-                        self._interval_data,
+                time_range = getattr(self, "_time_range", None)
+                if isinstance(time_range, (list, tuple)) and len(time_range) == 2:
+                    time_range_tuple = (int(time_range[0]), int(time_range[1]))
+                    attributes.update(
+                        _build_interval_attrs(
+                            time_range_tuple,
+                            getattr(self, "_day_type", "unknown"),
+                            getattr(self, "_statistic", "median"),
+                            getattr(self, "_max_age_days", 30),
+                            self._interval_data,
+                        )
                     )
-                )
 
         except Exception as e:
             _LOGGER.error(f"[{self.entity_id}] Error creating attributes: {e}")
             attributes["error"] = str(e)
 
         return attributes
+
+    def _refresh_attrs(self) -> None:
+        self._attr_native_value = self._compute_native_value()
+        self._attr_available = self._compute_available()
+        self._attr_extra_state_attributes = self._compute_extra_state_attributes()
 
     def _load_sampling_data(
         self, sampling_list: List[Tuple[Any, Any]], max_size: int
@@ -1102,7 +1144,7 @@ def _build_sampling_attrs(
     sampling_minutes: int,
     max_sampling_size: int,
 ) -> Dict[str, Any]:
-    attributes = {
+    attributes: Dict[str, Any] = {
         "sampling_points": len(sampling_data),
         "sampling_minutes": sampling_minutes,
         "max_sampling_size": max_sampling_size,
@@ -1241,7 +1283,7 @@ def create_hourly_attributes(
         # Ensure current_time is timezone aware
         current_time = ensure_timezone_aware(current_time)
 
-        attributes = {}
+        attributes: Dict[str, Any] = {}
 
         # Process data points with timezone-aware datetime handling
         filtered_data = []

@@ -49,15 +49,29 @@ class SimpleTelemetry:
         self.headers = headers
         self.session: Optional[ClientSession] = None
         self._aiohttp_available = ClientSession is not None and TCPConnector is not None
-        self._last_failure_log: dict[str, float] = {}
+        self._expected_http_failures_logged: set[tuple[str, str, int]] = set()
 
-    def _should_log_failure(self, key: str, cooldown_s: float = 300.0) -> bool:
-        now = time.monotonic()
-        last = self._last_failure_log.get(key)
-        if last is not None and (now - last) < cooldown_s:
-            return False
-        self._last_failure_log[key] = now
-        return True
+    def _log_http_failure(
+        self,
+        *,
+        event_type: str,
+        service_name: str,
+        status: int,
+        response_text: str,
+    ) -> None:
+        message = (
+            f"[TELEMETRY] Failed to send {event_type}: HTTP {status} - "
+            f"{response_text[:100]}"
+        )
+        if status in {400, 401, 403}:
+            key = (event_type, service_name, status)
+            if key in self._expected_http_failures_logged:
+                _LOGGER.debug(message)
+                return
+            self._expected_http_failures_logged.add(key)
+            _LOGGER.info(message)
+            return
+        _LOGGER.warning(message)
 
     async def _get_session(self) -> Optional[ClientSession]:
         """Získá nebo vytvoří aiohttp session."""
@@ -100,48 +114,47 @@ class SimpleTelemetry:
                 _LOGGER.warning("[TELEMETRY] aiohttp not available, skipping telemetry")
                 return False
 
-            timeout_kw = {}
             if ClientTimeout is not None:
-                timeout_kw = {"timeout": ClientTimeout(total=10)}
+                async with session.post(
+                    self.url,
+                    json=payload,
+                    headers=self.headers,
+                    timeout=ClientTimeout(total=10),
+                ) as response:
+                    response_text = await response.text()
+                    status = response.status
+            else:
+                async with session.post(
+                    self.url,
+                    json=payload,
+                    headers=self.headers,
+                ) as response:
+                    response_text = await response.text()
+                    status = response.status
 
-            async with session.post(
-                self.url,
-                json=payload,
-                headers=self.headers,
-                **timeout_kw
-            ) as response:
-                response_text = await response.text()
+            # LOGOVÁNÍ: Co se vrátilo
+            _LOGGER.debug(f"[TELEMETRY] Response: HTTP {status}")
+            _LOGGER.debug(f"[TELEMETRY] Response body: {response_text[:200]}...")
 
-                # LOGOVÁNÍ: Co se vrátilo
-                _LOGGER.debug(f"[TELEMETRY] Response: HTTP {response.status}")
-                _LOGGER.debug(f"[TELEMETRY] Response body: {response_text[:200]}...")
-
-                if response.status in [200, 202]:
-                    _LOGGER.debug(
-                        f"[TELEMETRY] Successfully sent {event_type} for {service_name}"
-                    )
-                    return True
-                else:
-                    log_message = (
-                        f"[TELEMETRY] Failed to send {event_type}: "
-                        f"HTTP {response.status} - {response_text[:100]}"
-                    )
-                    failure_key = f"{event_type}:{response.status}"
-                    if response.status in {400, 401, 403}:
-                        if self._should_log_failure(failure_key):
-                            _LOGGER.info(log_message)
-                        else:
-                            _LOGGER.debug(log_message)
-                    else:
-                        _LOGGER.warning(log_message)
-                    return False
+            if status in [200, 202]:
+                _LOGGER.debug(
+                    f"[TELEMETRY] Successfully sent {event_type} for {service_name}"
+                )
+                return True
+            else:
+                self._log_http_failure(
+                    event_type=event_type,
+                    service_name=service_name,
+                    status=status,
+                    response_text=response_text,
+                )
+                return False
 
         except Exception as e:
-            log_message = f"[TELEMETRY] Exception while sending {event_type} for {service_name}: {e}"
-            if self._should_log_failure(f"exception:{event_type}"):
-                _LOGGER.warning(log_message, exc_info=True)
-            else:
-                _LOGGER.debug(log_message, exc_info=True)
+            _LOGGER.error(
+                f"[TELEMETRY] Exception while sending {event_type} for {service_name}: {e}",
+                exc_info=True,
+            )
             return False
 
     async def close(self) -> None:

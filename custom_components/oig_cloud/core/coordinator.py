@@ -2,7 +2,7 @@ import asyncio
 import logging
 import random
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo  # Nahradit pytz import
 
 from homeassistant.config_entries import ConfigEntry
@@ -12,8 +12,10 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 from .data_source import DATA_SOURCE_CLOUD_ONLY, get_data_source_state
+
+if TYPE_CHECKING:
+    from ..api.ote_api import OteApi
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +41,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     def __init__(
         self,
         hass: HomeAssistant,
-        api: OigCloudApi,
+        api: Any,
         standard_interval_seconds: int = 30,
         extended_interval_seconds: int = 300,
         config_entry: Optional[Any] = None,
@@ -76,11 +78,12 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             "enable_pricing", False
         )
 
+        self.ote_api: Optional["OteApi"] = None
+
         if pricing_enabled:
             self._setup_pricing_ote(hass)
         else:
             _LOGGER.debug("Spot prices disabled - not initializing OTE API")
-            self.ote_api = None
 
         # NOVÉ: Sledování posledního stažení spotových cen
         self._last_spot_fetch: Optional[datetime] = None
@@ -152,17 +155,18 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
             # OPRAVA: Předat cache_path pro načtení uložených spotových cen
             cache_path = hass.config.path(".storage", "oig_ote_spot_prices.json")
-            self.ote_api = OteApi(cache_path=cache_path)
+            ote_api = OteApi(cache_path=cache_path)
+            self.ote_api = ote_api
 
             # Load cached spot prices asynchronously (avoid blocking file I/O in event loop)
             async def _async_load_ote_cache() -> None:
                 try:
-                    await self.ote_api.async_load_cached_spot_prices()
-                    if self.ote_api._last_data:
-                        self._spot_prices_cache = self.ote_api._last_data
+                    await ote_api.async_load_cached_spot_prices()
+                    if ote_api._last_data:
+                        self._spot_prices_cache = ote_api._last_data
                         _LOGGER.info(
                             "Loaded %d hours of cached spot prices from disk",
-                            self.ote_api._last_data.get("hours_count", 0),
+                            ote_api._last_data.get("hours_count", 0),
                         )
                 except Exception as err:
                     _LOGGER.debug("Failed to load OTE cache asynchronously: %s", err)
@@ -190,13 +194,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             self.ote_api = None
 
     async def async_config_entry_first_refresh(self) -> None:
-        """Load cached payload before the first refresh.
-
-        This makes entities render immediately with last-known values (retain-like behavior),
-        while the coordinator is still doing the first network/local refresh.
-        """
+        self._skip_next_jitter = True
         await self.async_hydrate_startup_cache()
-        self.skip_next_jitter()
 
         try:
             await super().async_config_entry_first_refresh()
@@ -293,6 +292,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     def _maybe_schedule_cache_save(self, data: Dict[str, Any]) -> None:
         if self._cache_store is None:
             return
+        cache_store = self._cache_store
         now = self._utcnow()
         if self._last_cache_save_ts is not None:
             age = (now - self._last_cache_save_ts).total_seconds()
@@ -308,7 +308,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
         async def _save() -> None:
             try:
-                await self._cache_store.async_save(snapshot)
+                await cache_store.async_save(snapshot)
             except Exception as err:
                 _LOGGER.debug("Failed to save coordinator cache: %s", err)
 
@@ -320,7 +320,11 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     def update_intervals(self, standard_interval: int, extended_interval: int) -> None:
         """Dynamicky aktualizuje intervaly coordinatoru."""
         # Uložíme původní hodnoty pro logování
-        old_standard = self.update_interval.total_seconds()
+        old_standard = (
+            self.update_interval.total_seconds()
+            if self.update_interval is not None
+            else 0.0
+        )
         old_extended = self.extended_interval
 
         self.standard_interval = standard_interval
@@ -419,11 +423,14 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         return False
 
     async def _fetch_spot_prices_for_fallback(self, now: datetime) -> Optional[Dict[str, Any]]:
+        ote_api = self.ote_api
+        if ote_api is None:
+            return None
         if now.hour < 13:
             _LOGGER.debug("Before 13:00 - fetching today's data only")
         else:
             _LOGGER.debug("After 13:00 - fetching today + tomorrow data")
-        return await self.ote_api.get_spot_prices()
+        return await ote_api.get_spot_prices()
 
     def _apply_spot_fallback_result(self, spot_data: Optional[Dict[str, Any]]) -> None:
         if spot_data and spot_data.get("prices_czk_kwh"):
@@ -530,9 +537,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         # Apply jitter - random delay at start of update
         if self._skip_next_jitter:
             self._skip_next_jitter = False
+            self._next_jitter = 0.0
             jitter = 0.0
-            self._next_jitter = jitter
-            _LOGGER.debug("⏱️  Skipping jitter for first refresh")
         else:
             jitter = self._calculate_jitter()
 
@@ -587,9 +593,6 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 f"Error communicating with OIG API: {exception}"
             ) from exception
 
-    def skip_next_jitter(self) -> None:
-        self._skip_next_jitter = True
-
     def _resolve_use_cloud(self) -> bool:
         use_cloud = True
         try:
@@ -609,7 +612,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
     async def _get_stats_for_mode(self, use_cloud: bool) -> Dict[str, Any]:
         if use_cloud:
-            return await self._try_get_stats()
+            return await self._try_get_stats() or {}
 
         telemetry_store = getattr(self, "telemetry_store", None)
         if telemetry_store is not None:
@@ -1002,6 +1005,23 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             )
             self.battery_forecast_data = None
 
+    async def async_shutdown(self) -> None:
+        if self._spot_retry_task and not self._spot_retry_task.done():
+            self._spot_retry_task.cancel()
+            try:
+                await self._spot_retry_task
+            except asyncio.CancelledError:
+                pass
+        self._spot_retry_task = None
+
+        if self._battery_forecast_task and not self._battery_forecast_task.done():
+            self._battery_forecast_task.cancel()
+            try:
+                await self._battery_forecast_task
+            except asyncio.CancelledError:
+                pass
+        self._battery_forecast_task = None
+
     def _resolve_forecast_box_id(self) -> Optional[str]:
         inverter_sn: Optional[str] = None
         try:
@@ -1033,6 +1053,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
 
     def _create_forecast_sensor(self, inverter_sn: str) -> Any:
         from ..battery_forecast.sensors.ha_sensor import OigCloudBatteryForecastSensor
+        if self.config_entry is None:
+            raise RuntimeError("config_entry is required for forecast sensor creation")
 
         device_info = self._build_forecast_device_info(inverter_sn)
         _LOGGER.debug(

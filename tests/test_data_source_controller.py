@@ -380,7 +380,6 @@ async def test_handle_local_event_throttles_snapshot_publish():
 
 
 def test_schedule_snapshot_publish_coalesces_pending_updates():
-    now = dt_util.utcnow()
     loop = DummyLoop(now_time=12.0)
     hass = DummyHass([], loop=loop)
     entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
@@ -400,15 +399,6 @@ def test_schedule_snapshot_publish_coalesces_pending_updates():
         hass, entry, coordinator=DummyCoordinator(), telemetry_store=DummyStore()
     )
     controller._last_snapshot_publish_monotonic = 10.0
-    hass.data[module.DOMAIN][entry.entry_id] = {
-        "data_source_state": module.DataSourceState(
-            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
-            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
-            local_available=True,
-            last_local_data=now,
-            reason="local_ok",
-        )
-    }
 
     controller._schedule_snapshot_publish()
     controller._schedule_snapshot_publish()
@@ -480,7 +470,6 @@ async def test_async_start_fallback_listeners(monkeypatch):
     now = dt_util.utcnow()
     states = [
         DummyState(module.PROXY_LAST_DATA_ENTITY_ID, now.isoformat(), last_updated=now),
-        DummyState(module.PROXY_BOX_ID_ENTITY_ID, "123", last_updated=now),
     ]
     hass = DummyHass(states)
     entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
