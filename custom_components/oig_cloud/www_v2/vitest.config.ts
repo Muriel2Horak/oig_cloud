@@ -7,6 +7,10 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/__tests__/**/*.test.ts', 'tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     setupFiles: ['./src/__tests__/setup.ts'],
+    coverage: {
+      reportsDirectory: './coverage',
+      reporter: ['text', 'html', 'clover', 'lcov'],
+    },
   },
   resolve: {
     alias: {

@@ -54,7 +54,7 @@ jobs:
 
       - name: Run frontend tests with coverage
         run: |
-          npm run test:fe:unit:coverage
+          npm --prefix custom_components/oig_cloud/www_v2 run test:unit:coverage
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
@@ -67,7 +67,7 @@ jobs:
             -Dsonar.organization=muriel2horak
             -Dsonar.sources=.
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.javascript.lcov.reportPaths=custom_components/oig_cloud/www_v2/coverage/lcov.info
             -Dsonar.sourceEncoding=UTF-8
             -Dsonar.python.pylintConfigFile=.pylintrc
             -Dsonar.python.bandit.reportPaths=bandit-report.json
