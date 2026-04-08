@@ -78,5 +78,7 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8
             -Dsonar.python.pylintConfigFile=.pylintrc
             -Dsonar.python.bandit.reportPaths=bandit-report.json
+            -Dsonar.tests=tests,custom_components/oig_cloud/www_v2/src/__tests__,custom_components/oig_cloud/www_v2/tests
+            -Dsonar.test.inclusions=tests/**/*.py,custom_components/oig_cloud/www_v2/src/__tests__/**/*.test.ts,custom_components/oig_cloud/www_v2/tests/**/*.test.ts
             -Dsonar.exclusions=**/test*.py,**/tests/**,**/__pycache__/**,**/*.pyc
-            -Dsonar.coverage.exclusions=**/test*.py,**/tests/**,**/__init__.py
+            -Dsonar.coverage.exclusions=**/test*.py,**/tests/**,**/__init__.py,custom_components/oig_cloud/www_v2/src/__tests__/**/*.test.ts,custom_components/oig_cloud/www_v2/tests/**/*.test.ts
