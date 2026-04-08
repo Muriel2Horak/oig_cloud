@@ -1,5 +1,7 @@
 """Tests for the OIG Cloud Data Update Coordinator."""
 
+import asyncio
+
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Dict
@@ -1141,6 +1143,73 @@ async def test_handle_spot_retry_executes_retry_callback(monkeypatch):
     await coordinator._spot_retry_task
 
     assert coordinator._update_spot_prices.called
+
+
+@pytest.mark.asyncio
+async def test_async_shutdown_reraises_cancelled_spot_retry_task(monkeypatch):
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+
+    class CancelledTask:
+        def done(self):
+            return False
+
+        def cancel(self):
+            return None
+
+        def __await__(self):
+            async def _raise():
+                raise asyncio.CancelledError
+
+            return _raise().__await__()
+
+    coordinator._spot_retry_task = CancelledTask()
+
+    with pytest.raises(asyncio.CancelledError):
+        await coordinator.async_shutdown()
+
+
+@pytest.mark.asyncio
+async def test_async_shutdown_reraises_cancelled_battery_forecast_task(monkeypatch):
+    hass = _make_simple_hass()
+    entry = Mock(spec=ConfigEntry)
+    entry.entry_id = "entry"
+    entry.options = {"enable_pricing": False, "enable_chmu_warnings": False}
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.frame.report_usage", lambda *_a, **_k: None
+    )
+    coordinator = OigCloudCoordinator(hass, Mock(), config_entry=entry)
+
+    class CompletedTask:
+        def done(self):
+            return True
+
+    class CancelledTask:
+        def done(self):
+            return False
+
+        def cancel(self):
+            return None
+
+        def __await__(self):
+            async def _raise():
+                raise asyncio.CancelledError
+
+            return _raise().__await__()
+
+    coordinator._spot_retry_task = CompletedTask()
+    coordinator._battery_forecast_task = CancelledTask()
+
+    with pytest.raises(asyncio.CancelledError):
+        await coordinator.async_shutdown()
 
 
 def test_prune_for_cache_limits_payload(monkeypatch):

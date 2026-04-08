@@ -1011,7 +1011,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             try:
                 await self._spot_retry_task
             except asyncio.CancelledError:
-                pass
+                raise
         self._spot_retry_task = None
 
         if self._battery_forecast_task and not self._battery_forecast_task.done():
@@ -1019,7 +1019,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             try:
                 await self._battery_forecast_task
             except asyncio.CancelledError:
-                pass
+                raise
         self._battery_forecast_task = None
 
     def _resolve_forecast_box_id(self) -> Optional[str]:

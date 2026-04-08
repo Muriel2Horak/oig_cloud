@@ -436,7 +436,7 @@ class ServiceShield:
             try:
                 await check_task
             except asyncio.CancelledError:
-                pass
+                raise
         self.check_task = None
 
         # Cleanup mode tracker
