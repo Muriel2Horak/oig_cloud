@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.19] - 2026-04-09
+
+### Fixed
+- Battery forecast planning now accepts usable partial adaptive load-profile payloads instead of collapsing to the legacy fallback path while profile warm-up is still in progress.
+- Forecast updates now rerun immediately when adaptive profiles arrive mid-bucket, so planned consumption and charging decisions no longer stay stuck on the stale flat fallback line until the next 15-minute refresh.
+- Planner load resolution now falls back to `load_avg` only when the selected adaptive profile is missing or unusable, with targeted regression coverage for partial profiles, same-bucket retries, and profile-update refresh triggers.
+
 ## [2.3.18] - 2026-04-08
 
 ### Fixed
