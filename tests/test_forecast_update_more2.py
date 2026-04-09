@@ -564,6 +564,79 @@ async def test_async_update_load_forecast_exception_and_solar_error(monkeypatch)
     assert sensor._timeline_data
 
 
+def test_resolve_load_kwh_uses_today_profile_when_tomorrow_missing():
+    sensor = DummySensor()
+    timestamp = datetime(2025, 1, 2, 12, 0, 0)
+    adaptive_profiles = {
+        "today_profile": {
+            "start_hour": 0,
+            "hourly_consumption": [1.2] * 24,
+            "avg_kwh_h": 0.9,
+        }
+    }
+
+    load_kwh = forecast_update_module._resolve_load_kwh(
+        sensor,
+        timestamp,
+        adaptive_profiles,
+        load_avg_sensors={},
+        today=datetime(2025, 1, 1).date(),
+    )
+
+    assert load_kwh == pytest.approx(0.3)
+
+
+def test_resolve_load_kwh_falls_back_when_adaptive_profile_missing_data(monkeypatch):
+    sensor = DummySensor()
+    timestamp = datetime(2025, 1, 1, 12, 0, 0)
+    adaptive_profiles = {"today_profile": {"start_hour": 0}}
+
+    monkeypatch.setattr(
+        forecast_update_module,
+        "get_load_avg_for_timestamp",
+        lambda *_a, **_k: 0.18,
+    )
+
+    load_kwh = forecast_update_module._resolve_load_kwh(
+        sensor,
+        timestamp,
+        adaptive_profiles,
+        load_avg_sensors={},
+        today=timestamp.date(),
+    )
+
+    assert load_kwh == pytest.approx(0.18)
+
+
+def test_should_skip_bucket_allows_profiles_dirty_rerun():
+    sensor = DummySensor()
+    bucket_start = datetime(2025, 1, 1, 12, 0, 0)
+    sensor._last_forecast_bucket = bucket_start
+    sensor._profiles_dirty = True
+
+    assert forecast_update_module._should_skip_bucket(sensor, bucket_start) is False
+
+
+def test_has_usable_adaptive_profiles_accepts_partial_profile():
+    adaptive_profiles = {
+        "today_profile": {
+            "avg_kwh_h": 0.7,
+        }
+    }
+
+    assert forecast_update_module._has_usable_adaptive_profiles(adaptive_profiles) is True
+
+
+def test_hourly_kwh_from_profile_returns_none_without_series_or_avg():
+    sensor = DummySensor()
+    value = forecast_update_module._hourly_kwh_from_profile(
+        sensor,
+        {"start_hour": 0},
+        datetime(2025, 1, 1, 12, 0, 0),
+    )
+    assert value is None
+
+
 @pytest.mark.asyncio
 async def test_async_update_truncates_horizon(monkeypatch):
     fixed_now = datetime(2025, 1, 1, 12, 0, 0)

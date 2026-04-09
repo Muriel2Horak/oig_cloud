@@ -54,7 +54,10 @@ def _should_skip_bucket(sensor: Any, bucket_start: datetime) -> bool:
             cooldown_s=60.0,
         )
         return True
-    if sensor._last_forecast_bucket == bucket_start:
+    if (
+        sensor._last_forecast_bucket == bucket_start
+        and not getattr(sensor, "_profiles_dirty", False)
+    ):
         return True
     return False
 
@@ -236,7 +239,20 @@ def _resolve_load_kwh(
         )
 
     profile = _select_adaptive_profile(adaptive_profiles, timestamp, today)
+    if not profile:
+        return get_load_avg_for_timestamp(
+            timestamp,
+            load_avg_sensors,
+            state=sensor,
+        )
+
     hourly_kwh = _hourly_kwh_from_profile(sensor, profile, timestamp)
+    if hourly_kwh is None:
+        return get_load_avg_for_timestamp(
+            timestamp,
+            load_avg_sensors,
+            state=sensor,
+        )
     return hourly_kwh / 4.0
 
 
@@ -244,32 +260,81 @@ def _select_adaptive_profile(
     adaptive_profiles: dict[str, Any],
     timestamp: datetime,
     today: date,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
+    today_profile = adaptive_profiles.get("today_profile")
+    tomorrow_profile = adaptive_profiles.get("tomorrow_profile")
     if timestamp.date() == today:
-        return adaptive_profiles["today_profile"]
-    return adaptive_profiles.get("tomorrow_profile", adaptive_profiles["today_profile"])
+        return today_profile or tomorrow_profile
+    return tomorrow_profile or today_profile
+
+
+def _profile_has_hourly_series(profile: Any) -> bool:
+    if not isinstance(profile, dict):
+        return False
+    hourly_consumption = profile.get("hourly_consumption")
+    return isinstance(hourly_consumption, (list, dict)) and bool(hourly_consumption)
+
+
+def _profile_avg_kwh_h(profile: Any) -> float | None:
+    if not isinstance(profile, dict) or "avg_kwh_h" not in profile:
+        return None
+    try:
+        return float(profile.get("avg_kwh_h"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _has_usable_adaptive_profiles(adaptive_profiles: Any) -> bool:
+    if not isinstance(adaptive_profiles, dict):
+        return False
+    for profile_key in ("today_profile", "tomorrow_profile"):
+        profile = adaptive_profiles.get(profile_key)
+        if _profile_has_hourly_series(profile) or _profile_avg_kwh_h(profile) is not None:
+            return True
+    return False
 
 
 def _hourly_kwh_from_profile(
     sensor: Any, profile: dict[str, Any], timestamp: datetime
-) -> float:
+) -> float | None:
     hour = timestamp.hour
     start_hour = profile.get("start_hour", 0)
     index = hour - start_hour
-    hourly_consumption = profile.get("hourly_consumption", []) or []
-    if 0 <= index < len(hourly_consumption):
-        return hourly_consumption[index]
+    hourly_consumption = profile.get("hourly_consumption")
+    if isinstance(hourly_consumption, list) and 0 <= index < len(hourly_consumption):
+        return float(hourly_consumption[index])
+    if isinstance(hourly_consumption, dict):
+        value = hourly_consumption.get(hour)
+        if value is None:
+            value = hourly_consumption.get(index)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+
+    avg_kwh_h = _profile_avg_kwh_h(profile)
+    if avg_kwh_h is not None:
+        sensor._log_rate_limited(
+            "adaptive_profile_oob",
+            "debug",
+            "Adaptive profile hour out of range: hour=%s start=%s len=%s (using avg)",
+            hour,
+            start_hour,
+            len(hourly_consumption) if isinstance(hourly_consumption, (list, dict)) else 0,
+            cooldown_s=900.0,
+        )
+        return avg_kwh_h
 
     sensor._log_rate_limited(
-        "adaptive_profile_oob",
+        "adaptive_profile_missing_data",
         "debug",
-        "Adaptive profile hour out of range: hour=%s start=%s len=%s (using avg)",
+        "Adaptive profile missing usable data: hour=%s start=%s (falling back to load_avg)",
         hour,
         start_hour,
-        len(hourly_consumption),
         cooldown_s=900.0,
     )
-    return profile.get("avg_kwh_h", 0.5)
+    return None
 
 
 def _build_solar_kwh_list(
@@ -653,6 +718,7 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
 async def async_update(sensor: Any) -> None:  # noqa: C901
     """Update sensor data."""
     mark_bucket_done = False
+    used_adaptive_profiles = False
     try:
         now_aware = dt_util.now()
         bucket_start = _bucket_start(now_aware)
@@ -684,6 +750,7 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             adaptive_helper,
             load_forecast,
         ) = prepared
+        used_adaptive_profiles = _has_usable_adaptive_profiles(adaptive_profiles)
         mark_bucket_done = True
 
         # ONE PLANNER: single planning pipeline.
@@ -725,7 +792,10 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
                 )
                 # We intentionally keep profiles dirty until a successful compute; if async_update
                 # failed, the next tick will retry.
-                if sensor._timeline_data:
+                if sensor._timeline_data and (
+                    not getattr(sensor, "_profiles_dirty", False)
+                    or used_adaptive_profiles
+                ):
                     sensor._profiles_dirty = False
         except Exception:  # pragma: no cover
             pass  # nosec B110 pragma: no cover
