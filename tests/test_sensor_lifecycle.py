@@ -62,6 +62,7 @@ class DummySensor:
 
         self._update_calls = 0
         self._create_task_calls = []
+        self._schedule_forecast_retry_calls = []
         self._backfill_called = False
         self._aggregate_daily_called = None
         self._aggregate_weekly_called = None
@@ -97,6 +98,9 @@ class DummySensor:
 
     def _create_task_threadsafe(self, func, *args):
         self._create_task_calls.append((func, args))
+
+    def _schedule_forecast_retry(self, delay_seconds):
+        self._schedule_forecast_retry_calls.append(delay_seconds)
 
 
 @pytest.mark.asyncio
@@ -266,6 +270,29 @@ async def test_async_added_to_hass_callbacks(monkeypatch):
     for coro, _name in sensor.hass.background_created:
         if hasattr(coro, "close"):
             coro.close()
+
+
+@pytest.mark.asyncio
+async def test_profiles_updated_schedules_immediate_refresh(monkeypatch):
+    sensor = DummySensor()
+
+    callback_holder = {}
+
+    def _connect(_hass, _signal, callback):
+        callback_holder["callback"] = callback
+        return lambda: None
+
+    async def _sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(sensor_lifecycle, "async_dispatcher_connect", _connect)
+    monkeypatch.setattr(sensor_lifecycle.asyncio, "sleep", _sleep)
+
+    sensor_lifecycle._subscribe_profiles(sensor)
+    await callback_holder["callback"]()
+
+    assert sensor._profiles_dirty is True
+    assert sensor._schedule_forecast_retry_calls == [2.0]
 
 
 @pytest.mark.asyncio

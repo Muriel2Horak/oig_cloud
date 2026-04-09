@@ -129,6 +129,22 @@ async def test_get_adaptive_load_prediction_variants():
     result = await helper.get_adaptive_load_prediction()
     assert result["match_score"] == 0.0
 
+    state = DummyState({"today_profile": {"total_kwh": 1}})
+    hass = DummyHass({"sensor.oig_123_adaptive_load_profiles": state})
+    helper = module.AdaptiveConsumptionHelper(hass, "123")
+    result = await helper.get_adaptive_load_prediction()
+    assert result is not None
+    assert "today_profile" in result
+    assert "tomorrow_profile" not in result
+
+    state = DummyState({"tomorrow_profile": {"total_kwh": 2}})
+    hass = DummyHass({"sensor.oig_123_adaptive_load_profiles": state})
+    helper = module.AdaptiveConsumptionHelper(hass, "123")
+    result = await helper.get_adaptive_load_prediction()
+    assert result is not None
+    assert "today_profile" not in result
+    assert "tomorrow_profile" in result
+
     state = DummyState({})
     hass = DummyHass({"sensor.oig_123_adaptive_load_profiles": state})
     helper = module.AdaptiveConsumptionHelper(hass, "123")
@@ -139,7 +155,7 @@ async def test_get_adaptive_load_prediction_variants():
     assert await helper.get_adaptive_load_prediction() is None
 
     class BadStates(DummyStates):
-        def get(self, _entity_id):
+        def get(self, entity_id):
             raise RuntimeError("boom")
 
     bad_hass = DummyHass({})
@@ -175,7 +191,7 @@ def test_get_profiles_from_sensor_variants():
     assert helper.get_profiles_from_sensor() == {}
 
     class BadStates(DummyStates):
-        def get(self, _entity_id):
+        def get(self, entity_id):
             raise RuntimeError("boom")
 
     bad_hass = DummyHass({})
