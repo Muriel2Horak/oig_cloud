@@ -72,6 +72,12 @@ class AdaptiveConsumptionHelper:
         return SEASON_NAMES.get(season, season)
 
     @staticmethod
+    def _normalize_profile_payload(profile: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(profile, dict) or not profile:
+            return None
+        return profile
+
+    @staticmethod
     def _sum_profile_hours(hourly: Any, start_hour: int, start: int, end: int) -> float:
         total = 0.0
         if isinstance(hourly, list):
@@ -310,24 +316,31 @@ class AdaptiveConsumptionHelper:
 
             attrs = profiles_state.attributes
 
-            if "today_profile" not in attrs or "tomorrow_profile" not in attrs:
+            today_profile = self._normalize_profile_payload(attrs.get("today_profile"))
+            tomorrow_profile = self._normalize_profile_payload(
+                attrs.get("tomorrow_profile")
+            )
+
+            if not today_profile and not tomorrow_profile:
                 _LOGGER.debug(
-                    "Adaptive sensor missing today_profile or tomorrow_profile"
+                    "Adaptive sensor missing usable today/tomorrow profile payload"
                 )
                 return None
 
             result = {
-                "today_profile": attrs["today_profile"],
-                "tomorrow_profile": attrs["tomorrow_profile"],
                 "match_score": attrs.get("prediction_summary", {}).get(
                     "similarity_score", 0.0
                 ),
                 "prediction_summary": attrs.get("prediction_summary", {}),
             }
+            if today_profile:
+                result["today_profile"] = today_profile
+            if tomorrow_profile:
+                result["tomorrow_profile"] = tomorrow_profile
 
             _LOGGER.debug(
                 "✅ Adaptive prediction loaded: today=%.2f kWh, match_score=%.3f",
-                result["today_profile"].get("total_kwh", 0),
+                (today_profile or tomorrow_profile or {}).get("total_kwh", 0),
                 result["match_score"],
             )
 
