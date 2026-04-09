@@ -193,10 +193,11 @@ def _subscribe_profiles(sensor) -> None:
     async def _on_profiles_updated():
         await asyncio.sleep(0)
         sensor._profiles_dirty = True
+        sensor._schedule_forecast_retry(2.0)
         sensor._log_rate_limited(
-            "profiles_updated_deferred",
+            "profiles_updated_retry",
             "info",
-            " profiles_updated received - deferring forecast refresh to next 15-min tick",
+            " profiles_updated received - scheduling immediate forecast refresh",
             cooldown_s=300.0,
         )
 
