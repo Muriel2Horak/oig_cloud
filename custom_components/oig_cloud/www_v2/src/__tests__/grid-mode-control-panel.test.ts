@@ -170,3 +170,72 @@ describe('OigGridDeliverySelector — activeLimitLabel render branch', () => {
     expect(limitLabel?.values).toContain(7777);
   });
 });
+
+describe('OigGridDeliverySelector — limited button stays visually active during service transition', () => {
+  function getButtonClasses(
+    value: 'off' | 'on' | 'limited',
+    buttonStates: Record<'off' | 'on' | 'limited', 'idle' | 'active' | 'pending' | 'processing' | 'disabled-by-service'>,
+  ): Record<'off' | 'on' | 'limited', string> {
+    const el = new OigGridDeliverySelector();
+    el.value = value;
+    el.limit = 5000;
+    el.buttonStates = buttonStates;
+
+    const rendered = Reflect.apply(
+      Reflect.get(Object.getPrototypeOf(el), 'render'),
+      el,
+      [],
+    ) as { values?: unknown[] } | null;
+
+    const modeButtonsTemplate = rendered?.values?.[1] as Array<{ values?: unknown[] }> | null;
+    if (!Array.isArray(modeButtonsTemplate)) return { off: '', on: '', limited: '' };
+
+    const keys: Array<'off' | 'on' | 'limited'> = ['off', 'on', 'limited'];
+    const result: Record<'off' | 'on' | 'limited', string> = { off: '', on: '', limited: '' };
+    keys.forEach((key, i) => {
+      const tpl = modeButtonsTemplate[i] as { values?: unknown[] } | null;
+      result[key] = String(tpl?.values?.[0] ?? '');
+    });
+    return result;
+  }
+
+  it('limited button class is "active disabled-by-service" when value=limited and shield is changing to off', () => {
+    const classes = getButtonClasses('limited', {
+      off: 'processing',
+      on: 'disabled-by-service',
+      limited: 'disabled-by-service',
+    });
+    expect(classes.limited).toBe('active disabled-by-service');
+  });
+
+  it('limited button class is "active" when value=limited and no service change is pending', () => {
+    const classes = getButtonClasses('limited', {
+      off: 'idle',
+      on: 'idle',
+      limited: 'active',
+    });
+    expect(classes.limited).toBe('active');
+  });
+
+  it('off button class is not active when value=limited even if shield disabled it', () => {
+    const classes = getButtonClasses('limited', {
+      off: 'disabled-by-service',
+      on: 'disabled-by-service',
+      limited: 'disabled-by-service',
+    });
+    expect(classes.off).toBe('disabled-by-service');
+    expect(classes.on).toBe('disabled-by-service');
+    expect(classes.limited).toBe('active disabled-by-service');
+  });
+
+  it('no button gets active-override when value=off and all states are idle', () => {
+    const classes = getButtonClasses('off', {
+      off: 'active',
+      on: 'idle',
+      limited: 'idle',
+    });
+    expect(classes.off).toBe('active');
+    expect(classes.on).toBe('idle');
+    expect(classes.limited).toBe('idle');
+  });
+});
