@@ -408,3 +408,163 @@ async def test_run_manual_balancing_no_plan_branch():
     result = await module._run_manual_balancing_checks(hass, call)
     assert result["processed_entries"] == 1
     assert result["results"][0]["reason"] == "no_plan_needed"
+
+
+class TestUpdateSolarForecastBranches:
+    """Tests for _update_solar_forecast_for_entry branches."""
+
+    def test_update_solar_forecast_no_sensors(self, monkeypatch):
+        """Branch when no solar forecast sensors are available."""
+        import asyncio
+        monkeypatch.setattr(module, "_get_entry_solar_sensors", lambda _ed: [])
+        result = asyncio.get_event_loop().run_until_complete(
+            module._update_solar_forecast_for_entry(
+                "entry_1", {"solar_forecast_sensors": []}
+            )
+        )
+        assert result["status"] == "no_sensors"
+
+    def test_update_solar_forecast_skipped(self, monkeypatch):
+        """Branch when entity_ids don't match any sensors."""
+        import asyncio
+        sensor = SimpleNamespace(entity_id="sensor.solar")
+        monkeypatch.setattr(module, "_get_entry_solar_sensors", lambda _ed: [sensor])
+        result = asyncio.get_event_loop().run_until_complete(
+            module._update_solar_forecast_for_entry(
+                "entry_1", {"solar_forecast_sensors": [sensor]}, entity_ids=["sensor.other"]
+            )
+        )
+        assert result["status"] == "skipped"
+
+    def test_update_solar_forecast_no_primary(self, monkeypatch):
+        """Branch when no primary solar sensor is found."""
+        import asyncio
+        monkeypatch.setattr(module, "_get_entry_solar_sensors", lambda _ed: [SimpleNamespace(entity_id="sensor.x")])
+        monkeypatch.setattr(module, "_get_primary_solar_sensor", lambda _ed: None)
+        result = asyncio.get_event_loop().run_until_complete(
+            module._update_solar_forecast_for_entry(
+                "entry_1", {"solar_forecast_sensors": [SimpleNamespace(entity_id="sensor.x")]}
+            )
+        )
+        assert result["status"] == "no_primary"
+
+    def test_update_solar_forecast_manual_update_failed(self, monkeypatch):
+        """Branch when async_manual_update returns False."""
+        import asyncio
+        sensor = SimpleNamespace(entity_id="sensor.x", _sensor_type="solar_forecast")
+
+        async def manual_update_false():
+            return False
+
+        sensor.async_manual_update = manual_update_false
+        monkeypatch.setattr(module, "_get_primary_solar_sensor", lambda _ed: sensor)
+        result = asyncio.get_event_loop().run_until_complete(
+            module._update_solar_forecast_for_entry(
+                "entry_1", {"solar_forecast_sensors": [sensor]}
+            )
+        )
+        assert result["status"] == "error"
+        assert result["error"] == "manual_update_failed"
+
+    def test_update_solar_forecast_exception(self, monkeypatch):
+        """Branch when exception is raised during update."""
+        import asyncio
+
+        async def raise_exc():
+            raise RuntimeError("update failed")
+
+        sensor = SimpleNamespace(entity_id="sensor.x", _sensor_type="solar_forecast", async_update=raise_exc)
+        monkeypatch.setattr(module, "_get_primary_solar_sensor", lambda _ed: sensor)
+        result = asyncio.get_event_loop().run_until_complete(
+            module._update_solar_forecast_for_entry(
+                "entry_1", {"solar_forecast_sensors": [sensor]}
+            )
+        )
+        assert result["status"] == "error"
+        assert "update failed" in result["error"]
+
+
+class TestActionSetBoxModeBranches:
+    """Tests for _action_set_box_mode branches."""
+
+    def test_action_set_box_mode_home_5_6_unsupported_error(self, monkeypatch):
+        """Branch when Home 5/6 returns 500 error."""
+        hass, entry, api = _make_hass()
+
+        async def raise_500_home5(*args, **kwargs):
+            raise Exception("500 Internal Server Error")
+
+        api.set_box_mode = raise_500_home5
+        monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
+
+        with pytest.raises(vol.Invalid, match="Home 5 a Home 6 nejsou.*"):
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(
+                module._action_set_box_mode(hass, entry, {"mode": "home_5"}, "")
+            )
+
+    def test_action_set_box_mode_home_5_label_unsupported_error(self, monkeypatch):
+        """Branch when 'Home 5' label returns 500 error."""
+        hass, entry, api = _make_hass()
+
+        async def raise_500_home5(*args, **kwargs):
+            raise Exception("500 Internal Server Error")
+
+        api.set_box_mode = raise_500_home5
+        monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
+
+        with pytest.raises(vol.Invalid, match="Home 5 a Home 6 nejsou.*"):
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(
+                module._action_set_box_mode(hass, entry, {"mode": "Home 5"}, "")
+            )
+
+    def test_action_set_box_mode_home_6_unsupported_error(self, monkeypatch):
+        """Branch when Home 6 returns 500 error."""
+        hass, entry, api = _make_hass()
+
+        async def raise_500_home6(*args, **kwargs):
+            raise Exception("500 Internal Server Error")
+
+        api.set_box_mode = raise_500_home6
+        monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
+
+        with pytest.raises(vol.Invalid, match="Home 5 a Home 6 nejsou.*"):
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(
+                module._action_set_box_mode(hass, entry, {"mode": "home_6"}, "")
+            )
+
+    def test_action_set_box_mode_non_500_error_passthrough(self, monkeypatch):
+        """Non-500 errors should be re-raised."""
+        hass, entry, api = _make_hass()
+
+        async def raise_other(*args, **kwargs):
+            raise Exception("403 Forbidden")
+
+        api.set_box_mode = raise_other
+        monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
+
+        with pytest.raises(Exception, match="403 Forbidden"):
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(
+                module._action_set_box_mode(hass, entry, {"mode": "home_1"}, "")
+            )
+
+    def test_action_set_box_mode_invalid_mode_raises(self, monkeypatch):
+        """Invalid mode value raises vol.Invalid."""
+        hass, entry, api = _make_hass()
+        called = []
+
+        async def track_call(*args, **kwargs):
+            called.append(args)
+
+        api.set_box_mode = track_call
+        monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
+
+        with pytest.raises(vol.Invalid, match="Neplatný režim boxu."):
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(
+                module._action_set_box_mode(hass, entry, {"mode": "invalid_mode"}, "")
+            )
+        assert len(called) == 0

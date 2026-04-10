@@ -3,16 +3,16 @@
 These tests verify that:
 1. set_grid_delivery(mode+limit) is split into two ordered steps
 2. Mode=limited is ALWAYS first
-3. Numeric limit is ALWAYS second  
+3. Numeric limit is ALWAYS second
 4. The limit step is NOT skipped due to intermediate state
 5. Step metadata is properly tracked
 """
 
 from __future__ import annotations
 
-import pytest
+import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 from custom_components.oig_cloud.shield import dispatch as dispatch_module
 from custom_components.oig_cloud.shield import validation as validation_module
@@ -44,6 +44,9 @@ class DummyHass:
         self.states = states
         self.data = {"oig_cloud": {}}
 
+    def async_create_task(self, task):
+        return task
+
 
 class DummyShield:
     def __init__(self, hass, entry):
@@ -58,6 +61,20 @@ class DummyShield:
 
     def _normalize_value(self, val):
         return validation_module.normalize_value(val)
+
+
+class DummyInterceptShield(DummyShield):
+    def __init__(self, hass, entry):
+        super().__init__(hass, entry)
+        self.extract_expected_entities = lambda _service_name, _params: {
+            "sensor.oig_123_box_prms_mode": "Home 1"
+        }
+        self._extract_api_info = lambda _service_name, _params: {}
+        self._log_security_event = lambda *_args, **_kwargs: None
+        self._notify_state_change = lambda: None
+        self._check_loop = lambda _when: None
+        self._log_event = AsyncMock()
+        self._log_telemetry = AsyncMock()
 
 
 class TestSplitGridDeliveryParams:
@@ -241,7 +258,7 @@ class TestQueueEntitiesMatch:
     def test_entities_match_logs_grid_step(self, caplog):
         """Queue entities_match logs grid delivery step when present."""
         import logging
-        
+
         entity = DummyState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "500")
         hass = DummyHass(DummyStates([entity]))
         entry = SimpleNamespace(options={"box_id": "123"}, data={})
@@ -272,17 +289,17 @@ class TestIntegrationSplitFlow:
         """Verify split flow always orders mode before limit."""
         # This test verifies the internal structure without full async execution
         params = {"mode": "limited", "limit": 750, "acknowledgement": True, "warning": True}
-        
+
         result = dispatch_module._split_grid_delivery_params(params)
-        
+
         assert result is not None
         assert len(result) == 2
-        
+
         # First step MUST be mode
         assert result[0]["_grid_delivery_step"] == "mode"
         assert "mode" in result[0]
         assert "limit" not in result[0]
-        
+
         # Second step MUST be limit
         assert result[1]["_grid_delivery_step"] == "limit"
         assert "limit" in result[1]
@@ -299,11 +316,314 @@ class TestIntegrationSplitFlow:
         # Test mode step
         mode_data = {"mode": "limited", "_grid_delivery_step": "mode"}
         mode_result = validation_module._expected_grid_delivery(shield, mode_data, lambda s: f"sensor.oig_123{s}")
-        
+
         assert mode_result == {"sensor.oig_123_invertor_prms_to_grid": "Omezeno"}
 
         # Test limit step
         limit_data = {"limit": 500, "_grid_delivery_step": "limit"}
         limit_result = validation_module._expected_grid_delivery(shield, limit_data, lambda s: f"sensor.oig_123{s}")
-        
+
         assert limit_result == {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "500"}
+
+    def test_handle_split_grid_delivery_queues_both_steps_in_order(self, monkeypatch):
+        """Split handler forwards mode step first and limit step second."""
+        hass = DummyHass(DummyStates([]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+        recorded_calls = []
+
+        async def fake_intercept(*args):
+            recorded_calls.append(args[3]["params"])
+
+        monkeypatch.setattr(dispatch_module, "intercept_service_call", fake_intercept)
+
+        result = asyncio.run(
+            dispatch_module._handle_split_grid_delivery(
+                shield,
+                "oig_cloud",
+                "set_grid_delivery",
+                {"mode": "limited", "limit": 750, "acknowledgement": True, "warning": True},
+                AsyncMock(),
+                False,
+                None,
+            )
+        )
+
+        assert result is True
+        assert recorded_calls == [
+            {"mode": "limited", "acknowledgement": True, "warning": True, "_grid_delivery_step": "mode"},
+            {"limit": 750, "acknowledgement": True, "warning": True, "_grid_delivery_step": "limit"},
+        ]
+
+    def test_intercept_service_call_skips_when_entities_already_match(self):
+        """Intercept logs skipped telemetry/event when target state is already reached."""
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyInterceptShield(hass, entry)
+        original_call = AsyncMock()
+
+        asyncio.run(
+            dispatch_module.intercept_service_call(
+                shield,
+                "oig_cloud",
+                "set_box_mode",
+                {"params": {"mode": "home_1"}},
+                original_call,
+                False,
+                None,
+            )
+        )
+
+        original_call.assert_not_awaited()
+        shield._log_telemetry.assert_awaited_once()
+        shield._log_event.assert_awaited_once()
+
+        telemetry_call = shield._log_telemetry.await_args
+        event_call = shield._log_event.await_args
+
+        assert telemetry_call is not None
+        assert event_call is not None
+
+        telemetry_payload = telemetry_call.args[2]
+        event_payload = event_call.args[2]
+
+        assert telemetry_call.args[0] == "skipped"
+        assert event_call.args[0] == "skipped"
+        assert telemetry_payload["reason"] == "already_completed"
+        assert event_payload["entities"] == {"sensor.oig_123_box_prms_mode": "Home 1"}
+
+
+class TestIsDuplicate:
+    """Tests for _is_duplicate function - checks queue and pending for duplicate services."""
+
+    def test_duplicate_in_queue(self):
+        """When same service/params/entities found in queue, return 'queue'."""
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        shield.queue.append((
+            "oig_cloud.set_box_mode",
+            {"mode": "home_1"},
+            {"sensor.oig_123_box_prms_mode": "Home 1"},
+            None,
+            "switch",
+            "oig_cloud.set_box_mode",
+            False,
+            None,
+        ))
+
+        result = dispatch_module._is_duplicate(
+            shield,
+            "oig_cloud.set_box_mode",
+            {"mode": "home_1"},
+            {"sensor.oig_123_box_prms_mode": "Home 1"},
+        )
+
+        assert result == "queue"
+
+
+class TestLogDedupState:
+    """Tests for _log_dedup_state function - debug logging for dedup."""
+
+    def test_log_dedup_state_empty_queue_and_pending(self, caplog):
+        """Log dedup state with empty queue and pending."""
+        import logging
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        with caplog.at_level(logging.DEBUG):
+            dispatch_module._log_dedup_state(
+                shield,
+                "oig_cloud.set_box_mode",
+                {"mode": "home_1"},
+                {"sensor.oig_123_box_prms_mode": "Home 1"},
+            )
+
+        assert "Dedup: checking for duplicates" in caplog.text
+        assert "Dedup: new service=oig_cloud.set_box_mode" in caplog.text
+        assert "Dedup: queue length=0" in caplog.text
+        assert "Dedup: pending length=0" in caplog.text
+
+    def test_log_dedup_state_with_queue_items(self, caplog):
+        """Log dedup state shows queue items."""
+        import logging
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        shield.queue.append((
+            "oig_cloud.set_box_mode",
+            {"mode": "home_1"},
+            {"sensor.oig_123_box_prms_mode": "Home 1"},
+            None,
+            "switch",
+            "oig_cloud.set_box_mode",
+            False,
+            None,
+        ))
+
+        with caplog.at_level(logging.DEBUG):
+            dispatch_module._log_dedup_state(
+                shield,
+                "oig_cloud.set_grid_delivery",
+                {"mode": "limited"},
+                {"sensor.oig_123_invertor_prms_to_grid": "Omezeno"},
+            )
+
+        assert "Dedup: queue length=1" in caplog.text
+        assert "Dedup: queue[0] service=oig_cloud.set_box_mode" in caplog.text
+
+    def test_log_dedup_state_with_pending_items(self, caplog):
+        """Log dedup state shows pending items."""
+        import logging
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        shield.pending["oig_cloud.set_boiler_mode"] = {
+            "entities": {"sensor.oig_123_boiler_mode": "Manual"},
+            "params": {"mode": "manual"},
+            "called_at": __import__('datetime').datetime.now(),
+        }
+
+        with caplog.at_level(logging.DEBUG):
+            dispatch_module._log_dedup_state(
+                shield,
+                "oig_cloud.set_box_mode",
+                {"mode": "home_1"},
+                {"sensor.oig_123_box_prms_mode": "Home 1"},
+            )
+
+        assert "Dedup: pending length=1" in caplog.text
+        assert "Dedup: pending service=oig_cloud.set_boiler_mode" in caplog.text
+
+    def test_duplicate_in_queue_with_different_params(self):
+        """Different params means not a duplicate even if same service."""
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        shield.queue.append((
+            "oig_cloud.set_box_mode",
+            {"mode": "home_1"},
+            {"sensor.oig_123_box_prms_mode": "Home 1"},
+            None,
+            "switch",
+            "oig_cloud.set_box_mode",
+            False,
+            None,
+        ))
+
+        result = dispatch_module._is_duplicate(
+            shield,
+            "oig_cloud.set_box_mode",
+            {"mode": "home_1"},
+            {"sensor.oig_123_box_prms_mode": "Home 1"},
+        )
+
+        assert result == "queue"
+
+    def test_duplicate_in_pending_with_different_entities(self):
+        """Different expected entities means not a duplicate even if same service."""
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        shield.pending["oig_cloud.set_box_mode"] = {
+            "entities": {"sensor.oig_123_box_prms_mode": "Home 1"},
+            "params": {"mode": "home_1"},
+            "called_at": __import__('datetime').datetime.now(),
+        }
+
+        result = dispatch_module._is_duplicate(
+            shield,
+            "oig_cloud.set_box_mode",
+            {"mode": "home_1"},
+            {"sensor.oig_123_box_prms_mode": "Home 2"},
+        )
+
+        assert result is None
+
+    def test_duplicate_in_queue_with_empty_params(self):
+        """Empty params still matches correctly."""
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        shield.queue.append((
+            "oig_cloud.set_box_mode",
+            None,
+            {"sensor.oig_123_box_prms_mode": "Home 1"},
+            None,
+            "switch",
+            "oig_cloud.set_box_mode",
+            False,
+            None,
+        ))
+
+        result = dispatch_module._is_duplicate(
+            shield,
+            "oig_cloud.set_box_mode",
+            None,
+            {"sensor.oig_123_box_prms_mode": "Home 1"},
+        )
+
+        assert result == "queue"
+
+    def test_duplicate_in_pending_missing_entities_key(self):
+        """Pending entry without entities key should not match."""
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        shield.pending["oig_cloud.set_box_mode"] = {
+            "params": {"mode": "home_1"},
+            "called_at": __import__('datetime').datetime.now(),
+        }
+
+        result = dispatch_module._is_duplicate(
+            shield,
+            "oig_cloud.set_box_mode",
+            {"mode": "home_1"},
+            {"sensor.oig_123_box_prms_mode": "Home 1"},
+        )
+
+        assert result is None
+
+    def test_different_service_in_queue_not_duplicate(self):
+        """Different service name means not a duplicate even if params match."""
+        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        shield.queue.append((
+            "oig_cloud.set_boiler_mode",
+            {"mode": "cbb"},
+            {},
+            None,
+            "switch",
+            "oig_cloud.set_boiler_mode",
+            False,
+            None,
+        ))
+
+        result = dispatch_module._is_duplicate(
+            shield,
+            "oig_cloud.set_box_mode",
+            {"mode": "home_1"},
+            {"sensor.oig_123_box_prms_mode": "Home 1"},
+        )
+
+        assert result is None
