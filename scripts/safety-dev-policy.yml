@@ -46,3 +46,16 @@ security:
       reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
     79083:
       reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    # Additional vulnerabilities from homeassistant hard-pinned transitive deps
+    85151:
+      reason: Hard-pinned transitive dep from homeassistant - protobuf<5.29.6 required by HA core.
+    84961:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    84963:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    85681:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    86217:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.
+    86269:
+      reason: Dev-only dependency pinned by pytest-homeassistant-custom-component.

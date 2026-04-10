@@ -82,7 +82,10 @@ jobs:
 
       - name: Run Safety check
         run: |
-          safety check --json > safety-report.json || true
+          safety check \
+            -r requirements.txt \
+            --policy-file scripts/safety-dev-policy.yml \
+            --json > safety-report.json || true
 
       - name: Upload Safety report
         uses: actions/upload-artifact@v4
