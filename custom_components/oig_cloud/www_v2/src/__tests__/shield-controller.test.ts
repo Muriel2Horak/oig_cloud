@@ -274,7 +274,18 @@ describe('ShieldController service calls', () => {
     expect(call[2]).not.toHaveProperty('mode');
   });
 
-  it('setGridDelivery sends both mode and limit when not yet in limited mode', async () => {
+  it('setGridDelivery sends both mode and limit when switching from off to limited', async () => {
+    mockStoreState.gridMode = 'Vypnuto';
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    await controller.setGridDelivery('limited', 4000);
+    const call = (haClient.callService as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[2]).toMatchObject({ mode: 'limited', limit: 4000 });
+  });
+
+  it('setGridDelivery sends both mode and limit when switching from on to limited', async () => {
     mockStoreState.gridMode = 'Zapnuto';
     const { ShieldController } = await import('@/data/shield-controller');
     const controller = new ShieldController();
@@ -283,6 +294,52 @@ describe('ShieldController service calls', () => {
     await controller.setGridDelivery('limited', 4000);
     const call = (haClient.callService as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[2]).toMatchObject({ mode: 'limited', limit: 4000 });
+  });
+
+  it('setGridDelivery sends only limit when store already reports limited but cached state is stale', async () => {
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    mockStoreState.gridMode = 'Zapnuto';
+    controller.refresh();
+    expect(controller.getState().currentGridDelivery).toBe('on');
+
+    mockStoreState.gridMode = 'Omezeno';
+
+    await controller.setGridDelivery('limited', 4200);
+
+    const call = (haClient.callService as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[2]).toMatchObject({ limit: 4200 });
+    expect(call[2]).not.toHaveProperty('mode');
+  });
+
+  it('setGridDelivery sends only limit when limited mode is already pending before numeric limit step', async () => {
+    mockStoreState.status = 'running';
+    mockStoreState.queueCount = 2;
+    mockStoreState.gridMode = 'Probíhá změna';
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_grid_delivery',
+          grid_delivery_step: 'mode',
+          params: { mode: 'limited', _grid_delivery_step: 'mode' },
+          targets: [{ param: 'mode', value: 'Omezeno', entity_id: 'sensor.invertor_prms_to_grid', from: 'Zapnuto', to: 'Omezeno', current: 'Zapnuto' }],
+          changes: [],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    await controller.setGridDelivery('limited', 3600);
+
+    const call = (haClient.callService as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[2]).toMatchObject({ limit: 3600 });
+    expect(call[2]).not.toHaveProperty('mode');
   });
 
   it('setGridDelivery sends limit only when delivery is non-limited with limit param', async () => {
@@ -413,6 +470,70 @@ describe('ShieldController button state helpers', () => {
     controller.refresh();
 
     expect(controller.getGridDeliveryButtonState('limited')).toBe('processing');
+    expect(controller.getGridDeliveryButtonState('off')).toBe('disabled-by-service');
+  });
+
+  it('getGridDeliveryButtonState keeps current limited active during queued transition away from limited', async () => {
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    mockStoreState.gridMode = 'Omezeno';
+    mockStoreState.activityAttrs = { running_requests: [], queued_requests: [] };
+    controller.refresh();
+
+    mockStoreState.status = 'idle';
+    mockStoreState.queueCount = 1;
+    mockStoreState.gridMode = 'Omezeno';
+    mockStoreState.activityAttrs = {
+      running_requests: [],
+      queued_requests: [
+        {
+          service: 'set_grid_delivery',
+          grid_delivery_step: 'mode',
+          params: { mode: 'off', _grid_delivery_step: 'mode' },
+          targets: [{ param: 'mode', value: 'Vypnuto', entity_id: 'sensor.invertor_prms_to_grid', from: 'Omezeno', to: 'Vypnuto', current: 'Omezeno' }],
+          changes: [],
+          queued_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+    };
+
+    controller.refresh();
+
+    expect(controller.getGridDeliveryButtonState('limited')).toBe('active');
+    expect(controller.getGridDeliveryButtonState('off')).toBe('pending');
+    expect(controller.getGridDeliveryButtonState('on')).toBe('disabled-by-service');
+  });
+
+  it('getGridDeliveryButtonState keeps current limited active during running transition away from limited', async () => {
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    mockStoreState.gridMode = 'Omezeno';
+    mockStoreState.activityAttrs = { running_requests: [], queued_requests: [] };
+    controller.refresh();
+
+    mockStoreState.status = 'running';
+    mockStoreState.queueCount = 1;
+    mockStoreState.gridMode = 'Probíhá změna';
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_grid_delivery',
+          grid_delivery_step: 'mode',
+          params: { mode: 'on', _grid_delivery_step: 'mode' },
+          targets: [{ param: 'mode', value: 'Zapnuto', entity_id: 'sensor.invertor_prms_to_grid', from: 'Omezeno', to: 'Zapnuto', current: 'Omezeno' }],
+          changes: [],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    controller.refresh();
+
+    expect(controller.getGridDeliveryButtonState('limited')).toBe('active');
+    expect(controller.getGridDeliveryButtonState('on')).toBe('processing');
     expect(controller.getGridDeliveryButtonState('off')).toBe('disabled-by-service');
   });
 
@@ -588,6 +709,20 @@ describe('ShieldController structured split grid parsing', () => {
     expect(controller.getState().currentGridDelivery).toBe('limited');
 
     mockStoreState.gridMode = 'Probíhá změna';
+    controller.refresh();
+    expect(controller.getState().currentGridDelivery).toBe('limited');
+  });
+
+  it('preserves previous grid mode during prefixed Probíhá změna transition refreshes', async () => {
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    mockStoreState.activityAttrs = { running_requests: [], queued_requests: [] };
+    mockStoreState.gridMode = 'Omezeno';
+    controller.refresh();
+    expect(controller.getState().currentGridDelivery).toBe('limited');
+
+    mockStoreState.gridMode = 'Probíhá změna režimu';
     controller.refresh();
     expect(controller.getState().currentGridDelivery).toBe('limited');
   });

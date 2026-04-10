@@ -48,6 +48,10 @@ export class ShieldController {
   private queueUpdateInterval: number | null = null;
   private started = false;
 
+  private isGridDeliveryTransition(rawValue: string): boolean {
+    return rawValue.trim().toLowerCase().includes('probíhá změna');
+  }
+
   // --------------------------------------------------------------------------
   // Lifecycle
   // --------------------------------------------------------------------------
@@ -150,7 +154,7 @@ export class ShieldController {
 
       // Normalize current values
       const currentBoxMode = BOX_MODE_SENSOR_MAP[boxModeRaw.trim()] ?? 'home_1';
-      const currentGridDelivery = gridModeRaw.trim() === 'Probíhá změna'
+      const currentGridDelivery = this.isGridDeliveryTransition(gridModeRaw)
         ? this.state.currentGridDelivery
         : resolveGridDelivery(gridModeRaw);
       const currentBoilerMode = BOILER_MODE_SENSOR_MAP[boilerModeRaw.trim()] ?? 'cbb';
@@ -164,7 +168,7 @@ export class ShieldController {
       const pendingServices = new Map<ShieldServiceType, string>();
       const changingServices = new Set<ShieldServiceType>();
 
-      if (gridModeRaw.trim() === 'Probíhá změna') {
+      if (this.isGridDeliveryTransition(gridModeRaw)) {
         changingServices.add('grid_mode');
       }
 
@@ -406,6 +410,48 @@ export class ShieldController {
     }
   }
 
+  private getGridDeliveryTransitionState(): 'pending' | 'processing' {
+    return this.state.status === 'running' ? 'processing' : 'pending';
+  }
+
+  private getPendingGridDeliveryTarget(): GridDelivery | null {
+    const pendingTarget = this.state.pendingServices.get('grid_mode');
+    if (!pendingTarget) {
+      return null;
+    }
+    return GRID_DELIVERY_SENSOR_MAP[pendingTarget] ?? null;
+  }
+
+  private isLimitedGridDeliveryActiveOrPending(): boolean {
+    if (this.state.pendingServices.has('grid_limit')) {
+      return true;
+    }
+
+    if (this.getPendingGridDeliveryTarget() === 'limited') {
+      return true;
+    }
+
+    const store = getEntityStore();
+    if (!store) {
+      return this.state.currentGridDelivery === 'limited';
+    }
+
+    const rawGridMode = store.getString(store.getSensorId('invertor_prms_to_grid')).value;
+    if (!rawGridMode.trim()) {
+      return this.state.currentGridDelivery === 'limited';
+    }
+
+    if (this.isGridDeliveryTransition(rawGridMode)) {
+      return this.state.currentGridDelivery === 'limited';
+    }
+
+    return resolveGridDelivery(rawGridMode) === 'limited';
+  }
+
+  private needsGridModeChangeForLimitedRequest(): boolean {
+    return !this.isLimitedGridDeliveryActiveOrPending();
+  }
+
   // --------------------------------------------------------------------------
   // Button state helpers (for use by selector components)
   // --------------------------------------------------------------------------
@@ -423,28 +469,35 @@ export class ShieldController {
   }
 
   getGridDeliveryButtonState(delivery: GridDelivery): 'active' | 'pending' | 'processing' | 'disabled-by-service' | 'idle' {
+    const transitionState = this.getGridDeliveryTransitionState();
+
     // Grid mode changing
     if (this.state.changingServices.has('grid_mode')) {
-      const pendingTarget = this.state.pendingServices.get('grid_mode');
-      if (pendingTarget) {
-        const pendingDelivery = GRID_DELIVERY_SENSOR_MAP[pendingTarget];
-        if (pendingDelivery === delivery) {
-          return this.state.status === 'running' ? 'processing' : 'pending';
-        }
+      const pendingDelivery = this.getPendingGridDeliveryTarget();
+      if (pendingDelivery === delivery) {
+        return transitionState;
       }
+
       // If limit is pending and delivery is 'limited', highlight it
       if (this.state.pendingServices.has('grid_limit') && delivery === 'limited') {
-        return this.state.status === 'running' ? 'processing' : 'pending';
+        return transitionState;
       }
+
+      if (delivery === 'limited' && this.state.currentGridDelivery === 'limited') {
+        return 'active';
+      }
+
       return 'disabled-by-service';
     }
+
     // Only limit is changing
     if (this.state.changingServices.has('grid_limit')) {
       if (delivery === 'limited') {
-        return this.state.status === 'running' ? 'processing' : 'pending';
+        return transitionState;
       }
       return 'disabled-by-service';
     }
+
     return this.state.currentGridDelivery === delivery ? 'active' : 'idle';
   }
 
@@ -508,13 +561,10 @@ export class ShieldController {
 
     // If limited with a limit value, send both mode + limit
     if (delivery === 'limited' && limit != null) {
-      // If already in limited mode, just change the limit
-      if (this.state.currentGridDelivery === 'limited') {
-        data.limit = limit;
-      } else {
+      if (this.needsGridModeChangeForLimitedRequest()) {
         data.mode = delivery;
-        data.limit = limit;
       }
+      data.limit = limit;
     } else if (limit != null) {
       // Only changing limit (grid delivery is already limited)
       data.limit = limit;
