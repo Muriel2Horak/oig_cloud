@@ -17,9 +17,25 @@ SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
 
 
 def _split_grid_delivery_params(params: Dict[str, Any]) -> Optional[list[Dict[str, Any]]]:
+    """Split mode+limit into ordered steps: mode=limited first, then numeric limit.
+
+    The box can only process one value change at a time, so grid delivery must
+    stay split. Order is critical: mode must be set to 'limited' BEFORE the
+    numeric limit is applied.
+    """
     if "mode" in params and "limit" in params:
-        mode_params = {k: v for k, v in params.items() if k != "limit"}
-        limit_params = {k: v for k, v in params.items() if k != "mode"}
+        # Step 1: Mode must be 'limited' for the limit to take effect
+        mode_params = {
+            k: v for k, v in params.items() if k != "limit"
+        }
+        mode_params["_grid_delivery_step"] = "mode"
+
+        # Step 2: Numeric limit (only meaningful after mode=limited)
+        limit_params = {
+            k: v for k, v in params.items() if k != "mode"
+        }
+        limit_params["_grid_delivery_step"] = "limit"
+
         return [mode_params, limit_params]
     return None
 
@@ -64,8 +80,21 @@ def _is_duplicate(
 
 
 def _entities_already_match(
-    shield: Any, expected_entities: Dict[str, str]
+    shield: Any, expected_entities: Dict[str, str], params: Optional[Dict[str, Any]] = None
 ) -> bool:
+    """Check if entities already match expected values.
+
+    For grid delivery limit step (step 2 of split flow), we must NOT skip
+    even if the mode is already 'limited' - the limit value itself needs
+    to be applied. The step metadata in params helps identify this case.
+    """
+    # For grid delivery limit step, always proceed (don't skip early)
+    if params and params.get("_grid_delivery_step") == "limit":
+        _LOGGER.debug(
+            "Intercept: grid delivery limit step detected - proceeding regardless of current state"
+        )
+        return False
+
     for entity_id, expected_value in expected_entities.items():
         state = shield.hass.states.get(entity_id)
         current = shield._normalize_value(state.state if state else None)
@@ -90,33 +119,46 @@ async def _handle_split_grid_delivery(
     blocking: bool,
     context: Optional[Context],
 ) -> bool:
+    """Handle split grid delivery: mode=limited first, then numeric limit."""
     split_params = _split_grid_delivery_params(params)
     if not split_params:
         return False
+
+    mode_step = split_params[0]
+    limit_step = split_params[1]
+
     _LOGGER.info(
-        "[Grid Delivery] Detected mode + limit together, splitting into 2 calls"
+        "[Grid Delivery] Splitting mode+limit into ordered steps: "
+        "mode='%s' (step 1) → limit='%s' (step 2)",
+        mode_step.get("mode"),
+        limit_step.get("limit"),
     )
-    _LOGGER.info("[Grid Delivery] Step 1/2: Processing mode change")
+
+    # Step 1: Set mode to 'limited' first
+    _LOGGER.info("[Grid Delivery] Step 1/2: Setting mode to 'limited'")
     await intercept_service_call(
         shield,
         domain,
         service,
-        {"params": split_params[0]},
+        {"params": mode_step},
         original_call,
         blocking,
         context,
     )
-    _LOGGER.info("[Grid Delivery] Step 2/2: Processing limit change")
+
+    # Step 2: Set numeric limit after mode=limited is confirmed
+    _LOGGER.info("[Grid Delivery] Step 2/2: Setting numeric limit")
     await intercept_service_call(
         shield,
         domain,
         service,
-        {"params": split_params[1]},
+        {"params": limit_step},
         original_call,
         blocking,
         context,
     )
-    _LOGGER.info("[Grid Delivery] Both calls queued successfully")
+
+    _LOGGER.info("[Grid Delivery] Both ordered steps queued successfully")
     return True
 
 
@@ -309,7 +351,7 @@ async def intercept_service_call(
         )
         return
 
-    if _entities_already_match(shield, expected_entities):
+    if _entities_already_match(shield, expected_entities, params):
         _LOGGER.debug("Intercept: all entities already match; returning early")
         await shield._log_telemetry(
             "skipped",

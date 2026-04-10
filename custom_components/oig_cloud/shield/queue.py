@@ -443,6 +443,14 @@ def _entities_match(
         info["entities"],
     )
 
+    # Log grid delivery step info for debugging split flow
+    params = info.get("params", {})
+    grid_step = params.get("_grid_delivery_step")
+    if grid_step:
+        _LOGGER.info(
+            "[SHIELD CHECK] Grid delivery split step detected: %s", grid_step
+        )
+
     for entity_id, expected_value in info["entities"].items():
         if entity_id.startswith("fake_formating_mode_"):
             _LOGGER.debug(

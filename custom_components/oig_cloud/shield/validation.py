@@ -243,6 +243,11 @@ def _expected_grid_delivery(
 def _expected_grid_delivery_limit(
     shield: Any, data: Dict[str, Any], find_entity: Callable[[str], Optional[str]]
 ) -> Dict[str, str]:
+    """Extract expected entities for grid delivery limit setting.
+
+    When part of a split flow (mode+limit), this is step 2 - the numeric limit.
+    The mode should already be set to 'limited' before this step runs.
+    """
     try:
         expected_value = round(float(data["limit"]))
     except (ValueError, TypeError):
@@ -260,8 +265,12 @@ def _expected_grid_delivery_limit(
         except (ValueError, TypeError, AttributeError):
             current_value = None
 
+        # Check if this is part of split flow (has step metadata)
+        grid_step = data.get("_grid_delivery_step")
+
         _LOGGER.debug(
-            "[extract] grid_delivery.limit ONLY | current=%s expected=%s",
+            "[extract] grid_delivery.limit step='%s' | current=%s expected=%s",
+            grid_step or "standalone",
             current_value,
             expected_value,
         )
@@ -276,7 +285,12 @@ def _expected_grid_delivery_limit(
 def _expected_grid_delivery_mode(
     shield: Any, data: Dict[str, Any], find_entity: Callable[[str], Optional[str]]
 ) -> Dict[str, str]:
-    mode_string = str(data["mode"]).strip()
+    """Extract expected entities for grid delivery mode setting.
+
+    When part of a split flow (mode+limit), this should only handle mode='limited'
+    as the first step. The limit step is handled separately.
+    """
+    mode_string = str(data.get("mode")).strip()
     mode_mapping = {
         "Vypnuto / Off": "Vypnuto",
         "Zapnuto / On": "Zapnuto",
@@ -302,8 +316,12 @@ def _expected_grid_delivery_mode(
         state = shield.hass.states.get(entity_id)
         current_text = state.state if state else None
 
+        # Check if this is part of split flow (has step metadata)
+        grid_step = data.get("_grid_delivery_step")
+
         _LOGGER.debug(
-            "[extract] grid_delivery.mode ONLY | current='%s' expected='%s' (mode_string='%s')",
+            "[extract] grid_delivery.mode step='%s' | current='%s' expected='%s' (mode_string='%s')",
+            grid_step or "standalone",
             current_text,
             expected_text,
             mode_string,

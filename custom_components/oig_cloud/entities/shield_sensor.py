@@ -190,8 +190,6 @@ class OigCloudShieldSensor(_ShieldBase):
             _LOGGER.error(f"Error getting shield sensor state: {e}")
             return translate_shield_state("error")
 
-        return translate_shield_state("unknown")
-
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Dodatečné atributy."""
@@ -345,7 +343,8 @@ def _build_running_requests(
         )
         changes = _build_changes(targets, include_current=True)
         service_short = svc_name.replace("oig_cloud.", "")
-        description = _build_description(service_short, targets)
+        params = svc_info.get("params", {})
+        description = _build_description(service_short, targets, params)
 
         running_requests.append(
             {
@@ -364,6 +363,7 @@ def _build_running_requests(
                     else None
                 ),
                 "is_primary": svc_name == running,
+                "grid_delivery_step": params.get("_grid_delivery_step"),
             }
         )
     return running_requests
@@ -384,21 +384,26 @@ def _build_queue_items(
         duration_seconds = (
             (datetime.now() - queued_at).total_seconds() if queued_at else None
         )
-        description = _build_description(service_name, targets)
+        description = _build_description(service_name, targets, params)
 
-        queue_items.append(
-            {
-                "position": i + 1,
-                "service": service_name,
-                "description": description,
-                "targets": targets,
-                "changes": changes,
-                "queued_at": queued_at.isoformat() if queued_at else None,
-                "duration_seconds": duration_seconds,
-                "trace_id": trace_id,
-                "params": params,
-            }
-        )
+        item = {
+            "position": i + 1,
+            "service": service_name,
+            "description": description,
+            "targets": targets,
+            "changes": changes,
+            "queued_at": queued_at.isoformat() if queued_at else None,
+            "duration_seconds": duration_seconds,
+            "trace_id": trace_id,
+            "params": params,
+        }
+
+        # Include grid delivery step info for split flow visibility
+        grid_step = params.get("_grid_delivery_step")
+        if grid_step:
+            item["grid_delivery_step"] = grid_step
+
+        queue_items.append(item)
     return queue_items
 
 
@@ -452,9 +457,13 @@ def _format_entity_display(entity_id: str) -> str:
     return entity_id
 
 
-def _build_description(service_short: str, targets: List[Dict[str, Any]]) -> str:
+def _build_description(service_short: str, targets: List[Dict[str, Any]], params: Optional[Dict[str, Any]] = None) -> str:
     target_value = targets[0]["value"] if targets else None
     if target_value:
+        # Add step indicator for grid delivery split flow
+        grid_step = params.get("_grid_delivery_step") if params else None
+        if grid_step:
+            return f"{service_short}: {target_value} (step: {grid_step})"
         return f"{service_short}: {target_value}"
     return f"Změna {service_short.replace('_', ' ')}"
 
