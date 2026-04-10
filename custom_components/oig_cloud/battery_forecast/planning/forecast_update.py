@@ -278,8 +278,11 @@ def _profile_has_hourly_series(profile: Any) -> bool:
 def _profile_avg_kwh_h(profile: Any) -> float | None:
     if not isinstance(profile, dict) or "avg_kwh_h" not in profile:
         return None
+    value = profile.get("avg_kwh_h")
+    if value is None:
+        return None
     try:
-        return float(profile.get("avg_kwh_h"))
+        return float(value)
     except (TypeError, ValueError):
         return None
 
