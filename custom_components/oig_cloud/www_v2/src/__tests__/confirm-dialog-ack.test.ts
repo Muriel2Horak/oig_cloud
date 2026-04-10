@@ -381,7 +381,7 @@ describe('OigConfirmDialog — acknowledgementText render branch (lines 342-344)
     el.remove();
   });
 
-  it('renders custom acknowledgementText via renderHTML when acknowledgementText is provided', async () => {
+  it('renders custom acknowledgementText as real DOM markup — no literal angle-bracket tags visible', async () => {
     el.showDialog({
       title: 'Test',
       message: 'Msg',
@@ -394,9 +394,27 @@ describe('OigConfirmDialog — acknowledgementText render branch (lines 342-344)
     const label = el.shadowRoot!.querySelector('.ack-wrapper label');
     expect(label).not.toBeNull();
 
-    const span = label!.querySelector('span');
-    expect(span).not.toBeNull();
-    expect(span!.innerHTML).toContain('<strong>Vlastní souhlas</strong>');
+    expect(label!.textContent).not.toContain('<strong>');
+    expect(label!.textContent).not.toContain('</strong>');
+    expect(label!.textContent).toContain('Vlastní souhlas');
+  });
+
+  it('renders acknowledgementText strong tag as a DOM element in shadow DOM', async () => {
+    el.showDialog({
+      title: 'Test',
+      message: 'Msg',
+      requireAcknowledgement: true,
+      acknowledgementText: '<strong>Vlastní souhlas</strong> s podmínkami.',
+    });
+
+    await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+
+    const label = el.shadowRoot!.querySelector('.ack-wrapper label');
+    expect(label).not.toBeNull();
+
+    const strongEl = label!.querySelector('strong');
+    expect(strongEl).not.toBeNull();
+    expect(strongEl!.textContent).toBe('Vlastní souhlas');
   });
 
   it('renders default acknowledgementText template when acknowledgementText is absent', async () => {

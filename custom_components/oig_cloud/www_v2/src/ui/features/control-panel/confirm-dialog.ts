@@ -12,6 +12,7 @@
 
 import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { CSS_VARS } from '@/ui/theme';
 import { ConfirmDialogConfig, ConfirmDialogResult } from './types';
 
@@ -366,14 +367,8 @@ export class OigConfirmDialog extends LitElement {
     `;
   }
 
-  /** Render a string that may contain HTML as unsafeHTML */
   private renderHTML(text: string) {
-    // Simple approach: create a temporary div, set innerHTML, return content
-    // For security in this internal dashboard context, this is acceptable
-    const div = document.createElement('div');
-    div.innerHTML = text;
-    // We use a span wrapper via lit's html to keep it reactive
-    return html`<span .innerHTML=${text}></span>`;
+    return unsafeHTML(text);
   }
 }
 
