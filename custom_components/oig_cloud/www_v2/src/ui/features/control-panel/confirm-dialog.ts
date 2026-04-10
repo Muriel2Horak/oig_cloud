@@ -339,7 +339,9 @@ export class OigConfirmDialog extends LitElement {
                 @click=${(e: Event) => e.stopPropagation()}
               />
               <label>
-                ${c.acknowledgementText || html`
+                ${c.acknowledgementText
+                  ? this.renderHTML(c.acknowledgementText)
+                  : html`
                   <strong>Souhlas\u00EDm</strong> s t\u00EDm, \u017Ee m\u011Bn\u00EDm nastaven\u00ED na vlastn\u00ED odpov\u011Bdnost.
                   Aplikace nenese odpov\u011Bdnost za p\u0159\u00EDpadn\u00E9 negativn\u00ED d\u016Fsledky t\u00E9to zm\u011Bny.
                 `}

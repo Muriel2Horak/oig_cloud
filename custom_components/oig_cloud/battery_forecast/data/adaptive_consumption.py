@@ -590,14 +590,31 @@ class AdaptiveConsumptionHelper:
             end_time = dt_util.now()
 
             from homeassistant.components.recorder import history
+            from homeassistant.helpers.recorder import get_instance
 
-            states = await self._hass.async_add_executor_job(
-                history.get_significant_states,
-                self._hass,
-                start_time,
-                end_time,
-                [consumption_sensor],
-            )
+            try:
+                recorder_instance = get_instance(self._hass)
+            except Exception:
+                recorder_instance = None
+
+            if recorder_instance:
+                states = await recorder_instance.async_add_executor_job(
+                    history.get_significant_states,
+                    self._hass,
+                    start_time,
+                    end_time,
+                    [consumption_sensor],
+                )
+            elif hasattr(self._hass, "async_add_executor_job"):
+                states = await self._hass.async_add_executor_job(
+                    history.get_significant_states,
+                    self._hass,
+                    start_time,
+                    end_time,
+                    [consumption_sensor],
+                )
+            else:
+                return None
 
             if not states or consumption_sensor not in states:
                 return None

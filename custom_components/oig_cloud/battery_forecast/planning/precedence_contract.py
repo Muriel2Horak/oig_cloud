@@ -144,7 +144,6 @@ def resolve_conflict(
 def resolve_conflict_with_context(
     level_a: PrecedenceLevel,
     level_b: PrecedenceLevel,
-    tie_breaker_key: str = "",
 ) -> Tuple[PrecedenceLevel, str]:
     """Resolve conflict with additional context for debugging/logging.
 
@@ -153,8 +152,6 @@ def resolve_conflict_with_context(
     Args:
         level_a: First precedence level
         level_b: Second precedence level
-        tie_breaker_key: Optional context key for deterministic tie resolution
-
     Returns:
         Tuple of (winning_level, reason_string)
     """

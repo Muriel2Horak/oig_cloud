@@ -41,14 +41,12 @@ def _extract_response_message(response_json: Any) -> str:
 
 try:
     from opentelemetry import trace
-    from opentelemetry.trace import SpanKind
 
     tracer = trace.get_tracer(__name__)
     _has_opentelemetry = True
 except ImportError:
     _logger.debug("OpenTelemetry not available - using ServiceShield telemetry instead")
     tracer = None  # type: ignore
-    SpanKind = None  # type: ignore
     _has_opentelemetry = False
 
 # Using a lock to prevent multiple simultaneous API calls

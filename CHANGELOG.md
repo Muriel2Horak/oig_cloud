@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.20] - 2026-04-10
+
+### Fixed
+- Service mode actions now accept canonical machine values while preserving legacy labels, keeping dashboard controls user-friendly without breaking existing service callers.
+- Shield grid-delivery processing now keeps the required split order (`limited` mode first, numeric limit second), exposes structured step metadata, and avoids skipping the pending limit step prematurely.
+- Dashboard V2 control-panel handling for grid delivery is now more robust: it resolves localized mode variants, shows the active numeric export limit, parses structured shield queue payloads, and renders acknowledgement emphasis correctly in confirmation dialogs.
+- Adaptive consumption, adaptive load-profile statistics, and interval statistics history lookups now run through Home Assistant's recorder executor, removing the remaining direct database-access warning paths.
+- Security workflow Safety checks now evaluate the shipped runtime requirements instead of the whole CI environment, while documenting the Home Assistant-pinned protobuf exception in the local Safety policy.
+
 ## [2.3.19] - 2026-04-09
 
 ### Fixed

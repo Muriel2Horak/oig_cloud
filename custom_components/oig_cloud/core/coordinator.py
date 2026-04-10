@@ -827,6 +827,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     def _compute_battery_forecast_inputs_hash(self) -> int:
         """Hash relevantnich vstupních entit pro battery forecast (change detection)."""
         import hashlib
+
         data_str = ""
 
         if self.data and isinstance(self.data, dict):
@@ -835,7 +836,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         if self._spot_prices_cache:
             data_str += str(self._spot_prices_cache.get("hours_count", 0))
 
-        return int(hashlib.md5(data_str.encode()).hexdigest()[:8], 16)
+        digest = hashlib.md5(data_str.encode(), usedforsecurity=False)
+        return int(digest.hexdigest()[:8], 16)
 
     def _maybe_update_battery_forecast(self) -> None:
         """Throttled battery forecast computation (low-power: 30 min)."""

@@ -5,7 +5,11 @@ import {
   ShieldQueueItem,
   BatteryChargeParams,
   BOX_MODE_LABELS,
+  BOX_MODE_SERVICE_MAP,
   GRID_DELIVERY_LABELS,
+  GRID_DELIVERY_SERVICE_MAP,
+  BOILER_MODE_LABELS,
+  BOILER_MODE_SERVICE_MAP,
   QUEUE_STATUS_COLORS,
 } from '@/ui/features/control-panel/types';
 
@@ -25,6 +29,51 @@ describe('Control Panel types', () => {
     });
   });
 
+  describe('BOX_MODE_SERVICE_MAP', () => {
+    it('should send canonical machine values (not labels)', () => {
+      expect(BOX_MODE_SERVICE_MAP.home_1).toBe('home_1');
+      expect(BOX_MODE_SERVICE_MAP.home_2).toBe('home_2');
+      expect(BOX_MODE_SERVICE_MAP.home_3).toBe('home_3');
+      expect(BOX_MODE_SERVICE_MAP.home_ups).toBe('home_ups');
+      expect(BOX_MODE_SERVICE_MAP.home_5).toBe('home_5');
+      expect(BOX_MODE_SERVICE_MAP.home_6).toBe('home_6');
+    });
+
+    it('should not send human-readable labels as service values', () => {
+      Object.values(BOX_MODE_SERVICE_MAP).forEach(value => {
+        expect(value).not.toContain(' ');
+        expect(value).not.toMatch(/^Home \d/);
+      });
+    });
+  });
+
+  describe('GRID_DELIVERY_SERVICE_MAP', () => {
+    it('should send canonical machine values (not labels)', () => {
+      expect(GRID_DELIVERY_SERVICE_MAP.off).toBe('off');
+      expect(GRID_DELIVERY_SERVICE_MAP.on).toBe('on');
+      expect(GRID_DELIVERY_SERVICE_MAP.limited).toBe('limited');
+    });
+
+    it('should not send bilingual label strings as service values', () => {
+      Object.values(GRID_DELIVERY_SERVICE_MAP).forEach(value => {
+        expect(value).not.toContain('/');
+        expect(value).not.toContain('Vypnuto');
+      });
+    });
+  });
+
+  describe('BOILER_MODE_SERVICE_MAP', () => {
+    it('should send canonical machine values (not labels)', () => {
+      expect(BOILER_MODE_SERVICE_MAP.cbb).toBe('cbb');
+      expect(BOILER_MODE_SERVICE_MAP.manual).toBe('manual');
+    });
+
+    it('should not send legacy uppercase values as service values', () => {
+      (Object.values(BOILER_MODE_SERVICE_MAP) as string[]).forEach(value => {
+        expect(value).toBe(value.toLowerCase());
+      });
+    });
+  });
   describe('GRID_DELIVERY_LABELS', () => {
     it('should have labels for all options', () => {
       expect(GRID_DELIVERY_LABELS.off).toBe('Vypnuto');

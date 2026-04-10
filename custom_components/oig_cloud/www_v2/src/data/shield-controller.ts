@@ -18,17 +18,17 @@ import { oigLog } from '@/core/logger';
 import {
   ShieldState,
   ShieldQueueItem,
+  ShieldRequestParams,
+  ShieldRequestTarget,
   ShieldServiceType,
   BoxMode,
   GridDelivery,
   BoilerMode,
   BOX_MODE_SENSOR_MAP,
-  BOX_MODE_SERVICE_MAP,
   GRID_DELIVERY_SENSOR_MAP,
-  GRID_DELIVERY_SERVICE_MAP,
   BOILER_MODE_SENSOR_MAP,
-  BOILER_MODE_SERVICE_MAP,
   EMPTY_SHIELD_STATE,
+  resolveGridDelivery,
 } from '@/ui/features/control-panel/types';
 
 // ============================================================================
@@ -150,7 +150,9 @@ export class ShieldController {
 
       // Normalize current values
       const currentBoxMode = BOX_MODE_SENSOR_MAP[boxModeRaw.trim()] ?? 'home_1';
-      const currentGridDelivery = GRID_DELIVERY_SENSOR_MAP[gridModeRaw.trim()] ?? 'off';
+      const currentGridDelivery = gridModeRaw.trim() === 'Probíhá změna'
+        ? this.state.currentGridDelivery
+        : resolveGridDelivery(gridModeRaw);
       const currentBoilerMode = BOILER_MODE_SENSOR_MAP[boilerModeRaw.trim()] ?? 'cbb';
 
       // Parse requests
@@ -162,17 +164,16 @@ export class ShieldController {
       const pendingServices = new Map<ShieldServiceType, string>();
       const changingServices = new Set<ShieldServiceType>();
 
+      if (gridModeRaw.trim() === 'Probíhá změna') {
+        changingServices.add('grid_mode');
+      }
+
       for (const req of allRequests) {
         const parsed = this.parseServiceRequest(req);
         if (parsed && !pendingServices.has(parsed.type)) {
           pendingServices.set(parsed.type, parsed.targetValue);
           changingServices.add(parsed.type);
         }
-      }
-
-      // Check if grid mode is "Probíhá změna" (change in progress)
-      if (gridModeRaw.trim() === 'Probíhá změna') {
-        changingServices.add('grid_mode');
       }
 
       const isRunning = statusStr === 'Running' || statusStr === 'running';
@@ -206,7 +207,19 @@ export class ShieldController {
     const service = raw.service ?? '';
     const changes = Array.isArray(raw.changes) ? raw.changes : [];
     const timestamp = raw.started_at ?? raw.queued_at ?? raw.created_at ?? raw.timestamp ?? raw.created ?? '';
-    const targetValue = raw.target_value ?? raw.target_display ?? '';
+    const targets = Array.isArray(raw.targets)
+      ? raw.targets.map((target: any): ShieldRequestTarget => ({
+        param: String(target?.param ?? ''),
+        value: String(target?.value ?? target?.to ?? ''),
+        entityId: String(target?.entity_id ?? target?.entityId ?? ''),
+        from: String(target?.from ?? ''),
+        to: String(target?.to ?? target?.value ?? ''),
+        current: String(target?.current ?? ''),
+      }))
+      : [];
+    const params = this.extractRequestParams(raw.params);
+    const gridDeliveryStep = this.extractGridDeliveryStep(raw, params);
+    const targetValue = this.resolveRequestTargetValue(raw, targets, params, gridDeliveryStep);
 
     let type: ShieldQueueItem['type'] = 'mode_change';
     if (service.includes('set_box_mode')) type = 'mode_change';
@@ -224,24 +237,35 @@ export class ShieldController {
       changes,
       createdAt: timestamp,
       position: index + 1,
+      description: typeof raw.description === 'string' ? raw.description : undefined,
+      params,
+      targets,
+      traceId: typeof raw.trace_id === 'string' ? raw.trace_id : undefined,
+      gridDeliveryStep,
     };
   }
 
   private parseServiceRequest(req: ShieldQueueItem): { type: ShieldServiceType; targetValue: string } | null {
-    // Try targets array from raw data
     const service = req.service;
     if (!service) return null;
 
-    // Map from change strings (V1 pattern)
     const changeStr = req.changes.length > 0 ? req.changes[0] : '';
+    const params = req.params;
+    const gridDeliveryStep = req.gridDeliveryStep;
+    const structuredTarget = this.extractStructuredTarget(req);
+
+    if (service.includes('set_grid_delivery') && structuredTarget) {
+      return structuredTarget;
+    }
 
     if (service.includes('set_grid_delivery') && changeStr.includes('p_max_feed_grid')) {
-      const match = changeStr.match(/→\s*(\d+)/);
-      return match ? { type: 'grid_limit', targetValue: match[1] } : null;
+      const numericMatch = changeStr.match(/→\s*'?(\d+)'?/);
+      const limitValue = numericMatch ? numericMatch[1] : req.targetValue;
+      return limitValue ? { type: 'grid_limit', targetValue: limitValue } : null;
     }
 
     const arrowMatch = changeStr.match(/→\s*'([^']+)'/);
-    const target = arrowMatch ? arrowMatch[1] : req.targetValue;
+    const target = arrowMatch ? arrowMatch[1] : (req.targetValue || '');
 
     if (service.includes('set_box_mode')) {
       return { type: 'box_mode', targetValue: target };
@@ -253,15 +277,133 @@ export class ShieldController {
       return { type: 'grid_mode', targetValue: target };
     }
     if (service.includes('set_grid_delivery')) {
-      // Fallback: if changeStr doesn't specify, infer from service name
-      const limitMatch = changeStr.match(/→\s*(\d+)/);
-      if (limitMatch) {
-        return { type: 'grid_limit', targetValue: limitMatch[1] };
+      if (gridDeliveryStep === 'limit') {
+        const limitValue = this.normalizeNumericTargetValue(params?.limit ?? req.targetValue);
+        return limitValue ? { type: 'grid_limit', targetValue: limitValue } : null;
+      }
+      if (gridDeliveryStep === 'mode') {
+        const modeValue = this.normalizeModeTargetValue(params?.mode ?? req.targetValue);
+        return modeValue ? { type: 'grid_mode', targetValue: modeValue } : null;
+      }
+
+      const numericMatch = changeStr.match(/→\s*'?(\d+)'?/);
+      if (numericMatch) {
+        return { type: 'grid_limit', targetValue: numericMatch[1] };
+      }
+      if (req.targetValue && /^\d+$/.test(req.targetValue.trim())) {
+        return { type: 'grid_limit', targetValue: req.targetValue };
       }
       return { type: 'grid_mode', targetValue: target };
     }
 
     return null;
+  }
+
+  private extractRequestParams(rawParams: unknown): ShieldRequestParams | undefined {
+    if (!rawParams || typeof rawParams !== 'object' || Array.isArray(rawParams)) {
+      return undefined;
+    }
+    return rawParams as ShieldRequestParams;
+  }
+
+  private extractGridDeliveryStep(raw: any, params?: ShieldRequestParams): string | undefined {
+    const step = raw?.grid_delivery_step ?? params?._grid_delivery_step;
+    return typeof step === 'string' ? step : undefined;
+  }
+
+  private resolveRequestTargetValue(
+    raw: any,
+    targets: ShieldRequestTarget[],
+    params: ShieldRequestParams | undefined,
+    gridDeliveryStep: string | undefined,
+  ): string {
+    const structuredTarget = this.extractStructuredTarget({
+      service: raw?.service ?? '',
+      targetValue: '',
+      params,
+      targets,
+      gridDeliveryStep,
+    });
+    if (structuredTarget?.targetValue) {
+      return structuredTarget.targetValue;
+    }
+    const directTarget = raw.target_value ?? raw.target_display;
+    return typeof directTarget === 'string' ? directTarget : '';
+  }
+
+  private extractStructuredTarget(req: Pick<ShieldQueueItem, 'service' | 'params' | 'targets' | 'gridDeliveryStep' | 'targetValue'>):
+    { type: ShieldServiceType; targetValue: string } | null {
+    if (!req.service.includes('set_grid_delivery')) {
+      return null;
+    }
+
+    const gridDeliveryStep = req.gridDeliveryStep;
+    const params = req.params;
+    const targets = req.targets ?? [];
+
+    if (gridDeliveryStep === 'limit') {
+      const limitTarget = this.findTargetValue(targets, ['limit']);
+      const limitValue = this.normalizeNumericTargetValue(limitTarget ?? params?.limit ?? req.targetValue);
+      return limitValue ? { type: 'grid_limit', targetValue: limitValue } : null;
+    }
+
+    if (gridDeliveryStep === 'mode') {
+      const modeTarget = this.findTargetValue(targets, ['mode']);
+      const modeValue = this.normalizeModeTargetValue(modeTarget ?? params?.mode ?? req.targetValue);
+      return modeValue ? { type: 'grid_mode', targetValue: modeValue } : null;
+    }
+
+    const limitTarget = this.findTargetValue(targets, ['limit']);
+    if (limitTarget) {
+      const limitValue = this.normalizeNumericTargetValue(limitTarget);
+      if (limitValue) {
+        return { type: 'grid_limit', targetValue: limitValue };
+      }
+    }
+
+    const modeTarget = this.findTargetValue(targets, ['mode']);
+    if (modeTarget) {
+      const modeValue = this.normalizeModeTargetValue(modeTarget);
+      if (modeValue) {
+        return { type: 'grid_mode', targetValue: modeValue };
+      }
+    }
+
+    return null;
+  }
+
+  private findTargetValue(targets: ShieldRequestTarget[], params: string[]): string | undefined {
+    const wanted = new Set(params);
+    const target = targets.find((item) => wanted.has(item.param));
+    return target?.to || target?.value || undefined;
+  }
+
+  private normalizeNumericTargetValue(value: unknown): string {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(Math.round(value));
+    }
+    if (typeof value !== 'string') {
+      return '';
+    }
+    const match = value.trim().match(/(\d+)/);
+    return match ? match[1] : '';
+  }
+
+  private normalizeModeTargetValue(value: unknown): string {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    const trimmed = value.trim();
+    switch (trimmed.toLowerCase()) {
+      case 'off':
+        return 'Vypnuto';
+      case 'on':
+        return 'Zapnuto';
+      case 'limited':
+        return 'Omezeno';
+      default:
+        return trimmed;
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -341,15 +483,13 @@ export class ShieldController {
 
   /** Set box mode via HA service */
   async setBoxMode(mode: BoxMode): Promise<boolean> {
-    const serviceMode = BOX_MODE_SERVICE_MAP[mode];
-
     // Check if already active
     if (this.state.currentBoxMode === mode && !this.state.changingServices.has('box_mode')) {
       return false;
     }
 
     const success = await haClient.callService('oig_cloud', 'set_box_mode', {
-      mode: serviceMode,
+      mode: mode,
       acknowledgement: true,
     });
 
@@ -361,8 +501,6 @@ export class ShieldController {
 
   /** Set grid delivery via HA service */
   async setGridDelivery(delivery: GridDelivery, limit?: number): Promise<boolean> {
-    const serviceMode = GRID_DELIVERY_SERVICE_MAP[delivery];
-
     const data: Record<string, any> = {
       acknowledgement: true,
       warning: true,
@@ -374,14 +512,14 @@ export class ShieldController {
       if (this.state.currentGridDelivery === 'limited') {
         data.limit = limit;
       } else {
-        data.mode = serviceMode;
+        data.mode = delivery;
         data.limit = limit;
       }
     } else if (limit != null) {
       // Only changing limit (grid delivery is already limited)
       data.limit = limit;
     } else {
-      data.mode = serviceMode;
+      data.mode = delivery;
     }
 
     const success = await haClient.callService('oig_cloud', 'set_grid_delivery', data);
@@ -394,15 +532,13 @@ export class ShieldController {
 
   /** Set boiler mode via HA service */
   async setBoilerMode(mode: BoilerMode): Promise<boolean> {
-    const serviceMode = BOILER_MODE_SERVICE_MAP[mode];
-
     // Check if already active
     if (this.state.currentBoilerMode === mode && !this.state.changingServices.has('boiler_mode')) {
       return false;
     }
 
     const success = await haClient.callService('oig_cloud', 'set_boiler_mode', {
-      mode: serviceMode,
+      mode: mode,
       acknowledgement: true,
     });
 

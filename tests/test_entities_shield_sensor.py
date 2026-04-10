@@ -8,6 +8,8 @@ import pytest
 from custom_components.oig_cloud.const import DOMAIN
 from custom_components.oig_cloud.entities.shield_sensor import (
     OigCloudShieldSensor,
+    _build_description,
+    _build_queue_items,
     _extract_param_type,
     translate_shield_state,
 )
@@ -418,3 +420,44 @@ def test_shield_sensor_available_false():
     sensor = OigCloudShieldSensor(DummyCoordinator(), "service_shield_status")
     sensor.hass = DummyHass(None)
     assert sensor.available is False
+
+
+def test_build_queue_items_includes_grid_delivery_step():
+    shield = DummyShield()
+    shield.queue = [
+        (
+            "oig_cloud.set_grid_limit",
+            {"limit": 5000, "_grid_delivery_step": 2},
+            {"sensor.oig_123_prm1_p_max_feed_grid": "5000"},
+        )
+    ]
+    shield.queue_metadata = {}
+    hass = DummyHass(shield)
+    hass.states = DummyStates(
+        {"sensor.oig_123_prm1_p_max_feed_grid": DummyState("3000")}
+    )
+
+    queue_items = _build_queue_items(hass, shield.queue, shield.queue_metadata)
+
+    assert len(queue_items) == 1
+    assert queue_items[0]["grid_delivery_step"] == 2
+
+
+def test_build_description_includes_grid_step():
+    targets = [{"value": "5000", "entity_id": "sensor.oig_123_p_max_feed_grid"}]
+    params = {"_grid_delivery_step": 1}
+
+    description = _build_description("set_grid_limit", targets, params)
+
+    assert "step: 1" in description
+    assert "5000" in description
+
+
+def test_build_description_without_grid_step():
+    targets = [{"value": "5000", "entity_id": "sensor.oig_123_p_max_feed_grid"}]
+    params = {"limit": 5000}
+
+    description = _build_description("set_grid_limit", targets, params)
+
+    assert "step:" not in description
+    assert "5000" in description

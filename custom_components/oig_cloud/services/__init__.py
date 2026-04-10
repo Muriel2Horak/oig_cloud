@@ -42,14 +42,26 @@ GRID_OFF_LABEL = "Vypnuto / Off"
 GRID_ON_LABEL = "Zapnuto / On"
 GRID_LIMITED_LABEL = "S omezením / Limited"
 GRID_DELIVERY_LABELS = (GRID_OFF_LABEL, GRID_ON_LABEL, GRID_LIMITED_LABEL)
+# Canonical machine values for grid delivery (as sent by services.yaml/frontend)
+GRID_DELIVERY_CANONICAL = ("off", "on", "limited")
+# All accepted values (canonical + backward-compatible labels)
+GRID_DELIVERY_ALL_KEYS = GRID_DELIVERY_CANONICAL + GRID_DELIVERY_LABELS
 
 BOILER_CBB_LABEL = "CBB"
 BOILER_MANUAL_LABEL = "Manual"
 BOILER_MODE_LABELS = (BOILER_CBB_LABEL, BOILER_MANUAL_LABEL)
+# Canonical machine values for boiler mode (as sent by services.yaml/frontend)
+BOILER_MODE_CANONICAL = ("cbb", "manual")
+# All accepted values (canonical + backward-compatible labels)
+BOILER_MODE_ALL_KEYS = BOILER_MODE_CANONICAL + BOILER_MODE_LABELS
 
 FORMAT_NO_CHARGE_LABEL = "Nenabíjet"
 FORMAT_CHARGE_LABEL = "Nabíjet"
 FORMAT_BATTERY_LABELS = (FORMAT_NO_CHARGE_LABEL, FORMAT_CHARGE_LABEL)
+# Canonical machine values for formating mode (as sent by services.yaml/frontend)
+FORMAT_BATTERY_CANONICAL = ("no_charge", "charge")
+# All accepted values (canonical + backward-compatible labels)
+FORMAT_BATTERY_ALL_KEYS = FORMAT_BATTERY_CANONICAL + FORMAT_BATTERY_LABELS
 SHIELD_LOG_PREFIX = "[SHIELD]"
 
 SET_BOX_MODE_SCHEMA = vol.Schema(
@@ -62,7 +74,7 @@ SET_BOX_MODE_SCHEMA = vol.Schema(
 SET_GRID_DELIVERY_SCHEMA = vol.Schema(
     {
         vol.Optional("device_id"): cv.string,
-        "mode": vol.Any(None, vol.In(GRID_DELIVERY_LABELS)),
+        "mode": vol.Any(None, vol.In(GRID_DELIVERY_ALL_KEYS)),
         "limit": vol.Any(None, vol.Coerce(int)),
         vol.Required("acknowledgement"): vol.In([True]),
         vol.Required("warning"): vol.In([True]),
@@ -71,14 +83,14 @@ SET_GRID_DELIVERY_SCHEMA = vol.Schema(
 SET_BOILER_MODE_SCHEMA = vol.Schema(
     {
         vol.Optional("device_id"): cv.string,
-        vol.Required("mode"): vol.In(BOILER_MODE_LABELS),
+        vol.Required("mode"): vol.In(BOILER_MODE_ALL_KEYS),
         vol.Required("acknowledgement"): vol.In([True]),
     }
 )
 SET_FORMATING_MODE_SCHEMA = vol.Schema(
     {
         vol.Optional("device_id"): cv.string,
-        vol.Required("mode"): vol.In(FORMAT_BATTERY_LABELS),
+        vol.Required("mode"): vol.In(FORMAT_BATTERY_ALL_KEYS),
         vol.Required("acknowledgement"): vol.In([True]),
         "limit": vol.Any(None, vol.Coerce(int)),
     }

@@ -637,6 +637,11 @@ def test_hourly_kwh_from_profile_returns_none_without_series_or_avg():
     assert value is None
 
 
+def test_profile_avg_kwh_h_returns_none_when_key_exists_with_none_value():
+    result = forecast_update_module._profile_avg_kwh_h({"avg_kwh_h": None})
+    assert result is None
+
+
 @pytest.mark.asyncio
 async def test_async_update_truncates_horizon(monkeypatch):
     fixed_now = datetime(2025, 1, 1, 12, 0, 0)

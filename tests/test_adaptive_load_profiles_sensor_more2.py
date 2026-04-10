@@ -154,8 +154,8 @@ def test_build_current_match_variants(monkeypatch):
     assert sensor._build_current_match(series, hour_medians) is None
 
 
-def test_apply_floor_to_prediction():
-    sensor = _make_sensor(__import__("pytest").MonkeyPatch())
+def test_apply_floor_to_prediction(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
     predicted, applied = sensor._apply_floor_to_prediction([], 0, {}, [])
     assert predicted == []
     assert applied == 0
@@ -168,8 +168,8 @@ def test_apply_floor_to_prediction():
     assert floor[0] >= 0.3
 
 
-def test_calculate_profile_similarity_mismatch_and_zero_total():
-    sensor = _make_sensor(__import__("pytest").MonkeyPatch())
+def test_calculate_profile_similarity_mismatch_and_zero_total(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
     assert sensor._calculate_profile_similarity([1.0], [1.0, 2.0]) == 0.0
 
     score = sensor._calculate_profile_similarity([1.0, 1.0], [0.0, 0.0])
@@ -274,8 +274,8 @@ async def test_load_hourly_series_empty_rows(monkeypatch):
     sensor._hass = SimpleNamespace()
 
     class DummyRecorder:
-        async def async_add_executor_job(self, func):
-            return func()
+        async def async_add_executor_job(self, func, *args):
+            return func(*args)
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
@@ -300,8 +300,8 @@ async def test_load_hourly_series_value_filters(monkeypatch):
     sensor._hass = SimpleNamespace(states=SimpleNamespace(get=lambda _eid: None))
 
     class DummyRecorder:
-        async def async_add_executor_job(self, func):
-            return func()
+        async def async_add_executor_job(self, func, *args):
+            return func(*args)
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
@@ -370,8 +370,8 @@ async def test_get_earliest_statistics_start_no_data(monkeypatch):
     sensor._hass = SimpleNamespace()
 
     class DummyRecorder:
-        async def async_add_executor_job(self, func):
-            return func()
+        async def async_add_executor_job(self, func, *args):
+            return func(*args)
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
@@ -839,3 +839,124 @@ async def test_find_best_matching_profile_for_sensor_no_scored(monkeypatch):
         is None
     )
     assert sensor._last_profile_reason == "no_matching_profiles"
+
+
+@pytest.mark.asyncio
+async def test_get_earliest_statistics_start_string_unparseable(monkeypatch):
+    """Cover line 84: parse_datetime returns None for string start."""
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return func()
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {
+            "sensor.test": [{"start": "not-a-valid-datetime", "sum": 1.0}]
+        },
+    )
+    assert await sensor._get_earliest_statistics_start("sensor.test") is None
+
+
+@pytest.mark.asyncio
+async def test_get_earliest_statistics_start_int_timestamp(monkeypatch):
+    """Cover lines 86-91: int/float timestamp handling."""
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return func()
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+    # Unix timestamp in seconds (1735689600 = 2025-01-01 00:00:00 UTC)
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {
+            "sensor.test": [{"start": 1735689600, "sum": 1.0}]
+        },
+    )
+    earliest = await sensor._get_earliest_statistics_start("sensor.test")
+    assert earliest == datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_get_earliest_statistics_start_float_timestamp(monkeypatch):
+    """Cover lines 86-91: float timestamp handling."""
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return func()
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+    # Unix timestamp as float
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {
+            "sensor.test": [{"start": 1735689600.0, "sum": 1.0}]
+        },
+    )
+    earliest = await sensor._get_earliest_statistics_start("sensor.test")
+    assert earliest == datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_get_earliest_statistics_start_millisecond_timestamp(monkeypatch):
+    """Cover lines 86-91: millisecond timestamp (> 1_000_000_000_000)."""
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return func()
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+    # Millisecond timestamp (1735689600000 = 2025-01-01 00:00:00 UTC)
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {
+            "sensor.test": [{"start": 1735689600000, "sum": 1.0}]
+        },
+    )
+    earliest = await sensor._get_earliest_statistics_start("sensor.test")
+    assert earliest == datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_get_earliest_statistics_start_unsupported_type(monkeypatch):
+    sensor = _make_sensor(monkeypatch)
+    sensor._hass = SimpleNamespace()
+
+    class DummyRecorder:
+        async def async_add_executor_job(self, func):
+            return func()
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda *_a, **_k: DummyRecorder(),
+    )
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.statistics_during_period",
+        lambda *_a, **_k: {
+            "sensor.test": [{"start": object(), "sum": 1.0}]
+        },
+    )
+
+    assert await sensor._get_earliest_statistics_start("sensor.test") is None
