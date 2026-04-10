@@ -265,13 +265,17 @@ export class OigGridDeliverySelector extends LitElement {
       { value: 'limited', label: GRID_DELIVERY_LABELS.limited },
     ];
 
-    // Determine limit input border class
     const limitState = this.buttonStates.limited;
     const limitBorderClass = limitState === 'pending' ? 'pending-border' : limitState === 'processing' ? 'processing-border' : '';
 
+    const isLimitedActive = this.value === 'limited' || this.buttonStates.limited === 'active';
+    const activeLimitLabel = isLimitedActive && this.limit > 0
+      ? html`<span class="status-text">${this.limit}\u00A0W</span>`
+      : null;
+
     return html`
       <div class="selector-label">
-        Dod\u00E1vka do s\u00EDt\u011B
+        Dod\u00E1vka do s\u00EDt\u011B ${activeLimitLabel}
       </div>
       <div class="mode-buttons">
         ${options.map(opt => {

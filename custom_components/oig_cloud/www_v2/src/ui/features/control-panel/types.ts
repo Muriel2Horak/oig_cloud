@@ -47,14 +47,13 @@ export const BOX_MODE_SENSOR_MAP: Record<string, BoxMode> = {
   '5': 'home_6',
 };
 
-/** BoxMode → service call mode value */
-export const BOX_MODE_SERVICE_MAP: Record<BoxMode, string> = {
-  home_1: 'Home 1',
-  home_2: 'Home 2',
-  home_3: 'Home 3',
-  home_ups: 'Home UPS',
-  home_5: 'Home 5',
-  home_6: 'Home 6',
+export const BOX_MODE_SERVICE_MAP: Record<BoxMode, BoxMode> = {
+  home_1: 'home_1',
+  home_2: 'home_2',
+  home_3: 'home_3',
+  home_ups: 'home_ups',
+  home_5: 'home_5',
+  home_6: 'home_6',
 };
 // ============================================================================
 // GRID DELIVERY
@@ -68,22 +67,50 @@ export const GRID_DELIVERY_LABELS: Record<GridDelivery, string> = {
   limited: 'S omezením',
 };
 
-/** Service call mode labels */
-export const GRID_DELIVERY_SERVICE_MAP: Record<GridDelivery, string> = {
-  off: 'Vypnuto / Off',
-  on: 'Zapnuto / On',
-  limited: 'S omezením / Limited',
+export const GRID_DELIVERY_SERVICE_MAP: Record<GridDelivery, GridDelivery> = {
+  off: 'off',
+  on: 'on',
+  limited: 'limited',
 };
 
-/** V1 sensor value → GridDelivery mapping */
 export const GRID_DELIVERY_SENSOR_MAP: Record<string, GridDelivery> = {
   'Vypnuto': 'off',
   'Zapnuto': 'on',
   'Omezeno': 'limited',
+  'omezeno': 'limited',
+  'vypnuto': 'off',
+  'zapnuto': 'on',
   'Off': 'off',
   'On': 'on',
   'Limited': 'limited',
+  'off': 'off',
+  'on': 'on',
+  'limited': 'limited',
+  '0': 'off',
+  '1': 'on',
+  '2': 'limited',
 };
+
+/**
+ * Robustly resolve a raw sensor string to a GridDelivery value.
+ * Falls back to case-insensitive prefix matching so variants like
+ * "Omezení", "Omezeno (xxx W)" or all-caps still resolve correctly.
+ */
+export function resolveGridDelivery(raw: string): GridDelivery {
+  const trimmed = raw.trim();
+  if (trimmed in GRID_DELIVERY_SENSOR_MAP) {
+    return GRID_DELIVERY_SENSOR_MAP[trimmed];
+  }
+  const lower = trimmed.toLowerCase();
+  const ciEntry = Object.entries(GRID_DELIVERY_SENSOR_MAP).find(
+    ([k]) => k.toLowerCase() === lower,
+  );
+  if (ciEntry) return ciEntry[1];
+  if (lower.startsWith('omez') || lower.includes('limit')) return 'limited';
+  if (lower.startsWith('zapn') || lower === 'on') return 'on';
+  if (lower.startsWith('vypn') || lower === 'off') return 'off';
+  return 'off';
+}
 
 export const GRID_DELIVERY_ICONS: Record<GridDelivery, string> = {
   off: '\u{1F6AB}',   // 🚫
@@ -115,10 +142,9 @@ export const BOILER_MODE_SENSOR_MAP: Record<string, BoilerMode> = {
   'Inteligentní': 'cbb',
 };
 
-/** BoilerMode → service call mode value */
-export const BOILER_MODE_SERVICE_MAP: Record<BoilerMode, string> = {
-  cbb: 'CBB',
-  manual: 'Manual',
+export const BOILER_MODE_SERVICE_MAP: Record<BoilerMode, BoilerMode> = {
+  cbb: 'cbb',
+  manual: 'manual',
 };
 
 // ============================================================================
@@ -131,6 +157,22 @@ export type ButtonState = 'idle' | 'active' | 'pending' | 'processing' | 'disabl
 // SHIELD QUEUE
 // ============================================================================
 
+export interface ShieldRequestTarget {
+  param: string;
+  value: string;
+  entityId: string;
+  from: string;
+  to: string;
+  current: string;
+}
+
+export interface ShieldRequestParams {
+  mode?: string;
+  limit?: number | string;
+  _grid_delivery_step?: string;
+  [key: string]: unknown;
+}
+
 export interface ShieldQueueItem {
   id: string;
   type: 'mode_change' | 'grid_delivery' | 'grid_limit' | 'boiler_mode' | 'battery_formating';
@@ -140,6 +182,11 @@ export interface ShieldQueueItem {
   changes: string[];
   createdAt: string;
   position: number;
+  description?: string;
+  params?: ShieldRequestParams;
+  targets?: ShieldRequestTarget[];
+  traceId?: string;
+  gridDeliveryStep?: string;
 }
 
 export const QUEUE_STATUS_COLORS: Record<ShieldQueueItem['status'], string> = {
