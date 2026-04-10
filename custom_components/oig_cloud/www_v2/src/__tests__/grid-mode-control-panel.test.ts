@@ -5,6 +5,7 @@ import {
   GRID_DELIVERY_LABELS,
   GridDelivery,
 } from '@/ui/features/control-panel/types';
+import { OigGridDeliverySelector } from '@/ui/features/control-panel/selectors';
 
 describe('resolveGridDelivery — robustness against sensor value variants', () => {
   it('resolves canonical Czech exact matches', () => {
@@ -110,5 +111,62 @@ describe('Grid mode + limit ordered split flow', () => {
     for (const v of variants) {
       expect(resolveGridDelivery(v)).toBe('off' as GridDelivery);
     }
+  });
+});
+
+describe('OigGridDeliverySelector — activeLimitLabel render branch', () => {
+  function renderAndExtractLimitLabel(
+    value: 'off' | 'on' | 'limited',
+    limit: number,
+    limitedState: 'idle' | 'active' | 'pending' | 'processing' | 'disabled-by-service',
+  ): unknown {
+    const el = new OigGridDeliverySelector();
+    el.value = value;
+    el.limit = limit;
+    el.buttonStates = { off: 'idle', on: 'idle', limited: limitedState };
+    const result = Reflect.apply(
+      Reflect.get(Object.getPrototypeOf(el), 'render'),
+      el,
+      [],
+    ) as { values?: unknown[] } | null;
+    const limitLabelValue = result?.values?.[0];
+    return limitLabelValue;
+  }
+
+  it('activeLimitLabel is a TemplateResult when value=limited and limit > 0', () => {
+    const label = renderAndExtractLimitLabel('limited', 3500, 'idle');
+    expect(label).not.toBeNull();
+    expect(typeof label).toBe('object');
+  });
+
+  it('activeLimitLabel is null when value=limited but limit=0', () => {
+    const label = renderAndExtractLimitLabel('limited', 0, 'idle');
+    expect(label).toBeNull();
+  });
+
+  it('activeLimitLabel is a TemplateResult when buttonStates.limited=active and limit > 0', () => {
+    const label = renderAndExtractLimitLabel('off', 5000, 'active');
+    expect(label).not.toBeNull();
+    expect(typeof label).toBe('object');
+  });
+
+  it('activeLimitLabel is null when value=off and buttonStates.limited=idle even with limit > 0', () => {
+    const label = renderAndExtractLimitLabel('off', 4000, 'idle');
+    expect(label).toBeNull();
+  });
+
+  it('activeLimitLabel TemplateResult contains the limit value as a template value', () => {
+    const el = new OigGridDeliverySelector();
+    el.value = 'limited';
+    el.limit = 7777;
+    el.buttonStates = { off: 'idle', on: 'idle', limited: 'idle' };
+    const result = Reflect.apply(
+      Reflect.get(Object.getPrototypeOf(el), 'render'),
+      el,
+      [],
+    ) as { values?: unknown[] } | null;
+    const limitLabel = result?.values?.[0] as { values?: unknown[] } | null;
+    expect(limitLabel).not.toBeNull();
+    expect(limitLabel?.values).toContain(7777);
   });
 });
