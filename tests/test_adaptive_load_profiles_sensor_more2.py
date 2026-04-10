@@ -274,8 +274,8 @@ async def test_load_hourly_series_empty_rows(monkeypatch):
     sensor._hass = SimpleNamespace()
 
     class DummyRecorder:
-        async def async_add_executor_job(self, func):
-            return func()
+        async def async_add_executor_job(self, func, *args):
+            return func(*args)
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
@@ -300,8 +300,8 @@ async def test_load_hourly_series_value_filters(monkeypatch):
     sensor._hass = SimpleNamespace(states=SimpleNamespace(get=lambda _eid: None))
 
     class DummyRecorder:
-        async def async_add_executor_job(self, func):
-            return func()
+        async def async_add_executor_job(self, func, *args):
+            return func(*args)
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",
@@ -370,8 +370,8 @@ async def test_get_earliest_statistics_start_no_data(monkeypatch):
     sensor._hass = SimpleNamespace()
 
     class DummyRecorder:
-        async def async_add_executor_job(self, func):
-            return func()
+        async def async_add_executor_job(self, func, *args):
+            return func(*args)
 
     monkeypatch.setattr(
         "homeassistant.helpers.recorder.get_instance",

@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from functools import partial
 from typing import Any, Dict, List, Optional, Tuple, cast
 
 import numpy as np
@@ -33,6 +34,61 @@ MAX_MISSING_HOURS_PER_DAY = 6  # Maximum hours to interpolate within a day
 TOP_MATCHES = 7  # Average top-N profiles for stability
 FLOOR_RATIO = 0.35  # Min floor as % of reference consumption
 DEFAULT_DAYS_BACK = 90  # Fallback when history start can't be resolved
+
+
+def _query_hourly_statistics(
+    hass: HomeAssistant, sensor_entity_id: str, start_ts: int, end_ts: int
+) -> list[Any]:
+    """Load hourly statistics rows inside recorder executor context."""
+    from homeassistant.components.recorder.statistics import statistics_during_period
+
+    start_time = datetime.fromtimestamp(start_ts, tz=dt_util.UTC)
+    end_time = datetime.fromtimestamp(end_ts, tz=dt_util.UTC)
+    stats = statistics_during_period(
+        hass,
+        start_time,
+        end_time,
+        {sensor_entity_id},
+        "hour",
+        None,
+        {"sum", "mean", "state"},
+    )
+    return stats.get(sensor_entity_id, []) if stats else []
+
+
+def _query_earliest_statistics_start(
+    hass: HomeAssistant, sensor_entity_id: str
+) -> Optional[datetime]:
+    """Resolve earliest available statistics timestamp inside recorder executor."""
+    from homeassistant.components.recorder.statistics import statistics_during_period
+
+    stats = statistics_during_period(
+        hass,
+        datetime.fromtimestamp(0, tz=dt_util.UTC),
+        dt_util.utcnow(),
+        {sensor_entity_id},
+        "day",
+        None,
+        {"sum", "mean", "state"},
+    )
+    rows = stats.get(sensor_entity_id) if stats else None
+    if not rows:
+        return None
+    first_row = rows[0]
+    start = first_row.get("start") or first_row.get("start_time")
+    if isinstance(start, datetime):
+        return start if start.tzinfo else start.replace(tzinfo=dt_util.UTC)
+    if isinstance(start, str):
+        parsed = dt_util.parse_datetime(start)
+        if parsed is None:
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt_util.UTC)
+    if isinstance(start, (int, float)):
+        timestamp = float(start)
+        if timestamp > 1_000_000_000_000:
+            timestamp /= 1000.0
+        return datetime.fromtimestamp(timestamp, tz=dt_util.UTC)
+    return None
 
 
 def _get_season(dt: datetime) -> str:
@@ -366,27 +422,6 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
             return None
         return recorder_instance
 
-    def _query_hourly_statistics(
-        self, sensor_entity_id: str, start_ts: int, end_ts: int
-    ):
-        hass = self._hass
-        if hass is None:
-            return []
-        from homeassistant.components.recorder.statistics import statistics_during_period
-
-        start_time = datetime.fromtimestamp(start_ts, tz=dt_util.UTC)
-        end_time = datetime.fromtimestamp(end_ts, tz=dt_util.UTC)
-        stats = statistics_during_period(
-            hass,
-            start_time,
-            end_time,
-            {sensor_entity_id},
-            "hour",
-            None,
-            {"sum", "mean", "state"},
-        )
-        return stats.get(sensor_entity_id, []) if stats else []
-
     @staticmethod
     def _coerce_stat_timestamp(value: Any) -> Optional[datetime]:
         if value is None:
@@ -467,8 +502,12 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
             end_ts = int(dt_util.as_utc(end_time).timestamp())
 
             stats_rows = await recorder_instance.async_add_executor_job(
-                lambda: self._query_hourly_statistics(
-                    sensor_entity_id, start_ts, end_ts
+                partial(
+                    _query_hourly_statistics,
+                    self._hass,
+                    sensor_entity_id,
+                    start_ts,
+                    end_ts,
                 )
             )
             if not stats_rows:
@@ -497,9 +536,6 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
         hass = self._hass
 
         try:
-            from homeassistant.components.recorder.statistics import (
-                statistics_during_period,
-            )
             from homeassistant.helpers.recorder import get_instance
 
             recorder_instance = get_instance(hass)
@@ -507,26 +543,8 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
                 _LOGGER.error("Recorder instance not available")
                 return None
 
-            def get_earliest_stat_start() -> Optional[datetime]:
-                stats = statistics_during_period(
-                    hass,
-                    datetime.fromtimestamp(0, tz=dt_util.UTC),
-                    dt_util.utcnow(),
-                    {sensor_entity_id},
-                    "day",
-                    None,
-                    {"sum", "mean", "state"},
-                )
-                rows = stats.get(sensor_entity_id) if stats else None
-                if not rows:
-                    return None
-                first_row = rows[0]
-                return self._coerce_stat_timestamp(
-                    first_row.get("start") or first_row.get("start_time")
-                )
-
             earliest = await recorder_instance.async_add_executor_job(
-                get_earliest_stat_start
+                partial(_query_earliest_statistics_start, hass, sensor_entity_id)
             )
             if earliest is None:
                 return None
