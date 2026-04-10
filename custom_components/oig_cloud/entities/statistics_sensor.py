@@ -566,6 +566,7 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
 
         try:
             from homeassistant.components.recorder import history
+            from homeassistant.helpers.recorder import get_instance
 
             time_range = self._time_range
             if not isinstance(time_range, (list, tuple)) or len(time_range) != 2:
@@ -584,14 +585,33 @@ class OigCloudStatisticsSensor(RestoreEntity, SensorEntity):
                 f"from {start_time.date()} to {end_time.date()}"
             )
 
+            try:
+                recorder_instance = get_instance(self.hass)
+            except Exception:
+                recorder_instance = None
+
             # Načíst všechna historická data
-            states = await self.hass.async_add_executor_job(
-                history.state_changes_during_period,
-                self.hass,
-                start_time,
-                end_time,
-                source_entity_id,
-            )
+            if recorder_instance:
+                states = await recorder_instance.async_add_executor_job(
+                    history.state_changes_during_period,
+                    self.hass,
+                    start_time,
+                    end_time,
+                    source_entity_id,
+                )
+            elif hasattr(self.hass, "async_add_executor_job"):
+                states = await self.hass.async_add_executor_job(
+                    history.state_changes_during_period,
+                    self.hass,
+                    start_time,
+                    end_time,
+                    source_entity_id,
+                )
+            else:
+                _LOGGER.warning(
+                    f"[{self.entity_id}] Recorder instance not available"
+                )
+                return None
 
             if source_entity_id not in states or not states[source_entity_id]:
                 _LOGGER.warning(
