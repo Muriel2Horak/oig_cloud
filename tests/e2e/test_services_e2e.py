@@ -31,7 +31,7 @@ async def test_service_set_box_mode_calls_api(e2e_setup, mock_api):
     await hass.services.async_call(
         DOMAIN,
         "set_box_mode",
-        {"mode": "Home 1", "acknowledgement": True},
+        {"mode": "home_1", "acknowledgement": True},
         blocking=True,
     )
     mock_api.set_box_mode.assert_awaited()
@@ -59,7 +59,7 @@ async def test_service_set_boiler_mode_calls_api(e2e_setup, mock_api):
     await hass.services.async_call(
         DOMAIN,
         "set_boiler_mode",
-        {"mode": "CBB", "acknowledgement": True},
+        {"mode": "cbb", "acknowledgement": True},
         blocking=True,
     )
     mock_api.set_boiler_mode.assert_awaited()
@@ -71,7 +71,7 @@ async def test_service_set_formating_mode_calls_api(e2e_setup, mock_api):
     await hass.services.async_call(
         DOMAIN,
         "set_formating_mode",
-        {"mode": "Nabíjet", "limit": 80, "acknowledgement": True},
+        {"mode": "no_charge", "limit": 80, "acknowledgement": True},
         blocking=True,
     )
     mock_api.set_formating_mode.assert_awaited_with("80")

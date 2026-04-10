@@ -82,7 +82,7 @@ async def test_action_set_formating_mode_not_acknowledged():
     await module._action_set_formating_mode(
         hass,
         entry,
-        {"mode": module.FORMAT_CHARGE_LABEL, "acknowledgement": False},
+        {"mode": "charge", "acknowledgement": False},
         "",
     )
     assert api.calls == []
@@ -245,19 +245,19 @@ async def test_action_functions_return_when_no_box_id(monkeypatch):
     hass, entry, api = _make_hass()
     monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: None)
 
-    await module._action_set_box_mode(hass, entry, {"mode": module.HOME_1}, "")
-    await module._action_set_boiler_mode(hass, entry, {"mode": module.BOILER_CBB_LABEL}, "")
+    await module._action_set_box_mode(hass, entry, {"mode": "home_1"}, "")
+    await module._action_set_boiler_mode(hass, entry, {"mode": "cbb"}, "")
     await module._action_set_grid_delivery(
         hass,
         entry,
-        {"mode": module.GRID_ON_LABEL, "limit": None, "acknowledgement": True, "warning": True},
+        {"mode": "on", "limit": None, "acknowledgement": True, "warning": True},
         "",
         False,
     )
     await module._action_set_formating_mode(
         hass,
         entry,
-        {"mode": module.FORMAT_CHARGE_LABEL, "acknowledgement": True},
+        {"mode": "charge", "acknowledgement": True},
         "",
     )
     assert api.calls == []
@@ -265,6 +265,30 @@ async def test_action_functions_return_when_no_box_id(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_action_grid_and_formating_calls(monkeypatch):
+    hass, entry, api = _make_hass()
+    monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
+
+    await module._action_set_grid_delivery(
+        hass,
+        entry,
+        {"mode": "on", "limit": None, "acknowledgement": True, "warning": True},
+        "",
+        False,
+    )
+    assert ("set_grid_delivery", 1) in api.calls
+
+    await module._action_set_formating_mode(
+        hass,
+        entry,
+        {"mode": "charge", "acknowledgement": True, "limit": None},
+        "",
+    )
+    assert ("set_formating_mode", "1") in api.calls
+
+
+@pytest.mark.asyncio
+async def test_action_grid_and_formating_calls_legacy_labels(monkeypatch):
+    """Test that legacy label values still work (backward compatibility)."""
     hass, entry, api = _make_hass()
     monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
 
