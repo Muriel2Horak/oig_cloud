@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.21] - 2026-04-10
+
+### Fixed
+- Grid-delivery updates in Dashboard V2 now avoid redundant `limited` mode writes when the inverter is already limited or a limited-mode step is already pending, so limit-only changes no longer resend the same mode before applying the new export limit.
+- Confirmation dialogs now render trusted acknowledgement markup correctly in the shadow DOM, fixing the visible `<strong>` tag text that still leaked into the popup.
+- Grid-delivery buttons now keep the limited state visually active during shield-driven transitions, so the control panel no longer shows disabled exports while limited export remains the effective current state.
+
 ## [2.3.20] - 2026-04-10
 
 ### Fixed

@@ -280,10 +280,14 @@ export class OigGridDeliverySelector extends LitElement {
       <div class="mode-buttons">
         ${options.map(opt => {
           const state = this.buttonStates[opt.value];
+          const isCurrentValue = opt.value === this.value;
           const isDisabled = this.disabled || state === 'pending' || state === 'processing' || state === 'disabled-by-service';
+          const effectiveClass = (isCurrentValue && state === 'disabled-by-service')
+            ? 'active disabled-by-service'
+            : state;
           return html`
             <button
-              class="mode-btn ${state}"
+              class="mode-btn ${effectiveClass}"
               ?disabled=${isDisabled}
               @click=${() => this.onDeliveryClick(opt.value)}
             >
