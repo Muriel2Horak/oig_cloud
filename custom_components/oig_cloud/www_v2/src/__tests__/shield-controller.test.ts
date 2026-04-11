@@ -9,11 +9,20 @@ const mockStoreState = {
   gridMode: 'Omezeno',
   gridLimit: 5400,
   boilerMode: 'CBB',
+  useGridSuffixSensors: false,
 };
 
 vi.mock('@/data/entity-store', () => ({
   getEntityStore: vi.fn(() => ({
-    findSensorId: (sensorName: string) => `sensor.${sensorName}`,
+    findSensorId: (sensorName: string) => {
+      if (mockStoreState.useGridSuffixSensors && sensorName === 'invertor_prms_to_grid') {
+        return 'sensor.invertor_prms_to_grid_2';
+      }
+      if (mockStoreState.useGridSuffixSensors && sensorName === 'invertor_prm1_p_max_feed_grid') {
+        return 'sensor.invertor_prm1_p_max_feed_grid_2';
+      }
+      return `sensor.${sensorName}`;
+    },
     getSensorId: (sensorName: string) => `sensor.${sensorName}`,
     get: (entityId: string) => {
       if (entityId === 'sensor.service_shield_activity') {
@@ -31,6 +40,11 @@ vi.mock('@/data/entity-store', () => ({
         case 'sensor.box_prms_mode':
           return { value: mockStoreState.boxMode, lastUpdated: null, attributes: {}, exists: true };
         case 'sensor.invertor_prms_to_grid':
+          if (mockStoreState.useGridSuffixSensors) {
+            return { value: '', lastUpdated: null, attributes: {}, exists: false };
+          }
+          return { value: mockStoreState.gridMode, lastUpdated: null, attributes: {}, exists: true };
+        case 'sensor.invertor_prms_to_grid_2':
           return { value: mockStoreState.gridMode, lastUpdated: null, attributes: {}, exists: true };
         case 'sensor.boiler_manual_mode':
           return { value: mockStoreState.boilerMode, lastUpdated: null, attributes: {}, exists: true };
@@ -43,6 +57,11 @@ vi.mock('@/data/entity-store', () => ({
         case 'sensor.service_shield_queue':
           return { value: mockStoreState.queueCount, lastUpdated: null, attributes: {}, exists: true };
         case 'sensor.invertor_prm1_p_max_feed_grid':
+          if (mockStoreState.useGridSuffixSensors) {
+            return { value: 0, lastUpdated: null, attributes: {}, exists: false };
+          }
+          return { value: mockStoreState.gridLimit, lastUpdated: null, attributes: {}, exists: true };
+        case 'sensor.invertor_prm1_p_max_feed_grid_2':
           return { value: mockStoreState.gridLimit, lastUpdated: null, attributes: {}, exists: true };
         default:
           return { value: 0, lastUpdated: null, attributes: {}, exists: false };
@@ -72,6 +91,7 @@ describe('ShieldController lifecycle — start / stop / subscribe', () => {
     mockStoreState.gridMode = 'Omezeno';
     mockStoreState.gridLimit = 5400;
     mockStoreState.boilerMode = 'CBB';
+    mockStoreState.useGridSuffixSensors = false;
     vi.resetModules();
     vi.clearAllMocks();
   });
@@ -342,6 +362,63 @@ describe('ShieldController service calls', () => {
     expect(call[2]).not.toHaveProperty('mode');
   });
 
+  it('setGridDelivery sends only limit when grid_mode is already pending even if raw sensor still says off', async () => {
+    mockStoreState.status = 'idle';
+    mockStoreState.queueCount = 1;
+    mockStoreState.gridMode = 'Vypnuto';
+    mockStoreState.activityAttrs = {
+      running_requests: [],
+      queued_requests: [
+        {
+          service: 'set_grid_delivery',
+          grid_delivery_step: 'mode',
+          params: { mode: 'limited', _grid_delivery_step: 'mode' },
+          targets: [{ param: 'mode', value: 'Omezeno', entity_id: 'sensor.invertor_prms_to_grid', from: 'Vypnuto', to: 'Omezeno', current: 'Vypnuto' }],
+          changes: [],
+          queued_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    await controller.setGridDelivery('limited', 5400);
+
+    const call = (haClient.callService as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[2]).toMatchObject({ limit: 5400 });
+    expect(call[2]).not.toHaveProperty('mode');
+  });
+
+  it('setGridDelivery still sends mode and limit when pending grid_mode targets on instead of limited', async () => {
+    mockStoreState.status = 'idle';
+    mockStoreState.queueCount = 1;
+    mockStoreState.gridMode = 'Vypnuto';
+    mockStoreState.activityAttrs = {
+      running_requests: [],
+      queued_requests: [
+        {
+          service: 'set_grid_delivery',
+          grid_delivery_step: 'mode',
+          params: { mode: 'on', _grid_delivery_step: 'mode' },
+          targets: [{ param: 'mode', value: 'Zapnuto', entity_id: 'sensor.invertor_prms_to_grid', from: 'Vypnuto', to: 'Zapnuto', current: 'Vypnuto' }],
+          changes: [],
+          queued_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    await controller.setGridDelivery('limited', 5400);
+
+    const call = (haClient.callService as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[2]).toMatchObject({ mode: 'limited', limit: 5400 });
+  });
+
   it('setGridDelivery sends limit only when delivery is non-limited with limit param', async () => {
     const { ShieldController } = await import('@/data/shield-controller');
     const controller = new ShieldController();
@@ -444,6 +521,17 @@ describe('ShieldController button state helpers', () => {
     const controller = new ShieldController();
     controller.refresh();
 
+    expect(controller.getGridDeliveryButtonState('limited')).toBe('active');
+    expect(controller.getGridDeliveryButtonState('off')).toBe('idle');
+  });
+
+  it('refresh reads suffix-matched grid sensors via findSensorId so limited mode does not fall back to off', async () => {
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    mockStoreState.useGridSuffixSensors = true;
+    controller.refresh();
+
+    expect(controller.getState().currentGridDelivery).toBe('limited');
     expect(controller.getGridDeliveryButtonState('limited')).toBe('active');
     expect(controller.getGridDeliveryButtonState('off')).toBe('idle');
   });
