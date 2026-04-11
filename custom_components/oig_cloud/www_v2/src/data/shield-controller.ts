@@ -147,10 +147,10 @@ export class ShieldController {
       const queueCount = store.getNumeric(queueSensorId).value;
 
       // --- Current actual values ---
-      const boxModeRaw = store.getString(store.getSensorId('box_prms_mode')).value;
-      const gridModeRaw = store.getString(store.getSensorId('invertor_prms_to_grid')).value;
-      const gridLimit = store.getNumeric(store.getSensorId('invertor_prm1_p_max_feed_grid')).value;
-      const boilerModeRaw = store.getString(store.getSensorId('boiler_manual_mode')).value;
+      const boxModeRaw = store.getString(store.findSensorId('box_prms_mode')).value;
+      const gridModeRaw = store.getString(store.findSensorId('invertor_prms_to_grid')).value;
+      const gridLimit = store.getNumeric(store.findSensorId('invertor_prm1_p_max_feed_grid')).value;
+      const boilerModeRaw = store.getString(store.findSensorId('boiler_manual_mode')).value;
 
       // Normalize current values
       const currentBoxMode = BOX_MODE_SENSOR_MAP[boxModeRaw.trim()] ?? 'home_1';
@@ -423,11 +423,11 @@ export class ShieldController {
   }
 
   private isLimitedGridDeliveryActiveOrPending(): boolean {
-    if (this.state.pendingServices.has('grid_limit')) {
+    if (this.getPendingGridDeliveryTarget() === 'limited') {
       return true;
     }
 
-    if (this.getPendingGridDeliveryTarget() === 'limited') {
+    if (this.state.pendingServices.has('grid_limit')) {
       return true;
     }
 
@@ -436,7 +436,7 @@ export class ShieldController {
       return this.state.currentGridDelivery === 'limited';
     }
 
-    const rawGridMode = store.getString(store.getSensorId('invertor_prms_to_grid')).value;
+    const rawGridMode = store.getString(store.findSensorId('invertor_prms_to_grid')).value;
     if (!rawGridMode.trim()) {
       return this.state.currentGridDelivery === 'limited';
     }

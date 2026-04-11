@@ -498,13 +498,16 @@ class OigCloudAdaptiveLoadProfilesSensor(SensorEntity):
             recorder_instance = self._get_recorder_instance()
             if not recorder_instance:
                 return []
+            hass = self._hass
+            if hass is None:
+                return []
             start_ts = int(dt_util.as_utc(start_time).timestamp())
             end_ts = int(dt_util.as_utc(end_time).timestamp())
 
             stats_rows = await recorder_instance.async_add_executor_job(
                 partial(
                     _query_hourly_statistics,
-                    self._hass,
+                    hass,
                     sensor_entity_id,
                     start_ts,
                     end_ts,
