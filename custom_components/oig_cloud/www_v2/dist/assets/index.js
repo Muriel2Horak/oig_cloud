@@ -1,27 +1,27 @@
-var Ya=Object.defineProperty;var Ua=(t,e,i)=>e in t?Ya(t,e,{enumerable:!0,configurable:!0,writable:!0,value:i}):t[e]=i;var _=(t,e,i)=>Ua(t,typeof e!="symbol"?e+"":e,i);import{f as Ga,u as Ka,i as P,a as M,b as d,r as Z,w as Et,A}from"./vendor.js";import{C as Ki,a as En,L as Dn,P as On,b as zn,i as An,p as In,c as Ln,d as Za,T as Qa,e as Xa,B as Ja,f as ts,g as es,h as is,j as rs,k as Bn}from"./charts.js";(function(){const e=document.createElement("link").relList;if(e&&e.supports&&e.supports("modulepreload"))return;for(const n of document.querySelectorAll('link[rel="modulepreload"]'))r(n);new MutationObserver(n=>{for(const a of n)if(a.type==="childList")for(const s of a.addedNodes)s.tagName==="LINK"&&s.rel==="modulepreload"&&r(s)}).observe(document,{childList:!0,subtree:!0});function i(n){const a={};return n.integrity&&(a.integrity=n.integrity),n.referrerPolicy&&(a.referrerPolicy=n.referrerPolicy),n.crossOrigin==="use-credentials"?a.credentials="include":n.crossOrigin==="anonymous"?a.credentials="omit":a.credentials="same-origin",a}function r(n){if(n.ep)return;n.ep=!0;const a=i(n);fetch(n.href,a)}})();const Ut="[V2]";function ns(){return new Date().toISOString().substr(11,12)}function yi(t,e){const i=ns(),r=t.toUpperCase().padEnd(5);return`${i} ${r} ${e}`}const y={debug(t,e){typeof window<"u"&&window.OIG_DEBUG&&console.debug(Ut,yi("debug",t),e??"")},info(t,e){console.info(Ut,yi("info",t),e??"")},warn(t,e){console.warn(Ut,yi("warn",t),e??"")},error(t,e,i){const r=e?{error:e.message,stack:e.stack,...i}:i;console.error(Ut,yi("error",t),r??"")},time(t){console.time(`${Ut} ${t}`)},timeEnd(t){console.timeEnd(`${Ut} ${t}`)},group(t){console.group(`${Ut} ${t}`)},groupEnd(){console.groupEnd()}};function as(){window.addEventListener("error",ss),window.addEventListener("unhandledrejection",os),y.debug("Error handling setup complete")}function ss(t){const e=t.error||new Error(t.message);y.error("Uncaught error",e,{filename:t.filename,lineno:t.lineno,colno:t.colno}),t.preventDefault()}function os(t){const e=t.reason instanceof Error?t.reason:new Error(String(t.reason));y.error("Unhandled promise rejection",e),t.preventDefault()}class Fn extends Error{constructor(e,i,r=!1,n){super(e),this.code=i,this.recoverable=r,this.cause=n,this.name="AppError"}}class Le extends Fn{constructor(e="Authentication failed"){super(e,"AUTH_ERROR",!1),this.name="AuthError"}}class jr extends Fn{constructor(e="Network error",i){super(e,"NETWORK_ERROR",!0,i),this.name="NetworkError"}}const ls="oig_v2_";function cs(){var t;try{const e=((t=globalThis.navigator)==null?void 0:t.userAgent)||"";return/Home Assistant|HomeAssistant|HAcompanion/i.test(e)}catch{return!1}}function ds(){var t;try{const e=((t=globalThis.navigator)==null?void 0:t.userAgent)||"",i=/Android|iPhone|iPad|iPod|Mobile/i.test(e),r=globalThis.innerWidth<=768;return i||r}catch{return!1}}const vt={isHaApp:!1,isMobile:!1,reduceMotion:!1};async function us(){var i,r;y.info("Bootstrap starting"),as(),vt.isHaApp=cs(),vt.isMobile=ds(),vt.reduceMotion=vt.isHaApp||vt.isMobile||((r=(i=globalThis.matchMedia)==null?void 0:i.call(globalThis,"(prefers-reduced-motion: reduce)"))==null?void 0:r.matches)||!1;const t=document.documentElement;vt.isHaApp&&t.classList.add("oig-ha-app"),vt.isMobile&&t.classList.add("oig-mobile"),vt.reduceMotion&&t.classList.add("oig-reduce-motion");const e={version:"2.0.0-beta.1",storagePrefix:ls};return y.info("Bootstrap complete",{...e,isHaApp:vt.isHaApp,isMobile:vt.isMobile,reduceMotion:vt.reduceMotion}),document.createElement("oig-app")}const o={bgPrimary:"var(--primary-background-color, #ffffff)",bgSecondary:"var(--secondary-background-color, #f5f5f5)",textPrimary:"var(--primary-text-color, #212121)",textSecondary:"var(--secondary-text-color, #757575)",accent:"var(--accent-color, #03a9f4)",divider:"var(--divider-color, #e0e0e0)",error:"var(--error-color, #db4437)",success:"var(--success-color, #0f9d58)",warning:"var(--warning-color, #f4b400)",cardBg:"var(--card-background-color, #ffffff)",cardShadow:"var(--shadow-elevation-2dp_-_box-shadow, 0 2px 2px 0 rgba(0,0,0,0.14))",fontFamily:"var(--primary-font-family, system-ui, sans-serif)"},Vr={"--primary-background-color":"#111936","--secondary-background-color":"#1a2044","--primary-text-color":"#e1e1e1","--secondary-text-color":"rgba(255,255,255,0.7)","--accent-color":"#03a9f4","--divider-color":"rgba(255,255,255,0.12)","--error-color":"#ef5350","--success-color":"#66bb6a","--warning-color":"#ffa726","--card-background-color":"rgba(255,255,255,0.06)","--shadow-elevation-2dp_-_box-shadow":"0 2px 4px 0 rgba(0,0,0,0.4)"},qr={"--primary-background-color":"#ffffff","--secondary-background-color":"#f5f5f5","--primary-text-color":"#212121","--secondary-text-color":"#757575","--accent-color":"#03a9f4","--divider-color":"#e0e0e0","--error-color":"#db4437","--success-color":"#0f9d58","--warning-color":"#f4b400","--card-background-color":"#ffffff","--shadow-elevation-2dp_-_box-shadow":"0 2px 2px 0 rgba(0,0,0,0.14)"};function nr(){var t,e;try{if(window.parent&&window.parent!==window){const i=(e=(t=window.parent.document)==null?void 0:t.querySelector("home-assistant"))==null?void 0:e.hass;if(i!=null&&i.themes){if(typeof i.themes.darkMode=="boolean")return i.themes.darkMode;const r=(i.themes.theme||"").toLowerCase();if(r.includes("dark"))return!0;if(r.includes("light"))return!1}}}catch{}return window.matchMedia("(prefers-color-scheme: dark)").matches}function ar(t){const e=t?Vr:qr,i=document.documentElement;for(const[r,n]of Object.entries(e))i.style.setProperty(r,n);i.classList.toggle("dark",t),document.body.style.background=t?Vr["--secondary-background-color"]:qr["--secondary-background-color"]}function ps(){const t=nr();ar(t),window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{const i=nr();ar(i)}),setInterval(()=>{const i=nr(),r=document.documentElement.classList.contains("dark");i!==r&&ar(i)},5e3)}const Yr={mobile:768,tablet:1024};function be(t){return t<Yr.mobile?"mobile":t<Yr.tablet?"tablet":"desktop"}/**
+var os=Object.defineProperty;var ls=(t,e,i)=>e in t?os(t,e,{enumerable:!0,configurable:!0,writable:!0,value:i}):t[e]=i;var _=(t,e,i)=>ls(t,typeof e!="symbol"?e+"":e,i);import{f as cs,u as ds,i as P,a as M,b as d,r as Q,w as Mt,A as O,E as us}from"./vendor.js";import{C as Ki,a as Nr,L as Rr,P as Hr,b as Wr,i as jr,p as Vr,c as qr,d as ps,T as hs,e as gs,B as fs,f as ms,g as bs,h as ys,j as vs,k as Yr}from"./charts.js";(function(){const e=document.createElement("link").relList;if(e&&e.supports&&e.supports("modulepreload"))return;for(const r of document.querySelectorAll('link[rel="modulepreload"]'))n(r);new MutationObserver(r=>{for(const a of r)if(a.type==="childList")for(const s of a.addedNodes)s.tagName==="LINK"&&s.rel==="modulepreload"&&n(s)}).observe(document,{childList:!0,subtree:!0});function i(r){const a={};return r.integrity&&(a.integrity=r.integrity),r.referrerPolicy&&(a.referrerPolicy=r.referrerPolicy),r.crossOrigin==="use-credentials"?a.credentials="include":r.crossOrigin==="anonymous"?a.credentials="omit":a.credentials="same-origin",a}function n(r){if(r.ep)return;r.ep=!0;const a=i(r);fetch(r.href,a)}})();const Kt="[V2]";function xs(){return new Date().toISOString().substr(11,12)}function vi(t,e){const i=xs(),n=t.toUpperCase().padEnd(5);return`${i} ${n} ${e}`}const y={debug(t,e){typeof window<"u"&&window.OIG_DEBUG&&console.debug(Kt,vi("debug",t),e??"")},info(t,e){console.info(Kt,vi("info",t),e??"")},warn(t,e){console.warn(Kt,vi("warn",t),e??"")},error(t,e,i){const n=e?{error:e.message,stack:e.stack,...i}:i;console.error(Kt,vi("error",t),n??"")},time(t){console.time(`${Kt} ${t}`)},timeEnd(t){console.timeEnd(`${Kt} ${t}`)},group(t){console.group(`${Kt} ${t}`)},groupEnd(){console.groupEnd()}};function ws(){window.addEventListener("error",$s),window.addEventListener("unhandledrejection",_s),y.debug("Error handling setup complete")}function $s(t){const e=t.error||new Error(t.message);y.error("Uncaught error",e,{filename:t.filename,lineno:t.lineno,colno:t.colno}),t.preventDefault()}function _s(t){const e=t.reason instanceof Error?t.reason:new Error(String(t.reason));y.error("Unhandled promise rejection",e),t.preventDefault()}class Gr extends Error{constructor(e,i,n=!1,r){super(e),this.code=i,this.recoverable=n,this.cause=r,this.name="AppError"}}class Ie extends Gr{constructor(e="Authentication failed"){super(e,"AUTH_ERROR",!1),this.name="AuthError"}}class Xn extends Gr{constructor(e="Network error",i){super(e,"NETWORK_ERROR",!0,i),this.name="NetworkError"}}const ks="oig_v2_";function Ss(){var t;try{const e=((t=globalThis.navigator)==null?void 0:t.userAgent)||"";return/Home Assistant|HomeAssistant|HAcompanion/i.test(e)}catch{return!1}}function Cs(){var t;try{const e=((t=globalThis.navigator)==null?void 0:t.userAgent)||"",i=/Android|iPhone|iPad|iPod|Mobile/i.test(e),n=globalThis.innerWidth<=768;return i||n}catch{return!1}}const vt={isHaApp:!1,isMobile:!1,reduceMotion:!1};async function Ps(){var i,n;y.info("Bootstrap starting"),ws(),vt.isHaApp=Ss(),vt.isMobile=Cs(),vt.reduceMotion=vt.isHaApp||vt.isMobile||((n=(i=globalThis.matchMedia)==null?void 0:i.call(globalThis,"(prefers-reduced-motion: reduce)"))==null?void 0:n.matches)||!1;const t=document.documentElement;vt.isHaApp&&t.classList.add("oig-ha-app"),vt.isMobile&&t.classList.add("oig-mobile"),vt.reduceMotion&&t.classList.add("oig-reduce-motion");const e={version:"2.0.0-beta.1",storagePrefix:ks};return y.info("Bootstrap complete",{...e,isHaApp:vt.isHaApp,isMobile:vt.isMobile,reduceMotion:vt.reduceMotion}),document.createElement("oig-app")}const o={bgPrimary:"var(--primary-background-color, #ffffff)",bgSecondary:"var(--secondary-background-color, #f5f5f5)",textPrimary:"var(--primary-text-color, #212121)",textSecondary:"var(--secondary-text-color, #757575)",accent:"var(--accent-color, #03a9f4)",divider:"var(--divider-color, #e0e0e0)",error:"var(--error-color, #db4437)",success:"var(--success-color, #0f9d58)",warning:"var(--warning-color, #f4b400)",cardBg:"var(--card-background-color, #ffffff)",cardShadow:"var(--shadow-elevation-2dp_-_box-shadow, 0 2px 2px 0 rgba(0,0,0,0.14))",fontFamily:"var(--primary-font-family, system-ui, sans-serif)"},Jn={"--primary-background-color":"#111936","--secondary-background-color":"#1a2044","--primary-text-color":"#e1e1e1","--secondary-text-color":"rgba(255,255,255,0.7)","--accent-color":"#03a9f4","--divider-color":"rgba(255,255,255,0.12)","--error-color":"#ef5350","--success-color":"#66bb6a","--warning-color":"#ffa726","--card-background-color":"rgba(255,255,255,0.06)","--shadow-elevation-2dp_-_box-shadow":"0 2px 4px 0 rgba(0,0,0,0.4)"},tr={"--primary-background-color":"#ffffff","--secondary-background-color":"#f5f5f5","--primary-text-color":"#212121","--secondary-text-color":"#757575","--accent-color":"#03a9f4","--divider-color":"#e0e0e0","--error-color":"#db4437","--success-color":"#0f9d58","--warning-color":"#f4b400","--card-background-color":"#ffffff","--shadow-elevation-2dp_-_box-shadow":"0 2px 2px 0 rgba(0,0,0,0.14)"};function on(){var t,e;try{if(window.parent&&window.parent!==window){const i=(e=(t=window.parent.document)==null?void 0:t.querySelector("home-assistant"))==null?void 0:e.hass;if(i!=null&&i.themes){if(typeof i.themes.darkMode=="boolean")return i.themes.darkMode;const n=(i.themes.theme||"").toLowerCase();if(n.includes("dark"))return!0;if(n.includes("light"))return!1}}}catch{}return window.matchMedia("(prefers-color-scheme: dark)").matches}function ln(t){const e=t?Jn:tr,i=document.documentElement;for(const[n,r]of Object.entries(e))i.style.setProperty(n,r);i.classList.toggle("dark",t),document.body.style.background=t?Jn["--secondary-background-color"]:tr["--secondary-background-color"]}function Ts(){const t=on();ln(t),window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{const i=on();ln(i)}),setInterval(()=>{const i=on(),n=document.documentElement.classList.contains("dark");i!==n&&ln(i)},5e3)}const er={mobile:768,tablet:1024};function be(t){return t<er.mobile?"mobile":t<er.tablet?"tablet":"desktop"}/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const E=t=>(e,i)=>{i!==void 0?i.addInitializer(()=>{customElements.define(t,e)}):customElements.define(t,e)};/**
+ */const D=t=>(e,i)=>{i!==void 0?i.addInitializer(()=>{customElements.define(t,e)}):customElements.define(t,e)};/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const hs={attribute:!0,type:String,converter:Ka,reflect:!1,hasChanged:Ga},gs=(t=hs,e,i)=>{const{kind:r,metadata:n}=i;let a=globalThis.litPropertyMetadata.get(n);if(a===void 0&&globalThis.litPropertyMetadata.set(n,a=new Map),r==="setter"&&((t=Object.create(t)).wrapped=!0),a.set(i.name,t),r==="accessor"){const{name:s}=i;return{set(l){const c=e.get.call(this);e.set.call(this,l),this.requestUpdate(s,c,t,!0,l)},init(l){return l!==void 0&&this.C(s,void 0,t,l),l}}}if(r==="setter"){const{name:s}=i;return function(l){const c=this[s];e.call(this,l),this.requestUpdate(s,c,t,!0,l)}}throw Error("Unsupported decorator location: "+r)};function h(t){return(e,i)=>typeof i=="object"?gs(t,e,i):((r,n,a)=>{const s=n.hasOwnProperty(a);return n.constructor.createProperty(a,r),s?Object.getOwnPropertyDescriptor(n,a):void 0})(t,e,i)}/**
+ */const Ms={attribute:!0,type:String,converter:ds,reflect:!1,hasChanged:cs},Ds=(t=Ms,e,i)=>{const{kind:n,metadata:r}=i;let a=globalThis.litPropertyMetadata.get(r);if(a===void 0&&globalThis.litPropertyMetadata.set(r,a=new Map),n==="setter"&&((t=Object.create(t)).wrapped=!0),a.set(i.name,t),n==="accessor"){const{name:s}=i;return{set(l){const c=e.get.call(this);e.set.call(this,l),this.requestUpdate(s,c,t,!0,l)},init(l){return l!==void 0&&this.C(s,void 0,t,l),l}}}if(n==="setter"){const{name:s}=i;return function(l){const c=this[s];e.call(this,l),this.requestUpdate(s,c,t,!0,l)}}throw Error("Unsupported decorator location: "+n)};function h(t){return(e,i)=>typeof i=="object"?Ds(t,e,i):((n,r,a)=>{const s=r.hasOwnProperty(a);return r.constructor.createProperty(a,n),s?Object.getOwnPropertyDescriptor(r,a):void 0})(t,e,i)}/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */function w(t){return h({...t,state:!0,attribute:!1})}/**
+ */function x(t){return h({...t,state:!0,attribute:!1})}/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const fs=(t,e,i)=>(i.configurable=!0,i.enumerable=!0,Reflect.decorate&&typeof e!="object"&&Object.defineProperty(t,e,i),i);/**
+ */const Es=(t,e,i)=>(i.configurable=!0,i.enumerable=!0,Reflect.decorate&&typeof e!="object"&&Object.defineProperty(t,e,i),i);/**
  * @license
  * Copyright 2017 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */function Zi(t,e){return(i,r,n)=>{const a=s=>{var l;return((l=s.renderRoot)==null?void 0:l.querySelector(t))??null};return fs(i,r,{get(){return a(this)}})}}class ms{constructor(){this.callbacks=new Set,this.watched=new Set,this.watchedPrefixes=new Set,this.unsub=null,this.running=!1,this.getHass=null,this.activeConnection=null}registerEntities(e){for(const i of e)typeof i=="string"&&i.length>0&&this.watched.add(i)}registerPrefix(e){var r;if(typeof e!="string"||e.length===0)return;this.watchedPrefixes.add(e);const i=(r=this.getHass)==null?void 0:r.call(this);if(i!=null&&i.states){const n=Object.keys(i.states).filter(a=>a.startsWith(e));this.registerEntities(n)}}onEntityChange(e){return this.callbacks.add(e),()=>{this.callbacks.delete(e)}}async start(e){this.getHass=e.getHass;const i=this.getHass();if(!(i!=null&&i.connection)){y.debug("StateWatcher: hass not ready, retrying in 500ms"),setTimeout(()=>this.start(e),500);return}if(this.running&&this.activeConnection===i.connection){const n=e.prefixes??[];for(const a of n)this.registerPrefix(a);return}this.running&&this.stop(),this.running=!0,this.activeConnection=i.connection;const r=e.prefixes??[];for(const n of r)this.registerPrefix(n);try{this.unsub=await i.connection.subscribeEvents(n=>this.handleStateChanged(n),"state_changed"),y.info("StateWatcher started",{prefixes:r,watchedCount:this.watched.size})}catch(n){this.running=!1,this.activeConnection=null,y.error("StateWatcher failed to subscribe",n)}}stop(){if(this.running=!1,this.activeConnection=null,this.unsub)try{this.unsub()}catch{}this.unsub=null,y.info("StateWatcher stopped")}isWatched(e){return this.matchesWatched(e)}destroy(){this.stop(),this.callbacks.clear(),this.watched.clear(),this.watchedPrefixes.clear(),this.getHass=null}matchesWatched(e){if(this.watched.has(e))return!0;for(const i of this.watchedPrefixes)if(e.startsWith(i))return!0;return!1}handleStateChanged(e){var n;const i=(n=e==null?void 0:e.data)==null?void 0:n.entity_id;if(!i||!this.matchesWatched(i))return;const r=e.data.new_state;for(const a of this.callbacks)try{a(i,r)}catch{}}}const Xt=new ms;class bs{constructor(e,i="2206237016"){this.subscriptions=new Map,this.cache=new Map,this.stateWatcherUnsub=null,this.hass=e,this.inverterSn=i,this.init()}init(){var e;if((e=this.hass)!=null&&e.states)for(const[i,r]of Object.entries(this.hass.states))this.cache.set(i,r);this.stateWatcherUnsub=Xt.onEntityChange((i,r)=>{r?this.cache.set(i,r):this.cache.delete(i),this.notifySubscribers(i,r)}),y.debug("EntityStore initialized",{entities:this.cache.size,inverterSn:this.inverterSn})}getSensorId(e){return`sensor.oig_${this.inverterSn}_${e}`}findSensorId(e){const i=this.getSensorId(e);for(const r of this.cache.keys()){if(r===i)return r;if(r.startsWith(i+"_")){const n=r.substring(i.length+1);if(/^\d+$/.test(n))return r}}return i}subscribe(e,i){this.subscriptions.has(e)||this.subscriptions.set(e,new Set),this.subscriptions.get(e).add(i),Xt.registerEntities([e]);const r=this.cache.get(e)??null;return i(r),()=>{var n,a;(n=this.subscriptions.get(e))==null||n.delete(i),((a=this.subscriptions.get(e))==null?void 0:a.size)===0&&this.subscriptions.delete(e)}}getNumeric(e){const i=this.cache.get(e);return i?{value:i.state!=="unavailable"&&i.state!=="unknown"&&parseFloat(i.state)||0,lastUpdated:i.last_updated?new Date(i.last_updated):null,attributes:i.attributes??{},exists:!0}:{value:0,lastUpdated:null,attributes:{},exists:!1}}getString(e){const i=this.cache.get(e);return i?{value:i.state!=="unavailable"&&i.state!=="unknown"?i.state:"",lastUpdated:i.last_updated?new Date(i.last_updated):null,attributes:i.attributes??{},exists:!0}:{value:"",lastUpdated:null,attributes:{},exists:!1}}get(e){return this.cache.get(e)??null}getAll(){return Object.fromEntries(this.cache)}batchLoad(e){const i={};for(const r of e)i[r]=this.getNumeric(r);return i}updateHass(e){if(this.hass=e,e!=null&&e.states){const i=new Set(Object.keys(e.states));for(const r of Array.from(this.cache.keys()))i.has(r)||(this.cache.delete(r),this.notifySubscribers(r,null));for(const[r,n]of Object.entries(e.states)){const a=this.cache.get(r),s=n;this.cache.set(r,s),((a==null?void 0:a.state)!==s.state||(a==null?void 0:a.last_updated)!==s.last_updated)&&this.notifySubscribers(r,s)}}}notifySubscribers(e,i){const r=this.subscriptions.get(e);if(r)for(const n of r)try{n(i)}catch(a){y.error("Entity callback error",a,{entityId:e})}}destroy(){var e;(e=this.stateWatcherUnsub)==null||e.call(this),this.subscriptions.clear(),this.cache.clear(),y.debug("EntityStore destroyed")}}let Ge=null;function ys(t,e){return Ge&&Ge.destroy(),Ge=new bs(t,e),Ge}function ae(){return Ge}const vs=3,xs=1e3;class ws{constructor(){this.hass=null,this.initPromise=null}async getHass(){return this.hass?this.hass:this.initPromise?this.initPromise:(this.initPromise=this.initHass(),this.initPromise)}getHassSync(){return this.hass}async refreshHass(){const e=await this.findHass();return e?(this.hass=e,y.info("HASS client refreshed"),e):this.hass}async initHass(){y.debug("Initializing HASS client");const e=await this.findHass();return e?(this.hass=e,y.info("HASS client initialized"),e):(y.warn("HASS not found in parent context"),null)}async findHass(){var e,i;if(typeof window>"u")return null;if(window.hass)return window.hass;if(window.parent&&window.parent!==window)try{const r=(i=(e=window.parent.document)==null?void 0:e.querySelector("home-assistant"))==null?void 0:i.hass;if(r)return r}catch{y.debug("Cannot access parent HASS (cross-origin)")}return window.customPanel?window.customPanel.hass:null}async fetchWithAuth(e,i={}){var s,l;const r=await this.getHass();if(!r)throw new Le("Cannot get HASS context");try{const u=new URL(e,window.location.href).hostname;if(u!=="localhost"&&u!=="127.0.0.1"&&!e.startsWith("/api/"))throw new Error(`fetchWithAuth rejected for non-localhost URL: ${e}`)}catch(c){if(c.message.includes("rejected"))throw c}const n=(l=(s=r.auth)==null?void 0:s.data)==null?void 0:l.access_token;if(!n)throw new Le("No access token available");const a=new Headers(i.headers);return a.set("Authorization",`Bearer ${n}`),a.has("Content-Type")||a.set("Content-Type","application/json"),this.fetchWithRetry(e,{...i,headers:a})}async fetchWithRetry(e,i,r=vs){try{const n=await fetch(e,i);if(!n.ok)throw n.status===401?new Le("Token expired or invalid"):new jr(`HTTP ${n.status}: ${n.statusText}`);return n}catch(n){if(r>0&&n instanceof jr)return y.warn(`Retrying fetch (${r} left)`,{url:e}),await this.delay(xs),this.fetchWithRetry(e,i,r-1);throw n}}async callApi(e,i,r){const n=await this.getHass();if(!n)throw new Le("Cannot get HASS context");return n.callApi(e,i,r)}async callService(e,i,r){const n=await this.getHass();if(!(n!=null&&n.callService))return y.error("Cannot call service — hass not available"),!1;try{return await n.callService(e,i,r),!0}catch(a){return y.error(`Service call failed (${e}.${i})`,a),!1}}async callWS(e){const i=await this.getHass();if(!(i!=null&&i.callWS))throw new Le("Cannot get HASS context for WS call");return i.callWS(e)}async fetchOIGAPI(e,i={}){try{const r=`/api/oig_cloud${e.startsWith("/")?"":"/"}${e}`;return await(await this.fetchWithAuth(r,{...i,headers:{"Content-Type":"application/json",...Object.fromEntries(new Headers(i.headers).entries())}})).json()}catch(r){return y.error(`OIG API fetch error for ${e}`,r),null}}async loadBatteryTimeline(e,i="active"){return this.fetchOIGAPI(`/battery_forecast/${e}/timeline?type=${i}`)}async loadUnifiedCostTile(e){return this.fetchOIGAPI(`/battery_forecast/${e}/unified_cost_tile`)}async loadSpotPrices(e){return this.fetchOIGAPI(`/spot_prices/${e}/intervals`)}async loadAnalytics(e){return this.fetchOIGAPI(`/analytics/${e}`)}async loadPlannerSettings(e){return this.fetchOIGAPI(`/battery_forecast/${e}/planner_settings`)}async savePlannerSettings(e,i){return this.fetchOIGAPI(`/battery_forecast/${e}/planner_settings`,{method:"POST",body:JSON.stringify(i)})}async loadDetailTabs(e,i,r="hybrid"){return this.fetchOIGAPI(`/battery_forecast/${e}/detail_tabs?tab=${i}&plan=${r}`)}async loadModules(e){return this.fetchOIGAPI(`/${e}/modules`)}openEntityDialog(e){var i;try{const r=((i=window.parent.document)==null?void 0:i.querySelector("home-assistant"))??document.querySelector("home-assistant");if(!r)return y.warn("Cannot open entity dialog — home-assistant element not found"),!1;const n=new CustomEvent("hass-more-info",{bubbles:!0,composed:!0,detail:{entityId:e}});return r.dispatchEvent(n),!0}catch(r){return y.error("Cannot open entity dialog",r),!1}}async showNotification(e,i,r="success"){await this.callService("persistent_notification","create",{title:e,message:i,notification_id:`oig_dashboard_${Date.now()}`})||console.log(`[${r.toUpperCase()}] ${e}: ${i}`)}getToken(){var e,i,r;return((r=(i=(e=this.hass)==null?void 0:e.auth)==null?void 0:i.data)==null?void 0:r.access_token)??null}delay(e){return new Promise(i=>setTimeout(i,e))}}const X=new ws,Ur={solar:"#ffd54f",battery:"#4caf50",inverter:"#9575cd",grid:"#42a5f5",house:"#f06292"},Be={solar:"linear-gradient(135deg, rgba(255,213,79,0.15) 0%, rgba(255,179,0,0.08) 100%)",battery:"linear-gradient(135deg, rgba(76,175,80,0.15) 0%, rgba(56,142,60,0.08) 100%)",grid:"linear-gradient(135deg, rgba(66,165,245,0.15) 0%, rgba(33,150,243,0.08) 100%)",house:"linear-gradient(135deg, rgba(240,98,146,0.15) 0%, rgba(233,30,99,0.08) 100%)",inverter:"linear-gradient(135deg, rgba(149,117,205,0.15) 0%, rgba(126,87,194,0.08) 100%)"},Fe={solar:"rgba(255,213,79,0.4)",battery:"rgba(76,175,80,0.4)",grid:"rgba(66,165,245,0.4)",house:"rgba(240,98,146,0.4)",inverter:"rgba(149,117,205,0.4)"},ue={solar:"#ffd54f",battery:"#ff9800",grid_import:"#f44336",grid_export:"#4caf50",house:"#f06292"},vi={solar:5400,battery:7e3,grid:17e3,house:1e4},$r={solarPower:0,solarP1:0,solarP2:0,solarV1:0,solarV2:0,solarI1:0,solarI2:0,solarPercent:0,solarToday:0,solarForecastToday:0,solarForecastTomorrow:0,batterySoC:0,batteryPower:0,batteryVoltage:0,batteryCurrent:0,batteryTemp:0,batteryChargeTotal:0,batteryDischargeTotal:0,batteryChargeSolar:0,batteryChargeGrid:0,isGridCharging:!1,timeToEmpty:"",timeToFull:"",balancingState:"standby",balancingTimeRemaining:"",gridChargingPlan:{hasBlocks:!1,totalEnergyKwh:0,totalCostCzk:0,windowLabel:null,durationMinutes:0,currentBlockLabel:null,nextBlockLabel:null,blocks:[]},gridPower:0,gridVoltage:0,gridFrequency:0,gridImportToday:0,gridExportToday:0,gridL1V:0,gridL2V:0,gridL3V:0,gridL1P:0,gridL2P:0,gridL3P:0,spotPrice:0,exportPrice:0,currentTariff:"",housePower:0,houseTodayWh:0,houseL1:0,houseL2:0,houseL3:0,inverterMode:"",inverterGridMode:"",inverterGridLimit:0,inverterTemp:0,bypassStatus:"off",notificationsUnread:0,notificationsError:0,boilerIsUse:!1,boilerPower:0,boilerDayEnergy:0,boilerManualMode:"",boilerInstallPower:3e3,plannerAutoMode:null,lastUpdate:""},Gr=new URLSearchParams(window.location.search),$s=Gr.get("sn")||Gr.get("inverter_sn")||"2206237016";function _s(t){return`sensor.oig_${$s}_${t}`}function B(t){if(!(t!=null&&t.state))return 0;const e=parseFloat(t.state);return isNaN(e)?0:e}function Pt(t){return!(t!=null&&t.state)||t.state==="unknown"||t.state==="unavailable"?"":t.state}function Kr(t,e="on"){if(!(t!=null&&t.state))return!1;const i=t.state.toLowerCase();return i===e||i==="1"||i==="zapnuto"}function ks(t){const e=(t||"").toLowerCase();return e==="charging"?"charging":e==="balancing"||e==="holding"?"holding":e==="completed"?"completed":e==="planned"?"planned":"standby"}function hr(t){return t==="tomorrow"?"zítra":t==="today"?"dnes":""}function Zr(t){if(!t)return null;const[e,i]=t.split(":").map(Number);return!Number.isFinite(e)||!Number.isFinite(i)?null:e*60+i}function Ss(t){const e=Number(t.grid_import_kwh??t.grid_charge_kwh??0);if(Number.isFinite(e)&&e>0)return e;const i=Number(t.battery_start_kwh??0),r=Number(t.battery_end_kwh??0);return Number.isFinite(i)&&Number.isFinite(r)?Math.max(0,r-i):0}function Nn(t=[]){return[...t].sort((e,i)=>{const r=(e.day==="tomorrow"?1:0)-(i.day==="tomorrow"?1:0);return r!==0?r:(e.time_from||"").localeCompare(i.time_from||"")})}function Cs(t){if(!Array.isArray(t)||t.length===0)return null;const e=Nn(t),i=e[0],r=e.at(-1),n=hr(i==null?void 0:i.day),a=hr(r==null?void 0:r.day);if(n===a){const m=n?`${n} `:"";return!(i!=null&&i.time_from)||!(r!=null&&r.time_to)?m.trim()||null:`${m}${i.time_from} – ${r.time_to}`}const s=n?`${n} `:"",l=a?`${a} `:"",c=(i==null?void 0:i.time_from)||"--",u=(r==null?void 0:r.time_to)||"--",p=i?`${s}${c}`:"--",g=r?`${l}${u}`:"--";return`${p} → ${g}`}function Ps(t){if(!Array.isArray(t)||t.length===0)return 0;let e=0;return t.forEach(i=>{const r=Zr(i.time_from),n=Zr(i.time_to);if(r===null||n===null)return;const a=n-r;a>0&&(e+=a)}),e}function Qr(t){const e=hr(t.day),i=e?`${e} `:"",r=t.time_from||"--",n=t.time_to||"--";return`${i}${r} - ${n}`}function Ts(t){const e=t.find(n=>{const a=(n.status||"").toLowerCase();return a==="running"||a==="active"})||null,i=e?t[t.indexOf(e)+1]||null:t[0]||null;return{runningBlock:e,upcomingBlock:i,shouldShowNext:!!(i&&(!e||i!==e))}}function Ms(t){const e=(t==null?void 0:t.attributes)||{},i=Array.isArray(e.charging_blocks)?e.charging_blocks:[],r=Nn(i),n=Number(e.total_energy_kwh)||0,a=n>0?n:r.reduce((b,v)=>b+Ss(v),0),s=Number(e.total_cost_czk)||0,l=s>0?s:r.reduce((b,v)=>b+Number(v.total_cost_czk||0),0),c=Cs(r),u=Ps(r),{runningBlock:p,upcomingBlock:g,shouldShowNext:m}=Ts(r);return{hasBlocks:r.length>0,totalEnergyKwh:a,totalCostCzk:l,windowLabel:c,durationMinutes:u,currentBlockLabel:p?Qr(p):null,nextBlockLabel:m&&g?Qr(g):null,blocks:r}}function Es(t){var Br,Fr,Nr,Rr,Hr,Wr;const e=(t==null?void 0:t.states)||t||{},i=qa=>e[_s(qa)]||null,r=B(i("actual_fv_p1")),n=B(i("actual_fv_p2")),a=B(i("extended_fve_voltage_1")),s=B(i("extended_fve_voltage_2")),l=B(i("extended_fve_current_1")),c=B(i("extended_fve_current_2")),u=i("solar_forecast"),p=(Br=u==null?void 0:u.attributes)!=null&&Br.today_total_kwh?parseFloat(u.attributes.today_total_kwh)||0:(Fr=u==null?void 0:u.attributes)!=null&&Fr.today_total_sum_kw?parseFloat(u.attributes.today_total_sum_kw)||0:B(u),g=(Nr=u==null?void 0:u.attributes)!=null&&Nr.tomorrow_total_sum_kw?parseFloat(u.attributes.tomorrow_total_sum_kw)||0:(Rr=u==null?void 0:u.attributes)!=null&&Rr.total_tomorrow_kwh&&parseFloat(u.attributes.total_tomorrow_kwh)||0,m=B(i("batt_bat_c")),b=B(i("batt_batt_comp_p")),v=B(i("extended_battery_voltage")),f=B(i("extended_battery_current")),k=B(i("extended_battery_temperature")),C=B(i("computed_batt_charge_energy_today")),$=B(i("computed_batt_discharge_energy_today")),S=B(i("computed_batt_charge_fve_energy_today")),Y=B(i("computed_batt_charge_grid_energy_today")),K=i("grid_charging_planned"),x=Kr(K),H=Pt(i("time_to_empty")),z=Pt(i("time_to_full")),D=i("battery_balancing"),q=ks((Hr=D==null?void 0:D.attributes)==null?void 0:Hr.current_state),Q=Pt({state:(Wr=D==null?void 0:D.attributes)==null?void 0:Wr.time_remaining}),U=Ms(K),xt=B(i("actual_aci_wtotal")),Vt=B(i("extended_grid_voltage")),er=B(i("ac_in_aci_f")),ir=B(i("ac_in_ac_ad")),Ct=B(i("ac_in_ac_pd")),Ae=B(i("ac_in_aci_vr")),Ie=B(i("ac_in_aci_vs")),yt=B(i("ac_in_aci_vt")),Lr=B(i("actual_aci_wr")),qt=B(i("actual_aci_ws")),Yt=B(i("actual_aci_wt")),_a=B(i("spot_price_current_15min")),ka=B(i("export_price_current_15min")),Sa=Pt(i("current_tariff")),Ca=B(i("actual_aco_p")),Pa=B(i("ac_out_en_day")),Ta=B(i("ac_out_aco_pr")),Ma=B(i("ac_out_aco_ps")),Ea=B(i("ac_out_aco_pt")),Da=Pt(i("box_prms_mode")),Oa=Pt(i("invertor_prms_to_grid")),za=B(i("invertor_prm1_p_max_feed_grid")),Aa=B(i("box_temp")),Ia=Pt(i("bypass_status"))||"off",La=B(i("notification_count_unread")),Ba=B(i("notification_count_error")),rr=i("boiler_is_use"),Fa=rr?Kr(rr)||Pt(rr)==="Zapnuto":!1,Na=B(i("boiler_current_cbb_w")),Ra=B(i("boiler_day_w")),Ha=Pt(i("boiler_manual_mode")),Wa=B(i("boiler_install_power"))||3e3,ja=i("real_data_update"),Va=Pt(ja);return{solarPower:r+n,solarP1:r,solarP2:n,solarV1:a,solarV2:s,solarI1:l,solarI2:c,solarPercent:B(i("dc_in_fv_proc")),solarToday:B(i("dc_in_fv_ad")),solarForecastToday:p,solarForecastTomorrow:g,batterySoC:m,batteryPower:b,batteryVoltage:v,batteryCurrent:f,batteryTemp:k,batteryChargeTotal:C,batteryDischargeTotal:$,batteryChargeSolar:S,batteryChargeGrid:Y,isGridCharging:x,timeToEmpty:H,timeToFull:z,balancingState:q,balancingTimeRemaining:Q,gridChargingPlan:U,gridPower:xt,gridVoltage:Vt,gridFrequency:er,gridImportToday:ir,gridExportToday:Ct,gridL1V:Ae,gridL2V:Ie,gridL3V:yt,gridL1P:Lr,gridL2P:qt,gridL3P:Yt,spotPrice:_a,exportPrice:ka,currentTariff:Sa,housePower:Ca,houseTodayWh:Pa,houseL1:Ta,houseL2:Ma,houseL3:Ea,inverterMode:Da,inverterGridMode:Oa,inverterGridLimit:za,inverterTemp:Aa,bypassStatus:Ia,notificationsUnread:La,notificationsError:Ba,boilerIsUse:Fa,boilerPower:Na,boilerDayEnergy:Ra,boilerManualMode:Ha,boilerInstallPower:Wa,plannerAutoMode:null,lastUpdate:Va}}const Ne={};function xi(t,e,i){const r=Math.abs(t),n=Math.min(100,r/e*100),a=Math.max(500,Math.round(3500-n*30));let s=a;return i&&Ne[i]!==void 0&&(s=Math.round(.3*a+(1-.3)*Ne[i]),Math.abs(s-Ne[i])<100&&(s=Ne[i])),i&&(Ne[i]=s),{active:r>=50,intensity:n,count:Math.max(1,Math.min(4,Math.ceil(1+n/33))),speed:s,size:Math.round(6+n/10),opacity:Math.min(1,.3+n/150)}}function Re(t){return Math.abs(t)>=1e3?`${(t/1e3).toFixed(1)} kW`:`${Math.round(t)} W`}function Gt(t){return t>=1e3?`${(t/1e3).toFixed(2)} kWh`:`${Math.round(t)} Wh`}function Ds(t){return t==="VT"||t.includes("vysoký")?"⚡ VT":t==="NT"||t.includes("nízký")?"🌙 NT":t?`⏰ ${t}`:"--"}function Os(t){return t.includes("Home 1")?{icon:"🏠",text:"Home 1"}:t.includes("Home 2")?{icon:"🔋",text:"Home 2"}:t.includes("Home 3")?{icon:"☀️",text:"Home 3"}:t.includes("UPS")?{icon:"⚡",text:"Home UPS"}:{icon:"⚙️",text:t||"--"}}function zs(t){return t==="Vypnuto / Off"?{display:"Vypnuto",icon:"🚫"}:t==="Zapnuto / On"?{display:"Zapnuto",icon:"💧"}:t.includes("Limited")||t.includes("omezením")?{display:"Omezeno",icon:"🚰"}:{display:t||"--",icon:"💧"}}const As={"HOME I":{icon:"🏠",color:"rgba(76, 175, 80, 0.16)",label:"HOME I"},"HOME II":{icon:"⚡",color:"rgba(33, 150, 243, 0.16)",label:"HOME II"},"HOME III":{icon:"🔋",color:"rgba(156, 39, 176, 0.16)",label:"HOME III"},"HOME UPS":{icon:"🛡️",color:"rgba(255, 152, 0, 0.18)",label:"HOME UPS"},"FULL HOME UPS":{icon:"🛡️",color:"rgba(255, 152, 0, 0.18)",label:"FULL HOME UPS"},"DO NOTHING":{icon:"⏸️",color:"rgba(158, 158, 158, 0.18)",label:"DO NOTHING"},"Mode 0":{icon:"🏠",color:"rgba(76, 175, 80, 0.16)",label:"HOME I"},"Mode 1":{icon:"⚡",color:"rgba(33, 150, 243, 0.16)",label:"HOME II"},"Mode 2":{icon:"🔋",color:"rgba(156, 39, 176, 0.16)",label:"HOME III"},"Mode 3":{icon:"🛡️",color:"rgba(255, 152, 0, 0.18)",label:"HOME UPS"}},Xr={timeline:[],labels:[],prices:[],exportPrices:[],modeSegments:[],cheapestBuyBlock:null,expensiveBuyBlock:null,bestExportBlock:null,worstExportBlock:null,solar:null,battery:null,initialZoomStart:null,initialZoomEnd:null,currentSpotPrice:0,currentExportPrice:0,avgSpotPrice:0,plannedConsumption:null,whatIf:null,solarForecastTotal:0},Jr=new URLSearchParams(window.location.search),gr=Jr.get("sn")||Jr.get("inverter_sn")||"2206237016";function xe(t){return`sensor.oig_${gr}_${t}`}function tn(t){if(!(t!=null&&t.state))return 0;const e=parseFloat(t.state);return isNaN(e)?0:e}function fr(t){const e=t.getFullYear(),i=String(t.getMonth()+1).padStart(2,"0"),r=String(t.getDate()).padStart(2,"0"),n=String(t.getHours()).padStart(2,"0"),a=String(t.getMinutes()).padStart(2,"0"),s=String(t.getSeconds()).padStart(2,"0");return`${e}-${i}-${r}T${n}:${a}:${s}`}const Pi={},Is=5*60*1e3;async function Ls(t="hybrid"){const e=Pi[t];if(e&&Date.now()-e.ts<Is)return y.debug("Timeline cache hit",{plan:t,age:Math.round((Date.now()-e.ts)/1e3)}),e.data;try{const i=await X.getHass();if(!i)return[];let r;i.callApi?r=await i.callApi("GET",`oig_cloud/battery_forecast/${gr}/timeline?type=active`):r=await X.fetchOIGAPI(`battery_forecast/${gr}/timeline?type=active`);const n=(r==null?void 0:r.active)||(r==null?void 0:r.timeline)||[];return Pi[t]={data:n,ts:Date.now()},y.info("Timeline fetched",{plan:t,points:n.length}),n}catch(i){return y.error("Failed to fetch timeline",i),[]}}function Bs(t){Object.keys(Pi).forEach(e=>delete Pi[e])}function Fs(t){const e=new Date,i=new Date(e);return i.setMinutes(Math.floor(e.getMinutes()/15)*15,0,0),t.filter(r=>new Date(r.timestamp)>=i)}function Ns(t){return t.map(e=>{if(!e.timestamp)return new Date;try{const[i,r]=e.timestamp.split("T");if(!i||!r)return new Date;const[n,a,s]=i.split("-").map(Number),[l,c,u=0]=r.split(":").map(Number);return new Date(n,a-1,s,l,c,u)}catch{return new Date}})}function Rs(t){const e=t.mode_name||t.mode_planned||t.mode||t.mode_display||null;if(!e||typeof e!="string")return null;const i=e.trim();return i.length?i:null}function Hs(t){return t.startsWith("HOME ")?t.replace("HOME ","").trim():t==="FULL HOME UPS"||t==="HOME UPS"?"UPS":t==="DO NOTHING"?"DN":t.substring(0,3).toUpperCase()}function Ws(t){return As[t]||{icon:"❓",color:"rgba(158, 158, 158, 0.15)",label:t}}function js(t){if(!t.length)return[];const e=[];let i=null;for(const r of t){const n=Rs(r);if(!n){i=null;continue}const a=new Date(r.timestamp),s=new Date(a.getTime()+15*60*1e3);if(i!==null&&i.mode===n)i.end=s;else{const l={mode:n,start:a,end:s};e.push(l),i=l}}return e.map(r=>{const n=Ws(r.mode);return{...r,icon:n.icon,color:n.color,label:n.label,shortLabel:Hs(r.mode)}})}function wi(t,e,i=3){const r=Math.floor(i*60/15);if(t.length<r)return null;let n=null,a=e?1/0:-1/0;for(let s=0;s<=t.length-r;s++){const l=t.slice(s,s+r),c=l.map(p=>p.price),u=c.reduce((p,g)=>p+g,0)/c.length;(e&&u<a||!e&&u>a)&&(a=u,n={start:l[0].timestamp,end:l[l.length-1].timestamp,avg:u,min:Math.min(...c),max:Math.max(...c),values:c,type:"cheapest-buy"})}return n}function Vs(t,e){const r=((t==null?void 0:t.states)||{})[xe("solar_forecast")];if(!(r!=null&&r.attributes)||!e.length)return null;const n=r.attributes,a=n.today_total_kwh||0,s=n.today_hourly_string1_kw||{},l=n.tomorrow_hourly_string1_kw||{},c=n.today_hourly_string2_kw||{},u=n.tomorrow_hourly_string2_kw||{},p={...s,...l},g={...c,...u},m=(f,k,C)=>f==null||k==null?f||k||0:f+(k-f)*C,b=[],v=[];for(const f of e){const k=f.getHours(),C=f.getMinutes(),$=new Date(f);$.setMinutes(0,0,0);const S=fr($),Y=new Date($);Y.setHours(k+1);const K=fr(Y),x=p[S]||0,H=p[K]||0,z=g[S]||0,D=g[K]||0,q=C/60;b.push(m(x,H,q)),v.push(m(z,D,q))}return{string1:b,string2:v,todayTotal:a,hasString1:b.some(f=>f>0),hasString2:v.some(f=>f>0)}}function qs(t,e){if(!t.length)return{arrays:{baseline:[],solarCharge:[],gridCharge:[],gridNet:[],consumption:[]},initialZoomStart:null,initialZoomEnd:null};const i=t.map(g=>new Date(g.timestamp)),r=i[0].getTime(),n=i[i.length-1],a=n?n.getTime():r,s=[],l=[],c=[],u=[],p=[];for(const g of e){const m=fr(g),b=t.find(v=>v.timestamp===m);if(b){const v=(b.battery_capacity_kwh??b.battery_soc??b.battery_start)||0,f=b.solar_charge_kwh||0,k=b.grid_charge_kwh||0,C=typeof b.grid_net=="number"?b.grid_net:(b.grid_import||0)-(b.grid_export||0),$=b.load_kwh??b.consumption_kwh??b.load??0,S=(Number($)||0)*4;s.push(v-f-k),l.push(f),c.push(k),u.push(C),p.push(S)}else s.push(null),l.push(null),c.push(null),u.push(null),p.push(null)}return{arrays:{baseline:s,solarCharge:l,gridCharge:c,gridNet:u,consumption:p},initialZoomStart:r,initialZoomEnd:a}}function Ys(t){const e=(t==null?void 0:t.states)||{},i=e[xe("battery_forecast")];if(!(i!=null&&i.attributes)||i.state==="unavailable"||i.state==="unknown")return null;const r=i.attributes,n=r.planned_consumption_today??null,a=r.planned_consumption_tomorrow??null,s=r.profile_today||"Žádný profil",l=e[xe("ac_out_en_day")],c=l==null?void 0:l.state,p=(c&&c!=="unavailable"&&parseFloat(c)||0)/1e3,g=p+(n||0),m=(n||0)+(a||0);let b=null;if(g>0&&a!=null){const f=a-g,k=f/g*100;Math.abs(k)<5?b="Zítra podobně":f>0?b=`Zítra více (+${Math.abs(k).toFixed(0)}%)`:b=`Zítra méně (-${Math.abs(k).toFixed(0)}%)`}return{todayConsumedKwh:p,todayPlannedKwh:n,todayTotalKwh:g,tomorrowKwh:a,totalPlannedKwh:m,profile:s!=="Žádný profil"&&s!=="Neznámý profil"?s:"Žádný profil",trendText:b}}function Us(t){const i=((t==null?void 0:t.states)||{})[xe("battery_forecast")];if(!(i!=null&&i.attributes)||i.state==="unavailable"||i.state==="unknown")return null;const n=i.attributes.mode_optimization||{},a=n.alternatives||{},s=n.total_cost_czk||0,l=n.total_savings_vs_home_i_czk||0,c=a["DO NOTHING"],u=(c==null?void 0:c.current_mode)||null;return{totalCost:s,totalSavings:l,alternatives:a,activeMode:u}}async function Gs(t,e="hybrid"){const i=performance.now();y.info("[Pricing] loadPricingData START");try{const r=await Ls(e),n=Fs(r);if(!n.length)return y.warn("[Pricing] No timeline data"),Xr;const a=n.map(U=>({timestamp:U.timestamp,price:U.spot_price_czk||0})),s=n.map(U=>({timestamp:U.timestamp,price:U.export_price_czk||0}));let l=Ns(a);const c=js(n),u=wi(a,!0,3);u&&(u.type="cheapest-buy");const p=wi(a,!1,3);p&&(p.type="expensive-buy");const g=wi(s,!1,3);g&&(g.type="best-export");const m=wi(s,!0,3);m&&(m.type="worst-export");const b=n.map(U=>new Date(U.timestamp)),v=new Set([...l,...b].map(U=>U.getTime()));l=Array.from(v).sort((U,xt)=>U-xt).map(U=>new Date(U));const{arrays:f,initialZoomStart:k,initialZoomEnd:C}=qs(n,l),$=Vs(t,l),S=(t==null?void 0:t.states)||{},Y=tn(S[xe("spot_price_current_15min")]),K=tn(S[xe("export_price_current_15min")]),x=a.length>0?a.reduce((U,xt)=>U+xt.price,0)/a.length:0,H=Ys(t),z=Us(t),D=($==null?void 0:$.todayTotal)||0,q={timeline:n,labels:l,prices:a,exportPrices:s,modeSegments:c,cheapestBuyBlock:u,expensiveBuyBlock:p,bestExportBlock:g,worstExportBlock:m,solar:$,battery:f,initialZoomStart:k,initialZoomEnd:C,currentSpotPrice:Y,currentExportPrice:K,avgSpotPrice:x,plannedConsumption:H,whatIf:z,solarForecastTotal:D},Q=(performance.now()-i).toFixed(0);return y.info(`[Pricing] loadPricingData COMPLETE in ${Q}ms`,{points:n.length,segments:c.length}),q}catch(r){return y.error("[Pricing] loadPricingData failed",r),Xr}}const en={workday_spring:"Pracovní den - Jaro",workday_summer:"Pracovní den - Léto",workday_autumn:"Pracovní den - Podzim",workday_winter:"Pracovní den - Zima",weekend_spring:"Víkend - Jaro",weekend_summer:"Víkend - Léto",weekend_autumn:"Víkend - Podzim",weekend_winter:"Víkend - Zima"},Ks={fve:"FVE",grid:"Síť",alternative:"Alternativa"},mr=new URLSearchParams(window.location.search),Zs=mr.get("sn")||mr.get("inverter_sn")||"2206237016",Ti=mr.get("entry_id")||"";function Qs(t,e,i){return isNaN(t)?e:Math.max(e,Math.min(i,t))}function Xs(t,e,i){if(t==null)return null;const r=e-i;if(r<=0)return null;const n=(t-i)/r*100;return Qs(n,0,100)}function Mi(t){if(!t)return"--:--";const e=t instanceof Date?t:new Date(t);return isNaN(e.getTime())?"--:--":e.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"})}function rn(t){if(!t)return"--";const e=new Date(t);return isNaN(e.getTime())?"--":e.toLocaleString("cs-CZ",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}function br(t,e){return`${Mi(t)}–${Mi(e)}`}function nn(t){return Ks[t||""]||t||"--"}function Rn(t){return t?Object.values(t).reduce((e,i)=>e+(parseFloat(String(i))||0),0):0}function Hn(t){return t?Object.entries(t).map(([i,r])=>({hour:parseInt(i,10),value:parseFloat(String(r))||0})).filter(i=>isFinite(i.value)).sort((i,r)=>r.value-i.value).slice(0,3).filter(i=>i.value>0).map(i=>i.hour).sort((i,r)=>i-r):[]}function He(t){if(!t)return null;const e=t.split(":").map(i=>parseInt(i,10));return e.length<2||!isFinite(e[0])||!isFinite(e[1])?null:e[0]*60+e[1]}function an(t,e,i){return e===null||i===null?!1:e<=i?t>=e&&t<i:t>=e||t<i}async function Js(){try{return Ti?await X.fetchOIGAPI(`/${Ti}/boiler_profile`):(y.warn("[Boiler] No entry_id — cannot fetch boiler profile"),null)}catch(t){return y.warn("[Boiler] Failed to fetch profile",{err:t}),null}}async function to(){try{return Ti?await X.fetchOIGAPI(`/${Ti}/boiler_plan`):(y.warn("[Boiler] No entry_id — cannot fetch boiler plan"),null)}catch(t){return y.warn("[Boiler] Failed to fetch plan",{err:t}),null}}function eo(t,e,i){const r=t||e,n=r==null?void 0:r.state,a=(n==null?void 0:n.temperatures)||{},s=(n==null?void 0:n.energy_state)||{},l=isFinite(a.upper_zone??a.top)?a.upper_zone??a.top??null:null,c=isFinite(a.lower_zone??a.bottom)?a.lower_zone??a.bottom??null:null,u=isFinite(s.avg_temp)?s.avg_temp??null:null,p=isFinite(s.energy_needed_kwh)?s.energy_needed_kwh??null:null,g=i.targetTempC??60,m=i.coldInletTempC??10,b=Xs(u,g,m),v=(t==null?void 0:t.slots)||[],f=(t==null?void 0:t.next_slot)||io(v);let k="Neplánováno";if(f){const $=nn(f.recommended_source);k=`${br(f.start,f.end)} (${$})`}const C=nn((n==null?void 0:n.recommended_source)||(f==null?void 0:f.recommended_source));return{currentTemp:(n==null?void 0:n.current_temp)||45,targetTemp:(n==null?void 0:n.target_temp)||g,heating:(n==null?void 0:n.heating)||!1,tempTop:l,tempBottom:c,avgTemp:u,heatingPercent:b,energyNeeded:p,planCost:(t==null?void 0:t.estimated_cost_czk)??null,nextHeating:k,recommendedSource:C,nextProfile:(n==null?void 0:n.next_profile)||"",nextStart:(n==null?void 0:n.next_start)||""}}function io(t){if(!Array.isArray(t))return null;const e=Date.now();return t.find(i=>{const r=new Date(i.end||i.end_time||"").getTime(),n=i.consumption_kwh??i.avg_consumption_kwh??0;return r>e&&n>0})||null}function ro(t){var m,b,v;if(!((m=t==null?void 0:t.slots)!=null&&m.length))return null;const e=t.slots.map(f=>({start:f.start||"",end:f.end||"",consumptionKwh:f.consumption_kwh??f.avg_consumption_kwh??0,recommendedSource:f.recommended_source||"",spotPrice:isFinite(f.spot_price)?f.spot_price??null:null,tempTop:f.temp_top,soc:f.soc})),i=e.filter(f=>f.consumptionKwh>0),r=parseFloat(String(t.total_consumption_kwh))||0,n=parseFloat(String(t.fve_kwh))||0,a=parseFloat(String(t.grid_kwh))||0,s=parseFloat(String(t.alt_kwh))||0,l=parseFloat(String(t.estimated_cost_czk))||0;let c="Mix: --";if(r>0){const f=Math.round(n/r*100),k=Math.round(a/r*100),C=Math.round(s/r*100);c=`Mix: FVE ${f}% · Síť ${k}% · Alt ${C}%`}const u=e.filter(f=>f.consumptionKwh>0&&f.spotPrice!==null).map(f=>({slot:f,price:f.spotPrice}));let p="--",g="--";if(u.length){const f=u.reduce((C,$)=>$.price<C.price?$:C),k=u.reduce((C,$)=>$.price>C.price?$:C);p=`${br(f.slot.start,f.slot.end)} (${f.price.toFixed(2)} Kč/kWh)`,g=`${br(k.slot.start,k.slot.end)} (${k.price.toFixed(2)} Kč/kWh)`}return{slots:e,totalConsumptionKwh:r,fveKwh:n,gridKwh:a,altKwh:s,estimatedCostCzk:l,nextSlot:t.next_slot?{start:t.next_slot.start||"",end:t.next_slot.end||"",consumptionKwh:t.next_slot.consumption_kwh||0,recommendedSource:t.next_slot.recommended_source||"",spotPrice:t.next_slot.spot_price??null}:null,planStart:rn((b=t.slots[0])==null?void 0:b.start),planEnd:rn((v=t.slots[t.slots.length-1])==null?void 0:v.end),sourceDigest:c,activeSlotCount:i.length,cheapestSpot:p,mostExpensiveSpot:g}}function no(t){const e=parseFloat(String(t==null?void 0:t.fve_kwh))||0,i=parseFloat(String(t==null?void 0:t.grid_kwh))||0,r=parseFloat(String(t==null?void 0:t.alt_kwh))||0,n=e+i+r;return{fveKwh:e,gridKwh:i,altKwh:r,fvePercent:n>0?e/n*100:0,gridPercent:n>0?i/n*100:0,altPercent:n>0?r/n*100:0}}function ao(t,e,i){var m;const r=(t==null?void 0:t.summary)||{},n=(m=t==null?void 0:t.profiles)==null?void 0:m[i],a=(n==null?void 0:n.hourly_avg)||{},s=r.predicted_total_kwh??Rn(a),l=r.peak_hours??Hn(a),c=isFinite(r.water_liters_40c)?r.water_liters_40c??null:null,u=r.circulation_windows||[],p=u.length?u.map(b=>`${b.start}–${b.end}`).join(", "):"--";let g="--";if(u.length){const b=new Date,v=b.getHours()*60+b.getMinutes();if(u.some(k=>{const C=He(k.start),$=He(k.end);return an(v,C,$)})){const k=u.find(C=>{const $=He(C.start),S=He(C.end);return an(v,$,S)});g=k?`ANO (do ${k.end})`:"ANO"}else{const k=e==null?void 0:e.state,C=k==null?void 0:k.circulation_recommended;let $=1/0,S=null;for(const Y of u){const K=He(Y.start);if(K===null)continue;let x=K-v;x<0&&(x+=24*60),x<$&&($=x,S=Y)}C&&S?g=`DOPORUČENO (${S.start}–${S.end})`:S?g=`Ne (další ${S.start}–${S.end})`:g="Ne"}}return{predictedTodayKwh:s,peakHours:l,waterLiters40c:c,circulationWindows:p,circulationNow:g}}function so(t){const e=(t==null?void 0:t.config)||{},i=isFinite(e.volume_l)?e.volume_l??null:null;return{volumeL:i,heaterPowerW:null,targetTempC:isFinite(e.target_temp_c)?e.target_temp_c??null:null,deadlineTime:e.deadline_time||"--:--",stratificationMode:e.stratification_mode||"--",kCoefficient:i?(i*.001163).toFixed(4):"--",coldInletTempC:isFinite(e.cold_inlet_temp_c)?e.cold_inlet_temp_c??10:10}}function oo(t){return t!=null&&t.profiles?Object.entries(t.profiles).map(([e,i])=>({id:e,name:i.name||e,targetTemp:i.target_temp||55,startTime:i.start_time||"06:00",endTime:i.end_time||"22:00",days:i.days||[1,1,1,1,1,0,0],enabled:i.enabled!==!1})):[]}function lo(t){var r;const e=[],i=((r=t==null?void 0:t.summary)==null?void 0:r.today_hours)||[];for(let n=0;n<24;n++){const a=i.includes(n);e.push({hour:n,temp:a?55:25,heating:a})}return e}function co(t,e){var s;const i=(s=t==null?void 0:t.profiles)==null?void 0:s[e],r=["Po","Út","St","Čt","Pá","So","Ne"];if(!i)return r.map(l=>({day:l,hours:Array(24).fill(0)}));const n=i.heatmap||[];let a=[];if(n.length>0)a=n.map(l=>l.map(c=>c&&typeof c=="object"?parseFloat(c.consumption)||0:parseFloat(String(c))||0));else{const l=i.hourly_avg||{};a=Array.from({length:7},()=>Array.from({length:24},(c,u)=>parseFloat(String(l[u]||0))))}return r.map((l,c)=>({day:l,hours:a[c]||Array(24).fill(0)}))}function uo(t,e){var u;const i=(u=t==null?void 0:t.profiles)==null?void 0:u[e],r=(t==null?void 0:t.summary)||{},n=(i==null?void 0:i.hourly_avg)||{},a=Array.from({length:24},(p,g)=>parseFloat(String(n[g]||0))),s=r.predicted_total_kwh??Rn(n),l=r.peak_hours??Hn(n),c=isFinite(r.avg_confidence)?r.avg_confidence??null:null;return{hourlyAvg:a,peakHours:l,predictedTotalKwh:s,confidence:c,daysTracked:7}}function po(t,e){var p,g,m;if(!((p=t==null?void 0:t.slots)!=null&&p.length)||!(e!=null&&e.length))return{fve:"--",grid:"--"};const i=(g=t.slots[0])==null?void 0:g.start,r=(m=t.slots[t.slots.length-1])==null?void 0:m.end,n=i?new Date(i).getTime():null,a=r?new Date(r).getTime():null,s=e.filter(b=>{if(!n||!a)return!0;const v=b.timestamp||b.time;if(!v)return!1;const f=new Date(v).getTime();return f>=n&&f<=a}),l=b=>{const v=[];let f=null;for(const k of s){const C=k.timestamp||k.time;if(!C)continue;const $=new Date(C),S=b(k);S&&!f?f={start:$,end:$}:S&&f?f.end=$:!S&&f&&(v.push(f),f=null)}return f&&v.push(f),v.length?v.map(k=>`${Mi(k.start)}–${Mi(new Date(k.end.getTime()+15*6e4))}`).join(", "):"--"},c=l(b=>(parseFloat(b.solar_kwh??b.solar_charge_kwh??0)||0)>0),u=l(b=>(parseFloat(b.grid_charge_kwh??0)||0)>0);return{fve:c,grid:u}}async function ho(){return y.info("[Boiler] Planning heating..."),await X.callService("oig_cloud","plan_boiler_heating",{})}async function go(){return y.info("[Boiler] Applying plan..."),await X.callService("oig_cloud","apply_boiler_plan",{})}async function fo(){return y.info("[Boiler] Canceling plan..."),await X.callService("oig_cloud","cancel_boiler_plan",{})}async function mo(t){const[e,i]=await Promise.all([Js(),to()]);let r=null;try{const l=await X.loadBatteryTimeline(Zs,"active");r=(l==null?void 0:l.active)||l||null,Array.isArray(r)&&r.length===0&&(r=null)}catch{}const n=(e==null?void 0:e.current_category)||Object.keys((e==null?void 0:e.profiles)||{})[0]||"workday_summer",a=Object.keys((e==null?void 0:e.profiles)||{}),s=so(e);return{state:eo(i,e,s),plan:ro(i),energyBreakdown:no(i),predictedUsage:ao(e,i,n),config:s,profiles:oo(e||i),heatmap:lo(i||e),heatmap7x24:co(e,n),profiling:uo(e,n),currentCategory:n,availableCategories:a,forecastWindows:po(i,r)}}const sn={efficiency:null,health:null,balancing:null,costComparison:null};function Wn(t){const e=ae();if(!e)return null;const i=e.findSensorId("battery_efficiency"),r=e.get(i);if(!r)return y.debug("Battery efficiency sensor not found"),null;const n=r.attributes||{},a=n.efficiency_last_month_pct!=null?{efficiency:Number(n.efficiency_last_month_pct??0),charged:Number(n.last_month_charge_kwh??0),discharged:Number(n.last_month_discharge_kwh??0),losses:Number(n.losses_last_month_kwh??0)}:null,s=n.efficiency_current_month_pct!=null?{efficiency:Number(n.efficiency_current_month_pct??0),charged:Number(n.current_month_charge_kwh??0),discharged:Number(n.current_month_discharge_kwh??0),losses:Number(n.losses_current_month_kwh??0)}:null,l=a??s;if(!l)return null;const c=a?"last_month":"current_month",u=a&&s?s.efficiency-a.efficiency:0;return{efficiency:l.efficiency,charged:l.charged,discharged:l.discharged,losses:l.losses,lossesPct:n[c==="last_month"?"losses_last_month_pct":"losses_current_month_pct"]??0,trend:u,period:c,currentMonthDays:n.current_month_days??0,lastMonth:a,currentMonth:s}}function jn(t){const e=ae();if(!e)return null;const i=e.findSensorId("battery_health"),r=e.get(i);if(!r)return y.debug("Battery health sensor not found"),null;const n=parseFloat(r.state)||0,a=r.attributes||{};let s,l;return n>=95?(s="excellent",l="Vynikající"):n>=90?(s="good",l="Dobrý"):n>=80?(s="fair",l="Uspokojivý"):(s="poor",l="Špatný"),{soh:n,capacity:a.capacity_p80_last_20??a.current_capacity_kwh??0,nominalCapacity:a.current_capacity_kwh??0,minCapacity:a.capacity_p20_last_20??0,measurementCount:a.measurement_count??0,lastAnalysis:a.last_analysis??"",qualityScore:a.quality_score??null,sohMethod:a.soh_selection_method??null,sohMethodDescription:a.soh_method_description??null,measurementHistory:Array.isArray(a.measurement_history)?a.measurement_history:[],degradation3m:a.degradation_3_months_percent??null,degradation6m:a.degradation_6_months_percent??null,degradation12m:a.degradation_12_months_percent??null,degradationPerYear:a.degradation_per_year_percent??null,estimatedEolDate:a.estimated_eol_date??null,yearsTo80Pct:a.years_to_80pct??null,trendConfidence:a.trend_confidence??null,status:s,statusLabel:l}}function on(t,e,i){if(!t||!e)return{daysRemaining:null,progressPercent:null,intervalDays:i||null};try{const r=new Date(t),n=new Date(e),a=new Date;if(isNaN(r.getTime())||isNaN(n.getTime()))return{daysRemaining:null,progressPercent:null,intervalDays:i||null};const s=n.getTime()-r.getTime(),l=a.getTime()-r.getTime(),c=Math.max(0,Math.round((n.getTime()-a.getTime())/(1e3*60*60*24))),u=s>0?Math.min(100,Math.max(0,Math.round(l/s*100))):null,p=i||Math.round(s/(1e3*60*60*24));return{daysRemaining:c,progressPercent:u,intervalDays:p||null}}catch{return{daysRemaining:null,progressPercent:null,intervalDays:i||null}}}function Vn(t){const e=ae();if(!e)return null;const i=e.findSensorId("battery_balancing"),r=e.get(i);if(!r){const c=e.get(e.findSensorId("battery_health")),u=c==null?void 0:c.attributes;if(u!=null&&u.balancing_status){const p=String(u.last_balancing??""),g=u.next_balancing?String(u.next_balancing):null,m=on(p,g,Number(u.balancing_interval_days??0));return{status:String(u.balancing_status??"unknown"),lastBalancing:p,cost:Number(u.balancing_cost??0),nextScheduled:g,...m,estimatedNextCost:u.estimated_next_cost!=null?Number(u.estimated_next_cost):null}}return null}const n=r.attributes||{},a=String(n.last_balancing??""),s=n.next_scheduled?String(n.next_scheduled):null,l=on(a,s,Number(n.interval_days??0));return{status:r.state||"unknown",lastBalancing:a,cost:Number(n.cost??0),nextScheduled:s,...l,estimatedNextCost:n.estimated_next_cost!=null?Number(n.estimated_next_cost):null}}async function bo(t){var e,i;try{const r=await X.loadUnifiedCostTile(t);if(!r)return null;const n=r.hybrid??r,a=n.today??{},s=Math.round((a.actual_cost_so_far??a.actual_total_cost??0)*100)/100,l=a.future_plan_cost??0,c=a.plan_total_cost??s+l,u=((e=n.tomorrow)==null?void 0:e.plan_total_cost)??null;let p=null,g=null,m=null,b=null;try{const v=await X.loadBatteryTimeline(t,"active"),f=(i=v==null?void 0:v.timeline_extended)==null?void 0:i.yesterday;f!=null&&f.summary&&(p=f.summary.planned_total_cost??null,g=f.summary.actual_total_cost??null,m=f.summary.delta_cost??null,b=f.summary.accuracy_pct??null)}catch{y.debug("Yesterday analysis not available")}return{activePlan:"hybrid",actualSpent:s,planTotalCost:c,futurePlanCost:l,tomorrowCost:u,yesterdayPlannedCost:p,yesterdayActualCost:g,yesterdayDelta:m,yesterdayAccuracy:b}}catch(r){return y.error("Failed to fetch cost comparison",r),null}}async function yo(t){const e=Wn(),i=jn(),r=Vn(),n=await bo(t);return{efficiency:e,health:i,balancing:r,costComparison:n}}function vo(t){return{efficiency:Wn(),health:jn(),balancing:Vn()}}const Ze={severity:0,warningsCount:0,eventType:"",description:"",instruction:"",onset:"",expires:"",etaHours:0,allWarnings:[],effectiveSeverity:0},xo={vítr:"💨",déšť:"🌧️",sníh:"❄️",bouřky:"⛈️",mráz:"🥶",vedro:"🥵",mlha:"🌫️",náledí:"🧊",laviny:"🏔️"};function qn(t){const e=t.toLowerCase();for(const[i,r]of Object.entries(xo))if(e.includes(i))return r;return"⚠️"}const Yn={0:"Bez výstrahy",1:"Nízká",2:"Zvýšená",3:"Vysoká",4:"Extrémní"},Ei={0:"#4CAF50",1:"#8BC34A",2:"#FF9800",3:"#f44336",4:"#9C27B0"};function wo(t){const e=ae();if(!e)return Ze;const i=`sensor.oig_${t}_chmu_warning_level`,r=e.get(i);if(!r)return y.debug("ČHMÚ sensor not found",{entityId:i}),Ze;const n=parseInt(r.state,10)||0,a=r.attributes||{},s=Number(a.warnings_count??0),l=String(a.event_type??""),c=String(a.description??""),u=String(a.instruction??""),p=String(a.onset??""),g=String(a.expires??""),m=Number(a.eta_hours??0),b=a.all_warnings_details??[],v=Array.isArray(b)?b.map(C=>({event_type:C.event_type??C.event??"",severity:C.severity??n,description:C.description??"",instruction:C.instruction??"",onset:C.onset??"",expires:C.expires??"",eta_hours:C.eta_hours??0})):[],f=l.toLowerCase().includes("žádná výstraha");return{severity:n,warningsCount:s,eventType:l,description:c,instruction:u,onset:p,expires:g,etaHours:m,allWarnings:v,effectiveSeverity:s===0||f?0:n}}const Un={"HOME I":{icon:"🏠",color:"#4CAF50",label:"HOME I"},"HOME II":{icon:"⚡",color:"#2196F3",label:"HOME II"},"HOME III":{icon:"🔋",color:"#9C27B0",label:"HOME III"},"HOME UPS":{icon:"🛡️",color:"#FF9800",label:"HOME UPS"},"FULL HOME UPS":{icon:"🛡️",color:"#FF9800",label:"FULL HOME UPS"},"DO NOTHING":{icon:"⏸️",color:"#9E9E9E",label:"DO NOTHING"}},Gn={yesterday:"📊 Včera",today:"📆 Dnes",tomorrow:"📅 Zítra",history:"📈 Historie",detail:"💎 Detail"};function ln(t){return{modeHistorical:t.mode_historical??t.mode??"",modePlanned:t.mode_planned??"",modeMatch:t.mode_match??!1,status:t.status??"planned",startTime:t.start_time??"",endTime:t.end_time??"",durationHours:t.duration_hours??0,costHistorical:t.cost_historical??null,costPlanned:t.cost_planned??null,costDelta:t.cost_delta??null,solarKwh:t.solar_total_kwh??0,consumptionKwh:t.consumption_total_kwh??0,gridImportKwh:t.grid_import_total_kwh??0,gridExportKwh:t.grid_export_total_kwh??0,intervalReasons:Array.isArray(t.interval_reasons)?t.interval_reasons:[]}}function $i(t){return{plan:(t==null?void 0:t.plan)??0,actual:(t==null?void 0:t.actual)??null,hasActual:(t==null?void 0:t.has_actual)??!1,unit:(t==null?void 0:t.unit)??""}}function $o(t){const e=(t==null?void 0:t.metrics)??{};return{overallAdherence:(t==null?void 0:t.overall_adherence)??0,modeSwitches:(t==null?void 0:t.mode_switches)??0,totalCost:(t==null?void 0:t.total_cost)??0,metrics:{cost:$i(e.cost),solar:$i(e.solar),consumption:$i(e.consumption),grid:$i(e.grid)},completedSummary:t!=null&&t.completed_summary?{count:t.completed_summary.count??0,totalCost:t.completed_summary.total_cost??0,adherencePct:t.completed_summary.adherence_pct??0}:void 0,plannedSummary:t!=null&&t.planned_summary?{count:t.planned_summary.count??0,totalCost:t.planned_summary.total_cost??0}:void 0,progressPct:t==null?void 0:t.progress_pct,actualTotalCost:t==null?void 0:t.actual_total_cost,planTotalCost:t==null?void 0:t.plan_total_cost,vsPlanPct:t==null?void 0:t.vs_plan_pct,eodPrediction:t!=null&&t.eod_prediction?{predictedTotal:t.eod_prediction.predicted_total??0,predictedSavings:t.eod_prediction.predicted_savings??0}:void 0}}function _o(t){return t?{date:t.date??"",modeBlocks:Array.isArray(t.mode_blocks)?t.mode_blocks.map(ln):[],summary:$o(t.summary),metadata:t.metadata?{activePlan:t.metadata.active_plan??"hybrid",comparisonPlanAvailable:t.metadata.comparison_plan_available}:void 0,comparison:t.comparison?{plan:t.comparison.plan??"",modeBlocks:Array.isArray(t.comparison.mode_blocks)?t.comparison.mode_blocks.map(ln):[]}:void 0}:null}async function ko(t,e,i="hybrid"){try{const r=await X.loadDetailTabs(t,e,i);if(!r)return null;const n=r[e]??r;return _o(n)}catch(r){return y.error(`Failed to load timeline tab: ${e}`,r),null}}const yr={tiles_left:[null,null,null,null,null,null],tiles_right:[null,null,null,null,null,null],left_count:4,right_count:4,visible:!0,version:1},Kn="oig_dashboard_tiles";function So(t,e){return e==="W"&&Math.abs(t)>=1e3?{value:(t/1e3).toFixed(2),unit:"kW"}:e==="Wh"&&Math.abs(t)>=1e3?{value:(t/1e3).toFixed(2),unit:"kWh"}:e==="W"||e==="Wh"?{value:Math.round(t).toString(),unit:e}:{value:t.toFixed(1),unit:e}}async function Co(){var t;try{const e=await X.callWS({type:"call_service",domain:"oig_cloud",service:"get_dashboard_tiles",service_data:{},return_response:!0}),i=(t=e==null?void 0:e.response)==null?void 0:t.config;if(i&&typeof i=="object")return y.debug("Loaded tiles config from HA"),dn(i)}catch(e){y.debug("WS tile config load failed, trying localStorage",{error:e.message})}try{const e=localStorage.getItem(Kn);if(e){const i=JSON.parse(e);return y.debug("Loaded tiles config from localStorage"),dn(i)}}catch{y.debug("localStorage tile config load failed")}return yr}async function cn(t){try{return localStorage.setItem(Kn,JSON.stringify(t)),await X.callService("oig_cloud","save_dashboard_tiles",{config:JSON.stringify(t)}),y.info("Tiles config saved"),!0}catch(e){return y.error("Failed to save tiles config",e),!1}}function dn(t){return{tiles_left:Array.isArray(t.tiles_left)?t.tiles_left.slice(0,6):yr.tiles_left,tiles_right:Array.isArray(t.tiles_right)?t.tiles_right.slice(0,6):yr.tiles_right,left_count:typeof t.left_count=="number"?t.left_count:4,right_count:typeof t.right_count=="number"?t.right_count:4,visible:t.visible!==!1,version:t.version??1}}function sr(t){var l;const e=ae();if(!e)return{value:"--",unit:"",isActive:!1,rawValue:0};const i=e.get(t);if(!i||i.state==="unavailable"||i.state==="unknown")return{value:"--",unit:"",isActive:!1,rawValue:0};const r=i.state,n=String(((l=i.attributes)==null?void 0:l.unit_of_measurement)??""),a=parseFloat(r)||0;if(i.entity_id.startsWith("switch.")||i.entity_id.startsWith("binary_sensor."))return{value:r==="on"?"Zapnuto":"Vypnuto",unit:"",isActive:r==="on",rawValue:r==="on"?1:0};const s=So(a,n);return{value:s.value,unit:s.unit,isActive:a!==0,rawValue:a}}function We(t){const e=(i,r)=>{var a,s;const n=[];for(let l=0;l<r;l++){const c=i[l];if(!c)continue;const u=sr(c.entity_id),p={};if((a=c.support_entities)!=null&&a.top_right){const g=sr(c.support_entities.top_right);p.topRight={value:g.value,unit:g.unit}}if((s=c.support_entities)!=null&&s.bottom_right){const g=sr(c.support_entities.bottom_right);p.bottomRight={value:g.value,unit:g.unit}}n.push({config:c,value:u.value,unit:u.unit,isActive:u.isActive,isZero:u.rawValue===0,formattedValue:u.unit?`${u.value} ${u.unit}`:u.value,supportValues:p})}return n};return{left:e(t.tiles_left,t.left_count),right:e(t.tiles_right,t.right_count)}}async function Po(t,e="toggle"){const i=t.split(".")[0];return X.callService(i,e,{entity_id:t})}function ye(t){return t==null||Number.isNaN(t)?"-- Wh":Math.abs(t)>=1e3?`${(t/1e3).toFixed(2)} kWh`:`${Math.round(t)} Wh`}function it(t,e="CZK"){return t==null||Number.isNaN(t)?`-- ${e}`:`${t.toFixed(2)} ${e}`}function ve(t,e=0){return t==null||Number.isNaN(t)?"-- %":`${t.toFixed(e)} %`}const To={fridge:"❄️","fridge-outline":"❄️",dishwasher:"🍽️","washing-machine":"🧺","tumble-dryer":"🌪️",stove:"🔥",microwave:"📦","coffee-maker":"☕",kettle:"🫖",toaster:"🍞",lightbulb:"💡","lightbulb-outline":"💡",lamp:"🪔","ceiling-light":"💡","floor-lamp":"🪔","led-strip":"✨","led-strip-variant":"✨","wall-sconce":"💡",chandelier:"💡",thermometer:"🌡️",thermostat:"🌡️",radiator:"♨️","radiator-disabled":"❄️","heat-pump":"♨️","air-conditioner":"❄️",fan:"🌀",hvac:"♨️",fire:"🔥",snowflake:"❄️","lightning-bolt":"⚡",flash:"⚡",battery:"🔋","battery-charging":"🔋","battery-50":"🔋","solar-panel":"☀️","solar-power":"☀️","meter-electric":"⚡","power-plug":"🔌","power-socket":"🔌",car:"🚗","car-electric":"🚘","car-battery":"🔋","ev-station":"🔌","ev-plug-type2":"🔌",garage:"🏠","garage-open":"🏠",door:"🚪","door-open":"🚪",lock:"🔒","lock-open":"🔓","shield-home":"🛡️",cctv:"📹",camera:"📹","motion-sensor":"👁️","alarm-light":"🚨",bell:"🔔","window-closed":"🪟","window-open":"🪟",blinds:"🪟","blinds-open":"🪟",curtains:"🪟","roller-shade":"🪟",television:"📺",speaker:"🔊","speaker-wireless":"🔊",music:"🎵","volume-high":"🔊",cast:"📡",chromecast:"📡","router-wireless":"📡",wifi:"📶","access-point":"📡",lan:"🌐",network:"🌐","home-assistant":"🏠",water:"💧","water-percent":"💧","water-boiler":"♨️","water-pump":"💧",shower:"🚿",toilet:"🚽",faucet:"🚰",pipe:"🔧","weather-sunny":"☀️","weather-cloudy":"☁️","weather-night":"🌙","weather-rainy":"🌧️","weather-snowy":"❄️","weather-windy":"💨",information:"ℹ️","help-circle":"❓","alert-circle":"⚠️","checkbox-marked-circle":"✅","toggle-switch":"🔘",power:"⚡",sync:"🔄"};function Di(t){const e=t.replace(/^mdi:/,"");return To[e]||"⚙️"}function or(t,e){let i=!1;return(...r)=>{i||(t(...r),i=!0,setTimeout(()=>i=!1,e))}}async function je(t,e=3,i=1e3){let r;for(let n=0;n<=e;n++)try{return await t()}catch(a){if(r=a,a instanceof Error&&(a.message.includes("401")||a.message.includes("403")))throw a;if(n<e){const s=Math.min(i*Math.pow(2,n),5e3);await new Promise(l=>setTimeout(l,s))}}throw r}const Zn={home_1:"Home 1",home_2:"Home 2",home_3:"Home 3",home_ups:"Home UPS",home_5:"Home 5",home_6:"Home 6"},un={"Home 1":"home_1","Home 2":"home_2","Home 3":"home_3","Home UPS":"home_ups","Home 5":"home_5","Home 6":"home_6","Mode 0":"home_1","Mode 1":"home_2","Mode 2":"home_3","Mode 3":"home_ups","Mode 4":"home_5","Mode 5":"home_6","HOME I":"home_1","HOME II":"home_2","HOME III":"home_3","HOME UPS":"home_ups",0:"home_1",1:"home_2",2:"home_3",3:"home_ups",4:"home_5",5:"home_6"},Si={off:"Vypnuto",on:"Zapnuto",limited:"S omezením"},Ci={Vypnuto:"off",Zapnuto:"on",Omezeno:"limited",omezeno:"limited",vypnuto:"off",zapnuto:"on",Off:"off",On:"on",Limited:"limited",off:"off",on:"on",limited:"limited",0:"off",1:"on",2:"limited"};function Mo(t){const e=t.trim();if(e in Ci)return Ci[e];const i=e.toLowerCase(),r=Object.entries(Ci).find(([n])=>n.toLowerCase()===i);return r?r[1]:i.startsWith("omez")||i.includes("limit")?"limited":i.startsWith("zapn")||i==="on"?"on":(i.startsWith("vypn")||i==="off","off")}const Eo={off:"🚫",on:"💧",limited:"🚰"},Qn={cbb:"Inteligentní",manual:"Manuální"},Xn={cbb:"🤖",manual:"👤"},pn={CBB:"cbb",Manuální:"manual",Manual:"manual",Inteligentní:"cbb"},Do={set_box_mode:"🏠 Změna režimu boxu",set_grid_delivery:"💧 Změna nastavení přetoků",set_grid_delivery_limit:"🔢 Změna limitu přetoků",set_boiler_mode:"🔥 Změna nastavení bojleru",set_formating_mode:"🔋 Změna nabíjení baterie",set_battery_capacity:"⚡ Změna kapacity baterie"},hn={CBB:"Inteligentní",Manual:"Manuální",Manuální:"Manuální"},Jn={status:"idle",activity:"",queueCount:0,runningRequests:[],queuedRequests:[],allRequests:[],currentBoxMode:"home_1",currentGridDelivery:"off",currentGridLimit:0,currentBoilerMode:"cbb",pendingServices:new Map,changingServices:new Set};class Oo{constructor(){this.state={...Jn,pendingServices:new Map,changingServices:new Set},this.listeners=new Set,this.watcherUnsub=null,this.queueUpdateInterval=null,this.started=!1}start(){this.started||(this.started=!0,this.watcherUnsub=Xt.onEntityChange((e,i)=>{e&&this.shouldRefreshShield(e)&&this.refresh()}),this.refresh(),this.queueUpdateInterval=window.setInterval(()=>{this.state.allRequests.length>0&&this.notify()},1e3),y.debug("ShieldController started"))}stop(){var e;(e=this.watcherUnsub)==null||e.call(this),this.watcherUnsub=null,this.queueUpdateInterval!==null&&(clearInterval(this.queueUpdateInterval),this.queueUpdateInterval=null),this.started=!1,y.debug("ShieldController stopped")}subscribe(e){return this.listeners.add(e),e(this.state),()=>this.listeners.delete(e)}getState(){return this.state}shouldRefreshShield(e){return["service_shield_","box_prms_mode","boiler_manual_mode","invertor_prms_to_grid","invertor_prm1_p_max_feed_grid"].some(r=>e.includes(r))}refresh(){const e=ae();if(e)try{const i=e.findSensorId("service_shield_activity"),r=e.get(i),n=(r==null?void 0:r.attributes)??{},a=n.running_requests??[],s=n.queued_requests??[],l=e.findSensorId("service_shield_status"),c=e.findSensorId("service_shield_queue"),u=e.getString(l).value,p=e.getNumeric(c).value,g=e.getString(e.getSensorId("box_prms_mode")).value,m=e.getString(e.getSensorId("invertor_prms_to_grid")).value,b=e.getNumeric(e.getSensorId("invertor_prm1_p_max_feed_grid")).value,v=e.getString(e.getSensorId("boiler_manual_mode")).value,f=un[g.trim()]??"home_1",k=m.trim()==="Probíhá změna"?this.state.currentGridDelivery:Mo(m),C=pn[v.trim()]??"cbb",$=a.map((z,D)=>this.parseRequest(z,D,!0)),S=s.map((z,D)=>this.parseRequest(z,D+a.length,!1)),Y=[...$,...S],K=new Map,x=new Set;m.trim()==="Probíhá změna"&&x.add("grid_mode");for(const z of Y){const D=this.parseServiceRequest(z);D&&!K.has(D.type)&&(K.set(D.type,D.targetValue),x.add(D.type))}const H=u==="Running"||u==="running";this.state={status:H?"running":"idle",activity:(r==null?void 0:r.state)??"",queueCount:p,runningRequests:$,queuedRequests:S,allRequests:Y,currentBoxMode:f,currentGridDelivery:k,currentGridLimit:b,currentBoilerMode:C,pendingServices:K,changingServices:x},this.notify()}catch(i){y.error("ShieldController refresh failed",i)}}parseRequest(e,i,r){const n=e.service??"",a=Array.isArray(e.changes)?e.changes:[],s=e.started_at??e.queued_at??e.created_at??e.timestamp??e.created??"",l=Array.isArray(e.targets)?e.targets.map(m=>({param:String((m==null?void 0:m.param)??""),value:String((m==null?void 0:m.value)??(m==null?void 0:m.to)??""),entityId:String((m==null?void 0:m.entity_id)??(m==null?void 0:m.entityId)??""),from:String((m==null?void 0:m.from)??""),to:String((m==null?void 0:m.to)??(m==null?void 0:m.value)??""),current:String((m==null?void 0:m.current)??"")})):[],c=this.extractRequestParams(e.params),u=this.extractGridDeliveryStep(e,c),p=this.resolveRequestTargetValue(e,l,c,u);let g="mode_change";return n.includes("set_box_mode")?g="mode_change":n.includes("set_grid_delivery")&&!n.includes("limit")?g="grid_delivery":n.includes("grid_delivery_limit")||n.includes("set_grid_delivery")?g="grid_limit":n.includes("set_boiler_mode")?g="boiler_mode":n.includes("set_formating_mode")&&(g="battery_formating"),{id:`${n}_${i}_${s}`,type:g,status:r?"running":"queued",service:n,targetValue:p,changes:a,createdAt:s,position:i+1,description:typeof e.description=="string"?e.description:void 0,params:c,targets:l,traceId:typeof e.trace_id=="string"?e.trace_id:void 0,gridDeliveryStep:u}}parseServiceRequest(e){const i=e.service;if(!i)return null;const r=e.changes.length>0?e.changes[0]:"",n=e.params,a=e.gridDeliveryStep,s=this.extractStructuredTarget(e);if(i.includes("set_grid_delivery")&&s)return s;if(i.includes("set_grid_delivery")&&r.includes("p_max_feed_grid")){const u=r.match(/→\s*'?(\d+)'?/),p=u?u[1]:e.targetValue;return p?{type:"grid_limit",targetValue:p}:null}const l=r.match(/→\s*'([^']+)'/),c=l?l[1]:e.targetValue||"";if(i.includes("set_box_mode"))return{type:"box_mode",targetValue:c};if(i.includes("set_boiler_mode"))return{type:"boiler_mode",targetValue:c};if(i.includes("set_grid_delivery")&&r.includes("prms_to_grid"))return{type:"grid_mode",targetValue:c};if(i.includes("set_grid_delivery")){if(a==="limit"){const p=this.normalizeNumericTargetValue((n==null?void 0:n.limit)??e.targetValue);return p?{type:"grid_limit",targetValue:p}:null}if(a==="mode"){const p=this.normalizeModeTargetValue((n==null?void 0:n.mode)??e.targetValue);return p?{type:"grid_mode",targetValue:p}:null}const u=r.match(/→\s*'?(\d+)'?/);return u?{type:"grid_limit",targetValue:u[1]}:e.targetValue&&/^\d+$/.test(e.targetValue.trim())?{type:"grid_limit",targetValue:e.targetValue}:{type:"grid_mode",targetValue:c}}return null}extractRequestParams(e){if(!(!e||typeof e!="object"||Array.isArray(e)))return e}extractGridDeliveryStep(e,i){const r=(e==null?void 0:e.grid_delivery_step)??(i==null?void 0:i._grid_delivery_step);return typeof r=="string"?r:void 0}resolveRequestTargetValue(e,i,r,n){const a=this.extractStructuredTarget({service:(e==null?void 0:e.service)??"",targetValue:"",params:r,targets:i,gridDeliveryStep:n});if(a!=null&&a.targetValue)return a.targetValue;const s=e.target_value??e.target_display;return typeof s=="string"?s:""}extractStructuredTarget(e){if(!e.service.includes("set_grid_delivery"))return null;const i=e.gridDeliveryStep,r=e.params,n=e.targets??[];if(i==="limit"){const l=this.findTargetValue(n,["limit"]),c=this.normalizeNumericTargetValue(l??(r==null?void 0:r.limit)??e.targetValue);return c?{type:"grid_limit",targetValue:c}:null}if(i==="mode"){const l=this.findTargetValue(n,["mode"]),c=this.normalizeModeTargetValue(l??(r==null?void 0:r.mode)??e.targetValue);return c?{type:"grid_mode",targetValue:c}:null}const a=this.findTargetValue(n,["limit"]);if(a){const l=this.normalizeNumericTargetValue(a);if(l)return{type:"grid_limit",targetValue:l}}const s=this.findTargetValue(n,["mode"]);if(s){const l=this.normalizeModeTargetValue(s);if(l)return{type:"grid_mode",targetValue:l}}return null}findTargetValue(e,i){const r=new Set(i),n=e.find(a=>r.has(a.param));return(n==null?void 0:n.to)||(n==null?void 0:n.value)||void 0}normalizeNumericTargetValue(e){if(typeof e=="number"&&Number.isFinite(e))return String(Math.round(e));if(typeof e!="string")return"";const i=e.trim().match(/(\d+)/);return i?i[1]:""}normalizeModeTargetValue(e){if(typeof e!="string")return"";const i=e.trim();switch(i.toLowerCase()){case"off":return"Vypnuto";case"on":return"Zapnuto";case"limited":return"Omezeno";default:return i}}getBoxModeButtonState(e){const i=this.state.pendingServices.get("box_mode");return i?un[i]===e?this.state.status==="running"?"processing":"pending":"disabled-by-service":this.state.currentBoxMode===e?"active":"idle"}getGridDeliveryButtonState(e){if(this.state.changingServices.has("grid_mode")){const i=this.state.pendingServices.get("grid_mode");return i&&Ci[i]===e?this.state.status==="running"?"processing":"pending":this.state.pendingServices.has("grid_limit")&&e==="limited"?this.state.status==="running"?"processing":"pending":"disabled-by-service"}return this.state.changingServices.has("grid_limit")?e==="limited"?this.state.status==="running"?"processing":"pending":"disabled-by-service":this.state.currentGridDelivery===e?"active":"idle"}getBoilerModeButtonState(e){const i=this.state.pendingServices.get("boiler_mode");return i?pn[i]===e?this.state.status==="running"?"processing":"pending":"disabled-by-service":this.state.currentBoilerMode===e?"active":"idle"}isAnyServiceChanging(){return this.state.changingServices.size>0}shouldProceedWithQueue(){return this.state.queueCount<3?!0:window.confirm(`⚠️ VAROVÁNÍ: Fronta již obsahuje ${this.state.queueCount} úkolů!
+ */function Zi(t,e){return(i,n,r)=>{const a=s=>{var l;return((l=s.renderRoot)==null?void 0:l.querySelector(t))??null};return Es(i,n,{get(){return a(this)}})}}class Os{constructor(){this.callbacks=new Set,this.watched=new Set,this.watchedPrefixes=new Set,this.unsub=null,this.running=!1,this.getHass=null,this.activeConnection=null}registerEntities(e){for(const i of e)typeof i=="string"&&i.length>0&&this.watched.add(i)}registerPrefix(e){var n;if(typeof e!="string"||e.length===0)return;this.watchedPrefixes.add(e);const i=(n=this.getHass)==null?void 0:n.call(this);if(i!=null&&i.states){const r=Object.keys(i.states).filter(a=>a.startsWith(e));this.registerEntities(r)}}onEntityChange(e){return this.callbacks.add(e),()=>{this.callbacks.delete(e)}}async start(e){this.getHass=e.getHass;const i=this.getHass();if(!(i!=null&&i.connection)){y.debug("StateWatcher: hass not ready, retrying in 500ms"),setTimeout(()=>this.start(e),500);return}if(this.running&&this.activeConnection===i.connection){const r=e.prefixes??[];for(const a of r)this.registerPrefix(a);return}this.running&&this.stop(),this.running=!0,this.activeConnection=i.connection;const n=e.prefixes??[];for(const r of n)this.registerPrefix(r);try{this.unsub=await i.connection.subscribeEvents(r=>this.handleStateChanged(r),"state_changed"),y.info("StateWatcher started",{prefixes:n,watchedCount:this.watched.size})}catch(r){this.running=!1,this.activeConnection=null,y.error("StateWatcher failed to subscribe",r)}}stop(){if(this.running=!1,this.activeConnection=null,this.unsub)try{this.unsub()}catch{}this.unsub=null,y.info("StateWatcher stopped")}isWatched(e){return this.matchesWatched(e)}destroy(){this.stop(),this.callbacks.clear(),this.watched.clear(),this.watchedPrefixes.clear(),this.getHass=null}matchesWatched(e){if(this.watched.has(e))return!0;for(const i of this.watchedPrefixes)if(e.startsWith(i))return!0;return!1}handleStateChanged(e){var r;const i=(r=e==null?void 0:e.data)==null?void 0:r.entity_id;if(!i||!this.matchesWatched(i))return;const n=e.data.new_state;for(const a of this.callbacks)try{a(i,n)}catch{}}}const te=new Os;class zs{constructor(e,i="2206237016"){this.subscriptions=new Map,this.cache=new Map,this.stateWatcherUnsub=null,this.hass=e,this.inverterSn=i,this.init()}init(){var e;if((e=this.hass)!=null&&e.states)for(const[i,n]of Object.entries(this.hass.states))this.cache.set(i,n);this.stateWatcherUnsub=te.onEntityChange((i,n)=>{n?this.cache.set(i,n):this.cache.delete(i),this.notifySubscribers(i,n)}),y.debug("EntityStore initialized",{entities:this.cache.size,inverterSn:this.inverterSn})}getSensorId(e){return`sensor.oig_${this.inverterSn}_${e}`}findSensorId(e){const i=this.getSensorId(e);for(const n of this.cache.keys()){if(n===i)return n;if(n.startsWith(i+"_")){const r=n.substring(i.length+1);if(/^\d+$/.test(r))return n}}return i}subscribe(e,i){this.subscriptions.has(e)||this.subscriptions.set(e,new Set),this.subscriptions.get(e).add(i),te.registerEntities([e]);const n=this.cache.get(e)??null;return i(n),()=>{var r,a;(r=this.subscriptions.get(e))==null||r.delete(i),((a=this.subscriptions.get(e))==null?void 0:a.size)===0&&this.subscriptions.delete(e)}}getNumeric(e){const i=this.cache.get(e);return i?{value:i.state!=="unavailable"&&i.state!=="unknown"&&parseFloat(i.state)||0,lastUpdated:i.last_updated?new Date(i.last_updated):null,attributes:i.attributes??{},exists:!0}:{value:0,lastUpdated:null,attributes:{},exists:!1}}getString(e){const i=this.cache.get(e);return i?{value:i.state!=="unavailable"&&i.state!=="unknown"?i.state:"",lastUpdated:i.last_updated?new Date(i.last_updated):null,attributes:i.attributes??{},exists:!0}:{value:"",lastUpdated:null,attributes:{},exists:!1}}get(e){return this.cache.get(e)??null}getAll(){return Object.fromEntries(this.cache)}batchLoad(e){const i={};for(const n of e)i[n]=this.getNumeric(n);return i}updateHass(e){if(this.hass=e,e!=null&&e.states){const i=new Set(Object.keys(e.states));for(const n of Array.from(this.cache.keys()))i.has(n)||(this.cache.delete(n),this.notifySubscribers(n,null));for(const[n,r]of Object.entries(e.states)){const a=this.cache.get(n),s=r;this.cache.set(n,s),((a==null?void 0:a.state)!==s.state||(a==null?void 0:a.last_updated)!==s.last_updated)&&this.notifySubscribers(n,s)}}}notifySubscribers(e,i){const n=this.subscriptions.get(e);if(n)for(const r of n)try{r(i)}catch(a){y.error("Entity callback error",a,{entityId:e})}}destroy(){var e;(e=this.stateWatcherUnsub)==null||e.call(this),this.subscriptions.clear(),this.cache.clear(),y.debug("EntityStore destroyed")}}let Ue=null;function Ls(t,e){return Ue&&Ue.destroy(),Ue=new zs(t,e),Ue}function Ft(){return Ue}const As=3,Is=1e3;class Bs{constructor(){this.hass=null,this.initPromise=null}async getHass(){return this.hass?this.hass:this.initPromise?this.initPromise:(this.initPromise=this.initHass(),this.initPromise)}getHassSync(){return this.hass}async refreshHass(){const e=await this.findHass();return e?(this.hass=e,y.info("HASS client refreshed"),e):this.hass}async initHass(){y.debug("Initializing HASS client");const e=await this.findHass();return e?(this.hass=e,y.info("HASS client initialized"),e):(y.warn("HASS not found in parent context"),null)}async findHass(){var e,i;if(typeof window>"u")return null;if(window.hass)return window.hass;if(window.parent&&window.parent!==window)try{const n=(i=(e=window.parent.document)==null?void 0:e.querySelector("home-assistant"))==null?void 0:i.hass;if(n)return n}catch{y.debug("Cannot access parent HASS (cross-origin)")}return window.customPanel?window.customPanel.hass:null}async fetchWithAuth(e,i={}){var s,l;const n=await this.getHass();if(!n)throw new Ie("Cannot get HASS context");try{const u=new URL(e,window.location.href).hostname;if(u!=="localhost"&&u!=="127.0.0.1"&&!e.startsWith("/api/"))throw new Error(`fetchWithAuth rejected for non-localhost URL: ${e}`)}catch(c){if(c.message.includes("rejected"))throw c}const r=(l=(s=n.auth)==null?void 0:s.data)==null?void 0:l.access_token;if(!r)throw new Ie("No access token available");const a=new Headers(i.headers);return a.set("Authorization",`Bearer ${r}`),a.has("Content-Type")||a.set("Content-Type","application/json"),this.fetchWithRetry(e,{...i,headers:a})}async fetchWithRetry(e,i,n=As){try{const r=await fetch(e,i);if(!r.ok)throw r.status===401?new Ie("Token expired or invalid"):new Xn(`HTTP ${r.status}: ${r.statusText}`);return r}catch(r){if(n>0&&r instanceof Xn)return y.warn(`Retrying fetch (${n} left)`,{url:e}),await this.delay(Is),this.fetchWithRetry(e,i,n-1);throw r}}async callApi(e,i,n){const r=await this.getHass();if(!r)throw new Ie("Cannot get HASS context");return r.callApi(e,i,n)}async callService(e,i,n){const r=await this.getHass();if(!(r!=null&&r.callService))return y.error("Cannot call service — hass not available"),!1;try{return await r.callService(e,i,n),!0}catch(a){return y.error(`Service call failed (${e}.${i})`,a),!1}}async callWS(e){const i=await this.getHass();if(!(i!=null&&i.callWS))throw new Ie("Cannot get HASS context for WS call");return i.callWS(e)}async fetchOIGAPI(e,i={}){try{const n=`/api/oig_cloud${e.startsWith("/")?"":"/"}${e}`;return await(await this.fetchWithAuth(n,{...i,headers:{"Content-Type":"application/json",...Object.fromEntries(new Headers(i.headers).entries())}})).json()}catch(n){return y.error(`OIG API fetch error for ${e}`,n),null}}async loadBatteryTimeline(e,i="active"){return this.fetchOIGAPI(`/battery_forecast/${e}/timeline?type=${i}`)}async loadUnifiedCostTile(e){return this.fetchOIGAPI(`/battery_forecast/${e}/unified_cost_tile`)}async loadSpotPrices(e){return this.fetchOIGAPI(`/spot_prices/${e}/intervals`)}async loadAnalytics(e){return this.fetchOIGAPI(`/analytics/${e}`)}async loadPlannerSettings(e){return this.fetchOIGAPI(`/battery_forecast/${e}/planner_settings`)}async savePlannerSettings(e,i){return this.fetchOIGAPI(`/battery_forecast/${e}/planner_settings`,{method:"POST",body:JSON.stringify(i)})}async loadDetailTabs(e,i,n="hybrid"){return this.fetchOIGAPI(`/battery_forecast/${e}/detail_tabs?tab=${i}&plan=${n}`)}async loadModules(e){return this.fetchOIGAPI(`/${e}/modules`)}openEntityDialog(e){var i;try{const n=((i=window.parent.document)==null?void 0:i.querySelector("home-assistant"))??document.querySelector("home-assistant");if(!n)return y.warn("Cannot open entity dialog — home-assistant element not found"),!1;const r=new CustomEvent("hass-more-info",{bubbles:!0,composed:!0,detail:{entityId:e}});return n.dispatchEvent(r),!0}catch(n){return y.error("Cannot open entity dialog",n),!1}}async showNotification(e,i,n="success"){await this.callService("persistent_notification","create",{title:e,message:i,notification_id:`oig_dashboard_${Date.now()}`})||console.log(`[${n.toUpperCase()}] ${e}: ${i}`)}getToken(){var e,i,n;return((n=(i=(e=this.hass)==null?void 0:e.auth)==null?void 0:i.data)==null?void 0:n.access_token)??null}delay(e){return new Promise(i=>setTimeout(i,e))}}const X=new Bs,ir={solar:"#ffd54f",battery:"#4caf50",inverter:"#9575cd",grid:"#42a5f5",house:"#f06292"},Be={solar:"linear-gradient(135deg, rgba(255,213,79,0.15) 0%, rgba(255,179,0,0.08) 100%)",battery:"linear-gradient(135deg, rgba(76,175,80,0.15) 0%, rgba(56,142,60,0.08) 100%)",grid:"linear-gradient(135deg, rgba(66,165,245,0.15) 0%, rgba(33,150,243,0.08) 100%)",house:"linear-gradient(135deg, rgba(240,98,146,0.15) 0%, rgba(233,30,99,0.08) 100%)",inverter:"linear-gradient(135deg, rgba(149,117,205,0.15) 0%, rgba(126,87,194,0.08) 100%)"},Fe={solar:"rgba(255,213,79,0.4)",battery:"rgba(76,175,80,0.4)",grid:"rgba(66,165,245,0.4)",house:"rgba(240,98,146,0.4)",inverter:"rgba(149,117,205,0.4)"},ue={solar:"#ffd54f",battery:"#ff9800",grid_import:"#f44336",grid_export:"#4caf50",house:"#f06292"},xi={solar:5400,battery:7e3,grid:17e3,house:1e4},Mn={solarPower:0,solarP1:0,solarP2:0,solarV1:0,solarV2:0,solarI1:0,solarI2:0,solarPercent:0,solarToday:0,solarForecastToday:0,solarForecastTomorrow:0,batterySoC:0,batteryPower:0,batteryVoltage:0,batteryCurrent:0,batteryTemp:0,batteryChargeTotal:0,batteryDischargeTotal:0,batteryChargeSolar:0,batteryChargeGrid:0,isGridCharging:!1,timeToEmpty:"",timeToFull:"",balancingState:"standby",balancingTimeRemaining:"",gridChargingPlan:{hasBlocks:!1,totalEnergyKwh:0,totalCostCzk:0,windowLabel:null,durationMinutes:0,currentBlockLabel:null,nextBlockLabel:null,blocks:[]},gridPower:0,gridVoltage:0,gridFrequency:0,gridImportToday:0,gridExportToday:0,gridL1V:0,gridL2V:0,gridL3V:0,gridL1P:0,gridL2P:0,gridL3P:0,spotPrice:0,exportPrice:0,currentTariff:"",housePower:0,houseTodayWh:0,houseL1:0,houseL2:0,houseL3:0,inverterMode:"",inverterGridMode:"unknown",inverterGridLimit:0,inverterTemp:0,bypassStatus:"off",notificationsUnread:0,notificationsError:0,boilerIsUse:!1,boilerPower:0,boilerDayEnergy:0,boilerManualMode:"",boilerInstallPower:3e3,plannerAutoMode:null,lastUpdate:""},Ur={home_1:"Home 1",home_2:"Home 2",home_3:"Home 3",home_ups:"Home UPS",home_5:"Home 5",home_6:"Home 6"},nr={"Home 1":"home_1","Home 2":"home_2","Home 3":"home_3","Home UPS":"home_ups","Home 5":"home_5","Home 6":"home_6","Mode 0":"home_1","Mode 1":"home_2","Mode 2":"home_3","Mode 3":"home_ups","Mode 4":"home_5","Mode 5":"home_6","HOME I":"home_1","HOME II":"home_2","HOME III":"home_3","HOME UPS":"home_ups",0:"home_1",1:"home_2",2:"home_3",3:"home_ups",4:"home_5",5:"home_6"},Ke={off:"Vypnuto",on:"Zapnuto",limited:"S omezením"},cn={Vypnuto:"off",Zapnuto:"on",Omezeno:"limited",omezeno:"limited",vypnuto:"off",zapnuto:"on",Off:"off",On:"on",Limited:"limited",off:"off",on:"on",limited:"limited",0:"off",1:"on",2:"limited"},Fs={off:"🚫",on:"💧",limited:"🚰"},Kr={cbb:"Inteligentní",manual:"Manuální"},Zr={cbb:"🤖",manual:"👤"},rr={CBB:"cbb",Manuální:"manual",Manual:"manual",Inteligentní:"cbb"},Ns={set_box_mode:"🏠 Změna režimu boxu",set_grid_delivery:"💧 Změna nastavení přetoků",set_grid_delivery_limit:"🔢 Změna limitu přetoků",set_boiler_mode:"🔥 Změna nastavení bojleru",set_formating_mode:"🔋 Změna nabíjení baterie",set_battery_capacity:"⚡ Změna kapacity baterie"},ar={CBB:"Inteligentní",Manual:"Manuální",Manuální:"Manuální"},Qr={status:"idle",activity:"",queueCount:0,runningRequests:[],queuedRequests:[],allRequests:[],currentBoxMode:"home_1",currentGridDelivery:"off",currentGridLimit:0,currentBoilerMode:"cbb",pendingServices:new Map,changingServices:new Set,gridDeliveryState:{currentLiveDelivery:"unknown",currentLiveLimit:null,pendingDeliveryTarget:null,pendingLimitTarget:null,isTransitioning:!1,isUnavailable:!1}},Rs="probíhá změna";function yn(t){return t.trim().toLowerCase().includes(Rs)}function Dn(t){const e=t.trim();if(e in cn)return cn[e];const i=e.toLowerCase(),n=Object.entries(cn).find(([r])=>r.toLowerCase()===i);return n?n[1]:i.startsWith("omez")||i.includes("limit")?"limited":i.startsWith("zapn")||i==="on"?"on":i.startsWith("vypn")||i==="off"?"off":"unknown"}function Hs(t){const e=t.get("grid_mode");if(!e)return null;const i=Dn(e);return i==="unknown"?null:i}function Ws(t){const e=t.get("grid_limit");if(!e)return null;const i=parseInt(e,10);return Number.isFinite(i)&&i>=0?i:null}function js(t){return t.changingServices.has("grid_mode")||t.changingServices.has("grid_limit")}function Xr(t,e){const{gridModeRaw:i,gridLimit:n}=t,r=i.trim().toLowerCase(),a=r==="unavailable"||r==="unknown"||r==="",s=yn(i),l=js(e),c=s||l;let u;a||s?u="unknown":u=Dn(i);let p=null;!a&&Number.isFinite(n)&&n>=0&&(p=n);const f=Hs(e.pendingServices),v=Ws(e.pendingServices);return{currentLiveDelivery:u,currentLiveLimit:p,pendingDeliveryTarget:f,pendingLimitTarget:v,isTransitioning:c,isUnavailable:a}}function Vs(t){return t.isTransitioning&&t.pendingDeliveryTarget?t.pendingDeliveryTarget:t.currentLiveDelivery}const sr=new URLSearchParams(window.location.search),qs=sr.get("sn")||sr.get("inverter_sn")||"2206237016";function Ci(t){return`sensor.oig_${qs}_${t}`}function or(t,e){var r;const i=Ci(e);return i in t?i:((r=Object.keys(t).filter(a=>a.startsWith(i+"_")).map(a=>({id:a,suffix:parseInt(a.substring(i.length+1),10)})).filter(a=>Number.isFinite(a.suffix)).sort((a,s)=>a.suffix-s.suffix)[0])==null?void 0:r.id)??null}function B(t){if(!(t!=null&&t.state))return 0;const e=parseFloat(t.state);return isNaN(e)?0:e}function Ot(t){return!(t!=null&&t.state)||t.state==="unknown"||t.state==="unavailable"?"":t.state}function lr(t,e="on"){if(!(t!=null&&t.state))return!1;const i=t.state.toLowerCase();return i===e||i==="1"||i==="zapnuto"}function Ys(t){const e=(t||"").toLowerCase();return e==="charging"?"charging":e==="balancing"||e==="holding"?"holding":e==="completed"?"completed":e==="planned"?"planned":"standby"}function vn(t){return t==="tomorrow"?"zítra":t==="today"?"dnes":""}function cr(t){if(!t)return null;const[e,i]=t.split(":").map(Number);return!Number.isFinite(e)||!Number.isFinite(i)?null:e*60+i}function Gs(t){const e=Number(t.grid_import_kwh??t.grid_charge_kwh??0);if(Number.isFinite(e)&&e>0)return e;const i=Number(t.battery_start_kwh??0),n=Number(t.battery_end_kwh??0);return Number.isFinite(i)&&Number.isFinite(n)?Math.max(0,n-i):0}function Jr(t=[]){return[...t].sort((e,i)=>{const n=(e.day==="tomorrow"?1:0)-(i.day==="tomorrow"?1:0);return n!==0?n:(e.time_from||"").localeCompare(i.time_from||"")})}function Us(t){if(!Array.isArray(t)||t.length===0)return null;const e=Jr(t),i=e[0],n=e.at(-1),r=vn(i==null?void 0:i.day),a=vn(n==null?void 0:n.day);if(r===a){const v=r?`${r} `:"";return!(i!=null&&i.time_from)||!(n!=null&&n.time_to)?v.trim()||null:`${v}${i.time_from} – ${n.time_to}`}const s=r?`${r} `:"",l=a?`${a} `:"",c=(i==null?void 0:i.time_from)||"--",u=(n==null?void 0:n.time_to)||"--",p=i?`${s}${c}`:"--",f=n?`${l}${u}`:"--";return`${p} → ${f}`}function Ks(t){if(!Array.isArray(t)||t.length===0)return 0;let e=0;return t.forEach(i=>{const n=cr(i.time_from),r=cr(i.time_to);if(n===null||r===null)return;const a=r-n;a>0&&(e+=a)}),e}function dr(t){const e=vn(t.day),i=e?`${e} `:"",n=t.time_from||"--",r=t.time_to||"--";return`${i}${n} - ${r}`}function Zs(t){const e=t.find(r=>{const a=(r.status||"").toLowerCase();return a==="running"||a==="active"})||null,i=e?t[t.indexOf(e)+1]||null:t[0]||null;return{runningBlock:e,upcomingBlock:i,shouldShowNext:!!(i&&(!e||i!==e))}}function Qs(t){const e=(t==null?void 0:t.attributes)||{},i=Array.isArray(e.charging_blocks)?e.charging_blocks:[],n=Jr(i),r=Number(e.total_energy_kwh)||0,a=r>0?r:n.reduce((m,g)=>m+Gs(g),0),s=Number(e.total_cost_czk)||0,l=s>0?s:n.reduce((m,g)=>m+Number(g.total_cost_czk||0),0),c=Us(n),u=Ks(n),{runningBlock:p,upcomingBlock:f,shouldShowNext:v}=Zs(n);return{hasBlocks:n.length>0,totalEnergyKwh:a,totalCostCzk:l,windowLabel:c,durationMinutes:u,currentBlockLabel:p?dr(p):null,nextBlockLabel:v&&f?dr(f):null,blocks:n}}function Xs(t){var Yn,Gn,Un,Kn,Zn,Qn;const e=(t==null?void 0:t.states)||t||{},i=ss=>e[Ci(ss)]||null,n=B(i("actual_fv_p1")),r=B(i("actual_fv_p2")),a=B(i("extended_fve_voltage_1")),s=B(i("extended_fve_voltage_2")),l=B(i("extended_fve_current_1")),c=B(i("extended_fve_current_2")),u=i("solar_forecast"),p=(Yn=u==null?void 0:u.attributes)!=null&&Yn.today_total_kwh?parseFloat(u.attributes.today_total_kwh)||0:(Gn=u==null?void 0:u.attributes)!=null&&Gn.today_total_sum_kw?parseFloat(u.attributes.today_total_sum_kw)||0:B(u),f=(Un=u==null?void 0:u.attributes)!=null&&Un.tomorrow_total_sum_kw?parseFloat(u.attributes.tomorrow_total_sum_kw)||0:(Kn=u==null?void 0:u.attributes)!=null&&Kn.total_tomorrow_kwh&&parseFloat(u.attributes.total_tomorrow_kwh)||0,v=B(i("batt_bat_c")),m=B(i("batt_batt_comp_p")),g=B(i("extended_battery_voltage")),b=B(i("extended_battery_current")),k=B(i("extended_battery_temperature")),S=B(i("computed_batt_charge_energy_today")),$=B(i("computed_batt_discharge_energy_today")),C=B(i("computed_batt_charge_fve_energy_today")),G=B(i("computed_batt_charge_grid_energy_today")),Z=i("grid_charging_planned"),w=lr(Z),j=Ot(i("time_to_empty")),L=Ot(i("time_to_full")),z=i("battery_balancing"),Y=Ys((Zn=z==null?void 0:z.attributes)==null?void 0:Zn.current_state),V=Ot({state:(Qn=z==null?void 0:z.attributes)==null?void 0:Qn.time_remaining}),N=Qs(Z),wt=B(i("actual_aci_wtotal")),Yt=B(i("extended_grid_voltage")),en=B(i("ac_in_aci_f")),nn=B(i("ac_in_ac_ad")),Ct=B(i("ac_in_ac_pd")),Le=B(i("ac_in_aci_vr")),Ae=B(i("ac_in_aci_vs")),yt=B(i("ac_in_aci_vt")),Vn=B(i("actual_aci_wr")),Gt=B(i("actual_aci_ws")),Ut=B(i("actual_aci_wt")),La=B(i("spot_price_current_15min")),Aa=B(i("export_price_current_15min")),Ia=Ot(i("current_tariff")),Ba=B(i("actual_aco_p")),Fa=B(i("ac_out_en_day")),Na=B(i("ac_out_aco_pr")),Ra=B(i("ac_out_aco_ps")),Ha=B(i("ac_out_aco_pt")),Wa=Ot(i("box_prms_mode")),ja=or(e,"invertor_prms_to_grid")||Ci("invertor_prms_to_grid"),Va=or(e,"invertor_prm1_p_max_feed_grid")||Ci("invertor_prm1_p_max_feed_grid"),rn=e[ja],an=e[Va],qa=(rn==null?void 0:rn.state)??"",Ya=parseFloat((an==null?void 0:an.state)??"")||0,qn=Xr({gridModeRaw:qa,gridLimit:Ya},{pendingServices:new Map,changingServices:new Set}),Ga=qn.currentLiveDelivery,Ua=qn.currentLiveLimit??0,Ka=B(i("box_temp")),Za=Ot(i("bypass_status"))||"off",Qa=B(i("notification_count_unread")),Xa=B(i("notification_count_error")),sn=i("boiler_is_use"),Ja=sn?lr(sn)||Ot(sn)==="Zapnuto":!1,ts=B(i("boiler_current_cbb_w")),es=B(i("boiler_day_w")),is=Ot(i("boiler_manual_mode")),ns=B(i("boiler_install_power"))||3e3,rs=i("real_data_update"),as=Ot(rs);return{solarPower:n+r,solarP1:n,solarP2:r,solarV1:a,solarV2:s,solarI1:l,solarI2:c,solarPercent:B(i("dc_in_fv_proc")),solarToday:B(i("dc_in_fv_ad")),solarForecastToday:p,solarForecastTomorrow:f,batterySoC:v,batteryPower:m,batteryVoltage:g,batteryCurrent:b,batteryTemp:k,batteryChargeTotal:S,batteryDischargeTotal:$,batteryChargeSolar:C,batteryChargeGrid:G,isGridCharging:w,timeToEmpty:j,timeToFull:L,balancingState:Y,balancingTimeRemaining:V,gridChargingPlan:N,gridPower:wt,gridVoltage:Yt,gridFrequency:en,gridImportToday:nn,gridExportToday:Ct,gridL1V:Le,gridL2V:Ae,gridL3V:yt,gridL1P:Vn,gridL2P:Gt,gridL3P:Ut,spotPrice:La,exportPrice:Aa,currentTariff:Ia,housePower:Ba,houseTodayWh:Fa,houseL1:Na,houseL2:Ra,houseL3:Ha,inverterMode:Wa,inverterGridMode:Ga,inverterGridLimit:Ua,inverterTemp:Ka,bypassStatus:Za,notificationsUnread:Qa,notificationsError:Xa,boilerIsUse:Ja,boilerPower:ts,boilerDayEnergy:es,boilerManualMode:is,boilerInstallPower:ns,plannerAutoMode:null,lastUpdate:as}}const Ne={};function wi(t,e,i){const n=Math.abs(t),r=Math.min(100,n/e*100),a=Math.max(500,Math.round(3500-r*30));let s=a;return i&&Ne[i]!==void 0&&(s=Math.round(.3*a+(1-.3)*Ne[i]),Math.abs(s-Ne[i])<100&&(s=Ne[i])),i&&(Ne[i]=s),{active:n>=50,intensity:r,count:Math.max(1,Math.min(4,Math.ceil(1+r/33))),speed:s,size:Math.round(6+r/10),opacity:Math.min(1,.3+r/150)}}function Re(t){return Math.abs(t)>=1e3?`${(t/1e3).toFixed(1)} kW`:`${Math.round(t)} W`}function Zt(t){return t>=1e3?`${(t/1e3).toFixed(2)} kWh`:`${Math.round(t)} Wh`}function Js(t){return t==="VT"||t.includes("vysoký")?"⚡ VT":t==="NT"||t.includes("nízký")?"🌙 NT":t?`⏰ ${t}`:"--"}function to(t){return t.includes("Home 1")?{icon:"🏠",text:"Home 1"}:t.includes("Home 2")?{icon:"🔋",text:"Home 2"}:t.includes("Home 3")?{icon:"☀️",text:"Home 3"}:t.includes("UPS")?{icon:"⚡",text:"Home UPS"}:{icon:"⚙️",text:t||"--"}}function eo(t){return t==="off"?{display:"Vypnuto",icon:"🚫"}:t==="on"?{display:"Zapnuto",icon:"💧"}:t==="limited"?{display:"Omezeno",icon:"🚰"}:{display:"--",icon:"💧"}}const io={"HOME I":{icon:"🏠",color:"rgba(76, 175, 80, 0.16)",label:"HOME I"},"HOME II":{icon:"⚡",color:"rgba(33, 150, 243, 0.16)",label:"HOME II"},"HOME III":{icon:"🔋",color:"rgba(156, 39, 176, 0.16)",label:"HOME III"},"HOME UPS":{icon:"🛡️",color:"rgba(255, 152, 0, 0.18)",label:"HOME UPS"},"FULL HOME UPS":{icon:"🛡️",color:"rgba(255, 152, 0, 0.18)",label:"FULL HOME UPS"},"DO NOTHING":{icon:"⏸️",color:"rgba(158, 158, 158, 0.18)",label:"DO NOTHING"},"Mode 0":{icon:"🏠",color:"rgba(76, 175, 80, 0.16)",label:"HOME I"},"Mode 1":{icon:"⚡",color:"rgba(33, 150, 243, 0.16)",label:"HOME II"},"Mode 2":{icon:"🔋",color:"rgba(156, 39, 176, 0.16)",label:"HOME III"},"Mode 3":{icon:"🛡️",color:"rgba(255, 152, 0, 0.18)",label:"HOME UPS"}},ur={timeline:[],labels:[],prices:[],exportPrices:[],modeSegments:[],cheapestBuyBlock:null,expensiveBuyBlock:null,bestExportBlock:null,worstExportBlock:null,solar:null,battery:null,initialZoomStart:null,initialZoomEnd:null,currentSpotPrice:0,currentExportPrice:0,avgSpotPrice:0,plannedConsumption:null,whatIf:null,solarForecastTotal:0},pr=new URLSearchParams(window.location.search),xn=pr.get("sn")||pr.get("inverter_sn")||"2206237016";function xe(t){return`sensor.oig_${xn}_${t}`}function hr(t){if(!(t!=null&&t.state))return 0;const e=parseFloat(t.state);return isNaN(e)?0:e}function wn(t){const e=t.getFullYear(),i=String(t.getMonth()+1).padStart(2,"0"),n=String(t.getDate()).padStart(2,"0"),r=String(t.getHours()).padStart(2,"0"),a=String(t.getMinutes()).padStart(2,"0"),s=String(t.getSeconds()).padStart(2,"0");return`${e}-${i}-${n}T${r}:${a}:${s}`}const Pi={},no=5*60*1e3;async function ro(t="hybrid"){const e=Pi[t];if(e&&Date.now()-e.ts<no)return y.debug("Timeline cache hit",{plan:t,age:Math.round((Date.now()-e.ts)/1e3)}),e.data;try{const i=await X.getHass();if(!i)return[];let n;i.callApi?n=await i.callApi("GET",`oig_cloud/battery_forecast/${xn}/timeline?type=active`):n=await X.fetchOIGAPI(`battery_forecast/${xn}/timeline?type=active`);const r=(n==null?void 0:n.active)||(n==null?void 0:n.timeline)||[];return Pi[t]={data:r,ts:Date.now()},y.info("Timeline fetched",{plan:t,points:r.length}),r}catch(i){return y.error("Failed to fetch timeline",i),[]}}function ao(t){Object.keys(Pi).forEach(e=>delete Pi[e])}function so(t){const e=new Date,i=new Date(e);return i.setMinutes(Math.floor(e.getMinutes()/15)*15,0,0),t.filter(n=>new Date(n.timestamp)>=i)}function oo(t){return t.map(e=>{if(!e.timestamp)return new Date;try{const[i,n]=e.timestamp.split("T");if(!i||!n)return new Date;const[r,a,s]=i.split("-").map(Number),[l,c,u=0]=n.split(":").map(Number);return new Date(r,a-1,s,l,c,u)}catch{return new Date}})}function lo(t){const e=t.mode_name||t.mode_planned||t.mode||t.mode_display||null;if(!e||typeof e!="string")return null;const i=e.trim();return i.length?i:null}function co(t){return t.startsWith("HOME ")?t.replace("HOME ","").trim():t==="FULL HOME UPS"||t==="HOME UPS"?"UPS":t==="DO NOTHING"?"DN":t.substring(0,3).toUpperCase()}function uo(t){return io[t]||{icon:"❓",color:"rgba(158, 158, 158, 0.15)",label:t}}function po(t){if(!t.length)return[];const e=[];let i=null;for(const n of t){const r=lo(n);if(!r){i=null;continue}const a=new Date(n.timestamp),s=new Date(a.getTime()+15*60*1e3);if(i!==null&&i.mode===r)i.end=s;else{const l={mode:r,start:a,end:s};e.push(l),i=l}}return e.map(n=>{const r=uo(n.mode);return{...n,icon:r.icon,color:r.color,label:r.label,shortLabel:co(n.mode)}})}function $i(t,e,i=3){const n=Math.floor(i*60/15);if(t.length<n)return null;let r=null,a=e?1/0:-1/0;for(let s=0;s<=t.length-n;s++){const l=t.slice(s,s+n),c=l.map(p=>p.price),u=c.reduce((p,f)=>p+f,0)/c.length;(e&&u<a||!e&&u>a)&&(a=u,r={start:l[0].timestamp,end:l[l.length-1].timestamp,avg:u,min:Math.min(...c),max:Math.max(...c),values:c,type:"cheapest-buy"})}return r}function ho(t,e){const n=((t==null?void 0:t.states)||{})[xe("solar_forecast")];if(!(n!=null&&n.attributes)||!e.length)return null;const r=n.attributes,a=r.today_total_kwh||0,s=r.today_hourly_string1_kw||{},l=r.tomorrow_hourly_string1_kw||{},c=r.today_hourly_string2_kw||{},u=r.tomorrow_hourly_string2_kw||{},p={...s,...l},f={...c,...u},v=(b,k,S)=>b==null||k==null?b||k||0:b+(k-b)*S,m=[],g=[];for(const b of e){const k=b.getHours(),S=b.getMinutes(),$=new Date(b);$.setMinutes(0,0,0);const C=wn($),G=new Date($);G.setHours(k+1);const Z=wn(G),w=p[C]||0,j=p[Z]||0,L=f[C]||0,z=f[Z]||0,Y=S/60;m.push(v(w,j,Y)),g.push(v(L,z,Y))}return{string1:m,string2:g,todayTotal:a,hasString1:m.some(b=>b>0),hasString2:g.some(b=>b>0)}}function go(t,e){if(!t.length)return{arrays:{baseline:[],solarCharge:[],gridCharge:[],gridNet:[],consumption:[]},initialZoomStart:null,initialZoomEnd:null};const i=t.map(f=>new Date(f.timestamp)),n=i[0].getTime(),r=i[i.length-1],a=r?r.getTime():n,s=[],l=[],c=[],u=[],p=[];for(const f of e){const v=wn(f),m=t.find(g=>g.timestamp===v);if(m){const g=(m.battery_capacity_kwh??m.battery_soc??m.battery_start)||0,b=m.solar_charge_kwh||0,k=m.grid_charge_kwh||0,S=typeof m.grid_net=="number"?m.grid_net:(m.grid_import||0)-(m.grid_export||0),$=m.load_kwh??m.consumption_kwh??m.load??0,C=(Number($)||0)*4;s.push(g-b-k),l.push(b),c.push(k),u.push(S),p.push(C)}else s.push(null),l.push(null),c.push(null),u.push(null),p.push(null)}return{arrays:{baseline:s,solarCharge:l,gridCharge:c,gridNet:u,consumption:p},initialZoomStart:n,initialZoomEnd:a}}function fo(t){const e=(t==null?void 0:t.states)||{},i=e[xe("battery_forecast")];if(!(i!=null&&i.attributes)||i.state==="unavailable"||i.state==="unknown")return null;const n=i.attributes,r=n.planned_consumption_today??null,a=n.planned_consumption_tomorrow??null,s=n.profile_today||"Žádný profil",l=e[xe("ac_out_en_day")],c=l==null?void 0:l.state,p=(c&&c!=="unavailable"&&parseFloat(c)||0)/1e3,f=p+(r||0),v=(r||0)+(a||0);let m=null;if(f>0&&a!=null){const b=a-f,k=b/f*100;Math.abs(k)<5?m="Zítra podobně":b>0?m=`Zítra více (+${Math.abs(k).toFixed(0)}%)`:m=`Zítra méně (-${Math.abs(k).toFixed(0)}%)`}return{todayConsumedKwh:p,todayPlannedKwh:r,todayTotalKwh:f,tomorrowKwh:a,totalPlannedKwh:v,profile:s!=="Žádný profil"&&s!=="Neznámý profil"?s:"Žádný profil",trendText:m}}function mo(t){const i=((t==null?void 0:t.states)||{})[xe("battery_forecast")];if(!(i!=null&&i.attributes)||i.state==="unavailable"||i.state==="unknown")return null;const r=i.attributes.mode_optimization||{},a=r.alternatives||{},s=r.total_cost_czk||0,l=r.total_savings_vs_home_i_czk||0,c=a["DO NOTHING"],u=(c==null?void 0:c.current_mode)||null;return{totalCost:s,totalSavings:l,alternatives:a,activeMode:u}}async function bo(t,e="hybrid"){const i=performance.now();y.info("[Pricing] loadPricingData START");try{const n=await ro(e),r=so(n);if(!r.length)return y.warn("[Pricing] No timeline data"),ur;const a=r.map(N=>({timestamp:N.timestamp,price:N.spot_price_czk||0})),s=r.map(N=>({timestamp:N.timestamp,price:N.export_price_czk||0}));let l=oo(a);const c=po(r),u=$i(a,!0,3);u&&(u.type="cheapest-buy");const p=$i(a,!1,3);p&&(p.type="expensive-buy");const f=$i(s,!1,3);f&&(f.type="best-export");const v=$i(s,!0,3);v&&(v.type="worst-export");const m=r.map(N=>new Date(N.timestamp)),g=new Set([...l,...m].map(N=>N.getTime()));l=Array.from(g).sort((N,wt)=>N-wt).map(N=>new Date(N));const{arrays:b,initialZoomStart:k,initialZoomEnd:S}=go(r,l),$=ho(t,l),C=(t==null?void 0:t.states)||{},G=hr(C[xe("spot_price_current_15min")]),Z=hr(C[xe("export_price_current_15min")]),w=a.length>0?a.reduce((N,wt)=>N+wt.price,0)/a.length:0,j=fo(t),L=mo(t),z=($==null?void 0:$.todayTotal)||0,Y={timeline:r,labels:l,prices:a,exportPrices:s,modeSegments:c,cheapestBuyBlock:u,expensiveBuyBlock:p,bestExportBlock:f,worstExportBlock:v,solar:$,battery:b,initialZoomStart:k,initialZoomEnd:S,currentSpotPrice:G,currentExportPrice:Z,avgSpotPrice:w,plannedConsumption:j,whatIf:L,solarForecastTotal:z},V=(performance.now()-i).toFixed(0);return y.info(`[Pricing] loadPricingData COMPLETE in ${V}ms`,{points:r.length,segments:c.length}),Y}catch(n){return y.error("[Pricing] loadPricingData failed",n),ur}}const gr={workday_spring:"Pracovní den - Jaro",workday_summer:"Pracovní den - Léto",workday_autumn:"Pracovní den - Podzim",workday_winter:"Pracovní den - Zima",weekend_spring:"Víkend - Jaro",weekend_summer:"Víkend - Léto",weekend_autumn:"Víkend - Podzim",weekend_winter:"Víkend - Zima"},yo={fve:"FVE",grid:"Síť",alternative:"Alternativa"},$n=new URLSearchParams(window.location.search),vo=$n.get("sn")||$n.get("inverter_sn")||"2206237016",Ti=$n.get("entry_id")||"";function xo(t,e,i){return isNaN(t)?e:Math.max(e,Math.min(i,t))}function wo(t,e,i){if(t==null)return null;const n=e-i;if(n<=0)return null;const r=(t-i)/n*100;return xo(r,0,100)}function Mi(t){if(!t)return"--:--";const e=t instanceof Date?t:new Date(t);return isNaN(e.getTime())?"--:--":e.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"})}function fr(t){if(!t)return"--";const e=new Date(t);return isNaN(e.getTime())?"--":e.toLocaleString("cs-CZ",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}function _n(t,e){return`${Mi(t)}–${Mi(e)}`}function mr(t){return yo[t||""]||t||"--"}function ta(t){return t?Object.values(t).reduce((e,i)=>e+(parseFloat(String(i))||0),0):0}function ea(t){return t?Object.entries(t).map(([i,n])=>({hour:parseInt(i,10),value:parseFloat(String(n))||0})).filter(i=>isFinite(i.value)).sort((i,n)=>n.value-i.value).slice(0,3).filter(i=>i.value>0).map(i=>i.hour).sort((i,n)=>i-n):[]}function He(t){if(!t)return null;const e=t.split(":").map(i=>parseInt(i,10));return e.length<2||!isFinite(e[0])||!isFinite(e[1])?null:e[0]*60+e[1]}function br(t,e,i){return e===null||i===null?!1:e<=i?t>=e&&t<i:t>=e||t<i}async function $o(){try{return Ti?await X.fetchOIGAPI(`/${Ti}/boiler_profile`):(y.warn("[Boiler] No entry_id — cannot fetch boiler profile"),null)}catch(t){return y.warn("[Boiler] Failed to fetch profile",{err:t}),null}}async function _o(){try{return Ti?await X.fetchOIGAPI(`/${Ti}/boiler_plan`):(y.warn("[Boiler] No entry_id — cannot fetch boiler plan"),null)}catch(t){return y.warn("[Boiler] Failed to fetch plan",{err:t}),null}}function ko(t,e,i){const n=t||e,r=n==null?void 0:n.state,a=(r==null?void 0:r.temperatures)||{},s=(r==null?void 0:r.energy_state)||{},l=isFinite(a.upper_zone??a.top)?a.upper_zone??a.top??null:null,c=isFinite(a.lower_zone??a.bottom)?a.lower_zone??a.bottom??null:null,u=isFinite(s.avg_temp)?s.avg_temp??null:null,p=isFinite(s.energy_needed_kwh)?s.energy_needed_kwh??null:null,f=i.targetTempC??60,v=i.coldInletTempC??10,m=wo(u,f,v),g=(t==null?void 0:t.slots)||[],b=(t==null?void 0:t.next_slot)||So(g);let k="Neplánováno";if(b){const $=mr(b.recommended_source);k=`${_n(b.start,b.end)} (${$})`}const S=mr((r==null?void 0:r.recommended_source)||(b==null?void 0:b.recommended_source));return{currentTemp:(r==null?void 0:r.current_temp)||45,targetTemp:(r==null?void 0:r.target_temp)||f,heating:(r==null?void 0:r.heating)||!1,tempTop:l,tempBottom:c,avgTemp:u,heatingPercent:m,energyNeeded:p,planCost:(t==null?void 0:t.estimated_cost_czk)??null,nextHeating:k,recommendedSource:S,nextProfile:(r==null?void 0:r.next_profile)||"",nextStart:(r==null?void 0:r.next_start)||""}}function So(t){if(!Array.isArray(t))return null;const e=Date.now();return t.find(i=>{const n=new Date(i.end||i.end_time||"").getTime(),r=i.consumption_kwh??i.avg_consumption_kwh??0;return n>e&&r>0})||null}function Co(t){var v,m,g;if(!((v=t==null?void 0:t.slots)!=null&&v.length))return null;const e=t.slots.map(b=>({start:b.start||"",end:b.end||"",consumptionKwh:b.consumption_kwh??b.avg_consumption_kwh??0,recommendedSource:b.recommended_source||"",spotPrice:isFinite(b.spot_price)?b.spot_price??null:null,tempTop:b.temp_top,soc:b.soc})),i=e.filter(b=>b.consumptionKwh>0),n=parseFloat(String(t.total_consumption_kwh))||0,r=parseFloat(String(t.fve_kwh))||0,a=parseFloat(String(t.grid_kwh))||0,s=parseFloat(String(t.alt_kwh))||0,l=parseFloat(String(t.estimated_cost_czk))||0;let c="Mix: --";if(n>0){const b=Math.round(r/n*100),k=Math.round(a/n*100),S=Math.round(s/n*100);c=`Mix: FVE ${b}% · Síť ${k}% · Alt ${S}%`}const u=e.filter(b=>b.consumptionKwh>0&&b.spotPrice!==null).map(b=>({slot:b,price:b.spotPrice}));let p="--",f="--";if(u.length){const b=u.reduce((S,$)=>$.price<S.price?$:S),k=u.reduce((S,$)=>$.price>S.price?$:S);p=`${_n(b.slot.start,b.slot.end)} (${b.price.toFixed(2)} Kč/kWh)`,f=`${_n(k.slot.start,k.slot.end)} (${k.price.toFixed(2)} Kč/kWh)`}return{slots:e,totalConsumptionKwh:n,fveKwh:r,gridKwh:a,altKwh:s,estimatedCostCzk:l,nextSlot:t.next_slot?{start:t.next_slot.start||"",end:t.next_slot.end||"",consumptionKwh:t.next_slot.consumption_kwh||0,recommendedSource:t.next_slot.recommended_source||"",spotPrice:t.next_slot.spot_price??null}:null,planStart:fr((m=t.slots[0])==null?void 0:m.start),planEnd:fr((g=t.slots[t.slots.length-1])==null?void 0:g.end),sourceDigest:c,activeSlotCount:i.length,cheapestSpot:p,mostExpensiveSpot:f}}function Po(t){const e=parseFloat(String(t==null?void 0:t.fve_kwh))||0,i=parseFloat(String(t==null?void 0:t.grid_kwh))||0,n=parseFloat(String(t==null?void 0:t.alt_kwh))||0,r=e+i+n;return{fveKwh:e,gridKwh:i,altKwh:n,fvePercent:r>0?e/r*100:0,gridPercent:r>0?i/r*100:0,altPercent:r>0?n/r*100:0}}function To(t,e,i){var v;const n=(t==null?void 0:t.summary)||{},r=(v=t==null?void 0:t.profiles)==null?void 0:v[i],a=(r==null?void 0:r.hourly_avg)||{},s=n.predicted_total_kwh??ta(a),l=n.peak_hours??ea(a),c=isFinite(n.water_liters_40c)?n.water_liters_40c??null:null,u=n.circulation_windows||[],p=u.length?u.map(m=>`${m.start}–${m.end}`).join(", "):"--";let f="--";if(u.length){const m=new Date,g=m.getHours()*60+m.getMinutes();if(u.some(k=>{const S=He(k.start),$=He(k.end);return br(g,S,$)})){const k=u.find(S=>{const $=He(S.start),C=He(S.end);return br(g,$,C)});f=k?`ANO (do ${k.end})`:"ANO"}else{const k=e==null?void 0:e.state,S=k==null?void 0:k.circulation_recommended;let $=1/0,C=null;for(const G of u){const Z=He(G.start);if(Z===null)continue;let w=Z-g;w<0&&(w+=24*60),w<$&&($=w,C=G)}S&&C?f=`DOPORUČENO (${C.start}–${C.end})`:C?f=`Ne (další ${C.start}–${C.end})`:f="Ne"}}return{predictedTodayKwh:s,peakHours:l,waterLiters40c:c,circulationWindows:p,circulationNow:f}}function Mo(t){const e=(t==null?void 0:t.config)||{},i=isFinite(e.volume_l)?e.volume_l??null:null;return{volumeL:i,heaterPowerW:null,targetTempC:isFinite(e.target_temp_c)?e.target_temp_c??null:null,deadlineTime:e.deadline_time||"--:--",stratificationMode:e.stratification_mode||"--",kCoefficient:i?(i*.001163).toFixed(4):"--",coldInletTempC:isFinite(e.cold_inlet_temp_c)?e.cold_inlet_temp_c??10:10}}function Do(t){return t!=null&&t.profiles?Object.entries(t.profiles).map(([e,i])=>({id:e,name:i.name||e,targetTemp:i.target_temp||55,startTime:i.start_time||"06:00",endTime:i.end_time||"22:00",days:i.days||[1,1,1,1,1,0,0],enabled:i.enabled!==!1})):[]}function Eo(t){var n;const e=[],i=((n=t==null?void 0:t.summary)==null?void 0:n.today_hours)||[];for(let r=0;r<24;r++){const a=i.includes(r);e.push({hour:r,temp:a?55:25,heating:a})}return e}function Oo(t,e){var s;const i=(s=t==null?void 0:t.profiles)==null?void 0:s[e],n=["Po","Út","St","Čt","Pá","So","Ne"];if(!i)return n.map(l=>({day:l,hours:Array(24).fill(0)}));const r=i.heatmap||[];let a=[];if(r.length>0)a=r.map(l=>l.map(c=>c&&typeof c=="object"?parseFloat(c.consumption)||0:parseFloat(String(c))||0));else{const l=i.hourly_avg||{};a=Array.from({length:7},()=>Array.from({length:24},(c,u)=>parseFloat(String(l[u]||0))))}return n.map((l,c)=>({day:l,hours:a[c]||Array(24).fill(0)}))}function zo(t,e){var u;const i=(u=t==null?void 0:t.profiles)==null?void 0:u[e],n=(t==null?void 0:t.summary)||{},r=(i==null?void 0:i.hourly_avg)||{},a=Array.from({length:24},(p,f)=>parseFloat(String(r[f]||0))),s=n.predicted_total_kwh??ta(r),l=n.peak_hours??ea(r),c=isFinite(n.avg_confidence)?n.avg_confidence??null:null;return{hourlyAvg:a,peakHours:l,predictedTotalKwh:s,confidence:c,daysTracked:7}}function Lo(t,e){var p,f,v;if(!((p=t==null?void 0:t.slots)!=null&&p.length)||!(e!=null&&e.length))return{fve:"--",grid:"--"};const i=(f=t.slots[0])==null?void 0:f.start,n=(v=t.slots[t.slots.length-1])==null?void 0:v.end,r=i?new Date(i).getTime():null,a=n?new Date(n).getTime():null,s=e.filter(m=>{if(!r||!a)return!0;const g=m.timestamp||m.time;if(!g)return!1;const b=new Date(g).getTime();return b>=r&&b<=a}),l=m=>{const g=[];let b=null;for(const k of s){const S=k.timestamp||k.time;if(!S)continue;const $=new Date(S),C=m(k);C&&!b?b={start:$,end:$}:C&&b?b.end=$:!C&&b&&(g.push(b),b=null)}return b&&g.push(b),g.length?g.map(k=>`${Mi(k.start)}–${Mi(new Date(k.end.getTime()+15*6e4))}`).join(", "):"--"},c=l(m=>(parseFloat(m.solar_kwh??m.solar_charge_kwh??0)||0)>0),u=l(m=>(parseFloat(m.grid_charge_kwh??0)||0)>0);return{fve:c,grid:u}}async function Ao(){return y.info("[Boiler] Planning heating..."),await X.callService("oig_cloud","plan_boiler_heating",{})}async function Io(){return y.info("[Boiler] Applying plan..."),await X.callService("oig_cloud","apply_boiler_plan",{})}async function Bo(){return y.info("[Boiler] Canceling plan..."),await X.callService("oig_cloud","cancel_boiler_plan",{})}async function Fo(t){const[e,i]=await Promise.all([$o(),_o()]);let n=null;try{const l=await X.loadBatteryTimeline(vo,"active");n=(l==null?void 0:l.active)||l||null,Array.isArray(n)&&n.length===0&&(n=null)}catch{}const r=(e==null?void 0:e.current_category)||Object.keys((e==null?void 0:e.profiles)||{})[0]||"workday_summer",a=Object.keys((e==null?void 0:e.profiles)||{}),s=Mo(e);return{state:ko(i,e,s),plan:Co(i),energyBreakdown:Po(i),predictedUsage:To(e,i,r),config:s,profiles:Do(e||i),heatmap:Eo(i||e),heatmap7x24:Oo(e,r),profiling:zo(e,r),currentCategory:r,availableCategories:a,forecastWindows:Lo(i,n)}}const yr={efficiency:null,health:null,balancing:null,costComparison:null};function ia(t){const e=Ft();if(!e)return null;const i=e.findSensorId("battery_efficiency"),n=e.get(i);if(!n)return y.debug("Battery efficiency sensor not found"),null;const r=n.attributes||{},a=r.efficiency_last_month_pct!=null?{efficiency:Number(r.efficiency_last_month_pct??0),charged:Number(r.last_month_charge_kwh??0),discharged:Number(r.last_month_discharge_kwh??0),losses:Number(r.losses_last_month_kwh??0)}:null,s=r.efficiency_current_month_pct!=null?{efficiency:Number(r.efficiency_current_month_pct??0),charged:Number(r.current_month_charge_kwh??0),discharged:Number(r.current_month_discharge_kwh??0),losses:Number(r.losses_current_month_kwh??0)}:null,l=a??s;if(!l)return null;const c=a?"last_month":"current_month",u=a&&s?s.efficiency-a.efficiency:0;return{efficiency:l.efficiency,charged:l.charged,discharged:l.discharged,losses:l.losses,lossesPct:r[c==="last_month"?"losses_last_month_pct":"losses_current_month_pct"]??0,trend:u,period:c,currentMonthDays:r.current_month_days??0,lastMonth:a,currentMonth:s}}function na(t){const e=Ft();if(!e)return null;const i=e.findSensorId("battery_health"),n=e.get(i);if(!n)return y.debug("Battery health sensor not found"),null;const r=parseFloat(n.state)||0,a=n.attributes||{};let s,l;return r>=95?(s="excellent",l="Vynikající"):r>=90?(s="good",l="Dobrý"):r>=80?(s="fair",l="Uspokojivý"):(s="poor",l="Špatný"),{soh:r,capacity:a.capacity_p80_last_20??a.current_capacity_kwh??0,nominalCapacity:a.current_capacity_kwh??0,minCapacity:a.capacity_p20_last_20??0,measurementCount:a.measurement_count??0,lastAnalysis:a.last_analysis??"",qualityScore:a.quality_score??null,sohMethod:a.soh_selection_method??null,sohMethodDescription:a.soh_method_description??null,measurementHistory:Array.isArray(a.measurement_history)?a.measurement_history:[],degradation3m:a.degradation_3_months_percent??null,degradation6m:a.degradation_6_months_percent??null,degradation12m:a.degradation_12_months_percent??null,degradationPerYear:a.degradation_per_year_percent??null,estimatedEolDate:a.estimated_eol_date??null,yearsTo80Pct:a.years_to_80pct??null,trendConfidence:a.trend_confidence??null,status:s,statusLabel:l}}function vr(t,e,i){if(!t||!e)return{daysRemaining:null,progressPercent:null,intervalDays:i||null};try{const n=new Date(t),r=new Date(e),a=new Date;if(isNaN(n.getTime())||isNaN(r.getTime()))return{daysRemaining:null,progressPercent:null,intervalDays:i||null};const s=r.getTime()-n.getTime(),l=a.getTime()-n.getTime(),c=Math.max(0,Math.round((r.getTime()-a.getTime())/(1e3*60*60*24))),u=s>0?Math.min(100,Math.max(0,Math.round(l/s*100))):null,p=i||Math.round(s/(1e3*60*60*24));return{daysRemaining:c,progressPercent:u,intervalDays:p||null}}catch{return{daysRemaining:null,progressPercent:null,intervalDays:i||null}}}function ra(t){const e=Ft();if(!e)return null;const i=e.findSensorId("battery_balancing"),n=e.get(i);if(!n){const c=e.get(e.findSensorId("battery_health")),u=c==null?void 0:c.attributes;if(u!=null&&u.balancing_status){const p=String(u.last_balancing??""),f=u.next_balancing?String(u.next_balancing):null,v=vr(p,f,Number(u.balancing_interval_days??0));return{status:String(u.balancing_status??"unknown"),lastBalancing:p,cost:Number(u.balancing_cost??0),nextScheduled:f,...v,estimatedNextCost:u.estimated_next_cost!=null?Number(u.estimated_next_cost):null}}return null}const r=n.attributes||{},a=String(r.last_balancing??""),s=r.next_scheduled?String(r.next_scheduled):null,l=vr(a,s,Number(r.interval_days??0));return{status:n.state||"unknown",lastBalancing:a,cost:Number(r.cost??0),nextScheduled:s,...l,estimatedNextCost:r.estimated_next_cost!=null?Number(r.estimated_next_cost):null}}async function No(t){var e,i;try{const n=await X.loadUnifiedCostTile(t);if(!n)return null;const r=n.hybrid??n,a=r.today??{},s=Math.round((a.actual_cost_so_far??a.actual_total_cost??0)*100)/100,l=a.future_plan_cost??0,c=a.plan_total_cost??s+l,u=((e=r.tomorrow)==null?void 0:e.plan_total_cost)??null;let p=null,f=null,v=null,m=null;try{const g=await X.loadBatteryTimeline(t,"active"),b=(i=g==null?void 0:g.timeline_extended)==null?void 0:i.yesterday;b!=null&&b.summary&&(p=b.summary.planned_total_cost??null,f=b.summary.actual_total_cost??null,v=b.summary.delta_cost??null,m=b.summary.accuracy_pct??null)}catch{y.debug("Yesterday analysis not available")}return{activePlan:"hybrid",actualSpent:s,planTotalCost:c,futurePlanCost:l,tomorrowCost:u,yesterdayPlannedCost:p,yesterdayActualCost:f,yesterdayDelta:v,yesterdayAccuracy:m}}catch(n){return y.error("Failed to fetch cost comparison",n),null}}async function Ro(t){const e=ia(),i=na(),n=ra(),r=await No(t);return{efficiency:e,health:i,balancing:n,costComparison:r}}function Ho(t){return{efficiency:ia(),health:na(),balancing:ra()}}const Qe={severity:0,warningsCount:0,eventType:"",description:"",instruction:"",onset:"",expires:"",etaHours:0,allWarnings:[],effectiveSeverity:0},Wo={vítr:"💨",déšť:"🌧️",sníh:"❄️",bouřky:"⛈️",mráz:"🥶",vedro:"🥵",mlha:"🌫️",náledí:"🧊",laviny:"🏔️"};function aa(t){const e=t.toLowerCase();for(const[i,n]of Object.entries(Wo))if(e.includes(i))return n;return"⚠️"}const sa={0:"Bez výstrahy",1:"Nízká",2:"Zvýšená",3:"Vysoká",4:"Extrémní"},Di={0:"#4CAF50",1:"#8BC34A",2:"#FF9800",3:"#f44336",4:"#9C27B0"};function jo(t){const e=Ft();if(!e)return Qe;const i=`sensor.oig_${t}_chmu_warning_level`,n=e.get(i);if(!n)return y.debug("ČHMÚ sensor not found",{entityId:i}),Qe;const r=parseInt(n.state,10)||0,a=n.attributes||{},s=Number(a.warnings_count??0),l=String(a.event_type??""),c=String(a.description??""),u=String(a.instruction??""),p=String(a.onset??""),f=String(a.expires??""),v=Number(a.eta_hours??0),m=a.all_warnings_details??[],g=Array.isArray(m)?m.map(S=>({event_type:S.event_type??S.event??"",severity:S.severity??r,description:S.description??"",instruction:S.instruction??"",onset:S.onset??"",expires:S.expires??"",eta_hours:S.eta_hours??0})):[],b=l.toLowerCase().includes("žádná výstraha");return{severity:r,warningsCount:s,eventType:l,description:c,instruction:u,onset:p,expires:f,etaHours:v,allWarnings:g,effectiveSeverity:s===0||b?0:r}}const oa={"HOME I":{icon:"🏠",color:"#4CAF50",label:"HOME I"},"HOME II":{icon:"⚡",color:"#2196F3",label:"HOME II"},"HOME III":{icon:"🔋",color:"#9C27B0",label:"HOME III"},"HOME UPS":{icon:"🛡️",color:"#FF9800",label:"HOME UPS"},"FULL HOME UPS":{icon:"🛡️",color:"#FF9800",label:"FULL HOME UPS"},"DO NOTHING":{icon:"⏸️",color:"#9E9E9E",label:"DO NOTHING"}},la={yesterday:"📊 Včera",today:"📆 Dnes",tomorrow:"📅 Zítra",history:"📈 Historie",detail:"💎 Detail"};function xr(t){return{modeHistorical:t.mode_historical??t.mode??"",modePlanned:t.mode_planned??"",modeMatch:t.mode_match??!1,status:t.status??"planned",startTime:t.start_time??"",endTime:t.end_time??"",durationHours:t.duration_hours??0,costHistorical:t.cost_historical??null,costPlanned:t.cost_planned??null,costDelta:t.cost_delta??null,solarKwh:t.solar_total_kwh??0,consumptionKwh:t.consumption_total_kwh??0,gridImportKwh:t.grid_import_total_kwh??0,gridExportKwh:t.grid_export_total_kwh??0,intervalReasons:Array.isArray(t.interval_reasons)?t.interval_reasons:[]}}function _i(t){return{plan:(t==null?void 0:t.plan)??0,actual:(t==null?void 0:t.actual)??null,hasActual:(t==null?void 0:t.has_actual)??!1,unit:(t==null?void 0:t.unit)??""}}function Vo(t){const e=(t==null?void 0:t.metrics)??{};return{overallAdherence:(t==null?void 0:t.overall_adherence)??0,modeSwitches:(t==null?void 0:t.mode_switches)??0,totalCost:(t==null?void 0:t.total_cost)??0,metrics:{cost:_i(e.cost),solar:_i(e.solar),consumption:_i(e.consumption),grid:_i(e.grid)},completedSummary:t!=null&&t.completed_summary?{count:t.completed_summary.count??0,totalCost:t.completed_summary.total_cost??0,adherencePct:t.completed_summary.adherence_pct??0}:void 0,plannedSummary:t!=null&&t.planned_summary?{count:t.planned_summary.count??0,totalCost:t.planned_summary.total_cost??0}:void 0,progressPct:t==null?void 0:t.progress_pct,actualTotalCost:t==null?void 0:t.actual_total_cost,planTotalCost:t==null?void 0:t.plan_total_cost,vsPlanPct:t==null?void 0:t.vs_plan_pct,eodPrediction:t!=null&&t.eod_prediction?{predictedTotal:t.eod_prediction.predicted_total??0,predictedSavings:t.eod_prediction.predicted_savings??0}:void 0}}function qo(t){return t?{date:t.date??"",modeBlocks:Array.isArray(t.mode_blocks)?t.mode_blocks.map(xr):[],summary:Vo(t.summary),metadata:t.metadata?{activePlan:t.metadata.active_plan??"hybrid",comparisonPlanAvailable:t.metadata.comparison_plan_available}:void 0,comparison:t.comparison?{plan:t.comparison.plan??"",modeBlocks:Array.isArray(t.comparison.mode_blocks)?t.comparison.mode_blocks.map(xr):[]}:void 0}:null}async function Yo(t,e,i="hybrid"){try{const n=await X.loadDetailTabs(t,e,i);if(!n)return null;const r=n[e]??n;return qo(r)}catch(n){return y.error(`Failed to load timeline tab: ${e}`,n),null}}const kn={tiles_left:[null,null,null,null,null,null],tiles_right:[null,null,null,null,null,null],left_count:4,right_count:4,visible:!0,version:1},ca="oig_dashboard_tiles";function Go(t,e){return e==="W"&&Math.abs(t)>=1e3?{value:(t/1e3).toFixed(2),unit:"kW"}:e==="Wh"&&Math.abs(t)>=1e3?{value:(t/1e3).toFixed(2),unit:"kWh"}:e==="W"||e==="Wh"?{value:Math.round(t).toString(),unit:e}:{value:t.toFixed(1),unit:e}}async function Uo(){var t;try{const e=await X.callWS({type:"call_service",domain:"oig_cloud",service:"get_dashboard_tiles",service_data:{},return_response:!0}),i=(t=e==null?void 0:e.response)==null?void 0:t.config;if(i&&typeof i=="object")return y.debug("Loaded tiles config from HA"),$r(i)}catch(e){y.debug("WS tile config load failed, trying localStorage",{error:e.message})}try{const e=localStorage.getItem(ca);if(e){const i=JSON.parse(e);return y.debug("Loaded tiles config from localStorage"),$r(i)}}catch{y.debug("localStorage tile config load failed")}return kn}async function wr(t){try{return localStorage.setItem(ca,JSON.stringify(t)),await X.callService("oig_cloud","save_dashboard_tiles",{config:JSON.stringify(t)}),y.info("Tiles config saved"),!0}catch(e){return y.error("Failed to save tiles config",e),!1}}function $r(t){return{tiles_left:Array.isArray(t.tiles_left)?t.tiles_left.slice(0,6):kn.tiles_left,tiles_right:Array.isArray(t.tiles_right)?t.tiles_right.slice(0,6):kn.tiles_right,left_count:typeof t.left_count=="number"?t.left_count:4,right_count:typeof t.right_count=="number"?t.right_count:4,visible:t.visible!==!1,version:t.version??1}}function dn(t){var l;const e=Ft();if(!e)return{value:"--",unit:"",isActive:!1,rawValue:0};const i=e.get(t);if(!i||i.state==="unavailable"||i.state==="unknown")return{value:"--",unit:"",isActive:!1,rawValue:0};const n=i.state,r=String(((l=i.attributes)==null?void 0:l.unit_of_measurement)??""),a=parseFloat(n)||0;if(i.entity_id.startsWith("switch.")||i.entity_id.startsWith("binary_sensor."))return{value:n==="on"?"Zapnuto":"Vypnuto",unit:"",isActive:n==="on",rawValue:n==="on"?1:0};const s=Go(a,r);return{value:s.value,unit:s.unit,isActive:a!==0,rawValue:a}}function We(t){const e=(i,n)=>{var a,s;const r=[];for(let l=0;l<n;l++){const c=i[l];if(!c)continue;const u=dn(c.entity_id),p={};if((a=c.support_entities)!=null&&a.top_right){const f=dn(c.support_entities.top_right);p.topRight={value:f.value,unit:f.unit}}if((s=c.support_entities)!=null&&s.bottom_right){const f=dn(c.support_entities.bottom_right);p.bottomRight={value:f.value,unit:f.unit}}r.push({config:c,value:u.value,unit:u.unit,isActive:u.isActive,isZero:u.rawValue===0,formattedValue:u.unit?`${u.value} ${u.unit}`:u.value,supportValues:p})}return r};return{left:e(t.tiles_left,t.left_count),right:e(t.tiles_right,t.right_count)}}async function Ko(t,e="toggle"){const i=t.split(".")[0];return X.callService(i,e,{entity_id:t})}function ye(t){return t==null||Number.isNaN(t)?"-- Wh":Math.abs(t)>=1e3?`${(t/1e3).toFixed(2)} kWh`:`${Math.round(t)} Wh`}function it(t,e="CZK"){return t==null||Number.isNaN(t)?`-- ${e}`:`${t.toFixed(2)} ${e}`}function ve(t,e=0){return t==null||Number.isNaN(t)?"-- %":`${t.toFixed(e)} %`}const Zo={fridge:"❄️","fridge-outline":"❄️",dishwasher:"🍽️","washing-machine":"🧺","tumble-dryer":"🌪️",stove:"🔥",microwave:"📦","coffee-maker":"☕",kettle:"🫖",toaster:"🍞",lightbulb:"💡","lightbulb-outline":"💡",lamp:"🪔","ceiling-light":"💡","floor-lamp":"🪔","led-strip":"✨","led-strip-variant":"✨","wall-sconce":"💡",chandelier:"💡",thermometer:"🌡️",thermostat:"🌡️",radiator:"♨️","radiator-disabled":"❄️","heat-pump":"♨️","air-conditioner":"❄️",fan:"🌀",hvac:"♨️",fire:"🔥",snowflake:"❄️","lightning-bolt":"⚡",flash:"⚡",battery:"🔋","battery-charging":"🔋","battery-50":"🔋","solar-panel":"☀️","solar-power":"☀️","meter-electric":"⚡","power-plug":"🔌","power-socket":"🔌",car:"🚗","car-electric":"🚘","car-battery":"🔋","ev-station":"🔌","ev-plug-type2":"🔌",garage:"🏠","garage-open":"🏠",door:"🚪","door-open":"🚪",lock:"🔒","lock-open":"🔓","shield-home":"🛡️",cctv:"📹",camera:"📹","motion-sensor":"👁️","alarm-light":"🚨",bell:"🔔","window-closed":"🪟","window-open":"🪟",blinds:"🪟","blinds-open":"🪟",curtains:"🪟","roller-shade":"🪟",television:"📺",speaker:"🔊","speaker-wireless":"🔊",music:"🎵","volume-high":"🔊",cast:"📡",chromecast:"📡","router-wireless":"📡",wifi:"📶","access-point":"📡",lan:"🌐",network:"🌐","home-assistant":"🏠",water:"💧","water-percent":"💧","water-boiler":"♨️","water-pump":"💧",shower:"🚿",toilet:"🚽",faucet:"🚰",pipe:"🔧","weather-sunny":"☀️","weather-cloudy":"☁️","weather-night":"🌙","weather-rainy":"🌧️","weather-snowy":"❄️","weather-windy":"💨",information:"ℹ️","help-circle":"❓","alert-circle":"⚠️","checkbox-marked-circle":"✅","toggle-switch":"🔘",power:"⚡",sync:"🔄"};function Ei(t){const e=t.replace(/^mdi:/,"");return Zo[e]||"⚙️"}function un(t,e){let i=!1;return(...n)=>{i||(t(...n),i=!0,setTimeout(()=>i=!1,e))}}async function je(t,e=3,i=1e3){let n;for(let r=0;r<=e;r++)try{return await t()}catch(a){if(n=a,a instanceof Error&&(a.message.includes("401")||a.message.includes("403")))throw a;if(r<e){const s=Math.min(i*Math.pow(2,r),5e3);await new Promise(l=>setTimeout(l,s))}}throw n}class Qo{constructor(){this.state={...Qr,pendingServices:new Map,changingServices:new Set},this.listeners=new Set,this.watcherUnsub=null,this.queueUpdateInterval=null,this.started=!1}start(){this.started||(this.started=!0,this.watcherUnsub=te.onEntityChange((e,i)=>{e&&this.shouldRefreshShield(e)&&this.refresh()}),this.refresh(),this.queueUpdateInterval=window.setInterval(()=>{this.state.allRequests.length>0&&this.notify()},1e3),y.debug("ShieldController started"))}stop(){var e;(e=this.watcherUnsub)==null||e.call(this),this.watcherUnsub=null,this.queueUpdateInterval!==null&&(clearInterval(this.queueUpdateInterval),this.queueUpdateInterval=null),this.started=!1,y.debug("ShieldController stopped")}subscribe(e){return this.listeners.add(e),e(this.state),()=>this.listeners.delete(e)}getState(){return this.state}shouldRefreshShield(e){return["service_shield_","box_prms_mode","boiler_manual_mode","invertor_prms_to_grid","invertor_prm1_p_max_feed_grid"].some(n=>e.includes(n))}refresh(){const e=Ft();if(e)try{const i=e.findSensorId("service_shield_activity"),n=e.get(i),r=(n==null?void 0:n.attributes)??{},a=r.running_requests??[],s=r.queued_requests??[],l=e.findSensorId("service_shield_status"),c=e.findSensorId("service_shield_queue"),u=e.getString(l).value,p=e.getNumeric(c).value,f=e.getString(e.findSensorId("box_prms_mode")).value,v=e.getString(e.findSensorId("invertor_prms_to_grid")).value,m=e.getNumeric(e.findSensorId("invertor_prm1_p_max_feed_grid")).value,g=e.getString(e.findSensorId("boiler_manual_mode")).value,b=nr[f.trim()]??"home_1",k=rr[g.trim()]??"cbb",S=a.map((V,N)=>this.parseRequest(V,N,!0)),$=s.map((V,N)=>this.parseRequest(V,N+a.length,!1)),C=[...S,...$],G=new Map,Z=new Set;for(const V of C){const N=this.parseServiceRequest(V);N&&!G.has(N.type)&&(G.set(N.type,N.targetValue),Z.add(N.type))}const w=u==="Running"||u==="running",z=Xr({gridModeRaw:v,gridLimit:m},{pendingServices:G,changingServices:Z,shieldStatus:w?"running":"idle"}),Y=yn(v)||z.currentLiveDelivery==="unknown"?this.state.currentGridDelivery:z.currentLiveDelivery;this.state={status:w?"running":"idle",activity:(n==null?void 0:n.state)??"",queueCount:p,runningRequests:S,queuedRequests:$,allRequests:C,currentBoxMode:b,currentGridDelivery:Y,currentGridLimit:z.currentLiveLimit??0,currentBoilerMode:k,pendingServices:G,changingServices:Z,gridDeliveryState:z},this.notify()}catch(i){y.error("ShieldController refresh failed",i)}}parseRequest(e,i,n){const r=e||{},a=r.service??"",l=(Array.isArray(r.changes)?r.changes:[]).map(g=>typeof g=="string"?g:String(g??"")).filter(g=>g.length>0),c=r.started_at??r.queued_at??r.created_at??r.timestamp??r.created??"",u=Array.isArray(r.targets)?r.targets.map(g=>({param:String((g==null?void 0:g.param)??""),value:String((g==null?void 0:g.value)??(g==null?void 0:g.to)??""),entityId:String((g==null?void 0:g.entity_id)??(g==null?void 0:g.entityId)??""),from:String((g==null?void 0:g.from)??""),to:String((g==null?void 0:g.to)??(g==null?void 0:g.value)??""),current:String((g==null?void 0:g.current)??"")})):[],p=this.extractRequestParams(r.params),f=this.extractGridDeliveryStep(r,p),v=this.resolveRequestTargetValue(r,u,p,f);let m="mode_change";return a.includes("set_box_mode")?m="mode_change":a.includes("set_grid_delivery")&&!a.includes("limit")?m="grid_delivery":a.includes("grid_delivery_limit")||a.includes("set_grid_delivery")?m="grid_limit":a.includes("set_boiler_mode")?m="boiler_mode":a.includes("set_formating_mode")&&(m="battery_formating"),{id:`${a}_${i}_${c}`,type:m,status:n?"running":"queued",service:a,targetValue:v,changes:l,createdAt:c,position:i+1,description:typeof r.description=="string"?r.description:void 0,params:p,targets:u,traceId:typeof r.trace_id=="string"?r.trace_id:void 0,gridDeliveryStep:f}}parseServiceRequest(e){const i=e.service;if(!i)return null;const n=e.changes.length>0?e.changes[0]:"",r=e.params,a=e.gridDeliveryStep,s=this.extractStructuredTarget(e);if(i.includes("set_grid_delivery")&&s)return s;if(i.includes("set_grid_delivery")&&n.includes("p_max_feed_grid")){const u=n.match(/→\s*'?(\d+)'?/),p=u?u[1]:e.targetValue;return p?{type:"grid_limit",targetValue:p}:null}const l=n.match(/→\s*'([^']+)'/),c=l?l[1]:e.targetValue||"";if(i.includes("set_box_mode"))return{type:"box_mode",targetValue:c};if(i.includes("set_boiler_mode"))return{type:"boiler_mode",targetValue:c};if(i.includes("set_grid_delivery")&&n.includes("prms_to_grid"))return{type:"grid_mode",targetValue:c};if(i.includes("set_grid_delivery")){if(a==="limit"){const p=this.normalizeNumericTargetValue((r==null?void 0:r.limit)??e.targetValue);return p?{type:"grid_limit",targetValue:p}:null}if(a==="mode"){const p=this.normalizeModeTargetValue((r==null?void 0:r.mode)??e.targetValue);return p?{type:"grid_mode",targetValue:p}:null}const u=n.match(/→\s*'?(\d+)'?/);return u?{type:"grid_limit",targetValue:u[1]}:e.targetValue&&/^\d+$/.test(e.targetValue.trim())?{type:"grid_limit",targetValue:e.targetValue}:{type:"grid_mode",targetValue:c}}return null}extractRequestParams(e){if(!(!e||typeof e!="object"||Array.isArray(e)))return e}extractGridDeliveryStep(e,i){const n=(e==null?void 0:e.grid_delivery_step)??(i==null?void 0:i._grid_delivery_step);return typeof n=="string"?n:void 0}resolveRequestTargetValue(e,i,n,r){const a=this.extractStructuredTarget({service:(e==null?void 0:e.service)??"",targetValue:"",params:n,targets:i,gridDeliveryStep:r});if(a!=null&&a.targetValue)return a.targetValue;const s=e.target_value??e.target_display;return typeof s=="string"?s:""}extractStructuredTarget(e){if(!e.service.includes("set_grid_delivery"))return null;const i=e.gridDeliveryStep,n=e.params,r=e.targets??[];if(i==="limit"){const l=this.findTargetValue(r,["limit"]),c=this.normalizeNumericTargetValue(l??(n==null?void 0:n.limit)??e.targetValue);return c?{type:"grid_limit",targetValue:c}:null}if(i==="mode"){const l=this.findTargetValue(r,["mode"]),c=this.normalizeModeTargetValue(l??(n==null?void 0:n.mode)??e.targetValue);return c?{type:"grid_mode",targetValue:c}:null}const a=this.findTargetValue(r,["limit"]);if(a){const l=this.normalizeNumericTargetValue(a);if(l)return{type:"grid_limit",targetValue:l}}const s=this.findTargetValue(r,["mode"]);if(s){const l=this.normalizeModeTargetValue(s);if(l)return{type:"grid_mode",targetValue:l}}return null}findTargetValue(e,i){const n=new Set(i),r=e.find(a=>n.has(a.param));return(r==null?void 0:r.to)||(r==null?void 0:r.value)||void 0}normalizeNumericTargetValue(e){if(typeof e=="number"&&Number.isFinite(e))return String(Math.round(e));if(typeof e!="string")return"";const i=e.trim().match(/(\d+)/);return i?i[1]:""}normalizeModeTargetValue(e){if(typeof e!="string")return"";const i=e.trim();switch(i.toLowerCase()){case"off":return"Vypnuto";case"on":return"Zapnuto";case"limited":return"Omezeno";default:return i}}isLimitedGridDeliveryActiveOrPending(){const e=this.state.gridDeliveryState;if(e.pendingDeliveryTarget==="limited"||e.pendingLimitTarget!==null||e.currentLiveDelivery==="limited"||e.currentLiveDelivery==="unknown"&&(Vs(e)==="limited"||this.state.currentGridDelivery==="limited"))return!0;const i=Ft();if(i){const n=i.getString(i.findSensorId("invertor_prms_to_grid")).value;if(!yn(n)&&Dn(n)==="limited")return!0}return!1}needsGridModeChangeForLimitedRequest(){return!this.isLimitedGridDeliveryActiveOrPending()}getBoxModeButtonState(e){const i=this.state.pendingServices.get("box_mode");return i?nr[i]===e?this.state.status==="running"?"processing":"pending":"disabled-by-service":this.state.currentBoxMode===e?"active":"idle"}getGridDeliveryButtonState(e){return this.getGridDeliveryButtonStateV2(e)}getGridDeliveryButtonStateV2(e){const i=this.state.gridDeliveryState,r=this.state.status==="running"?"processing":"pending",a=i.pendingDeliveryTarget,s=i.pendingLimitTarget,l=i.currentLiveDelivery;return a!==null?a===e?r:e==="limited"&&l==="limited"||e==="limited"&&l==="unknown"&&this.state.currentGridDelivery==="limited"?"active":"disabled-by-service":s!==null?e==="limited"?r:"disabled-by-service":l===e?"active":"idle"}getBoilerModeButtonState(e){const i=this.state.pendingServices.get("boiler_mode");return i?rr[i]===e?this.state.status==="running"?"processing":"pending":"disabled-by-service":this.state.currentBoilerMode===e?"active":"idle"}isAnyServiceChanging(){return this.state.changingServices.size>0}shouldProceedWithQueue(){return this.state.queueCount<3?!0:window.confirm(`⚠️ VAROVÁNÍ: Fronta již obsahuje ${this.state.queueCount} úkolů!
 
 Každá změna může trvat až 10 minut.
-Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.currentBoxMode===e&&!this.state.changingServices.has("box_mode"))return!1;const i=await X.callService("oig_cloud","set_box_mode",{mode:e,acknowledgement:!0});return i&&this.refresh(),i}async setGridDelivery(e,i){const r={acknowledgement:!0,warning:!0};e==="limited"&&i!=null?(this.state.currentGridDelivery==="limited"||(r.mode=e),r.limit=i):i!=null?r.limit=i:r.mode=e;const n=await X.callService("oig_cloud","set_grid_delivery",r);return n&&this.refresh(),n}async setBoilerMode(e){if(this.state.currentBoilerMode===e&&!this.state.changingServices.has("boiler_mode"))return!1;const i=await X.callService("oig_cloud","set_boiler_mode",{mode:e,acknowledgement:!0});return i&&this.refresh(),i}async removeFromQueue(e){const i=await X.callService("oig_cloud","shield_remove_from_queue",{position:e});return i&&this.refresh(),i}notify(){for(const e of this.listeners)try{e(this.state)}catch(i){y.error("ShieldController listener error",i)}}}const J=new Oo;var zo=Object.defineProperty,Ao=Object.getOwnPropertyDescriptor,se=(t,e,i,r)=>{for(var n=r>1?void 0:r?Ao(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&zo(e,i,n),n};const ft=Z;let Ot=class extends M{constructor(){super(...arguments),this.title="Energetické Toky",this.time="",this.showStatus=!1,this.alertCount=0,this.leftPanelCollapsed=!1,this.rightPanelCollapsed=!1}onStatusClick(){this.dispatchEvent(new CustomEvent("status-click",{bubbles:!0}))}onEditClick(){this.dispatchEvent(new CustomEvent("edit-click",{bubbles:!0}))}onResetClick(){this.dispatchEvent(new CustomEvent("reset-click",{bubbles:!0}))}onToggleLeftPanel(){this.dispatchEvent(new CustomEvent("toggle-left-panel",{bubbles:!0}))}onToggleRightPanel(){this.dispatchEvent(new CustomEvent("toggle-right-panel",{bubbles:!0}))}render(){const t=this.alertCount>0?"warning":"ok";return d`
+Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.currentBoxMode===e&&!this.state.changingServices.has("box_mode"))return!1;const i=await X.callService("oig_cloud","set_box_mode",{mode:e,acknowledgement:!0});return i&&this.refresh(),i}async setGridDelivery(e,i){const n={acknowledgement:!0,warning:!0};e==="limited"&&i!=null?(this.needsGridModeChangeForLimitedRequest()&&(n.mode=e),n.limit=i):i!=null?n.limit=i:n.mode=e;const r=await X.callService("oig_cloud","set_grid_delivery",n);return r&&this.refresh(),r}async setBoilerMode(e){if(this.state.currentBoilerMode===e&&!this.state.changingServices.has("boiler_mode"))return!1;const i=await X.callService("oig_cloud","set_boiler_mode",{mode:e,acknowledgement:!0});return i&&this.refresh(),i}async removeFromQueue(e){const i=await X.callService("oig_cloud","shield_remove_from_queue",{position:e});return i&&this.refresh(),i}notify(){for(const e of this.listeners)try{e(this.state)}catch(i){y.error("ShieldController listener error",i)}}}const J=new Qo;var Xo=Object.defineProperty,Jo=Object.getOwnPropertyDescriptor,se=(t,e,i,n)=>{for(var r=n>1?void 0:n?Jo(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Xo(e,i,r),r};const mt=Q;let zt=class extends M{constructor(){super(...arguments),this.title="Energetické Toky",this.time="",this.showStatus=!1,this.alertCount=0,this.leftPanelCollapsed=!1,this.rightPanelCollapsed=!1}onStatusClick(){this.dispatchEvent(new CustomEvent("status-click",{bubbles:!0}))}onEditClick(){this.dispatchEvent(new CustomEvent("edit-click",{bubbles:!0}))}onResetClick(){this.dispatchEvent(new CustomEvent("reset-click",{bubbles:!0}))}onToggleLeftPanel(){this.dispatchEvent(new CustomEvent("toggle-left-panel",{bubbles:!0}))}onToggleRightPanel(){this.dispatchEvent(new CustomEvent("toggle-right-panel",{bubbles:!0}))}render(){const t=this.alertCount>0?"warning":"ok";return d`
       <h1 class="title">
         <span class="title-icon">⚡</span>
         ${this.title}
@@ -54,13 +54,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
            ↺
          </button>
        </div>
-    `}};Ot.styles=P`
+    `}};zt.styles=P`
     :host {
       display: flex;
       align-items: center;
       padding: 12px 16px;
-      background: ${ft(o.bgPrimary)};
-      border-bottom: 1px solid ${ft(o.divider)};
+      background: ${mt(o.bgPrimary)};
+      border-bottom: 1px solid ${mt(o.divider)};
       gap: 12px;
     }
 
@@ -70,7 +70,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       gap: 8px;
       font-size: 18px;
       font-weight: 500;
-      color: ${ft(o.textPrimary)};
+      color: ${mt(o.textPrimary)};
       margin: 0;
     }
 
@@ -78,15 +78,15 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .version {
       font-size: 11px;
-      color: ${ft(o.textSecondary)};
-      background: ${ft(o.bgSecondary)};
+      color: ${mt(o.textSecondary)};
+      background: ${mt(o.bgSecondary)};
       padding: 2px 6px;
       border-radius: 4px;
     }
 
     .time {
       font-size: 13px;
-      color: ${ft(o.textSecondary)};
+      color: ${mt(o.textSecondary)};
       margin-left: 8px;
     }
 
@@ -105,17 +105,17 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     }
 
     .status-badge.warning {
-      background: ${ft(o.warning)};
+      background: ${mt(o.warning)};
       color: #fff;
     }
 
     .status-badge.error {
-      background: ${ft(o.error)};
+      background: ${mt(o.error)};
       color: #fff;
     }
 
     .status-badge.ok {
-      background: ${ft(o.success)};
+      background: ${mt(o.success)};
       color: #fff;
     }
 
@@ -140,26 +140,26 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       display: flex;
       align-items: center;
       justify-content: center;
-      color: ${ft(o.textSecondary)};
+      color: ${mt(o.textSecondary)};
       transition: all 0.2s;
     }
 
     .action-btn:hover {
-      background: ${ft(o.bgSecondary)};
-      color: ${ft(o.textPrimary)};
+      background: ${mt(o.bgSecondary)};
+      color: ${mt(o.textPrimary)};
     }
 
     .action-btn.active {
-      background: ${ft(o.accent)};
+      background: ${mt(o.accent)};
       color: #fff;
     }
-  `;se([h({type:String})],Ot.prototype,"title",2);se([h({type:String})],Ot.prototype,"time",2);se([h({type:Boolean})],Ot.prototype,"showStatus",2);se([h({type:Number})],Ot.prototype,"alertCount",2);se([h({type:Boolean})],Ot.prototype,"leftPanelCollapsed",2);se([h({type:Boolean})],Ot.prototype,"rightPanelCollapsed",2);Ot=se([E("oig-header")],Ot);function ta(t,e){let i=null;return function(...r){i!==null&&clearTimeout(i),i=window.setTimeout(()=>{t.apply(this,r),i=null},e)}}var Io=Object.defineProperty,Lo=Object.getOwnPropertyDescriptor,ui=(t,e,i,r)=>{for(var n=r>1?void 0:r?Lo(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Io(e,i,n),n};const gn="oig_v2_theme";let Jt=class extends M{constructor(){super(...arguments),this.mode="auto",this.isDark=!1,this.breakpoint="desktop",this.width=1280,this.mediaQuery=null,this.resizeObserver=null,this.debouncedResize=ta(this.updateBreakpoint.bind(this),100),this.onMediaChange=t=>{this.mode==="auto"&&(this.isDark=t.matches,this.dispatchEvent(new CustomEvent("theme-changed",{detail:{isDark:this.isDark}})))},this.onThemeChange=()=>{this.detectTheme()}}connectedCallback(){super.connectedCallback(),this.loadTheme(),this.setupMediaQuery(),this.setupResizeObserver(),this.detectTheme(),window.addEventListener("oig-theme-change",this.onThemeChange)}disconnectedCallback(){var t,e;super.disconnectedCallback(),(t=this.mediaQuery)==null||t.removeEventListener("change",this.onMediaChange),(e=this.resizeObserver)==null||e.disconnect(),window.removeEventListener("oig-theme-change",this.onThemeChange)}loadTheme(){const t=localStorage.getItem(gn);t&&["light","dark","auto"].includes(t)&&(this.mode=t)}saveTheme(){localStorage.setItem(gn,this.mode)}setupMediaQuery(){this.mediaQuery=window.matchMedia("(prefers-color-scheme: dark)"),this.mediaQuery.addEventListener("change",this.onMediaChange)}setupResizeObserver(){this.resizeObserver=new ResizeObserver(this.debouncedResize),this.resizeObserver.observe(document.documentElement),this.updateBreakpoint()}updateBreakpoint(){this.width=window.innerWidth,this.breakpoint=be(this.width)}detectTheme(){this.mode==="auto"?this.isDark=window.matchMedia("(prefers-color-scheme: dark)").matches:this.isDark=this.mode==="dark"}setTheme(t){this.mode=t,this.saveTheme(),this.detectTheme(),this.dispatchEvent(new CustomEvent("theme-changed",{detail:{mode:t,isDark:this.isDark}})),y.info("Theme changed",{mode:t,isDark:this.isDark})}getThemeInfo(){return{mode:this.mode,isDark:this.isDark,breakpoint:this.breakpoint,width:this.width}}render(){return d`
+  `;se([h({type:String})],zt.prototype,"title",2);se([h({type:String})],zt.prototype,"time",2);se([h({type:Boolean})],zt.prototype,"showStatus",2);se([h({type:Number})],zt.prototype,"alertCount",2);se([h({type:Boolean})],zt.prototype,"leftPanelCollapsed",2);se([h({type:Boolean})],zt.prototype,"rightPanelCollapsed",2);zt=se([D("oig-header")],zt);function da(t,e){let i=null;return function(...n){i!==null&&clearTimeout(i),i=window.setTimeout(()=>{t.apply(this,n),i=null},e)}}var tl=Object.defineProperty,el=Object.getOwnPropertyDescriptor,pi=(t,e,i,n)=>{for(var r=n>1?void 0:n?el(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&tl(e,i,r),r};const _r="oig_v2_theme";let ee=class extends M{constructor(){super(...arguments),this.mode="auto",this.isDark=!1,this.breakpoint="desktop",this.width=1280,this.mediaQuery=null,this.resizeObserver=null,this.debouncedResize=da(this.updateBreakpoint.bind(this),100),this.onMediaChange=t=>{this.mode==="auto"&&(this.isDark=t.matches,this.dispatchEvent(new CustomEvent("theme-changed",{detail:{isDark:this.isDark}})))},this.onThemeChange=()=>{this.detectTheme()}}connectedCallback(){super.connectedCallback(),this.loadTheme(),this.setupMediaQuery(),this.setupResizeObserver(),this.detectTheme(),window.addEventListener("oig-theme-change",this.onThemeChange)}disconnectedCallback(){var t,e;super.disconnectedCallback(),(t=this.mediaQuery)==null||t.removeEventListener("change",this.onMediaChange),(e=this.resizeObserver)==null||e.disconnect(),window.removeEventListener("oig-theme-change",this.onThemeChange)}loadTheme(){const t=localStorage.getItem(_r);t&&["light","dark","auto"].includes(t)&&(this.mode=t)}saveTheme(){localStorage.setItem(_r,this.mode)}setupMediaQuery(){this.mediaQuery=window.matchMedia("(prefers-color-scheme: dark)"),this.mediaQuery.addEventListener("change",this.onMediaChange)}setupResizeObserver(){this.resizeObserver=new ResizeObserver(this.debouncedResize),this.resizeObserver.observe(document.documentElement),this.updateBreakpoint()}updateBreakpoint(){this.width=window.innerWidth,this.breakpoint=be(this.width)}detectTheme(){this.mode==="auto"?this.isDark=window.matchMedia("(prefers-color-scheme: dark)").matches:this.isDark=this.mode==="dark"}setTheme(t){this.mode=t,this.saveTheme(),this.detectTheme(),this.dispatchEvent(new CustomEvent("theme-changed",{detail:{mode:t,isDark:this.isDark}})),y.info("Theme changed",{mode:t,isDark:this.isDark})}getThemeInfo(){return{mode:this.mode,isDark:this.isDark,breakpoint:this.breakpoint,width:this.width}}render(){return d`
       <slot></slot>
-    `}};Jt.styles=P`
+    `}};ee.styles=P`
     :host {
       display: contents;
     }
-  `;ui([h({type:String})],Jt.prototype,"mode",2);ui([w()],Jt.prototype,"isDark",2);ui([w()],Jt.prototype,"breakpoint",2);ui([w()],Jt.prototype,"width",2);Jt=ui([E("oig-theme-provider")],Jt);var Bo=Object.defineProperty,Fo=Object.getOwnPropertyDescriptor,_r=(t,e,i,r)=>{for(var n=r>1?void 0:r?Fo(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Bo(e,i,n),n};let Qe=class extends M{constructor(){super(...arguments),this.tabs=[],this.activeTab=""}onTabClick(t){t!==this.activeTab&&(this.activeTab=t,this.dispatchEvent(new CustomEvent("tab-change",{detail:{tabId:t},bubbles:!0})))}isActive(t){return this.activeTab===t}render(){return d`
+  `;pi([h({type:String})],ee.prototype,"mode",2);pi([x()],ee.prototype,"isDark",2);pi([x()],ee.prototype,"breakpoint",2);pi([x()],ee.prototype,"width",2);ee=pi([D("oig-theme-provider")],ee);var il=Object.defineProperty,nl=Object.getOwnPropertyDescriptor,En=(t,e,i,n)=>{for(var r=n>1?void 0:n?nl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&il(e,i,r),r};let Xe=class extends M{constructor(){super(...arguments),this.tabs=[],this.activeTab=""}onTabClick(t){t!==this.activeTab&&(this.activeTab=t,this.dispatchEvent(new CustomEvent("tab-change",{detail:{tabId:t},bubbles:!0})))}isActive(t){return this.activeTab===t}render(){return d`
       ${this.tabs.map(t=>d`
         <button 
           class="tab ${this.isActive(t.id)?"active":""}"
@@ -169,13 +169,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <span>${t.label}</span>
         </button>
       `)}
-    `}};Qe.styles=P`
+    `}};Xe.styles=P`
     :host {
       display: flex;
       gap: 8px;
       padding: 0 16px;
-      background: ${Z(o.bgPrimary)};
-      border-bottom: 1px solid ${Z(o.divider)};
+      background: ${Q(o.bgPrimary)};
+      border-bottom: 1px solid ${Q(o.divider)};
     }
 
     .tab {
@@ -188,20 +188,20 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       cursor: pointer;
       font-size: 14px;
       font-weight: 500;
-      color: ${Z(o.textSecondary)};
+      color: ${Q(o.textSecondary)};
       border-bottom: 2px solid transparent;
       transition: all 0.2s;
       white-space: nowrap;
     }
 
     .tab:hover {
-      color: ${Z(o.textPrimary)};
-      background: ${Z(o.bgSecondary)};
+      color: ${Q(o.textPrimary)};
+      background: ${Q(o.bgSecondary)};
     }
 
     .tab.active {
-      color: ${Z(o.accent)};
-      border-bottom-color: ${Z(o.accent)};
+      color: ${Q(o.accent)};
+      border-bottom-color: ${Q(o.accent)};
     }
 
     .tab-icon {
@@ -223,13 +223,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         display: none;
       }
     }
-  `;_r([h({type:Array})],Qe.prototype,"tabs",2);_r([h({type:String})],Qe.prototype,"activeTab",2);Qe=_r([E("oig-tabs")],Qe);var No=Object.defineProperty,Ro=Object.getOwnPropertyDescriptor,kr=(t,e,i,r)=>{for(var n=r>1?void 0:r?Ro(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&No(e,i,n),n};const Ho="oig_v2_layout_",lr=Z;let Xe=class extends M{constructor(){super(...arguments),this.editable=!1,this.breakpoint="desktop",this.onResize=ta(()=>{this.breakpoint=be(window.innerWidth)},100)}connectedCallback(){super.connectedCallback(),this.breakpoint=be(window.innerWidth),window.addEventListener("resize",this.onResize)}disconnectedCallback(){super.disconnectedCallback(),window.removeEventListener("resize",this.onResize)}updated(t){t.has("breakpoint")&&this.setAttribute("breakpoint",this.breakpoint)}resetLayout(){const t=`${Ho}${this.breakpoint}`;localStorage.removeItem(t),this.requestUpdate()}render(){return d`<slot></slot>`}};Xe.styles=P`
+  `;En([h({type:Array})],Xe.prototype,"tabs",2);En([h({type:String})],Xe.prototype,"activeTab",2);Xe=En([D("oig-tabs")],Xe);var rl=Object.defineProperty,al=Object.getOwnPropertyDescriptor,On=(t,e,i,n)=>{for(var r=n>1?void 0:n?al(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&rl(e,i,r),r};const sl="oig_v2_layout_",pn=Q;let Je=class extends M{constructor(){super(...arguments),this.editable=!1,this.breakpoint="desktop",this.onResize=da(()=>{this.breakpoint=be(window.innerWidth)},100)}connectedCallback(){super.connectedCallback(),this.breakpoint=be(window.innerWidth),window.addEventListener("resize",this.onResize)}disconnectedCallback(){super.disconnectedCallback(),window.removeEventListener("resize",this.onResize)}updated(t){t.has("breakpoint")&&this.setAttribute("breakpoint",this.breakpoint)}resetLayout(){const t=`${sl}${this.breakpoint}`;localStorage.removeItem(t),this.requestUpdate()}render(){return d`<slot></slot>`}};Je.styles=P`
     :host {
       display: grid;
       gap: 16px;
       padding: 16px;
       min-height: 100%;
-      background: ${lr(o.bgSecondary)};
+      background: ${pn(o.bgSecondary)};
     }
 
     :host([breakpoint='mobile']) { grid-template-columns: 1fr; }
@@ -238,9 +238,9 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .grid-item {
       position: relative;
-      background: ${lr(o.cardBg)};
+      background: ${pn(o.cardBg)};
       border-radius: 8px;
-      box-shadow: ${lr(o.cardShadow)};
+      box-shadow: ${pn(o.cardShadow)};
       transition: transform 0.2s, box-shadow 0.2s;
     }
 
@@ -251,7 +251,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     @media (max-width: 768px) {
       :host { gap: 12px; padding: 12px; }
     }
-  `;kr([h({type:Boolean})],Xe.prototype,"editable",2);kr([w()],Xe.prototype,"breakpoint",2);Xe=kr([E("oig-grid")],Xe);const Wo=t=>{const e=t.trim();return e?e.endsWith("W")?e:`${e}W`:""};function fn(t,e){const i=e.has("box_mode"),r=t.get("box_mode"),n=e.has("grid_mode")||e.has("grid_limit"),a=t.get("grid_limit"),s=t.get("grid_mode");let l=null;if(a){const c=Wo(a);l=c?`→ ${c}`:null}else s&&(l=`→ ${s}`);return{inverterModeChanging:i,inverterModeText:r?`→ ${r}`:null,gridExportChanging:n,gridExportText:l}}var jo=Object.defineProperty,Vo=Object.getOwnPropertyDescriptor,Qi=(t,e,i,r)=>{for(var n=r>1?void 0:r?Vo(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&jo(e,i,n),n};let we=class extends M{constructor(){super(...arguments),this.soc=0,this.charging=!1,this.gridCharging=!1}get fillHeight(){return Math.max(0,Math.min(100,this.soc))/100*54}get fillY(){return 13+(54-this.fillHeight)}render(){return d`
+  `;On([h({type:Boolean})],Je.prototype,"editable",2);On([x()],Je.prototype,"breakpoint",2);Je=On([D("oig-grid")],Je);const ol={off:"Vypnuto",on:"Zapnuto",limited:"Omezeno",unknown:"?"};function hn(t){return ol[t]??t}const ua=t=>{const e=t.trim();return e?e.endsWith("W")?e:`${e}W`:""};function ll(t){const e=t.isUnavailable;let i;e||t.currentLiveDelivery==="unknown"?i="?":t.currentLiveDelivery==="limited"&&t.currentLiveLimit!==null?i=`Omezeno ${t.currentLiveLimit}W`:i=hn(t.currentLiveDelivery);const n=t.pendingDeliveryTarget!==null,r=t.pendingLimitTarget!==null;let a=null,s=null;return n&&r?(a=`Ve frontě: ${hn(t.pendingDeliveryTarget)} / ${t.pendingLimitTarget}W`,s="both"):r?(a=`Ve frontě: limit ${ua(String(t.pendingLimitTarget))}`,s="limit"):n&&(a=`Ve frontě: ${hn(t.pendingDeliveryTarget)}`,s="mode"),{currentText:i,currentUnavailable:e,pendingText:a,pendingKind:s,isTransitioning:t.isTransitioning}}function kr(t,e){const i=e.has("box_mode"),n=t.get("box_mode"),r=e.has("grid_mode")||e.has("grid_limit"),a=t.get("grid_limit"),s=t.get("grid_mode");let l=null;if(a){const c=ua(a);l=c?`→ ${c}`:null}else s&&(l=`→ ${s}`);return{inverterModeChanging:i,inverterModeText:n?`→ ${n}`:null,gridExportChanging:r,gridExportText:l}}var cl=Object.defineProperty,dl=Object.getOwnPropertyDescriptor,Qi=(t,e,i,n)=>{for(var r=n>1?void 0:n?dl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&cl(e,i,r),r};let we=class extends M{constructor(){super(...arguments),this.soc=0,this.charging=!1,this.gridCharging=!1}get fillHeight(){return Math.max(0,Math.min(100,this.soc))/100*54}get fillY(){return 13+(54-this.fillHeight)}render(){return d`
       <svg viewBox="0 0 50 80">
         <defs>
           <linearGradient id="bg" x1="0%" y1="100%" x2="0%" y2="0%">
@@ -336,7 +336,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       0%, 100% { opacity: 0.6; }
       50% { opacity: 1; }
     }
-  `;Qi([h({type:Number})],we.prototype,"soc",2);Qi([h({type:Boolean})],we.prototype,"charging",2);Qi([h({type:Boolean})],we.prototype,"gridCharging",2);we=Qi([E("oig-battery-gauge")],we);var qo=Object.defineProperty,Yo=Object.getOwnPropertyDescriptor,Xi=(t,e,i,r)=>{for(var n=r>1?void 0:r?Yo(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&qo(e,i,n),n};let $e=class extends M{constructor(){super(...arguments),this.power=0,this.percent=0,this.maxPower=5400}get isNight(){return this.percent<2}get level(){return this.percent<2?"night":this.percent<20?"low":this.percent<65?"mid":"high"}get sunColor(){const t=this.level;return t==="low"?"#b0bec5":t==="mid"?"#ffd54f":"#ffb300"}get rayLen(){const t=this.level;return t==="low"?4:t==="mid"?7:10}get rayOpacity(){const t=this.level;return t==="low"?.5:t==="mid"?.8:1}get coreRadius(){const t=this.level;return t==="low"?7:t==="mid"?9:11}renderMoon(){return Et`
+  `;Qi([h({type:Number})],we.prototype,"soc",2);Qi([h({type:Boolean})],we.prototype,"charging",2);Qi([h({type:Boolean})],we.prototype,"gridCharging",2);we=Qi([D("oig-battery-gauge")],we);var ul=Object.defineProperty,pl=Object.getOwnPropertyDescriptor,Xi=(t,e,i,n)=>{for(var r=n>1?void 0:n?pl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&ul(e,i,r),r};let $e=class extends M{constructor(){super(...arguments),this.power=0,this.percent=0,this.maxPower=5400}get isNight(){return this.percent<2}get level(){return this.percent<2?"night":this.percent<20?"low":this.percent<65?"mid":"high"}get sunColor(){const t=this.level;return t==="low"?"#b0bec5":t==="mid"?"#ffd54f":"#ffb300"}get rayLen(){const t=this.level;return t==="low"?4:t==="mid"?7:10}get rayOpacity(){const t=this.level;return t==="low"?.5:t==="mid"?.8:1}get coreRadius(){const t=this.level;return t==="low"?7:t==="mid"?9:11}renderMoon(){return Mt`
       <circle cx="24" cy="24" r="20" fill="#3949ab" opacity="0.28"/>
       <g class="moon-body">
         <path d="M24 6 A18 18 0 1 0 24 42 A13 13 0 1 1 24 6Z" fill="#cfd8dc" opacity="0.95"/>
@@ -346,18 +346,18 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       <circle class="star" cx="5" cy="30" r="1.2" fill="#c5cae9" style="animation-delay:1.4s"/>
       <circle class="star" cx="6" cy="44" r="1.0" fill="#c5cae9" style="animation-delay:2.1s"/>
       <circle class="star" cx="42" cy="39" r="1.3" fill="#e8eaf6" style="animation-delay:2.8s"/>
-    `}renderSun(){const i=this.coreRadius,r=i+3,n=r+this.rayLen,a=this.sunColor,s=this.rayOpacity,c=[0,45,90,135,180,225,270,315].map(p=>{const g=p*Math.PI/180,m=24+Math.cos(g)*r,b=24+Math.sin(g)*r,v=24+Math.cos(g)*n,f=24+Math.sin(g)*n;return Et`
+    `}renderSun(){const i=this.coreRadius,n=i+3,r=n+this.rayLen,a=this.sunColor,s=this.rayOpacity,c=[0,45,90,135,180,225,270,315].map(p=>{const f=p*Math.PI/180,v=24+Math.cos(f)*n,m=24+Math.sin(f)*n,g=24+Math.cos(f)*r,b=24+Math.sin(f)*r;return Mt`
         <line class="ray"
-          x1="${m}" y1="${b}" x2="${v}" y2="${f}"
+          x1="${v}" y1="${m}" x2="${g}" y2="${b}"
           stroke="${a}" stroke-width="2.5" opacity="${s}"
         />
-      `}),u=this.level==="low";return Et`
+      `}),u=this.level==="low";return Mt`
       <!-- Paprsky obaleny v <g> pro CSS rotaci -->
       <g class="rays-group">
         ${c}
       </g>
       <circle class="sun-core" cx="${24}" cy="${24}" r="${i}" fill="${a}" />
-      ${u?Et`
+      ${u?Mt`
         <!-- Jednoduchý obláček -->
         <g class="cloud" opacity="0.85">
           <ellipse cx="30" cy="30" rx="9" ry="6" fill="#90a4ae"/>
@@ -407,7 +407,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       from { transform: rotate(0deg); }
       to   { transform: rotate(360deg); }
     }
-  `;Xi([h({type:Number})],$e.prototype,"power",2);Xi([h({type:Number})],$e.prototype,"percent",2);Xi([h({type:Number})],$e.prototype,"maxPower",2);$e=Xi([E("oig-solar-icon")],$e);var Uo=Object.defineProperty,Go=Object.getOwnPropertyDescriptor,pi=(t,e,i,r)=>{for(var n=r>1?void 0:r?Go(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Uo(e,i,n),n};let te=class extends M{constructor(){super(...arguments),this.soc=0,this.charging=!1,this.gridCharging=!1,this.discharging=!1,this._clipId=`batt-clip-${Math.random().toString(36).slice(2)}`}get fillColor(){return this.gridCharging?"#42a5f5":this.soc>50?"#4caf50":this.soc>20?"#ff9800":"#f44336"}get fillHeight(){return Math.max(1,Math.min(100,this.soc)/100*48)}get fillY(){return 14+(48-this.fillHeight)}get stripeColor(){return this.gridCharging?"#90caf9":"#a5d6a7"}render(){const t=this.charging||this.gridCharging,e=this.soc>=25;return d`
+  `;Xi([h({type:Number})],$e.prototype,"power",2);Xi([h({type:Number})],$e.prototype,"percent",2);Xi([h({type:Number})],$e.prototype,"maxPower",2);$e=Xi([D("oig-solar-icon")],$e);var hl=Object.defineProperty,gl=Object.getOwnPropertyDescriptor,hi=(t,e,i,n)=>{for(var r=n>1?void 0:n?gl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&hl(e,i,r),r};let ie=class extends M{constructor(){super(...arguments),this.soc=0,this.charging=!1,this.gridCharging=!1,this.discharging=!1,this._clipId=`batt-clip-${Math.random().toString(36).slice(2)}`}get fillColor(){return this.gridCharging?"#42a5f5":this.soc>50?"#4caf50":this.soc>20?"#ff9800":"#f44336"}get fillHeight(){return Math.max(1,Math.min(100,this.soc)/100*48)}get fillY(){return 14+(48-this.fillHeight)}get stripeColor(){return this.gridCharging?"#90caf9":"#a5d6a7"}render(){const t=this.charging||this.gridCharging,e=this.soc>=25;return d`
       <svg viewBox="0 0 32 68">
         <!-- Terminal (horní pólík) -->
         <rect class="terminal" x="11" y="0" width="10" height="5" rx="1.5"/>
@@ -435,7 +435,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         />
 
         <!-- Animovaný pruh při nabíjení -->
-        ${t?Et`
+        ${t?Mt`
           <rect
             class="charge-stripe active"
             x="4" y="52" width="24" height="8" rx="2"
@@ -445,13 +445,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         `:""}
 
         <!-- SoC text uvnitř -->
-        ${e?Et`
+        ${e?Mt`
           <text class="soc-text" x="16" y="${this.fillY+this.fillHeight/2}">
             ${Math.round(this.soc)}%
           </text>
         `:""}
       </svg>
-    `}};te.styles=P`
+    `}};ie.styles=P`
     :host { display: inline-block; width: 32px; height: 52px; }
     svg { width: 100%; height: 100%; overflow: visible; }
 
@@ -489,7 +489,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       80%  { opacity: 0.4; }
       100% { transform: translateY(-30px); opacity: 0; }
     }
-  `;pi([h({type:Number})],te.prototype,"soc",2);pi([h({type:Boolean})],te.prototype,"charging",2);pi([h({type:Boolean})],te.prototype,"gridCharging",2);pi([h({type:Boolean})],te.prototype,"discharging",2);te=pi([E("oig-battery-icon")],te);var Ko=Object.defineProperty,Zo=Object.getOwnPropertyDescriptor,ea=(t,e,i,r)=>{for(var n=r>1?void 0:r?Zo(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Ko(e,i,n),n};let Oi=class extends M{constructor(){super(...arguments),this.power=0}get mode(){return this.power>50?"importing":this.power<-50?"exporting":"idle"}render(){const t=this.mode;return d`
+  `;hi([h({type:Number})],ie.prototype,"soc",2);hi([h({type:Boolean})],ie.prototype,"charging",2);hi([h({type:Boolean})],ie.prototype,"gridCharging",2);hi([h({type:Boolean})],ie.prototype,"discharging",2);ie=hi([D("oig-battery-icon")],ie);var fl=Object.defineProperty,ml=Object.getOwnPropertyDescriptor,pa=(t,e,i,n)=>{for(var r=n>1?void 0:n?ml(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&fl(e,i,r),r};let Oi=class extends M{constructor(){super(...arguments),this.power=0}get mode(){return this.power>50?"importing":this.power<-50?"exporting":"idle"}render(){const t=this.mode;return d`
       <svg viewBox="0 0 48 48">
         <!-- Dva malé stožáry v pozadí — ikona sítě -->
         <line class="pylon" x1="8" y1="44" x2="8" y2="14"/>
@@ -568,7 +568,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       from { stroke-dashoffset: 0; }
       to   { stroke-dashoffset: 60; }
     }
-  `;ea([h({type:Number})],Oi.prototype,"power",2);Oi=ea([E("oig-grid-icon")],Oi);var Qo=Object.defineProperty,Xo=Object.getOwnPropertyDescriptor,Ji=(t,e,i,r)=>{for(var n=r>1?void 0:r?Xo(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Qo(e,i,n),n};let _e=class extends M{constructor(){super(...arguments),this.power=0,this.maxPower=1e4,this.boilerActive=!1}get percent(){return Math.min(100,this.power/Math.max(1,this.maxPower)*100)}get fillColor(){const t=this.percent;return t<15?"#546e7a":t<40?"#f06292":t<70?"#e91e63":"#c62828"}get level(){const t=this.percent;return t<15?"low":t<60?"mid":"high"}get windowColor(){const t=this.level;return t==="low"?"#37474f":t==="mid"?"#ffd54f":"#ffb300"}render(){const t=this.percent,e=24,i=22,r=Math.max(1,t/100*e),n=i+(e-r),a=this.level;return d`
+  `;pa([h({type:Number})],Oi.prototype,"power",2);Oi=pa([D("oig-grid-icon")],Oi);var bl=Object.defineProperty,yl=Object.getOwnPropertyDescriptor,Ji=(t,e,i,n)=>{for(var r=n>1?void 0:n?yl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&bl(e,i,r),r};let _e=class extends M{constructor(){super(...arguments),this.power=0,this.maxPower=1e4,this.boilerActive=!1}get percent(){return Math.min(100,this.power/Math.max(1,this.maxPower)*100)}get fillColor(){const t=this.percent;return t<15?"#546e7a":t<40?"#f06292":t<70?"#e91e63":"#c62828"}get level(){const t=this.percent;return t<15?"low":t<60?"mid":"high"}get windowColor(){const t=this.level;return t==="low"?"#37474f":t==="mid"?"#ffd54f":"#ffb300"}render(){const t=this.percent,e=24,i=22,n=Math.max(1,t/100*e),r=i+(e-n),a=this.level;return d`
       <svg viewBox="0 0 48 48">
         <defs>
           <clipPath id="house-clip">
@@ -600,7 +600,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         <!-- Výplň spotřeby -->
         <rect
           class="fill-bar"
-          x="8" y="${n}" width="32" height="${r}"
+          x="8" y="${r}" width="32" height="${n}"
           fill="${this.fillColor}"
           clip-path="url(#house-clip)"
         />
@@ -618,7 +618,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         />
 
         <!-- Bojler indikátor (malý plamen vlevo dole) -->
-        ${this.boilerActive?Et`
+        ${this.boilerActive?Mt`
           <circle class="boiler-dot" cx="10" cy="43" r="3.5" fill="#ff5722" opacity="0.9"/>
           <text x="10" y="43" text-anchor="middle" dominant-baseline="middle" font-size="5" fill="white">🔥</text>
         `:""}
@@ -655,7 +655,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .boiler-dot {
       transition: opacity 0.4s ease;
     }
-  `;Ji([h({type:Number})],_e.prototype,"power",2);Ji([h({type:Number})],_e.prototype,"maxPower",2);Ji([h({type:Boolean})],_e.prototype,"boilerActive",2);_e=Ji([E("oig-house-icon")],_e);var Jo=Object.defineProperty,tl=Object.getOwnPropertyDescriptor,hi=(t,e,i,r)=>{for(var n=r>1?void 0:r?tl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Jo(e,i,n),n};let ee=class extends M{constructor(){super(...arguments),this.mode="",this.bypassActive=!1,this.hasAlarm=!1,this.plannerAuto=!1}get modeType(){return this.hasAlarm?"alarm":this.bypassActive?"bypass":this.mode.includes("UPS")?"ups":"normal"}render(){const t=this.modeType;return d`
+  `;Ji([h({type:Number})],_e.prototype,"power",2);Ji([h({type:Number})],_e.prototype,"maxPower",2);Ji([h({type:Boolean})],_e.prototype,"boilerActive",2);_e=Ji([D("oig-house-icon")],_e);var vl=Object.defineProperty,xl=Object.getOwnPropertyDescriptor,gi=(t,e,i,n)=>{for(var r=n>1?void 0:n?xl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&vl(e,i,r),r};let ne=class extends M{constructor(){super(...arguments),this.mode="",this.bypassActive=!1,this.hasAlarm=!1,this.plannerAuto=!1}get modeType(){return this.hasAlarm?"alarm":this.bypassActive?"bypass":this.mode.includes("UPS")?"ups":"normal"}render(){const t=this.modeType;return d`
       <svg viewBox="0 0 48 48">
         <!-- Hlavní box střídače -->
         <rect
@@ -667,14 +667,14 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         <path class="sine-out ${t}" d="${"M 10,28 C 14,28 14,20 18,22 C 22,24 22,32 26,32 C 30,32 30,20 34,22 C 38,24 38,28 38,28"}"/>
 
         <!-- UPS blesk -->
-        ${t==="ups"?Et`
+        ${t==="ups"?Mt`
           <path class="ups-bolt active"
             d="M 25,12 L 20,26 L 24,26 L 23,36 L 28,22 L 24,22 Z"
           />
         `:""}
 
         <!-- Bypass výstraha — trojúhelník nahoře -->
-        ${t==="bypass"?Et`
+        ${t==="bypass"?Mt`
           <polygon
             class="warning-triangle active"
             points="24,6 18,16 30,16"
@@ -684,7 +684,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         `:""}
 
         <!-- Alarm kroužek -->
-        ${t==="alarm"?Et`
+        ${t==="alarm"?Mt`
           <circle class="alarm-ring active" cx="24" cy="25" r="6"/>
           <text x="24" y="26" text-anchor="middle" dominant-baseline="middle"
             font-size="8" font-weight="bold" fill="#f44336">!</text>
@@ -702,7 +702,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         <line x1="44" y1="18" x2="48" y2="18"
           stroke="#9575cd" stroke-width="1.5" opacity="0.4"/>
       </svg>
-    `}};ee.styles=P`
+    `}};ne.styles=P`
     :host { display: inline-block; width: 48px; height: 48px; }
     svg { width: 100%; height: 100%; overflow: visible; }
 
@@ -763,27 +763,27 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       0%, 100% { opacity: 0.3; r: 6; }
       50%       { opacity: 1;   r: 8; }
     }
-  `;hi([h({type:String})],ee.prototype,"mode",2);hi([h({type:Boolean})],ee.prototype,"bypassActive",2);hi([h({type:Boolean})],ee.prototype,"hasAlarm",2);hi([h({type:Boolean})],ee.prototype,"plannerAuto",2);ee=hi([E("oig-inverter-icon")],ee);var el=Object.defineProperty,il=Object.getOwnPropertyDescriptor,At=(t,e,i,r)=>{for(var n=r>1?void 0:r?il(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&el(e,i,n),n};const W=Z,mn=new URLSearchParams(window.location.search),rl=mn.get("sn")||mn.get("inverter_sn")||"2206237016",nl=t=>`sensor.oig_${rl}_${t}`,cr="oig_v2_flow_layout_",Kt=["solar","battery","inverter","grid","house"],al={solar:{top:"0%",left:"0%"},house:{top:"0%",left:"65%"},inverter:{top:"35%",left:"35%"},grid:{top:"70%",left:"0%"},battery:{top:"70%",left:"65%"}};function I(t){return()=>X.openEntityDialog(nl(t))}let kt=class extends M{constructor(){super(...arguments),this.data=$r,this.editMode=!1,this.pendingServices=new Map,this.changingServices=new Set,this.shieldStatus="idle",this.shieldQueueCount=0,this.shieldUnsub=null,this.expandedNodes=new Set,this.customPositions={},this.draggedNodeId=null,this.dragStartX=0,this.dragStartY=0,this.dragStartTop=0,this.dragStartLeft=0,this.onShieldUpdate=t=>{this.pendingServices=t.pendingServices,this.changingServices=t.changingServices,this.shieldStatus=t.status,this.shieldQueueCount=t.queueCount},this.handleDragStart=t=>{if(!this.editMode)return;t.preventDefault(),t.stopPropagation();const i=t.target.closest(".node");if(!i)return;const r=this.findNodeId(i);if(!r)return;this.draggedNodeId=r,i.classList.add("dragging");const n=i.getBoundingClientRect();this.dragStartX=t.clientX,this.dragStartY=t.clientY,this.dragStartTop=n.top,this.dragStartLeft=n.left},this.handleTouchStart=t=>{if(!this.editMode)return;t.preventDefault();const i=t.target.closest(".node");if(!i)return;const r=this.findNodeId(i);if(!r)return;this.draggedNodeId=r,i.classList.add("dragging");const n=t.touches[0],a=i.getBoundingClientRect();this.dragStartX=n.clientX,this.dragStartY=n.clientY,this.dragStartTop=a.top,this.dragStartLeft=a.left},this.handleDragMove=t=>{!this.draggedNodeId||!this.editMode||(t.preventDefault(),this.updateDragPosition(t.clientX,t.clientY))},this.handleTouchMove=t=>{if(!this.draggedNodeId||!this.editMode)return;t.preventDefault();const e=t.touches[0];this.updateDragPosition(e.clientX,e.clientY)},this.handleDragEnd=t=>{var r;if(!this.draggedNodeId||!this.editMode)return;const e=(r=this.shadowRoot)==null?void 0:r.querySelector(".flow-grid"),i=e==null?void 0:e.querySelector(`.node-${this.draggedNodeId}`);i&&i.classList.remove("dragging"),this.saveLayout(),this.dispatchEvent(new CustomEvent("layout-changed",{bubbles:!0,composed:!0})),this.draggedNodeId=null},this.handleTouchEnd=t=>{this.handleDragEnd(t)}}connectedCallback(){super.connectedCallback(),this.loadSavedLayout(),this.shieldUnsub=J.subscribe(this.onShieldUpdate)}disconnectedCallback(){var t;super.disconnectedCallback(),this.removeDragListeners(),(t=this.shieldUnsub)==null||t.call(this),this.shieldUnsub=null}updated(t){t.has("editMode")&&(this.editMode?(this.setAttribute("editmode",""),this.loadSavedLayout(),this.requestUpdate(),this.updateComplete.then(()=>this.applySavedPositions())):(this.removeAttribute("editmode"),this.removeDragListeners(),this.clearInlinePositions(),this.updateComplete.then(()=>this.applyCustomPositions()))),!this.editMode&&this.hasCustomLayout&&this.updateComplete.then(()=>this.applyCustomPositions())}loadSavedLayout(){const t=be(window.innerWidth),e=`${cr}${t}`;try{const i=localStorage.getItem(e);i&&(this.customPositions=JSON.parse(i),y.debug("[FlowNode] Loaded layout for "+t))}catch{}}applySavedPositions(){var e;if(!this.editMode)return;const t=(e=this.shadowRoot)==null?void 0:e.querySelector(".flow-grid");if(t){for(const i of Kt){const r=this.customPositions[i];if(!r)continue;const n=t.querySelector(`.node-${i}`);n&&(n.style.top=r.top,n.style.left=r.left)}this.initDragListeners()}}clearInlinePositions(){var e;const t=(e=this.shadowRoot)==null?void 0:e.querySelector(".flow-grid");if(t)for(const i of Kt){const r=t.querySelector(`.node-${i}`);r&&(r.style.top="",r.style.left="")}}saveLayout(){const t=be(window.innerWidth),e=`${cr}${t}`;try{localStorage.setItem(e,JSON.stringify(this.customPositions)),y.debug("[FlowNode] Saved layout for "+t)}catch{}}toggleExpand(t,e){const i=e.target;if(i.closest(".clickable")||i.closest(".indicator")||i.closest(".forecast-badge")||i.closest(".node-value")||i.closest(".node-subvalue")||i.closest(".gc-plan-btn"))return;const r=new Set(this.expandedNodes);r.has(t)?r.delete(t):r.add(t),this.expandedNodes=r}nodeClass(t,e=""){const i=this.expandedNodes.has(t)?" expanded":"";return`node node-${t}${i}${e?" "+e:""}`}get hasCustomLayout(){return Kt.some(t=>{const e=this.customPositions[t];return(e==null?void 0:e.top)!=null&&(e==null?void 0:e.left)!=null})}applyCustomPositions(){var e;if(this.editMode||!this.hasCustomLayout)return;const t=(e=this.shadowRoot)==null?void 0:e.querySelector(".flow-grid");if(t)for(const i of Kt){const r=t.querySelector(`.node-${i}`);if(!r)continue;const n=this.customPositions[i]??al[i];r.style.top=n.top,r.style.left=n.left}}resetLayout(){const t=be(window.innerWidth),e=`${cr}${t}`;localStorage.removeItem(e),this.customPositions={},this.clearInlinePositions(),this.editMode&&this.requestUpdate(),y.debug("[FlowNode] Reset layout for "+t)}initDragListeners(){var e;const t=(e=this.shadowRoot)==null?void 0:e.querySelector(".flow-grid");if(t){for(const i of Kt){const r=t.querySelector(`.node-${i}`);r&&(r.addEventListener("mousedown",this.handleDragStart),r.addEventListener("touchstart",this.handleTouchStart,{passive:!1}))}document.addEventListener("mousemove",this.handleDragMove),document.addEventListener("mouseup",this.handleDragEnd),document.addEventListener("touchmove",this.handleTouchMove,{passive:!1}),document.addEventListener("touchend",this.handleTouchEnd)}}removeDragListeners(){document.removeEventListener("mousemove",this.handleDragMove),document.removeEventListener("mouseup",this.handleDragEnd),document.removeEventListener("touchmove",this.handleTouchMove),document.removeEventListener("touchend",this.handleTouchEnd)}findNodeId(t){for(const i of Kt)if(t.classList.contains(`node-${i}`))return i;const e=t.closest('[class*="node-"]');if(!e)return null;for(const i of Kt)if(e.classList.contains(`node-${i}`))return i;return null}updateDragPosition(t,e){var $;if(!this.draggedNodeId)return;const i=($=this.shadowRoot)==null?void 0:$.querySelector(".flow-grid");if(!i)return;const r=i.querySelector(`.node-${this.draggedNodeId}`);if(!r)return;const n=i.getBoundingClientRect(),a=r.getBoundingClientRect(),s=t-this.dragStartX,l=e-this.dragStartY,c=this.dragStartLeft+s,u=this.dragStartTop+l,p=n.left,g=n.right-a.width,m=n.top,b=n.bottom-a.height,v=Math.max(p,Math.min(g,c)),f=Math.max(m,Math.min(b,u)),k=(v-n.left)/n.width*100,C=(f-n.top)/n.height*100;r.style.left=`${k}%`,r.style.top=`${C}%`,this.customPositions[this.draggedNodeId]={top:`${C}%`,left:`${k}%`},this.dispatchEvent(new CustomEvent("layout-changed",{bubbles:!0,composed:!0}))}renderSolar(){const t=this.data,e=t.solarPercent,i=e<2,r=i?"linear-gradient(135deg, rgba(57,73,171,0.25) 0%, rgba(26,35,126,0.18) 100%)":Be.solar,n=i?"rgba(121,134,203,0.5)":Fe.solar,a=i?"position:absolute;top:4px;left:6px;font-size:11px;background:rgba(57,73,171,0.35);color:#9fa8da;padding:3px 8px;border-radius:4px;border:1px solid rgba(121,134,203,0.4)":"position:absolute;top:4px;left:6px;font-size:9px",s=i?"position:absolute;top:4px;right:6px;font-size:11px;background:rgba(57,73,171,0.35);color:#9fa8da;padding:3px 8px;border-radius:4px;border:1px solid rgba(121,134,203,0.4)":"position:absolute;top:4px;right:6px;font-size:9px";return d`
-      <div class="${this.nodeClass("solar",i?"night":"")}" style="--node-gradient: ${r}; --node-border: ${n};"
+  `;gi([h({type:String})],ne.prototype,"mode",2);gi([h({type:Boolean})],ne.prototype,"bypassActive",2);gi([h({type:Boolean})],ne.prototype,"hasAlarm",2);gi([h({type:Boolean})],ne.prototype,"plannerAuto",2);ne=gi([D("oig-inverter-icon")],ne);var wl=Object.defineProperty,$l=Object.getOwnPropertyDescriptor,Et=(t,e,i,n)=>{for(var r=n>1?void 0:n?$l(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&wl(e,i,r),r};const H=Q,Sr=new URLSearchParams(window.location.search),_l=Sr.get("sn")||Sr.get("inverter_sn")||"2206237016",kl=t=>`sensor.oig_${_l}_${t}`,gn="oig_v2_flow_layout_",Qt=["solar","battery","inverter","grid","house"],Sl={solar:{top:"0%",left:"0%"},house:{top:"0%",left:"65%"},inverter:{top:"35%",left:"35%"},grid:{top:"70%",left:"0%"},battery:{top:"70%",left:"65%"}};function A(t){return()=>X.openEntityDialog(kl(t))}let xt=class extends M{constructor(){super(...arguments),this.data=Mn,this.editMode=!1,this.pendingServices=new Map,this.changingServices=new Set,this.shieldStatus="idle",this.shieldQueueCount=0,this.gridDeliveryState={currentLiveDelivery:"unknown",currentLiveLimit:null,pendingDeliveryTarget:null,pendingLimitTarget:null,isTransitioning:!1,isUnavailable:!1},this.shieldUnsub=null,this.expandedNodes=new Set,this.customPositions={},this.draggedNodeId=null,this.dragStartX=0,this.dragStartY=0,this.dragStartTop=0,this.dragStartLeft=0,this.onShieldUpdate=t=>{this.pendingServices=t.pendingServices,this.changingServices=t.changingServices,this.shieldStatus=t.status,this.shieldQueueCount=t.queueCount,this.gridDeliveryState=t.gridDeliveryState},this.handleDragStart=t=>{if(!this.editMode)return;t.preventDefault(),t.stopPropagation();const i=t.target.closest(".node");if(!i)return;const n=this.findNodeId(i);if(!n)return;this.draggedNodeId=n,i.classList.add("dragging");const r=i.getBoundingClientRect();this.dragStartX=t.clientX,this.dragStartY=t.clientY,this.dragStartTop=r.top,this.dragStartLeft=r.left},this.handleTouchStart=t=>{if(!this.editMode)return;t.preventDefault();const i=t.target.closest(".node");if(!i)return;const n=this.findNodeId(i);if(!n)return;this.draggedNodeId=n,i.classList.add("dragging");const r=t.touches[0],a=i.getBoundingClientRect();this.dragStartX=r.clientX,this.dragStartY=r.clientY,this.dragStartTop=a.top,this.dragStartLeft=a.left},this.handleDragMove=t=>{!this.draggedNodeId||!this.editMode||(t.preventDefault(),this.updateDragPosition(t.clientX,t.clientY))},this.handleTouchMove=t=>{if(!this.draggedNodeId||!this.editMode)return;t.preventDefault();const e=t.touches[0];this.updateDragPosition(e.clientX,e.clientY)},this.handleDragEnd=t=>{var n;if(!this.draggedNodeId||!this.editMode)return;const e=(n=this.shadowRoot)==null?void 0:n.querySelector(".flow-grid"),i=e==null?void 0:e.querySelector(`.node-${this.draggedNodeId}`);i&&i.classList.remove("dragging"),this.saveLayout(),this.dispatchEvent(new CustomEvent("layout-changed",{bubbles:!0,composed:!0})),this.draggedNodeId=null},this.handleTouchEnd=t=>{this.handleDragEnd(t)}}connectedCallback(){super.connectedCallback(),this.loadSavedLayout(),this.shieldUnsub=J.subscribe(this.onShieldUpdate)}disconnectedCallback(){var t;super.disconnectedCallback(),this.removeDragListeners(),(t=this.shieldUnsub)==null||t.call(this),this.shieldUnsub=null}updated(t){t.has("editMode")&&(this.editMode?(this.setAttribute("editmode",""),this.loadSavedLayout(),this.requestUpdate(),this.updateComplete.then(()=>this.applySavedPositions())):(this.removeAttribute("editmode"),this.removeDragListeners(),this.clearInlinePositions(),this.updateComplete.then(()=>this.applyCustomPositions()))),!this.editMode&&this.hasCustomLayout&&this.updateComplete.then(()=>this.applyCustomPositions())}loadSavedLayout(){const t=be(window.innerWidth),e=`${gn}${t}`;try{const i=localStorage.getItem(e);i&&(this.customPositions=JSON.parse(i),y.debug("[FlowNode] Loaded layout for "+t))}catch{}}applySavedPositions(){var e;if(!this.editMode)return;const t=(e=this.shadowRoot)==null?void 0:e.querySelector(".flow-grid");if(t){for(const i of Qt){const n=this.customPositions[i];if(!n)continue;const r=t.querySelector(`.node-${i}`);r&&(r.style.top=n.top,r.style.left=n.left)}this.initDragListeners()}}clearInlinePositions(){var e;const t=(e=this.shadowRoot)==null?void 0:e.querySelector(".flow-grid");if(t)for(const i of Qt){const n=t.querySelector(`.node-${i}`);n&&(n.style.top="",n.style.left="")}}saveLayout(){const t=be(window.innerWidth),e=`${gn}${t}`;try{localStorage.setItem(e,JSON.stringify(this.customPositions)),y.debug("[FlowNode] Saved layout for "+t)}catch{}}toggleExpand(t,e){const i=e.target;if(i.closest(".clickable")||i.closest(".indicator")||i.closest(".forecast-badge")||i.closest(".node-value")||i.closest(".node-subvalue")||i.closest(".gc-plan-btn"))return;const n=new Set(this.expandedNodes);n.has(t)?n.delete(t):n.add(t),this.expandedNodes=n}nodeClass(t,e=""){const i=this.expandedNodes.has(t)?" expanded":"";return`node node-${t}${i}${e?" "+e:""}`}get hasCustomLayout(){return Qt.some(t=>{const e=this.customPositions[t];return(e==null?void 0:e.top)!=null&&(e==null?void 0:e.left)!=null})}applyCustomPositions(){var e;if(this.editMode||!this.hasCustomLayout)return;const t=(e=this.shadowRoot)==null?void 0:e.querySelector(".flow-grid");if(t)for(const i of Qt){const n=t.querySelector(`.node-${i}`);if(!n)continue;const r=this.customPositions[i]??Sl[i];n.style.top=r.top,n.style.left=r.left}}resetLayout(){const t=be(window.innerWidth),e=`${gn}${t}`;localStorage.removeItem(e),this.customPositions={},this.clearInlinePositions(),this.editMode&&this.requestUpdate(),y.debug("[FlowNode] Reset layout for "+t)}initDragListeners(){var e;const t=(e=this.shadowRoot)==null?void 0:e.querySelector(".flow-grid");if(t){for(const i of Qt){const n=t.querySelector(`.node-${i}`);n&&(n.addEventListener("mousedown",this.handleDragStart),n.addEventListener("touchstart",this.handleTouchStart,{passive:!1}))}document.addEventListener("mousemove",this.handleDragMove),document.addEventListener("mouseup",this.handleDragEnd),document.addEventListener("touchmove",this.handleTouchMove,{passive:!1}),document.addEventListener("touchend",this.handleTouchEnd)}}removeDragListeners(){document.removeEventListener("mousemove",this.handleDragMove),document.removeEventListener("mouseup",this.handleDragEnd),document.removeEventListener("touchmove",this.handleTouchMove),document.removeEventListener("touchend",this.handleTouchEnd)}findNodeId(t){for(const i of Qt)if(t.classList.contains(`node-${i}`))return i;const e=t.closest('[class*="node-"]');if(!e)return null;for(const i of Qt)if(e.classList.contains(`node-${i}`))return i;return null}updateDragPosition(t,e){var $;if(!this.draggedNodeId)return;const i=($=this.shadowRoot)==null?void 0:$.querySelector(".flow-grid");if(!i)return;const n=i.querySelector(`.node-${this.draggedNodeId}`);if(!n)return;const r=i.getBoundingClientRect(),a=n.getBoundingClientRect(),s=t-this.dragStartX,l=e-this.dragStartY,c=this.dragStartLeft+s,u=this.dragStartTop+l,p=r.left,f=r.right-a.width,v=r.top,m=r.bottom-a.height,g=Math.max(p,Math.min(f,c)),b=Math.max(v,Math.min(m,u)),k=(g-r.left)/r.width*100,S=(b-r.top)/r.height*100;n.style.left=`${k}%`,n.style.top=`${S}%`,this.customPositions[this.draggedNodeId]={top:`${S}%`,left:`${k}%`},this.dispatchEvent(new CustomEvent("layout-changed",{bubbles:!0,composed:!0}))}renderSolar(){const t=this.data,e=t.solarPercent,i=e<2,n=i?"linear-gradient(135deg, rgba(57,73,171,0.25) 0%, rgba(26,35,126,0.18) 100%)":Be.solar,r=i?"rgba(121,134,203,0.5)":Fe.solar,a=i?"position:absolute;top:4px;left:6px;font-size:11px;background:rgba(57,73,171,0.35);color:#9fa8da;padding:3px 8px;border-radius:4px;border:1px solid rgba(121,134,203,0.4)":"position:absolute;top:4px;left:6px;font-size:9px",s=i?"position:absolute;top:4px;right:6px;font-size:11px;background:rgba(57,73,171,0.35);color:#9fa8da;padding:3px 8px;border-radius:4px;border:1px solid rgba(121,134,203,0.4)":"position:absolute;top:4px;right:6px;font-size:9px";return d`
+      <div class="${this.nodeClass("solar",i?"night":"")}" style="--node-gradient: ${n}; --node-border: ${r};"
         @click=${l=>this.toggleExpand("solar",l)}>
         <div class="node-header" style="margin-top:16px">
           <oig-solar-icon .power=${t.solarPower} .percent=${e} .maxPower=${5400}></oig-solar-icon>
           <span class="node-label">Solár</span>
         </div>
-        <div class="node-value" @click=${I("actual_fv_total")}>
+        <div class="node-value" @click=${A("actual_fv_total")}>
           ${Re(t.solarPower)}
         </div>
-        <div class="node-subvalue" @click=${I("dc_in_fv_ad")}>
+        <div class="node-subvalue" @click=${A("dc_in_fv_ad")}>
           Dnes: ${(t.solarToday/1e3).toFixed(2)} kWh
         </div>
-        <div class="node-subvalue" @click=${I("solar_forecast")}>
+        <div class="node-subvalue" @click=${A("solar_forecast")}>
           Zítra: ${t.solarForecastTomorrow.toFixed(1)} kWh
         </div>
 
-        <button class="indicator" style="${a}" @click=${I("solar_forecast")}>
+        <button class="indicator" style="${a}" @click=${A("solar_forecast")}>
           🔮 ${t.solarForecastToday.toFixed(1)} kWh
         </button>
-        <button class="indicator" style="${s}" @click=${I("solar_forecast")}>
+        <button class="indicator" style="${s}" @click=${A("solar_forecast")}>
           🌅 ${t.solarForecastTomorrow.toFixed(1)} kWh
         </button>
 
@@ -793,36 +793,36 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
               <div class="detail-header">🏭 String 1</div>
               <div class="detail-row">
                 <span class="icon">⚡</span>
-                <button class="clickable" @click=${I("extended_fve_voltage_1")}>${Math.round(t.solarV1)}V</button>
+                <button class="clickable" @click=${A("extended_fve_voltage_1")}>${Math.round(t.solarV1)}V</button>
               </div>
               <div class="detail-row">
                 <span class="icon">〰️</span>
-                <button class="clickable" @click=${I("extended_fve_current_1")}>${t.solarI1.toFixed(1)}A</button>
+                <button class="clickable" @click=${A("extended_fve_current_1")}>${t.solarI1.toFixed(1)}A</button>
               </div>
               <div class="detail-row">
                 <span class="icon">⚡</span>
-                <button class="clickable" @click=${I("dc_in_fv_p1")}>${Math.round(t.solarP1)} W</button>
+                <button class="clickable" @click=${A("dc_in_fv_p1")}>${Math.round(t.solarP1)} W</button>
               </div>
             </div>
             <div>
               <div class="detail-header">🏭 String 2</div>
               <div class="detail-row">
                 <span class="icon">⚡</span>
-                <button class="clickable" @click=${I("extended_fve_voltage_2")}>${Math.round(t.solarV2)}V</button>
+                <button class="clickable" @click=${A("extended_fve_voltage_2")}>${Math.round(t.solarV2)}V</button>
               </div>
               <div class="detail-row">
                 <span class="icon">〰️</span>
-                <button class="clickable" @click=${I("extended_fve_current_2")}>${t.solarI2.toFixed(1)}A</button>
+                <button class="clickable" @click=${A("extended_fve_current_2")}>${t.solarI2.toFixed(1)}A</button>
               </div>
               <div class="detail-row">
                 <span class="icon">⚡</span>
-                <button class="clickable" @click=${I("dc_in_fv_p2")}>${Math.round(t.solarP2)} W</button>
+                <button class="clickable" @click=${A("dc_in_fv_p2")}>${Math.round(t.solarP2)} W</button>
               </div>
             </div>
           </div>
         </div>
       </div>
-    `}openGridChargingDialog(){this.dispatchEvent(new CustomEvent("oig-grid-charging-open",{bubbles:!0,composed:!0,detail:{data:this.data.gridChargingPlan}}))}getBatteryStatus(){const t=this.data;return t.batteryPower>10?{text:`⚡ Nabíjení${t.timeToFull?` (${t.timeToFull})`:""}`,cls:"status-charging pulse"}:t.batteryPower<-10?{text:`⚡ Vybíjení${t.timeToEmpty?` (${t.timeToEmpty})`:""}`,cls:"status-discharging pulse"}:{text:"◉ Klid",cls:"status-idle"}}getBalancingIndicator(){const t=this.data,e=t.balancingState;return e!=="charging"&&e!=="holding"&&e!=="completed"?{show:!1,text:"",icon:"",cls:""}:e==="charging"?{show:!0,text:`Nabíjení${t.balancingTimeRemaining?` (${t.balancingTimeRemaining})`:""}`,icon:"⚡",cls:"charging"}:e==="holding"?{show:!0,text:`Držení${t.balancingTimeRemaining?` (${t.balancingTimeRemaining})`:""}`,icon:"⏸️",cls:"holding"}:{show:!0,text:"Dokončeno",icon:"✅",cls:"completed"}}renderBattery(){const t=this.data,e=this.getBatteryStatus(),i=this.getBalancingIndicator(),r=t.batteryPower>10,n=t.batteryTemp>25?"🌡️":t.batteryTemp<15?"🧊":"🌡️",a=t.batteryTemp>25?"temp-hot":t.batteryTemp<15?"temp-cold":"";return d`
+    `}openGridChargingDialog(){this.dispatchEvent(new CustomEvent("oig-grid-charging-open",{bubbles:!0,composed:!0,detail:{data:this.data.gridChargingPlan}}))}getBatteryStatus(){const t=this.data;return t.batteryPower>10?{text:`⚡ Nabíjení${t.timeToFull?` (${t.timeToFull})`:""}`,cls:"status-charging pulse"}:t.batteryPower<-10?{text:`⚡ Vybíjení${t.timeToEmpty?` (${t.timeToEmpty})`:""}`,cls:"status-discharging pulse"}:{text:"◉ Klid",cls:"status-idle"}}getBalancingIndicator(){const t=this.data,e=t.balancingState;return e!=="charging"&&e!=="holding"&&e!=="completed"?{show:!1,text:"",icon:"",cls:""}:e==="charging"?{show:!0,text:`Nabíjení${t.balancingTimeRemaining?` (${t.balancingTimeRemaining})`:""}`,icon:"⚡",cls:"charging"}:e==="holding"?{show:!0,text:`Držení${t.balancingTimeRemaining?` (${t.balancingTimeRemaining})`:""}`,icon:"⏸️",cls:"holding"}:{show:!0,text:"Dokončeno",icon:"✅",cls:"completed"}}renderBattery(){const t=this.data,e=this.getBatteryStatus(),i=this.getBalancingIndicator(),n=t.batteryPower>10,r=t.batteryTemp>25?"🌡️":t.batteryTemp<15?"🧊":"🌡️",a=t.batteryTemp>25?"temp-hot":t.batteryTemp<15?"temp-cold":"";return d`
       <div class="${this.nodeClass("battery")}" style="--node-gradient: ${Be.battery}; --node-border: ${Fe.battery};"
         @click=${s=>this.toggleExpand("battery",s)}>
 
@@ -830,17 +830,17 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <!-- Jediná ikona: SVG baterie nahrazuje gauge + emoji -->
           <oig-battery-icon
             .soc=${t.batterySoC}
-            ?charging=${r&&!t.isGridCharging}
-            ?gridCharging=${t.isGridCharging&&r}
+            ?charging=${n&&!t.isGridCharging}
+            ?gridCharging=${t.isGridCharging&&n}
             ?discharging=${t.batteryPower<-10}
           ></oig-battery-icon>
           <span class="node-label">Baterie</span>
         </div>
 
-        <div class="node-value" @click=${I("batt_bat_c")}>
+        <div class="node-value" @click=${A("batt_bat_c")}>
           ${Math.round(t.batterySoC)} %
         </div>
-        <div class="node-subvalue" @click=${I("batt_batt_comp_p")}>
+        <div class="node-subvalue" @click=${A("batt_batt_comp_p")}>
           ${Re(t.batteryPower)}
         </div>
 
@@ -848,23 +848,23 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
         ${t.isGridCharging?d`
           <span class="grid-charging-badge">⚡🔌 Síťové nabíjení</span>
-        `:A}
+        `:O}
         ${i.show?d`
           <span class="balancing-indicator ${i.cls}">
             <span>${i.icon}</span>
             <span>${i.text}</span>
           </span>
-        `:A}
+        `:O}
 
         <div class="battery-indicators">
-          <button class="indicator" @click=${I("extended_battery_voltage")}>
+          <button class="indicator" @click=${A("extended_battery_voltage")}>
             ⚡ ${t.batteryVoltage.toFixed(1)} V
           </button>
-          <button class="indicator" @click=${I("extended_battery_current")}>
+          <button class="indicator" @click=${A("extended_battery_current")}>
             〰️ ${t.batteryCurrent.toFixed(1)} A
           </button>
-          <button class="indicator ${a}" @click=${I("extended_battery_temperature")}>
-            ${n} ${t.batteryTemp.toFixed(1)} °C
+          <button class="indicator ${a}" @click=${A("extended_battery_temperature")}>
+            ${r} ${t.batteryTemp.toFixed(1)} °C
           </button>
         </div>
 
@@ -874,26 +874,26 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <div class="energy-grid">
             <div class="detail-row">
               <span class="icon">⬆️</span>
-              <button class="clickable" @click=${I("computed_batt_charge_energy_today")}>
-                Nab: ${Gt(t.batteryChargeTotal)}
+              <button class="clickable" @click=${A("computed_batt_charge_energy_today")}>
+                Nab: ${Zt(t.batteryChargeTotal)}
               </button>
             </div>
             <div class="detail-row">
               <span class="icon">⬇️</span>
-              <button class="clickable" @click=${I("computed_batt_discharge_energy_today")}>
-                Vyb: ${Gt(t.batteryDischargeTotal)}
+              <button class="clickable" @click=${A("computed_batt_discharge_energy_today")}>
+                Vyb: ${Zt(t.batteryDischargeTotal)}
               </button>
             </div>
             <div class="detail-row">
               <span class="icon">☀️</span>
-              <button class="clickable" @click=${I("computed_batt_charge_fve_energy_today")}>
-                FVE: ${Gt(t.batteryChargeSolar)}
+              <button class="clickable" @click=${A("computed_batt_charge_fve_energy_today")}>
+                FVE: ${Zt(t.batteryChargeSolar)}
               </button>
             </div>
             <div class="detail-row">
               <span class="icon">🔌</span>
-              <button class="clickable" @click=${I("computed_batt_charge_grid_energy_today")}>
-                Síť: ${Gt(t.batteryChargeGrid)}
+              <button class="clickable" @click=${A("computed_batt_charge_grid_energy_today")}>
+                Síť: ${Zt(t.batteryChargeGrid)}
               </button>
             </div>
           </div>
@@ -909,7 +909,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </div>
         </div>
       </div>
-    `}getInverterModeDesc(){const t=this.data.inverterMode;return t.includes("Home 1")?"🏠 Home 1: Max baterie + FVE":t.includes("Home 2")?"🔋 Home 2: Šetří baterii":t.includes("Home 3")?"☀️ Home 3: Priorita nabíjení":t.includes("UPS")?"⚡ UPS: Vše ze sítě":`⚙️ ${t||"--"}`}renderInverter(){const t=this.data,e=Os(t.inverterMode),i=t.bypassStatus.toLowerCase()==="on"||t.bypassStatus==="1",r=t.inverterTemp>35?"🔥":"🌡️",n=zs(t.inverterGridMode),a=(t.inverterGridLimit/1e3).toFixed(1),s=fn(this.pendingServices,this.changingServices);let l="planner-unknown",c="Plánovač: N/A";return t.plannerAutoMode===!0?(l="planner-auto",c="Plánovač: AUTO"):t.plannerAutoMode===!1&&(l="planner-off",c="Plánovač: VYPNUTO"),d`
+    `}getInverterModeDesc(){const t=this.data.inverterMode;return t.includes("Home 1")?"🏠 Home 1: Max baterie + FVE":t.includes("Home 2")?"🔋 Home 2: Šetří baterii":t.includes("Home 3")?"☀️ Home 3: Priorita nabíjení":t.includes("UPS")?"⚡ UPS: Vše ze sítě":`⚙️ ${t||"--"}`}renderInverter(){const t=this.data,e=to(t.inverterMode),i=t.bypassStatus.toLowerCase()==="on"||t.bypassStatus==="1",n=t.inverterTemp>35?"🔥":"🌡️",r=eo(t.inverterGridMode),a=(t.inverterGridLimit/1e3).toFixed(1),s=kr(this.pendingServices,this.changingServices);let l="planner-unknown",c="Plánovač: N/A";return t.plannerAutoMode===!0?(l="planner-auto",c="Plánovač: AUTO"):t.plannerAutoMode===!1&&(l="planner-off",c="Plánovač: VYPNUTO"),d`
       <div class="${this.nodeClass("inverter",s.inverterModeChanging?"mode-changing":"")}" style="--node-gradient: ${Be.inverter}; --node-border: ${Fe.inverter};"
         @click=${u=>this.toggleExpand("inverter",u)}>
         <div class="node-header">
@@ -922,39 +922,39 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <span class="node-label">Střídač</span>
         </div>
         ${i?d`
-          <button class="bypass-active bypass-warning" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${I("bypass_status")}>
+          <button class="bypass-active bypass-warning" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${A("bypass_status")}>
             🔴 Bypass
           </button>
-        `:A}
+        `:O}
 
-        <div class="node-value" @click=${I("box_prms_mode")}>
-          ${s.inverterModeChanging?d`<span class="spinner spinner--small"></span>`:A}
+        <div class="node-value" @click=${A("box_prms_mode")}>
+          ${s.inverterModeChanging?d`<span class="spinner spinner--small"></span>`:O}
           ${e.icon} ${e.text}
         </div>
         <div class="node-subvalue">${this.getInverterModeDesc()}</div>
-        ${s.inverterModeText?d`<div class="pending-text">${s.inverterModeText}</div>`:A}
+        ${s.inverterModeText?d`<div class="pending-text">${s.inverterModeText}</div>`:O}
 
         <div class="planner-badge ${l}">${c}</div>
         <div class="shield-badge ${this.shieldStatus==="running"?"shield-running":"shield-idle"}">
-          🛡️ ${this.shieldStatus==="running"?"Zpracovávám":"Nečinný"}${this.shieldQueueCount>0?d` <span class="shield-queue">(${this.shieldQueueCount})</span>`:A}
+          🛡️ ${this.shieldStatus==="running"?"Zpracovávám":"Nečinný"}${this.shieldQueueCount>0?d` <span class="shield-queue">(${this.shieldQueueCount})</span>`:O}
         </div>
 
         <div class="battery-indicators" style="margin-top:6px">
-          <button class="indicator" @click=${I("box_temp")}>
-            ${r} ${t.inverterTemp.toFixed(1)} °C
+          <button class="indicator" @click=${A("box_temp")}>
+            ${n} ${t.inverterTemp.toFixed(1)} °C
           </button>
-          <button class="indicator ${i?"bypass-warning":""}" @click=${I("bypass_status")}>
+          <button class="indicator ${i?"bypass-warning":""}" @click=${A("bypass_status")}>
             <span id="inverter-bypass-icon">${i?"🔴":"🟢"}</span> Bypass: ${i?"ON":"OFF"}
           </button>
         </div>
 
         <!-- Přetoky + notifikace — vždy viditelné -->
         <div class="battery-indicators" style="margin-top:4px">
-          <button class="indicator" @click=${I("invertor_prms_to_grid")}>
-            ${n.icon} ${n.display}
+          <button class="indicator" @click=${A("invertor_prms_to_grid")}>
+            ${r.icon} ${r.display}
           </button>
           <button class="clickable notif-badge ${t.notificationsError>0?"has-error":t.notificationsUnread>0?"has-unread":"indicator"}"
-            @click=${I("notification_count_unread")}>
+            @click=${A("notification_count_unread")}>
             🔔 ${t.notificationsUnread}/${t.notificationsError}
           </button>
         </div>
@@ -962,22 +962,22 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         <div class="detail-section">
           <div class="detail-header">🌊 Přetoky — limit</div>
           <div class="detail-row">
-            <button class="clickable" @click=${I("invertor_prm1_p_max_feed_grid")}>
+            <button class="clickable" @click=${A("invertor_prm1_p_max_feed_grid")}>
               Limit: ${a} kW
             </button>
           </div>
         </div>
       </div>
-    `}getGridStatus(){const t=this.data.gridPower;return t>10?{text:"⬇ Import",cls:"status-importing pulse"}:t<-10?{text:"⬆ Export",cls:"status-exporting pulse"}:{text:"◉ Žádný tok",cls:"status-idle"}}renderGrid(){const t=this.data,e=this.getGridStatus(),i=fn(this.pendingServices,this.changingServices);return d`
+    `}getGridStatus(){const t=this.data.gridPower;return t>10?{text:"⬇ Import",cls:"status-importing pulse"}:t<-10?{text:"⬆ Export",cls:"status-exporting pulse"}:{text:"◉ Žádný tok",cls:"status-idle"}}renderGrid(){const t=this.data,e=this.getGridStatus(),i=kr(this.pendingServices,this.changingServices),n=ll(this.gridDeliveryState);return d`
       <div class="${this.nodeClass("grid",i.gridExportChanging?"mode-changing":"")}" style="--node-gradient: ${Be.grid}; --node-border: ${Fe.grid};"
         @click=${r=>this.toggleExpand("grid",r)}>
 
         <!-- Tarif badge vlevo nahoře -->
-        <button class="indicator" style="position:absolute;top:4px;left:6px;font-size:9px" @click=${I("current_tariff")}>
-          ${Ds(t.currentTariff)}
+        <button class="indicator" style="position:absolute;top:4px;left:6px;font-size:9px" @click=${A("current_tariff")}>
+          ${Js(t.currentTariff)}
         </button>
         <!-- Frekvence vpravo nahoře -->
-        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${I("ac_in_aci_f")}>
+        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${A("ac_in_aci_f")}>
           ${t.gridFrequency.toFixed(1)} Hz
         </button>
 
@@ -988,29 +988,32 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         <div class="node-label" style="margin-bottom:2px">Síť</div>
 
         <!-- Hlavní hodnota -->
-        <div class="node-value" @click=${I("actual_aci_wtotal")}>
+        <div class="node-value" @click=${A("actual_aci_wtotal")}>
           ${Re(t.gridPower)}
         </div>
         <div class="node-status ${e.cls}">${e.text}</div>
-        ${i.gridExportText?d`
-          <div class="pending-text">
+        <div class="node-subvalue ${n.currentUnavailable?"current-state-unknown":""}" @click=${A("invertor_prms_to_grid")}>
+          ${n.currentText}
+        </div>
+        ${n.pendingText?d`
+          <div class="pending-overlay">
             <span class="spinner spinner--small"></span>
-            ${i.gridExportText}
+            ${n.pendingText}
           </div>
-        `:A}
+        `:O}
 
         <!-- Ceny — vždy viditelné jako rychlý přehled -->
         <div class="prices-row" style="margin-top:4px">
           <div class="price-cell">
             <span class="price-label">⬇ Spot</span>
-            <button class="price-val price-spot" @click=${I("spot_price_current_15min")}>
+            <button class="price-val price-spot" @click=${A("spot_price_current_15min")}>
               ${t.spotPrice.toFixed(2)} Kč
             </button>
           </div>
           <div class="energy-divider-v"></div>
           <div class="price-cell">
             <span class="price-label">⬆ Výkup</span>
-            <button class="price-val price-export" @click=${I("export_price_current_15min")}>
+            <button class="price-val price-export" @click=${A("export_price_current_15min")}>
               ${t.exportPrice.toFixed(2)} Kč
             </button>
           </div>
@@ -1020,18 +1023,18 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         <div class="phases-grid" style="margin-top:6px">
           <div class="phase-cell">
             <span class="phase-label">L1</span>
-            <button class="phase-val" @click=${I("actual_aci_wr")}>${Math.round(t.gridL1P)}W</button>
-            <button class="phase-val" style="font-size:10px;color:${W(o.textSecondary)}" @click=${I("ac_in_aci_vr")}>${Math.round(t.gridL1V)}V</button>
+            <button class="phase-val" @click=${A("actual_aci_wr")}>${Math.round(t.gridL1P)}W</button>
+            <button class="phase-val" style="font-size:10px;color:${H(o.textSecondary)}" @click=${A("ac_in_aci_vr")}>${Math.round(t.gridL1V)}V</button>
           </div>
           <div class="phase-cell">
             <span class="phase-label">L2</span>
-            <button class="phase-val" @click=${I("actual_aci_ws")}>${Math.round(t.gridL2P)}W</button>
-            <button class="phase-val" style="font-size:10px;color:${W(o.textSecondary)}" @click=${I("ac_in_aci_vs")}>${Math.round(t.gridL2V)}V</button>
+            <button class="phase-val" @click=${A("actual_aci_ws")}>${Math.round(t.gridL2P)}W</button>
+            <button class="phase-val" style="font-size:10px;color:${H(o.textSecondary)}" @click=${A("ac_in_aci_vs")}>${Math.round(t.gridL2V)}V</button>
           </div>
           <div class="phase-cell">
             <span class="phase-label">L3</span>
-            <button class="phase-val" @click=${I("actual_aci_wt")}>${Math.round(t.gridL3P)}W</button>
-            <button class="phase-val" style="font-size:10px;color:${W(o.textSecondary)}" @click=${I("ac_in_aci_vt")}>${Math.round(t.gridL3V)}V</button>
+            <button class="phase-val" @click=${A("actual_aci_wt")}>${Math.round(t.gridL3P)}W</button>
+            <button class="phase-val" style="font-size:10px;color:${H(o.textSecondary)}" @click=${A("ac_in_aci_vt")}>${Math.round(t.gridL3V)}V</button>
           </div>
         </div>
 
@@ -1040,15 +1043,15 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <div class="energy-symmetric">
             <div class="energy-side">
               <span class="energy-side-label">⬇ Odběr</span>
-              <button class="energy-side-val energy-import" @click=${I("ac_in_ac_ad")}>
-                ${Gt(t.gridImportToday)}
+              <button class="energy-side-val energy-import" @click=${A("ac_in_ac_ad")}>
+                ${Zt(t.gridImportToday)}
               </button>
             </div>
             <div class="energy-divider-v"></div>
             <div class="energy-side">
               <span class="energy-side-label">⬆ Dodávka</span>
-              <button class="energy-side-val energy-export" @click=${I("ac_in_ac_pd")}>
-                ${Gt(t.gridExportToday)}
+              <button class="energy-side-val energy-export" @click=${A("ac_in_ac_pd")}>
+                ${Zt(t.gridExportToday)}
               </button>
             </div>
           </div>
@@ -1067,10 +1070,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <span class="node-label">Spotřeba</span>
         </div>
 
-        <div class="node-value" @click=${I("actual_aco_p")}>
+        <div class="node-value" @click=${A("actual_aco_p")}>
           ${Re(t.housePower)}
         </div>
-        <div class="node-subvalue" @click=${I("ac_out_en_day")}>
+        <div class="node-subvalue" @click=${A("ac_out_en_day")}>
           Dnes: ${(t.houseTodayWh/1e3).toFixed(1)} kWh
         </div>
 
@@ -1089,26 +1092,26 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
             <div class="detail-row">
               <span class="icon">⚡</span>
               <span>Výkon:</span>
-              <button class="clickable" @click=${I("boiler_current_cbb_w")}>
+              <button class="clickable" @click=${A("boiler_current_cbb_w")}>
                 ${Re(t.boilerPower)}
               </button>
             </div>
             <div class="detail-row">
               <span class="icon">📊</span>
               <span>Nabito:</span>
-              <button class="clickable" @click=${I("boiler_day_w")}>
-                ${Gt(t.boilerDayEnergy)}
+              <button class="clickable" @click=${A("boiler_day_w")}>
+                ${Zt(t.boilerDayEnergy)}
               </button>
             </div>
             <div class="detail-row">
               <span class="icon">${t.boilerManualMode==="CBB"?"🤖":t.boilerManualMode==="Manual"?"👤":"⚙️"}</span>
               <span>Režim:</span>
-              <button class="clickable" @click=${I("boiler_manual_mode")}>
+              <button class="clickable" @click=${A("boiler_manual_mode")}>
                 ${t.boilerManualMode==="CBB"?"🤖 Inteligentní":t.boilerManualMode==="Manual"?"👤 Manuální":t.boilerManualMode||"--"}
               </button>
             </div>
           </div>
-        `:A}
+        `:O}
       </div>
     `}render(){return d`
       <div class="flow-grid ${this.hasCustomLayout&&!this.editMode?"custom-layout":""}">
@@ -1118,7 +1121,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         ${this.renderGrid()}
         ${this.renderHouse()}
       </div>
-    `}};kt.styles=P`
+    `}};xt.styles=P`
     :host {
       display: block;
       width: 100%;
@@ -1235,7 +1238,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .node-label {
       font-size: 10px;
       font-weight: 600;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       text-transform: uppercase;
       letter-spacing: 0.4px;
     }
@@ -1243,7 +1246,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .node-value {
       font-size: 22px;
       font-weight: 700;
-      color: ${W(o.textPrimary)};
+      color: ${H(o.textPrimary)};
       cursor: pointer;
       padding: 0;
       margin: 2px 0;
@@ -1256,7 +1259,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .node-subvalue {
       font-size: 10px;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       cursor: pointer;
       padding: 0;
     }
@@ -1279,16 +1282,34 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       align-items: center;
       gap: 6px;
       font-size: 11px;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       margin-top: 4px;
+    }
+
+    .pending-overlay {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      color: ${H(o.accent)};
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      border-radius: 4px;
+      padding: 2px 6px;
+      margin-top: 4px;
+    }
+
+    .current-state-unknown {
+      color: ${H(o.textSecondary)};
+      font-style: italic;
     }
 
     .spinner {
       display: inline-block;
       width: 16px;
       height: 16px;
-      border: 2px solid ${W(o.divider)};
-      border-top-color: ${W(o.accent)};
+      border: 2px solid ${H(o.divider)};
+      border-top-color: ${H(o.accent)};
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
@@ -1350,7 +1371,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       max-height: 500px;
       margin-top: 6px;
       padding-top: 6px;
-      border-top: 1px solid ${W(o.divider)};
+      border-top: 1px solid ${H(o.divider)};
     }
 
     /* Expand indicator arrow — vždy viditelný */
@@ -1396,13 +1417,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .node.expanded .boiler-section,
     .node.expanded .grid-charging-plan {
-      border-top: 1px dashed ${W(o.divider)};
+      border-top: 1px dashed ${H(o.divider)};
     }
 
     .detail-header {
       font-size: 10px;
       font-weight: 600;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       text-transform: uppercase;
       margin-bottom: 4px;
     }
@@ -1412,7 +1433,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       align-items: center;
       gap: 4px;
       font-size: 11px;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       margin-bottom: 2px;
     }
 
@@ -1420,7 +1441,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .clickable {
       cursor: pointer;
-      color: ${W(o.textPrimary)};
+      color: ${H(o.textPrimary)};
       padding: 0;
       margin: 0;
       background: none;
@@ -1460,12 +1481,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       display: flex;
       gap: 4px;
       font-size: 11px;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       margin: 4px 0;
       align-items: center;
     }
 
-    .phase-sep { color: ${W(o.divider)}; }
+    .phase-sep { color: ${H(o.divider)}; }
 
     .battery-center {
       display: flex;
@@ -1488,13 +1509,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       cursor: pointer;
       padding: 1px 4px;
       border-radius: 3px;
-      background: ${W(o.bgSecondary)};
+      background: ${H(o.bgSecondary)};
       border: none;
       font-family: inherit;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
     }
 
-    .indicator:hover { background: ${W(o.divider)}; }
+    .indicator:hover { background: ${H(o.divider)}; }
 
     .grid-charging-badge {
       font-size: 10px;
@@ -1542,7 +1563,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .battery-energy-section {
       margin-top: 6px;
       padding-top: 6px;
-      border-top: 1px solid ${W(o.divider)};
+      border-top: 1px solid ${H(o.divider)};
       text-align: left;
     }
 
@@ -1561,15 +1582,15 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-size: 11px;
       font-weight: 500;
       cursor: pointer;
-      border: 1px solid ${W(o.divider)};
+      border: 1px solid ${H(o.divider)};
       background: transparent;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       transition: background 0.15s, border-color 0.15s, color 0.15s;
     }
 
     .gc-plan-btn:hover {
       background: rgba(255,255,255,0.06);
-      color: ${W(o.textPrimary)};
+      color: ${H(o.textPrimary)};
     }
 
     .gc-plan-btn.has-plan {
@@ -1653,7 +1674,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .boiler-section {
       margin-top: 6px;
       padding-top: 6px;
-      border-top: 1px dashed ${W(o.divider)};
+      border-top: 1px dashed ${H(o.divider)};
     }
 
     /* ---- SVG ikony ---- */
@@ -1686,7 +1707,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     }
     .phase-label {
       font-size: 8px;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.3px;
@@ -1694,7 +1715,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .phase-val {
       font-size: 11px;
       font-weight: 600;
-      color: ${W(o.textPrimary)};
+      color: ${H(o.textPrimary)};
       cursor: pointer;
       background: none;
       border: none;
@@ -1703,7 +1724,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .phase-val:hover { text-decoration: underline; }
     .phase-divider {
       border: none;
-      border-top: 1px solid ${W(o.divider)};
+      border-top: 1px solid ${H(o.divider)};
       margin: 2px 0;
     }
 
@@ -1724,7 +1745,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     }
     .energy-side-label {
       font-size: 9px;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
@@ -1735,7 +1756,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       background: none;
       border: none;
       padding: 0;
-      color: ${W(o.textPrimary)};
+      color: ${H(o.textPrimary)};
     }
     .energy-side-val:hover { text-decoration: underline; }
     .energy-import { color: #ef5350; }
@@ -1743,7 +1764,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .energy-divider-v {
       width: 1px;
       height: 28px;
-      background: ${W(o.divider)};
+      background: ${H(o.divider)};
       flex-shrink: 0;
     }
 
@@ -1764,7 +1785,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     }
     .price-label {
       font-size: 8px;
-      color: ${W(o.textSecondary)};
+      color: ${H(o.textSecondary)};
       text-transform: uppercase;
     }
     .price-val {
@@ -1774,7 +1795,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       background: none;
       border: none;
       padding: 0;
-      color: ${W(o.textPrimary)};
+      color: ${H(o.textPrimary)};
     }
     .price-val:hover { text-decoration: underline; }
     .price-spot { color: #ef5350; }
@@ -1785,7 +1806,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         max-height: 500px;
         margin-top: 6px;
         padding-top: 6px;
-        border-top: 1px solid ${W(o.divider)};
+        border-top: 1px solid ${H(o.divider)};
       }
       .node-solar .detail-section {
         max-height: 0;
@@ -1798,7 +1819,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         max-height: 500px;
         margin-top: 6px;
         padding-top: 6px;
-        border-top: 1px dashed ${W(o.divider)};
+        border-top: 1px dashed ${H(o.divider)};
       }
       .node::after { display: none; }
     }
@@ -1880,7 +1901,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       .node-value { font-size: 16px; }
       .node-label { font-size: 8px; }
     }
-  `;At([h({type:Object})],kt.prototype,"data",2);At([h({type:Boolean})],kt.prototype,"editMode",2);At([w()],kt.prototype,"pendingServices",2);At([w()],kt.prototype,"changingServices",2);At([w()],kt.prototype,"shieldStatus",2);At([w()],kt.prototype,"shieldQueueCount",2);At([w()],kt.prototype,"expandedNodes",2);At([w()],kt.prototype,"customPositions",2);kt=At([E("oig-flow-node")],kt);var sl=Object.defineProperty,ol=Object.getOwnPropertyDescriptor,oe=(t,e,i,r)=>{for(var n=r>1?void 0:r?ol(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&sl(e,i,n),n};function ll(t,e){return{fromColor:Ur[t]||"#9e9e9e",toColor:Ur[e]||"#9e9e9e"}}const cl=Z;let zt=class extends M{constructor(){super(...arguments),this.data=$r,this.particlesEnabled=!0,this.active=!0,this.editMode=!1,this.lines=[],this.animationId=null,this.lastSpawnTime={},this.particleCount=0,this.MAX_PARTICLES=50,this.onVisibilityChange=()=>{this.updateAnimationState()},this.onLayoutChanged=()=>{this.drawConnectionsDeferred()}}connectedCallback(){super.connectedCallback(),document.addEventListener("visibilitychange",this.onVisibilityChange),this.addEventListener("layout-changed",this.onLayoutChanged)}disconnectedCallback(){super.disconnectedCallback(),document.removeEventListener("visibilitychange",this.onVisibilityChange),this.removeEventListener("layout-changed",this.onLayoutChanged),this.stopAnimation()}updated(t){t.has("data")&&(this.updateLines(),this.animationId!==null&&this.spawnParticles()),(t.has("active")||t.has("particlesEnabled"))&&this.updateAnimationState(),this.drawConnectionsDeferred()}firstUpdated(){this.updateLines(),this.updateAnimationState(),new ResizeObserver(()=>this.drawConnectionsDeferred()).observe(this)}drawConnectionsDeferred(){requestAnimationFrame(()=>this.drawConnectionsSVG())}getParticlesLayer(){var t;return(t=this.renderRoot)==null?void 0:t.querySelector(".particles-layer")}getGridMetrics(){var a,s;const t=(a=this.renderRoot)==null?void 0:a.querySelector("oig-flow-node");if(!t)return null;const i=(t.renderRoot||t.shadowRoot||t).querySelector(".flow-grid");if(!i)return null;const r=(s=this.renderRoot)==null?void 0:s.querySelector(".canvas-container");if(!r)return null;const n=i.getBoundingClientRect();return n.width===0||n.height===0?null:{grid:i,gridRect:n,canvasRect:r.getBoundingClientRect()}}positionOverlayLayer(t,e,i){const r=e.left-i.left,n=e.top-i.top;t.style.left=`${r}px`,t.style.top=`${n}px`,t.style.width=`${e.width}px`,t.style.height=`${e.height}px`}updateLines(){const t=this.data,e=[],i=t.solarPower>50;e.push({id:"solar-inverter",from:"solar",to:"inverter",color:ue.solar,power:i?t.solarPower:0,params:i?xi(t.solarPower,vi.solar,"solar"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:i});const r=Math.abs(t.batteryPower)>50,n=t.batteryPower>0;e.push({id:"battery-inverter",from:r&&n?"inverter":"battery",to:r&&n?"battery":"inverter",color:ue.battery,power:r?Math.abs(t.batteryPower):0,params:r?xi(t.batteryPower,vi.battery,"battery"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:r});const a=Math.abs(t.gridPower)>50,s=t.gridPower>0;e.push({id:"grid-inverter",from:a?s?"grid":"inverter":"grid",to:a?s?"inverter":"grid":"inverter",color:a?s?ue.grid_import:ue.grid_export:ue.grid_import,power:a?Math.abs(t.gridPower):0,params:a?xi(t.gridPower,vi.grid,"grid"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:a});const l=t.housePower>50;e.push({id:"inverter-house",from:"inverter",to:"house",color:ue.house,power:l?t.housePower:0,params:l?xi(t.housePower,vi.house,"house"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:l}),this.lines=e}calcEdgePoint(t,e,i,r){const n=e.x-t.x,a=e.y-t.y;if(n===0&&a===0)return{...t};const s=Math.abs(n),l=Math.abs(a),c=s*r>l*i?i/s:r/l;return{x:t.x+n*c,y:t.y+a*c}}getNodeInfo(t,e,i){const r=t.querySelector(`.node-${i}`);if(!r)return null;const n=r.getBoundingClientRect();return{x:n.left+n.width/2-e.left,y:n.top+n.height/2-e.top,hw:n.width/2,hh:n.height/2}}drawConnectionsSVG(){const t=this.svgEl;if(!t)return;const e=this.getGridMetrics();if(!e)return;const{grid:i,gridRect:r,canvasRect:n}=e;this.positionOverlayLayer(t,r,n),t.setAttribute("viewBox",`0 0 ${r.width} ${r.height}`);const a=this.getParticlesLayer();a&&this.positionOverlayLayer(a,r,n),t.innerHTML="";const s="http://www.w3.org/2000/svg",l=document.createElementNS(s,"defs"),c=document.createElementNS(s,"filter");c.setAttribute("id","neon-glow"),c.setAttribute("x","-50%"),c.setAttribute("y","-50%"),c.setAttribute("width","200%"),c.setAttribute("height","200%");const u=document.createElementNS(s,"feGaussianBlur");u.setAttribute("in","SourceGraphic"),u.setAttribute("stdDeviation","3"),u.setAttribute("result","blur"),c.appendChild(u);const p=document.createElementNS(s,"feMerge"),g=document.createElementNS(s,"feMergeNode");g.setAttribute("in","blur"),p.appendChild(g);const m=document.createElementNS(s,"feMergeNode");m.setAttribute("in","SourceGraphic"),p.appendChild(m),c.appendChild(p),l.appendChild(c),t.appendChild(l);for(const b of this.lines){const v=this.getNodeInfo(i,r,b.from),f=this.getNodeInfo(i,r,b.to);if(!v||!f)continue;const k={x:v.x,y:v.y},C={x:f.x,y:f.y},$=this.calcEdgePoint(k,C,v.hw,v.hh),S=this.calcEdgePoint(C,k,f.hw,f.hh),Y=S.x-$.x,K=S.y-$.y,x=Math.sqrt(Y*Y+K*K),H=Math.min(x*.2,40),z=-K/x,D=Y/x,q=($.x+S.x)/2,Q=($.y+S.y)/2,U=q+z*H,xt=Q+D*H,Vt=`grad-${b.id}`,{fromColor:er,toColor:ir}=ll(b.from,b.to),Ct=document.createElementNS(s,"linearGradient");Ct.setAttribute("id",Vt),Ct.setAttribute("x1","0%"),Ct.setAttribute("y1","0%"),Ct.setAttribute("x2","100%"),Ct.setAttribute("y2","0%");const Ae=document.createElementNS(s,"stop");Ae.setAttribute("offset","0%"),Ae.setAttribute("stop-color",er);const Ie=document.createElementNS(s,"stop");Ie.setAttribute("offset","100%"),Ie.setAttribute("stop-color",ir),Ct.appendChild(Ae),Ct.appendChild(Ie),l.appendChild(Ct);const yt=document.createElementNS(s,"path");if(yt.setAttribute("d",`M ${$.x} ${$.y} Q ${U} ${xt} ${S.x} ${S.y}`),yt.setAttribute("stroke",`url(#${Vt})`),yt.setAttribute("stroke-width","3"),yt.setAttribute("stroke-linecap","round"),yt.setAttribute("fill","none"),yt.setAttribute("opacity",b.active?"0.8":"0.18"),b.active&&yt.setAttribute("filter","url(#neon-glow)"),yt.classList.add("flow-line"),b.active||yt.classList.add("flow-line--inactive"),t.appendChild(yt),b.params.active){const qt=document.createElementNS(s,"polygon");qt.setAttribute("points",`0,-6 ${6*1.2},0 0,6`),qt.setAttribute("fill",b.color),qt.setAttribute("opacity","0.9");const Yt=document.createElementNS(s,"animateMotion");Yt.setAttribute("dur",`${Math.max(1,b.params.speed/1e3)}s`),Yt.setAttribute("repeatCount","indefinite"),Yt.setAttribute("path",`M ${$.x} ${$.y} Q ${U} ${xt} ${S.x} ${S.y}`),Yt.setAttribute("rotate","auto"),qt.appendChild(Yt),t.appendChild(qt)}}}updateAnimationState(){this.particlesEnabled&&this.active&&!document.hidden&&!vt.reduceMotion?(this.spawnParticles(),this.startAnimation()):this.stopAnimation()}startAnimation(){if(this.animationId!==null)return;const t=()=>{this.spawnParticles(),this.animationId=requestAnimationFrame(t)};this.animationId=requestAnimationFrame(t)}stopAnimation(){this.animationId!==null&&(cancelAnimationFrame(this.animationId),this.animationId=null)}spawnParticles(){if(this.particleCount>=this.MAX_PARTICLES)return;const t=this.getParticlesLayer();if(!t)return;const e=this.getGridMetrics();if(!e)return;const{grid:i,gridRect:r,canvasRect:n}=e;this.positionOverlayLayer(t,r,n);const a=performance.now();for(const s of this.lines){if(!s.params.active)continue;const l=s.params.speed,c=this.lastSpawnTime[s.id]||0;if(a-c<l)continue;const u=this.getNodeInfo(i,r,s.from),p=this.getNodeInfo(i,r,s.to);if(!u||!p)continue;const g={x:u.x,y:u.y},m={x:p.x,y:p.y},b=this.calcEdgePoint(g,m,u.hw,u.hh),v=this.calcEdgePoint(m,g,p.hw,p.hh);this.lastSpawnTime[s.id]=a;const f=s.params.count;for(let k=0;k<f&&!(this.particleCount>=this.MAX_PARTICLES);k++)this.createParticle(t,b,v,s.color,s.params,k*(s.params.speed/f/2))}}createParticle(t,e,i,r,n,a){const s=document.createElement("div");s.className="particle";const l=n.size;s.style.width=`${l}px`,s.style.height=`${l}px`,s.style.background=r,s.style.left=`${e.x}px`,s.style.top=`${e.y}px`,s.style.boxShadow=`0 0 ${l}px ${r}`,s.style.opacity="0",t.appendChild(s),this.particleCount++;const c=n.speed;setTimeout(()=>{let u=!1;const p=()=>{u||(u=!0,s.isConnected&&s.remove(),this.particleCount=Math.max(0,this.particleCount-1))};if(typeof s.animate=="function"){const g=s.animate([{left:`${e.x}px`,top:`${e.y}px`,opacity:0,offset:0},{opacity:n.opacity,offset:.1},{opacity:n.opacity,offset:.9},{left:`${i.x}px`,top:`${i.y}px`,opacity:0,offset:1}],{duration:c,easing:"linear"});g.onfinish=p,g.oncancel=p}else s.style.transition=`left ${c}ms linear, top ${c}ms linear, opacity ${c}ms linear`,s.style.opacity=`${n.opacity}`,requestAnimationFrame(()=>{s.style.left=`${i.x}px`,s.style.top=`${i.y}px`,s.style.opacity="0"}),s.addEventListener("transitionend",p,{once:!0}),window.setTimeout(p,c+50)},a)}render(){return d`
+  `;Et([h({type:Object})],xt.prototype,"data",2);Et([h({type:Boolean})],xt.prototype,"editMode",2);Et([x()],xt.prototype,"pendingServices",2);Et([x()],xt.prototype,"changingServices",2);Et([x()],xt.prototype,"shieldStatus",2);Et([x()],xt.prototype,"shieldQueueCount",2);Et([x()],xt.prototype,"gridDeliveryState",2);Et([x()],xt.prototype,"expandedNodes",2);Et([x()],xt.prototype,"customPositions",2);xt=Et([D("oig-flow-node")],xt);var Cl=Object.defineProperty,Pl=Object.getOwnPropertyDescriptor,oe=(t,e,i,n)=>{for(var r=n>1?void 0:n?Pl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Cl(e,i,r),r};function Tl(t,e){return{fromColor:ir[t]||"#9e9e9e",toColor:ir[e]||"#9e9e9e"}}const Ml=Q;let Lt=class extends M{constructor(){super(...arguments),this.data=Mn,this.particlesEnabled=!0,this.active=!0,this.editMode=!1,this.lines=[],this.animationId=null,this.lastSpawnTime={},this.particleCount=0,this.MAX_PARTICLES=50,this.onVisibilityChange=()=>{this.updateAnimationState()},this.onLayoutChanged=()=>{this.drawConnectionsDeferred()}}connectedCallback(){super.connectedCallback(),document.addEventListener("visibilitychange",this.onVisibilityChange),this.addEventListener("layout-changed",this.onLayoutChanged)}disconnectedCallback(){super.disconnectedCallback(),document.removeEventListener("visibilitychange",this.onVisibilityChange),this.removeEventListener("layout-changed",this.onLayoutChanged),this.stopAnimation()}updated(t){t.has("data")&&(this.updateLines(),this.animationId!==null&&this.spawnParticles()),(t.has("active")||t.has("particlesEnabled"))&&this.updateAnimationState(),this.drawConnectionsDeferred()}firstUpdated(){this.updateLines(),this.updateAnimationState(),new ResizeObserver(()=>this.drawConnectionsDeferred()).observe(this)}drawConnectionsDeferred(){requestAnimationFrame(()=>this.drawConnectionsSVG())}getParticlesLayer(){var t;return(t=this.renderRoot)==null?void 0:t.querySelector(".particles-layer")}getGridMetrics(){var a,s;const t=(a=this.renderRoot)==null?void 0:a.querySelector("oig-flow-node");if(!t)return null;const i=(t.renderRoot||t.shadowRoot||t).querySelector(".flow-grid");if(!i)return null;const n=(s=this.renderRoot)==null?void 0:s.querySelector(".canvas-container");if(!n)return null;const r=i.getBoundingClientRect();return r.width===0||r.height===0?null:{grid:i,gridRect:r,canvasRect:n.getBoundingClientRect()}}positionOverlayLayer(t,e,i){const n=e.left-i.left,r=e.top-i.top;t.style.left=`${n}px`,t.style.top=`${r}px`,t.style.width=`${e.width}px`,t.style.height=`${e.height}px`}updateLines(){const t=this.data,e=[],i=t.solarPower>50;e.push({id:"solar-inverter",from:"solar",to:"inverter",color:ue.solar,power:i?t.solarPower:0,params:i?wi(t.solarPower,xi.solar,"solar"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:i});const n=Math.abs(t.batteryPower)>50,r=t.batteryPower>0;e.push({id:"battery-inverter",from:n&&r?"inverter":"battery",to:n&&r?"battery":"inverter",color:ue.battery,power:n?Math.abs(t.batteryPower):0,params:n?wi(t.batteryPower,xi.battery,"battery"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:n});const a=Math.abs(t.gridPower)>50,s=t.gridPower>0;e.push({id:"grid-inverter",from:a?s?"grid":"inverter":"grid",to:a?s?"inverter":"grid":"inverter",color:a?s?ue.grid_import:ue.grid_export:ue.grid_import,power:a?Math.abs(t.gridPower):0,params:a?wi(t.gridPower,xi.grid,"grid"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:a});const l=t.housePower>50;e.push({id:"inverter-house",from:"inverter",to:"house",color:ue.house,power:l?t.housePower:0,params:l?wi(t.housePower,xi.house,"house"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:l}),this.lines=e}calcEdgePoint(t,e,i,n){const r=e.x-t.x,a=e.y-t.y;if(r===0&&a===0)return{...t};const s=Math.abs(r),l=Math.abs(a),c=s*n>l*i?i/s:n/l;return{x:t.x+r*c,y:t.y+a*c}}getNodeInfo(t,e,i){const n=t.querySelector(`.node-${i}`);if(!n)return null;const r=n.getBoundingClientRect();return{x:r.left+r.width/2-e.left,y:r.top+r.height/2-e.top,hw:r.width/2,hh:r.height/2}}drawConnectionsSVG(){const t=this.svgEl;if(!t)return;const e=this.getGridMetrics();if(!e)return;const{grid:i,gridRect:n,canvasRect:r}=e;this.positionOverlayLayer(t,n,r),t.setAttribute("viewBox",`0 0 ${n.width} ${n.height}`);const a=this.getParticlesLayer();a&&this.positionOverlayLayer(a,n,r),t.innerHTML="";const s="http://www.w3.org/2000/svg",l=document.createElementNS(s,"defs"),c=document.createElementNS(s,"filter");c.setAttribute("id","neon-glow"),c.setAttribute("x","-50%"),c.setAttribute("y","-50%"),c.setAttribute("width","200%"),c.setAttribute("height","200%");const u=document.createElementNS(s,"feGaussianBlur");u.setAttribute("in","SourceGraphic"),u.setAttribute("stdDeviation","3"),u.setAttribute("result","blur"),c.appendChild(u);const p=document.createElementNS(s,"feMerge"),f=document.createElementNS(s,"feMergeNode");f.setAttribute("in","blur"),p.appendChild(f);const v=document.createElementNS(s,"feMergeNode");v.setAttribute("in","SourceGraphic"),p.appendChild(v),c.appendChild(p),l.appendChild(c),t.appendChild(l);for(const m of this.lines){const g=this.getNodeInfo(i,n,m.from),b=this.getNodeInfo(i,n,m.to);if(!g||!b)continue;const k={x:g.x,y:g.y},S={x:b.x,y:b.y},$=this.calcEdgePoint(k,S,g.hw,g.hh),C=this.calcEdgePoint(S,k,b.hw,b.hh),G=C.x-$.x,Z=C.y-$.y,w=Math.sqrt(G*G+Z*Z),j=Math.min(w*.2,40),L=-Z/w,z=G/w,Y=($.x+C.x)/2,V=($.y+C.y)/2,N=Y+L*j,wt=V+z*j,Yt=`grad-${m.id}`,{fromColor:en,toColor:nn}=Tl(m.from,m.to),Ct=document.createElementNS(s,"linearGradient");Ct.setAttribute("id",Yt),Ct.setAttribute("x1","0%"),Ct.setAttribute("y1","0%"),Ct.setAttribute("x2","100%"),Ct.setAttribute("y2","0%");const Le=document.createElementNS(s,"stop");Le.setAttribute("offset","0%"),Le.setAttribute("stop-color",en);const Ae=document.createElementNS(s,"stop");Ae.setAttribute("offset","100%"),Ae.setAttribute("stop-color",nn),Ct.appendChild(Le),Ct.appendChild(Ae),l.appendChild(Ct);const yt=document.createElementNS(s,"path");if(yt.setAttribute("d",`M ${$.x} ${$.y} Q ${N} ${wt} ${C.x} ${C.y}`),yt.setAttribute("stroke",`url(#${Yt})`),yt.setAttribute("stroke-width","3"),yt.setAttribute("stroke-linecap","round"),yt.setAttribute("fill","none"),yt.setAttribute("opacity",m.active?"0.8":"0.18"),m.active&&yt.setAttribute("filter","url(#neon-glow)"),yt.classList.add("flow-line"),m.active||yt.classList.add("flow-line--inactive"),t.appendChild(yt),m.params.active){const Gt=document.createElementNS(s,"polygon");Gt.setAttribute("points",`0,-6 ${6*1.2},0 0,6`),Gt.setAttribute("fill",m.color),Gt.setAttribute("opacity","0.9");const Ut=document.createElementNS(s,"animateMotion");Ut.setAttribute("dur",`${Math.max(1,m.params.speed/1e3)}s`),Ut.setAttribute("repeatCount","indefinite"),Ut.setAttribute("path",`M ${$.x} ${$.y} Q ${N} ${wt} ${C.x} ${C.y}`),Ut.setAttribute("rotate","auto"),Gt.appendChild(Ut),t.appendChild(Gt)}}}updateAnimationState(){this.particlesEnabled&&this.active&&!document.hidden&&!vt.reduceMotion?(this.spawnParticles(),this.startAnimation()):this.stopAnimation()}startAnimation(){if(this.animationId!==null)return;const t=()=>{this.spawnParticles(),this.animationId=requestAnimationFrame(t)};this.animationId=requestAnimationFrame(t)}stopAnimation(){this.animationId!==null&&(cancelAnimationFrame(this.animationId),this.animationId=null)}spawnParticles(){if(this.particleCount>=this.MAX_PARTICLES)return;const t=this.getParticlesLayer();if(!t)return;const e=this.getGridMetrics();if(!e)return;const{grid:i,gridRect:n,canvasRect:r}=e;this.positionOverlayLayer(t,n,r);const a=performance.now();for(const s of this.lines){if(!s.params.active)continue;const l=s.params.speed,c=this.lastSpawnTime[s.id]||0;if(a-c<l)continue;const u=this.getNodeInfo(i,n,s.from),p=this.getNodeInfo(i,n,s.to);if(!u||!p)continue;const f={x:u.x,y:u.y},v={x:p.x,y:p.y},m=this.calcEdgePoint(f,v,u.hw,u.hh),g=this.calcEdgePoint(v,f,p.hw,p.hh);this.lastSpawnTime[s.id]=a;const b=s.params.count;for(let k=0;k<b&&!(this.particleCount>=this.MAX_PARTICLES);k++)this.createParticle(t,m,g,s.color,s.params,k*(s.params.speed/b/2))}}createParticle(t,e,i,n,r,a){const s=document.createElement("div");s.className="particle";const l=r.size;s.style.width=`${l}px`,s.style.height=`${l}px`,s.style.background=n,s.style.left=`${e.x}px`,s.style.top=`${e.y}px`,s.style.boxShadow=`0 0 ${l}px ${n}`,s.style.opacity="0",t.appendChild(s),this.particleCount++;const c=r.speed;setTimeout(()=>{let u=!1;const p=()=>{u||(u=!0,s.isConnected&&s.remove(),this.particleCount=Math.max(0,this.particleCount-1))};if(typeof s.animate=="function"){const f=s.animate([{left:`${e.x}px`,top:`${e.y}px`,opacity:0,offset:0},{opacity:r.opacity,offset:.1},{opacity:r.opacity,offset:.9},{left:`${i.x}px`,top:`${i.y}px`,opacity:0,offset:1}],{duration:c,easing:"linear"});f.onfinish=p,f.oncancel=p}else s.style.transition=`left ${c}ms linear, top ${c}ms linear, opacity ${c}ms linear`,s.style.opacity=`${r.opacity}`,requestAnimationFrame(()=>{s.style.left=`${i.x}px`,s.style.top=`${i.y}px`,s.style.opacity="0"}),s.addEventListener("transitionend",p,{once:!0}),window.setTimeout(p,c+50)},a)}render(){return d`
       <div class="canvas-container">
         <div class="flow-grid-wrapper">
           <oig-flow-node .data=${this.data} .editMode=${this.editMode}></oig-flow-node>
@@ -1890,12 +1911,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
         <div class="particles-layer"></div>
       </div>
-    `}resetLayout(){var e;const t=(e=this.shadowRoot)==null?void 0:e.querySelector("oig-flow-node");t!=null&&t.resetLayout&&t.resetLayout()}};zt.styles=P`
+    `}resetLayout(){var e;const t=(e=this.shadowRoot)==null?void 0:e.querySelector("oig-flow-node");t!=null&&t.resetLayout&&t.resetLayout()}};Lt.styles=P`
     :host {
       display: block;
       position: relative;
       width: 100%;
-      background: ${cl(o.bgSecondary)};
+      background: ${Ml(o.bgSecondary)};
       border-radius: 12px;
       overflow: visible;
     }
@@ -1960,7 +1981,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       fill: none;
       stroke-linecap: round;
     }
-  `;oe([h({type:Object})],zt.prototype,"data",2);oe([h({type:Boolean})],zt.prototype,"particlesEnabled",2);oe([h({type:Boolean})],zt.prototype,"active",2);oe([h({type:Boolean})],zt.prototype,"editMode",2);oe([w()],zt.prototype,"lines",2);oe([Zi(".connections-layer")],zt.prototype,"svgEl",2);zt=oe([E("oig-flow-canvas")],zt);var dl=Object.defineProperty,ul=Object.getOwnPropertyDescriptor,Sr=(t,e,i,r)=>{for(var n=r>1?void 0:r?ul(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&dl(e,i,n),n};const wt=Z;let Je=class extends M{constructor(){super(...arguments),this.data=null,this.open=!1,this.onKeyDown=t=>{t.key==="Escape"&&this.hide()}}show(){this.open=!0}hide(){this.open=!1}onOverlayClick(t){t.target===t.currentTarget&&this.hide()}connectedCallback(){super.connectedCallback(),document.addEventListener("keydown",this.onKeyDown),this.addEventListener("oig-grid-charging-open",()=>this.show())}disconnectedCallback(){super.disconnectedCallback(),document.removeEventListener("keydown",this.onKeyDown)}formatTime(t){const e=t.time_from??"--:--",i=t.time_to??"--:--";return`${e} – ${i}`}isBlockActive(t){if(!t.time_from||!t.time_to)return!1;const e=new Date,i=e.toISOString().slice(0,10);if(t.day==="tomorrow")return!1;const r=`${i}T${t.time_from}`,n=`${i}T${t.time_to}`,a=new Date(r),s=new Date(n);return e>=a&&e<s}renderEmpty(){return d`
+  `;oe([h({type:Object})],Lt.prototype,"data",2);oe([h({type:Boolean})],Lt.prototype,"particlesEnabled",2);oe([h({type:Boolean})],Lt.prototype,"active",2);oe([h({type:Boolean})],Lt.prototype,"editMode",2);oe([x()],Lt.prototype,"lines",2);oe([Zi(".connections-layer")],Lt.prototype,"svgEl",2);Lt=oe([D("oig-flow-canvas")],Lt);var Dl=Object.defineProperty,El=Object.getOwnPropertyDescriptor,zn=(t,e,i,n)=>{for(var r=n>1?void 0:n?El(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Dl(e,i,r),r};const $t=Q;let ti=class extends M{constructor(){super(...arguments),this.data=null,this.open=!1,this.onKeyDown=t=>{t.key==="Escape"&&this.hide()}}show(){this.open=!0}hide(){this.open=!1}onOverlayClick(t){t.target===t.currentTarget&&this.hide()}connectedCallback(){super.connectedCallback(),document.addEventListener("keydown",this.onKeyDown),this.addEventListener("oig-grid-charging-open",()=>this.show())}disconnectedCallback(){super.disconnectedCallback(),document.removeEventListener("keydown",this.onKeyDown)}formatTime(t){const e=t.time_from??"--:--",i=t.time_to??"--:--";return`${e} – ${i}`}isBlockActive(t){if(!t.time_from||!t.time_to)return!1;const e=new Date,i=e.toISOString().slice(0,10);if(t.day==="tomorrow")return!1;const n=`${i}T${t.time_from}`,r=`${i}T${t.time_to}`,a=new Date(n),s=new Date(r);return e>=a&&e<s}renderEmpty(){return d`
       <div class="empty-state">
         <div class="empty-icon">🔌</div>
         <div class="empty-text">Žádné plánované nabíjení</div>
@@ -1972,16 +1993,16 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         <div class="summary-row">
           ${t.totalEnergyKwh>0?d`
             <span class="summary-chip energy">⚡ ${t.totalEnergyKwh.toFixed(1)} kWh</span>
-          `:A}
+          `:O}
           ${t.totalCostCzk>0?d`
             <span class="summary-chip cost">💰 ~${t.totalCostCzk.toFixed(0)} Kč</span>
-          `:A}
+          `:O}
           ${t.windowLabel?d`
             <span class="summary-chip time">🪟 ${t.windowLabel}</span>
-          `:A}
+          `:O}
           ${t.durationMinutes>0?d`
             <span class="summary-chip time">⏱️ ${Math.round(t.durationMinutes)} min</span>
-          `:A}
+          `:O}
         </div>
 
         <!-- Active block banner -->
@@ -1989,10 +2010,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <div class="active-block-banner">
             <div class="pulse-dot"></div>
             <span>Probíhá: ${this.formatTime(e)}
-              ${e.grid_charge_kwh!=null?` · ${e.grid_charge_kwh.toFixed(1)} kWh`:A}
+              ${e.grid_charge_kwh!=null?` · ${e.grid_charge_kwh.toFixed(1)} kWh`:O}
             </span>
           </div>
-        `:A}
+        `:O}
 
         <!-- Blocks table -->
         <div class="section-title">Bloky nabíjení</div>
@@ -2006,13 +2027,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
             </tr>
           </thead>
           <tbody>
-            ${t.blocks.map((i,r)=>{const n=this.isBlockActive(i);return d`
-                <tr class="${n?"is-active":!n&&r===0&&!e?"is-next":""}">
+            ${t.blocks.map((i,n)=>{const r=this.isBlockActive(i);return d`
+                <tr class="${r?"is-active":!r&&n===0&&!e?"is-next":""}">
                   <td>${this.formatTime(i)}</td>
                   <td>
                     ${i.day?d`
                       <span class="day-badge ${i.day}">${i.day==="today"?"dnes":"zítra"}</span>
-                    `:A}
+                    `:O}
                   </td>
                   <td>${i.grid_charge_kwh!=null?i.grid_charge_kwh.toFixed(1):"--"}</td>
                   <td>${i.total_cost_czk!=null?`${i.total_cost_czk.toFixed(0)} Kč`:"--"}</td>
@@ -2032,7 +2053,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
                 <div class="dialog-header-subtitle">
                   ${this.data.blocks.length} blok${this.data.blocks.length>1?"ů":""}
                 </div>
-              `:A}
+              `:O}
             </div>
             <button class="close-btn" @click=${()=>this.hide()} aria-label="Zavřít">✕</button>
           </div>
@@ -2041,7 +2062,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </div>
         </div>
       </div>
-    `:A}};Je.styles=P`
+    `:O}};ti.styles=P`
     :host {
       display: contents;
     }
@@ -2069,7 +2090,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     /* ---- Dialog box ---- */
     .dialog {
       position: relative;
-      background: ${wt(o.cardBg)};
+      background: ${$t(o.cardBg)};
       border: 1px solid rgba(33,150,243,0.3);
       border-radius: 16px;
       backdrop-filter: blur(16px);
@@ -2094,7 +2115,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       align-items: center;
       gap: 10px;
       padding: 16px 20px 14px;
-      border-bottom: 1px solid ${wt(o.divider)};
+      border-bottom: 1px solid ${$t(o.divider)};
       flex-shrink: 0;
     }
 
@@ -2107,12 +2128,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       flex: 1;
       font-size: 15px;
       font-weight: 700;
-      color: ${wt(o.textPrimary)};
+      color: ${$t(o.textPrimary)};
     }
 
     .dialog-header-subtitle {
       font-size: 11px;
-      color: ${wt(o.textSecondary)};
+      color: ${$t(o.textSecondary)};
       margin-top: 2px;
     }
 
@@ -2120,7 +2141,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       background: none;
       border: none;
       cursor: pointer;
-      color: ${wt(o.textSecondary)};
+      color: ${$t(o.textSecondary)};
       font-size: 20px;
       line-height: 1;
       padding: 4px;
@@ -2133,7 +2154,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .close-btn:hover {
       background: rgba(255,255,255,0.08);
-      color: ${wt(o.textPrimary)};
+      color: ${$t(o.textPrimary)};
     }
 
     /* ---- Body ---- */
@@ -2188,7 +2209,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      color: ${wt(o.textSecondary)};
+      color: ${$t(o.textSecondary)};
       margin-bottom: 8px;
     }
 
@@ -2232,9 +2253,9 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: ${wt(o.textSecondary)};
+      color: ${$t(o.textSecondary)};
       padding: 0 6px 8px;
-      border-bottom: 1px solid ${wt(o.divider)};
+      border-bottom: 1px solid ${$t(o.divider)};
     }
 
     .blocks-table th:last-child,
@@ -2245,7 +2266,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .blocks-table td {
       padding: 8px 6px;
       font-size: 12px;
-      color: ${wt(o.textPrimary)};
+      color: ${$t(o.textPrimary)};
       border-bottom: 1px solid rgba(255,255,255,0.04);
       vertical-align: middle;
     }
@@ -2287,7 +2308,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .empty-state {
       text-align: center;
       padding: 32px 16px;
-      color: ${wt(o.textSecondary)};
+      color: ${$t(o.textSecondary)};
     }
 
     .empty-state .empty-icon {
@@ -2305,7 +2326,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-size: 12px;
       opacity: 0.6;
     }
-  `;Sr([h({type:Object})],Je.prototype,"data",2);Sr([w()],Je.prototype,"open",2);Je=Sr([E("oig-grid-charging-dialog")],Je);var pl=Object.defineProperty,hl=Object.getOwnPropertyDescriptor,dt=(t,e,i,r)=>{for(var n=r>1?void 0:r?hl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&pl(e,i,n),n};const et=Z;Ki.register(En,Dn,On,zn,An,In,Ln);let Ft=class extends M{constructor(){super(...arguments),this.values=[],this.color="rgba(76, 175, 80, 1)",this.startTime="",this.endTime="",this.chart=null,this.lastDataKey="",this.initializing=!1}render(){return d`<canvas></canvas>`}firstUpdated(){this.values.length>0&&(this.initializing=!0,requestAnimationFrame(()=>{this.createSparkline(),this.initializing=!1}))}updated(t){this.initializing||(t.has("values")||t.has("color"))&&this.updateOrCreateSparkline()}disconnectedCallback(){super.disconnectedCallback(),this.destroyChart()}updateOrCreateSparkline(){var e,i,r,n;if(!this.canvas||this.values.length===0)return;const t=JSON.stringify({v:this.values,c:this.color});if(!(t===this.lastDataKey&&this.chart)){if(this.lastDataKey=t,(r=(i=(e=this.chart)==null?void 0:e.data)==null?void 0:i.datasets)!=null&&r[0]){const a=this.chart.data.datasets[0];if(!((((n=this.chart.data.labels)==null?void 0:n.length)||0)!==this.values.length)){a.data=this.values,a.borderColor=this.color,a.backgroundColor=this.color.replace("1)","0.2)"),this.chart.update("none");return}}this.destroyChart(),this.createSparkline()}}createSparkline(){if(!this.canvas||this.values.length===0)return;this.destroyChart();const t=this.color,e=this.values,i=new Date(this.startTime),r=e.map((n,a)=>new Date(i.getTime()+a*15*60*1e3).toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"}));this.chart=new Ki(this.canvas,{type:"line",data:{labels:r,datasets:[{data:e,borderColor:t,backgroundColor:t.replace("1)","0.2)"),borderWidth:2,fill:!0,tension:.3,pointRadius:0,pointHoverRadius:5}]},plugins:[],options:{responsive:!0,maintainAspectRatio:!1,animation:{duration:0},plugins:{legend:{display:!1},tooltip:{enabled:!0,backgroundColor:"rgba(0, 0, 0, 0.8)",titleColor:"#fff",bodyColor:"#fff",padding:8,displayColors:!1,callbacks:{title:n=>{var a;return((a=n[0])==null?void 0:a.label)||""},label:n=>`${n.parsed.y.toFixed(2)} Kč/kWh`}},datalabels:{display:!1},zoom:{pan:{enabled:!0,mode:"x",modifierKey:"shift"},zoom:{wheel:{enabled:!0,speed:.1},drag:{enabled:!0,backgroundColor:"rgba(33, 150, 243, 0.3)"},mode:"x"}}},scales:{x:{display:!1},y:{display:!0,position:"right",grace:"10%",ticks:{color:"rgba(255, 255, 255, 0.6)",font:{size:8},callback:n=>Number(n).toFixed(1),maxTicksLimit:3},grid:{display:!1}}},layout:{padding:0},interaction:{mode:"nearest",intersect:!1}}})}destroyChart(){this.chart&&(this.chart.destroy(),this.chart=null)}};Ft.styles=P`
+  `;zn([h({type:Object})],ti.prototype,"data",2);zn([x()],ti.prototype,"open",2);ti=zn([D("oig-grid-charging-dialog")],ti);var Ol=Object.defineProperty,zl=Object.getOwnPropertyDescriptor,dt=(t,e,i,n)=>{for(var r=n>1?void 0:n?zl(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Ol(e,i,r),r};const et=Q;Ki.register(Nr,Rr,Hr,Wr,jr,Vr,qr);let Nt=class extends M{constructor(){super(...arguments),this.values=[],this.color="rgba(76, 175, 80, 1)",this.startTime="",this.endTime="",this.chart=null,this.lastDataKey="",this.initializing=!1}render(){return d`<canvas></canvas>`}firstUpdated(){this.values.length>0&&(this.initializing=!0,requestAnimationFrame(()=>{this.createSparkline(),this.initializing=!1}))}updated(t){this.initializing||(t.has("values")||t.has("color"))&&this.updateOrCreateSparkline()}disconnectedCallback(){super.disconnectedCallback(),this.destroyChart()}updateOrCreateSparkline(){var e,i,n,r;if(!this.canvas||this.values.length===0)return;const t=JSON.stringify({v:this.values,c:this.color});if(!(t===this.lastDataKey&&this.chart)){if(this.lastDataKey=t,(n=(i=(e=this.chart)==null?void 0:e.data)==null?void 0:i.datasets)!=null&&n[0]){const a=this.chart.data.datasets[0];if(!((((r=this.chart.data.labels)==null?void 0:r.length)||0)!==this.values.length)){a.data=this.values,a.borderColor=this.color,a.backgroundColor=this.color.replace("1)","0.2)"),this.chart.update("none");return}}this.destroyChart(),this.createSparkline()}}createSparkline(){if(!this.canvas||this.values.length===0)return;this.destroyChart();const t=this.color,e=this.values,i=new Date(this.startTime),n=e.map((r,a)=>new Date(i.getTime()+a*15*60*1e3).toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"}));this.chart=new Ki(this.canvas,{type:"line",data:{labels:n,datasets:[{data:e,borderColor:t,backgroundColor:t.replace("1)","0.2)"),borderWidth:2,fill:!0,tension:.3,pointRadius:0,pointHoverRadius:5}]},plugins:[],options:{responsive:!0,maintainAspectRatio:!1,animation:{duration:0},plugins:{legend:{display:!1},tooltip:{enabled:!0,backgroundColor:"rgba(0, 0, 0, 0.8)",titleColor:"#fff",bodyColor:"#fff",padding:8,displayColors:!1,callbacks:{title:r=>{var a;return((a=r[0])==null?void 0:a.label)||""},label:r=>`${r.parsed.y.toFixed(2)} Kč/kWh`}},datalabels:{display:!1},zoom:{pan:{enabled:!0,mode:"x",modifierKey:"shift"},zoom:{wheel:{enabled:!0,speed:.1},drag:{enabled:!0,backgroundColor:"rgba(33, 150, 243, 0.3)"},mode:"x"}}},scales:{x:{display:!1},y:{display:!0,position:"right",grace:"10%",ticks:{color:"rgba(255, 255, 255, 0.6)",font:{size:8},callback:r=>Number(r).toFixed(1),maxTicksLimit:3},grid:{display:!1}}},layout:{padding:0},interaction:{mode:"nearest",intersect:!1}}})}destroyChart(){this.chart&&(this.chart.destroy(),this.chart=null)}};Nt.styles=P`
     :host {
       display: block;
       width: 100%;
@@ -2315,10 +2336,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       width: 100% !important;
       height: 100% !important;
     }
-  `;dt([h({type:Array})],Ft.prototype,"values",2);dt([h({type:String})],Ft.prototype,"color",2);dt([h({type:String})],Ft.prototype,"startTime",2);dt([h({type:String})],Ft.prototype,"endTime",2);dt([Zi("canvas")],Ft.prototype,"canvas",2);Ft=dt([E("oig-mini-sparkline")],Ft);let gt=class extends M{constructor(){super(...arguments),this.title="",this.time="",this.valueText="",this.value=0,this.unit="Kč/kWh",this.variant="default",this.clickable=!1,this.startTime="",this.endTime="",this.sparklineValues=[],this.sparklineColor="rgba(76, 175, 80, 1)",this.handleClick=()=>{this.clickable&&this.dispatchEvent(new CustomEvent("card-click",{detail:{startTime:this.startTime,endTime:this.endTime,value:this.value},bubbles:!0,composed:!0}))}}connectedCallback(){super.connectedCallback(),this.clickable&&this.addEventListener("click",this.handleClick)}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener("click",this.handleClick)}render(){const t=this.valueText||`${this.value.toFixed(2)} <span class="stat-unit">${this.unit}</span>`;return d`
+  `;dt([h({type:Array})],Nt.prototype,"values",2);dt([h({type:String})],Nt.prototype,"color",2);dt([h({type:String})],Nt.prototype,"startTime",2);dt([h({type:String})],Nt.prototype,"endTime",2);dt([Zi("canvas")],Nt.prototype,"canvas",2);Nt=dt([D("oig-mini-sparkline")],Nt);let gt=class extends M{constructor(){super(...arguments),this.title="",this.time="",this.valueText="",this.value=0,this.unit="Kč/kWh",this.variant="default",this.clickable=!1,this.startTime="",this.endTime="",this.sparklineValues=[],this.sparklineColor="rgba(76, 175, 80, 1)",this.handleClick=()=>{this.clickable&&this.dispatchEvent(new CustomEvent("card-click",{detail:{startTime:this.startTime,endTime:this.endTime,value:this.value},bubbles:!0,composed:!0}))}}connectedCallback(){super.connectedCallback(),this.clickable&&this.addEventListener("click",this.handleClick)}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener("click",this.handleClick)}render(){const t=this.valueText||`${this.value.toFixed(2)} <span class="stat-unit">${this.unit}</span>`;return d`
       <div class="card-title">${this.title}</div>
       <div class="card-value ${this.variant}" .innerHTML=${t}></div>
-      ${this.time?d`<div class="card-time">${this.time}</div>`:A}
+      ${this.time?d`<div class="card-time">${this.time}</div>`:O}
       ${this.sparklineValues.length>0?d`
             <div class="sparkline-container">
               <oig-mini-sparkline
@@ -2328,7 +2349,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
                 .endTime=${this.endTime}
               ></oig-mini-sparkline>
             </div>
-          `:A}
+          `:O}
     `}};gt.styles=P`
     :host {
       display: block;
@@ -2389,7 +2410,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .sparkline-container {
       margin-top: 8px;
     }
-  `;dt([h({type:String})],gt.prototype,"title",2);dt([h({type:String})],gt.prototype,"time",2);dt([h({type:String})],gt.prototype,"valueText",2);dt([h({type:Number})],gt.prototype,"value",2);dt([h({type:String})],gt.prototype,"unit",2);dt([h({type:String})],gt.prototype,"variant",2);dt([h({type:Boolean})],gt.prototype,"clickable",2);dt([h({type:String})],gt.prototype,"startTime",2);dt([h({type:String})],gt.prototype,"endTime",2);dt([h({type:Array})],gt.prototype,"sparklineValues",2);dt([h({type:String})],gt.prototype,"sparklineColor",2);gt=dt([E("oig-stats-card")],gt);function gl(t){const e=new Date(t.start),i=new Date(t.end),r=e.toLocaleDateString("cs-CZ",{day:"2-digit",month:"2-digit"}),n=e.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"}),a=i.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"});return`${r} ${n} - ${a}`}let ti=class extends M{constructor(){super(...arguments),this.data=null,this.topOnly=!1}onCardClick(t){this.dispatchEvent(new CustomEvent("zoom-to-block",{detail:t.detail,bubbles:!0,composed:!0}))}renderPriceTiles(){if(!this.data)return A;const t=this.data.solarForecastTotal>0;return d`
+  `;dt([h({type:String})],gt.prototype,"title",2);dt([h({type:String})],gt.prototype,"time",2);dt([h({type:String})],gt.prototype,"valueText",2);dt([h({type:Number})],gt.prototype,"value",2);dt([h({type:String})],gt.prototype,"unit",2);dt([h({type:String})],gt.prototype,"variant",2);dt([h({type:Boolean})],gt.prototype,"clickable",2);dt([h({type:String})],gt.prototype,"startTime",2);dt([h({type:String})],gt.prototype,"endTime",2);dt([h({type:Array})],gt.prototype,"sparklineValues",2);dt([h({type:String})],gt.prototype,"sparklineColor",2);gt=dt([D("oig-stats-card")],gt);function Ll(t){const e=new Date(t.start),i=new Date(t.end),n=e.toLocaleDateString("cs-CZ",{day:"2-digit",month:"2-digit"}),r=e.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"}),a=i.toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"});return`${n} ${r} - ${a}`}let ei=class extends M{constructor(){super(...arguments),this.data=null,this.topOnly=!1}onCardClick(t){this.dispatchEvent(new CustomEvent("zoom-to-block",{detail:t.detail,bubbles:!0,composed:!0}))}renderPriceTiles(){if(!this.data)return O;const t=this.data.solarForecastTotal>0;return d`
       <div class="price-tile spot">
         <div class="price-tile-label">Spot</div>
         <div class="price-tile-value">${this.data.currentSpotPrice.toFixed(2)} <span class="price-tile-unit">Kč/kWh</span></div>
@@ -2409,26 +2430,26 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         </div>
         <div class="price-tile-sub">${t?"Předpověď":"Nedostupná"}</div>
       </div>
-    `}renderBlockCard(t,e,i,r){return e?d`
+    `}renderBlockCard(t,e,i,n){return e?d`
       <oig-stats-card
         title=${t}
         .value=${e.avg}
         unit="Kč/kWh"
-        .time=${gl(e)}
+        .time=${Ll(e)}
         variant=${i}
         clickable
         .startTime=${e.start}
         .endTime=${e.end}
         .sparklineValues=${e.values}
-        .sparklineColor=${r}
+        .sparklineColor=${n}
         @card-click=${this.onCardClick}
       ></oig-stats-card>
-    `:A}renderExtremeBlocks(){if(!this.data)return A;const{cheapestBuyBlock:t,expensiveBuyBlock:e,bestExportBlock:i,worstExportBlock:r}=this.data;return d`
+    `:O}renderExtremeBlocks(){if(!this.data)return O;const{cheapestBuyBlock:t,expensiveBuyBlock:e,bestExportBlock:i,worstExportBlock:n}=this.data;return d`
       ${this.renderBlockCard("Nejlevnější nákup",t,"success","rgba(76, 175, 80, 1)")}
       ${this.renderBlockCard("Nejdražší nákup",e,"danger","rgba(244, 67, 54, 1)")}
       ${this.renderBlockCard("Nejlepší výkup",i,"success","rgba(76, 175, 80, 1)")}
-      ${this.renderBlockCard("Nejhorší výkup",r,"warning","rgba(255, 167, 38, 1)")}
-    `}renderPlannedConsumption(){var s;const t=(s=this.data)==null?void 0:s.plannedConsumption;if(!t)return A;const e=t.todayTotalKwh,i=t.tomorrowKwh,r=e+(i||0),n=r>0?e/r*100:50,a=r>0?(i||0)/r*100:50;return d`
+      ${this.renderBlockCard("Nejhorší výkup",n,"warning","rgba(255, 167, 38, 1)")}
+    `}renderPlannedConsumption(){var s;const t=(s=this.data)==null?void 0:s.plannedConsumption;if(!t)return O;const e=t.todayTotalKwh,i=t.tomorrowKwh,n=e+(i||0),r=n>0?e/n*100:50,a=n>0?(i||0)/n*100:50;return d`
       <div class="planned-section">
         <div class="section-label" style="margin-bottom: 8px;">Plánovaná spotřeba</div>
         <div class="planned-header">
@@ -2438,7 +2459,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
             </div>
             <div class="planned-profile">${t.profile}</div>
           </div>
-          ${t.trendText?d`<div class="planned-trend">${t.trendText}</div>`:A}
+          ${t.trendText?d`<div class="planned-trend">${t.trendText}</div>`:O}
         </div>
 
         <div class="planned-details">
@@ -2460,23 +2481,23 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </div>
         </div>
 
-        ${r>0?d`
+        ${n>0?d`
               <div class="planned-bars">
-                <div class="bar-today" style="width: ${n}%"></div>
+                <div class="bar-today" style="width: ${r}%"></div>
                 <div class="bar-tomorrow" style="width: ${a}%"></div>
               </div>
               <div class="bar-labels">
                 <span>Dnes: ${e.toFixed(1)}</span>
                 <span>Zítra: ${i!=null?i.toFixed(1):"--"}</span>
               </div>
-            `:A}
+            `:O}
       </div>
-    `}render(){return!this.data||this.data.timeline.length===0?this.topOnly?A:d`<div style="color: ${o.textSecondary}; padding: 16px;">Načítání cenových dat...</div>`:this.topOnly?d`
+    `}render(){return!this.data||this.data.timeline.length===0?this.topOnly?O:d`<div style="color: ${o.textSecondary}; padding: 16px;">Načítání cenových dat...</div>`:this.topOnly?d`
         <div class="top-row">
           ${this.renderPriceTiles()}
           ${this.renderExtremeBlocks()}
         </div>
-      `:d`${this.renderPlannedConsumption()}`}};ti.styles=P`
+      `:d`${this.renderPlannedConsumption()}`}};ei.styles=P`
     :host {
       display: block;
       margin-bottom: 16px;
@@ -2660,12 +2681,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         grid-template-columns: 1fr;
       }
     }
-  `;dt([h({type:Object})],ti.prototype,"data",2);dt([h({type:Boolean})],ti.prototype,"topOnly",2);ti=dt([E("oig-pricing-stats")],ti);const ia=6048e5,fl=864e5,gi=6e4,fi=36e5,ml=1e3,bn=Symbol.for("constructDateFrom");function st(t,e){return typeof t=="function"?t(e):t&&typeof t=="object"&&bn in t?t[bn](e):t instanceof Date?new t.constructor(e):new Date(e)}function L(t,e){return st(e||t,t)}function tr(t,e,i){const r=L(t,i==null?void 0:i.in);return isNaN(e)?st((i==null?void 0:i.in)||t,NaN):(e&&r.setDate(r.getDate()+e),r)}function Cr(t,e,i){const r=L(t,i==null?void 0:i.in);if(isNaN(e))return st(t,NaN);if(!e)return r;const n=r.getDate(),a=st(t,r.getTime());a.setMonth(r.getMonth()+e+1,0);const s=a.getDate();return n>=s?a:(r.setFullYear(a.getFullYear(),a.getMonth(),n),r)}function Pr(t,e,i){return st(t,+L(t)+e)}function bl(t,e,i){return Pr(t,e*fi)}let yl={};function le(){return yl}function Dt(t,e){var l,c,u,p;const i=le(),r=(e==null?void 0:e.weekStartsOn)??((c=(l=e==null?void 0:e.locale)==null?void 0:l.options)==null?void 0:c.weekStartsOn)??i.weekStartsOn??((p=(u=i.locale)==null?void 0:u.options)==null?void 0:p.weekStartsOn)??0,n=L(t,e==null?void 0:e.in),a=n.getDay(),s=(a<r?7:0)+a-r;return n.setDate(n.getDate()-s),n.setHours(0,0,0,0),n}function ke(t,e){return Dt(t,{...e,weekStartsOn:1})}function ra(t,e){const i=L(t,e==null?void 0:e.in),r=i.getFullYear(),n=st(i,0);n.setFullYear(r+1,0,4),n.setHours(0,0,0,0);const a=ke(n),s=st(i,0);s.setFullYear(r,0,4),s.setHours(0,0,0,0);const l=ke(s);return i.getTime()>=a.getTime()?r+1:i.getTime()>=l.getTime()?r:r-1}function zi(t){const e=L(t),i=new Date(Date.UTC(e.getFullYear(),e.getMonth(),e.getDate(),e.getHours(),e.getMinutes(),e.getSeconds(),e.getMilliseconds()));return i.setUTCFullYear(e.getFullYear()),+t-+i}function ce(t,...e){const i=st.bind(null,e.find(r=>typeof r=="object"));return e.map(i)}function vr(t,e){const i=L(t,e==null?void 0:e.in);return i.setHours(0,0,0,0),i}function na(t,e,i){const[r,n]=ce(i==null?void 0:i.in,t,e),a=vr(r),s=vr(n),l=+a-zi(a),c=+s-zi(s);return Math.round((l-c)/fl)}function vl(t,e){const i=ra(t,e),r=st(t,0);return r.setFullYear(i,0,4),r.setHours(0,0,0,0),ke(r)}function xl(t,e,i){const r=L(t,i==null?void 0:i.in);return r.setTime(r.getTime()+e*gi),r}function wl(t,e,i){return Cr(t,e*3,i)}function $l(t,e,i){return Pr(t,e*1e3)}function _l(t,e,i){return tr(t,e*7,i)}function kl(t,e,i){return Cr(t,e*12,i)}function Ke(t,e){const i=+L(t)-+L(e);return i<0?-1:i>0?1:i}function Sl(t){return t instanceof Date||typeof t=="object"&&Object.prototype.toString.call(t)==="[object Date]"}function aa(t){return!(!Sl(t)&&typeof t!="number"||isNaN(+L(t)))}function Cl(t,e,i){const[r,n]=ce(i==null?void 0:i.in,t,e),a=r.getFullYear()-n.getFullYear(),s=r.getMonth()-n.getMonth();return a*12+s}function Pl(t,e,i){const[r,n]=ce(i==null?void 0:i.in,t,e);return r.getFullYear()-n.getFullYear()}function sa(t,e,i){const[r,n]=ce(i==null?void 0:i.in,t,e),a=yn(r,n),s=Math.abs(na(r,n));r.setDate(r.getDate()-a*s);const l=+(yn(r,n)===-a),c=a*(s-l);return c===0?0:c}function yn(t,e){const i=t.getFullYear()-e.getFullYear()||t.getMonth()-e.getMonth()||t.getDate()-e.getDate()||t.getHours()-e.getHours()||t.getMinutes()-e.getMinutes()||t.getSeconds()-e.getSeconds()||t.getMilliseconds()-e.getMilliseconds();return i<0?-1:i>0?1:i}function mi(t){return e=>{const r=(t?Math[t]:Math.trunc)(e);return r===0?0:r}}function Tl(t,e,i){const[r,n]=ce(i==null?void 0:i.in,t,e),a=(+r-+n)/fi;return mi(i==null?void 0:i.roundingMethod)(a)}function Tr(t,e){return+L(t)-+L(e)}function Ml(t,e,i){const r=Tr(t,e)/gi;return mi(i==null?void 0:i.roundingMethod)(r)}function oa(t,e){const i=L(t,e==null?void 0:e.in);return i.setHours(23,59,59,999),i}function la(t,e){const i=L(t,e==null?void 0:e.in),r=i.getMonth();return i.setFullYear(i.getFullYear(),r+1,0),i.setHours(23,59,59,999),i}function El(t,e){const i=L(t,e==null?void 0:e.in);return+oa(i,e)==+la(i,e)}function ca(t,e,i){const[r,n,a]=ce(i==null?void 0:i.in,t,t,e),s=Ke(n,a),l=Math.abs(Cl(n,a));if(l<1)return 0;n.getMonth()===1&&n.getDate()>27&&n.setDate(30),n.setMonth(n.getMonth()-s*l);let c=Ke(n,a)===-s;El(r)&&l===1&&Ke(r,a)===1&&(c=!1);const u=s*(l-+c);return u===0?0:u}function Dl(t,e,i){const r=ca(t,e,i)/3;return mi(i==null?void 0:i.roundingMethod)(r)}function Ol(t,e,i){const r=Tr(t,e)/1e3;return mi(i==null?void 0:i.roundingMethod)(r)}function zl(t,e,i){const r=sa(t,e,i)/7;return mi(i==null?void 0:i.roundingMethod)(r)}function Al(t,e,i){const[r,n]=ce(i==null?void 0:i.in,t,e),a=Ke(r,n),s=Math.abs(Pl(r,n));r.setFullYear(1584),n.setFullYear(1584);const l=Ke(r,n)===-a,c=a*(s-+l);return c===0?0:c}function Il(t,e){const i=L(t,e==null?void 0:e.in),r=i.getMonth(),n=r-r%3;return i.setMonth(n,1),i.setHours(0,0,0,0),i}function Ll(t,e){const i=L(t,e==null?void 0:e.in);return i.setDate(1),i.setHours(0,0,0,0),i}function Bl(t,e){const i=L(t,e==null?void 0:e.in),r=i.getFullYear();return i.setFullYear(r+1,0,0),i.setHours(23,59,59,999),i}function da(t,e){const i=L(t,e==null?void 0:e.in);return i.setFullYear(i.getFullYear(),0,1),i.setHours(0,0,0,0),i}function Fl(t,e){const i=L(t,e==null?void 0:e.in);return i.setMinutes(59,59,999),i}function Nl(t,e){var l,c;const i=le(),r=i.weekStartsOn??((c=(l=i.locale)==null?void 0:l.options)==null?void 0:c.weekStartsOn)??0,n=L(t,e==null?void 0:e.in),a=n.getDay(),s=(a<r?-7:0)+6-(a-r);return n.setDate(n.getDate()+s),n.setHours(23,59,59,999),n}function Rl(t,e){const i=L(t,e==null?void 0:e.in);return i.setSeconds(59,999),i}function Hl(t,e){const i=L(t,e==null?void 0:e.in),r=i.getMonth(),n=r-r%3+3;return i.setMonth(n,0),i.setHours(23,59,59,999),i}function Wl(t,e){const i=L(t,e==null?void 0:e.in);return i.setMilliseconds(999),i}const jl={lessThanXSeconds:{one:"less than a second",other:"less than {{count}} seconds"},xSeconds:{one:"1 second",other:"{{count}} seconds"},halfAMinute:"half a minute",lessThanXMinutes:{one:"less than a minute",other:"less than {{count}} minutes"},xMinutes:{one:"1 minute",other:"{{count}} minutes"},aboutXHours:{one:"about 1 hour",other:"about {{count}} hours"},xHours:{one:"1 hour",other:"{{count}} hours"},xDays:{one:"1 day",other:"{{count}} days"},aboutXWeeks:{one:"about 1 week",other:"about {{count}} weeks"},xWeeks:{one:"1 week",other:"{{count}} weeks"},aboutXMonths:{one:"about 1 month",other:"about {{count}} months"},xMonths:{one:"1 month",other:"{{count}} months"},aboutXYears:{one:"about 1 year",other:"about {{count}} years"},xYears:{one:"1 year",other:"{{count}} years"},overXYears:{one:"over 1 year",other:"over {{count}} years"},almostXYears:{one:"almost 1 year",other:"almost {{count}} years"}},Vl=(t,e,i)=>{let r;const n=jl[t];return typeof n=="string"?r=n:e===1?r=n.one:r=n.other.replace("{{count}}",e.toString()),i!=null&&i.addSuffix?i.comparison&&i.comparison>0?"in "+r:r+" ago":r};function dr(t){return(e={})=>{const i=e.width?String(e.width):t.defaultWidth;return t.formats[i]||t.formats[t.defaultWidth]}}const ql={full:"EEEE, MMMM do, y",long:"MMMM do, y",medium:"MMM d, y",short:"MM/dd/yyyy"},Yl={full:"h:mm:ss a zzzz",long:"h:mm:ss a z",medium:"h:mm:ss a",short:"h:mm a"},Ul={full:"{{date}} 'at' {{time}}",long:"{{date}} 'at' {{time}}",medium:"{{date}}, {{time}}",short:"{{date}}, {{time}}"},Gl={date:dr({formats:ql,defaultWidth:"full"}),time:dr({formats:Yl,defaultWidth:"full"}),dateTime:dr({formats:Ul,defaultWidth:"full"})},Kl={lastWeek:"'last' eeee 'at' p",yesterday:"'yesterday at' p",today:"'today at' p",tomorrow:"'tomorrow at' p",nextWeek:"eeee 'at' p",other:"P"},Zl=(t,e,i,r)=>Kl[t];function Ve(t){return(e,i)=>{const r=i!=null&&i.context?String(i.context):"standalone";let n;if(r==="formatting"&&t.formattingValues){const s=t.defaultFormattingWidth||t.defaultWidth,l=i!=null&&i.width?String(i.width):s;n=t.formattingValues[l]||t.formattingValues[s]}else{const s=t.defaultWidth,l=i!=null&&i.width?String(i.width):t.defaultWidth;n=t.values[l]||t.values[s]}const a=t.argumentCallback?t.argumentCallback(e):e;return n[a]}}const Ql={narrow:["B","A"],abbreviated:["BC","AD"],wide:["Before Christ","Anno Domini"]},Xl={narrow:["1","2","3","4"],abbreviated:["Q1","Q2","Q3","Q4"],wide:["1st quarter","2nd quarter","3rd quarter","4th quarter"]},Jl={narrow:["J","F","M","A","M","J","J","A","S","O","N","D"],abbreviated:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],wide:["January","February","March","April","May","June","July","August","September","October","November","December"]},tc={narrow:["S","M","T","W","T","F","S"],short:["Su","Mo","Tu","We","Th","Fr","Sa"],abbreviated:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],wide:["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]},ec={narrow:{am:"a",pm:"p",midnight:"mi",noon:"n",morning:"morning",afternoon:"afternoon",evening:"evening",night:"night"},abbreviated:{am:"AM",pm:"PM",midnight:"midnight",noon:"noon",morning:"morning",afternoon:"afternoon",evening:"evening",night:"night"},wide:{am:"a.m.",pm:"p.m.",midnight:"midnight",noon:"noon",morning:"morning",afternoon:"afternoon",evening:"evening",night:"night"}},ic={narrow:{am:"a",pm:"p",midnight:"mi",noon:"n",morning:"in the morning",afternoon:"in the afternoon",evening:"in the evening",night:"at night"},abbreviated:{am:"AM",pm:"PM",midnight:"midnight",noon:"noon",morning:"in the morning",afternoon:"in the afternoon",evening:"in the evening",night:"at night"},wide:{am:"a.m.",pm:"p.m.",midnight:"midnight",noon:"noon",morning:"in the morning",afternoon:"in the afternoon",evening:"in the evening",night:"at night"}},rc=(t,e)=>{const i=Number(t),r=i%100;if(r>20||r<10)switch(r%10){case 1:return i+"st";case 2:return i+"nd";case 3:return i+"rd"}return i+"th"},nc={ordinalNumber:rc,era:Ve({values:Ql,defaultWidth:"wide"}),quarter:Ve({values:Xl,defaultWidth:"wide",argumentCallback:t=>t-1}),month:Ve({values:Jl,defaultWidth:"wide"}),day:Ve({values:tc,defaultWidth:"wide"}),dayPeriod:Ve({values:ec,defaultWidth:"wide",formattingValues:ic,defaultFormattingWidth:"wide"})};function qe(t){return(e,i={})=>{const r=i.width,n=r&&t.matchPatterns[r]||t.matchPatterns[t.defaultMatchWidth],a=e.match(n);if(!a)return null;const s=a[0],l=r&&t.parsePatterns[r]||t.parsePatterns[t.defaultParseWidth],c=Array.isArray(l)?sc(l,g=>g.test(s)):ac(l,g=>g.test(s));let u;u=t.valueCallback?t.valueCallback(c):c,u=i.valueCallback?i.valueCallback(u):u;const p=e.slice(s.length);return{value:u,rest:p}}}function ac(t,e){for(const i in t)if(Object.prototype.hasOwnProperty.call(t,i)&&e(t[i]))return i}function sc(t,e){for(let i=0;i<t.length;i++)if(e(t[i]))return i}function oc(t){return(e,i={})=>{const r=e.match(t.matchPattern);if(!r)return null;const n=r[0],a=e.match(t.parsePattern);if(!a)return null;let s=t.valueCallback?t.valueCallback(a[0]):a[0];s=i.valueCallback?i.valueCallback(s):s;const l=e.slice(n.length);return{value:s,rest:l}}}const lc=/^(\d+)(th|st|nd|rd)?/i,cc=/\d+/i,dc={narrow:/^(b|a)/i,abbreviated:/^(b\.?\s?c\.?|b\.?\s?c\.?\s?e\.?|a\.?\s?d\.?|c\.?\s?e\.?)/i,wide:/^(before christ|before common era|anno domini|common era)/i},uc={any:[/^b/i,/^(a|c)/i]},pc={narrow:/^[1234]/i,abbreviated:/^q[1234]/i,wide:/^[1234](th|st|nd|rd)? quarter/i},hc={any:[/1/i,/2/i,/3/i,/4/i]},gc={narrow:/^[jfmasond]/i,abbreviated:/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,wide:/^(january|february|march|april|may|june|july|august|september|october|november|december)/i},fc={narrow:[/^j/i,/^f/i,/^m/i,/^a/i,/^m/i,/^j/i,/^j/i,/^a/i,/^s/i,/^o/i,/^n/i,/^d/i],any:[/^ja/i,/^f/i,/^mar/i,/^ap/i,/^may/i,/^jun/i,/^jul/i,/^au/i,/^s/i,/^o/i,/^n/i,/^d/i]},mc={narrow:/^[smtwf]/i,short:/^(su|mo|tu|we|th|fr|sa)/i,abbreviated:/^(sun|mon|tue|wed|thu|fri|sat)/i,wide:/^(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/i},bc={narrow:[/^s/i,/^m/i,/^t/i,/^w/i,/^t/i,/^f/i,/^s/i],any:[/^su/i,/^m/i,/^tu/i,/^w/i,/^th/i,/^f/i,/^sa/i]},yc={narrow:/^(a|p|mi|n|(in the|at) (morning|afternoon|evening|night))/i,any:/^([ap]\.?\s?m\.?|midnight|noon|(in the|at) (morning|afternoon|evening|night))/i},vc={any:{am:/^a/i,pm:/^p/i,midnight:/^mi/i,noon:/^no/i,morning:/morning/i,afternoon:/afternoon/i,evening:/evening/i,night:/night/i}},xc={ordinalNumber:oc({matchPattern:lc,parsePattern:cc,valueCallback:t=>parseInt(t,10)}),era:qe({matchPatterns:dc,defaultMatchWidth:"wide",parsePatterns:uc,defaultParseWidth:"any"}),quarter:qe({matchPatterns:pc,defaultMatchWidth:"wide",parsePatterns:hc,defaultParseWidth:"any",valueCallback:t=>t+1}),month:qe({matchPatterns:gc,defaultMatchWidth:"wide",parsePatterns:fc,defaultParseWidth:"any"}),day:qe({matchPatterns:mc,defaultMatchWidth:"wide",parsePatterns:bc,defaultParseWidth:"any"}),dayPeriod:qe({matchPatterns:yc,defaultMatchWidth:"any",parsePatterns:vc,defaultParseWidth:"any"})},ua={code:"en-US",formatDistance:Vl,formatLong:Gl,formatRelative:Zl,localize:nc,match:xc,options:{weekStartsOn:0,firstWeekContainsDate:1}};function wc(t,e){const i=L(t,e==null?void 0:e.in);return na(i,da(i))+1}function pa(t,e){const i=L(t,e==null?void 0:e.in),r=+ke(i)-+vl(i);return Math.round(r/ia)+1}function Mr(t,e){var p,g,m,b;const i=L(t,e==null?void 0:e.in),r=i.getFullYear(),n=le(),a=(e==null?void 0:e.firstWeekContainsDate)??((g=(p=e==null?void 0:e.locale)==null?void 0:p.options)==null?void 0:g.firstWeekContainsDate)??n.firstWeekContainsDate??((b=(m=n.locale)==null?void 0:m.options)==null?void 0:b.firstWeekContainsDate)??1,s=st((e==null?void 0:e.in)||t,0);s.setFullYear(r+1,0,a),s.setHours(0,0,0,0);const l=Dt(s,e),c=st((e==null?void 0:e.in)||t,0);c.setFullYear(r,0,a),c.setHours(0,0,0,0);const u=Dt(c,e);return+i>=+l?r+1:+i>=+u?r:r-1}function $c(t,e){var l,c,u,p;const i=le(),r=(e==null?void 0:e.firstWeekContainsDate)??((c=(l=e==null?void 0:e.locale)==null?void 0:l.options)==null?void 0:c.firstWeekContainsDate)??i.firstWeekContainsDate??((p=(u=i.locale)==null?void 0:u.options)==null?void 0:p.firstWeekContainsDate)??1,n=Mr(t,e),a=st((e==null?void 0:e.in)||t,0);return a.setFullYear(n,0,r),a.setHours(0,0,0,0),Dt(a,e)}function ha(t,e){const i=L(t,e==null?void 0:e.in),r=+Dt(i,e)-+$c(i,e);return Math.round(r/ia)+1}function G(t,e){const i=t<0?"-":"",r=Math.abs(t).toString().padStart(e,"0");return i+r}const Lt={y(t,e){const i=t.getFullYear(),r=i>0?i:1-i;return G(e==="yy"?r%100:r,e.length)},M(t,e){const i=t.getMonth();return e==="M"?String(i+1):G(i+1,2)},d(t,e){return G(t.getDate(),e.length)},a(t,e){const i=t.getHours()/12>=1?"pm":"am";switch(e){case"a":case"aa":return i.toUpperCase();case"aaa":return i;case"aaaaa":return i[0];case"aaaa":default:return i==="am"?"a.m.":"p.m."}},h(t,e){return G(t.getHours()%12||12,e.length)},H(t,e){return G(t.getHours(),e.length)},m(t,e){return G(t.getMinutes(),e.length)},s(t,e){return G(t.getSeconds(),e.length)},S(t,e){const i=e.length,r=t.getMilliseconds(),n=Math.trunc(r*Math.pow(10,i-3));return G(n,e.length)}},pe={midnight:"midnight",noon:"noon",morning:"morning",afternoon:"afternoon",evening:"evening",night:"night"},vn={G:function(t,e,i){const r=t.getFullYear()>0?1:0;switch(e){case"G":case"GG":case"GGG":return i.era(r,{width:"abbreviated"});case"GGGGG":return i.era(r,{width:"narrow"});case"GGGG":default:return i.era(r,{width:"wide"})}},y:function(t,e,i){if(e==="yo"){const r=t.getFullYear(),n=r>0?r:1-r;return i.ordinalNumber(n,{unit:"year"})}return Lt.y(t,e)},Y:function(t,e,i,r){const n=Mr(t,r),a=n>0?n:1-n;if(e==="YY"){const s=a%100;return G(s,2)}return e==="Yo"?i.ordinalNumber(a,{unit:"year"}):G(a,e.length)},R:function(t,e){const i=ra(t);return G(i,e.length)},u:function(t,e){const i=t.getFullYear();return G(i,e.length)},Q:function(t,e,i){const r=Math.ceil((t.getMonth()+1)/3);switch(e){case"Q":return String(r);case"QQ":return G(r,2);case"Qo":return i.ordinalNumber(r,{unit:"quarter"});case"QQQ":return i.quarter(r,{width:"abbreviated",context:"formatting"});case"QQQQQ":return i.quarter(r,{width:"narrow",context:"formatting"});case"QQQQ":default:return i.quarter(r,{width:"wide",context:"formatting"})}},q:function(t,e,i){const r=Math.ceil((t.getMonth()+1)/3);switch(e){case"q":return String(r);case"qq":return G(r,2);case"qo":return i.ordinalNumber(r,{unit:"quarter"});case"qqq":return i.quarter(r,{width:"abbreviated",context:"standalone"});case"qqqqq":return i.quarter(r,{width:"narrow",context:"standalone"});case"qqqq":default:return i.quarter(r,{width:"wide",context:"standalone"})}},M:function(t,e,i){const r=t.getMonth();switch(e){case"M":case"MM":return Lt.M(t,e);case"Mo":return i.ordinalNumber(r+1,{unit:"month"});case"MMM":return i.month(r,{width:"abbreviated",context:"formatting"});case"MMMMM":return i.month(r,{width:"narrow",context:"formatting"});case"MMMM":default:return i.month(r,{width:"wide",context:"formatting"})}},L:function(t,e,i){const r=t.getMonth();switch(e){case"L":return String(r+1);case"LL":return G(r+1,2);case"Lo":return i.ordinalNumber(r+1,{unit:"month"});case"LLL":return i.month(r,{width:"abbreviated",context:"standalone"});case"LLLLL":return i.month(r,{width:"narrow",context:"standalone"});case"LLLL":default:return i.month(r,{width:"wide",context:"standalone"})}},w:function(t,e,i,r){const n=ha(t,r);return e==="wo"?i.ordinalNumber(n,{unit:"week"}):G(n,e.length)},I:function(t,e,i){const r=pa(t);return e==="Io"?i.ordinalNumber(r,{unit:"week"}):G(r,e.length)},d:function(t,e,i){return e==="do"?i.ordinalNumber(t.getDate(),{unit:"date"}):Lt.d(t,e)},D:function(t,e,i){const r=wc(t);return e==="Do"?i.ordinalNumber(r,{unit:"dayOfYear"}):G(r,e.length)},E:function(t,e,i){const r=t.getDay();switch(e){case"E":case"EE":case"EEE":return i.day(r,{width:"abbreviated",context:"formatting"});case"EEEEE":return i.day(r,{width:"narrow",context:"formatting"});case"EEEEEE":return i.day(r,{width:"short",context:"formatting"});case"EEEE":default:return i.day(r,{width:"wide",context:"formatting"})}},e:function(t,e,i,r){const n=t.getDay(),a=(n-r.weekStartsOn+8)%7||7;switch(e){case"e":return String(a);case"ee":return G(a,2);case"eo":return i.ordinalNumber(a,{unit:"day"});case"eee":return i.day(n,{width:"abbreviated",context:"formatting"});case"eeeee":return i.day(n,{width:"narrow",context:"formatting"});case"eeeeee":return i.day(n,{width:"short",context:"formatting"});case"eeee":default:return i.day(n,{width:"wide",context:"formatting"})}},c:function(t,e,i,r){const n=t.getDay(),a=(n-r.weekStartsOn+8)%7||7;switch(e){case"c":return String(a);case"cc":return G(a,e.length);case"co":return i.ordinalNumber(a,{unit:"day"});case"ccc":return i.day(n,{width:"abbreviated",context:"standalone"});case"ccccc":return i.day(n,{width:"narrow",context:"standalone"});case"cccccc":return i.day(n,{width:"short",context:"standalone"});case"cccc":default:return i.day(n,{width:"wide",context:"standalone"})}},i:function(t,e,i){const r=t.getDay(),n=r===0?7:r;switch(e){case"i":return String(n);case"ii":return G(n,e.length);case"io":return i.ordinalNumber(n,{unit:"day"});case"iii":return i.day(r,{width:"abbreviated",context:"formatting"});case"iiiii":return i.day(r,{width:"narrow",context:"formatting"});case"iiiiii":return i.day(r,{width:"short",context:"formatting"});case"iiii":default:return i.day(r,{width:"wide",context:"formatting"})}},a:function(t,e,i){const n=t.getHours()/12>=1?"pm":"am";switch(e){case"a":case"aa":return i.dayPeriod(n,{width:"abbreviated",context:"formatting"});case"aaa":return i.dayPeriod(n,{width:"abbreviated",context:"formatting"}).toLowerCase();case"aaaaa":return i.dayPeriod(n,{width:"narrow",context:"formatting"});case"aaaa":default:return i.dayPeriod(n,{width:"wide",context:"formatting"})}},b:function(t,e,i){const r=t.getHours();let n;switch(r===12?n=pe.noon:r===0?n=pe.midnight:n=r/12>=1?"pm":"am",e){case"b":case"bb":return i.dayPeriod(n,{width:"abbreviated",context:"formatting"});case"bbb":return i.dayPeriod(n,{width:"abbreviated",context:"formatting"}).toLowerCase();case"bbbbb":return i.dayPeriod(n,{width:"narrow",context:"formatting"});case"bbbb":default:return i.dayPeriod(n,{width:"wide",context:"formatting"})}},B:function(t,e,i){const r=t.getHours();let n;switch(r>=17?n=pe.evening:r>=12?n=pe.afternoon:r>=4?n=pe.morning:n=pe.night,e){case"B":case"BB":case"BBB":return i.dayPeriod(n,{width:"abbreviated",context:"formatting"});case"BBBBB":return i.dayPeriod(n,{width:"narrow",context:"formatting"});case"BBBB":default:return i.dayPeriod(n,{width:"wide",context:"formatting"})}},h:function(t,e,i){if(e==="ho"){let r=t.getHours()%12;return r===0&&(r=12),i.ordinalNumber(r,{unit:"hour"})}return Lt.h(t,e)},H:function(t,e,i){return e==="Ho"?i.ordinalNumber(t.getHours(),{unit:"hour"}):Lt.H(t,e)},K:function(t,e,i){const r=t.getHours()%12;return e==="Ko"?i.ordinalNumber(r,{unit:"hour"}):G(r,e.length)},k:function(t,e,i){let r=t.getHours();return r===0&&(r=24),e==="ko"?i.ordinalNumber(r,{unit:"hour"}):G(r,e.length)},m:function(t,e,i){return e==="mo"?i.ordinalNumber(t.getMinutes(),{unit:"minute"}):Lt.m(t,e)},s:function(t,e,i){return e==="so"?i.ordinalNumber(t.getSeconds(),{unit:"second"}):Lt.s(t,e)},S:function(t,e){return Lt.S(t,e)},X:function(t,e,i){const r=t.getTimezoneOffset();if(r===0)return"Z";switch(e){case"X":return wn(r);case"XXXX":case"XX":return Qt(r);case"XXXXX":case"XXX":default:return Qt(r,":")}},x:function(t,e,i){const r=t.getTimezoneOffset();switch(e){case"x":return wn(r);case"xxxx":case"xx":return Qt(r);case"xxxxx":case"xxx":default:return Qt(r,":")}},O:function(t,e,i){const r=t.getTimezoneOffset();switch(e){case"O":case"OO":case"OOO":return"GMT"+xn(r,":");case"OOOO":default:return"GMT"+Qt(r,":")}},z:function(t,e,i){const r=t.getTimezoneOffset();switch(e){case"z":case"zz":case"zzz":return"GMT"+xn(r,":");case"zzzz":default:return"GMT"+Qt(r,":")}},t:function(t,e,i){const r=Math.trunc(+t/1e3);return G(r,e.length)},T:function(t,e,i){return G(+t,e.length)}};function xn(t,e=""){const i=t>0?"-":"+",r=Math.abs(t),n=Math.trunc(r/60),a=r%60;return a===0?i+String(n):i+String(n)+e+G(a,2)}function wn(t,e){return t%60===0?(t>0?"-":"+")+G(Math.abs(t)/60,2):Qt(t,e)}function Qt(t,e=""){const i=t>0?"-":"+",r=Math.abs(t),n=G(Math.trunc(r/60),2),a=G(r%60,2);return i+n+e+a}const $n=(t,e)=>{switch(t){case"P":return e.date({width:"short"});case"PP":return e.date({width:"medium"});case"PPP":return e.date({width:"long"});case"PPPP":default:return e.date({width:"full"})}},ga=(t,e)=>{switch(t){case"p":return e.time({width:"short"});case"pp":return e.time({width:"medium"});case"ppp":return e.time({width:"long"});case"pppp":default:return e.time({width:"full"})}},_c=(t,e)=>{const i=t.match(/(P+)(p+)?/)||[],r=i[1],n=i[2];if(!n)return $n(t,e);let a;switch(r){case"P":a=e.dateTime({width:"short"});break;case"PP":a=e.dateTime({width:"medium"});break;case"PPP":a=e.dateTime({width:"long"});break;case"PPPP":default:a=e.dateTime({width:"full"});break}return a.replace("{{date}}",$n(r,e)).replace("{{time}}",ga(n,e))},xr={p:ga,P:_c},kc=/^D+$/,Sc=/^Y+$/,Cc=["D","DD","YY","YYYY"];function fa(t){return kc.test(t)}function ma(t){return Sc.test(t)}function wr(t,e,i){const r=Pc(t,e,i);if(console.warn(r),Cc.includes(t))throw new RangeError(r)}function Pc(t,e,i){const r=t[0]==="Y"?"years":"days of the month";return`Use \`${t.toLowerCase()}\` instead of \`${t}\` (in \`${e}\`) for formatting ${r} to the input \`${i}\`; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md`}const Tc=/[yYQqMLwIdDecihHKkms]o|(\w)\1*|''|'(''|[^'])+('|$)|./g,Mc=/P+p+|P+|p+|''|'(''|[^'])+('|$)|./g,Ec=/^'([^]*?)'?$/,Dc=/''/g,Oc=/[a-zA-Z]/;function zc(t,e,i){var p,g,m,b,v,f,k,C;const r=le(),n=(i==null?void 0:i.locale)??r.locale??ua,a=(i==null?void 0:i.firstWeekContainsDate)??((g=(p=i==null?void 0:i.locale)==null?void 0:p.options)==null?void 0:g.firstWeekContainsDate)??r.firstWeekContainsDate??((b=(m=r.locale)==null?void 0:m.options)==null?void 0:b.firstWeekContainsDate)??1,s=(i==null?void 0:i.weekStartsOn)??((f=(v=i==null?void 0:i.locale)==null?void 0:v.options)==null?void 0:f.weekStartsOn)??r.weekStartsOn??((C=(k=r.locale)==null?void 0:k.options)==null?void 0:C.weekStartsOn)??0,l=L(t,i==null?void 0:i.in);if(!aa(l))throw new RangeError("Invalid time value");let c=e.match(Mc).map($=>{const S=$[0];if(S==="p"||S==="P"){const Y=xr[S];return Y($,n.formatLong)}return $}).join("").match(Tc).map($=>{if($==="''")return{isToken:!1,value:"'"};const S=$[0];if(S==="'")return{isToken:!1,value:Ac($)};if(vn[S])return{isToken:!0,value:$};if(S.match(Oc))throw new RangeError("Format string contains an unescaped latin alphabet character `"+S+"`");return{isToken:!1,value:$}});n.localize.preprocessor&&(c=n.localize.preprocessor(l,c));const u={firstWeekContainsDate:a,weekStartsOn:s,locale:n};return c.map($=>{if(!$.isToken)return $.value;const S=$.value;(!(i!=null&&i.useAdditionalWeekYearTokens)&&ma(S)||!(i!=null&&i.useAdditionalDayOfYearTokens)&&fa(S))&&wr(S,e,String(t));const Y=vn[S[0]];return Y(l,S,n.localize,u)}).join("")}function Ac(t){const e=t.match(Ec);return e?e[1].replace(Dc,"'"):t}function Ic(){return Object.assign({},le())}function Lc(t,e){const i=L(t,e==null?void 0:e.in).getDay();return i===0?7:i}function Bc(t,e){const i=Fc(e)?new e(0):st(e,0);return i.setFullYear(t.getFullYear(),t.getMonth(),t.getDate()),i.setHours(t.getHours(),t.getMinutes(),t.getSeconds(),t.getMilliseconds()),i}function Fc(t){var e;return typeof t=="function"&&((e=t.prototype)==null?void 0:e.constructor)===t}const Nc=10;class ba{constructor(){_(this,"subPriority",0)}validate(e,i){return!0}}class Rc extends ba{constructor(e,i,r,n,a){super(),this.value=e,this.validateValue=i,this.setValue=r,this.priority=n,a&&(this.subPriority=a)}validate(e,i){return this.validateValue(e,this.value,i)}set(e,i,r){return this.setValue(e,i,this.value,r)}}class Hc extends ba{constructor(i,r){super();_(this,"priority",Nc);_(this,"subPriority",-1);this.context=i||(n=>st(r,n))}set(i,r){return r.timestampIsSet?i:st(i,Bc(i,this.context))}}class V{run(e,i,r,n){const a=this.parse(e,i,r,n);return a?{setter:new Rc(a.value,this.validate,this.set,this.priority,this.subPriority),rest:a.rest}:null}validate(e,i,r){return!0}}class Wc extends V{constructor(){super(...arguments);_(this,"priority",140);_(this,"incompatibleTokens",["R","u","t","T"])}parse(i,r,n){switch(r){case"G":case"GG":case"GGG":return n.era(i,{width:"abbreviated"})||n.era(i,{width:"narrow"});case"GGGGG":return n.era(i,{width:"narrow"});case"GGGG":default:return n.era(i,{width:"wide"})||n.era(i,{width:"abbreviated"})||n.era(i,{width:"narrow"})}}set(i,r,n){return r.era=n,i.setFullYear(n,0,1),i.setHours(0,0,0,0),i}}const lt={month:/^(1[0-2]|0?\d)/,date:/^(3[0-1]|[0-2]?\d)/,dayOfYear:/^(36[0-6]|3[0-5]\d|[0-2]?\d?\d)/,week:/^(5[0-3]|[0-4]?\d)/,hour23h:/^(2[0-3]|[0-1]?\d)/,hour24h:/^(2[0-4]|[0-1]?\d)/,hour11h:/^(1[0-1]|0?\d)/,hour12h:/^(1[0-2]|0?\d)/,minute:/^[0-5]?\d/,second:/^[0-5]?\d/,singleDigit:/^\d/,twoDigits:/^\d{1,2}/,threeDigits:/^\d{1,3}/,fourDigits:/^\d{1,4}/,anyDigitsSigned:/^-?\d+/,singleDigitSigned:/^-?\d/,twoDigitsSigned:/^-?\d{1,2}/,threeDigitsSigned:/^-?\d{1,3}/,fourDigitsSigned:/^-?\d{1,4}/},Tt={basicOptionalMinutes:/^([+-])(\d{2})(\d{2})?|Z/,basic:/^([+-])(\d{2})(\d{2})|Z/,basicOptionalSeconds:/^([+-])(\d{2})(\d{2})((\d{2}))?|Z/,extended:/^([+-])(\d{2}):(\d{2})|Z/,extendedOptionalSeconds:/^([+-])(\d{2}):(\d{2})(:(\d{2}))?|Z/};function ct(t,e){return t&&{value:e(t.value),rest:t.rest}}function rt(t,e){const i=e.match(t);return i?{value:parseInt(i[0],10),rest:e.slice(i[0].length)}:null}function Mt(t,e){const i=e.match(t);if(!i)return null;if(i[0]==="Z")return{value:0,rest:e.slice(1)};const r=i[1]==="+"?1:-1,n=i[2]?parseInt(i[2],10):0,a=i[3]?parseInt(i[3],10):0,s=i[5]?parseInt(i[5],10):0;return{value:r*(n*fi+a*gi+s*ml),rest:e.slice(i[0].length)}}function ya(t){return rt(lt.anyDigitsSigned,t)}function ot(t,e){switch(t){case 1:return rt(lt.singleDigit,e);case 2:return rt(lt.twoDigits,e);case 3:return rt(lt.threeDigits,e);case 4:return rt(lt.fourDigits,e);default:return rt(new RegExp("^\\d{1,"+t+"}"),e)}}function Ai(t,e){switch(t){case 1:return rt(lt.singleDigitSigned,e);case 2:return rt(lt.twoDigitsSigned,e);case 3:return rt(lt.threeDigitsSigned,e);case 4:return rt(lt.fourDigitsSigned,e);default:return rt(new RegExp("^-?\\d{1,"+t+"}"),e)}}function Er(t){switch(t){case"morning":return 4;case"evening":return 17;case"pm":case"noon":case"afternoon":return 12;case"am":case"midnight":case"night":default:return 0}}function va(t,e){const i=e>0,r=i?e:1-e;let n;if(r<=50)n=t||100;else{const a=r+50,s=Math.trunc(a/100)*100,l=t>=a%100;n=t+s-(l?100:0)}return i?n:1-n}function xa(t){return t%400===0||t%4===0&&t%100!==0}class jc extends V{constructor(){super(...arguments);_(this,"priority",130);_(this,"incompatibleTokens",["Y","R","u","w","I","i","e","c","t","T"])}parse(i,r,n){const a=s=>({year:s,isTwoDigitYear:r==="yy"});switch(r){case"y":return ct(ot(4,i),a);case"yo":return ct(n.ordinalNumber(i,{unit:"year"}),a);default:return ct(ot(r.length,i),a)}}validate(i,r){return r.isTwoDigitYear||r.year>0}set(i,r,n){const a=i.getFullYear();if(n.isTwoDigitYear){const l=va(n.year,a);return i.setFullYear(l,0,1),i.setHours(0,0,0,0),i}const s=!("era"in r)||r.era===1?n.year:1-n.year;return i.setFullYear(s,0,1),i.setHours(0,0,0,0),i}}class Vc extends V{constructor(){super(...arguments);_(this,"priority",130);_(this,"incompatibleTokens",["y","R","u","Q","q","M","L","I","d","D","i","t","T"])}parse(i,r,n){const a=s=>({year:s,isTwoDigitYear:r==="YY"});switch(r){case"Y":return ct(ot(4,i),a);case"Yo":return ct(n.ordinalNumber(i,{unit:"year"}),a);default:return ct(ot(r.length,i),a)}}validate(i,r){return r.isTwoDigitYear||r.year>0}set(i,r,n,a){const s=Mr(i,a);if(n.isTwoDigitYear){const c=va(n.year,s);return i.setFullYear(c,0,a.firstWeekContainsDate),i.setHours(0,0,0,0),Dt(i,a)}const l=!("era"in r)||r.era===1?n.year:1-n.year;return i.setFullYear(l,0,a.firstWeekContainsDate),i.setHours(0,0,0,0),Dt(i,a)}}class qc extends V{constructor(){super(...arguments);_(this,"priority",130);_(this,"incompatibleTokens",["G","y","Y","u","Q","q","M","L","w","d","D","e","c","t","T"])}parse(i,r){return Ai(r==="R"?4:r.length,i)}set(i,r,n){const a=st(i,0);return a.setFullYear(n,0,4),a.setHours(0,0,0,0),ke(a)}}class Yc extends V{constructor(){super(...arguments);_(this,"priority",130);_(this,"incompatibleTokens",["G","y","Y","R","w","I","i","e","c","t","T"])}parse(i,r){return Ai(r==="u"?4:r.length,i)}set(i,r,n){return i.setFullYear(n,0,1),i.setHours(0,0,0,0),i}}class Uc extends V{constructor(){super(...arguments);_(this,"priority",120);_(this,"incompatibleTokens",["Y","R","q","M","L","w","I","d","D","i","e","c","t","T"])}parse(i,r,n){switch(r){case"Q":case"QQ":return ot(r.length,i);case"Qo":return n.ordinalNumber(i,{unit:"quarter"});case"QQQ":return n.quarter(i,{width:"abbreviated",context:"formatting"})||n.quarter(i,{width:"narrow",context:"formatting"});case"QQQQQ":return n.quarter(i,{width:"narrow",context:"formatting"});case"QQQQ":default:return n.quarter(i,{width:"wide",context:"formatting"})||n.quarter(i,{width:"abbreviated",context:"formatting"})||n.quarter(i,{width:"narrow",context:"formatting"})}}validate(i,r){return r>=1&&r<=4}set(i,r,n){return i.setMonth((n-1)*3,1),i.setHours(0,0,0,0),i}}class Gc extends V{constructor(){super(...arguments);_(this,"priority",120);_(this,"incompatibleTokens",["Y","R","Q","M","L","w","I","d","D","i","e","c","t","T"])}parse(i,r,n){switch(r){case"q":case"qq":return ot(r.length,i);case"qo":return n.ordinalNumber(i,{unit:"quarter"});case"qqq":return n.quarter(i,{width:"abbreviated",context:"standalone"})||n.quarter(i,{width:"narrow",context:"standalone"});case"qqqqq":return n.quarter(i,{width:"narrow",context:"standalone"});case"qqqq":default:return n.quarter(i,{width:"wide",context:"standalone"})||n.quarter(i,{width:"abbreviated",context:"standalone"})||n.quarter(i,{width:"narrow",context:"standalone"})}}validate(i,r){return r>=1&&r<=4}set(i,r,n){return i.setMonth((n-1)*3,1),i.setHours(0,0,0,0),i}}class Kc extends V{constructor(){super(...arguments);_(this,"incompatibleTokens",["Y","R","q","Q","L","w","I","D","i","e","c","t","T"]);_(this,"priority",110)}parse(i,r,n){const a=s=>s-1;switch(r){case"M":return ct(rt(lt.month,i),a);case"MM":return ct(ot(2,i),a);case"Mo":return ct(n.ordinalNumber(i,{unit:"month"}),a);case"MMM":return n.month(i,{width:"abbreviated",context:"formatting"})||n.month(i,{width:"narrow",context:"formatting"});case"MMMMM":return n.month(i,{width:"narrow",context:"formatting"});case"MMMM":default:return n.month(i,{width:"wide",context:"formatting"})||n.month(i,{width:"abbreviated",context:"formatting"})||n.month(i,{width:"narrow",context:"formatting"})}}validate(i,r){return r>=0&&r<=11}set(i,r,n){return i.setMonth(n,1),i.setHours(0,0,0,0),i}}class Zc extends V{constructor(){super(...arguments);_(this,"priority",110);_(this,"incompatibleTokens",["Y","R","q","Q","M","w","I","D","i","e","c","t","T"])}parse(i,r,n){const a=s=>s-1;switch(r){case"L":return ct(rt(lt.month,i),a);case"LL":return ct(ot(2,i),a);case"Lo":return ct(n.ordinalNumber(i,{unit:"month"}),a);case"LLL":return n.month(i,{width:"abbreviated",context:"standalone"})||n.month(i,{width:"narrow",context:"standalone"});case"LLLLL":return n.month(i,{width:"narrow",context:"standalone"});case"LLLL":default:return n.month(i,{width:"wide",context:"standalone"})||n.month(i,{width:"abbreviated",context:"standalone"})||n.month(i,{width:"narrow",context:"standalone"})}}validate(i,r){return r>=0&&r<=11}set(i,r,n){return i.setMonth(n,1),i.setHours(0,0,0,0),i}}function Qc(t,e,i){const r=L(t,i==null?void 0:i.in),n=ha(r,i)-e;return r.setDate(r.getDate()-n*7),L(r,i==null?void 0:i.in)}class Xc extends V{constructor(){super(...arguments);_(this,"priority",100);_(this,"incompatibleTokens",["y","R","u","q","Q","M","L","I","d","D","i","t","T"])}parse(i,r,n){switch(r){case"w":return rt(lt.week,i);case"wo":return n.ordinalNumber(i,{unit:"week"});default:return ot(r.length,i)}}validate(i,r){return r>=1&&r<=53}set(i,r,n,a){return Dt(Qc(i,n,a),a)}}function Jc(t,e,i){const r=L(t,i==null?void 0:i.in),n=pa(r,i)-e;return r.setDate(r.getDate()-n*7),r}class td extends V{constructor(){super(...arguments);_(this,"priority",100);_(this,"incompatibleTokens",["y","Y","u","q","Q","M","L","w","d","D","e","c","t","T"])}parse(i,r,n){switch(r){case"I":return rt(lt.week,i);case"Io":return n.ordinalNumber(i,{unit:"week"});default:return ot(r.length,i)}}validate(i,r){return r>=1&&r<=53}set(i,r,n){return ke(Jc(i,n))}}const ed=[31,28,31,30,31,30,31,31,30,31,30,31],id=[31,29,31,30,31,30,31,31,30,31,30,31];class rd extends V{constructor(){super(...arguments);_(this,"priority",90);_(this,"subPriority",1);_(this,"incompatibleTokens",["Y","R","q","Q","w","I","D","i","e","c","t","T"])}parse(i,r,n){switch(r){case"d":return rt(lt.date,i);case"do":return n.ordinalNumber(i,{unit:"date"});default:return ot(r.length,i)}}validate(i,r){const n=i.getFullYear(),a=xa(n),s=i.getMonth();return a?r>=1&&r<=id[s]:r>=1&&r<=ed[s]}set(i,r,n){return i.setDate(n),i.setHours(0,0,0,0),i}}class nd extends V{constructor(){super(...arguments);_(this,"priority",90);_(this,"subpriority",1);_(this,"incompatibleTokens",["Y","R","q","Q","M","L","w","I","d","E","i","e","c","t","T"])}parse(i,r,n){switch(r){case"D":case"DD":return rt(lt.dayOfYear,i);case"Do":return n.ordinalNumber(i,{unit:"date"});default:return ot(r.length,i)}}validate(i,r){const n=i.getFullYear();return xa(n)?r>=1&&r<=366:r>=1&&r<=365}set(i,r,n){return i.setMonth(0,n),i.setHours(0,0,0,0),i}}function Dr(t,e,i){var g,m,b,v;const r=le(),n=(i==null?void 0:i.weekStartsOn)??((m=(g=i==null?void 0:i.locale)==null?void 0:g.options)==null?void 0:m.weekStartsOn)??r.weekStartsOn??((v=(b=r.locale)==null?void 0:b.options)==null?void 0:v.weekStartsOn)??0,a=L(t,i==null?void 0:i.in),s=a.getDay(),c=(e%7+7)%7,u=7-n,p=e<0||e>6?e-(s+u)%7:(c+u)%7-(s+u)%7;return tr(a,p,i)}class ad extends V{constructor(){super(...arguments);_(this,"priority",90);_(this,"incompatibleTokens",["D","i","e","c","t","T"])}parse(i,r,n){switch(r){case"E":case"EE":case"EEE":return n.day(i,{width:"abbreviated",context:"formatting"})||n.day(i,{width:"short",context:"formatting"})||n.day(i,{width:"narrow",context:"formatting"});case"EEEEE":return n.day(i,{width:"narrow",context:"formatting"});case"EEEEEE":return n.day(i,{width:"short",context:"formatting"})||n.day(i,{width:"narrow",context:"formatting"});case"EEEE":default:return n.day(i,{width:"wide",context:"formatting"})||n.day(i,{width:"abbreviated",context:"formatting"})||n.day(i,{width:"short",context:"formatting"})||n.day(i,{width:"narrow",context:"formatting"})}}validate(i,r){return r>=0&&r<=6}set(i,r,n,a){return i=Dr(i,n,a),i.setHours(0,0,0,0),i}}class sd extends V{constructor(){super(...arguments);_(this,"priority",90);_(this,"incompatibleTokens",["y","R","u","q","Q","M","L","I","d","D","E","i","c","t","T"])}parse(i,r,n,a){const s=l=>{const c=Math.floor((l-1)/7)*7;return(l+a.weekStartsOn+6)%7+c};switch(r){case"e":case"ee":return ct(ot(r.length,i),s);case"eo":return ct(n.ordinalNumber(i,{unit:"day"}),s);case"eee":return n.day(i,{width:"abbreviated",context:"formatting"})||n.day(i,{width:"short",context:"formatting"})||n.day(i,{width:"narrow",context:"formatting"});case"eeeee":return n.day(i,{width:"narrow",context:"formatting"});case"eeeeee":return n.day(i,{width:"short",context:"formatting"})||n.day(i,{width:"narrow",context:"formatting"});case"eeee":default:return n.day(i,{width:"wide",context:"formatting"})||n.day(i,{width:"abbreviated",context:"formatting"})||n.day(i,{width:"short",context:"formatting"})||n.day(i,{width:"narrow",context:"formatting"})}}validate(i,r){return r>=0&&r<=6}set(i,r,n,a){return i=Dr(i,n,a),i.setHours(0,0,0,0),i}}class od extends V{constructor(){super(...arguments);_(this,"priority",90);_(this,"incompatibleTokens",["y","R","u","q","Q","M","L","I","d","D","E","i","e","t","T"])}parse(i,r,n,a){const s=l=>{const c=Math.floor((l-1)/7)*7;return(l+a.weekStartsOn+6)%7+c};switch(r){case"c":case"cc":return ct(ot(r.length,i),s);case"co":return ct(n.ordinalNumber(i,{unit:"day"}),s);case"ccc":return n.day(i,{width:"abbreviated",context:"standalone"})||n.day(i,{width:"short",context:"standalone"})||n.day(i,{width:"narrow",context:"standalone"});case"ccccc":return n.day(i,{width:"narrow",context:"standalone"});case"cccccc":return n.day(i,{width:"short",context:"standalone"})||n.day(i,{width:"narrow",context:"standalone"});case"cccc":default:return n.day(i,{width:"wide",context:"standalone"})||n.day(i,{width:"abbreviated",context:"standalone"})||n.day(i,{width:"short",context:"standalone"})||n.day(i,{width:"narrow",context:"standalone"})}}validate(i,r){return r>=0&&r<=6}set(i,r,n,a){return i=Dr(i,n,a),i.setHours(0,0,0,0),i}}function ld(t,e,i){const r=L(t,i==null?void 0:i.in),n=Lc(r,i),a=e-n;return tr(r,a,i)}class cd extends V{constructor(){super(...arguments);_(this,"priority",90);_(this,"incompatibleTokens",["y","Y","u","q","Q","M","L","w","d","D","E","e","c","t","T"])}parse(i,r,n){const a=s=>s===0?7:s;switch(r){case"i":case"ii":return ot(r.length,i);case"io":return n.ordinalNumber(i,{unit:"day"});case"iii":return ct(n.day(i,{width:"abbreviated",context:"formatting"})||n.day(i,{width:"short",context:"formatting"})||n.day(i,{width:"narrow",context:"formatting"}),a);case"iiiii":return ct(n.day(i,{width:"narrow",context:"formatting"}),a);case"iiiiii":return ct(n.day(i,{width:"short",context:"formatting"})||n.day(i,{width:"narrow",context:"formatting"}),a);case"iiii":default:return ct(n.day(i,{width:"wide",context:"formatting"})||n.day(i,{width:"abbreviated",context:"formatting"})||n.day(i,{width:"short",context:"formatting"})||n.day(i,{width:"narrow",context:"formatting"}),a)}}validate(i,r){return r>=1&&r<=7}set(i,r,n){return i=ld(i,n),i.setHours(0,0,0,0),i}}class dd extends V{constructor(){super(...arguments);_(this,"priority",80);_(this,"incompatibleTokens",["b","B","H","k","t","T"])}parse(i,r,n){switch(r){case"a":case"aa":case"aaa":return n.dayPeriod(i,{width:"abbreviated",context:"formatting"})||n.dayPeriod(i,{width:"narrow",context:"formatting"});case"aaaaa":return n.dayPeriod(i,{width:"narrow",context:"formatting"});case"aaaa":default:return n.dayPeriod(i,{width:"wide",context:"formatting"})||n.dayPeriod(i,{width:"abbreviated",context:"formatting"})||n.dayPeriod(i,{width:"narrow",context:"formatting"})}}set(i,r,n){return i.setHours(Er(n),0,0,0),i}}class ud extends V{constructor(){super(...arguments);_(this,"priority",80);_(this,"incompatibleTokens",["a","B","H","k","t","T"])}parse(i,r,n){switch(r){case"b":case"bb":case"bbb":return n.dayPeriod(i,{width:"abbreviated",context:"formatting"})||n.dayPeriod(i,{width:"narrow",context:"formatting"});case"bbbbb":return n.dayPeriod(i,{width:"narrow",context:"formatting"});case"bbbb":default:return n.dayPeriod(i,{width:"wide",context:"formatting"})||n.dayPeriod(i,{width:"abbreviated",context:"formatting"})||n.dayPeriod(i,{width:"narrow",context:"formatting"})}}set(i,r,n){return i.setHours(Er(n),0,0,0),i}}class pd extends V{constructor(){super(...arguments);_(this,"priority",80);_(this,"incompatibleTokens",["a","b","t","T"])}parse(i,r,n){switch(r){case"B":case"BB":case"BBB":return n.dayPeriod(i,{width:"abbreviated",context:"formatting"})||n.dayPeriod(i,{width:"narrow",context:"formatting"});case"BBBBB":return n.dayPeriod(i,{width:"narrow",context:"formatting"});case"BBBB":default:return n.dayPeriod(i,{width:"wide",context:"formatting"})||n.dayPeriod(i,{width:"abbreviated",context:"formatting"})||n.dayPeriod(i,{width:"narrow",context:"formatting"})}}set(i,r,n){return i.setHours(Er(n),0,0,0),i}}class hd extends V{constructor(){super(...arguments);_(this,"priority",70);_(this,"incompatibleTokens",["H","K","k","t","T"])}parse(i,r,n){switch(r){case"h":return rt(lt.hour12h,i);case"ho":return n.ordinalNumber(i,{unit:"hour"});default:return ot(r.length,i)}}validate(i,r){return r>=1&&r<=12}set(i,r,n){const a=i.getHours()>=12;return a&&n<12?i.setHours(n+12,0,0,0):!a&&n===12?i.setHours(0,0,0,0):i.setHours(n,0,0,0),i}}class gd extends V{constructor(){super(...arguments);_(this,"priority",70);_(this,"incompatibleTokens",["a","b","h","K","k","t","T"])}parse(i,r,n){switch(r){case"H":return rt(lt.hour23h,i);case"Ho":return n.ordinalNumber(i,{unit:"hour"});default:return ot(r.length,i)}}validate(i,r){return r>=0&&r<=23}set(i,r,n){return i.setHours(n,0,0,0),i}}class fd extends V{constructor(){super(...arguments);_(this,"priority",70);_(this,"incompatibleTokens",["h","H","k","t","T"])}parse(i,r,n){switch(r){case"K":return rt(lt.hour11h,i);case"Ko":return n.ordinalNumber(i,{unit:"hour"});default:return ot(r.length,i)}}validate(i,r){return r>=0&&r<=11}set(i,r,n){return i.getHours()>=12&&n<12?i.setHours(n+12,0,0,0):i.setHours(n,0,0,0),i}}class md extends V{constructor(){super(...arguments);_(this,"priority",70);_(this,"incompatibleTokens",["a","b","h","H","K","t","T"])}parse(i,r,n){switch(r){case"k":return rt(lt.hour24h,i);case"ko":return n.ordinalNumber(i,{unit:"hour"});default:return ot(r.length,i)}}validate(i,r){return r>=1&&r<=24}set(i,r,n){const a=n<=24?n%24:n;return i.setHours(a,0,0,0),i}}class bd extends V{constructor(){super(...arguments);_(this,"priority",60);_(this,"incompatibleTokens",["t","T"])}parse(i,r,n){switch(r){case"m":return rt(lt.minute,i);case"mo":return n.ordinalNumber(i,{unit:"minute"});default:return ot(r.length,i)}}validate(i,r){return r>=0&&r<=59}set(i,r,n){return i.setMinutes(n,0,0),i}}class yd extends V{constructor(){super(...arguments);_(this,"priority",50);_(this,"incompatibleTokens",["t","T"])}parse(i,r,n){switch(r){case"s":return rt(lt.second,i);case"so":return n.ordinalNumber(i,{unit:"second"});default:return ot(r.length,i)}}validate(i,r){return r>=0&&r<=59}set(i,r,n){return i.setSeconds(n,0),i}}class vd extends V{constructor(){super(...arguments);_(this,"priority",30);_(this,"incompatibleTokens",["t","T"])}parse(i,r){const n=a=>Math.trunc(a*Math.pow(10,-r.length+3));return ct(ot(r.length,i),n)}set(i,r,n){return i.setMilliseconds(n),i}}class xd extends V{constructor(){super(...arguments);_(this,"priority",10);_(this,"incompatibleTokens",["t","T","x"])}parse(i,r){switch(r){case"X":return Mt(Tt.basicOptionalMinutes,i);case"XX":return Mt(Tt.basic,i);case"XXXX":return Mt(Tt.basicOptionalSeconds,i);case"XXXXX":return Mt(Tt.extendedOptionalSeconds,i);case"XXX":default:return Mt(Tt.extended,i)}}set(i,r,n){return r.timestampIsSet?i:st(i,i.getTime()-zi(i)-n)}}class wd extends V{constructor(){super(...arguments);_(this,"priority",10);_(this,"incompatibleTokens",["t","T","X"])}parse(i,r){switch(r){case"x":return Mt(Tt.basicOptionalMinutes,i);case"xx":return Mt(Tt.basic,i);case"xxxx":return Mt(Tt.basicOptionalSeconds,i);case"xxxxx":return Mt(Tt.extendedOptionalSeconds,i);case"xxx":default:return Mt(Tt.extended,i)}}set(i,r,n){return r.timestampIsSet?i:st(i,i.getTime()-zi(i)-n)}}class $d extends V{constructor(){super(...arguments);_(this,"priority",40);_(this,"incompatibleTokens","*")}parse(i){return ya(i)}set(i,r,n){return[st(i,n*1e3),{timestampIsSet:!0}]}}class _d extends V{constructor(){super(...arguments);_(this,"priority",20);_(this,"incompatibleTokens","*")}parse(i){return ya(i)}set(i,r,n){return[st(i,n),{timestampIsSet:!0}]}}const kd={G:new Wc,y:new jc,Y:new Vc,R:new qc,u:new Yc,Q:new Uc,q:new Gc,M:new Kc,L:new Zc,w:new Xc,I:new td,d:new rd,D:new nd,E:new ad,e:new sd,c:new od,i:new cd,a:new dd,b:new ud,B:new pd,h:new hd,H:new gd,K:new fd,k:new md,m:new bd,s:new yd,S:new vd,X:new xd,x:new wd,t:new $d,T:new _d},Sd=/[yYQqMLwIdDecihHKkms]o|(\w)\1*|''|'(''|[^'])+('|$)|./g,Cd=/P+p+|P+|p+|''|'(''|[^'])+('|$)|./g,Pd=/^'([^]*?)'?$/,Td=/''/g,Md=/\S/,Ed=/[a-zA-Z]/;function Dd(t,e,i,r){var k,C,$,S,Y,K,x,H;const n=()=>st((r==null?void 0:r.in)||i,NaN),a=Ic(),s=(r==null?void 0:r.locale)??a.locale??ua,l=(r==null?void 0:r.firstWeekContainsDate)??((C=(k=r==null?void 0:r.locale)==null?void 0:k.options)==null?void 0:C.firstWeekContainsDate)??a.firstWeekContainsDate??((S=($=a.locale)==null?void 0:$.options)==null?void 0:S.firstWeekContainsDate)??1,c=(r==null?void 0:r.weekStartsOn)??((K=(Y=r==null?void 0:r.locale)==null?void 0:Y.options)==null?void 0:K.weekStartsOn)??a.weekStartsOn??((H=(x=a.locale)==null?void 0:x.options)==null?void 0:H.weekStartsOn)??0;if(!e)return t?n():L(i,r==null?void 0:r.in);const u={firstWeekContainsDate:l,weekStartsOn:c,locale:s},p=[new Hc(r==null?void 0:r.in,i)],g=e.match(Cd).map(z=>{const D=z[0];if(D in xr){const q=xr[D];return q(z,s.formatLong)}return z}).join("").match(Sd),m=[];for(let z of g){!(r!=null&&r.useAdditionalWeekYearTokens)&&ma(z)&&wr(z,e,t),!(r!=null&&r.useAdditionalDayOfYearTokens)&&fa(z)&&wr(z,e,t);const D=z[0],q=kd[D];if(q){const{incompatibleTokens:Q}=q;if(Array.isArray(Q)){const xt=m.find(Vt=>Q.includes(Vt.token)||Vt.token===D);if(xt)throw new RangeError(`The format string mustn't contain \`${xt.fullToken}\` and \`${z}\` at the same time`)}else if(q.incompatibleTokens==="*"&&m.length>0)throw new RangeError(`The format string mustn't contain \`${z}\` and any other token at the same time`);m.push({token:D,fullToken:z});const U=q.run(t,z,s.match,u);if(!U)return n();p.push(U.setter),t=U.rest}else{if(D.match(Ed))throw new RangeError("Format string contains an unescaped latin alphabet character `"+D+"`");if(z==="''"?z="'":D==="'"&&(z=Od(z)),t.indexOf(z)===0)t=t.slice(z.length);else return n()}}if(t.length>0&&Md.test(t))return n();const b=p.map(z=>z.priority).sort((z,D)=>D-z).filter((z,D,q)=>q.indexOf(z)===D).map(z=>p.filter(D=>D.priority===z).sort((D,q)=>q.subPriority-D.subPriority)).map(z=>z[0]);let v=L(i,r==null?void 0:r.in);if(isNaN(+v))return n();const f={};for(const z of b){if(!z.validate(v,u))return n();const D=z.set(v,f,u);Array.isArray(D)?(v=D[0],Object.assign(f,D[1])):v=D}return v}function Od(t){return t.match(Pd)[1].replace(Td,"'")}function zd(t,e){const i=L(t,e==null?void 0:e.in);return i.setMinutes(0,0,0),i}function Ad(t,e){const i=L(t,e==null?void 0:e.in);return i.setSeconds(0,0),i}function Id(t,e){const i=L(t,e==null?void 0:e.in);return i.setMilliseconds(0),i}function Ld(t,e){const i=()=>st(e==null?void 0:e.in,NaN),r=(e==null?void 0:e.additionalDigits)??2,n=Rd(t);let a;if(n.date){const u=Hd(n.date,r);a=Wd(u.restDateString,u.year)}if(!a||isNaN(+a))return i();const s=+a;let l=0,c;if(n.time&&(l=jd(n.time),isNaN(l)))return i();if(n.timezone){if(c=Vd(n.timezone),isNaN(c))return i()}else{const u=new Date(s+l),p=L(0,e==null?void 0:e.in);return p.setFullYear(u.getUTCFullYear(),u.getUTCMonth(),u.getUTCDate()),p.setHours(u.getUTCHours(),u.getUTCMinutes(),u.getUTCSeconds(),u.getUTCMilliseconds()),p}return L(s+l+c,e==null?void 0:e.in)}const _i={dateTimeDelimiter:/[T ]/,timeZoneDelimiter:/[Z ]/i,timezone:/([Z+-].*)$/},Bd=/^-?(?:(\d{3})|(\d{2})(?:-?(\d{2}))?|W(\d{2})(?:-?(\d{1}))?|)$/,Fd=/^(\d{2}(?:[.,]\d*)?)(?::?(\d{2}(?:[.,]\d*)?))?(?::?(\d{2}(?:[.,]\d*)?))?$/,Nd=/^([+-])(\d{2})(?::?(\d{2}))?$/;function Rd(t){const e={},i=t.split(_i.dateTimeDelimiter);let r;if(i.length>2)return e;if(/:/.test(i[0])?r=i[0]:(e.date=i[0],r=i[1],_i.timeZoneDelimiter.test(e.date)&&(e.date=t.split(_i.timeZoneDelimiter)[0],r=t.substr(e.date.length,t.length))),r){const n=_i.timezone.exec(r);n?(e.time=r.replace(n[1],""),e.timezone=n[1]):e.time=r}return e}function Hd(t,e){const i=new RegExp("^(?:(\\d{4}|[+-]\\d{"+(4+e)+"})|(\\d{2}|[+-]\\d{"+(2+e)+"})$)"),r=t.match(i);if(!r)return{year:NaN,restDateString:""};const n=r[1]?parseInt(r[1]):null,a=r[2]?parseInt(r[2]):null;return{year:a===null?n:a*100,restDateString:t.slice((r[1]||r[2]).length)}}function Wd(t,e){if(e===null)return new Date(NaN);const i=t.match(Bd);if(!i)return new Date(NaN);const r=!!i[4],n=Ye(i[1]),a=Ye(i[2])-1,s=Ye(i[3]),l=Ye(i[4]),c=Ye(i[5])-1;if(r)return Kd(e,l,c)?qd(e,l,c):new Date(NaN);{const u=new Date(0);return!Ud(e,a,s)||!Gd(e,n)?new Date(NaN):(u.setUTCFullYear(e,a,Math.max(n,s)),u)}}function Ye(t){return t?parseInt(t):1}function jd(t){const e=t.match(Fd);if(!e)return NaN;const i=ur(e[1]),r=ur(e[2]),n=ur(e[3]);return Zd(i,r,n)?i*fi+r*gi+n*1e3:NaN}function ur(t){return t&&parseFloat(t.replace(",","."))||0}function Vd(t){if(t==="Z")return 0;const e=t.match(Nd);if(!e)return 0;const i=e[1]==="+"?-1:1,r=parseInt(e[2]),n=e[3]&&parseInt(e[3])||0;return Qd(r,n)?i*(r*fi+n*gi):NaN}function qd(t,e,i){const r=new Date(0);r.setUTCFullYear(t,0,4);const n=r.getUTCDay()||7,a=(e-1)*7+i+1-n;return r.setUTCDate(r.getUTCDate()+a),r}const Yd=[31,null,31,30,31,30,31,31,30,31,30,31];function wa(t){return t%400===0||t%4===0&&t%100!==0}function Ud(t,e,i){return e>=0&&e<=11&&i>=1&&i<=(Yd[e]||(wa(t)?29:28))}function Gd(t,e){return e>=1&&e<=(wa(t)?366:365)}function Kd(t,e,i){return e>=1&&e<=53&&i>=0&&i<=6}function Zd(t,e,i){return t===24?e===0&&i===0:i>=0&&i<60&&e>=0&&e<60&&t>=0&&t<25}function Qd(t,e){return e>=0&&e<=59}/*!
+  `;dt([h({type:Object})],ei.prototype,"data",2);dt([h({type:Boolean})],ei.prototype,"topOnly",2);ei=dt([D("oig-pricing-stats")],ei);const ha=6048e5,Al=864e5,fi=6e4,mi=36e5,Il=1e3,Cr=Symbol.for("constructDateFrom");function st(t,e){return typeof t=="function"?t(e):t&&typeof t=="object"&&Cr in t?t[Cr](e):t instanceof Date?new t.constructor(e):new Date(e)}function I(t,e){return st(e||t,t)}function tn(t,e,i){const n=I(t,i==null?void 0:i.in);return isNaN(e)?st((i==null?void 0:i.in)||t,NaN):(e&&n.setDate(n.getDate()+e),n)}function Ln(t,e,i){const n=I(t,i==null?void 0:i.in);if(isNaN(e))return st(t,NaN);if(!e)return n;const r=n.getDate(),a=st(t,n.getTime());a.setMonth(n.getMonth()+e+1,0);const s=a.getDate();return r>=s?a:(n.setFullYear(a.getFullYear(),a.getMonth(),r),n)}function An(t,e,i){return st(t,+I(t)+e)}function Bl(t,e,i){return An(t,e*mi)}let Fl={};function le(){return Fl}function Dt(t,e){var l,c,u,p;const i=le(),n=(e==null?void 0:e.weekStartsOn)??((c=(l=e==null?void 0:e.locale)==null?void 0:l.options)==null?void 0:c.weekStartsOn)??i.weekStartsOn??((p=(u=i.locale)==null?void 0:u.options)==null?void 0:p.weekStartsOn)??0,r=I(t,e==null?void 0:e.in),a=r.getDay(),s=(a<n?7:0)+a-n;return r.setDate(r.getDate()-s),r.setHours(0,0,0,0),r}function ke(t,e){return Dt(t,{...e,weekStartsOn:1})}function ga(t,e){const i=I(t,e==null?void 0:e.in),n=i.getFullYear(),r=st(i,0);r.setFullYear(n+1,0,4),r.setHours(0,0,0,0);const a=ke(r),s=st(i,0);s.setFullYear(n,0,4),s.setHours(0,0,0,0);const l=ke(s);return i.getTime()>=a.getTime()?n+1:i.getTime()>=l.getTime()?n:n-1}function zi(t){const e=I(t),i=new Date(Date.UTC(e.getFullYear(),e.getMonth(),e.getDate(),e.getHours(),e.getMinutes(),e.getSeconds(),e.getMilliseconds()));return i.setUTCFullYear(e.getFullYear()),+t-+i}function ce(t,...e){const i=st.bind(null,e.find(n=>typeof n=="object"));return e.map(i)}function Sn(t,e){const i=I(t,e==null?void 0:e.in);return i.setHours(0,0,0,0),i}function fa(t,e,i){const[n,r]=ce(i==null?void 0:i.in,t,e),a=Sn(n),s=Sn(r),l=+a-zi(a),c=+s-zi(s);return Math.round((l-c)/Al)}function Nl(t,e){const i=ga(t,e),n=st(t,0);return n.setFullYear(i,0,4),n.setHours(0,0,0,0),ke(n)}function Rl(t,e,i){const n=I(t,i==null?void 0:i.in);return n.setTime(n.getTime()+e*fi),n}function Hl(t,e,i){return Ln(t,e*3,i)}function Wl(t,e,i){return An(t,e*1e3)}function jl(t,e,i){return tn(t,e*7,i)}function Vl(t,e,i){return Ln(t,e*12,i)}function Ze(t,e){const i=+I(t)-+I(e);return i<0?-1:i>0?1:i}function ql(t){return t instanceof Date||typeof t=="object"&&Object.prototype.toString.call(t)==="[object Date]"}function ma(t){return!(!ql(t)&&typeof t!="number"||isNaN(+I(t)))}function Yl(t,e,i){const[n,r]=ce(i==null?void 0:i.in,t,e),a=n.getFullYear()-r.getFullYear(),s=n.getMonth()-r.getMonth();return a*12+s}function Gl(t,e,i){const[n,r]=ce(i==null?void 0:i.in,t,e);return n.getFullYear()-r.getFullYear()}function ba(t,e,i){const[n,r]=ce(i==null?void 0:i.in,t,e),a=Pr(n,r),s=Math.abs(fa(n,r));n.setDate(n.getDate()-a*s);const l=+(Pr(n,r)===-a),c=a*(s-l);return c===0?0:c}function Pr(t,e){const i=t.getFullYear()-e.getFullYear()||t.getMonth()-e.getMonth()||t.getDate()-e.getDate()||t.getHours()-e.getHours()||t.getMinutes()-e.getMinutes()||t.getSeconds()-e.getSeconds()||t.getMilliseconds()-e.getMilliseconds();return i<0?-1:i>0?1:i}function bi(t){return e=>{const n=(t?Math[t]:Math.trunc)(e);return n===0?0:n}}function Ul(t,e,i){const[n,r]=ce(i==null?void 0:i.in,t,e),a=(+n-+r)/mi;return bi(i==null?void 0:i.roundingMethod)(a)}function In(t,e){return+I(t)-+I(e)}function Kl(t,e,i){const n=In(t,e)/fi;return bi(i==null?void 0:i.roundingMethod)(n)}function ya(t,e){const i=I(t,e==null?void 0:e.in);return i.setHours(23,59,59,999),i}function va(t,e){const i=I(t,e==null?void 0:e.in),n=i.getMonth();return i.setFullYear(i.getFullYear(),n+1,0),i.setHours(23,59,59,999),i}function Zl(t,e){const i=I(t,e==null?void 0:e.in);return+ya(i,e)==+va(i,e)}function xa(t,e,i){const[n,r,a]=ce(i==null?void 0:i.in,t,t,e),s=Ze(r,a),l=Math.abs(Yl(r,a));if(l<1)return 0;r.getMonth()===1&&r.getDate()>27&&r.setDate(30),r.setMonth(r.getMonth()-s*l);let c=Ze(r,a)===-s;Zl(n)&&l===1&&Ze(n,a)===1&&(c=!1);const u=s*(l-+c);return u===0?0:u}function Ql(t,e,i){const n=xa(t,e,i)/3;return bi(i==null?void 0:i.roundingMethod)(n)}function Xl(t,e,i){const n=In(t,e)/1e3;return bi(i==null?void 0:i.roundingMethod)(n)}function Jl(t,e,i){const n=ba(t,e,i)/7;return bi(i==null?void 0:i.roundingMethod)(n)}function tc(t,e,i){const[n,r]=ce(i==null?void 0:i.in,t,e),a=Ze(n,r),s=Math.abs(Gl(n,r));n.setFullYear(1584),r.setFullYear(1584);const l=Ze(n,r)===-a,c=a*(s-+l);return c===0?0:c}function ec(t,e){const i=I(t,e==null?void 0:e.in),n=i.getMonth(),r=n-n%3;return i.setMonth(r,1),i.setHours(0,0,0,0),i}function ic(t,e){const i=I(t,e==null?void 0:e.in);return i.setDate(1),i.setHours(0,0,0,0),i}function nc(t,e){const i=I(t,e==null?void 0:e.in),n=i.getFullYear();return i.setFullYear(n+1,0,0),i.setHours(23,59,59,999),i}function wa(t,e){const i=I(t,e==null?void 0:e.in);return i.setFullYear(i.getFullYear(),0,1),i.setHours(0,0,0,0),i}function rc(t,e){const i=I(t,e==null?void 0:e.in);return i.setMinutes(59,59,999),i}function ac(t,e){var l,c;const i=le(),n=i.weekStartsOn??((c=(l=i.locale)==null?void 0:l.options)==null?void 0:c.weekStartsOn)??0,r=I(t,e==null?void 0:e.in),a=r.getDay(),s=(a<n?-7:0)+6-(a-n);return r.setDate(r.getDate()+s),r.setHours(23,59,59,999),r}function sc(t,e){const i=I(t,e==null?void 0:e.in);return i.setSeconds(59,999),i}function oc(t,e){const i=I(t,e==null?void 0:e.in),n=i.getMonth(),r=n-n%3+3;return i.setMonth(r,0),i.setHours(23,59,59,999),i}function lc(t,e){const i=I(t,e==null?void 0:e.in);return i.setMilliseconds(999),i}const cc={lessThanXSeconds:{one:"less than a second",other:"less than {{count}} seconds"},xSeconds:{one:"1 second",other:"{{count}} seconds"},halfAMinute:"half a minute",lessThanXMinutes:{one:"less than a minute",other:"less than {{count}} minutes"},xMinutes:{one:"1 minute",other:"{{count}} minutes"},aboutXHours:{one:"about 1 hour",other:"about {{count}} hours"},xHours:{one:"1 hour",other:"{{count}} hours"},xDays:{one:"1 day",other:"{{count}} days"},aboutXWeeks:{one:"about 1 week",other:"about {{count}} weeks"},xWeeks:{one:"1 week",other:"{{count}} weeks"},aboutXMonths:{one:"about 1 month",other:"about {{count}} months"},xMonths:{one:"1 month",other:"{{count}} months"},aboutXYears:{one:"about 1 year",other:"about {{count}} years"},xYears:{one:"1 year",other:"{{count}} years"},overXYears:{one:"over 1 year",other:"over {{count}} years"},almostXYears:{one:"almost 1 year",other:"almost {{count}} years"}},dc=(t,e,i)=>{let n;const r=cc[t];return typeof r=="string"?n=r:e===1?n=r.one:n=r.other.replace("{{count}}",e.toString()),i!=null&&i.addSuffix?i.comparison&&i.comparison>0?"in "+n:n+" ago":n};function fn(t){return(e={})=>{const i=e.width?String(e.width):t.defaultWidth;return t.formats[i]||t.formats[t.defaultWidth]}}const uc={full:"EEEE, MMMM do, y",long:"MMMM do, y",medium:"MMM d, y",short:"MM/dd/yyyy"},pc={full:"h:mm:ss a zzzz",long:"h:mm:ss a z",medium:"h:mm:ss a",short:"h:mm a"},hc={full:"{{date}} 'at' {{time}}",long:"{{date}} 'at' {{time}}",medium:"{{date}}, {{time}}",short:"{{date}}, {{time}}"},gc={date:fn({formats:uc,defaultWidth:"full"}),time:fn({formats:pc,defaultWidth:"full"}),dateTime:fn({formats:hc,defaultWidth:"full"})},fc={lastWeek:"'last' eeee 'at' p",yesterday:"'yesterday at' p",today:"'today at' p",tomorrow:"'tomorrow at' p",nextWeek:"eeee 'at' p",other:"P"},mc=(t,e,i,n)=>fc[t];function Ve(t){return(e,i)=>{const n=i!=null&&i.context?String(i.context):"standalone";let r;if(n==="formatting"&&t.formattingValues){const s=t.defaultFormattingWidth||t.defaultWidth,l=i!=null&&i.width?String(i.width):s;r=t.formattingValues[l]||t.formattingValues[s]}else{const s=t.defaultWidth,l=i!=null&&i.width?String(i.width):t.defaultWidth;r=t.values[l]||t.values[s]}const a=t.argumentCallback?t.argumentCallback(e):e;return r[a]}}const bc={narrow:["B","A"],abbreviated:["BC","AD"],wide:["Before Christ","Anno Domini"]},yc={narrow:["1","2","3","4"],abbreviated:["Q1","Q2","Q3","Q4"],wide:["1st quarter","2nd quarter","3rd quarter","4th quarter"]},vc={narrow:["J","F","M","A","M","J","J","A","S","O","N","D"],abbreviated:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],wide:["January","February","March","April","May","June","July","August","September","October","November","December"]},xc={narrow:["S","M","T","W","T","F","S"],short:["Su","Mo","Tu","We","Th","Fr","Sa"],abbreviated:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],wide:["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"]},wc={narrow:{am:"a",pm:"p",midnight:"mi",noon:"n",morning:"morning",afternoon:"afternoon",evening:"evening",night:"night"},abbreviated:{am:"AM",pm:"PM",midnight:"midnight",noon:"noon",morning:"morning",afternoon:"afternoon",evening:"evening",night:"night"},wide:{am:"a.m.",pm:"p.m.",midnight:"midnight",noon:"noon",morning:"morning",afternoon:"afternoon",evening:"evening",night:"night"}},$c={narrow:{am:"a",pm:"p",midnight:"mi",noon:"n",morning:"in the morning",afternoon:"in the afternoon",evening:"in the evening",night:"at night"},abbreviated:{am:"AM",pm:"PM",midnight:"midnight",noon:"noon",morning:"in the morning",afternoon:"in the afternoon",evening:"in the evening",night:"at night"},wide:{am:"a.m.",pm:"p.m.",midnight:"midnight",noon:"noon",morning:"in the morning",afternoon:"in the afternoon",evening:"in the evening",night:"at night"}},_c=(t,e)=>{const i=Number(t),n=i%100;if(n>20||n<10)switch(n%10){case 1:return i+"st";case 2:return i+"nd";case 3:return i+"rd"}return i+"th"},kc={ordinalNumber:_c,era:Ve({values:bc,defaultWidth:"wide"}),quarter:Ve({values:yc,defaultWidth:"wide",argumentCallback:t=>t-1}),month:Ve({values:vc,defaultWidth:"wide"}),day:Ve({values:xc,defaultWidth:"wide"}),dayPeriod:Ve({values:wc,defaultWidth:"wide",formattingValues:$c,defaultFormattingWidth:"wide"})};function qe(t){return(e,i={})=>{const n=i.width,r=n&&t.matchPatterns[n]||t.matchPatterns[t.defaultMatchWidth],a=e.match(r);if(!a)return null;const s=a[0],l=n&&t.parsePatterns[n]||t.parsePatterns[t.defaultParseWidth],c=Array.isArray(l)?Cc(l,f=>f.test(s)):Sc(l,f=>f.test(s));let u;u=t.valueCallback?t.valueCallback(c):c,u=i.valueCallback?i.valueCallback(u):u;const p=e.slice(s.length);return{value:u,rest:p}}}function Sc(t,e){for(const i in t)if(Object.prototype.hasOwnProperty.call(t,i)&&e(t[i]))return i}function Cc(t,e){for(let i=0;i<t.length;i++)if(e(t[i]))return i}function Pc(t){return(e,i={})=>{const n=e.match(t.matchPattern);if(!n)return null;const r=n[0],a=e.match(t.parsePattern);if(!a)return null;let s=t.valueCallback?t.valueCallback(a[0]):a[0];s=i.valueCallback?i.valueCallback(s):s;const l=e.slice(r.length);return{value:s,rest:l}}}const Tc=/^(\d+)(th|st|nd|rd)?/i,Mc=/\d+/i,Dc={narrow:/^(b|a)/i,abbreviated:/^(b\.?\s?c\.?|b\.?\s?c\.?\s?e\.?|a\.?\s?d\.?|c\.?\s?e\.?)/i,wide:/^(before christ|before common era|anno domini|common era)/i},Ec={any:[/^b/i,/^(a|c)/i]},Oc={narrow:/^[1234]/i,abbreviated:/^q[1234]/i,wide:/^[1234](th|st|nd|rd)? quarter/i},zc={any:[/1/i,/2/i,/3/i,/4/i]},Lc={narrow:/^[jfmasond]/i,abbreviated:/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,wide:/^(january|february|march|april|may|june|july|august|september|october|november|december)/i},Ac={narrow:[/^j/i,/^f/i,/^m/i,/^a/i,/^m/i,/^j/i,/^j/i,/^a/i,/^s/i,/^o/i,/^n/i,/^d/i],any:[/^ja/i,/^f/i,/^mar/i,/^ap/i,/^may/i,/^jun/i,/^jul/i,/^au/i,/^s/i,/^o/i,/^n/i,/^d/i]},Ic={narrow:/^[smtwf]/i,short:/^(su|mo|tu|we|th|fr|sa)/i,abbreviated:/^(sun|mon|tue|wed|thu|fri|sat)/i,wide:/^(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/i},Bc={narrow:[/^s/i,/^m/i,/^t/i,/^w/i,/^t/i,/^f/i,/^s/i],any:[/^su/i,/^m/i,/^tu/i,/^w/i,/^th/i,/^f/i,/^sa/i]},Fc={narrow:/^(a|p|mi|n|(in the|at) (morning|afternoon|evening|night))/i,any:/^([ap]\.?\s?m\.?|midnight|noon|(in the|at) (morning|afternoon|evening|night))/i},Nc={any:{am:/^a/i,pm:/^p/i,midnight:/^mi/i,noon:/^no/i,morning:/morning/i,afternoon:/afternoon/i,evening:/evening/i,night:/night/i}},Rc={ordinalNumber:Pc({matchPattern:Tc,parsePattern:Mc,valueCallback:t=>parseInt(t,10)}),era:qe({matchPatterns:Dc,defaultMatchWidth:"wide",parsePatterns:Ec,defaultParseWidth:"any"}),quarter:qe({matchPatterns:Oc,defaultMatchWidth:"wide",parsePatterns:zc,defaultParseWidth:"any",valueCallback:t=>t+1}),month:qe({matchPatterns:Lc,defaultMatchWidth:"wide",parsePatterns:Ac,defaultParseWidth:"any"}),day:qe({matchPatterns:Ic,defaultMatchWidth:"wide",parsePatterns:Bc,defaultParseWidth:"any"}),dayPeriod:qe({matchPatterns:Fc,defaultMatchWidth:"any",parsePatterns:Nc,defaultParseWidth:"any"})},$a={code:"en-US",formatDistance:dc,formatLong:gc,formatRelative:mc,localize:kc,match:Rc,options:{weekStartsOn:0,firstWeekContainsDate:1}};function Hc(t,e){const i=I(t,e==null?void 0:e.in);return fa(i,wa(i))+1}function _a(t,e){const i=I(t,e==null?void 0:e.in),n=+ke(i)-+Nl(i);return Math.round(n/ha)+1}function Bn(t,e){var p,f,v,m;const i=I(t,e==null?void 0:e.in),n=i.getFullYear(),r=le(),a=(e==null?void 0:e.firstWeekContainsDate)??((f=(p=e==null?void 0:e.locale)==null?void 0:p.options)==null?void 0:f.firstWeekContainsDate)??r.firstWeekContainsDate??((m=(v=r.locale)==null?void 0:v.options)==null?void 0:m.firstWeekContainsDate)??1,s=st((e==null?void 0:e.in)||t,0);s.setFullYear(n+1,0,a),s.setHours(0,0,0,0);const l=Dt(s,e),c=st((e==null?void 0:e.in)||t,0);c.setFullYear(n,0,a),c.setHours(0,0,0,0);const u=Dt(c,e);return+i>=+l?n+1:+i>=+u?n:n-1}function Wc(t,e){var l,c,u,p;const i=le(),n=(e==null?void 0:e.firstWeekContainsDate)??((c=(l=e==null?void 0:e.locale)==null?void 0:l.options)==null?void 0:c.firstWeekContainsDate)??i.firstWeekContainsDate??((p=(u=i.locale)==null?void 0:u.options)==null?void 0:p.firstWeekContainsDate)??1,r=Bn(t,e),a=st((e==null?void 0:e.in)||t,0);return a.setFullYear(r,0,n),a.setHours(0,0,0,0),Dt(a,e)}function ka(t,e){const i=I(t,e==null?void 0:e.in),n=+Dt(i,e)-+Wc(i,e);return Math.round(n/ha)+1}function K(t,e){const i=t<0?"-":"",n=Math.abs(t).toString().padStart(e,"0");return i+n}const It={y(t,e){const i=t.getFullYear(),n=i>0?i:1-i;return K(e==="yy"?n%100:n,e.length)},M(t,e){const i=t.getMonth();return e==="M"?String(i+1):K(i+1,2)},d(t,e){return K(t.getDate(),e.length)},a(t,e){const i=t.getHours()/12>=1?"pm":"am";switch(e){case"a":case"aa":return i.toUpperCase();case"aaa":return i;case"aaaaa":return i[0];case"aaaa":default:return i==="am"?"a.m.":"p.m."}},h(t,e){return K(t.getHours()%12||12,e.length)},H(t,e){return K(t.getHours(),e.length)},m(t,e){return K(t.getMinutes(),e.length)},s(t,e){return K(t.getSeconds(),e.length)},S(t,e){const i=e.length,n=t.getMilliseconds(),r=Math.trunc(n*Math.pow(10,i-3));return K(r,e.length)}},pe={midnight:"midnight",noon:"noon",morning:"morning",afternoon:"afternoon",evening:"evening",night:"night"},Tr={G:function(t,e,i){const n=t.getFullYear()>0?1:0;switch(e){case"G":case"GG":case"GGG":return i.era(n,{width:"abbreviated"});case"GGGGG":return i.era(n,{width:"narrow"});case"GGGG":default:return i.era(n,{width:"wide"})}},y:function(t,e,i){if(e==="yo"){const n=t.getFullYear(),r=n>0?n:1-n;return i.ordinalNumber(r,{unit:"year"})}return It.y(t,e)},Y:function(t,e,i,n){const r=Bn(t,n),a=r>0?r:1-r;if(e==="YY"){const s=a%100;return K(s,2)}return e==="Yo"?i.ordinalNumber(a,{unit:"year"}):K(a,e.length)},R:function(t,e){const i=ga(t);return K(i,e.length)},u:function(t,e){const i=t.getFullYear();return K(i,e.length)},Q:function(t,e,i){const n=Math.ceil((t.getMonth()+1)/3);switch(e){case"Q":return String(n);case"QQ":return K(n,2);case"Qo":return i.ordinalNumber(n,{unit:"quarter"});case"QQQ":return i.quarter(n,{width:"abbreviated",context:"formatting"});case"QQQQQ":return i.quarter(n,{width:"narrow",context:"formatting"});case"QQQQ":default:return i.quarter(n,{width:"wide",context:"formatting"})}},q:function(t,e,i){const n=Math.ceil((t.getMonth()+1)/3);switch(e){case"q":return String(n);case"qq":return K(n,2);case"qo":return i.ordinalNumber(n,{unit:"quarter"});case"qqq":return i.quarter(n,{width:"abbreviated",context:"standalone"});case"qqqqq":return i.quarter(n,{width:"narrow",context:"standalone"});case"qqqq":default:return i.quarter(n,{width:"wide",context:"standalone"})}},M:function(t,e,i){const n=t.getMonth();switch(e){case"M":case"MM":return It.M(t,e);case"Mo":return i.ordinalNumber(n+1,{unit:"month"});case"MMM":return i.month(n,{width:"abbreviated",context:"formatting"});case"MMMMM":return i.month(n,{width:"narrow",context:"formatting"});case"MMMM":default:return i.month(n,{width:"wide",context:"formatting"})}},L:function(t,e,i){const n=t.getMonth();switch(e){case"L":return String(n+1);case"LL":return K(n+1,2);case"Lo":return i.ordinalNumber(n+1,{unit:"month"});case"LLL":return i.month(n,{width:"abbreviated",context:"standalone"});case"LLLLL":return i.month(n,{width:"narrow",context:"standalone"});case"LLLL":default:return i.month(n,{width:"wide",context:"standalone"})}},w:function(t,e,i,n){const r=ka(t,n);return e==="wo"?i.ordinalNumber(r,{unit:"week"}):K(r,e.length)},I:function(t,e,i){const n=_a(t);return e==="Io"?i.ordinalNumber(n,{unit:"week"}):K(n,e.length)},d:function(t,e,i){return e==="do"?i.ordinalNumber(t.getDate(),{unit:"date"}):It.d(t,e)},D:function(t,e,i){const n=Hc(t);return e==="Do"?i.ordinalNumber(n,{unit:"dayOfYear"}):K(n,e.length)},E:function(t,e,i){const n=t.getDay();switch(e){case"E":case"EE":case"EEE":return i.day(n,{width:"abbreviated",context:"formatting"});case"EEEEE":return i.day(n,{width:"narrow",context:"formatting"});case"EEEEEE":return i.day(n,{width:"short",context:"formatting"});case"EEEE":default:return i.day(n,{width:"wide",context:"formatting"})}},e:function(t,e,i,n){const r=t.getDay(),a=(r-n.weekStartsOn+8)%7||7;switch(e){case"e":return String(a);case"ee":return K(a,2);case"eo":return i.ordinalNumber(a,{unit:"day"});case"eee":return i.day(r,{width:"abbreviated",context:"formatting"});case"eeeee":return i.day(r,{width:"narrow",context:"formatting"});case"eeeeee":return i.day(r,{width:"short",context:"formatting"});case"eeee":default:return i.day(r,{width:"wide",context:"formatting"})}},c:function(t,e,i,n){const r=t.getDay(),a=(r-n.weekStartsOn+8)%7||7;switch(e){case"c":return String(a);case"cc":return K(a,e.length);case"co":return i.ordinalNumber(a,{unit:"day"});case"ccc":return i.day(r,{width:"abbreviated",context:"standalone"});case"ccccc":return i.day(r,{width:"narrow",context:"standalone"});case"cccccc":return i.day(r,{width:"short",context:"standalone"});case"cccc":default:return i.day(r,{width:"wide",context:"standalone"})}},i:function(t,e,i){const n=t.getDay(),r=n===0?7:n;switch(e){case"i":return String(r);case"ii":return K(r,e.length);case"io":return i.ordinalNumber(r,{unit:"day"});case"iii":return i.day(n,{width:"abbreviated",context:"formatting"});case"iiiii":return i.day(n,{width:"narrow",context:"formatting"});case"iiiiii":return i.day(n,{width:"short",context:"formatting"});case"iiii":default:return i.day(n,{width:"wide",context:"formatting"})}},a:function(t,e,i){const r=t.getHours()/12>=1?"pm":"am";switch(e){case"a":case"aa":return i.dayPeriod(r,{width:"abbreviated",context:"formatting"});case"aaa":return i.dayPeriod(r,{width:"abbreviated",context:"formatting"}).toLowerCase();case"aaaaa":return i.dayPeriod(r,{width:"narrow",context:"formatting"});case"aaaa":default:return i.dayPeriod(r,{width:"wide",context:"formatting"})}},b:function(t,e,i){const n=t.getHours();let r;switch(n===12?r=pe.noon:n===0?r=pe.midnight:r=n/12>=1?"pm":"am",e){case"b":case"bb":return i.dayPeriod(r,{width:"abbreviated",context:"formatting"});case"bbb":return i.dayPeriod(r,{width:"abbreviated",context:"formatting"}).toLowerCase();case"bbbbb":return i.dayPeriod(r,{width:"narrow",context:"formatting"});case"bbbb":default:return i.dayPeriod(r,{width:"wide",context:"formatting"})}},B:function(t,e,i){const n=t.getHours();let r;switch(n>=17?r=pe.evening:n>=12?r=pe.afternoon:n>=4?r=pe.morning:r=pe.night,e){case"B":case"BB":case"BBB":return i.dayPeriod(r,{width:"abbreviated",context:"formatting"});case"BBBBB":return i.dayPeriod(r,{width:"narrow",context:"formatting"});case"BBBB":default:return i.dayPeriod(r,{width:"wide",context:"formatting"})}},h:function(t,e,i){if(e==="ho"){let n=t.getHours()%12;return n===0&&(n=12),i.ordinalNumber(n,{unit:"hour"})}return It.h(t,e)},H:function(t,e,i){return e==="Ho"?i.ordinalNumber(t.getHours(),{unit:"hour"}):It.H(t,e)},K:function(t,e,i){const n=t.getHours()%12;return e==="Ko"?i.ordinalNumber(n,{unit:"hour"}):K(n,e.length)},k:function(t,e,i){let n=t.getHours();return n===0&&(n=24),e==="ko"?i.ordinalNumber(n,{unit:"hour"}):K(n,e.length)},m:function(t,e,i){return e==="mo"?i.ordinalNumber(t.getMinutes(),{unit:"minute"}):It.m(t,e)},s:function(t,e,i){return e==="so"?i.ordinalNumber(t.getSeconds(),{unit:"second"}):It.s(t,e)},S:function(t,e){return It.S(t,e)},X:function(t,e,i){const n=t.getTimezoneOffset();if(n===0)return"Z";switch(e){case"X":return Dr(n);case"XXXX":case"XX":return Jt(n);case"XXXXX":case"XXX":default:return Jt(n,":")}},x:function(t,e,i){const n=t.getTimezoneOffset();switch(e){case"x":return Dr(n);case"xxxx":case"xx":return Jt(n);case"xxxxx":case"xxx":default:return Jt(n,":")}},O:function(t,e,i){const n=t.getTimezoneOffset();switch(e){case"O":case"OO":case"OOO":return"GMT"+Mr(n,":");case"OOOO":default:return"GMT"+Jt(n,":")}},z:function(t,e,i){const n=t.getTimezoneOffset();switch(e){case"z":case"zz":case"zzz":return"GMT"+Mr(n,":");case"zzzz":default:return"GMT"+Jt(n,":")}},t:function(t,e,i){const n=Math.trunc(+t/1e3);return K(n,e.length)},T:function(t,e,i){return K(+t,e.length)}};function Mr(t,e=""){const i=t>0?"-":"+",n=Math.abs(t),r=Math.trunc(n/60),a=n%60;return a===0?i+String(r):i+String(r)+e+K(a,2)}function Dr(t,e){return t%60===0?(t>0?"-":"+")+K(Math.abs(t)/60,2):Jt(t,e)}function Jt(t,e=""){const i=t>0?"-":"+",n=Math.abs(t),r=K(Math.trunc(n/60),2),a=K(n%60,2);return i+r+e+a}const Er=(t,e)=>{switch(t){case"P":return e.date({width:"short"});case"PP":return e.date({width:"medium"});case"PPP":return e.date({width:"long"});case"PPPP":default:return e.date({width:"full"})}},Sa=(t,e)=>{switch(t){case"p":return e.time({width:"short"});case"pp":return e.time({width:"medium"});case"ppp":return e.time({width:"long"});case"pppp":default:return e.time({width:"full"})}},jc=(t,e)=>{const i=t.match(/(P+)(p+)?/)||[],n=i[1],r=i[2];if(!r)return Er(t,e);let a;switch(n){case"P":a=e.dateTime({width:"short"});break;case"PP":a=e.dateTime({width:"medium"});break;case"PPP":a=e.dateTime({width:"long"});break;case"PPPP":default:a=e.dateTime({width:"full"});break}return a.replace("{{date}}",Er(n,e)).replace("{{time}}",Sa(r,e))},Cn={p:Sa,P:jc},Vc=/^D+$/,qc=/^Y+$/,Yc=["D","DD","YY","YYYY"];function Ca(t){return Vc.test(t)}function Pa(t){return qc.test(t)}function Pn(t,e,i){const n=Gc(t,e,i);if(console.warn(n),Yc.includes(t))throw new RangeError(n)}function Gc(t,e,i){const n=t[0]==="Y"?"years":"days of the month";return`Use \`${t.toLowerCase()}\` instead of \`${t}\` (in \`${e}\`) for formatting ${n} to the input \`${i}\`; see: https://github.com/date-fns/date-fns/blob/master/docs/unicodeTokens.md`}const Uc=/[yYQqMLwIdDecihHKkms]o|(\w)\1*|''|'(''|[^'])+('|$)|./g,Kc=/P+p+|P+|p+|''|'(''|[^'])+('|$)|./g,Zc=/^'([^]*?)'?$/,Qc=/''/g,Xc=/[a-zA-Z]/;function Jc(t,e,i){var p,f,v,m,g,b,k,S;const n=le(),r=(i==null?void 0:i.locale)??n.locale??$a,a=(i==null?void 0:i.firstWeekContainsDate)??((f=(p=i==null?void 0:i.locale)==null?void 0:p.options)==null?void 0:f.firstWeekContainsDate)??n.firstWeekContainsDate??((m=(v=n.locale)==null?void 0:v.options)==null?void 0:m.firstWeekContainsDate)??1,s=(i==null?void 0:i.weekStartsOn)??((b=(g=i==null?void 0:i.locale)==null?void 0:g.options)==null?void 0:b.weekStartsOn)??n.weekStartsOn??((S=(k=n.locale)==null?void 0:k.options)==null?void 0:S.weekStartsOn)??0,l=I(t,i==null?void 0:i.in);if(!ma(l))throw new RangeError("Invalid time value");let c=e.match(Kc).map($=>{const C=$[0];if(C==="p"||C==="P"){const G=Cn[C];return G($,r.formatLong)}return $}).join("").match(Uc).map($=>{if($==="''")return{isToken:!1,value:"'"};const C=$[0];if(C==="'")return{isToken:!1,value:td($)};if(Tr[C])return{isToken:!0,value:$};if(C.match(Xc))throw new RangeError("Format string contains an unescaped latin alphabet character `"+C+"`");return{isToken:!1,value:$}});r.localize.preprocessor&&(c=r.localize.preprocessor(l,c));const u={firstWeekContainsDate:a,weekStartsOn:s,locale:r};return c.map($=>{if(!$.isToken)return $.value;const C=$.value;(!(i!=null&&i.useAdditionalWeekYearTokens)&&Pa(C)||!(i!=null&&i.useAdditionalDayOfYearTokens)&&Ca(C))&&Pn(C,e,String(t));const G=Tr[C[0]];return G(l,C,r.localize,u)}).join("")}function td(t){const e=t.match(Zc);return e?e[1].replace(Qc,"'"):t}function ed(){return Object.assign({},le())}function id(t,e){const i=I(t,e==null?void 0:e.in).getDay();return i===0?7:i}function nd(t,e){const i=rd(e)?new e(0):st(e,0);return i.setFullYear(t.getFullYear(),t.getMonth(),t.getDate()),i.setHours(t.getHours(),t.getMinutes(),t.getSeconds(),t.getMilliseconds()),i}function rd(t){var e;return typeof t=="function"&&((e=t.prototype)==null?void 0:e.constructor)===t}const ad=10;class Ta{constructor(){_(this,"subPriority",0)}validate(e,i){return!0}}class sd extends Ta{constructor(e,i,n,r,a){super(),this.value=e,this.validateValue=i,this.setValue=n,this.priority=r,a&&(this.subPriority=a)}validate(e,i){return this.validateValue(e,this.value,i)}set(e,i,n){return this.setValue(e,i,this.value,n)}}class od extends Ta{constructor(i,n){super();_(this,"priority",ad);_(this,"subPriority",-1);this.context=i||(r=>st(n,r))}set(i,n){return n.timestampIsSet?i:st(i,nd(i,this.context))}}class U{run(e,i,n,r){const a=this.parse(e,i,n,r);return a?{setter:new sd(a.value,this.validate,this.set,this.priority,this.subPriority),rest:a.rest}:null}validate(e,i,n){return!0}}class ld extends U{constructor(){super(...arguments);_(this,"priority",140);_(this,"incompatibleTokens",["R","u","t","T"])}parse(i,n,r){switch(n){case"G":case"GG":case"GGG":return r.era(i,{width:"abbreviated"})||r.era(i,{width:"narrow"});case"GGGGG":return r.era(i,{width:"narrow"});case"GGGG":default:return r.era(i,{width:"wide"})||r.era(i,{width:"abbreviated"})||r.era(i,{width:"narrow"})}}set(i,n,r){return n.era=r,i.setFullYear(r,0,1),i.setHours(0,0,0,0),i}}const lt={month:/^(1[0-2]|0?\d)/,date:/^(3[0-1]|[0-2]?\d)/,dayOfYear:/^(36[0-6]|3[0-5]\d|[0-2]?\d?\d)/,week:/^(5[0-3]|[0-4]?\d)/,hour23h:/^(2[0-3]|[0-1]?\d)/,hour24h:/^(2[0-4]|[0-1]?\d)/,hour11h:/^(1[0-1]|0?\d)/,hour12h:/^(1[0-2]|0?\d)/,minute:/^[0-5]?\d/,second:/^[0-5]?\d/,singleDigit:/^\d/,twoDigits:/^\d{1,2}/,threeDigits:/^\d{1,3}/,fourDigits:/^\d{1,4}/,anyDigitsSigned:/^-?\d+/,singleDigitSigned:/^-?\d/,twoDigitsSigned:/^-?\d{1,2}/,threeDigitsSigned:/^-?\d{1,3}/,fourDigitsSigned:/^-?\d{1,4}/},Pt={basicOptionalMinutes:/^([+-])(\d{2})(\d{2})?|Z/,basic:/^([+-])(\d{2})(\d{2})|Z/,basicOptionalSeconds:/^([+-])(\d{2})(\d{2})((\d{2}))?|Z/,extended:/^([+-])(\d{2}):(\d{2})|Z/,extendedOptionalSeconds:/^([+-])(\d{2}):(\d{2})(:(\d{2}))?|Z/};function ct(t,e){return t&&{value:e(t.value),rest:t.rest}}function nt(t,e){const i=e.match(t);return i?{value:parseInt(i[0],10),rest:e.slice(i[0].length)}:null}function Tt(t,e){const i=e.match(t);if(!i)return null;if(i[0]==="Z")return{value:0,rest:e.slice(1)};const n=i[1]==="+"?1:-1,r=i[2]?parseInt(i[2],10):0,a=i[3]?parseInt(i[3],10):0,s=i[5]?parseInt(i[5],10):0;return{value:n*(r*mi+a*fi+s*Il),rest:e.slice(i[0].length)}}function Ma(t){return nt(lt.anyDigitsSigned,t)}function ot(t,e){switch(t){case 1:return nt(lt.singleDigit,e);case 2:return nt(lt.twoDigits,e);case 3:return nt(lt.threeDigits,e);case 4:return nt(lt.fourDigits,e);default:return nt(new RegExp("^\\d{1,"+t+"}"),e)}}function Li(t,e){switch(t){case 1:return nt(lt.singleDigitSigned,e);case 2:return nt(lt.twoDigitsSigned,e);case 3:return nt(lt.threeDigitsSigned,e);case 4:return nt(lt.fourDigitsSigned,e);default:return nt(new RegExp("^-?\\d{1,"+t+"}"),e)}}function Fn(t){switch(t){case"morning":return 4;case"evening":return 17;case"pm":case"noon":case"afternoon":return 12;case"am":case"midnight":case"night":default:return 0}}function Da(t,e){const i=e>0,n=i?e:1-e;let r;if(n<=50)r=t||100;else{const a=n+50,s=Math.trunc(a/100)*100,l=t>=a%100;r=t+s-(l?100:0)}return i?r:1-r}function Ea(t){return t%400===0||t%4===0&&t%100!==0}class cd extends U{constructor(){super(...arguments);_(this,"priority",130);_(this,"incompatibleTokens",["Y","R","u","w","I","i","e","c","t","T"])}parse(i,n,r){const a=s=>({year:s,isTwoDigitYear:n==="yy"});switch(n){case"y":return ct(ot(4,i),a);case"yo":return ct(r.ordinalNumber(i,{unit:"year"}),a);default:return ct(ot(n.length,i),a)}}validate(i,n){return n.isTwoDigitYear||n.year>0}set(i,n,r){const a=i.getFullYear();if(r.isTwoDigitYear){const l=Da(r.year,a);return i.setFullYear(l,0,1),i.setHours(0,0,0,0),i}const s=!("era"in n)||n.era===1?r.year:1-r.year;return i.setFullYear(s,0,1),i.setHours(0,0,0,0),i}}class dd extends U{constructor(){super(...arguments);_(this,"priority",130);_(this,"incompatibleTokens",["y","R","u","Q","q","M","L","I","d","D","i","t","T"])}parse(i,n,r){const a=s=>({year:s,isTwoDigitYear:n==="YY"});switch(n){case"Y":return ct(ot(4,i),a);case"Yo":return ct(r.ordinalNumber(i,{unit:"year"}),a);default:return ct(ot(n.length,i),a)}}validate(i,n){return n.isTwoDigitYear||n.year>0}set(i,n,r,a){const s=Bn(i,a);if(r.isTwoDigitYear){const c=Da(r.year,s);return i.setFullYear(c,0,a.firstWeekContainsDate),i.setHours(0,0,0,0),Dt(i,a)}const l=!("era"in n)||n.era===1?r.year:1-r.year;return i.setFullYear(l,0,a.firstWeekContainsDate),i.setHours(0,0,0,0),Dt(i,a)}}class ud extends U{constructor(){super(...arguments);_(this,"priority",130);_(this,"incompatibleTokens",["G","y","Y","u","Q","q","M","L","w","d","D","e","c","t","T"])}parse(i,n){return Li(n==="R"?4:n.length,i)}set(i,n,r){const a=st(i,0);return a.setFullYear(r,0,4),a.setHours(0,0,0,0),ke(a)}}class pd extends U{constructor(){super(...arguments);_(this,"priority",130);_(this,"incompatibleTokens",["G","y","Y","R","w","I","i","e","c","t","T"])}parse(i,n){return Li(n==="u"?4:n.length,i)}set(i,n,r){return i.setFullYear(r,0,1),i.setHours(0,0,0,0),i}}class hd extends U{constructor(){super(...arguments);_(this,"priority",120);_(this,"incompatibleTokens",["Y","R","q","M","L","w","I","d","D","i","e","c","t","T"])}parse(i,n,r){switch(n){case"Q":case"QQ":return ot(n.length,i);case"Qo":return r.ordinalNumber(i,{unit:"quarter"});case"QQQ":return r.quarter(i,{width:"abbreviated",context:"formatting"})||r.quarter(i,{width:"narrow",context:"formatting"});case"QQQQQ":return r.quarter(i,{width:"narrow",context:"formatting"});case"QQQQ":default:return r.quarter(i,{width:"wide",context:"formatting"})||r.quarter(i,{width:"abbreviated",context:"formatting"})||r.quarter(i,{width:"narrow",context:"formatting"})}}validate(i,n){return n>=1&&n<=4}set(i,n,r){return i.setMonth((r-1)*3,1),i.setHours(0,0,0,0),i}}class gd extends U{constructor(){super(...arguments);_(this,"priority",120);_(this,"incompatibleTokens",["Y","R","Q","M","L","w","I","d","D","i","e","c","t","T"])}parse(i,n,r){switch(n){case"q":case"qq":return ot(n.length,i);case"qo":return r.ordinalNumber(i,{unit:"quarter"});case"qqq":return r.quarter(i,{width:"abbreviated",context:"standalone"})||r.quarter(i,{width:"narrow",context:"standalone"});case"qqqqq":return r.quarter(i,{width:"narrow",context:"standalone"});case"qqqq":default:return r.quarter(i,{width:"wide",context:"standalone"})||r.quarter(i,{width:"abbreviated",context:"standalone"})||r.quarter(i,{width:"narrow",context:"standalone"})}}validate(i,n){return n>=1&&n<=4}set(i,n,r){return i.setMonth((r-1)*3,1),i.setHours(0,0,0,0),i}}class fd extends U{constructor(){super(...arguments);_(this,"incompatibleTokens",["Y","R","q","Q","L","w","I","D","i","e","c","t","T"]);_(this,"priority",110)}parse(i,n,r){const a=s=>s-1;switch(n){case"M":return ct(nt(lt.month,i),a);case"MM":return ct(ot(2,i),a);case"Mo":return ct(r.ordinalNumber(i,{unit:"month"}),a);case"MMM":return r.month(i,{width:"abbreviated",context:"formatting"})||r.month(i,{width:"narrow",context:"formatting"});case"MMMMM":return r.month(i,{width:"narrow",context:"formatting"});case"MMMM":default:return r.month(i,{width:"wide",context:"formatting"})||r.month(i,{width:"abbreviated",context:"formatting"})||r.month(i,{width:"narrow",context:"formatting"})}}validate(i,n){return n>=0&&n<=11}set(i,n,r){return i.setMonth(r,1),i.setHours(0,0,0,0),i}}class md extends U{constructor(){super(...arguments);_(this,"priority",110);_(this,"incompatibleTokens",["Y","R","q","Q","M","w","I","D","i","e","c","t","T"])}parse(i,n,r){const a=s=>s-1;switch(n){case"L":return ct(nt(lt.month,i),a);case"LL":return ct(ot(2,i),a);case"Lo":return ct(r.ordinalNumber(i,{unit:"month"}),a);case"LLL":return r.month(i,{width:"abbreviated",context:"standalone"})||r.month(i,{width:"narrow",context:"standalone"});case"LLLLL":return r.month(i,{width:"narrow",context:"standalone"});case"LLLL":default:return r.month(i,{width:"wide",context:"standalone"})||r.month(i,{width:"abbreviated",context:"standalone"})||r.month(i,{width:"narrow",context:"standalone"})}}validate(i,n){return n>=0&&n<=11}set(i,n,r){return i.setMonth(r,1),i.setHours(0,0,0,0),i}}function bd(t,e,i){const n=I(t,i==null?void 0:i.in),r=ka(n,i)-e;return n.setDate(n.getDate()-r*7),I(n,i==null?void 0:i.in)}class yd extends U{constructor(){super(...arguments);_(this,"priority",100);_(this,"incompatibleTokens",["y","R","u","q","Q","M","L","I","d","D","i","t","T"])}parse(i,n,r){switch(n){case"w":return nt(lt.week,i);case"wo":return r.ordinalNumber(i,{unit:"week"});default:return ot(n.length,i)}}validate(i,n){return n>=1&&n<=53}set(i,n,r,a){return Dt(bd(i,r,a),a)}}function vd(t,e,i){const n=I(t,i==null?void 0:i.in),r=_a(n,i)-e;return n.setDate(n.getDate()-r*7),n}class xd extends U{constructor(){super(...arguments);_(this,"priority",100);_(this,"incompatibleTokens",["y","Y","u","q","Q","M","L","w","d","D","e","c","t","T"])}parse(i,n,r){switch(n){case"I":return nt(lt.week,i);case"Io":return r.ordinalNumber(i,{unit:"week"});default:return ot(n.length,i)}}validate(i,n){return n>=1&&n<=53}set(i,n,r){return ke(vd(i,r))}}const wd=[31,28,31,30,31,30,31,31,30,31,30,31],$d=[31,29,31,30,31,30,31,31,30,31,30,31];class _d extends U{constructor(){super(...arguments);_(this,"priority",90);_(this,"subPriority",1);_(this,"incompatibleTokens",["Y","R","q","Q","w","I","D","i","e","c","t","T"])}parse(i,n,r){switch(n){case"d":return nt(lt.date,i);case"do":return r.ordinalNumber(i,{unit:"date"});default:return ot(n.length,i)}}validate(i,n){const r=i.getFullYear(),a=Ea(r),s=i.getMonth();return a?n>=1&&n<=$d[s]:n>=1&&n<=wd[s]}set(i,n,r){return i.setDate(r),i.setHours(0,0,0,0),i}}class kd extends U{constructor(){super(...arguments);_(this,"priority",90);_(this,"subpriority",1);_(this,"incompatibleTokens",["Y","R","q","Q","M","L","w","I","d","E","i","e","c","t","T"])}parse(i,n,r){switch(n){case"D":case"DD":return nt(lt.dayOfYear,i);case"Do":return r.ordinalNumber(i,{unit:"date"});default:return ot(n.length,i)}}validate(i,n){const r=i.getFullYear();return Ea(r)?n>=1&&n<=366:n>=1&&n<=365}set(i,n,r){return i.setMonth(0,r),i.setHours(0,0,0,0),i}}function Nn(t,e,i){var f,v,m,g;const n=le(),r=(i==null?void 0:i.weekStartsOn)??((v=(f=i==null?void 0:i.locale)==null?void 0:f.options)==null?void 0:v.weekStartsOn)??n.weekStartsOn??((g=(m=n.locale)==null?void 0:m.options)==null?void 0:g.weekStartsOn)??0,a=I(t,i==null?void 0:i.in),s=a.getDay(),c=(e%7+7)%7,u=7-r,p=e<0||e>6?e-(s+u)%7:(c+u)%7-(s+u)%7;return tn(a,p,i)}class Sd extends U{constructor(){super(...arguments);_(this,"priority",90);_(this,"incompatibleTokens",["D","i","e","c","t","T"])}parse(i,n,r){switch(n){case"E":case"EE":case"EEE":return r.day(i,{width:"abbreviated",context:"formatting"})||r.day(i,{width:"short",context:"formatting"})||r.day(i,{width:"narrow",context:"formatting"});case"EEEEE":return r.day(i,{width:"narrow",context:"formatting"});case"EEEEEE":return r.day(i,{width:"short",context:"formatting"})||r.day(i,{width:"narrow",context:"formatting"});case"EEEE":default:return r.day(i,{width:"wide",context:"formatting"})||r.day(i,{width:"abbreviated",context:"formatting"})||r.day(i,{width:"short",context:"formatting"})||r.day(i,{width:"narrow",context:"formatting"})}}validate(i,n){return n>=0&&n<=6}set(i,n,r,a){return i=Nn(i,r,a),i.setHours(0,0,0,0),i}}class Cd extends U{constructor(){super(...arguments);_(this,"priority",90);_(this,"incompatibleTokens",["y","R","u","q","Q","M","L","I","d","D","E","i","c","t","T"])}parse(i,n,r,a){const s=l=>{const c=Math.floor((l-1)/7)*7;return(l+a.weekStartsOn+6)%7+c};switch(n){case"e":case"ee":return ct(ot(n.length,i),s);case"eo":return ct(r.ordinalNumber(i,{unit:"day"}),s);case"eee":return r.day(i,{width:"abbreviated",context:"formatting"})||r.day(i,{width:"short",context:"formatting"})||r.day(i,{width:"narrow",context:"formatting"});case"eeeee":return r.day(i,{width:"narrow",context:"formatting"});case"eeeeee":return r.day(i,{width:"short",context:"formatting"})||r.day(i,{width:"narrow",context:"formatting"});case"eeee":default:return r.day(i,{width:"wide",context:"formatting"})||r.day(i,{width:"abbreviated",context:"formatting"})||r.day(i,{width:"short",context:"formatting"})||r.day(i,{width:"narrow",context:"formatting"})}}validate(i,n){return n>=0&&n<=6}set(i,n,r,a){return i=Nn(i,r,a),i.setHours(0,0,0,0),i}}class Pd extends U{constructor(){super(...arguments);_(this,"priority",90);_(this,"incompatibleTokens",["y","R","u","q","Q","M","L","I","d","D","E","i","e","t","T"])}parse(i,n,r,a){const s=l=>{const c=Math.floor((l-1)/7)*7;return(l+a.weekStartsOn+6)%7+c};switch(n){case"c":case"cc":return ct(ot(n.length,i),s);case"co":return ct(r.ordinalNumber(i,{unit:"day"}),s);case"ccc":return r.day(i,{width:"abbreviated",context:"standalone"})||r.day(i,{width:"short",context:"standalone"})||r.day(i,{width:"narrow",context:"standalone"});case"ccccc":return r.day(i,{width:"narrow",context:"standalone"});case"cccccc":return r.day(i,{width:"short",context:"standalone"})||r.day(i,{width:"narrow",context:"standalone"});case"cccc":default:return r.day(i,{width:"wide",context:"standalone"})||r.day(i,{width:"abbreviated",context:"standalone"})||r.day(i,{width:"short",context:"standalone"})||r.day(i,{width:"narrow",context:"standalone"})}}validate(i,n){return n>=0&&n<=6}set(i,n,r,a){return i=Nn(i,r,a),i.setHours(0,0,0,0),i}}function Td(t,e,i){const n=I(t,i==null?void 0:i.in),r=id(n,i),a=e-r;return tn(n,a,i)}class Md extends U{constructor(){super(...arguments);_(this,"priority",90);_(this,"incompatibleTokens",["y","Y","u","q","Q","M","L","w","d","D","E","e","c","t","T"])}parse(i,n,r){const a=s=>s===0?7:s;switch(n){case"i":case"ii":return ot(n.length,i);case"io":return r.ordinalNumber(i,{unit:"day"});case"iii":return ct(r.day(i,{width:"abbreviated",context:"formatting"})||r.day(i,{width:"short",context:"formatting"})||r.day(i,{width:"narrow",context:"formatting"}),a);case"iiiii":return ct(r.day(i,{width:"narrow",context:"formatting"}),a);case"iiiiii":return ct(r.day(i,{width:"short",context:"formatting"})||r.day(i,{width:"narrow",context:"formatting"}),a);case"iiii":default:return ct(r.day(i,{width:"wide",context:"formatting"})||r.day(i,{width:"abbreviated",context:"formatting"})||r.day(i,{width:"short",context:"formatting"})||r.day(i,{width:"narrow",context:"formatting"}),a)}}validate(i,n){return n>=1&&n<=7}set(i,n,r){return i=Td(i,r),i.setHours(0,0,0,0),i}}class Dd extends U{constructor(){super(...arguments);_(this,"priority",80);_(this,"incompatibleTokens",["b","B","H","k","t","T"])}parse(i,n,r){switch(n){case"a":case"aa":case"aaa":return r.dayPeriod(i,{width:"abbreviated",context:"formatting"})||r.dayPeriod(i,{width:"narrow",context:"formatting"});case"aaaaa":return r.dayPeriod(i,{width:"narrow",context:"formatting"});case"aaaa":default:return r.dayPeriod(i,{width:"wide",context:"formatting"})||r.dayPeriod(i,{width:"abbreviated",context:"formatting"})||r.dayPeriod(i,{width:"narrow",context:"formatting"})}}set(i,n,r){return i.setHours(Fn(r),0,0,0),i}}class Ed extends U{constructor(){super(...arguments);_(this,"priority",80);_(this,"incompatibleTokens",["a","B","H","k","t","T"])}parse(i,n,r){switch(n){case"b":case"bb":case"bbb":return r.dayPeriod(i,{width:"abbreviated",context:"formatting"})||r.dayPeriod(i,{width:"narrow",context:"formatting"});case"bbbbb":return r.dayPeriod(i,{width:"narrow",context:"formatting"});case"bbbb":default:return r.dayPeriod(i,{width:"wide",context:"formatting"})||r.dayPeriod(i,{width:"abbreviated",context:"formatting"})||r.dayPeriod(i,{width:"narrow",context:"formatting"})}}set(i,n,r){return i.setHours(Fn(r),0,0,0),i}}class Od extends U{constructor(){super(...arguments);_(this,"priority",80);_(this,"incompatibleTokens",["a","b","t","T"])}parse(i,n,r){switch(n){case"B":case"BB":case"BBB":return r.dayPeriod(i,{width:"abbreviated",context:"formatting"})||r.dayPeriod(i,{width:"narrow",context:"formatting"});case"BBBBB":return r.dayPeriod(i,{width:"narrow",context:"formatting"});case"BBBB":default:return r.dayPeriod(i,{width:"wide",context:"formatting"})||r.dayPeriod(i,{width:"abbreviated",context:"formatting"})||r.dayPeriod(i,{width:"narrow",context:"formatting"})}}set(i,n,r){return i.setHours(Fn(r),0,0,0),i}}class zd extends U{constructor(){super(...arguments);_(this,"priority",70);_(this,"incompatibleTokens",["H","K","k","t","T"])}parse(i,n,r){switch(n){case"h":return nt(lt.hour12h,i);case"ho":return r.ordinalNumber(i,{unit:"hour"});default:return ot(n.length,i)}}validate(i,n){return n>=1&&n<=12}set(i,n,r){const a=i.getHours()>=12;return a&&r<12?i.setHours(r+12,0,0,0):!a&&r===12?i.setHours(0,0,0,0):i.setHours(r,0,0,0),i}}class Ld extends U{constructor(){super(...arguments);_(this,"priority",70);_(this,"incompatibleTokens",["a","b","h","K","k","t","T"])}parse(i,n,r){switch(n){case"H":return nt(lt.hour23h,i);case"Ho":return r.ordinalNumber(i,{unit:"hour"});default:return ot(n.length,i)}}validate(i,n){return n>=0&&n<=23}set(i,n,r){return i.setHours(r,0,0,0),i}}class Ad extends U{constructor(){super(...arguments);_(this,"priority",70);_(this,"incompatibleTokens",["h","H","k","t","T"])}parse(i,n,r){switch(n){case"K":return nt(lt.hour11h,i);case"Ko":return r.ordinalNumber(i,{unit:"hour"});default:return ot(n.length,i)}}validate(i,n){return n>=0&&n<=11}set(i,n,r){return i.getHours()>=12&&r<12?i.setHours(r+12,0,0,0):i.setHours(r,0,0,0),i}}class Id extends U{constructor(){super(...arguments);_(this,"priority",70);_(this,"incompatibleTokens",["a","b","h","H","K","t","T"])}parse(i,n,r){switch(n){case"k":return nt(lt.hour24h,i);case"ko":return r.ordinalNumber(i,{unit:"hour"});default:return ot(n.length,i)}}validate(i,n){return n>=1&&n<=24}set(i,n,r){const a=r<=24?r%24:r;return i.setHours(a,0,0,0),i}}class Bd extends U{constructor(){super(...arguments);_(this,"priority",60);_(this,"incompatibleTokens",["t","T"])}parse(i,n,r){switch(n){case"m":return nt(lt.minute,i);case"mo":return r.ordinalNumber(i,{unit:"minute"});default:return ot(n.length,i)}}validate(i,n){return n>=0&&n<=59}set(i,n,r){return i.setMinutes(r,0,0),i}}class Fd extends U{constructor(){super(...arguments);_(this,"priority",50);_(this,"incompatibleTokens",["t","T"])}parse(i,n,r){switch(n){case"s":return nt(lt.second,i);case"so":return r.ordinalNumber(i,{unit:"second"});default:return ot(n.length,i)}}validate(i,n){return n>=0&&n<=59}set(i,n,r){return i.setSeconds(r,0),i}}class Nd extends U{constructor(){super(...arguments);_(this,"priority",30);_(this,"incompatibleTokens",["t","T"])}parse(i,n){const r=a=>Math.trunc(a*Math.pow(10,-n.length+3));return ct(ot(n.length,i),r)}set(i,n,r){return i.setMilliseconds(r),i}}class Rd extends U{constructor(){super(...arguments);_(this,"priority",10);_(this,"incompatibleTokens",["t","T","x"])}parse(i,n){switch(n){case"X":return Tt(Pt.basicOptionalMinutes,i);case"XX":return Tt(Pt.basic,i);case"XXXX":return Tt(Pt.basicOptionalSeconds,i);case"XXXXX":return Tt(Pt.extendedOptionalSeconds,i);case"XXX":default:return Tt(Pt.extended,i)}}set(i,n,r){return n.timestampIsSet?i:st(i,i.getTime()-zi(i)-r)}}class Hd extends U{constructor(){super(...arguments);_(this,"priority",10);_(this,"incompatibleTokens",["t","T","X"])}parse(i,n){switch(n){case"x":return Tt(Pt.basicOptionalMinutes,i);case"xx":return Tt(Pt.basic,i);case"xxxx":return Tt(Pt.basicOptionalSeconds,i);case"xxxxx":return Tt(Pt.extendedOptionalSeconds,i);case"xxx":default:return Tt(Pt.extended,i)}}set(i,n,r){return n.timestampIsSet?i:st(i,i.getTime()-zi(i)-r)}}class Wd extends U{constructor(){super(...arguments);_(this,"priority",40);_(this,"incompatibleTokens","*")}parse(i){return Ma(i)}set(i,n,r){return[st(i,r*1e3),{timestampIsSet:!0}]}}class jd extends U{constructor(){super(...arguments);_(this,"priority",20);_(this,"incompatibleTokens","*")}parse(i){return Ma(i)}set(i,n,r){return[st(i,r),{timestampIsSet:!0}]}}const Vd={G:new ld,y:new cd,Y:new dd,R:new ud,u:new pd,Q:new hd,q:new gd,M:new fd,L:new md,w:new yd,I:new xd,d:new _d,D:new kd,E:new Sd,e:new Cd,c:new Pd,i:new Md,a:new Dd,b:new Ed,B:new Od,h:new zd,H:new Ld,K:new Ad,k:new Id,m:new Bd,s:new Fd,S:new Nd,X:new Rd,x:new Hd,t:new Wd,T:new jd},qd=/[yYQqMLwIdDecihHKkms]o|(\w)\1*|''|'(''|[^'])+('|$)|./g,Yd=/P+p+|P+|p+|''|'(''|[^'])+('|$)|./g,Gd=/^'([^]*?)'?$/,Ud=/''/g,Kd=/\S/,Zd=/[a-zA-Z]/;function Qd(t,e,i,n){var k,S,$,C,G,Z,w,j;const r=()=>st((n==null?void 0:n.in)||i,NaN),a=ed(),s=(n==null?void 0:n.locale)??a.locale??$a,l=(n==null?void 0:n.firstWeekContainsDate)??((S=(k=n==null?void 0:n.locale)==null?void 0:k.options)==null?void 0:S.firstWeekContainsDate)??a.firstWeekContainsDate??((C=($=a.locale)==null?void 0:$.options)==null?void 0:C.firstWeekContainsDate)??1,c=(n==null?void 0:n.weekStartsOn)??((Z=(G=n==null?void 0:n.locale)==null?void 0:G.options)==null?void 0:Z.weekStartsOn)??a.weekStartsOn??((j=(w=a.locale)==null?void 0:w.options)==null?void 0:j.weekStartsOn)??0;if(!e)return t?r():I(i,n==null?void 0:n.in);const u={firstWeekContainsDate:l,weekStartsOn:c,locale:s},p=[new od(n==null?void 0:n.in,i)],f=e.match(Yd).map(L=>{const z=L[0];if(z in Cn){const Y=Cn[z];return Y(L,s.formatLong)}return L}).join("").match(qd),v=[];for(let L of f){!(n!=null&&n.useAdditionalWeekYearTokens)&&Pa(L)&&Pn(L,e,t),!(n!=null&&n.useAdditionalDayOfYearTokens)&&Ca(L)&&Pn(L,e,t);const z=L[0],Y=Vd[z];if(Y){const{incompatibleTokens:V}=Y;if(Array.isArray(V)){const wt=v.find(Yt=>V.includes(Yt.token)||Yt.token===z);if(wt)throw new RangeError(`The format string mustn't contain \`${wt.fullToken}\` and \`${L}\` at the same time`)}else if(Y.incompatibleTokens==="*"&&v.length>0)throw new RangeError(`The format string mustn't contain \`${L}\` and any other token at the same time`);v.push({token:z,fullToken:L});const N=Y.run(t,L,s.match,u);if(!N)return r();p.push(N.setter),t=N.rest}else{if(z.match(Zd))throw new RangeError("Format string contains an unescaped latin alphabet character `"+z+"`");if(L==="''"?L="'":z==="'"&&(L=Xd(L)),t.indexOf(L)===0)t=t.slice(L.length);else return r()}}if(t.length>0&&Kd.test(t))return r();const m=p.map(L=>L.priority).sort((L,z)=>z-L).filter((L,z,Y)=>Y.indexOf(L)===z).map(L=>p.filter(z=>z.priority===L).sort((z,Y)=>Y.subPriority-z.subPriority)).map(L=>L[0]);let g=I(i,n==null?void 0:n.in);if(isNaN(+g))return r();const b={};for(const L of m){if(!L.validate(g,u))return r();const z=L.set(g,b,u);Array.isArray(z)?(g=z[0],Object.assign(b,z[1])):g=z}return g}function Xd(t){return t.match(Gd)[1].replace(Ud,"'")}function Jd(t,e){const i=I(t,e==null?void 0:e.in);return i.setMinutes(0,0,0),i}function tu(t,e){const i=I(t,e==null?void 0:e.in);return i.setSeconds(0,0),i}function eu(t,e){const i=I(t,e==null?void 0:e.in);return i.setMilliseconds(0),i}function iu(t,e){const i=()=>st(e==null?void 0:e.in,NaN),n=(e==null?void 0:e.additionalDigits)??2,r=su(t);let a;if(r.date){const u=ou(r.date,n);a=lu(u.restDateString,u.year)}if(!a||isNaN(+a))return i();const s=+a;let l=0,c;if(r.time&&(l=cu(r.time),isNaN(l)))return i();if(r.timezone){if(c=du(r.timezone),isNaN(c))return i()}else{const u=new Date(s+l),p=I(0,e==null?void 0:e.in);return p.setFullYear(u.getUTCFullYear(),u.getUTCMonth(),u.getUTCDate()),p.setHours(u.getUTCHours(),u.getUTCMinutes(),u.getUTCSeconds(),u.getUTCMilliseconds()),p}return I(s+l+c,e==null?void 0:e.in)}const ki={dateTimeDelimiter:/[T ]/,timeZoneDelimiter:/[Z ]/i,timezone:/([Z+-].*)$/},nu=/^-?(?:(\d{3})|(\d{2})(?:-?(\d{2}))?|W(\d{2})(?:-?(\d{1}))?|)$/,ru=/^(\d{2}(?:[.,]\d*)?)(?::?(\d{2}(?:[.,]\d*)?))?(?::?(\d{2}(?:[.,]\d*)?))?$/,au=/^([+-])(\d{2})(?::?(\d{2}))?$/;function su(t){const e={},i=t.split(ki.dateTimeDelimiter);let n;if(i.length>2)return e;if(/:/.test(i[0])?n=i[0]:(e.date=i[0],n=i[1],ki.timeZoneDelimiter.test(e.date)&&(e.date=t.split(ki.timeZoneDelimiter)[0],n=t.substr(e.date.length,t.length))),n){const r=ki.timezone.exec(n);r?(e.time=n.replace(r[1],""),e.timezone=r[1]):e.time=n}return e}function ou(t,e){const i=new RegExp("^(?:(\\d{4}|[+-]\\d{"+(4+e)+"})|(\\d{2}|[+-]\\d{"+(2+e)+"})$)"),n=t.match(i);if(!n)return{year:NaN,restDateString:""};const r=n[1]?parseInt(n[1]):null,a=n[2]?parseInt(n[2]):null;return{year:a===null?r:a*100,restDateString:t.slice((n[1]||n[2]).length)}}function lu(t,e){if(e===null)return new Date(NaN);const i=t.match(nu);if(!i)return new Date(NaN);const n=!!i[4],r=Ye(i[1]),a=Ye(i[2])-1,s=Ye(i[3]),l=Ye(i[4]),c=Ye(i[5])-1;if(n)return fu(e,l,c)?uu(e,l,c):new Date(NaN);{const u=new Date(0);return!hu(e,a,s)||!gu(e,r)?new Date(NaN):(u.setUTCFullYear(e,a,Math.max(r,s)),u)}}function Ye(t){return t?parseInt(t):1}function cu(t){const e=t.match(ru);if(!e)return NaN;const i=mn(e[1]),n=mn(e[2]),r=mn(e[3]);return mu(i,n,r)?i*mi+n*fi+r*1e3:NaN}function mn(t){return t&&parseFloat(t.replace(",","."))||0}function du(t){if(t==="Z")return 0;const e=t.match(au);if(!e)return 0;const i=e[1]==="+"?-1:1,n=parseInt(e[2]),r=e[3]&&parseInt(e[3])||0;return bu(n,r)?i*(n*mi+r*fi):NaN}function uu(t,e,i){const n=new Date(0);n.setUTCFullYear(t,0,4);const r=n.getUTCDay()||7,a=(e-1)*7+i+1-r;return n.setUTCDate(n.getUTCDate()+a),n}const pu=[31,null,31,30,31,30,31,31,30,31,30,31];function Oa(t){return t%400===0||t%4===0&&t%100!==0}function hu(t,e,i){return e>=0&&e<=11&&i>=1&&i<=(pu[e]||(Oa(t)?29:28))}function gu(t,e){return e>=1&&e<=(Oa(t)?366:365)}function fu(t,e,i){return e>=1&&e<=53&&i>=0&&i<=6}function mu(t,e,i){return t===24?e===0&&i===0:i>=0&&i<60&&e>=0&&e<60&&t>=0&&t<25}function bu(t,e){return e>=0&&e<=59}/*!
  * chartjs-adapter-date-fns v3.0.0
  * https://www.chartjs.org
  * (c) 2022 chartjs-adapter-date-fns Contributors
  * Released under the MIT license
- */const Xd={datetime:"MMM d, yyyy, h:mm:ss aaaa",millisecond:"h:mm:ss.SSS aaaa",second:"h:mm:ss aaaa",minute:"h:mm aaaa",hour:"ha",day:"MMM d",week:"PP",month:"MMM yyyy",quarter:"qqq - yyyy",year:"yyyy"};Za._date.override({_id:"date-fns",formats:function(){return Xd},parse:function(t,e){if(t===null||typeof t>"u")return null;const i=typeof t;return i==="number"||t instanceof Date?t=L(t):i==="string"&&(typeof e=="string"?t=Dd(t,e,new Date,this.options):t=Ld(t,this.options)),aa(t)?t.getTime():null},format:function(t,e){return zc(t,e,this.options)},add:function(t,e,i){switch(i){case"millisecond":return Pr(t,e);case"second":return $l(t,e);case"minute":return xl(t,e);case"hour":return bl(t,e);case"day":return tr(t,e);case"week":return _l(t,e);case"month":return Cr(t,e);case"quarter":return wl(t,e);case"year":return kl(t,e);default:return t}},diff:function(t,e,i){switch(i){case"millisecond":return Tr(t,e);case"second":return Ol(t,e);case"minute":return Ml(t,e);case"hour":return Tl(t,e);case"day":return sa(t,e);case"week":return zl(t,e);case"month":return ca(t,e);case"quarter":return Dl(t,e);case"year":return Al(t,e);default:return 0}},startOf:function(t,e,i){switch(e){case"second":return Id(t);case"minute":return Ad(t);case"hour":return zd(t);case"day":return vr(t);case"week":return Dt(t);case"isoWeek":return Dt(t,{weekStartsOn:+i});case"month":return Ll(t);case"quarter":return Il(t);case"year":return da(t);default:return t}},endOf:function(t,e){switch(e){case"second":return Wl(t);case"minute":return Rl(t);case"hour":return Fl(t);case"day":return oa(t);case"week":return Nl(t);case"month":return la(t);case"quarter":return Hl(t);case"year":return Bl(t);default:return t}}});function _n(t,e){if(!(e!=null&&e.start)||!(e!=null&&e.end))return null;const i=t.getPixelForValue(e.start.getTime()),r=t.getPixelForValue(e.end.getTime());if(!Number.isFinite(i)||!Number.isFinite(r))return null;const n=Math.min(i,r),a=Math.max(Math.abs(r-i),2);return!Number.isFinite(a)||a<=0?null:{left:n,width:a}}const Jd={id:"pricingModeIcons",beforeDatasetsDraw(t,e,i){var c;const r=i,n=r==null?void 0:r.segments;if(!(n!=null&&n.length))return;const a=t.chartArea,s=(c=t.scales)==null?void 0:c.x;if(!a||!s)return;const l=t.ctx;l.save(),l.globalAlpha=(r==null?void 0:r.backgroundOpacity)??.12;for(const u of n){const p=_n(s,u);p&&(l.fillStyle=u.color||"rgba(255, 255, 255, 0.1)",l.fillRect(p.left,a.top,p.width,a.bottom-a.top))}l.restore()},afterDatasetsDraw(t,e,i){var z;const r=i,n=r==null?void 0:r.segments;if(!(n!=null&&n.length))return;const a=(z=t.scales)==null?void 0:z.x,s=t.chartArea;if(!a||!s)return;const l=(r==null?void 0:r.iconSize)??16,c=(r==null?void 0:r.labelSize)??9,u=`${l}px "Inter", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`,p=`${c}px "Inter", sans-serif`,g=(r==null?void 0:r.iconColor)||"rgba(255, 255, 255, 0.95)",m=(r==null?void 0:r.labelColor)||"rgba(255, 255, 255, 0.7)",b=(r==null?void 0:r.axisBandPadding)??10,v=(r==null?void 0:r.axisBandHeight)??l+c+10,f=(r==null?void 0:r.axisBandColor)||"rgba(6, 10, 18, 0.12)",k=(r==null?void 0:r.iconAlignment)||"start",C=(r==null?void 0:r.iconStartOffset)??12,$=(r==null?void 0:r.iconBaselineOffset)??4,S=(a.bottom||s.bottom)+b,Y=Math.min(S,t.height-v-2),K=s.right-s.left,x=Y+$,H=t.ctx;H.save(),H.globalCompositeOperation="destination-over",H.fillStyle=f,H.fillRect(s.left,Y,K,v),H.restore(),H.save(),H.globalCompositeOperation="destination-over",H.textAlign="center",H.textBaseline="top";for(const D of n){const q=_n(a,D);if(!q)continue;let Q;if(k==="start"){Q=q.left+C;const U=q.left+q.width-l/2;Q>U&&(Q=q.left+q.width/2)}else Q=q.left+q.width/2;H.font=u,H.fillStyle=g,H.fillText(D.icon||"❓",Q,x),D.shortLabel&&(H.font=p,H.fillStyle=m,H.fillText(D.shortLabel,Q,x+l-2))}H.restore()}};function kn(t,e){if(!t)return;t.layout||(t.layout={}),t.layout.padding||(t.layout.padding={});const i=t.layout.padding,r=12;i.top=i.top??12,i.bottom=Math.max(i.bottom||0,r)}var tu=Object.defineProperty,eu=Object.getOwnPropertyDescriptor,Ee=(t,e,i,r)=>{for(var n=r>1?void 0:r?eu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&tu(e,i,n),n};const Bt=Z;Ki.register(En,Dn,Qa,Xa,On,zn,Ja,An,ts,es,In,Ln,is,rs,Bn,Jd);function iu(t){const e=t.timeline.map(i=>i.spot_price_czk??0);return{label:"📊 Spotová cena nákupu",data:e,borderColor:"#2196F3",backgroundColor:"rgba(33, 150, 243, 0.15)",borderWidth:3,fill:!1,tension:.4,type:"line",yAxisID:"y-price",pointRadius:e.map(()=>0),pointHoverRadius:7,pointBackgroundColor:e.map(()=>"#42a5f5"),pointBorderColor:e.map(()=>"#42a5f5"),pointBorderWidth:2,order:1,datalabels:{display:!1}}}function ru(t){return{label:"💰 Výkupní cena",data:t.timeline.map(e=>e.export_price_czk??0),borderColor:"#4CAF50",backgroundColor:"rgba(76, 187, 106, 0.15)",borderWidth:2,fill:!1,type:"line",tension:.4,yAxisID:"y-price",pointRadius:0,pointHoverRadius:5,order:1,borderDash:[5,5]}}function nu(t){if(!t.solar)return[];const{string1:e,string2:i,hasString1:r,hasString2:n}=t.solar,a=(r?1:0)+(n?1:0),s={string1:{border:"rgba(255, 193, 7, 0.8)",bg:"rgba(255, 193, 7, 0.2)"},string2:{border:"rgba(255, 152, 0, 0.8)",bg:"rgba(255, 152, 0, 0.2)"}};if(a===1){const l=r?e:i,c=r?s.string1:s.string2;return[{label:"☀️ Solární předpověď",data:l,borderColor:c.border,backgroundColor:c.bg,borderWidth:2,fill:"origin",tension:.4,type:"line",yAxisID:"y-power",pointRadius:0,pointHoverRadius:5,order:2}]}return a===2?[{label:"☀️ String 2",data:i,borderColor:s.string2.border,backgroundColor:s.string2.bg,borderWidth:1.5,fill:"origin",tension:.4,type:"line",yAxisID:"y-power",stack:"solar",pointRadius:0,pointHoverRadius:5,order:2},{label:"☀️ String 1",data:e,borderColor:s.string1.border,backgroundColor:s.string1.bg,borderWidth:1.5,fill:"-1",tension:.4,type:"line",yAxisID:"y-power",stack:"solar",pointRadius:0,pointHoverRadius:5,order:2}]:[]}function au(t){if(!t.battery)return[];const{baseline:e,solarCharge:i,gridCharge:r,gridNet:n,consumption:a}=t.battery,s=[],l={baseline:{border:"#78909C",bg:"rgba(120, 144, 156, 0.25)"},solar:{border:"transparent",bg:"rgba(255, 167, 38, 0.6)"},grid:{border:"transparent",bg:"rgba(33, 150, 243, 0.6)"}};return a.some(c=>c!=null&&c>0)&&s.push({label:"🏠 Spotřeba (plán)",data:a,borderColor:"rgba(255, 112, 67, 0.7)",backgroundColor:"rgba(255, 112, 67, 0.12)",borderWidth:1.5,type:"line",fill:!1,tension:.25,pointRadius:0,pointHoverRadius:5,yAxisID:"y-power",stack:"consumption",borderDash:[6,4],order:2}),r.some(c=>c!=null&&c>0)&&s.push({label:"⚡ Do baterie ze sítě",data:r,backgroundColor:l.grid.bg,borderColor:l.grid.border,borderWidth:0,type:"line",fill:!0,tension:.4,pointRadius:0,pointHoverRadius:5,yAxisID:"y-solar",stack:"charging",order:3}),i.some(c=>c!=null&&c>0)&&s.push({label:"☀️ Do baterie ze soláru",data:i,backgroundColor:l.solar.bg,borderColor:l.solar.border,borderWidth:0,type:"line",fill:!0,tension:.4,pointRadius:0,pointHoverRadius:5,yAxisID:"y-solar",stack:"charging",order:3}),s.push({label:"🔋 Zbývající kapacita",data:e,backgroundColor:l.baseline.bg,borderColor:l.baseline.border,borderWidth:3,type:"line",fill:!0,tension:.4,pointRadius:0,pointHoverRadius:5,yAxisID:"y-solar",stack:"charging",order:3}),n.some(c=>c!==null)&&s.push({label:"📡 Netto odběr ze sítě",data:n,borderColor:"#00BCD4",backgroundColor:"transparent",borderWidth:2,type:"line",fill:!1,tension:.2,pointRadius:0,pointHoverRadius:5,yAxisID:"y-solar",order:2}),s}function Sn(t){const e=[];return t.prices.length>0&&e.push(iu(t)),t.exportPrices.length>0&&e.push(ru(t)),e.push(...nu(t)),e.push(...au(t)),e}function ki(t,e,i=""){if(t==null)return"";const r=i?` ${i}`:"";return`${t.toFixed(e)}${r}`}function ge(t){var n;const e=(n=t.scales)==null?void 0:n.x;if(!e)return"overview";const r=(e.max-e.min)/(1e3*60*60);return r<=6?"detail":r<=24?"day":"overview"}function Zt(t,e){var p,g,m,b,v,f,k,C,$,S,Y;if(!((p=t==null?void 0:t.scales)!=null&&p.x))return;const i=t.scales.x,n=(i.max-i.min)/(1e3*60*60),a=ge(t),s=(m=(g=t.options.plugins)==null?void 0:g.legend)==null?void 0:m.labels;s&&(s.padding=10,s.font&&(s.font.size=11),a==="detail"&&(s.padding=12,s.font&&(s.font.size=12)));const l=["y-price","y-solar","y-power"];for(const K of l){const x=(b=t.options.scales)==null?void 0:b[K];x&&(a==="overview"?(x.title&&(x.title.display=!1),(v=x.ticks)!=null&&v.font&&(x.ticks.font.size=10),K==="y-solar"&&(x.display=!1)):a==="detail"?(x.title&&(x.title.display=!0,x.title.font&&(x.title.font.size=12)),(f=x.ticks)!=null&&f.font&&(x.ticks.font.size=11),x.display=!0):(x.title&&(x.title.display=!0,x.title.font&&(x.title.font.size=11)),(k=x.ticks)!=null&&k.font&&(x.ticks.font.size=10),x.display=!0))}const c=(C=t.options.scales)==null?void 0:C.x;c&&(a==="overview"?c.ticks&&(c.ticks.maxTicksLimit=12,c.ticks.font&&(c.ticks.font.size=10)):a==="detail"?(c.ticks&&(c.ticks.maxTicksLimit=24,c.ticks.font&&(c.ticks.font.size=11)),c.time&&(c.time.displayFormats.hour="HH:mm")):(c.ticks&&(c.ticks.maxTicksLimit=16,c.ticks.font&&(c.ticks.font.size=10)),c.time&&(c.time.displayFormats.hour="dd.MM HH:mm")));const u=e==="always"||e==="auto"&&n<=6;for(const K of t.data.datasets){const x=K;if(x.datalabels||(x.datalabels={}),e==="never"){x.datalabels.display=!1;continue}if(u){let H=1;n>3&&n<=6?H=2:n>6&&(H=4),x.datalabels.display=Q=>{const U=Q.dataset.data[Q.dataIndex];return U==null||U===0?!1:Q.dataIndex%H===0};const z=x.yAxisID==="y-price",D=(($=x.label)==null?void 0:$.includes("Solární"))||((S=x.label)==null?void 0:S.includes("String")),q=(Y=x.label)==null?void 0:Y.includes("kapacita");x.datalabels.align="top",x.datalabels.offset=6,x.datalabels.color="#fff",x.datalabels.font={size:9,weight:"bold"},z?(x.datalabels.formatter=Q=>ki(Q,2,"Kč"),x.datalabels.backgroundColor=x.borderColor||"rgba(33, 150, 243, 0.8)"):D?(x.datalabels.formatter=Q=>ki(Q,1,"kW"),x.datalabels.backgroundColor=x.borderColor||"rgba(255, 193, 7, 0.8)"):q?(x.datalabels.formatter=Q=>ki(Q,1,"kWh"),x.datalabels.backgroundColor=x.borderColor||"rgba(120, 144, 156, 0.8)"):(x.datalabels.formatter=Q=>ki(Q,1),x.datalabels.backgroundColor=x.borderColor||"rgba(33, 150, 243, 0.8)"),x.datalabels.borderRadius=4,x.datalabels.padding={top:3,bottom:3,left:5,right:5}}else x.datalabels.display=!1}t.update("none"),y.debug(`[PricingChart] Detail: ${n.toFixed(1)}h, Labels: ${u?"ON":"OFF"}, Mode: ${e}`)}let Nt=class extends M{constructor(){super(...arguments),this.data=null,this.datalabelMode="auto",this.zoomState={start:null,end:null},this.currentDetailLevel="overview",this.chart=null,this.resizeObserver=null}firstUpdated(){this.setupResizeObserver(),this.data&&this.data.timeline.length>0&&requestAnimationFrame(()=>this.createChart())}updated(t){t.has("data")&&this.data&&(this.chart?this.updateChartData():this.data.timeline.length>0&&requestAnimationFrame(()=>this.createChart())),t.has("datalabelMode")&&this.chart&&Zt(this.chart,this.datalabelMode)}disconnectedCallback(){var t;super.disconnectedCallback(),this.destroyChart(),(t=this.resizeObserver)==null||t.disconnect(),this.resizeObserver=null}zoomToTimeRange(t,e){if(!this.chart){y.warn("[PricingChart] Chart not available for zoom");return}const i=new Date(t),r=new Date(e),n=15*60*1e3,a=i.getTime()-n,s=r.getTime()+n;if(this.zoomState.start!==null&&Math.abs(this.zoomState.start-a)<6e4&&this.zoomState.end!==null&&Math.abs(this.zoomState.end-s)<6e4){y.debug("[PricingChart] Already zoomed to same range → reset"),this.resetZoom();return}try{const l=this.chart.options;l.scales.x.min=a,l.scales.x.max=s,this.chart.update("none"),this.zoomState={start:a,end:s},this.currentDetailLevel=ge(this.chart),Zt(this.chart,this.datalabelMode),this.dispatchEvent(new CustomEvent("zoom-change",{detail:{start:a,end:s,level:this.currentDetailLevel},bubbles:!0,composed:!0})),y.debug("[PricingChart] Zoomed to range",{start:new Date(a).toISOString(),end:new Date(s).toISOString()})}catch(l){y.error("[PricingChart] Zoom error",l)}}resetZoom(){if(!this.chart)return;const t=this.chart.options;delete t.scales.x.min,delete t.scales.x.max,this.chart.update("none"),this.zoomState={start:null,end:null},this.currentDetailLevel=ge(this.chart),Zt(this.chart,this.datalabelMode),this.dispatchEvent(new CustomEvent("zoom-reset",{bubbles:!0,composed:!0}))}getChart(){return this.chart}createChart(){if(!this.canvas||!this.data||this.data.timeline.length===0)return;this.chart&&this.destroyChart();const t=this.data,e=Sn(t),i={responsive:!0,maintainAspectRatio:!1,animation:{duration:0},interaction:{mode:"index",intersect:!1},plugins:{legend:{labels:{color:"#ffffff",font:{size:11,weight:"500"},padding:10,usePointStyle:!0,pointStyle:"circle",boxWidth:12,boxHeight:12},position:"top"},tooltip:{backgroundColor:"rgba(0,0,0,0.9)",titleColor:"#ffffff",bodyColor:"#ffffff",titleFont:{size:13,weight:"bold"},bodyFont:{size:11},padding:10,cornerRadius:6,displayColors:!0,callbacks:{title:n=>n.length>0?new Date(n[0].parsed.x).toLocaleString("cs-CZ",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"",label:n=>{let a=n.dataset.label||"";return a&&(a+=": "),n.parsed.y!==null&&(n.dataset.yAxisID==="y-price"?a+=n.parsed.y.toFixed(2)+" Kč/kWh":n.dataset.yAxisID==="y-solar"?a+=n.parsed.y.toFixed(2)+" kWh":n.dataset.yAxisID==="y-power"?a+=n.parsed.y.toFixed(2)+" kW":a+=n.parsed.y),a}}},datalabels:{display:!1},zoom:{zoom:{wheel:{enabled:!0,modifierKey:null},drag:{enabled:!0,backgroundColor:"rgba(33, 150, 243, 0.3)",borderColor:"rgba(33, 150, 243, 0.8)",borderWidth:2},pinch:{enabled:!0},mode:"x",onZoomComplete:({chart:n})=>{this.zoomState={start:null,end:null},this.currentDetailLevel=ge(n),Zt(n,this.datalabelMode)}},pan:{enabled:!0,mode:"x",modifierKey:"shift",onPanComplete:({chart:n})=>{this.zoomState={start:null,end:null},this.currentDetailLevel=ge(n),Zt(n,this.datalabelMode)}},limits:{x:{minRange:36e5}}},pricingModeIcons:null},scales:{x:{type:"timeseries",time:{unit:"hour",displayFormats:{hour:"dd.MM HH:mm"},tooltipFormat:"dd.MM.yyyy HH:mm"},ticks:{color:this.getTextColor(),maxRotation:45,minRotation:45,font:{size:11},maxTicksLimit:20},grid:{color:this.getGridColor(),lineWidth:1}},"y-price":{type:"linear",position:"left",ticks:{color:"#2196F3",font:{size:11,weight:"500"},callback:n=>n.toFixed(2)+" Kč"},grid:{color:"rgba(33, 150, 243, 0.15)",lineWidth:1},title:{display:!0,text:"💰 Cena (Kč/kWh)",color:"#2196F3",font:{size:13,weight:"bold"}}},"y-solar":{type:"linear",position:"left",stacked:!0,ticks:{color:"#78909C",font:{size:11,weight:"500"},callback:n=>n.toFixed(1)+" kWh",display:!0},grid:{display:!0,color:"rgba(120, 144, 156, 0.15)",lineWidth:1,drawOnChartArea:!0},title:{display:!0,text:"🔋 Kapacita baterie (kWh)",color:"#78909C",font:{size:11,weight:"bold"}},beginAtZero:!1},"y-power":{type:"linear",position:"right",stacked:!0,ticks:{color:"#FFA726",font:{size:11,weight:"500"},callback:n=>n.toFixed(2)+" kW"},grid:{display:!1},title:{display:!0,text:"☀️ Výkon (kW)",color:"#FFA726",font:{size:13,weight:"bold"}}}}};kn(i);const r={type:"bar",data:{labels:t.labels,datasets:e},plugins:[Bn],options:i};try{this.chart=new Ki(this.canvas,r),Zt(this.chart,this.datalabelMode),t.initialZoomStart&&t.initialZoomEnd&&requestAnimationFrame(()=>{if(!this.chart)return;const n=this.chart.options;n.scales.x.min=t.initialZoomStart,n.scales.x.max=t.initialZoomEnd,this.chart.update("none"),this.currentDetailLevel=ge(this.chart),Zt(this.chart,this.datalabelMode)}),y.info("[PricingChart] Chart created",{datasets:e.length,labels:t.labels.length,segments:t.modeSegments.length})}catch(n){y.error("[PricingChart] Failed to create chart",n)}}updateChartData(){var s;if(!this.chart||!this.data)return;const t=this.data,e=Sn(t),i=((s=this.chart.data.labels)==null?void 0:s.length)!==t.labels.length,r=this.chart.data.datasets.length!==e.length;i&&(this.chart.data.labels=t.labels);let n="none";r?(this.chart.data.datasets=e,n=void 0):e.forEach((l,c)=>{const u=this.chart.data.datasets[c];u&&(u.data=l.data,u.label=l.label,u.backgroundColor=l.backgroundColor,u.borderColor=l.borderColor)});const a=this.chart.options;a.plugins||(a.plugins={}),a.plugins.pricingModeIcons=null,kn(a),this.chart.update(n),y.debug("[PricingChart] Chart updated incrementally")}destroyChart(){this.chart&&(this.chart.destroy(),this.chart=null)}setupResizeObserver(){this.resizeObserver=new ResizeObserver(()=>{var t;(t=this.chart)==null||t.resize()}),this.resizeObserver.observe(this)}getTextColor(){try{return getComputedStyle(this).getPropertyValue("--oig-text-primary").trim()||"#e0e0e0"}catch{return"#e0e0e0"}}getGridColor(){try{return getComputedStyle(this).getPropertyValue("--oig-border").trim()||"rgba(255,255,255,0.1)"}catch{return"rgba(255,255,255,0.1)"}}setDatalabelMode(t){this.datalabelMode=t,this.dispatchEvent(new CustomEvent("datalabel-mode-change",{detail:{mode:t},bubbles:!0,composed:!0}))}get isZoomed(){return this.zoomState.start!==null||this.zoomState.end!==null}renderControls(){const t=e=>{const i=this.datalabelMode===e?"active":"";return e==="always"&&this.datalabelMode==="always"?`control-btn mode-always ${i}`:e==="never"&&this.datalabelMode==="never"?`control-btn mode-never ${i}`:`control-btn ${i}`};return d`
+ */const yu={datetime:"MMM d, yyyy, h:mm:ss aaaa",millisecond:"h:mm:ss.SSS aaaa",second:"h:mm:ss aaaa",minute:"h:mm aaaa",hour:"ha",day:"MMM d",week:"PP",month:"MMM yyyy",quarter:"qqq - yyyy",year:"yyyy"};ps._date.override({_id:"date-fns",formats:function(){return yu},parse:function(t,e){if(t===null||typeof t>"u")return null;const i=typeof t;return i==="number"||t instanceof Date?t=I(t):i==="string"&&(typeof e=="string"?t=Qd(t,e,new Date,this.options):t=iu(t,this.options)),ma(t)?t.getTime():null},format:function(t,e){return Jc(t,e,this.options)},add:function(t,e,i){switch(i){case"millisecond":return An(t,e);case"second":return Wl(t,e);case"minute":return Rl(t,e);case"hour":return Bl(t,e);case"day":return tn(t,e);case"week":return jl(t,e);case"month":return Ln(t,e);case"quarter":return Hl(t,e);case"year":return Vl(t,e);default:return t}},diff:function(t,e,i){switch(i){case"millisecond":return In(t,e);case"second":return Xl(t,e);case"minute":return Kl(t,e);case"hour":return Ul(t,e);case"day":return ba(t,e);case"week":return Jl(t,e);case"month":return xa(t,e);case"quarter":return Ql(t,e);case"year":return tc(t,e);default:return 0}},startOf:function(t,e,i){switch(e){case"second":return eu(t);case"minute":return tu(t);case"hour":return Jd(t);case"day":return Sn(t);case"week":return Dt(t);case"isoWeek":return Dt(t,{weekStartsOn:+i});case"month":return ic(t);case"quarter":return ec(t);case"year":return wa(t);default:return t}},endOf:function(t,e){switch(e){case"second":return lc(t);case"minute":return sc(t);case"hour":return rc(t);case"day":return ya(t);case"week":return ac(t);case"month":return va(t);case"quarter":return oc(t);case"year":return nc(t);default:return t}}});function Or(t,e){if(!(e!=null&&e.start)||!(e!=null&&e.end))return null;const i=t.getPixelForValue(e.start.getTime()),n=t.getPixelForValue(e.end.getTime());if(!Number.isFinite(i)||!Number.isFinite(n))return null;const r=Math.min(i,n),a=Math.max(Math.abs(n-i),2);return!Number.isFinite(a)||a<=0?null:{left:r,width:a}}const vu={id:"pricingModeIcons",beforeDatasetsDraw(t,e,i){var c;const n=i,r=n==null?void 0:n.segments;if(!(r!=null&&r.length))return;const a=t.chartArea,s=(c=t.scales)==null?void 0:c.x;if(!a||!s)return;const l=t.ctx;l.save(),l.globalAlpha=(n==null?void 0:n.backgroundOpacity)??.12;for(const u of r){const p=Or(s,u);p&&(l.fillStyle=u.color||"rgba(255, 255, 255, 0.1)",l.fillRect(p.left,a.top,p.width,a.bottom-a.top))}l.restore()},afterDatasetsDraw(t,e,i){var L;const n=i,r=n==null?void 0:n.segments;if(!(r!=null&&r.length))return;const a=(L=t.scales)==null?void 0:L.x,s=t.chartArea;if(!a||!s)return;const l=(n==null?void 0:n.iconSize)??16,c=(n==null?void 0:n.labelSize)??9,u=`${l}px "Inter", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`,p=`${c}px "Inter", sans-serif`,f=(n==null?void 0:n.iconColor)||"rgba(255, 255, 255, 0.95)",v=(n==null?void 0:n.labelColor)||"rgba(255, 255, 255, 0.7)",m=(n==null?void 0:n.axisBandPadding)??10,g=(n==null?void 0:n.axisBandHeight)??l+c+10,b=(n==null?void 0:n.axisBandColor)||"rgba(6, 10, 18, 0.12)",k=(n==null?void 0:n.iconAlignment)||"start",S=(n==null?void 0:n.iconStartOffset)??12,$=(n==null?void 0:n.iconBaselineOffset)??4,C=(a.bottom||s.bottom)+m,G=Math.min(C,t.height-g-2),Z=s.right-s.left,w=G+$,j=t.ctx;j.save(),j.globalCompositeOperation="destination-over",j.fillStyle=b,j.fillRect(s.left,G,Z,g),j.restore(),j.save(),j.globalCompositeOperation="destination-over",j.textAlign="center",j.textBaseline="top";for(const z of r){const Y=Or(a,z);if(!Y)continue;let V;if(k==="start"){V=Y.left+S;const N=Y.left+Y.width-l/2;V>N&&(V=Y.left+Y.width/2)}else V=Y.left+Y.width/2;j.font=u,j.fillStyle=f,j.fillText(z.icon||"❓",V,w),z.shortLabel&&(j.font=p,j.fillStyle=v,j.fillText(z.shortLabel,V,w+l-2))}j.restore()}};function zr(t,e){if(!t)return;t.layout||(t.layout={}),t.layout.padding||(t.layout.padding={});const i=t.layout.padding,n=12;i.top=i.top??12,i.bottom=Math.max(i.bottom||0,n)}var xu=Object.defineProperty,wu=Object.getOwnPropertyDescriptor,De=(t,e,i,n)=>{for(var r=n>1?void 0:n?wu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&xu(e,i,r),r};const Bt=Q;Ki.register(Nr,Rr,hs,gs,Hr,Wr,fs,jr,ms,bs,Vr,qr,ys,vs,Yr,vu);function $u(t){const e=t.timeline.map(i=>i.spot_price_czk??0);return{label:"📊 Spotová cena nákupu",data:e,borderColor:"#2196F3",backgroundColor:"rgba(33, 150, 243, 0.15)",borderWidth:3,fill:!1,tension:.4,type:"line",yAxisID:"y-price",pointRadius:e.map(()=>0),pointHoverRadius:7,pointBackgroundColor:e.map(()=>"#42a5f5"),pointBorderColor:e.map(()=>"#42a5f5"),pointBorderWidth:2,order:1,datalabels:{display:!1}}}function _u(t){return{label:"💰 Výkupní cena",data:t.timeline.map(e=>e.export_price_czk??0),borderColor:"#4CAF50",backgroundColor:"rgba(76, 187, 106, 0.15)",borderWidth:2,fill:!1,type:"line",tension:.4,yAxisID:"y-price",pointRadius:0,pointHoverRadius:5,order:1,borderDash:[5,5]}}function ku(t){if(!t.solar)return[];const{string1:e,string2:i,hasString1:n,hasString2:r}=t.solar,a=(n?1:0)+(r?1:0),s={string1:{border:"rgba(255, 193, 7, 0.8)",bg:"rgba(255, 193, 7, 0.2)"},string2:{border:"rgba(255, 152, 0, 0.8)",bg:"rgba(255, 152, 0, 0.2)"}};if(a===1){const l=n?e:i,c=n?s.string1:s.string2;return[{label:"☀️ Solární předpověď",data:l,borderColor:c.border,backgroundColor:c.bg,borderWidth:2,fill:"origin",tension:.4,type:"line",yAxisID:"y-power",pointRadius:0,pointHoverRadius:5,order:2}]}return a===2?[{label:"☀️ String 2",data:i,borderColor:s.string2.border,backgroundColor:s.string2.bg,borderWidth:1.5,fill:"origin",tension:.4,type:"line",yAxisID:"y-power",stack:"solar",pointRadius:0,pointHoverRadius:5,order:2},{label:"☀️ String 1",data:e,borderColor:s.string1.border,backgroundColor:s.string1.bg,borderWidth:1.5,fill:"-1",tension:.4,type:"line",yAxisID:"y-power",stack:"solar",pointRadius:0,pointHoverRadius:5,order:2}]:[]}function Su(t){if(!t.battery)return[];const{baseline:e,solarCharge:i,gridCharge:n,gridNet:r,consumption:a}=t.battery,s=[],l={baseline:{border:"#78909C",bg:"rgba(120, 144, 156, 0.25)"},solar:{border:"transparent",bg:"rgba(255, 167, 38, 0.6)"},grid:{border:"transparent",bg:"rgba(33, 150, 243, 0.6)"}};return a.some(c=>c!=null&&c>0)&&s.push({label:"🏠 Spotřeba (plán)",data:a,borderColor:"rgba(255, 112, 67, 0.7)",backgroundColor:"rgba(255, 112, 67, 0.12)",borderWidth:1.5,type:"line",fill:!1,tension:.25,pointRadius:0,pointHoverRadius:5,yAxisID:"y-power",stack:"consumption",borderDash:[6,4],order:2}),n.some(c=>c!=null&&c>0)&&s.push({label:"⚡ Do baterie ze sítě",data:n,backgroundColor:l.grid.bg,borderColor:l.grid.border,borderWidth:0,type:"line",fill:!0,tension:.4,pointRadius:0,pointHoverRadius:5,yAxisID:"y-solar",stack:"charging",order:3}),i.some(c=>c!=null&&c>0)&&s.push({label:"☀️ Do baterie ze soláru",data:i,backgroundColor:l.solar.bg,borderColor:l.solar.border,borderWidth:0,type:"line",fill:!0,tension:.4,pointRadius:0,pointHoverRadius:5,yAxisID:"y-solar",stack:"charging",order:3}),s.push({label:"🔋 Zbývající kapacita",data:e,backgroundColor:l.baseline.bg,borderColor:l.baseline.border,borderWidth:3,type:"line",fill:!0,tension:.4,pointRadius:0,pointHoverRadius:5,yAxisID:"y-solar",stack:"charging",order:3}),r.some(c=>c!==null)&&s.push({label:"📡 Netto odběr ze sítě",data:r,borderColor:"#00BCD4",backgroundColor:"transparent",borderWidth:2,type:"line",fill:!1,tension:.2,pointRadius:0,pointHoverRadius:5,yAxisID:"y-solar",order:2}),s}function Lr(t){const e=[];return t.prices.length>0&&e.push($u(t)),t.exportPrices.length>0&&e.push(_u(t)),e.push(...ku(t)),e.push(...Su(t)),e}function Si(t,e,i=""){if(t==null)return"";const n=i?` ${i}`:"";return`${t.toFixed(e)}${n}`}function ge(t){var r;const e=(r=t.scales)==null?void 0:r.x;if(!e)return"overview";const n=(e.max-e.min)/(1e3*60*60);return n<=6?"detail":n<=24?"day":"overview"}function Xt(t,e){var p,f,v,m,g,b,k,S,$,C,G;if(!((p=t==null?void 0:t.scales)!=null&&p.x))return;const i=t.scales.x,r=(i.max-i.min)/(1e3*60*60),a=ge(t),s=(v=(f=t.options.plugins)==null?void 0:f.legend)==null?void 0:v.labels;s&&(s.padding=10,s.font&&(s.font.size=11),a==="detail"&&(s.padding=12,s.font&&(s.font.size=12)));const l=["y-price","y-solar","y-power"];for(const Z of l){const w=(m=t.options.scales)==null?void 0:m[Z];w&&(a==="overview"?(w.title&&(w.title.display=!1),(g=w.ticks)!=null&&g.font&&(w.ticks.font.size=10),Z==="y-solar"&&(w.display=!1)):a==="detail"?(w.title&&(w.title.display=!0,w.title.font&&(w.title.font.size=12)),(b=w.ticks)!=null&&b.font&&(w.ticks.font.size=11),w.display=!0):(w.title&&(w.title.display=!0,w.title.font&&(w.title.font.size=11)),(k=w.ticks)!=null&&k.font&&(w.ticks.font.size=10),w.display=!0))}const c=(S=t.options.scales)==null?void 0:S.x;c&&(a==="overview"?c.ticks&&(c.ticks.maxTicksLimit=12,c.ticks.font&&(c.ticks.font.size=10)):a==="detail"?(c.ticks&&(c.ticks.maxTicksLimit=24,c.ticks.font&&(c.ticks.font.size=11)),c.time&&(c.time.displayFormats.hour="HH:mm")):(c.ticks&&(c.ticks.maxTicksLimit=16,c.ticks.font&&(c.ticks.font.size=10)),c.time&&(c.time.displayFormats.hour="dd.MM HH:mm")));const u=e==="always"||e==="auto"&&r<=6;for(const Z of t.data.datasets){const w=Z;if(w.datalabels||(w.datalabels={}),e==="never"){w.datalabels.display=!1;continue}if(u){let j=1;r>3&&r<=6?j=2:r>6&&(j=4),w.datalabels.display=V=>{const N=V.dataset.data[V.dataIndex];return N==null||N===0?!1:V.dataIndex%j===0};const L=w.yAxisID==="y-price",z=(($=w.label)==null?void 0:$.includes("Solární"))||((C=w.label)==null?void 0:C.includes("String")),Y=(G=w.label)==null?void 0:G.includes("kapacita");w.datalabels.align="top",w.datalabels.offset=6,w.datalabels.color="#fff",w.datalabels.font={size:9,weight:"bold"},L?(w.datalabels.formatter=V=>Si(V,2,"Kč"),w.datalabels.backgroundColor=w.borderColor||"rgba(33, 150, 243, 0.8)"):z?(w.datalabels.formatter=V=>Si(V,1,"kW"),w.datalabels.backgroundColor=w.borderColor||"rgba(255, 193, 7, 0.8)"):Y?(w.datalabels.formatter=V=>Si(V,1,"kWh"),w.datalabels.backgroundColor=w.borderColor||"rgba(120, 144, 156, 0.8)"):(w.datalabels.formatter=V=>Si(V,1),w.datalabels.backgroundColor=w.borderColor||"rgba(33, 150, 243, 0.8)"),w.datalabels.borderRadius=4,w.datalabels.padding={top:3,bottom:3,left:5,right:5}}else w.datalabels.display=!1}t.update("none"),y.debug(`[PricingChart] Detail: ${r.toFixed(1)}h, Labels: ${u?"ON":"OFF"}, Mode: ${e}`)}let Rt=class extends M{constructor(){super(...arguments),this.data=null,this.datalabelMode="auto",this.zoomState={start:null,end:null},this.currentDetailLevel="overview",this.chart=null,this.resizeObserver=null}firstUpdated(){this.setupResizeObserver(),this.data&&this.data.timeline.length>0&&requestAnimationFrame(()=>this.createChart())}updated(t){t.has("data")&&this.data&&(this.chart?this.updateChartData():this.data.timeline.length>0&&requestAnimationFrame(()=>this.createChart())),t.has("datalabelMode")&&this.chart&&Xt(this.chart,this.datalabelMode)}disconnectedCallback(){var t;super.disconnectedCallback(),this.destroyChart(),(t=this.resizeObserver)==null||t.disconnect(),this.resizeObserver=null}zoomToTimeRange(t,e){if(!this.chart){y.warn("[PricingChart] Chart not available for zoom");return}const i=new Date(t),n=new Date(e),r=15*60*1e3,a=i.getTime()-r,s=n.getTime()+r;if(this.zoomState.start!==null&&Math.abs(this.zoomState.start-a)<6e4&&this.zoomState.end!==null&&Math.abs(this.zoomState.end-s)<6e4){y.debug("[PricingChart] Already zoomed to same range → reset"),this.resetZoom();return}try{const l=this.chart.options;l.scales.x.min=a,l.scales.x.max=s,this.chart.update("none"),this.zoomState={start:a,end:s},this.currentDetailLevel=ge(this.chart),Xt(this.chart,this.datalabelMode),this.dispatchEvent(new CustomEvent("zoom-change",{detail:{start:a,end:s,level:this.currentDetailLevel},bubbles:!0,composed:!0})),y.debug("[PricingChart] Zoomed to range",{start:new Date(a).toISOString(),end:new Date(s).toISOString()})}catch(l){y.error("[PricingChart] Zoom error",l)}}resetZoom(){if(!this.chart)return;const t=this.chart.options;delete t.scales.x.min,delete t.scales.x.max,this.chart.update("none"),this.zoomState={start:null,end:null},this.currentDetailLevel=ge(this.chart),Xt(this.chart,this.datalabelMode),this.dispatchEvent(new CustomEvent("zoom-reset",{bubbles:!0,composed:!0}))}getChart(){return this.chart}createChart(){if(!this.canvas||!this.data||this.data.timeline.length===0)return;this.chart&&this.destroyChart();const t=this.data,e=Lr(t),i={responsive:!0,maintainAspectRatio:!1,animation:{duration:0},interaction:{mode:"index",intersect:!1},plugins:{legend:{labels:{color:"#ffffff",font:{size:11,weight:"500"},padding:10,usePointStyle:!0,pointStyle:"circle",boxWidth:12,boxHeight:12},position:"top"},tooltip:{backgroundColor:"rgba(0,0,0,0.9)",titleColor:"#ffffff",bodyColor:"#ffffff",titleFont:{size:13,weight:"bold"},bodyFont:{size:11},padding:10,cornerRadius:6,displayColors:!0,callbacks:{title:r=>r.length>0?new Date(r[0].parsed.x).toLocaleString("cs-CZ",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"",label:r=>{let a=r.dataset.label||"";return a&&(a+=": "),r.parsed.y!==null&&(r.dataset.yAxisID==="y-price"?a+=r.parsed.y.toFixed(2)+" Kč/kWh":r.dataset.yAxisID==="y-solar"?a+=r.parsed.y.toFixed(2)+" kWh":r.dataset.yAxisID==="y-power"?a+=r.parsed.y.toFixed(2)+" kW":a+=r.parsed.y),a}}},datalabels:{display:!1},zoom:{zoom:{wheel:{enabled:!0,modifierKey:null},drag:{enabled:!0,backgroundColor:"rgba(33, 150, 243, 0.3)",borderColor:"rgba(33, 150, 243, 0.8)",borderWidth:2},pinch:{enabled:!0},mode:"x",onZoomComplete:({chart:r})=>{this.zoomState={start:null,end:null},this.currentDetailLevel=ge(r),Xt(r,this.datalabelMode)}},pan:{enabled:!0,mode:"x",modifierKey:"shift",onPanComplete:({chart:r})=>{this.zoomState={start:null,end:null},this.currentDetailLevel=ge(r),Xt(r,this.datalabelMode)}},limits:{x:{minRange:36e5}}},pricingModeIcons:null},scales:{x:{type:"timeseries",time:{unit:"hour",displayFormats:{hour:"dd.MM HH:mm"},tooltipFormat:"dd.MM.yyyy HH:mm"},ticks:{color:this.getTextColor(),maxRotation:45,minRotation:45,font:{size:11},maxTicksLimit:20},grid:{color:this.getGridColor(),lineWidth:1}},"y-price":{type:"linear",position:"left",ticks:{color:"#2196F3",font:{size:11,weight:"500"},callback:r=>r.toFixed(2)+" Kč"},grid:{color:"rgba(33, 150, 243, 0.15)",lineWidth:1},title:{display:!0,text:"💰 Cena (Kč/kWh)",color:"#2196F3",font:{size:13,weight:"bold"}}},"y-solar":{type:"linear",position:"left",stacked:!0,ticks:{color:"#78909C",font:{size:11,weight:"500"},callback:r=>r.toFixed(1)+" kWh",display:!0},grid:{display:!0,color:"rgba(120, 144, 156, 0.15)",lineWidth:1,drawOnChartArea:!0},title:{display:!0,text:"🔋 Kapacita baterie (kWh)",color:"#78909C",font:{size:11,weight:"bold"}},beginAtZero:!1},"y-power":{type:"linear",position:"right",stacked:!0,ticks:{color:"#FFA726",font:{size:11,weight:"500"},callback:r=>r.toFixed(2)+" kW"},grid:{display:!1},title:{display:!0,text:"☀️ Výkon (kW)",color:"#FFA726",font:{size:13,weight:"bold"}}}}};zr(i);const n={type:"bar",data:{labels:t.labels,datasets:e},plugins:[Yr],options:i};try{this.chart=new Ki(this.canvas,n),Xt(this.chart,this.datalabelMode),t.initialZoomStart&&t.initialZoomEnd&&requestAnimationFrame(()=>{if(!this.chart)return;const r=this.chart.options;r.scales.x.min=t.initialZoomStart,r.scales.x.max=t.initialZoomEnd,this.chart.update("none"),this.currentDetailLevel=ge(this.chart),Xt(this.chart,this.datalabelMode)}),y.info("[PricingChart] Chart created",{datasets:e.length,labels:t.labels.length,segments:t.modeSegments.length})}catch(r){y.error("[PricingChart] Failed to create chart",r)}}updateChartData(){var s;if(!this.chart||!this.data)return;const t=this.data,e=Lr(t),i=((s=this.chart.data.labels)==null?void 0:s.length)!==t.labels.length,n=this.chart.data.datasets.length!==e.length;i&&(this.chart.data.labels=t.labels);let r="none";n?(this.chart.data.datasets=e,r=void 0):e.forEach((l,c)=>{const u=this.chart.data.datasets[c];u&&(u.data=l.data,u.label=l.label,u.backgroundColor=l.backgroundColor,u.borderColor=l.borderColor)});const a=this.chart.options;a.plugins||(a.plugins={}),a.plugins.pricingModeIcons=null,zr(a),this.chart.update(r),y.debug("[PricingChart] Chart updated incrementally")}destroyChart(){this.chart&&(this.chart.destroy(),this.chart=null)}setupResizeObserver(){this.resizeObserver=new ResizeObserver(()=>{var t;(t=this.chart)==null||t.resize()}),this.resizeObserver.observe(this)}getTextColor(){try{return getComputedStyle(this).getPropertyValue("--oig-text-primary").trim()||"#e0e0e0"}catch{return"#e0e0e0"}}getGridColor(){try{return getComputedStyle(this).getPropertyValue("--oig-border").trim()||"rgba(255,255,255,0.1)"}catch{return"rgba(255,255,255,0.1)"}}setDatalabelMode(t){this.datalabelMode=t,this.dispatchEvent(new CustomEvent("datalabel-mode-change",{detail:{mode:t},bubbles:!0,composed:!0}))}get isZoomed(){return this.zoomState.start!==null||this.zoomState.end!==null}renderControls(){const t=e=>{const i=this.datalabelMode===e?"active":"";return e==="always"&&this.datalabelMode==="always"?`control-btn mode-always ${i}`:e==="never"&&this.datalabelMode==="never"?`control-btn mode-never ${i}`:`control-btn ${i}`};return d`
       <div class="chart-controls">
         <button class=${t("auto")} @click=${()=>this.setDatalabelMode("auto")}>
           Auto
@@ -2693,7 +2714,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       ${t?d`<div class="chart-hint">
             Kolečko myši = zoom | Shift + tah = posun | Tah = výběr oblasti
           </div>`:null}
-    `}};Nt.styles=P`
+    `}};Rt.styles=P`
     :host {
       display: block;
       background: ${Bt(o.cardBg)};
@@ -2798,17 +2819,17 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       margin-top: 6px;
       text-align: center;
     }
-  `;Ee([h({type:Object})],Nt.prototype,"data",2);Ee([h({type:String})],Nt.prototype,"datalabelMode",2);Ee([w()],Nt.prototype,"zoomState",2);Ee([w()],Nt.prototype,"currentDetailLevel",2);Ee([Zi("#pricing-canvas")],Nt.prototype,"canvas",2);Nt=Ee([E("oig-pricing-chart")],Nt);var su=Object.defineProperty,ou=Object.getOwnPropertyDescriptor,j=(t,e,i,r)=>{for(var n=r>1?void 0:r?ou(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&su(e,i,n),n};const T=Z,de=P`
+  `;De([h({type:Object})],Rt.prototype,"data",2);De([h({type:String})],Rt.prototype,"datalabelMode",2);De([x()],Rt.prototype,"zoomState",2);De([x()],Rt.prototype,"currentDetailLevel",2);De([Zi("#pricing-canvas")],Rt.prototype,"canvas",2);Rt=De([D("oig-pricing-chart")],Rt);var Cu=Object.defineProperty,Pu=Object.getOwnPropertyDescriptor,q=(t,e,i,n)=>{for(var r=n>1?void 0:n?Pu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Cu(e,i,r),r};const T=Q,de=P`
   background: ${T(o.cardBg)};
   border-radius: 12px;
   padding: 16px;
   box-shadow: ${T(o.cardShadow)};
-`,Wt=P`
+`,Vt=P`
   font-size: 15px;
   font-weight: 600;
   color: ${T(o.textPrimary)};
   margin: 0 0 12px 0;
-`;function lu(t){return Math.max(0,Math.min(100,t))}function Cn(t){const r=Math.max(0,Math.min(1,(t-10)/60)),n={r:33,g:150,b:243},a={r:255,g:87,b:34},s=(l,c)=>Math.round(l+(c-l)*r);return`rgb(${s(n.r,a.r)}, ${s(n.g,a.g)}, ${s(n.b,a.b)})`}let ei=class extends M{constructor(){super(...arguments),this.collapsed=!0,this.busy=!1}toggle(){this.collapsed=!this.collapsed}async doAction(t,e){this.busy=!0;try{const i=await t();this.dispatchEvent(new CustomEvent("action-done",{detail:{success:i,label:e},bubbles:!0,composed:!0}))}finally{this.busy=!1}}render(){return d`
+`;function Tu(t){return Math.max(0,Math.min(100,t))}function Ar(t){const n=Math.max(0,Math.min(1,(t-10)/60)),r={r:33,g:150,b:243},a={r:255,g:87,b:34},s=(l,c)=>Math.round(l+(c-l)*n);return`rgb(${s(r.r,a.r)}, ${s(r.g,a.g)}, ${s(r.b,a.b)})`}let ii=class extends M{constructor(){super(...arguments),this.collapsed=!0,this.busy=!1}toggle(){this.collapsed=!this.collapsed}async doAction(t,e){this.busy=!0;try{const i=await t();this.dispatchEvent(new CustomEvent("action-done",{detail:{success:i,label:e},bubbles:!0,composed:!0}))}finally{this.busy=!1}}render(){return d`
       <div class="panel">
         <button class="panel-header" @click=${this.toggle}>
           <span class="panel-title">
@@ -2829,21 +2850,21 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <div class="section-label">Manualni akce (override)</div>
           <div class="button-group">
             <button class="action-btn" ?disabled=${this.busy}
-              @click=${()=>this.doAction(ho,"plan")}>
+              @click=${()=>this.doAction(Ao,"plan")}>
               Preplanovat (debug)
             </button>
             <button class="action-btn" ?disabled=${this.busy}
-              @click=${()=>this.doAction(go,"apply")}>
+              @click=${()=>this.doAction(Io,"apply")}>
               Aplikovat rucne
             </button>
             <button class="action-btn" ?disabled=${this.busy}
-              @click=${()=>this.doAction(fo,"cancel")}>
+              @click=${()=>this.doAction(Bo,"cancel")}>
               Zrusit plan
             </button>
           </div>
         </div>
       </div>
-    `}};ei.styles=P`
+    `}};ii.styles=P`
     :host { display: block; }
 
     .panel {
@@ -2948,7 +2969,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .action-btn:hover { background: ${T(o.divider)}; }
     .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  `;j([w()],ei.prototype,"collapsed",2);j([w()],ei.prototype,"busy",2);ei=j([E("oig-boiler-debug-panel")],ei);let Ii=class extends M{constructor(){super(...arguments),this.data=null}render(){const t=this.data;if(!t)return d`<div>Nacitani stavu...</div>`;const e=(i,r,n=1)=>i!=null?`${i.toFixed(n)} ${r}`:`-- ${r}`;return d`
+  `;q([x()],ii.prototype,"collapsed",2);q([x()],ii.prototype,"busy",2);ii=q([D("oig-boiler-debug-panel")],ii);let Ai=class extends M{constructor(){super(...arguments),this.data=null}render(){const t=this.data;if(!t)return d`<div>Nacitani stavu...</div>`;const e=(i,n,r=1)=>i!=null?`${i.toFixed(r)} ${n}`:`-- ${n}`;return d`
       <h3>Stav bojleru</h3>
       <div class="grid">
         <div class="card">
@@ -2964,7 +2985,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
             <div class="card-label">Teplota spodni</div>
             <div class="card-value">${e(t.tempBottom,"°C")}</div>
           </div>
-        `:A}
+        `:O}
         <div class="card">
           <div class="card-label">Energie potrebna</div>
           <div class="card-value">${e(t.energyNeeded,"kWh",2)}</div>
@@ -2982,10 +3003,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <div class="card-value small">${t.recommendedSource}</div>
         </div>
       </div>
-    `}};Ii.styles=P`
+    `}};Ai.styles=P`
     :host { display: block; }
 
-    h3 { ${Wt}; }
+    h3 { ${Vt}; }
 
     .grid {
       display: grid;
@@ -3015,7 +3036,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-size: 13px;
       font-weight: 500;
     }
-  `;j([h({type:Object})],Ii.prototype,"data",2);Ii=j([E("oig-boiler-status-grid")],Ii);let Li=class extends M{constructor(){super(...arguments),this.data=null}render(){const t=this.data;if(!t)return A;const e=i=>`${i.toFixed(2)} kWh`;return d`
+  `;q([h({type:Object})],Ai.prototype,"data",2);Ai=q([D("oig-boiler-status-grid")],Ai);let Ii=class extends M{constructor(){super(...arguments),this.data=null}render(){const t=this.data;if(!t)return O;const e=i=>`${i.toFixed(2)} kWh`;return d`
       <h3>Rozpad energie</h3>
       <div class="cards">
         <div class="card">
@@ -3042,10 +3063,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         <span>${t.gridPercent.toFixed(0)}% sit</span>
         <span>${t.altPercent.toFixed(0)}% alternativa</span>
       </div>
-    `}};Li.styles=P`
+    `}};Ii.styles=P`
     :host { display: block; }
 
-    h3 { ${Wt}; }
+    h3 { ${Vt}; }
 
     .cards {
       display: grid;
@@ -3094,7 +3115,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-size: 11px;
       color: ${T(o.textSecondary)};
     }
-  `;j([h({type:Object})],Li.prototype,"data",2);Li=j([E("oig-boiler-energy-breakdown")],Li);let Bi=class extends M{constructor(){super(...arguments),this.data=null}render(){const t=this.data;if(!t)return A;const e=t.peakHours.length?t.peakHours.map(n=>`${n}h`).join(", "):"--",i=t.waterLiters40c!==null?`${t.waterLiters40c.toFixed(0)} L`:"-- L",r=t.circulationNow.startsWith("ANO");return d`
+  `;q([h({type:Object})],Ii.prototype,"data",2);Ii=q([D("oig-boiler-energy-breakdown")],Ii);let Bi=class extends M{constructor(){super(...arguments),this.data=null}render(){const t=this.data;if(!t)return O;const e=t.peakHours.length?t.peakHours.map(r=>`${r}h`).join(", "):"--",i=t.waterLiters40c!==null?`${t.waterLiters40c.toFixed(0)} L`:"-- L",n=t.circulationNow.startsWith("ANO");return d`
       <h3>Planovane odbery</h3>
       <div class="list">
         <div class="item">
@@ -3115,13 +3136,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         </div>
         <div class="item">
           <span class="label">Cirkulace prave ted:</span>
-          <span class="value ${r?"active":"idle"}">${t.circulationNow}</span>
+          <span class="value ${n?"active":"idle"}">${t.circulationNow}</span>
         </div>
       </div>
     `}};Bi.styles=P`
     :host { display: block; }
 
-    h3 { ${Wt}; }
+    h3 { ${Vt}; }
 
     .list {
       display: flex;
@@ -3149,7 +3170,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .value.active { color: #4CAF50; }
     .value.idle { color: ${T(o.textSecondary)}; }
-  `;j([h({type:Object})],Bi.prototype,"data",2);Bi=j([E("oig-boiler-predicted-usage")],Bi);let ii=class extends M{constructor(){super(...arguments),this.plan=null,this.forecastWindows={fve:"--",grid:"--"}}render(){var r;const t=this.plan,e=this.forecastWindows,i=n=>n??"--";return d`
+  `;q([h({type:Object})],Bi.prototype,"data",2);Bi=q([D("oig-boiler-predicted-usage")],Bi);let ni=class extends M{constructor(){super(...arguments),this.plan=null,this.forecastWindows={fve:"--",grid:"--"}}render(){var n;const t=this.plan,e=this.forecastWindows,i=r=>r??"--";return d`
       <h3>Informace o planu</h3>
       <div class="rows">
         <div class="row">
@@ -3158,7 +3179,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         </div>
         <div class="row">
           <span class="row-label">Slotu:</span>
-          <span class="row-value">${((r=t==null?void 0:t.slots)==null?void 0:r.length)??"--"}</span>
+          <span class="row-value">${((n=t==null?void 0:t.slots)==null?void 0:n.length)??"--"}</span>
         </div>
         <div class="row">
           <span class="row-label">Topeni aktivni:</span>
@@ -3189,10 +3210,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <span class="row-value">${i(t==null?void 0:t.planEnd)}</span>
         </div>
       </div>
-    `}};ii.styles=P`
+    `}};ni.styles=P`
     :host { display: block; }
 
-    h3 { ${Wt}; }
+    h3 { ${Vt}; }
 
     .rows {
       display: flex;
@@ -3219,16 +3240,16 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       max-width: 60%;
       word-break: break-word;
     }
-  `;j([h({type:Object})],ii.prototype,"plan",2);j([h({type:Object})],ii.prototype,"forecastWindows",2);ii=j([E("oig-boiler-plan-info")],ii);let ri=class extends M{constructor(){super(...arguments),this.boilerState=null,this.targetTemp=60}render(){const t=this.boilerState;if(!t)return d`<div>Nacitani...</div>`;const e=10,i=70,r=b=>lu((b-e)/(i-e)*100),n=t.heatingPercent??0,a=t.tempTop!==null?r(t.tempTop):null,s=t.tempBottom!==null?r(t.tempBottom):null,l=r(this.targetTemp),c=Cn(t.tempTop??this.targetTemp),u=Cn(t.tempBottom??10),p=`linear-gradient(180deg, ${c} 0%, ${u} 100%)`,g=t.heatingPercent!==null?`${t.heatingPercent.toFixed(0)}% nahrato`:"-- % nahrato";return d`
+  `;q([h({type:Object})],ni.prototype,"plan",2);q([h({type:Object})],ni.prototype,"forecastWindows",2);ni=q([D("oig-boiler-plan-info")],ni);let ri=class extends M{constructor(){super(...arguments),this.boilerState=null,this.targetTemp=60}render(){const t=this.boilerState;if(!t)return d`<div>Nacitani...</div>`;const e=10,i=70,n=m=>Tu((m-e)/(i-e)*100),r=t.heatingPercent??0,a=t.tempTop!==null?n(t.tempTop):null,s=t.tempBottom!==null?n(t.tempBottom):null,l=n(this.targetTemp),c=Ar(t.tempTop??this.targetTemp),u=Ar(t.tempBottom??10),p=`linear-gradient(180deg, ${c} 0%, ${u} 100%)`,f=t.heatingPercent!==null?`${t.heatingPercent.toFixed(0)}% nahrato`:"-- % nahrato";return d`
       <h3>Vizualizace bojleru</h3>
 
       <div class="tank-wrapper">
         <div class="temp-scale">
-          ${[70,60,50,40,30,20,10].map(b=>d`<span>${b}°C</span>`)}
+          ${[70,60,50,40,30,20,10].map(m=>d`<span>${m}°C</span>`)}
         </div>
 
         <div class="tank">
-          <div class="water" style="height:${n}%; background:${p}"></div>
+          <div class="water" style="height:${r}%; background:${p}"></div>
 
           <div class="target-line" style="bottom:${l}%">
             <span class="target-label">Cil</span>
@@ -3239,22 +3260,22 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
               <span class="sensor-label">${t.tempTop.toFixed(1)}°C</span>
               <span class="sensor-line"></span>
             </div>
-          `:A}
+          `:O}
 
           ${s!==null?d`
             <div class="sensor bottom" style="bottom:${s}%">
               <span class="sensor-label">${t.tempBottom.toFixed(1)}°C</span>
               <span class="sensor-line"></span>
             </div>
-          `:A}
+          `:O}
         </div>
       </div>
 
-      <div class="grade-label">${g}</div>
+      <div class="grade-label">${f}</div>
     `}};ri.styles=P`
     :host { display: block; }
 
-    h3 { ${Wt}; }
+    h3 { ${Vt}; }
 
     .tank-wrapper {
       display: flex;
@@ -3355,18 +3376,18 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-weight: 600;
       color: ${T(o.textPrimary)};
     }
-  `;j([h({type:Object})],ri.prototype,"boilerState",2);j([h({type:Number})],ri.prototype,"targetTemp",2);ri=j([E("oig-boiler-tank")],ri);let ni=class extends M{constructor(){super(...arguments),this.current="",this.available=[]}onChange(t){const e=t.target.value;this.dispatchEvent(new CustomEvent("category-change",{detail:{category:e},bubbles:!0,composed:!0}))}render(){const t=this.available.length?this.available:Object.keys(en);return d`
+  `;q([h({type:Object})],ri.prototype,"boilerState",2);q([h({type:Number})],ri.prototype,"targetTemp",2);ri=q([D("oig-boiler-tank")],ri);let ai=class extends M{constructor(){super(...arguments),this.current="",this.available=[]}onChange(t){const e=t.target.value;this.dispatchEvent(new CustomEvent("category-change",{detail:{category:e},bubbles:!0,composed:!0}))}render(){const t=this.available.length?this.available:Object.keys(gr);return d`
       <div class="row">
         <label>Profil:</label>
         <select @change=${this.onChange}>
           ${t.map(e=>d`
             <option value=${e} ?selected=${e===this.current}>
-              ${en[e]||e}
+              ${gr[e]||e}
             </option>
           `)}
         </select>
       </div>
-    `}};ni.styles=P`
+    `}};ai.styles=P`
     :host { display: block; margin: 12px 0; }
 
     .row {
@@ -3390,13 +3411,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       color: ${T(o.textPrimary)};
       cursor: pointer;
     }
-  `;j([h({type:String})],ni.prototype,"current",2);j([h({type:Array})],ni.prototype,"available",2);ni=j([E("oig-boiler-category-select")],ni);let Fi=class extends M{constructor(){super(...arguments),this.data=[]}render(){if(!this.data.length)return A;const t=this.data.flatMap(s=>s.hours),e=Math.max(...t,.1),i=e*.3,r=e*.7,n=Array.from({length:24},(s,l)=>l),a=s=>s===0?"none":s<i?"low":s<r?"medium":"high";return d`
+  `;q([h({type:String})],ai.prototype,"current",2);q([h({type:Array})],ai.prototype,"available",2);ai=q([D("oig-boiler-category-select")],ai);let Fi=class extends M{constructor(){super(...arguments),this.data=[]}render(){if(!this.data.length)return O;const t=this.data.flatMap(s=>s.hours),e=Math.max(...t,.1),i=e*.3,n=e*.7,r=Array.from({length:24},(s,l)=>l),a=s=>s===0?"none":s<i?"low":s<n?"medium":"high";return d`
       <h3>Mapa spotreby (7 dni)</h3>
       <div class="wrapper">
         <div class="grid">
           <!-- Header row -->
           <div></div>
-          ${n.map(s=>d`<div class="hour-header">${s}</div>`)}
+          ${r.map(s=>d`<div class="hour-header">${s}</div>`)}
 
           <!-- Day rows -->
           ${this.data.map(s=>d`
@@ -3417,7 +3438,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     `}};Fi.styles=P`
     :host { display: block; }
 
-    h3 { ${Wt}; }
+    h3 { ${Vt}; }
 
     .wrapper {
       ${de};
@@ -3479,7 +3500,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       height: 12px;
       border-radius: 2px;
     }
-  `;j([h({type:Array})],Fi.prototype,"data",2);Fi=j([E("oig-boiler-heatmap-grid")],Fi);let Ni=class extends M{constructor(){super(...arguments),this.plan=null}render(){const t=this.plan,e=(i,r=2)=>i!=null?i.toFixed(r):"-";return d`
+  `;q([h({type:Array})],Fi.prototype,"data",2);Fi=q([D("oig-boiler-heatmap-grid")],Fi);let Ni=class extends M{constructor(){super(...arguments),this.plan=null}render(){const t=this.plan,e=(i,n=2)=>i!=null?i.toFixed(n):"-";return d`
       <div class="grid">
         <div class="card">
           <div class="card-title">Celkova spotreba dnes</div>
@@ -3527,7 +3548,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .fve { color: #4CAF50; }
     .grid-c { color: #FF9800; }
     .cost { color: #2196F3; }
-  `;j([h({type:Object})],Ni.prototype,"plan",2);Ni=j([E("oig-boiler-stats-cards")],Ni);let Ri=class extends M{constructor(){super(...arguments),this.data=null}render(){const t=this.data;if(!t)return A;const e=Math.max(...t.hourlyAvg,.01),i=new Set(t.peakHours),r=t.peakHours.length?t.peakHours.map(a=>`${a}h`).join(", "):"--",n=t.confidence!==null?`${Math.round(t.confidence*100)} %`:"-- %";return d`
+  `;q([h({type:Object})],Ni.prototype,"plan",2);Ni=q([D("oig-boiler-stats-cards")],Ni);let Ri=class extends M{constructor(){super(...arguments),this.data=null}render(){const t=this.data;if(!t)return O;const e=Math.max(...t.hourlyAvg,.01),i=new Set(t.peakHours),n=t.peakHours.length?t.peakHours.map(a=>`${a}h`).join(", "):"--",r=t.confidence!==null?`${Math.round(t.confidence*100)} %`:"-- %";return d`
       <h3>Profil spotreby (tyden)</h3>
       <div class="wrapper">
         <div class="chart">
@@ -3547,11 +3568,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </div>
           <div class="stat-item">
             <span class="stat-label">Piky:</span>
-            <span class="stat-value">${r}</span>
+            <span class="stat-value">${n}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">Spolehlivost:</span>
-            <span class="stat-value">${n}</span>
+            <span class="stat-value">${r}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">Sledovano:</span>
@@ -3562,7 +3583,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     `}};Ri.styles=P`
     :host { display: block; }
 
-    h3 { ${Wt}; }
+    h3 { ${Vt}; }
 
     .wrapper {
       ${de};
@@ -3621,7 +3642,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .stat-label { color: ${T(o.textSecondary)}; }
     .stat-value { font-weight: 600; color: ${T(o.textPrimary)}; }
-  `;j([h({type:Object})],Ri.prototype,"data",2);Ri=j([E("oig-boiler-profiling")],Ri);let Hi=class extends M{constructor(){super(...arguments),this.config=null}render(){const t=this.config;if(!t)return A;const e=(i,r="")=>i!=null?`${i}${r?" "+r:""}`:`--${r?" "+r:""}`;return d`
+  `;q([h({type:Object})],Ri.prototype,"data",2);Ri=q([D("oig-boiler-profiling")],Ri);let Hi=class extends M{constructor(){super(...arguments),this.config=null}render(){const t=this.config;if(!t)return O;const e=(i,n="")=>i!=null?`${i}${n?" "+n:""}`:`--${n?" "+n:""}`;return d`
       <h3>Profil bojleru</h3>
       <div class="grid">
         <div class="card">
@@ -3652,7 +3673,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     `}};Hi.styles=P`
     :host { display: block; }
 
-    h3 { ${Wt}; }
+    h3 { ${Vt}; }
 
     .grid {
       display: grid;
@@ -3677,7 +3698,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-weight: 600;
       color: ${T(o.textPrimary)};
     }
-  `;j([h({type:Object})],Hi.prototype,"config",2);Hi=j([E("oig-boiler-config-section")],Hi);let Wi=class extends M{constructor(){super(...arguments),this.state=null}render(){return this.state?d`
+  `;q([h({type:Object})],Hi.prototype,"config",2);Hi=q([D("oig-boiler-config-section")],Hi);let Wi=class extends M{constructor(){super(...arguments),this.state=null}render(){return this.state?d`
       <div class="temp-display">
         <div class="current-temp">${this.state.currentTemp}°C</div>
         <div class="target-temp">Cil: ${this.state.targetTemp}°C</div>
@@ -3748,14 +3769,14 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-size: 12px;
       color: ${T(o.textSecondary)};
     }
-  `;j([h({type:Object})],Wi.prototype,"state",2);Wi=j([E("oig-boiler-state")],Wi);let ji=class extends M{constructor(){super(...arguments),this.data=[]}render(){return A}};ji.styles=P`
+  `;q([h({type:Object})],Wi.prototype,"state",2);Wi=q([D("oig-boiler-state")],Wi);let ji=class extends M{constructor(){super(...arguments),this.data=[]}render(){return O}};ji.styles=P`
     :host { display: block; }
-  `;j([h({type:Array})],ji.prototype,"data",2);ji=j([E("oig-boiler-heatmap")],ji);let ai=class extends M{constructor(){super(...arguments),this.profiles=[],this.editMode=!1}render(){return A}};ai.styles=P`
+  `;q([h({type:Array})],ji.prototype,"data",2);ji=q([D("oig-boiler-heatmap")],ji);let si=class extends M{constructor(){super(...arguments),this.profiles=[],this.editMode=!1}render(){return O}};si.styles=P`
     :host { display: block; }
-  `;j([h({type:Array})],ai.prototype,"profiles",2);j([h({type:Boolean})],ai.prototype,"editMode",2);ai=j([E("oig-boiler-profiles")],ai);var cu=Object.defineProperty,du=Object.getOwnPropertyDescriptor,bt=(t,e,i,r)=>{for(var n=r>1?void 0:r?du(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&cu(e,i,n),n};const _t=Z,Or=P`
+  `;q([h({type:Array})],si.prototype,"profiles",2);q([h({type:Boolean})],si.prototype,"editMode",2);si=q([D("oig-boiler-profiles")],si);var Mu=Object.defineProperty,Du=Object.getOwnPropertyDescriptor,ft=(t,e,i,n)=>{for(var r=n>1?void 0:n?Du(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Mu(e,i,r),r};const kt=Q,Rn=P`
   .selector-label {
     font-size: 12px;
-    color: ${_t(o.textSecondary)};
+    color: ${kt(o.textSecondary)};
     margin-bottom: 8px;
     display: flex;
     align-items: center;
@@ -3781,9 +3802,9 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     flex: 1;
     min-width: 80px;
     padding: 10px 12px;
-    border: 2px solid ${_t(o.divider)};
-    background: ${_t(o.bgSecondary)};
-    color: ${_t(o.textPrimary)};
+    border: 2px solid ${kt(o.divider)};
+    background: ${kt(o.bgSecondary)};
+    color: ${kt(o.textPrimary)};
     border-radius: 8px;
     font-size: 12px;
     font-weight: 500;
@@ -3794,12 +3815,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
   }
 
   .mode-btn:hover:not(:disabled):not(.active) {
-    border-color: ${_t(o.accent)};
+    border-color: ${kt(o.accent)};
   }
 
   .mode-btn.active {
-    background: ${_t(o.accent)};
-    border-color: ${_t(o.accent)};
+    background: ${kt(o.accent)};
+    border-color: ${kt(o.accent)};
     color: #fff;
   }
 
@@ -3848,32 +3869,32 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         Re\u017Eim st\u0159\u00EDda\u010De
       </div>
       <div class="mode-buttons">
-        ${["home_1","home_2","home_3","home_ups","home_5","home_6"].map(e=>{const i=this.buttonStates[e],r=this.disabled||i==="pending"||i==="processing"||i==="disabled-by-service";return d`
+        ${["home_1","home_2","home_3","home_ups","home_5","home_6"].map(e=>{const i=this.buttonStates[e],n=this.disabled||i==="pending"||i==="processing"||i==="disabled-by-service";return d`
             <button
               class="mode-btn ${i}"
-              ?disabled=${r}
+              ?disabled=${n}
               @click=${()=>this.onModeClick(e)}
             >
-              ${Zn[e]}
+              ${Ur[e]}
               ${i==="pending"?d`<span style="font-size:10px"> \u23F3</span>`:""}
               ${i==="processing"?d`<span style="font-size:10px"> \uD83D\uDD04</span>`:""}
             </button>
           `})}
       </div>
-    `}};Se.styles=[Or];bt([h({type:String})],Se.prototype,"value",2);bt([h({type:Boolean})],Se.prototype,"disabled",2);bt([h({type:Object})],Se.prototype,"buttonStates",2);Se=bt([E("oig-box-mode-selector")],Se);let ie=class extends M{constructor(){super(...arguments),this.value="off",this.limit=0,this.disabled=!1,this.buttonStates={off:"idle",on:"idle",limited:"idle"}}onDeliveryClick(t){const e=this.buttonStates[t];this.disabled||e==="active"||e==="pending"||e==="processing"||e==="disabled-by-service"||this.dispatchEvent(new CustomEvent("delivery-change",{detail:{value:t,limit:t==="limited"?this.limit:null},bubbles:!0}))}onLimitInput(t){const e=t.target;this.limit=parseInt(e.value,10)||0,this.dispatchEvent(new CustomEvent("limit-change",{detail:{limit:this.limit},bubbles:!0}))}get showLimitInput(){return this.value==="limited"||this.buttonStates.limited==="active"}render(){const t=[{value:"off",label:Si.off},{value:"on",label:Si.on},{value:"limited",label:Si.limited}],e=this.buttonStates.limited,i=e==="pending"?"pending-border":e==="processing"?"processing-border":"",n=(this.value==="limited"||this.buttonStates.limited==="active")&&this.limit>0?d`<span class="status-text">${this.limit}\u00A0W</span>`:null;return d`
+    `}};Se.styles=[Rn];ft([h({type:String})],Se.prototype,"value",2);ft([h({type:Boolean})],Se.prototype,"disabled",2);ft([h({type:Object})],Se.prototype,"buttonStates",2);Se=ft([D("oig-box-mode-selector")],Se);let Ht=class extends M{constructor(){super(...arguments),this.value="off",this.limit=0,this.disabled=!1,this.pendingTarget=null,this.buttonStates={off:"idle",on:"idle",limited:"idle"}}onDeliveryClick(t){const e=this.buttonStates[t];this.disabled||e==="active"||e==="pending"||e==="processing"||e==="disabled-by-service"||this.dispatchEvent(new CustomEvent("delivery-change",{detail:{value:t,limit:t==="limited"?this.limit:null},bubbles:!0}))}onLimitInput(t){const e=t.target;this.limit=parseInt(e.value,10)||0,this.dispatchEvent(new CustomEvent("limit-change",{detail:{limit:this.limit},bubbles:!0}))}get showLimitInput(){return this.value==="limited"||this.buttonStates.limited==="active"}render(){const t=[{value:"off",label:Ke.off},{value:"on",label:Ke.on},{value:"limited",label:Ke.limited}],e=this.buttonStates.limited,i=e==="pending"?"pending-border":e==="processing"?"processing-border":"",r=this.value==="limited"&&this.limit>0?d`<span class="status-text">${this.limit}\u00A0W</span>`:null,s=this.pendingTarget!==null&&this.pendingTarget!==this.value?d`<span class="status-text transitioning">\u23F3\u00A0${Ke[this.pendingTarget]}</span>`:null;return d`
       <div class="selector-label">
-        Dod\u00E1vka do s\u00EDt\u011B ${n}
+        Dod\u00E1vka do s\u00EDt\u011B ${r}${s}
       </div>
       <div class="mode-buttons">
-        ${t.map(a=>{const s=this.buttonStates[a.value],l=this.disabled||s==="pending"||s==="processing"||s==="disabled-by-service";return d`
+        ${t.map(l=>{const c=this.buttonStates[l.value],u=l.value===this.value,p=l.value===this.pendingTarget&&!u,f=this.disabled||c==="pending"||c==="processing"||c==="disabled-by-service",v=u&&c==="disabled-by-service"?"active disabled-by-service":p?`${c} pending-target`:c;return d`
             <button
-              class="mode-btn ${s}"
-              ?disabled=${l}
-              @click=${()=>this.onDeliveryClick(a.value)}
+              class="mode-btn ${v}"
+              ?disabled=${f}
+              @click=${()=>this.onDeliveryClick(l.value)}
             >
-              ${a.label}
-              ${s==="pending"?d`<span style="font-size:10px"> \u23F3</span>`:""}
-              ${s==="processing"?d`<span style="font-size:10px"> \uD83D\uDD04</span>`:""}
+              ${l.label}
+              ${c==="pending"?d`<span style="font-size:10px"> \u23F3</span>`:""}
+              ${c==="processing"?d`<span style="font-size:10px"> \uD83D\uDD04</span>`:""}
             </button>
           `})}
       </div>
@@ -3892,7 +3913,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <span class="limit-unit">W</span>
         </div>
       `:null}
-    `}};ie.styles=[Or,P`
+    `}};Ht.styles=[Rn,P`
       .limit-input-container {
         display: flex;
         align-items: center;
@@ -3903,11 +3924,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       .limit-input {
         flex: 1;
         padding: 8px 12px;
-        border: 1px solid ${_t(o.divider)};
+        border: 1px solid ${kt(o.divider)};
         border-radius: 6px;
         font-size: 14px;
-        background: ${_t(o.bgPrimary)};
-        color: ${_t(o.textPrimary)};
+        background: ${kt(o.bgPrimary)};
+        color: ${kt(o.textPrimary)};
         transition: border-color 0.2s;
       }
 
@@ -3921,32 +3942,38 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
       .limit-unit {
         font-size: 12px;
-        color: ${_t(o.textSecondary)};
+        color: ${kt(o.textSecondary)};
       }
-    `];bt([h({type:String})],ie.prototype,"value",2);bt([h({type:Number})],ie.prototype,"limit",2);bt([h({type:Boolean})],ie.prototype,"disabled",2);bt([h({type:Object})],ie.prototype,"buttonStates",2);ie=bt([E("oig-grid-delivery-selector")],ie);let Ce=class extends M{constructor(){super(...arguments),this.value="cbb",this.disabled=!1,this.buttonStates={cbb:"idle",manual:"idle"}}onModeClick(t){const e=this.buttonStates[t];this.disabled||e==="active"||e==="pending"||e==="processing"||e==="disabled-by-service"||this.dispatchEvent(new CustomEvent("boiler-mode-change",{detail:{mode:t},bubbles:!0}))}render(){return d`
+
+      .mode-btn.pending-target {
+        border-color: #ffc107;
+        color: #ffc107;
+        background: rgba(255, 193, 7, 0.08);
+      }
+    `];ft([h({type:String})],Ht.prototype,"value",2);ft([h({type:Number})],Ht.prototype,"limit",2);ft([h({type:Boolean})],Ht.prototype,"disabled",2);ft([h({type:String})],Ht.prototype,"pendingTarget",2);ft([h({type:Object})],Ht.prototype,"buttonStates",2);Ht=ft([D("oig-grid-delivery-selector")],Ht);let Ce=class extends M{constructor(){super(...arguments),this.value="cbb",this.disabled=!1,this.buttonStates={cbb:"idle",manual:"idle"}}onModeClick(t){const e=this.buttonStates[t];this.disabled||e==="active"||e==="pending"||e==="processing"||e==="disabled-by-service"||this.dispatchEvent(new CustomEvent("boiler-mode-change",{detail:{mode:t},bubbles:!0}))}render(){return d`
       <div class="selector-label">
         Re\u017Eim bojleru
       </div>
       <div class="mode-buttons">
-        ${["cbb","manual"].map(e=>{const i=this.buttonStates[e],r=this.disabled||i==="pending"||i==="processing"||i==="disabled-by-service";return d`
+        ${["cbb","manual"].map(e=>{const i=this.buttonStates[e],n=this.disabled||i==="pending"||i==="processing"||i==="disabled-by-service";return d`
             <button
               class="mode-btn ${i}"
-              ?disabled=${r}
+              ?disabled=${n}
               @click=${()=>this.onModeClick(e)}
             >
-              ${Xn[e]} ${Qn[e]}
+              ${Zr[e]} ${Kr[e]}
               ${i==="pending"?d`<span style="font-size:10px"> \u23F3</span>`:""}
               ${i==="processing"?d`<span style="font-size:10px"> \uD83D\uDD04</span>`:""}
             </button>
           `})}
       </div>
-    `}};Ce.styles=[Or];bt([h({type:String})],Ce.prototype,"value",2);bt([h({type:Boolean})],Ce.prototype,"disabled",2);bt([h({type:Object})],Ce.prototype,"buttonStates",2);Ce=bt([E("oig-boiler-mode-selector")],Ce);var uu=Object.defineProperty,pu=Object.getOwnPropertyDescriptor,De=(t,e,i,r)=>{for(var n=r>1?void 0:r?pu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&uu(e,i,n),n};const mt=Z;let Rt=class extends M{constructor(){super(...arguments),this.items=[],this.expanded=!1,this.shieldStatus="idle",this.queueCount=0,this._now=Date.now(),this.updateInterval=null}connectedCallback(){super.connectedCallback(),this.updateInterval=window.setInterval(()=>{this._now=Date.now()},1e3)}disconnectedCallback(){super.disconnectedCallback(),this.updateInterval!==null&&clearInterval(this.updateInterval)}toggleExpanded(){this.expanded=!this.expanded}removeItem(t,e){e.stopPropagation(),this.dispatchEvent(new CustomEvent("remove-item",{detail:{position:t},bubbles:!0}))}formatServiceName(t){return Do[t]||t||"N/A"}formatChanges(t){return!t||t.length===0?"N/A":t.map(e=>{const i=e.indexOf("→");if(i===-1)return e;const r=e.slice(0,i).trim(),n=e.slice(i+1).trim(),a=r.indexOf(":"),s=a===-1?r:r.slice(a+1),l=(hn[s.replace(/'/g,"").trim()]||s).replace(/'/g,"").trim(),c=(hn[n.replace(/'/g,"").trim()]||n).replace(/'/g,"").trim();return`${l} → ${c}`}).join(", ")}formatTimestamp(t){if(!t)return{time:"--",duration:"--"};try{const e=new Date(t),i=new Date(this._now),r=Math.floor((i.getTime()-e.getTime())/1e3),n=String(e.getHours()).padStart(2,"0"),a=String(e.getMinutes()).padStart(2,"0");let s=`${n}:${a}`;if(e.toDateString()!==i.toDateString()){const c=e.getDate(),u=e.getMonth()+1;s=`${c}.${u}. ${s}`}let l;if(r<60)l=`${r}s`;else if(r<3600){const c=Math.floor(r/60),u=r%60;l=`${c}m ${u}s`}else{const c=Math.floor(r/3600),u=Math.floor(r%3600/60);l=`${c}h ${u}m`}return{time:s,duration:l}}catch{return{time:"--",duration:"--"}}}get activeCount(){return this.items.length}render(){this._now;const t=this.shieldStatus==="running"?"running":"idle",e=this.shieldStatus==="running"?"🔄 Zpracovává":"✓ Připraveno";return d`
+    `}};Ce.styles=[Rn];ft([h({type:String})],Ce.prototype,"value",2);ft([h({type:Boolean})],Ce.prototype,"disabled",2);ft([h({type:Object})],Ce.prototype,"buttonStates",2);Ce=ft([D("oig-boiler-mode-selector")],Ce);var Eu=Object.defineProperty,Ou=Object.getOwnPropertyDescriptor,Ee=(t,e,i,n)=>{for(var r=n>1?void 0:n?Ou(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Eu(e,i,r),r};const bt=Q;let Wt=class extends M{constructor(){super(...arguments),this.items=[],this.expanded=!1,this.shieldStatus="idle",this.queueCount=0,this._now=Date.now(),this.updateInterval=null}connectedCallback(){super.connectedCallback(),this.updateInterval=window.setInterval(()=>{this._now=Date.now()},1e3)}disconnectedCallback(){super.disconnectedCallback(),this.updateInterval!==null&&clearInterval(this.updateInterval)}toggleExpanded(){this.expanded=!this.expanded}removeItem(t,e){e.stopPropagation(),this.dispatchEvent(new CustomEvent("remove-item",{detail:{position:t},bubbles:!0}))}formatServiceName(t){return Ns[t]||t||"N/A"}formatChanges(t){return!t||t.length===0?"N/A":t.map(e=>{const i=e.indexOf("→");if(i===-1)return e;const n=e.slice(0,i).trim(),r=e.slice(i+1).trim(),a=n.indexOf(":"),s=a===-1?n:n.slice(a+1),l=(ar[s.replace(/'/g,"").trim()]||s).replace(/'/g,"").trim(),c=(ar[r.replace(/'/g,"").trim()]||r).replace(/'/g,"").trim();return`${l} → ${c}`}).join(", ")}formatTimestamp(t){if(!t)return{time:"--",duration:"--"};try{const e=new Date(t),i=new Date(this._now),n=Math.floor((i.getTime()-e.getTime())/1e3),r=String(e.getHours()).padStart(2,"0"),a=String(e.getMinutes()).padStart(2,"0");let s=`${r}:${a}`;if(e.toDateString()!==i.toDateString()){const c=e.getDate(),u=e.getMonth()+1;s=`${c}.${u}. ${s}`}let l;if(n<60)l=`${n}s`;else if(n<3600){const c=Math.floor(n/60),u=n%60;l=`${c}m ${u}s`}else{const c=Math.floor(n/3600),u=Math.floor(n%3600/60);l=`${c}h ${u}m`}return{time:s,duration:l}}catch{return{time:"--",duration:"--"}}}get activeCount(){return this.items.length}render(){this._now;const t=this.shieldStatus==="running"?"running":"idle",e=this.shieldStatus==="running"?"🔄 Zpracovává":"✓ Připraveno";return d`
       <div class="queue-header" @click=${this.toggleExpanded}>
         <div class="queue-title-area">
           <span class="queue-title">Shield fronta</span>
           ${this.activeCount>0?d`
             <span class="queue-count">(${this.activeCount} aktivn\u00EDch)</span>
-          `:A}
+          `:O}
           <span class="shield-status ${t}">${e}</span>
         </div>
         <span class="queue-toggle ${this.expanded?"expanded":""}">\u25BC</span>
@@ -3969,21 +3996,21 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
                 </tr>
               </thead>
               <tbody>
-                ${this.items.map((i,r)=>this.renderRow(i,r))}
+                ${this.items.map((i,n)=>this.renderRow(i,n))}
               </tbody>
             </table>
           `}
         </div>
-      `:A}
-    `}renderRow(t,e){const i=t.status==="running",{time:r,duration:n}=this.formatTimestamp(t.createdAt);return d`
+      `:O}
+    `}renderRow(t,e){const i=t.status==="running",{time:n,duration:r}=this.formatTimestamp(t.createdAt);return d`
       <tr>
         <td class="${i?"status-running":"status-queued"}">
           ${i?"🔄 Zpracovává se":"⏳ Čeká"}
         </td>
         <td>${this.formatServiceName(t.service)}</td>
         <td class="hide-mobile" style="font-size: 11px;">${this.formatChanges(t.changes)}</td>
-        <td class="queue-time">${r}</td>
-        <td class="queue-time duration">${n}</td>
+        <td class="queue-time">${n}</td>
+        <td class="queue-time duration">${r}</td>
         <td style="text-align: center;">
           ${i?d`<span style="opacity: 0.4;">\u2014</span>`:d`
             <button
@@ -3994,12 +4021,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           `}
         </td>
       </tr>
-    `}};Rt.styles=P`
+    `}};Wt.styles=P`
     :host {
       display: block;
-      background: ${mt(o.cardBg)};
+      background: ${bt(o.cardBg)};
       border-radius: 12px;
-      box-shadow: ${mt(o.cardShadow)};
+      box-shadow: ${bt(o.cardShadow)};
       overflow: hidden;
     }
 
@@ -4009,7 +4036,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       justify-content: space-between;
       padding: 12px 16px;
       cursor: pointer;
-      background: ${mt(o.bgSecondary)};
+      background: ${bt(o.bgSecondary)};
       user-select: none;
     }
 
@@ -4026,12 +4053,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .queue-title {
       font-size: 14px;
       font-weight: 500;
-      color: ${mt(o.textPrimary)};
+      color: ${bt(o.textPrimary)};
     }
 
     .queue-count {
       font-size: 12px;
-      color: ${mt(o.textSecondary)};
+      color: ${bt(o.textSecondary)};
     }
 
     .shield-status {
@@ -4053,7 +4080,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .queue-toggle {
       font-size: 12px;
-      color: ${mt(o.accent)};
+      color: ${bt(o.accent)};
       transition: transform 0.2s;
     }
 
@@ -4063,7 +4090,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .queue-content {
       padding: 0;
-      border-top: 1px solid ${mt(o.divider)};
+      border-top: 1px solid ${bt(o.divider)};
     }
 
     /* Table layout (matches V1) */
@@ -4077,15 +4104,15 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       text-align: left;
       padding: 8px 12px;
       font-weight: 600;
-      color: ${mt(o.textSecondary)};
-      border-bottom: 1px solid ${mt(o.divider)};
-      background: ${mt(o.bgSecondary)};
+      color: ${bt(o.textSecondary)};
+      border-bottom: 1px solid ${bt(o.divider)};
+      background: ${bt(o.bgSecondary)};
     }
 
     .queue-table td {
       padding: 8px 12px;
-      color: ${mt(o.textPrimary)};
-      border-bottom: 1px solid ${mt(o.divider)};
+      color: ${bt(o.textPrimary)};
+      border-bottom: 1px solid ${bt(o.divider)};
       vertical-align: middle;
     }
 
@@ -4129,7 +4156,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .empty-state {
       text-align: center;
       padding: 16px;
-      color: ${mt(o.textSecondary)};
+      color: ${bt(o.textSecondary)};
       font-size: 12px;
     }
 
@@ -4145,7 +4172,15 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         font-size: 11px;
       }
     }
-  `;De([h({type:Array})],Rt.prototype,"items",2);De([h({type:Boolean})],Rt.prototype,"expanded",2);De([h({type:String})],Rt.prototype,"shieldStatus",2);De([h({type:Number})],Rt.prototype,"queueCount",2);De([w()],Rt.prototype,"_now",2);Rt=De([E("oig-shield-queue")],Rt);var hu=Object.defineProperty,gu=Object.getOwnPropertyDescriptor,bi=(t,e,i,r)=>{for(var n=r>1?void 0:r?gu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&hu(e,i,n),n};const pt=Z;let re=class extends M{constructor(){super(...arguments),this.open=!1,this.config={title:"",message:""},this.acknowledged=!1,this.limitValue=5e3,this.resolver=null,this.onOverlayClick=()=>{this.closeDialog({confirmed:!1})},this.onDialogClick=t=>{t.stopPropagation()},this.onKeyDown=t=>{t.key==="Escape"&&this.open&&this.closeDialog({confirmed:!1})},this.onAckChange=t=>{this.acknowledged=t.target.checked},this.onLimitInput=t=>{this.limitValue=parseInt(t.target.value,10)||0},this.onCancel=()=>{this.closeDialog({confirmed:!1})},this.onConfirm=()=>{if(this.config.showLimitInput){const t=this.config.limitMin??1,e=this.config.limitMax??2e4;if(isNaN(this.limitValue)||this.limitValue<t||this.limitValue>e)return}this.closeDialog({confirmed:!0,limit:this.config.showLimitInput?this.limitValue:void 0})}}connectedCallback(){super.connectedCallback(),this.addEventListener("keydown",this.onKeyDown)}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener("keydown",this.onKeyDown)}showDialog(t){return this.config=t,this.acknowledged=!1,this.limitValue=t.limitValue??5e3,this.open=!0,new Promise(e=>{this.resolver=e})}closeDialog(t){var e;this.open=!1,(e=this.resolver)==null||e.call(this,t),this.resolver=null}get canConfirm(){return!(this.config.requireAcknowledgement&&!this.acknowledged)}render(){if(!this.open)return A;const t=this.config;return d`
+  `;Ee([h({type:Array})],Wt.prototype,"items",2);Ee([h({type:Boolean})],Wt.prototype,"expanded",2);Ee([h({type:String})],Wt.prototype,"shieldStatus",2);Ee([h({type:Number})],Wt.prototype,"queueCount",2);Ee([x()],Wt.prototype,"_now",2);Wt=Ee([D("oig-shield-queue")],Wt);/**
+ * @license
+ * Copyright 2017 Google LLC
+ * SPDX-License-Identifier: BSD-3-Clause
+ */const zu={CHILD:2},Lu=t=>(...e)=>({_$litDirective$:t,values:e});class Au{constructor(e){}get _$AU(){return this._$AM._$AU}_$AT(e,i,n){this._$Ct=e,this._$AM=i,this._$Ci=n}_$AS(e,i){return this.update(e,i)}update(e,i){return this.render(...i)}}/**
+ * @license
+ * Copyright 2017 Google LLC
+ * SPDX-License-Identifier: BSD-3-Clause
+ */class Tn extends Au{constructor(e){if(super(e),this.it=O,e.type!==zu.CHILD)throw Error(this.constructor.directiveName+"() can only be used in child bindings")}render(e){if(e===O||e==null)return this._t=void 0,this.it=e;if(e===us)return e;if(typeof e!="string")throw Error(this.constructor.directiveName+"() called with a non-string value");if(e===this.it)return this._t;this.it=e;const i=[e];return i.raw=i,this._t={_$litType$:this.constructor.resultType,strings:i,values:[]}}}Tn.directiveName="unsafeHTML",Tn.resultType=1;const Iu=Lu(Tn);var Bu=Object.defineProperty,Fu=Object.getOwnPropertyDescriptor,yi=(t,e,i,n)=>{for(var r=n>1?void 0:n?Fu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Bu(e,i,r),r};const pt=Q;let re=class extends M{constructor(){super(...arguments),this.open=!1,this.config={title:"",message:""},this.acknowledged=!1,this.limitValue=5e3,this.resolver=null,this.onOverlayClick=()=>{this.closeDialog({confirmed:!1})},this.onDialogClick=t=>{t.stopPropagation()},this.onKeyDown=t=>{t.key==="Escape"&&this.open&&this.closeDialog({confirmed:!1})},this.onAckChange=t=>{this.acknowledged=t.target.checked},this.onLimitInput=t=>{this.limitValue=parseInt(t.target.value,10)||0},this.onCancel=()=>{this.closeDialog({confirmed:!1})},this.onConfirm=()=>{if(this.config.showLimitInput){const t=this.config.limitMin??1,e=this.config.limitMax??2e4;if(isNaN(this.limitValue)||this.limitValue<t||this.limitValue>e)return}this.closeDialog({confirmed:!0,limit:this.config.showLimitInput?this.limitValue:void 0})}}connectedCallback(){super.connectedCallback(),this.addEventListener("keydown",this.onKeyDown)}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener("keydown",this.onKeyDown)}showDialog(t){return this.config=t,this.acknowledged=!1,this.limitValue=t.limitValue??5e3,this.open=!0,new Promise(e=>{this.resolver=e})}closeDialog(t){var e;this.open=!1,(e=this.resolver)==null||e.call(this,t),this.resolver=null}get canConfirm(){return!(this.config.requireAcknowledgement&&!this.acknowledged)}render(){if(!this.open)return O;const t=this.config;return d`
       <div @click=${this.onOverlayClick}>
         <div class="dialog" @click=${this.onDialogClick}>
           <div class="dialog-header">
@@ -4174,13 +4209,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
               />
               <small class="limit-hint">Rozsah: ${t.limitMin??1}\u2013${t.limitMax??2e4} W</small>
             </div>
-          `:A}
+          `:O}
 
           ${t.warning?d`
             <div class="dialog-warning">
               \u26A0\uFE0F ${this.renderHTML(t.warning)}
             </div>
-          `:A}
+          `:O}
 
           ${t.requireAcknowledgement?d`
             <div class="ack-wrapper" @click=${()=>{this.acknowledged=!this.acknowledged}}>
@@ -4197,7 +4232,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
                 `}
               </label>
             </div>
-          `:A}
+          `:O}
 
           <div class="dialog-actions">
             <button class="btn btn-cancel" @click=${this.onCancel}>
@@ -4213,7 +4248,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </div>
         </div>
       </div>
-    `}renderHTML(t){const e=document.createElement("div");return e.innerHTML=t,d`<span .innerHTML=${t}></span>`}};re.styles=P`
+    `}renderHTML(t){return Iu(t)}};re.styles=P`
     :host {
       display: none;
     }
@@ -4381,7 +4416,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       opacity: 0.4;
       cursor: not-allowed;
     }
-  `;bi([h({type:Boolean,reflect:!0})],re.prototype,"open",2);bi([h({type:Object})],re.prototype,"config",2);bi([w()],re.prototype,"acknowledged",2);bi([w()],re.prototype,"limitValue",2);re=bi([E("oig-confirm-dialog")],re);var fu=Object.defineProperty,mu=Object.getOwnPropertyDescriptor,$a=(t,e,i,r)=>{for(var n=r>1?void 0:r?mu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&fu(e,i,n),n};const Ue=Z;let Vi=class extends M{constructor(){super(...arguments),this.shieldState=null}render(){if(!this.shieldState)return A;const t=this.determineStatus(this.shieldState),e=t.toLowerCase(),i=this.getStatusIcon(t),r=this.getStatusLabel(t),a=this.shieldState.queueCount>0?"has-items":"";return d`
+  `;yi([h({type:Boolean,reflect:!0})],re.prototype,"open",2);yi([h({type:Object})],re.prototype,"config",2);yi([x()],re.prototype,"acknowledged",2);yi([x()],re.prototype,"limitValue",2);re=yi([D("oig-confirm-dialog")],re);var Nu=Object.defineProperty,Ru=Object.getOwnPropertyDescriptor,za=(t,e,i,n)=>{for(var r=n>1?void 0:n?Ru(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Nu(e,i,r),r};const Ge=Q;let Vi=class extends M{constructor(){super(...arguments),this.shieldState=null}render(){if(!this.shieldState)return O;const t=this.determineStatus(this.shieldState),e=t.toLowerCase(),i=this.getStatusIcon(t),n=this.getStatusLabel(t),a=this.shieldState.queueCount>0?"has-items":"";return d`
       <div class="shield-status-container">
         <div class="shield-status-left">
           <span class="shield-status-icon">${i}</span>
@@ -4394,14 +4429,14 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <span class="queue-count ${a}">
             Fronta: ${this.shieldState.queueCount}
           </span>
-          <span class="shield-status-badge ${e}">${r}</span>
+          <span class="shield-status-badge ${e}">${n}</span>
         </div>
       </div>
     `}determineStatus(t){return t.status==="running"?"processing":t.queueCount>0?"pending":"idle"}getStatusIcon(t){switch(t){case"idle":return"✓";case"pending":return"⏳";case"processing":return"🔄";default:return"✓"}}getStatusLabel(t){switch(t){case"idle":return"Připraveno";case"pending":return"Čeká";case"processing":return"Zpracovává";default:return"Neznámý"}}getActivityText(){return this.shieldState?this.shieldState.activity?this.shieldState.activity:this.shieldState.queueCount>0?`${this.shieldState.queueCount} operací ve frontě`:"Systém připraven":"Žádná aktivita"}};Vi.styles=P`
     :host {
       display: block;
       padding: 16px 20px;
-      border-top: 1px solid ${Ue(o.divider)};
+      border-top: 1px solid ${Ge(o.divider)};
     }
 
     .shield-status-container {
@@ -4431,12 +4466,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .shield-status-title {
       font-size: 13px;
       font-weight: 600;
-      color: ${Ue(o.textPrimary)};
+      color: ${Ge(o.textPrimary)};
     }
 
     .shield-status-subtitle {
       font-size: 11px;
-      color: ${Ue(o.textSecondary)};
+      color: ${Ge(o.textSecondary)};
     }
 
     .shield-status-right {
@@ -4483,8 +4518,8 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-size: 11px;
       padding: 3px 8px;
       border-radius: 8px;
-      background: ${Ue(o.bgSecondary)};
-      color: ${Ue(o.textSecondary)};
+      background: ${Ge(o.bgSecondary)};
+      color: ${Ge(o.textSecondary)};
       font-weight: 500;
     }
 
@@ -4508,7 +4543,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         padding: 2px 6px;
       }
     }
-  `;$a([h({type:Object})],Vi.prototype,"shieldState",2);Vi=$a([E("oig-shield-status")],Vi);var bu=Object.defineProperty,yu=Object.getOwnPropertyDescriptor,zr=(t,e,i,r)=>{for(var n=r>1?void 0:r?yu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&bu(e,i,n),n};const he=Z;let si=class extends M{constructor(){super(...arguments),this.shieldState={...Jn,pendingServices:new Map,changingServices:new Set},this.unsubscribe=null,this.onShieldUpdate=t=>{this.shieldState=t}}connectedCallback(){super.connectedCallback(),this.unsubscribe=J.subscribe(this.onShieldUpdate)}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this.unsubscribe)==null||t.call(this),this.unsubscribe=null}get boxModeButtonStates(){return{home_1:J.getBoxModeButtonState("home_1"),home_2:J.getBoxModeButtonState("home_2"),home_3:J.getBoxModeButtonState("home_3"),home_ups:J.getBoxModeButtonState("home_ups"),home_5:J.getBoxModeButtonState("home_5"),home_6:J.getBoxModeButtonState("home_6")}}get gridDeliveryButtonStates(){return{off:J.getGridDeliveryButtonState("off"),on:J.getGridDeliveryButtonState("on"),limited:J.getGridDeliveryButtonState("limited")}}get boilerModeButtonStates(){return{cbb:J.getBoilerModeButtonState("cbb"),manual:J.getBoilerModeButtonState("manual")}}async onBoxModeChange(t){const{mode:e}=t.detail,i=Zn[e];if(y.debug("Control panel: box mode change requested",{mode:e}),!(await this.confirmDialog.showDialog({title:"Změna režimu střídače",message:`Chystáte se změnit režim boxu na <strong>"${i}"</strong>.<br><br>Tato změna ovlivní chování celého systému a může trvat až 10 minut.`,warning:"Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.",requireAcknowledgement:!0,confirmText:"Potvrdit změnu",cancelText:"Zrušit"})).confirmed||!J.shouldProceedWithQueue())return;await J.setBoxMode(e)||y.warn("Box mode change failed or already active",{mode:e})}async onGridDeliveryChange(t){const{value:e,limit:i}=t.detail,r=Si[e],n=Eo[e],a=e==="limited",s=this.shieldState.currentGridLimit||5e3;y.debug("Control panel: grid delivery change requested",{delivery:e,limit:i});const l={title:`${n} Změna dodávky do sítě`,message:`Chystáte se změnit dodávku do sítě na: <strong>"${r}"</strong>`,warning:a?"Režim a limit budou změněny postupně (serializováno). Každá změna může trvat až 10 minut.":"Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.",requireAcknowledgement:!0,acknowledgementText:"<strong>Souhlasím</strong> s tím, že měním dodávku do sítě na vlastní odpovědnost. Aplikace nenese odpovědnost za případné negativní důsledky této změny.",confirmText:"Potvrdit změnu",cancelText:"Zrušit",showLimitInput:a,limitValue:s,limitMin:1,limitMax:2e4,limitStep:100},c=await this.confirmDialog.showDialog(l);if(!c.confirmed||!J.shouldProceedWithQueue())return;const u=this.shieldState.currentGridDelivery==="limited",p=e==="limited";u&&p&&c.limit!=null?await J.setGridDelivery(e,c.limit):p&&c.limit!=null?await J.setGridDelivery(e,c.limit):await J.setGridDelivery(e)}async onBoilerModeChange(t){const{mode:e}=t.detail,i=Qn[e],r=Xn[e];if(y.debug("Control panel: boiler mode change requested",{mode:e}),!(await this.confirmDialog.showDialog({title:"Změna režimu bojleru",message:`Chystáte se změnit režim bojleru na <strong>"${r} ${i}"</strong>.<br><br>Tato změna ovlivní chování ohřevu vody a může trvat až 10 minut.`,warning:"Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.",requireAcknowledgement:!0,confirmText:"Potvrdit změnu",cancelText:"Zrušit"})).confirmed||!J.shouldProceedWithQueue())return;await J.setBoilerMode(e)||y.warn("Boiler mode change failed or already active",{mode:e})}async onQueueRemoveItem(t){const{position:e}=t.detail;y.debug("Control panel: queue remove requested",{position:e});const i=this.shieldState.allRequests.find(s=>s.position===e);let r="Operace";if(i&&(i.service.includes("set_box_mode")?r=`Změna režimu na ${i.targetValue||"neznámý"}`:i.service.includes("set_grid_delivery")?r=`Změna dodávky do sítě na ${i.targetValue||"neznámý"}`:i.service.includes("set_boiler_mode")&&(r=`Změna režimu bojleru na ${i.targetValue||"neznámý"}`)),!(await this.confirmDialog.showDialog({title:r,message:"Operace bude odstraněna z fronty bez provedení.",requireAcknowledgement:!1,confirmText:"OK",cancelText:"Zrušit"})).confirmed)return;await J.removeFromQueue(e)||y.warn("Failed to remove from queue",{position:e})}render(){const t=this.shieldState,e=t.status==="running"?"running":"idle",i=t.status==="running"?"Zpracovává":"Připraveno",r=t.allRequests.length>0;return d`
+  `;za([h({type:Object})],Vi.prototype,"shieldState",2);Vi=za([D("oig-shield-status")],Vi);var Hu=Object.defineProperty,Wu=Object.getOwnPropertyDescriptor,Hn=(t,e,i,n)=>{for(var r=n>1?void 0:n?Wu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Hu(e,i,r),r};const he=Q;let oi=class extends M{constructor(){super(...arguments),this.shieldState={...Qr,pendingServices:new Map,changingServices:new Set},this.unsubscribe=null,this.onShieldUpdate=t=>{this.shieldState=t}}connectedCallback(){super.connectedCallback(),this.unsubscribe=J.subscribe(this.onShieldUpdate)}disconnectedCallback(){var t;super.disconnectedCallback(),(t=this.unsubscribe)==null||t.call(this),this.unsubscribe=null}get boxModeButtonStates(){return{home_1:J.getBoxModeButtonState("home_1"),home_2:J.getBoxModeButtonState("home_2"),home_3:J.getBoxModeButtonState("home_3"),home_ups:J.getBoxModeButtonState("home_ups"),home_5:J.getBoxModeButtonState("home_5"),home_6:J.getBoxModeButtonState("home_6")}}get gridDeliveryButtonStates(){return{off:J.getGridDeliveryButtonState("off"),on:J.getGridDeliveryButtonState("on"),limited:J.getGridDeliveryButtonState("limited")}}get boilerModeButtonStates(){return{cbb:J.getBoilerModeButtonState("cbb"),manual:J.getBoilerModeButtonState("manual")}}async onBoxModeChange(t){const{mode:e}=t.detail,i=Ur[e];if(y.debug("Control panel: box mode change requested",{mode:e}),!(await this.confirmDialog.showDialog({title:"Změna režimu střídače",message:`Chystáte se změnit režim boxu na <strong>"${i}"</strong>.<br><br>Tato změna ovlivní chování celého systému a může trvat až 10 minut.`,warning:"Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.",requireAcknowledgement:!0,confirmText:"Potvrdit změnu",cancelText:"Zrušit"})).confirmed||!J.shouldProceedWithQueue())return;await J.setBoxMode(e)||y.warn("Box mode change failed or already active",{mode:e})}async onGridDeliveryChange(t){const{value:e,limit:i}=t.detail,n=Ke[e],r=Fs[e],a=e==="limited",s=this.shieldState.gridDeliveryState.currentLiveLimit??5e3;y.debug("Control panel: grid delivery change requested",{delivery:e,limit:i});const l={title:`${r} Změna dodávky do sítě`,message:`Chystáte se změnit dodávku do sítě na: <strong>"${n}"</strong>`,warning:a?"Režim a limit budou změněny postupně (serializováno). Každá změna může trvat až 10 minut.":"Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.",requireAcknowledgement:!0,acknowledgementText:"<strong>Souhlasím</strong> s tím, že měním dodávku do sítě na vlastní odpovědnost. Aplikace nenese odpovědnost za případné negativní důsledky této změny.",confirmText:"Potvrdit změnu",cancelText:"Zrušit",showLimitInput:a,limitValue:s,limitMin:1,limitMax:2e4,limitStep:100},c=await this.confirmDialog.showDialog(l);if(!c.confirmed||!J.shouldProceedWithQueue())return;const u=this.shieldState.gridDeliveryState.currentLiveDelivery==="limited",p=e==="limited";u&&p&&c.limit!=null?await J.setGridDelivery(e,c.limit):p&&c.limit!=null?await J.setGridDelivery(e,c.limit):await J.setGridDelivery(e)}async onBoilerModeChange(t){const{mode:e}=t.detail,i=Kr[e],n=Zr[e];if(y.debug("Control panel: boiler mode change requested",{mode:e}),!(await this.confirmDialog.showDialog({title:"Změna režimu bojleru",message:`Chystáte se změnit režim bojleru na <strong>"${n} ${i}"</strong>.<br><br>Tato změna ovlivní chování ohřevu vody a může trvat až 10 minut.`,warning:"Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.",requireAcknowledgement:!0,confirmText:"Potvrdit změnu",cancelText:"Zrušit"})).confirmed||!J.shouldProceedWithQueue())return;await J.setBoilerMode(e)||y.warn("Boiler mode change failed or already active",{mode:e})}async onQueueRemoveItem(t){const{position:e}=t.detail;y.debug("Control panel: queue remove requested",{position:e});const i=this.shieldState.allRequests.find(s=>s.position===e);let n="Operace";if(i&&(i.service.includes("set_box_mode")?n=`Změna režimu na ${i.targetValue||"neznámý"}`:i.service.includes("set_grid_delivery")?n=`Změna dodávky do sítě na ${i.targetValue||"neznámý"}`:i.service.includes("set_boiler_mode")&&(n=`Změna režimu bojleru na ${i.targetValue||"neznámý"}`)),!(await this.confirmDialog.showDialog({title:n,message:"Operace bude odstraněna z fronty bez provedení.",requireAcknowledgement:!1,confirmText:"OK",cancelText:"Zrušit"})).confirmed)return;await J.removeFromQueue(e)||y.warn("Failed to remove from queue",{position:e})}render(){const t=this.shieldState,e=t.status==="running"?"running":"idle",i=t.status==="running"?"Zpracovává":"Připraveno",n=t.allRequests.length>0;return d`
       <div class="control-panel">
         <div class="panel-header">
           <span class="panel-title">
@@ -4534,8 +4569,9 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <!-- Grid Delivery Selector -->
           <div class="selector-section">
             <oig-grid-delivery-selector
-              .value=${t.currentGridDelivery}
-              .limit=${t.currentGridLimit}
+              .value=${t.gridDeliveryState.currentLiveDelivery}
+              .limit=${t.gridDeliveryState.currentLiveLimit??0}
+              .pendingTarget=${t.gridDeliveryState.pendingDeliveryTarget}
               .buttonStates=${this.gridDeliveryButtonStates}
               @delivery-change=${this.onGridDeliveryChange}
             ></oig-grid-delivery-selector>
@@ -4557,7 +4593,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         <oig-shield-status .shieldState=${t}></oig-shield-status>
 
         <!-- Shield Queue (always rendered, collapsible) -->
-        ${r?d`
+        ${n?d`
           <div class="queue-section">
             <oig-shield-queue
               .items=${t.allRequests}
@@ -4567,12 +4603,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
               @remove-item=${this.onQueueRemoveItem}
             ></oig-shield-queue>
           </div>
-        `:A}
+        `:O}
       </div>
 
       <!-- Shared confirm dialog instance -->
       <oig-confirm-dialog></oig-confirm-dialog>
-    `}};si.styles=P`
+    `}};oi.styles=P`
     :host {
       display: block;
       margin-top: 16px;
@@ -4646,7 +4682,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         padding: 12px 14px;
       }
     }
-  `;zr([w()],si.prototype,"shieldState",2);zr([Zi("oig-confirm-dialog")],si.prototype,"confirmDialog",2);si=zr([E("oig-control-panel")],si);var vu=Object.defineProperty,xu=Object.getOwnPropertyDescriptor,Oe=(t,e,i,r)=>{for(var n=r>1?void 0:r?xu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&vu(e,i,n),n};const ht=Z;let Ht=class extends M{constructor(){super(...arguments),this.open=!1,this.currentSoc=0,this.maxSoc=100,this.estimate=null,this.targetSoc=80}onClose(){this.dispatchEvent(new CustomEvent("close",{bubbles:!0}))}onSliderInput(t){this.targetSoc=parseInt(t.target.value,10),this.dispatchEvent(new CustomEvent("soc-change",{detail:{targetSoc:this.targetSoc},bubbles:!0}))}onConfirm(){this.dispatchEvent(new CustomEvent("confirm",{detail:{targetSoc:this.targetSoc},bubbles:!0}))}render(){return d`
+  `;Hn([x()],oi.prototype,"shieldState",2);Hn([Zi("oig-confirm-dialog")],oi.prototype,"confirmDialog",2);oi=Hn([D("oig-control-panel")],oi);var ju=Object.defineProperty,Vu=Object.getOwnPropertyDescriptor,Oe=(t,e,i,n)=>{for(var r=n>1?void 0:n?Vu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&ju(e,i,r),r};const ht=Q;let jt=class extends M{constructor(){super(...arguments),this.open=!1,this.currentSoc=0,this.maxSoc=100,this.estimate=null,this.targetSoc=80}onClose(){this.dispatchEvent(new CustomEvent("close",{bubbles:!0}))}onSliderInput(t){this.targetSoc=parseInt(t.target.value,10),this.dispatchEvent(new CustomEvent("soc-change",{detail:{targetSoc:this.targetSoc},bubbles:!0}))}onConfirm(){this.dispatchEvent(new CustomEvent("confirm",{detail:{targetSoc:this.targetSoc},bubbles:!0}))}render(){return d`
       <div class="dialog" @click=${t=>t.stopPropagation()}>
         <div class="dialog-title">Nabít baterii</div>
         
@@ -4697,7 +4733,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </button>
         </div>
       </div>
-    `}};Ht.styles=P`
+    `}};jt.styles=P`
     :host {
       display: none;
     }
@@ -4843,7 +4879,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .btn-confirm:hover {
       opacity: 0.9;
     }
-  `;Oe([h({type:Boolean})],Ht.prototype,"open",2);Oe([h({type:Number})],Ht.prototype,"currentSoc",2);Oe([h({type:Number})],Ht.prototype,"maxSoc",2);Oe([h({type:Object})],Ht.prototype,"estimate",2);Oe([w()],Ht.prototype,"targetSoc",2);Ht=Oe([E("oig-battery-charge-dialog")],Ht);var wu=Object.defineProperty,$u=Object.getOwnPropertyDescriptor,St=(t,e,i,r)=>{for(var n=r>1?void 0:r?$u(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&wu(e,i,n),n};const pr=Z,Ar=P`
+  `;Oe([h({type:Boolean})],jt.prototype,"open",2);Oe([h({type:Number})],jt.prototype,"currentSoc",2);Oe([h({type:Number})],jt.prototype,"maxSoc",2);Oe([h({type:Object})],jt.prototype,"estimate",2);Oe([x()],jt.prototype,"targetSoc",2);jt=Oe([D("oig-battery-charge-dialog")],jt);var qu=Object.defineProperty,Yu=Object.getOwnPropertyDescriptor,St=(t,e,i,n)=>{for(var r=n>1?void 0:n?Yu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&qu(e,i,r),r};const bn=Q,Wn=P`
   .metric {
     display: flex;
     justify-content: space-between;
@@ -4868,19 +4904,19 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
   .metric-value.positive { color: var(--success-color, #4caf50); }
   .metric-value.negative { color: var(--error-color, #f44336); }
-`;let oi=class extends M{constructor(){super(...arguments),this.title="",this.icon="📊"}render(){return d`
+`;let li=class extends M{constructor(){super(...arguments),this.title="",this.icon="📊"}render(){return d`
       <div class="block-header">
         <span class="block-icon">${this.icon}</span>
         <span class="block-title">${this.title}</span>
       </div>
       <slot></slot>
-    `}};oi.styles=P`
+    `}};li.styles=P`
     :host {
       display: block;
-      background: ${pr(o.cardBg)};
+      background: ${bn(o.cardBg)};
       border-radius: 12px;
       padding: 16px;
-      box-shadow: ${pr(o.cardShadow)};
+      box-shadow: ${bn(o.cardShadow)};
     }
 
     .block-header {
@@ -4897,11 +4933,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .block-title {
       font-size: 14px;
       font-weight: 500;
-      color: ${pr(o.textPrimary)};
+      color: ${bn(o.textPrimary)};
     }
 
-    ${Ar}
-  `;St([h({type:String})],oi.prototype,"title",2);St([h({type:String})],oi.prototype,"icon",2);oi=St([E("oig-analytics-block")],oi);let qi=class extends M{constructor(){super(...arguments),this.data=null}render(){if(!this.data)return d`<div>Načítání...</div>`;const t=this.data.trend>=0?"positive":"negative",e=this.data.trend>=0?"+":"",i=this.data.period==="last_month"?"Minulý měsíc":`Aktuální měsíc (${this.data.currentMonthDays} dní)`;return d`
+    ${Wn}
+  `;St([h({type:String})],li.prototype,"title",2);St([h({type:String})],li.prototype,"icon",2);li=St([D("oig-analytics-block")],li);let qi=class extends M{constructor(){super(...arguments),this.data=null}render(){if(!this.data)return d`<div>Načítání...</div>`;const t=this.data.trend>=0?"positive":"negative",e=this.data.trend>=0?"+":"",i=this.data.period==="last_month"?"Minulý měsíc":`Aktuální měsíc (${this.data.currentMonthDays} dní)`;return d`
       <div class="efficiency-value">${ve(this.data.efficiency,1)}</div>
       <div class="period-label">${i}</div>
 
@@ -4981,7 +5017,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-size: 10px;
       color: var(--error-color, #f44336);
     }
-  `;St([h({type:Object})],qi.prototype,"data",2);qi=St([E("oig-battery-efficiency")],qi);let Yi=class extends M{constructor(){super(...arguments),this.data=null}renderSparkline(){var c;const t=(c=this.data)==null?void 0:c.measurementHistory;if(!t||t.length<2)return null;const e=t.map(u=>u.soh_percent),i=Math.min(...e)-1,n=Math.max(...e)+1-i||1,a=200,s=40,l=e.map((u,p)=>{const g=p/(e.length-1)*a,m=s-(u-i)/n*s;return`${g},${m}`}).join(" ");return d`
+  `;St([h({type:Object})],qi.prototype,"data",2);qi=St([D("oig-battery-efficiency")],qi);let Yi=class extends M{constructor(){super(...arguments),this.data=null}renderSparkline(){var c;const t=(c=this.data)==null?void 0:c.measurementHistory;if(!t||t.length<2)return null;const e=t.map(u=>u.soh_percent),i=Math.min(...e)-1,r=Math.max(...e)+1-i||1,a=200,s=40,l=e.map((u,p)=>{const f=p/(e.length-1)*a,v=s-(u-i)/r*s;return`${f},${v}`}).join(" ");return d`
       <div class="sparkline-container">
         <svg viewBox="0 0 ${a} ${s}" preserveAspectRatio="none">
           <polyline
@@ -5104,7 +5140,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       height: 100%;
     }
 
-    ${Ar}
+    ${Wn}
 
     .degradation-section {
       margin-top: 12px;
@@ -5130,7 +5166,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       font-weight: 500;
       color: var(--primary-text-color);
     }
-  `;St([h({type:Object})],Yi.prototype,"data",2);Yi=St([E("oig-battery-health")],Yi);let Ui=class extends M{constructor(){super(...arguments),this.data=null}getProgressClass(t){return t==null?"ok":t>=95?"overdue":t>=80?"due-soon":"ok"}render(){return this.data?d`
+  `;St([h({type:Object})],Yi.prototype,"data",2);Yi=St([D("oig-battery-health")],Yi);let Gi=class extends M{constructor(){super(...arguments),this.data=null}getProgressClass(t){return t==null?"ok":t>=95?"overdue":t>=80?"due-soon":"ok"}render(){return this.data?d`
       <oig-analytics-block title="Balancování" icon="⚖️">
         <div class="metric">
           <span class="metric-label">Stav</span>
@@ -5177,9 +5213,9 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </div>
         `:null}
       </oig-analytics-block>
-    `:d`<div>Načítání...</div>`}};Ui.styles=P`
+    `:d`<div>Načítání...</div>`}};Gi.styles=P`
     :host { display: block; }
-    ${Ar}
+    ${Wn}
 
     .progress-container {
       margin: 8px 0;
@@ -5211,7 +5247,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .progress-fill.ok { background: #4caf50; }
     .progress-fill.due-soon { background: #ff9800; }
     .progress-fill.overdue { background: #f44336; }
-  `;St([h({type:Object})],Ui.prototype,"data",2);Ui=St([E("oig-battery-balancing")],Ui);let Gi=class extends M{constructor(){super(...arguments),this.data=null}render(){return this.data?d`
+  `;St([h({type:Object})],Gi.prototype,"data",2);Gi=St([D("oig-battery-balancing")],Gi);let Ui=class extends M{constructor(){super(...arguments),this.data=null}render(){return this.data?d`
       <oig-analytics-block title="Porovnání nákladů" icon="💰">
         <div class="cost-row">
           <span class="cost-label">Skutečné náklady</span>
@@ -5260,7 +5296,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </div>
         `:null}
       </oig-analytics-block>
-    `:d`<div>Načítání...</div>`}};Gi.styles=P`
+    `:d`<div>Načítání...</div>`}};Ui.styles=P`
     :host { display: block; }
 
     .cost-row {
@@ -5300,16 +5336,16 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .delta-positive { color: var(--success-color, #4caf50); }
     .delta-negative { color: var(--error-color, #f44336); }
-  `;St([h({type:Object})],Gi.prototype,"data",2);Gi=St([E("oig-cost-comparison")],Gi);var _u=Object.defineProperty,ku=Object.getOwnPropertyDescriptor,ze=(t,e,i,r)=>{for(var n=r>1?void 0:r?ku(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&_u(e,i,n),n};const fe=Z;let li=class extends M{constructor(){super(...arguments),this.data=Ze,this.compact=!1,this.onClick=()=>{this.dispatchEvent(new CustomEvent("badge-click",{bubbles:!0}))}}connectedCallback(){super.connectedCallback(),this.addEventListener("click",this.onClick)}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener("click",this.onClick)}render(){const t=this.data.effectiveSeverity,e=Ei[t]??Ei[0],i=this.data.warningsCount>0&&t>0,r=i?qn(this.data.eventType):"✓";return d`
+  `;St([h({type:Object})],Ui.prototype,"data",2);Ui=St([D("oig-cost-comparison")],Ui);var Gu=Object.defineProperty,Uu=Object.getOwnPropertyDescriptor,ze=(t,e,i,n)=>{for(var r=n>1?void 0:n?Uu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Gu(e,i,r),r};const fe=Q;let ci=class extends M{constructor(){super(...arguments),this.data=Qe,this.compact=!1,this.onClick=()=>{this.dispatchEvent(new CustomEvent("badge-click",{bubbles:!0}))}}connectedCallback(){super.connectedCallback(),this.addEventListener("click",this.onClick)}disconnectedCallback(){super.disconnectedCallback(),this.removeEventListener("click",this.onClick)}render(){const t=this.data.effectiveSeverity,e=Di[t]??Di[0],i=this.data.warningsCount>0&&t>0,n=i?aa(this.data.eventType):"✓";return d`
       <style>
         :host { background: ${fe(e)}; }
       </style>
-      <span class="badge-icon">${r}</span>
+      <span class="badge-icon">${n}</span>
       ${i?d`
         <span class="badge-count">${this.data.warningsCount}</span>
       `:null}
-      <span class="badge-label">${i?Yn[t]??"Výstraha":"OK"}</span>
-    `}};li.styles=P`
+      <span class="badge-label">${i?sa[t]??"Výstraha":"OK"}</span>
+    `}};ci.styles=P`
     :host {
       display: inline-flex;
       align-items: center;
@@ -5341,12 +5377,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     :host([compact]) .badge-label {
       display: none;
     }
-  `;ze([h({type:Object})],li.prototype,"data",2);ze([h({type:Boolean})],li.prototype,"compact",2);li=ze([E("oig-chmu-badge")],li);let ci=class extends M{constructor(){super(...arguments),this.open=!1,this.data=Ze}onClose(){this.dispatchEvent(new CustomEvent("close",{bubbles:!0}))}formatTime(t){return t?new Date(t).toLocaleString("cs-CZ"):"—"}renderWarning(t){const e=Ei[t.severity]??Ei[2],i=qn(t.event_type),r=Yn[t.severity]??"Neznámá";return d`
+  `;ze([h({type:Object})],ci.prototype,"data",2);ze([h({type:Boolean})],ci.prototype,"compact",2);ci=ze([D("oig-chmu-badge")],ci);let di=class extends M{constructor(){super(...arguments),this.open=!1,this.data=Qe}onClose(){this.dispatchEvent(new CustomEvent("close",{bubbles:!0}))}formatTime(t){return t?new Date(t).toLocaleString("cs-CZ"):"—"}renderWarning(t){const e=Di[t.severity]??Di[2],i=aa(t.event_type),n=sa[t.severity]??"Neznámá";return d`
       <div class="warning-item" style="background: ${e}">
         <div class="warning-header">
           <span class="warning-icon">${i}</span>
           <span class="warning-type">${t.event_type}</span>
-          <span class="warning-level">${r}</span>
+          <span class="warning-level">${n}</span>
           ${t.eta_hours>0?d`
             <span class="eta-badge">za ${t.eta_hours.toFixed(0)}h</span>
           `:null}
@@ -5372,7 +5408,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <div class="empty-state">Žádné aktivní výstrahy</div>
         `}
       </div>
-    `}};ci.styles=P`
+    `}};di.styles=P`
     :host {
       display: none;
     }
@@ -5492,7 +5528,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       border-radius: 4px;
       margin-left: 6px;
     }
-  `;ze([h({type:Boolean,reflect:!0})],ci.prototype,"open",2);ze([h({type:Object})],ci.prototype,"data",2);ci=ze([E("oig-chmu-modal")],ci);var Su=Object.defineProperty,Cu=Object.getOwnPropertyDescriptor,It=(t,e,i,r)=>{for(var n=r>1?void 0:r?Cu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Su(e,i,n),n};const F=Z;let ne=class extends M{constructor(){super(...arguments),this.open=!1,this.activeTab="today",this.data=null,this.autoRefresh=!0,this.refreshInterval=null}connectedCallback(){super.connectedCallback(),this.autoRefresh&&this.startAutoRefresh()}disconnectedCallback(){super.disconnectedCallback(),this.stopAutoRefresh()}startAutoRefresh(){this.refreshInterval=window.setInterval(()=>{this.open&&this.autoRefresh&&this.dispatchEvent(new CustomEvent("refresh",{bubbles:!0}))},6e4)}stopAutoRefresh(){this.refreshInterval!==null&&(clearInterval(this.refreshInterval),this.refreshInterval=null)}onClose(){this.dispatchEvent(new CustomEvent("close",{bubbles:!0}))}onTabClick(t){this.activeTab=t,this.dispatchEvent(new CustomEvent("tab-change",{detail:{tab:t},bubbles:!0}))}toggleAutoRefresh(){this.autoRefresh=!this.autoRefresh,this.autoRefresh?this.startAutoRefresh():this.stopAutoRefresh()}fmtPct(t){return`${t.toFixed(0)}%`}adherenceColor(t){return t>=90?"#4caf50":t>=70?"#ff9800":"#f44336"}getModeConfig(t){return Un[t]??{icon:"❓",color:"#666",label:t}}renderModeBlock(t){const e=this.getModeConfig(t.modePlanned||t.modeHistorical),i=t.status==="current";return d`
+  `;ze([h({type:Boolean,reflect:!0})],di.prototype,"open",2);ze([h({type:Object})],di.prototype,"data",2);di=ze([D("oig-chmu-modal")],di);var Ku=Object.defineProperty,Zu=Object.getOwnPropertyDescriptor,At=(t,e,i,n)=>{for(var r=n>1?void 0:n?Zu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Ku(e,i,r),r};const F=Q;let ae=class extends M{constructor(){super(...arguments),this.open=!1,this.activeTab="today",this.data=null,this.autoRefresh=!0,this.refreshInterval=null}connectedCallback(){super.connectedCallback(),this.autoRefresh&&this.startAutoRefresh()}disconnectedCallback(){super.disconnectedCallback(),this.stopAutoRefresh()}startAutoRefresh(){this.refreshInterval=window.setInterval(()=>{this.open&&this.autoRefresh&&this.dispatchEvent(new CustomEvent("refresh",{bubbles:!0}))},6e4)}stopAutoRefresh(){this.refreshInterval!==null&&(clearInterval(this.refreshInterval),this.refreshInterval=null)}onClose(){this.dispatchEvent(new CustomEvent("close",{bubbles:!0}))}onTabClick(t){this.activeTab=t,this.dispatchEvent(new CustomEvent("tab-change",{detail:{tab:t},bubbles:!0}))}toggleAutoRefresh(){this.autoRefresh=!this.autoRefresh,this.autoRefresh?this.startAutoRefresh():this.stopAutoRefresh()}fmtPct(t){return`${t.toFixed(0)}%`}adherenceColor(t){return t>=90?"#4caf50":t>=70?"#ff9800":"#f44336"}getModeConfig(t){return oa[t]??{icon:"❓",color:"#666",label:t}}renderModeBlock(t){const e=this.getModeConfig(t.modePlanned||t.modeHistorical),i=t.status==="current";return d`
       <div
         class="mode-block ${i?"current":""}"
         style="background: ${e.color}; flex: ${Math.max(t.durationHours,.5)}"
@@ -5506,13 +5542,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <span class="mode-cost">${it(t.costPlanned)}</span>
         `:null}
       </div>
-    `}renderMetricTile(t,e){const i=e.unit==="Kč"?it(e.plan):`${e.plan.toFixed(1)} ${e.unit}`;let r="",n="";return e.hasActual&&e.actual!=null&&(n=e.unit==="Kč"?it(e.actual):`${e.actual.toFixed(1)} ${e.unit}`,e.unit==="Kč"?r=e.actual<=e.plan?"better":"worse":r=e.actual>=e.plan?"better":"worse"),d`
+    `}renderMetricTile(t,e){const i=e.unit==="Kč"?it(e.plan):`${e.plan.toFixed(1)} ${e.unit}`;let n="",r="";return e.hasActual&&e.actual!=null&&(r=e.unit==="Kč"?it(e.actual):`${e.actual.toFixed(1)} ${e.unit}`,e.unit==="Kč"?n=e.actual<=e.plan?"better":"worse":n=e.actual>=e.plan?"better":"worse"),d`
       <div class="metric-tile">
         <div class="metric-label">${t}</div>
         <div class="metric-values">
           <span class="metric-plan">${i}</span>
           ${e.hasActual?d`
-            <span class="metric-actual ${r}">(${n})</span>
+            <span class="metric-actual ${n}">(${r})</span>
           `:null}
         </div>
       </div>
@@ -5535,7 +5571,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
               class="tab ${this.activeTab===e?"active":""}"
               @click=${()=>this.onTabClick(e)}
             >
-              ${Gn[e]}
+              ${la[e]}
             </button>
           `)}
         </div>
@@ -5624,7 +5660,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </div>
         </div>
       `:null}
-    `}};ne.styles=P`
+    `}};ae.styles=P`
     :host {
       display: none;
     }
@@ -5914,7 +5950,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         border-radius: 0;
       }
     }
-  `;It([h({type:Boolean,reflect:!0})],ne.prototype,"open",2);It([h({type:String})],ne.prototype,"activeTab",2);It([h({type:Object})],ne.prototype,"data",2);It([w()],ne.prototype,"autoRefresh",2);ne=It([E("oig-timeline-dialog")],ne);let Pe=class extends M{constructor(){super(...arguments),this.data=null,this.activeTab="today",this.autoRefresh=!0,this.refreshInterval=null}connectedCallback(){super.connectedCallback(),this.autoRefresh&&this.startAutoRefresh()}disconnectedCallback(){super.disconnectedCallback(),this.stopAutoRefresh()}startAutoRefresh(){this.refreshInterval=window.setInterval(()=>{this.autoRefresh&&this.dispatchEvent(new CustomEvent("refresh",{bubbles:!0}))},6e4)}stopAutoRefresh(){this.refreshInterval!==null&&(clearInterval(this.refreshInterval),this.refreshInterval=null)}onTabClick(t){this.activeTab=t,this.dispatchEvent(new CustomEvent("tab-change",{detail:{tab:t},bubbles:!0}))}toggleAutoRefresh(){this.autoRefresh=!this.autoRefresh,this.autoRefresh?this.startAutoRefresh():this.stopAutoRefresh()}fmtPct(t){return`${t.toFixed(0)}%`}adherenceColor(t){return t>=90?"#4caf50":t>=70?"#ff9800":"#f44336"}getModeConfig(t){return Un[t]??{icon:"❓",color:"#666",label:t}}renderModeBlock(t){const e=this.getModeConfig(t.modePlanned||t.modeHistorical),i=t.status==="current";return d`
+  `;At([h({type:Boolean,reflect:!0})],ae.prototype,"open",2);At([h({type:String})],ae.prototype,"activeTab",2);At([h({type:Object})],ae.prototype,"data",2);At([x()],ae.prototype,"autoRefresh",2);ae=At([D("oig-timeline-dialog")],ae);let Pe=class extends M{constructor(){super(...arguments),this.data=null,this.activeTab="today",this.autoRefresh=!0,this.refreshInterval=null}connectedCallback(){super.connectedCallback(),this.autoRefresh&&this.startAutoRefresh()}disconnectedCallback(){super.disconnectedCallback(),this.stopAutoRefresh()}startAutoRefresh(){this.refreshInterval=window.setInterval(()=>{this.autoRefresh&&this.dispatchEvent(new CustomEvent("refresh",{bubbles:!0}))},6e4)}stopAutoRefresh(){this.refreshInterval!==null&&(clearInterval(this.refreshInterval),this.refreshInterval=null)}onTabClick(t){this.activeTab=t,this.dispatchEvent(new CustomEvent("tab-change",{detail:{tab:t},bubbles:!0}))}toggleAutoRefresh(){this.autoRefresh=!this.autoRefresh,this.autoRefresh?this.startAutoRefresh():this.stopAutoRefresh()}fmtPct(t){return`${t.toFixed(0)}%`}adherenceColor(t){return t>=90?"#4caf50":t>=70?"#ff9800":"#f44336"}getModeConfig(t){return oa[t]??{icon:"❓",color:"#666",label:t}}renderModeBlock(t){const e=this.getModeConfig(t.modePlanned||t.modeHistorical),i=t.status==="current";return d`
       <div
         class="mode-block ${i?"current":""}"
         style="background: ${e.color}; flex: ${Math.max(t.durationHours,.5)}"
@@ -5928,13 +5964,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <span class="mode-cost">${it(t.costPlanned)}</span>
         `:null}
       </div>
-    `}renderMetricTile(t,e){const i=e.unit==="Kč"?it(e.plan):`${e.plan.toFixed(1)} ${e.unit}`;let r="",n="";return e.hasActual&&e.actual!=null&&(n=e.unit==="Kč"?it(e.actual):`${e.actual.toFixed(1)} ${e.unit}`,e.unit==="Kč"?r=e.actual<=e.plan?"better":"worse":r=e.actual>=e.plan?"better":"worse"),d`
+    `}renderMetricTile(t,e){const i=e.unit==="Kč"?it(e.plan):`${e.plan.toFixed(1)} ${e.unit}`;let n="",r="";return e.hasActual&&e.actual!=null&&(r=e.unit==="Kč"?it(e.actual):`${e.actual.toFixed(1)} ${e.unit}`,e.unit==="Kč"?n=e.actual<=e.plan?"better":"worse":n=e.actual>=e.plan?"better":"worse"),d`
       <div class="metric-tile">
         <div class="metric-label">${t}</div>
         <div class="metric-values">
           <span class="metric-plan">${i}</span>
           ${e.hasActual?d`
-            <span class="metric-actual ${r}">(${n})</span>
+            <span class="metric-actual ${n}">(${r})</span>
           `:null}
         </div>
       </div>
@@ -5954,7 +5990,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
               class="tab ${this.activeTab===e?"active":""}"
               @click=${()=>this.onTabClick(e)}
             >
-              ${Gn[e]}
+              ${la[e]}
             </button>
           `)}
         </div>
@@ -6287,11 +6323,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       color: ${F(o.textSecondary)};
       font-size: 12px;
     }
-  `;It([h({type:Object})],Pe.prototype,"data",2);It([h({type:String})],Pe.prototype,"activeTab",2);It([w()],Pe.prototype,"autoRefresh",2);Pe=It([E("oig-timeline-tile")],Pe);var Pu=Object.defineProperty,Tu=Object.getOwnPropertyDescriptor,jt=(t,e,i,r)=>{for(var n=r>1?void 0:r?Tu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Pu(e,i,n),n};const at=Z;let Te=class extends M{constructor(){super(...arguments),this.data=null,this.editMode=!1,this.tileType="entity"}onTileClick(){var e;if(this.editMode)return;const t=(e=this.data)==null?void 0:e.config;t&&(t.type==="button"&&t.action?Po(t.entity_id,t.action):X.openEntityDialog(t.entity_id))}onSupportClick(t,e){t.stopPropagation(),!this.editMode&&X.openEntityDialog(e)}onEdit(){var t;this.dispatchEvent(new CustomEvent("edit-tile",{detail:{entityId:(t=this.data)==null?void 0:t.config.entity_id},bubbles:!0,composed:!0}))}onDelete(){var t;this.dispatchEvent(new CustomEvent("delete-tile",{detail:{entityId:(t=this.data)==null?void 0:t.config.entity_id},bubbles:!0,composed:!0}))}render(){var c,u;if(!this.data)return null;const t=this.data.config,e=t.type==="button";this.tileType!==t.type&&(this.tileType=t.type??"entity");const i=t.color||"",r=t.icon||(e?"⚡":"📊"),n=r.startsWith("mdi:")?Di(r):r,a=(c=t.support_entities)==null?void 0:c.top_right,s=(u=t.support_entities)==null?void 0:u.bottom_right,l=this.data.supportValues.topRight||this.data.supportValues.bottomRight;return d`
+  `;At([h({type:Object})],Pe.prototype,"data",2);At([h({type:String})],Pe.prototype,"activeTab",2);At([x()],Pe.prototype,"autoRefresh",2);Pe=At([D("oig-timeline-tile")],Pe);var Qu=Object.defineProperty,Xu=Object.getOwnPropertyDescriptor,qt=(t,e,i,n)=>{for(var r=n>1?void 0:n?Xu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Qu(e,i,r),r};const at=Q;let Te=class extends M{constructor(){super(...arguments),this.data=null,this.editMode=!1,this.tileType="entity"}onTileClick(){var e;if(this.editMode)return;const t=(e=this.data)==null?void 0:e.config;t&&(t.type==="button"&&t.action?Ko(t.entity_id,t.action):X.openEntityDialog(t.entity_id))}onSupportClick(t,e){t.stopPropagation(),!this.editMode&&X.openEntityDialog(e)}onEdit(){var t;this.dispatchEvent(new CustomEvent("edit-tile",{detail:{entityId:(t=this.data)==null?void 0:t.config.entity_id},bubbles:!0,composed:!0}))}onDelete(){var t;this.dispatchEvent(new CustomEvent("delete-tile",{detail:{entityId:(t=this.data)==null?void 0:t.config.entity_id},bubbles:!0,composed:!0}))}render(){var c,u;if(!this.data)return null;const t=this.data.config,e=t.type==="button";this.tileType!==t.type&&(this.tileType=t.type??"entity");const i=t.color||"",n=t.icon||(e?"⚡":"📊"),r=n.startsWith("mdi:")?Ei(n):n,a=(c=t.support_entities)==null?void 0:c.top_right,s=(u=t.support_entities)==null?void 0:u.bottom_right,l=this.data.supportValues.topRight||this.data.supportValues.bottomRight;return d`
       ${i?d`<style>:host { --tile-color: ${at(i)}; }</style>`:null}
 
       <div class="tile-top" @click=${this.onTileClick} title=${this.editMode?"":t.entity_id}>
-        <span class="tile-icon">${n}</span>
+        <span class="tile-icon">${r}</span>
         <span class="tile-label">${t.label||""}</span>
         ${l?d`
           <div class="support-values">
@@ -6568,7 +6604,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       background: ${at(o.error)};
       color: #fff;
     }
-  `;jt([h({type:Object})],Te.prototype,"data",2);jt([h({type:Boolean})],Te.prototype,"editMode",2);jt([h({type:String,reflect:!0})],Te.prototype,"tileType",2);Te=jt([E("oig-tile")],Te);let Me=class extends M{constructor(){super(...arguments),this.tiles=[],this.editMode=!1,this.position="left"}render(){return this.tiles.length===0?d`<div class="empty-state">Žádné dlaždice</div>`:d`
+  `;qt([h({type:Object})],Te.prototype,"data",2);qt([h({type:Boolean})],Te.prototype,"editMode",2);qt([h({type:String,reflect:!0})],Te.prototype,"tileType",2);Te=qt([D("oig-tile")],Te);let Me=class extends M{constructor(){super(...arguments),this.tiles=[],this.editMode=!1,this.position="left"}render(){return this.tiles.length===0?d`<div class="empty-state">Žádné dlaždice</div>`:d`
       ${this.tiles.map(t=>d`
         <oig-tile
           .data=${t}
@@ -6593,7 +6629,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       text-align: center;
       opacity: 0.6;
     }
-  `;jt([h({type:Array})],Me.prototype,"tiles",2);jt([h({type:Boolean})],Me.prototype,"editMode",2);jt([h({type:String,reflect:!0})],Me.prototype,"position",2);Me=jt([E("oig-tiles-container")],Me);var Mu=Object.defineProperty,Eu=Object.getOwnPropertyDescriptor,Ir=(t,e,i,r)=>{for(var n=r>1?void 0:r?Eu(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Mu(e,i,n),n};const tt=Z,Pn={Spotrebice:["fridge","fridge-outline","dishwasher","washing-machine","tumble-dryer","stove","microwave","coffee-maker","kettle","toaster","blender","food-processor","rice-cooker","slow-cooker","pressure-cooker","air-fryer","oven","range-hood"],Osvetleni:["lightbulb","lightbulb-outline","lamp","ceiling-light","floor-lamp","led-strip","led-strip-variant","wall-sconce","chandelier","desk-lamp","spotlight","light-switch"],"Vytapeni & Chlazeni":["thermometer","thermostat","radiator","radiator-disabled","heat-pump","air-conditioner","fan","hvac","fire","snowflake","fireplace","heating-coil"],"Energie & Baterie":["lightning-bolt","flash","battery","battery-charging","battery-50","battery-10","solar-panel","solar-power","meter-electric","power-plug","power-socket","ev-plug","transmission-tower","current-ac","current-dc"],"Auto & Doprava":["car","car-electric","car-battery","ev-station","ev-plug-type2","garage","garage-open","motorcycle","bicycle","scooter","bus","train","airplane"],Zabezpeceni:["door","door-open","lock","lock-open","shield-home","cctv","camera","motion-sensor","alarm-light","bell","eye","key","fingerprint","shield-check"],"Okna & Stineni":["window-closed","window-open","blinds","blinds-open","curtains","roller-shade","window-shutter","balcony","door-sliding"],"Media & Zabava":["television","speaker","speaker-wireless","music","volume-high","cast","chromecast","radio","headphones","microphone","gamepad","movie","spotify"],"Sit & IT":["router-wireless","wifi","access-point","lan","network","home-assistant","server","nas","cloud","ethernet","bluetooth","cellphone","tablet","laptop"],"Voda & Koupelna":["water","water-percent","water-boiler","water-pump","shower","toilet","faucet","pipe","bathtub","sink","water-heater","pool"],Pocasi:["weather-sunny","weather-cloudy","weather-night","weather-rainy","weather-snowy","weather-windy","weather-fog","weather-lightning","weather-hail","temperature","humidity","barometer"],"Ventilace & Kvalita vzduchu":["fan","air-filter","air-purifier","smoke-detector","co2","wind-turbine"],"Zahrada & Venku":["flower","tree","sprinkler","grass","garden-light","outdoor-lamp","grill","pool","hot-tub","umbrella","thermometer-lines"],Domacnost:["iron","vacuum","broom","mop","washing","basket","hanger","scissors"],"Notifikace & Stav":["information","help-circle","alert-circle","checkbox-marked-circle","check","close","minus","plus","arrow-up","arrow-down","refresh","sync","bell-ring"],Ovladani:["toggle-switch","power","play","pause","stop","skip-next","skip-previous","volume-up","volume-down","brightness-up","brightness-down"],"Cas & Planovani":["clock","timer","alarm","calendar","calendar-clock","schedule","history"],Ostatni:["home","cog","tools","wrench","hammer","chart-line","gauge","dots-vertical","menu","settings","account","logout"]};let di=class extends M{constructor(){super(...arguments),this.isOpen=!1,this.searchQuery=""}get filteredCategories(){const t=this.searchQuery.trim().toLowerCase();if(!t)return Pn;const e=Object.entries(Pn).map(([i,r])=>{const n=r.filter(a=>a.toLowerCase().includes(t));return[i,n]}).filter(([,i])=>i.length>0);return Object.fromEntries(e)}open(){this.isOpen=!0}close(){this.isOpen=!1,this.searchQuery=""}onOverlayClick(t){t.target===t.currentTarget&&this.close()}onSearchInput(t){const e=t.target;this.searchQuery=(e==null?void 0:e.value)??""}onIconClick(t){this.dispatchEvent(new CustomEvent("icon-selected",{detail:{icon:`mdi:${t}`},bubbles:!0,composed:!0})),this.close()}render(){if(!this.isOpen)return null;const t=this.filteredCategories,e=Object.entries(t);return d`
+  `;qt([h({type:Array})],Me.prototype,"tiles",2);qt([h({type:Boolean})],Me.prototype,"editMode",2);qt([h({type:String,reflect:!0})],Me.prototype,"position",2);Me=qt([D("oig-tiles-container")],Me);var Ju=Object.defineProperty,tp=Object.getOwnPropertyDescriptor,jn=(t,e,i,n)=>{for(var r=n>1?void 0:n?tp(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&Ju(e,i,r),r};const tt=Q,Ir={Spotrebice:["fridge","fridge-outline","dishwasher","washing-machine","tumble-dryer","stove","microwave","coffee-maker","kettle","toaster","blender","food-processor","rice-cooker","slow-cooker","pressure-cooker","air-fryer","oven","range-hood"],Osvetleni:["lightbulb","lightbulb-outline","lamp","ceiling-light","floor-lamp","led-strip","led-strip-variant","wall-sconce","chandelier","desk-lamp","spotlight","light-switch"],"Vytapeni & Chlazeni":["thermometer","thermostat","radiator","radiator-disabled","heat-pump","air-conditioner","fan","hvac","fire","snowflake","fireplace","heating-coil"],"Energie & Baterie":["lightning-bolt","flash","battery","battery-charging","battery-50","battery-10","solar-panel","solar-power","meter-electric","power-plug","power-socket","ev-plug","transmission-tower","current-ac","current-dc"],"Auto & Doprava":["car","car-electric","car-battery","ev-station","ev-plug-type2","garage","garage-open","motorcycle","bicycle","scooter","bus","train","airplane"],Zabezpeceni:["door","door-open","lock","lock-open","shield-home","cctv","camera","motion-sensor","alarm-light","bell","eye","key","fingerprint","shield-check"],"Okna & Stineni":["window-closed","window-open","blinds","blinds-open","curtains","roller-shade","window-shutter","balcony","door-sliding"],"Media & Zabava":["television","speaker","speaker-wireless","music","volume-high","cast","chromecast","radio","headphones","microphone","gamepad","movie","spotify"],"Sit & IT":["router-wireless","wifi","access-point","lan","network","home-assistant","server","nas","cloud","ethernet","bluetooth","cellphone","tablet","laptop"],"Voda & Koupelna":["water","water-percent","water-boiler","water-pump","shower","toilet","faucet","pipe","bathtub","sink","water-heater","pool"],Pocasi:["weather-sunny","weather-cloudy","weather-night","weather-rainy","weather-snowy","weather-windy","weather-fog","weather-lightning","weather-hail","temperature","humidity","barometer"],"Ventilace & Kvalita vzduchu":["fan","air-filter","air-purifier","smoke-detector","co2","wind-turbine"],"Zahrada & Venku":["flower","tree","sprinkler","grass","garden-light","outdoor-lamp","grill","pool","hot-tub","umbrella","thermometer-lines"],Domacnost:["iron","vacuum","broom","mop","washing","basket","hanger","scissors"],"Notifikace & Stav":["information","help-circle","alert-circle","checkbox-marked-circle","check","close","minus","plus","arrow-up","arrow-down","refresh","sync","bell-ring"],Ovladani:["toggle-switch","power","play","pause","stop","skip-next","skip-previous","volume-up","volume-down","brightness-up","brightness-down"],"Cas & Planovani":["clock","timer","alarm","calendar","calendar-clock","schedule","history"],Ostatni:["home","cog","tools","wrench","hammer","chart-line","gauge","dots-vertical","menu","settings","account","logout"]};let ui=class extends M{constructor(){super(...arguments),this.isOpen=!1,this.searchQuery=""}get filteredCategories(){const t=this.searchQuery.trim().toLowerCase();if(!t)return Ir;const e=Object.entries(Ir).map(([i,n])=>{const r=n.filter(a=>a.toLowerCase().includes(t));return[i,r]}).filter(([,i])=>i.length>0);return Object.fromEntries(e)}open(){this.isOpen=!0}close(){this.isOpen=!1,this.searchQuery=""}onOverlayClick(t){t.target===t.currentTarget&&this.close()}onSearchInput(t){const e=t.target;this.searchQuery=(e==null?void 0:e.value)??""}onIconClick(t){this.dispatchEvent(new CustomEvent("icon-selected",{detail:{icon:`mdi:${t}`},bubbles:!0,composed:!0})),this.close()}render(){if(!this.isOpen)return null;const t=this.filteredCategories,e=Object.entries(t);return d`
       <div class="overlay" @click=${this.onOverlayClick}>
         <div class="modal" @click=${i=>i.stopPropagation()}>
           <div class="header">
@@ -6611,14 +6647,14 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           <div class="content">
             ${e.length===0?d`
               <div class="empty">Žádné ikony nenalezeny</div>
-            `:e.map(([i,r])=>d`
+            `:e.map(([i,n])=>d`
               <div class="category">
                 <div class="category-title">${i}</div>
                 <div class="icon-grid">
-                  ${r.map(n=>d`
-                    <button class="icon-item" type="button" @click=${()=>this.onIconClick(n)}>
-                      <span class="icon-emoji">${Di(n)}</span>
-                      <span class="icon-name">${n}</span>
+                  ${n.map(r=>d`
+                    <button class="icon-item" type="button" @click=${()=>this.onIconClick(r)}>
+                      <span class="icon-emoji">${Ei(r)}</span>
+                      <span class="icon-name">${r}</span>
                     </button>
                   `)}
                 </div>
@@ -6627,7 +6663,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           </div>
         </div>
       </div>
-    `}};di.styles=P`
+    `}};ui.styles=P`
     :host {
       display: block;
     }
@@ -6794,11 +6830,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       text-align: center;
       padding: 24px 0 12px;
     }
-  `;Ir([h({type:Boolean,reflect:!0,attribute:"open"})],di.prototype,"isOpen",2);Ir([w()],di.prototype,"searchQuery",2);di=Ir([E("oig-icon-picker")],di);var Du=Object.defineProperty,Ou=Object.getOwnPropertyDescriptor,ut=(t,e,i,r)=>{for(var n=r>1?void 0:r?Ou(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&Du(e,i,n),n};const O=Z;let nt=class extends M{constructor(){super(...arguments),this.isOpen=!1,this.tileIndex=-1,this.tileSide="left",this.existingConfig=null,this.currentTab="entity",this.entitySearchText="",this.buttonSearchText="",this.selectedEntityId="",this.selectedButtonEntityId="",this.label="",this.icon="",this.color="#03A9F4",this.action="toggle",this.supportEntity1="",this.supportEntity2="",this.supportSearch1="",this.supportSearch2="",this.showSupportList1=!1,this.showSupportList2=!1,this.iconPickerOpen=!1}loadTileConfig(t){var e,i;this.currentTab=t.type,t.type==="entity"?this.selectedEntityId=t.entity_id:this.selectedButtonEntityId=t.entity_id,this.label=t.label||"",this.icon=t.icon||"",this.color=t.color||"#03A9F4",this.action=t.action||"toggle",this.supportEntity1=((e=t.support_entities)==null?void 0:e.top_right)||"",this.supportEntity2=((i=t.support_entities)==null?void 0:i.bottom_right)||""}resetForm(){this.currentTab="entity",this.entitySearchText="",this.buttonSearchText="",this.selectedEntityId="",this.selectedButtonEntityId="",this.label="",this.icon="",this.color="#03A9F4",this.action="toggle",this.supportEntity1="",this.supportEntity2="",this.supportSearch1="",this.supportSearch2="",this.showSupportList1=!1,this.showSupportList2=!1,this.iconPickerOpen=!1}handleClose(){this.isOpen=!1,this.resetForm(),this.dispatchEvent(new CustomEvent("close",{bubbles:!0,composed:!0}))}getEntities(){const t=ae();return t?t.getAll():{}}getEntityItems(t,e){const i=e.trim().toLowerCase(),r=this.getEntities();return Object.entries(r).filter(([a])=>t.some(s=>a.startsWith(s))).map(([a,s])=>{const l=this.getAttributeValue(s,"friendly_name")||a,c=this.getAttributeValue(s,"unit_of_measurement"),u=this.getAttributeValue(s,"icon");return{id:a,name:l,value:s.state,unit:c,icon:u,state:s}}).filter(a=>i?a.name.toLowerCase().includes(i)||a.id.toLowerCase().includes(i):!0).sort((a,s)=>a.name.localeCompare(s.name))}getSupportEntities(t){const e=t.trim().toLowerCase();if(!e)return[];const i=this.getEntities();return Object.entries(i).map(([r,n])=>{const a=this.getAttributeValue(n,"friendly_name")||r,s=this.getAttributeValue(n,"unit_of_measurement"),l=this.getAttributeValue(n,"icon");return{id:r,name:a,value:n.state,unit:s,icon:l,state:n}}).filter(r=>r.name.toLowerCase().includes(e)||r.id.toLowerCase().includes(e)).sort((r,n)=>r.name.localeCompare(n.name)).slice(0,20)}getDisplayIcon(t){return t?t.startsWith("mdi:")?Di(t):t:Di("")}getColorForEntity(t){switch(t.split(".")[0]){case"sensor":return"#03A9F4";case"binary_sensor":return"#4CAF50";case"switch":return"#FFC107";case"light":return"#FF9800";case"fan":return"#00BCD4";case"input_boolean":return"#9C27B0";default:return"#03A9F4"}}applyEntityDefaults(t){if(!t)return;const i=this.getEntities()[t];if(!i)return;this.label||(this.label=this.getAttributeValue(i,"friendly_name"));const r=this.getAttributeValue(i,"icon");!this.icon&&r&&(this.icon=r),this.color=this.getColorForEntity(t)}handleEntitySelect(t){this.selectedEntityId=t,this.applyEntityDefaults(t)}handleButtonEntitySelect(t){this.selectedButtonEntityId=t,this.applyEntityDefaults(t)}handleSupportInput(t,e){const i=e.trim();t===1?(this.supportSearch1=e,this.showSupportList1=!!i,i||(this.supportEntity1="")):(this.supportSearch2=e,this.showSupportList2=!!i,i||(this.supportEntity2=""))}handleSupportSelect(t,e){const i=e.name||e.id;t===1?(this.supportEntity1=e.id,this.supportSearch1=i,this.showSupportList1=!1):(this.supportEntity2=e.id,this.supportSearch2=i,this.showSupportList2=!1)}getSupportInputValue(t,e){if(t)return t;if(!e)return"";const i=this.getEntities()[e];return i&&this.getAttributeValue(i,"friendly_name")||e}getAttributeValue(t,e){var r;const i=(r=t.attributes)==null?void 0:r[e];return i==null?"":String(i)}handleSave(){const t=this.currentTab==="entity"?this.selectedEntityId:this.selectedButtonEntityId;if(!t){window.alert("Vyberte entitu");return}const e={top_right:this.supportEntity1||void 0,bottom_right:this.supportEntity2||void 0},i={type:this.currentTab,entity_id:t,label:this.label||void 0,icon:this.icon||void 0,color:this.color||void 0,action:this.currentTab==="button"?this.action:void 0,support_entities:e};this.dispatchEvent(new CustomEvent("tile-saved",{detail:{index:this.tileIndex,side:this.tileSide,config:i},bubbles:!0,composed:!0})),this.handleClose()}onIconSelected(t){var e;this.icon=((e=t.detail)==null?void 0:e.icon)||"",this.iconPickerOpen=!1}renderEntityList(t,e,i,r){const n=this.getEntityItems(t,e);return n.length===0?d`<div class="support-empty">Žádné entity nenalezeny</div>`:d`
-      ${n.map(a=>d`
+  `;jn([h({type:Boolean,reflect:!0,attribute:"open"})],ui.prototype,"isOpen",2);jn([x()],ui.prototype,"searchQuery",2);ui=jn([D("oig-icon-picker")],ui);var ep=Object.defineProperty,ip=Object.getOwnPropertyDescriptor,ut=(t,e,i,n)=>{for(var r=n>1?void 0:n?ip(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&ep(e,i,r),r};const E=Q;let rt=class extends M{constructor(){super(...arguments),this.isOpen=!1,this.tileIndex=-1,this.tileSide="left",this.existingConfig=null,this.currentTab="entity",this.entitySearchText="",this.buttonSearchText="",this.selectedEntityId="",this.selectedButtonEntityId="",this.label="",this.icon="",this.color="#03A9F4",this.action="toggle",this.supportEntity1="",this.supportEntity2="",this.supportSearch1="",this.supportSearch2="",this.showSupportList1=!1,this.showSupportList2=!1,this.iconPickerOpen=!1}loadTileConfig(t){var e,i;this.currentTab=t.type,t.type==="entity"?this.selectedEntityId=t.entity_id:this.selectedButtonEntityId=t.entity_id,this.label=t.label||"",this.icon=t.icon||"",this.color=t.color||"#03A9F4",this.action=t.action||"toggle",this.supportEntity1=((e=t.support_entities)==null?void 0:e.top_right)||"",this.supportEntity2=((i=t.support_entities)==null?void 0:i.bottom_right)||""}resetForm(){this.currentTab="entity",this.entitySearchText="",this.buttonSearchText="",this.selectedEntityId="",this.selectedButtonEntityId="",this.label="",this.icon="",this.color="#03A9F4",this.action="toggle",this.supportEntity1="",this.supportEntity2="",this.supportSearch1="",this.supportSearch2="",this.showSupportList1=!1,this.showSupportList2=!1,this.iconPickerOpen=!1}handleClose(){this.isOpen=!1,this.resetForm(),this.dispatchEvent(new CustomEvent("close",{bubbles:!0,composed:!0}))}getEntities(){const t=Ft();return t?t.getAll():{}}getEntityItems(t,e){const i=e.trim().toLowerCase(),n=this.getEntities();return Object.entries(n).filter(([a])=>t.some(s=>a.startsWith(s))).map(([a,s])=>{const l=this.getAttributeValue(s,"friendly_name")||a,c=this.getAttributeValue(s,"unit_of_measurement"),u=this.getAttributeValue(s,"icon");return{id:a,name:l,value:s.state,unit:c,icon:u,state:s}}).filter(a=>i?a.name.toLowerCase().includes(i)||a.id.toLowerCase().includes(i):!0).sort((a,s)=>a.name.localeCompare(s.name))}getSupportEntities(t){const e=t.trim().toLowerCase();if(!e)return[];const i=this.getEntities();return Object.entries(i).map(([n,r])=>{const a=this.getAttributeValue(r,"friendly_name")||n,s=this.getAttributeValue(r,"unit_of_measurement"),l=this.getAttributeValue(r,"icon");return{id:n,name:a,value:r.state,unit:s,icon:l,state:r}}).filter(n=>n.name.toLowerCase().includes(e)||n.id.toLowerCase().includes(e)).sort((n,r)=>n.name.localeCompare(r.name)).slice(0,20)}getDisplayIcon(t){return t?t.startsWith("mdi:")?Ei(t):t:Ei("")}getColorForEntity(t){switch(t.split(".")[0]){case"sensor":return"#03A9F4";case"binary_sensor":return"#4CAF50";case"switch":return"#FFC107";case"light":return"#FF9800";case"fan":return"#00BCD4";case"input_boolean":return"#9C27B0";default:return"#03A9F4"}}applyEntityDefaults(t){if(!t)return;const i=this.getEntities()[t];if(!i)return;this.label||(this.label=this.getAttributeValue(i,"friendly_name"));const n=this.getAttributeValue(i,"icon");!this.icon&&n&&(this.icon=n),this.color=this.getColorForEntity(t)}handleEntitySelect(t){this.selectedEntityId=t,this.applyEntityDefaults(t)}handleButtonEntitySelect(t){this.selectedButtonEntityId=t,this.applyEntityDefaults(t)}handleSupportInput(t,e){const i=e.trim();t===1?(this.supportSearch1=e,this.showSupportList1=!!i,i||(this.supportEntity1="")):(this.supportSearch2=e,this.showSupportList2=!!i,i||(this.supportEntity2=""))}handleSupportSelect(t,e){const i=e.name||e.id;t===1?(this.supportEntity1=e.id,this.supportSearch1=i,this.showSupportList1=!1):(this.supportEntity2=e.id,this.supportSearch2=i,this.showSupportList2=!1)}getSupportInputValue(t,e){if(t)return t;if(!e)return"";const i=this.getEntities()[e];return i&&this.getAttributeValue(i,"friendly_name")||e}getAttributeValue(t,e){var n;const i=(n=t.attributes)==null?void 0:n[e];return i==null?"":String(i)}handleSave(){const t=this.currentTab==="entity"?this.selectedEntityId:this.selectedButtonEntityId;if(!t){window.alert("Vyberte entitu");return}const e={top_right:this.supportEntity1||void 0,bottom_right:this.supportEntity2||void 0},i={type:this.currentTab,entity_id:t,label:this.label||void 0,icon:this.icon||void 0,color:this.color||void 0,action:this.currentTab==="button"?this.action:void 0,support_entities:e};this.dispatchEvent(new CustomEvent("tile-saved",{detail:{index:this.tileIndex,side:this.tileSide,config:i},bubbles:!0,composed:!0})),this.handleClose()}onIconSelected(t){var e;this.icon=((e=t.detail)==null?void 0:e.icon)||"",this.iconPickerOpen=!1}renderEntityList(t,e,i,n){const r=this.getEntityItems(t,e);return r.length===0?d`<div class="support-empty">Žádné entity nenalezeny</div>`:d`
+      ${r.map(a=>d`
         <div
           class="entity-item ${i===a.id?"selected":""}"
-          @click=${()=>r(a.id)}
+          @click=${()=>n(a.id)}
         >
           <div class="entity-icon">${this.getDisplayIcon(a.icon)}</div>
           <div class="entity-meta">
@@ -6811,13 +6847,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         </div>
       `)}
     `}renderSupportList(t,e){const i=this.getSupportEntities(t);return i.length===0?d`<div class="support-empty">Žádné entity nenalezeny</div>`:d`
-      ${i.map(r=>d`
+      ${i.map(n=>d`
         <div
           class="support-item"
-          @mousedown=${()=>this.handleSupportSelect(e,r)}
+          @mousedown=${()=>this.handleSupportSelect(e,n)}
         >
-          <div class="support-name">${r.name}</div>
-          <div class="support-value">${r.value} ${r.unit}</div>
+          <div class="support-name">${n.name}</div>
+          <div class="support-value">${n.value} ${n.unit}</div>
         </div>
       `)}
     `}renderEntityTab(){return d`
@@ -7060,13 +7096,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         @icon-selected=${this.onIconSelected}
         @close=${()=>{this.iconPickerOpen=!1}}
       ></oig-icon-picker>
-    `:null}};nt.styles=P`
+    `:null}};rt.styles=P`
     :host {
       display: none;
       position: fixed;
       inset: 0;
       z-index: 1000;
-      font-family: ${O(o.fontFamily)};
+      font-family: ${E(o.fontFamily)};
     }
 
     :host([open]) {
@@ -7076,7 +7112,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .overlay {
       position: fixed;
       inset: 0;
-      background: color-mix(in srgb, ${O(o.bgPrimary)} 35%, transparent);
+      background: color-mix(in srgb, ${E(o.bgPrimary)} 35%, transparent);
       backdrop-filter: blur(6px);
       display: flex;
       align-items: center;
@@ -7087,10 +7123,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .dialog {
       width: min(520px, 100%);
       max-height: 85vh;
-      background: ${O(o.cardBg)};
-      border: 1px solid ${O(o.divider)};
+      background: ${E(o.cardBg)};
+      border: 1px solid ${E(o.divider)};
       border-radius: 16px;
-      box-shadow: ${O(o.cardShadow)};
+      box-shadow: ${E(o.cardShadow)};
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -7107,19 +7143,19 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       align-items: center;
       justify-content: space-between;
       padding: 16px 18px 12px;
-      border-bottom: 1px solid ${O(o.divider)};
+      border-bottom: 1px solid ${E(o.divider)};
     }
 
     .title {
       font-size: 16px;
       font-weight: 700;
-      color: ${O(o.textPrimary)};
+      color: ${E(o.textPrimary)};
     }
 
     .close-btn {
       border: none;
-      background: ${O(o.bgSecondary)};
-      color: ${O(o.textPrimary)};
+      background: ${E(o.bgSecondary)};
+      color: ${E(o.textPrimary)};
       width: 30px;
       height: 30px;
       border-radius: 10px;
@@ -7131,7 +7167,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     }
 
     .close-btn:hover {
-      background: ${O(o.divider)};
+      background: ${E(o.divider)};
       transform: scale(1.05);
     }
 
@@ -7140,19 +7176,19 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       grid-template-columns: 1fr 1fr;
       gap: 8px;
       padding: 12px 18px;
-      background: ${O(o.bgSecondary)};
-      border-bottom: 1px solid ${O(o.divider)};
+      background: ${E(o.bgSecondary)};
+      border-bottom: 1px solid ${E(o.divider)};
     }
 
     .tab-btn {
       border: 1px solid transparent;
-      background: ${O(o.cardBg)};
+      background: ${E(o.cardBg)};
       border-radius: 12px;
       padding: 8px 10px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
-      color: ${O(o.textSecondary)};
+      color: ${E(o.textSecondary)};
       display: flex;
       align-items: center;
       justify-content: center;
@@ -7161,8 +7197,8 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     }
 
     .tab-btn.active {
-      border-color: ${O(o.accent)};
-      color: ${O(o.textPrimary)};
+      border-color: ${E(o.accent)};
+      color: ${E(o.textPrimary)};
       transform: translateY(-1px);
     }
 
@@ -7182,7 +7218,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     label {
       font-size: 12px;
-      color: ${O(o.textSecondary)};
+      color: ${E(o.textSecondary)};
       font-weight: 600;
     }
 
@@ -7192,23 +7228,23 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       width: 100%;
       padding: 10px 12px;
       border-radius: 10px;
-      border: 1px solid ${O(o.divider)};
-      background: ${O(o.bgPrimary)};
-      color: ${O(o.textPrimary)};
+      border: 1px solid ${E(o.divider)};
+      background: ${E(o.bgPrimary)};
+      color: ${E(o.textPrimary)};
       font-size: 12px;
       outline: none;
       transition: border 0.2s ease, box-shadow 0.2s ease;
     }
 
     .input::placeholder {
-      color: ${O(o.textSecondary)};
+      color: ${E(o.textSecondary)};
     }
 
     .input:focus,
     select:focus,
     .color-input:focus {
-      border-color: ${O(o.accent)};
-      box-shadow: 0 0 0 2px color-mix(in srgb, ${O(o.accent)} 20%, transparent);
+      border-color: ${E(o.accent)};
+      box-shadow: 0 0 0 2px color-mix(in srgb, ${E(o.accent)} 20%, transparent);
     }
 
     .row {
@@ -7229,17 +7265,17 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       width: 46px;
       height: 46px;
       border-radius: 12px;
-      border: 1px dashed ${O(o.divider)};
+      border: 1px dashed ${E(o.divider)};
       display: grid;
       place-items: center;
       font-size: 22px;
       cursor: pointer;
-      background: ${O(o.bgSecondary)};
+      background: ${E(o.bgSecondary)};
       transition: border 0.2s ease, transform 0.2s ease;
     }
 
     .icon-preview:hover {
-      border-color: ${O(o.accent)};
+      border-color: ${E(o.accent)};
       transform: translateY(-1px);
     }
 
@@ -7249,8 +7285,8 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .icon-btn {
       border: none;
-      background: ${O(o.bgSecondary)};
-      color: ${O(o.textPrimary)};
+      background: ${E(o.bgSecondary)};
+      color: ${E(o.textPrimary)};
       border-radius: 10px;
       padding: 10px 12px;
       cursor: pointer;
@@ -7260,18 +7296,18 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .divider {
       height: 1px;
-      background: ${O(o.divider)};
+      background: ${E(o.divider)};
       margin: 6px 0;
       opacity: 0.8;
     }
 
     .entity-list {
-      border: 1px solid ${O(o.divider)};
+      border: 1px solid ${E(o.divider)};
       border-radius: 12px;
       overflow: hidden;
       max-height: 200px;
       overflow-y: auto;
-      background: ${O(o.bgPrimary)};
+      background: ${E(o.bgPrimary)};
     }
 
     .entity-item {
@@ -7279,7 +7315,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       grid-template-columns: 30px 1fr;
       gap: 10px;
       padding: 10px 12px;
-      border-bottom: 1px solid ${O(o.divider)};
+      border-bottom: 1px solid ${E(o.divider)};
       cursor: pointer;
       align-items: center;
       transition: background 0.2s ease;
@@ -7290,12 +7326,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     }
 
     .entity-item:hover {
-      background: ${O(o.bgSecondary)};
+      background: ${E(o.bgSecondary)};
     }
 
     .entity-item.selected {
-      background: color-mix(in srgb, ${O(o.accent)} 16%, transparent);
-      border-left: 3px solid ${O(o.accent)};
+      background: color-mix(in srgb, ${E(o.accent)} 16%, transparent);
+      border-left: 3px solid ${E(o.accent)};
       padding-left: 9px;
     }
 
@@ -7314,7 +7350,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .entity-name {
       font-size: 12px;
-      color: ${O(o.textPrimary)};
+      color: ${E(o.textPrimary)};
       font-weight: 600;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -7323,7 +7359,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .entity-sub {
       font-size: 10px;
-      color: ${O(o.textSecondary)};
+      color: ${E(o.textSecondary)};
       display: flex;
       justify-content: space-between;
       gap: 8px;
@@ -7338,18 +7374,18 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       top: calc(100% + 6px);
       left: 0;
       right: 0;
-      background: ${O(o.cardBg)};
-      border: 1px solid ${O(o.divider)};
+      background: ${E(o.cardBg)};
+      border: 1px solid ${E(o.divider)};
       border-radius: 12px;
       z-index: 10;
       max-height: 180px;
       overflow-y: auto;
-      box-shadow: ${O(o.cardShadow)};
+      box-shadow: ${E(o.cardShadow)};
     }
 
     .support-item {
       padding: 10px 12px;
-      border-bottom: 1px solid ${O(o.divider)};
+      border-bottom: 1px solid ${E(o.divider)};
       cursor: pointer;
       display: flex;
       flex-direction: column;
@@ -7362,24 +7398,24 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     }
 
     .support-item:hover {
-      background: ${O(o.bgSecondary)};
+      background: ${E(o.bgSecondary)};
     }
 
     .support-name {
       font-size: 12px;
-      color: ${O(o.textPrimary)};
+      color: ${E(o.textPrimary)};
       font-weight: 600;
     }
 
     .support-value {
       font-size: 10px;
-      color: ${O(o.textSecondary)};
+      color: ${E(o.textSecondary)};
     }
 
     .support-empty {
       padding: 12px;
       font-size: 11px;
-      color: ${O(o.textSecondary)};
+      color: ${E(o.textSecondary)};
       text-align: center;
     }
 
@@ -7388,8 +7424,8 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       justify-content: flex-end;
       gap: 10px;
       padding: 14px 18px 18px;
-      border-top: 1px solid ${O(o.divider)};
-      background: ${O(o.bgSecondary)};
+      border-top: 1px solid ${E(o.divider)};
+      background: ${E(o.bgSecondary)};
     }
 
     .btn {
@@ -7403,15 +7439,15 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     }
 
     .btn-secondary {
-      background: ${O(o.bgPrimary)};
-      color: ${O(o.textPrimary)};
-      border: 1px solid ${O(o.divider)};
+      background: ${E(o.bgPrimary)};
+      color: ${E(o.textPrimary)};
+      border: 1px solid ${E(o.divider)};
     }
 
     .btn-primary {
-      background: ${O(o.accent)};
+      background: ${E(o.accent)};
       color: #fff;
-      box-shadow: 0 6px 14px color-mix(in srgb, ${O(o.accent)} 40%, transparent);
+      box-shadow: 0 6px 14px color-mix(in srgb, ${E(o.accent)} 40%, transparent);
     }
 
     .btn:hover {
@@ -7427,7 +7463,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .tab-content.active {
       display: flex;
     }
-  `;ut([h({type:Boolean,reflect:!0,attribute:"open"})],nt.prototype,"isOpen",2);ut([h({type:Number})],nt.prototype,"tileIndex",2);ut([h({attribute:!1})],nt.prototype,"tileSide",2);ut([h({attribute:!1})],nt.prototype,"existingConfig",2);ut([w()],nt.prototype,"currentTab",2);ut([w()],nt.prototype,"entitySearchText",2);ut([w()],nt.prototype,"buttonSearchText",2);ut([w()],nt.prototype,"selectedEntityId",2);ut([w()],nt.prototype,"selectedButtonEntityId",2);ut([w()],nt.prototype,"label",2);ut([w()],nt.prototype,"icon",2);ut([w()],nt.prototype,"color",2);ut([w()],nt.prototype,"action",2);ut([w()],nt.prototype,"supportEntity1",2);ut([w()],nt.prototype,"supportEntity2",2);ut([w()],nt.prototype,"supportSearch1",2);ut([w()],nt.prototype,"supportSearch2",2);ut([w()],nt.prototype,"showSupportList1",2);ut([w()],nt.prototype,"showSupportList2",2);ut([w()],nt.prototype,"iconPickerOpen",2);nt=ut([E("oig-tile-dialog")],nt);var zu=Object.defineProperty,Au=Object.getOwnPropertyDescriptor,R=(t,e,i,r)=>{for(var n=r>1?void 0:r?Au(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(n=(r?s(e,i,n):s(n))||n);return r&&n&&zu(e,i,n),n};const $t=Z,Tn=new URLSearchParams(window.location.search),me=Tn.get("sn")||Tn.get("inverter_sn")||"2206237016",Mn=`sensor.oig_${me}_`,Iu=[{id:"flow",label:"Toky",icon:"⚡"},{id:"pricing",label:"Ceny",icon:"💰"},{id:"boiler",label:"Bojler",icon:"🔥"}];let N=class extends M{constructor(){super(...arguments),this.hass=null,this.loading=!0,this.error=null,this.activeTab="flow",this.editMode=!1,this.time="",this.leftPanelCollapsed=!1,this.rightPanelCollapsed=!1,this.flowData=$r,this.pricingData=null,this.pricingLoading=!1,this.boilerState=null,this.boilerLoading=!1,this.boilerPlan=null,this.boilerEnergyBreakdown=null,this.boilerPredictedUsage=null,this.boilerConfig=null,this.boilerHeatmap7x24=[],this.boilerProfiling=null,this.boilerCurrentCategory="",this.boilerAvailableCategories=[],this.boilerForecastWindows={fve:"--",grid:"--"},this.boilerRefreshTimer=null,this.analyticsData=sn,this.chmuData=Ze,this.chmuModalOpen=!1,this.timelineTab="today",this.timelineData=null,this.tilesConfig=null,this.tilesLeft=[],this.tilesRight=[],this.tileDialogOpen=!1,this.editingTileIndex=-1,this.editingTileSide="left",this.editingTileConfig=null,this.entityStore=null,this.timeInterval=null,this.stateWatcherUnsub=null,this.tileEntityUnsubs=[],this.pricingDirty=!1,this.timelineDirty=!1,this.analyticsDirty=!1,this.boilerDirty=!1,this.reconnecting=!1,this.throttledUpdateFlow=or(()=>this.updateFlowData(),500),this.throttledUpdateSensors=or(()=>this.updateSensorData(),1e3),this.throttledRefreshDerivedData=or(()=>this.refreshDerivedData(),5e3),this.onPageShow=()=>{this.rebindHassContext()},this.onDocumentVisibilityChange=()=>{document.visibilityState==="visible"&&this.rebindHassContext()}}connectedCallback(){super.connectedCallback(),window.addEventListener("pageshow",this.onPageShow),document.addEventListener("visibilitychange",this.onDocumentVisibilityChange),this.initApp(),this.startTimeUpdate()}disconnectedCallback(){super.disconnectedCallback(),window.removeEventListener("pageshow",this.onPageShow),document.removeEventListener("visibilitychange",this.onDocumentVisibilityChange),this.cleanup()}updated(t){t.has("hass")&&!t.has("loading")&&this.rebindHassContext(),t.has("activeTab")&&(this.activeTab==="pricing"&&(!this.pricingData||this.pricingDirty)&&this.loadPricingData(),this.activeTab==="pricing"&&(this.analyticsData===sn||this.analyticsDirty)&&this.loadAnalyticsAsync(),this.activeTab==="pricing"&&(!this.timelineData||this.timelineDirty)&&this.loadTimelineTabData(this.timelineTab),this.activeTab==="boiler"&&(!this.boilerState||this.boilerDirty)&&this.loadBoilerDataAsync())}async initApp(){try{const t=await X.getHass();if(!t)throw new Error("Cannot access Home Assistant context");this.hass=t,this.entityStore=ys(t,me),await Xt.start({getHass:()=>X.getHassSync(),prefixes:[Mn]}),this.stateWatcherUnsub=Xt.onEntityChange((e,i)=>{this.syncHassState(e,i),this.throttledUpdateFlow(),this.throttledUpdateSensors(),this.throttledRefreshDerivedData()}),J.start(),this.updateFlowData(),this.updateSensorData(),this.loadPricingData(),this.loadBoilerDataAsync(),this.loadAnalyticsAsync(),this.loadTilesAsync(),this.loading=!1,y.info("App initialized",{entities:Object.keys(t.states||{}).length,inverterSn:me})}catch(t){this.error=t.message,this.loading=!1,y.error("App init failed",t)}}cleanup(){var t,e;(t=this.stateWatcherUnsub)==null||t.call(this),this.stateWatcherUnsub=null,Xt.stop(),J.stop(),this.tileEntityUnsubs.forEach(i=>i()),this.tileEntityUnsubs=[],(e=this.entityStore)==null||e.destroy(),this.entityStore=null,this.timeInterval!==null&&(clearInterval(this.timeInterval),this.timeInterval=null),this.boilerRefreshTimer!==null&&(clearInterval(this.boilerRefreshTimer),this.boilerRefreshTimer=null)}async rebindHassContext(){var t;if(!this.reconnecting){this.reconnecting=!0;try{const e=await X.refreshHass();if(!e)return;this.hass=e,(t=this.entityStore)==null||t.updateHass(e),await Xt.start({getHass:()=>X.getHassSync(),prefixes:[Mn]}),this.updateFlowData(),this.updateSensorData()}catch(e){y.error("Failed to rebind hass context",e)}finally{this.reconnecting=!1}}}updateFlowData(){var t;if(this.hass)try{const e=((t=this.entityStore)==null?void 0:t.getAll())??this.hass;this.flowData=Es(e)}catch(e){y.error("Failed to extract flow data",e)}}updateSensorData(){if(this.chmuData=wo(me),this.activeTab==="pricing"&&(this.analyticsData={...this.analyticsData,...vo()}),this.tilesConfig){const t=We(this.tilesConfig);this.tilesLeft=t.left,this.tilesRight=t.right}}updateTilesImmediate(){if(!this.tilesConfig)return;const t=We(this.tilesConfig);this.tilesLeft=t.left,this.tilesRight=t.right}subscribeTileEntities(){if(this.tileEntityUnsubs.forEach(e=>e()),this.tileEntityUnsubs=[],!this.tilesConfig||!this.entityStore)return;const t=new Set;[...this.tilesConfig.tiles_left,...this.tilesConfig.tiles_right].forEach(e=>{var i,r;e&&(t.add(e.entity_id),(i=e.support_entities)!=null&&i.top_right&&t.add(e.support_entities.top_right),(r=e.support_entities)!=null&&r.bottom_right&&t.add(e.support_entities.bottom_right))});for(const e of t){const i=this.entityStore.subscribe(e,()=>{this.updateTilesImmediate()});this.tileEntityUnsubs.push(i)}}async loadPricingData(){if(!(!this.hass||this.pricingLoading)){this.pricingLoading=!0;try{const t=await je(()=>Gs(this.hass));this.pricingData=t,this.pricingDirty=!1}catch(t){y.error("Failed to load pricing data",t)}finally{this.pricingLoading=!1}}}async loadBoilerDataAsync(){if(!(!this.hass||this.boilerLoading)){this.boilerLoading=!0;try{const t=await je(()=>mo(this.hass));this.boilerState=t.state,this.boilerPlan=t.plan,this.boilerEnergyBreakdown=t.energyBreakdown,this.boilerPredictedUsage=t.predictedUsage,this.boilerConfig=t.config,this.boilerHeatmap7x24=t.heatmap7x24,this.boilerProfiling=t.profiling,this.boilerCurrentCategory=t.currentCategory,this.boilerAvailableCategories=t.availableCategories,this.boilerForecastWindows=t.forecastWindows,this.boilerDirty=!1,this.boilerRefreshTimer||(this.boilerRefreshTimer=window.setInterval(()=>this.loadBoilerDataAsync(),5*60*1e3))}catch(t){y.error("Failed to load boiler data",t)}finally{this.boilerLoading=!1}}}async loadAnalyticsAsync(){try{this.analyticsData=await je(()=>yo(me)),this.analyticsDirty=!1}catch(t){y.error("Failed to load analytics",t)}}async loadTilesAsync(){try{this.tilesConfig=await je(()=>Co());const t=We(this.tilesConfig);this.tilesLeft=t.left,this.tilesRight=t.right,this.subscribeTileEntities()}catch(t){y.error("Failed to load tiles config",t)}}async loadTimelineTabData(t){try{this.timelineData=await je(()=>ko(me,t)),this.timelineDirty=!1}catch(e){y.error(`Failed to load timeline tab: ${t}`,e)}}syncHassState(t,e){if(this.hass){if(this.hass.states||(this.hass.states={}),e){this.hass.states[t]=e;return}delete this.hass.states[t]}}refreshDerivedData(){if(this.pricingDirty=!0,this.timelineDirty=!0,this.analyticsDirty=!0,this.boilerDirty=!0,this.activeTab==="pricing"){Bs(),this.loadPricingData(),this.loadTimelineTabData(this.timelineTab),this.loadAnalyticsAsync();return}this.activeTab==="boiler"&&this.loadBoilerDataAsync()}startTimeUpdate(){const t=()=>{this.time=new Date().toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"})};t(),this.timeInterval=window.setInterval(t,1e3)}onTabChange(t){this.activeTab=t.detail.tabId}onGridChargingOpen(){var e;const t=(e=this.shadowRoot)==null?void 0:e.querySelector("oig-grid-charging-dialog");t==null||t.show()}onEditClick(){this.editMode=!this.editMode}onResetClick(){var i,r;const t=(i=this.shadowRoot)==null?void 0:i.querySelector("oig-flow-canvas");t!=null&&t.resetLayout&&t.resetLayout();const e=(r=this.shadowRoot)==null?void 0:r.querySelector("oig-grid");e&&e.resetLayout()}onToggleLeftPanel(){this.leftPanelCollapsed=!this.leftPanelCollapsed}onToggleRightPanel(){this.rightPanelCollapsed=!this.rightPanelCollapsed}onChmuBadgeClick(){this.chmuModalOpen=!0}onChmuModalClose(){this.chmuModalOpen=!1}onTimelineTabChange(t){this.timelineTab=t.detail.tab,this.loadTimelineTabData(t.detail.tab)}onTimelineRefresh(){this.loadTimelineTabData(this.timelineTab)}onBoilerCategoryChange(t){const e=t.detail.category;this.boilerCurrentCategory=e,this.loadBoilerDataAsync()}onBoilerActionDone(t){const{success:e,label:i}=t.detail;y.info(`[Boiler] Action ${i}: ${e?"OK":"FAIL"}`),e&&setTimeout(()=>this.loadBoilerDataAsync(),2e3)}onEditTile(t){const{entityId:e}=t.detail;let i=-1,r="left",n=null;if(this.tilesConfig){const a=this.tilesConfig.tiles_left.findIndex(s=>s&&s.entity_id===e);if(a>=0)i=a,r="left",n=this.tilesConfig.tiles_left[a];else{const s=this.tilesConfig.tiles_right.findIndex(l=>l&&l.entity_id===e);s>=0&&(i=s,r="right",n=this.tilesConfig.tiles_right[s])}}this.editingTileIndex=i,this.editingTileSide=r,this.editingTileConfig=n,this.tileDialogOpen=!0,n&&requestAnimationFrame(()=>{var s;const a=(s=this.shadowRoot)==null?void 0:s.querySelector("oig-tile-dialog");a==null||a.loadTileConfig(n)})}onDeleteTile(t){const{entityId:e}=t.detail;if(!this.tilesConfig||!e)return;const i={...this.tilesConfig};i.tiles_left=i.tiles_left.map(n=>n&&n.entity_id===e?null:n),i.tiles_right=i.tiles_right.map(n=>n&&n.entity_id===e?null:n),this.tilesConfig=i;const r=We(i);this.tilesLeft=r.left,this.tilesRight=r.right,cn(i),this.subscribeTileEntities()}onTileSaved(t){const{index:e,side:i,config:r}=t.detail;if(!this.tilesConfig)return;const n={...this.tilesConfig},a=i==="left"?[...n.tiles_left]:[...n.tiles_right];if(e>=0&&e<a.length)a[e]=r;else{const l=a.findIndex(c=>c===null);l>=0?a[l]=r:a.push(r)}i==="left"?n.tiles_left=a:n.tiles_right=a,this.tilesConfig=n;const s=We(n);this.tilesLeft=s.left,this.tilesRight=s.right,cn(n),this.subscribeTileEntities()}onTileDialogClose(){this.tileDialogOpen=!1,this.editingTileConfig=null,this.editingTileIndex=-1}render(){var e;if(this.loading)return d`<div class="loading"><div class="spinner"></div><span>Načítání...</span></div>`;if(this.error)return d`
+  `;ut([h({type:Boolean,reflect:!0,attribute:"open"})],rt.prototype,"isOpen",2);ut([h({type:Number})],rt.prototype,"tileIndex",2);ut([h({attribute:!1})],rt.prototype,"tileSide",2);ut([h({attribute:!1})],rt.prototype,"existingConfig",2);ut([x()],rt.prototype,"currentTab",2);ut([x()],rt.prototype,"entitySearchText",2);ut([x()],rt.prototype,"buttonSearchText",2);ut([x()],rt.prototype,"selectedEntityId",2);ut([x()],rt.prototype,"selectedButtonEntityId",2);ut([x()],rt.prototype,"label",2);ut([x()],rt.prototype,"icon",2);ut([x()],rt.prototype,"color",2);ut([x()],rt.prototype,"action",2);ut([x()],rt.prototype,"supportEntity1",2);ut([x()],rt.prototype,"supportEntity2",2);ut([x()],rt.prototype,"supportSearch1",2);ut([x()],rt.prototype,"supportSearch2",2);ut([x()],rt.prototype,"showSupportList1",2);ut([x()],rt.prototype,"showSupportList2",2);ut([x()],rt.prototype,"iconPickerOpen",2);rt=ut([D("oig-tile-dialog")],rt);var np=Object.defineProperty,rp=Object.getOwnPropertyDescriptor,W=(t,e,i,n)=>{for(var r=n>1?void 0:n?rp(e,i):e,a=t.length-1,s;a>=0;a--)(s=t[a])&&(r=(n?s(e,i,r):s(r))||r);return n&&r&&np(e,i,r),r};const _t=Q,Br=new URLSearchParams(window.location.search),me=Br.get("sn")||Br.get("inverter_sn")||"2206237016",Fr=`sensor.oig_${me}_`,ap=[{id:"flow",label:"Toky",icon:"⚡"},{id:"pricing",label:"Ceny",icon:"💰"},{id:"boiler",label:"Bojler",icon:"🔥"}];let R=class extends M{constructor(){super(...arguments),this.hass=null,this.loading=!0,this.error=null,this.activeTab="flow",this.editMode=!1,this.time="",this.leftPanelCollapsed=!1,this.rightPanelCollapsed=!1,this.flowData=Mn,this.pricingData=null,this.pricingLoading=!1,this.boilerState=null,this.boilerLoading=!1,this.boilerPlan=null,this.boilerEnergyBreakdown=null,this.boilerPredictedUsage=null,this.boilerConfig=null,this.boilerHeatmap7x24=[],this.boilerProfiling=null,this.boilerCurrentCategory="",this.boilerAvailableCategories=[],this.boilerForecastWindows={fve:"--",grid:"--"},this.boilerRefreshTimer=null,this.analyticsData=yr,this.chmuData=Qe,this.chmuModalOpen=!1,this.timelineTab="today",this.timelineData=null,this.tilesConfig=null,this.tilesLeft=[],this.tilesRight=[],this.tileDialogOpen=!1,this.editingTileIndex=-1,this.editingTileSide="left",this.editingTileConfig=null,this.entityStore=null,this.timeInterval=null,this.stateWatcherUnsub=null,this.tileEntityUnsubs=[],this.pricingDirty=!1,this.timelineDirty=!1,this.analyticsDirty=!1,this.boilerDirty=!1,this.reconnecting=!1,this.throttledUpdateFlow=un(()=>this.updateFlowData(),500),this.throttledUpdateSensors=un(()=>this.updateSensorData(),1e3),this.throttledRefreshDerivedData=un(()=>this.refreshDerivedData(),5e3),this.onPageShow=()=>{this.rebindHassContext()},this.onDocumentVisibilityChange=()=>{document.visibilityState==="visible"&&this.rebindHassContext()}}connectedCallback(){super.connectedCallback(),window.addEventListener("pageshow",this.onPageShow),document.addEventListener("visibilitychange",this.onDocumentVisibilityChange),this.initApp(),this.startTimeUpdate()}disconnectedCallback(){super.disconnectedCallback(),window.removeEventListener("pageshow",this.onPageShow),document.removeEventListener("visibilitychange",this.onDocumentVisibilityChange),this.cleanup()}updated(t){t.has("hass")&&!t.has("loading")&&this.rebindHassContext(),t.has("activeTab")&&(this.activeTab==="pricing"&&(!this.pricingData||this.pricingDirty)&&this.loadPricingData(),this.activeTab==="pricing"&&(this.analyticsData===yr||this.analyticsDirty)&&this.loadAnalyticsAsync(),this.activeTab==="pricing"&&(!this.timelineData||this.timelineDirty)&&this.loadTimelineTabData(this.timelineTab),this.activeTab==="boiler"&&(!this.boilerState||this.boilerDirty)&&this.loadBoilerDataAsync())}async initApp(){try{const t=await X.getHass();if(!t)throw new Error("Cannot access Home Assistant context");this.hass=t,this.entityStore=Ls(t,me),await te.start({getHass:()=>X.getHassSync(),prefixes:[Fr]}),this.stateWatcherUnsub=te.onEntityChange((e,i)=>{this.syncHassState(e,i),this.throttledUpdateFlow(),this.throttledUpdateSensors(),this.throttledRefreshDerivedData()}),J.start(),this.updateFlowData(),this.updateSensorData(),this.loadPricingData(),this.loadBoilerDataAsync(),this.loadAnalyticsAsync(),this.loadTilesAsync(),this.loading=!1,y.info("App initialized",{entities:Object.keys(t.states||{}).length,inverterSn:me})}catch(t){this.error=t.message,this.loading=!1,y.error("App init failed",t)}}cleanup(){var t,e;(t=this.stateWatcherUnsub)==null||t.call(this),this.stateWatcherUnsub=null,te.stop(),J.stop(),this.tileEntityUnsubs.forEach(i=>i()),this.tileEntityUnsubs=[],(e=this.entityStore)==null||e.destroy(),this.entityStore=null,this.timeInterval!==null&&(clearInterval(this.timeInterval),this.timeInterval=null),this.boilerRefreshTimer!==null&&(clearInterval(this.boilerRefreshTimer),this.boilerRefreshTimer=null)}async rebindHassContext(){var t;if(!this.reconnecting){this.reconnecting=!0;try{const e=await X.refreshHass();if(!e)return;this.hass=e,(t=this.entityStore)==null||t.updateHass(e),await te.start({getHass:()=>X.getHassSync(),prefixes:[Fr]}),this.updateFlowData(),this.updateSensorData()}catch(e){y.error("Failed to rebind hass context",e)}finally{this.reconnecting=!1}}}updateFlowData(){var t;if(this.hass)try{const e=((t=this.entityStore)==null?void 0:t.getAll())??this.hass;this.flowData=Xs(e)}catch(e){y.error("Failed to extract flow data",e)}}updateSensorData(){if(this.chmuData=jo(me),this.activeTab==="pricing"&&(this.analyticsData={...this.analyticsData,...Ho()}),this.tilesConfig){const t=We(this.tilesConfig);this.tilesLeft=t.left,this.tilesRight=t.right}}updateTilesImmediate(){if(!this.tilesConfig)return;const t=We(this.tilesConfig);this.tilesLeft=t.left,this.tilesRight=t.right}subscribeTileEntities(){if(this.tileEntityUnsubs.forEach(e=>e()),this.tileEntityUnsubs=[],!this.tilesConfig||!this.entityStore)return;const t=new Set;[...this.tilesConfig.tiles_left,...this.tilesConfig.tiles_right].forEach(e=>{var i,n;e&&(t.add(e.entity_id),(i=e.support_entities)!=null&&i.top_right&&t.add(e.support_entities.top_right),(n=e.support_entities)!=null&&n.bottom_right&&t.add(e.support_entities.bottom_right))});for(const e of t){const i=this.entityStore.subscribe(e,()=>{this.updateTilesImmediate()});this.tileEntityUnsubs.push(i)}}async loadPricingData(){if(!(!this.hass||this.pricingLoading)){this.pricingLoading=!0;try{const t=await je(()=>bo(this.hass));this.pricingData=t,this.pricingDirty=!1}catch(t){y.error("Failed to load pricing data",t)}finally{this.pricingLoading=!1}}}async loadBoilerDataAsync(){if(!(!this.hass||this.boilerLoading)){this.boilerLoading=!0;try{const t=await je(()=>Fo(this.hass));this.boilerState=t.state,this.boilerPlan=t.plan,this.boilerEnergyBreakdown=t.energyBreakdown,this.boilerPredictedUsage=t.predictedUsage,this.boilerConfig=t.config,this.boilerHeatmap7x24=t.heatmap7x24,this.boilerProfiling=t.profiling,this.boilerCurrentCategory=t.currentCategory,this.boilerAvailableCategories=t.availableCategories,this.boilerForecastWindows=t.forecastWindows,this.boilerDirty=!1,this.boilerRefreshTimer||(this.boilerRefreshTimer=window.setInterval(()=>this.loadBoilerDataAsync(),5*60*1e3))}catch(t){y.error("Failed to load boiler data",t)}finally{this.boilerLoading=!1}}}async loadAnalyticsAsync(){try{this.analyticsData=await je(()=>Ro(me)),this.analyticsDirty=!1}catch(t){y.error("Failed to load analytics",t)}}async loadTilesAsync(){try{this.tilesConfig=await je(()=>Uo());const t=We(this.tilesConfig);this.tilesLeft=t.left,this.tilesRight=t.right,this.subscribeTileEntities()}catch(t){y.error("Failed to load tiles config",t)}}async loadTimelineTabData(t){try{this.timelineData=await je(()=>Yo(me,t)),this.timelineDirty=!1}catch(e){y.error(`Failed to load timeline tab: ${t}`,e)}}syncHassState(t,e){if(this.hass){if(this.hass.states||(this.hass.states={}),e){this.hass.states[t]=e;return}delete this.hass.states[t]}}refreshDerivedData(){if(this.pricingDirty=!0,this.timelineDirty=!0,this.analyticsDirty=!0,this.boilerDirty=!0,this.activeTab==="pricing"){ao(),this.loadPricingData(),this.loadTimelineTabData(this.timelineTab),this.loadAnalyticsAsync();return}this.activeTab==="boiler"&&this.loadBoilerDataAsync()}startTimeUpdate(){const t=()=>{this.time=new Date().toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"})};t(),this.timeInterval=window.setInterval(t,1e3)}onTabChange(t){this.activeTab=t.detail.tabId}onGridChargingOpen(){var e;const t=(e=this.shadowRoot)==null?void 0:e.querySelector("oig-grid-charging-dialog");t==null||t.show()}onEditClick(){this.editMode=!this.editMode}onResetClick(){var i,n;const t=(i=this.shadowRoot)==null?void 0:i.querySelector("oig-flow-canvas");t!=null&&t.resetLayout&&t.resetLayout();const e=(n=this.shadowRoot)==null?void 0:n.querySelector("oig-grid");e&&e.resetLayout()}onToggleLeftPanel(){this.leftPanelCollapsed=!this.leftPanelCollapsed}onToggleRightPanel(){this.rightPanelCollapsed=!this.rightPanelCollapsed}onChmuBadgeClick(){this.chmuModalOpen=!0}onChmuModalClose(){this.chmuModalOpen=!1}onTimelineTabChange(t){this.timelineTab=t.detail.tab,this.loadTimelineTabData(t.detail.tab)}onTimelineRefresh(){this.loadTimelineTabData(this.timelineTab)}onBoilerCategoryChange(t){const e=t.detail.category;this.boilerCurrentCategory=e,this.loadBoilerDataAsync()}onBoilerActionDone(t){const{success:e,label:i}=t.detail;y.info(`[Boiler] Action ${i}: ${e?"OK":"FAIL"}`),e&&setTimeout(()=>this.loadBoilerDataAsync(),2e3)}onEditTile(t){const{entityId:e}=t.detail;let i=-1,n="left",r=null;if(this.tilesConfig){const a=this.tilesConfig.tiles_left.findIndex(s=>s&&s.entity_id===e);if(a>=0)i=a,n="left",r=this.tilesConfig.tiles_left[a];else{const s=this.tilesConfig.tiles_right.findIndex(l=>l&&l.entity_id===e);s>=0&&(i=s,n="right",r=this.tilesConfig.tiles_right[s])}}this.editingTileIndex=i,this.editingTileSide=n,this.editingTileConfig=r,this.tileDialogOpen=!0,r&&requestAnimationFrame(()=>{var s;const a=(s=this.shadowRoot)==null?void 0:s.querySelector("oig-tile-dialog");a==null||a.loadTileConfig(r)})}onDeleteTile(t){const{entityId:e}=t.detail;if(!this.tilesConfig||!e)return;const i={...this.tilesConfig};i.tiles_left=i.tiles_left.map(r=>r&&r.entity_id===e?null:r),i.tiles_right=i.tiles_right.map(r=>r&&r.entity_id===e?null:r),this.tilesConfig=i;const n=We(i);this.tilesLeft=n.left,this.tilesRight=n.right,wr(i),this.subscribeTileEntities()}onTileSaved(t){const{index:e,side:i,config:n}=t.detail;if(!this.tilesConfig)return;const r={...this.tilesConfig},a=i==="left"?[...r.tiles_left]:[...r.tiles_right];if(e>=0&&e<a.length)a[e]=n;else{const l=a.findIndex(c=>c===null);l>=0?a[l]=n:a.push(n)}i==="left"?r.tiles_left=a:r.tiles_right=a,this.tilesConfig=r;const s=We(r);this.tilesLeft=s.left,this.tilesRight=s.right,wr(r),this.subscribeTileEntities()}onTileDialogClose(){this.tileDialogOpen=!1,this.editingTileConfig=null,this.editingTileIndex=-1}render(){var e;if(this.loading)return d`<div class="loading"><div class="spinner"></div><span>Načítání...</span></div>`;if(this.error)return d`
         <div class="error">
           <h2>Chyba připojení</h2>
           <p>${this.error}</p>
@@ -7451,7 +7487,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         </oig-header>
 
         <oig-tabs
-          .tabs=${Iu}
+          .tabs=${ap}
           .activeTab=${this.activeTab}
           @tab-change=${this.onTabChange}
         ></oig-tabs>
@@ -7497,7 +7533,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
                     <div class="spinner spinner--small"></div>
                     <span>Načítání cen...</span>
                   </div>
-                `:A}
+                `:O}
                 <oig-pricing-stats ?topOnly=${!0} .data=${this.pricingData}></oig-pricing-stats>
                 <oig-pricing-chart .data=${this.pricingData}></oig-pricing-chart>
 
@@ -7532,7 +7568,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
                   <div class="spinner spinner--small"></div>
                   <span>Načítání bojleru...</span>
                 </div>
-              `:A}
+              `:O}
 
               <!-- State header (current temp + heating dot) -->
               <oig-boiler-state .state=${this.boilerState}></oig-boiler-state>
@@ -7610,15 +7646,15 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
           .data=${this.flowData.gridChargingPlan}
         ></oig-grid-charging-dialog>
       </oig-theme-provider>
-    `}};N.styles=P`
+    `}};R.styles=P`
     :host {
       display: flex;
       flex-direction: column;
       height: 100%;
       width: 100%;
-      font-family: ${$t(o.fontFamily)};
-      color: ${$t(o.textPrimary)};
-      background: ${$t(o.bgPrimary)};
+      font-family: ${_t(o.fontFamily)};
+      color: ${_t(o.textPrimary)};
+      background: ${_t(o.bgPrimary)};
     }
 
     /* ---- Loading & Error ---- */
@@ -7630,15 +7666,15 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       height: 100%;
       gap: 12px;
       font-size: 14px;
-      color: ${$t(o.textSecondary)};
+      color: ${_t(o.textSecondary)};
     }
 
     .spinner {
       display: inline-block;
       width: 24px;
       height: 24px;
-      border: 3px solid ${$t(o.divider)};
-      border-top-color: ${$t(o.accent)};
+      border: 3px solid ${_t(o.divider)};
+      border-top-color: ${_t(o.accent)};
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
@@ -7655,7 +7691,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
 
     .error {
       padding: 20px;
-      color: ${$t(o.error)};
+      color: ${_t(o.error)};
       text-align: center;
       animation: fadeIn 0.3s ease;
     }
@@ -7667,7 +7703,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
     .error button {
       margin-top: 12px;
       padding: 8px 16px;
-      background: ${$t(o.accent)};
+      background: ${_t(o.accent)};
       color: #fff;
       border: none;
       border-radius: 6px;
@@ -7682,7 +7718,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       flex: 1;
       overflow: auto;
       padding: 16px;
-      background: ${$t(o.bgSecondary)};
+      background: ${_t(o.bgSecondary)};
     }
 
     .tab-content {
@@ -7746,11 +7782,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
       align-items: center;
       gap: 6px;
       padding: 4px 10px;
-      background: ${$t(o.cardBg)};
+      background: ${_t(o.cardBg)};
       border-radius: 6px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.12);
       font-size: 12px;
-      color: ${$t(o.textSecondary)};
+      color: ${_t(o.textSecondary)};
       z-index: 10;
       animation: fadeIn 0.2s ease;
     }
@@ -7811,7 +7847,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
         grid-template-columns: 1fr !important;
       }
     }
-  `;R([h({type:Object})],N.prototype,"hass",2);R([w()],N.prototype,"loading",2);R([w()],N.prototype,"error",2);R([w()],N.prototype,"activeTab",2);R([w()],N.prototype,"editMode",2);R([w()],N.prototype,"time",2);R([w()],N.prototype,"leftPanelCollapsed",2);R([w()],N.prototype,"rightPanelCollapsed",2);R([w()],N.prototype,"flowData",2);R([w()],N.prototype,"pricingData",2);R([w()],N.prototype,"pricingLoading",2);R([w()],N.prototype,"boilerState",2);R([w()],N.prototype,"boilerLoading",2);R([w()],N.prototype,"boilerPlan",2);R([w()],N.prototype,"boilerEnergyBreakdown",2);R([w()],N.prototype,"boilerPredictedUsage",2);R([w()],N.prototype,"boilerConfig",2);R([w()],N.prototype,"boilerHeatmap7x24",2);R([w()],N.prototype,"boilerProfiling",2);R([w()],N.prototype,"boilerCurrentCategory",2);R([w()],N.prototype,"boilerAvailableCategories",2);R([w()],N.prototype,"boilerForecastWindows",2);R([w()],N.prototype,"analyticsData",2);R([w()],N.prototype,"chmuData",2);R([w()],N.prototype,"chmuModalOpen",2);R([w()],N.prototype,"timelineTab",2);R([w()],N.prototype,"timelineData",2);R([w()],N.prototype,"tilesConfig",2);R([w()],N.prototype,"tilesLeft",2);R([w()],N.prototype,"tilesRight",2);R([w()],N.prototype,"tileDialogOpen",2);R([w()],N.prototype,"editingTileIndex",2);R([w()],N.prototype,"editingTileSide",2);R([w()],N.prototype,"editingTileConfig",2);N=R([E("oig-app")],N);y.info("V2 starting",{version:"2.0.0-beta.1"});ps();async function Lu(){try{const t=await us(),e=document.getElementById("app");e&&(e.innerHTML="",e.appendChild(t)),y.info("V2 mounted successfully")}catch(t){y.error("V2 bootstrap failed",t);const e=document.getElementById("app");e&&(e.innerHTML=`
+  `;W([h({type:Object})],R.prototype,"hass",2);W([x()],R.prototype,"loading",2);W([x()],R.prototype,"error",2);W([x()],R.prototype,"activeTab",2);W([x()],R.prototype,"editMode",2);W([x()],R.prototype,"time",2);W([x()],R.prototype,"leftPanelCollapsed",2);W([x()],R.prototype,"rightPanelCollapsed",2);W([x()],R.prototype,"flowData",2);W([x()],R.prototype,"pricingData",2);W([x()],R.prototype,"pricingLoading",2);W([x()],R.prototype,"boilerState",2);W([x()],R.prototype,"boilerLoading",2);W([x()],R.prototype,"boilerPlan",2);W([x()],R.prototype,"boilerEnergyBreakdown",2);W([x()],R.prototype,"boilerPredictedUsage",2);W([x()],R.prototype,"boilerConfig",2);W([x()],R.prototype,"boilerHeatmap7x24",2);W([x()],R.prototype,"boilerProfiling",2);W([x()],R.prototype,"boilerCurrentCategory",2);W([x()],R.prototype,"boilerAvailableCategories",2);W([x()],R.prototype,"boilerForecastWindows",2);W([x()],R.prototype,"analyticsData",2);W([x()],R.prototype,"chmuData",2);W([x()],R.prototype,"chmuModalOpen",2);W([x()],R.prototype,"timelineTab",2);W([x()],R.prototype,"timelineData",2);W([x()],R.prototype,"tilesConfig",2);W([x()],R.prototype,"tilesLeft",2);W([x()],R.prototype,"tilesRight",2);W([x()],R.prototype,"tileDialogOpen",2);W([x()],R.prototype,"editingTileIndex",2);W([x()],R.prototype,"editingTileSide",2);W([x()],R.prototype,"editingTileConfig",2);R=W([D("oig-app")],R);y.info("V2 starting",{version:"2.0.0-beta.1"});Ts();async function sp(){try{const t=await Ps(),e=document.getElementById("app");e&&(e.innerHTML="",e.appendChild(t)),y.info("V2 mounted successfully")}catch(t){y.error("V2 bootstrap failed",t);const e=document.getElementById("app");e&&(e.innerHTML=`
         <div style="padding: 20px; font-family: system-ui;">
           <h2>Chyba načítání</h2>
           <p>Nepodařilo se načíst dashboard. Zkuste obnovit stránku.</p>
@@ -7819,5 +7855,5 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(e){if(this.state.curren
             <summary>Detaily</summary>
             <pre>${t.message}</pre>
           </details>
-        </div>`)}}Lu();
+        </div>`)}}sp();
 //# sourceMappingURL=index.js.map
