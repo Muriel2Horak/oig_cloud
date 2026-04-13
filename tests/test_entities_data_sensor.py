@@ -33,17 +33,49 @@ def test_get_mode_name_and_unknown():
     assert sensor._get_mode_name(99, "cs") == _LANGS["unknown"]["cs"]
 
 
-def test_grid_mode_king_and_queen():
+def test_grid_mode_uses_canonical_helper():
     sensor = _make_sensor("invertor_prms_to_grid")
 
-    assert sensor._grid_mode_king(1, 0, 0, "cs") == GridMode.OFF
-    assert sensor._grid_mode_king(1, 0, 100, "cs") == GridMode.OFF
-    assert sensor._grid_mode_king(1, 1, 5000, "cs") == GridMode.LIMITED
-    assert sensor._grid_mode_king(1, 1, 10000, "cs") == GridMode.ON
+    # King semantics via canonical helper
+    assert sensor._grid_mode({
+        "box_prms": {"crct": 1},
+        "invertor_prm1": {"p_max_feed_grid": 0},
+        "invertor_prms": {"to_grid": 0},
+    }, 0, "cs") == GridMode.OFF
 
-    assert sensor._grid_mode_queen(1, 0, 0, "cs") == GridMode.OFF
-    assert sensor._grid_mode_queen(1, 0, 100, "cs") == GridMode.LIMITED
-    assert sensor._grid_mode_queen(1, 1, 100, "cs") == GridMode.ON
+    assert sensor._grid_mode({
+        "box_prms": {"crct": 1},
+        "invertor_prm1": {"p_max_feed_grid": 5000},
+        "invertor_prms": {"to_grid": 1},
+    }, 1, "cs") == GridMode.LIMITED
+
+    assert sensor._grid_mode({
+        "box_prms": {"crct": 1},
+        "invertor_prm1": {"p_max_feed_grid": 10000},
+        "invertor_prms": {"to_grid": 1},
+    }, 1, "cs") == GridMode.ON
+
+    # Queen semantics via canonical helper
+    assert sensor._grid_mode({
+        "queen": True,
+        "box_prms": {"crct": 1},
+        "invertor_prm1": {"p_max_feed_grid": 0},
+        "invertor_prms": {"to_grid": 0},
+    }, 0, "cs") == GridMode.OFF
+
+    assert sensor._grid_mode({
+        "queen": True,
+        "box_prms": {"crct": 1},
+        "invertor_prm1": {"p_max_feed_grid": 100},
+        "invertor_prms": {"to_grid": 0},
+    }, 0, "cs") == GridMode.LIMITED
+
+    assert sensor._grid_mode({
+        "queen": True,
+        "box_prms": {"crct": 1},
+        "invertor_prm1": {"p_max_feed_grid": 100},
+        "invertor_prms": {"to_grid": 1},
+    }, 1, "cs") == GridMode.ON
 
 
 def test_apply_local_value_map_and_coerce():

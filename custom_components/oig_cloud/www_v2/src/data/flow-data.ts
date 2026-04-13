@@ -7,6 +7,7 @@
 
 import {
   FlowData,
+  FlowGridDelivery,
   FlowNode,
   FlowConnection,
   FLOW_COLORS,
@@ -15,6 +16,13 @@ import {
   type GridChargingBlock,
   type GridChargingPlanData,
 } from '@/ui/features/flow/types';
+
+import {
+  resolveGridDeliveryState,
+  ShieldPendingData,
+} from '@/data/grid-delivery-model';
+
+import { ShieldServiceType } from '@/ui/features/control-panel/types';
 
 const params = new URLSearchParams(window.location.search);
 const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
@@ -27,6 +35,21 @@ interface HassState {
   state: string;
   attributes?: Record<string, any>;
   last_updated?: string;
+}
+
+type HassStates = Record<string, HassState>;
+
+function findSensorIdSuffix(states: HassStates, baseSensorName: string): string | null {
+  const prefix = getSensorId(baseSensorName);
+  if (prefix in states) return prefix;
+
+  const withSuffix = Object.keys(states)
+    .filter(id => id.startsWith(prefix + '_'))
+    .map(id => ({ id, suffix: parseInt(id.substring(prefix.length + 1), 10) }))
+    .filter(c => Number.isFinite(c.suffix))
+    .sort((a, b) => a.suffix - b.suffix);
+
+  return withSuffix[0]?.id ?? null;
 }
 
 function parseNumber(state: HassState | null | undefined): number {
@@ -252,8 +275,28 @@ export function extractFlowData(hass: any): FlowData {
 
   // Inverter
   const inverterMode = parseString(get('box_prms_mode'));
-  const inverterGridMode = parseString(get('invertor_prms_to_grid'));
-  const inverterGridLimit = parseNumber(get('invertor_prm1_p_max_feed_grid'));
+
+  // Grid delivery — use canonical model with suffix-safe resolution
+  const gridModeSensorId = findSensorIdSuffix(states, 'invertor_prms_to_grid') || getSensorId('invertor_prms_to_grid');
+  const gridLimitSensorId = findSensorIdSuffix(states, 'invertor_prm1_p_max_feed_grid') || getSensorId('invertor_prm1_p_max_feed_grid');
+  const gridModeRawState = states[gridModeSensorId];
+  const gridLimitRawState = states[gridLimitSensorId];
+
+  const gridModeRaw = gridModeRawState?.state ?? '';
+  const gridLimitRaw = parseFloat(gridLimitRawState?.state ?? '') || 0;
+
+  const emptyPending: ShieldPendingData = {
+    pendingServices: new Map<ShieldServiceType, string>(),
+    changingServices: new Set<ShieldServiceType>(),
+    shieldStatus: 'idle',
+  };
+  const gridDeliveryState = resolveGridDeliveryState(
+    { gridModeRaw, gridLimit: gridLimitRaw },
+    emptyPending,
+  );
+
+  const inverterGridMode: FlowGridDelivery = gridDeliveryState.currentLiveDelivery;
+  const inverterGridLimit = gridDeliveryState.currentLiveLimit ?? 0;
   const inverterTemp = parseNumber(get('box_temp'));
   const bypassStatus = parseString(get('bypass_status')) || 'off';
   const notificationsUnread = parseNumber(get('notification_count_unread'));
@@ -495,9 +538,9 @@ export function getHouseModeInfo(boxMode: string): { icon: string; text: string 
   return { icon: '⚙️', text: boxMode || '--' };
 }
 
-export function getGridExportDisplay(raw: string): { display: string; icon: string } {
-  if (raw === 'Vypnuto / Off') return { display: 'Vypnuto', icon: '🚫' };
-  if (raw === 'Zapnuto / On') return { display: 'Zapnuto', icon: '💧' };
-  if (raw.includes('Limited') || raw.includes('omezením')) return { display: 'Omezeno', icon: '🚰' };
-  return { display: raw || '--', icon: '💧' };
+export function getGridExportDisplay(state: FlowGridDelivery): { display: string; icon: string } {
+  if (state === 'off') return { display: 'Vypnuto', icon: '🚫' };
+  if (state === 'on') return { display: 'Zapnuto', icon: '💧' };
+  if (state === 'limited') return { display: 'Omezeno', icon: '🚰' };
+  return { display: '--', icon: '💧' };
 }

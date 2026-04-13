@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, TypedDict, Union
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import callback
@@ -504,22 +504,17 @@ class OigCloudDataSensor(_DataSensorBase):
         self, pv_data: Dict[str, Any], node_value: Any, language: str
     ) -> str:
         try:
-            grid_enabled_raw, max_grid_feed_raw = self._extract_grid_inputs(pv_data)
-            if grid_enabled_raw is None or max_grid_feed_raw is None:
-                local_mode = self._get_local_grid_mode(node_value, language)
-                if local_mode != _LANGS["unknown"][language]:
-                    return local_mode
-                self._log_missing_grid_inputs(grid_enabled_raw, max_grid_feed_raw)
-                return _LANGS["unknown"][language]
+            canonical = resolve_grid_delivery_live_state(pv_data)
+            if canonical["mode"] != "unknown":
+                return _canonical_mode_to_label(canonical["mode"], language)
 
-            grid_enabled, to_grid, max_grid_feed = self._normalize_grid_inputs(
-                grid_enabled_raw, node_value, max_grid_feed_raw
-            )
-            if self._is_queen_mode(pv_data):
-                return self._grid_mode_queen(
-                    grid_enabled, to_grid, max_grid_feed, language
-                )
-            return self._grid_mode_king(grid_enabled, to_grid, max_grid_feed, language)
+            local_mode = self._get_local_grid_mode(node_value, language)
+            if local_mode != _LANGS["unknown"][language]:
+                return local_mode
+
+            grid_enabled_raw, max_grid_feed_raw = self._extract_grid_inputs(pv_data)
+            self._log_missing_grid_inputs(grid_enabled_raw, max_grid_feed_raw)
+            return _LANGS["unknown"][language]
 
         except (KeyError, ValueError, TypeError) as e:
             _LOGGER.error(f"[{self.entity_id}] Error determining grid mode: {e}")
@@ -555,43 +550,6 @@ class OigCloudDataSensor(_DataSensorBase):
                 "[%s] Missing invertor_prm1.p_max_feed_grid in data",
                 self.entity_id,
             )
-
-    @staticmethod
-    def _normalize_grid_inputs(
-        grid_enabled_raw: Any, node_value: Any, max_grid_feed_raw: Any
-    ) -> Tuple[int, int, int]:
-        grid_enabled = int(grid_enabled_raw)
-        to_grid = int(node_value) if node_value is not None else 0
-        max_grid_feed = int(max_grid_feed_raw)
-        return grid_enabled, to_grid, max_grid_feed
-
-    @staticmethod
-    def _is_queen_mode(pv_data: Dict[str, Any]) -> bool:
-        return "queen" in pv_data and bool(pv_data["queen"])
-
-    def _grid_mode_queen(
-        self, grid_enabled: int, to_grid: int, max_grid_feed: int, language: str
-    ) -> str:
-        if 0 == to_grid and 0 == max_grid_feed:
-            return GridMode.OFF
-        elif 0 == to_grid and 0 < max_grid_feed:
-            return GridMode.LIMITED
-        elif 1 == to_grid:
-            return GridMode.ON
-        return _LANGS["changing"][language]
-
-    def _grid_mode_king(
-        self, grid_enabled: int, to_grid: int, max_grid_feed: int, language: str
-    ) -> str:
-        if grid_enabled == 0:
-            return GridMode.OFF
-        if to_grid == 0:
-            return GridMode.OFF
-        if to_grid == 1 and max_grid_feed >= 10000:
-            return GridMode.ON
-        if to_grid == 1 and max_grid_feed <= 9999:
-            return GridMode.LIMITED
-        return _LANGS["changing"][language]
 
     def _get_ssrmode_name(self, node_value: Any, language: str) -> str:
         if node_value == 0:
@@ -695,16 +653,21 @@ class OigCloudDataSensor(_DataSensorBase):
 
     def _get_local_grid_mode(self, node_value: Any, language: str) -> str:
         try:
-            to_grid = int(node_value) if node_value is not None else 0
-            grid_enabled = int(
-                self._get_local_value_for_sensor_type("box_prms_crct") or 0
+            grid_enabled_raw = self._get_local_value_for_sensor_type(
+                "box_prms_crct"
             )
-            max_grid_feed = int(
-                self._get_local_value_for_sensor_type("invertor_prm1_p_max_feed_grid")
-                or 0
+            max_grid_feed_raw = self._get_local_value_for_sensor_type(
+                "invertor_prm1_p_max_feed_grid"
             )
-            # Queen mode not reliably available locally; default to king logic.
-            return self._grid_mode_king(grid_enabled, to_grid, max_grid_feed, language)
+
+            raw_values = {
+                "box_prms": {"crct": grid_enabled_raw},
+                "invertor_prm1": {"p_max_feed_grid": max_grid_feed_raw},
+                "invertor_prms": {"to_grid": node_value},
+            }
+
+            canonical = resolve_grid_delivery_live_state(raw_values)
+            return _canonical_mode_to_label(canonical["mode"], language)
         except Exception:
             return _LANGS["unknown"][language]
 
@@ -777,3 +740,99 @@ class OigCloudDataSensor(_DataSensorBase):
             _LOGGER.debug("[%s] No coordinator data available", self.entity_id)
 
         self.async_write_ha_state()
+
+
+class GridDeliveryLiveState(TypedDict):
+    """Canonical grid-delivery live state."""
+
+    mode: str
+    limit: Optional[int]
+
+
+def resolve_grid_delivery_live_state(raw_values: dict) -> GridDeliveryLiveState:
+    """Resolve canonical grid-delivery live state from raw telemetry fields.
+
+    This helper is pure (no entity instance required) and handles both
+    King and Queen inverter semantics.
+
+    King semantics:
+      - grid_enabled (box_prms.crcte/crct) must be 1.
+      - to_grid == 0  →  off.
+      - to_grid == 1 and p_max_feed_grid >= 10000  →  on.
+      - to_grid == 1 and p_max_feed_grid <= 9999   →  limited.
+
+    Queen semantics:
+      - to_grid == 0 and p_max_feed_grid == 0  →  off.
+      - to_grid == 0 and p_max_feed_grid > 0   →  limited.
+      - to_grid == 1                           →  on.
+
+    Required fields:
+      - box_prms.crcte or box_prms.crct
+      - invertor_prm1.p_max_feed_grid
+      - invertor_prms.to_grid
+
+    Returns explicit ``unknown`` when any required field is missing or
+    non-numeric.  Never coerces missing telemetry to ``off``.
+    """
+    box_prms = raw_values.get("box_prms", {}) or {}
+    invertor_prm1 = raw_values.get("invertor_prm1", {}) or {}
+    invertor_prms = raw_values.get("invertor_prms", {}) or {}
+
+    grid_enabled_raw = (
+        box_prms.get("crcte", box_prms.get("crct"))
+        if isinstance(box_prms, dict)
+        else None
+    )
+    max_grid_feed_raw = (
+        invertor_prm1.get("p_max_feed_grid")
+        if isinstance(invertor_prm1, dict)
+        else None
+    )
+    to_grid_raw = (
+        invertor_prms.get("to_grid")
+        if isinstance(invertor_prms, dict)
+        else None
+    )
+
+    if grid_enabled_raw is None or max_grid_feed_raw is None or to_grid_raw is None:
+        return GridDeliveryLiveState(mode="unknown", limit=None)
+
+    try:
+        grid_enabled = int(grid_enabled_raw)
+        to_grid = int(to_grid_raw)
+        max_grid_feed = int(max_grid_feed_raw)
+    except (ValueError, TypeError):
+        return GridDeliveryLiveState(mode="unknown", limit=None)
+
+    is_queen = "queen" in raw_values and bool(raw_values["queen"])
+
+    if is_queen:
+        if to_grid == 0 and max_grid_feed == 0:
+            return GridDeliveryLiveState(mode="off", limit=0)
+        if to_grid == 0 and max_grid_feed > 0:
+            return GridDeliveryLiveState(mode="limited", limit=max_grid_feed)
+        if to_grid == 1:
+            return GridDeliveryLiveState(mode="on", limit=max_grid_feed)
+        return GridDeliveryLiveState(mode="unknown", limit=None)
+
+    # King semantics
+    if grid_enabled == 0:
+        return GridDeliveryLiveState(mode="off", limit=0)
+    if to_grid == 0:
+        return GridDeliveryLiveState(mode="off", limit=0)
+    if to_grid == 1 and max_grid_feed >= 10000:
+        return GridDeliveryLiveState(mode="on", limit=max_grid_feed)
+    if to_grid == 1 and max_grid_feed <= 9999:
+        return GridDeliveryLiveState(mode="limited", limit=max_grid_feed)
+
+    return GridDeliveryLiveState(mode="unknown", limit=None)
+
+
+def _canonical_mode_to_label(mode: str, language: str) -> str:
+    return {
+        "off": GridMode.OFF,
+        "on": GridMode.ON,
+        "limited": GridMode.LIMITED,
+    }.get(mode, _LANGS["unknown"][language])
+
+
