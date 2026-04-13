@@ -834,5 +834,3 @@ def _canonical_mode_to_label(mode: str, language: str) -> str:
         "on": GridMode.ON,
         "limited": GridMode.LIMITED,
     }.get(mode, _LANGS["unknown"][language])
-
-
