@@ -175,3 +175,148 @@ def test_check_entity_state_change_grid_mode_unknown_expected():
         )
         is False
     )
+
+
+def test_find_entity_by_suffix_prefers_exact_match():
+    entities = [
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid_3", "Omezeno"),
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid_2", "Zapnuto"),
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid", "Vypnuto"),
+    ]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    result = module._find_entity_by_suffix(shield, "123", "_invertor_prms_to_grid")
+    assert result == "sensor.oig_123_invertor_prms_to_grid"
+
+
+def test_find_entity_by_suffix_prefers_lowest_numeric_suffix():
+    entities = [
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid_10", "Omezeno"),
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid_3", "Zapnuto"),
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid_2", "Vypnuto"),
+    ]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    result = module._find_entity_by_suffix(shield, "123", "_invertor_prms_to_grid")
+    assert result == "sensor.oig_123_invertor_prms_to_grid_2"
+
+
+def test_find_entity_by_suffix_ignores_non_numeric_suffix():
+    entities = [
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid_backup", "Omezeno"),
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid_2", "Zapnuto"),
+    ]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    result = module._find_entity_by_suffix(shield, "123", "_invertor_prms_to_grid")
+    assert result == "sensor.oig_123_invertor_prms_to_grid_2"
+
+
+def test_is_entity_unavailable_missing_entity():
+    hass = DummyHass([])
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    assert module._is_entity_unavailable(shield, "sensor.missing") is True
+
+
+def test_is_entity_unavailable_unknown_state():
+    entities = [DummyEntity("sensor.oig_123_invertor_prms_to_grid", "unknown")]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    assert (
+        module._is_entity_unavailable(shield, "sensor.oig_123_invertor_prms_to_grid")
+        is True
+    )
+
+
+def test_is_entity_unavailable_unavailable_state():
+    entities = [DummyEntity("sensor.oig_123_invertor_prm1_p_max_feed_grid", "unavailable")]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    assert (
+        module._is_entity_unavailable(
+            shield, "sensor.oig_123_invertor_prm1_p_max_feed_grid"
+        )
+        is True
+    )
+
+
+def test_is_entity_unavailable_live_state_is_ok():
+    entities = [DummyEntity("sensor.oig_123_invertor_prms_to_grid", "Zapnuto")]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    assert (
+        module._is_entity_unavailable(shield, "sensor.oig_123_invertor_prms_to_grid")
+        is False
+    )
+
+
+def test_extract_expected_entities_grid_mode_unavailable_returns_expected():
+    """Unavailable entity should still return expected value so shield waits for it."""
+    entities = [DummyEntity("sensor.oig_123_invertor_prms_to_grid", "unavailable")]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    expected = module.extract_expected_entities(
+        shield, "oig_cloud.set_grid_delivery", {"mode": "on"}
+    )
+    assert expected == {"sensor.oig_123_invertor_prms_to_grid": "Zapnuto"}
+
+
+def test_extract_expected_entities_grid_limit_unavailable_returns_expected():
+    """Unavailable entity should still return expected value so shield waits for it."""
+    entities = [DummyEntity("sensor.oig_123_invertor_prm1_p_max_feed_grid", "unavailable")]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    expected = module.extract_expected_entities(
+        shield, "oig_cloud.set_grid_delivery", {"limit": 100}
+    )
+    assert expected == {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "100"}
+
+
+def test_extract_expected_entities_grid_mode_suffixed_entity():
+    """Grid mode should resolve suffixed entity deterministically."""
+    entities = [
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid_2", "Vypnuto"),
+        DummyEntity("sensor.oig_123_invertor_prms_to_grid_3", "Zapnuto"),
+    ]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    expected = module.extract_expected_entities(
+        shield, "oig_cloud.set_grid_delivery", {"mode": "on"}
+    )
+    assert expected == {"sensor.oig_123_invertor_prms_to_grid_2": "Zapnuto"}
+
+
+def test_extract_expected_entities_grid_limit_suffixed_entity():
+    """Grid limit should resolve suffixed entity deterministically."""
+    entities = [
+        DummyEntity("sensor.oig_123_invertor_prm1_p_max_feed_grid_2", "50"),
+        DummyEntity("sensor.oig_123_invertor_prm1_p_max_feed_grid_3", "75"),
+    ]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"})
+    shield = DummyShield(hass, entry)
+
+    expected = module.extract_expected_entities(
+        shield, "oig_cloud.set_grid_delivery", {"limit": 100}
+    )
+    assert expected == {"sensor.oig_123_invertor_prm1_p_max_feed_grid_2": "100"}
