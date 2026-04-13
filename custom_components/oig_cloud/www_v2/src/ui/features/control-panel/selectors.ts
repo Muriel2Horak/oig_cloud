@@ -192,6 +192,7 @@ export class OigGridDeliverySelector extends LitElement {
   @property({ type: String }) value: GridDelivery = 'off';
   @property({ type: Number }) limit = 0;
   @property({ type: Boolean }) disabled = false;
+  @property({ type: String }) pendingTarget: GridDelivery | null = null;
   @property({ type: Object }) buttonStates: Record<GridDelivery, ButtonState> = {
     off: 'idle',
     on: 'idle',
@@ -231,6 +232,12 @@ export class OigGridDeliverySelector extends LitElement {
         font-size: 12px;
         color: ${u(CSS_VARS.textSecondary)};
       }
+
+      .mode-btn.pending-target {
+        border-color: #ffc107;
+        color: #ffc107;
+        background: rgba(255, 193, 7, 0.08);
+      }
     `,
   ];
 
@@ -268,23 +275,31 @@ export class OigGridDeliverySelector extends LitElement {
     const limitState = this.buttonStates.limited;
     const limitBorderClass = limitState === 'pending' ? 'pending-border' : limitState === 'processing' ? 'processing-border' : '';
 
-    const isLimitedActive = this.value === 'limited' || this.buttonStates.limited === 'active';
-    const activeLimitLabel = isLimitedActive && this.limit > 0
+    const isLiveLimited = this.value === 'limited';
+    const activeLimitLabel = isLiveLimited && this.limit > 0
       ? html`<span class="status-text">${this.limit}\u00A0W</span>`
+      : null;
+
+    const hasPendingChange = this.pendingTarget !== null && this.pendingTarget !== this.value;
+    const pendingLabel = hasPendingChange
+      ? html`<span class="status-text transitioning">\u23F3\u00A0${GRID_DELIVERY_LABELS[this.pendingTarget!]}</span>`
       : null;
 
     return html`
       <div class="selector-label">
-        Dod\u00E1vka do s\u00EDt\u011B ${activeLimitLabel}
+        Dod\u00E1vka do s\u00EDt\u011B ${activeLimitLabel}${pendingLabel}
       </div>
       <div class="mode-buttons">
         ${options.map(opt => {
           const state = this.buttonStates[opt.value];
           const isCurrentValue = opt.value === this.value;
+          const isPendingTarget = opt.value === this.pendingTarget && !isCurrentValue;
           const isDisabled = this.disabled || state === 'pending' || state === 'processing' || state === 'disabled-by-service';
           const effectiveClass = (isCurrentValue && state === 'disabled-by-service')
             ? 'active disabled-by-service'
-            : state;
+            : isPendingTarget
+              ? `${state} pending-target`
+              : state;
           return html`
             <button
               class="mode-btn ${effectiveClass}"
