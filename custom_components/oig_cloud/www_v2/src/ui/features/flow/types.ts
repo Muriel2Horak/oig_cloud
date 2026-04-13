@@ -7,6 +7,9 @@
 // FLOW DATA — extracted from HA sensors
 // ============================================================================
 
+/** Canonical grid delivery state - must match GridDelivery from control-panel/types.ts */
+export type FlowGridDelivery = 'off' | 'on' | 'limited' | 'unknown';
+
 export interface FlowData {
   // Solar
   solarPower: number;
@@ -63,7 +66,7 @@ export interface FlowData {
 
   // Inverter
   inverterMode: string;
-  inverterGridMode: string;
+  inverterGridMode: FlowGridDelivery;
   inverterGridLimit: number;
   inverterTemp: number;
   bypassStatus: string;
@@ -251,7 +254,7 @@ export const EMPTY_FLOW_DATA: FlowData = {
   gridL1V: 0, gridL2V: 0, gridL3V: 0, gridL1P: 0, gridL2P: 0, gridL3P: 0,
   spotPrice: 0, exportPrice: 0, currentTariff: '',
   housePower: 0, houseTodayWh: 0, houseL1: 0, houseL2: 0, houseL3: 0,
-  inverterMode: '', inverterGridMode: '', inverterGridLimit: 0, inverterTemp: 0,
+  inverterMode: '', inverterGridMode: 'unknown' as FlowGridDelivery, inverterGridLimit: 0, inverterTemp: 0,
   bypassStatus: 'off', notificationsUnread: 0, notificationsError: 0,
   boilerIsUse: false, boilerPower: 0, boilerDayEnergy: 0, boilerManualMode: '', boilerInstallPower: 3000,
   plannerAutoMode: null,
