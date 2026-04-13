@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from homeassistant.core import callback
 from homeassistant.util.dt import now as dt_now
@@ -451,7 +451,8 @@ def _entities_match(
             "[SHIELD CHECK] Grid delivery split step detected: %s", grid_step
         )
 
-    for entity_id, expected_value in info["entities"].items():
+    all_expected = info["entities"]
+    for entity_id, expected_value in all_expected.items():
         if entity_id.startswith("fake_formating_mode_"):
             _LOGGER.debug(
                 "[OIG Shield] Formating mode - čekám na timeout (zbývá %.1f min)",
@@ -462,6 +463,25 @@ def _entities_match(
 
         state = shield.hass.states.get(entity_id)
         current_value = state.state if state else None
+
+        # Reject completion on malformed/unavailable values
+        if _is_unavailable_value(current_value):
+            _LOGGER.debug(
+                "[SHIELD CHECK] ❌ Entity %s je nedostupná (hodnota: '%s'), čekám na platná data",
+                entity_id,
+                current_value,
+            )
+            return False
+
+        # Check for telemetry lag in grid delivery flow
+        if _should_reject_completion_due_to_telemetry_lag(
+            shield, entity_id, expected_value, current_value, all_expected
+        ):
+            _LOGGER.debug(
+                "[SHIELD CHECK] ❌ Entity %s - potenciální telemetry lag, čekám na stabilní stav",
+                entity_id,
+            )
+            return False
 
         norm_expected, norm_current = _normalize_entity_values(
             shield, entity_id, expected_value, current_value
@@ -489,20 +509,120 @@ def _entities_match(
     return True
 
 
+def _is_unavailable_value(value: Any) -> bool:
+    """Check if a value represents unavailable/unknown state.
+
+    Returns True for None, empty string, 'unknown', 'unavailable', or any
+    value that indicates the entity is not providing valid data.
+    """
+    if value is None:
+        return True
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return normalized in ("", "unknown", "unavailable", "none")
+    return False
+
+
+def _is_numeric_value(value: Any) -> bool:
+    """Check if value can be converted to a valid numeric value."""
+    if _is_unavailable_value(value):
+        return False
+    try:
+        float(value)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _get_grid_delivery_related_entity(entity_id: str) -> Optional[str]:
+    """Get the related grid delivery entity for cross-validation.
+
+    For limit entity, returns the mode entity and vice versa.
+    Derives the related entity by suffix substitution on the entity_id.
+    """
+    if entity_id.endswith("_invertor_prm1_p_max_feed_grid"):
+        return entity_id[: -len("_invertor_prm1_p_max_feed_grid")] + "_invertor_prms_to_grid"
+    elif entity_id.endswith("_invertor_prms_to_grid"):
+        return entity_id[: -len("_invertor_prms_to_grid")] + "_invertor_prm1_p_max_feed_grid"
+    return None
+
+
+def _should_reject_completion_due_to_telemetry_lag(
+    shield: Any,
+    entity_id: str,
+    expected_value: Any,
+    current_value: Any,
+    all_expected: Dict[str, str],
+) -> bool:
+    """Check if completion should be rejected due to telemetry lag/mismatch.
+
+    During grid delivery transitions, mode and limit may temporarily disagree
+    due to telemetry lag. This prevents false completion when:
+    1. Limit step completes but mode hasn't updated to 'limited' yet
+    2. Mode shows 'limited' but limit value is still stale
+
+    Returns True if completion should be rejected, False otherwise.
+    """
+    # Only apply to grid delivery entities
+    if not entity_id or not (
+        entity_id.endswith("_invertor_prm1_p_max_feed_grid")
+        or entity_id.endswith("_invertor_prms_to_grid")
+    ):
+        return False
+
+    # Check for unavailable/malformed values - always reject
+    if _is_unavailable_value(current_value):
+        return True
+
+    # For limit entity, check if the related mode entity shows "limited"
+    if entity_id.endswith("_invertor_prm1_p_max_feed_grid"):
+        related_mode_entity = _get_grid_delivery_related_entity(entity_id)
+        if related_mode_entity and related_mode_entity not in all_expected:
+            mode_state = shield.hass.states.get(related_mode_entity)
+            if mode_state is not None:
+                mode_current = mode_state.state if mode_state else None
+                mode_normalized = shield._normalize_value(mode_current)
+                if mode_normalized != "omezeno":
+                    _LOGGER.debug(
+                        "[SHIELD CHECK] Rejecting limit completion: mode is '%s' (expected 'omezeno'), "
+                        "possible telemetry lag",
+                        mode_current,
+                    )
+                    return True
+
+    return False
+
+
 def _normalize_entity_values(
     shield: Any,
     entity_id: str,
     expected_value: Any,
     current_value: Any,
-) -> tuple[str, str]:
+) -> Tuple[str, str]:
+    """Normalize entity values for comparison.
+
+    For grid delivery limit entity, performs numeric comparison.
+    For other entities, uses string normalization.
+
+    Returns normalized (expected, current) tuple.
+    """
     if entity_id and entity_id.endswith("_invertor_prm1_p_max_feed_grid"):
-        try:
-            return (
-                str(round(float(expected_value))),
-                str(round(float(current_value))),
-            )
-        except (ValueError, TypeError):
-            return (str(expected_value), str(current_value or ""))
+        # For limit entity, prefer numeric comparison
+        expected_is_numeric = _is_numeric_value(expected_value)
+        current_is_numeric = _is_numeric_value(current_value)
+
+        if expected_is_numeric and current_is_numeric:
+            try:
+                return (
+                    str(round(float(expected_value))),
+                    str(round(float(current_value))),
+                )
+            except (ValueError, TypeError):
+                pass
+        # Fall through to string comparison if numeric fails
+        # Use empty string for unavailable current values
+        safe_current = "" if _is_unavailable_value(current_value) else str(current_value or "")
+        return (str(expected_value), safe_current)
 
     norm_expected = shield._normalize_value(expected_value)
     norm_current = shield._normalize_value(current_value)

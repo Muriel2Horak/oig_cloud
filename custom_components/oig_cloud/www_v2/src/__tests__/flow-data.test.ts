@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBalancingState, buildGridChargingPlan, extractFlowData } from '@/data/flow-data';
+import { parseBalancingState, buildGridChargingPlan, extractFlowData, getGridExportDisplay } from '@/data/flow-data';
 
 describe('Flow data extraction helpers', () => {
   it('maps balancing states to V1-compatible indicators', () => {
@@ -65,5 +65,159 @@ describe('Flow data extraction helpers', () => {
     expect(data.housePower).toBe(790);
     expect(data.gridPower).toBe(29);
     expect(data.batterySoC).toBe(64);
+  });
+});
+
+describe('Grid delivery derivation from canonical model', () => {
+  const BASE_SENSOR = 'sensor.oig_2206237016_';
+
+  it('derives grid delivery OFF from raw sensor value', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Vypnuto' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
+    });
+
+    expect(data.inverterGridMode).toBe('off');
+    expect(data.inverterGridLimit).toBe(0);
+  });
+
+  it('derives grid delivery ON from raw sensor value', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Zapnuto' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '10000' },
+    });
+
+    expect(data.inverterGridMode).toBe('on');
+    expect(data.inverterGridLimit).toBe(10000);
+  });
+
+  it('derives grid delivery LIMITED from raw sensor value', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Omezeno' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '5400' },
+    });
+
+    expect(data.inverterGridMode).toBe('limited');
+    expect(data.inverterGridLimit).toBe(5400);
+  });
+
+  it('derives grid delivery UNKNOWN when sensor unavailable', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'unavailable' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
+    });
+
+    expect(data.inverterGridMode).toBe('unknown');
+  });
+
+  it('derives grid delivery UNKNOWN when sensor unknown', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'unknown' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
+    });
+
+    expect(data.inverterGridMode).toBe('unknown');
+  });
+
+  it('derives grid delivery UNKNOWN when sensor empty', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: '' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
+    });
+
+    expect(data.inverterGridMode).toBe('unknown');
+  });
+
+  it('handles transition state "Probíhá změna" as unknown', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Probíhá změna' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '5400' },
+    });
+
+    expect(data.inverterGridMode).toBe('unknown');
+  });
+
+  it('reports unknown limit when mode is unavailable', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'unavailable' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '5400' },
+    });
+
+    expect(data.inverterGridMode).toBe('unknown');
+    expect(data.inverterGridLimit).toBe(0);
+  });
+});
+
+describe('Suffix-safe grid delivery resolution', () => {
+  const BASE_SENSOR = 'sensor.oig_2206237016_';
+
+  it('uses exact match when sensor exists', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Zapnuto' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '10000' },
+    });
+
+    expect(data.inverterGridMode).toBe('on');
+    expect(data.inverterGridLimit).toBe(10000);
+  });
+
+  it('finds suffixed sensor _2 when exact match missing', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid_2']: { state: 'Omezeno' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid_2']: { state: '3000' },
+    });
+
+    expect(data.inverterGridMode).toBe('limited');
+    expect(data.inverterGridLimit).toBe(3000);
+  });
+
+  it('prefers lowest numeric suffix when multiple suffixed sensors exist', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid_2']: { state: 'Zapnuto' },
+      [BASE_SENSOR + 'invertor_prms_to_grid_3']: { state: 'Vypnuto' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid_2']: { state: '8000' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid_3']: { state: '5000' },
+    });
+
+    expect(data.inverterGridMode).toBe('on');
+    expect(data.inverterGridLimit).toBe(8000);
+  });
+
+  it('falls back to base sensor when suffixed sensor not found', () => {
+    const data = extractFlowData({
+      [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Vypnuto' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
+      [BASE_SENSOR + 'invertor_prms_to_grid_5']: { state: 'Zapnuto' },
+      [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid_5']: { state: '10000' },
+    });
+
+    expect(data.inverterGridMode).toBe('off');
+    expect(data.inverterGridLimit).toBe(0);
+  });
+});
+
+describe('getGridExportDisplay with canonical values', () => {
+  it('displays OFF state correctly', () => {
+    const result = getGridExportDisplay('off');
+    expect(result.display).toBe('Vypnuto');
+    expect(result.icon).toBe('🚫');
+  });
+
+  it('displays ON state correctly', () => {
+    const result = getGridExportDisplay('on');
+    expect(result.display).toBe('Zapnuto');
+    expect(result.icon).toBe('💧');
+  });
+
+  it('displays LIMITED state correctly', () => {
+    const result = getGridExportDisplay('limited');
+    expect(result.display).toBe('Omezeno');
+    expect(result.icon).toBe('🚰');
+  });
+
+  it('displays UNKNOWN state correctly', () => {
+    const result = getGridExportDisplay('unknown');
+    expect(result.display).toBe('--');
+    expect(result.icon).toBe('💧');
   });
 });

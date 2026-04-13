@@ -7,6 +7,8 @@
  * Port of V1 shield.js type structures.
  */
 
+import type { GridDeliveryStateModel } from '@/data/grid-delivery-model';
+
 // ============================================================================
 // BOX MODE
 // ============================================================================
@@ -92,9 +94,9 @@ export const GRID_DELIVERY_SENSOR_MAP: Record<string, GridDelivery> = {
 };
 
 /**
- * Robustly resolve a raw sensor string to a GridDelivery value.
- * Falls back to case-insensitive prefix matching so variants like
- * "Omezení", "Omezeno (xxx W)" or all-caps still resolve correctly.
+ * @deprecated Use resolveGridDeliveryLive from data/grid-delivery-model which returns 'unknown'
+ * for genuinely unresolvable input instead of silently coercing to 'off'.
+ * Kept for legacy test coverage only — not used in production code paths.
  */
 export function resolveGridDelivery(raw: string): GridDelivery {
   const trimmed = raw.trim();
@@ -229,13 +231,17 @@ export interface ShieldState {
   allRequests: ShieldQueueItem[];
   /** Current actual sensor values */
   currentBoxMode: BoxMode;
+  /** @deprecated Use gridDeliveryState.currentLiveDelivery or getGridDeliveryDisplayState() */
   currentGridDelivery: GridDelivery;
+  /** @deprecated Use gridDeliveryState.currentLiveLimit */
   currentGridLimit: number;
   currentBoilerMode: BoilerMode;
   /** Per-service pending targets (from shield activity sensor attributes) */
   pendingServices: Map<ShieldServiceType, string>;
   /** Which service types are currently being changed */
   changingServices: Set<ShieldServiceType>;
+  /** New grid delivery state model with explicit live/pending separation */
+  gridDeliveryState: GridDeliveryStateModel;
 }
 
 export const EMPTY_SHIELD_STATE: ShieldState = {
@@ -251,6 +257,14 @@ export const EMPTY_SHIELD_STATE: ShieldState = {
   currentBoilerMode: 'cbb',
   pendingServices: new Map(),
   changingServices: new Set(),
+  gridDeliveryState: {
+    currentLiveDelivery: 'unknown',
+    currentLiveLimit: null,
+    pendingDeliveryTarget: null,
+    pendingLimitTarget: null,
+    isTransitioning: false,
+    isUnavailable: false,
+  },
 };
 
 // ============================================================================

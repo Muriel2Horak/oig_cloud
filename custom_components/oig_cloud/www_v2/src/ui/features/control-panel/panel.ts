@@ -228,7 +228,7 @@ export class OigControlPanel extends LitElement {
     const label = GRID_DELIVERY_LABELS[delivery];
     const icon = GRID_DELIVERY_ICONS[delivery];
     const needsLimit = delivery === 'limited';
-    const currentLimit = this.shieldState.currentGridLimit || 5000;
+    const currentLimit = this.shieldState.gridDeliveryState.currentLiveLimit ?? 5000;
 
     oigLog.debug('Control panel: grid delivery change requested', { delivery, limit });
 
@@ -258,7 +258,7 @@ export class OigControlPanel extends LitElement {
     if (!shieldController.shouldProceedWithQueue()) return;
 
     // Determine what to send based on current state (matches V1 logic)
-    const isLimitedActive = this.shieldState.currentGridDelivery === 'limited';
+    const isLimitedActive = this.shieldState.gridDeliveryState.currentLiveDelivery === 'limited';
     const isChangingToLimited = delivery === 'limited';
 
     if (isLimitedActive && isChangingToLimited && result.limit != null) {
@@ -382,8 +382,9 @@ export class OigControlPanel extends LitElement {
           <!-- Grid Delivery Selector -->
           <div class="selector-section">
             <oig-grid-delivery-selector
-              .value=${s.currentGridDelivery}
-              .limit=${s.currentGridLimit}
+              .value=${s.gridDeliveryState.currentLiveDelivery as GridDelivery}
+              .limit=${s.gridDeliveryState.currentLiveLimit ?? 0}
+              .pendingTarget=${s.gridDeliveryState.pendingDeliveryTarget}
               .buttonStates=${this.gridDeliveryButtonStates}
               @delivery-change=${this.onGridDeliveryChange}
             ></oig-grid-delivery-selector>

@@ -5,13 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.23] - 2026-04-13
+
+### Fixed
+- Grid-delivery live state is now resolved canonically across backend sensors, shield validation, queue completion, and Dashboard V2, so unknown or unavailable telemetry no longer falls back to a misleading current off state.
+- Dashboard V2 now shares one grid-delivery state model for current versus pending rendering, keeps suffix-aware entity lookup aligned with backend validation, and preserves accurate button state during shield-driven transitions.
+- Added backend and frontend regression coverage for Local proxy plus King edge cases, suffixed entities, telemetry lag, malformed or unavailable values, and pending overlays in flow and control-panel views.
+
 ## [2.3.22] - 2026-04-11
 
 ### Fixed
 - Shield `setGridDelivery` now correctly avoids redundant `mode: limited` writes when the inverter is already in limited mode or a limited-mode step is already pending, so limit-only updates no longer re-enqueue the same mode.
 - Dashboard V2 control panel now reads grid-delivery sensors via `findSensorId()` instead of `getSensorId()`, fixing the missing/off state display for devices that expose suffixed entity IDs (e.g. `_2`).
 - `adaptive_load_profiles_sensor.py` now narrows `self._hass` before passing it to recorder executor jobs, resolving a mypy type error without suppressions.
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.3.21] - 2026-04-10
 

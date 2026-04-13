@@ -815,6 +815,37 @@ describe('ShieldController structured split grid parsing', () => {
     expect(controller.getState().currentGridDelivery).toBe('limited');
   });
 
+  it('currentGridDelivery preserves last-known value when live becomes unknown — no silent unknown->off coercion', async () => {
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    mockStoreState.activityAttrs = { running_requests: [], queued_requests: [] };
+    mockStoreState.gridMode = 'Omezeno';
+    controller.refresh();
+    expect(controller.getState().currentGridDelivery).toBe('limited');
+
+    mockStoreState.gridMode = 'unknown';
+    controller.refresh();
+    expect(controller.getState().currentGridDelivery).toBe('limited');
+    expect(controller.getState().gridDeliveryState.currentLiveDelivery).toBe('unknown');
+  });
+
+  it('currentGridDelivery preserves last-known on when sensor becomes unavailable', async () => {
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    mockStoreState.activityAttrs = { running_requests: [], queued_requests: [] };
+    mockStoreState.gridMode = 'Zapnuto';
+    controller.refresh();
+    expect(controller.getState().currentGridDelivery).toBe('on');
+
+    mockStoreState.gridMode = 'unavailable';
+    controller.refresh();
+    expect(controller.getState().currentGridDelivery).toBe('on');
+    expect(controller.getState().gridDeliveryState.currentLiveDelivery).toBe('unknown');
+    expect(controller.getState().gridDeliveryState.isUnavailable).toBe(true);
+  });
+
   it('resolves grid_limit from targets array when no gridDeliveryStep (extractStructuredTarget targets path)', async () => {
     mockStoreState.status = 'running';
     mockStoreState.queueCount = 1;
@@ -1183,5 +1214,264 @@ describe('ShieldController structured split grid parsing', () => {
     ) => string;
 
     expect(normalizeModeTargetValue(42)).toBe('');
+  });
+});
+
+describe('ShieldController live-vs-pending disagreement windows', () => {
+  beforeEach(() => {
+    mockStoreState.activityAttrs = { running_requests: [], queued_requests: [] };
+    mockStoreState.status = 'idle';
+    mockStoreState.queueCount = 0;
+    mockStoreState.boxMode = 'Home 1';
+    mockStoreState.gridMode = 'Omezeno';
+    mockStoreState.gridLimit = 5400;
+    mockStoreState.boilerMode = 'CBB';
+    mockStoreState.useGridSuffixSensors = false;
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it('gridDeliveryState exposes unknown live delivery during Probíhá změna transition', async () => {
+    mockStoreState.gridMode = 'Probíhá změna';
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_grid_delivery',
+          grid_delivery_step: 'mode',
+          params: { mode: 'limited', _grid_delivery_step: 'mode' },
+          targets: [{ param: 'mode', value: 'Omezeno', entity_id: 'sensor.invertor_prms_to_grid', from: 'Vypnuto', to: 'Omezeno', current: 'Vypnuto' }],
+          changes: [],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.gridDeliveryState.currentLiveDelivery).toBe('unknown');
+    expect(state.gridDeliveryState.isTransitioning).toBe(true);
+    expect(state.gridDeliveryState.pendingDeliveryTarget).toBe('limited');
+  });
+
+  it('gridDeliveryState correctly separates live state from pending target', async () => {
+    mockStoreState.gridMode = 'Vypnuto';
+    mockStoreState.activityAttrs = {
+      running_requests: [],
+      queued_requests: [
+        {
+          service: 'set_grid_delivery',
+          grid_delivery_step: 'mode',
+          params: { mode: 'on', _grid_delivery_step: 'mode' },
+          targets: [{ param: 'mode', value: 'Zapnuto', entity_id: 'sensor.invertor_prms_to_grid', from: 'Vypnuto', to: 'Zapnuto', current: 'Vypnuto' }],
+          changes: [],
+          queued_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.gridDeliveryState.currentLiveDelivery).toBe('off');
+    expect(state.gridDeliveryState.pendingDeliveryTarget).toBe('on');
+    expect(state.gridDeliveryState.isTransitioning).toBe(true);
+  });
+
+  it('pending limit is tracked separately from pending delivery', async () => {
+    mockStoreState.gridMode = 'Omezeno';
+    mockStoreState.gridLimit = 5000;
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_grid_delivery',
+          grid_delivery_step: 'limit',
+          params: { limit: 3000, _grid_delivery_step: 'limit' },
+          targets: [{ param: 'limit', value: '3000', entity_id: 'sensor.invertor_prm1_p_max_feed_grid', from: '5000', to: '3000', current: '5000' }],
+          changes: [],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.gridDeliveryState.currentLiveDelivery).toBe('limited');
+    expect(state.gridDeliveryState.currentLiveLimit).toBe(5000);
+    expect(state.gridDeliveryState.pendingDeliveryTarget).toBeNull();
+    expect(state.gridDeliveryState.pendingLimitTarget).toBe(3000);
+  });
+
+  it('handles window where live says limited but pending is changing to on', async () => {
+    mockStoreState.gridMode = 'Omezeno';
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_grid_delivery',
+          grid_delivery_step: 'mode',
+          params: { mode: 'on', _grid_delivery_step: 'mode' },
+          targets: [{ param: 'mode', value: 'Zapnuto', entity_id: 'sensor.invertor_prms_to_grid', from: 'Omezeno', to: 'Zapnuto', current: 'Omezeno' }],
+          changes: [],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.gridDeliveryState.currentLiveDelivery).toBe('limited');
+    expect(state.gridDeliveryState.pendingDeliveryTarget).toBe('on');
+    expect(state.currentGridDelivery).toBe('limited');
+  });
+
+  it('isUnavailable is true when sensor reports unavailable', async () => {
+    mockStoreState.gridMode = 'unavailable';
+    mockStoreState.activityAttrs = { running_requests: [], queued_requests: [] };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.gridDeliveryState.isUnavailable).toBe(true);
+    expect(state.gridDeliveryState.currentLiveDelivery).toBe('unknown');
+  });
+});
+
+describe('ShieldController malformed activity attrs handling', () => {
+  beforeEach(() => {
+    mockStoreState.activityAttrs = {};
+    mockStoreState.status = 'idle';
+    mockStoreState.queueCount = 0;
+    mockStoreState.boxMode = 'Home 1';
+    mockStoreState.gridMode = 'Omezeno';
+    mockStoreState.gridLimit = 5400;
+    mockStoreState.boilerMode = 'CBB';
+    mockStoreState.useGridSuffixSensors = false;
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it('handles missing running_requests gracefully', async () => {
+    mockStoreState.activityAttrs = { queued_requests: [] };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    expect(() => controller.refresh()).not.toThrow();
+    expect(controller.getState().allRequests).toHaveLength(0);
+  });
+
+  it('handles missing queued_requests gracefully', async () => {
+    mockStoreState.activityAttrs = { running_requests: [] };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    expect(() => controller.refresh()).not.toThrow();
+    expect(controller.getState().allRequests).toHaveLength(0);
+  });
+
+  it('handles null activity attrs gracefully', async () => {
+    mockStoreState.activityAttrs = null as any;
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    expect(() => controller.refresh()).not.toThrow();
+    expect(controller.getState().allRequests).toHaveLength(0);
+  });
+
+  it('handles malformed request objects gracefully', async () => {
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        null,
+        undefined,
+        { service: null, changes: 'not-an-array' },
+        { service: 'set_grid_delivery', changes: [null, undefined, 123] },
+      ],
+      queued_requests: [
+        { service: undefined, params: null },
+      ],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+
+    expect(() => controller.refresh()).not.toThrow();
+    const state = controller.getState();
+    expect(state.allRequests.length).toBeGreaterThan(0);
+    expect(state.pendingServices.has('grid_mode')).toBe(true);
+  });
+
+  it('handles requests with missing service field', async () => {
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        { changes: ["box_prms_mode: 'Home 1' → 'Home 2'"], started_at: '2026-04-09T12:00:00Z' },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.allRequests[0]?.service).toBe('');
+    expect(state.allRequests[0]?.type).toBe('mode_change');
+  });
+
+  it('handles requests with non-string changes array elements', async () => {
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_box_mode',
+          changes: [123, null, undefined, true, "box_prms_mode: 'Home 1' → 'Home 2'"],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.allRequests[0]?.changes).toContain("box_prms_mode: 'Home 1' → 'Home 2'");
+    expect(state.pendingServices.has('box_mode')).toBe(true);
+  });
+
+  it('handles grid_delivery request without params or targets', async () => {
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_grid_delivery',
+          changes: [],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.allRequests[0]?.service).toBe('set_grid_delivery');
   });
 });

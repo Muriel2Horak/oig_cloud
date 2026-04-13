@@ -25,11 +25,17 @@ import {
   GridDelivery,
   BoilerMode,
   BOX_MODE_SENSOR_MAP,
-  GRID_DELIVERY_SENSOR_MAP,
   BOILER_MODE_SENSOR_MAP,
   EMPTY_SHIELD_STATE,
-  resolveGridDelivery,
 } from '@/ui/features/control-panel/types';
+import {
+  GridDeliveryRawValues,
+  ShieldPendingData,
+  resolveGridDeliveryState,
+  resolveGridDeliveryLive,
+  isGridDeliveryTransition,
+  getGridDeliveryDisplayState,
+} from '@/data/grid-delivery-model';
 
 // ============================================================================
 // TYPES
@@ -42,15 +48,15 @@ export type ShieldListener = (state: ShieldState) => void;
 // ============================================================================
 
 export class ShieldController {
-  private state: ShieldState = { ...EMPTY_SHIELD_STATE, pendingServices: new Map(), changingServices: new Set() };
+  private state: ShieldState = {
+    ...EMPTY_SHIELD_STATE,
+    pendingServices: new Map(),
+    changingServices: new Set(),
+  };
   private listeners = new Set<ShieldListener>();
   private watcherUnsub: (() => void) | null = null;
   private queueUpdateInterval: number | null = null;
   private started = false;
-
-  private isGridDeliveryTransition(rawValue: string): boolean {
-    return rawValue.trim().toLowerCase().includes('probíhá změna');
-  }
 
   // --------------------------------------------------------------------------
   // Lifecycle
@@ -154,9 +160,6 @@ export class ShieldController {
 
       // Normalize current values
       const currentBoxMode = BOX_MODE_SENSOR_MAP[boxModeRaw.trim()] ?? 'home_1';
-      const currentGridDelivery = this.isGridDeliveryTransition(gridModeRaw)
-        ? this.state.currentGridDelivery
-        : resolveGridDelivery(gridModeRaw);
       const currentBoilerMode = BOILER_MODE_SENSOR_MAP[boilerModeRaw.trim()] ?? 'cbb';
 
       // Parse requests
@@ -168,10 +171,6 @@ export class ShieldController {
       const pendingServices = new Map<ShieldServiceType, string>();
       const changingServices = new Set<ShieldServiceType>();
 
-      if (this.isGridDeliveryTransition(gridModeRaw)) {
-        changingServices.add('grid_mode');
-      }
-
       for (const req of allRequests) {
         const parsed = this.parseServiceRequest(req);
         if (parsed && !pendingServices.has(parsed.type)) {
@@ -182,6 +181,22 @@ export class ShieldController {
 
       const isRunning = statusStr === 'Running' || statusStr === 'running';
 
+      const shieldPending: ShieldPendingData = {
+        pendingServices,
+        changingServices,
+        shieldStatus: isRunning ? 'running' : 'idle',
+      };
+      const rawValues: GridDeliveryRawValues = {
+        gridModeRaw,
+        gridLimit,
+      };
+      const gridDeliveryState = resolveGridDeliveryState(rawValues, shieldPending);
+
+      const currentGridDelivery: GridDelivery =
+        (isGridDeliveryTransition(gridModeRaw) || gridDeliveryState.currentLiveDelivery === 'unknown')
+          ? this.state.currentGridDelivery
+          : gridDeliveryState.currentLiveDelivery;
+
       this.state = {
         status: isRunning ? 'running' : 'idle',
         activity: activityEntity?.state ?? '',
@@ -191,10 +206,11 @@ export class ShieldController {
         allRequests,
         currentBoxMode,
         currentGridDelivery,
-        currentGridLimit: gridLimit,
+        currentGridLimit: gridDeliveryState.currentLiveLimit ?? 0,
         currentBoilerMode,
         pendingServices,
         changingServices,
+        gridDeliveryState,
       };
 
       this.notify();
@@ -208,11 +224,13 @@ export class ShieldController {
   // --------------------------------------------------------------------------
 
   private parseRequest(raw: any, index: number, isRunning: boolean): ShieldQueueItem {
-    const service = raw.service ?? '';
-    const changes = Array.isArray(raw.changes) ? raw.changes : [];
-    const timestamp = raw.started_at ?? raw.queued_at ?? raw.created_at ?? raw.timestamp ?? raw.created ?? '';
-    const targets = Array.isArray(raw.targets)
-      ? raw.targets.map((target: any): ShieldRequestTarget => ({
+    const safeRaw = raw || {};
+    const service = safeRaw.service ?? '';
+    const rawChanges = Array.isArray(safeRaw.changes) ? safeRaw.changes : [];
+    const changes = rawChanges.map((c: unknown) => (typeof c === 'string' ? c : String(c ?? ''))).filter((c: string) => c.length > 0);
+    const timestamp = safeRaw.started_at ?? safeRaw.queued_at ?? safeRaw.created_at ?? safeRaw.timestamp ?? safeRaw.created ?? '';
+    const targets = Array.isArray(safeRaw.targets)
+      ? safeRaw.targets.map((target: any): ShieldRequestTarget => ({
         param: String(target?.param ?? ''),
         value: String(target?.value ?? target?.to ?? ''),
         entityId: String(target?.entity_id ?? target?.entityId ?? ''),
@@ -221,9 +239,9 @@ export class ShieldController {
         current: String(target?.current ?? ''),
       }))
       : [];
-    const params = this.extractRequestParams(raw.params);
-    const gridDeliveryStep = this.extractGridDeliveryStep(raw, params);
-    const targetValue = this.resolveRequestTargetValue(raw, targets, params, gridDeliveryStep);
+    const params = this.extractRequestParams(safeRaw.params);
+    const gridDeliveryStep = this.extractGridDeliveryStep(safeRaw, params);
+    const targetValue = this.resolveRequestTargetValue(safeRaw, targets, params, gridDeliveryStep);
 
     let type: ShieldQueueItem['type'] = 'mode_change';
     if (service.includes('set_box_mode')) type = 'mode_change';
@@ -241,10 +259,10 @@ export class ShieldController {
       changes,
       createdAt: timestamp,
       position: index + 1,
-      description: typeof raw.description === 'string' ? raw.description : undefined,
+      description: typeof safeRaw.description === 'string' ? safeRaw.description : undefined,
       params,
       targets,
-      traceId: typeof raw.trace_id === 'string' ? raw.trace_id : undefined,
+      traceId: typeof safeRaw.trace_id === 'string' ? safeRaw.trace_id : undefined,
       gridDeliveryStep,
     };
   }
@@ -410,42 +428,43 @@ export class ShieldController {
     }
   }
 
-  private getGridDeliveryTransitionState(): 'pending' | 'processing' {
-    return this.state.status === 'running' ? 'processing' : 'pending';
-  }
-
-  private getPendingGridDeliveryTarget(): GridDelivery | null {
-    const pendingTarget = this.state.pendingServices.get('grid_mode');
-    if (!pendingTarget) {
-      return null;
-    }
-    return GRID_DELIVERY_SENSOR_MAP[pendingTarget] ?? null;
-  }
-
   private isLimitedGridDeliveryActiveOrPending(): boolean {
-    if (this.getPendingGridDeliveryTarget() === 'limited') {
+    const state = this.state.gridDeliveryState;
+
+    if (state.pendingDeliveryTarget === 'limited') {
       return true;
     }
 
-    if (this.state.pendingServices.has('grid_limit')) {
+    if (state.pendingLimitTarget !== null) {
       return true;
+    }
+
+    if (state.currentLiveDelivery === 'limited') {
+      return true;
+    }
+
+    if (state.currentLiveDelivery === 'unknown') {
+      const displayState = getGridDeliveryDisplayState(state);
+      if (displayState === 'limited') {
+        return true;
+      }
+      if (this.state.currentGridDelivery === 'limited') {
+        return true;
+      }
     }
 
     const store = getEntityStore();
-    if (!store) {
-      return this.state.currentGridDelivery === 'limited';
+    if (store) {
+      const rawGridMode = store.getString(store.findSensorId('invertor_prms_to_grid')).value;
+      if (!isGridDeliveryTransition(rawGridMode)) {
+        const resolved = resolveGridDeliveryLive(rawGridMode);
+        if (resolved === 'limited') {
+          return true;
+        }
+      }
     }
 
-    const rawGridMode = store.getString(store.findSensorId('invertor_prms_to_grid')).value;
-    if (!rawGridMode.trim()) {
-      return this.state.currentGridDelivery === 'limited';
-    }
-
-    if (this.isGridDeliveryTransition(rawGridMode)) {
-      return this.state.currentGridDelivery === 'limited';
-    }
-
-    return resolveGridDelivery(rawGridMode) === 'limited';
+    return false;
   }
 
   private needsGridModeChangeForLimitedRequest(): boolean {
@@ -468,37 +487,47 @@ export class ShieldController {
     return this.state.currentBoxMode === mode ? 'active' : 'idle';
   }
 
+  /**
+   * Get button state for grid delivery using explicit live+pending fields.
+   * @deprecated Use getGridDeliveryButtonStateV2 which accepts explicit state model
+   */
   getGridDeliveryButtonState(delivery: GridDelivery): 'active' | 'pending' | 'processing' | 'disabled-by-service' | 'idle' {
-    const transitionState = this.getGridDeliveryTransitionState();
+    return this.getGridDeliveryButtonStateV2(delivery);
+  }
 
-    // Grid mode changing
-    if (this.state.changingServices.has('grid_mode')) {
-      const pendingDelivery = this.getPendingGridDeliveryTarget();
+  private getGridDeliveryButtonStateV2(delivery: GridDelivery): 'active' | 'pending' | 'processing' | 'disabled-by-service' | 'idle' {
+    const state = this.state.gridDeliveryState;
+    const isRunning = this.state.status === 'running';
+    const transitionState = isRunning ? 'processing' : 'pending';
+
+    const pendingDelivery = state.pendingDeliveryTarget;
+    const pendingLimit = state.pendingLimitTarget;
+    const liveDelivery = state.currentLiveDelivery;
+
+    if (pendingDelivery !== null) {
       if (pendingDelivery === delivery) {
         return transitionState;
       }
 
-      // If limit is pending and delivery is 'limited', highlight it
-      if (this.state.pendingServices.has('grid_limit') && delivery === 'limited') {
-        return transitionState;
+      if (delivery === 'limited' && liveDelivery === 'limited') {
+        return 'active';
       }
 
-      if (delivery === 'limited' && this.state.currentGridDelivery === 'limited') {
+      if (delivery === 'limited' && liveDelivery === 'unknown' && this.state.currentGridDelivery === 'limited') {
         return 'active';
       }
 
       return 'disabled-by-service';
     }
 
-    // Only limit is changing
-    if (this.state.changingServices.has('grid_limit')) {
+    if (pendingLimit !== null) {
       if (delivery === 'limited') {
         return transitionState;
       }
       return 'disabled-by-service';
     }
 
-    return this.state.currentGridDelivery === delivery ? 'active' : 'idle';
+    return liveDelivery === delivery ? 'active' : 'idle';
   }
 
   getBoilerModeButtonState(mode: BoilerMode): 'active' | 'pending' | 'processing' | 'disabled-by-service' | 'idle' {

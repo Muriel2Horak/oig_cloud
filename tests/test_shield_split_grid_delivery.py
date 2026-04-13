@@ -425,133 +425,253 @@ class TestIsDuplicate:
         assert result == "queue"
 
 
-class TestLogDedupState:
-    """Tests for _log_dedup_state function - debug logging for dedup."""
+class TestQueueTelemetryLagHandling:
+    """Regression tests for queue completion with telemetry lag / mismatch windows."""
 
-    def test_log_dedup_state_empty_queue_and_pending(self, caplog):
-        """Log dedup state with empty queue and pending."""
-        import logging
-        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
-        hass = DummyHass(DummyStates([entity]))
+    def test_limit_step_not_complete_when_mode_not_limited(self):
+        """Limit step must wait when mode sensor hasn't updated to 'limited' yet."""
+        limit_entity = DummyState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "500")
+        mode_entity = DummyState("sensor.oig_123_invertor_prms_to_grid", "Zapnuto")
+        hass = DummyHass(DummyStates([limit_entity, mode_entity]))
         entry = SimpleNamespace(options={"box_id": "123"}, data={})
         shield = DummyShield(hass, entry)
 
-        with caplog.at_level(logging.DEBUG):
-            dispatch_module._log_dedup_state(
-                shield,
-                "oig_cloud.set_box_mode",
-                {"mode": "home_1"},
-                {"sensor.oig_123_box_prms_mode": "Home 1"},
-            )
-
-        assert "Dedup: checking for duplicates" in caplog.text
-        assert "Dedup: new service=oig_cloud.set_box_mode" in caplog.text
-        assert "Dedup: queue length=0" in caplog.text
-        assert "Dedup: pending length=0" in caplog.text
-
-    def test_log_dedup_state_with_queue_items(self, caplog):
-        """Log dedup state shows queue items."""
-        import logging
-        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
-        hass = DummyHass(DummyStates([entity]))
-        entry = SimpleNamespace(options={"box_id": "123"}, data={})
-        shield = DummyShield(hass, entry)
-
-        shield.queue.append((
-            "oig_cloud.set_box_mode",
-            {"mode": "home_1"},
-            {"sensor.oig_123_box_prms_mode": "Home 1"},
-            None,
-            "switch",
-            "oig_cloud.set_box_mode",
-            False,
-            None,
-        ))
-
-        with caplog.at_level(logging.DEBUG):
-            dispatch_module._log_dedup_state(
-                shield,
-                "oig_cloud.set_grid_delivery",
-                {"mode": "limited"},
-                {"sensor.oig_123_invertor_prms_to_grid": "Omezeno"},
-            )
-
-        assert "Dedup: queue length=1" in caplog.text
-        assert "Dedup: queue[0] service=oig_cloud.set_box_mode" in caplog.text
-
-    def test_log_dedup_state_with_pending_items(self, caplog):
-        """Log dedup state shows pending items."""
-        import logging
-        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
-        hass = DummyHass(DummyStates([entity]))
-        entry = SimpleNamespace(options={"box_id": "123"}, data={})
-        shield = DummyShield(hass, entry)
-
-        shield.pending["oig_cloud.set_boiler_mode"] = {
-            "entities": {"sensor.oig_123_boiler_mode": "Manual"},
-            "params": {"mode": "manual"},
+        info = {
+            "entities": {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "500"},
+            "params": {"_grid_delivery_step": "limit", "limit": 500},
             "called_at": __import__('datetime').datetime.now(),
         }
 
-        with caplog.at_level(logging.DEBUG):
-            dispatch_module._log_dedup_state(
-                shield,
-                "oig_cloud.set_box_mode",
-                {"mode": "home_1"},
-                {"sensor.oig_123_box_prms_mode": "Home 1"},
-            )
-
-        assert "Dedup: pending length=1" in caplog.text
-        assert "Dedup: pending service=oig_cloud.set_boiler_mode" in caplog.text
-
-    def test_duplicate_in_queue_with_different_params(self):
-        """Different params means not a duplicate even if same service."""
-        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
-        hass = DummyHass(DummyStates([entity]))
-        entry = SimpleNamespace(options={"box_id": "123"}, data={})
-        shield = DummyShield(hass, entry)
-
-        shield.queue.append((
-            "oig_cloud.set_box_mode",
-            {"mode": "home_1"},
-            {"sensor.oig_123_box_prms_mode": "Home 1"},
-            None,
-            "switch",
-            "oig_cloud.set_box_mode",
-            False,
-            None,
-        ))
-
-        result = dispatch_module._is_duplicate(
-            shield,
-            "oig_cloud.set_box_mode",
-            {"mode": "home_1"},
-            {"sensor.oig_123_box_prms_mode": "Home 1"},
+        result = queue_module._entities_match(
+            shield, "oig_cloud.set_grid_delivery", info, 15
         )
 
-        assert result == "queue"
+        # Should NOT complete because mode is still "Zapnuto", not "Omezeno"
+        assert result is False
 
-    def test_duplicate_in_pending_with_different_entities(self):
-        """Different expected entities means not a duplicate even if same service."""
-        entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
-        hass = DummyHass(DummyStates([entity]))
+    def test_limit_step_completes_when_mode_is_limited(self):
+        """Limit step can complete when mode already shows 'limited'."""
+        limit_entity = DummyState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "500")
+        mode_entity = DummyState("sensor.oig_123_invertor_prms_to_grid", "Omezeno")
+        hass = DummyHass(DummyStates([limit_entity, mode_entity]))
         entry = SimpleNamespace(options={"box_id": "123"}, data={})
         shield = DummyShield(hass, entry)
 
-        shield.pending["oig_cloud.set_box_mode"] = {
+        info = {
+            "entities": {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "500"},
+            "params": {"_grid_delivery_step": "limit", "limit": 500},
+            "called_at": __import__('datetime').datetime.now(),
+        }
+
+        result = queue_module._entities_match(
+            shield, "oig_cloud.set_grid_delivery", info, 15
+        )
+
+        # Should complete because limit matches AND mode is already "Omezeno"
+        assert result is True
+
+    def test_limit_step_completes_when_mode_entity_missing(self):
+        """Limit step can complete when mode entity doesn't exist (backward compat)."""
+        limit_entity = DummyState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "500")
+        hass = DummyHass(DummyStates([limit_entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        info = {
+            "entities": {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "500"},
+            "params": {"_grid_delivery_step": "limit", "limit": 500},
+            "called_at": __import__('datetime').datetime.now(),
+        }
+
+        result = queue_module._entities_match(
+            shield, "oig_cloud.set_grid_delivery", info, 15
+        )
+
+        assert result is True
+
+    def test_unavailable_value_prevents_completion(self):
+        """Unavailable current value must not cause false completion."""
+        limit_entity = DummyState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "unavailable")
+        hass = DummyHass(DummyStates([limit_entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        info = {
+            "entities": {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "500"},
+            "params": {"_grid_delivery_step": "limit", "limit": 500},
+            "called_at": __import__('datetime').datetime.now(),
+        }
+
+        result = queue_module._entities_match(
+            shield, "oig_cloud.set_grid_delivery", info, 15
+        )
+
+        assert result is False
+
+    def test_unknown_value_prevents_completion(self):
+        """Unknown current value must not cause false completion."""
+        limit_entity = DummyState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "unknown")
+        hass = DummyHass(DummyStates([limit_entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        info = {
+            "entities": {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "500"},
+            "params": {"_grid_delivery_step": "limit", "limit": 500},
+            "called_at": __import__('datetime').datetime.now(),
+        }
+
+        result = queue_module._entities_match(
+            shield, "oig_cloud.set_grid_delivery", info, 15
+        )
+
+        assert result is False
+
+    def test_none_value_prevents_completion(self):
+        """None current value (missing state) must not cause false completion."""
+        limit_entity = DummyState("sensor.oig_123_invertor_prm1_p_max_feed_grid", None)
+        hass = DummyHass(DummyStates([limit_entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        info = {
+            "entities": {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "500"},
+            "params": {"_grid_delivery_step": "limit", "limit": 500},
+            "called_at": __import__('datetime').datetime.now(),
+        }
+
+        result = queue_module._entities_match(
+            shield, "oig_cloud.set_grid_delivery", info, 15
+        )
+
+        assert result is False
+
+    def test_malformed_numeric_value_prevents_completion(self):
+        """Malformed current value must not cause false completion for limit entity."""
+        limit_entity = DummyState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "not-a-number")
+        hass = DummyHass(DummyStates([limit_entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        info = {
+            "entities": {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "500"},
+            "params": {"_grid_delivery_step": "limit", "limit": 500},
+            "called_at": __import__('datetime').datetime.now(),
+        }
+
+        result = queue_module._entities_match(
+            shield, "oig_cloud.set_grid_delivery", info, 15
+        )
+
+        assert result is False
+
+    def test_regular_entities_not_affected_by_telemetry_lag_checks(self):
+        """Non-grid-delivery entities should complete normally regardless of unrelated states."""
+        box_mode_entity = DummyState("sensor.oig_123_box_prms_mode", "Home 1")
+        hass = DummyHass(DummyStates([box_mode_entity]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        info = {
             "entities": {"sensor.oig_123_box_prms_mode": "Home 1"},
             "params": {"mode": "home_1"},
             "called_at": __import__('datetime').datetime.now(),
         }
 
-        result = dispatch_module._is_duplicate(
-            shield,
-            "oig_cloud.set_box_mode",
-            {"mode": "home_1"},
-            {"sensor.oig_123_box_prms_mode": "Home 2"},
+        result = queue_module._entities_match(
+            shield, "oig_cloud.set_box_mode", info, 15
         )
 
-        assert result is None
+        assert result is True
+
+
+class TestNormalizeEntityValuesHardened:
+    """Tests for hardened _normalize_entity_values with unavailable/malformed handling."""
+
+    def test_limit_entity_unavailable_normalized_to_empty(self):
+        """Unavailable limit values normalize to empty string for safe comparison."""
+        entity_id = "sensor.oig_123_invertor_prm1_p_max_feed_grid"
+        expected = "500"
+        current = "unavailable"
+
+        hass = DummyHass(DummyStates([]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        norm_expected, norm_current = queue_module._normalize_entity_values(
+            shield, entity_id, expected, current
+        )
+
+        assert norm_expected == "500"
+        assert norm_current == ""
+
+    def test_limit_entity_none_normalized_to_empty(self):
+        """None limit values normalize to empty string for safe comparison."""
+        entity_id = "sensor.oig_123_invertor_prm1_p_max_feed_grid"
+        expected = "500"
+        current = None
+
+        hass = DummyHass(DummyStates([]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        norm_expected, norm_current = queue_module._normalize_entity_values(
+            shield, entity_id, expected, current
+        )
+
+        assert norm_expected == "500"
+        assert norm_current == ""
+
+    def test_limit_entity_numeric_rounding(self):
+        """Numeric limit values are properly rounded."""
+        entity_id = "sensor.oig_123_invertor_prm1_p_max_feed_grid"
+        expected = "500.7"
+        current = "500.3"
+
+        hass = DummyHass(DummyStates([]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        norm_expected, norm_current = queue_module._normalize_entity_values(
+            shield, entity_id, expected, current
+        )
+
+        assert norm_expected == "501"
+        assert norm_current == "500"
+
+    def test_limit_entity_malformed_falls_back_to_string(self):
+        """Malformed limit values fall back to string comparison."""
+        entity_id = "sensor.oig_123_invertor_prm1_p_max_feed_grid"
+        expected = "abc"
+        current = "def"
+
+        hass = DummyHass(DummyStates([]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        norm_expected, norm_current = queue_module._normalize_entity_values(
+            shield, entity_id, expected, current
+        )
+
+        assert norm_expected == "abc"
+        assert norm_current == "def"
+
+    def test_mode_entity_unavailable_uses_normalize_value(self):
+        """Mode entity uses standard normalize_value even for unavailable."""
+        entity_id = "sensor.oig_123_invertor_prms_to_grid"
+        expected = "Omezeno"
+        current = "unavailable"
+
+        hass = DummyHass(DummyStates([]))
+        entry = SimpleNamespace(options={"box_id": "123"}, data={})
+        shield = DummyShield(hass, entry)
+
+        norm_expected, norm_current = queue_module._normalize_entity_values(
+            shield, entity_id, expected, current
+        )
+
+        assert norm_expected == "omezeno"
+        assert norm_current == "unavailable"
 
     def test_duplicate_in_queue_with_empty_params(self):
         """Empty params still matches correctly."""

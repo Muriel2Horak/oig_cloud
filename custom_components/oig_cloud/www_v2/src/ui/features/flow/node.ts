@@ -17,7 +17,8 @@ import { CSS_VARS, getCurrentBreakpoint } from '@/ui/theme';
 import { FlowData, EMPTY_FLOW_DATA, NODE_GRADIENTS, NODE_BORDERS } from './types';
 import { shieldController, ShieldListener } from '@/data/shield-controller';
 import type { ShieldServiceType } from '@/ui/features/control-panel/types';
-import { mapShieldPendingToFlowIndicators } from './pending';
+import { mapShieldPendingToFlowIndicators, resolveGridFlowState } from './pending';
+import type { GridDeliveryStateModel } from '@/data/grid-delivery-model';
 import { formatPower, formatEnergy, getTariffDisplay, getHouseModeInfo, getGridExportDisplay } from '@/data/flow-data';
 import { haClient } from '@/data/ha-client';
 import { oigLog } from '@/core/logger';
@@ -68,6 +69,14 @@ export class OigFlowNode extends LitElement {
   @state() private changingServices: Set<ShieldServiceType> = new Set();
   @state() private shieldStatus: 'idle' | 'running' = 'idle';
   @state() private shieldQueueCount: number = 0;
+  @state() private gridDeliveryState: GridDeliveryStateModel = {
+    currentLiveDelivery: 'unknown',
+    currentLiveLimit: null,
+    pendingDeliveryTarget: null,
+    pendingLimitTarget: null,
+    isTransitioning: false,
+    isUnavailable: false,
+  };
   private shieldUnsub: (() => void) | null = null;
 
   // Expand/collapse state for mobile/tablet
@@ -244,6 +253,24 @@ export class OigFlowNode extends LitElement {
       font-size: 11px;
       color: ${u(CSS_VARS.textSecondary)};
       margin-top: 4px;
+    }
+
+    .pending-overlay {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      color: ${u(CSS_VARS.accent)};
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      border-radius: 4px;
+      padding: 2px 6px;
+      margin-top: 4px;
+    }
+
+    .current-state-unknown {
+      color: ${u(CSS_VARS.textSecondary)};
+      font-style: italic;
     }
 
     .spinner {
@@ -867,6 +894,7 @@ export class OigFlowNode extends LitElement {
     this.changingServices = state.changingServices;
     this.shieldStatus = state.status;
     this.shieldQueueCount = state.queueCount;
+    this.gridDeliveryState = state.gridDeliveryState;
   };
 
   protected updated(changed: PropertyValues): void {
@@ -1491,6 +1519,7 @@ export class OigFlowNode extends LitElement {
     const d = this.data;
     const status = this.getGridStatus();
     const pending = mapShieldPendingToFlowIndicators(this.pendingServices, this.changingServices);
+    const gridFlow = resolveGridFlowState(this.gridDeliveryState);
 
     return html`
       <div class="${this.nodeClass('grid', pending.gridExportChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid};"
@@ -1516,10 +1545,13 @@ export class OigFlowNode extends LitElement {
           ${formatPower(d.gridPower)}
         </div>
         <div class="node-status ${status.cls}">${status.text}</div>
-        ${pending.gridExportText ? html`
-          <div class="pending-text">
+        <div class="node-subvalue ${gridFlow.currentUnavailable ? 'current-state-unknown' : ''}" @click=${openEntity('invertor_prms_to_grid')}>
+          ${gridFlow.currentText}
+        </div>
+        ${gridFlow.pendingText ? html`
+          <div class="pending-overlay">
             <span class="spinner spinner--small"></span>
-            ${pending.gridExportText}
+            ${gridFlow.pendingText}
           </div>
         ` : nothing}
 

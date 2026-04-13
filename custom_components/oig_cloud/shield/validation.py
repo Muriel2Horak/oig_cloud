@@ -257,28 +257,37 @@ def _expected_grid_delivery_limit(
         return {}
 
     entity_id = find_entity("_invertor_prm1_p_max_feed_grid")
-    if entity_id:
-        shield.last_checked_entity_id = entity_id
-        state = shield.hass.states.get(entity_id)
-        try:
-            current_value = round(float(state.state))
-        except (ValueError, TypeError, AttributeError):
-            current_value = None
+    if not entity_id:
+        return {}
 
-        # Check if this is part of split flow (has step metadata)
-        grid_step = data.get("_grid_delivery_step")
+    shield.last_checked_entity_id = entity_id
+    grid_step = data.get("_grid_delivery_step")
 
+    if _is_entity_unavailable(shield, entity_id):
         _LOGGER.debug(
-            "[extract] grid_delivery.limit step='%s' | current=%s expected=%s",
+            "[extract] grid_delivery.limit step='%s' | entity=%s unavailable",
             grid_step or "standalone",
-            current_value,
-            expected_value,
+            entity_id,
         )
+        return {entity_id: str(expected_value)}
 
-        if current_value != expected_value:
-            return {entity_id: str(expected_value)}
+    state = shield.hass.states.get(entity_id)
+    try:
+        current_value = round(float(state.state))
+    except (ValueError, TypeError, AttributeError):
+        current_value = None
 
-        _LOGGER.info("[extract] Limit již je %sW - přeskakuji", expected_value)
+    _LOGGER.debug(
+        "[extract] grid_delivery.limit step='%s' | current=%s expected=%s",
+        grid_step or "standalone",
+        current_value,
+        expected_value,
+    )
+
+    if current_value != expected_value:
+        return {entity_id: str(expected_value)}
+
+    _LOGGER.info("[extract] Limit již je %sW - přeskakuji", expected_value)
     return {}
 
 
@@ -311,26 +320,35 @@ def _expected_grid_delivery_mode(
         return {}
 
     entity_id = find_entity("_invertor_prms_to_grid")
-    if entity_id:
-        shield.last_checked_entity_id = entity_id
-        state = shield.hass.states.get(entity_id)
-        current_text = state.state if state else None
+    if not entity_id:
+        return {}
 
-        # Check if this is part of split flow (has step metadata)
-        grid_step = data.get("_grid_delivery_step")
+    shield.last_checked_entity_id = entity_id
+    grid_step = data.get("_grid_delivery_step")
 
+    if _is_entity_unavailable(shield, entity_id):
         _LOGGER.debug(
-            "[extract] grid_delivery.mode step='%s' | current='%s' expected='%s' (mode_string='%s')",
+            "[extract] grid_delivery.mode step='%s' | entity=%s unavailable",
             grid_step or "standalone",
-            current_text,
-            expected_text,
-            mode_string,
+            entity_id,
         )
+        return {entity_id: expected_text}
 
-        if current_text != expected_text:
-            return {entity_id: expected_text}
+    state = shield.hass.states.get(entity_id)
+    current_text = state.state if state else None
 
-        _LOGGER.info("[extract] Mode již je %s - přeskakuji", current_text)
+    _LOGGER.debug(
+        "[extract] grid_delivery.mode step='%s' | current='%s' expected='%s' (mode_string='%s')",
+        grid_step or "standalone",
+        current_text,
+        expected_text,
+        mode_string,
+    )
+
+    if current_text != expected_text:
+        return {entity_id: expected_text}
+
+    _LOGGER.info("[extract] Mode již je %s - přeskakuji", current_text)
     return {}
 
 
@@ -374,13 +392,46 @@ def _find_shield_coordinator(shield: Any) -> Optional[Any]:
 
 
 def _find_entity_by_suffix(shield: Any, box_id: str, suffix: str) -> Optional[str]:
+    """Find entity by suffix with deterministic suffix-safe resolution.
+
+    Mirrors frontend findSensorId() logic from entity-store.ts:
+    - Exact match (no numeric suffix) is preferred
+    - Then _2, _3, etc. in numeric order (lowest first)
+    - Returns None if no matching entity found
+    """
     prefix = f"sensor.oig_{box_id}_"
-    matching_entities = [
-        entity.entity_id
-        for entity in shield.hass.states.async_all()
-        if entity.entity_id.startswith(prefix) and entity.entity_id.endswith(suffix)
-    ]
-    return matching_entities[0] if matching_entities else None
+    sensor_name = suffix.lstrip("_")
+    base_entity = f"{prefix}{sensor_name}"
+
+    candidates = []
+    for entity in shield.hass.states.async_all():
+        entity_id = entity.entity_id
+        if entity_id == base_entity:
+            candidates.append((entity_id, 0))
+        elif entity_id.startswith(base_entity + "_"):
+            numeric_suffix = entity_id[len(base_entity) + 1 :]
+            if numeric_suffix.isdigit():
+                candidates.append((entity_id, int(numeric_suffix)))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: (item[1], item[0]))
+    return candidates[0][0]
+
+
+def _is_entity_unavailable(shield: Any, entity_id: str) -> bool:
+    """Check if entity state is unavailable or unknown.
+
+    Returns True if entity is missing, unavailable, or in unknown state.
+    This distinguishes "entity not readable" from "value mismatch".
+    """
+    state = shield.hass.states.get(entity_id)
+    if state is None:
+        return True
+    if state.state in ("unavailable", "unknown", None):
+        return True
+    return False
 
 
 def check_entity_state_change(shield: Any, entity_id: str, expected_value: Any) -> bool:

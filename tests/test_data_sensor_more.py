@@ -169,6 +169,93 @@ def test_grid_mode_fallbacks_to_local(monkeypatch):
     assert sensor.state == GridMode.OFF
 
 
+def test_local_grid_mode_king_off(monkeypatch):
+    states = {
+        "sensor.box_prms_crct": DummyState("1"),
+        "sensor.invertor_prm1_p_max_feed_grid": DummyState("5000"),
+    }
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensor_types.SENSOR_TYPES",
+        {
+            "invertor_prms_to_grid": {"node_id": "invertor_prms", "node_key": "to_grid"},
+            "box_prms_crct": {"local_entity_id": "sensor.box_prms_crct"},
+            "invertor_prm1_p_max_feed_grid": {
+                "local_entity_id": "sensor.invertor_prm1_p_max_feed_grid"
+            },
+        },
+    )
+    hass = SimpleNamespace(states=DummyStates(states))
+    coordinator = DummyCoordinator(hass, data={"123": {"invertor_prms": {"to_grid": 0}}})
+    sensor = OigCloudDataSensor(coordinator, "invertor_prms_to_grid")
+    sensor.hass = hass
+    assert sensor._get_local_grid_mode(0, "cs") == GridMode.OFF
+
+
+def test_local_grid_mode_king_on(monkeypatch):
+    states = {
+        "sensor.box_prms_crct": DummyState("1"),
+        "sensor.invertor_prm1_p_max_feed_grid": DummyState("10000"),
+    }
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensor_types.SENSOR_TYPES",
+        {
+            "invertor_prms_to_grid": {"node_id": "invertor_prms", "node_key": "to_grid"},
+            "box_prms_crct": {"local_entity_id": "sensor.box_prms_crct"},
+            "invertor_prm1_p_max_feed_grid": {
+                "local_entity_id": "sensor.invertor_prm1_p_max_feed_grid"
+            },
+        },
+    )
+    hass = SimpleNamespace(states=DummyStates(states))
+    coordinator = DummyCoordinator(hass, data={"123": {"invertor_prms": {"to_grid": 1}}})
+    sensor = OigCloudDataSensor(coordinator, "invertor_prms_to_grid")
+    sensor.hass = hass
+    assert sensor._get_local_grid_mode(1, "cs") == GridMode.ON
+
+
+def test_local_grid_mode_king_limited(monkeypatch):
+    states = {
+        "sensor.box_prms_crct": DummyState("1"),
+        "sensor.invertor_prm1_p_max_feed_grid": DummyState("5000"),
+    }
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensor_types.SENSOR_TYPES",
+        {
+            "invertor_prms_to_grid": {"node_id": "invertor_prms", "node_key": "to_grid"},
+            "box_prms_crct": {"local_entity_id": "sensor.box_prms_crct"},
+            "invertor_prm1_p_max_feed_grid": {
+                "local_entity_id": "sensor.invertor_prm1_p_max_feed_grid"
+            },
+        },
+    )
+    hass = SimpleNamespace(states=DummyStates(states))
+    coordinator = DummyCoordinator(hass, data={"123": {"invertor_prms": {"to_grid": 1}}})
+    sensor = OigCloudDataSensor(coordinator, "invertor_prms_to_grid")
+    sensor.hass = hass
+    assert sensor._get_local_grid_mode(1, "cs") == GridMode.LIMITED
+
+
+def test_local_grid_mode_king_unknown(monkeypatch):
+    states = {
+        "sensor.box_prms_crct": DummyState("unknown"),
+    }
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensor_types.SENSOR_TYPES",
+        {
+            "invertor_prms_to_grid": {"node_id": "invertor_prms", "node_key": "to_grid"},
+            "box_prms_crct": {"local_entity_id": "sensor.box_prms_crct"},
+            "invertor_prm1_p_max_feed_grid": {
+                "local_entity_id": "sensor.invertor_prm1_p_max_feed_grid"
+            },
+        },
+    )
+    hass = SimpleNamespace(states=DummyStates(states))
+    coordinator = DummyCoordinator(hass, data={"123": {"invertor_prms": {"to_grid": 1}}})
+    sensor = OigCloudDataSensor(coordinator, "invertor_prms_to_grid")
+    sensor.hass = hass
+    assert sensor._get_local_grid_mode(1, "cs") == "Neznámý"
+
+
 def test_handle_coordinator_update_no_data(monkeypatch):
     sensor = _make_sensor(monkeypatch, "simple", {}, data=None)
     called = {"count": 0}
@@ -332,22 +419,10 @@ def test_special_state_mappings(monkeypatch):
     assert sensor_boiler_use.state == "Zapnuto"
 
 
-def test_grid_mode_queen_changing(monkeypatch):
-    sensor = _make_sensor(monkeypatch, "invertor_prms_to_grid", {})
-    result = sensor._grid_mode_queen(1, 2, 0, "cs")
-    assert result == "Probíhá změna"
-
-
-def test_grid_mode_king_changing(monkeypatch):
-    sensor = _make_sensor(monkeypatch, "invertor_prms_to_grid", {})
-    result = sensor._grid_mode_king(1, 2, 5000, "cs")
-    assert result == "Probíhá změna"
-
-
 def test_grid_mode_missing_data(monkeypatch):
     sensor = _make_sensor(monkeypatch, "invertor_prms_to_grid", {})
     result = sensor._grid_mode({}, 1, "cs")
-    assert result == "Vypnuto"
+    assert result == "Neznámý"
 
 
 def test_get_local_value_unknown_state(monkeypatch):
