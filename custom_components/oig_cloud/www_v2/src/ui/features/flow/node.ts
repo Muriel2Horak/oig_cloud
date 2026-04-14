@@ -17,7 +17,7 @@ import { CSS_VARS, getCurrentBreakpoint } from '@/ui/theme';
 import { FlowData, EMPTY_FLOW_DATA, NODE_GRADIENTS, NODE_BORDERS } from './types';
 import { shieldController, ShieldListener } from '@/data/shield-controller';
 import type { ShieldServiceType } from '@/ui/features/control-panel/types';
-import { mapShieldPendingToFlowIndicators, resolveGridFlowState } from './pending';
+import { mapShieldPendingToFlowIndicators, resolveGridFlowState, resolveInverterGridDeliveryDisplay } from './pending';
 import type { GridDeliveryStateModel } from '@/data/grid-delivery-model';
 import { formatPower, formatEnergy, getTariffDisplay, getHouseModeInfo, getGridExportDisplay } from '@/data/flow-data';
 import { haClient } from '@/data/ha-client';
@@ -1429,8 +1429,8 @@ export class OigFlowNode extends LitElement {
     const bypassActive = d.bypassStatus.toLowerCase() === 'on' || d.bypassStatus === '1';
     const tempIcon = d.inverterTemp > 35 ? '🔥' : '🌡️';
     const gridExport = getGridExportDisplay(d.inverterGridMode);
-    const limitKw = (d.inverterGridLimit / 1000).toFixed(1);
     const pending = mapShieldPendingToFlowIndicators(this.pendingServices, this.changingServices);
+    const gridDelivery = resolveInverterGridDeliveryDisplay(this.gridDeliveryState);
 
     let plannerCls = 'planner-unknown';
     let plannerText = 'Plánovač: N/A';
@@ -1483,22 +1483,37 @@ export class OigFlowNode extends LitElement {
 
         <!-- Přetoky + notifikace — vždy viditelné -->
         <div class="battery-indicators" style="margin-top:4px">
-          <button class="indicator" @click=${openEntity('invertor_prms_to_grid')}>
-            ${gridExport.icon} ${gridExport.display}
+          <button class="indicator ${gridDelivery.isUnavailable ? 'current-state-unknown' : ''}" @click=${openEntity('invertor_prms_to_grid')}>
+            ${gridExport.icon} ${gridDelivery.currentModeText}
           </button>
           <button class="clickable notif-badge ${d.notificationsError > 0 ? 'has-error' : d.notificationsUnread > 0 ? 'has-unread' : 'indicator'}"
             @click=${openEntity('notification_count_unread')}>
             🔔 ${d.notificationsUnread}/${d.notificationsError}
           </button>
         </div>
+        ${gridDelivery.pendingModeText ? html`
+          <div class="pending-overlay">
+            <span class="spinner spinner--small"></span>
+            ${gridDelivery.pendingModeText}
+          </div>
+        ` : nothing}
 
         <div class="detail-section">
           <div class="detail-header">🌊 Přetoky — limit</div>
-          <div class="detail-row">
-            <button class="clickable" @click=${openEntity('invertor_prm1_p_max_feed_grid')}>
-              Limit: ${limitKw} kW
-            </button>
-          </div>
+          ${gridDelivery.limitLabel !== null ? html`
+            <div class="detail-row">
+              <span class="detail-label">${gridDelivery.limitLabel}</span>
+              <button class="clickable ${gridDelivery.showLimitAsActive ? 'limit-active' : ''}" @click=${openEntity('invertor_prm1_p_max_feed_grid')}>
+                ${gridDelivery.limitValue}
+              </button>
+            </div>
+          ` : nothing}
+          ${gridDelivery.pendingLimitText ? html`
+            <div class="pending-overlay">
+              <span class="spinner spinner--small"></span>
+              ${gridDelivery.pendingLimitText}
+            </div>
+          ` : nothing}
         </div>
       </div>
     `;
