@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapShieldPendingToFlowIndicators, resolveGridFlowState } from '../../../../src/ui/features/flow/pending';
+import { mapShieldPendingToFlowIndicators, resolveGridFlowState, resolveInverterGridDeliveryDisplay } from '../../../../src/ui/features/flow/pending';
 import type { ShieldServiceType } from '../../../../src/ui/features/control-panel/types';
 import type { GridDeliveryStateModel } from '../../../../src/data/grid-delivery-model';
 
@@ -156,5 +156,145 @@ describe('grid export flow state - current+pending contract', () => {
     expect(state.currentUnavailable).toBe(true);
     expect(state.pendingText).toBe('Ve frontě: Zapnuto');
     expect(state.pendingKind).toBe('mode');
+  });
+});
+
+describe('inverter grid delivery display - resolveInverterGridDeliveryDisplay', () => {
+  it('off mode with no configured limit shows Vypnuto, null limit fields', () => {
+    const model: GridDeliveryStateModel = {
+      ...baseModel,
+      currentLiveDelivery: 'off',
+      currentLiveLimit: null,
+    };
+    const result = resolveInverterGridDeliveryDisplay(model);
+
+    expect(result.currentModeText).toBe('Vypnuto');
+    expect(result.limitLabel).toBeNull();
+    expect(result.limitValue).toBeNull();
+    expect(result.showLimitAsActive).toBe(false);
+    expect(result.isUnavailable).toBe(false);
+  });
+
+  it('off mode with configured limit shows Nastavený limit, not active', () => {
+    const model: GridDeliveryStateModel = {
+      ...baseModel,
+      currentLiveDelivery: 'off',
+      currentLiveLimit: 3500,
+    };
+    const result = resolveInverterGridDeliveryDisplay(model);
+
+    expect(result.currentModeText).toBe('Vypnuto');
+    expect(result.limitLabel).toBe('Nastavený limit');
+    expect(result.limitValue).toBe('3500W');
+    expect(result.showLimitAsActive).toBe(false);
+  });
+
+  it('on mode with configured limit shows Nastavený limit, not active', () => {
+    const model: GridDeliveryStateModel = {
+      ...baseModel,
+      currentLiveDelivery: 'on',
+      currentLiveLimit: 2000,
+    };
+    const result = resolveInverterGridDeliveryDisplay(model);
+
+    expect(result.currentModeText).toBe('Zapnuto');
+    expect(result.limitLabel).toBe('Nastavený limit');
+    expect(result.limitValue).toBe('2000W');
+    expect(result.showLimitAsActive).toBe(false);
+  });
+
+  it('limited mode shows Aktivní limit and active flag', () => {
+    const model: GridDeliveryStateModel = {
+      ...baseModel,
+      currentLiveDelivery: 'limited',
+      currentLiveLimit: 3500,
+    };
+    const result = resolveInverterGridDeliveryDisplay(model);
+
+    expect(result.currentModeText).toBe('Omezeno 3500W');
+    expect(result.limitLabel).toBe('Aktivní limit');
+    expect(result.limitValue).toBe('3500W');
+    expect(result.showLimitAsActive).toBe(true);
+  });
+
+  it('unknown live delivery returns ? and hides limit', () => {
+    const model: GridDeliveryStateModel = {
+      ...baseModel,
+      currentLiveDelivery: 'unknown',
+      currentLiveLimit: null,
+      isUnavailable: true,
+    };
+    const result = resolveInverterGridDeliveryDisplay(model);
+
+    expect(result.currentModeText).toBe('?');
+    expect(result.limitLabel).toBeNull();
+    expect(result.limitValue).toBeNull();
+    expect(result.showLimitAsActive).toBe(false);
+    expect(result.isUnavailable).toBe(true);
+  });
+
+  it('unknown live delivery with limit still hides limit when unavailable', () => {
+    const model: GridDeliveryStateModel = {
+      ...baseModel,
+      currentLiveDelivery: 'unknown',
+      currentLiveLimit: 1000,
+      isUnavailable: true,
+    };
+    const result = resolveInverterGridDeliveryDisplay(model);
+
+    expect(result.currentModeText).toBe('?');
+    expect(result.limitLabel).toBeNull();
+    expect(result.limitValue).toBeNull();
+    expect(result.showLimitAsActive).toBe(false);
+  });
+
+  it('pending mode change produces pendingModeText', () => {
+    const model: GridDeliveryStateModel = {
+      ...baseModel,
+      currentLiveDelivery: 'off',
+      pendingDeliveryTarget: 'limited',
+      isTransitioning: true,
+    };
+    const result = resolveInverterGridDeliveryDisplay(model);
+
+    expect(result.pendingModeText).toBe('Ve frontě: Omezeno');
+    expect(result.pendingLimitText).toBeNull();
+    expect(result.isTransitioning).toBe(true);
+  });
+
+  it('pending limit change produces pendingLimitText', () => {
+    const model: GridDeliveryStateModel = {
+      ...baseModel,
+      currentLiveDelivery: 'limited',
+      currentLiveLimit: 2000,
+      pendingLimitTarget: 4500,
+      isTransitioning: true,
+    };
+    const result = resolveInverterGridDeliveryDisplay(model);
+
+    expect(result.pendingLimitText).toBe('Ve frontě: limit 4500W');
+    expect(result.pendingModeText).toBeNull();
+  });
+
+  it('both pending mode and limit produce both text fields', () => {
+    const model: GridDeliveryStateModel = {
+      ...baseModel,
+      currentLiveDelivery: 'off',
+      pendingDeliveryTarget: 'limited',
+      pendingLimitTarget: 3000,
+      isTransitioning: true,
+    };
+    const result = resolveInverterGridDeliveryDisplay(model);
+
+    expect(result.pendingModeText).toBe('Ve frontě: Omezeno');
+    expect(result.pendingLimitText).toBe('Ve frontě: limit 3000W');
+  });
+
+  it('isTransitioning mirrors model transitioning flag', () => {
+    const model: GridDeliveryStateModel = { ...baseModel, isTransitioning: true };
+    expect(resolveInverterGridDeliveryDisplay(model).isTransitioning).toBe(true);
+
+    const stableModel: GridDeliveryStateModel = { ...baseModel, isTransitioning: false };
+    expect(resolveInverterGridDeliveryDisplay(stableModel).isTransitioning).toBe(false);
   });
 });
