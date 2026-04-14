@@ -70,6 +70,89 @@ export function resolveGridFlowState(model: GridDeliveryStateModel): GridFlowSta
   };
 }
 
+export interface InverterGridDeliveryDisplay {
+  /** Human-readable text for the current live mode (e.g. "Vypnuto", "Omezeno 3500W", "?") */
+  currentModeText: string;
+  /**
+   * Label for the limit row.
+   * "Nastavený limit" when mode is off/on (limit is configured but inactive).
+   * "Aktivní limit" when mode is limited (limit is live).
+   * null when there is no limit value to show.
+   */
+  limitLabel: string | null;
+  /**
+   * The limit value to display (e.g. "3500W"), or null when no limit is available.
+   */
+  limitValue: string | null;
+  /**
+   * true only when the live delivery is actively limited – the limit value is
+   * the real live cap.  false when mode is off/on/unknown (limit is just the
+   * configured value, not currently enforced).
+   */
+  showLimitAsActive: boolean;
+  /** true when the sensor data is unavailable / unknown */
+  isUnavailable: boolean;
+  /** true while a service call is in flight */
+  isTransitioning: boolean;
+  /**
+   * When a mode change is pending, this carries the queued target label
+   * (e.g. "Ve frontě: Omezeno"), otherwise null.
+   */
+  pendingModeText: string | null;
+  /**
+   * When a limit change is pending, this carries the queued value label
+   * (e.g. "Ve frontě: limit 4500W"), otherwise null.
+   */
+  pendingLimitText: string | null;
+}
+
+export function resolveInverterGridDeliveryDisplay(
+  model: GridDeliveryStateModel,
+): InverterGridDeliveryDisplay {
+  const isUnavailable = model.isUnavailable;
+
+  let currentModeText: string;
+  if (isUnavailable || model.currentLiveDelivery === 'unknown') {
+    currentModeText = '?';
+  } else if (model.currentLiveDelivery === 'limited' && model.currentLiveLimit !== null) {
+    currentModeText = `Omezeno ${model.currentLiveLimit}W`;
+  } else {
+    currentModeText = deliveryLabel(model.currentLiveDelivery);
+  }
+
+  const isActiveLimited =
+    !isUnavailable && model.currentLiveDelivery === 'limited';
+
+  let limitLabel: string | null = null;
+  let limitValue: string | null = null;
+
+  if (!isUnavailable && model.currentLiveLimit !== null) {
+    limitValue = `${model.currentLiveLimit}W`;
+    limitLabel = isActiveLimited ? 'Aktivní limit' : 'Nastavený limit';
+  }
+
+  let pendingModeText: string | null = null;
+  let pendingLimitText: string | null = null;
+
+  if (model.pendingDeliveryTarget !== null) {
+    pendingModeText = `Ve frontě: ${deliveryLabel(model.pendingDeliveryTarget)}`;
+  }
+  if (model.pendingLimitTarget !== null) {
+    pendingLimitText = `Ve frontě: limit ${ensureWattsSuffix(String(model.pendingLimitTarget))}`;
+  }
+
+  return {
+    currentModeText,
+    limitLabel,
+    limitValue,
+    showLimitAsActive: isActiveLimited,
+    isUnavailable,
+    isTransitioning: model.isTransitioning,
+    pendingModeText,
+    pendingLimitText,
+  };
+}
+
 export function mapShieldPendingToFlowIndicators(
   pendingServices: Map<ShieldServiceType, string>,
   changingServices: Set<ShieldServiceType>
