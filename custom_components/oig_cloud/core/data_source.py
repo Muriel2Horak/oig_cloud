@@ -237,7 +237,7 @@ def _coerce_box_id_float(value: float) -> Optional[str]:
 
 def _coerce_box_id_str(value: str) -> Optional[str]:
     s = value.strip()
-    if s.isdigit():
+    if s and re.match(r"^\w+$", s):
         return s
     try:
         m = re.search(r"(\d{6,})", s)
@@ -250,7 +250,7 @@ def _get_latest_local_entity_update(
     hass: HomeAssistant, box_id: str
 ) -> Optional[datetime]:
     """Return the most recent update timestamp among local telemetry entities for a box."""
-    if not (isinstance(box_id, str) and box_id.isdigit()):
+    if not (isinstance(box_id, str) and re.match(r"^\w+$", box_id)):
         return None
     try:
         latest: Optional[datetime] = None
@@ -418,7 +418,7 @@ class DataSourceController:
     """Controls effective data source mode based on local proxy health."""
 
     _LOCAL_ENTITY_RE = re.compile(
-        r"^(?:sensor|binary_sensor|switch|number|select)\.oig_local_(\d+)_"
+        r"^(?:sensor|binary_sensor|switch|number|select)\.oig_local_([a-zA-Z0-9]+)_"
     )
 
     def __init__(

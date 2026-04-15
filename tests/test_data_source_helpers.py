@@ -56,7 +56,10 @@ def test_coerce_box_id_variants():
     assert module._coerce_box_id(123456.7) == "123456"
     assert module._coerce_box_id(-1) is None
     assert module._coerce_box_id("box 987654") == "987654"
-    assert module._coerce_box_id("bad") is None
+    assert module._coerce_box_id("dev01") == "dev01"
+    assert module._coerce_box_id("bad") == "bad"
+    assert module._coerce_box_id("") is None
+    assert module._coerce_box_id("   ") is None
 
     assert module._coerce_box_id(float("nan")) is None
     assert module._coerce_box_id([]) is None
@@ -167,3 +170,29 @@ def test_get_latest_local_entity_update_includes_control_domains():
     hass = DummyHass(states)
     latest = module._get_latest_local_entity_update(hass, "2206237016")
     assert latest == later
+
+
+def test_get_latest_local_entity_update_alphanumeric():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    later = datetime(2025, 1, 2, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_dev01_ac_out", "1", last_updated=now),
+        DummyState("number.oig_local_dev01_tbl_batt_prms_bat_min_cfg", "10", last_updated=later),
+    ]
+    hass = DummyHass(states)
+    latest = module._get_latest_local_entity_update(hass, "dev01")
+    assert latest == later
+
+
+def test_iter_local_entities_alphanumeric():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_dev01_ac_out", "1", last_updated=now),
+        DummyState("number.oig_local_dev01_tbl_batt_prms_bat_min_cfg", "10", last_updated=now),
+        DummyState("sensor.oig_local_2206237016_ac_out", "1", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    found = [st.entity_id for st in module._iter_local_entities(hass, "dev01")]
+    assert "sensor.oig_local_dev01_ac_out" in found
+    assert "number.oig_local_dev01_tbl_batt_prms_bat_min_cfg" in found
+    assert "sensor.oig_local_2206237016_ac_out" not in found

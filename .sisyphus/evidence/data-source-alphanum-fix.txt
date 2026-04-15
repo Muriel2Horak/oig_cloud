@@ -1,0 +1,28 @@
+Evidence: data_source.py alphanumeric device ID fix
+Date: 2026-04-15
+
+Changes made:
+1. _coerce_box_id_str() in custom_components/oig_cloud/core/data_source.py
+   - Changed from s.isdigit() to re.match(r"^\w+$", s)
+   - Now accepts alphanumeric word IDs like "dev01"
+   - Preserves fallback to extract \d{6,} from mixed strings like "Box 123456"
+
+2. _get_latest_local_entity_update() in custom_components/oig_cloud/core/data_source.py
+   - Changed from box_id.isdigit() to re.match(r"^\w+$", box_id)
+   - No longer rejects non-digit box IDs
+
+3. DataSourceController._LOCAL_ENTITY_RE in custom_components/oig_cloud/core/data_source.py
+   - Changed from (\d+) to ([a-zA-Z0-9]+)
+   - Matches alphanumeric device IDs while preserving boundary behavior
+
+Tests added/updated:
+- test_coerce_box_id_variants: added dev01, empty/whitespace cases, updated "bad" expectation
+- test_get_latest_local_entity_update_alphanumeric: proves freshness works for dev01
+- test_iter_local_entities_alphanumeric: proves iteration works for dev01
+- test_local_entity_re_matches_all_audited_domains: added abc, dev01, double-underscore cases
+- test_on_any_state_change_tracks_alphanumeric_box_id: proves event handling works for dev01
+
+Test results:
+- tests/test_data_source_helpers.py: 16 passed
+- tests/test_data_source_controller.py: 50 passed
+- Full suite: 3375 passed, 27 skipped
