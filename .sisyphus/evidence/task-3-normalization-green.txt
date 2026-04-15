@@ -1,0 +1,51 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0 -- /repos/oig-cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: cov-6.0.0, requests-mock-1.12.1, github-actions-annotate-failures-0.2.0, socket-0.7.0, anyio-4.12.1, syrupy-4.8.0, sugar-1.0.0, homeassistant-custom-component-0.13.205, xdist-3.6.1, respx-0.21.1, asyncio-0.24.0, unordered-0.6.1, pytest_freezer-0.4.8, picked-0.5.0, aiohttp-1.0.5, timeout-2.3.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+collecting ... collected 40 items
+
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_sensor_numeric_device_id PASSED [  2%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_sensor_alphanumeric_device_id PASSED [  5%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_binary_sensor_to_grid PASSED [  7%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_switch_control_cfg PASSED [ 10%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_number_control_cfg PASSED [ 12%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_select_control_cfg PASSED [ 15%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_select_proxy_control_cfg PASSED [ 17%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_descriptor_fields_accessible PASSED [ 20%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_non_string[None] PASSED [ 22%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_non_string[123] PASSED [ 25%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_non_string[entity_id2] PASSED [ 27%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_non_string[entity_id3] PASSED [ 30%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_malformed_prefix[sensor.other_thing] PASSED [ 32%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_malformed_prefix[switch.other_thing] PASSED [ 35%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_malformed_prefix[number.other_thing] PASSED [ 37%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_malformed_prefix[select.other_thing] PASSED [ 40%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_malformed_prefix[binary_sensor.other_thing] PASSED [ 42%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_wrong_device_id PASSED [ 45%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_wrong_device_id_switch PASSED [ 47%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_unsupported_domain_light PASSED [ 50%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_unsupported_domain_climate PASSED [ 52%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_legacy_tlb_prefix PASSED [ 55%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_legacy_tlb_prefix_sensor PASSED [ 57%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_missing_oig_local_prefix PASSED [ 60%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_missing_oig_local_prefix_number PASSED [ 62%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_no_dot PASSED [ 65%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_empty_suffix PASSED [ 67%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_no_underscore_in_key_part PASSED [ 70%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_table_key_no_separator PASSED [ 72%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_empty_table PASSED [ 75%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_rejects_empty_key PASSED [ 77%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_deterministic_same_input PASSED [ 80%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_deterministic_different_calls PASSED [ 82%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_all_supported_domains[sensor-sensor.oig_local_2206237016_tbl_actual_aci_wr-2206237016-tbl_actual_aci-wr-False] PASSED [ 85%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_all_supported_domains[binary_sensor-binary_sensor.oig_local_2206237016_tbl_invertor_prms_to_grid-2206237016-tbl_invertor_prms-to_grid-False] PASSED [ 87%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_all_supported_domains[switch-switch.oig_local_2206237016_tbl_invertor_prms_to_grid_cfg-2206237016-tbl_invertor_prms-to_grid-True] PASSED [ 90%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_all_supported_domains[number-number.oig_local_dev01_tbl_batt_prms_bat_min_cfg-dev01-tbl_batt_prms-bat_min-True] PASSED [ 92%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_all_supported_domains[select-select.oig_local_dev01_tbl_box_prms_mode_cfg-dev01-tbl_box_prms-mode-True] PASSED [ 95%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_is_control_false_for_non_cfg PASSED [ 97%]
+tests/test_proxy_normalization.py::TestNormalizeProxyEntityId::test_is_control_false_for_number_non_cfg PASSED [100%]
+
+============================== 40 passed in 1.11s ==============================

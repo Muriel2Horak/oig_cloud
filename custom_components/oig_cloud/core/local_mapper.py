@@ -11,6 +11,125 @@ from ..sensor_types import SENSOR_TYPES
 
 _LOGGER = logging.getLogger(__name__)
 
+SUPPORTED_DOMAINS: Tuple[str, ...] = ("sensor", "binary_sensor", "switch", "number", "select")
+
+
+@dataclass(frozen=True, slots=True)
+class ProxyEntityDescriptor:
+    """Canonical parsed representation of a local/proxy entity ID.
+
+    Attributes:
+        domain: One of the supported proxy domains (sensor, binary_sensor,
+            switch, number, select).
+        device_id: The box/device identifier extracted from the entity ID
+            (e.g. "2206237016", "dev01").
+        table: The table/section name from the proxy object-id
+            (e.g. "tbl_actual_aci", "tbl_invertor_prms", "proxy_control").
+        key: The semantic key within that table
+            (e.g. "wr", "to_grid", "bat_min", "mode", "proxy_mode").
+        is_control: True when the original entity ID carries the _cfg suffix,
+            indicating this is a control (write) entity rather than a read-only
+            telemetry entity.
+        raw_suffix: The complete suffix after the oig_local_ prefix, as
+            originally present in the entity_id. Useful for SENSOR_TYPES
+            suffix lookups that still expect the raw suffix.
+    """
+
+    domain: str
+    device_id: str
+    table: str
+    key: str
+    is_control: bool
+    raw_suffix: str
+
+
+def normalize_proxy_entity_id(
+    entity_id: Any, expected_device_id: str
+) -> Optional[ProxyEntityDescriptor]:
+    """Parse a local/proxy entity ID into a canonical descriptor.
+
+    Accepts entity IDs conforming to the audited oig-proxy contract:
+        {domain}.oig_local_{device_id}_{table}_{key}[_cfg]
+
+    The _cfg suffix on the key portion indicates a control entity.
+    Strict device_id scoping is enforced.
+
+    Args:
+        entity_id: The entity ID string to normalize (e.g.
+            "switch.oig_local_2206237016_tbl_invertor_prms_to_grid_cfg").
+        expected_device_id: The box/device ID that must appear after
+            "oig_local_" for the ID to be considered valid.
+
+    Returns:
+        A ProxyEntityDescriptor with all parsed components, or None if the
+        entity ID is malformed, uses an unsupported domain, or does not match
+        the expected_device_id.
+    """
+    if not isinstance(entity_id, str):
+        return None
+
+    dot_pos = entity_id.find(".")
+    if dot_pos < 1:
+        return None
+    domain = entity_id[:dot_pos]
+    if domain not in SUPPORTED_DOMAINS:
+        return None
+
+    expected_prefix = f"{domain}.oig_local_{expected_device_id}_"
+    if not entity_id.startswith(expected_prefix):
+        return None
+
+    raw_suffix = entity_id[len(expected_prefix):]
+    if not raw_suffix:
+        return None
+
+    is_control = False
+    if raw_suffix.endswith("_cfg"):
+        is_control = True
+        key_part = raw_suffix[:-4]
+    else:
+        key_part = raw_suffix
+
+    if key_part.startswith("proxy_control_"):
+        table = "proxy_control"
+        key = key_part[len("proxy_control_"):]
+    elif key_part.startswith("tbl_"):
+        first_us = key_part.find("_", 4)
+        if first_us >= 4:
+            second_us = key_part.find("_", first_us + 1)
+            if second_us >= first_us + 1:
+                table = key_part[:second_us]
+                key = key_part[second_us + 1:]
+            elif second_us == -1:
+                table = key_part[:first_us]
+                key = key_part[first_us + 1:]
+            else:
+                table = key_part
+                key = ""
+        else:
+            table = key_part
+            key = ""
+    else:
+        last_us = key_part.rfind("_")
+        if last_us >= 1:
+            table = key_part[:last_us]
+            key = key_part[last_us + 1:]
+        else:
+            table = key_part
+            key = ""
+
+    if not table or not key:
+        return None
+
+    return ProxyEntityDescriptor(
+        domain=domain,
+        device_id=expected_device_id,
+        table=table,
+        key=key,
+        is_control=is_control,
+        raw_suffix=raw_suffix,
+    )
+
 
 def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt is None:
