@@ -28,6 +28,8 @@ Local režim předpokládá, že v Home Assistant existují:
   - `sensor.oig_local_oig_proxy_proxy_status_last_data`
   - `sensor.oig_local_oig_proxy_proxy_status_box_device_id`
 
+> **Kompatibilita s OIG Proxy**: Integrace očekává lokální entity v přesném formátu generovaném OIG Proxy: `{domain}.oig_local_<box_id>_<table>_<key>`, kde `{domain}` může být `sensor`, `binary_sensor`, `switch`, `number` nebo `select`. Ovládací entity končí suffixem `_cfg`. Entity s odlišným prefixem (např. chybějící `oig_local_` nebo `tlb_` místo `tbl_`) nejsou podporovány.
+
 Pokud tyto entity neexistují (nebo jsou `unknown/unavailable`), integrace Local režim neaktivuje a zůstane na cloudu.
 
 ## Fallback na cloud (kdy a proč)
