@@ -14,7 +14,7 @@ from homeassistant.helpers.debounce import Debouncer
 from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
-from .local_mapper import SUPPORTED_DOMAINS
+from .local_mapper import SUPPORTED_DOMAINS, normalize_proxy_entity_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -268,7 +268,9 @@ def _iter_local_entities(hass: HomeAssistant, box_id: str):
     for domain in SUPPORTED_DOMAINS:
         prefix = f"{domain}.oig_local_{box_id}_"
         for st in hass.states.async_all(domain):
-            if st.entity_id.startswith(prefix):
+            if st.entity_id.startswith(prefix) and normalize_proxy_entity_id(
+                st.entity_id, box_id
+            ):
                 yield st
 
 
@@ -418,7 +420,7 @@ class DataSourceController:
     """Controls effective data source mode based on local proxy health."""
 
     _LOCAL_ENTITY_RE = re.compile(
-        r"^(?:sensor|binary_sensor|switch|number|select)\.oig_local_([a-zA-Z0-9]+)_"
+        r"^(?:sensor|binary_sensor|switch|number|select)\.oig_local_([a-zA-Z0-9][a-zA-Z0-9_]*)_"
     )
 
     def __init__(
@@ -559,22 +561,20 @@ class DataSourceController:
         ):
             return
 
-        # Ensure the local update belongs to this entry's box_id (prevents cross-device wiring).
-        m = self._LOCAL_ENTITY_RE.match(entity_id)
-        if not m:
-            return
-        event_box_id = m.group(1)
-
         expected_box_id = _get_expected_box_id(self.entry)
 
-        if expected_box_id and event_box_id != expected_box_id:
-            return
-
-        # If box_id isn't configured yet, fall back to proxy-reported box_id (if available).
-        if expected_box_id is None:
-            proxy_box_id = _get_proxy_box_id(self.hass)
-            if proxy_box_id and event_box_id != proxy_box_id:
+        if expected_box_id:
+            if normalize_proxy_entity_id(entity_id, expected_box_id) is None:
                 return
+            event_box_id = expected_box_id
+        else:
+            # If box_id isn't configured yet, fall back to proxy-reported box_id (if available).
+            proxy_box_id = _get_proxy_box_id(self.hass)
+            if proxy_box_id is None:
+                return
+            if normalize_proxy_entity_id(entity_id, proxy_box_id) is None:
+                return
+            event_box_id = proxy_box_id
 
         # Remember the latest local telemetry activity timestamp.
         try:

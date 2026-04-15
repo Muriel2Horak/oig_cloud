@@ -1151,8 +1151,48 @@ def test_local_entity_re_matches_all_audited_domains():
     assert re_obj.match("select.oig_local_123_proxy_control_proxy_mode_cfg")
     assert re_obj.match("sensor.oig_local_abc_ac_out")
     assert re_obj.match("sensor.oig_local_dev01_ac_out")
+    assert re_obj.match("sensor.oig_local_dev_01_ac_out")
     assert not re_obj.match("light.oig_local_123_ac_out")
     assert not re_obj.match("sensor.oig_local__ac_out")
+
+
+@pytest.mark.parametrize(
+    "entity_id",
+    [
+        "sensor.oig_local_123_",
+        "sensor.oig_local_123_bad",
+        "sensor.oig_local_123_cfg",
+    ],
+)
+def test_on_any_state_change_rejects_malformed_ids(entity_id):
+    now = dt_util.utcnow()
+    states = [
+        DummyState(module.PROXY_LAST_DATA_ENTITY_ID, now.isoformat(), last_updated=now),
+        DummyState(module.PROXY_BOX_ID_ENTITY_ID, "123", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY, box_id="123")
+    controller = module.DataSourceController(hass, entry, coordinator=None)
+    controller._schedule_debounced_poke = lambda: None
+
+    hass.data[module.DOMAIN][entry.entry_id] = {
+        "data_source_state": module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=now,
+            reason="local_ok",
+        )
+    }
+
+    event = SimpleNamespace(
+        data={"entity_id": entity_id},
+        time_fired=now + timedelta(seconds=5),
+    )
+    controller._on_any_state_change(event)
+
+    assert not controller._pending_local_entities
+    assert controller._last_local_entity_update is None
 
 
 @pytest.mark.parametrize(

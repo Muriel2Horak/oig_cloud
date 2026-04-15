@@ -196,3 +196,19 @@ def test_iter_local_entities_alphanumeric():
     assert "sensor.oig_local_dev01_ac_out" in found
     assert "number.oig_local_dev01_tbl_batt_prms_bat_min_cfg" in found
     assert "sensor.oig_local_2206237016_ac_out" not in found
+
+
+def test_iter_local_entities_rejects_malformed_ids():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_123_ac_out", "1", last_updated=now),
+        DummyState("sensor.oig_local_123_", "1", last_updated=now),
+        DummyState("sensor.oig_local_123_bad", "1", last_updated=now),
+        DummyState("sensor.oig_local_123_cfg", "1", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    found = [st.entity_id for st in module._iter_local_entities(hass, "123")]
+    assert "sensor.oig_local_123_ac_out" in found
+    assert "sensor.oig_local_123_" not in found
+    assert "sensor.oig_local_123_bad" not in found
+    assert "sensor.oig_local_123_cfg" not in found

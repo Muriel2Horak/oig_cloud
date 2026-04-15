@@ -1,0 +1,14 @@
+Fix: enforce normalization boundary in data_source discovery and events
+
+Targeted tests (data_source_helpers + data_source_controller):
+70 passed in 2.23s
+
+Full test suite:
+3379 passed, 27 skipped in 109.96s
+
+Changes:
+- data_source.py imports normalize_proxy_entity_id from .local_mapper
+- _iter_local_entities filters via normalize_proxy_entity_id
+- _on_any_state_change filters local events via normalize_proxy_entity_id using expected_box_id or proxy_box_id
+- _LOCAL_ENTITY_RE updated to ([a-zA-Z0-9][a-zA-Z0-9_]*)_ to align with \w+ while avoiding empty box_id matches
+- Added tests proving malformed entity IDs (sensor.oig_local_123_, sensor.oig_local_123_bad, sensor.oig_local_123_cfg) are rejected
