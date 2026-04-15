@@ -1,0 +1,2 @@
+Full test suite: 3377 passed, 27 skipped, 0 failures.
+Command: PYTHONPATH=/repos/oig-cloud .venv/bin/python -m pytest tests/ -q

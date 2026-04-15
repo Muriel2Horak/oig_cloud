@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from ..sensor_types import SENSOR_TYPES
@@ -123,6 +124,16 @@ def normalize_proxy_entity_id(
         is_control=is_control,
         raw_suffix=raw_suffix,
     )
+
+
+def iter_local_entities(hass: HomeAssistant, box_id: str):
+    for domain in SUPPORTED_DOMAINS:
+        prefix = f"{domain}.oig_local_{box_id}_"
+        for st in hass.states.async_all(domain):
+            if st.entity_id.startswith(prefix) and normalize_proxy_entity_id(
+                st.entity_id, box_id
+            ):
+                yield st
 
 
 def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -350,15 +361,6 @@ def _append_updates(
     if ext is not None:
         group, index = ext
         updates.append(_ExtendedUpdate(group=group, index=index))
-
-
-def _is_valid_node_pair(node_id: Any, node_key: Any) -> bool:
-    return bool(
-        isinstance(node_id, str)
-        and isinstance(node_key, str)
-        and node_id
-        and node_key
-    )
 
 
 _SUFFIX_UPDATES: Dict[str, _SuffixConfig] = _build_suffix_updates()

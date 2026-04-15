@@ -14,7 +14,11 @@ from homeassistant.helpers.debounce import Debouncer
 from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
-from .local_mapper import SUPPORTED_DOMAINS, normalize_proxy_entity_id
+from .local_mapper import (
+    SUPPORTED_DOMAINS,
+    iter_local_entities,
+    normalize_proxy_entity_id,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -254,7 +258,7 @@ def _get_latest_local_entity_update(
         return None
     try:
         latest: Optional[datetime] = None
-        for st in _iter_local_entities(hass, box_id):
+        for st in iter_local_entities(hass, box_id):
             dt_utc = _extract_state_timestamp(st)
             if dt_utc is None:
                 continue
@@ -262,16 +266,6 @@ def _get_latest_local_entity_update(
         return latest
     except Exception:
         return None
-
-
-def _iter_local_entities(hass: HomeAssistant, box_id: str):
-    for domain in SUPPORTED_DOMAINS:
-        prefix = f"{domain}.oig_local_{box_id}_"
-        for st in hass.states.async_all(domain):
-            if st.entity_id.startswith(prefix) and normalize_proxy_entity_id(
-                st.entity_id, box_id
-            ):
-                yield st
 
 
 def _extract_state_timestamp(state: Any) -> Optional[datetime]:
@@ -681,10 +675,7 @@ class DataSourceController:
         configured_mode = get_configured_mode(self.entry)
         if configured_mode == DATA_SOURCE_CLOUD_ONLY:
             return True
-        return (
-            state.effective_mode == DATA_SOURCE_CLOUD_ONLY
-            and state.reason == "cloud_only"
-        )
+        return state.effective_mode == DATA_SOURCE_CLOUD_ONLY
 
     @callback
     def _update_state(self, force: bool = False) -> tuple[bool, bool]:

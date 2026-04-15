@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.oig_cloud.core import data_source as module
+from custom_components.oig_cloud.core.local_mapper import iter_local_entities
 
 
 class DummyState:
@@ -151,7 +152,7 @@ def test_iter_local_entities_covers_all_domains():
         DummyState("sensor.oig_local_999_tbl_actual_aci_wr", "1", last_updated=now),
     ]
     hass = DummyHass(states)
-    found = [st.entity_id for st in module._iter_local_entities(hass, "2206237016")]
+    found = [st.entity_id for st in iter_local_entities(hass, "2206237016")]
     assert "sensor.oig_local_2206237016_tbl_actual_aci_wr" in found
     assert "binary_sensor.oig_local_2206237016_tbl_invertor_prms_to_grid" in found
     assert "switch.oig_local_2206237016_tbl_box_prms_mode_cfg" in found
@@ -192,7 +193,7 @@ def test_iter_local_entities_alphanumeric():
         DummyState("sensor.oig_local_2206237016_tbl_actual_aci_wr", "1", last_updated=now),
     ]
     hass = DummyHass(states)
-    found = [st.entity_id for st in module._iter_local_entities(hass, "dev01")]
+    found = [st.entity_id for st in iter_local_entities(hass, "dev01")]
     assert "sensor.oig_local_dev01_tbl_box_prms_mode" in found
     assert "number.oig_local_dev01_tbl_batt_prms_bat_min_cfg" in found
     assert "sensor.oig_local_2206237016_tbl_actual_aci_wr" not in found
@@ -207,7 +208,7 @@ def test_iter_local_entities_rejects_malformed_ids():
         DummyState("sensor.oig_local_123_cfg", "1", last_updated=now),
     ]
     hass = DummyHass(states)
-    found = [st.entity_id for st in module._iter_local_entities(hass, "123")]
+    found = [st.entity_id for st in iter_local_entities(hass, "123")]
     assert "sensor.oig_local_123_tbl_actual_aci_wr" in found
     assert "sensor.oig_local_123_" not in found
     assert "sensor.oig_local_123_bad" not in found

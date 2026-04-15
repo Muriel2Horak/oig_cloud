@@ -395,7 +395,7 @@ async def test_handle_local_event_throttles_snapshot_publish():
     assert controller._pending_snapshot_publish is False
 
 
-def test_schedule_snapshot_publish_coalesces_pending_updates():
+def test_schedule_snapshot_publish_coalesces_pending_updates(monkeypatch):
     loop = DummyLoop(now_time=12.0)
     hass = DummyHass([], loop=loop)
     entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
@@ -410,6 +410,18 @@ def test_schedule_snapshot_publish_coalesces_pending_updates():
 
         def async_set_updated_data(self, data):
             self.updates.append(data)
+
+    monkeypatch.setattr(
+        module,
+        "get_data_source_state",
+        lambda *_a, **_k: module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=dt_util.utcnow(),
+            reason="local_ok",
+        ),
+    )
 
     controller = module.DataSourceController(
         hass, entry, coordinator=DummyCoordinator(), telemetry_store=DummyStore()
@@ -510,6 +522,17 @@ async def test_async_start_fallback_listeners(monkeypatch):
 
     monkeypatch.setattr(module, "_async_track_state_change_event", None)
     monkeypatch.setattr(module, "_async_track_time_interval", None)
+    monkeypatch.setattr(
+        module,
+        "get_data_source_state",
+        lambda *_a, **_k: module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=now,
+            reason="local_ok",
+        ),
+    )
 
     await controller.async_start()
 
