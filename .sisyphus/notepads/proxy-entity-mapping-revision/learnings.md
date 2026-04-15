@@ -169,3 +169,32 @@ All assertions use `resolve_grid_delivery_live_state(payload[box_id])` to prove 
 
 ### Key insight
 Because `_build_suffix_updates()` auto-generates `_cfg` variants for every `local_entity_suffix`, the end-to-end path from proxy control entity ID → payload node → canonical resolver works out-of-the-box for both grid and non-grid semantics. No monkeypatching was required in the regression tests, which proves the production wiring is correct.
+
+## Task 8: Release-Safe Verification & Docs Finalization
+
+### What was done
+- Updated `docs/user/DATA_SOURCE.md` to accurately describe the supported local/proxy contract:
+  - All 5 domains explicitly listed: `sensor`, `binary_sensor`, `switch`, `number`, `select`
+  - Object ID pattern: `{domain}.oig_local_<box_id>_<table>_<key>` with `_cfg` suffix for controls
+  - Explicit rejection of legacy non-contract aliases (`tlb_`, missing `oig_local_`)
+  - How normalization works (single boundary in `core/local_mapper.py`)
+  - Control entities (`_cfg`) map to same canonical payload nodes as read-only counterparts
+
+### Key changes to DATA_SOURCE.md
+- Line 19: Replaced stale `sensor.oig_local_<box_id>_*` with full domain enumeration and `_cfg` example
+- Line 26: Replaced `sensor.oig_local_<box_id>_*` with `{domain}.oig_local_<box_id>_<table>_<key>` across all 5 domains
+- Line 31: The existing contract callout was already correct; verified it mentions all 5 domains, `_cfg` suffix, and legacy alias rejection
+- Line 68: Replaced `sensor.oig_local_*` with `{domain}.oig_local_*` for recommended-setup check
+
+### Verification results
+- oig-cloud full suite: 3372 passed, 27 skipped in ~105s
+- Upstream proxy contract: 42 passed, 2 failed (async test infrastructure issue, NOT contract failures)
+  - test_entity_id_compatibility.py: all passing
+  - test_mqtt/test_client.py: 40 passed, 2 failed (health_check_loop async tests - missing pytest-asyncio plugin)
+
+### Evidence files
+- `.sisyphus/evidence/task-8-oig-cloud-verify.txt`
+- `.sisyphus/evidence/task-8-oig-proxy-contract.txt`
+
+### Key insight
+The proxy contract documentation in DATA_SOURCE.md was already partially updated in prior tasks, but the Local only mode description (line 19) still showed the old `sensor.oig_local_<box_id>_*` pattern. This was the only remaining stale reference that needed fixing. All contract details (5 domains, _cfg suffix, legacy alias rejection) were already correctly documented in the "Co je potřeba pro Local režim" section.

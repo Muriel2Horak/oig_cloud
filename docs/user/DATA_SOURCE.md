@@ -16,14 +16,14 @@ Nastavení najdete v průvodci/rekonfiguraci v kroku **Interval aktualizace**:
   - Doporučené, pokud nemáte lokální proxy.
 
 - **🏠 Local only (fallback na cloud při výpadku)** (`data_source_mode=local_only`)
-  - Primárně čte telemetrii z lokálních entit `sensor.oig_local_<box_id>_*`.
-  - Pokud lokální proxy „ztichne“ déle než limit, integrace se dočasně přepne na cloud a po obnovení lokálních dat se vrátí zpět.
+  - Primárně čte telemetrii z lokálních entit generovaných OIG Proxy: `{domain}.oig_local_<box_id>_<table>_<key>`, kde `{domain}` může být `sensor`, `binary_sensor`, `switch`, `number` nebo `select`. Ovládací entity mají suffix `_cfg` (např. `switch.oig_local_<box_id>_tbl_invertor_prms_to_grid_cfg`).
+  - Pokud lokální proxy „ztichne" déle než limit, integrace se dočasně přepne na cloud a po obnovení lokálních dat se vrátí zpět.
 
 ## Co je potřeba pro Local režim
 
 Local režim předpokládá, že v Home Assistant existují:
 
-- lokální telemetrické entity ve tvaru `sensor.oig_local_<box_id>_*`
+- lokální telemetrické entity ve tvaru `{domain}.oig_local_<box_id>_<table>_<key>` napříč všemi podporovanými doménami (`sensor`, `binary_sensor`, `switch`, `number`, `select`), kde ovládací entity končí suffixem `_cfg`
 - proxy status entity:
   - `sensor.oig_local_oig_proxy_proxy_status_last_data`
   - `sensor.oig_local_oig_proxy_proxy_status_box_device_id`
@@ -34,7 +34,7 @@ Pokud tyto entity neexistují (nebo jsou `unknown/unavailable`), integrace Local
 
 ## Fallback na cloud (kdy a proč)
 
-V Local režimu integrace sleduje „čerstvost“ lokálních dat:
+V Local režimu integrace sleduje „čerstvost" lokálních dat:
 
 - `Fallback na cloud po (minut)` (`local_proxy_stale_minutes`)
   - Pokud nepřijde žádná lokální aktualizace déle než tento limit, integrace přepne na cloud.
@@ -65,6 +65,5 @@ Základní kontrola je přes entitu:
 
 - Začněte s **Cloud only**.
 - Local režim zapínejte až když:
-  - máte ověřené lokální entity (`sensor.oig_local_*`) a proxy status entity,
+  - máte ověřené lokální entity (`{domain}.oig_local_*`) a proxy status entity,
   - a chcete rychlejší UI nebo odolnost proti výpadkům cloudu.
-
