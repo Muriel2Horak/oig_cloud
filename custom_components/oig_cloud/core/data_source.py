@@ -14,6 +14,7 @@ from homeassistant.helpers.debounce import Debouncer
 from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
+from .local_mapper import SUPPORTED_DOMAINS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -264,7 +265,7 @@ def _get_latest_local_entity_update(
 
 
 def _iter_local_entities(hass: HomeAssistant, box_id: str):
-    for domain in ("sensor", "binary_sensor"):
+    for domain in SUPPORTED_DOMAINS:
         prefix = f"{domain}.oig_local_{box_id}_"
         for st in hass.states.async_all(domain):
             if st.entity_id.startswith(prefix):
@@ -416,7 +417,9 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
 class DataSourceController:
     """Controls effective data source mode based on local proxy health."""
 
-    _LOCAL_ENTITY_RE = re.compile(r"^(?:sensor|binary_sensor)\.oig_local_(\d+)_")
+    _LOCAL_ENTITY_RE = re.compile(
+        r"^(?:sensor|binary_sensor|switch|number|select)\.oig_local_(\d+)_"
+    )
 
     def __init__(
         self,
@@ -551,9 +554,8 @@ class DataSourceController:
         entity_id = event.data.get("entity_id")
         if not isinstance(entity_id, str):
             return
-        if not (
-            entity_id.startswith("sensor.oig_local_")
-            or entity_id.startswith("binary_sensor.oig_local_")
+        if not any(
+            entity_id.startswith(f"{domain}.oig_local_") for domain in SUPPORTED_DOMAINS
         ):
             return
 

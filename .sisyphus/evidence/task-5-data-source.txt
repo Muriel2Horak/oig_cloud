@@ -1,0 +1,31 @@
+Task 5: Update local entity discovery and freshness handling in data source flows
+================================================================================
+
+Files modified:
+- custom_components/oig_cloud/core/data_source.py
+- custom_components/oig_cloud/core/telemetry_store.py
+- tests/test_data_source_helpers.py
+- tests/test_data_source_controller.py
+
+Changes:
+1. _iter_local_entities now iterates over all 5 audited domains from SUPPORTED_DOMAINS
+   (sensor, binary_sensor, switch, number, select)
+2. _LOCAL_ENTITY_RE updated to match all 5 domains: r"^(?:sensor|binary_sensor|switch|number|select)\.oig_local_(\d+)_"
+3. _on_any_state_change prefix filter now uses SUPPORTED_DOMAINS instead of hardcoded sensor/binary_sensor
+4. telemetry_store.seed_from_existing_local_states now iterates over SUPPORTED_DOMAINS
+5. Added tests proving switch, number, and select entities are discovered and tracked
+
+Test results (tests/test_data_source*.py):
+============================== 63 passed in 1.98s ===============================
+
+New tests added:
+- test_iter_local_entities_covers_all_domains
+- test_get_latest_local_entity_update_includes_control_domains
+- test_local_entity_re_matches_all_audited_domains
+- test_on_any_state_change_tracks_control_domains (parametrized for switch/number/select)
+
+Proxy status exceptions verified intact:
+- sensor.oig_local_oig_proxy_proxy_status_last_data
+- sensor.oig_local_oig_proxy_proxy_status_box_device_id
+
+Cloud fallback, stale-local detection, and box mismatch protections behaviorally unchanged.

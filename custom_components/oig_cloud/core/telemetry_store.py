@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, Optional
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .local_mapper import LocalUpdateApplier
+from .local_mapper import LocalUpdateApplier, SUPPORTED_DOMAINS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class TelemetryStore:
     def seed_from_existing_local_states(self) -> bool:
         """Seed payload from all currently-known local entity states for this box."""
         entity_ids = []
-        for domain in ("sensor", "binary_sensor"):
+        for domain in SUPPORTED_DOMAINS:
             prefix = f"{domain}.oig_local_{self.box_id}_"
             for st in self.hass.states.async_all(domain):
                 if st.entity_id.startswith(prefix):

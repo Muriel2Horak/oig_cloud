@@ -1109,3 +1109,54 @@ def test_update_state_proxy_box_mismatch_reason():
     controller = module.DataSourceController(hass, entry, coordinator=None)
 
     controller._update_state(force=True)
+
+
+def test_local_entity_re_matches_all_audited_domains():
+    re_obj = module.DataSourceController._LOCAL_ENTITY_RE
+    assert re_obj.match("sensor.oig_local_123_ac_out")
+    assert re_obj.match("binary_sensor.oig_local_123_tbl_invertor_prms_to_grid")
+    assert re_obj.match("switch.oig_local_123_tbl_box_prms_mode_cfg")
+    assert re_obj.match("number.oig_local_123_tbl_invertor_prms_bat_min_cfg")
+    assert re_obj.match("select.oig_local_123_proxy_control_proxy_mode_cfg")
+    assert not re_obj.match("light.oig_local_123_ac_out")
+    assert not re_obj.match("sensor.oig_local_abc_ac_out")
+
+
+@pytest.mark.parametrize(
+    "entity_id",
+    [
+        "switch.oig_local_123_tbl_box_prms_mode_cfg",
+        "number.oig_local_123_tbl_invertor_prms_bat_min_cfg",
+        "select.oig_local_123_proxy_control_proxy_mode_cfg",
+    ],
+)
+def test_on_any_state_change_tracks_control_domains(entity_id):
+    now = dt_util.utcnow()
+    states = [
+        DummyState(module.PROXY_LAST_DATA_ENTITY_ID, now.isoformat(), last_updated=now),
+        DummyState(module.PROXY_BOX_ID_ENTITY_ID, "123", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY, box_id="123")
+    controller = module.DataSourceController(hass, entry, coordinator=None)
+    controller._schedule_debounced_poke = lambda: None
+
+    hass.data[module.DOMAIN][entry.entry_id] = {
+        "data_source_state": module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=now,
+            reason="local_ok",
+        )
+    }
+
+    event = SimpleNamespace(
+        data={"entity_id": entity_id},
+        time_fired=now + timedelta(seconds=5),
+    )
+    controller._on_any_state_change(event)
+
+    assert entity_id in controller._pending_local_entities
+    assert controller._last_local_entity_update is not None
+

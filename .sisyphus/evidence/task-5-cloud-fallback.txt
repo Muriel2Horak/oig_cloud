@@ -1,0 +1,21 @@
+Task 5: Cloud fallback behavior verification
+=============================================
+
+Existing cloud fallback tests continue to pass:
+
+- test_update_state_cloud_only_forces_cloud
+- test_on_any_state_change_ignored_cloud_only
+- test_publish_pending_snapshot_skips_when_effective_cloud
+- test_async_start_seed_skips_publish_when_effective_cloud
+- test_init_data_source_state_cloud_only_effective
+- test_init_data_source_state_proxy_box_missing
+- test_init_data_source_state_proxy_mismatch
+- test_update_state_local_stale_reason
+- test_update_state_proxy_box_mismatch_reason
+
+All stale-local protections, box mismatch guards, and cloud-only fallbacks remain
+behaviorally unchanged after broadening domain discovery to include switch, number,
+and select.
+
+Test results (tests/test_data_source*.py):
+============================== 63 passed in 1.98s ===============================

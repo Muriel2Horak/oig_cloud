@@ -129,9 +129,41 @@ def test_get_latest_local_entity_update_skips_unknown():
 
 def test_get_latest_local_entity_update_exception(monkeypatch):
     class BadStates(DummyStates):
-        def async_all(self, _domain):
+        def async_all(self, domain):
             raise RuntimeError("boom")
 
     hass = DummyHass()
     hass.states = BadStates([])
     assert module._get_latest_local_entity_update(hass, "2206237016") is None
+
+
+def test_iter_local_entities_covers_all_domains():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_2206237016_ac_out", "1", last_updated=now),
+        DummyState("binary_sensor.oig_local_2206237016_tbl_invertor_prms_to_grid", "on", last_updated=now),
+        DummyState("switch.oig_local_2206237016_tbl_box_prms_mode_cfg", "home", last_updated=now),
+        DummyState("number.oig_local_2206237016_tbl_invertor_prms_bat_min_cfg", "10", last_updated=now),
+        DummyState("select.oig_local_2206237016_proxy_control_proxy_mode_cfg", "auto", last_updated=now),
+        DummyState("sensor.oig_local_999_ac_out", "1", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    found = [st.entity_id for st in module._iter_local_entities(hass, "2206237016")]
+    assert "sensor.oig_local_2206237016_ac_out" in found
+    assert "binary_sensor.oig_local_2206237016_tbl_invertor_prms_to_grid" in found
+    assert "switch.oig_local_2206237016_tbl_box_prms_mode_cfg" in found
+    assert "number.oig_local_2206237016_tbl_invertor_prms_bat_min_cfg" in found
+    assert "select.oig_local_2206237016_proxy_control_proxy_mode_cfg" in found
+    assert "sensor.oig_local_999_ac_out" not in found
+
+
+def test_get_latest_local_entity_update_includes_control_domains():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    later = datetime(2025, 1, 2, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_2206237016_ac_out", "1", last_updated=now),
+        DummyState("switch.oig_local_2206237016_tbl_box_prms_mode_cfg", "home", last_updated=later),
+    ]
+    hass = DummyHass(states)
+    latest = module._get_latest_local_entity_update(hass, "2206237016")
+    assert latest == later
