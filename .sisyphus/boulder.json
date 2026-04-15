@@ -1,10 +1,59 @@
 {
-  "active_plan": "/Users/martinhorak/Downloads/oig_cloud/.sisyphus/plans/economic-planner-mitigation-plan.md",
-  "started_at": "2026-03-07T07:11:26.526Z",
+  "active_plan": "/repos/oig-cloud/.sisyphus/plans/grid-delivery-limit-only-edit-ux.md",
+  "started_at": "2026-04-14T17:28:03.456Z",
   "session_ids": [
-    "ses_33bcc66d7ffeLbiG09vHZ3XptG"
+    "ses_278422676ffeIp0mJjOvsXtHeg"
   ],
-  "plan_name": "economic-planner-mitigation-plan",
+  "session_origins": {
+    "ses_278422676ffeIp0mJjOvsXtHeg": "direct"
+  },
+  "plan_name": "grid-delivery-limit-only-edit-ux",
   "agent": "atlas",
-  "worktree_path": "/Users/martinhorak/Downloads/oig_cloud-worktrees/economic-battery-planner-final"
+  "task_sessions": {
+    "todo:2": {
+      "task_key": "todo:2",
+      "task_label": "2",
+      "task_title": "Add limit-only dialog variant to confirm-dialog",
+      "session_id": "ses_272c0ee03ffefX6nGZ0hecAGSd",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "updated_at": "2026-04-14T18:32:15.299Z"
+    },
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "Allow active-limited re-clicks and wire them to limit-only dialog",
+      "session_id": "ses_272b93376ffeLgC1QtIagpBZ9G",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "updated_at": "2026-04-14T18:37:12.615Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "Remove redundant limit label from control-panel selector",
+      "session_id": "ses_272ad18d1ffeK5tTLLYFbwSoZH",
+      "agent": "Sisyphus-Junior",
+      "category": "visual-engineering",
+      "updated_at": "2026-04-14T18:54:02.154Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Add/update control-panel render regression tests",
+      "session_id": "ses_272a656faffea1aqBTRcUE6MMD",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-04-14T18:56:47.588Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Rebuild and verify Dashboard V2 artifacts for release-consistent output",
+      "session_id": "ses_272a2b9a9ffeYC5sTupQ1t7CHY",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-04-14T19:04:53.307Z"
+    }
+  }
 }

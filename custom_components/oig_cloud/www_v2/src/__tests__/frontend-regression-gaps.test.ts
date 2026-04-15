@@ -468,19 +468,15 @@ describe('Frontend Regression Gaps — Control Panel Render', () => {
         limited: 'active',
       });
 
-      // values[0] = activeLimitLabel (shows current limit)
-      const activeLimitLabel = result?.values?.[0] as { values?: unknown[] } | null;
-      expect(activeLimitLabel).not.toBeNull();
-      expect(activeLimitLabel?.values).toContain(5000);
-
-      // values[1] = pendingLabel (shows pending target)
-      const pendingLabel = result?.values?.[1] as { values?: unknown[] } | null;
+      // values[0] = pendingLabel (shows pending target)
+      const pendingLabel = result?.values?.[0] as { values?: unknown[] } | null;
       expect(pendingLabel).not.toBeNull();
       expect(pendingLabel?.values?.some((v: unknown) => String(v).includes('Vypnuto'))).toBe(true);
 
-      // Both should be present simultaneously
-      expect(activeLimitLabel).not.toBeNull();
-      expect(pendingLabel).not.toBeNull();
+      // values[1] = mode buttons
+      const modeButtonsTemplate = result?.values?.[1] as Array<{ values?: unknown[] }> | null;
+      expect(modeButtonsTemplate).toBeDefined();
+      expect(Array.isArray(modeButtonsTemplate)).toBe(true);
     });
 
     it('renders current off active while pending shows limited separately', () => {
@@ -490,14 +486,15 @@ describe('Frontend Regression Gaps — Control Panel Render', () => {
         limited: 'pending',
       });
 
-      // Current is off, so no active limit label
-      const activeLimitLabel = result?.values?.[0];
-      expect(activeLimitLabel).toBeNull();
-
-      // But pending label shows limited
-      const pendingLabel = result?.values?.[1] as { values?: unknown[] } | null;
+      // values[0] = pendingLabel shows limited
+      const pendingLabel = result?.values?.[0] as { values?: unknown[] } | null;
       expect(pendingLabel).not.toBeNull();
       expect(pendingLabel?.values?.some((v: unknown) => String(v).includes('S omezen'))).toBe(true);
+
+      // values[1] = mode buttons
+      const modeButtonsTemplate = result?.values?.[1] as Array<{ values?: unknown[] }> | null;
+      expect(modeButtonsTemplate).toBeDefined();
+      expect(Array.isArray(modeButtonsTemplate)).toBe(true);
     });
 
     it('renders current on active while pending shows limited with limit', () => {
@@ -507,13 +504,14 @@ describe('Frontend Regression Gaps — Control Panel Render', () => {
         limited: 'pending',
       });
 
-      // Current is on, no limit label shown
-      const activeLimitLabel = result?.values?.[0];
-      expect(activeLimitLabel).toBeNull();
-
-      // Pending shows limited
-      const pendingLabel = result?.values?.[1] as { values?: unknown[] } | null;
+      // values[0] = pendingLabel
+      const pendingLabel = result?.values?.[0] as { values?: unknown[] } | null;
       expect(pendingLabel).not.toBeNull();
+
+      // values[1] = mode buttons
+      const modeButtonsTemplate = result?.values?.[1] as Array<{ values?: unknown[] }> | null;
+      expect(modeButtonsTemplate).toBeDefined();
+      expect(Array.isArray(modeButtonsTemplate)).toBe(true);
     });
 
     it('button classes show current active and pending-target simultaneously', () => {
@@ -529,8 +527,8 @@ describe('Frontend Regression Gaps — Control Panel Render', () => {
         [],
       ) as { values?: unknown[] } | null;
 
-      // values[2] = mode-buttons array
-      const modeButtonsTemplate = rendered?.values?.[2] as Array<{ values?: unknown[] }> | null;
+      // values[1] = mode-buttons array
+      const modeButtonsTemplate = rendered?.values?.[1] as Array<{ values?: unknown[] }> | null;
       expect(modeButtonsTemplate).toBeDefined();
       expect(Array.isArray(modeButtonsTemplate)).toBe(true);
 
@@ -562,7 +560,7 @@ describe('Frontend Regression Gaps — Control Panel Render', () => {
         [],
       ) as { values?: unknown[] } | null;
 
-      const modeButtonsTemplate = rendered?.values?.[2] as Array<{ values?: unknown[] }> | null;
+      const modeButtonsTemplate = rendered?.values?.[1] as Array<{ values?: unknown[] }> | null;
       if (modeButtonsTemplate && Array.isArray(modeButtonsTemplate)) {
         // Off button should be active (current state)
         const offButton = modeButtonsTemplate[0] as { values?: unknown[] } | null;
@@ -576,21 +574,20 @@ describe('Frontend Regression Gaps — Control Panel Render', () => {
   });
 
   describe('live LIMITED + pending limit-only in control panel', () => {
-    it('shows limited active with active limit label and no mode pending', () => {
+    it('shows limited active with no mode pending and renders limit input', () => {
       const result = renderSelector('limited', null, 3000, {
         off: 'idle',
         on: 'idle',
         limited: 'active',
       });
 
-      // Active limit label shows current limit
-      const activeLimitLabel = result?.values?.[0] as { values?: unknown[] } | null;
-      expect(activeLimitLabel).not.toBeNull();
-      expect(activeLimitLabel?.values).toContain(3000);
-
-      // No pending label since pendingTarget is null (limit-only change)
-      const pendingLabel = result?.values?.[1];
+      // values[0] = pendingLabel is null because no pending change
+      const pendingLabel = result?.values?.[0];
       expect(pendingLabel).toBeNull();
+
+      // values[2] = limit input container is present because showLimitInput is true
+      const limitInput = result?.values?.[2] as { values?: unknown[] } | null;
+      expect(limitInput).not.toBeNull();
     });
   });
 });

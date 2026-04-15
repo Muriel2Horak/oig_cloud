@@ -1,0 +1,57 @@
+
+> oig-dashboard-v2@2.0.0-beta.1 test:unit
+> vitest run src/__tests__/grid-mode-control-panel.test.ts --reporter=verbose
+
+
+ RUN  v1.6.1 /repos/oig-cloud/custom_components/oig_cloud/www_v2
+
+stderr | issueWarning (file:/repos/oig-cloud/custom_components/oig_cloud/www_v2/node_modules/@lit/reactive-element/src/reactive-element.ts:98:15)
+Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > resolveGridDelivery — robustness against sensor value variants > resolves canonical Czech exact matches
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > resolveGridDelivery — robustness against sensor value variants > resolves lowercase Czech variants
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > resolveGridDelivery — robustness against sensor value variants > resolves canonical English exact matches
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > resolveGridDelivery — robustness against sensor value variants > resolves lowercase English variants
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > resolveGridDelivery — robustness against sensor value variants > resolves numeric string variants
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > resolveGridDelivery — robustness against sensor value variants > resolves all-caps variants via case-insensitive fallback
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > resolveGridDelivery — robustness against sensor value variants > resolves compound values like "Omezeno (5000 W)" via prefix matching
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > resolveGridDelivery — robustness against sensor value variants > resolves values with leading/trailing whitespace
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > resolveGridDelivery — robustness against sensor value variants > returns "off" for unknown/transition values instead of crashing
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > GRID_DELIVERY_SENSOR_MAP — covers both Czech and English keys > has entries for all three GridDelivery states in multiple forms
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > GRID_DELIVERY_SENSOR_MAP — covers both Czech and English keys > maps "Omezeno" to limited (Czech backend canonical)
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > GRID_DELIVERY_LABELS — nice user-facing labels preserved > keeps Czech user-facing labels for all three modes
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > Grid mode + limit ordered split flow > resolveGridDelivery preserves existing limited state during "Probíhá změna" transition
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > Grid mode + limit ordered split flow > resolves to limited consistently regardless of casing variation
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > Grid mode + limit ordered split flow > resolves to on consistently regardless of casing variation
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > Grid mode + limit ordered split flow > resolves to off consistently regardless of casing variation
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — activeLimitLabel render branch > activeLimitLabel is a TemplateResult when value=limited and limit > 0
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — activeLimitLabel render branch > activeLimitLabel is null when value=limited but limit=0
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — activeLimitLabel render branch > activeLimitLabel is null when value=off even if buttonStates.limited=active (live-only rule)
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — activeLimitLabel render branch > activeLimitLabel is null when value=off and buttonStates.limited=idle even with limit > 0
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — activeLimitLabel render branch > activeLimitLabel TemplateResult contains the limit value as a template value
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — limited button stays visually active during service transition > limited button class is "active disabled-by-service" when value=limited and shield is changing to off
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — limited button stays visually active during service transition > limited button class is "active" when value=limited and no service change is pending
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — limited button stays visually active during service transition > off button class is not active when value=limited even if shield disabled it
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — limited button stays visually active during service transition > no button gets active-override when value=off and all states are idle
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — pending target rendering separation > pendingLabel is null when pendingTarget matches current value (no change)
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — pending target rendering separation > pendingLabel is null when pendingTarget is null
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — pending target rendering separation > pendingLabel is a TemplateResult when pendingTarget differs from live value
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — pending target rendering separation > pendingLabel contains pending target label text when value=off and pendingTarget=on
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — pending target rendering separation > activeLimitLabel uses live value only — not shown when value=off even with pending=limited
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — pending target rendering separation > activeLimitLabel shown when value=limited regardless of pendingTarget
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — pending-target button class > pending target button gets "idle pending-target" class, not "active"
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — pending-target button class > live current button retains active class even when pending target differs
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — pending-target button class > pending target class NOT applied when pendingTarget equals live value
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > Control panel — dialog prefill uses live limit not pending > OigGridDeliverySelector shows live limit value when value=limited
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > Control panel — dialog prefill uses live limit not pending > OigGridDeliverySelector does not show stale limit when live value is off
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — unknown live state leaves all buttons inactive > no button is active when live delivery is unknown
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — unknown live state leaves all buttons inactive > off button is NOT activated when live delivery is unknown — no silent unknown->off mapping
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — active limited re-click emits delivery-change > emits delivery-change event when already-active limited button is clicked
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigGridDeliverySelector — active limited re-click emits delivery-change > still no-ops when active off or active on is clicked
+ ✓ src/__tests__/grid-mode-control-panel.test.ts > OigControlPanel — grid delivery limit-only fast path > prepares a limit-only dialog config when live mode is limited and delivery-change fires for limited
+
+ Test Files  1 passed (1)
+      Tests  41 passed (41)
+   Start at  18:43:09
+   Duration  5.16s (transform 1.04s, setup 166ms, collect 1.22s, tests 69ms, environment 1.96s, prepare 470ms)
+

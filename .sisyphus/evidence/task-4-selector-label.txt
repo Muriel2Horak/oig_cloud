@@ -1,0 +1,34 @@
+Task 4: Remove redundant limit label from control-panel selector
+================================================================
+Date: 2026-04-14
+
+CHANGES MADE
+------------
+
+1. selectors.ts (lines ~279-292):
+   - Removed `isLiveLimited` variable
+   - Removed `activeLimitLabel` TemplateResult (was: <span class="status-text">{limit} W</span>)
+   - Removed `${activeLimitLabel}` from selector-label div
+   - `pendingLabel` and all button/input logic unchanged
+
+2. grid-mode-control-panel.test.ts:
+   - Deleted describe block: 'OigGridDeliverySelector — activeLimitLabel render branch' (5 tests removed)
+   - Deleted describe block: 'Control panel — dialog prefill uses live limit not pending' (2 tests removed)
+   - Updated values[] indices in 3 describe blocks (values[2]→[1] for mode-buttons, values[1]→[0] for pendingLabel)
+   - Removed 2 individual activeLimitLabel assertions from 'pending target rendering separation' describe
+
+TEST RESULTS
+------------
+vitest run src/__tests__/grid-mode-control-panel.test.ts
+
+Test Files  1 passed (1)
+     Tests  32 passed (32)
+  Duration  4.55s
+
+INVARIANTS PRESERVED
+--------------------
+- Limit input field (showLimitInput + <input type="number">) unchanged
+- Off/On/Limited mode buttons unchanged
+- Event emission (delivery-change, limit-change) unchanged
+- pendingLabel (transitioning indicator) unchanged
+- CSS layout: selector-label div still exists, no spacing broken

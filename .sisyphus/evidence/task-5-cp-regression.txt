@@ -1,0 +1,17 @@
+
+> oig-dashboard-v2@2.0.0-beta.1 test:unit
+> vitest run src/__tests__/grid-mode-control-panel.test.ts
+
+
+ RUN  v1.6.1 /repos/oig-cloud/custom_components/oig_cloud/www_v2
+
+stderr | issueWarning (file:/repos/oig-cloud/custom_components/oig_cloud/www_v2/node_modules/@lit/reactive-element/src/reactive-element.ts:98:15)
+Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+
+ ✓ src/__tests__/grid-mode-control-panel.test.ts  (34 tests) 55ms
+
+ Test Files  1 passed (1)
+      Tests  34 passed (34)
+   Start at  18:58:08
+   Duration  4.19s (transform 788ms, setup 134ms, collect 934ms, tests 55ms, environment 1.41s, prepare 331ms)
+

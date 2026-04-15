@@ -189,7 +189,7 @@ export class OigBoxModeSelector extends LitElement {
 
 @customElement('oig-grid-delivery-selector')
 export class OigGridDeliverySelector extends LitElement {
-  @property({ type: String }) value: GridDelivery = 'off';
+  @property({ type: String }) value: GridDelivery | 'unknown' = 'off';
   @property({ type: Number }) limit = 0;
   @property({ type: Boolean }) disabled = false;
   @property({ type: String }) pendingTarget: GridDelivery | null = null;
@@ -243,7 +243,8 @@ export class OigGridDeliverySelector extends LitElement {
 
   private onDeliveryClick(delivery: GridDelivery): void {
     const state = this.buttonStates[delivery];
-    if (this.disabled || state === 'active' || state === 'pending' || state === 'processing' || state === 'disabled-by-service') return;
+    if (this.disabled || state === 'pending' || state === 'processing' || state === 'disabled-by-service') return;
+    if (state === 'active' && delivery !== 'limited') return;
 
     this.dispatchEvent(new CustomEvent('delivery-change', {
       detail: { value: delivery, limit: delivery === 'limited' ? this.limit : null },
@@ -275,11 +276,6 @@ export class OigGridDeliverySelector extends LitElement {
     const limitState = this.buttonStates.limited;
     const limitBorderClass = limitState === 'pending' ? 'pending-border' : limitState === 'processing' ? 'processing-border' : '';
 
-    const isLiveLimited = this.value === 'limited';
-    const activeLimitLabel = isLiveLimited && this.limit > 0
-      ? html`<span class="status-text">${this.limit}\u00A0W</span>`
-      : null;
-
     const hasPendingChange = this.pendingTarget !== null && this.pendingTarget !== this.value;
     const pendingLabel = hasPendingChange
       ? html`<span class="status-text transitioning">\u23F3\u00A0${GRID_DELIVERY_LABELS[this.pendingTarget!]}</span>`
@@ -287,7 +283,7 @@ export class OigGridDeliverySelector extends LitElement {
 
     return html`
       <div class="selector-label">
-        Dod\u00E1vka do s\u00EDt\u011B ${activeLimitLabel}${pendingLabel}
+        Dod\u00E1vka do s\u00EDt\u011B ${pendingLabel}
       </div>
       <div class="mode-buttons">
         ${options.map(opt => {

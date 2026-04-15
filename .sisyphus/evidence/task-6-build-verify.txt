@@ -1,0 +1,92 @@
+=== typecheck ===
+
+> oig-dashboard-v2@2.0.0-beta.1 typecheck
+> tsc --noEmit
+
+
+=== test:unit ===
+
+> oig-dashboard-v2@2.0.0-beta.1 test:unit
+> vitest run
+
+
+[7m[1m[36m RUN [39m[22m[27m [36mv1.6.1[39m [90m/repos/oig-cloud/custom_components/oig_cloud/www_v2[39m
+
+ [32m✓[39m src/__tests__/grid-delivery-model.test.ts [2m ([22m[2m51 tests[22m[2m)[22m[90m 109[2mms[22m[39m
+[90mstderr[2m | issueWarning (file:/repos/oig-cloud/custom_components/oig_cloud/www_v2/node_modules/@lit/reactive-element/src/reactive-element.ts:98:15)[22m[39m
+Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+
+ [32m✓[39m src/__tests__/frontend-regression-gaps.test.ts [2m ([22m[2m26 tests[22m[2m)[22m[90m 273[2mms[22m[39m
+ [32m✓[39m src/__tests__/shield-controller.test.ts [2m ([22m[2m69 tests[22m[2m)[22m[33m 1848[2mms[22m[39m
+[90mstderr[2m | issueWarning (file:/repos/oig-cloud/custom_components/oig_cloud/www_v2/node_modules/@lit/reactive-element/src/reactive-element.ts:98:15)[22m[39m
+Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+
+[90mstderr[2m | issueWarning (file:/repos/oig-cloud/custom_components/oig_cloud/www_v2/node_modules/@lit/reactive-element/src/reactive-element.ts:98:15)[22m[39m
+Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+
+ [32m✓[39m src/__tests__/confirm-dialog-ack.test.ts [2m ([22m[2m46 tests[22m[2m)[22m[33m 863[2mms[22m[39m
+ [32m✓[39m src/__tests__/grid-mode-control-panel.test.ts [2m ([22m[2m34 tests[22m[2m)[22m[90m 112[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/flow/pending.test.ts [2m ([22m[2m23 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+[90mstderr[2m | issueWarning (file:/repos/oig-cloud/custom_components/oig_cloud/www_v2/node_modules/@lit/reactive-element/src/reactive-element.ts:98:15)[22m[39m
+Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+
+[90mstdout[2m | src/__tests__/app-refresh.test.ts[2m > [22m[2mOigApp live refresh[2m > [22m[2mresubscribes state watcher when HA connection changes[22m[39m
+[V2] 19:15:38.249 INFO  StateWatcher started { prefixes: [ [32m'sensor.oig_2206237016_'[39m ], watchedCount: [33m0[39m }
+[V2] 19:15:38.253 INFO  StateWatcher stopped 
+[V2] 19:15:38.253 INFO  StateWatcher started { prefixes: [ [32m'sensor.oig_2206237016_'[39m ], watchedCount: [33m0[39m }
+[V2] 19:15:38.255 INFO  StateWatcher stopped 
+
+ [32m✓[39m src/__tests__/app-refresh.test.ts [2m ([22m[2m8 tests[22m[2m)[22m[90m 137[2mms[22m[39m
+ [32m✓[39m src/__tests__/flow-data.test.ts [2m ([22m[2m20 tests[22m[2m)[22m[90m 110[2mms[22m[39m
+[90mstderr[2m | issueWarning (file:/repos/oig-cloud/custom_components/oig_cloud/www_v2/node_modules/@lit/reactive-element/src/reactive-element.ts:98:15)[22m[39m
+Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information.
+
+ [32m✓[39m src/__tests__/inverter-card-grid-delivery.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[33m 1769[2mms[22m[39m
+ [32m✓[39m tests/unit/core/errors.test.ts [2m ([22m[2m16 tests[22m[2m)[22m[90m 88[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/control-panel/types.test.ts [2m ([22m[2m16 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m tests/unit/data/query-cache.test.ts [2m ([22m[2m15 tests[22m[2m)[22m[90m 116[2mms[22m[39m
+ [32m✓[39m tests/unit/core/lifecycle.test.ts [2m ([22m[2m11 tests[22m[2m)[22m[90m 84[2mms[22m[39m
+[90mstderr[2m | tests/unit/core/lifecycle.test.ts[2m > [22m[2mLifecycle[2m > [22m[2mmount[2m > [22m[2mshould only mount once[22m[39m
+[V2] 19:15:47.934 WARN  Lifecycle already mounted 
+
+ [32m✓[39m tests/unit/utils/format.test.ts [2m ([22m[2m22 tests[22m[2m)[22m[90m 141[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/layout/flow-layout.test.ts [2m ([22m[2m10 tests[22m[2m)[22m[90m 47[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/components.test.ts [2m ([22m[2m16 tests[22m[2m)[22m[90m 39[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/pricing/types.test.ts [2m ([22m[2m7 tests[22m[2m)[22m[90m 41[2mms[22m[39m
+ [32m✓[39m tests/unit/utils/dom.test.ts [2m ([22m[2m11 tests[22m[2m)[22m[90m 213[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/theme.test.ts [2m ([22m[2m16 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/data/flow-data.test.ts [2m ([22m[2m5 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/unit/utils/colors.test.ts [2m ([22m[2m15 tests[22m[2m)[22m[90m 46[2mms[22m[39m
+ [32m✓[39m tests/unit/utils/motion.test.ts [2m ([22m[2m11 tests[22m[2m)[22m[90m 189[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/flow/types.test.ts [2m ([22m[2m10 tests[22m[2m)[22m[90m 38[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/boiler/types.test.ts [2m ([22m[2m8 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m src/__tests__/pending-indicators.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 44[2mms[22m[39m
+ [32m✓[39m src/__tests__/node-sizing.test.ts [2m ([22m[2m5 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/chmu/types.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 35[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/timeline/types.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/tiles/types.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/unit/ui/analytics/types.test.ts [2m ([22m[2m1 test[22m[2m)[22m[90m 93[2mms[22m[39m
+ [32m✓[39m src/__tests__/example.test.ts [2m ([22m[2m4 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m src/__tests__/tile-grid.test.ts [2m ([22m[2m2 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m32 passed[39m[22m[90m (32)[39m
+[2m      Tests [22m [1m[32m498 passed[39m[22m[90m (498)[39m
+[2m   Start at [22m 19:15:19
+[2m   Duration [22m 56.87s[2m (transform 4.47s, setup 3.35s, collect 8.64s, tests 6.70s, environment 97.25s, prepare 22.40s)[22m
+
+
+=== build ===
+
+> oig-dashboard-v2@2.0.0-beta.1 build
+> tsc && vite build
+
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 404 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html        [39m[1m[2m  1.73 kB[22m[1m[22m[2m │ gzip:   0.80 kB[22m
+[2mdist/[22m[2massets/[22m[36mvendor.js  [39m[1m[2m 16.60 kB[22m[1m[22m[2m │ gzip:   6.23 kB[22m[2m │ map:    37.17 kB[22m
+[2mdist/[22m[2massets/[22m[36mcharts.js  [39m[1m[2m227.27 kB[22m[1m[22m[2m │ gzip:  79.83 kB[22m[2m │ map: 1,063.63 kB[22m
+[2mdist/[22m[2massets/[22m[36mindex.js   [39m[1m[2m438.26 kB[22m[1m[22m[2m │ gzip: 102.47 kB[22m[2m │ map: 1,282.04 kB[22m
+[32m✓ built in 10.89s[39m

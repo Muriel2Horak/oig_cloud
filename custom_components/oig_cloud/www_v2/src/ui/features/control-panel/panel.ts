@@ -50,7 +50,14 @@ export class OigControlPanel extends LitElement {
     changingServices: new Set(),
   };
 
-  @query('oig-confirm-dialog') private confirmDialog!: OigConfirmDialog;
+  private _confirmDialogOverride: OigConfirmDialog | null = null;
+  @query('oig-confirm-dialog') private _confirmDialogQuery!: OigConfirmDialog;
+  private get confirmDialog(): OigConfirmDialog {
+    return (this._confirmDialogOverride ?? this._confirmDialogQuery) as OigConfirmDialog;
+  }
+  private set confirmDialog(value: OigConfirmDialog) {
+    this._confirmDialogOverride = value;
+  }
 
   private unsubscribe: (() => void) | null = null;
 
@@ -232,6 +239,31 @@ export class OigControlPanel extends LitElement {
 
     oigLog.debug('Control panel: grid delivery change requested', { delivery, limit });
 
+    // ── FAST PATH: re-click on active limited button → limit-only dialog ─────
+    const liveDelivery = this.shieldState.gridDeliveryState.currentLiveDelivery;
+    const isTransitioning = this.shieldState.gridDeliveryState.isTransitioning;
+
+    if (!isTransitioning && liveDelivery === 'limited' && delivery === 'limited') {
+      const fastConfig: ConfirmDialogConfig = {
+        title: '🚰 Změnit limit přetoků',
+        message: '',
+        limitOnly: true,
+        showLimitInput: true,
+        limitValue: currentLimit,
+        limitMin: 1,
+        limitMax: 20000,
+        limitStep: 100,
+        confirmText: 'Uložit limit',
+        cancelText: 'Zrušit',
+      };
+      const result = await this.confirmDialog.showDialog(fastConfig);
+      if (!result.confirmed) return;
+      if (!shieldController.shouldProceedWithQueue()) return;
+      await shieldController.setGridDelivery('limited', result.limit);
+      return;
+    }
+    // ── END FAST PATH ─────────────────────────────────────────────────────────
+
     // Build dialog config (matches V1 showGridDeliveryDialog)
     const config: ConfirmDialogConfig = {
       title: `${icon} Zm\u011Bna dod\u00E1vky do s\u00EDt\u011B`,
@@ -382,7 +414,7 @@ export class OigControlPanel extends LitElement {
           <!-- Grid Delivery Selector -->
           <div class="selector-section">
             <oig-grid-delivery-selector
-              .value=${s.gridDeliveryState.currentLiveDelivery as GridDelivery}
+              .value=${s.gridDeliveryState.currentLiveDelivery}
               .limit=${s.gridDeliveryState.currentLiveLimit ?? 0}
               .pendingTarget=${s.gridDeliveryState.pendingDeliveryTarget}
               .buttonStates=${this.gridDeliveryButtonStates}

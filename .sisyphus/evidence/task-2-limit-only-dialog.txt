@@ -1,0 +1,40 @@
+TASK 2 — Limit-Only Dialog Variant
+====================================
+Date: 2026-04-14
+
+CHANGES MADE
+------------
+1. custom_components/oig_cloud/www_v2/src/ui/features/control-panel/types.ts
+   - Added `limitOnly?: boolean` field to `ConfirmDialogConfig` interface (line ~298)
+   - JSDoc explains: skips main warning/ack sections, implies showLimitInput=true
+
+2. custom_components/oig_cloud/www_v2/src/ui/features/control-panel/confirm-dialog.ts
+   - `onConfirm`: unified hasLimit flag covers both `showLimitInput` and `limitOnly`
+   - `render()`: early-return limitOnly branch — renders compact dialog with:
+       * dialog-header using c.title OR fallback "Změnit limit přetoků"
+       * limit-section (number input, min=1, max=20000, step=100)
+       * dialog-actions (cancel + confirm "Uložit limit")
+       * NO dialog-body, NO dialog-warning, NO ack-wrapper
+   - Existing `showLimitInput` path unchanged (no regression)
+
+3. custom_components/oig_cloud/www_v2/src/__tests__/confirm-dialog-ack.test.ts
+   - Added describe block: "OigConfirmDialog — limitOnly variant" (10 new tests)
+   - Tests cover: DOM structure, header fallback, input attributes, confirm/cancel
+     resolution, blocked-below-min, custom confirmText, default "Uložit limit" text
+
+TEST RESULTS
+------------
+ ✓ src/__tests__/confirm-dialog-ack.test.ts  (46 tests) 510ms
+   36 pre-existing tests: ALL PASS
+   10 new limitOnly tests: ALL PASS
+
+LSP DIAGNOSTICS
+---------------
+confirm-dialog.ts: No errors
+confirm-dialog-ack.test.ts: No errors
+types.ts: No errors
+
+RETURN TYPE
+-----------
+ConfirmDialogResult shape unchanged: { confirmed: boolean; limit?: number }
+limitOnly variant resolves limit from limitValue state (same as showLimitInput).
