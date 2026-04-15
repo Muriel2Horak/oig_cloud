@@ -1,0 +1,21 @@
+Task 6: Update local sensor helpers and canonical state readers
+
+File modified: custom_components/oig_cloud/entities/data_sensor.py
+- Imported SUPPORTED_DOMAINS from ..core.local_mapper
+- Updated _get_local_entity_id_for_config to use SUPPORTED_DOMAINS as default instead of ["sensor"]
+- Added _cfg suffix fallback across all SUPPORTED_DOMAINS when raw suffix lookup fails
+- Backward compatibility preserved: explicit local_entity_domains still tried first
+
+File modified: tests/test_data_sensor_more.py
+- Added test_get_local_entity_id_for_config_default_uses_supported_domains
+- Added test_get_local_entity_id_for_config_discovers_cfg_suffix
+- Added test_get_local_entity_id_for_config_prefers_explicit_domain_before_cfg
+- Added test_get_local_value_for_sensor_type_from_control_entity
+- Added test_local_grid_mode_uses_control_domain_entities
+
+Test results:
+/repos/oig-cloud/.venv/bin/python -m pytest tests/test_data_sensor*.py -v
+66 passed in 2.40s
+0 failures
+
+LSP diagnostics: clean on custom_components/oig_cloud/entities/data_sensor.py

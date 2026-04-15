@@ -81,3 +81,58 @@ Algorithm:
 
 ### Key insight
 `normalize_proxy_entity_id` is stricter than the old parser: it requires the suffix to have a valid `table_key` structure. Tests using unrealistic suffixes like `"suffix"` (no underscore) had to be updated to use realistic suffixes like `"tbl_test_key"`.
+
+## Task 5: Local Data-Source Discovery Update
+
+### What was changed
+- `data_source.py`:
+  - Imported `SUPPORTED_DOMAINS` from `.local_mapper` (no circular dependency)
+  - `_iter_local_entities` now iterates over all 5 audited domains instead of hardcoded `("sensor", "binary_sensor")`
+  - `_LOCAL_ENTITY_RE` expanded to match `sensor|binary_sensor|switch|number|select`
+  - `_on_any_state_change` prefix filter replaced hardcoded `sensor.oig_local_` / `binary_sensor.oig_local_` checks with `any(entity_id.startswith(f"{domain}.oig_local_") for domain in SUPPORTED_DOMAINS)`
+- `telemetry_store.py`:
+  - `seed_from_existing_local_states` now iterates over `SUPPORTED_DOMAINS` instead of hardcoded `("sensor", "binary_sensor")`
+
+### Test updates
+- `test_data_source_helpers.py`:
+  - Added `test_iter_local_entities_covers_all_domains` — verifies all 5 domain entities are yielded and foreign box IDs are excluded
+  - Added `test_get_latest_local_entity_update_includes_control_domains` — proves `switch` entities contribute to freshness evaluation
+- `test_data_source_controller.py`:
+  - Added `test_local_entity_re_matches_all_audited_domains` — regex positive/negative cases for all 5 domains
+  - Added parametrized `test_on_any_state_change_tracks_control_domains` for `switch`, `number`, `select`
+
+### Verification
+- 63 tests pass (0 failures) in `tests/test_data_source*.py`
+- LSP diagnostics clean on all modified files
+- Proxy status exceptions (`sensor.oig_local_oig_proxy_*`) remain discoverable and explicit
+- Cloud-only mode, stale-local detection, and box mismatch protections behaviorally unchanged
+
+### Key insight
+Using `SUPPORTED_DOMAINS` from `local_mapper.py` as the single canonical source eliminates drift between the proxy contract and local discovery logic. The regex still requires a numeric box_id (`\d+`) after `oig_local_`, which preserves the existing device-scoping behavior.
+
+## Task 6: Local Sensor Helpers Update
+
+### What was changed
+- `data_sensor.py`:
+  - Imported `SUPPORTED_DOMAINS` from `core/local_mapper`
+  - `_get_local_entity_id_for_config` now defaults to `SUPPORTED_DOMAINS` instead of `["sensor"]` when no `local_entity_domains` are specified
+  - Added `_cfg` suffix fallback: after trying the raw suffix across primary domains, it tries `{suffix}_cfg` across all `SUPPORTED_DOMAINS`
+  - Backward compatibility: explicit `local_entity_domains` are still respected for the first pass, but `_cfg` fallback uses all supported domains
+
+### Why this matters
+- Proxy control entities append `_cfg` to their suffix (e.g., `switch.oig_local_*_tbl_invertor_prms_to_grid_cfg`), but SENSOR_TYPES configs often omit `_cfg`
+- Grid-delivery local fallback (`_get_local_grid_mode`) now correctly resolves control-domain inputs like `switch.oig_local_*_tbl_box_prms_crct_cfg` and `number.oig_local_*_tbl_invertor_prm1_p_max_feed_grid_cfg`
+- The canonical resolver `resolve_grid_delivery_live_state` itself was unchanged; only the local input feeding into it was fixed
+
+### Test coverage
+- 5 new tests in `tests/test_data_sensor_more.py` covering:
+  - Default domain list uses `SUPPORTED_DOMAINS`
+  - `_cfg` suffix discovery for control entities
+  - Explicit domains preferred over `_cfg` fallback
+  - `_get_local_value_for_sensor_type` reading from control entities
+  - `_get_local_grid_mode` resolving from control-domain local entities
+
+### Verification
+- 66 tests pass (0 failures) in `tests/test_data_sensor*.py`
+- LSP diagnostics clean on all modified files
+

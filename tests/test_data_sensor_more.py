@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from custom_components.oig_cloud.core.local_mapper import SUPPORTED_DOMAINS
 from custom_components.oig_cloud.entities.data_sensor import GridMode, OigCloudDataSensor
 
 
@@ -547,3 +548,101 @@ def test_resolve_box_id_fallback(monkeypatch):
     coordinator = DummyCoordinator(hass, data={})
     sensor = OigCloudDataSensor(coordinator, "simple")
     assert sensor.entity_id.startswith("sensor.oig_unknown_")
+
+
+def test_get_local_entity_id_for_config_default_uses_supported_domains(monkeypatch):
+    """When no local_entity_domains are given, all SUPPORTED_DOMAINS are tried."""
+    states = {
+        "switch.oig_local_123_foo": DummyState("1"),
+    }
+    sensor = _make_sensor(
+        monkeypatch,
+        "local_default_all_domains",
+        {"local_entity_suffix": "foo"},
+        states=states,
+    )
+    assert sensor._get_local_entity_id_for_config(sensor._sensor_config) == (
+        "switch.oig_local_123_foo"
+    )
+
+
+def test_get_local_entity_id_for_config_discovers_cfg_suffix(monkeypatch):
+    """Control entities with _cfg suffix are discovered even when config omits it."""
+    states = {
+        "switch.oig_local_123_tbl_invertor_prms_to_grid_cfg": DummyState("on"),
+    }
+    sensor = _make_sensor(
+        monkeypatch,
+        "grid_delivery_local",
+        {
+            "local_entity_suffix": "tbl_invertor_prms_to_grid",
+            "local_entity_domains": ["sensor", "binary_sensor"],
+        },
+        states=states,
+    )
+    assert sensor._get_local_entity_id_for_config(sensor._sensor_config) == (
+        "switch.oig_local_123_tbl_invertor_prms_to_grid_cfg"
+    )
+
+
+def test_get_local_entity_id_for_config_prefers_explicit_domain_before_cfg(monkeypatch):
+    """Raw suffix on explicit domains is preferred over _cfg fallback."""
+    states = {
+        "sensor.oig_local_123_tbl_invertor_prms_to_grid": DummyState("on"),
+        "switch.oig_local_123_tbl_invertor_prms_to_grid_cfg": DummyState("off"),
+    }
+    sensor = _make_sensor(
+        monkeypatch,
+        "grid_delivery_local",
+        {
+            "local_entity_suffix": "tbl_invertor_prms_to_grid",
+            "local_entity_domains": ["sensor", "binary_sensor"],
+        },
+        states=states,
+    )
+    assert sensor._get_local_entity_id_for_config(sensor._sensor_config) == (
+        "sensor.oig_local_123_tbl_invertor_prms_to_grid"
+    )
+
+
+def test_get_local_value_for_sensor_type_from_control_entity(monkeypatch):
+    """_get_local_value_for_sensor_type can resolve values from control-domain entities."""
+    states = {
+        "number.oig_local_123_tbl_invertor_prm1_p_max_feed_grid_cfg": DummyState("5000"),
+    }
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensor_types.SENSOR_TYPES",
+        {
+            "invertor_prm1_p_max_feed_grid": {
+                "local_entity_suffix": "tbl_invertor_prm1_p_max_feed_grid",
+            },
+        },
+    )
+    hass = SimpleNamespace(states=DummyStates(states))
+    coordinator = DummyCoordinator(hass, data={})
+    sensor = OigCloudDataSensor(coordinator, "invertor_prm1_p_max_feed_grid")
+    sensor.hass = hass
+    assert sensor._get_local_value_for_sensor_type("invertor_prm1_p_max_feed_grid") == 5000
+
+
+def test_local_grid_mode_uses_control_domain_entities(monkeypatch):
+    """_get_local_grid_mode resolves from control-domain local entities via _cfg fallback."""
+    states = {
+        "switch.oig_local_123_tbl_box_prms_crct_cfg": DummyState("1"),
+        "number.oig_local_123_tbl_invertor_prm1_p_max_feed_grid_cfg": DummyState("10000"),
+    }
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.sensor_types.SENSOR_TYPES",
+        {
+            "invertor_prms_to_grid": {"node_id": "invertor_prms", "node_key": "to_grid"},
+            "box_prms_crct": {"local_entity_suffix": "tbl_box_prms_crct"},
+            "invertor_prm1_p_max_feed_grid": {
+                "local_entity_suffix": "tbl_invertor_prm1_p_max_feed_grid",
+            },
+        },
+    )
+    hass = SimpleNamespace(states=DummyStates(states))
+    coordinator = DummyCoordinator(hass, data={"123": {"invertor_prms": {"to_grid": 1}}})
+    sensor = OigCloudDataSensor(coordinator, "invertor_prms_to_grid")
+    sensor.hass = hass
+    assert sensor._get_local_grid_mode(1, "cs") == GridMode.ON

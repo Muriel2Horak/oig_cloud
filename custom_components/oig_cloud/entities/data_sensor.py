@@ -6,6 +6,8 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 
+from ..core.local_mapper import SUPPORTED_DOMAINS
+
 
 # Importujeme pouze GridMode bez zbytku shared modulu
 class GridMode:
@@ -583,18 +585,24 @@ class OigCloudDataSensor(_DataSensorBase):
         if suffix and self._box_id and self._box_id != "unknown":
             domains = sensor_config.get("local_entity_domains")
             if isinstance(domains, str):
-                domain_list = [domains]
+                primary_domains = [domains]
             elif isinstance(domains, (list, tuple, set)):
-                domain_list = [d for d in domains if isinstance(d, str)]
+                primary_domains = [d for d in domains if isinstance(d, str)]
             else:
-                domain_list = ["sensor"]
-            if not domain_list:
-                domain_list = ["sensor"]
-            for domain in domain_list:
+                primary_domains = []
+            if not primary_domains:
+                primary_domains = list(SUPPORTED_DOMAINS)
+            for domain in primary_domains:
                 candidate = f"{domain}.oig_local_{self._box_id}_{suffix}"
                 if self.hass.states.get(candidate):
                     return candidate
-            return f"{domain_list[0]}.oig_local_{self._box_id}_{suffix}"
+            # Fallback: proxy control entities append _cfg to the suffix.
+            cfg_suffix = f"{suffix}_cfg"
+            for domain in SUPPORTED_DOMAINS:
+                candidate = f"{domain}.oig_local_{self._box_id}_{cfg_suffix}"
+                if self.hass.states.get(candidate):
+                    return candidate
+            return f"{primary_domains[0]}.oig_local_{self._box_id}_{suffix}"
         return None
 
     def _coerce_number(self, value: Any) -> Any:
