@@ -69,30 +69,32 @@ def test_fallback_value_energy_default(monkeypatch):
 
 def test_get_local_entity_id_for_config_prefers_existing_state(monkeypatch):
     states = {
-        "switch.oig_local_123_temp": DummyState("1"),
+        "switch.oig_local_123_tbl_box_prms_mode": DummyState("1"),
     }
     sensor = _make_sensor(
         monkeypatch,
         "local_pref",
         {
-            "local_entity_suffix": "temp",
+            "local_entity_suffix": "tbl_box_prms_mode",
             "local_entity_domains": ["sensor", "switch"],
         },
         states=states,
     )
     assert sensor._get_local_entity_id_for_config(sensor._sensor_config) == (
-        "switch.oig_local_123_temp"
+        "switch.oig_local_123_tbl_box_prms_mode"
     )
 
 
 def test_get_local_entity_id_for_config_default_domain(monkeypatch):
+    states = {"sensor.oig_local_123_tbl_actual_aci_wr": DummyState("1")}
     sensor = _make_sensor(
         monkeypatch,
         "local_default",
-        {"local_entity_suffix": "foo"},
+        {"local_entity_suffix": "tbl_actual_aci_wr"},
+        states=states,
     )
     assert sensor._get_local_entity_id_for_config(sensor._sensor_config) == (
-        "sensor.oig_local_123_foo"
+        "sensor.oig_local_123_tbl_actual_aci_wr"
     )
 
 
@@ -427,11 +429,11 @@ def test_grid_mode_missing_data(monkeypatch):
 
 
 def test_get_local_value_unknown_state(monkeypatch):
-    states = {"sensor.oig_local_123_temp": DummyState("unknown")}
+    states = {"sensor.oig_local_123_tbl_actual_aci_wr": DummyState("unknown")}
     sensor = _make_sensor(
         monkeypatch,
         "local_unknown",
-        {"local_entity_suffix": "temp"},
+        {"local_entity_suffix": "tbl_actual_aci_wr"},
         states=states,
     )
     assert sensor._get_local_value() is None
@@ -553,16 +555,16 @@ def test_resolve_box_id_fallback(monkeypatch):
 def test_get_local_entity_id_for_config_default_uses_supported_domains(monkeypatch):
     """When no local_entity_domains are given, all SUPPORTED_DOMAINS are tried."""
     states = {
-        "switch.oig_local_123_foo": DummyState("1"),
+        "binary_sensor.oig_local_123_tbl_invertor_prms_to_grid": DummyState("1"),
     }
     sensor = _make_sensor(
         monkeypatch,
         "local_default_all_domains",
-        {"local_entity_suffix": "foo"},
+        {"local_entity_suffix": "tbl_invertor_prms_to_grid"},
         states=states,
     )
     assert sensor._get_local_entity_id_for_config(sensor._sensor_config) == (
-        "switch.oig_local_123_foo"
+        "binary_sensor.oig_local_123_tbl_invertor_prms_to_grid"
     )
 
 

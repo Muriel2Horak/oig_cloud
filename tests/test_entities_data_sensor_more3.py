@@ -39,12 +39,13 @@ def test_fallback_value_prefers_last_state():
 def test_local_entity_id_suffix_and_domains(monkeypatch):
     sensor = _make_sensor("box_prms_mode")
     sensor._box_id = "abc"
+    sensor.hass.states.get = lambda eid: SimpleNamespace(state="1") if eid == "sensor.oig_local_abc_tbl_actual_aci_wr" else None
     config = {
-        "local_entity_suffix": "foo",
+        "local_entity_suffix": "tbl_actual_aci_wr",
         "local_entity_domains": ["sensor", "binary_sensor"],
     }
     entity_id = sensor._get_local_entity_id_for_config(config)
-    assert entity_id == "sensor.oig_local_abc_foo"
+    assert entity_id == "sensor.oig_local_abc_tbl_actual_aci_wr"
 
 
 def test_apply_local_value_map_numeric_conversion():
@@ -307,18 +308,18 @@ def test_on_off_and_mode_names():
 def test_local_entity_id_for_config_domains():
     sensor = _make_sensor("box_prms_mode")
     sensor._box_id = "123"
-    sensor.hass.states.get = lambda _eid: None
+    sensor.hass.states.get = lambda eid: SimpleNamespace(state="1") if eid == "sensor.oig_local_123_tbl_actual_aci_wr" else None
     assert (
         sensor._get_local_entity_id_for_config(
-            {"local_entity_suffix": "x", "local_entity_domains": "sensor"}
+            {"local_entity_suffix": "tbl_actual_aci_wr", "local_entity_domains": "sensor"}
         )
-        == "sensor.oig_local_123_x"
+        == "sensor.oig_local_123_tbl_actual_aci_wr"
     )
     assert (
         sensor._get_local_entity_id_for_config(
-            {"local_entity_suffix": "x", "local_entity_domains": []}
+            {"local_entity_suffix": "tbl_actual_aci_wr", "local_entity_domains": []}
         )
-        == "sensor.oig_local_123_x"
+        == "sensor.oig_local_123_tbl_actual_aci_wr"
     )
 
 

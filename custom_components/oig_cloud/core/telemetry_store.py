@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, Optional
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .local_mapper import LocalUpdateApplier, SUPPORTED_DOMAINS
+from .local_mapper import LocalUpdateApplier, SUPPORTED_DOMAINS, normalize_proxy_entity_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,7 +81,9 @@ class TelemetryStore:
         for domain in SUPPORTED_DOMAINS:
             prefix = f"{domain}.oig_local_{self.box_id}_"
             for st in self.hass.states.async_all(domain):
-                if st.entity_id.startswith(prefix):
+                if st.entity_id.startswith(prefix) and normalize_proxy_entity_id(
+                    st.entity_id, self.box_id
+                ):
                     entity_ids.append(st.entity_id)
         return self.apply_local_events(entity_ids)
 

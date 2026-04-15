@@ -110,13 +110,7 @@ def normalize_proxy_entity_id(
             table = key_part
             key = ""
     else:
-        last_us = key_part.rfind("_")
-        if last_us >= 1:
-            table = key_part[:last_us]
-            key = key_part[last_us + 1:]
-        else:
-            table = key_part
-            key = ""
+        return None
 
     if not table or not key:
         return None

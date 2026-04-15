@@ -6,7 +6,7 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from ..core.local_mapper import SUPPORTED_DOMAINS
+from ..core.local_mapper import SUPPORTED_DOMAINS, normalize_proxy_entity_id
 
 
 # Importujeme pouze GridMode bez zbytku shared modulu
@@ -594,15 +594,18 @@ class OigCloudDataSensor(_DataSensorBase):
                 primary_domains = list(SUPPORTED_DOMAINS)
             for domain in primary_domains:
                 candidate = f"{domain}.oig_local_{self._box_id}_{suffix}"
-                if self.hass.states.get(candidate):
-                    return candidate
+                if normalize_proxy_entity_id(candidate, self._box_id):
+                    state = self.hass.states.get(candidate)
+                    if state is not None:
+                        return candidate
             # Fallback: proxy control entities append _cfg to the suffix.
             cfg_suffix = f"{suffix}_cfg"
             for domain in SUPPORTED_DOMAINS:
                 candidate = f"{domain}.oig_local_{self._box_id}_{cfg_suffix}"
-                if self.hass.states.get(candidate):
-                    return candidate
-            return f"{primary_domains[0]}.oig_local_{self._box_id}_{suffix}"
+                if normalize_proxy_entity_id(candidate, self._box_id):
+                    state = self.hass.states.get(candidate)
+                    if state is not None:
+                        return candidate
         return None
 
     def _coerce_number(self, value: Any) -> Any:

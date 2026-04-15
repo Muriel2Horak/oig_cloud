@@ -1,0 +1,56 @@
+F1/F2 Blocker Fix Evidence
+==========================
+Date: 2026-04-15
+Plan: proxy-entity-mapping-revision
+
+CHANGES MADE
+------------
+A. local_mapper.py
+   - Removed the generic `else` fallback in `normalize_proxy_entity_id` that
+     accepted arbitrary suffixes like `ac_out`.
+   - After `tbl_` and `proxy_control_` branches, any non-contract suffix now
+     returns `None`.
+   - This enforces that ONLY audited proxy contract suffixes are accepted.
+
+B. data_source.py
+   - Removed dead `_LOCAL_ENTITY_RE` class attribute from `DataSourceController`.
+   - Removed `_poke_coordinator` method (zero production callers).
+
+C. telemetry_store.py
+   - `seed_from_existing_local_states` now calls
+     `normalize_proxy_entity_id(st.entity_id, self.box_id)` before applying
+     state, ensuring only contract-compliant entities seed the store.
+
+D. data_sensor.py
+   - `_get_local_entity_id_for_config` now routes through the normalization
+     boundary: it builds candidates per domain, validates them with
+     `normalize_proxy_entity_id`, and only returns an entity_id when a valid
+     HA state exists.
+   - Removed the old fallback that returned the first domain candidate even
+     when no state was present.
+
+E. Tests
+   - Updated tests that treated non-contract IDs (e.g.
+     `sensor.oig_local_123_ac_out`, `sensor.oig_local_dev01_ac_out`) as
+     valid; they now use contract-compliant suffixes such as
+     `tbl_actual_aci_wr` and `tbl_box_prms_mode`.
+   - Removed `test_poke_coordinator_handles_error` and
+     `test_local_entity_re_matches_all_audited_domains` since the dead code
+     they tested was deleted.
+
+TEST RESULTS
+------------
+Command: PYTHONPATH=/repos/oig-cloud .venv/bin/python -m pytest tests/ -q
+Result: 3377 passed, 27 skipped, 0 failures
+
+FILES CHANGED
+-------------
+custom_components/oig_cloud/core/local_mapper.py
+custom_components/oig_cloud/core/data_source.py
+custom_components/oig_cloud/core/telemetry_store.py
+custom_components/oig_cloud/entities/data_sensor.py
+tests/test_data_sensor_extra.py
+tests/test_data_sensor_more.py
+tests/test_data_source_controller.py
+tests/test_data_source_helpers.py
+tests/test_entities_data_sensor_more3.py

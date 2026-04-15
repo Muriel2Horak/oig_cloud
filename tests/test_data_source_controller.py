@@ -90,7 +90,7 @@ def test_init_data_source_state_local_ok():
     states = [
         DummyState(module.PROXY_LAST_DATA_ENTITY_ID, now.isoformat(), last_updated=now),
         DummyState(module.PROXY_BOX_ID_ENTITY_ID, "123", last_updated=now),
-        DummyState("sensor.oig_local_123_ac_out", "1", last_updated=now),
+        DummyState("sensor.oig_local_123_tbl_actual_aci_wr", "1", last_updated=now),
     ]
     hass = DummyHass(states)
     entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
@@ -106,7 +106,7 @@ def test_init_data_source_state_proxy_mismatch():
     states = [
         DummyState(module.PROXY_LAST_DATA_ENTITY_ID, now.isoformat(), last_updated=now),
         DummyState(module.PROXY_BOX_ID_ENTITY_ID, "999", last_updated=now),
-        DummyState("sensor.oig_local_123_ac_out", "1", last_updated=now),
+        DummyState("sensor.oig_local_123_tbl_actual_aci_wr", "1", last_updated=now),
     ]
     hass = DummyHass(states)
     entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY, box_id="123")
@@ -157,12 +157,12 @@ def test_on_any_state_change_tracks_pending():
     }
 
     event = SimpleNamespace(
-        data={"entity_id": "sensor.oig_local_123_ac_out"},
+        data={"entity_id": "sensor.oig_local_123_tbl_actual_aci_wr"},
         time_fired=now + timedelta(seconds=5),
     )
     controller._on_any_state_change(event)
 
-    assert "sensor.oig_local_123_ac_out" in controller._pending_local_entities
+    assert "sensor.oig_local_123_tbl_actual_aci_wr" in controller._pending_local_entities
     assert controller._last_local_entity_update is not None
 
 
@@ -209,7 +209,7 @@ def test_on_any_state_change_ignored_cloud_only():
     controller._schedule_debounced_poke = lambda: None
 
     event = SimpleNamespace(
-        data={"entity_id": "sensor.oig_local_123_ac_out"},
+        data={"entity_id": "sensor.oig_local_123_tbl_actual_aci_wr"},
         time_fired=now + timedelta(seconds=5),
     )
     controller._on_any_state_change(event)
@@ -305,21 +305,6 @@ def test_on_effective_mode_changed_handles_errors():
 
 
 @pytest.mark.asyncio
-async def test_poke_coordinator_handles_error():
-    hass = DummyHass([])
-    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
-
-    class DummyCoordinator:
-        data = {"k": "v"}
-
-        def async_set_updated_data(self, _data):
-            raise RuntimeError("fail")
-
-    controller = module.DataSourceController(hass, entry, coordinator=DummyCoordinator())
-    await controller._poke_coordinator()
-
-
-@pytest.mark.asyncio
 async def test_handle_local_event_updates_coordinator():
     now = dt_util.utcnow()
     hass = DummyHass([])
@@ -342,7 +327,7 @@ async def test_handle_local_event_updates_coordinator():
     controller = module.DataSourceController(
         hass, entry, coordinator=DummyCoordinator(), telemetry_store=DummyStore()
     )
-    controller._pending_local_entities = {"sensor.oig_local_123_ac_out"}
+    controller._pending_local_entities = {"sensor.oig_local_123_tbl_actual_aci_wr"}
     hass.data[module.DOMAIN][entry.entry_id] = {
         "data_source_state": module.DataSourceState(
             configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
@@ -383,7 +368,7 @@ async def test_handle_local_event_throttles_snapshot_publish():
     controller = module.DataSourceController(
         hass, entry, coordinator=DummyCoordinator(), telemetry_store=DummyStore()
     )
-    controller._pending_local_entities = {"sensor.oig_local_123_ac_out"}
+    controller._pending_local_entities = {"sensor.oig_local_123_tbl_actual_aci_wr"}
     controller._last_snapshot_publish_monotonic = 10.0
     hass.data[module.DOMAIN][entry.entry_id] = {
         "data_source_state": module.DataSourceState(
@@ -686,7 +671,7 @@ def test_on_any_state_change_state_read_error(monkeypatch):
     )
 
     event = SimpleNamespace(
-        data={"entity_id": "sensor.oig_local_123_ac_out"},
+        data={"entity_id": "sensor.oig_local_123_tbl_actual_aci_wr"},
         time_fired=now + timedelta(seconds=5),
     )
     controller._on_any_state_change(event)
@@ -720,7 +705,7 @@ def test_on_any_state_change_box_id_mismatch():
     }
 
     event = SimpleNamespace(
-        data={"entity_id": "sensor.oig_local_123_ac_out"},
+        data={"entity_id": "sensor.oig_local_123_tbl_actual_aci_wr"},
         time_fired=now + timedelta(seconds=5),
     )
     controller._on_any_state_change(event)
@@ -747,7 +732,7 @@ def test_on_any_state_change_proxy_box_mismatch():
     }
 
     event = SimpleNamespace(
-        data={"entity_id": "sensor.oig_local_999_ac_out"},
+        data={"entity_id": "sensor.oig_local_999_tbl_actual_aci_wr"},
         time_fired=now + timedelta(seconds=5),
     )
     controller._on_any_state_change(event)
@@ -934,7 +919,7 @@ def test_on_any_state_change_expected_box_id_error():
     }
 
     event = SimpleNamespace(
-        data={"entity_id": "sensor.oig_local_123_ac_out"},
+        data={"entity_id": "sensor.oig_local_123_tbl_actual_aci_wr"},
         time_fired=now,
     )
     controller._on_any_state_change(event)
@@ -988,7 +973,7 @@ def test_on_any_state_change_coerce_box_id_exception():
     }
 
     event = SimpleNamespace(
-        data={"entity_id": "sensor.oig_local_123_ac_out"},
+        data={"entity_id": "sensor.oig_local_123_tbl_actual_aci_wr"},
         time_fired=now,
     )
     controller._on_any_state_change(event)
@@ -1014,7 +999,7 @@ def test_on_any_state_change_time_fired_error(monkeypatch):
     monkeypatch.setattr(module.dt_util, "as_utc", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
 
     event = SimpleNamespace(
-        data={"entity_id": "sensor.oig_local_123_ac_out"},
+        data={"entity_id": "sensor.oig_local_123_tbl_actual_aci_wr"},
         time_fired="bad",
     )
     controller._on_any_state_change(event)
@@ -1140,20 +1125,6 @@ def test_update_state_proxy_box_mismatch_reason():
     controller = module.DataSourceController(hass, entry, coordinator=None)
 
     controller._update_state(force=True)
-
-
-def test_local_entity_re_matches_all_audited_domains():
-    re_obj = module.DataSourceController._LOCAL_ENTITY_RE
-    assert re_obj.match("sensor.oig_local_123_ac_out")
-    assert re_obj.match("binary_sensor.oig_local_123_tbl_invertor_prms_to_grid")
-    assert re_obj.match("switch.oig_local_123_tbl_box_prms_mode_cfg")
-    assert re_obj.match("number.oig_local_123_tbl_invertor_prms_bat_min_cfg")
-    assert re_obj.match("select.oig_local_123_proxy_control_proxy_mode_cfg")
-    assert re_obj.match("sensor.oig_local_abc_ac_out")
-    assert re_obj.match("sensor.oig_local_dev01_ac_out")
-    assert re_obj.match("sensor.oig_local_dev_01_ac_out")
-    assert not re_obj.match("light.oig_local_123_ac_out")
-    assert not re_obj.match("sensor.oig_local__ac_out")
 
 
 @pytest.mark.parametrize(

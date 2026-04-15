@@ -419,10 +419,6 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
 class DataSourceController:
     """Controls effective data source mode based on local proxy health."""
 
-    _LOCAL_ENTITY_RE = re.compile(
-        r"^(?:sensor|binary_sensor|switch|number|select)\.oig_local_([a-zA-Z0-9][a-zA-Z0-9_]*)_"
-    )
-
     def __init__(
         self,
         hass: HomeAssistant,
@@ -780,10 +776,4 @@ class DataSourceController:
             except Exception as err:
                 _LOGGER.debug("Failed to schedule coordinator refresh: %s", err)
 
-    async def _poke_coordinator(self) -> None:
-        await asyncio.sleep(0)
-        try:
-            if self.coordinator and getattr(self.coordinator, "data", None) is not None:
-                self.coordinator.async_set_updated_data(self.coordinator.data)
-        except Exception as err:
-            _LOGGER.debug("Failed to poke coordinator: %s", err)
+
