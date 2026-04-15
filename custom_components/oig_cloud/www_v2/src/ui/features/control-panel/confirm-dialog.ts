@@ -265,18 +265,18 @@ export class OigConfirmDialog extends LitElement {
   };
 
   private onConfirm = (): void => {
-    // Validate limit if required
-    if (this.config.showLimitInput) {
+    const hasLimit = this.config.showLimitInput || this.config.limitOnly;
+    if (hasLimit) {
       const min = this.config.limitMin ?? 1;
       const max = this.config.limitMax ?? 20000;
       if (isNaN(this.limitValue) || this.limitValue < min || this.limitValue > max) {
-        return; // Don't close — invalid input
+        return;
       }
     }
 
     this.closeDialog({
       confirmed: true,
-      limit: this.config.showLimitInput ? this.limitValue : undefined,
+      limit: hasLimit ? this.limitValue : undefined,
     });
   };
 
@@ -293,6 +293,49 @@ export class OigConfirmDialog extends LitElement {
     if (!this.open) return nothing;
 
     const c = this.config;
+
+    if (c.limitOnly) {
+      return html`
+        <div @click=${this.onOverlayClick}>
+          <div class="dialog" @click=${this.onDialogClick}>
+            <div class="dialog-header">
+              ${c.title || 'Změnit limit přetoků'}
+            </div>
+
+            <div class="limit-section" style="margin-top: 16px;">
+              <label class="limit-label" for="confirm-limit-input">
+                Zadejte limit přetoků (W):
+              </label>
+              <input
+                type="number"
+                id="confirm-limit-input"
+                class="limit-input"
+                .value=${String(this.limitValue)}
+                min=${c.limitMin ?? 1}
+                max=${c.limitMax ?? 20000}
+                step=${c.limitStep ?? 100}
+                @input=${this.onLimitInput}
+                placeholder="např. 5000"
+              />
+              <small class="limit-hint">Rozsah: ${c.limitMin ?? 1}–${c.limitMax ?? 20000} W</small>
+            </div>
+
+            <div class="dialog-actions">
+              <button class="btn btn-cancel" @click=${this.onCancel}>
+                ${c.cancelText || 'Zrušit'}
+              </button>
+              <button
+                class="btn btn-confirm"
+                ?disabled=${!this.canConfirm}
+                @click=${this.onConfirm}
+              >
+                ${c.confirmText || 'Uložit limit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
     return html`
       <div @click=${this.onOverlayClick}>

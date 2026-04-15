@@ -1,11 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   resolveGridDelivery,
   GRID_DELIVERY_SENSOR_MAP,
   GRID_DELIVERY_LABELS,
   GridDelivery,
+  EMPTY_SHIELD_STATE,
+  ConfirmDialogConfig,
 } from '@/ui/features/control-panel/types';
 import { OigGridDeliverySelector } from '@/ui/features/control-panel/selectors';
+import { OigControlPanel } from '@/ui/features/control-panel/panel';
 
 describe('resolveGridDelivery — robustness against sensor value variants', () => {
   it('resolves canonical Czech exact matches', () => {
@@ -114,62 +117,6 @@ describe('Grid mode + limit ordered split flow', () => {
   });
 });
 
-describe('OigGridDeliverySelector — activeLimitLabel render branch', () => {
-  function renderAndExtractLimitLabel(
-    value: 'off' | 'on' | 'limited',
-    limit: number,
-    limitedState: 'idle' | 'active' | 'pending' | 'processing' | 'disabled-by-service',
-  ): unknown {
-    const el = new OigGridDeliverySelector();
-    el.value = value;
-    el.limit = limit;
-    el.buttonStates = { off: 'idle', on: 'idle', limited: limitedState };
-    const result = Reflect.apply(
-      Reflect.get(Object.getPrototypeOf(el), 'render'),
-      el,
-      [],
-    ) as { values?: unknown[] } | null;
-    const limitLabelValue = result?.values?.[0];
-    return limitLabelValue;
-  }
-
-  it('activeLimitLabel is a TemplateResult when value=limited and limit > 0', () => {
-    const label = renderAndExtractLimitLabel('limited', 3500, 'idle');
-    expect(label).not.toBeNull();
-    expect(typeof label).toBe('object');
-  });
-
-  it('activeLimitLabel is null when value=limited but limit=0', () => {
-    const label = renderAndExtractLimitLabel('limited', 0, 'idle');
-    expect(label).toBeNull();
-  });
-
-  it('activeLimitLabel is null when value=off even if buttonStates.limited=active (live-only rule)', () => {
-    const label = renderAndExtractLimitLabel('off', 5000, 'active');
-    expect(label).toBeNull();
-  });
-
-  it('activeLimitLabel is null when value=off and buttonStates.limited=idle even with limit > 0', () => {
-    const label = renderAndExtractLimitLabel('off', 4000, 'idle');
-    expect(label).toBeNull();
-  });
-
-  it('activeLimitLabel TemplateResult contains the limit value as a template value', () => {
-    const el = new OigGridDeliverySelector();
-    el.value = 'limited';
-    el.limit = 7777;
-    el.buttonStates = { off: 'idle', on: 'idle', limited: 'idle' };
-    const result = Reflect.apply(
-      Reflect.get(Object.getPrototypeOf(el), 'render'),
-      el,
-      [],
-    ) as { values?: unknown[] } | null;
-    const limitLabel = result?.values?.[0] as { values?: unknown[] } | null;
-    expect(limitLabel).not.toBeNull();
-    expect(limitLabel?.values).toContain(7777);
-  });
-});
-
 describe('OigGridDeliverySelector — limited button stays visually active during service transition', () => {
   function getButtonClasses(
     value: 'off' | 'on' | 'limited',
@@ -186,8 +133,8 @@ describe('OigGridDeliverySelector — limited button stays visually active durin
       [],
     ) as { values?: unknown[] } | null;
 
-    // values[0] = activeLimitLabel, values[1] = pendingLabel, values[2] = mode-buttons array
-    const modeButtonsTemplate = rendered?.values?.[2] as Array<{ values?: unknown[] }> | null;
+    // values[0] = pendingLabel, values[1] = mode-buttons array
+    const modeButtonsTemplate = rendered?.values?.[1] as Array<{ values?: unknown[] }> | null;
     if (!Array.isArray(modeButtonsTemplate)) return { off: '', on: '', limited: '' };
 
     const keys: Array<'off' | 'on' | 'limited'> = ['off', 'on', 'limited'];
@@ -261,41 +208,29 @@ describe('OigGridDeliverySelector — pending target rendering separation', () =
 
   it('pendingLabel is null when pendingTarget matches current value (no change)', () => {
     const result = renderSelector('limited', 'limited', 5000, { off: 'idle', on: 'idle', limited: 'active' });
-    const pendingLabel = result?.values?.[1];
+    const pendingLabel = result?.values?.[0];
     expect(pendingLabel).toBeNull();
   });
 
   it('pendingLabel is null when pendingTarget is null', () => {
     const result = renderSelector('limited', null, 5000, { off: 'idle', on: 'idle', limited: 'active' });
-    const pendingLabel = result?.values?.[1];
+    const pendingLabel = result?.values?.[0];
     expect(pendingLabel).toBeNull();
   });
 
   it('pendingLabel is a TemplateResult when pendingTarget differs from live value', () => {
     const result = renderSelector('off', 'limited', 0, { off: 'idle', on: 'idle', limited: 'pending' });
-    const pendingLabel = result?.values?.[1];
+    const pendingLabel = result?.values?.[0];
     expect(pendingLabel).not.toBeNull();
     expect(typeof pendingLabel).toBe('object');
   });
 
   it('pendingLabel contains pending target label text when value=off and pendingTarget=on', () => {
     const result = renderSelector('off', 'on', 0, { off: 'idle', on: 'pending', limited: 'idle' });
-    const pendingLabel = result?.values?.[1] as { values?: unknown[] } | null;
+    const pendingLabel = result?.values?.[0] as { values?: unknown[] } | null;
     expect(pendingLabel).not.toBeNull();
     const vals = pendingLabel?.values ?? [];
     expect(vals.some(v => String(v).includes('Zapnuto'))).toBe(true);
-  });
-
-  it('activeLimitLabel uses live value only — not shown when value=off even with pending=limited', () => {
-    const result = renderSelector('off', 'limited', 3000, { off: 'idle', on: 'idle', limited: 'pending' });
-    const activeLimitLabel = result?.values?.[0];
-    expect(activeLimitLabel).toBeNull();
-  });
-
-  it('activeLimitLabel shown when value=limited regardless of pendingTarget', () => {
-    const result = renderSelector('limited', 'off', 5000, { off: 'idle', on: 'idle', limited: 'active' });
-    const activeLimitLabel = result?.values?.[0];
-    expect(activeLimitLabel).not.toBeNull();
   });
 });
 
@@ -317,8 +252,7 @@ describe('OigGridDeliverySelector — pending-target button class', () => {
       [],
     ) as { values?: unknown[] } | null;
 
-    // values[0] = activeLimitLabel, values[1] = pendingLabel, values[2] = mode-buttons array
-    const modeButtonsTemplate = rendered?.values?.[2] as Array<{ values?: unknown[] }> | null;
+    const modeButtonsTemplate = rendered?.values?.[1] as Array<{ values?: unknown[] }> | null;
     if (!Array.isArray(modeButtonsTemplate)) return { off: '', on: '', limited: '' };
 
     const keys: Array<'off' | 'on' | 'limited'> = ['off', 'on', 'limited'];
@@ -361,43 +295,6 @@ describe('OigGridDeliverySelector — pending-target button class', () => {
   });
 });
 
-describe('Control panel — dialog prefill uses live limit not pending', () => {
-  it('OigGridDeliverySelector shows live limit value when value=limited', () => {
-    const el = new OigGridDeliverySelector();
-    el.value = 'limited';
-    el.limit = 4500;
-    el.pendingTarget = 'off';
-    el.buttonStates = { off: 'idle', on: 'idle', limited: 'active' };
-
-    const result = Reflect.apply(
-      Reflect.get(Object.getPrototypeOf(el), 'render'),
-      el,
-      [],
-    ) as { values?: unknown[] } | null;
-
-    const activeLimitLabel = result?.values?.[0] as { values?: unknown[] } | null;
-    expect(activeLimitLabel).not.toBeNull();
-    expect(activeLimitLabel?.values).toContain(4500);
-  });
-
-  it('OigGridDeliverySelector does not show stale limit when live value is off', () => {
-    const el = new OigGridDeliverySelector();
-    el.value = 'off';
-    el.limit = 9999;
-    el.pendingTarget = 'limited';
-    el.buttonStates = { off: 'active', on: 'idle', limited: 'idle' };
-
-    const result = Reflect.apply(
-      Reflect.get(Object.getPrototypeOf(el), 'render'),
-      el,
-      [],
-    ) as { values?: unknown[] } | null;
-
-    const activeLimitLabel = result?.values?.[0];
-    expect(activeLimitLabel).toBeNull();
-  });
-});
-
 describe('OigGridDeliverySelector — unknown live state leaves all buttons inactive', () => {
   function getButtonClassesForUnknown(): Record<'off' | 'on' | 'limited', string> {
     const el = new OigGridDeliverySelector();
@@ -412,7 +309,7 @@ describe('OigGridDeliverySelector — unknown live state leaves all buttons inac
       [],
     ) as { values?: unknown[] } | null;
 
-    const modeButtonsTemplate = rendered?.values?.[2] as Array<{ values?: unknown[] }> | null;
+    const modeButtonsTemplate = rendered?.values?.[1] as Array<{ values?: unknown[] }> | null;
     if (!Array.isArray(modeButtonsTemplate)) return { off: '', on: '', limited: '' };
 
     const keys: Array<'off' | 'on' | 'limited'> = ['off', 'on', 'limited'];
@@ -434,5 +331,124 @@ describe('OigGridDeliverySelector — unknown live state leaves all buttons inac
   it('off button is NOT activated when live delivery is unknown — no silent unknown->off mapping', () => {
     const classes = getButtonClassesForUnknown();
     expect(classes.off).not.toBe('active');
+  });
+});
+
+describe('OigGridDeliverySelector — label and input cleanup after Task 4', () => {
+  it('does NOT render the numeric limit in the label/header area', () => {
+    const el = new OigGridDeliverySelector();
+    el.value = 'limited';
+    el.limit = 5000;
+    el.pendingTarget = null;
+    el.buttonStates = { off: 'idle', on: 'idle', limited: 'active' };
+
+    const result = Reflect.apply(
+      Reflect.get(Object.getPrototypeOf(el), 'render'),
+      el,
+      [],
+    ) as { values?: unknown[]; strings?: TemplateStringsArray } | null;
+
+    expect(result?.values?.[0]).toBeNull();
+    const labelStaticText = String(result?.strings?.[0] ?? '');
+    expect(labelStaticText).not.toContain('5000');
+  });
+
+  it('renders the limit input field when mode is limited', () => {
+    const el = new OigGridDeliverySelector();
+    el.value = 'limited';
+    el.limit = 5000;
+    el.buttonStates = { off: 'idle', on: 'idle', limited: 'active' };
+
+    const result = Reflect.apply(
+      Reflect.get(Object.getPrototypeOf(el), 'render'),
+      el,
+      [],
+    ) as { values?: unknown[] } | null;
+
+    const limitInputTemplate = result?.values?.[2] as { strings?: TemplateStringsArray } | null;
+    expect(limitInputTemplate).not.toBeNull();
+    expect(String(limitInputTemplate?.strings?.[0] ?? '')).toContain('limit-input-container');
+  });
+});
+
+describe('OigGridDeliverySelector — active limited re-click emits delivery-change', () => {
+  it('emits delivery-change event when already-active limited button is clicked', () => {
+    const el = new OigGridDeliverySelector();
+    el.value = 'limited';
+    el.limit = 5000;
+    el.buttonStates = { off: 'idle', on: 'idle', limited: 'active' };
+
+    let emitted = false;
+    let receivedDetail: unknown = null;
+    el.addEventListener('delivery-change', ((e: Event) => {
+      emitted = true;
+      receivedDetail = (e as CustomEvent).detail;
+    }) as EventListener);
+
+    const onDeliveryClick = Reflect.get(Object.getPrototypeOf(el), 'onDeliveryClick') as (d: GridDelivery) => void;
+    onDeliveryClick.call(el, 'limited');
+
+    expect(emitted).toBe(true);
+    expect(receivedDetail).toEqual({ value: 'limited', limit: 5000 });
+  });
+
+  it('still no-ops when active off or active on is clicked', () => {
+    const el = new OigGridDeliverySelector();
+    el.value = 'off';
+    el.limit = 0;
+    el.buttonStates = { off: 'active', on: 'idle', limited: 'idle' };
+
+    let emitted = false;
+    el.addEventListener('delivery-change', () => { emitted = true; });
+
+    const onDeliveryClick = Reflect.get(Object.getPrototypeOf(el), 'onDeliveryClick') as (d: GridDelivery) => void;
+    onDeliveryClick.call(el, 'off');
+    expect(emitted).toBe(false);
+
+    el.value = 'on';
+    el.buttonStates = { off: 'idle', on: 'active', limited: 'idle' };
+    onDeliveryClick.call(el, 'on');
+    expect(emitted).toBe(false);
+  });
+});
+
+describe('OigControlPanel — grid delivery limit-only fast path', () => {
+  it('prepares a limit-only dialog config when live mode is limited and delivery-change fires for limited', async () => {
+    const panel = new OigControlPanel();
+    Reflect.set(panel, 'shieldState', {
+      ...EMPTY_SHIELD_STATE,
+      gridDeliveryState: {
+        currentLiveDelivery: 'limited',
+        currentLiveLimit: 5400,
+        pendingDeliveryTarget: null,
+        pendingLimitTarget: null,
+        isTransitioning: false,
+        isUnavailable: false,
+      },
+    });
+
+    let capturedConfig: ConfirmDialogConfig | null = null;
+    Reflect.set(panel, 'confirmDialog', {
+      showDialog: vi.fn(async (config: ConfirmDialogConfig) => {
+        capturedConfig = config;
+        return { confirmed: false };
+      }),
+    });
+
+    const event = new CustomEvent('delivery-change', {
+      detail: { value: 'limited' as const, limit: 5400 },
+      bubbles: true,
+    }) as CustomEvent<{ value: GridDelivery; limit: number | null }>;
+
+    const onGridDeliveryChange = Reflect.get(Object.getPrototypeOf(panel), 'onGridDeliveryChange') as (
+      e: CustomEvent<{ value: GridDelivery; limit: number | null }>,
+    ) => Promise<void>;
+    await onGridDeliveryChange.call(panel, event);
+
+    expect(capturedConfig).not.toBeNull();
+    const cfg = capturedConfig as unknown as ConfirmDialogConfig;
+    expect(cfg.showLimitInput).toBe(true);
+    expect(cfg.limitValue).toBe(5400);
+    expect(cfg.limitOnly).toBe(true);
   });
 });

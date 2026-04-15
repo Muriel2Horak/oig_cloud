@@ -434,3 +434,158 @@ describe('OigConfirmDialog — acknowledgementText render branch (lines 342-344)
     expect(strong!.textContent).toContain('Souhlasím');
   });
 });
+
+describe('OigConfirmDialog — limitOnly variant', () => {
+  let el: OigConfirmDialog;
+
+  beforeEach(() => {
+    el = document.createElement('oig-confirm-dialog') as OigConfirmDialog;
+    document.body.appendChild(el);
+  });
+
+  afterEach(() => {
+    el.remove();
+  });
+
+  it('limitOnly renders limit input without dialog-body or ack-wrapper', async () => {
+    el.showDialog({
+      title: 'Změnit limit přetoků',
+      message: '',
+      limitOnly: true,
+      limitValue: 3000,
+    });
+
+    await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.limit-section')).not.toBeNull();
+    expect(el.shadowRoot!.querySelector('.dialog-body')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.ack-wrapper')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.dialog-warning')).toBeNull();
+  });
+
+  it('limitOnly uses config title as dialog header', async () => {
+    el.showDialog({
+      title: 'Změnit limit přetoků',
+      message: '',
+      limitOnly: true,
+    });
+
+    await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+
+    const header = el.shadowRoot!.querySelector('.dialog-header');
+    expect(header).not.toBeNull();
+    expect(header!.textContent!.trim()).toBe('Změnit limit přetoků');
+  });
+
+  it('limitOnly falls back to default header text when title is empty', async () => {
+    el.showDialog({
+      title: '',
+      message: '',
+      limitOnly: true,
+    });
+
+    await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+
+    const header = el.shadowRoot!.querySelector('.dialog-header');
+    expect(header).not.toBeNull();
+    expect(header!.textContent!.trim()).toBe('Změnit limit přetoků');
+  });
+
+  it('limitOnly renders number input with correct min/max/step attributes', async () => {
+    el.showDialog({
+      title: 'Limit',
+      message: '',
+      limitOnly: true,
+      limitMin: 1,
+      limitMax: 20000,
+      limitStep: 100,
+      limitValue: 5000,
+    });
+
+    await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+
+    const input = el.shadowRoot!.querySelector('input[type="number"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.getAttribute('min')).toBe('1');
+    expect(input.getAttribute('max')).toBe('20000');
+    expect(input.getAttribute('step')).toBe('100');
+  });
+
+  it('limitOnly confirm resolves with confirmed=true and the limit value', async () => {
+    const p = el.showDialog({
+      title: 'Limit',
+      message: '',
+      limitOnly: true,
+      limitMin: 1,
+      limitMax: 20000,
+    });
+    setDialogValue(el, 'limitValue', 4500);
+    callDialogMethod(el, 'onConfirm');
+    const result = await p;
+    expect(result.confirmed).toBe(true);
+    expect(result.limit).toBe(4500);
+  });
+
+  it('limitOnly confirm is blocked when value is below min', async () => {
+    const p = el.showDialog({
+      title: 'Limit',
+      message: '',
+      limitOnly: true,
+      limitMin: 1,
+      limitMax: 20000,
+    });
+    setDialogValue(el, 'limitValue', 0);
+    callDialogMethod(el, 'onConfirm');
+
+    let resolved = false;
+    p.then(() => { resolved = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(resolved).toBe(false);
+    expect(el.open).toBe(true);
+
+    callDialogMethod(el, 'onCancel');
+    await p;
+  });
+
+  it('limitOnly cancel resolves with confirmed=false', async () => {
+    const p = el.showDialog({
+      title: 'Limit',
+      message: '',
+      limitOnly: true,
+    });
+    callDialogMethod(el, 'onCancel');
+    const result = await p;
+    expect(result.confirmed).toBe(false);
+  });
+
+  it('limitOnly uses custom confirmText when provided', async () => {
+    el.showDialog({
+      title: 'Limit',
+      message: '',
+      limitOnly: true,
+      confirmText: 'Potvrdit',
+    });
+
+    await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+
+    const confirmBtn = el.shadowRoot!.querySelector('.btn-confirm');
+    expect(confirmBtn).not.toBeNull();
+    expect(confirmBtn!.textContent!.trim()).toBe('Potvrdit');
+  });
+
+  it('limitOnly shows default "Uložit limit" confirm button text when confirmText is absent', async () => {
+    el.showDialog({
+      title: 'Limit',
+      message: '',
+      limitOnly: true,
+    });
+
+    await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+
+    const confirmBtn = el.shadowRoot!.querySelector('.btn-confirm');
+    expect(confirmBtn).not.toBeNull();
+    expect(confirmBtn!.textContent!.trim()).toBe('Uložit limit');
+  });
+});

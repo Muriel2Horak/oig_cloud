@@ -296,6 +296,12 @@ export interface ConfirmDialogConfig {
   limitMin?: number;
   limitMax?: number;
   limitStep?: number;
+  /**
+   * Limit-only variant: skips main warning/acknowledgement sections and replaces
+   * the dialog header with a concise label (e.g. "Změnit limit přetoků").
+   * The limit number input still renders unchanged. Implies showLimitInput=true.
+   */
+  limitOnly?: boolean;
 }
 
 export interface ConfirmDialogResult {
