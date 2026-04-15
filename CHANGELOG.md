@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.25] - 2026-04-15
+
+### Changed
+- Dashboard V2 control-panel grid-delivery selector no longer redundantly displays the active export limit in its label; the limit value remains visible in the inverter flow card.
+- Clicking the already-active "S omezením" button in the control panel now opens a streamlined limit-only dialog, allowing users to edit the export limit without re-sending the mode change.
+
 ## [2.3.24] - 2026-04-14
 
 ### Fixed
