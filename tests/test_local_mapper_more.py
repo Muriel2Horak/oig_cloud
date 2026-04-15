@@ -50,10 +50,10 @@ def test_apply_state_domain_not_allowed(monkeypatch):
         domains=("sensor",),
         value_map=None,
     )
-    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"suffix": cfg})
+    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"tbl_test_key": cfg})
     applier = local_mapper.LocalUpdateApplier("123")
     payload = {}
-    entity_id = "binary_sensor.oig_local_123_suffix"
+    entity_id = "binary_sensor.oig_local_123_tbl_test_key"
     assert applier.apply_state(payload, entity_id, 1, datetime.now()) is False
 
 
@@ -63,10 +63,10 @@ def test_apply_state_value_none(monkeypatch):
         domains=("sensor",),
         value_map=None,
     )
-    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"suffix": cfg})
+    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"tbl_test_key": cfg})
     applier = local_mapper.LocalUpdateApplier("123")
     payload = {}
-    entity_id = "sensor.oig_local_123_suffix"
+    entity_id = "sensor.oig_local_123_tbl_test_key"
     assert applier.apply_state(payload, entity_id, "unknown", datetime.now()) is False
 
 
@@ -76,10 +76,10 @@ def test_apply_state_box_and_node_overrides(monkeypatch):
         domains=("sensor",),
         value_map=None,
     )
-    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"suffix": cfg})
+    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"tbl_test_key": cfg})
     applier = local_mapper.LocalUpdateApplier("123")
     payload = {"123": "bad"}
-    entity_id = "sensor.oig_local_123_suffix"
+    entity_id = "sensor.oig_local_123_tbl_test_key"
     assert applier.apply_state(payload, entity_id, "Home 1", datetime.now()) is True
     assert isinstance(payload["123"]["box_prms"], dict)
 
@@ -90,10 +90,10 @@ def test_apply_state_skips_invalid_box_mode(monkeypatch):
         domains=("sensor",),
         value_map=None,
     )
-    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"suffix": cfg})
+    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"tbl_test_key": cfg})
     applier = local_mapper.LocalUpdateApplier("123")
     payload = {}
-    entity_id = "sensor.oig_local_123_suffix"
+    entity_id = "sensor.oig_local_123_tbl_test_key"
     assert applier.apply_state(payload, entity_id, "home", datetime.now()) is False
 
 
@@ -103,10 +103,10 @@ def test_apply_state_resets_non_dict_node(monkeypatch):
         domains=("sensor",),
         value_map=None,
     )
-    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"suffix": cfg})
+    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"tbl_test_key": cfg})
     applier = local_mapper.LocalUpdateApplier("123")
     payload = {"123": {"box_prms": "bad"}}
-    entity_id = "sensor.oig_local_123_suffix"
+    entity_id = "sensor.oig_local_123_tbl_test_key"
     assert applier.apply_state(payload, entity_id, "Home 1", datetime.now()) is True
     assert isinstance(payload["123"]["box_prms"], dict)
 
@@ -117,10 +117,10 @@ def test_apply_state_extended_items_and_values(monkeypatch):
         domains=("sensor",),
         value_map=None,
     )
-    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"suffix": cfg})
+    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"tbl_test_key": cfg})
     applier = local_mapper.LocalUpdateApplier("123")
     payload = {"extended_batt": {"items": "bad"}}
-    entity_id = "sensor.oig_local_123_suffix"
+    entity_id = "sensor.oig_local_123_tbl_test_key"
     assert applier.apply_state(payload, entity_id, 5, datetime.now()) is True
     values = payload["extended_batt"]["items"][-1]["values"]
     assert len(values) >= 4
@@ -132,10 +132,58 @@ def test_apply_state_extended_values_extend(monkeypatch):
         domains=("sensor",),
         value_map=None,
     )
-    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"suffix": cfg})
+    monkeypatch.setattr(local_mapper, "_SUFFIX_UPDATES", {"tbl_test_key": cfg})
     applier = local_mapper.LocalUpdateApplier("123")
     payload = {"extended_batt": {"items": [{"values": [1]}]}}
-    entity_id = "sensor.oig_local_123_suffix"
+    entity_id = "sensor.oig_local_123_tbl_test_key"
     assert applier.apply_state(payload, entity_id, 7, datetime.now()) is True
     values = payload["extended_batt"]["items"][-1]["values"]
     assert len(values) >= 4
+
+
+def test_apply_state_switch_control_cfg_suffix(monkeypatch):
+    cfg = local_mapper._SuffixConfig(
+        updates=(local_mapper._NodeUpdate(node_id="invertor_prms", node_key="to_grid"),),
+        domains=local_mapper.SUPPORTED_DOMAINS,
+        value_map={"on": 1, "off": 0},
+    )
+    monkeypatch.setattr(
+        local_mapper, "_SUFFIX_UPDATES", {"tbl_invertor_prms_to_grid_cfg": cfg}
+    )
+    applier = local_mapper.LocalUpdateApplier("123")
+    payload = {}
+    entity_id = "switch.oig_local_123_tbl_invertor_prms_to_grid_cfg"
+    assert applier.apply_state(payload, entity_id, "on", datetime.now()) is True
+    assert payload["123"]["invertor_prms"]["to_grid"] == 1
+
+
+def test_apply_state_number_control_cfg_suffix(monkeypatch):
+    cfg = local_mapper._SuffixConfig(
+        updates=(local_mapper._NodeUpdate(node_id="batt_prms", node_key="bat_min"),),
+        domains=local_mapper.SUPPORTED_DOMAINS,
+        value_map=None,
+    )
+    monkeypatch.setattr(
+        local_mapper, "_SUFFIX_UPDATES", {"tbl_batt_prms_bat_min_cfg": cfg}
+    )
+    applier = local_mapper.LocalUpdateApplier("123")
+    payload = {}
+    entity_id = "number.oig_local_123_tbl_batt_prms_bat_min_cfg"
+    assert applier.apply_state(payload, entity_id, 15, datetime.now()) is True
+    assert payload["123"]["batt_prms"]["bat_min"] == 15
+
+
+def test_apply_state_select_control_cfg_suffix(monkeypatch):
+    cfg = local_mapper._SuffixConfig(
+        updates=(local_mapper._NodeUpdate(node_id="box_prms", node_key="mode"),),
+        domains=local_mapper.SUPPORTED_DOMAINS,
+        value_map=None,
+    )
+    monkeypatch.setattr(
+        local_mapper, "_SUFFIX_UPDATES", {"tbl_box_prms_mode_cfg": cfg}
+    )
+    applier = local_mapper.LocalUpdateApplier("123")
+    payload = {}
+    entity_id = "select.oig_local_123_tbl_box_prms_mode_cfg"
+    assert applier.apply_state(payload, entity_id, "Home 2", datetime.now()) is True
+    assert payload["123"]["box_prms"]["mode"] == 1

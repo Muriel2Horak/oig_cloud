@@ -209,7 +209,7 @@ def _normalize_domains(value: Any) -> Tuple[str, ...]:
         if not isinstance(item, str):
             continue
         domain = item.strip()
-        if domain in {"sensor", "binary_sensor"} and domain not in domains:
+        if domain in SUPPORTED_DOMAINS and domain not in domains:
             domains.append(domain)
 
     if not domains:
@@ -308,6 +308,11 @@ def _build_suffix_updates() -> Dict[str, _SuffixConfig]:
             domains=domains,
             value_map=entry["value_map"],
         )
+        out[f"{suffix}_cfg"] = _SuffixConfig(
+            updates=tuple(entry["updates"]),
+            domains=SUPPORTED_DOMAINS,
+            value_map=entry["value_map"],
+        )
     return out
 
 
@@ -379,13 +384,12 @@ class LocalUpdateApplier:
         last_updated: Optional[datetime],
     ) -> bool:
         """Return True if payload changed."""
-        parsed = _parse_local_entity_id(entity_id, self.box_id)
-        if parsed is None:
+        descriptor = normalize_proxy_entity_id(entity_id, self.box_id)
+        if descriptor is None:
             return False
-        domain, suffix = parsed
 
-        suffix_cfg = _SUFFIX_UPDATES.get(suffix)
-        if not suffix_cfg or domain not in suffix_cfg.domains:
+        suffix_cfg = _SUFFIX_UPDATES.get(descriptor.raw_suffix)
+        if not suffix_cfg or descriptor.domain not in suffix_cfg.domains:
             return False
 
         value = _apply_value_map(state, suffix_cfg.value_map)
@@ -406,18 +410,6 @@ class LocalUpdateApplier:
                     changed = True
 
         return changed
-
-
-def _parse_local_entity_id(
-    entity_id: Any, box_id: str
-) -> Optional[Tuple[str, str]]:
-    if not isinstance(entity_id, str):
-        return None
-    for candidate_domain in ("sensor", "binary_sensor"):
-        prefix = f"{candidate_domain}.oig_local_{box_id}_"
-        if entity_id.startswith(prefix):
-            return candidate_domain, entity_id[len(prefix) :]
-    return None
 
 
 def _ensure_box_payload(payload: Dict[str, Any], box_id: str) -> Dict[str, Any]:
