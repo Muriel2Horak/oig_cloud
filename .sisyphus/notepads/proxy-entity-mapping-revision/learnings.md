@@ -136,3 +136,36 @@ Using `SUPPORTED_DOMAINS` from `local_mapper.py` as the single canonical source 
 - 66 tests pass (0 failures) in `tests/test_data_sensor*.py`
 - LSP diagnostics clean on all modified files
 
+
+## Task 7: Proxy-Sensitive Semantics End-to-End Regression
+
+### What was built
+- New regression test file: `tests/test_proxy_semantics_regression.py`
+  - `TestGridDeliveryProxySemantics`: 3 end-to-end tests proving canonical grid-delivery resolution from proxy control entities
+  - `TestNonGridProxySemantics`: 1 end-to-end test proving non-grid proxy control (`tbl_box_prms_mode_cfg`) correctly updates the canonical payload
+
+### Grid-delivery coverage
+Uses the real `LocalUpdateApplier` (no monkeypatching) with audited `_cfg` entity IDs:
+- `switch.oig_local_{box_id}_tbl_invertor_prms_to_grid_cfg` → maps via `local_value_map` (`on`→1, `off`→0) to `invertor_prms.to_grid`
+- `number.oig_local_{box_id}_tbl_invertor_prm1_p_max_feed_grid_cfg` → maps to `invertor_prm1.p_max_feed_grid`
+- `switch.oig_local_{box_id}_tbl_box_prms_crct_cfg` → maps to `box_prms.crct`
+
+Scenarios tested:
+- `off`: to_grid=off, crct=1, p_max_feed_grid=10000
+- `on`: to_grid=on, crct=1, p_max_feed_grid=10000
+- `limited`: to_grid=on, crct=1, p_max_feed_grid=5000
+
+All assertions use `resolve_grid_delivery_live_state(payload[box_id])` to prove the canonical resolver consumes the locally-built payload correctly.
+
+### Non-grid coverage
+- `select.oig_local_{box_id}_tbl_box_prms_mode_cfg` → `box_prms.mode`
+- `_apply_node_update` normalizes "Home 2" → `1` via `_normalize_box_mode`
+
+### Verification
+- 4/4 new tests pass
+- 76/76 related existing tests pass (local_mapper + data_sensor suites)
+- LSP diagnostics clean on the new file
+- Evidence files created: `.sisyphus/evidence/task-7-grid-delivery.txt`, `.sisyphus/evidence/task-7-non-grid.txt`
+
+### Key insight
+Because `_build_suffix_updates()` auto-generates `_cfg` variants for every `local_entity_suffix`, the end-to-end path from proxy control entity ID → payload node → canonical resolver works out-of-the-box for both grid and non-grid semantics. No monkeypatching was required in the regression tests, which proves the production wiring is correct.

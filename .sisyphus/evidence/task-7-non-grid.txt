@@ -1,0 +1,1 @@
+tests/test_proxy_semantics_regression.py::TestNonGridProxySemantics::test_box_mode_applied_via_select_control_cfg PASSED
