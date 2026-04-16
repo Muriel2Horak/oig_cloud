@@ -1,0 +1,24 @@
+/repos/oig-cloud/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0 -- /repos/oig-cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-proxy
+configfile: pytest.ini
+plugins: cov-6.0.0, requests-mock-1.12.1, github-actions-annotate-failures-0.2.0, socket-0.7.0, anyio-4.12.1, syrupy-4.8.0, sugar-1.0.0, homeassistant-custom-component-0.13.205, xdist-3.6.1, respx-0.21.1, asyncio-0.24.0, unordered-0.6.1, pytest_freezer-0.4.8, picked-0.5.0, aiohttp-1.0.5, timeout-2.3.1
+asyncio: mode=Mode.STRICT, default_loop_scope=None
+collecting ... collected 8 items
+
+../oig-proxy/tests/v2/test_entity_id_compatibility.py::TestBuildObjectId::test_namespace_prefix_included PASSED [ 12%]
+../oig-proxy/tests/v2/test_entity_id_compatibility.py::TestBuildObjectId::test_special_characters_normalized PASSED [ 25%]
+../oig-proxy/tests/v2/test_entity_id_compatibility.py::TestBuildObjectId::test_multiple_underscores_collapsed PASSED [ 37%]
+../oig-proxy/tests/v2/test_entity_id_compatibility.py::TestBuildObjectId::test_leading_trailing_underscores_stripped PASSED [ 50%]
+../oig-proxy/tests/v2/test_entity_id_compatibility.py::TestBuildObjectId::test_control_object_id_ends_with_cfg PASSED [ 62%]
+../oig-proxy/tests/v2/test_entity_id_compatibility.py::TestBuildObjectId::test_non_control_no_cfg_suffix PASSED [ 75%]
+../oig-proxy/tests/v2/test_entity_id_compatibility.py::TestBuildObjectId::test_case_normalized_to_lowercase PASSED [ 87%]
+../oig-proxy/tests/v2/test_entity_id_compatibility.py::TestBuildObjectId::test_v1_example_format PASSED [100%]
+
+============================== 8 passed in 0.71s ===============================
+EXIT_CODE=0

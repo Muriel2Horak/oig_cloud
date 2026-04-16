@@ -1,0 +1,6 @@
+# Task 8 Evidence: oig-cloud Full Test Suite
+
+Command: .venv/bin/python -m pytest tests/ -q
+Result: 3372 passed, 27 skipped in 104.96s (0:01:44)
+
+All 3372 tests passed. Suite complete.

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.oig_cloud.core import data_source as module
+from custom_components.oig_cloud.core.local_mapper import iter_local_entities
 
 
 class DummyState:
@@ -56,7 +57,10 @@ def test_coerce_box_id_variants():
     assert module._coerce_box_id(123456.7) == "123456"
     assert module._coerce_box_id(-1) is None
     assert module._coerce_box_id("box 987654") == "987654"
-    assert module._coerce_box_id("bad") is None
+    assert module._coerce_box_id("dev01") == "dev01"
+    assert module._coerce_box_id("bad") == "bad"
+    assert module._coerce_box_id("") is None
+    assert module._coerce_box_id("   ") is None
 
     assert module._coerce_box_id(float("nan")) is None
     assert module._coerce_box_id([]) is None
@@ -108,7 +112,7 @@ def test_get_effective_mode():
 def test_get_latest_local_entity_update():
     now = datetime(2025, 1, 1, tzinfo=timezone.utc)
     states = [
-        DummyState("sensor.oig_local_2206237016_ac_out", "1", last_updated=now),
+        DummyState("sensor.oig_local_2206237016_tbl_actual_aci_wr", "1", last_updated=now),
         DummyState("binary_sensor.oig_local_2206237016_tbl_invertor_prms_to_grid", "on", last_updated=now),
     ]
     hass = DummyHass(states)
@@ -120,7 +124,7 @@ def test_get_latest_local_entity_update():
 def test_get_latest_local_entity_update_skips_unknown():
     now = datetime(2025, 1, 1, tzinfo=timezone.utc)
     states = [
-        DummyState("sensor.oig_local_2206237016_ac_out", "unknown", last_updated=now),
+        DummyState("sensor.oig_local_2206237016_tbl_actual_aci_wr", "unknown", last_updated=now),
         DummyState("binary_sensor.oig_local_2206237016_tbl", "on", last_updated=None),
     ]
     hass = DummyHass(states)
@@ -129,9 +133,83 @@ def test_get_latest_local_entity_update_skips_unknown():
 
 def test_get_latest_local_entity_update_exception(monkeypatch):
     class BadStates(DummyStates):
-        def async_all(self, _domain):
+        def async_all(self, domain):
             raise RuntimeError("boom")
 
     hass = DummyHass()
     hass.states = BadStates([])
     assert module._get_latest_local_entity_update(hass, "2206237016") is None
+
+
+def test_iter_local_entities_covers_all_domains():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_2206237016_tbl_actual_aci_wr", "1", last_updated=now),
+        DummyState("binary_sensor.oig_local_2206237016_tbl_invertor_prms_to_grid", "on", last_updated=now),
+        DummyState("switch.oig_local_2206237016_tbl_box_prms_mode_cfg", "home", last_updated=now),
+        DummyState("number.oig_local_2206237016_tbl_invertor_prms_bat_min_cfg", "10", last_updated=now),
+        DummyState("select.oig_local_2206237016_proxy_control_proxy_mode_cfg", "auto", last_updated=now),
+        DummyState("sensor.oig_local_999_tbl_actual_aci_wr", "1", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    found = [st.entity_id for st in iter_local_entities(hass, "2206237016")]
+    assert "sensor.oig_local_2206237016_tbl_actual_aci_wr" in found
+    assert "binary_sensor.oig_local_2206237016_tbl_invertor_prms_to_grid" in found
+    assert "switch.oig_local_2206237016_tbl_box_prms_mode_cfg" in found
+    assert "number.oig_local_2206237016_tbl_invertor_prms_bat_min_cfg" in found
+    assert "select.oig_local_2206237016_proxy_control_proxy_mode_cfg" in found
+    assert "sensor.oig_local_999_tbl_actual_aci_wr" not in found
+
+
+def test_get_latest_local_entity_update_includes_control_domains():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    later = datetime(2025, 1, 2, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_2206237016_tbl_actual_aci_wr", "1", last_updated=now),
+        DummyState("switch.oig_local_2206237016_tbl_box_prms_mode_cfg", "home", last_updated=later),
+    ]
+    hass = DummyHass(states)
+    latest = module._get_latest_local_entity_update(hass, "2206237016")
+    assert latest == later
+
+
+def test_get_latest_local_entity_update_alphanumeric():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    later = datetime(2025, 1, 2, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_dev01_tbl_box_prms_mode", "1", last_updated=now),
+        DummyState("number.oig_local_dev01_tbl_batt_prms_bat_min_cfg", "10", last_updated=later),
+    ]
+    hass = DummyHass(states)
+    latest = module._get_latest_local_entity_update(hass, "dev01")
+    assert latest == later
+
+
+def test_iter_local_entities_alphanumeric():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_dev01_tbl_box_prms_mode", "1", last_updated=now),
+        DummyState("number.oig_local_dev01_tbl_batt_prms_bat_min_cfg", "10", last_updated=now),
+        DummyState("sensor.oig_local_2206237016_tbl_actual_aci_wr", "1", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    found = [st.entity_id for st in iter_local_entities(hass, "dev01")]
+    assert "sensor.oig_local_dev01_tbl_box_prms_mode" in found
+    assert "number.oig_local_dev01_tbl_batt_prms_bat_min_cfg" in found
+    assert "sensor.oig_local_2206237016_tbl_actual_aci_wr" not in found
+
+
+def test_iter_local_entities_rejects_malformed_ids():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_123_tbl_actual_aci_wr", "1", last_updated=now),
+        DummyState("sensor.oig_local_123_", "1", last_updated=now),
+        DummyState("sensor.oig_local_123_bad", "1", last_updated=now),
+        DummyState("sensor.oig_local_123_cfg", "1", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    found = [st.entity_id for st in iter_local_entities(hass, "123")]
+    assert "sensor.oig_local_123_tbl_actual_aci_wr" in found
+    assert "sensor.oig_local_123_" not in found
+    assert "sensor.oig_local_123_bad" not in found
+    assert "sensor.oig_local_123_cfg" not in found

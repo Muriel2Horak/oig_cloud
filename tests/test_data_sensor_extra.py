@@ -139,12 +139,12 @@ def test_grid_mode_king_and_queen(monkeypatch):
 
 
 def test_local_entity_value_mapping(monkeypatch):
-    states = {"sensor.oig_local_123_temp": DummyState("ON")}
+    states = {"sensor.oig_local_123_tbl_actual_aci_wr": DummyState("ON")}
     sensor, _ = _make_sensor(
         monkeypatch,
         "local_value_test",
         {
-            "local_entity_suffix": "temp",
+            "local_entity_suffix": "tbl_actual_aci_wr",
             "local_entity_domains": ["sensor"],
             "local_value_map": {"on": 1},
         },

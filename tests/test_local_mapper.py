@@ -30,6 +30,10 @@ def test_normalize_domains_and_value_map():
         "sensor",
     )
     assert local_mapper._normalize_domains([1, "sensor"]) == ("sensor",)
+    assert local_mapper._normalize_domains(
+        ["sensor", "binary_sensor", "switch", "number", "select"]
+    ) == ("sensor", "binary_sensor", "switch", "number", "select")
+    assert local_mapper._normalize_domains(["light", "switch"]) == ("switch",)
 
     value_map = local_mapper._normalize_value_map({"On": 1, "Off": 0})
     assert value_map["on"] == 1

@@ -14,6 +14,11 @@ from homeassistant.helpers.debounce import Debouncer
 from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
+from .local_mapper import (
+    SUPPORTED_DOMAINS,
+    iter_local_entities,
+    normalize_proxy_entity_id,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -236,7 +241,7 @@ def _coerce_box_id_float(value: float) -> Optional[str]:
 
 def _coerce_box_id_str(value: str) -> Optional[str]:
     s = value.strip()
-    if s.isdigit():
+    if s and re.match(r"^\w+$", s):
         return s
     try:
         m = re.search(r"(\d{6,})", s)
@@ -249,11 +254,11 @@ def _get_latest_local_entity_update(
     hass: HomeAssistant, box_id: str
 ) -> Optional[datetime]:
     """Return the most recent update timestamp among local telemetry entities for a box."""
-    if not (isinstance(box_id, str) and box_id.isdigit()):
+    if not (isinstance(box_id, str) and re.match(r"^\w+$", box_id)):
         return None
     try:
         latest: Optional[datetime] = None
-        for st in _iter_local_entities(hass, box_id):
+        for st in iter_local_entities(hass, box_id):
             dt_utc = _extract_state_timestamp(st)
             if dt_utc is None:
                 continue
@@ -261,14 +266,6 @@ def _get_latest_local_entity_update(
         return latest
     except Exception:
         return None
-
-
-def _iter_local_entities(hass: HomeAssistant, box_id: str):
-    for domain in ("sensor", "binary_sensor"):
-        prefix = f"{domain}.oig_local_{box_id}_"
-        for st in hass.states.async_all(domain):
-            if st.entity_id.startswith(prefix):
-                yield st
 
 
 def _extract_state_timestamp(state: Any) -> Optional[datetime]:
@@ -416,8 +413,6 @@ def init_data_source_state(hass: HomeAssistant, entry: ConfigEntry) -> DataSourc
 class DataSourceController:
     """Controls effective data source mode based on local proxy health."""
 
-    _LOCAL_ENTITY_RE = re.compile(r"^(?:sensor|binary_sensor)\.oig_local_(\d+)_")
-
     def __init__(
         self,
         hass: HomeAssistant,
@@ -551,28 +546,25 @@ class DataSourceController:
         entity_id = event.data.get("entity_id")
         if not isinstance(entity_id, str):
             return
-        if not (
-            entity_id.startswith("sensor.oig_local_")
-            or entity_id.startswith("binary_sensor.oig_local_")
+        if not any(
+            entity_id.startswith(f"{domain}.oig_local_") for domain in SUPPORTED_DOMAINS
         ):
             return
 
-        # Ensure the local update belongs to this entry's box_id (prevents cross-device wiring).
-        m = self._LOCAL_ENTITY_RE.match(entity_id)
-        if not m:
-            return
-        event_box_id = m.group(1)
-
         expected_box_id = _get_expected_box_id(self.entry)
 
-        if expected_box_id and event_box_id != expected_box_id:
-            return
-
-        # If box_id isn't configured yet, fall back to proxy-reported box_id (if available).
-        if expected_box_id is None:
-            proxy_box_id = _get_proxy_box_id(self.hass)
-            if proxy_box_id and event_box_id != proxy_box_id:
+        if expected_box_id:
+            if normalize_proxy_entity_id(entity_id, expected_box_id) is None:
                 return
+            event_box_id = expected_box_id
+        else:
+            # If box_id isn't configured yet, fall back to proxy-reported box_id (if available).
+            proxy_box_id = _get_proxy_box_id(self.hass)
+            if proxy_box_id is None:
+                return
+            if normalize_proxy_entity_id(entity_id, proxy_box_id) is None:
+                return
+            event_box_id = proxy_box_id
 
         # Remember the latest local telemetry activity timestamp.
         try:
@@ -683,10 +675,7 @@ class DataSourceController:
         configured_mode = get_configured_mode(self.entry)
         if configured_mode == DATA_SOURCE_CLOUD_ONLY:
             return True
-        return (
-            state.effective_mode == DATA_SOURCE_CLOUD_ONLY
-            and state.reason == "cloud_only"
-        )
+        return state.effective_mode == DATA_SOURCE_CLOUD_ONLY
 
     @callback
     def _update_state(self, force: bool = False) -> tuple[bool, bool]:
@@ -778,10 +767,4 @@ class DataSourceController:
             except Exception as err:
                 _LOGGER.debug("Failed to schedule coordinator refresh: %s", err)
 
-    async def _poke_coordinator(self) -> None:
-        await asyncio.sleep(0)
-        try:
-            if self.coordinator and getattr(self.coordinator, "data", None) is not None:
-                self.coordinator.async_set_updated_data(self.coordinator.data)
-        except Exception as err:
-            _LOGGER.debug("Failed to poke coordinator: %s", err)
+
