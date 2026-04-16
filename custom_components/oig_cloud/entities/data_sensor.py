@@ -317,7 +317,7 @@ class OigCloudDataSensor(_DataSensorBase):
             return self._get_ssrmode_name(raw_value, "cs")
         if self._sensor_type == "boiler_manual_mode":
             return self._get_boiler_mode_name(raw_value, "cs")
-        if self._sensor_type in {"boiler_is_use", "box_prms_crct"}:
+        if self._sensor_type in {"boiler_is_use", "box_prms_crct", "box_prms_crcte"}:
             return self._get_on_off_name(raw_value, "cs")
         return _STATE_NOT_HANDLED
 
@@ -680,15 +680,20 @@ class OigCloudDataSensor(_DataSensorBase):
 
     def _get_local_grid_mode(self, node_value: Any, language: str) -> str:
         try:
-            grid_enabled_raw = self._get_local_value_for_sensor_type(
-                "box_prms_crct"
-            )
+            grid_enabled_crcte = self._get_local_value_for_sensor_type("box_prms_crcte")
+            grid_enabled_crct = self._get_local_value_for_sensor_type("box_prms_crct")
             max_grid_feed_raw = self._get_local_value_for_sensor_type(
                 "invertor_prm1_p_max_feed_grid"
             )
 
+            box_prms: dict = {}
+            if grid_enabled_crcte is not None:
+                box_prms["crcte"] = grid_enabled_crcte
+            if grid_enabled_crct is not None:
+                box_prms["crct"] = grid_enabled_crct
+
             raw_values = {
-                "box_prms": {"crct": grid_enabled_raw},
+                "box_prms": box_prms,
                 "invertor_prm1": {"p_max_feed_grid": max_grid_feed_raw},
                 "invertor_prms": {"to_grid": node_value},
             }

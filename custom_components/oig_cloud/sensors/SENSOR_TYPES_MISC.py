@@ -97,6 +97,20 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "device_mapping": "main",
         "local_entity_suffix": "tbl_box_prms_crct",
     },
+    "box_prms_crcte": {
+        "name": "Distribution Emergency Control Extended",
+        "name_cs": "Krizové ovládání distribuce (rozšířené)",
+        "device_class": SensorDeviceClass.ENUM,
+        "unit_of_measurement": None,
+        "state_class": None,
+        "node_id": "box_prms",
+        "node_key": "crcte",
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "options": ["Vypnuto / Off", "Zapnuto / On"],
+        "sensor_type_category": "data",
+        "device_mapping": "main",
+        "local_entity_suffix": "tbl_box_prms_crcte",
+    },
     # Notification sensors - nová kategorie
     "latest_notification": {
         "name": "Latest Notification",

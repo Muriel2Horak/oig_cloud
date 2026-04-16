@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.28] - 2026-04-16
+
+### Fixed
+- `sensor.oig_{box_id}_invertor_prms_to_grid` now correctly reflects grid-delivery state in `local_only` mode for inverters that expose `box_prms.crcte` instead of `box_prms.crct`.
+- Added `box_prms_crcte` sensor type so the local-mapper suffix table includes the `crcte` key and payload updates are applied correctly.
+- `_get_local_grid_mode()` now reads both `box_prms_crcte` and `box_prms_crct` and prefers `crcte` when available, matching the resolver's preference order.
+- `_on_any_state_change()` no longer silently drops legacy proxy entity events (format `{domain}.{device_id}_tbl_…`) — it now delegates all filtering to `normalize_proxy_entity_id()`, which accepts both the current `oig_local_` prefix and the legacy format.
+- `box_prms_crcte` entity now shows translated On/Off labels instead of raw `0`/`1`.
+
 ## [2.3.27] - 2026-04-16
 
 ### Fixed

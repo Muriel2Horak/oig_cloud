@@ -370,3 +370,42 @@ def test_get_node_value_exception():
     sensor = _make_sensor("box_prms_mode", coordinator)
     sensor._sensor_config = {"node_id": "node", "node_key": []}
     assert sensor.get_node_value() is None
+
+
+def test_get_local_grid_mode_crcte_only(monkeypatch):
+    from custom_components.oig_cloud.entities.data_sensor import GridMode
+
+    sensor = _make_sensor("invertor_prms_to_grid")
+    values = {
+        "box_prms_crcte": 1,
+        "box_prms_crct": None,
+        "invertor_prm1_p_max_feed_grid": 15000,
+    }
+    monkeypatch.setattr(sensor, "_get_local_value_for_sensor_type", lambda k: values.get(k))
+    assert sensor._get_local_grid_mode(1, "cs") == GridMode.ON
+
+
+def test_get_local_grid_mode_crcte_overrides_crct(monkeypatch):
+    from custom_components.oig_cloud.entities.data_sensor import GridMode
+
+    sensor = _make_sensor("invertor_prms_to_grid")
+    values = {
+        "box_prms_crcte": 1,
+        "box_prms_crct": 0,
+        "invertor_prm1_p_max_feed_grid": 15000,
+    }
+    monkeypatch.setattr(sensor, "_get_local_value_for_sensor_type", lambda k: values.get(k))
+    assert sensor._get_local_grid_mode(1, "cs") == GridMode.ON
+
+
+def test_get_local_grid_mode_crct_fallback(monkeypatch):
+    from custom_components.oig_cloud.entities.data_sensor import GridMode
+
+    sensor = _make_sensor("invertor_prms_to_grid")
+    values = {
+        "box_prms_crcte": None,
+        "box_prms_crct": 1,
+        "invertor_prm1_p_max_feed_grid": 15000,
+    }
+    monkeypatch.setattr(sensor, "_get_local_value_for_sensor_type", lambda k: values.get(k))
+    assert sensor._get_local_grid_mode(1, "cs") == GridMode.ON

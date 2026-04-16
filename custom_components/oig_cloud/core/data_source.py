@@ -15,7 +15,6 @@ from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
 from .local_mapper import (
-    SUPPORTED_DOMAINS,
     iter_local_entities,
     normalize_proxy_entity_id,
 )
@@ -546,13 +545,11 @@ class DataSourceController:
         entity_id = event.data.get("entity_id")
         if not isinstance(entity_id, str):
             return
-        if not any(
-            entity_id.startswith(f"{domain}.oig_local_") for domain in SUPPORTED_DOMAINS
-        ):
-            return
 
         expected_box_id = _get_expected_box_id(self.entry)
 
+        # Use normalize_proxy_entity_id as the sole gate — it handles both the
+        # current "oig_local_" prefix and the legacy "<device_id>_" format.
         if expected_box_id:
             if normalize_proxy_entity_id(entity_id, expected_box_id) is None:
                 return
