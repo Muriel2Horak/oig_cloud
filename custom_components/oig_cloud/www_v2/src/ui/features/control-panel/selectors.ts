@@ -218,6 +218,12 @@ export class OigGridDeliverySelector extends LitElement {
         background: ${u(CSS_VARS.bgPrimary)};
         color: ${u(CSS_VARS.textPrimary)};
         transition: border-color 0.2s;
+        cursor: default;
+      }
+
+      .limit-input[readonly] {
+        user-select: none;
+        pointer-events: none;
       }
 
       .limit-input.pending-border {
@@ -248,16 +254,6 @@ export class OigGridDeliverySelector extends LitElement {
 
     this.dispatchEvent(new CustomEvent('delivery-change', {
       detail: { value: delivery, limit: delivery === 'limited' ? this.limit : null },
-      bubbles: true,
-    }));
-  }
-
-  private onLimitInput(e: Event): void {
-    const input = e.target as HTMLInputElement;
-    this.limit = parseInt(input.value, 10) || 0;
-
-    this.dispatchEvent(new CustomEvent('limit-change', {
-      detail: { limit: this.limit },
       bubbles: true,
     }));
   }
@@ -318,7 +314,7 @@ export class OigGridDeliverySelector extends LitElement {
             .value=${String(this.limit)}
             min="0"
             step="100"
-            @input=${this.onLimitInput}
+            readonly
             ?disabled=${this.disabled}
           />
           <span class="limit-unit">W</span>
