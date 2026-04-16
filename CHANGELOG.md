@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.26] - 2026-04-16
+
+### Changed
+- Single normalization boundary (`normalize_proxy_entity_id`) in `core/local_mapper.py` for all local proxy entity lookups.
+- Support for all 5 audited proxy domains: `sensor`, `binary_sensor`, `switch`, `number`, `select`.
+- `_cfg` suffix fallback for control entities across all domains.
+- Alphanumeric device ID support (`dev01`) in local mapper normalization.
+- Centralized `iter_local_entities` reused in `data_source.py` and `telemetry_store.py`.
+- `data_sensor.py` local helper now routes through the normalization boundary.
+- Updated docs: `docs/user/DATA_SOURCE.md`.
+
+### Fixed
+- Cloud-fallback guard fix in `_should_block_local_snapshot_publish`.
+
+### Removed
+- Dead code removal: `_LOCAL_ENTITY_RE`, `_is_valid_node_pair`, `_poke_coordinator`.
+
+### Added
+- Full regression test suite: 3377 passed, 27 skipped.
+
 ## [2.3.25] - 2026-04-15
 
 ### Changed
