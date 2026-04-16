@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.30] - 2026-04-16
+
+### Changed
+- Dashboard V2: removed inline limit-value input from the grid-delivery control panel. The limit is now displayed and edited exclusively through the dialog opened by the "S omezením" button.
+
 ## [2.3.29] - 2026-04-16
 
 ### Fixed

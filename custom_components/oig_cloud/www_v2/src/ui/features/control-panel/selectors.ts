@@ -3,7 +3,7 @@
  *
  * Three selector components:
  * 1. oig-box-mode-selector — Home 1/2/3/UPS
- * 2. oig-grid-delivery-selector — Vypnuto/Zapnuto/S omezením + limit input
+ * 2. oig-grid-delivery-selector — Vypnuto/Zapnuto/S omezením
  * 3. oig-boiler-mode-selector — CBB/Manual
  *
  * Each button supports 5 visual states: idle, active, pending, processing, disabled-by-service.
@@ -202,43 +202,6 @@ export class OigGridDeliverySelector extends LitElement {
   static styles = [
     sharedButtonStyles,
     css`
-      .limit-input-container {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-top: 8px;
-      }
-
-      .limit-input {
-        flex: 1;
-        padding: 8px 12px;
-        border: 1px solid ${u(CSS_VARS.divider)};
-        border-radius: 6px;
-        font-size: 14px;
-        background: ${u(CSS_VARS.bgPrimary)};
-        color: ${u(CSS_VARS.textPrimary)};
-        transition: border-color 0.2s;
-        cursor: default;
-      }
-
-      .limit-input[readonly] {
-        user-select: none;
-        pointer-events: none;
-      }
-
-      .limit-input.pending-border {
-        border-color: #ffc107;
-      }
-
-      .limit-input.processing-border {
-        border-color: #42a5f5;
-      }
-
-      .limit-unit {
-        font-size: 12px;
-        color: ${u(CSS_VARS.textSecondary)};
-      }
-
       .mode-btn.pending-target {
         border-color: #ffc107;
         color: #ffc107;
@@ -258,19 +221,12 @@ export class OigGridDeliverySelector extends LitElement {
     }));
   }
 
-  private get showLimitInput(): boolean {
-    return this.value === 'limited' || this.buttonStates.limited === 'active';
-  }
-
   render() {
     const options: Array<{ value: GridDelivery; label: string }> = [
       { value: 'off', label: GRID_DELIVERY_LABELS.off },
       { value: 'on', label: GRID_DELIVERY_LABELS.on },
       { value: 'limited', label: GRID_DELIVERY_LABELS.limited },
     ];
-
-    const limitState = this.buttonStates.limited;
-    const limitBorderClass = limitState === 'pending' ? 'pending-border' : limitState === 'processing' ? 'processing-border' : '';
 
     const hasPendingChange = this.pendingTarget !== null && this.pendingTarget !== this.value;
     const pendingLabel = hasPendingChange
@@ -305,21 +261,6 @@ export class OigGridDeliverySelector extends LitElement {
           `;
         })}
       </div>
-
-      ${this.showLimitInput ? html`
-        <div class="limit-input-container">
-          <input
-            type="number"
-            class="limit-input ${limitBorderClass}"
-            .value=${String(this.limit)}
-            min="0"
-            step="100"
-            readonly
-            ?disabled=${this.disabled}
-          />
-          <span class="limit-unit">W</span>
-        </div>
-      ` : null}
     `;
   }
 }
