@@ -15,7 +15,6 @@ from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
 from .local_mapper import (
-    SUPPORTED_DOMAINS,
     iter_local_entities,
     normalize_proxy_entity_id,
 )
