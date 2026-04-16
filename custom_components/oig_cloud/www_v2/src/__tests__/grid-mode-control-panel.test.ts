@@ -412,6 +412,43 @@ describe('OigGridDeliverySelector — active limited re-click emits delivery-cha
   });
 });
 
+describe('OigGridDeliverySelector — limit input is read-only', () => {
+  function renderLimitTemplate(limit: number) {
+    const el = new OigGridDeliverySelector();
+    el.value = 'limited';
+    el.limit = limit;
+    el.pendingTarget = null;
+    el.buttonStates = { off: 'idle', on: 'idle', limited: 'active' };
+    return Reflect.apply(
+      Reflect.get(Object.getPrototypeOf(el), 'render'),
+      el,
+      [],
+    ) as { values?: unknown[] } | null;
+  }
+
+  it('limit input template has readonly attribute in static strings', () => {
+    const result = renderLimitTemplate(5000);
+    const limitInputTemplate = result?.values?.[2] as { strings?: TemplateStringsArray } | null;
+    expect(limitInputTemplate).not.toBeNull();
+    const allStrings = Array.from(limitInputTemplate?.strings ?? []).join('');
+    expect(allStrings).toContain('readonly');
+  });
+
+  it('limit input has no @input event binding (values count reduced by one vs editable)', () => {
+    const result = renderLimitTemplate(7500);
+    const limitInputTemplate = result?.values?.[2] as { values?: unknown[] } | null;
+    expect(limitInputTemplate).not.toBeNull();
+    expect(limitInputTemplate?.values?.length).toBe(3);
+  });
+
+  it('displayed limit value is preserved (visible in the template)', () => {
+    const result = renderLimitTemplate(3300);
+    const limitInputTemplate = result?.values?.[2] as { values?: unknown[] } | null;
+    expect(limitInputTemplate).not.toBeNull();
+    expect(limitInputTemplate?.values?.[1]).toBe('3300');
+  });
+});
+
 describe('OigControlPanel — grid delivery limit-only fast path', () => {
   it('prepares a limit-only dialog config when live mode is limited and delivery-change fires for limited', async () => {
     const panel = new OigControlPanel();
