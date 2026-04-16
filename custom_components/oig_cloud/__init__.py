@@ -122,9 +122,6 @@ def _infer_box_id_from_local_entities(hass: HomeAssistant) -> str | None:
     except Exception as err:
         _LOGGER.debug("Failed to infer local box_id: %s", err, exc_info=True)
         return None
-    except Exception as err:
-        _LOGGER.debug("Failed to infer local box_id: %s", err, exc_info=True)
-        return None
 
 
 def _get_planner_defaults() -> dict[str, Any]:
