@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.29] - 2026-04-16
+
+### Fixed
+- Dashboard V2 now keeps the inline grid-delivery limit visible in the control panel while making the field read-only, so limit changes can only be made through the existing limited-mode dialog flow.
+
 ## [2.3.28] - 2026-04-16
 
 ### Fixed
