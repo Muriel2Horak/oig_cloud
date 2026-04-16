@@ -10,9 +10,7 @@ from homeassistant.util import dt as dt_util
 
 from .local_mapper import (
     LocalUpdateApplier,
-    SUPPORTED_DOMAINS,
     iter_local_entities,
-    normalize_proxy_entity_id,
 )
 
 _LOGGER = logging.getLogger(__name__)
