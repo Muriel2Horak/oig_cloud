@@ -229,19 +229,86 @@ class TestNormalizeProxyEntityId:
         assert result is None
 
     # ------------------------------------------------------------------
-    # Negative: missing oig_local_ prefix
+    # Positive: legacy format without oig_local_ prefix
     # ------------------------------------------------------------------
 
-    def test_rejects_missing_oig_local_prefix(self):
-        result = normalize_proxy_entity_id(
+    def test_legacy_sensor_numeric_device_id(self):
+        desc = normalize_proxy_entity_id(
+            "sensor.2206237016_tbl_actual_aci_wr",
+            "2206237016",
+        )
+        assert desc is not None
+        assert desc.domain == "sensor"
+        assert desc.device_id == "2206237016"
+        assert desc.table == "tbl_actual_aci"
+        assert desc.key == "wr"
+        assert desc.is_control is False
+        assert desc.raw_suffix == "tbl_actual_aci_wr"
+
+    def test_legacy_switch_control_cfg(self):
+        desc = normalize_proxy_entity_id(
             "switch.2206237016_tbl_invertor_prms_to_grid_cfg",
+            "2206237016",
+        )
+        assert desc is not None
+        assert desc.domain == "switch"
+        assert desc.device_id == "2206237016"
+        assert desc.table == "tbl_invertor_prms"
+        assert desc.key == "to_grid"
+        assert desc.is_control is True
+        assert desc.raw_suffix == "tbl_invertor_prms_to_grid_cfg"
+
+    def test_legacy_number_control_cfg(self):
+        desc = normalize_proxy_entity_id(
+            "number.2206237016_tbl_batt_prms_bat_min_cfg",
+            "2206237016",
+        )
+        assert desc is not None
+        assert desc.domain == "number"
+        assert desc.device_id == "2206237016"
+        assert desc.table == "tbl_batt_prms"
+        assert desc.key == "bat_min"
+        assert desc.is_control is True
+        assert desc.raw_suffix == "tbl_batt_prms_bat_min_cfg"
+
+    def test_legacy_select_proxy_control_cfg(self):
+        desc = normalize_proxy_entity_id(
+            "select.2206237016_proxy_control_proxy_mode_cfg",
+            "2206237016",
+        )
+        assert desc is not None
+        assert desc.domain == "select"
+        assert desc.device_id == "2206237016"
+        assert desc.table == "proxy_control"
+        assert desc.key == "proxy_mode"
+        assert desc.is_control is True
+        assert desc.raw_suffix == "proxy_control_proxy_mode_cfg"
+
+    # ------------------------------------------------------------------
+    # Negative: cloud entity must NOT match local format
+    # ------------------------------------------------------------------
+
+    def test_rejects_cloud_entity_id(self):
+        result = normalize_proxy_entity_id(
+            "sensor.oig_2206237016_invertor_prms_to_grid",
             "2206237016",
         )
         assert result is None
 
-    def test_rejects_missing_oig_local_prefix_number(self):
+    # ------------------------------------------------------------------
+    # Negative: missing oig_local_ prefix (legacy tlb_ is still rejected)
+    # ------------------------------------------------------------------
+
+    def test_rejects_legacy_tlb_prefix_switch_no_oig_local(self):
         result = normalize_proxy_entity_id(
-            "number.2206237016_tbl_batt_prms_bat_min_cfg",
+            "switch.2206237016_tlb_invertor_prms_to_grid_cfg",
+            "2206237016",
+        )
+        assert result is None
+
+    def test_rejects_legacy_tlb_prefix_sensor_no_oig_local(self):
+        result = normalize_proxy_entity_id(
+            "sensor.2206237016_tlb_actual_aci_wr",
             "2206237016",
         )
         assert result is None

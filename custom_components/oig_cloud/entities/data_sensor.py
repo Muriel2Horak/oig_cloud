@@ -574,6 +574,23 @@ class OigCloudDataSensor(_DataSensorBase):
             return _LANGS["on"][language]
         return _LANGS["unknown"][language]
 
+    def _find_local_entity_candidate(
+        self, suffix: str, domains: Tuple[str, ...]
+    ) -> Optional[str]:
+        for prefix_fmt in (
+            "{domain}.oig_local_{box_id}_{suffix}",
+            "{domain}.{box_id}_{suffix}",
+        ):
+            for domain in domains:
+                candidate = prefix_fmt.format(
+                    domain=domain, box_id=self._box_id, suffix=suffix
+                )
+                if normalize_proxy_entity_id(candidate, self._box_id):
+                    state = self.hass.states.get(candidate)
+                    if state is not None:
+                        return candidate
+        return None
+
     def _get_local_entity_id_for_config(
         self, sensor_config: Dict[str, Any]
     ) -> Optional[str]:
@@ -592,20 +609,19 @@ class OigCloudDataSensor(_DataSensorBase):
                 primary_domains = []
             if not primary_domains:
                 primary_domains = list(SUPPORTED_DOMAINS)
-            for domain in primary_domains:
-                candidate = f"{domain}.oig_local_{self._box_id}_{suffix}"
-                if normalize_proxy_entity_id(candidate, self._box_id):
-                    state = self.hass.states.get(candidate)
-                    if state is not None:
-                        return candidate
+
+            candidate = self._find_local_entity_candidate(
+                suffix, tuple(primary_domains)
+            )
+            if candidate:
+                return candidate
+
             # Fallback: proxy control entities append _cfg to the suffix.
-            cfg_suffix = f"{suffix}_cfg"
-            for domain in SUPPORTED_DOMAINS:
-                candidate = f"{domain}.oig_local_{self._box_id}_{cfg_suffix}"
-                if normalize_proxy_entity_id(candidate, self._box_id):
-                    state = self.hass.states.get(candidate)
-                    if state is not None:
-                        return candidate
+            cfg_candidate = self._find_local_entity_candidate(
+                f"{suffix}_cfg", SUPPORTED_DOMAINS
+            )
+            if cfg_candidate:
+                return cfg_candidate
         return None
 
     def _coerce_number(self, value: Any) -> Any:

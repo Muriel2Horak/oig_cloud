@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.27] - 2026-04-16
+
+### Fixed
+- Local proxy entity mapping now supports the legacy format without `oig_local_` prefix (e.g. `switch.2206237016_tbl_invertor_prms_to_grid_cfg`), fixing a regression for users with older proxy versions.
+- `normalize_proxy_entity_id`, `iter_local_entities`, `_get_local_entity_id_for_config`, and `_infer_box_id_from_local_entities` all recognize both `oig_local_` and legacy no-prefix formats.
+
 ## [2.3.26] - 2026-04-16
 
 ### Changed

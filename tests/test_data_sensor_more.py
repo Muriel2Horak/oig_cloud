@@ -85,6 +85,42 @@ def test_get_local_entity_id_for_config_prefers_existing_state(monkeypatch):
     )
 
 
+def test_get_local_entity_id_for_config_legacy_fallback(monkeypatch):
+    states = {
+        "switch.123_tbl_box_prms_mode": DummyState("1"),
+    }
+    sensor = _make_sensor(
+        monkeypatch,
+        "local_legacy",
+        {
+            "local_entity_suffix": "tbl_box_prms_mode",
+            "local_entity_domains": ["sensor", "switch"],
+        },
+        states=states,
+    )
+    assert sensor._get_local_entity_id_for_config(sensor._sensor_config) == (
+        "switch.123_tbl_box_prms_mode"
+    )
+
+
+def test_get_local_entity_id_for_config_legacy_cfg_fallback(monkeypatch):
+    states = {
+        "number.123_tbl_invertor_prms_bat_min_cfg": DummyState("10"),
+    }
+    sensor = _make_sensor(
+        monkeypatch,
+        "local_legacy_cfg",
+        {
+            "local_entity_suffix": "tbl_invertor_prms_bat_min",
+            "local_entity_domains": ["sensor"],
+        },
+        states=states,
+    )
+    assert sensor._get_local_entity_id_for_config(sensor._sensor_config) == (
+        "number.123_tbl_invertor_prms_bat_min_cfg"
+    )
+
+
 def test_get_local_entity_id_for_config_default_domain(monkeypatch):
     states = {"sensor.oig_local_123_tbl_actual_aci_wr": DummyState("1")}
     sensor = _make_sensor(

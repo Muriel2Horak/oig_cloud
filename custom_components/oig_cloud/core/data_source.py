@@ -556,7 +556,6 @@ class DataSourceController:
         if expected_box_id:
             if normalize_proxy_entity_id(entity_id, expected_box_id) is None:
                 return
-            event_box_id = expected_box_id
         else:
             # If box_id isn't configured yet, fall back to proxy-reported box_id (if available).
             proxy_box_id = _get_proxy_box_id(self.hass)
@@ -564,7 +563,6 @@ class DataSourceController:
                 return
             if normalize_proxy_entity_id(entity_id, proxy_box_id) is None:
                 return
-            event_box_id = proxy_box_id
 
         # Remember the latest local telemetry activity timestamp.
         try:
@@ -766,5 +764,3 @@ class DataSourceController:
                 self.hass.async_create_task(self.coordinator.async_request_refresh())
             except Exception as err:
                 _LOGGER.debug("Failed to schedule coordinator refresh: %s", err)
-
-

@@ -76,11 +76,16 @@ def normalize_proxy_entity_id(
     if domain not in SUPPORTED_DOMAINS:
         return None
 
-    expected_prefix = f"{domain}.oig_local_{expected_device_id}_"
-    if not entity_id.startswith(expected_prefix):
+    for prefix in (
+        f"{domain}.oig_local_{expected_device_id}_",
+        f"{domain}.{expected_device_id}_",
+    ):
+        if entity_id.startswith(prefix):
+            raw_suffix = entity_id[len(prefix):]
+            break
+    else:
         return None
 
-    raw_suffix = entity_id[len(expected_prefix):]
     if not raw_suffix:
         return None
 
@@ -128,11 +133,8 @@ def normalize_proxy_entity_id(
 
 def iter_local_entities(hass: HomeAssistant, box_id: str):
     for domain in SUPPORTED_DOMAINS:
-        prefix = f"{domain}.oig_local_{box_id}_"
         for st in hass.states.async_all(domain):
-            if st.entity_id.startswith(prefix) and normalize_proxy_entity_id(
-                st.entity_id, box_id
-            ):
+            if normalize_proxy_entity_id(st.entity_id, box_id):
                 yield st
 
 
