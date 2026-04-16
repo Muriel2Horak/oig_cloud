@@ -592,20 +592,32 @@ class OigCloudDataSensor(_DataSensorBase):
                 primary_domains = []
             if not primary_domains:
                 primary_domains = list(SUPPORTED_DOMAINS)
-            for domain in primary_domains:
-                candidate = f"{domain}.oig_local_{self._box_id}_{suffix}"
-                if normalize_proxy_entity_id(candidate, self._box_id):
-                    state = self.hass.states.get(candidate)
-                    if state is not None:
-                        return candidate
+            for prefix_fmt in (
+                "{domain}.oig_local_{box_id}_{suffix}",
+                "{domain}.{box_id}_{suffix}",
+            ):
+                for domain in primary_domains:
+                    candidate = prefix_fmt.format(
+                        domain=domain, box_id=self._box_id, suffix=suffix
+                    )
+                    if normalize_proxy_entity_id(candidate, self._box_id):
+                        state = self.hass.states.get(candidate)
+                        if state is not None:
+                            return candidate
             # Fallback: proxy control entities append _cfg to the suffix.
             cfg_suffix = f"{suffix}_cfg"
-            for domain in SUPPORTED_DOMAINS:
-                candidate = f"{domain}.oig_local_{self._box_id}_{cfg_suffix}"
-                if normalize_proxy_entity_id(candidate, self._box_id):
-                    state = self.hass.states.get(candidate)
-                    if state is not None:
-                        return candidate
+            for prefix_fmt in (
+                "{domain}.oig_local_{box_id}_{suffix}",
+                "{domain}.{box_id}_{suffix}",
+            ):
+                for domain in SUPPORTED_DOMAINS:
+                    candidate = prefix_fmt.format(
+                        domain=domain, box_id=self._box_id, suffix=cfg_suffix
+                    )
+                    if normalize_proxy_entity_id(candidate, self._box_id):
+                        state = self.hass.states.get(candidate)
+                        if state is not None:
+                            return candidate
         return None
 
     def _coerce_number(self, value: Any) -> Any:

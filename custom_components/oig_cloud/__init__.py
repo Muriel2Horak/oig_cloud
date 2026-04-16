@@ -96,20 +96,31 @@ def _ensure_data_source_option_defaults(
 def _infer_box_id_from_local_entities(hass: HomeAssistant) -> str | None:
     """Best-effort inference of box_id from existing oig_local entity_ids.
 
-    Expected local entity_id pattern: sensor.oig_local_<box_id>_<suffix>
+    Expected local entity_id patterns:
+        sensor.oig_local_<box_id>_<suffix>  (current)
+        sensor.<box_id>_tbl_<suffix>         (legacy)
+        sensor.<box_id>_proxy_control_<suffix> (legacy)
     """
     try:
         from homeassistant.helpers import entity_registry as er
 
         reg = er.async_get(hass)
         ids: set[str] = set()
-        pat = re.compile(r"^sensor\\.oig_local_(\\d+)_")
+        pat = re.compile(r"^sensor\.oig_local_(\d+)_")
+        pat_legacy = re.compile(r"^sensor\.(\d+)_(?:tbl_|proxy_control_)")
         for ent in reg.entities.values():
             m = pat.match(ent.entity_id)
             if m:
                 ids.add(m.group(1))
+                continue
+            m = pat_legacy.match(ent.entity_id)
+            if m:
+                ids.add(m.group(1))
         if len(ids) == 1:
             return next(iter(ids))
+        return None
+    except Exception as err:
+        _LOGGER.debug("Failed to infer local box_id: %s", err, exc_info=True)
         return None
     except Exception as err:
         _LOGGER.debug("Failed to infer local box_id: %s", err, exc_info=True)

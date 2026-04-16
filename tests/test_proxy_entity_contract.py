@@ -122,10 +122,13 @@ class TestNormalizeProxyEntityIdContract:
         result = normalize_proxy_entity_id(entity_id, "2206237016")
         assert result is None
 
-    def test_rejects_missing_oig_local_prefix(self):
+    def test_accepts_legacy_format_without_oig_local_prefix(self):
         entity_id = "switch.2206237016_tbl_invertor_prms_to_grid_cfg"
         result = normalize_proxy_entity_id(entity_id, "2206237016")
-        assert result is None
+        assert result is not None
+        assert result.domain == "switch"
+        assert result.raw_suffix == "tbl_invertor_prms_to_grid_cfg"
+        assert result.is_control is True
 
     def test_rejects_unsupported_domain_even_with_correct_prefix(self):
         entity_id = "light.oig_local_2206237016_tbl_box_prms_mode"

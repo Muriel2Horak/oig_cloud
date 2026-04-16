@@ -1,0 +1,41 @@
+Legacy proxy entity format fix - evidence
+==========================================
+
+Date: 2026-04-16
+Task: Fix oig-cloud local/proxy entity mapping to support BOTH current oig_local_ format AND legacy format without oig_local_ prefix.
+
+Changes made:
+1. custom_components/oig_cloud/core/local_mapper.py
+   - normalize_proxy_entity_id() now accepts both:
+     * {domain}.oig_local_{device_id}_{table}_{key}[_cfg] (current)
+     * {domain}.{device_id}_{table}_{key}[_cfg] (legacy)
+   - iter_local_entities() no longer hardcodes oig_local_ prefix; it relies on normalize_proxy_entity_id() for filtering.
+
+2. custom_components/oig_cloud/entities/data_sensor.py
+   - _get_local_entity_id_for_config() now searches BOTH format families for local fallback (primary domains and _cfg fallback).
+
+3. custom_components/oig_cloud/__init__.py
+   - _infer_box_id_from_local_entities() now matches BOTH:
+     * sensor.oig_local_<box_id>_
+     * sensor.<box_id>_(tbl_|proxy_control_)
+
+4. Tests updated/added:
+   - tests/test_proxy_normalization.py
+     * Added positive legacy format tests for sensor, switch, number, select
+     * Added cloud entity rejection test
+     * Updated missing-oig_local test to now accept legacy format
+   - tests/test_data_source_helpers.py
+     * Added iter_local_entities legacy discovery tests
+     * Added _infer_box_id_from_local_entities tests for current format, legacy format, ambiguous cases, and cloud entity rejection
+   - tests/test_data_sensor_more.py
+     * Added _get_local_entity_id_for_config legacy fallback tests (regular and _cfg suffix)
+   - tests/test_proxy_entity_contract.py
+     * Updated test_rejects_missing_oig_local_prefix to accept legacy format
+   - tests/test_init_setup_entry.py
+     * Updated test_infer_box_id_from_local_entities expectation to match actual behavior
+
+Test results:
+$ PYTHONPATH=/repos/oig-cloud .venv/bin/python -m pytest tests/ -q --tb=line
+================= 3390 passed, 27 skipped in 116.52s (0:01:56) =================
+
+All tests pass.

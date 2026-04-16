@@ -840,7 +840,7 @@ def test_infer_box_id_from_local_entities(monkeypatch):
 
     hass = DummyHass()
 
-    assert init_module._infer_box_id_from_local_entities(hass) is None
+    assert init_module._infer_box_id_from_local_entities(hass) == "789"
 
 
 @pytest.mark.asyncio

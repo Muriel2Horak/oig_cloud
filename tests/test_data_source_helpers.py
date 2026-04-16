@@ -7,6 +7,7 @@ import pytest
 
 from custom_components.oig_cloud.core import data_source as module
 from custom_components.oig_cloud.core.local_mapper import iter_local_entities
+from custom_components.oig_cloud import _infer_box_id_from_local_entities
 
 
 class DummyState:
@@ -213,3 +214,120 @@ def test_iter_local_entities_rejects_malformed_ids():
     assert "sensor.oig_local_123_" not in found
     assert "sensor.oig_local_123_bad" not in found
     assert "sensor.oig_local_123_cfg" not in found
+
+
+def test_iter_local_entities_discovers_legacy_format():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.2206237016_tbl_actual_aci_wr", "1", last_updated=now),
+        DummyState("switch.2206237016_tbl_invertor_prms_to_grid_cfg", "on", last_updated=now),
+        DummyState("number.2206237016_tbl_batt_prms_bat_min_cfg", "10", last_updated=now),
+        DummyState("select.2206237016_proxy_control_proxy_mode_cfg", "auto", last_updated=now),
+        DummyState("sensor.9999_tbl_actual_aci_wr", "1", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    found = [st.entity_id for st in iter_local_entities(hass, "2206237016")]
+    assert "sensor.2206237016_tbl_actual_aci_wr" in found
+    assert "switch.2206237016_tbl_invertor_prms_to_grid_cfg" in found
+    assert "number.2206237016_tbl_batt_prms_bat_min_cfg" in found
+    assert "select.2206237016_proxy_control_proxy_mode_cfg" in found
+    assert "sensor.9999_tbl_actual_aci_wr" not in found
+
+
+def test_iter_local_entities_mixed_current_and_legacy():
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    states = [
+        DummyState("sensor.oig_local_2206237016_tbl_actual_aci_wr", "1", last_updated=now),
+        DummyState("switch.2206237016_tbl_invertor_prms_to_grid_cfg", "on", last_updated=now),
+    ]
+    hass = DummyHass(states)
+    found = [st.entity_id for st in iter_local_entities(hass, "2206237016")]
+    assert "sensor.oig_local_2206237016_tbl_actual_aci_wr" in found
+    assert "switch.2206237016_tbl_invertor_prms_to_grid_cfg" in found
+
+
+def test_infer_box_id_from_current_local_entities(monkeypatch):
+    class DummyEnt:
+        def __init__(self, entity_id):
+            self.entity_id = entity_id
+
+    class DummyReg:
+        def __init__(self, entities):
+            self.entities = entities
+
+    hass = DummyHass()
+    hass.data = {}
+    reg = DummyReg({
+        "a": DummyEnt("sensor.oig_local_2206237016_tbl_actual_aci_wr"),
+        "b": DummyEnt("switch.oig_local_2206237016_tbl_invertor_prms_to_grid_cfg"),
+    })
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: reg,
+    )
+    assert _infer_box_id_from_local_entities(hass) == "2206237016"
+
+
+def test_infer_box_id_from_legacy_local_entities(monkeypatch):
+    class DummyEnt:
+        def __init__(self, entity_id):
+            self.entity_id = entity_id
+
+    class DummyReg:
+        def __init__(self, entities):
+            self.entities = entities
+
+    hass = DummyHass()
+    hass.data = {}
+    reg = DummyReg({
+        "a": DummyEnt("sensor.2206237016_tbl_actual_aci_wr"),
+        "b": DummyEnt("switch.2206237016_proxy_control_proxy_mode_cfg"),
+    })
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: reg,
+    )
+    assert _infer_box_id_from_local_entities(hass) == "2206237016"
+
+
+def test_infer_box_id_returns_none_when_ambiguous(monkeypatch):
+    class DummyEnt:
+        def __init__(self, entity_id):
+            self.entity_id = entity_id
+
+    class DummyReg:
+        def __init__(self, entities):
+            self.entities = entities
+
+    hass = DummyHass()
+    hass.data = {}
+    reg = DummyReg({
+        "a": DummyEnt("sensor.oig_local_2206237016_tbl_actual_aci_wr"),
+        "b": DummyEnt("sensor.oig_local_9999999999_tbl_actual_aci_wr"),
+    })
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: reg,
+    )
+    assert _infer_box_id_from_local_entities(hass) is None
+
+
+def test_infer_box_id_ignores_cloud_entities(monkeypatch):
+    class DummyEnt:
+        def __init__(self, entity_id):
+            self.entity_id = entity_id
+
+    class DummyReg:
+        def __init__(self, entities):
+            self.entities = entities
+
+    hass = DummyHass()
+    hass.data = {}
+    reg = DummyReg({
+        "a": DummyEnt("sensor.oig_2206237016_invertor_prms_to_grid"),
+    })
+    monkeypatch.setattr(
+        "homeassistant.helpers.entity_registry.async_get",
+        lambda _hass: reg,
+    )
+    assert _infer_box_id_from_local_entities(hass) is None
