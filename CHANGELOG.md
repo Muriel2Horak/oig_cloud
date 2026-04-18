@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.31] - 2026-04-18
+
+### Added
+- Frontend test coverage increased from 35.58% to 81.67%, exceeding the 80% CI gate requirement.
+- Added comprehensive test suites for:
+  - Data modules: pricing-data, boiler-data, analytics-data, api, tiles-data, timeline-data, ha-client
+  - Core/utils: bootstrap, split-flap
+  - UI components: header, status-badge, theme-provider
+  - UI features: pricing/stats, pricing/chart, analytics/blocks, boiler/components, timeline/dialog, tiles/tile-dialog, tiles/tile, flow/canvas, flow/connection, control-panel/dialog, control-panel/queue, layout/grid, layout/tabs
+- Total test count increased to 1813 tests, all passing.
+
 ## [2.3.30] - 2026-04-16
 
 ### Changed
