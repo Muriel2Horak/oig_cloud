@@ -824,9 +824,7 @@
         "home_1": "Home 1",
         "home_2": "Home 2",
         "home_3": "Home 3",
-        "home_ups": "Home UPS",
-        "home_5": "Home 5",
-        "home_6": "Home 6"
+        "home_ups": "Home UPS"
       }
     },
     "boiler_mode": {
@@ -887,11 +885,19 @@
       "name": "Set Boiler Mode"
     },
     "set_box_mode": {
-      "description": "Set Battery Box mode (Home 1, Home 2, Home 3, Home UPS, Home 5, Home 6)",
+      "description": "Set Battery Box mode (Home 1, Home 2, Home 3, Home UPS) and optional supplementary toggles (Grid V, Grid VI)",
       "fields": {
         "acknowledgement": {
           "description": "Acknowledge mode change",
           "name": "Acknowledgement"
+        },
+        "home_grid_v": {
+          "description": "Enable Home Grid V supplementary mode",
+          "name": "Home Grid V"
+        },
+        "home_grid_vi": {
+          "description": "Enable Home Grid VI supplementary mode",
+          "name": "Home Grid VI"
         },
         "mode": {
           "description": "Battery Box mode",
