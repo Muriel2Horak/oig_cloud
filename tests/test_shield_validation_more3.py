@@ -24,15 +24,29 @@ class DummyHass:
 
 
 class DummyEntry:
-    def __init__(self, options=None, data=None):
+    def __init__(self, options=None, data=None, entry_id="entry"):
         self.options = options or {}
         self.data = data or {}
+        self.entry_id = entry_id
 
 
 class DummyEntity:
     def __init__(self, entity_id, state):
         self.entity_id = entity_id
         self.state = state
+
+
+class DummyDevice:
+    def __init__(self, identifiers):
+        self.identifiers = identifiers
+
+
+class DummyDeviceRegistry:
+    def __init__(self, device=None):
+        self._device = device
+
+    def async_get(self, _device_id):
+        return self._device
 
 
 class DummyShield:
@@ -115,6 +129,60 @@ def test_extract_expected_entities_boiler_mode_same():
         shield, "oig_cloud.set_boiler_mode", {"mode": "Manual"}
     )
     assert expected == {}
+
+
+def test_extract_expected_entities_boiler_mode_uses_service_device_id(monkeypatch):
+    entities = [
+        DummyEntity("sensor.oig_123_boiler_manual_mode", "CBB"),
+        DummyEntity("sensor.oig_456_boiler_manual_mode", "Manuální"),
+    ]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"}, entry_id="entry")
+    shield = DummyShield(hass, entry)
+    hass.data = {"oig_cloud": {entry.entry_id: {"coordinator": SimpleNamespace(data={})}}}
+    device_registry = DummyDeviceRegistry(DummyDevice({("oig_cloud", "456_shield")}))
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    expected = module.extract_expected_entities(
+        shield,
+        "oig_cloud.set_boiler_mode",
+        {"mode": "Manual", "device_id": "device-id"},
+    )
+
+    assert expected == {}
+    assert shield.last_checked_entity_id == "sensor.oig_456_boiler_manual_mode"
+
+
+def test_extract_expected_entities_boiler_mode_targets_service_box_when_change_needed(
+    monkeypatch,
+):
+    entities = [
+        DummyEntity("sensor.oig_123_boiler_manual_mode", "Manuální"),
+        DummyEntity("sensor.oig_456_boiler_manual_mode", "CBB"),
+    ]
+    hass = DummyHass(entities)
+    entry = DummyEntry(options={"box_id": "123"}, entry_id="entry")
+    shield = DummyShield(hass, entry)
+    hass.data = {"oig_cloud": {entry.entry_id: {"coordinator": SimpleNamespace(data={})}}}
+    device_registry = DummyDeviceRegistry(DummyDevice({("oig_cloud", "456_shield")}))
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.device_registry.async_get",
+        lambda _hass: device_registry,
+    )
+
+    expected = module.extract_expected_entities(
+        shield,
+        "oig_cloud.set_boiler_mode",
+        {"mode": "Manual", "device_id": "device-id"},
+    )
+
+    assert expected == {"sensor.oig_456_boiler_manual_mode": "Manuální"}
+    assert shield.last_checked_entity_id == "sensor.oig_456_boiler_manual_mode"
 
 
 def test_extract_expected_entities_grid_limit_bad_state():
