@@ -18,8 +18,6 @@ from ..types import (
     SERVICE_MODE_HOME_1,
     SERVICE_MODE_HOME_2,
     SERVICE_MODE_HOME_3,
-    SERVICE_MODE_HOME_5,
-    SERVICE_MODE_HOME_6,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -258,8 +256,6 @@ def get_current_mode(sensor: Any) -> int:
                 SERVICE_MODE_HOME_1: CBB_MODE_HOME_I,
                 SERVICE_MODE_HOME_2: CBB_MODE_HOME_II,
                 SERVICE_MODE_HOME_3: CBB_MODE_HOME_III,
-                SERVICE_MODE_HOME_5: CBB_MODE_HOME_I,
-                SERVICE_MODE_HOME_6: CBB_MODE_HOME_I,
             }
             if mode_value in mode_map:
                 mode = mode_map[mode_value]

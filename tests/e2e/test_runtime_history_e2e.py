@@ -96,6 +96,16 @@ async def test_fetch_interval_from_history_mocked(e2e_setup, monkeypatch):
         fake_get_significant_states,
     )
 
+    # Mock get_instance to return a recorder that can execute jobs
+    class MockRecorderInstance:
+        async def async_add_executor_job(self, func, *args):
+            return func(*args)
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda hass: MockRecorderInstance(),
+    )
+
     sensor = SimpleNamespace(
         _hass=hass,
         _box_id=box_id,

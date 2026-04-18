@@ -541,8 +541,6 @@ def map_mode_name_to_id(mode_name: str) -> int:
         SERVICE_MODE_HOME_2: CBB_MODE_HOME_II,
         SERVICE_MODE_HOME_3: CBB_MODE_HOME_III,
         SERVICE_MODE_HOME_UPS: CBB_MODE_HOME_UPS,
-        "Home 5": CBB_MODE_HOME_I,
-        "Home 6": CBB_MODE_HOME_I,
     }
 
     normalized = str(mode_name or "").strip()
