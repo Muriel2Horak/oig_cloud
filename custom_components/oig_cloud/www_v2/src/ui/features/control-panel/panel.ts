@@ -30,6 +30,7 @@ import {
   BOILER_MODE_ICONS,
   ButtonState,
   ConfirmDialogConfig,
+  SupplementaryState,
 } from './types';
 import { oigLog } from '@/core/logger';
 
@@ -171,8 +172,6 @@ export class OigControlPanel extends LitElement {
       home_2: shieldController.getBoxModeButtonState('home_2'),
       home_3: shieldController.getBoxModeButtonState('home_3'),
       home_ups: shieldController.getBoxModeButtonState('home_ups'),
-      home_5: shieldController.getBoxModeButtonState('home_5'),
-      home_6: shieldController.getBoxModeButtonState('home_6'),
     };
   }
 
@@ -340,6 +339,44 @@ export class OigControlPanel extends LitElement {
   }
 
   // --------------------------------------------------------------------------
+  // Event handlers — Supplementary Toggles
+  // --------------------------------------------------------------------------
+
+  private async onSupplementaryToggle(
+    e: CustomEvent<{ field: 'home_grid_v' | 'home_grid_vi'; value: boolean }>,
+  ): Promise<void> {
+    const { field, value } = e.detail;
+    const sup: SupplementaryState = this.shieldState.supplementary;
+
+    if (!sup.available || sup.flexibilita) return;
+
+    const fieldLabel = field === 'home_grid_v' ? 'Home Grid V' : 'Home Grid VI';
+    const actionLabel = value ? 'zapnout' : 'vypnout';
+
+    // Show acknowledgement dialog
+    const result = await this.confirmDialog.showDialog({
+      title: 'Změna doplňkového režimu',
+      message: `Chystáte se ${actionLabel} <strong>"${fieldLabel}"</strong>.<br><br>` +
+        `Tato změna ovlivní chování systému a může trvat až 10 minut.`,
+      warning: 'Změna režimu může trvat až 10 minut. Během této doby je systém v přechodném stavu.',
+      requireAcknowledgement: true,
+      confirmText: 'Potvrdit změnu',
+      cancelText: 'Zrušit',
+    });
+
+    if (!result.confirmed) return;
+
+    // Queue warning check
+    if (!shieldController.shouldProceedWithQueue()) return;
+
+    // Call service
+    const success = await shieldController.toggleSupplementary(field, value);
+    if (!success) {
+      oigLog.warn('Supplementary toggle failed', { field, value });
+    }
+  }
+
+  // --------------------------------------------------------------------------
   // Event handlers — Queue removal
   // --------------------------------------------------------------------------
 
@@ -407,6 +444,16 @@ export class OigControlPanel extends LitElement {
               .buttonStates=${this.boxModeButtonStates}
               @mode-change=${this.onBoxModeChange}
             ></oig-box-mode-selector>
+          </div>
+
+          <div class="section-divider"></div>
+
+          <!-- Supplementary Toggles -->
+          <div class="selector-section">
+            <oig-supplementary-toggles
+              .supplementary=${s.supplementary}
+              @supplementary-toggle=${this.onSupplementaryToggle}
+            ></oig-supplementary-toggles>
           </div>
 
           <div class="section-divider"></div>

@@ -24,6 +24,7 @@ import {
   BOILER_MODE_LABELS,
   BOILER_MODE_ICONS,
   ButtonState,
+  SupplementaryState,
 } from './types';
 
 const u = unsafeCSS;
@@ -139,8 +140,6 @@ export class OigBoxModeSelector extends LitElement {
     home_2: 'idle',
     home_3: 'idle',
     home_ups: 'idle',
-    home_5: 'idle',
-    home_6: 'idle',
   };
 
   static styles = [sharedButtonStyles];
@@ -156,7 +155,7 @@ export class OigBoxModeSelector extends LitElement {
   }
 
   render() {
-    const modes: BoxMode[] = ['home_1', 'home_2', 'home_3', 'home_ups', 'home_5', 'home_6'];
+    const modes: BoxMode[] = ['home_1', 'home_2', 'home_3', 'home_ups'];
 
     return html`
       <div class="selector-label">
@@ -319,6 +318,144 @@ export class OigBoilerModeSelector extends LitElement {
 }
 
 // ============================================================================
+// PURE SELECTORS
+// ============================================================================
+
+export function selectBoxModeButtons(): BoxMode[] {
+  return ['home_1', 'home_2', 'home_3', 'home_ups'];
+}
+
+export function selectSupplementaryToggles(state: SupplementaryState): {
+  home_grid_v: boolean;
+  home_grid_vi: boolean;
+  flexibilita: boolean;
+  available: boolean;
+  disabled: boolean;
+} {
+  return {
+    home_grid_v: state.available ? state.home_grid_v : false,
+    home_grid_vi: state.available ? state.home_grid_vi : false,
+    flexibilita: state.available ? state.flexibilita : false,
+    available: state.available,
+    disabled: !state.available || state.flexibilita,
+  };
+}
+
+// ============================================================================
+// SUPPLEMENTARY TOGGLES COMPONENT
+// ============================================================================
+
+@customElement('oig-supplementary-toggles')
+export class OigSupplementaryToggles extends LitElement {
+  @property({ type: Object }) supplementary: SupplementaryState = {
+    home_grid_v: false,
+    home_grid_vi: false,
+    flexibilita: false,
+    available: false,
+  };
+
+  static styles = [
+    sharedButtonStyles,
+    css`
+      .toggle-section {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .toggle-checkbox {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: var(--oig-accent, #2196f3);
+      }
+
+      .toggle-checkbox:disabled {
+        cursor: not-allowed;
+        opacity: 0.4;
+      }
+
+      .toggle-label {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--oig-text-primary, #e0e0e0);
+      }
+
+      .toggle-label.disabled {
+        opacity: 0.4;
+      }
+
+      .flexibilita-badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 8px;
+        background: rgba(255, 152, 0, 0.15);
+        color: #ff9800;
+        font-weight: 500;
+        margin-left: auto;
+      }
+
+      .unavailable-note {
+        font-size: 11px;
+        color: var(--oig-text-secondary, #9e9e9e);
+        font-style: italic;
+      }
+    `,
+  ];
+
+  private onToggle(field: 'home_grid_v' | 'home_grid_vi', value: boolean): void {
+    if (!this.supplementary.available || this.supplementary.flexibilita) return;
+
+    this.dispatchEvent(new CustomEvent('supplementary-toggle', {
+      detail: { field, value },
+      bubbles: true,
+    }));
+  }
+
+  render() {
+    const derived = selectSupplementaryToggles(this.supplementary);
+    const { flexibilita, available, disabled } = derived;
+
+    return html`
+      <div class="selector-label">
+        Dopl\u0148kov\u00E9 re\u017Eimy
+        ${flexibilita ? html`<span class="flexibilita-badge">\u{26A1} Flexibilita</span>` : ''}
+      </div>
+      <div class="toggle-section">
+        <div class="toggle-row">
+          <input
+            type="checkbox"
+            class="toggle-checkbox"
+            .checked=${derived.home_grid_v}
+            ?disabled=${disabled}
+            @change=${(e: Event) => this.onToggle('home_grid_v', (e.target as HTMLInputElement).checked)}
+          />
+          <span class="toggle-label ${disabled ? 'disabled' : ''}">Home Grid V</span>
+        </div>
+        <div class="toggle-row">
+          <input
+            type="checkbox"
+            class="toggle-checkbox"
+            .checked=${derived.home_grid_vi}
+            ?disabled=${disabled}
+            @change=${(e: Event) => this.onToggle('home_grid_vi', (e.target as HTMLInputElement).checked)}
+          />
+          <span class="toggle-label ${disabled ? 'disabled' : ''}">Home Grid VI</span>
+        </div>
+        ${!available ? html`<span class="unavailable-note">Roz\u0161\u00ED\u0159en\u00E9 atributy nejsou dostupn\u00E9</span>` : ''}
+        ${flexibilita ? html`<span class="unavailable-note">Flexibilita je aktivn\u00ED &mdash; p\u0159ep\u00EDna\u010D\u00E8 jsou zam\u010Deny</span>` : ''}
+      </div>
+    `;
+  }
+}
+
+// ============================================================================
 // TAG NAME DECLARATIONS
 // ============================================================================
 
@@ -327,5 +464,6 @@ declare global {
     'oig-box-mode-selector': OigBoxModeSelector;
     'oig-grid-delivery-selector': OigGridDeliverySelector;
     'oig-boiler-mode-selector': OigBoilerModeSelector;
+    'oig-supplementary-toggles': OigSupplementaryToggles;
   }
 }
