@@ -10,6 +10,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from ..sensor_types import SENSOR_TYPES
+from ..core.box_mode_composite import canonical_extended_state, parse_app_value
 from .base_sensor import OigCloudSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -640,6 +641,8 @@ class OigCloudComputedSensor(_ComputedBase):
     def _state_from_mapping(self) -> Optional[Union[float, str]]:
         if self._sensor_type == "real_data_update":
             return self._state_real_data_update()
+        if self._sensor_type == "box_mode_extended":
+            return self._state_box_mode_extended()
         handler = self._sensor_mapping().get(self._sensor_type)
         if handler:
             return handler()
@@ -669,6 +672,26 @@ class OigCloudComputedSensor(_ComputedBase):
         if bat_p is None:
             return None
         return float(-bat_p) if bat_p < 0 else 0.0
+
+    def _state_box_mode_extended(self) -> Optional[str]:
+        raw_app = self._get_oig_number("box_prm2_app")
+        if raw_app is None:
+            self._attr_extra_state_attributes = {
+                "raw_app": None,
+                "home_grid_v": False,
+                "home_grid_vi": False,
+                "flexibilita": False,
+            }
+            return "unknown"
+        state = parse_app_value(int(raw_app))
+        canonical = canonical_extended_state(state)
+        self._attr_extra_state_attributes = {
+            "raw_app": int(raw_app),
+            "home_grid_v": state.home_grid_v if state else False,
+            "home_grid_vi": state.home_grid_vi if state else False,
+            "flexibilita": state.flexibilita if state else False,
+        }
+        return canonical
 
     def _accumulate_energy(self) -> Optional[float]:
         self._update_shared_energy_cache()

@@ -19,6 +19,8 @@ def _extract_param_type(entity_id: str) -> str:
         return "mode"
     elif "box_prms_mode" in entity_id:
         return "mode"
+    elif "box_prm2_app" in entity_id:
+        return "app"
     elif "boiler_manual_mode" in entity_id:
         return "mode"
     elif "formating_mode" in entity_id:
@@ -364,6 +366,7 @@ def _build_running_requests(
                 ),
                 "is_primary": svc_name == running,
                 "grid_delivery_step": params.get("_grid_delivery_step"),
+                "box_mode_step": params.get("_box_mode_step"),
             }
         )
     return running_requests
@@ -402,6 +405,11 @@ def _build_queue_items(
         grid_step = params.get("_grid_delivery_step")
         if grid_step:
             item["grid_delivery_step"] = grid_step
+
+        # Include box mode step info for composite split flow visibility
+        box_mode_step = params.get("_box_mode_step")
+        if box_mode_step:
+            item["box_mode_step"] = box_mode_step
 
         queue_items.append(item)
     return queue_items
@@ -464,6 +472,10 @@ def _build_description(service_short: str, targets: List[Dict[str, Any]], params
         grid_step = params.get("_grid_delivery_step") if params else None
         if grid_step:
             return f"{service_short}: {target_value} (step: {grid_step})"
+        # Add step indicator for box mode composite split flow
+        box_mode_step = params.get("_box_mode_step") if params else None
+        if box_mode_step:
+            return f"{service_short}: {target_value} (step: {box_mode_step})"
         return f"{service_short}: {target_value}"
     return f"Změna {service_short.replace('_', ' ')}"
 
