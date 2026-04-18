@@ -474,6 +474,15 @@ LwoFE+ObVXxX674szQvIc+7WPCooVsUbwZIikzJqZb4gJQ1OQx23CgyyYlsPHIDN
             self._logger.error(f"Error: {e}", stack_info=True)
             raise e
 
+    async def set_box_prm2_app(self, value: int) -> bool:
+        """Set box_prm2.app value (supplementary mode bitmask: 0-3)."""
+        try:
+            self._logger.debug(f"Setting box_prm2.app to {value}")
+            return await self.set_box_params_internal("box_prm2", "app", str(value))
+        except Exception as e:
+            self._logger.error(f"Error setting box_prm2.app: {e}", stack_info=True)
+            raise e
+
     async def set_grid_delivery_limit(self, limit: int) -> bool:
         """Set grid delivery limit."""
         try:
