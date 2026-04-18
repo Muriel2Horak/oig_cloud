@@ -27,6 +27,7 @@ import {
   BOX_MODE_SENSOR_MAP,
   BOILER_MODE_SENSOR_MAP,
   EMPTY_SHIELD_STATE,
+  SupplementaryState,
 } from '@/ui/features/control-panel/types';
 import {
   GridDeliveryRawValues,
@@ -126,6 +127,7 @@ export class ShieldController {
       'boiler_manual_mode',
       'invertor_prms_to_grid',
       'invertor_prm1_p_max_feed_grid',
+      'box_mode_extended',
     ];
     return fragments.some((f) => entityId.includes(f));
   }
@@ -197,6 +199,16 @@ export class ShieldController {
           ? this.state.currentGridDelivery
           : gridDeliveryState.currentLiveDelivery;
 
+      const extendedSensorId = store.findSensorId('box_mode_extended');
+      const extendedEntity = store.get(extendedSensorId);
+      const extAttrs = (extendedEntity?.attributes ?? {}) as Record<string, unknown>;
+      const supplementary: SupplementaryState = {
+        home_grid_v: Boolean(extAttrs['home_grid_v']),
+        home_grid_vi: Boolean(extAttrs['home_grid_vi']),
+        flexibilita: Boolean(extAttrs['flexibilita']),
+        available: extendedEntity != null && extendedEntity.state !== 'unavailable' && extendedEntity.state !== 'unknown',
+      };
+
       this.state = {
         status: isRunning ? 'running' : 'idle',
         activity: activityEntity?.state ?? '',
@@ -211,6 +223,7 @@ export class ShieldController {
         pendingServices,
         changingServices,
         gridDeliveryState,
+        supplementary,
       };
 
       this.notify();
@@ -618,6 +631,19 @@ export class ShieldController {
 
     const success = await haClient.callService('oig_cloud', 'set_boiler_mode', {
       mode: mode,
+      acknowledgement: true,
+    });
+
+    if (success) {
+      this.refresh();
+    }
+    return success;
+  }
+
+  /** Toggle supplementary mode (home_grid_v / home_grid_vi) via set_box_mode — no mode param */
+  async toggleSupplementary(field: 'home_grid_v' | 'home_grid_vi', value: boolean): Promise<boolean> {
+    const success = await haClient.callService('oig_cloud', 'set_box_mode', {
+      [field]: value,
       acknowledgement: true,
     });
 
