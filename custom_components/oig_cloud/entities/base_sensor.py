@@ -2,7 +2,47 @@ from typing import Any
 
 from ..oig_cloud_sensor import OigCloudSensor
 
-__all__ = ["OigCloudSensor", "resolve_box_id"]
+__all__ = ["OigCloudSensor", "resolve_box_id", "_get_sensor_definition"]
+
+SHIELD_SENSOR_TYPES: dict[str, dict[str, Any]] = {
+    "service_shield_status": {
+        "name": "Service Shield Status",
+        "name_cs": "Stav Service Shield",
+        "icon": "mdi:shield",
+        "device_class": None,
+        "state_class": None,
+        "unit_of_measurement": None,
+    },
+    "service_shield_queue": {
+        "name": "Service Shield Queue",
+        "name_cs": "Fronta Service Shield",
+        "icon": "mdi:format-list-numbered",
+        "device_class": None,
+        "state_class": None,
+        "unit_of_measurement": None,
+    },
+    "mode_reaction_time": {
+        "name": "Mode Reaction Time",
+        "name_cs": "Reakční čas režimu",
+        "icon": "mdi:timer",
+        "device_class": None,
+        "state_class": "measurement",
+        "unit_of_measurement": "s",
+    },
+    "service_shield_activity": {
+        "name": "Service Shield Activity",
+        "name_cs": "Aktivita Service Shield",
+        "icon": "mdi:shield-clock",
+        "device_class": None,
+        "state_class": None,
+        "unit_of_measurement": None,
+    },
+}
+
+
+def _get_sensor_definition(sensor_type: str) -> dict[str, Any]:
+    """Get sensor definition for shield sensor types."""
+    return SHIELD_SENSOR_TYPES.get(sensor_type, {})
 
 
 def _as_numeric_string(value: Any) -> str | None:

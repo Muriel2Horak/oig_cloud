@@ -3,10 +3,10 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from ...oig_cloud_sensor import OigCloudSensor
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 
-class OigCloudBatteryEfficiencySensor(OigCloudSensor):
+class OigCloudBatteryEfficiencySensor(CoordinatorEntity):
     """Battery efficiency sensor compatibility stub.
 
     This module provides the interface expected by e2e tests
@@ -21,7 +21,7 @@ class OigCloudBatteryEfficiencySensor(OigCloudSensor):
         device_info: Dict[str, Any],
         hass: Optional[Any] = None,
     ) -> None:
-        super().__init__(coordinator, sensor_type)
+        super().__init__(coordinator)
         self._entry = entry
         self._device_info = device_info
         if hass is not None:
