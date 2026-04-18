@@ -9,6 +9,7 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ..core.box_mode_composite import canonical_extended_state, parse_app_value
 from ..sensor_types import SENSOR_TYPES
 from .base_sensor import OigCloudSensor
 
@@ -656,6 +657,7 @@ class OigCloudComputedSensor(_ComputedBase):
             "boiler_current_w": self._get_boiler_consumption_from_entities,
             "batt_batt_comp_p_charge": self._state_batt_comp_charge,
             "batt_batt_comp_p_discharge": self._state_batt_comp_discharge,
+            "box_mode_extended": self._state_box_mode_extended,
         }
 
     def _state_batt_comp_charge(self) -> Optional[float]:
@@ -855,6 +857,46 @@ class OigCloudComputedSensor(_ComputedBase):
 
     async def async_update(self) -> None:
         await self.coordinator.async_request_refresh()
+
+    def _state_box_mode_extended(self) -> Optional[str]:
+        """Compute extended box mode from box_prm2_app sensor."""
+        raw_app = self._get_box_prm2_app()
+        if raw_app is None:
+            self._attr_extra_state_attributes = {
+                "raw_app": None,
+                "home_grid_v": False,
+                "home_grid_vi": False,
+                "flexibilita": False,
+            }
+            return "unknown"
+        state = parse_app_value(int(raw_app))
+        canonical = canonical_extended_state(state)
+        self._attr_extra_state_attributes = {
+            "raw_app": int(raw_app),
+            "home_grid_v": state.home_grid_v if state else False,
+            "home_grid_vi": state.home_grid_vi if state else False,
+            "flexibilita": state.flexibilita if state else False,
+        }
+        return canonical
+
+    def _get_box_prm2_app(self) -> Optional[float]:
+        """Get raw value from box_prm2_app sensor."""
+        box_id = self._box_id
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            return None
+        entity_id = f"sensor.oig_{box_id}_box_prm2_app"
+        if not getattr(self, "hass", None):
+            return None
+        st = self.hass.states.get(entity_id)
+        if not st:
+            return None
+        raw = str(st.state)
+        if raw in ("unavailable", "", "unknown", "none"):
+            return None
+        try:
+            return float(raw)
+        except (ValueError, TypeError):
+            return None
 
     def _format_time(self, hours: float) -> str:
         if hours <= 0:
