@@ -11,6 +11,7 @@ from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
 from .api.oig_cloud_api import OigCloudApi, OigCloudApiError
+from .core.box_mode_composite import build_app_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,6 +21,15 @@ MODES: Final[Dict[str, str]] = {
     "Home 2": "1",
     "Home 3": "2",
     "Home UPS": "3",
+}
+
+LEGACY_HOME_5_6_ALIASES: Final[set[str]] = {
+    "home_5",
+    "home_6",
+    "Home 5",
+    "Home 6",
+    "home5",
+    "home6",
 }
 
 GRID_DELIVERY: Final[Dict[str, int]] = {
@@ -38,16 +48,63 @@ FORMAT_BATTERY: Final[Dict[str, int]] = {
     "Nabíjet": 1
 }
 
+def _validate_box_mode(value: str) -> str:
+    if value in LEGACY_HOME_5_6_ALIASES:
+        raise vol.Invalid(
+            "Home 5/6 are now supplementary toggles. "
+            "Use home_grid_v/home_grid_vi boolean fields instead of mode."
+        )
+    if value not in MODES:
+        raise vol.Invalid(f"Invalid box mode: {value}")
+    return value
+
+
+def _validate_box_mode_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    has_mode = data.get("Mode") is not None
+    has_toggles = data.get("home_grid_v") is not None or data.get("home_grid_vi") is not None
+    if not has_mode and not has_toggles:
+        raise vol.Invalid("At least one of Mode, home_grid_v, or home_grid_vi must be provided.")
+    return data
+
+
+def _extract_current_box_prm2_app(entry_data: Dict[str, Any]) -> Optional[int]:
+    coordinator_data = entry_data["coordinator"].data
+    if not isinstance(coordinator_data, dict):
+        return None
+
+    direct_box_prm2 = coordinator_data.get("box_prm2")
+    if isinstance(direct_box_prm2, dict):
+        direct_value = direct_box_prm2.get("app")
+        if isinstance(direct_value, int):
+            return direct_value
+        if isinstance(direct_value, str) and direct_value.isdigit():
+            return int(direct_value)
+
+    for device_data in coordinator_data.values():
+        if not isinstance(device_data, dict):
+            continue
+        box_prm2 = device_data.get("box_prm2")
+        if not isinstance(box_prm2, dict):
+            continue
+        value = box_prm2.get("app")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+
+    return None
+
+
 # Service schemas
-SCHEMA_BOX_MODE = vol.Schema({
-    vol.Required("Mode"): vol.In([
-        "Home 1",
-        "Home 2",
-        "Home 3",
-        "Home UPS",
-    ]),
-    vol.Required("Acknowledgement"): vol.Boolean(True),
-})
+SCHEMA_BOX_MODE = vol.All(
+    vol.Schema({
+        vol.Optional("Mode"): _validate_box_mode,
+        vol.Optional("home_grid_v"): vol.Boolean(),
+        vol.Optional("home_grid_vi"): vol.Boolean(),
+        vol.Required("Acknowledgement"): vol.Boolean(True),
+    }),
+    _validate_box_mode_payload,
+)
 
 SCHEMA_GRID_DELIVERY = vol.Schema({
     vol.Exclusive("Mode", "mode_or_limit"): vol.In([
@@ -99,18 +156,43 @@ async def async_setup_entry_services(hass: HomeAssistant, entry: ConfigEntry) ->
             try:
                 entry_data = hass.data[DOMAIN][entry.entry_id]
                 client: OigCloudApi = entry_data["api"]
-                mode: str = call.data.get("Mode")
-                mode_value: str = MODES.get(mode)
-                
-                _LOGGER.info(f"Setting box mode to {mode} (value: {mode_value})")
-                success: bool = await client.set_box_mode(mode_value)
-                
-                if success:
-                    _LOGGER.info(f"Successfully set box mode to {mode}")
-                    # Refresh coordinator data
-                    await entry_data["coordinator"].async_refresh()
-                else:
-                    raise HomeAssistantError(f"Failed to set box mode to {mode}")
+                mode: Optional[str] = call.data.get("Mode")
+                home_grid_v: Optional[bool] = call.data.get("home_grid_v")
+                home_grid_vi: Optional[bool] = call.data.get("home_grid_vi")
+
+                if mode is not None:
+                    mode_value = MODES.get(mode)
+                    _LOGGER.info(f"Setting box mode to {mode} (value: {mode_value})")
+                    success = await client.set_box_mode(mode_value)
+                    if not success:
+                        raise HomeAssistantError(f"Failed to set box mode to {mode}")
+
+                if home_grid_v is not None or home_grid_vi is not None:
+                    current_raw = _extract_current_box_prm2_app(entry_data)
+                    if current_raw is None:
+                        raise HomeAssistantError(
+                            "Current box_prm2.app state unknown — cannot perform read-modify-write for supplementary toggles."
+                        )
+                    if current_raw == 4:
+                        raise HomeAssistantError(
+                            "Flexibilita mode is active (box_prm2.app=4). Cannot modify supplementary toggles while Flexibilita is enabled."
+                        )
+
+                    new_value = build_app_value(
+                        home_grid_v=home_grid_v,
+                        home_grid_vi=home_grid_vi,
+                        current_raw=current_raw,
+                    )
+                    _LOGGER.info(
+                        "Setting box_prm2.app to %s (current: %s)",
+                        new_value,
+                        current_raw,
+                    )
+                    success = await client.set_box_prm2_app(new_value)
+                    if not success:
+                        raise HomeAssistantError("Failed to set box_prm2.app")
+
+                await entry_data["coordinator"].async_refresh()
             except OigCloudApiError as err:
                 raise HomeAssistantError(f"API error: {err}") from err
             except Exception as err:
