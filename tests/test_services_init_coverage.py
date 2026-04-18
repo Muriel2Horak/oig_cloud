@@ -78,8 +78,6 @@ def test_constants_defined():
     assert hasattr(services, "HOME_2")
     assert hasattr(services, "HOME_3")
     assert hasattr(services, "HOME_UPS")
-    assert hasattr(services, "HOME_5")
-    assert hasattr(services, "HOME_6")
     assert hasattr(services, "HOME_MODE_LABELS")
 
     # Grid modes
@@ -261,7 +259,7 @@ def test_home_mode_labels():
     """Test that HOME_MODE_LABELS contains correct values."""
     from custom_components.oig_cloud import services
 
-    expected = ("Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6")
+    expected = ("Home 1", "Home 2", "Home 3", "Home UPS")
     assert services.HOME_MODE_LABELS == expected
 
 

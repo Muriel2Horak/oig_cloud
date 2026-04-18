@@ -487,49 +487,31 @@ class TestUpdateSolarForecastBranches:
 class TestActionSetBoxModeBranches:
     """Tests for _action_set_box_mode branches."""
 
-    def test_action_set_box_mode_home_5_6_unsupported_error(self, monkeypatch):
-        """Branch when Home 5/6 returns 500 error."""
+    def test_action_set_box_mode_home_5_legacy_invalid(self, monkeypatch):
         hass, entry, api = _make_hass()
-
-        async def raise_500_home5(*args, **kwargs):
-            raise Exception("500 Internal Server Error")
-
-        api.set_box_mode = raise_500_home5
         monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
 
-        with pytest.raises(vol.Invalid, match="Home 5 a Home 6 nejsou.*"):
+        with pytest.raises(vol.Invalid, match="Neplatný režim boxu."):
             import asyncio
             asyncio.get_event_loop().run_until_complete(
                 module._action_set_box_mode(hass, entry, {"mode": "home_5"}, "")
             )
 
-    def test_action_set_box_mode_home_5_label_unsupported_error(self, monkeypatch):
-        """Branch when 'Home 5' label returns 500 error."""
+    def test_action_set_box_mode_home_5_label_legacy_invalid(self, monkeypatch):
         hass, entry, api = _make_hass()
-
-        async def raise_500_home5(*args, **kwargs):
-            raise Exception("500 Internal Server Error")
-
-        api.set_box_mode = raise_500_home5
         monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
 
-        with pytest.raises(vol.Invalid, match="Home 5 a Home 6 nejsou.*"):
+        with pytest.raises(vol.Invalid, match="Neplatný režim boxu."):
             import asyncio
             asyncio.get_event_loop().run_until_complete(
                 module._action_set_box_mode(hass, entry, {"mode": "Home 5"}, "")
             )
 
-    def test_action_set_box_mode_home_6_unsupported_error(self, monkeypatch):
-        """Branch when Home 6 returns 500 error."""
+    def test_action_set_box_mode_home_6_legacy_invalid(self, monkeypatch):
         hass, entry, api = _make_hass()
-
-        async def raise_500_home6(*args, **kwargs):
-            raise Exception("500 Internal Server Error")
-
-        api.set_box_mode = raise_500_home6
         monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: "123")
 
-        with pytest.raises(vol.Invalid, match="Home 5 a Home 6 nejsou.*"):
+        with pytest.raises(vol.Invalid, match="Neplatný režim boxu."):
             import asyncio
             asyncio.get_event_loop().run_until_complete(
                 module._action_set_box_mode(hass, entry, {"mode": "home_6"}, "")
