@@ -36,4 +36,17 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, str | SensorDeviceClass | SensorStateClas
         "state_class": None,
         "options": ["Vypnuto / Off", "Zapnuto / On", "S omezením / Limited"],
     },
+    "box_mode_extended": {
+        "name": "Box Mode Extended",
+        "name_cs": "Rozšířený režim boxu",
+        "device_class": None,
+        "unit_of_measurement": None,
+        "node_id": None,
+        "node_key": None,
+        "state_class": None,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "sensor_type_category": "computed",
+        "device_mapping": "main",
+        "local_entity_suffix": "tbl_box_mode_extended",
+    },
 }
