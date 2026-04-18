@@ -243,6 +243,9 @@ export class OigShieldQueue extends LitElement {
 
     try {
       const date = new Date(timestamp);
+      if (isNaN(date.getTime())) {
+        return { time: '--', duration: '--' };
+      }
       const now = new Date(this._now);
       const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
 
