@@ -18,6 +18,7 @@ from homeassistant.helpers import device_registry as dr
 from opentelemetry import trace
 
 from ..const import DOMAIN
+from ..core.box_mode_composite import build_app_value
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,14 +30,35 @@ HOME_1 = "Home 1"
 HOME_2 = "Home 2"
 HOME_3 = "Home 3"
 HOME_UPS = "Home UPS"
-HOME_5 = "Home 5"
-HOME_6 = "Home 6"
-HOME_MODE_LABELS = (HOME_1, HOME_2, HOME_3, HOME_UPS, HOME_5, HOME_6)
+HOME_MODE_LABELS = (HOME_1, HOME_2, HOME_3, HOME_UPS)
 HOME_MODE_ALL_KEYS = (
-    HOME_1, HOME_2, HOME_3, HOME_UPS, HOME_5, HOME_6,
-    "home_1", "home_2", "home_3", "home_ups", "home_5", "home_6",
-    "home1", "home2", "home3", "homeups", "home5", "home6",
+    HOME_1, HOME_2, HOME_3, HOME_UPS,
+    "home_1", "home_2", "home_3", "home_ups",
+    "home1", "home2", "home3", "homeups",
 )
+
+LEGACY_HOME_5_6_ALIASES = frozenset({
+    "home_5", "home_6", "Home 5", "Home 6", "home5", "home6",
+})
+
+
+def _validate_box_mode(value):
+    if value in LEGACY_HOME_5_6_ALIASES:
+        raise vol.Invalid(
+            "Home 5/6 are now supplementary toggles. "
+            "Use home_grid_v/home_grid_vi boolean fields instead of mode."
+        )
+    if value not in HOME_MODE_ALL_KEYS:
+        raise vol.Invalid(f"Invalid box mode: {value}")
+    return value
+
+
+def _validate_set_box_mode_schema(data):
+    has_mode = data.get("mode") is not None
+    has_toggles = data.get("home_grid_v") is not None or data.get("home_grid_vi") is not None
+    if not has_mode and not has_toggles:
+        raise vol.Invalid("At least one of mode, home_grid_v, or home_grid_vi must be provided.")
+    return data
 
 GRID_OFF_LABEL = "Vypnuto / Off"
 GRID_ON_LABEL = "Zapnuto / On"
@@ -65,11 +87,16 @@ FORMAT_BATTERY_ALL_KEYS = FORMAT_BATTERY_CANONICAL + FORMAT_BATTERY_LABELS
 SHIELD_LOG_PREFIX = "[SHIELD]"
 
 SET_BOX_MODE_SCHEMA = vol.Schema(
-    {
-        vol.Optional("device_id"): cv.string,
-        vol.Required("mode"): vol.In(HOME_MODE_ALL_KEYS),
-        vol.Required("acknowledgement"): vol.In([True]),
-    }
+    vol.All(
+        {
+            vol.Optional("device_id"): cv.string,
+            vol.Optional("mode"): _validate_box_mode,
+            vol.Optional("home_grid_v"): cv.boolean,
+            vol.Optional("home_grid_vi"): cv.boolean,
+            vol.Required("acknowledgement"): vol.In([True]),
+        },
+        _validate_set_box_mode_schema,
+    )
 )
 SET_GRID_DELIVERY_SCHEMA = vol.Schema(
     {
@@ -272,22 +299,16 @@ MODES: Dict[str, str] = {
     "home_2": "1",
     "home_3": "2",
     "home_ups": "3",
-    "home_5": "4",
-    "home_6": "5",
     # Alternate slug variants (legacy docs)
     "home1": "0",
     "home2": "1",
     "home3": "2",
     "homeups": "3",
-    "home5": "4",
-    "home6": "5",
     # Backward-compatible labels (legacy automations)
     HOME_1: "0",
     HOME_2: "1",
     HOME_3: "2",
     HOME_UPS: "3",
-    HOME_5: "4",
-    HOME_6: "5",
 }
 
 GRID_DELIVERY = {
@@ -422,27 +443,54 @@ async def _action_set_box_mode(
         return
 
     mode: Optional[str] = service_data.get("mode")
-    mode_value: Optional[str] = MODES.get(mode) if mode else None
-    _LOGGER.info(
-        "%sSetting box mode for device %s to %s (value: %s)",
-        log_prefix,
-        box_id,
-        mode,
-        mode_value,
-    )
-    try:
+    home_grid_v: Optional[bool] = service_data.get("home_grid_v")
+    home_grid_vi: Optional[bool] = service_data.get("home_grid_vi")
+
+    if mode is not None:
+        mode_value: Optional[str] = MODES.get(mode)
         if mode_value is None:
             raise vol.Invalid("Neplatný režim boxu.")
+        _LOGGER.info(
+            "%sSetting box mode for device %s to %s (value: %s)",
+            log_prefix,
+            box_id,
+            mode,
+            mode_value,
+        )
         await client.set_box_mode(mode_value)
-    except Exception as err:
-        # Check if this is a 500 error for Home 5/6 (unsupported modes on some boxes)
-        err_str = str(err)
-        if "500" in err_str and mode in ("home_5", "home_6", "Home 5", "Home 6"):
+
+    if home_grid_v is not None or home_grid_vi is not None:
+        coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+        current_raw = None
+        try:
+            current_raw = coordinator.data["box_prm2"]["app"]
+        except (TypeError, KeyError):
+            pass
+
+        if current_raw is None:
             raise vol.Invalid(
-                "Režimy Home 5 a Home 6 nejsou na tomto boxu dostupné. "
-                "Tyto režimy podporují pouze novější typy battery boxů."
-            ) from err
-        raise
+                "Current box_prm2.app state unknown — cannot perform read-modify-write for supplementary toggles."
+            )
+
+        if current_raw == 4:
+            raise vol.Invalid(
+                "Flexibilita mode is active (box_prm2.app=4). "
+                "Cannot modify supplementary toggles while Flexibilita is enabled."
+            )
+
+        new_value = build_app_value(
+            home_grid_v=home_grid_v,
+            home_grid_vi=home_grid_vi,
+            current_raw=current_raw,
+        )
+        _LOGGER.info(
+            "%sSetting box_prm2.app for device %s to %s (current: %s)",
+            log_prefix,
+            box_id,
+            new_value,
+            current_raw,
+        )
+        await client.set_box_prm2_app(new_value)
 
 
 async def _action_set_boiler_mode(

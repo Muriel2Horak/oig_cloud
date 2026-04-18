@@ -65,7 +65,7 @@ PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 # OPRAVA: Definujeme všechny možné box modes pro konzistenci
-ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
+ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS"]
 
 
 def _read_manifest_file(path: str) -> str:

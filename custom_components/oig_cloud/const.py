@@ -40,6 +40,7 @@ CONF_BOILER_SPOT_PRICE_SENSOR = "boiler_spot_price_sensor"
 CONF_BOILER_DEADLINE_TIME = "boiler_deadline_time"
 CONF_BOILER_PLANNING_HORIZON_HOURS = "boiler_planning_horizon_hours"
 CONF_BOILER_PLAN_SLOT_MINUTES = "boiler_plan_slot_minutes"
+CONF_BOILER_MAX_GRID_PRICE_KWH = "boiler_max_grid_price_kwh"  # Max spot price for grid heating
 
 # Auto Module constants
 CONF_ENABLE_AUTO = "enable_auto"
