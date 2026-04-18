@@ -275,8 +275,9 @@ def test_compute_fve_current_exception():
 def test_mode_name_variants():
     sensor = _make_sensor("box_prms_mode")
     assert sensor._get_mode_name(2, "cs") == "Home 3"
-    assert sensor._get_mode_name(4, "cs") == "Home 5"
-    assert sensor._get_mode_name(5, "cs") == "Home 6"
+    # Values 4/5 are no longer standalone Home 5/Home 6 modes (supplementary mode refactor)
+    assert sensor._get_mode_name(4, "cs") == _LANGS["unknown"]["cs"]
+    assert sensor._get_mode_name(5, "cs") == _LANGS["unknown"]["cs"]
 
 
 def test_grid_mode_missing_fields(monkeypatch):
