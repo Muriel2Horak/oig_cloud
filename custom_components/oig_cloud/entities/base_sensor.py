@@ -1,5 +1,9 @@
 from typing import Any
 
+from ..oig_cloud_sensor import OigCloudSensor
+
+__all__ = ["OigCloudSensor", "resolve_box_id"]
+
 
 def _as_numeric_string(value: Any) -> str | None:
     if isinstance(value, bool):
