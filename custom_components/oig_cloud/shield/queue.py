@@ -451,6 +451,13 @@ def _entities_match(
             "[SHIELD CHECK] Grid delivery split step detected: %s", grid_step
         )
 
+    # Log box mode step info for debugging composite split flow
+    box_mode_step = params.get("_box_mode_step")
+    if box_mode_step:
+        _LOGGER.info(
+            "[SHIELD CHECK] Box mode split step detected: %s", box_mode_step
+        )
+
     all_expected = info["entities"]
     for entity_id, expected_value in all_expected.items():
         if entity_id.startswith("fake_formating_mode_"):
