@@ -117,7 +117,7 @@ def extract_expected_entities(
 
     def find_entity(suffix: str) -> str | None:
         _LOGGER.info("[FIND ENTITY] Hledám cloud entitu se suffixem: %s", suffix)
-        box_id = _resolve_box_id_for_shield(shield)
+        box_id = _resolve_target_box_id(shield, data, service_name)
         if not box_id:
             _LOGGER.warning(
                 "[FIND ENTITY] box_id nelze určit, cloud entitu pro suffix '%s' nelze vybrat",
@@ -149,6 +149,38 @@ def extract_expected_entities(
         return _expected_grid_delivery(shield, data, find_entity)
 
     return {}
+
+
+def _resolve_target_box_id(
+    shield: Any, data: Dict[str, Any], service_name: str
+) -> Optional[str]:
+    device_id = data.get("device_id")
+    if not device_id:
+        return _resolve_box_id_for_shield(shield)
+
+    entry_id = getattr(shield.entry, "entry_id", None)
+    if not isinstance(entry_id, str) or not entry_id:
+        return _resolve_box_id_for_shield(shield)
+
+    try:
+        from ..services import get_box_id_from_device
+
+        box_id = get_box_id_from_device(shield.hass, device_id, entry_id)
+        if box_id:
+            _LOGGER.debug(
+                "[FIND ENTITY] Resolved target box_id %s from device_id for %s",
+                box_id,
+                service_name,
+            )
+            return box_id
+    except Exception:
+        _LOGGER.debug(
+            "[FIND ENTITY] Failed to resolve target box_id from service data for %s",
+            service_name,
+            exc_info=True,
+        )
+
+    return _resolve_box_id_for_shield(shield)
 
 
 def _expected_formating_mode() -> Dict[str, str]:
