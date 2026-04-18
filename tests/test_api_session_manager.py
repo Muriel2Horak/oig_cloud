@@ -1,8 +1,5 @@
-"""Tests for OigCloudSessionManager covering retry logic, auth, rate limiting, and API delegation."""
-
 import asyncio
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,8 +12,6 @@ from custom_components.oig_cloud.api.oig_cloud_session_manager import (
 
 
 class TestOigCloudSessionManagerInit:
-    """Test initialization and basic properties."""
-
     def test_init(self):
         mock_api = MagicMock()
         mgr = OigCloudSessionManager(mock_api)
@@ -32,8 +27,6 @@ class TestOigCloudSessionManagerInit:
 
 
 class TestOigCloudSessionManagerDebugSession:
-    """Test debug session and header extraction."""
-
     @pytest.fixture
     def mock_api(self):
         api = MagicMock()
@@ -98,8 +91,6 @@ class TestOigCloudSessionManagerDebugSession:
 
 
 class TestOigCloudSessionManagerAuth:
-    """Test authentication and session expiry."""
-
     @pytest.fixture
     def mock_api(self):
         api = MagicMock()
@@ -146,8 +137,6 @@ class TestOigCloudSessionManagerAuth:
 
 
 class TestOigCloudSessionManagerRateLimit:
-    """Test rate limiting."""
-
     @pytest.fixture
     def mgr(self):
         mock_api = MagicMock()
@@ -174,8 +163,6 @@ class TestOigCloudSessionManagerRateLimit:
 
 
 class TestOigCloudSessionManagerCallWithRetry:
-    """Test _call_with_retry logic."""
-
     @pytest.fixture
     def mock_api(self):
         api = MagicMock()
@@ -224,8 +211,6 @@ class TestOigCloudSessionManagerCallWithRetry:
 
 
 class TestOigCloudSessionManagerWrappedMethods:
-    """Test all wrapped API methods delegate correctly."""
-
     @pytest.fixture
     def mock_api(self):
         api = MagicMock()
@@ -295,8 +280,6 @@ class TestOigCloudSessionManagerWrappedMethods:
 
 
 class TestOigCloudSessionManagerStatsAndClose:
-    """Test statistics and cleanup."""
-
     @pytest.fixture
     def mgr(self):
         mock_api = MagicMock()
@@ -329,4 +312,3 @@ class TestOigCloudSessionManagerStatsAndClose:
         mgr._stats["total_requests"] = 5
         mgr._stats["successful_requests"] = 4
         await mgr.close()
-        # Should not raise

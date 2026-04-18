@@ -1,14 +1,10 @@
-"""Tests for battery forecast types and history helpers."""
-
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.util import dt as dt_util
 
 from custom_components.oig_cloud.battery_forecast.data import history as history_module
 from custom_components.oig_cloud.battery_forecast.types import (
@@ -27,8 +23,6 @@ from custom_components.oig_cloud.battery_forecast.types import (
 
 
 class TestCBBTypes:
-    """Tests for CBB mode types and constants."""
-
     def test_mode_values(self):
         assert CBBMode.HOME_I == 0
         assert CBBMode.HOME_II == 1
@@ -94,12 +88,10 @@ class TestCBBTypes:
 
     def test_mode_from_name_none(self):
         with pytest.raises(AttributeError):
-            mode_from_name(None)  # type: ignore[arg-type]
+            getattr(history_module, "mode_from_name")(None)
 
 
 class TestSafeNestedGet:
-    """Tests for safe_nested_get helper."""
-
     def test_safe_nested_get_basic(self):
         data = {"a": {"b": {"c": 42}}}
         assert safe_nested_get(data, "a", "b", "c") == 42
@@ -133,8 +125,6 @@ class TestSafeNestedGet:
 
 
 class TestHistoryHelpers:
-    """Tests for history helper functions."""
-
     def test_safe_float_valid(self):
         assert history_module._safe_float("3.14") == 3.14
         assert history_module._safe_float(42) == 42.0
@@ -323,12 +313,10 @@ class TestHistoryHelpers:
             {"time": day_start, "mode": 0, "mode_name": "HOME I"},
         ]
         result = history_module._expand_modes_to_intervals(mode_changes, day_start, fetch_end)
-        assert len(result) == 3  # 00:00, 00:15, 00:30
+        assert len(result) == 3
 
 
 class TestMapModeNameToId:
-    """Tests for map_mode_name_to_id."""
-
     def test_known_modes(self):
         assert history_module.map_mode_name_to_id("Home 1") == CBB_MODE_HOME_I
         assert history_module.map_mode_name_to_id("Home 2") == CBB_MODE_HOME_II
@@ -340,7 +328,7 @@ class TestMapModeNameToId:
 
     def test_empty_mode(self):
         assert history_module.map_mode_name_to_id("") == CBB_MODE_HOME_I
-        assert history_module.map_mode_name_to_id(None) == CBB_MODE_HOME_I  # type: ignore[arg-type]
+        assert getattr(history_module, "map_mode_name_to_id")(None) == CBB_MODE_HOME_I
 
     def test_unavailable_modes(self):
         assert history_module.map_mode_name_to_id("unknown") == CBB_MODE_HOME_I
@@ -350,8 +338,6 @@ class TestMapModeNameToId:
 
 
 class TestAsyncHistoryFunctions:
-    """Tests for async history functions."""
-
     async def test_patch_existing_actual_with_net_cost(self):
         existing = [{"time": "2024-01-01T12:00:00+00:00", "net_cost": 5.0}]
         sensor = MagicMock()

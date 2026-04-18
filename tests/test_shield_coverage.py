@@ -1,19 +1,11 @@
-"""Unit tests for shield internal modules to increase coverage.
-
-Targets:
-- custom_components/oig_cloud/shield/dispatch.py
-- custom_components/oig_cloud/shield/queue.py
-- custom_components/oig_cloud/shield/validation.py
-"""
-
 from __future__ import annotations
 
 import asyncio
 import logging
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-from typing import Any, Dict, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any, Callable, Dict, Optional
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import voluptuous as vol
@@ -23,33 +15,29 @@ from custom_components.oig_cloud.shield import queue as queue_module
 from custom_components.oig_cloud.shield import validation as validation_module
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 class DummyState:
-    def __init__(self, entity_id: str, state: str):
+    def __init__(self, entity_id: str, state: str) -> None:
         self.entity_id = entity_id
         self.state = state
-        self.attributes = {}
+        self.attributes: dict[str, Any] = {}
         self.last_changed = datetime.now()
         self.last_updated = self.last_changed
 
 
 class DummyStates:
-    def __init__(self, states=None):
+    def __init__(self, states: Optional[list[DummyState]] = None) -> None:
         self._states = {state.entity_id: state for state in (states or [])}
 
     def get(self, entity_id: str) -> Optional[DummyState]:
         return self._states.get(entity_id)
 
-    def async_all(self, domain=None):
+    def async_all(self, domain: Optional[str] = None) -> list[DummyState]:
         if domain is None:
             return list(self._states.values())
         prefix = f"{domain}."
         return [st for st in self._states.values() if st.entity_id.startswith(prefix)]
 
-    def async_entity_ids(self, domain=None):
+    def async_entity_ids(self, domain: Optional[str] = None) -> list[str]:
         entities = list(self._states.keys())
         if domain:
             prefix = f"{domain}."
@@ -58,94 +46,101 @@ class DummyStates:
 
 
 class DummyBus:
-    def __init__(self):
-        self.events = []
+    def __init__(self) -> None:
+        self.events: list[tuple[str, Any, Any]] = []
 
-    def async_fire(self, event_type, data=None, context=None):
+    def async_fire(
+        self, event_type: str, data: Any = None, context: Any = None
+    ) -> None:
         self.events.append((event_type, data, context))
 
 
 class DummyHass:
-    def __init__(self, states=None):
+    def __init__(self, states: Optional[DummyStates] = None) -> None:
         self.states = states or DummyStates()
-        self.data = {"oig_cloud": {}}
+        self.data: dict[str, Any] = {"oig_cloud": {}}
         self.bus = DummyBus()
+        self.services: Any = SimpleNamespace(async_call=AsyncMock())
 
-    def async_create_task(self, task):
+    def async_create_task(self, task: asyncio.Task[Any]) -> asyncio.Task[Any]:
         return task
 
-    async def services_async_call(self, domain, service, service_data):
+    async def services_async_call(
+        self, domain: str, service: str, service_data: dict[str, Any]
+    ) -> None:
         pass
 
 
 class DummyEntry:
-    def __init__(self, box_id="123", entry_id="test_entry"):
+    def __init__(self, box_id: str = "123", entry_id: str = "test_entry") -> None:
         self.entry_id = entry_id
         self.options = {"box_id": box_id}
-        self.data = {}
+        self.data: dict[str, Any] = {}
 
 
 class DummyShield:
-    def __init__(self, hass=None, entry=None):
+    def __init__(
+        self, hass: Optional[DummyHass] = None, entry: Optional[DummyEntry] = None
+    ) -> None:
         self.hass = hass or DummyHass()
         self.entry = entry or DummyEntry()
-        self.last_checked_entity_id = None
-        self.queue = []
-        self.pending = {}
-        self.running = None
-        self.queue_metadata = {}
+        self.last_checked_entity_id: Optional[str] = None
+        self.queue: list[Any] = []
+        self.pending: dict[str, dict[str, Any]] = {}
+        self.running: Optional[str] = None
+        self.queue_metadata: dict[Any, Any] = {}
         self._is_checking = False
-        self._state_listener_unsub = None
-        self._active_tasks = {}
-        self.check_task = None
+        self._state_listener_unsub: Optional[Callable[[], None]] = None
+        self._active_tasks: dict[str, dict[str, Any]] = {}
+        self.check_task: Any = None
         self.mode_tracker = None
         self._expected_entity_missing = False
+        self._logger: Any = MagicMock()
 
-    def _normalize_value(self, val):
+    def _normalize_value(self, val: Any) -> str:
         return validation_module.normalize_value(val)
 
-    def _notify_state_change(self):
+    def _notify_state_change(self) -> None:
         pass
 
-    def _log_security_event(self, *args, **kwargs):
+    def _log_security_event(self, *args: Any, **kwargs: Any) -> None:
         pass
 
-    def _get_entity_state(self, entity_id):
+    def _get_entity_state(self, entity_id: str) -> Optional[str]:
         state = self.hass.states.get(entity_id)
         return state.state if state else None
 
-    def _values_match(self, current, expected):
+    def _values_match(self, current: Any, expected: Any) -> bool:
         return validation_module.values_match(current, expected)
 
-    def _check_entity_state_change(self, entity_id, expected_value):
+    def _check_entity_state_change(self, entity_id: str, expected_value: Any) -> bool:
         current = self._get_entity_state(entity_id)
         return validation_module.values_match(current, expected_value)
 
-    async def _log_event(self, *args, **kwargs):
+    async def _log_event(self, *args: Any, **kwargs: Any) -> None:
         pass
 
-    async def _log_telemetry(self, *args, **kwargs):
+    async def _log_telemetry(self, *args: Any, **kwargs: Any) -> None:
         pass
 
-    async def _start_call(self, *args, **kwargs):
+    async def _start_call(self, *args: Any, **kwargs: Any) -> None:
         pass
 
-    async def _check_loop(self, _now):
+    async def _check_loop(self, _now: datetime) -> None:
         pass
 
-    def _setup_state_listener(self):
+    def _setup_state_listener(self) -> None:
         pass
 
-    def extract_expected_entities(self, service_name, params):
+    def extract_expected_entities(
+        self, service_name: str, params: dict[str, Any]
+    ) -> dict[str, str]:
         return validation_module.extract_expected_entities(self, service_name, params)
 
-    def _extract_api_info(self, service_name, params):
+    def _extract_api_info(
+        self, service_name: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
         return validation_module.extract_api_info(service_name, params)
-
-
-# ---------------------------------------------------------------------------
-# dispatch.py tests
-# ---------------------------------------------------------------------------
 
 class TestSplitGridDeliveryParams:
     def test_split_both_mode_and_limit(self):
@@ -195,7 +190,7 @@ class TestIsDuplicate:
     def test_none_params(self):
         shield = DummyShield()
         shield.queue.append(("svc", None, {"e": "v"}))
-        result = dispatch_module._is_duplicate(shield, "svc", None, {"e": "v"})
+        result = dispatch_module._is_duplicate(shield, "svc", {}, {"e": "v"})
         assert result == "queue"
 
 
@@ -211,7 +206,7 @@ class TestEntitiesAlreadyMatch:
         state = DummyState("sensor.e", "on")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         result = dispatch_module._entities_already_match(shield, {"sensor.e": "zapnuto"})
         assert result is True
 
@@ -219,13 +214,13 @@ class TestEntitiesAlreadyMatch:
         state = DummyState("sensor.e", "off")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         result = dispatch_module._entities_already_match(shield, {"sensor.e": "zapnuto"})
         assert result is False
 
     def test_missing_state(self):
         shield = DummyShield()
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         result = dispatch_module._entities_already_match(shield, {"sensor.e": "v"})
         assert result is False
 
@@ -300,7 +295,7 @@ class TestInterceptServiceCall:
     def test_calls_original_when_no_expected_entities_and_missing_flag(self):
         shield = DummyShield()
         shield._expected_entity_missing = True
-        shield.extract_expected_entities = lambda s, p: {}
+        shield.extract_expected_entities = lambda service_name, params: {}
         original_call = AsyncMock()
         asyncio.run(
             dispatch_module.intercept_service_call(
@@ -314,8 +309,10 @@ class TestInterceptServiceCall:
         state = DummyState("sensor.e", "on")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
-        shield.extract_expected_entities = lambda s, p: {"sensor.e": "zapnuto"}
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
+        shield.extract_expected_entities = (
+            lambda service_name, params: {"sensor.e": "zapnuto"}
+        )
         shield._log_telemetry = AsyncMock()
         shield._log_event = AsyncMock()
         asyncio.run(
@@ -423,10 +420,8 @@ class TestSafeCallService:
         state = DummyState("sensor.oig_123_boiler_manual_mode", "Manual")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._check_entity_state_change = lambda e, v: True
-        shield.hass.services = MagicMock()
+        shield._check_entity_state_change = lambda entity_id, expected_value: True
         shield.hass.services.async_call = AsyncMock()
-        shield._logger = MagicMock()
         result = asyncio.run(
             dispatch_module.safe_call_service(
                 shield, "set_boiler_mode", {"entity_id": "sensor.oig_123_boiler_manual_mode", "mode": "Manual"}
@@ -438,10 +433,8 @@ class TestSafeCallService:
         state = DummyState("sensor.e", "Home 1")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._check_entity_state_change = lambda e, v: True
-        shield.hass.services = MagicMock()
+        shield._check_entity_state_change = lambda entity_id, expected_value: True
         shield.hass.services.async_call = AsyncMock()
-        shield._logger = MagicMock()
         result = asyncio.run(
             dispatch_module.safe_call_service(
                 shield, "set_box_mode", {"entity_id": "sensor.e", "mode": "Home 2"}
@@ -451,9 +444,7 @@ class TestSafeCallService:
 
     def test_exception_returns_false(self):
         shield = DummyShield()
-        shield.hass.services = MagicMock()
         shield.hass.services.async_call = AsyncMock(side_effect=Exception("fail"))
-        shield._logger = MagicMock()
         result = asyncio.run(
             dispatch_module.safe_call_service(shield, "svc", {})
         )
@@ -718,10 +709,6 @@ class TestBuildLogMessage:
         assert "unknown – svc" in msg
 
 
-# ---------------------------------------------------------------------------
-# queue.py tests
-# ---------------------------------------------------------------------------
-
 class TestHandleShieldStatus:
     def test_status_running(self):
         shield = DummyShield()
@@ -951,7 +938,7 @@ class TestCheckLoop:
         state = DummyState("sensor.e", "new")
         hass = DummyHass(DummyStates([state]))
         shield.hass = hass
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         shield.pending["svc"] = {
             "entities": {"sensor.e": "new"},
             "params": {},
@@ -999,7 +986,7 @@ class TestProcessPendingService:
         state = DummyState("sensor.e", "new")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         shield.pending["svc"] = {
             "entities": {"sensor.e": "new"},
             "params": {},
@@ -1015,7 +1002,7 @@ class TestProcessPendingService:
         state = DummyState("sensor.e", "old")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         shield.pending["svc"] = {
             "entities": {"sensor.e": "new"},
             "params": {},
@@ -1123,7 +1110,7 @@ class TestEntitiesMatch:
         limit_state = DummyState("sensor.oig_123_invertor_prm1_p_max_feed_grid", "500")
         hass = DummyHass(DummyStates([mode_state, limit_state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         info = {
             "entities": {"sensor.oig_123_invertor_prm1_p_max_feed_grid": "500"},
             "params": {},
@@ -1137,7 +1124,7 @@ class TestEntitiesMatch:
         state = DummyState("sensor.e", "new")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         info = {
             "entities": {"sensor.e": "new"},
             "params": {},
@@ -1151,7 +1138,7 @@ class TestEntitiesMatch:
         state = DummyState("sensor.e", "old")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         info = {
             "entities": {"sensor.e": "new"},
             "params": {},
@@ -1258,7 +1245,7 @@ class TestShouldRejectCompletionDueToTelemetryLag:
         mode_state = DummyState("sensor.oig_123_invertor_prms_to_grid", "zapnuto")
         hass = DummyHass(DummyStates([mode_state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         with caplog.at_level(logging.DEBUG, logger="custom_components.oig_cloud.shield.queue"):
             result = queue_module._should_reject_completion_due_to_telemetry_lag(
                 shield, "sensor.oig_123_invertor_prm1_p_max_feed_grid", "500", "500", {}
@@ -1270,7 +1257,7 @@ class TestShouldRejectCompletionDueToTelemetryLag:
         mode_state = DummyState("sensor.oig_123_invertor_prms_to_grid", "Omezeno")
         hass = DummyHass(DummyStates([mode_state]))
         shield = DummyShield(hass)
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         result = queue_module._should_reject_completion_due_to_telemetry_lag(
             shield, "sensor.oig_123_invertor_prm1_p_max_feed_grid", "500", "500", {}
         )
@@ -1316,7 +1303,7 @@ class TestNormalizeEntityValues:
 
     def test_regular_entity(self):
         shield = DummyShield()
-        shield._normalize_value = lambda v: validation_module.normalize_value(v)
+        shield._normalize_value = lambda val: validation_module.normalize_value(val)
         result = queue_module._normalize_entity_values(
             shield, "sensor.e", "Home 1", "home1"
         )
@@ -1347,16 +1334,16 @@ class TestCheckEntitiesPeriodically:
         state = DummyState("sensor.e", "v")
         hass = DummyHass(DummyStates([state]))
         shield = DummyShield(hass)
-        shield._get_entity_state = lambda e: "v"
-        shield._values_match = lambda c, e: c == e
+        shield._get_entity_state = lambda entity_id: "v"
+        shield._values_match = lambda current, expected: current == expected
         queue_module.start_monitoring_task(shield, "task1", {"sensor.e": "v"}, 60)
         asyncio.run(queue_module.check_entities_periodically(shield, "task1"))
         assert "task1" in shield._active_tasks
 
     def test_timeout(self):
         shield = DummyShield()
-        shield._get_entity_state = lambda e: "wrong"
-        shield._values_match = lambda c, e: False
+        shield._get_entity_state = lambda entity_id: "wrong"
+        shield._values_match = lambda current, expected: False
         queue_module.start_monitoring_task(shield, "task1", {"sensor.e": "v"}, 0)
         asyncio.run(queue_module.check_entities_periodically(shield, "task1"))
         assert "task1" in shield._active_tasks
@@ -1367,31 +1354,37 @@ class TestStartMonitoring:
         shield = DummyShield()
         queue_module.start_monitoring(shield)
         assert shield.check_task is not None
-        shield.check_task.cancel()
+        check_task = shield.check_task
+        assert check_task is not None
+        check_task.cancel()
         try:
-            await shield.check_task
+            await check_task
         except asyncio.CancelledError:
             pass
 
     async def test_skips_existing(self, caplog):
         shield = DummyShield()
-        shield.check_task = MagicMock()
-        shield.check_task.done = lambda: False
+        existing_task = MagicMock()
+        existing_task.done = lambda: False
+        shield.check_task = existing_task
         with caplog.at_level(logging.DEBUG, logger="custom_components.oig_cloud.shield.queue"):
             queue_module.start_monitoring(shield)
         assert "již běží" in caplog.text
 
     async def test_restarts_done(self, caplog):
         shield = DummyShield()
-        shield.check_task = MagicMock()
-        shield.check_task.done = lambda: True
-        shield.check_task.cancelled = lambda: False
+        existing_task = MagicMock()
+        existing_task.done = lambda: True
+        existing_task.cancelled = lambda: False
+        shield.check_task = existing_task
         with caplog.at_level(logging.WARNING, logger="custom_components.oig_cloud.shield.queue"):
             queue_module.start_monitoring(shield)
         assert "Předchozí task byl dokončen" in caplog.text
-        shield.check_task.cancel()
+        restarted_task = shield.check_task
+        assert restarted_task is not None
+        restarted_task.cancel()
         try:
-            await shield.check_task
+            await restarted_task
         except asyncio.CancelledError:
             pass
 
@@ -1408,10 +1401,6 @@ class TestAsyncCheckLoop:
         except asyncio.CancelledError:
             pass
 
-
-# ---------------------------------------------------------------------------
-# validation.py tests
-# ---------------------------------------------------------------------------
 
 class TestNormalizeValue:
     def test_known_mappings(self):
