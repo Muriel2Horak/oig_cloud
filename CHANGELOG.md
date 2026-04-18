@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.31] - 2026-04-18
+
+### Fixed
+- ServiceShield boiler confirmation now resolves the target `boiler_manual_mode` entity from the service call `device_id`, preventing false pending and timeout states when a different box is selected than the config entry default.
+- Added regression coverage for boiler-mode Shield verification against the requested target box.
+
 ## [2.3.30] - 2026-04-16
 
 ### Changed
