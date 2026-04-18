@@ -497,8 +497,6 @@ class OigCloudDataSensor(_DataSensorBase):
             1: "Home 2",
             2: "Home 3",
             3: "Home UPS",
-            4: "Home 5",
-            5: "Home 6",
         }
         return modes.get(node_value, _LANGS["unknown"][language])
 
