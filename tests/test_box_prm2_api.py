@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from custom_components.oig_cloud.api.oig_cloud_api import OigCloudApi
+from custom_components.oig_cloud.api.oig_cloud_api import OigCloudApi, OigCloudApiError
 from custom_components.oig_cloud.api.oig_cloud_session_manager import OigCloudSessionManager
 
 
@@ -46,11 +46,11 @@ class TestOigCloudApiSetBoxPrm2App:
             mock_set_params.assert_called_once_with("box_prm2", "app", "3")
 
     async def test_set_box_prm2_app_error(self, api):
-        """Test set_box_prm2_app raises exception on error."""
+        """Test set_box_prm2_app raises OigCloudApiError on error."""
         with patch.object(
             api, "set_box_params_internal", side_effect=RuntimeError("boom")
         ):
-            with pytest.raises(RuntimeError):
+            with pytest.raises(OigCloudApiError):
                 await api.set_box_prm2_app(1)
 
 
