@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor.const import SensorDeviceClass, SensorStateClass
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTemperature
 
 SENSOR_TYPES_BOX: Dict[str, Dict[str, Any]] = {
@@ -25,6 +25,19 @@ SENSOR_TYPES_BOX: Dict[str, Dict[str, Any]] = {
         "node_id": "box_prms",
         "node_key": "mode",
         "local_entity_suffix": "tbl_box_prms_mode",
+        "state_class": None,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "sensor_type_category": "data",
+        "device_mapping": "main",
+    },
+    "box_prm2_app": {
+        "name": "Supplementary Mode Raw",
+        "name_cs": "Doplňkový režim raw",
+        "device_class": None,
+        "unit_of_measurement": None,
+        "node_id": "box_prm2",
+        "node_key": "app",
+        "local_entity_suffix": "tbl_box_prm2_app",
         "state_class": None,
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "data",
