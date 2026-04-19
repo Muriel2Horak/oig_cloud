@@ -6,15 +6,16 @@ import logging
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
+import voluptuous as vol
+
 from ..const import DOMAIN
+from ..core.box_mode_composite import build_app_value
 
 _LOGGER = logging.getLogger(__name__)
-HOME_5_LABEL = "Home 5"
 HOME_1_LABEL = "Home 1"
 HOME_2_LABEL = "Home 2"
 HOME_3_LABEL = "Home 3"
 HOME_UPS_LABEL = "Home UPS"
-HOME_6_LABEL = "Home 6"
 MANUAL_LABEL = "Manuální"
 API_ENDPOINT_SET_VALUE = "Device.Set.Value.php"
 
@@ -162,35 +163,78 @@ def _expected_formating_mode() -> Dict[str, str]:
 
 def _expected_box_mode(
     shield: Any, data: Dict[str, Any], find_entity: Callable[[str], Optional[str]]
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
+    box_mode_step = data.get("_box_mode_step")
     mode_raw = str(data.get("mode") or "").strip()
-    if not mode_raw or mode_raw.lower() == "none":
+    has_mode = bool(mode_raw and mode_raw.lower() != "none")
+    has_toggles = any(k in data for k in ("home_grid_v", "home_grid_vi"))
+
+    # App step requires toggles to be specified
+    if box_mode_step == "app" and not has_toggles:
+        raise vol.Invalid("App step requires home_grid_v or home_grid_vi toggle to be specified")
+
+    if has_mode and box_mode_step != "app":
+        mode_key = normalize_value(mode_raw)
+        mode_mapping = {
+            "home1": HOME_1_LABEL,
+            "home2": HOME_2_LABEL,
+            "home3": HOME_3_LABEL,
+            "homeups": HOME_UPS_LABEL,
+            "0": HOME_1_LABEL,
+            "1": HOME_2_LABEL,
+            "2": HOME_3_LABEL,
+            "3": HOME_UPS_LABEL,
+        }
+        expected_value = mode_mapping.get(mode_key, mode_raw)
+        entity_id = find_entity("_box_prms_mode")
+        if entity_id:
+            shield.last_checked_entity_id = entity_id
+            state = shield.hass.states.get(entity_id)
+            current = normalize_value(state.state if state else None)
+            expected = normalize_value(expected_value)
+            _LOGGER.debug("[extract] box_mode step='%s' | current='%s' expected='%s'", box_mode_step or "standalone", current, expected)
+            if current != expected:
+                return {entity_id: expected_value}
         return {}
-    mode_key = normalize_value(mode_raw)
-    mode_mapping = {
-        "home1": HOME_1_LABEL,
-        "home2": HOME_2_LABEL,
-        "home3": HOME_3_LABEL,
-        "homeups": HOME_UPS_LABEL,
-        "home5": HOME_5_LABEL,
-        "home6": HOME_6_LABEL,
-        "0": HOME_1_LABEL,
-        "1": HOME_2_LABEL,
-        "2": HOME_3_LABEL,
-        "3": HOME_UPS_LABEL,
-        "4": HOME_5_LABEL,
-        "5": HOME_6_LABEL,
-    }
-    expected_value = mode_mapping.get(mode_key, mode_raw)
-    entity_id = find_entity("_box_prms_mode")
-    if entity_id:
+
+    if (has_mode and box_mode_step == "app") or (not has_mode and has_toggles):
+        entity_id = find_entity("_box_prm2_app")
+        if not entity_id:
+            raise vol.Invalid("box_prm2_app sensor not found — cannot verify supplementary toggle state")
         shield.last_checked_entity_id = entity_id
         state = shield.hass.states.get(entity_id)
-        current = normalize_value(state.state if state else None)
-        expected = normalize_value(expected_value)
-        _LOGGER.debug("[extract] box_mode | current='%s' expected='%s'", current, expected)
-        if current != expected:
-            return {entity_id: expected_value}
+        if not state or state.state in (None, "unknown", "unavailable", ""):
+            raise vol.Invalid(
+                f"box_prm2_app sensor is {state.state if state else 'unavailable'} — "
+                "cannot perform supplementary toggle operation without current state"
+            )
+        try:
+            current_raw = int(float(state.state))
+        except (ValueError, TypeError) as e:
+            raise vol.Invalid(f"box_prm2_app sensor has invalid state '{state.state}': {e}")
+        home_grid_v = data.get("home_grid_v")
+        home_grid_vi = data.get("home_grid_vi")
+
+        # If no toggles specified (both None), preserve current state
+        if home_grid_v is None and home_grid_vi is None:
+            if current_raw == 4:
+                # Flexibilita mode - cannot modify, skip
+                return {}
+            # No change requested, skip
+            return {}
+
+        try:
+            expected_app_value = build_app_value(home_grid_v, home_grid_vi, current_raw)
+        except ValueError as e:
+            raise vol.Invalid(f"Cannot compute supplementary app value: {e}")
+        if expected_app_value == 4:
+            raise vol.Invalid("Flexibilita mode (app=4) is active — cannot modify supplementary toggles")
+        if current_raw == expected_app_value:
+            _LOGGER.info("[extract] box_mode app již je %s - přeskakuji", expected_app_value)
+            return {}
+        _LOGGER.debug("[extract] box_mode app step='%s' | current=%s expected=%s", box_mode_step or "standalone", current_raw, expected_app_value)
+        return {entity_id: expected_app_value}
+
     return {}
 
 
@@ -453,6 +497,7 @@ def _select_entity_matcher(
         ("boiler_manual_mode", _wrap_matcher(_matches_boiler_mode)),
         ("ssr", _wrap_matcher(_matches_ssr_mode)),
         ("box_prms_mode", _wrap_matcher(_matches_box_mode)),
+        ("box_prm2_app", _wrap_matcher(_matches_box_prm2_app)),
         ("invertor_prms_to_grid", _matches_inverter_mode),
         ("p_max_feed_grid", _wrap_matcher(_matches_numeric)),
     ]
@@ -491,8 +536,6 @@ def _matches_box_mode(expected_value: Any, current_value: Any) -> bool:
         1: HOME_2_LABEL,
         2: HOME_3_LABEL,
         3: HOME_UPS_LABEL,
-        4: HOME_5_LABEL,
-        5: HOME_6_LABEL,
     }
     if isinstance(expected_value, str):
         if normalize_value(current_value) == normalize_value(expected_value):
@@ -502,6 +545,17 @@ def _matches_box_mode(expected_value: Any, current_value: Any) -> bool:
     if isinstance(expected_value, int):
         return current_value == mode_mapping.get(expected_value)
     return False
+
+
+def _matches_box_prm2_app(expected_value: Any, current_value: Any) -> bool:
+    try:
+        expected_num = round(float(expected_value))
+        current_num = round(float(current_value))
+    except (ValueError, TypeError):
+        return False
+    if expected_num == 4 or current_num == 4:
+        return False
+    return expected_num == current_num
 
 
 def _matches_inverter_mode(
