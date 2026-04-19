@@ -11,21 +11,26 @@ import {
   BOILER_MODE_LABELS,
   BOILER_MODE_SERVICE_MAP,
   QUEUE_STATUS_COLORS,
+  SupplementaryState,
+  EMPTY_SHIELD_STATE,
 } from '@/ui/features/control-panel/types';
 
 describe('Control Panel types', () => {
   describe('BOX_MODE_LABELS', () => {
-    it('should have labels for all modes', () => {
+    it('should have labels for all 4 main modes', () => {
       expect(BOX_MODE_LABELS.home_1).toBe('Home 1');
       expect(BOX_MODE_LABELS.home_2).toBe('Home 2');
       expect(BOX_MODE_LABELS.home_3).toBe('Home 3');
       expect(BOX_MODE_LABELS.home_ups).toBe('Home UPS');
-      expect(BOX_MODE_LABELS.home_5).toBe('Home 5');
-      expect(BOX_MODE_LABELS.home_6).toBe('Home 6');
     });
 
-    it('should have 6 modes', () => {
-      expect(Object.keys(BOX_MODE_LABELS)).toHaveLength(6);
+    it('should have exactly 4 modes (home_5 / home_6 removed)', () => {
+      expect(Object.keys(BOX_MODE_LABELS)).toHaveLength(4);
+    });
+
+    it('should not contain home_5 or home_6', () => {
+      expect(Object.keys(BOX_MODE_LABELS)).not.toContain('home_5');
+      expect(Object.keys(BOX_MODE_LABELS)).not.toContain('home_6');
     });
   });
 
@@ -35,8 +40,6 @@ describe('Control Panel types', () => {
       expect(BOX_MODE_SERVICE_MAP.home_2).toBe('home_2');
       expect(BOX_MODE_SERVICE_MAP.home_3).toBe('home_3');
       expect(BOX_MODE_SERVICE_MAP.home_ups).toBe('home_ups');
-      expect(BOX_MODE_SERVICE_MAP.home_5).toBe('home_5');
-      expect(BOX_MODE_SERVICE_MAP.home_6).toBe('home_6');
     });
 
     it('should not send human-readable labels as service values', () => {
@@ -44,6 +47,12 @@ describe('Control Panel types', () => {
         expect(value).not.toContain(' ');
         expect(value).not.toMatch(/^Home \d/);
       });
+    });
+
+    it('should not contain home_5 or home_6 entries', () => {
+      const keys = Object.keys(BOX_MODE_SERVICE_MAP);
+      expect(keys).not.toContain('home_5');
+      expect(keys).not.toContain('home_6');
     });
   });
 
@@ -152,4 +161,31 @@ describe('Control Panel types', () => {
       expect(params.estimatedTime).toBe(3600);
     });
   });
+
+  describe('SupplementaryState', () => {
+    it('should have all required fields', () => {
+      const state: SupplementaryState = {
+        home_grid_v: true,
+        home_grid_vi: false,
+        flexibilita: false,
+        available: true,
+      };
+
+      expect(state.home_grid_v).toBe(true);
+      expect(state.home_grid_vi).toBe(false);
+      expect(state.flexibilita).toBe(false);
+      expect(state.available).toBe(true);
+    });
+  });
+
+  describe('EMPTY_SHIELD_STATE', () => {
+    it('should include supplementary field with all toggles off', () => {
+      expect(EMPTY_SHIELD_STATE.supplementary).toBeDefined();
+      expect(EMPTY_SHIELD_STATE.supplementary.home_grid_v).toBe(false);
+      expect(EMPTY_SHIELD_STATE.supplementary.home_grid_vi).toBe(false);
+      expect(EMPTY_SHIELD_STATE.supplementary.flexibilita).toBe(false);
+      expect(EMPTY_SHIELD_STATE.supplementary.available).toBe(false);
+    });
+  });
 });
+

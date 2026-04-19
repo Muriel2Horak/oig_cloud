@@ -211,6 +211,7 @@ export class ShieldController {
         pendingServices,
         changingServices,
         gridDeliveryState,
+        supplementary: this.state.supplementary,
       };
 
       this.notify();
