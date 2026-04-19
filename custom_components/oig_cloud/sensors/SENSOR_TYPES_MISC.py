@@ -182,5 +182,6 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "entity_category": EntityCategory.DIAGNOSTIC,
         "sensor_type_category": "computed",
         "device_mapping": "main",
+        "translation_key": "box_mode_extended",
     },
 }

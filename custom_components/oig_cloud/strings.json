@@ -532,5 +532,19 @@
     "abort": {
       "reconfigure_successful": "Nastavení bylo úspěšně uloženo"
     }
+  },
+  "entity": {
+    "sensor": {
+      "box_mode_extended": {
+        "state": {
+          "none": "Žádný",
+          "home_5": "Home 5",
+          "home_6": "Home 6",
+          "home_5_home_6": "Home 5 + Home 6",
+          "flexibility": "Flexibilita",
+          "unknown": "Neznámý"
+        }
+      }
+    }
   }
 }
