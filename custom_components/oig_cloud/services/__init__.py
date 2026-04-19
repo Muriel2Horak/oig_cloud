@@ -15,9 +15,11 @@ from homeassistant.core import (
 )
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.typing import VolSchemaType
 from opentelemetry import trace
 
 from ..const import DOMAIN
+from ..core.box_mode_composite import build_app_value
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,12 +66,94 @@ FORMAT_BATTERY_CANONICAL = ("no_charge", "charge")
 FORMAT_BATTERY_ALL_KEYS = FORMAT_BATTERY_CANONICAL + FORMAT_BATTERY_LABELS
 SHIELD_LOG_PREFIX = "[SHIELD]"
 
-SET_BOX_MODE_SCHEMA = vol.Schema(
-    {
-        vol.Optional("device_id"): cv.string,
-        vol.Required("mode"): vol.In(HOME_MODE_ALL_KEYS),
-        vol.Required("acknowledgement"): vol.In([True]),
-    }
+BASE_HOME_MODE_VALUES: Dict[str, str] = {
+    HOME_1: "0",
+    HOME_2: "1",
+    HOME_3: "2",
+    HOME_UPS: "3",
+    "home_1": "0",
+    "home_2": "1",
+    "home_3": "2",
+    "home_ups": "3",
+    "home1": "0",
+    "home2": "1",
+    "home3": "2",
+    "homeups": "3",
+}
+
+LEGACY_HOME_5_6_ALIASES = {
+    HOME_5,
+    HOME_6,
+    "home_5",
+    "home_6",
+    "home5",
+    "home6",
+}
+
+LEGACY_HOME_5_6_ERROR = (
+    "Home 5 a Home 6 nejsou samostatné režimy. "
+    "Use home_grid_v/home_grid_vi instead."
+)
+
+
+def _validate_box_mode(value: str) -> str:
+    if value in LEGACY_HOME_5_6_ALIASES:
+        raise vol.Invalid(LEGACY_HOME_5_6_ERROR)
+    if value not in BASE_HOME_MODE_VALUES:
+        raise vol.Invalid("Neplatný režim boxu.")
+    return value
+
+
+def _validate_box_mode_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    has_mode = data.get("mode") is not None
+    has_toggles = data.get("home_grid_v") is not None or data.get("home_grid_vi") is not None
+    if not has_mode and not has_toggles:
+        raise vol.Invalid(
+            "At least one of mode, home_grid_v, or home_grid_vi must be provided."
+        )
+    return data
+
+
+def _extract_current_box_prm2_app(entry_data: Dict[str, Any]) -> Optional[int]:
+    coordinator = entry_data.get("coordinator")
+    coordinator_data = getattr(coordinator, "data", None)
+    if not isinstance(coordinator_data, dict):
+        return None
+
+    direct_box_prm2 = coordinator_data.get("box_prm2")
+    if isinstance(direct_box_prm2, dict):
+        direct_value = direct_box_prm2.get("app")
+        if isinstance(direct_value, int):
+            return direct_value
+        if isinstance(direct_value, str) and direct_value.isdigit():
+            return int(direct_value)
+
+    for device_data in coordinator_data.values():
+        if not isinstance(device_data, dict):
+            continue
+        box_prm2 = device_data.get("box_prm2")
+        if not isinstance(box_prm2, dict):
+            continue
+        value = box_prm2.get("app")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+
+    return None
+
+
+SET_BOX_MODE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional("device_id"): cv.string,
+            vol.Optional("mode"): _validate_box_mode,
+            vol.Optional("home_grid_v"): cv.boolean,
+            vol.Optional("home_grid_vi"): cv.boolean,
+            vol.Required("acknowledgement"): vol.In([True]),
+        }
+    ),
+    _validate_box_mode_payload,
 )
 SET_GRID_DELIVERY_SCHEMA = vol.Schema(
     {
@@ -422,7 +506,9 @@ async def _action_set_box_mode(
         return
 
     mode: Optional[str] = service_data.get("mode")
-    mode_value: Optional[str] = MODES.get(mode) if mode else None
+    mode_value: Optional[str] = BASE_HOME_MODE_VALUES.get(mode) if mode else None
+    home_grid_v: Optional[bool] = service_data.get("home_grid_v")
+    home_grid_vi: Optional[bool] = service_data.get("home_grid_vi")
     _LOGGER.info(
         "%sSetting box mode for device %s to %s (value: %s)",
         log_prefix,
@@ -431,17 +517,28 @@ async def _action_set_box_mode(
         mode_value,
     )
     try:
-        if mode_value is None:
+        if mode in LEGACY_HOME_5_6_ALIASES:
+            raise vol.Invalid(LEGACY_HOME_5_6_ERROR)
+        if mode is not None and mode_value is None:
             raise vol.Invalid("Neplatný režim boxu.")
-        await client.set_box_mode(mode_value)
-    except Exception as err:
-        # Check if this is a 500 error for Home 5/6 (unsupported modes on some boxes)
-        err_str = str(err)
-        if "500" in err_str and mode in ("home_5", "home_6", "Home 5", "Home 6"):
-            raise vol.Invalid(
-                "Režimy Home 5 a Home 6 nejsou na tomto boxu dostupné. "
-                "Tyto režimy podporují pouze novější typy battery boxů."
-            ) from err
+        if mode_value is not None:
+            await client.set_box_mode(mode_value)
+
+        if home_grid_v is not None or home_grid_vi is not None:
+            entry_data = hass.data[DOMAIN][entry.entry_id]
+            current_raw = _extract_current_box_prm2_app(entry_data)
+            if current_raw is None:
+                raise vol.Invalid("box_prm2.app state unknown")
+            if current_raw == 4:
+                raise vol.Invalid("Flexibilita mode is active")
+
+            new_value = build_app_value(
+                home_grid_v=home_grid_v,
+                home_grid_vi=home_grid_vi,
+                current_raw=current_raw,
+            )
+            await client.set_box_prm2_app(new_value)
+    except Exception:
         raise
 
 
@@ -789,7 +886,13 @@ async def async_setup_entry_services_fallback(
 
 def _entry_service_actions(
     *, shielded: bool
-) -> list[tuple[str, Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]], vol.Schema]]:
+) -> list[
+    tuple[
+        str,
+        Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
+        VolSchemaType,
+    ]
+]:
     if shielded:
         return [
             ("set_box_mode", _shield_set_box_mode, SET_BOX_MODE_SCHEMA),
@@ -809,7 +912,11 @@ def _register_entry_services(
     hass: HomeAssistant,
     entry: ConfigEntry,
     services: Iterable[
-        tuple[str, Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]], vol.Schema]
+        tuple[
+            str,
+            Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]],
+            VolSchemaType,
+        ]
     ],
     handler_factory: Callable[
         [str, Callable[[HomeAssistant, ConfigEntry, Dict[str, Any]], Awaitable[None]]],

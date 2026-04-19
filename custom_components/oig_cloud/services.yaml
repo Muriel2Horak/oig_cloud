@@ -25,8 +25,16 @@ set_box_mode:
             - home_2
             - home_3
             - home_ups
-            - home_5
-            - home_6
+    home_grid_v:
+      description: Enable Home Grid V supplementary mode
+      required: false
+      selector:
+        boolean:
+    home_grid_vi:
+      description: Enable Home Grid VI supplementary mode
+      required: false
+      selector:
+        boolean:
     acknowledgement:
       description: |
         I acknowledge that calling the service will result in parameter modification of a live system.

@@ -40,6 +40,29 @@ def _split_grid_delivery_params(params: Dict[str, Any]) -> Optional[list[Dict[st
     return None
 
 
+_TOGGLE_KEYS = ("home_grid_v", "home_grid_vi")
+
+
+def _split_box_mode_params(params: Dict[str, Any]) -> Optional[list[Dict[str, Any]]]:
+    """Split mode+toggles into ordered steps: mode first, then app toggles.
+
+    The box can only process one value change at a time, so composite box mode
+    calls must stay split. Order is critical: main mode must be set BEFORE
+    supplementary app bits are applied.
+    """
+    has_mode = "mode" in params
+    has_toggles = any(k in params for k in _TOGGLE_KEYS)
+    if has_mode and has_toggles:
+        mode_params = {k: v for k, v in params.items() if k not in _TOGGLE_KEYS}
+        mode_params["_box_mode_step"] = "mode"
+
+        app_params = {k: v for k, v in params.items() if k != "mode"}
+        app_params["_box_mode_step"] = "app"
+
+        return [mode_params, app_params]
+    return None
+
+
 def _is_duplicate(
     shield: Any,
     service_name: str,
@@ -159,6 +182,56 @@ async def _handle_split_grid_delivery(
     )
 
     _LOGGER.info("[Grid Delivery] Both ordered steps queued successfully")
+    return True
+
+
+async def _handle_split_box_mode(
+    shield: Any,
+    domain: str,
+    service: str,
+    params: Dict[str, Any],
+    original_call: Any,
+    blocking: bool,
+    context: Optional[Context],
+) -> bool:
+    """Handle split box mode: main mode first, then app toggles."""
+    split_params = _split_box_mode_params(params)
+    if not split_params:
+        return False
+
+    mode_step = split_params[0]
+    app_step = split_params[1]
+
+    _LOGGER.info(
+        "[Box Mode] Splitting mode+toggles into ordered steps: "
+        "mode='%s' (step 1) → app='%s' (step 2)",
+        mode_step.get("mode"),
+        {k: v for k, v in app_step.items() if not k.startswith("_")},
+    )
+
+    _LOGGER.info("[Box Mode] Step 1/2: Setting main mode")
+    await intercept_service_call(
+        shield,
+        domain,
+        service,
+        {"params": mode_step},
+        original_call,
+        blocking,
+        context,
+    )
+
+    _LOGGER.info("[Box Mode] Step 2/2: Setting app toggles")
+    await intercept_service_call(
+        shield,
+        domain,
+        service,
+        {"params": app_step},
+        original_call,
+        blocking,
+        context,
+    )
+
+    _LOGGER.info("[Box Mode] Both ordered steps queued successfully")
     return True
 
 
@@ -301,6 +374,11 @@ async def intercept_service_call(
     trace_id = str(uuid.uuid4())[:8]
 
     if service_name == "oig_cloud.set_grid_delivery" and await _handle_split_grid_delivery(
+        shield, domain, service, params, original_call, blocking, context
+    ):
+        return
+
+    if service_name == SERVICE_SET_BOX_MODE and await _handle_split_box_mode(
         shield, domain, service, params, original_call, blocking, context
     ):
         return

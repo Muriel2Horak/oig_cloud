@@ -13,15 +13,13 @@ import type { GridDeliveryStateModel } from '@/data/grid-delivery-model';
 // BOX MODE
 // ============================================================================
 
-export type BoxMode = 'home_1' | 'home_2' | 'home_3' | 'home_ups' | 'home_5' | 'home_6';
+export type BoxMode = 'home_1' | 'home_2' | 'home_3' | 'home_ups';
 
 export const BOX_MODE_LABELS: Record<BoxMode, string> = {
   home_1: 'Home 1',
   home_2: 'Home 2',
   home_3: 'Home 3',
   home_ups: 'Home UPS',
-  home_5: 'Home 5',
-  home_6: 'Home 6',
 };
 /** V1 sensor value → BoxMode mapping */
 export const BOX_MODE_SENSOR_MAP: Record<string, BoxMode> = {
@@ -29,14 +27,10 @@ export const BOX_MODE_SENSOR_MAP: Record<string, BoxMode> = {
   'Home 2': 'home_2',
   'Home 3': 'home_3',
   'Home UPS': 'home_ups',
-  'Home 5': 'home_5',
-  'Home 6': 'home_6',
   'Mode 0': 'home_1',
   'Mode 1': 'home_2',
   'Mode 2': 'home_3',
   'Mode 3': 'home_ups',
-  'Mode 4': 'home_5',
-  'Mode 5': 'home_6',
   'HOME I': 'home_1',
   'HOME II': 'home_2',
   'HOME III': 'home_3',
@@ -45,8 +39,6 @@ export const BOX_MODE_SENSOR_MAP: Record<string, BoxMode> = {
   '1': 'home_2',
   '2': 'home_3',
   '3': 'home_ups',
-  '4': 'home_5',
-  '5': 'home_6',
 };
 
 export const BOX_MODE_SERVICE_MAP: Record<BoxMode, BoxMode> = {
@@ -54,8 +46,6 @@ export const BOX_MODE_SERVICE_MAP: Record<BoxMode, BoxMode> = {
   home_2: 'home_2',
   home_3: 'home_3',
   home_ups: 'home_ups',
-  home_5: 'home_5',
-  home_6: 'home_6',
 };
 // ============================================================================
 // GRID DELIVERY
@@ -212,6 +202,21 @@ export const QUEUE_VALUE_MAP: Record<string, string> = {
 };
 
 // ============================================================================
+// SUPPLEMENTARY STATE (box_mode_extended sensor)
+// ============================================================================
+
+export interface SupplementaryState {
+  /** Home Grid V toggle active */
+  home_grid_v: boolean;
+  /** Home Grid VI toggle active */
+  home_grid_vi: boolean;
+  /** Flexibilita (app=4) override is active — blocks manual toggles */
+  flexibilita: boolean;
+  /** Whether the box_mode_extended sensor is available */
+  available: boolean;
+}
+
+// ============================================================================
 // SHIELD STATE — reactive controller state
 // ============================================================================
 
@@ -242,6 +247,8 @@ export interface ShieldState {
   changingServices: Set<ShieldServiceType>;
   /** New grid delivery state model with explicit live/pending separation */
   gridDeliveryState: GridDeliveryStateModel;
+  /** Supplementary toggle state from box_mode_extended sensor */
+  supplementary: SupplementaryState;
 }
 
 export const EMPTY_SHIELD_STATE: ShieldState = {
@@ -264,6 +271,12 @@ export const EMPTY_SHIELD_STATE: ShieldState = {
     pendingLimitTarget: null,
     isTransitioning: false,
     isUnavailable: false,
+  },
+  supplementary: {
+    home_grid_v: false,
+    home_grid_vi: false,
+    flexibilita: false,
+    available: false,
   },
 };
 

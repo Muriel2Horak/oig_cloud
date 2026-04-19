@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor.const import SensorDeviceClass, SensorStateClass
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 
 SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
@@ -169,5 +169,18 @@ SENSOR_TYPES_MISC: Dict[str, Dict[str, Any]] = {
         "sensor_type_category": "notification",
         "device_mapping": "main",
         "icon": "mdi:bell-badge",
+    },
+    "box_mode_extended": {
+        "name": "Box Mode Extended",
+        "name_cs": "Rozšířený režim",
+        "device_class": None,
+        "unit_of_measurement": None,
+        "node_id": None,
+        "node_key": None,
+        "local_entity_suffix": "tbl_box_mode_extended",
+        "state_class": None,
+        "entity_category": EntityCategory.DIAGNOSTIC,
+        "sensor_type_category": "computed",
+        "device_mapping": "main",
     },
 }

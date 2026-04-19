@@ -24,6 +24,7 @@ import {
   BOILER_MODE_LABELS,
   BOILER_MODE_ICONS,
   ButtonState,
+  SupplementaryState,
 } from './types';
 
 const u = unsafeCSS;
@@ -139,8 +140,6 @@ export class OigBoxModeSelector extends LitElement {
     home_2: 'idle',
     home_3: 'idle',
     home_ups: 'idle',
-    home_5: 'idle',
-    home_6: 'idle',
   };
 
   static styles = [sharedButtonStyles];
@@ -156,7 +155,7 @@ export class OigBoxModeSelector extends LitElement {
   }
 
   render() {
-    const modes: BoxMode[] = ['home_1', 'home_2', 'home_3', 'home_ups', 'home_5', 'home_6'];
+    const modes: BoxMode[] = ['home_1', 'home_2', 'home_3', 'home_ups'];
 
     return html`
       <div class="selector-label">
@@ -316,6 +315,38 @@ export class OigBoilerModeSelector extends LitElement {
       </div>
     `;
   }
+}
+
+// ============================================================================
+// SELECTOR HELPERS
+// ============================================================================
+
+export function selectBoxModeButtons(): BoxMode[] {
+  return ['home_1', 'home_2', 'home_3', 'home_ups'];
+}
+
+export interface SupplementaryToggleView extends SupplementaryState {
+  disabled: boolean;
+}
+
+export function selectSupplementaryToggles(state: SupplementaryState): SupplementaryToggleView {
+  const disabled = !state.available || state.flexibilita;
+  if (!state.available) {
+    return {
+      home_grid_v: false,
+      home_grid_vi: false,
+      flexibilita: state.flexibilita,
+      available: false,
+      disabled: true,
+    };
+  }
+  return {
+    home_grid_v: state.home_grid_v,
+    home_grid_vi: state.home_grid_vi,
+    flexibilita: state.flexibilita,
+    available: state.available,
+    disabled,
+  };
 }
 
 // ============================================================================

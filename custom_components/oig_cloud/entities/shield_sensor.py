@@ -19,6 +19,8 @@ def _extract_param_type(entity_id: str) -> str:
         return "mode"
     elif "box_prms_mode" in entity_id:
         return "mode"
+    elif "box_prm2_app" in entity_id:
+        return "app"
     elif "boiler_manual_mode" in entity_id:
         return "mode"
     elif "formating_mode" in entity_id:
