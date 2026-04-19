@@ -9,6 +9,7 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ..core.box_mode_composite import canonical_extended_state, parse_app_value
 from ..sensor_types import SENSOR_TYPES
 from .base_sensor import OigCloudSensor
 
@@ -656,7 +657,47 @@ class OigCloudComputedSensor(_ComputedBase):
             "boiler_current_w": self._get_boiler_consumption_from_entities,
             "batt_batt_comp_p_charge": self._state_batt_comp_charge,
             "batt_batt_comp_p_discharge": self._state_batt_comp_discharge,
+            "box_mode_extended": self._state_box_mode_extended,
         }
+
+    def _state_box_mode_extended(self) -> Optional[str]:
+        """Compute extended box mode from box_prm2_app sensor."""
+        raw_app = self._get_box_prm2_app()
+        if raw_app is None:
+            self._attr_extra_state_attributes = {
+                "raw_app": None,
+                "home_grid_v": False,
+                "home_grid_vi": False,
+                "flexibilita": False,
+            }
+            return "unknown"
+
+        state = parse_app_value(raw_app)
+        canonical = canonical_extended_state(state)
+        self._attr_extra_state_attributes = {
+            "raw_app": raw_app,
+            "home_grid_v": bool(state.home_grid_v) if state else False,
+            "home_grid_vi": bool(state.home_grid_vi) if state else False,
+            "flexibilita": bool(state.flexibilita) if state else False,
+        }
+        return canonical or "unknown"
+
+    def _get_box_prm2_app(self) -> Optional[int]:
+        """Get raw value from box_prm2_app sensor."""
+        if not getattr(self, "hass", None):
+            return None
+        box_id = self._box_id
+        entity_id = f"sensor.oig_{box_id}_box_prm2_app"
+        st = self.hass.states.get(entity_id)
+        if not st or st.state in (None, "", "unknown", "unavailable"):
+            return None
+
+        value = st.state
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return int(parsed)
 
     def _state_batt_comp_charge(self) -> Optional[float]:
         bat_p = self._get_oig_number("batt_batt_comp_p")
