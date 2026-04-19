@@ -142,6 +142,7 @@ def _extract_current_box_prm2_app(entry_data: Dict[str, Any]) -> Optional[int]:
 
     return None
 
+
 SET_BOX_MODE_SCHEMA = vol.All(
     vol.Schema(
         {
@@ -537,7 +538,7 @@ async def _action_set_box_mode(
                 current_raw=current_raw,
             )
             await client.set_box_prm2_app(new_value)
-    except Exception as err:
+    except Exception:
         raise
 
 
