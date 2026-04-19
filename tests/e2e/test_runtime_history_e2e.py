@@ -91,9 +91,19 @@ async def test_fetch_interval_from_history_mocked(e2e_setup, monkeypatch):
     ):
         return {eid: history_states.get(eid, []) for eid in entity_ids}
 
+    async def fake_async_add_executor_job(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    class FakeRecorderInstance:
+        async_add_executor_job = staticmethod(fake_async_add_executor_job)
+
     monkeypatch.setattr(
         "homeassistant.components.recorder.history.get_significant_states",
         fake_get_significant_states,
+    )
+    monkeypatch.setattr(
+        "homeassistant.helpers.recorder.get_instance",
+        lambda _hass: FakeRecorderInstance(),
     )
 
     sensor = SimpleNamespace(
