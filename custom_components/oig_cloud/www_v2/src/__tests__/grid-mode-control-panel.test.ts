@@ -7,8 +7,13 @@ import {
   EMPTY_SHIELD_STATE,
   ConfirmDialogConfig,
 } from '@/ui/features/control-panel/types';
-import { OigGridDeliverySelector } from '@/ui/features/control-panel/selectors';
+import {
+  OigGridDeliverySelector,
+  OigSupplementarySelector,
+  OigBoxModeSelector,
+} from '@/ui/features/control-panel/selectors';
 import { OigControlPanel } from '@/ui/features/control-panel/panel';
+import { shieldController } from '@/data/shield-controller';
 
 describe('resolveGridDelivery — robustness against sensor value variants', () => {
   it('resolves canonical Czech exact matches', () => {
@@ -434,5 +439,96 @@ describe('OigControlPanel — grid delivery limit-only fast path', () => {
     expect(cfg.showLimitInput).toBe(true);
     expect(cfg.limitValue).toBe(5400);
     expect(cfg.limitOnly).toBe(true);
+  });
+});
+
+describe('OigControlPanel — supplementary controls integration', () => {
+  it('renders supplementary controls independently from the main Home 1..UPS selector', async () => {
+    const subscribeSpy = vi.spyOn(shieldController, 'subscribe').mockReturnValue(() => {});
+    const panel = document.createElement('oig-control-panel') as OigControlPanel;
+
+    Reflect.set(panel, 'shieldState', {
+      ...EMPTY_SHIELD_STATE,
+      currentBoxMode: 'home_2',
+      supplementary: {
+        home_grid_v: false,
+        home_grid_vi: true,
+        flexibilita: false,
+        available: true,
+      },
+    });
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const boxSelector = panel.shadowRoot?.querySelector('oig-box-mode-selector') as OigBoxModeSelector | null;
+    const supplementarySelector = panel.shadowRoot?.querySelector('oig-supplementary-selector') as OigSupplementarySelector | null;
+
+    expect(boxSelector).not.toBeNull();
+    expect(supplementarySelector).not.toBeNull();
+    expect(boxSelector?.value).toBe('home_2');
+    expect(supplementarySelector?.homeGridV).toBe(false);
+    expect(supplementarySelector?.homeGridVi).toBe(true);
+
+    subscribeSpy.mockRestore();
+  });
+
+  it('disables supplementary controls when Flexibilita is active', async () => {
+    const subscribeSpy = vi.spyOn(shieldController, 'subscribe').mockReturnValue(() => {});
+    const panel = document.createElement('oig-control-panel') as OigControlPanel;
+
+    Reflect.set(panel, 'shieldState', {
+      ...EMPTY_SHIELD_STATE,
+      supplementary: {
+        home_grid_v: false,
+        home_grid_vi: false,
+        flexibilita: true,
+        available: true,
+      },
+    });
+
+    document.body.appendChild(panel);
+    await panel.updateComplete;
+
+    const supplementarySelector = panel.shadowRoot?.querySelector('oig-supplementary-selector') as OigSupplementarySelector | null;
+
+    expect(supplementarySelector?.disabled).toBe(true);
+    expect(supplementarySelector?.flexibilita).toBe(true);
+
+    subscribeSpy.mockRestore();
+  });
+
+  it('turns an already-active Home 6 supplementary toggle off without changing main mode', async () => {
+    const queueSpy = vi.spyOn(shieldController, 'shouldProceedWithQueue').mockReturnValue(true);
+    const setSpy = vi.spyOn(shieldController, 'setSupplementaryToggle').mockResolvedValue(true);
+    const panel = new OigControlPanel();
+
+    Reflect.set(panel, 'shieldState', {
+      ...EMPTY_SHIELD_STATE,
+      currentBoxMode: 'home_2',
+      supplementary: {
+        home_grid_v: false,
+        home_grid_vi: true,
+        flexibilita: false,
+        available: true,
+      },
+    });
+    Reflect.set(panel, 'confirmDialog', {
+      showDialog: vi.fn(async () => ({ confirmed: true })),
+    });
+
+    const onSupplementaryToggle = Reflect.get(Object.getPrototypeOf(panel), 'onSupplementaryToggle') as (
+      event: CustomEvent<{ key: 'home_grid_v' | 'home_grid_vi' }>,
+    ) => Promise<void>;
+
+    await onSupplementaryToggle.call(panel, new CustomEvent('supplementary-toggle', {
+      detail: { key: 'home_grid_vi' },
+    }));
+
+    expect(setSpy).toHaveBeenCalledWith('home_grid_vi', false);
+    expect(Reflect.get(panel, 'shieldState').currentBoxMode).toBe('home_2');
+
+    queueSpy.mockRestore();
+    setSpy.mockRestore();
   });
 });

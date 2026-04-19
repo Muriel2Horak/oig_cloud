@@ -2,8 +2,31 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   selectBoxModeButtons,
   selectSupplementaryToggles,
+  OigSupplementarySelector,
 } from '@/ui/features/control-panel/selectors';
 import type { SupplementaryState } from '@/ui/features/control-panel/types';
+
+type TemplateResult = { values?: unknown[]; strings?: TemplateStringsArray };
+
+function renderSupplementary(props: {
+  homeGridV?: boolean;
+  homeGridVi?: boolean;
+  flexibilita?: boolean;
+  available?: boolean;
+  disabled?: boolean;
+}): TemplateResult | null {
+  const el = new OigSupplementarySelector();
+  el.homeGridV = props.homeGridV ?? false;
+  el.homeGridVi = props.homeGridVi ?? false;
+  el.flexibilita = props.flexibilita ?? false;
+  el.available = props.available ?? true;
+  el.disabled = props.disabled ?? false;
+  return Reflect.apply(
+    Reflect.get(Object.getPrototypeOf(el), 'render'),
+    el,
+    [],
+  ) as TemplateResult | null;
+}
 
 describe('selectBoxModeButtons', () => {
   it('returns exactly 4 main mode buttons', () => {
@@ -157,5 +180,90 @@ describe('selectSupplementaryToggles', () => {
       expect(allowedFields).not.toContain('home_5');
       expect(allowedFields).not.toContain('home_6');
     });
+  });
+});
+
+describe('OigSupplementarySelector', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('renders Home 5 and Home 6 controls', async () => {
+    const el = document.createElement('oig-supplementary-selector') as OigSupplementarySelector;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const buttons = Array.from(el.shadowRoot?.querySelectorAll('button') ?? []).map(button => button.textContent?.trim());
+
+    expect(buttons).toHaveLength(2);
+    expect(buttons.some(text => text?.includes('Home 5'))).toBe(true);
+    expect(buttons.some(text => text?.includes('Home 6'))).toBe(true);
+  });
+
+  it('renders Home 6 as active from live-equivalent supplementary state', async () => {
+    const el = document.createElement('oig-supplementary-selector') as OigSupplementarySelector;
+    el.homeGridVi = true;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const buttons = el.shadowRoot?.querySelectorAll('button') ?? [];
+    expect(buttons[0]?.className).toContain('idle');
+    expect(buttons[1]?.className).toContain('active');
+  });
+
+  it('supports both Home 5 and Home 6 active simultaneously', async () => {
+    const el = document.createElement('oig-supplementary-selector') as OigSupplementarySelector;
+    el.homeGridV = true;
+    el.homeGridVi = true;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const buttons = el.shadowRoot?.querySelectorAll('button') ?? [];
+    expect(buttons[0]?.className).toContain('active');
+    expect(buttons[1]?.className).toContain('active');
+  });
+
+  it('disables both controls when Flexibilita is active', async () => {
+    const el = document.createElement('oig-supplementary-selector') as OigSupplementarySelector;
+    el.homeGridV = true;
+    el.homeGridVi = true;
+    el.flexibilita = true;
+    el.disabled = true;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const buttons = el.shadowRoot?.querySelectorAll('button') ?? [];
+    expect(buttons[0]?.disabled).toBe(true);
+    expect(buttons[1]?.disabled).toBe(true);
+    expect(buttons[0]?.className).toContain('active');
+    expect(buttons[0]?.className).toContain('disabled-by-service');
+    expect(buttons[1]?.className).toContain('active');
+    expect(buttons[1]?.className).toContain('disabled-by-service');
+  });
+
+  it('disables both controls when supplementary state is unavailable', async () => {
+    const el = document.createElement('oig-supplementary-selector') as OigSupplementarySelector;
+    el.available = false;
+    el.disabled = true;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const buttons = el.shadowRoot?.querySelectorAll('button') ?? [];
+    expect(buttons[0]?.disabled).toBe(true);
+    expect(buttons[1]?.disabled).toBe(true);
+  });
+
+  it('dispatches supplementary-toggle with the selected service field', () => {
+    const el = new OigSupplementarySelector();
+    let detail: unknown = null;
+
+    el.addEventListener('supplementary-toggle', event => {
+      detail = (event as CustomEvent).detail;
+    });
+
+    const onToggleClick = Reflect.get(Object.getPrototypeOf(el), 'onToggleClick') as (key: 'home_grid_v' | 'home_grid_vi') => void;
+    onToggleClick.call(el, 'home_grid_vi');
+
+    expect(detail).toEqual({ key: 'home_grid_vi' });
   });
 });

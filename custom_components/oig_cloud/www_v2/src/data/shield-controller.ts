@@ -27,6 +27,8 @@ import {
   BOX_MODE_SENSOR_MAP,
   BOILER_MODE_SENSOR_MAP,
   EMPTY_SHIELD_STATE,
+  SupplementaryState,
+  SUPPLEMENTARY_APP_VALUE_MAP,
 } from '@/ui/features/control-panel/types';
 import {
   GridDeliveryRawValues,
@@ -123,6 +125,8 @@ export class ShieldController {
     const fragments = [
       'service_shield_',
       'box_prms_mode',
+      'box_mode_extended',
+      'box_prm2_app',
       'boiler_manual_mode',
       'invertor_prms_to_grid',
       'invertor_prm1_p_max_feed_grid',
@@ -133,6 +137,21 @@ export class ShieldController {
   // --------------------------------------------------------------------------
   // State refresh — reads all shield sensors
   // --------------------------------------------------------------------------
+
+  private readSupplementaryState(store: NonNullable<ReturnType<typeof getEntityStore>>): SupplementaryState {
+    const entityId = store.findSensorId('box_mode_extended');
+    const entity = store.get(entityId);
+    if (!entity || entity.state === 'unavailable' || entity.state === 'unknown' || entity.state === '') {
+      return { home_grid_v: false, home_grid_vi: false, flexibilita: false, available: false };
+    }
+    const attrs: Record<string, unknown> = entity.attributes ?? {};
+    return {
+      home_grid_v: attrs['home_grid_v'] === true,
+      home_grid_vi: attrs['home_grid_vi'] === true,
+      flexibilita: attrs['flexibilita'] === true,
+      available: true,
+    };
+  }
 
   refresh(): void {
     const store = getEntityStore();
@@ -211,7 +230,7 @@ export class ShieldController {
         pendingServices,
         changingServices,
         gridDeliveryState,
-        supplementary: this.state.supplementary,
+        supplementary: this.readSupplementaryState(store),
       };
 
       this.notify();
@@ -245,7 +264,13 @@ export class ShieldController {
     const targetValue = this.resolveRequestTargetValue(safeRaw, targets, params, gridDeliveryStep);
 
     let type: ShieldQueueItem['type'] = 'mode_change';
-    if (service.includes('set_box_mode')) type = 'mode_change';
+    if (service.includes('set_box_mode')) {
+      const earlyParams = this.extractRequestParams(safeRaw.params);
+      const isSupplementary =
+        earlyParams?.home_grid_v !== undefined || earlyParams?.home_grid_vi !== undefined ||
+        (Array.isArray(safeRaw.targets) && safeRaw.targets.some((t: any) => t?.param === 'app'));
+      type = isSupplementary ? 'supplementary_toggle' : 'mode_change';
+    }
     else if (service.includes('set_grid_delivery') && !service.includes('limit')) type = 'grid_delivery';
     else if (service.includes('grid_delivery_limit') || service.includes('set_grid_delivery')) type = 'grid_limit';
     else if (service.includes('set_boiler_mode')) type = 'boiler_mode';
@@ -291,6 +316,15 @@ export class ShieldController {
     const target = arrowMatch ? arrowMatch[1] : (req.targetValue || '');
 
     if (service.includes('set_box_mode')) {
+      const isSupplementary =
+        req.targets?.some(t => t.param === 'app') ||
+        params?.home_grid_v !== undefined || params?.home_grid_vi !== undefined;
+      if (isSupplementary) {
+        const appTarget = req.targets?.find(t => t.param === 'app');
+        const appValue = appTarget?.to || req.targetValue;
+        const appLabel = SUPPLEMENTARY_APP_VALUE_MAP[appValue] ?? appValue ?? '';
+        return { type: 'supplementary', targetValue: appLabel };
+      }
       return { type: 'box_mode', targetValue: target };
     }
     if (service.includes('set_boiler_mode')) {
@@ -632,6 +666,21 @@ export class ShieldController {
   async removeFromQueue(position: number): Promise<boolean> {
     const success = await haClient.callService('oig_cloud', 'shield_remove_from_queue', {
       position,
+    });
+
+    if (success) {
+      this.refresh();
+    }
+    return success;
+  }
+
+  async setSupplementaryToggle(
+    key: 'home_grid_v' | 'home_grid_vi',
+    value: boolean,
+  ): Promise<boolean> {
+    const success = await haClient.callService('oig_cloud', 'set_box_mode', {
+      [key]: value,
+      acknowledgement: true,
     });
 
     if (success) {

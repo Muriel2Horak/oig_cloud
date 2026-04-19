@@ -198,7 +198,7 @@ export class OigGridDeliverySelector extends LitElement {
     limited: 'idle',
   };
 
-  static styles = [
+  static readonly styles = [
     sharedButtonStyles,
     css`
       .mode-btn.pending-target {
@@ -318,6 +318,82 @@ export class OigBoilerModeSelector extends LitElement {
 }
 
 // ============================================================================
+// SUPPLEMENTARY TOGGLES SELECTOR (Home 5 / Home 6)
+// ============================================================================
+
+@customElement('oig-supplementary-selector')
+export class OigSupplementarySelector extends LitElement {
+  @property({ type: Boolean }) homeGridV = false;
+  @property({ type: Boolean }) homeGridVi = false;
+  @property({ type: Boolean }) flexibilita = false;
+  @property({ type: Boolean }) available = false;
+  @property({ type: Boolean }) disabled = false;
+
+  static styles = [
+    sharedButtonStyles,
+    css`
+      .flexibilita-badge {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 8px;
+        background: rgba(255, 152, 0, 0.15);
+        color: #ff9800;
+        font-weight: 600;
+        margin-left: 4px;
+        white-space: nowrap;
+      }
+    `,
+  ];
+
+  private getButtonClass(active: boolean): string {
+    if (active && this.disabled) return 'active disabled-by-service';
+    if (active) return 'active';
+    if (this.disabled) return 'disabled-by-service';
+    return 'idle';
+  }
+
+  private onToggleClick(key: 'home_grid_v' | 'home_grid_vi'): void {
+    if (this.disabled) return;
+    this.dispatchEvent(new CustomEvent('supplementary-toggle', {
+      detail: { key },
+      bubbles: true,
+    }));
+  }
+
+  render() {
+    const v5Class = this.getButtonClass(this.homeGridV);
+    const v6Class = this.getButtonClass(this.homeGridVi);
+    const flexBadge = this.flexibilita
+      ? html`<span class="flexibilita-badge">\u26A1 Flexibilita</span>`
+      : '';
+
+    return html`
+      <div class="selector-label">
+        Dopl\u0148kov\u00FD re\u017Eim ${flexBadge}
+      </div>
+      <div class="mode-buttons">
+        <button
+          class="mode-btn ${v5Class}"
+          ?disabled=${this.disabled}
+          @click=${() => this.onToggleClick('home_grid_v')}
+        >
+          Home 5
+          ${this.homeGridV && !this.disabled ? html`<span style="font-size:10px"> \u2713</span>` : ''}
+        </button>
+        <button
+          class="mode-btn ${v6Class}"
+          ?disabled=${this.disabled}
+          @click=${() => this.onToggleClick('home_grid_vi')}
+        >
+          Home 6
+          ${this.homeGridVi && !this.disabled ? html`<span style="font-size:10px"> \u2713</span>` : ''}
+        </button>
+      </div>
+    `;
+  }
+}
+
+// ============================================================================
 // SELECTOR HELPERS
 // ============================================================================
 
@@ -358,5 +434,6 @@ declare global {
     'oig-box-mode-selector': OigBoxModeSelector;
     'oig-grid-delivery-selector': OigGridDeliverySelector;
     'oig-boiler-mode-selector': OigBoilerModeSelector;
+    'oig-supplementary-selector': OigSupplementarySelector;
   }
 }

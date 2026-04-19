@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.33] - 2026-04-19
+
+### Added
+- Dashboard V2 now exposes dedicated Home 5 and Home 6 supplementary controls with confirmation flow, live-state rendering, and targeted regression coverage.
+- `sensor.oig_{box_id}_box_mode_extended` now provides Home Assistant state translations so supplementary modes render as readable labels in entity details and history.
+
+### Fixed
+- Shield controller queue classification now treats supplementary PRM2 app toggles independently from main box-mode changes, preventing false pending-state coupling.
+- Queue rendering now translates supplementary `prm2_app` values correctly and ignores the `(nyní: ...)` suffix when formatting change labels.
+- Supplementary state refresh now reads `box_mode_extended` consistently, keeping main mode buttons stable while supplementary toggles are pending.
+
 ## [2.3.30] - 2026-04-16
 
 ### Changed

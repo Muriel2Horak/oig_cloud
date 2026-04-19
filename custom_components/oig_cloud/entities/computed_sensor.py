@@ -69,6 +69,10 @@ class OigCloudComputedSensor(_ComputedBase):
         # Preferujeme český název, fallback na anglický, fallback na sensor_type
         self._attr_name = name_cs or name_en or sensor_type
 
+        translation_key = sensor_config.get("translation_key")
+        if translation_key:
+            self._attr_translation_key = translation_key
+
         self._last_update: Optional[datetime] = None
         self._attr_extra_state_attributes: Dict[str, Any] = {}
 

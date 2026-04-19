@@ -32,9 +32,9 @@ import {
   ConfirmDialogConfig,
 } from './types';
 import { oigLog } from '@/core/logger';
+import { selectSupplementaryToggles } from './selectors';
 
 // Import sub-components so they register
-import './selectors';
 import './shield';
 import './queue';
 import './confirm-dialog';
@@ -189,6 +189,10 @@ export class OigControlPanel extends LitElement {
     };
   }
 
+  private get supplementaryView() {
+    return selectSupplementaryToggles(this.shieldState.supplementary);
+  }
+
   // --------------------------------------------------------------------------
   // Event handlers — Box Mode
   // --------------------------------------------------------------------------
@@ -338,6 +342,37 @@ export class OigControlPanel extends LitElement {
   }
 
   // --------------------------------------------------------------------------
+  // Event handlers — Supplementary toggles (Home 5 / Home 6)
+  // --------------------------------------------------------------------------
+
+  private async onSupplementaryToggle(e: CustomEvent<{ key: 'home_grid_v' | 'home_grid_vi' }>): Promise<void> {
+    const { key } = e.detail;
+    const label = key === 'home_grid_v' ? 'Home 5' : 'Home 6';
+    const nextValue = !this.shieldState.supplementary[key];
+
+    oigLog.debug('Control panel: supplementary toggle requested', { key });
+
+    const result = await this.confirmDialog.showDialog({
+      title: 'Zm\u011Bna dopl\u0148kov\u00E9ho re\u017Eimu',
+      message: `Chyst\u00E1te se p\u0159epnout <strong>"${label}"</strong>.<br><br>` +
+        `Tato zm\u011Bna ovlivn\u00ED chov\u00E1n\u00ED syst\u00E9mu a m\u016F\u017Ee trvat a\u017E 10 minut.`,
+      warning: 'Zm\u011Bna m\u016F\u017Ee trvat a\u017E 10 minut. B\u011Bhem t\u00E9to doby je syst\u00E9m v p\u0159echodn\u00E9m stavu.',
+      requireAcknowledgement: true,
+      confirmText: 'Potvrdit zm\u011Bnu',
+      cancelText: 'Zru\u0161it',
+    });
+
+    if (!result.confirmed) return;
+
+    if (!shieldController.shouldProceedWithQueue()) return;
+
+    const success = await shieldController.setSupplementaryToggle(key, nextValue);
+    if (!success) {
+      oigLog.warn('Supplementary toggle failed', { key });
+    }
+  }
+
+  // --------------------------------------------------------------------------
   // Event handlers — Queue removal
   // --------------------------------------------------------------------------
 
@@ -405,6 +440,20 @@ export class OigControlPanel extends LitElement {
               .buttonStates=${this.boxModeButtonStates}
               @mode-change=${this.onBoxModeChange}
             ></oig-box-mode-selector>
+          </div>
+
+          <div class="section-divider"></div>
+
+          <!-- Supplementary Toggles (Home 5 / Home 6) -->
+          <div class="selector-section">
+            <oig-supplementary-selector
+              .homeGridV=${this.supplementaryView.home_grid_v}
+              .homeGridVi=${this.supplementaryView.home_grid_vi}
+              .flexibilita=${this.supplementaryView.flexibilita}
+              .available=${this.supplementaryView.available}
+              .disabled=${this.supplementaryView.disabled}
+              @supplementary-toggle=${this.onSupplementaryToggle}
+            ></oig-supplementary-selector>
           </div>
 
           <div class="section-divider"></div>

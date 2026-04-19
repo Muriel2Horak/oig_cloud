@@ -269,6 +269,19 @@ describe('ShieldController service calls', () => {
     });
   });
 
+  it('setSupplementaryToggle sends the existing set_box_mode contract using home_grid_v/home_grid_vi fields', async () => {
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    await controller.setSupplementaryToggle('home_grid_vi', true);
+
+    expect(haClient.callService).toHaveBeenCalledWith('oig_cloud', 'set_box_mode', {
+      home_grid_vi: true,
+      acknowledgement: true,
+    });
+  });
+
   it('setGridDelivery sends mode-only payload when no limit provided', async () => {
     const { ShieldController } = await import('@/data/shield-controller');
     const controller = new ShieldController();
@@ -1473,5 +1486,143 @@ describe('ShieldController malformed activity attrs handling', () => {
 
     const state = controller.getState();
     expect(state.allRequests[0]?.service).toBe('set_grid_delivery');
+  });
+});
+
+describe('ShieldController supplementary toggle classification', () => {
+  beforeEach(() => {
+    mockStoreState.activityAttrs = { running_requests: [], queued_requests: [] };
+    mockStoreState.status = 'idle';
+    mockStoreState.queueCount = 0;
+    mockStoreState.boxMode = 'Home 1';
+    mockStoreState.gridMode = 'Omezeno';
+    mockStoreState.gridLimit = 5400;
+    mockStoreState.boilerMode = 'CBB';
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  it('queued supplementary toggle (with home_grid_v param) is classified as supplementary_toggle type', async () => {
+    mockStoreState.status = 'idle';
+    mockStoreState.queueCount = 1;
+    mockStoreState.activityAttrs = {
+      running_requests: [],
+      queued_requests: [
+        {
+          service: 'set_box_mode',
+          params: { home_grid_v: true, acknowledgement: true },
+          targets: [{ param: 'app', value: '1', entity_id: 'sensor.oig_2206237016_box_prm2_app', from: '0', to: '1', current: '0' }],
+          changes: ["prm2_app: '0' → '1'"],
+          queued_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.allRequests[0]?.type).toBe('supplementary_toggle');
+    expect(state.pendingServices.get('supplementary')).toBeDefined();
+    expect(state.pendingServices.has('box_mode')).toBe(false);
+  });
+
+  it('running supplementary toggle (detected via targets param=app) is classified as supplementary_toggle type', async () => {
+    mockStoreState.status = 'running';
+    mockStoreState.queueCount = 1;
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_box_mode',
+          targets: [{ param: 'app', value: '2', entity_id: 'sensor.oig_2206237016_box_prm2_app', from: '0', to: '2', current: '0' }],
+          changes: ["prm2_app: '0' → '2' (nyní: '0')"],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.allRequests[0]?.type).toBe('supplementary_toggle');
+    expect(state.pendingServices.get('supplementary')).toBeDefined();
+    expect(state.pendingServices.has('box_mode')).toBe(false);
+  });
+
+  it('supplementary toggle does NOT affect box mode button states', async () => {
+    mockStoreState.status = 'running';
+    mockStoreState.queueCount = 1;
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_box_mode',
+          targets: [{ param: 'app', value: '1', entity_id: 'sensor.oig_2206237016_box_prm2_app', from: '0', to: '1', current: '0' }],
+          changes: ["prm2_app: '0' → '1' (nyní: '0')"],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    expect(controller.getBoxModeButtonState('home_1')).toBe('active');
+    expect(controller.getBoxModeButtonState('home_2')).toBe('idle');
+    expect(controller.getBoxModeButtonState('home_3')).toBe('idle');
+    expect(controller.getBoxModeButtonState('home_ups')).toBe('idle');
+  });
+
+  it('supplementary targetValue is mapped from SUPPLEMENTARY_APP_VALUE_MAP when to=2 (Home 6)', async () => {
+    mockStoreState.status = 'idle';
+    mockStoreState.queueCount = 1;
+    mockStoreState.activityAttrs = {
+      running_requests: [],
+      queued_requests: [
+        {
+          service: 'set_box_mode',
+          params: { home_grid_vi: true, acknowledgement: true },
+          targets: [{ param: 'app', value: '2', entity_id: 'sensor.oig_2206237016_box_prm2_app', from: '0', to: '2', current: '0' }],
+          changes: ["prm2_app: '0' → '2'"],
+          queued_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.pendingServices.get('supplementary')).toBe('Home 6');
+  });
+
+  it('regular box mode change is still classified as mode_change type', async () => {
+    mockStoreState.status = 'running';
+    mockStoreState.queueCount = 1;
+    mockStoreState.activityAttrs = {
+      running_requests: [
+        {
+          service: 'set_box_mode',
+          changes: ["box_prms_mode: 'Home 1' → 'Home 2'"],
+          started_at: '2026-04-09T12:00:00Z',
+        },
+      ],
+      queued_requests: [],
+    };
+
+    const { ShieldController } = await import('@/data/shield-controller');
+    const controller = new ShieldController();
+    controller.refresh();
+
+    const state = controller.getState();
+    expect(state.allRequests[0]?.type).toBe('mode_change');
+    expect(state.pendingServices.has('box_mode')).toBe(true);
+    expect(state.pendingServices.has('supplementary')).toBe(false);
   });
 });
