@@ -17,6 +17,7 @@ import {
   ShieldQueueItem,
   QUEUE_SERVICE_MAP,
   QUEUE_VALUE_MAP,
+  SUPPLEMENTARY_APP_VALUE_MAP,
 } from './types';
 
 const u = unsafeCSS;
@@ -215,7 +216,10 @@ export class OigShieldQueue extends LitElement {
   // Formatting helpers (from V1 shield.js)
   // --------------------------------------------------------------------------
 
-  private formatServiceName(service: string): string {
+  private formatServiceName(service: string, type?: ShieldQueueItem['type']): string {
+    if (type === 'supplementary_toggle') {
+      return '\u2699\uFE0F Zm\u011Bna dopl\u0148kov\u00E9ho re\u017Eimu';
+    }
     return QUEUE_SERVICE_MAP[service] || service || 'N/A';
   }
 
@@ -231,8 +235,11 @@ export class OigShieldQueue extends LitElement {
       const colonIndex = left.indexOf(':');
       const fromRaw = colonIndex === -1 ? left : left.slice(colonIndex + 1);
 
-      const from = (QUEUE_VALUE_MAP[fromRaw.replace(/'/g, '').trim()] || fromRaw).replace(/'/g, '').trim();
-      const to = (QUEUE_VALUE_MAP[right.replace(/'/g, '').trim()] || right).replace(/'/g, '').trim();
+      const valueMap = left.includes('prm2_app') ? SUPPLEMENTARY_APP_VALUE_MAP : QUEUE_VALUE_MAP;
+
+      const from = (valueMap[fromRaw.replace(/'/g, '').trim()] || fromRaw).replace(/'/g, '').trim();
+      const rightWithoutCurrentSuffix = right.replace(/\s*\(nyní:[^)]*\)\s*$/, '');
+      const to = (valueMap[rightWithoutCurrentSuffix.replace(/'/g, '').trim()] || rightWithoutCurrentSuffix).replace(/'/g, '').trim();
 
       return `${from} \u2192 ${to}`;
     }).join(', ');
@@ -337,7 +344,7 @@ export class OigShieldQueue extends LitElement {
         <td class="${isRunning ? 'status-running' : 'status-queued'}">
           ${isRunning ? '\uD83D\uDD04 Zpracov\u00E1v\u00E1 se' : '\u23F3 \u010Cek\u00E1'}
         </td>
-        <td>${this.formatServiceName(item.service)}</td>
+        <td>${this.formatServiceName(item.service, item.type)}</td>
         <td class="hide-mobile" style="font-size: 11px;">${this.formatChanges(item.changes)}</td>
         <td class="queue-time">${time}</td>
         <td class="queue-time duration">${duration}</td>

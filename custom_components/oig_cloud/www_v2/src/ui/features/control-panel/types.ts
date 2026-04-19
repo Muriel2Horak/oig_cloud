@@ -167,7 +167,7 @@ export interface ShieldRequestParams {
 
 export interface ShieldQueueItem {
   id: string;
-  type: 'mode_change' | 'grid_delivery' | 'grid_limit' | 'boiler_mode' | 'battery_formating';
+  type: 'mode_change' | 'grid_delivery' | 'grid_limit' | 'boiler_mode' | 'battery_formating' | 'supplementary_toggle';
   status: 'queued' | 'running';
   service: string;
   targetValue: string;
@@ -201,6 +201,14 @@ export const QUEUE_VALUE_MAP: Record<string, string> = {
   'Manuální': 'Manuální',
 };
 
+export const SUPPLEMENTARY_APP_VALUE_MAP: Record<string, string> = {
+  '0': 'Žádný',
+  '1': 'Home 5',
+  '2': 'Home 6',
+  '3': 'Home 5 + Home 6',
+  '4': 'Flexibilita',
+};
+
 // ============================================================================
 // SUPPLEMENTARY STATE (box_mode_extended sensor)
 // ============================================================================
@@ -220,7 +228,7 @@ export interface SupplementaryState {
 // SHIELD STATE — reactive controller state
 // ============================================================================
 
-export type ShieldServiceType = 'box_mode' | 'boiler_mode' | 'grid_mode' | 'grid_limit';
+export type ShieldServiceType = 'box_mode' | 'boiler_mode' | 'grid_mode' | 'grid_limit' | 'supplementary';
 
 export interface ShieldState {
   /** Current shield status: idle | running */
