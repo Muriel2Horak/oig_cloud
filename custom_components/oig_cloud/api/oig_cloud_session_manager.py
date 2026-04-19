@@ -389,6 +389,10 @@ class OigCloudSessionManager:
             mode_value,
         )
 
+    async def set_box_prm2_app(self, value: int) -> Dict[str, Any]:
+        """Set box_prm2.app with retry logic."""
+        return await self._call_with_retry(self._api.set_box_prm2_app, value)
+
     async def set_grid_delivery_limit(
         self,
         limit: int,
