@@ -171,6 +171,11 @@ describe('OigShieldQueue', () => {
       const result = (element as any).formatChanges(["mode: 'home_1' → 'home_2'"]);
       expect(result).not.toContain("'");
     });
+
+    it('should strip the current suffix from supplementary queue changes', () => {
+      const result = (element as any).formatChanges(["prm2_app: '0' → '2' (nyní: '0')"]);
+      expect(result).toBe('Žádný → Home 6');
+    });
   });
 
   describe('formatTimestamp', () => {

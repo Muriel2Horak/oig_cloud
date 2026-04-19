@@ -144,7 +144,7 @@ export class ShieldController {
     if (!entity || entity.state === 'unavailable' || entity.state === 'unknown' || entity.state === '') {
       return { home_grid_v: false, home_grid_vi: false, flexibilita: false, available: false };
     }
-    const attrs = (entity.attributes ?? {}) as Record<string, unknown>;
+    const attrs: Record<string, unknown> = entity.attributes ?? {};
     return {
       home_grid_v: attrs['home_grid_v'] === true,
       home_grid_vi: attrs['home_grid_vi'] === true,

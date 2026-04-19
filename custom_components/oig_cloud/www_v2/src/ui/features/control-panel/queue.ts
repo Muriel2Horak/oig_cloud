@@ -223,6 +223,12 @@ export class OigShieldQueue extends LitElement {
     return QUEUE_SERVICE_MAP[service] || service || 'N/A';
   }
 
+  private stripCurrentSuffix(value: string): string {
+    const marker = '(nyní:';
+    const markerIndex = value.indexOf(marker);
+    return markerIndex === -1 ? value.trim() : value.slice(0, markerIndex).trim();
+  }
+
   private formatChanges(changes: string[]): string {
     if (!changes || changes.length === 0) return 'N/A';
 
@@ -237,9 +243,10 @@ export class OigShieldQueue extends LitElement {
 
       const valueMap = left.includes('prm2_app') ? SUPPLEMENTARY_APP_VALUE_MAP : QUEUE_VALUE_MAP;
 
-      const from = (valueMap[fromRaw.replace(/'/g, '').trim()] || fromRaw).replace(/'/g, '').trim();
-      const rightWithoutCurrentSuffix = right.replace(/\s*\(nyní:[^)]*\)\s*$/, '');
-      const to = (valueMap[rightWithoutCurrentSuffix.replace(/'/g, '').trim()] || rightWithoutCurrentSuffix).replace(/'/g, '').trim();
+      const fromKey = fromRaw.replaceAll("'", '').trim();
+      const toKey = this.stripCurrentSuffix(right).replaceAll("'", '').trim();
+      const from = valueMap[fromKey] || fromKey;
+      const to = valueMap[toKey] || toKey;
 
       return `${from} \u2192 ${to}`;
     }).join(', ');

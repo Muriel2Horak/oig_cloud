@@ -198,7 +198,7 @@ export class OigGridDeliverySelector extends LitElement {
     limited: 'idle',
   };
 
-  static styles = [
+  static readonly styles = [
     sharedButtonStyles,
     css`
       .mode-btn.pending-target {
