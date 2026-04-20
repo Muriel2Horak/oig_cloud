@@ -213,15 +213,12 @@ def get_battery_efficiency(sensor: Any) -> float:
         efficiency_pct = float(state.state)
         efficiency = efficiency_pct / 100.0
         if efficiency < 0.70 or efficiency > 1.0:
-            _LOGGER.warning(
-                "Unrealistic efficiency %.3f (%.1f%%), using fallback 0.882",
-                efficiency,
-                efficiency_pct,
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Unrealistic efficiency %.3f (%.1f%%), using fallback 0.882", efficiency,
+            efficiency_pct,)
             return 0.882
         return efficiency
     except (ValueError, TypeError) as err:
-        _LOGGER.error("Error parsing battery efficiency: %s", err)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Error parsing battery efficiency: %s", err)
         return 0.882
 
 
@@ -276,7 +273,7 @@ def get_current_mode(sensor: Any) -> int:
             CBB_MODE_HOME_III,
             CBB_MODE_HOME_UPS,
         ):
-            _LOGGER.warning("Invalid mode %s, using fallback HOME I", mode)
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Invalid mode %s, using fallback HOME I", mode)
             return CBB_MODE_HOME_I
 
         mode_name = CBB_MODE_NAMES.get(mode, f"UNKNOWN_{mode}")
@@ -284,7 +281,7 @@ def get_current_mode(sensor: Any) -> int:
         return mode
 
     except (ValueError, TypeError) as err:
-        _LOGGER.error("Error parsing CBB mode from '%s': %s", state.state, err)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Error parsing CBB mode from '%s': %s", state.state, err)
         return CBB_MODE_HOME_I
 
 
@@ -303,10 +300,7 @@ def get_boiler_available_capacity(sensor: Any) -> float:
     power_state = sensor._hass.states.get(boiler_power_sensor)
 
     if not power_state:
-        _LOGGER.warning(
-            "Boiler is enabled but %s not found, using default 2.8 kW",
-            boiler_power_sensor,
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Boiler is enabled but %s not found, using default 2.8 kW", boiler_power_sensor,)
         return 0.7
 
     try:
@@ -320,5 +314,5 @@ def get_boiler_available_capacity(sensor: Any) -> float:
         return capacity_kwh_15min
 
     except (ValueError, TypeError) as err:
-        _LOGGER.warning("Error parsing boiler power: %s, using default 0.7 kWh", err)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Error parsing boiler power: %s, using default 0.7 kWh", err)
         return 0.7

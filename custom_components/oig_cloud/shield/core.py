@@ -207,7 +207,11 @@ class ServiceShield:
                     self.hass.async_create_task(result)
                 # Pokud vrátí None (synchronní callback), nic nedělej
             except Exception as e:
-                _LOGGER.error(f"[OIG Shield] Chyba při volání callback: {e}")
+                _LOGGER.error(
+                    "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+                    "[OIG Shield] Chyba při volání callback: %s",
+                    e,
+                )
 
     def _values_match(self, current_value: Any, expected_value: Any) -> bool:
         """Porovná dvě hodnoty s normalizací."""
@@ -329,7 +333,10 @@ class ServiceShield:
 
         except Exception as e:
             _LOGGER.error(
-                f"[OIG Shield] Failed to register services: {e}", exc_info=True
+                "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+                "[OIG Shield] Failed to register services: %s",
+                e,
+                exc_info=True,
             )
             raise
 
@@ -589,7 +596,10 @@ class ModeTransitionTracker:
                 }
             except Exception as e:
                 self._logger.error(
-                    f"[ModeTracker] Error calculating stats for {scenario}: {e}"
+                    "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+                    "[ModeTracker] Error calculating stats for %s: %s",
+                    scenario,
+                    e,
                 )
 
         return result
@@ -636,7 +646,9 @@ class ModeTransitionTracker:
             state_list = await self._load_historical_states(sensor_id)
             if not state_list:
                 self._logger.warning(
-                    f"[ModeTracker] No historical data found for {sensor_id}"
+                    "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+                    "[ModeTracker] No historical data found for %s",
+                    sensor_id,
                 )
                 return
 
@@ -656,7 +668,10 @@ class ModeTransitionTracker:
 
         except Exception as e:
             self._logger.error(
-                f"[ModeTracker] Error loading historical data: {e}", exc_info=True
+                "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+                "[ModeTracker] Error loading historical data: %s",
+                e,
+                exc_info=True,
             )
 
     async def _load_historical_states(self, sensor_id: str) -> Optional[list[Any]]:

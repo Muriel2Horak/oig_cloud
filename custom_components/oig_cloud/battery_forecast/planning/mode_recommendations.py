@@ -46,7 +46,7 @@ def create_mode_recommendations(
             mode_home_ups=mode_home_ups,
         )
     except Exception as exc:
-        _LOGGER.error("Failed to create mode recommendations: %s", exc)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to create mode recommendations: %s", exc)
         return []
 
 

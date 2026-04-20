@@ -45,9 +45,7 @@ def initialize_sensor(
         sensor._box_id = "unknown"
 
     if sensor._box_id == "unknown":
-        _LOGGER.warning(
-            "Battery forecast sensor: unable to resolve box_id, using 'unknown' (sensor will be unstable)"
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Battery forecast sensor: unable to resolve box_id, using 'unknown' (sensor will be unstable)")
 
     # Entity attributes aligned with statistics sensors.
     sensor._attr_unique_id = f"oig_cloud_{sensor._box_id}_{sensor_type}"
@@ -124,10 +122,8 @@ def initialize_sensor(
             "Initialized storage helper: oig_cloud.battery_plans_%s", sensor._box_id
         )
     else:
-        _LOGGER.warning(
-            "Cannot initialize storage helper - hass not available yet. "
-            "Will retry in async_added_to_hass()."
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Cannot initialize storage helper - hass not available yet. "
+        "Will retry in async_added_to_hass().")
 
     # Storage helper for precomputed UI data.
     sensor._precomputed_store = None

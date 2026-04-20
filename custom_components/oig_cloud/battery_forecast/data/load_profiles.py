@@ -11,7 +11,7 @@ _LOGGER = logging.getLogger(__name__)
 def get_load_avg_sensors(sensor: Any) -> Dict[str, Any]:
     """Collect load_avg sensors mapped with time ranges and day types."""
     if not sensor._hass:
-        _LOGGER.warning("get_load_avg_sensors: hass not available")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "get_load_avg_sensors: hass not available")
         return {}
 
     from ...sensors.SENSOR_TYPES_STATISTICS import SENSOR_TYPES_STATISTICS
@@ -37,9 +37,7 @@ def get_load_avg_sensors(sensor: Any) -> Dict[str, Any]:
         try:
             value = float(state.state)
         except (ValueError, TypeError) as err:
-            _LOGGER.warning(
-                "Failed to parse %s value '%s': %s", entity_id, state.state, err
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to parse %s value '%s': %s", entity_id, state.state, err)
             continue
 
         load_sensors[entity_id] = {

@@ -62,7 +62,7 @@ def determine_block_status(
             return "current"
         return "planned"
     except Exception as err:
-        _LOGGER.warning("[determine_block_status] Error parsing times: %s", err)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "[determine_block_status] Error parsing times: %s", err)
         return "planned"
 
 

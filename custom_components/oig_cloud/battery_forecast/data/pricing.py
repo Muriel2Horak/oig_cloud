@@ -65,7 +65,7 @@ async def _resolve_spot_data(
 ) -> Dict[str, Any]:
     spot_data: Dict[str, Any] = {}
     if not sensor.coordinator:
-        _LOGGER.warning("Coordinator not available in get_spot_price_timeline")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Coordinator not available in get_spot_price_timeline")
     else:
         spot_data = sensor.coordinator.data.get("spot_prices", {})
 
@@ -209,7 +209,7 @@ def _build_price_timeline(
             datetime.fromisoformat(timestamp_str)
             timeline.append({"time": timestamp_str, "price": price})
         except ValueError:
-            _LOGGER.warning("Invalid timestamp in %s prices: %s", label, timestamp_str)
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Invalid timestamp in %s prices: %s", label, timestamp_str)
             continue
     return timeline
 
@@ -218,14 +218,14 @@ async def get_spot_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
     """Return 15-minute spot prices with fees applied."""
     spot_data = await _resolve_spot_data(sensor, price_type="spot")
     if not spot_data:
-        _LOGGER.warning("No spot price data available for forecast")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No spot price data available for forecast")
         return []
 
     raw_prices_dict = await _resolve_prices_dict(
         sensor, spot_data, key="prices15m_czk_kwh", fallback_type="spot"
     )
     if not raw_prices_dict:
-        _LOGGER.warning("No prices15m_czk_kwh in spot price data")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No prices15m_czk_kwh in spot price data")
         return []
 
     price_sensor = _get_price_sensor_entity(sensor, price_type="spot")
@@ -248,7 +248,7 @@ async def get_spot_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
                     sensor, raw_spot_price, target_datetime
                 )
         except ValueError:
-            _LOGGER.warning("Invalid timestamp in spot prices: %s", timestamp_str)
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Invalid timestamp in spot prices: %s", timestamp_str)
             continue
 
     timeline = _build_price_timeline(computed_prices, label="spot")
@@ -266,7 +266,7 @@ async def get_export_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
         sensor, price_type="export", fallback_to_spot=True
     )
     if not spot_data:
-        _LOGGER.warning("No spot price data available for export timeline")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No spot price data available for export timeline")
         return []
 
     export_prices_dict = await _resolve_prices_dict(
@@ -278,7 +278,7 @@ async def get_export_price_timeline(sensor: Any) -> List[Dict[str, Any]]:
             sensor, spot_data, key="prices15m_czk_kwh", fallback_type="spot"
         )
         if not spot_prices_dict:
-            _LOGGER.warning("No prices15m_czk_kwh for export price calculation")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No prices15m_czk_kwh for export price calculation")
             return []
 
         export_prices_dict = _derive_export_prices(

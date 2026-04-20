@@ -17,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 async def precompute_ui_data(sensor: Any) -> None:
     """Precompute UI data (detail_tabs + unified_cost_tile) and save to storage."""
     if not _has_precomputed_store(sensor):
-        _LOGGER.warning("⚠️ Precomputed storage not initialized, skipping")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "⚠️ Precomputed storage not initialized, skipping")
         return
 
     try:
@@ -50,7 +50,7 @@ async def precompute_ui_data(sensor: Any) -> None:
         )
 
     except Exception as err:
-        _LOGGER.error("Failed to precompute UI data: %s", err, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to precompute UI data: %s", err, exc_info=True)
     finally:
         sensor._last_precompute_at = dt_util.now()  # pylint: disable=protected-access
 
@@ -90,7 +90,7 @@ async def _build_detail_tabs(sensor: Any) -> Dict[str, Any]:
             sensor, plan="active", mode_names=CBB_MODE_NAMES
         )
     except Exception as err:
-        _LOGGER.error("Failed to build detail_tabs: %s", err, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to build detail_tabs: %s", err, exc_info=True)
         return {}
 
 
@@ -143,7 +143,7 @@ async def _run_precompute_task(sensor: Any) -> None:
     try:
         await precompute_ui_data(sensor)
     except Exception as err:  # pragma: no cover - logged inside
-        _LOGGER.error("[Precompute] Job failed: %s", err, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "[Precompute] Job failed: %s", err, exc_info=True)
     finally:
         sensor._precompute_task = None  # pylint: disable=protected-access
 

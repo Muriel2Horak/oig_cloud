@@ -195,7 +195,10 @@ class BalancingManager:
             _LOGGER.info("BalancingManager: async_setup() done")
         except Exception as err:
             _LOGGER.error(
-                "BalancingManager: async_setup() failed: %s", err, exc_info=True
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "BalancingManager: async_setup() failed: %s",
+                err,
+                exc_info=True,
             )
             raise
 
@@ -218,9 +221,7 @@ class BalancingManager:
                 f"BalancingManager: State loaded. Last balancing: {self._last_balancing_ts}"
             )
         except Exception as err:
-            _LOGGER.warning(
-                "BalancingManager: Failed to load state: %s (starting fresh)", err
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "BalancingManager: Failed to load state: %s (starting fresh)", err)
             # Start with clean state if load fails
             self._last_balancing_ts = None
             self._active_plan = None
@@ -251,7 +252,11 @@ class BalancingManager:
                 await self._coordinator.async_request_refresh()
                 _LOGGER.info("✅ Coordinator refresh scheduled successfully")
             except Exception as e:
-                _LOGGER.error(f"Failed to request coordinator refresh: {e}")
+                _LOGGER.error(
+                    "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                    "Failed to request coordinator refresh: %s",
+                    e,
+                )
                 _LOGGER.info(
                     "✅ Forecast sensor and storage updated with balancing plan"
                 )
@@ -300,7 +305,7 @@ class BalancingManager:
             return active_plan
 
         if force:
-            _LOGGER.warning("🔴 FORCE MODE enabled - creating forced balancing plan!")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "🔴 FORCE MODE enabled - creating forced balancing plan!")
             return await self._handle_forced_plan(manual_trigger=True)
 
         days_since_last = self._get_days_since_last_balancing()
@@ -341,10 +346,7 @@ class BalancingManager:
             return None
         forced_plan = await self._handle_forced_plan(manual_trigger=False)
         if forced_plan:
-            _LOGGER.warning(
-                "🔴 FORCED balancing after %.1f days! Health priority over cost.",
-                days_since_last,
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "🔴 FORCED balancing after %.1f days! Health priority over cost.", days_since_last,)
         return forced_plan
 
     async def _maybe_opportunistic_plan(
@@ -409,10 +411,7 @@ class BalancingManager:
             return self._active_plan
 
         if holding_end < now:
-            _LOGGER.warning(
-                "⏰ Holding period ended at %s. Clearing expired plan.",
-                holding_end.strftime("%H:%M"),
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "⏰ Holding period ended at %s. Clearing expired plan.", holding_end.strftime("%H:%M"),)
             self._active_plan = None
             await self._save_state()
             return None
@@ -429,10 +428,13 @@ class BalancingManager:
     ) -> Optional[BalancingPlan]:
         forced_plan = await self._create_forced_plan()
         if not forced_plan:
-            _LOGGER.error("Failed to create forced balancing plan!")
+            _LOGGER.error(
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "Failed to create forced balancing plan!"
+            )
             return None
         if manual_trigger:
-            _LOGGER.warning("🔴 FORCED balancing plan created (manual trigger)!")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "🔴 FORCED balancing plan created (manual trigger)!")
         await self._activate_plan(forced_plan)
         return forced_plan
 
@@ -522,13 +524,21 @@ class BalancingManager:
         except RuntimeError as e:
             # Recorder DB nemusí být hned po startu připravená
             if "database connection has not been established" in str(e).lower():
-                _LOGGER.warning(
-                    "Error checking balancing completion: Recorder not ready yet; skipping"
-                )
+                _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Error checking balancing completion: Recorder not ready yet; skipping")
                 return (False, None)
-            _LOGGER.error(f"Error checking balancing completion: {e}", exc_info=True)
+            _LOGGER.error(
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "Error checking balancing completion: %s",
+                e,
+                exc_info=True,
+            )
         except Exception as e:
-            _LOGGER.error(f"Error checking balancing completion: {e}", exc_info=True)
+            _LOGGER.error(
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "Error checking balancing completion: %s",
+                e,
+                exc_info=True,
+            )
 
         return (False, None)
 
@@ -713,7 +723,7 @@ class BalancingManager:
         _LOGGER.debug("_check_natural_balancing: Getting HYBRID timeline...")
         timeline = self._get_hybrid_timeline()
         if not timeline:
-            _LOGGER.warning("No HYBRID timeline available for natural balancing check")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No HYBRID timeline available for natural balancing check")
             return None
 
         _LOGGER.debug(f"Timeline has {len(timeline)} intervals")
@@ -774,7 +784,7 @@ class BalancingManager:
         # Check if SoC meets threshold
         current_soc_percent = await self._get_current_soc_percent()
         if current_soc_percent is None:
-            _LOGGER.warning("Cannot get current SoC for opportunistic balancing")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Cannot get current SoC for opportunistic balancing")
             return None
 
         soc_threshold = self._get_soc_threshold()
@@ -800,7 +810,7 @@ class BalancingManager:
         # 2. Find all possible holding windows in next 48h
         prices = await self._get_spot_prices_48h()
         if not prices:
-            _LOGGER.warning("No spot prices available for cost optimization")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No spot prices available for cost optimization")
             # Fall back to immediate
             holding_start = datetime.now() + timedelta(hours=1)
             holding_end = holding_start + timedelta(
@@ -947,10 +957,8 @@ class BalancingManager:
             current_soc_percent
         )
 
-        _LOGGER.warning(
-            f"🔴 FORCED balancing: Health priority! "
-            f"Cost={immediate_cost:.2f} CZK (not optimized)"
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + f"🔴 FORCED balancing: Health priority! "
+        f"Cost={immediate_cost:.2f} CZK (not optimized)")
 
         # Store costs for sensor
         self._last_immediate_cost = immediate_cost
@@ -1092,7 +1100,7 @@ class BalancingManager:
         # Get current spot price
         prices = await self._get_spot_prices_48h()
         if not prices:
-            _LOGGER.warning("No spot prices available for immediate cost calculation")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No spot prices available for immediate cost calculation")
             return 999.0  # High cost to prevent selection
 
         now = datetime.now()
@@ -1106,7 +1114,7 @@ class BalancingManager:
                 current_price = price
 
         if current_price is None:
-            _LOGGER.warning("Could not find current spot price")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Could not find current spot price")
             return 999.0
 
         # Calculate charge needed
@@ -1341,9 +1349,7 @@ class BalancingManager:
         state = self.hass.states.get(sensor_id)
 
         if not state or state.state in ["unknown", "unavailable"]:
-            _LOGGER.warning(
-                f"Battery capacity sensor {sensor_id} not available or unknown"
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + f"Battery capacity sensor {sensor_id} not available or unknown")
             return None
 
         try:
@@ -1372,13 +1378,13 @@ class BalancingManager:
         """
         await asyncio.sleep(0)
         if not self._forecast_sensor:
-            _LOGGER.warning("Forecast sensor not set, cannot get spot prices")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Forecast sensor not set, cannot get spot prices")
             return {}
 
         # Get active timeline from forecast sensor (_timeline_data attribute)
         timeline = getattr(self._forecast_sensor, "_timeline_data", None)
         if not timeline:
-            _LOGGER.warning("No active timeline available for spot prices")
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No active timeline available for spot prices")
             return {}
 
         prices = {}

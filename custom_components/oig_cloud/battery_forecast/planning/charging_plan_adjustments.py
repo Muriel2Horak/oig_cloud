@@ -45,10 +45,7 @@ def fix_minimum_capacity_violations(
         )
 
         if charging_index is None:
-            _LOGGER.warning(
-                "Cannot fix minimum violation at index %s - no suitable charging time found",
-                violation_index,
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Cannot fix minimum violation at index %s - no suitable charging time found", violation_index,)
             break
 
         charge_kwh = charging_power_kw / 4.0
@@ -76,7 +73,7 @@ def fix_minimum_capacity_violations(
         iteration += 1
 
     if iteration >= max_iterations:
-        _LOGGER.warning("Reached max iterations in minimum capacity fixing")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Reached max iterations in minimum capacity fixing")
 
     return timeline
 
@@ -119,9 +116,7 @@ def ensure_target_capacity_at_end(
         )
 
         if charging_index is None:
-            _LOGGER.warning(
-                "Cannot achieve target capacity - no suitable charging time found"
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Cannot achieve target capacity - no suitable charging time found")
             break
 
         charge_kwh = charging_power_kw / 4.0
@@ -148,7 +143,7 @@ def ensure_target_capacity_at_end(
         iteration += 1
 
     if iteration >= max_iterations:
-        _LOGGER.warning("Reached max iterations in target capacity ensuring")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Reached max iterations in target capacity ensuring")
 
     return timeline
 

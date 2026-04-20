@@ -134,13 +134,10 @@ def get_solar_for_timestamp(
 
     hourly_kw_value = _safe_float(hourly_kw)
     if hourly_kw_value is None:
-        _LOGGER.warning(
-            "Invalid solar value for %s: %s (type=%s), key=%s",
-            timestamp.strftime("%H:%M"),
-            hourly_kw,
-            type(hourly_kw),
-            hour_key,
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Invalid solar value for %s: %s (type=%s), key=%s", timestamp.strftime("%H:%M"),
+        hourly_kw,
+        type(hourly_kw),
+        hour_key,)
         return 0.0
 
     _log_solar_value(

@@ -541,7 +541,12 @@ async def start_call(
             domain, service, service_data=actual_params, blocking=blocking, context=context
         )
     except Exception as err:
-        _LOGGER.error("[OIG Shield] Service call %s failed: %s", service_name, err)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+            "[OIG Shield] Service call %s failed: %s",
+            service_name,
+            err,
+        )
         shield.pending.pop(service_name, None)
         shield.running = None
         await shield._log_event(
@@ -602,7 +607,12 @@ async def safe_call_service(
         return True  # pragma: no cover
 
     except Exception as err:
-        shield._logger.error("❌ Chyba při volání služby %s: %s", service_name, err)
+        shield._logger.error(
+            "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+            "❌ Chyba při volání služby %s: %s",
+            service_name,
+            err,
+        )
         return False
 
 
@@ -696,7 +706,10 @@ def _init_power_monitor(
         return None
     box_id = _resolve_box_id_for_power_monitor(shield)
     if not box_id:
-        _LOGGER.warning("[OIG Shield] Power monitor: box_id nenalezen!")
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+            "[OIG Shield] Power monitor: box_id nenalezen!"
+        )
         return None
 
     power_entity = _build_power_entity(box_id)
@@ -727,12 +740,14 @@ def _read_power_state(shield: Any, power_entity: str) -> Optional[float]:
     power_state = shield.hass.states.get(power_entity)
     if not power_state:
         _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
             "[OIG Shield] Power monitor: entita %s neexistuje!",
             power_entity,
         )
         return None
     if power_state.state in ["unknown", "unavailable"]:
         _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
             "[OIG Shield] Power monitor: entita %s je %s",
             power_entity,
             power_state.state,
@@ -741,7 +756,11 @@ def _read_power_state(shield: Any, power_entity: str) -> Optional[float]:
     try:
         return float(power_state.state)
     except (ValueError, TypeError) as err:
-        _LOGGER.warning("[OIG Shield] Nelze inicializovat power monitor: %s", err)
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+            "[OIG Shield] Nelze inicializovat power monitor: %s",
+            err,
+        )
         return None
 
 
@@ -849,10 +868,12 @@ async def _refresh_coordinator_after_call(shield: Any, service_name: str) -> Non
             )
         else:
             _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
                 "[OIG Shield] Coordinator nenalezen - entity se aktualizují až při příštím scheduled update!"
             )
     except Exception as err:
         _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
             "[OIG Shield] Chyba při refreshu coordinatoru: %s",
             err,
             exc_info=True,

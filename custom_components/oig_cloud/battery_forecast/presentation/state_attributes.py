@@ -51,10 +51,8 @@ def build_extra_state_attributes(
     _attach_mode_optimization(attrs, sensor)
 
     if debug_expose_baseline_timeline:
-        _LOGGER.warning(
-            "DEBUG MODE: Full timeline in attributes (280 KB)! "
-            "Set DEBUG_EXPOSE_BASELINE_TIMELINE=False for production."
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "DEBUG MODE: Full timeline in attributes (280 KB)! "
+        "Set DEBUG_EXPOSE_BASELINE_TIMELINE=False for production.")
         attrs["timeline_data"] = sensor._timeline_data
         if hasattr(sensor, "_baseline_timeline"):
             attrs["baseline_timeline_data"] = sensor._baseline_timeline

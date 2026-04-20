@@ -19,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 async def aggregate_daily(sensor: Any, date_str: str) -> bool:
     """Aggregate daily plan into a summary."""
     if not sensor._plans_store:
-        _LOGGER.error("Cannot aggregate - Storage Helper not initialized")
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Cannot aggregate - Storage Helper not initialized")
         return False
 
     _LOGGER.info("Aggregating daily plan for %s", date_str)
@@ -27,14 +27,12 @@ async def aggregate_daily(sensor: Any, date_str: str) -> bool:
     try:
         plan = await load_plan_from_storage(sensor, date_str)
         if not plan:
-            _LOGGER.warning(
-                "No detailed plan found for %s, skipping aggregation", date_str
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No detailed plan found for %s, skipping aggregation", date_str)
             return False
 
         intervals = plan.get("intervals", [])
         if not intervals:
-            _LOGGER.warning("Empty intervals for %s, skipping aggregation", date_str)
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Empty intervals for %s, skipping aggregation", date_str)
             return False
 
         total_cost = sum(iv.get("net_cost", 0) for iv in intervals)
@@ -98,12 +96,9 @@ async def aggregate_daily(sensor: Any, date_str: str) -> bool:
         return True
 
     except Exception as err:
-        _LOGGER.error(
-            "Error aggregating daily plan for %s: %s",
-            date_str,
-            err,
-            exc_info=True,
-        )
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Error aggregating daily plan for %s: %s", date_str,
+        err,
+        exc_info=True,)
         return False
 
 
@@ -112,7 +107,7 @@ async def aggregate_weekly(
 ) -> bool:
     """Aggregate weekly plan summary."""
     if not sensor._plans_store:
-        _LOGGER.error("Cannot aggregate - Storage Helper not initialized")
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Cannot aggregate - Storage Helper not initialized")
         return False
 
     _LOGGER.info(
@@ -129,9 +124,7 @@ async def aggregate_weekly(
         week_days = _collect_week_days(daily_plans, start_date, end_date)
 
         if not week_days:
-            _LOGGER.warning(
-                "No daily plans found for %s, skipping aggregation", week_str
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No daily plans found for %s, skipping aggregation", week_str)
             return False
 
         totals = _sum_weekly_totals(week_days)
@@ -162,12 +155,9 @@ async def aggregate_weekly(
         return True
 
     except Exception as err:
-        _LOGGER.error(
-            "Error aggregating weekly plan for %s: %s",
-            week_str,
-            err,
-            exc_info=True,
-        )
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Error aggregating weekly plan for %s: %s", week_str,
+        err,
+        exc_info=True,)
         return False
 
 
@@ -275,7 +265,10 @@ def _cleanup_old_weekly(data: Dict[str, Any]) -> List[str]:
 async def backfill_daily_archive_from_storage(sensor: Any) -> None:
     """Backfill daily plans archive from stored detailed plans."""
     if not sensor._plans_store:
-        _LOGGER.warning("Cannot backfill - no storage helper")
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            "Cannot backfill - no storage helper"
+        )
         return
 
     try:
@@ -319,4 +312,4 @@ async def backfill_daily_archive_from_storage(sensor: Any) -> None:
             _LOGGER.debug("No days needed backfilling")
 
     except Exception as err:
-        _LOGGER.error("Failed to backfill daily archive: %s", err, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to backfill daily archive: %s", err, exc_info=True)

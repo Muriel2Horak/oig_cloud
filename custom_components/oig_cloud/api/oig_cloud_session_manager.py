@@ -289,7 +289,12 @@ class OigCloudSessionManager:
         try:
             return self._api.get_session()
         except Exception as e:
-            _LOGGER.warning(f"Could not inspect session headers: {e}", exc_info=True)
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=incident][corr=na][run=na] "
+                "Could not inspect session headers: %s",
+                e,
+                exc_info=True,
+            )
             return None
 
     def _log_session_headers(self, session: Any) -> None:
@@ -518,7 +523,11 @@ class OigCloudSessionManager:
             except Exception as e:
                 self._stats["failed_requests"] += 1
                 _LOGGER.error(
-                    f"❌ Request #{request_num}: Unexpected error in {method.__name__}: {e}"
+                    "[OIG_CLOUD_ERROR][component=incident][corr=na][run=na] "
+                    "❌ Request #%s: Unexpected error in %s: %s",
+                    request_num,
+                    method.__name__,
+                    e,
                 )
                 raise
 

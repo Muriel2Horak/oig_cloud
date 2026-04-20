@@ -33,7 +33,7 @@ async def _load_storage_plans(sensor: Any) -> Dict[str, Any]:
         )
         return storage_plans
     except Exception as err:
-        _LOGGER.error("Failed to load Storage Helper data: %s", err)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to load Storage Helper data: %s", err)
         return {}
 
 
@@ -230,11 +230,8 @@ async def _load_historical_modes(
             source=source,
         )
     except Exception as err:
-        _LOGGER.error(
-            "Failed to fetch historical modes from Recorder for %s: %s",
-            date_str,
-            err,
-        )
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to fetch historical modes from Recorder for %s: %s", date_str,
+        err,)
         return {}
 
 
@@ -300,12 +297,9 @@ async def _maybe_repair_baseline(
     try:
         repaired = await sensor._create_baseline_plan(date_str)
     except Exception as err:
-        _LOGGER.error(
-            "Baseline rebuild failed for %s: %s",
-            date_str,
-            err,
-            exc_info=True,
-        )
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Baseline rebuild failed for %s: %s", date_str,
+        err,
+        exc_info=True,)
         repaired = False
     if repaired:
         refreshed = await _refresh_storage_after_repair(sensor, storage_plans, date_str)
@@ -325,12 +319,9 @@ async def _refresh_storage_after_repair(
         if not storage_invalid and storage_day and storage_day.get("intervals"):
             return refreshed_plans
     except Exception as err:
-        _LOGGER.error(
-            "Failed to reload baseline plan after rebuild for %s: %s",
-            date_str,
-            err,
-            exc_info=True,
-        )
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to reload baseline plan after rebuild for %s: %s", date_str,
+        err,
+        exc_info=True,)
     return storage_plans
 
 
@@ -425,7 +416,7 @@ def _add_past_planned_entries(
             time_str = f"{date_str}T{time_str}:00"
         interval_dt = _parse_iso_datetime(time_str)
         if not interval_dt:
-            _LOGGER.warning("Failed to parse time_str: %s", time_str)
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to parse time_str: %s", time_str)
             continue
         interval_dt_naive = (
             interval_dt.replace(tzinfo=None) if interval_dt.tzinfo else interval_dt
@@ -626,10 +617,7 @@ def _fallback_storage_intervals(
 ) -> List[Dict[str, Any]]:
     if past_planned or not storage_day or not storage_day.get("intervals"):
         return past_planned
-    _LOGGER.warning(
-        "Using baseline plan for %s despite invalid data (no fallback)",
-        date_str,
-    )
+    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Using baseline plan for %s despite invalid data (no fallback)", date_str,)
     return storage_day["intervals"]
 
 

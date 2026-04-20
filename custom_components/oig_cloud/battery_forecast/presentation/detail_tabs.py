@@ -72,7 +72,7 @@ def _resolve_tabs(tab: Optional[str]) -> List[str]:
         return ["yesterday", "today", "tomorrow"]
     if tab in ["yesterday", "today", "tomorrow"]:
         return [tab]
-    _LOGGER.warning("Invalid tab requested: %s, returning all tabs", tab)
+    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Invalid tab requested: %s, returning all tabs", tab)
     return ["yesterday", "today", "tomorrow"]
 
 

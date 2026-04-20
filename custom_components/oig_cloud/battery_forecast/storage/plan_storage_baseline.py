@@ -44,7 +44,7 @@ def is_baseline_plan_invalid(plan: Optional[Dict[str, Any]]) -> bool:
 async def create_baseline_plan(sensor: Any, date_str: str) -> bool:
     """Create baseline plan for a given date."""
     if not sensor._plans_store:
-        _LOGGER.error("Cannot create baseline - Storage Helper not initialized")
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Cannot create baseline - Storage Helper not initialized")
         return False
 
     _LOGGER.info("Creating baseline plan for %s", date_str)
@@ -74,12 +74,9 @@ async def create_baseline_plan(sensor: Any, date_str: str) -> bool:
         )
 
     except Exception as err:
-        _LOGGER.error(
-            "Error creating baseline plan for %s: %s",
-            date_str,
-            err,
-            exc_info=True,
-        )
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Error creating baseline plan for %s: %s", date_str,
+        err,
+        exc_info=True,)
         return False
 
 
@@ -96,7 +93,10 @@ async def _create_baseline_from_fallback(sensor: Any, date_str: str) -> bool:
                 {"baseline": True, "filled_intervals": None},
             )
 
-    _LOGGER.warning("No HYBRID timeline available - cannot create baseline plan")
+    _LOGGER.warning(
+        "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+        "No HYBRID timeline available - cannot create baseline plan"
+    )
     return False
 
 
@@ -314,7 +314,7 @@ async def _save_baseline_plan(
             filled_intervals_str,
         )
     else:
-        _LOGGER.error("Failed to save baseline plan for %s", date_str)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to save baseline plan for %s", date_str)
     return success
 
 
@@ -325,13 +325,13 @@ async def ensure_plan_exists(sensor: Any, date_str: str) -> bool:
         _LOGGER.debug("Plan exists for %s", date_str)
         return True
 
-    _LOGGER.warning("Plan missing for %s, attempting to create...", date_str)
+    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Plan missing for %s, attempting to create...", date_str)
 
     now = dt_util.now()
     today_str = now.strftime(DATE_FMT)
 
     if date_str != today_str:
-        _LOGGER.warning("Cannot create plan for %s (not today %s)", date_str, today_str)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Cannot create plan for %s (not today %s)", date_str, today_str)
         return False
 
     current_hour = now.hour
@@ -352,16 +352,13 @@ async def ensure_plan_exists(sensor: Any, date_str: str) -> bool:
         )
         return await create_baseline_plan(sensor, date_str)
 
-    _LOGGER.warning(
-        "Emergency baseline creation at %s for %s",
-        now.strftime("%H:%M"),
-        date_str,
-    )
+    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Emergency baseline creation at %s for %s", now.strftime("%H:%M"),
+    date_str,)
     success = await create_baseline_plan(sensor, date_str)
 
     if success:
         _LOGGER.info("Emergency baseline created for %s", date_str)
     else:
-        _LOGGER.error("Failed to create emergency baseline for %s", date_str)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to create emergency baseline for %s", date_str)
 
     return success

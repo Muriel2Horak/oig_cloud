@@ -246,11 +246,8 @@ def economic_charging_plan(
             )
         )
         if current_soc < flags.pre_peak_charging_canary_soc_threshold_kwh:
-            _LOGGER.warning(
-                "PRE_PEAK_CANARY: SOC %.2fkWh below canary threshold %.2fkWh",
-                current_soc,
-                flags.pre_peak_charging_canary_soc_threshold_kwh,
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "PRE_PEAK_CANARY: SOC %.2fkWh below canary threshold %.2fkWh", current_soc,
+            flags.pre_peak_charging_canary_soc_threshold_kwh,)
 
     candidates = get_candidate_intervals(
         timeline,
@@ -260,10 +257,7 @@ def economic_charging_plan(
     )
 
     if not candidates:
-        _LOGGER.warning(
-            "No economic charging candidates under max_price=%sCZK",
-            plan.max_charging_price,
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No economic charging candidates under max_price=%sCZK", plan.max_charging_price,)
         return timeline, {}
 
     _LOGGER.info("Found %s economic charging candidates", len(candidates))
@@ -385,7 +379,7 @@ def smart_charging_plan(
     )
 
     if iteration >= 100:
-        _LOGGER.warning("Reached max iterations in smart charging plan")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Reached max iterations in smart charging plan")
 
     final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
     target_achieved = final_capacity >= effective_target
@@ -429,12 +423,9 @@ def _apply_protection_override(
     if protection_shortage <= 0:
         return protection_soc_kwh, decision_trace
 
-    _LOGGER.warning(
-        "PROTECTION OVERRIDE: Need %.2fkWh to reach protection target %.2fkWh (current: %.2fkWh)",
-        protection_shortage,
-        protection_soc_kwh,
-        current_soc,
-    )
+    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "PROTECTION OVERRIDE: Need %.2fkWh to reach protection target %.2fkWh (current: %.2fkWh)", protection_shortage,
+    protection_soc_kwh,
+    current_soc,)
 
     candidates = get_candidate_intervals(
         timeline,
@@ -444,6 +435,7 @@ def _apply_protection_override(
     )
     if not candidates:
         _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
             "PROTECTION FAILED: No charging candidates under max_price=%sCZK",
             plan.max_charging_price,
         )
@@ -545,13 +537,10 @@ def _apply_economic_candidate(
                 effective_minimum_kwh=plan.effective_minimum_kwh,
                 max_charge_per_interval=charge_per_interval,
             )
-            _LOGGER.warning(
-                "DEATH VALLEY at %s: Need %.2fkWh (min_soc_wait=%.2fkWh, effective_min=%.2fkWh)",
-                timestamp,
-                min_charge,
-                min_soc_wait,
-                plan.effective_minimum_kwh,
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "DEATH VALLEY at %s: Need %.2fkWh (min_soc_wait=%.2fkWh, effective_min=%.2fkWh)", timestamp,
+            min_charge,
+            min_soc_wait,
+            plan.effective_minimum_kwh,)
             old_charge = timeline[idx].get("grid_charge_kwh", 0)
             timeline[idx]["grid_charge_kwh"] = old_charge + min_charge
             if timeline[idx].get("reason") == "normal":
@@ -786,10 +775,7 @@ def _apply_target_charging(
             charge_per_interval=charge_per_interval,
         )
         if not charging_candidates:
-            _LOGGER.warning(
-                "No more charging candidates available, shortage: %.2fkWh",
-                shortage,
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No more charging candidates available, shortage: %.2fkWh", shortage,)
             break
 
         best_candidate = charging_candidates[0]

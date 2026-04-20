@@ -419,7 +419,10 @@ def _append_load_for_price(
         load_forecast.append(load_kwh)
     except Exception as exc:  # pragma: no cover
         _LOGGER.warning(
-            "Failed to get load for %s: %s", spot_price.get("time"), exc
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            "Failed to get load for %s: %s",
+            spot_price.get("time"),
+            exc,
         )  # pragma: no cover
         load_forecast.append(0.125)  # pragma: no cover
 
@@ -716,7 +719,12 @@ def _run_planner(
                 exc_info=True,
             )
         else:
-            _LOGGER.error("Planner failed: %s", err, exc_info=True)
+            _LOGGER.error(
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "Planner failed: %s",
+                err,
+                exc_info=True,
+            )
         return [], None, []
 
 
@@ -926,7 +934,10 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
     adaptive_profiles = await adaptive_helper.get_adaptive_load_prediction()
 
     if not spot_prices:
-        _LOGGER.warning("No spot prices available - forecast will use fallback prices")
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            "No spot prices available - forecast will use fallback prices"
+        )
 
     load_forecast = await _build_load_forecast(
         sensor,
@@ -1024,7 +1035,12 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         _dispatch_forecast_updated(sensor)
 
     except Exception as err:
-        _LOGGER.error("Error updating battery forecast: %s", err, exc_info=True)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            "Error updating battery forecast: %s",
+            err,
+            exc_info=True,
+        )
     finally:
         # Mark bucket complete only if prerequisites were ready.
         try:

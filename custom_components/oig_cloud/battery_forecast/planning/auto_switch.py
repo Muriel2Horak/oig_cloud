@@ -116,11 +116,8 @@ def auto_mode_switch_enabled(sensor: Any) -> bool:
 
     if CONF_AUTO_MODE_SWITCH in data:
         enabled = bool(data.get(CONF_AUTO_MODE_SWITCH, False))
-        _LOGGER.warning(
-            "[AutoModeSwitch] Using legacy config source=data for %s=%s (entry.options missing key)",
-            CONF_AUTO_MODE_SWITCH,
-            enabled,
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "[AutoModeSwitch] Using legacy config source=data for %s=%s (entry.options missing key)", CONF_AUTO_MODE_SWITCH,
+        enabled,)
         return enabled
 
     _LOGGER.debug(
@@ -389,12 +386,9 @@ def get_mode_switch_offset(
 
         return float(offset_seconds)
     except Exception as err:  # pragma: no cover - defensive
-        _LOGGER.warning(
-            "[AutoModeSwitch] Failed to read mode switch offset %s→%s: %s",
-            from_mode,
-            to_mode,
-            err,
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "[AutoModeSwitch] Failed to read mode switch offset %s→%s: %s", from_mode,
+        to_mode,
+        err,)
         return fallback
 
 
@@ -486,12 +480,9 @@ async def execute_mode_change(
         )
         return context
     except Exception as err:
-        _LOGGER.error(
-            "[AutoModeSwitch] Failed to switch to %s: %s",
-            target_mode,
-            err,
-            exc_info=True,
-        )
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "[AutoModeSwitch] Failed to switch to %s: %s", target_mode,
+        err,
+        exc_info=True,)
         return context
 
 

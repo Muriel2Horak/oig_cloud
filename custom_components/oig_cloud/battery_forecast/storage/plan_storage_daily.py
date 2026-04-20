@@ -35,7 +35,7 @@ async def _ensure_baseline(sensor: Any, today_str: str, now: datetime) -> None:
     if baseline_created:
         _LOGGER.info("Baseline plan created in Storage Helper for %s", today_str)
     else:
-        _LOGGER.warning("Failed to create baseline plan for %s", today_str)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to create baseline plan for %s", today_str)
 
 
 async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
@@ -67,11 +67,8 @@ async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
                 len(sensor._daily_plans_archive),
             )
         except Exception as err:
-            _LOGGER.error(
-                "Failed to save daily plans archive: %s",
-                err,
-                exc_info=True,
-            )
+            _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to save daily plans archive: %s", err,
+            exc_info=True,)
 
 
 def _collect_today_timeline(
@@ -142,10 +139,7 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
             await _archive_daily_plan(sensor, now)
 
         if not _has_optimization_result(sensor):
-            _LOGGER.warning(
-                "No HYBRID optimization result available to fix daily plan for %s",
-                today_str,
-            )
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No HYBRID optimization result available to fix daily plan for %s", today_str,)
             sensor._daily_plan_state = _empty_daily_plan(today_str, now)
             return
 

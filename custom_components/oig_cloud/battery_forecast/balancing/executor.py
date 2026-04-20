@@ -119,7 +119,7 @@ class BalancingExecutor:
             holding_start = _parse_datetime(plan.get("holding_start"))
             holding_end = _parse_datetime(plan.get("holding_end"))
             if not holding_start or not holding_end:
-                _LOGGER.warning("Balancing plan missing holding_start or holding_end")
+                _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Balancing plan missing holding_start or holding_end")
                 return None
 
             preferred = _parse_preferred_intervals(
@@ -136,7 +136,11 @@ class BalancingExecutor:
             )
 
         except (ValueError, TypeError, KeyError) as e:
-            _LOGGER.error(f"Failed to parse balancing plan: {e}")
+            _LOGGER.error(
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "Failed to parse balancing plan: %s",
+                e,
+            )
             return None
 
     def apply_balancing(
@@ -461,7 +465,7 @@ def _build_balancing_result(
             f"May not reach 100% by deadline! "
             f"Can charge {expected_kwh:.1f} kWh, need {required_kwh:.1f} kWh"
         )
-        _LOGGER.warning("⚠️ BALANCING WARNING: %s", warning)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "⚠️ BALANCING WARNING: %s", warning)
 
     total_ups = len(set(charging_indices + holding_indices))
     _LOGGER.info(

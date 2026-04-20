@@ -347,7 +347,7 @@ class AdaptiveConsumptionHelper:
             return result
 
         except Exception as e:
-            _LOGGER.error("Error in adaptive load prediction: %s", e, exc_info=True)
+            _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Error in adaptive load prediction: %s", e, exc_info=True)
             return None
 
     def get_profiles_from_sensor(self) -> Dict[str, Any]:
@@ -372,7 +372,11 @@ class AdaptiveConsumptionHelper:
             if isinstance(profiles_list, dict):
                 return profiles_list
 
-            _LOGGER.warning("Unexpected profiles type: %s", type(profiles_list))
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                "Unexpected profiles type: %s",
+                type(profiles_list),
+            )
             return {}
 
         except Exception as e:

@@ -31,19 +31,19 @@ async def build_unified_cost_tile(
     try:
         today_data = await build_today_cost_data(self)
     except Exception as e:
-        _LOGGER.error("Failed to build today cost data: %s", e, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to build today cost data: %s", e, exc_info=True)
         today_data = _build_today_fallback(e)
 
     try:
         yesterday_data = get_yesterday_cost_from_archive(self, mode_names=mode_names)
     except Exception as e:
-        _LOGGER.error("Failed to get yesterday cost data: %s", e, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to get yesterday cost data: %s", e, exc_info=True)
         yesterday_data = _build_yesterday_fallback(e)
 
     try:
         tomorrow_data = await build_tomorrow_cost_data(self, mode_names=mode_names)
     except Exception as e:
-        _LOGGER.error("Failed to build tomorrow cost data: %s", e, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to build tomorrow cost data: %s", e, exc_info=True)
         tomorrow_data = _build_tomorrow_fallback(e)
 
     result = {

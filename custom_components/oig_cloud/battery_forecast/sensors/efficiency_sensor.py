@@ -196,11 +196,8 @@ class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
             if (
                 self._last_month_key == prev_key and self._last_month_metrics
             ):  # pragma: no cover
-                _LOGGER.warning(
-                    "Keeping last month efficiency for %s/%s from stored state (history missing)",
-                    prev_month,
-                    prev_year,
-                )
+                _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Keeping last month efficiency for %s/%s from stored state (history missing)", prev_month,
+                prev_year,)
             else:
                 self._reset_last_month_metrics(prev_key)
 
@@ -454,7 +451,7 @@ async def _load_month_metrics(
     try:
         from homeassistant.components.recorder.history import get_significant_states
     except ImportError:
-        _LOGGER.warning("Recorder component not available")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Recorder component not available")
         return None
 
     def _get_history(
@@ -543,7 +540,7 @@ async def _load_month_metrics_from_statistics(
         )
         from homeassistant.helpers.recorder import get_instance
     except ImportError:
-        _LOGGER.warning("Recorder statistics not available")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Recorder statistics not available")
         return None
 
     sensor_ids = {charge_sensor, discharge_sensor, battery_sensor}
@@ -552,7 +549,7 @@ async def _load_month_metrics_from_statistics(
     except (KeyError, AttributeError):
         recorder_instance = None
     if recorder_instance is None:
-        _LOGGER.warning("Recorder instance not available for efficiency statistics")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Recorder instance not available for efficiency statistics")
         return None
 
     try:
@@ -567,7 +564,7 @@ async def _load_month_metrics_from_statistics(
             {"sum", "state", "mean"},
         )
     except Exception as err:
-        _LOGGER.warning("Efficiency stats query failed: %s", err)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Efficiency stats query failed: %s", err)
         return None
 
     def _first_row(stat_id: str) -> Optional[Any]:
@@ -733,13 +730,10 @@ def _log_last_month_failure(
     battery_start: Optional[float],
     battery_end: Optional[float],
 ) -> None:
-    _LOGGER.warning(
-        "Incomplete data for %s/%s: charge=%s, discharge=%s, "
-        "battery_start=%s, battery_end=%s",
-        last_month,
-        last_month_year,
-        charge_wh,
-        discharge_wh,
-        battery_start,
-        battery_end,
-    )
+    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Incomplete data for %s/%s: charge=%s, discharge=%s, "
+    "battery_start=%s, battery_end=%s", last_month,
+    last_month_year,
+    charge_wh,
+    discharge_wh,
+    battery_start,
+    battery_end,)
