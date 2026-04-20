@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.34] - 2026-04-20
+
+### Fixed
+- Hybrid battery planning no longer suppresses grid charging just because later daytime solar can eventually refill the battery; hold-limit protection now still tops the battery up before delayed solar arrives.
+- `_force_target_before_index()` now evaluates reachability only within the enforced window, preventing future solar outside that window from disabling the low-SOC recovery path.
+- Added regression coverage for the delayed-solar / low-SOC hold scenario so the planner cannot leave the battery sitting near `hw_min` for too long without scheduling grid charge.
+
 ## [2.3.33] - 2026-04-19
 
 ### Added

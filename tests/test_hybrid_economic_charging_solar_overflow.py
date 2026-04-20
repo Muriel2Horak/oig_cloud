@@ -58,10 +58,12 @@ class DummyConfig:
     negative_price_strategy = NegativePriceStrategy.CHARGE_GRID
     round_trip_efficiency = 0.9
     price_hysteresis_czk = 0.0
+    hw_min_hold_hours = 0.0
 
 
 class DummySimConfig:
     ac_dc_efficiency = 0.9
+    min_capacity_kwh = 0.0
 
 
 class DummyStrategy:
@@ -357,4 +359,55 @@ def test_cloudy_fallback_does_not_trust_optimistic_solar():
         f"Cloudy fallback regression failed: Expected protective charging under cloudy conditions "
         f"but got no ADD decisions. Charging intervals: {charging_intervals}. "
         f"Planner must add protective charging when solar is insufficient."
+    )
+
+
+def test_future_solar_fill_does_not_skip_hw_min_hold_protection():
+    strategy = DummyStrategy()
+    strategy._planning_min = 0.5
+    strategy._target = 3.0
+    strategy.config.hw_min_hold_hours = 0.5
+    strategy.sim_config.min_capacity_kwh = 2.0
+
+    initial_battery_kwh = 2.2
+    prices = [0.3] * 12
+    solar_forecast = [0.0] * 6 + [0.9] * 6
+    consumption_forecast = [0.2] * 12
+
+    charging_intervals, _, _ = module.plan_charging_intervals(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        prices=prices,
+        balancing_plan=None,
+        negative_price_intervals=None,
+    )
+
+    trajectory = module.simulate_trajectory(
+        strategy,
+        initial_battery_kwh=initial_battery_kwh,
+        solar_forecast=solar_forecast,
+        consumption_forecast=consumption_forecast,
+        charging_intervals=charging_intervals,
+    )
+
+    max_hold_streak = 0
+    current_hold_streak = 0
+    for soc in trajectory:
+        if soc <= strategy.sim_config.min_capacity_kwh + 1e-6:
+            current_hold_streak += 1
+            max_hold_streak = max(max_hold_streak, current_hold_streak)
+        else:
+            current_hold_streak = 0
+
+    assert charging_intervals, (
+        "Planner must add grid charging before delayed solar arrives when battery would otherwise sit at or below hw_min for too long."
+    )
+    assert any(idx < 6 for idx in charging_intervals), (
+        f"Expected at least one pre-solar charging interval before index 6, got {sorted(charging_intervals)}."
+    )
+    assert max_hold_streak <= 2, (
+        f"Battery stayed at or below hw_min for {max_hold_streak} consecutive intervals despite hw_min_hold_hours=0.5. "
+        f"Trajectory: {trajectory}"
     )

@@ -176,7 +176,7 @@ def plan_charging_intervals(
         ):
             infeasible_reason = None
 
-        if _pre_economic_max_soc < _target_effective - eps_kwh and _apply_hw_min_hold_limit(
+        if _apply_hw_min_hold_limit(
             strategy,
             initial_battery_kwh=initial_battery_kwh,
             solar_forecast=solar_forecast,
@@ -1401,7 +1401,12 @@ def _force_target_before_index(
             consumption_forecast=consumption_forecast,
             charging_intervals=charging_intervals,
         )
-        max_soc = max(battery_trajectory) if battery_trajectory else initial_battery_kwh
+        limit_idx = max(0, min(limit, len(battery_trajectory)))
+        max_soc = (
+            max([initial_battery_kwh, *battery_trajectory[:limit_idx]])
+            if battery_trajectory and limit_idx > 0
+            else initial_battery_kwh
+        )
         if max_soc >= strategy._target - eps_kwh:
             break
         candidate = _find_cheapest_candidate(
