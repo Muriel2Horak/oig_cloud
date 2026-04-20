@@ -14,6 +14,7 @@ from homeassistant.util.dt import now as dt_now
 
 from . import dispatch as shield_dispatch
 from . import queue as shield_queue
+from .telemetry import render_shield_log_marker
 from . import validation as shield_validation
 
 _LOGGER = logging.getLogger(__name__)
@@ -174,7 +175,12 @@ class ServiceShield:
             _LOGGER.debug("Telemetry sent successfully")
 
         except Exception as e:
-            _LOGGER.error("Failed to log telemetry: %s", e, exc_info=True)
+            _LOGGER.error(
+                render_shield_log_marker(
+                    "ERROR", None, f"Failed to log telemetry: {e}"
+                ),
+                exc_info=True,
+            )
 
     def register_state_change_callback(self, callback: Callable[[], None]) -> None:
         """Registruje callback, který se zavolá při změně shield stavu."""
@@ -392,6 +398,7 @@ class ServiceShield:
         service: str,
         blocking: bool,
         context: Optional[Context],
+        trace_id: Optional[str] = None,
     ) -> None:
         await shield_dispatch.start_call(
             self,
@@ -403,6 +410,7 @@ class ServiceShield:
             service,
             blocking,
             context,
+            trace_id,
         )
 
     async def cleanup(self) -> None:

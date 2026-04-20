@@ -1,0 +1,16 @@
+2026-04-20 Task 8 Shield telemetry verification
+
+Command:
+`/repos/oig-cloud/.venv/bin/pytest tests/test_shield_decision_telemetry.py tests/test_shield_split_grid_delivery.py tests/test_shield_composite_box_mode.py tests/test_no_telemetry_normalization.py -q`
+
+Result:
+- collected 88 items
+- `tests/test_shield_decision_telemetry.py` ......
+- `tests/test_shield_split_grid_delivery.py` ............................... ..
+- `tests/test_shield_composite_box_mode.py` ............................
+- `tests/test_no_telemetry_normalization.py` .....................
+- `88 passed in 0.79s`
+
+Notes:
+- Covers the four wave-1-active Shield decision events and related Shield regressions.
+- Reserved Shield event names `shield_call_blocked` and `shield_override_applied` are not emitted by the tested decision paths.

@@ -11,6 +11,8 @@ from typing import Any, Dict, Optional, Tuple
 from homeassistant.core import callback
 from homeassistant.util.dt import now as dt_now
 
+from .telemetry import emit_shield_decision_event, render_shield_log_marker
+
 TIMEOUT_MINUTES = 15
 SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
 
@@ -149,7 +151,14 @@ async def _handle_timeout(shield: Any, service_name: str, info: Dict[str, Any]) 
         )
         return
 
-    _LOGGER.warning("[OIG Shield] Timeout pro službu %s", service_name)
+    correlation_id = info.get("trace_id") if isinstance(info.get("trace_id"), str) else None
+    _LOGGER.warning(
+        render_shield_log_marker(
+            "WARNING",
+            correlation_id,
+            f"Timeout pro službu {service_name}",
+        )
+    )
     await shield._log_event(
         "timeout",
         service_name,
@@ -159,10 +168,13 @@ async def _handle_timeout(shield: Any, service_name: str, info: Dict[str, Any]) 
             "original_states": info.get("original_states", {}),
         },
     )
-    await shield._log_telemetry(
-        "timeout",
-        service_name,
-        {"params": info["params"], "entities": info["entities"]},
+    await emit_shield_decision_event(
+        shield,
+        event_name="shield_call_timeout",
+        service_name=service_name,
+        correlation_id=correlation_id,
+        expected_entities=info.get("entities", {}),
+        detail_result_reason="timeout_exceeded",
     )
 
 

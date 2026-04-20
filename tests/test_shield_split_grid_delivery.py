@@ -376,21 +376,16 @@ class TestIntegrationSplitFlow:
         )
 
         original_call.assert_not_awaited()
-        shield._log_telemetry.assert_awaited_once()
+        shield._log_telemetry.assert_not_awaited()
         shield._log_event.assert_awaited_once()
 
-        telemetry_call = shield._log_telemetry.await_args
         event_call = shield._log_event.await_args
 
-        assert telemetry_call is not None
         assert event_call is not None
 
-        telemetry_payload = telemetry_call.args[2]
         event_payload = event_call.args[2]
 
-        assert telemetry_call.args[0] == "skipped"
         assert event_call.args[0] == "skipped"
-        assert telemetry_payload["reason"] == "already_completed"
         assert event_payload["entities"] == {"sensor.oig_123_box_prms_mode": "Home 1"}
 
 
