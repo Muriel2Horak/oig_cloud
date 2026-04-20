@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 import time
@@ -14,6 +15,11 @@ from homeassistant.helpers.debounce import Debouncer
 from homeassistant.util import dt as dt_util
 
 from ..const import DOMAIN
+from ..shared.cloud_contract import (
+    EventName,
+    build_producer_event,
+    resolve_telemetry_device_id,
+)
 from .local_mapper import (
     iter_local_entities,
     normalize_proxy_entity_id,
@@ -430,6 +436,7 @@ class DataSourceController:
         self._pending_snapshot_publish = False
         self._snapshot_publish_handle: Optional[Any] = None
         self._last_snapshot_publish_monotonic: Optional[float] = None
+        self._previous_effective_mode: Optional[str] = None
         self._debouncer = Debouncer(
             hass,
             _LOGGER,
@@ -675,6 +682,9 @@ class DataSourceController:
     @callback
     def _update_state(self, force: bool = False) -> tuple[bool, bool]:
         entry_id = self.entry.entry_id
+        entry_data = self.hass.data.setdefault(DOMAIN, {}).setdefault(entry_id, {})
+        previous_state = entry_data.get("data_source_state")
+        had_previous_state = isinstance(previous_state, DataSourceState)
         configured = get_configured_mode(self.entry)
         stale_minutes = get_proxy_stale_minutes(self.entry)
 
@@ -703,7 +713,11 @@ class DataSourceController:
             stale_minutes=stale_minutes,
         )
 
-        prev = get_data_source_state(self.hass, entry_id)
+        prev = (
+            previous_state
+            if had_previous_state
+            else get_data_source_state(self.hass, entry_id)
+        )
         changed = force or (
             prev.configured_mode != configured
             or prev.effective_mode != effective
@@ -717,6 +731,9 @@ class DataSourceController:
         )
 
         if changed:
+            self._previous_effective_mode = (
+                prev.effective_mode if had_previous_state else None
+            )
             new_state = DataSourceState(
                 configured_mode=configured,
                 effective_mode=effective,
@@ -724,14 +741,14 @@ class DataSourceController:
                 last_local_data=last_dt,
                 reason=reason,
             )
-            self.hass.data.setdefault(DOMAIN, {}).setdefault(entry_id, {})[
-                "data_source_state"
-            ] = new_state
+            entry_data["data_source_state"] = new_state
         return changed, mode_changed
 
     @callback
     def _on_effective_mode_changed(self) -> None:
         state = get_data_source_state(self.hass, self.entry.entry_id)
+        previous_effective_mode = self._previous_effective_mode
+        self._previous_effective_mode = state.effective_mode
         _LOGGER.info(
             "Data source mode switch: configured=%s effective=%s local_ok=%s (%s)",
             state.configured_mode,
@@ -755,9 +772,137 @@ class DataSourceController:
         except Exception as err:
             _LOGGER.debug("Failed to fire data source change event: %s", err)
 
+        transition = (previous_effective_mode, state.effective_mode)
+        if transition == (DATA_SOURCE_CLOUD_ONLY, DATA_SOURCE_LOCAL_ONLY):
+            self._schedule_fallback_incident(
+                event_name=EventName.INCIDENT_FALLBACK_CLOUD_TO_LOCAL.value,
+                previous_mode=DATA_SOURCE_CLOUD_ONLY,
+                current_mode=DATA_SOURCE_LOCAL_ONLY,
+            )
+        elif transition == (DATA_SOURCE_LOCAL_ONLY, DATA_SOURCE_CLOUD_ONLY):
+            self._schedule_fallback_incident(
+                event_name=EventName.INCIDENT_FALLBACK_LOCAL_TO_CLOUD.value,
+                previous_mode=DATA_SOURCE_LOCAL_ONLY,
+                current_mode=DATA_SOURCE_CLOUD_ONLY,
+            )
+
         if state.effective_mode == DATA_SOURCE_CLOUD_ONLY:
             # Ensure cloud data is fresh when falling back
             try:
                 self.hass.async_create_task(self.coordinator.async_request_refresh())
             except Exception as err:
                 _LOGGER.debug("Failed to schedule coordinator refresh: %s", err)
+
+    @callback
+    def _schedule_fallback_incident(
+        self,
+        *,
+        event_name: str,
+        previous_mode: str,
+        current_mode: str,
+    ) -> None:
+        try:
+            self.hass.async_create_task(
+                self._async_emit_fallback_incident(
+                    event_name=event_name,
+                    previous_mode=previous_mode,
+                    current_mode=current_mode,
+                )
+            )
+        except Exception as err:
+            _LOGGER.debug("Failed to schedule fallback incident telemetry: %s", err)
+
+    async def _async_emit_fallback_incident(
+        self,
+        *,
+        event_name: str,
+        previous_mode: str,
+        current_mode: str,
+    ) -> None:
+        telemetry_state = self._get_telemetry_state()
+        emitter = telemetry_state.get("emitter")
+        if emitter is None or not hasattr(emitter, "emit_cloud_event"):
+            return
+
+        dedupe_state = telemetry_state.get("incident_dedupe")
+        if not isinstance(dedupe_state, dict):
+            dedupe_state = {}
+            telemetry_state["incident_dedupe"] = dedupe_state
+
+        if dedupe_state.get(event_name):
+            return
+
+        device_id = resolve_telemetry_device_id(self.entry)
+        if device_id is None:
+            return
+
+        correlation_id = f"{self.entry.entry_id}:{event_name}"
+        reset_event_name = self._paired_incident_event_name(event_name)
+        dedupe_state[event_name] = True
+
+        try:
+            event = build_producer_event(
+                event_name=event_name,
+                occurred_at=dt_util.utcnow().isoformat(),
+                device_id=device_id,
+                install_id_hash=self._resolve_install_id_hash(),
+                integration_version=self._resolve_integration_version(),
+                run_id="na",
+                correlation_id=correlation_id,
+                diagnostics={
+                    "detail_data_source_from": previous_mode,
+                    "detail_data_source_to": current_mode,
+                },
+            )
+            emitted = bool(await emitter.emit_cloud_event(event))
+        except Exception as err:
+            dedupe_state[event_name] = False
+            _LOGGER.debug("Failed to emit data source fallback incident: %s", err)
+            return
+
+        if not emitted:
+            dedupe_state[event_name] = False
+            return
+
+        dedupe_state[reset_event_name] = False
+        if event_name == EventName.INCIDENT_FALLBACK_CLOUD_TO_LOCAL.value:
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=incident][corr=%s][run=na] Data source fallback emitted: %s -> %s",
+                correlation_id,
+                previous_mode,
+                current_mode,
+            )
+        else:
+            _LOGGER.info(
+                "[OIG_CLOUD_INFO][component=incident][corr=%s][run=na] Data source recovery emitted: %s -> %s",
+                correlation_id,
+                previous_mode,
+                current_mode,
+            )
+
+    def _get_telemetry_state(self) -> dict[str, Any]:
+        entry_data = self.hass.data.setdefault(DOMAIN, {}).setdefault(self.entry.entry_id, {})
+        telemetry_state = entry_data.get("telemetry")
+        if isinstance(telemetry_state, dict):
+            return telemetry_state
+
+        telemetry_state = {}
+        entry_data["telemetry"] = telemetry_state
+        return telemetry_state
+
+    def _resolve_install_id_hash(self) -> str:
+        core_uuid = str(self.hass.data.get("core.uuid", "")).strip()
+        return hashlib.sha256(core_uuid.encode("utf-8")).hexdigest()
+
+    def _resolve_integration_version(self) -> str:
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self.entry.entry_id, {})
+        version = entry_data.get("integration_version")
+        if isinstance(version, str) and version.strip():
+            return version.strip()
+        return "unknown"
+
+    @staticmethod
+    def _paired_incident_event_name(event_name: str) -> str:
+        if event_name == EventName.INCIDENT_FALLBACK_CLOUD_TO_LOCAL.value:
+            return EventName.INCIDENT_FALLBACK_LOCAL_TO_CLOUD.value
+        return EventName.INCIDENT_FALLBACK_CLOUD_TO_LOCAL.value

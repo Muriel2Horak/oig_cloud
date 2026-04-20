@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 from homeassistant.util import dt as dt_util
 
@@ -50,8 +52,19 @@ class DummyHass:
         self.bus = DummyBus()
         self.loop = loop
 
-    def async_create_task(self, _coro):
+    def async_create_task(self, _coro) -> Any:
         return None
+
+
+class AsyncTaskHass(DummyHass):
+    def __init__(self, states, loop=None):
+        super().__init__(states, loop=loop)
+        self.created_tasks = []
+
+    def async_create_task(self, coro) -> Any:
+        task = asyncio.create_task(coro)
+        self.created_tasks.append(task)
+        return task
 
 
 class DummyHandle:
@@ -83,6 +96,23 @@ def _make_entry(mode, box_id="123"):
         entry_id="entry1",
         options={"data_source_mode": mode, "box_id": box_id},
     )
+
+
+class RecordingEmitter:
+    def __init__(self):
+        self.events = []
+
+    async def emit_cloud_event(self, event):
+        self.events.append(dict(event))
+        return True
+
+
+async def _drain_created_tasks(hass: AsyncTaskHass) -> None:
+    if not hass.created_tasks:
+        return
+    tasks = list(hass.created_tasks)
+    hass.created_tasks.clear()
+    await asyncio.gather(*tasks)
 
 
 def test_init_data_source_state_local_ok():
@@ -302,6 +332,133 @@ def test_on_effective_mode_changed_handles_errors():
 
     hass.bus.async_fire = _raise_fire
     controller._on_effective_mode_changed()
+
+
+@pytest.mark.asyncio
+async def test_on_effective_mode_changed_skips_incident_without_previous_mode():
+    now = dt_util.utcnow()
+    hass = AsyncTaskHass([])
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
+    emitter = RecordingEmitter()
+    controller = module.DataSourceController(hass, entry, coordinator=None)
+    hass.data[module.DOMAIN][entry.entry_id] = {
+        "data_source_state": module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=now,
+            reason="local_ok",
+        ),
+        "telemetry": {"emitter": emitter},
+    }
+
+    controller._previous_effective_mode = None
+    controller._on_effective_mode_changed()
+    await _drain_created_tasks(hass)
+
+    assert emitter.events == []
+    assert "incident_dedupe" not in hass.data[module.DOMAIN][entry.entry_id]["telemetry"]
+
+
+@pytest.mark.asyncio
+async def test_on_effective_mode_changed_emits_fallback_cloud_to_local_once_until_recovery():
+    now = dt_util.utcnow()
+    hass = AsyncTaskHass([])
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
+    emitter = RecordingEmitter()
+    controller = module.DataSourceController(hass, entry, coordinator=None)
+    hass.data[module.DOMAIN][entry.entry_id] = {
+        "data_source_state": module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            local_available=True,
+            last_local_data=now,
+            reason="local_ok",
+        ),
+        "telemetry": {"emitter": emitter},
+    }
+
+    controller._previous_effective_mode = module.DATA_SOURCE_CLOUD_ONLY
+    controller._on_effective_mode_changed()
+    await _drain_created_tasks(hass)
+
+    assert [event["event_name"] for event in emitter.events] == [
+        "incident_fallback_cloud_to_local"
+    ]
+    assert emitter.events[0]["detail_data_source_from"] == module.DATA_SOURCE_CLOUD_ONLY
+    assert emitter.events[0]["detail_data_source_to"] == module.DATA_SOURCE_LOCAL_ONLY
+    dedupe = hass.data[module.DOMAIN][entry.entry_id]["telemetry"]["incident_dedupe"]
+    assert dedupe["incident_fallback_cloud_to_local"] is True
+    assert dedupe["incident_fallback_local_to_cloud"] is False
+
+    controller._previous_effective_mode = module.DATA_SOURCE_CLOUD_ONLY
+    controller._on_effective_mode_changed()
+    await _drain_created_tasks(hass)
+
+    assert len(emitter.events) == 1
+
+
+@pytest.mark.asyncio
+async def test_on_effective_mode_changed_emits_recovery_and_resets_failure_dedupe():
+    now = dt_util.utcnow()
+    hass = AsyncTaskHass([])
+    entry = _make_entry(module.DATA_SOURCE_LOCAL_ONLY)
+    emitter = RecordingEmitter()
+
+    class DummyCoordinator:
+        def __init__(self):
+            self.refresh_requests = 0
+
+        async def async_request_refresh(self):
+            self.refresh_requests += 1
+
+    coordinator = DummyCoordinator()
+    controller = module.DataSourceController(hass, entry, coordinator=coordinator)
+    hass.data[module.DOMAIN][entry.entry_id] = {
+        "data_source_state": module.DataSourceState(
+            configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+            effective_mode=module.DATA_SOURCE_CLOUD_ONLY,
+            local_available=False,
+            last_local_data=now,
+            reason="local_missing",
+        ),
+        "telemetry": {
+            "emitter": emitter,
+            "incident_dedupe": {"incident_fallback_cloud_to_local": True},
+        },
+    }
+
+    controller._previous_effective_mode = module.DATA_SOURCE_LOCAL_ONLY
+    controller._on_effective_mode_changed()
+    await _drain_created_tasks(hass)
+
+    assert [event["event_name"] for event in emitter.events] == [
+        "incident_fallback_local_to_cloud"
+    ]
+    assert emitter.events[0]["detail_data_source_from"] == module.DATA_SOURCE_LOCAL_ONLY
+    assert emitter.events[0]["detail_data_source_to"] == module.DATA_SOURCE_CLOUD_ONLY
+    assert coordinator.refresh_requests == 1
+    assert hass.data[module.DOMAIN][entry.entry_id]["telemetry"]["incident_dedupe"] == {
+        "incident_fallback_cloud_to_local": False,
+        "incident_fallback_local_to_cloud": True,
+    }
+
+    hass.data[module.DOMAIN][entry.entry_id]["data_source_state"] = module.DataSourceState(
+        configured_mode=module.DATA_SOURCE_LOCAL_ONLY,
+        effective_mode=module.DATA_SOURCE_LOCAL_ONLY,
+        local_available=True,
+        last_local_data=now,
+        reason="local_ok",
+    )
+
+    controller._previous_effective_mode = module.DATA_SOURCE_CLOUD_ONLY
+    controller._on_effective_mode_changed()
+    await _drain_created_tasks(hass)
+
+    assert [event["event_name"] for event in emitter.events] == [
+        "incident_fallback_local_to_cloud",
+        "incident_fallback_cloud_to_local",
+    ]
 
 
 @pytest.mark.asyncio
@@ -1258,4 +1415,3 @@ def test_on_any_state_change_tracks_legacy_local_entity_id():
 
     assert legacy_entity_id in controller._pending_local_entities
     assert controller._last_local_entity_update is not None
-
