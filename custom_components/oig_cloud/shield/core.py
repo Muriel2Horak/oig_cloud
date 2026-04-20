@@ -12,7 +12,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util.dt import now as dt_now
 
-from ..shared.logging import setup_simple_telemetry
+from ..shared.logging import resolve_no_telemetry, setup_simple_telemetry
 from . import dispatch as shield_dispatch
 from . import queue as shield_queue
 from . import validation as shield_validation
@@ -108,7 +108,7 @@ class ServiceShield:
         self.mode_tracker: Optional[Any] = None
 
         # Setup telemetrie pouze pro ServiceShield
-        if not entry.options.get("no_telemetry", False):
+        if not resolve_no_telemetry(entry):
             self._setup_telemetry()
 
     def _setup_telemetry(self) -> None:

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
@@ -17,9 +18,21 @@ else:
         ClientTimeout = None  # type: ignore
         TCPConnector = None  # type: ignore
 
-from ..const import OT_ENDPOINT, OT_HEADERS, OT_INSECURE
+from ..const import CONF_NO_TELEMETRY, OT_ENDPOINT, OT_HEADERS, OT_INSECURE
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def resolve_no_telemetry(entry: Any) -> bool:
+    """Resolve the canonical no_telemetry flag from entry data and options."""
+    data = getattr(entry, "data", {})
+    options = getattr(entry, "options", {})
+
+    data_map = data if isinstance(data, Mapping) else {}
+    options_map = options if isinstance(options, Mapping) else {}
+    data_value = data_map.get(CONF_NO_TELEMETRY, False)
+    options_value = options_map.get(CONF_NO_TELEMETRY, False)
+    return bool(data_value or options_value)
 
 
 def _redact_sensitive(value: Any) -> Any:

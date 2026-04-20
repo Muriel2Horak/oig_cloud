@@ -40,6 +40,7 @@ from .core.data_source import (
     get_data_source_state,
     init_data_source_state,
 )
+from .shared.logging import resolve_no_telemetry
 
 
 BalancingManager: Any = None
@@ -924,9 +925,7 @@ def _load_entry_auth_config(
     _LOGGER.debug("Username: %s", "***" if username else "MISSING")
     _LOGGER.debug("Password: %s", "***" if password else "MISSING")
 
-    no_telemetry = entry.data.get(CONF_NO_TELEMETRY, False) or entry.options.get(
-        CONF_NO_TELEMETRY, False
-    )
+    no_telemetry = resolve_no_telemetry(entry)
     standard_scan_interval = entry.options.get("standard_scan_interval") or entry.data.get(
         CONF_STANDARD_SCAN_INTERVAL, 30
     )
