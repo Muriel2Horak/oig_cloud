@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import re
 from typing import Any, Dict
@@ -215,9 +214,7 @@ async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
     _ = config
     _LOGGER.debug("OIG Cloud setup: starting")
 
-    # OPRAVA: Odstraníme neexistující import setup_telemetry
-    # Initialize telemetry - telemetrie se inicializuje přímo v ServiceShield
-    _LOGGER.debug("OIG Cloud setup: telemetry will be initialized in ServiceShield")
+    _LOGGER.debug("OIG Cloud setup: telemetry will be initialized per entry")
 
     # OPRAVA: ServiceShield se inicializuje pouze v async_setup_entry, ne zde
     # V async_setup pouze připravíme globální strukturu
@@ -1487,7 +1484,7 @@ async def async_setup_entry(
             _LOGGER.error("Username or password is missing from configuration")
             raise ConfigEntryAuthFailed("Missing credentials")
 
-        _LOGGER.debug("Telemetry handled only by ServiceShield, not main module")
+        _LOGGER.debug("Telemetry handled by the shared entry emitter")
 
         coordinator, session_manager = await _init_session_manager_and_coordinator(
             hass,
@@ -1612,6 +1609,15 @@ def _setup_service_shield_data(
 ) -> None:
     if not service_shield:
         return
+
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    telemetry_state = entry_data.get("telemetry")
+    telemetry_emitter = None
+    if isinstance(telemetry_state, dict):
+        telemetry_emitter = telemetry_state.get("emitter")
+    if hasattr(service_shield, "bind_telemetry_emitter"):
+        service_shield.bind_telemetry_emitter(telemetry_emitter)
+
     # Vytvoříme globální odkaz na ServiceShield pro senzory
     hass.data[DOMAIN]["shield"] = service_shield
 
@@ -1755,37 +1761,6 @@ def _setup_service_shield_monitoring(
     entry.async_on_unload(
         async_track_time_interval(hass, flush_statistics_store, timedelta(minutes=10))
     )
-
-
-async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
-    """Setup telemetry if enabled."""
-    await asyncio.sleep(0)
-    try:
-        _LOGGER.debug("Starting telemetry setup...")
-
-        email_hash = hashlib.sha256(username.encode("utf-8")).hexdigest()
-        hass_id = hashlib.sha256(hass.data["core.uuid"].encode("utf-8")).hexdigest()
-
-        _LOGGER.debug(
-            "Telemetry identifiers - Email hash: %s..., HASS ID: %s...",
-            email_hash[:16],
-            hass_id[:16],
-        )
-
-        from .shared.logging import setup_simple_telemetry
-
-        telemetry = setup_simple_telemetry(email_hash, hass_id)
-        if telemetry:
-            hass.data.setdefault(DOMAIN, {})["telemetry"] = telemetry
-            _LOGGER.info("Telemetry initialized (simple mode)")
-        else:
-            _LOGGER.debug("Telemetry initialization skipped (no handler)")
-
-    except Exception as e:
-        _LOGGER.warning("Failed to setup telemetry: %s", e, exc_info=True)
-        # Pokračujeme bez telemetrie
-
-
 async def async_unload_entry(
     hass: HomeAssistant, entry: config_entries.ConfigEntry
 ) -> bool:

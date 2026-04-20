@@ -12,7 +12,6 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util.dt import now as dt_now
 
-from ..shared.logging import resolve_no_telemetry, setup_simple_telemetry
 from . import dispatch as shield_dispatch
 from . import queue as shield_queue
 from . import validation as shield_validation
@@ -72,7 +71,7 @@ class ServiceShield:
         self.entry: ConfigEntry = entry
         self._logger: logging.Logger = logging.getLogger(__name__)
         self._active_tasks: Dict[str, Dict[str, Any]] = {}
-        self._telemetry_handler: Optional[Any] = None
+        self._telemetry_emitter: Optional[Any] = None
 
         # Inicializace základních atributů
         self.pending: Dict[str, Dict[str, Any]] = {}
@@ -107,38 +106,18 @@ class ServiceShield:
         # Mode Transition Tracker (bude inicializován později s box_id)
         self.mode_tracker: Optional[Any] = None
 
-        # Setup telemetrie pouze pro ServiceShield
-        if not resolve_no_telemetry(entry):
-            self._setup_telemetry()
-
-    def _setup_telemetry(self) -> None:
-        """Nastavit telemetrii pouze pro ServiceShield."""
-        try:
-            import hashlib
-
-            username = self.entry.data.get("username", "")
-            email_hash = hashlib.sha256(username.encode("utf-8")).hexdigest()
-            hass_id = hashlib.sha256(
-                self.hass.data["core.uuid"].encode("utf-8")
-            ).hexdigest()
-
-            # Použijeme setup_simple_telemetry místo setup_otel_logging
-            self._telemetry_handler = setup_simple_telemetry(email_hash, hass_id)
-
-            # Nastavit i pro zpětnou kompatibilitu
-            self.telemetry_handler = self._telemetry_handler
-
-            self._logger.info("ServiceShield telemetry initialized successfully")
-
-        except Exception as e:
-            self._logger.debug(f"Failed to setup ServiceShield telemetry: {e}")
-            # Pokud telemetrie selže, pokračujeme bez ní
-            self.telemetry_handler = None
-            self.telemetry_logger = None
+    def bind_telemetry_emitter(self, emitter: Optional[Any]) -> None:
+        """Attach the shared telemetry emitter after entry telemetry init."""
+        self._telemetry_emitter = emitter
+        self.telemetry_handler = emitter
+        if emitter is None:
+            self._logger.debug("ServiceShield telemetry emitter cleared")
+        else:
+            self._logger.debug("ServiceShield telemetry emitter bound")
 
     def _log_security_event(self, event_type: str, details: Dict[str, Any]) -> None:
         """Zalogovat bezpečnostní událost do telemetrie."""
-        if self._telemetry_handler:
+        if self._telemetry_emitter:
             security_logger = logging.getLogger(
                 "custom_components.oig_cloud.service_shield.security"
             )
@@ -159,7 +138,7 @@ class ServiceShield:
     async def _log_telemetry(
         self, event_type: str, service_name: str, data: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Log telemetry event using SimpleTelemetry."""
+        """Log telemetry event through the shared raw emitter tier."""
         try:
             _LOGGER.debug(
                 "Telemetry log start: event_type=%s service=%s",
@@ -167,34 +146,32 @@ class ServiceShield:
                 service_name,
             )
             _LOGGER.debug(
-                "Telemetry handler available: %s", self._telemetry_handler is not None
+                "Telemetry emitter available: %s", self._telemetry_emitter is not None
             )
 
-            if self._telemetry_handler:
-                # Připravíme telemetrii data
-                telemetry_data: Dict[str, Any] = {
-                    "timestamp": dt_now().isoformat(),
-                    "component": "service_shield",
-                }
+            if self._telemetry_emitter is None:
+                _LOGGER.debug("Telemetry emitter missing; skipping send")
+                return
 
-                if data:
-                    telemetry_data.update(data)
+            telemetry_data: Dict[str, Any] = {
+                "timestamp": dt_now().isoformat(),
+                "component": "service_shield",
+            }
 
-                _LOGGER.debug(
-                    "Telemetry data prepared: %s",
-                    telemetry_data,
-                )
+            if data:
+                telemetry_data.update(data)
 
-                # Odešleme do SimpleTelemetry
-                await self._telemetry_handler.send_event(
-                    event_type=event_type,
-                    service_name=service_name,
-                    data=telemetry_data,
-                )
+            telemetry_data["event_type"] = event_type
+            telemetry_data["service_name"] = service_name
 
-                _LOGGER.debug("Telemetry sent successfully")
-            else:
-                _LOGGER.debug("Telemetry handler missing; skipping send")
+            _LOGGER.debug(
+                "Telemetry data prepared: %s",
+                telemetry_data,
+            )
+
+            await self._telemetry_emitter.emit_raw_event(telemetry_data)
+
+            _LOGGER.debug("Telemetry sent successfully")
 
         except Exception as e:
             _LOGGER.error("Failed to log telemetry: %s", e, exc_info=True)
@@ -450,35 +427,9 @@ class ServiceShield:
             self._state_listener_unsub = None
             _LOGGER.info("[OIG Shield] State listener zrušen při cleanup")
 
-        if self._telemetry_handler:
-            try:
-                # Odeslat závěrečnou telemetrii
-                if self.telemetry_logger:
-                    self.telemetry_logger.info(
-                        "ServiceShield cleanup initiated",
-                        extra={
-                            "shield_data": {
-                                "event": "cleanup",
-                                "final_queue_length": len(self.queue),
-                                "final_pending_count": len(self.pending),
-                                "timestamp": dt_now().isoformat(),
-                            }
-                        },
-                    )
-
-                # Zavřít handler
-                if hasattr(self._telemetry_handler, "close"):
-                    await self._telemetry_handler.close()
-
-                # Odstranit handler z loggerů
-                shield_logger = logging.getLogger(
-                    "custom_components.oig_cloud.service_shield"
-                )
-                if self._telemetry_handler in shield_logger.handlers:
-                    shield_logger.removeHandler(self._telemetry_handler)
-
-            except Exception as e:
-                self._logger.debug(f"Error cleaning up telemetry: {e}")
+        self._telemetry_emitter = None
+        self.telemetry_handler = None
+        self.telemetry_logger = None
 
         self._logger.debug("[OIG Shield] ServiceShield cleaned up")
 

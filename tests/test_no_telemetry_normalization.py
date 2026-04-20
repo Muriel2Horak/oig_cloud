@@ -161,9 +161,25 @@ from custom_components.oig_cloud.const import (
     CONF_NO_TELEMETRY,
     CONF_PASSWORD,
     CONF_USERNAME,
+    DOMAIN,
 )
+import custom_components.oig_cloud.shield.core as shield_core_module
 from custom_components.oig_cloud.shield.core import ServiceShield
 from custom_components.oig_cloud.shared import logging as logging_module
+
+
+for _module_name in (
+    "custom_components.oig_cloud.shield.dispatch",
+    "custom_components.oig_cloud.shield.queue",
+    "custom_components.oig_cloud.shield.validation",
+    "custom_components.oig_cloud.shield.core",
+    "custom_components.oig_cloud.shield",
+    "custom_components.oig_cloud.core.coordinator",
+    "custom_components.oig_cloud.core.data_source",
+    "custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api",
+    "custom_components.oig_cloud",
+):
+    sys.modules.pop(_module_name, None)
 
 MISSING = object()
 
@@ -216,20 +232,134 @@ def test_resolve_no_telemetry_merges_entry_data_and_options(
         (True, True, True),
     ],
 )
-def test_core_and_shield_resolve_no_telemetry_identically(
+def test_service_shield_constructor_never_calls_legacy_simple_telemetry_setup(
     monkeypatch, data_flag, options_flag, expected
 ):
     entry = _make_entry(data_flag=data_flag, options_flag=options_flag)
     hass = SimpleNamespace(data={"core.uuid": "core-uuid"})
     setup_calls: list[str] = []
 
-    def _record_setup(self):
+    def _record_setup(*_args, **_kwargs):
         setup_calls.append("setup")
+        return object()
 
-    monkeypatch.setattr(ServiceShield, "_setup_telemetry", _record_setup)
+    monkeypatch.setattr(
+        shield_core_module,
+        "setup_simple_telemetry",
+        _record_setup,
+        raising=False,
+    )
 
     _, _, no_telemetry, _, _ = init_module._load_entry_auth_config(entry)
-    ServiceShield(hass, entry)
+    shield = ServiceShield(hass, entry)
 
     assert no_telemetry is expected
-    assert setup_calls == ([] if expected else ["setup"])
+    assert setup_calls == []
+    assert shield.telemetry_handler is None
+
+
+@pytest.mark.asyncio
+async def test_service_shield_logs_via_raw_emitter_after_lazy_binding(monkeypatch):
+    fixed_now = dt.datetime(2026, 4, 20, 12, 0, 0)
+    entry = _make_entry()
+    hass = SimpleNamespace(data={"core.uuid": "core-uuid"})
+
+    class RecordingEmitter:
+        def __init__(self):
+            self.raw_events = []
+            self.cloud_calls = 0
+
+        async def emit_raw_event(self, event):
+            self.raw_events.append(dict(event))
+            return True
+
+        async def emit_cloud_event(self, event):
+            self.cloud_calls += 1
+            return True
+
+    monkeypatch.setattr(shield_core_module, "dt_now", lambda: fixed_now)
+    monkeypatch.setattr(
+        shield_core_module,
+        "setup_simple_telemetry",
+        lambda *_a, **_k: None,
+        raising=False,
+    )
+
+    shield = ServiceShield(hass, entry)
+    emitter = RecordingEmitter()
+
+    await shield._log_telemetry("ignored", "svc", {"reason": "before_bind"})
+    shield.bind_telemetry_emitter(emitter)
+    await shield._log_telemetry("ignored", "svc", {"reason": "after_bind"})
+
+    assert emitter.cloud_calls == 0
+    assert emitter.raw_events == [
+        {
+            "timestamp": fixed_now.isoformat(),
+            "component": "service_shield",
+            "reason": "after_bind",
+            "event_type": "ignored",
+            "service_name": "svc",
+        }
+    ]
+
+
+def test_setup_service_shield_data_binds_entry_scoped_emitter(monkeypatch):
+    class DummyShield:
+        def __init__(self):
+            self.bound_emitter = None
+
+        def bind_telemetry_emitter(self, emitter):
+            self.bound_emitter = emitter
+
+        def get_shield_status(self):
+            return {"status": "ok"}
+
+        def get_queue_info(self):
+            return {"queue": 0}
+
+    entry_emitter = object()
+    other_emitter = object()
+    entry = SimpleNamespace(entry_id="entry-1", options={"box_id": "123"})
+    hass = SimpleNamespace(
+        data={
+            DOMAIN: {
+                "shield": SimpleNamespace(bound_emitter=other_emitter),
+                "entry-1": {"telemetry": {"emitter": entry_emitter}},
+                "entry-2": {"telemetry": {"emitter": other_emitter}},
+            }
+        }
+    )
+    shield = DummyShield()
+
+    init_module._setup_service_shield_data(hass, entry, SimpleNamespace(), shield)
+
+    assert shield.bound_emitter is entry_emitter
+    assert hass.data[DOMAIN]["shield"] is shield
+
+
+@pytest.mark.asyncio
+async def test_service_shield_log_telemetry_swallows_raw_emitter_failures(
+    monkeypatch, caplog
+):
+    entry = _make_entry()
+    hass = SimpleNamespace(data={"core.uuid": "core-uuid"})
+
+    class FailingEmitter:
+        async def emit_raw_event(self, event):
+            raise RuntimeError(f"boom: {event['event_type']}")
+
+    monkeypatch.setattr(
+        shield_core_module,
+        "setup_simple_telemetry",
+        lambda *_a, **_k: None,
+        raising=False,
+    )
+
+    shield = ServiceShield(hass, entry)
+    shield.bind_telemetry_emitter(FailingEmitter())
+
+    with caplog.at_level("ERROR"):
+        await shield._log_telemetry("timeout", "svc", {"reason": "test"})
+
+    assert "Failed to log telemetry" in caplog.text
