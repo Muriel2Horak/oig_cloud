@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -104,6 +105,254 @@ class DummySensor:
 
     def _create_task_threadsafe(self, *_args, **_kwargs):
         return None
+
+
+class RecordingPlannerEmitter:
+    def __init__(
+        self,
+        *,
+        order: list[str] | None = None,
+        should_raise: bool = False,
+        result: bool = True,
+    ) -> None:
+        self.order = order
+        self.should_raise = should_raise
+        self.result = result
+        self.events: list[dict[str, Any]] = []
+
+    async def emit_cloud_event(self, event: dict[str, Any]) -> bool:
+        if self.order is not None:
+            self.order.append("emit")
+        if self.should_raise:
+            raise RuntimeError("broker unavailable")
+        self.events.append(dict(event))
+        return self.result
+
+
+def _configure_planner_runtime(
+    monkeypatch,
+    sensor: DummySensor,
+    *,
+    fixed_now: datetime,
+    planner_result: tuple[list[dict[str, Any]], dict[str, Any] | None, list[dict[str, Any]]],
+    emitter: RecordingPlannerEmitter | None = None,
+    box_id: str | None = "123",
+    order: list[str] | None = None,
+) -> None:
+    entry_options = {"box_id": box_id} if box_id is not None else {}
+    sensor._config_entry = SimpleNamespace(entry_id="entry-1", options=entry_options)
+    sensor.hass = SimpleNamespace(
+        data={
+            "core.uuid": "core-uuid",
+            "oig_cloud": {
+                "entry-1": {
+                    "telemetry": {"emitter": emitter},
+                }
+            },
+        }
+    )
+    sensor._hass = sensor.hass
+
+    async def _fake_prepare(_sensor, _bucket_start):
+        return (
+            5.0,
+            10.0,
+            2.0,
+            [{"time": fixed_now.isoformat(), "price": 1.0}],
+            [{"time": fixed_now.isoformat(), "price": 0.5}],
+            {},
+            None,
+            SimpleNamespace(),
+            [0.25],
+        )
+
+    def _fake_run_planner(*_args, **_kwargs):
+        if order is not None:
+            order.append("run")
+        return planner_result
+
+    def _fake_apply(sensor_obj, timeline, mode_result, recommendations):
+        if order is not None:
+            order.append("apply")
+        sensor_obj._timeline_data = timeline
+        sensor_obj._mode_optimization_result = mode_result
+        sensor_obj._mode_recommendations = recommendations
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.battery_forecast.planning.forecast_update.dt_util.now",
+        lambda: fixed_now,
+    )
+    monkeypatch.setattr(
+        forecast_update_module, "_prepare_forecast_inputs", _fake_prepare
+    )
+    monkeypatch.setattr(
+        forecast_update_module, "_resolve_target_and_soc", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        forecast_update_module, "_build_solar_kwh_list", lambda *_a, **_k: [0.1]
+    )
+    monkeypatch.setattr(forecast_update_module, "_run_planner", _fake_run_planner)
+    monkeypatch.setattr(
+        forecast_update_module, "_apply_planner_results", _fake_apply
+    )
+    monkeypatch.setattr(
+        forecast_update_module, "_post_update_housekeeping", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        forecast_update_module, "_dispatch_forecast_updated", lambda *_a, **_k: None
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("planner_result", "expected_event_name", "expected_result"),
+    [
+        (
+            (
+                [{"recommended_mode": "HOME_I"}],
+                {
+                    "planning_min_kwh": 3.3,
+                    "target_kwh": 8.4,
+                    "optimal_modes": ["HOME_I"],
+                    "infeasible": False,
+                },
+                [{"mode": "Home 1"}],
+            ),
+            "planner_run_completed",
+            "success",
+        ),
+        (
+            (
+                [],
+                {
+                    "planning_min_kwh": 3.3,
+                    "target_kwh": 8.4,
+                    "optimal_modes": [],
+                    "infeasible": False,
+                },
+                [],
+            ),
+            "planner_run_empty",
+            "empty",
+        ),
+        (([], None, []), "planner_run_failed", "failed"),
+    ],
+)
+async def test_async_update_emits_one_planner_summary_before_apply_results(
+    monkeypatch,
+    planner_result,
+    expected_event_name,
+    expected_result,
+):
+    fixed_now = datetime(2025, 1, 1, 12, 7, 0, tzinfo=timezone.utc)
+    bucket_start = fixed_now.replace(minute=0, second=0, microsecond=0)
+    order: list[str] = []
+    emitter = RecordingPlannerEmitter(order=order)
+    sensor = DummySensor()
+
+    _configure_planner_runtime(
+        monkeypatch,
+        sensor,
+        fixed_now=fixed_now,
+        planner_result=planner_result,
+        emitter=emitter,
+        order=order,
+    )
+
+    await forecast_update_module.async_update(sensor)
+
+    assert order == ["run", "emit", "apply"]
+    assert len(emitter.events) == 1
+    assert emitter.events[0]["event_name"] == expected_event_name
+    assert emitter.events[0]["result"] == expected_result
+    assert emitter.events[0]["run_id"] == f"123:{bucket_start.isoformat()}"
+    assert emitter.events[0]["correlation_id"] == f"123:{bucket_start.isoformat()}"
+    assert emitter.events[0]["device_id"] == "123"
+    assert emitter.events[0]["metric_decisions_count"] == 0
+    assert "optimal_timeline" not in emitter.events[0]
+    assert "optimal_modes" not in emitter.events[0]
+    assert "params" not in emitter.events[0]
+    assert sensor._mode_optimization_result is planner_result[1]
+
+
+@pytest.mark.asyncio
+async def test_async_update_logs_marker_when_planner_telemetry_emit_fails_open(
+    monkeypatch, caplog
+):
+    fixed_now = datetime(2025, 1, 1, 12, 7, 0, tzinfo=timezone.utc)
+    run_id = "123:2025-01-01T12:00:00+00:00"
+    order: list[str] = []
+    emitter = RecordingPlannerEmitter(order=order, should_raise=True)
+    sensor = DummySensor()
+
+    _configure_planner_runtime(
+        monkeypatch,
+        sensor,
+        fixed_now=fixed_now,
+        planner_result=(
+            [{"recommended_mode": "HOME_I"}],
+            {
+                "planning_min_kwh": 3.3,
+                "target_kwh": 8.4,
+                "optimal_modes": ["HOME_I"],
+                "infeasible": False,
+            },
+            [],
+        ),
+        emitter=emitter,
+        order=order,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        await forecast_update_module.async_update(sensor)
+
+    assert order == ["run", "emit", "apply"]
+    assert sensor._timeline_data == [{"recommended_mode": "HOME_I"}]
+    assert (
+        f"[OIG_CLOUD_WARNING][component=planner][corr={run_id}][run={run_id}]"
+        in caplog.text
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_update_skips_planner_telemetry_without_device_id_and_logs_marker(
+    monkeypatch, caplog
+):
+    fixed_now = datetime(2025, 1, 1, 12, 7, 0, tzinfo=timezone.utc)
+    run_id = "123:2025-01-01T12:00:00+00:00"
+    order: list[str] = []
+    emitter = RecordingPlannerEmitter(order=order)
+    sensor = DummySensor()
+
+    _configure_planner_runtime(
+        monkeypatch,
+        sensor,
+        fixed_now=fixed_now,
+        planner_result=(
+            [{"recommended_mode": "HOME_I"}],
+            {
+                "planning_min_kwh": 3.3,
+                "target_kwh": 8.4,
+                "optimal_modes": ["HOME_I"],
+                "infeasible": False,
+            },
+            [],
+        ),
+        emitter=emitter,
+        box_id=None,
+        order=order,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        await forecast_update_module.async_update(sensor)
+
+    assert order == ["run", "apply"]
+    assert emitter.events == []
+    assert sensor._timeline_data == [{"recommended_mode": "HOME_I"}]
+    assert (
+        f"[OIG_CLOUD_WARNING][component=planner][corr={run_id}][run={run_id}]"
+        in caplog.text
+    )
 
 
 @pytest.mark.asyncio

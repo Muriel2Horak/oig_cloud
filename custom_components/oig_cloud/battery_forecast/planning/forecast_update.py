@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import math
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, List, Optional
 
 from homeassistant.util import dt as dt_util
 
+from ...const import DOMAIN
+from ...shared.cloud_contract import (
+    DETAIL_ENUMS,
+    build_failure_summary,
+    build_producer_event,
+    resolve_telemetry_device_id,
+)
+from ...shared.logging import resolve_no_telemetry
 from ..data.adaptive_consumption import AdaptiveConsumptionHelper
 from ..data.input import get_load_avg_for_timestamp, get_solar_for_timestamp
 from ..economic_planner import build_planner_decision_trace, plan_battery_schedule
@@ -25,6 +36,210 @@ from . import mode_guard as mode_guard_module
 _LOGGER = logging.getLogger(__name__)
 ISO_TZ_OFFSET = "+00:00"
 MODE_GUARD_MINUTES = 60
+_MANIFEST_PATH = Path(__file__).resolve().parents[2] / "manifest.json"
+_INTEGRATION_VERSION: str | None = None
+
+
+def _build_planner_run_id(sensor: Any, bucket_start: datetime) -> str:
+    box_id = str(getattr(sensor, "_box_id", "unknown") or "unknown").strip() or "unknown"
+    return f"{box_id}:{bucket_start.isoformat()}"
+
+
+def _planner_log_marker(level: str, correlation_id: str, run_id: str) -> str:
+    return f"[OIG_CLOUD_{level}][component=planner][corr={correlation_id}][run={run_id}]"
+
+
+def _resolve_planner_telemetry_emitter(sensor: Any) -> Any | None:
+    entry = getattr(sensor, "_config_entry", None)
+    entry_id = getattr(entry, "entry_id", None)
+    if not entry_id:
+        return None
+
+    hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+    hass_data = getattr(hass, "data", None)
+    if not isinstance(hass_data, dict):
+        return None
+
+    entry_data = hass_data.get(DOMAIN, {}).get(entry_id, {})
+    telemetry_state = entry_data.get("telemetry")
+    if not isinstance(telemetry_state, dict):
+        return None
+    return telemetry_state.get("emitter")
+
+
+def _resolve_install_id_hash(sensor: Any) -> str | None:
+    hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+    hass_data = getattr(hass, "data", None)
+    if not isinstance(hass_data, dict):
+        return None
+
+    core_uuid = str(hass_data.get("core.uuid", "")).strip()
+    if not core_uuid:
+        return None
+    return hashlib.sha256(core_uuid.encode("utf-8")).hexdigest()
+
+
+def _resolve_integration_version() -> str:
+    global _INTEGRATION_VERSION
+    if _INTEGRATION_VERSION is not None:
+        return _INTEGRATION_VERSION
+
+    try:
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        _INTEGRATION_VERSION = str(manifest.get("version", "unknown"))
+    except Exception:
+        _INTEGRATION_VERSION = "unknown"
+    return _INTEGRATION_VERSION
+
+
+def _classify_planner_event_name(timeline: list[dict[str, Any]], mode_result: Any) -> str:
+    if mode_result is None:
+        return "planner_run_failed"
+    if len(timeline) == 0:
+        return "planner_run_empty"
+    return "planner_run_completed"
+
+
+def _normalize_planner_mode_name(mode: Any) -> str | None:
+    raw_mode = CBB_MODE_NAMES.get(mode) if isinstance(mode, int) else mode
+    if not isinstance(raw_mode, str):
+        return None
+    normalized = raw_mode.strip().upper().replace("_", " ")
+    return " ".join(normalized.split()) or None
+
+
+def _normalize_planner_detail_reason(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in DETAIL_ENUMS["detail_reason"]:
+        return normalized
+    return None
+
+
+def _build_planner_summary_diagnostics(
+    sensor: Any,
+    timeline: list[dict[str, Any]],
+    mode_result: dict[str, Any] | None,
+) -> dict[str, Any]:
+    charging_metrics = dict(getattr(sensor, "_charging_metrics", {}) or {})
+    decision_trace = charging_metrics.get("planner_decision_trace")
+    decision_count = len(decision_trace) if isinstance(decision_trace, list) else 0
+
+    diagnostics: dict[str, Any] = {
+        "metric_decisions_count": decision_count,
+        "metric_guard_override_count": 0,
+    }
+
+    if mode_result is not None:
+        planning_min_kwh = mode_result.get("planning_min_kwh")
+        if isinstance(planning_min_kwh, (int, float)):
+            diagnostics["metric_planning_min_kwh"] = float(planning_min_kwh)
+
+        target_kwh = mode_result.get("target_kwh")
+        if isinstance(target_kwh, (int, float)):
+            diagnostics["metric_target_soc_kwh"] = float(target_kwh)
+
+        infeasible = mode_result.get("infeasible")
+        if isinstance(infeasible, bool):
+            diagnostics["metric_infeasible"] = infeasible
+
+        optimal_modes = mode_result.get("optimal_modes")
+        if isinstance(optimal_modes, list):
+            normalized_modes = [
+                _normalize_planner_mode_name(mode) for mode in optimal_modes
+            ]
+            diagnostics["metric_home_i_count"] = normalized_modes.count("HOME I")
+            diagnostics["metric_home_iii_count"] = normalized_modes.count("HOME III")
+            diagnostics["metric_home_ups_count"] = normalized_modes.count("HOME UPS")
+        else:
+            diagnostics["metric_home_i_count"] = 0
+            diagnostics["metric_home_iii_count"] = 0
+            diagnostics["metric_home_ups_count"] = 0
+
+        if isinstance(decision_trace, list) and decision_trace:
+            first_trace = decision_trace[0]
+            strategy = first_trace.get("strategy")
+            if isinstance(strategy, str):
+                normalized_strategy = strategy.strip().upper()
+                if normalized_strategy in DETAIL_ENUMS["detail_strategy"]:
+                    diagnostics["detail_strategy"] = normalized_strategy
+
+            reason = _normalize_planner_detail_reason(first_trace.get("reason"))
+            if reason is not None:
+                diagnostics["detail_reason"] = reason
+    else:
+        failure_class = charging_metrics.get("planner_failure_class")
+        if isinstance(failure_class, str) and failure_class.strip():
+            diagnostics["detail_failure_class"] = failure_class.strip()
+            diagnostics["detail_failure_summary"] = build_failure_summary(
+                failure_class.strip()
+            )
+
+    return diagnostics
+
+
+async def _emit_planner_summary_event(
+    sensor: Any,
+    *,
+    bucket_start: datetime,
+    timeline: list[dict[str, Any]],
+    mode_result: dict[str, Any] | None,
+) -> None:
+    entry = getattr(sensor, "_config_entry", None)
+    if entry is None:
+        return
+    if resolve_no_telemetry(entry):
+        return
+
+    run_id = _build_planner_run_id(sensor, bucket_start)
+    correlation_id = run_id
+    warning_marker = _planner_log_marker("WARNING", correlation_id, run_id)
+
+    emitter = _resolve_planner_telemetry_emitter(sensor)
+    if emitter is None:
+        return
+
+    device_id = resolve_telemetry_device_id(entry)
+    if device_id is None:
+        _LOGGER.warning(
+            "%s Planner telemetry skipped because device_id is unavailable",
+            warning_marker,
+        )
+        return
+
+    install_id_hash = _resolve_install_id_hash(sensor)
+    if install_id_hash is None:
+        _LOGGER.warning(
+            "%s Planner telemetry skipped because install_id_hash is unavailable",
+            warning_marker,
+        )
+        return
+
+    try:
+        event = build_producer_event(
+            event_name=_classify_planner_event_name(timeline, mode_result),
+            occurred_at=dt_util.now().isoformat(),
+            device_id=device_id,
+            install_id_hash=install_id_hash,
+            integration_version=_resolve_integration_version(),
+            run_id=run_id,
+            correlation_id=correlation_id,
+            diagnostics=_build_planner_summary_diagnostics(sensor, timeline, mode_result),
+        )
+        emit_result = await emitter.emit_cloud_event(event)
+        if emit_result is False:
+            _LOGGER.warning(
+                "%s Planner telemetry was not delivered by the configured emitter",
+                warning_marker,
+            )
+    except Exception as err:
+        _LOGGER.warning(
+            "%s Planner telemetry emission failed: %s",
+            warning_marker,
+            err,
+            exc_info=True,
+        )
 
 
 def _round_trip_to_directional(efficiency: float) -> float:
@@ -369,6 +584,9 @@ def _run_planner(
     solar_kwh_list: list[float],
     current_capacity: float,
     max_capacity: float,
+    *,
+    run_id: str | None = None,
+    correlation_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, list[dict[str, Any]]]:
     try:
         max_intervals = 36 * 4
@@ -403,6 +621,7 @@ def _run_planner(
 
         result = plan_battery_schedule(planner_inputs)
         charging_metrics = dict(getattr(sensor, "_charging_metrics", {}) or {})
+        charging_metrics.pop("planner_failure_class", None)
         charging_metrics["planner_decision_trace"] = build_planner_decision_trace(
             result.decisions, planner_inputs
         )
@@ -485,7 +704,19 @@ def _run_planner(
         }
         return timeline, mode_result, mode_recommendations
     except Exception as err:
-        _LOGGER.error("Planner failed: %s", err, exc_info=True)
+        charging_metrics = dict(getattr(sensor, "_charging_metrics", {}) or {})
+        charging_metrics["planner_failure_class"] = err.__class__.__name__
+        charging_metrics["planner_decision_trace"] = []
+        sensor._charging_metrics = charging_metrics
+        if run_id is not None and correlation_id is not None:
+            _LOGGER.error(
+                "%s Planner failed: %s",
+                _planner_log_marker("ERROR", correlation_id, run_id),
+                err,
+                exc_info=True,
+            )
+        else:
+            _LOGGER.error("Planner failed: %s", err, exc_info=True)
         return [], None, []
 
 
@@ -730,6 +961,8 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
         if _should_skip_bucket(sensor, bucket_start):
             return
 
+        planner_run_id = _build_planner_run_id(sensor, bucket_start)
+
         sensor._forecast_in_progress = True
 
         # Ziskat vsechna potrebna data
@@ -771,6 +1004,14 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             solar_kwh_list,
             current_capacity,
             max_capacity,
+            run_id=planner_run_id,
+            correlation_id=planner_run_id,
+        )
+        await _emit_planner_summary_event(
+            sensor,
+            bucket_start=bucket_start,
+            timeline=timeline,
+            mode_result=mode_result,
         )
         _apply_planner_results(sensor, timeline, mode_result, recommendations)
 
