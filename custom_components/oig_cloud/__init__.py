@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from typing import Any, Dict
@@ -308,6 +309,46 @@ async def _load_manifest_version(hass: HomeAssistant) -> str:
     except Exception as exc:
         _LOGGER.warning("Could not load version from manifest: %s", exc)
         return "unknown"
+
+
+def _resolve_install_id_hash(hass: HomeAssistant) -> str:
+    core_uuid = str(hass.data.get("core.uuid", "")).strip()
+    if not core_uuid:
+        return ""
+    return hashlib.sha256(core_uuid.encode("utf-8")).hexdigest()
+
+
+async def _build_cloud_telemetry_context(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    from .shared.cloud_contract import resolve_telemetry_device_id
+
+    return {
+        "device_id": resolve_telemetry_device_id(entry),
+        "install_id_hash": _resolve_install_id_hash(hass),
+        "integration_version": await _load_manifest_version(hass),
+    }
+
+
+async def _bind_session_manager_telemetry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    session_manager: Any,
+) -> None:
+    entry_data = hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
+    telemetry_state = entry_data.get("telemetry")
+    if not isinstance(telemetry_state, dict):
+        return
+
+    telemetry_state.setdefault("incident_dedupe", {})
+    telemetry_state["cloud_context"] = await _build_cloud_telemetry_context(hass, entry)
+
+    if hasattr(session_manager, "bind_telemetry_emitter"):
+        session_manager.bind_telemetry_emitter(
+            telemetry_state.get("emitter"),
+            telemetry_state,
+        )
 
 
 def _build_dashboard_url(
@@ -989,6 +1030,7 @@ async def _init_session_manager_and_coordinator(
     from .api.oig_cloud_session_manager import OigCloudSessionManager
 
     session_manager = OigCloudSessionManager(oig_api)
+    await _bind_session_manager_telemetry(hass, entry, session_manager)
 
     state = get_data_source_state(hass, entry.entry_id)
     should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
@@ -1486,6 +1528,10 @@ async def async_setup_entry(
 
         _LOGGER.debug("Telemetry handled by the shared entry emitter")
 
+        from .shared.emitter import async_setup_entry_telemetry
+
+        await async_setup_entry_telemetry(hass, entry)
+
         coordinator, session_manager = await _init_session_manager_and_coordinator(
             hass,
             entry,
@@ -1522,7 +1568,8 @@ async def async_setup_entry(
 
         telemetry_store = _init_telemetry_store(hass, entry, coordinator)
 
-        hass.data[DOMAIN][entry.entry_id] = {
+        entry_data = hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
+        entry_data.update({
             "coordinator": coordinator,
             "session_manager": session_manager,  # NOVÉ: Uložit session manager
             "notification_manager": notification_manager,
@@ -1543,11 +1590,7 @@ async def async_setup_entry(
                 "enable_boiler": entry.options.get("enable_boiler", False),  # NOVÉ
                 "enable_dashboard": dashboard_enabled,  # NOVÉ
             },
-        }
-
-        from .shared.emitter import async_setup_entry_telemetry
-
-        await async_setup_entry_telemetry(hass, entry)
+        })
 
         _setup_service_shield_data(hass, entry, coordinator, service_shield)
 

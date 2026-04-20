@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import logging
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -11,8 +13,14 @@ from custom_components.oig_cloud.api.oig_cloud_session_manager import (
     SESSION_TTL,
     OigCloudSessionManager,
 )
+from custom_components.oig_cloud.const import DOMAIN
 from custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api import (
     OigCloudAuthError,
+)
+
+
+INSTALL_ID_HASH = (
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 )
 
 
@@ -50,6 +58,34 @@ class DummyApi:
         return DummySession(headers={"User-Agent": "test"})
 
 
+class RecordingTelemetryEmitter:
+    def __init__(self):
+        self.cloud_events: list[dict[str, object]] = []
+
+    async def emit_cloud_event(self, event: dict[str, object]) -> bool:
+        self.cloud_events.append(dict(event))
+        return True
+
+
+class FailingTelemetryEmitter:
+    def __init__(self, error_message: str):
+        self.error_message = error_message
+
+    async def emit_cloud_event(self, event: dict[str, object]) -> bool:
+        raise RuntimeError(self.error_message)
+
+
+def _make_telemetry_state() -> dict[str, Any]:
+    return {
+        "incident_dedupe": {},
+        "cloud_context": {
+            "device_id": "12345",
+            "install_id_hash": INSTALL_ID_HASH,
+            "integration_version": "2.3.34",
+        },
+    }
+
+
 @pytest.mark.asyncio
 async def test_log_api_session_info_variants(monkeypatch):
     api = DummyApi()
@@ -70,7 +106,7 @@ async def test_log_api_session_info_variants(monkeypatch):
     await manager._log_api_session_info()
     assert session.closed is True
 
-    api.get_session = lambda: None
+    api.get_session = cast(Any, lambda: None)
     await manager._log_api_session_info()
 
 
@@ -128,7 +164,7 @@ async def test_call_with_retry_auth_error(monkeypatch):
     async def _raise():
         raise OigCloudAuthError("nope")
 
-    api.get_stats = _raise
+    api.get_stats = cast(Any, _raise)
 
     async def _sleep(_seconds):
         return None
@@ -150,7 +186,7 @@ async def test_call_with_retry_unexpected_error():
     async def _raise():
         raise RuntimeError("boom")
 
-    api.get_stats = _raise
+    api.get_stats = cast(Any, _raise)
 
     with pytest.raises(RuntimeError):
         await manager.get_stats()
@@ -184,7 +220,7 @@ async def test_log_api_session_info_with_errors(monkeypatch):
     def _raise_session():
         raise RuntimeError("boom")
 
-    api.get_session = _raise_session
+    api.get_session = cast(Any, _raise_session)
     await manager._log_api_session_info()
 
 
@@ -208,6 +244,199 @@ async def test_ensure_auth_success_updates_session(monkeypatch):
 
     assert manager._last_auth_time is not None
     api.authenticate.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_auth_failure_emits_once_until_success_resets_dedupe(caplog):
+    api = DummyApi()
+    api.authenticate = AsyncMock(
+        side_effect=[RuntimeError("fail-1"), RuntimeError("fail-2"), None, RuntimeError("fail-3")]
+    )
+    manager = OigCloudSessionManager(api)
+    emitter = RecordingTelemetryEmitter()
+    hass_data: dict[str, Any] = {
+        DOMAIN: {
+            "entry-1": {
+                "telemetry": _make_telemetry_state(),
+            }
+        }
+    }
+    telemetry_state: dict[str, Any] = hass_data[DOMAIN]["entry-1"]["telemetry"]
+
+    manager.bind_telemetry_emitter(emitter, telemetry_state)
+
+    with pytest.raises(RuntimeError, match="fail-1"):
+        await manager._ensure_auth()
+
+    with pytest.raises(RuntimeError, match="fail-2"):
+        await manager._ensure_auth()
+
+    assert [event["event_name"] for event in emitter.cloud_events] == [
+        "incident_auth_failed"
+    ]
+    assert emitter.cloud_events[0]["detail_incident_reason"] == "source_connection_error"
+    dedupe_state = telemetry_state["incident_dedupe"]
+    assert dedupe_state["incident_auth_failed"]["active"] is True
+    assert dedupe_state["incident_auth_failed"]["transition_count"] == 1
+    assert any(
+        record.message.startswith("[OIG_CLOUD_ERROR][component=incident][corr=")
+        and "[run=na]" in record.message
+        for record in caplog.records
+    )
+
+    await manager._ensure_auth()
+
+    assert dedupe_state["incident_auth_failed"]["active"] is False
+    manager._last_auth_time = None
+
+    with pytest.raises(RuntimeError, match="fail-3"):
+        await manager._ensure_auth()
+
+    assert [event["event_name"] for event in emitter.cloud_events] == [
+        "incident_auth_failed",
+        "incident_auth_failed",
+    ]
+    assert dedupe_state["incident_auth_failed"]["transition_count"] == 2
+    assert "fail-1" not in caplog.text
+    assert "fail-2" not in caplog.text
+    assert "fail-3" not in caplog.text
+    assert "error_class=RuntimeError" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_auth_failure_dedupe_state_is_entry_scoped():
+    api_one = DummyApi()
+    api_one.authenticate = AsyncMock(side_effect=RuntimeError("entry-one-fail"))
+    manager_one = OigCloudSessionManager(api_one)
+    emitter_one = RecordingTelemetryEmitter()
+
+    api_two = DummyApi()
+    api_two.authenticate = AsyncMock(side_effect=RuntimeError("entry-two-fail"))
+    manager_two = OigCloudSessionManager(api_two)
+    emitter_two = RecordingTelemetryEmitter()
+
+    hass_data: dict[str, Any] = {
+        DOMAIN: {
+            "entry-1": {"telemetry": _make_telemetry_state()},
+            "entry-2": {"telemetry": _make_telemetry_state()},
+        }
+    }
+
+    manager_one.bind_telemetry_emitter(emitter_one, hass_data[DOMAIN]["entry-1"]["telemetry"])
+    manager_two.bind_telemetry_emitter(emitter_two, hass_data[DOMAIN]["entry-2"]["telemetry"])
+
+    with pytest.raises(RuntimeError, match="entry-one-fail"):
+        await manager_one._ensure_auth()
+
+    with pytest.raises(RuntimeError, match="entry-two-fail"):
+        await manager_two._ensure_auth()
+
+    with pytest.raises(RuntimeError, match="entry-one-fail"):
+        await manager_one._ensure_auth()
+
+    assert [event["event_name"] for event in emitter_one.cloud_events] == [
+        "incident_auth_failed"
+    ]
+    assert [event["event_name"] for event in emitter_two.cloud_events] == [
+        "incident_auth_failed"
+    ]
+    assert (
+        hass_data[DOMAIN]["entry-1"]["telemetry"]["incident_dedupe"]
+        is not hass_data[DOMAIN]["entry-2"]["telemetry"]["incident_dedupe"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_retry_exhaustion_emits_once_until_success_resets_dedupe(
+    monkeypatch, caplog
+):
+    api = DummyApi()
+    manager = OigCloudSessionManager(api)
+    emitter = RecordingTelemetryEmitter()
+    telemetry_state = _make_telemetry_state()
+    manager.bind_telemetry_emitter(emitter, telemetry_state)
+
+    async def _noop():
+        return None
+
+    async def _sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(manager, "_ensure_auth", _noop)
+    monkeypatch.setattr(manager, "_rate_limit", _noop)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.asyncio.sleep", _sleep
+    )
+
+    async def always_fail_auth():
+        raise OigCloudAuthError("expired")
+
+    async def succeed():
+        return {"ok": True}
+
+    with pytest.raises(OigCloudAuthError, match="expired"):
+        await manager._call_with_retry(always_fail_auth)
+
+    with pytest.raises(OigCloudAuthError, match="expired"):
+        await manager._call_with_retry(always_fail_auth)
+
+    assert [event["event_name"] for event in emitter.cloud_events] == [
+        "incident_retry_exhausted"
+    ]
+    assert emitter.cloud_events[0]["detail_incident_reason"] == "retry_limit_reached"
+    dedupe_state = telemetry_state["incident_dedupe"]
+    assert dedupe_state["incident_retry_exhausted"]["active"] is True
+    assert dedupe_state["incident_retry_exhausted"]["transition_count"] == 1
+    assert any(
+        record.message.startswith("[OIG_CLOUD_WARNING][component=incident][corr=")
+        and "[run=na]" in record.message
+        for record in caplog.records
+    )
+    assert any(
+        record.message.startswith("[OIG_CLOUD_ERROR][component=incident][corr=")
+        and "[run=na]" in record.message
+        for record in caplog.records
+    )
+
+    assert await manager._call_with_retry(succeed) == {"ok": True}
+    assert dedupe_state["incident_retry_exhausted"]["active"] is False
+
+    with pytest.raises(OigCloudAuthError, match="expired"):
+        await manager._call_with_retry(always_fail_auth)
+
+    assert [event["event_name"] for event in emitter.cloud_events] == [
+        "incident_retry_exhausted",
+        "incident_retry_exhausted",
+    ]
+    assert dedupe_state["incident_retry_exhausted"]["transition_count"] == 2
+    assert "expired" not in caplog.text
+    assert "error_class=OigCloudAuthError" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_incident_emitter_failure_logs_canonical_warning_without_secret_text(
+    caplog,
+):
+    api = DummyApi()
+    api.authenticate = AsyncMock(side_effect=RuntimeError("auth-secret-token"))
+    manager = OigCloudSessionManager(api)
+    manager.bind_telemetry_emitter(
+        FailingTelemetryEmitter("broker-secret-token"),
+        _make_telemetry_state(),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(RuntimeError, match="auth-secret-token"):
+            await manager._ensure_auth()
+
+    assert "auth-secret-token" not in caplog.text
+    assert "broker-secret-token" not in caplog.text
+    assert any(
+        record.message.startswith("[OIG_CLOUD_WARNING][component=incident][corr=")
+        and "[run=na]" in record.message
+        and "incident telemetry dispatch failed" in record.message.lower()
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio

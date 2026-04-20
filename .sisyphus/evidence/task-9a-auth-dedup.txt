@@ -1,0 +1,18 @@
+Task 9a evidence: repeated auth/retry failures dedupe correctly
+
+Commands:
+1. .venv/bin/pytest tests/test_oig_cloud_session_manager.py -k "auth_failure_dedupe_state_is_entry_scoped or retry_exhaustion_emits_once_until_success_resets_dedupe"
+2. .venv/bin/pytest tests/test_oig_cloud_session_manager.py -k "incident_emitter_failure_logs_canonical_warning_without_secret_text"
+
+Result:
+- PASS
+- Verified auth dedupe is entry-scoped under `hass.data[DOMAIN][entry_id]["telemetry"]["incident_dedupe"]`
+- Verified `incident_retry_exhausted` emits once per failure transition and resets after successful API call
+- Verified repeated retry failures without recovery do not emit additional incident events
+- Verified incident emitter failure logs use canonical warning marker and do not expose raw secret-bearing exception text
+
+Supporting verification:
+- LSP diagnostics clean for:
+  - `custom_components/oig_cloud/__init__.py`
+  - `custom_components/oig_cloud/api/oig_cloud_session_manager.py`
+  - `tests/test_oig_cloud_session_manager.py`
