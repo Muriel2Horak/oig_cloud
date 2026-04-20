@@ -231,6 +231,10 @@
           "enable_pricing": "💰 Cenové senzory a spotové ceny z OTE",
           "enable_solar_forecast": "☀️ Solární předpověď výroby FVE",
           "enable_statistics": "📊 Statistiky a analýzy spotřeby",
+          "telemetry_mqtt_enabled": "📡 Odesílání telemetrie přes MQTT",
+          "telemetry_mqtt_host": "MQTT broker host",
+          "telemetry_mqtt_port": "MQTT broker port",
+          "telemetry_mqtt_prefix": "MQTT topic prefix",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
@@ -243,6 +247,10 @@
           "enable_pricing": "Doporučeno - spotové ceny z OTE + kalkulace nákladů",
           "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
           "enable_statistics": "Doporučeno - medián spotřeby, predikce",
+          "telemetry_mqtt_enabled": "Publikace telemetrie do lokálního MQTT brokeru; zůstává neaktivní, dokud ji nepovolíte a nenastavíte host",
+          "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
+          "telemetry_mqtt_port": "Standardní MQTT port je 1883",
+          "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         },
         "description": "{step}\n{progress}\n\nVyberte, které funkce chcete používat. Každý modul můžete později podrobně nastavit.",
@@ -556,6 +564,10 @@
           "enable_pricing": "💰 Cenové senzory a spotové ceny z OTE",
           "enable_solar_forecast": "☀️ Solární předpověď výroby FVE",
           "enable_statistics": "📊 Statistiky a analýzy spotřeby",
+          "telemetry_mqtt_enabled": "📡 Odesílání telemetrie přes MQTT",
+          "telemetry_mqtt_host": "MQTT broker host",
+          "telemetry_mqtt_port": "MQTT broker port",
+          "telemetry_mqtt_prefix": "MQTT topic prefix",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
@@ -568,6 +580,10 @@
           "enable_pricing": "Doporučeno - spotové ceny z OTE + kalkulace nákladů",
           "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
           "enable_statistics": "Doporučeno - medián spotřeby, predikce",
+          "telemetry_mqtt_enabled": "Publikace telemetrie do lokálního MQTT brokeru; zůstává neaktivní, dokud ji nepovolíte a nenastavíte host",
+          "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
+          "telemetry_mqtt_port": "Standardní MQTT port je 1883",
+          "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         },
         "description": "{step}\n{progress}\n\nVyberte, které funkce chcete používat. Každý modul můžete později podrobně nastavit.",

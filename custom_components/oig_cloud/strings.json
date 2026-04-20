@@ -44,6 +44,10 @@
           "enable_extended_sensors": "⚡ Rozšířené senzory (napětí, proudy, teploty)",
           "enable_chmu_warnings": "🌦️ Varování ČHMÚ (meteorologická výstraha)",
           "enable_dashboard": "📊 Webový dashboard s grafy",
+          "telemetry_mqtt_enabled": "📡 Odesílání telemetrie přes MQTT",
+          "telemetry_mqtt_host": "MQTT broker host",
+          "telemetry_mqtt_port": "MQTT broker port",
+          "telemetry_mqtt_prefix": "MQTT topic prefix",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
@@ -54,6 +58,10 @@
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
           "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
+          "telemetry_mqtt_enabled": "Publikace telemetrie do lokálního MQTT brokeru; zůstává neaktivní, dokud ji nepovolíte a nenastavíte host",
+          "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
+          "telemetry_mqtt_port": "Standardní MQTT port je 1883",
+          "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
@@ -333,6 +341,10 @@
           "enable_extended_sensors": "⚡ Rozšířené senzory (napětí, proudy, teploty)",
           "enable_chmu_warnings": "🌦️ Varování ČHMÚ (meteorologická výstraha)",
           "enable_dashboard": "📊 Webový dashboard s grafy",
+          "telemetry_mqtt_enabled": "📡 Odesílání telemetrie přes MQTT",
+          "telemetry_mqtt_host": "MQTT broker host",
+          "telemetry_mqtt_port": "MQTT broker port",
+          "telemetry_mqtt_prefix": "MQTT topic prefix",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
@@ -343,6 +355,10 @@
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
           "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
           "enable_dashboard": "Webové rozhraní s grafy přístupné v HA",
+          "telemetry_mqtt_enabled": "Publikace telemetrie do lokálního MQTT brokeru; zůstává neaktivní, dokud ji nepovolíte a nenastavíte host",
+          "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
+          "telemetry_mqtt_port": "Standardní MQTT port je 1883",
+          "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
       },
