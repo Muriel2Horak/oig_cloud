@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -97,6 +98,30 @@ FORBIDDEN_TOP_LEVEL_KEYS = frozenset(
 _CLASS_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
 _DIGITS_RE = re.compile(r"^[0-9]+$")
+_DETAILS_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_DETAILS_TOKEN_RE = re.compile(
+    r"\b(?=[a-z0-9]{20,}\b)(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]+\b",
+    re.IGNORECASE,
+)
+_DETAILS_SECRET_RE = re.compile(
+    r"\b(?:authorization|api_key|password|cookie|secret|bearer)\b",
+    re.IGNORECASE,
+)
+_ENTITY_ID_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
+
+MAX_DETAILS_JSON_DEPTH = 4
+MAX_DETAIL_STRING_LENGTH = 120
+
+FORBIDDEN_DETAILS_JSON_KEYS = frozenset(
+    {
+        *FORBIDDEN_TOP_LEVEL_KEYS,
+        "friendly_name",
+        "entity_name",
+        "display_name",
+        "name",
+        "title",
+    }
+)
 
 
 class CloudContractError(ValueError):
@@ -613,11 +638,77 @@ def _validate_exception_class_name(key: str, value: str) -> str:
 
 
 def _validate_details_json(value: Any) -> str:
-    if not isinstance(value, str):
-        raise CloudContractError("details_json must be a string")
-    if len(value.encode("utf-8")) > MAX_DETAILS_JSON_BYTES:
+    if isinstance(value, str):
+        normalized_value = value
+    else:
+        normalized_value = json.dumps(
+            _sanitize_details_json_value(value, depth=0),
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+    if len(normalized_value.encode("utf-8")) > MAX_DETAILS_JSON_BYTES:
         raise CloudContractError("details_json must be <= 2 KiB")
-    return value
+    return normalized_value
+
+
+def _sanitize_details_json_value(value: Any, *, depth: int) -> Any:
+    if depth > MAX_DETAILS_JSON_DEPTH:
+        raise CloudContractError("details_json must not exceed 4 nested levels")
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return _sanitize_details_json_string(value)
+    if isinstance(value, Mapping):
+        return _sanitize_details_json_mapping(value, depth=depth)
+    raise CloudContractError(
+        "details_json must contain only nested objects with scalar values"
+    )
+
+
+def _sanitize_details_json_mapping(value: Mapping[str, Any], *, depth: int) -> dict[str, Any]:
+    if _looks_like_home_assistant_state_payload(value):
+        raise CloudContractError("details_json must not contain Home Assistant state payloads")
+
+    sanitized: dict[str, Any] = {}
+    for raw_key, raw_value in value.items():
+        key = _normalize_details_json_key(raw_key)
+        if key in FORBIDDEN_DETAILS_JSON_KEYS:
+            continue
+        sanitized[key] = _sanitize_details_json_value(raw_value, depth=depth + 1)
+
+    return sanitized
+
+
+def _normalize_details_json_key(value: Any) -> str:
+    if not isinstance(value, str):
+        raise CloudContractError("details_json keys must be strings")
+    normalized_value = value.strip()
+    if not normalized_value or not _DETAILS_KEY_RE.fullmatch(normalized_value):
+        raise CloudContractError("details_json keys must use bounded snake_case names")
+    return normalized_value
+
+
+def _sanitize_details_json_string(value: str) -> str:
+    normalized_value = value.strip()
+    if _DETAILS_TOKEN_RE.search(normalized_value) or _DETAILS_SECRET_RE.search(
+        normalized_value
+    ):
+        return "***REDACTED***"
+    if _ENTITY_ID_RE.fullmatch(normalized_value):
+        return "***REDACTED***"
+    if len(normalized_value) > MAX_DETAIL_STRING_LENGTH:
+        return f"{normalized_value[:MAX_DETAIL_STRING_LENGTH]}..."
+    return normalized_value
+
+
+def _looks_like_home_assistant_state_payload(value: Mapping[str, Any]) -> bool:
+    keys = {key for key in value if isinstance(key, str)}
+    return (
+        {"entity_id", "state"}.issubset(keys)
+        or {"entity_id", "attributes"}.issubset(keys)
+        or {"state", "last_changed", "last_updated"}.issubset(keys)
+    )
 
 
 CANONICAL_MQTT_PAYLOAD_EXAMPLE = build_sink_payload(
