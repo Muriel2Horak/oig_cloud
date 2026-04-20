@@ -3,3 +3,13 @@
 - `ssh ha` lands in the HA SSH add-on environment (`a0d7b954-ssh`); a direct Python socket probe from there to `10.0.0.161:1883` succeeds.
 - Grafana is reachable from the agent at `http://10.0.0.161:3000/login`; the `docker-vm` hostname itself is not browser-resolvable from this environment.
 - `promtail-config-haos.yml` already contains the intended HA syslog job with `job=homeassistant` and `host=haos` labels.
+- 2026-04-20: `WizardMixin._get_modules_schema()` is the shared place for both config-flow and options-flow module-step defaults, so adding MQTT controls there automatically surfaces them in both flows.
+- 2026-04-20: `OigCloudOptionsFlowHandler.__init__()` already hydrates `_wizard_data` from `entry.options`; normalizing MQTT defaults there keeps reconfigure flows stable even for older entries missing the new keys.
+- 2026-04-20: Loading `cloud_contract.py` in tests via `importlib.util.spec_from_file_location()` avoids importing `custom_components.oig_cloud.__init__`, so contract tests stay runnable even when the local environment does not have Home Assistant installed.
+- 2026-04-20: Telegraf `mqtt_consumer` adds a `topic` tag by default; cloud ingestion must set `topic_tag = ''` or `oig/cloud-telemetry/<device_id>` leaks an extra identifier tag into `cloud_telemetry_events`.
+- 2026-04-20: `influx query` renders the cloud `result` tag as the CLI result-set label (`Result: success`) instead of a normal visible column, so tag verification should use the result header plus the remaining tag columns.
+- 2026-04-20: The MQTT publisher tests can stay dependency-light by loading `shared/mqtt_publisher.py` directly from disk and driving it with a fake paho client instead of importing the full HA integration package.
+- 2026-04-20: A monotonic-clock injection point on the MQTT publisher makes the overflow warning cooldown deterministic in tests and catches the easy-to-miss "first warning suppressed at time 0" bug.
+- 2026-04-20: `cloud_contract._validate_details_json()` can now accept nested mappings, preserve numeric planner diagnostics, redact token-like strings, and serialize safe nested summaries back into bounded `details_json` strings.
+- 2026-04-20: Emitter tests should load `shared/emitter.py` through a fake package namespace (not `custom_components.oig_cloud`) so relative imports work without poisoning later pytest imports of the real integration package.
+- 2026-04-20: Entry telemetry setup must fail open when `hass.data["core.uuid"]` is absent in lightweight test/runtime stubs; skipping the New Relic handler keeps `async_setup_entry()` green while preserving the real hash source when available.

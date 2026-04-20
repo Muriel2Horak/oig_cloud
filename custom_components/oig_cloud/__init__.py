@@ -1548,6 +1548,10 @@ async def async_setup_entry(
             },
         }
 
+        from .shared.emitter import async_setup_entry_telemetry
+
+        await async_setup_entry_telemetry(hass, entry)
+
         _setup_service_shield_data(hass, entry, coordinator, service_shield)
 
         # POZN: Plná migrace/cleanup device registry je riziková (může rozbít entity).
@@ -1814,6 +1818,13 @@ async def async_unload_entry(
                 await boiler_coordinator.async_shutdown()
             except Exception as err:
                 _LOGGER.debug("BoilerCoordinator shutdown failed: %s", err)
+
+        from .shared.emitter import async_shutdown_entry_telemetry
+
+        try:
+            await async_shutdown_entry_telemetry(hass, entry)
+        except Exception as err:
+            _LOGGER.debug("Telemetry shutdown failed: %s", err)
 
         from .services import async_unload_services
 

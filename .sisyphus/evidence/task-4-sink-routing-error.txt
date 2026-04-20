@@ -1,0 +1,15 @@
+Command:
+.venv/bin/pytest tests/test_emitter.py -q -k "continues_when_one_sink_fails"
+
+Output:
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: aiohttp-1.0.5, socket-0.7.0, picked-0.5.0, requests-mock-1.12.1, homeassistant-custom-component-0.13.205, cov-6.0.0, sugar-1.0.0, xdist-3.6.1, github-actions-annotate-failures-0.2.0, asyncio-0.24.0, timeout-2.3.1, anyio-4.12.1, pytest_freezer-0.4.8, unordered-0.6.1, syrupy-4.8.0, respx-0.21.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+collected 7 items / 6 deselected / 1 selected
+
+tests/test_emitter.py .                                                  [100%]
+
+======================= 1 passed, 6 deselected in 0.19s ========================
