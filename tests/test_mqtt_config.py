@@ -21,11 +21,12 @@ PACKAGE_ROOT = ROOT / "custom_components"
 OIG_ROOT = PACKAGE_ROOT / "oig_cloud"
 CONFIG_ROOT = OIG_ROOT / "config"
 CORE_ROOT = OIG_ROOT / "core"
+TEST_PACKAGE = "telemetry_mqtt_config_testpkg"
 
-_ensure_package("custom_components", PACKAGE_ROOT)
-_ensure_package("custom_components.oig_cloud", OIG_ROOT)
-_ensure_package("custom_components.oig_cloud.config", CONFIG_ROOT)
-_ensure_package("custom_components.oig_cloud.core", CORE_ROOT)
+_ensure_package(TEST_PACKAGE, ROOT)
+_ensure_package(f"{TEST_PACKAGE}.oig_cloud", OIG_ROOT)
+_ensure_package(f"{TEST_PACKAGE}.oig_cloud.config", CONFIG_ROOT)
+_ensure_package(f"{TEST_PACKAGE}.oig_cloud.core", CORE_ROOT)
 
 if "homeassistant" not in sys.modules:
     homeassistant = types.ModuleType("homeassistant")
@@ -120,7 +121,7 @@ if "voluptuous" not in sys.modules:
     setattr(voluptuous, "Invalid", Invalid)
     sys.modules["voluptuous"] = voluptuous
 
-validation_module = types.ModuleType("custom_components.oig_cloud.config.validation")
+validation_module = types.ModuleType(f"{TEST_PACKAGE}.oig_cloud.config.validation")
 
 
 class CannotConnect(Exception):
@@ -143,15 +144,15 @@ setattr(validation_module, "CannotConnect", CannotConnect)
 setattr(validation_module, "InvalidAuth", InvalidAuth)
 setattr(validation_module, "LiveDataNotEnabled", LiveDataNotEnabled)
 setattr(validation_module, "validate_input", validate_input)
-sys.modules["custom_components.oig_cloud.config.validation"] = validation_module
+sys.modules[f"{TEST_PACKAGE}.oig_cloud.config.validation"] = validation_module
 
-data_source_module = types.ModuleType("custom_components.oig_cloud.core.data_source")
+data_source_module = types.ModuleType(f"{TEST_PACKAGE}.oig_cloud.core.data_source")
 setattr(data_source_module, "PROXY_BOX_ID_ENTITY_ID", "sensor.oig_proxy_box_id")
 setattr(data_source_module, "PROXY_LAST_DATA_ENTITY_ID", "sensor.oig_proxy_last_data")
-sys.modules["custom_components.oig_cloud.core.data_source"] = data_source_module
+sys.modules[f"{TEST_PACKAGE}.oig_cloud.core.data_source"] = data_source_module
 
-const_module = importlib.import_module("custom_components.oig_cloud.const")
-steps_module = importlib.import_module("custom_components.oig_cloud.config.steps")
+const_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.const")
+steps_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.config.steps")
 
 WizardMixin = steps_module.WizardMixin
 OigCloudOptionsFlowHandler = steps_module.OigCloudOptionsFlowHandler

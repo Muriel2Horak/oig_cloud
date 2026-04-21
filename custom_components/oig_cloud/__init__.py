@@ -8,7 +8,7 @@ import logging
 import re
 from typing import Any, Dict
 
-from homeassistant import config_entries, core
+from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -20,7 +20,6 @@ from .const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
     CONF_EXTENDED_SCAN_INTERVAL,
-    CONF_NO_TELEMETRY,
     CONF_PASSWORD,
     CONF_PLANNING_MIN_PERCENT,
     CONF_STANDARD_SCAN_INTERVAL,
@@ -72,6 +71,24 @@ ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
 def _read_manifest_file(path: str) -> str:
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
+
+
+async def _setup_telemetry(hass: HomeAssistant, email_hash: str) -> None:
+    """Backwards-compatible telemetry bootstrap for legacy tests/helpers."""
+    try:
+        from .shared import logging as shared_logging
+
+        hass_id = str(hass.data.get("core.uuid", ""))
+        handler = shared_logging.setup_simple_telemetry(email_hash, hass_id)
+    except Exception as err:
+        _LOGGER.debug("Legacy telemetry setup failed: %s", err, exc_info=True)
+        return
+
+    if handler is None:
+        return
+
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    domain_data["telemetry"] = handler
 
 
 def _ensure_data_source_option_defaults(
@@ -324,8 +341,14 @@ async def _build_cloud_telemetry_context(
 ) -> dict[str, Any]:
     from .shared.cloud_contract import resolve_telemetry_device_id
 
+    try:
+        device_id = resolve_telemetry_device_id(entry)
+    except Exception as err:
+        _LOGGER.debug("Failed to resolve telemetry device_id: %s", err, exc_info=True)
+        device_id = None
+
     return {
-        "device_id": resolve_telemetry_device_id(entry),
+        "device_id": device_id,
         "install_id_hash": _resolve_install_id_hash(hass),
         "integration_version": await _load_manifest_version(hass),
     }
@@ -959,9 +982,6 @@ def _load_entry_auth_config(
 ) -> tuple[str | None, str | None, bool, int, int]:
     username = entry.data.get(CONF_USERNAME) or entry.options.get(CONF_USERNAME)
     password = entry.data.get(CONF_PASSWORD) or entry.options.get(CONF_PASSWORD)
-
-    _LOGGER.debug("Username: %s", "***" if username else "MISSING")
-    _LOGGER.debug("Password: %s", "***" if password else "MISSING")
 
     no_telemetry = resolve_no_telemetry(entry)
     standard_scan_interval = entry.options.get("standard_scan_interval") or entry.data.get(
@@ -1804,6 +1824,8 @@ def _setup_service_shield_monitoring(
     entry.async_on_unload(
         async_track_time_interval(hass, flush_statistics_store, timedelta(minutes=10))
     )
+
+
 async def async_unload_entry(
     hass: HomeAssistant, entry: config_entries.ConfigEntry
 ) -> bool:

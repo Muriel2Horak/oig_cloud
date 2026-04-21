@@ -1,11 +1,45 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import datetime as dt
 import sys
 import types
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+OIG_ROOT = ROOT / "custom_components" / "oig_cloud"
+CORE_ROOT = OIG_ROOT / "core"
+LIB_ROOT = OIG_ROOT / "lib"
+LIB_OIG_ROOT = LIB_ROOT / "oig_cloud_client"
+LIB_API_ROOT = LIB_OIG_ROOT / "api"
+SHIELD_ROOT = OIG_ROOT / "shield"
+TEST_PACKAGE = "telemetry_normalization_testpkg"
+
+
+def _ensure_package(name: str, path: Path) -> None:
+    module = sys.modules.get(name)
+    if module is None:
+        module = types.ModuleType(name)
+        module.__path__ = [str(path)]
+        sys.modules[name] = module
+
+
+def _load_package_module(name: str, path: Path) -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        name,
+        path,
+        submodule_search_locations=[str(path.parent)],
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _new_module(name: str, **attrs: object) -> types.ModuleType:
@@ -15,6 +49,13 @@ def _new_module(name: str, **attrs: object) -> types.ModuleType:
 
 
 def _install_test_stubs() -> None:
+    _ensure_package(TEST_PACKAGE, ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.core", CORE_ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.lib", LIB_ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.lib.oig_cloud_client", LIB_OIG_ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.lib.oig_cloud_client.api", LIB_API_ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.shield", SHIELD_ROOT)
+
     if "homeassistant" not in sys.modules:
         class ConfigEntry:
             pass
@@ -100,15 +141,15 @@ def _install_test_stubs() -> None:
         sys.modules["voluptuous"] = types.ModuleType("voluptuous")
 
     coordinator_module = _new_module(
-        "custom_components.oig_cloud.core.coordinator",
+        f"{TEST_PACKAGE}.oig_cloud.core.coordinator",
         OigCloudCoordinator=type("OigCloudCoordinator", (), {}),
     )
     sys.modules.setdefault(
-        "custom_components.oig_cloud.core.coordinator", coordinator_module
+        f"{TEST_PACKAGE}.oig_cloud.core.coordinator", coordinator_module
     )
 
     data_source_module = _new_module(
-        "custom_components.oig_cloud.core.data_source",
+        f"{TEST_PACKAGE}.oig_cloud.core.data_source",
         DATA_SOURCE_CLOUD_ONLY="cloud_only",
         DEFAULT_DATA_SOURCE_MODE="cloud_only",
         DEFAULT_LOCAL_EVENT_DEBOUNCE_MS=1000,
@@ -122,22 +163,22 @@ def _install_test_stubs() -> None:
         init_data_source_state=lambda *_a, **_k: None,
     )
     sys.modules.setdefault(
-        "custom_components.oig_cloud.core.data_source", data_source_module
+        f"{TEST_PACKAGE}.oig_cloud.core.data_source", data_source_module
     )
 
     api_module = _new_module(
-        "custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api",
+        f"{TEST_PACKAGE}.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api",
         OigCloudApi=type("OigCloudApi", (), {}),
         OigCloudAuthError=type("OigCloudAuthError", (Exception,), {}),
     )
     sys.modules.setdefault(
-        "custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api", api_module
+        f"{TEST_PACKAGE}.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api", api_module
     )
 
     for module_name in (
-        "custom_components.oig_cloud.shield.dispatch",
-        "custom_components.oig_cloud.shield.queue",
-        "custom_components.oig_cloud.shield.validation",
+        f"{TEST_PACKAGE}.oig_cloud.shield.dispatch",
+        f"{TEST_PACKAGE}.oig_cloud.shield.queue",
+        f"{TEST_PACKAGE}.oig_cloud.shield.validation",
     ):
         module = _new_module(
             module_name,
@@ -156,30 +197,16 @@ def _install_test_stubs() -> None:
 
 _install_test_stubs()
 
-import custom_components.oig_cloud as init_module
-from custom_components.oig_cloud.const import (
-    CONF_NO_TELEMETRY,
-    CONF_PASSWORD,
-    CONF_USERNAME,
-    DOMAIN,
-)
-import custom_components.oig_cloud.shield.core as shield_core_module
-from custom_components.oig_cloud.shield.core import ServiceShield
-from custom_components.oig_cloud.shared import logging as logging_module
+init_module = _load_package_module(f"{TEST_PACKAGE}.oig_cloud", OIG_ROOT / "__init__.py")
+const_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.const")
+shield_core_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.shield.core")
+logging_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.shared.logging")
 
-
-for _module_name in (
-    "custom_components.oig_cloud.shield.dispatch",
-    "custom_components.oig_cloud.shield.queue",
-    "custom_components.oig_cloud.shield.validation",
-    "custom_components.oig_cloud.shield.core",
-    "custom_components.oig_cloud.shield",
-    "custom_components.oig_cloud.core.coordinator",
-    "custom_components.oig_cloud.core.data_source",
-    "custom_components.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api",
-    "custom_components.oig_cloud",
-):
-    sys.modules.pop(_module_name, None)
+CONF_NO_TELEMETRY = const_module.CONF_NO_TELEMETRY
+CONF_PASSWORD = const_module.CONF_PASSWORD
+CONF_USERNAME = const_module.CONF_USERNAME
+DOMAIN = const_module.DOMAIN
+ServiceShield = shield_core_module.ServiceShield
 
 MISSING = object()
 
