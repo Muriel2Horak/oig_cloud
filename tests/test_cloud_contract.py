@@ -420,6 +420,27 @@ def test_details_json_is_string_only_and_bounded_to_two_kib():
     )
     assert event["details_json"] == '{"summary":"already redacted"}'
 
+    # String values are sanitized and truncated by _sanitize_details_json_string(),
+    # so an oversized string is ACCEPTED (truncated to 120 chars + "...") rather than rejected.
+    event = module.build_producer_event(
+        event_name="planner_run_failed",
+        occurred_at="2026-04-20T12:15:00Z",
+        device_id="12345",
+        install_id_hash=INSTALL_ID_HASH,
+        integration_version="2.3.34",
+        run_id="planner-run-2",
+        correlation_id="planner-run-2",
+        diagnostics={
+            "metric_infeasible": True,
+            "detail_failure_class": "TimeoutError",
+            "details_json": "x" * 2049,
+        },
+    )
+    # Sanitized and truncated to 120 + "..."
+    assert event["details_json"] == "x" * 120 + "..."
+
+    # Non-string values are JSON-serialized WITHOUT truncation, so oversized
+    # dicts still raise CloudContractError.
     with pytest.raises(module.CloudContractError, match="details_json"):
         module.build_producer_event(
             event_name="planner_run_failed",
@@ -432,6 +453,6 @@ def test_details_json_is_string_only_and_bounded_to_two_kib():
             diagnostics={
                 "metric_infeasible": True,
                 "detail_failure_class": "TimeoutError",
-                "details_json": "x" * 2049,
+                "details_json": {f"key{i}": "x" * 100 for i in range(20)},
             },
         )

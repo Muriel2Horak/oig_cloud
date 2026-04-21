@@ -389,13 +389,6 @@ class CloudMqttPublisher:
         normalized_prefix = topic_prefix.rstrip("/")
         if normalized_prefix == _EXACT_CLOUD_TOPIC_PREFIX:
             return normalized_prefix
-
-        _LOGGER.warning(
-            "Ignoring MQTT topic prefix %s for entry %s; using %s",
-            normalized_prefix,
-            self._entry_id,
-            _EXACT_CLOUD_TOPIC_PREFIX,
-        )
         return _EXACT_CLOUD_TOPIC_PREFIX
 
     @staticmethod

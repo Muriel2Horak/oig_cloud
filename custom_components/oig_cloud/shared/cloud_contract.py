@@ -639,7 +639,7 @@ def _validate_exception_class_name(key: str, value: str) -> str:
 
 def _validate_details_json(value: Any) -> str:
     if isinstance(value, str):
-        normalized_value = value
+        normalized_value = _sanitize_details_json_string(value)
     else:
         normalized_value = json.dumps(
             _sanitize_details_json_value(value, depth=0),
