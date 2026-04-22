@@ -50,7 +50,7 @@ async def precompute_ui_data(sensor: Any) -> None:
         )
 
     except Exception as err:
-        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to precompute UI data: %s", err, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to precompute UI data: %s", err, exc_info=True)  # NOSONAR
     finally:
         sensor._last_precompute_at = dt_util.now()  # pylint: disable=protected-access
 

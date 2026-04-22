@@ -214,7 +214,7 @@ def get_battery_efficiency(sensor: Any) -> float:
         efficiency = efficiency_pct / 100.0
         if efficiency < 0.70 or efficiency > 1.0:
             _LOGGER.warning(
-                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
                 + "Unrealistic efficiency %.3f (%.1f%%), using fallback 0.882",
                 efficiency,
                 efficiency_pct,

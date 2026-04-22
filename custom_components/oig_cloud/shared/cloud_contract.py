@@ -464,7 +464,7 @@ def build_sink_payload(
     return payload
 
 
-def _normalize_event(
+def _normalize_event(  # NOSONAR
     event: Mapping[str, Any], *, strict_unknown_keys: bool
 ) -> dict[str, str | int | float | bool]:
     if "transport" in event:

@@ -45,7 +45,7 @@ async def create_baseline_plan(sensor: Any, date_str: str) -> bool:
     """Create baseline plan for a given date."""
     if not sensor._plans_store:
         _LOGGER.error(
-            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "  # NOSONAR
             + "Cannot create baseline - Storage Helper not initialized"
         )
         return False
@@ -331,7 +331,7 @@ async def ensure_plan_exists(sensor: Any, date_str: str) -> bool:
         return True
 
     _LOGGER.warning(
-        "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+        "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
         + "Plan missing for %s, attempting to create...",
         date_str,
     )

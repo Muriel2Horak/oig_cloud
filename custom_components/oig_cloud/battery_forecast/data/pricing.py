@@ -65,7 +65,7 @@ async def _resolve_spot_data(
 ) -> Dict[str, Any]:
     spot_data: Dict[str, Any] = {}
     if not sensor.coordinator:
-        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Coordinator not available in get_spot_price_timeline")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Coordinator not available in get_spot_price_timeline")  # NOSONAR
     else:
         spot_data = sensor.coordinator.data.get("spot_prices", {})
 

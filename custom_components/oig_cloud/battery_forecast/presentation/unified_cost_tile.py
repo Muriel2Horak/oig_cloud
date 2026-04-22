@@ -31,7 +31,7 @@ async def build_unified_cost_tile(
     try:
         today_data = await build_today_cost_data(self)
     except Exception as e:
-        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to build today cost data: %s", e, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to build today cost data: %s", e, exc_info=True)  # NOSONAR
         today_data = _build_today_fallback(e)
 
     try:

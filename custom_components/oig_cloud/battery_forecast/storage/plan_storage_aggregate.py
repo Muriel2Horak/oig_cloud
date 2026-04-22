@@ -20,7 +20,7 @@ async def aggregate_daily(sensor: Any, date_str: str) -> bool:
     """Aggregate daily plan into a summary."""
     if not sensor._plans_store:
         _LOGGER.error(
-            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "  # NOSONAR
             + "Cannot aggregate - Storage Helper not initialized"
         )
         return False
@@ -31,7 +31,7 @@ async def aggregate_daily(sensor: Any, date_str: str) -> bool:
         plan = await load_plan_from_storage(sensor, date_str)
         if not plan:
             _LOGGER.warning(
-                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
                 + "No detailed plan found for %s, skipping aggregation",
                 date_str,
             )

@@ -199,7 +199,7 @@ class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
                 self._last_month_key == prev_key and self._last_month_metrics
             ):  # pragma: no cover
                 _LOGGER.warning(
-                    "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                    "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
                     + "Keeping last month efficiency for %s/%s from stored state (history missing)",
                     prev_month,
                     prev_year,

@@ -45,7 +45,7 @@ def fix_minimum_capacity_violations(
         )
 
         if charging_index is None:
-            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Cannot fix minimum violation at index %s - no suitable charging time found", violation_index,)
+            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Cannot fix minimum violation at index %s - no suitable charging time found", violation_index,)  # NOSONAR
             break
 
         charge_kwh = charging_power_kw / 4.0

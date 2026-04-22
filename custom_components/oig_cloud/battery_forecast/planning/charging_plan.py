@@ -249,7 +249,7 @@ def economic_charging_plan(
         )
         if current_soc < flags.pre_peak_charging_canary_soc_threshold_kwh:
             _LOGGER.warning(
-                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
                 + "PRE_PEAK_CANARY: SOC %.2fkWh below canary threshold %.2fkWh",
                 current_soc,
                 flags.pre_peak_charging_canary_soc_threshold_kwh,

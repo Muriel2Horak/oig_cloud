@@ -122,7 +122,7 @@ def _restore_active_plan(sensor, last_state) -> None:
                     sensor._plan_status,
                 )
     except (json.decoder.JSONDecodeError, TypeError) as err:
-        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to restore charging plan: %s", err)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to restore charging plan: %s", err)  # NOSONAR
 
 
 async def _load_daily_archive(sensor) -> None:

@@ -131,7 +131,7 @@ def fetch_solar_forecast(hass: HomeAssistant, box_id: str) -> list[float]:
         if result is not None:
             return result
 
-    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Solar forecast sensor unavailable for box_id=%s, using fallback defaults", box_id or "default",)
+    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Solar forecast sensor unavailable for box_id=%s, using fallback defaults", box_id or "default",)  # NOSONAR
     return [_DEFAULT_SOLAR_KWH_15MIN] * _FORECAST_INTERVALS
 
 

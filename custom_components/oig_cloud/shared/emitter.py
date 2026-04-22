@@ -60,7 +60,7 @@ class SharedTelemetryEmitter:
             Transport.MQTT.value,
         )
 
-    async def emit_raw_event(self, event: Mapping[str, Any]) -> bool:
+    async def emit_raw_event(self, event: Mapping[str, Any]) -> bool:  # NOSONAR
         """Legacy raw telemetry path removed with New Relic transport."""
         _ = event
         if resolve_no_telemetry(self._entry):

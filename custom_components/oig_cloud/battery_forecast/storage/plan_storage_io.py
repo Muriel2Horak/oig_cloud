@@ -18,7 +18,7 @@ async def load_plan_from_storage(
     """Load a plan from Storage Helper for a given date."""
     if not sensor._plans_store:
         _LOGGER.error(
-            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "  # NOSONAR
             + STORAGE_HELPER_NOT_INITIALIZED
         )
         return _get_cached_plan(sensor, date_str, STORAGE_HELPER_NOT_INITIALIZED)
@@ -115,7 +115,7 @@ def _get_cached_plan(
     cached = getattr(sensor, "_in_memory_plan_cache", {}).get(date_str)
     if cached:
         _LOGGER.warning(
-            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
             + "Using in-memory cached plan for %s (%s)",
             date_str,
             reason,

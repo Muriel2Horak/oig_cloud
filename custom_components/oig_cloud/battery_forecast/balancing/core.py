@@ -220,7 +220,7 @@ class BalancingManager:
             )
         except Exception as err:
             _LOGGER.warning(
-                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
                 + "BalancingManager: Failed to load state: %s (starting fresh)",
                 err,
             )

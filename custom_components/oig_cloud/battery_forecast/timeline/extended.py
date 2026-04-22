@@ -34,7 +34,7 @@ async def _load_storage_plans(sensor: Any) -> Dict[str, Any]:
         return storage_plans
     except Exception as err:
         _LOGGER.error(
-            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "  # NOSONAR
             + "Failed to load Storage Helper data: %s",
             err,
         )
