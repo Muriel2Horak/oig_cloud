@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.35] - 2026-04-22
+
+### Changed
+- Cloud telemetry is now MQTT-only, always enabled, and fixed to `telemetry.muriel-cz.cz` on the canonical `oig/cloud-telemetry/<device_id>` topic.
+- Legacy telemetry toggles and MQTT host/prefix options were removed from the config/options flow; stored legacy telemetry settings are now ignored.
+
+### Fixed
+- SSH deploys now copy the full integration tree instead of truncating after the first file, preventing stale mixed-version Home Assistant deployments and startup import failures.
+- The OIG Cloud Events Grafana dashboard now reads cloud event counts from valid telemetry fields, renders zero baselines for missing event types, and shows warning/error event tables from Influx-backed cloud telemetry.
+- Local verification tooling now matches the current Home Assistant stack closely enough to keep the end-to-end local CI gate green while exercising the telemetry release path.
+
 ## [2.3.34] - 2026-04-20
 
 ### Fixed
