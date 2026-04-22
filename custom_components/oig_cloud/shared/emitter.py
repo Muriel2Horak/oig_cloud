@@ -14,7 +14,6 @@ from ..const import (
     TELEMETRY_MQTT_PREFIX,
 )
 from .cloud_contract import Transport, build_sink_payload, validate_producer_event
-from .logging import resolve_no_telemetry
 from .mqtt_publisher import CloudMqttPublisher
 
 
@@ -47,9 +46,6 @@ class SharedTelemetryEmitter:
         self._mqtt_sink = sink
 
     async def emit_cloud_event(self, event: Mapping[str, Any]) -> bool:
-        if resolve_no_telemetry(self._entry):
-            return False
-
         if self._mqtt_sink is None:
             return False
 
@@ -63,8 +59,6 @@ class SharedTelemetryEmitter:
     async def emit_raw_event(self, event: Mapping[str, Any]) -> bool:  # NOSONAR
         """Legacy raw telemetry path removed with New Relic transport."""
         _ = event
-        if resolve_no_telemetry(self._entry):
-            return False
         return False
 
     async def _dispatch_cloud_sink(
@@ -101,9 +95,6 @@ async def async_setup_entry_telemetry(hass: Any, entry: Any) -> dict[str, Any]:
         "mqtt_sink": None,
     }
     entry_data["telemetry"] = telemetry_state
-
-    if resolve_no_telemetry(entry):
-        return telemetry_state
 
     mqtt_publisher = await _start_mqtt_publisher(entry)
     if mqtt_publisher is not None:
