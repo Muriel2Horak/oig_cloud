@@ -39,11 +39,9 @@ contract_module = importlib.import_module(
 )
 
 DOMAIN = const_module.DOMAIN
-CONF_NO_TELEMETRY = const_module.CONF_NO_TELEMETRY
-CONF_TELEMETRY_MQTT_ENABLED = const_module.CONF_TELEMETRY_MQTT_ENABLED
-CONF_TELEMETRY_MQTT_HOST = const_module.CONF_TELEMETRY_MQTT_HOST
-CONF_TELEMETRY_MQTT_PORT = const_module.CONF_TELEMETRY_MQTT_PORT
-CONF_TELEMETRY_MQTT_PREFIX = const_module.CONF_TELEMETRY_MQTT_PREFIX
+TELEMETRY_MQTT_HOST = const_module.TELEMETRY_MQTT_HOST
+TELEMETRY_MQTT_PORT = const_module.TELEMETRY_MQTT_PORT
+TELEMETRY_MQTT_PREFIX = const_module.TELEMETRY_MQTT_PREFIX
 
 
 def load_emitter_module():
@@ -66,7 +64,7 @@ def _build_planner_event() -> dict[str, object]:
         occurred_at="2026-04-20T12:00:00Z",
         device_id="12345",
         install_id_hash=INSTALL_ID_HASH,
-        integration_version="2.3.34",
+        integration_version="2.3.35",
         run_id="planner-run-1",
         correlation_id="planner-run-1",
         diagnostics={
@@ -107,13 +105,13 @@ class RecordingSink:
 
 def _make_entry(*, no_telemetry: bool = False, mqtt_enabled: bool = False):
     options = {
-        CONF_TELEMETRY_MQTT_ENABLED: mqtt_enabled,
-        CONF_TELEMETRY_MQTT_HOST: "mqtt.internal" if mqtt_enabled else "",
-        CONF_TELEMETRY_MQTT_PORT: 1883,
-        CONF_TELEMETRY_MQTT_PREFIX: "oig/cloud-telemetry",
+        "telemetry_mqtt_enabled": mqtt_enabled,
+        "telemetry_mqtt_host": "mqtt.internal" if mqtt_enabled else "",
+        "telemetry_mqtt_port": 2883,
+        "telemetry_mqtt_prefix": "lab/oig",
     }
     if no_telemetry:
-        options[CONF_NO_TELEMETRY] = True
+        options["no_telemetry"] = True
 
     return SimpleNamespace(
         entry_id="entry-1",
@@ -126,11 +124,9 @@ def _make_entry(*, no_telemetry: bool = False, mqtt_enabled: bool = False):
 async def test_emit_cloud_event_validates_taxonomy_before_dispatch():
     emitter_module = load_emitter_module()
     mqtt_sink = RecordingSink()
-    new_relic_sink = RecordingSink()
     emitter = emitter_module.SharedTelemetryEmitter(
         entry=_make_entry(),
         mqtt_sink=mqtt_sink,
-        new_relic_sink=new_relic_sink,
     )
     event = _build_planner_event()
     event["event_name"] = "planner_run_custom"
@@ -139,18 +135,15 @@ async def test_emit_cloud_event_validates_taxonomy_before_dispatch():
         await emitter.emit_cloud_event(event)
 
     assert mqtt_sink.cloud_events == []
-    assert new_relic_sink.cloud_events == []
 
 
 @pytest.mark.asyncio
-async def test_emit_cloud_event_fans_out_with_transport_injected_per_sink():
+async def test_emit_cloud_event_routes_only_to_mqtt_with_transport_injected():
     emitter_module = load_emitter_module()
     mqtt_sink = RecordingSink()
-    new_relic_sink = RecordingSink()
     emitter = emitter_module.SharedTelemetryEmitter(
         entry=_make_entry(),
         mqtt_sink=mqtt_sink,
-        new_relic_sink=new_relic_sink,
     )
     event = _build_planner_event()
 
@@ -160,37 +153,29 @@ async def test_emit_cloud_event_fans_out_with_transport_injected_per_sink():
     assert event["event_name"] == "planner_run_completed"
     assert "transport" not in event
     assert mqtt_sink.cloud_events == [{**event, "transport": "mqtt"}]
-    assert new_relic_sink.cloud_events == [{**event, "transport": "newrelic"}]
 
 
 @pytest.mark.asyncio
-async def test_emit_cloud_event_continues_when_one_sink_fails():
+async def test_emit_cloud_event_returns_false_when_mqtt_sink_fails():
     emitter_module = load_emitter_module()
     mqtt_sink = RecordingSink(should_raise=True)
-    new_relic_sink = RecordingSink()
     emitter = emitter_module.SharedTelemetryEmitter(
         entry=_make_entry(),
         mqtt_sink=mqtt_sink,
-        new_relic_sink=new_relic_sink,
     )
 
     result = await emitter.emit_cloud_event(_build_planner_event())
 
-    assert result is True
-    assert new_relic_sink.cloud_events == [
-        {**_build_planner_event(), "transport": "newrelic"}
-    ]
+    assert result is False
 
 
 @pytest.mark.asyncio
-async def test_emit_raw_event_bypasses_taxonomy_and_routes_only_to_new_relic():
+async def test_emit_raw_event_is_disabled_for_mqtt_only_telemetry():
     emitter_module = load_emitter_module()
     mqtt_sink = RecordingSink()
-    new_relic_sink = RecordingSink()
     emitter = emitter_module.SharedTelemetryEmitter(
         entry=_make_entry(),
         mqtt_sink=mqtt_sink,
-        new_relic_sink=new_relic_sink,
     )
     raw_event = {
         "event_name": "planner_run_custom",
@@ -200,30 +185,25 @@ async def test_emit_raw_event_bypasses_taxonomy_and_routes_only_to_new_relic():
 
     result = await emitter.emit_raw_event(raw_event)
 
-    assert result is True
+    assert result is False
     assert mqtt_sink.raw_events == []
-    assert new_relic_sink.raw_events == [raw_event]
 
 
 @pytest.mark.asyncio
-async def test_emitters_respect_no_telemetry_before_any_sink_dispatch():
+async def test_emitters_ignore_legacy_no_telemetry_before_sink_dispatch():
     emitter_module = load_emitter_module()
     mqtt_sink = RecordingSink()
-    new_relic_sink = RecordingSink()
     emitter = emitter_module.SharedTelemetryEmitter(
         entry=_make_entry(no_telemetry=True),
         mqtt_sink=mqtt_sink,
-        new_relic_sink=new_relic_sink,
     )
 
     cloud_result = await emitter.emit_cloud_event(_build_planner_event())
     raw_result = await emitter.emit_raw_event({"event_name": "raw"})
 
-    assert cloud_result is False
+    assert cloud_result is True
     assert raw_result is False
-    assert mqtt_sink.cloud_events == []
-    assert new_relic_sink.cloud_events == []
-    assert new_relic_sink.raw_events == []
+    assert mqtt_sink.cloud_events == [{**_build_planner_event(), "transport": "mqtt"}]
 
 
 @pytest.mark.asyncio
@@ -255,9 +235,7 @@ async def test_async_setup_entry_telemetry_stores_state_under_entry_scope(monkey
 
     emitter_module = load_emitter_module()
     started_publishers: list[FakePublisher] = []
-    new_relic_handler = object()
 
-    monkeypatch.setattr(emitter_module, "setup_simple_telemetry", lambda *_a, **_k: new_relic_handler)
     monkeypatch.setattr(emitter_module, "CloudMqttPublisher", FakePublisher)
 
     hass = SimpleNamespace(data={"core.uuid": "core-uuid", DOMAIN: {"entry-1": {}}})
@@ -267,9 +245,36 @@ async def test_async_setup_entry_telemetry_stores_state_under_entry_scope(monkey
 
     assert hass.data[DOMAIN][entry.entry_id]["telemetry"] is state
     assert "telemetry" not in hass.data[DOMAIN]
-    assert state["new_relic_handler"] is new_relic_handler
     assert state["mqtt_publisher"] is started_publishers[0]
     assert isinstance(state["emitter"], emitter_module.SharedTelemetryEmitter)
-    assert started_publishers[0].host == "mqtt.internal"
-    assert started_publishers[0].port == 1883
-    assert started_publishers[0].topic_prefix == "oig/cloud-telemetry"
+    assert set(state) == {"emitter", "mqtt_publisher", "mqtt_sink"}
+    assert started_publishers[0].host == TELEMETRY_MQTT_HOST
+    assert started_publishers[0].port == TELEMETRY_MQTT_PORT
+    assert started_publishers[0].topic_prefix == TELEMETRY_MQTT_PREFIX
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_telemetry_ignores_legacy_mqtt_options(monkeypatch):
+    class FakePublisher:
+        def __init__(self, *, entry_id, host, port, topic_prefix):
+            self.entry_id = entry_id
+            self.host = host
+            self.port = port
+            self.topic_prefix = topic_prefix
+
+        async def async_start(self) -> bool:
+            started_publishers.append(self)
+            return True
+
+    emitter_module = load_emitter_module()
+    started_publishers: list[FakePublisher] = []
+    monkeypatch.setattr(emitter_module, "CloudMqttPublisher", FakePublisher)
+
+    hass = SimpleNamespace(data={DOMAIN: {"entry-1": {}}})
+    entry = _make_entry(mqtt_enabled=False)
+
+    await emitter_module.async_setup_entry_telemetry(hass, entry)
+
+    assert started_publishers[0].host == TELEMETRY_MQTT_HOST
+    assert started_publishers[0].port == TELEMETRY_MQTT_PORT
+    assert started_publishers[0].topic_prefix == TELEMETRY_MQTT_PREFIX

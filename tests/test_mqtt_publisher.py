@@ -98,7 +98,7 @@ def _make_event(*, event_name: str = "incident_auth_failed", device_id: str = "2
         "occurred_at": "2026-04-20T12:34:56Z",
         "device_id": device_id,
         "install_id_hash": "a" * 64,
-        "integration_version": "2.3.34",
+        "integration_version": "2.3.35",
         "run_id": "run-1",
         "correlation_id": "corr-1",
         "result": "failed",

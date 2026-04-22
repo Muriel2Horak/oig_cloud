@@ -122,7 +122,7 @@ def _assert_event_shape(
     assert event["event_name"] == event_name
     assert event["device_id"] == "123"
     assert event["install_id_hash"] == INSTALL_ID_HASH
-    assert event["integration_version"] == "2.3.34"
+    assert event["integration_version"] == "2.3.35"
     assert event["run_id"] == "na"
     assert event["correlation_id"] == correlation_id
     assert event["result"] == result

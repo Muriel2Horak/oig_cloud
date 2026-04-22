@@ -228,16 +228,16 @@ def _make_entry(*, data_flag=MISSING, options_flag=MISSING):
     [
         (MISSING, MISSING, False),
         (MISSING, False, False),
-        (MISSING, True, True),
+        (MISSING, True, False),
         (False, MISSING, False),
         (False, False, False),
-        (False, True, True),
-        (True, MISSING, True),
-        (True, False, True),
-        (True, True, True),
+        (False, True, False),
+        (True, MISSING, False),
+        (True, False, False),
+        (True, True, False),
     ],
 )
-def test_resolve_no_telemetry_merges_entry_data_and_options(
+def test_resolve_no_telemetry_ignores_legacy_entry_data_and_options(
     data_flag, options_flag, expected
 ):
     entry = _make_entry(data_flag=data_flag, options_flag=options_flag)
@@ -250,13 +250,50 @@ def test_resolve_no_telemetry_merges_entry_data_and_options(
     [
         (MISSING, MISSING, False),
         (MISSING, False, False),
-        (MISSING, True, True),
+        (MISSING, True, False),
         (False, MISSING, False),
         (False, False, False),
-        (False, True, True),
-        (True, MISSING, True),
-        (True, False, True),
-        (True, True, True),
+        (False, True, False),
+        (True, MISSING, False),
+        (True, False, False),
+        (True, True, False),
+    ],
+)
+def test_load_entry_auth_config_ignores_legacy_no_telemetry_flags(
+    monkeypatch, data_flag, options_flag, expected
+):
+    entry = _make_entry(data_flag=data_flag, options_flag=options_flag)
+    setup_calls: list[str] = []
+
+    def _record_setup(*_args, **_kwargs):
+        setup_calls.append("setup")
+        return object()
+
+    monkeypatch.setattr(
+        shield_core_module,
+        "setup_simple_telemetry",
+        _record_setup,
+        raising=False,
+    )
+
+    _, _, no_telemetry, _, _ = init_module._load_entry_auth_config(entry)
+
+    assert no_telemetry is expected
+    assert setup_calls == []
+
+
+@pytest.mark.parametrize(
+    ("data_flag", "options_flag", "expected"),
+    [
+        (MISSING, MISSING, False),
+        (MISSING, False, False),
+        (MISSING, True, False),
+        (False, MISSING, False),
+        (False, False, False),
+        (False, True, False),
+        (True, MISSING, False),
+        (True, False, False),
+        (True, True, False),
     ],
 )
 def test_service_shield_constructor_never_calls_legacy_simple_telemetry_setup(
@@ -286,8 +323,7 @@ def test_service_shield_constructor_never_calls_legacy_simple_telemetry_setup(
 
 
 @pytest.mark.asyncio
-async def test_service_shield_logs_via_raw_emitter_after_lazy_binding(monkeypatch):
-    fixed_now = dt.datetime(2026, 4, 20, 12, 0, 0)
+async def test_service_shield_legacy_raw_logging_is_disabled_after_lazy_binding(monkeypatch):
     entry = _make_entry()
     hass = SimpleNamespace(data={"core.uuid": "core-uuid"})
 
@@ -304,14 +340,6 @@ async def test_service_shield_logs_via_raw_emitter_after_lazy_binding(monkeypatc
             self.cloud_calls += 1
             return True
 
-    monkeypatch.setattr(shield_core_module, "dt_now", lambda: fixed_now)
-    monkeypatch.setattr(
-        shield_core_module,
-        "setup_simple_telemetry",
-        lambda *_a, **_k: None,
-        raising=False,
-    )
-
     shield = ServiceShield(hass, entry)
     emitter = RecordingEmitter()
 
@@ -320,15 +348,7 @@ async def test_service_shield_logs_via_raw_emitter_after_lazy_binding(monkeypatc
     await shield._log_telemetry("ignored", "svc", {"reason": "after_bind"})
 
     assert emitter.cloud_calls == 0
-    assert emitter.raw_events == [
-        {
-            "timestamp": fixed_now.isoformat(),
-            "component": "service_shield",
-            "reason": "after_bind",
-            "event_type": "ignored",
-            "service_name": "svc",
-        }
-    ]
+    assert emitter.raw_events == []
 
 
 def test_setup_service_shield_data_binds_entry_scoped_emitter(monkeypatch):
@@ -389,4 +409,4 @@ async def test_service_shield_log_telemetry_swallows_raw_emitter_failures(
     with caplog.at_level("ERROR"):
         await shield._log_telemetry("timeout", "svc", {"reason": "test"})
 
-    assert "Failed to log telemetry" in caplog.text
+    assert "Failed to log telemetry" not in caplog.text

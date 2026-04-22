@@ -172,7 +172,6 @@ class Severity(str, Enum):
 
 class Transport(str, Enum):
     MQTT = "mqtt"
-    NEWRELIC = "newrelic"
 
 
 @dataclass(frozen=True)
@@ -717,7 +716,7 @@ CANONICAL_MQTT_PAYLOAD_EXAMPLE = build_sink_payload(
         occurred_at="2026-04-20T12:00:00Z",
         device_id="12345",
         install_id_hash="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        integration_version="2.3.34",
+        integration_version="2.3.35",
         run_id="12345:2026-04-20T12:00:00+00:00",
         correlation_id="12345:2026-04-20T12:00:00+00:00",
         diagnostics={

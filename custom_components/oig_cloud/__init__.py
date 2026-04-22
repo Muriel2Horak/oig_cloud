@@ -74,21 +74,9 @@ def _read_manifest_file(path: str) -> str:
 
 
 async def _setup_telemetry(hass: HomeAssistant, email_hash: str) -> None:
-    """Backwards-compatible telemetry bootstrap for legacy tests/helpers."""
-    try:
-        from .shared import logging as shared_logging
-
-        hass_id = str(hass.data.get("core.uuid", ""))
-        handler = shared_logging.setup_simple_telemetry(email_hash, hass_id)
-    except Exception as err:
-        _LOGGER.debug("Legacy telemetry setup failed: %s", err, exc_info=True)
-        return
-
-    if handler is None:
-        return
-
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    domain_data["telemetry"] = handler
+    """Legacy bootstrap kept as a no-op after New Relic removal."""
+    _ = hass
+    _ = email_hash
 
 
 def _ensure_data_source_option_defaults(

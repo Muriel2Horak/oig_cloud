@@ -905,6 +905,10 @@
           "description": "I acknowledge the risks associated with manual boiler mode and accept full responsibility.",
           "name": "Acknowledgement"
         },
+        "device_id": {
+          "description": "Select the Battery Box device when controlling a specific installation.",
+          "name": "Device"
+        },
         "mode": {
           "description": "Select between CBB (automatic) or Manual operation.",
           "name": "Boiler Mode"
@@ -919,6 +923,18 @@
           "description": "Acknowledge mode change",
           "name": "Acknowledgement"
         },
+        "device_id": {
+          "description": "Select the Battery Box device when controlling a specific installation.",
+          "name": "Device"
+        },
+        "home_grid_v": {
+          "description": "Enable supplementary Home Grid V mode when supported.",
+          "name": "Home Grid V"
+        },
+        "home_grid_vi": {
+          "description": "Enable supplementary Home Grid VI mode when supported.",
+          "name": "Home Grid VI"
+        },
         "mode": {
           "description": "Battery Box mode",
           "name": "Mode"
@@ -932,6 +948,10 @@
         "acknowledgement": {
           "description": "I acknowledge that starting battery charging from the grid modifies a live system and accept responsibility.",
           "name": "Acknowledgement"
+        },
+        "device_id": {
+          "description": "Select the Battery Box device when controlling a specific installation.",
+          "name": "Device"
         },
         "limit": {
           "description": "Set the target battery charge percentage.",
@@ -950,6 +970,10 @@
         "acknowledgement": {
           "description": "I acknowledge that enabling this feature modifies a live system. I take full responsibility.",
           "name": "Acknowledgement"
+        },
+        "device_id": {
+          "description": "Select the Battery Box device when controlling a specific installation.",
+          "name": "Device"
         },
         "limit": {
           "description": "Set the maximum allowed export to the grid in watts.",

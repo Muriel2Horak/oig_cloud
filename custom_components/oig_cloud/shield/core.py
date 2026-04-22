@@ -14,7 +14,6 @@ from homeassistant.util.dt import now as dt_now
 
 from . import dispatch as shield_dispatch
 from . import queue as shield_queue
-from .telemetry import render_shield_log_marker
 from . import validation as shield_validation
 
 _LOGGER = logging.getLogger(__name__)
@@ -139,48 +138,11 @@ class ServiceShield:
     async def _log_telemetry(
         self, event_type: str, service_name: str, data: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Log telemetry event through the shared raw emitter tier."""
-        try:
-            _LOGGER.debug(
-                "Telemetry log start: event_type=%s service=%s",
-                event_type,
-                service_name,
-            )
-            _LOGGER.debug(
-                "Telemetry emitter available: %s", self._telemetry_emitter is not None
-            )
-
-            if self._telemetry_emitter is None:
-                _LOGGER.debug("Telemetry emitter missing; skipping send")
-                return
-
-            telemetry_data: Dict[str, Any] = {
-                "timestamp": dt_now().isoformat(),
-                "component": "service_shield",
-            }
-
-            if data:
-                telemetry_data.update(data)
-
-            telemetry_data["event_type"] = event_type
-            telemetry_data["service_name"] = service_name
-
-            _LOGGER.debug(
-                "Telemetry data prepared: %s",
-                telemetry_data,
-            )
-
-            await self._telemetry_emitter.emit_raw_event(telemetry_data)
-
-            _LOGGER.debug("Telemetry sent successfully")
-
-        except Exception as e:
-            _LOGGER.error(
-                render_shield_log_marker(
-                    "ERROR", None, f"Failed to log telemetry: {e}"
-                ),
-                exc_info=True,
-            )
+        """Legacy raw telemetry path disabled after New Relic removal."""
+        _ = event_type
+        _ = service_name
+        _ = data
+        return None
 
     def register_state_change_callback(self, callback: Callable[[], None]) -> None:
         """Registruje callback, který se zavolá při změně shield stavu."""

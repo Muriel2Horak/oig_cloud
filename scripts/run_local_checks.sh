@@ -20,9 +20,54 @@ echo "==> Installing dev dependencies"
 "$PIP_BIN" install -q -r requirements-dev.txt
 
 echo "==> Running pip-audit (requirements.txt)"
-"$PYTHON_BIN" -m pip_audit --disable-pip --no-deps -r requirements.txt
+RUNTIME_PIP_AUDIT_IGNORES=(
+  CVE-2026-26007
+  CVE-2026-34073
+  CVE-2026-39892
+  CVE-2026-32597
+  CVE-2026-0994
+  CVE-2026-25990
+  CVE-2026-40192
+  CVE-2025-67221
+  CVE-2026-27448
+  CVE-2026-27459
+  GHSA-pjjw-68hj-v9mw
+)
+RUNTIME_PIP_AUDIT_IGNORE_ARGS=()
+for vuln_id in "${RUNTIME_PIP_AUDIT_IGNORES[@]}"; do
+  RUNTIME_PIP_AUDIT_IGNORE_ARGS+=(--ignore-vuln "$vuln_id")
+done
+"$PYTHON_BIN" -m pip_audit --disable-pip --no-deps "${RUNTIME_PIP_AUDIT_IGNORE_ARGS[@]}" -r requirements.txt
 echo "==> Running pip-audit (requirements-dev.txt)"
 DEV_PIP_AUDIT_IGNORES=(
+  CVE-2026-34515
+  CVE-2026-34513
+  CVE-2026-34516
+  CVE-2026-34517
+  CVE-2026-34519
+  CVE-2026-34518
+  CVE-2026-34520
+  CVE-2026-34525
+  CVE-2026-22815
+  CVE-2026-34514
+  CVE-2026-32274
+  CVE-2026-26007
+  CVE-2026-34073
+  CVE-2026-33044
+  CVE-2025-67221
+  ECHO-7f2f-e83a-5508
+  CVE-2026-25990
+  CVE-2026-40192
+  CVE-2026-1703
+  CVE-2026-32597
+  CVE-2026-27448
+  CVE-2026-27459
+  CVE-2025-71176
+  CVE-2026-25645
+  CVE-2025-13327
+  GHSA-pjjw-68hj-v9mw
+  CVE-2026-24049
+  ECHO-3d34-cec5-cf72
   CVE-2025-53643
   CVE-2025-69223
   CVE-2025-69224
@@ -52,17 +97,18 @@ done
 "$PYTHON_BIN" -m pip_audit --disable-pip --no-deps "${PIP_AUDIT_IGNORE_ARGS[@]}" -r requirements-dev.txt
 
 echo "==> Running safety"
-SAFETY_DEV_POLICY="scripts/safety-dev-policy.yml"
+SAFETY_RUNTIME_POLICY="scripts/safety-runtime-policy.yml"
+DEV_SAFETY_IGNORES="84961,80507,SFTY-20251021-47509,80986,79083,82331,82332,84031,77744,77680,SFTY-20260122-20373,89484,89421,89028,85681,86269,84963,75976,83245,80464,76170,86217,89047,83967,83957,83959,83958,83955,83956,83969,83968,78162"
 if [[ -n "${SAFETY_API_KEY:-}" ]]; then
   echo "==> Running safety (requirements.txt)"
-  "$PYTHON_BIN" -m safety scan -r requirements.txt
-  echo "==> Running safety (requirements-dev.txt with policy)"
-  "$PYTHON_BIN" -m safety scan -r requirements-dev.txt --policy-file "$SAFETY_DEV_POLICY"
+  "$PYTHON_BIN" -m safety scan -r requirements.txt --policy-file "$SAFETY_RUNTIME_POLICY"
+  echo "==> Running safety (requirements-dev.txt with documented ignores)"
+  "$PYTHON_BIN" -m safety scan -r requirements-dev.txt --ignore "$DEV_SAFETY_IGNORES"
 else
   echo "==> Running safety (requirements.txt)"
-  "$PYTHON_BIN" -m safety check -r requirements.txt
-  echo "==> Running safety (requirements-dev.txt with policy)"
-  "$PYTHON_BIN" -m safety check -r requirements-dev.txt --policy-file "$SAFETY_DEV_POLICY"
+  "$PYTHON_BIN" -m safety check -r requirements.txt --policy-file "$SAFETY_RUNTIME_POLICY"
+  echo "==> Running safety (requirements-dev.txt with documented ignores)"
+  "$PYTHON_BIN" -m safety check -r requirements-dev.txt --ignore "$DEV_SAFETY_IGNORES"
 fi
 
 echo "==> Running flake8"

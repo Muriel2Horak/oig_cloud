@@ -13,10 +13,6 @@ from ..const import (
     CONF_CHARGE_RATE_KW,
     CONF_PASSWORD,
     CONF_PLANNING_MIN_PERCENT,
-    CONF_TELEMETRY_MQTT_ENABLED,
-    CONF_TELEMETRY_MQTT_HOST,
-    CONF_TELEMETRY_MQTT_PORT,
-    CONF_TELEMETRY_MQTT_PREFIX,
     CONF_USERNAME,
     DEFAULT_CHARGE_RATE_KW,
     DEFAULT_HW_MIN_PERCENT,
@@ -334,7 +330,6 @@ class WizardMixin:
         payload.update(self._map_pricing_to_backend(wizard_data))
         payload.update(self._build_boiler_options(wizard_data))
         payload.update(self._build_auto_options(wizard_data))
-        payload.update(self._build_mqtt_options(wizard_data))
         return payload
 
     @staticmethod
@@ -492,19 +487,6 @@ class WizardMixin:
     @staticmethod
     def _build_auto_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
         return {"enable_auto": wizard_data.get("enable_auto", False)}
-
-    @staticmethod
-    def _build_mqtt_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            CONF_TELEMETRY_MQTT_ENABLED: wizard_data.get(
-                CONF_TELEMETRY_MQTT_ENABLED, False
-            ),
-            CONF_TELEMETRY_MQTT_HOST: wizard_data.get(CONF_TELEMETRY_MQTT_HOST, ""),
-            CONF_TELEMETRY_MQTT_PORT: wizard_data.get(CONF_TELEMETRY_MQTT_PORT, 1883),
-            CONF_TELEMETRY_MQTT_PREFIX: wizard_data.get(
-                CONF_TELEMETRY_MQTT_PREFIX, "oig/cloud-telemetry"
-            ),
-        }
 
     @staticmethod
     def _map_backend_to_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -920,24 +902,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 vol.Optional(
                     "enable_auto", default=defaults.get("enable_auto", False)
                 ): bool,
-                vol.Optional(
-                    CONF_TELEMETRY_MQTT_ENABLED,
-                    default=defaults.get(CONF_TELEMETRY_MQTT_ENABLED, False),
-                ): bool,
-                vol.Optional(
-                    CONF_TELEMETRY_MQTT_HOST,
-                    default=defaults.get(CONF_TELEMETRY_MQTT_HOST, ""),
-                ): str,
-                vol.Optional(
-                    CONF_TELEMETRY_MQTT_PORT,
-                    default=defaults.get(CONF_TELEMETRY_MQTT_PORT, 1883),
-                ): int,
-                vol.Optional(
-                    CONF_TELEMETRY_MQTT_PREFIX,
-                    default=defaults.get(
-                        CONF_TELEMETRY_MQTT_PREFIX, "oig/cloud-telemetry"
-                    ),
-                ): str,
                 vol.Optional("go_back", default=False): bool,
             }
         )
@@ -2649,10 +2613,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                     "enable_pricing": False,
                     "enable_battery_prediction": False,
                     "enable_dashboard": False,
-                    CONF_TELEMETRY_MQTT_ENABLED: False,
-                    CONF_TELEMETRY_MQTT_HOST: "",
-                    CONF_TELEMETRY_MQTT_PORT: 1883,
-                    CONF_TELEMETRY_MQTT_PREFIX: "oig/cloud-telemetry",
                     "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
                     "home_charge_rate": DEFAULT_CHARGE_RATE_KW,
                     CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
@@ -2760,7 +2720,14 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             _LOGGER.exception("OptionsFlow init: pricing mapping failed, keeping raw")
 
         self._wizard_data = backend_options | frontend_pricing
-        self._wizard_data.update(self._build_mqtt_options(backend_options))
+        for legacy_telemetry_key in (
+            "no_telemetry",
+            "telemetry_mqtt_enabled",
+            "telemetry_mqtt_host",
+            "telemetry_mqtt_port",
+            "telemetry_mqtt_prefix",
+        ):
+            self._wizard_data.pop(legacy_telemetry_key, None)
 
         # Přidat přihlašovací údaje z data (bez hesla)
         self._wizard_data[CONF_USERNAME] = config_entry.data.get(CONF_USERNAME)

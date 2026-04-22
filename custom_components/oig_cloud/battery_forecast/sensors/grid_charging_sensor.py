@@ -144,7 +144,10 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
             battery_sensor = _find_battery_forecast_sensor(self.hass, self._box_id)
 
             if not battery_sensor:
-                _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "[GridChargingPlan] BatteryForecastSensor not found")
+                _LOGGER.warning(
+                    "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                    + "[GridChargingPlan] BatteryForecastSensor not found"
+                )
                 return []
 
             precomputed = await battery_sensor._precomputed_store.async_load()
@@ -172,7 +175,12 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
             return ups_blocks
 
         except Exception as err:
-            _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "[GridChargingPlan] Error: %s", err, exc_info=True)
+            _LOGGER.error(
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                + "[GridChargingPlan] Error: %s",
+                err,
+                exc_info=True,
+            )
             return []
 
     def _get_active_plan_key(self) -> str:
@@ -270,10 +278,14 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
             return offset_seconds
 
         except Exception as err:
-            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "[GridChargingPlan] ❌ Error getting offset %s→%s, using fallback 300s: %s", from_mode,
-            to_mode,
-            err,
-            exc_info=True,)
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "[GridChargingPlan] ❌ Error getting offset %s→%s, using fallback 300s: %s",
+                from_mode,
+                to_mode,
+                err,
+                exc_info=True,
+            )
             return 300.0
 
     @cached_property
@@ -353,8 +365,12 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
 
             return start_time, end_time, start_time_str, end_time_str
         except (ValueError, AttributeError):
-            _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "[GridChargingPlan] Invalid time format: %s - %s", start_time_str,
-            end_time_str,)
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "[GridChargingPlan] Invalid time format: %s - %s",
+                start_time_str,
+                end_time_str,
+            )
             return None
 
     def _resolve_block_offsets(
@@ -387,8 +403,7 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
         return (
             abs(
                 (
-                    self._parse_time_to_datetime(next_start, day)
-                    - end_time
+                    self._parse_time_to_datetime(next_start, day) - end_time
                 ).total_seconds()
             )
             <= 60
@@ -525,7 +540,11 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
             "next_charging_duration": next_charging_duration,
             "is_charging_planned": len(charging_blocks) > 0,
             **({"decision_trace": decision_trace} if decision_trace else {}),
-            **({"planner_decision_trace": planner_decision_trace} if planner_decision_trace else {}),
+            **(
+                {"planner_decision_trace": planner_decision_trace}
+                if planner_decision_trace
+                else {}
+            ),
         }
 
 

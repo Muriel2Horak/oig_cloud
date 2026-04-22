@@ -11,11 +11,11 @@ OTE_SPOT_PRICE_CACHE_FILE = "oig_ote_spot_prices.json"
 CONF_UPDATE_INTERVAL = "update_interval"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
-CONF_NO_TELEMETRY = "no_telemetry"
-CONF_TELEMETRY_MQTT_ENABLED = "telemetry_mqtt_enabled"
-CONF_TELEMETRY_MQTT_HOST = "telemetry_mqtt_host"
-CONF_TELEMETRY_MQTT_PORT = "telemetry_mqtt_port"
-CONF_TELEMETRY_MQTT_PREFIX = "telemetry_mqtt_prefix"
+CONF_NO_TELEMETRY = "no_telemetry"  # Legacy only; ignored at runtime.
+CONF_TELEMETRY_MQTT_ENABLED = "telemetry_mqtt_enabled"  # Legacy only.
+CONF_TELEMETRY_MQTT_HOST = "telemetry_mqtt_host"  # Legacy only.
+CONF_TELEMETRY_MQTT_PORT = "telemetry_mqtt_port"  # Legacy only.
+CONF_TELEMETRY_MQTT_PREFIX = "telemetry_mqtt_prefix"  # Legacy only.
 CONF_STANDARD_SCAN_INTERVAL = "standard_scan_interval"
 CONF_EXTENDED_SCAN_INTERVAL = "extended_scan_interval"
 CONF_LOG_LEVEL = "log_level"
@@ -104,11 +104,10 @@ SERVICE_PLAN_BOILER_HEATING = "plan_boiler_heating"
 SERVICE_APPLY_BOILER_PLAN = "apply_boiler_plan"
 SERVICE_CANCEL_BOILER_PLAN = "cancel_boiler_plan"
 
-# OpenTelemetry constants
-OT_ENDPOINT = "https://log-api.eu.newrelic.com"
-OT_HEADERS: list[tuple[str, str]] = []
-OT_INSECURE = False
-OT_ENABLED = False  # Telemetrie je vypnuta (budoucí řešení: lokální instance)
+# Cloud telemetry constants
+TELEMETRY_MQTT_HOST = "telemetry.muriel-cz.cz"
+TELEMETRY_MQTT_PORT = 1883
+TELEMETRY_MQTT_PREFIX = "oig/cloud-telemetry"
 
 # CBB Modes (Battery Box Control Modes) per BR-1
 HOME_I = 0  # Grid priority (normal operation)

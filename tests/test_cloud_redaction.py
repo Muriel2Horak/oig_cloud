@@ -33,7 +33,7 @@ def _build_planner_event(module, *, details_json, **diagnostics):
         occurred_at="2026-04-20T12:00:00Z",
         device_id="12345",
         install_id_hash=INSTALL_ID_HASH,
-        integration_version="2.3.34",
+        integration_version="2.3.35",
         run_id="12345:2026-04-20T12:00:00+00:00",
         correlation_id="12345:2026-04-20T12:00:00+00:00",
         diagnostics={

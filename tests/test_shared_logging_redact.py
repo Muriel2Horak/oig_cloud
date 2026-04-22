@@ -2,15 +2,33 @@
 
 from __future__ import annotations
 
-import time
-from unittest.mock import AsyncMock, MagicMock
+import importlib
+import sys
+import types
+from pathlib import Path
 
-import pytest
 
-from custom_components.oig_cloud.shared.logging import (
-    _redact_sensitive,
-    setup_simple_telemetry,
-)
+ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = ROOT / "custom_components"
+OIG_ROOT = PACKAGE_ROOT / "oig_cloud"
+SHARED_ROOT = OIG_ROOT / "shared"
+TEST_PACKAGE = "shared_logging_redact_testpkg"
+
+
+def _ensure_package(name: str, path: Path) -> None:
+    module = sys.modules.get(name)
+    if module is None:
+        module = types.ModuleType(name)
+        module.__path__ = [str(path)]
+        sys.modules[name] = module
+
+
+_ensure_package(TEST_PACKAGE, ROOT)
+_ensure_package(f"{TEST_PACKAGE}.oig_cloud", OIG_ROOT)
+_ensure_package(f"{TEST_PACKAGE}.oig_cloud.shared", SHARED_ROOT)
+
+logging_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.shared.logging")
+_redact_sensitive = logging_module._redact_sensitive
 
 
 def test_redact_sensitive_none():
@@ -65,63 +83,6 @@ def test_redact_sensitive_cookie_pattern():
         assert result == "***REDACTED***", f"Failed for: {pattern}"
 
 
-def test_setup_simple_telemetry_success():
-    """Test that setup_simple_telemetry creates SimpleTelemetry instance."""
-    result = setup_simple_telemetry("email_hash", "hass_id")
-
-    assert result is not None
-    assert result.url.endswith("/log/v1")
-    assert "Content-Type" in result.headers
-    assert "X-Event-Source" in result.headers
-
-
-@pytest.mark.asyncio
-async def test_telemetry_send_event_session_not_available():
-    """Test that send_event returns False when aiohttp is not available."""
-    # Create telemetry with unavailable aiohttp
-    from custom_components.oig_cloud.shared.logging import SimpleTelemetry
-
-    class NoAiohttpTelemetry(SimpleTelemetry):
-        def __init__(self, url, headers):
-            super().__init__(url, headers)
-            self._aiohttp_available = False
-
-    telemetry = NoAiohttpTelemetry("http://example.test", {})
-    result = await telemetry.send_event("test", "service", {"data": 123})
-
-    assert result is False
-
-
-@pytest.mark.asyncio
-async def test_telemetry_close_no_session():
-    """Test that close handles None session."""
-    from custom_components.oig_cloud.shared.logging import SimpleTelemetry
-
-    telemetry = SimpleTelemetry("http://example.test", {})
-    telemetry.session = None
-
-    # Should not raise any exception
-    await telemetry.close()
-
-
-@pytest.mark.asyncio
-async def test_telemetry_close_closed_session():
-    """Test that close handles already closed session."""
-    from custom_components.oig_cloud.shared.logging import SimpleTelemetry
-
-    class DummyClosedSession:
-        closed = True
-
-        async def close(self):
-            await time.sleep(0)
-
-    telemetry = SimpleTelemetry("http://example.test", {})
-    telemetry.session = DummyClosedSession()
-
-    # Should not raise any exception
-    await telemetry.close()
-
-
 def test_redact_sensitive_list_and_dict():
     """Test that lists and dicts are converted to strings."""
     # List - will be converted to string but not redacted unless it contains token pattern
@@ -151,38 +112,6 @@ def test_redact_sensitive_string_without_sensitive_data():
     assert result == "normal string without tokens"
 
 
-# Test that covers import fallback when aiohttp is not available
-def test_imports_fallback_when_aiohttp_unavailable():
-    """Test that imports work even when aiohttp is unavailable."""
-    import custom_components.oig_cloud.shared.logging as logging_module
-    # If aiohttp is available, it should be imported
-    # If not available, it should fall back to None
-    assert hasattr(logging_module, 'ClientSession')
-    assert hasattr(logging_module, 'ClientTimeout')
-    assert hasattr(logging_module, 'TCPConnector')
-
-
-def test_import_fallback_executes_except_branch(monkeypatch):
-    """Force ImportError for aiohttp to execute fallback branch."""
-    import builtins
-    import importlib
-
-    import custom_components.oig_cloud.shared.logging as logging_module
-
-    original_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name == "aiohttp" or name.startswith("aiohttp."):
-            raise ImportError("forced")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-    importlib.reload(logging_module)
-
-    try:
-        assert logging_module.ClientSession is None
-        assert logging_module.ClientTimeout is None
-        assert logging_module.TCPConnector is None
-    finally:
-        monkeypatch.setattr(builtins, "__import__", original_import)
-        importlib.reload(logging_module)
+def test_logging_module_no_longer_exports_new_relic_bootstrap():
+    assert not hasattr(logging_module, "SimpleTelemetry")
+    assert not hasattr(logging_module, "setup_simple_telemetry")

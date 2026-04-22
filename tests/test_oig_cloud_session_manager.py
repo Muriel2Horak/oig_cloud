@@ -81,7 +81,7 @@ def _make_telemetry_state() -> dict[str, Any]:
         "cloud_context": {
             "device_id": "12345",
             "install_id_hash": INSTALL_ID_HASH,
-            "integration_version": "2.3.34",
+        "integration_version": "2.3.35",
         },
     }
 
