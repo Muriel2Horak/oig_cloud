@@ -281,7 +281,7 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
 
         except Exception as err:
             _LOGGER.warning(
-                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                PLANNER_WARNING_MARKER
                 + "[GridChargingPlan] ❌ Error getting offset %s→%s, using fallback 300s: %s",
                 from_mode,
                 to_mode,
@@ -368,7 +368,7 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
             return start_time, end_time, start_time_str, end_time_str
         except (ValueError, AttributeError):
             _LOGGER.warning(
-                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                PLANNER_WARNING_MARKER
                 + "[GridChargingPlan] Invalid time format: %s - %s",
                 start_time_str,
                 end_time_str,
