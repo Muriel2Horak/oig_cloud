@@ -122,7 +122,7 @@ def _restore_active_plan(sensor, last_state) -> None:
                     sensor._plan_status,
                 )
     except (json.decoder.JSONDecodeError, TypeError) as err:
-        _LOGGER.warning("Failed to restore charging plan: %s", err)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to restore charging plan: %s", err)  # NOSONAR
 
 
 async def _load_daily_archive(sensor) -> None:
@@ -139,7 +139,7 @@ async def _load_daily_archive(sensor) -> None:
         else:
             _LOGGER.info("No daily archive in storage - will backfill from history")
     except Exception as err:
-        _LOGGER.warning("Failed to load daily plans archive from storage: %s", err)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to load daily plans archive from storage: %s", err)
 
 
 async def _backfill_daily_archive(sensor) -> None:
@@ -149,7 +149,7 @@ async def _backfill_daily_archive(sensor) -> None:
         _LOGGER.info(" Backfilling daily plans archive from storage...")
         await sensor._backfill_daily_archive_from_storage()
     except Exception as err:
-        _LOGGER.warning("Failed to backfill daily archive: %s", err)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to backfill daily archive: %s", err)
 
 
 def _restore_daily_plan_state(sensor, last_state) -> None:
@@ -168,7 +168,7 @@ def _restore_daily_plan_state(sensor, last_state) -> None:
                 actual_count,
             )
     except (json.decoder.JSONDecodeError, TypeError) as err:
-        _LOGGER.warning("Failed to restore daily plan state: %s", err)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to restore daily plan state: %s", err)
 
 
 def _schedule_forecast_refresh(sensor) -> None:
@@ -177,7 +177,7 @@ def _schedule_forecast_refresh(sensor) -> None:
         try:
             await sensor.async_update()
         except Exception as err:
-            _LOGGER.error("Forecast refresh failed: %s", err, exc_info=True)
+            _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Forecast refresh failed: %s", err, exc_info=True)
 
     for minute in [0, 15, 30, 45]:
         async_track_time_change(
@@ -216,7 +216,7 @@ def _schedule_initial_refresh(sensor) -> None:
             await sensor.async_update()
             _LOGGER.info(" Initial forecast completed")
         except Exception as err:
-            _LOGGER.error("Initial forecast failed: %s", err, exc_info=True)
+            _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Initial forecast failed: %s", err, exc_info=True)
 
     _create_background_task(sensor, _initial_refresh(), "oig_cloud_battery_forecast_initial_refresh")
 

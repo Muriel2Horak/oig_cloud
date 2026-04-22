@@ -107,9 +107,7 @@ class BalancingManager:
 
     def _get_holding_time_hours(self) -> int:
         """Get balancing holding time from config (default 3 hours)."""
-        return self._get_int_option(
-            "balancing_hold_hours", "balancing_holding_time", 3
-        )
+        return self._get_int_option("balancing_hold_hours", "balancing_holding_time", 3)
 
     def _get_cycle_days(self) -> int:
         """Get balancing cycle days from config (default 7 days)."""
@@ -195,7 +193,10 @@ class BalancingManager:
             _LOGGER.info("BalancingManager: async_setup() done")
         except Exception as err:
             _LOGGER.error(
-                "BalancingManager: async_setup() failed: %s", err, exc_info=True
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "BalancingManager: async_setup() failed: %s",
+                err,
+                exc_info=True,
             )
             raise
 
@@ -219,7 +220,9 @@ class BalancingManager:
             )
         except Exception as err:
             _LOGGER.warning(
-                "BalancingManager: Failed to load state: %s (starting fresh)", err
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
+                + "BalancingManager: Failed to load state: %s (starting fresh)",
+                err,
             )
             # Start with clean state if load fails
             self._last_balancing_ts = None
@@ -232,9 +235,9 @@ class BalancingManager:
                 self._last_balancing_ts.isoformat() if self._last_balancing_ts else None
             ),
             "active_plan": self._active_plan.to_dict() if self._active_plan else None,
-            "last_plan_ts": self._last_plan_ts.isoformat()
-            if self._last_plan_ts
-            else None,
+            "last_plan_ts": (
+                self._last_plan_ts.isoformat() if self._last_plan_ts else None
+            ),
             "last_plan_mode": self._last_plan_mode,
         }
         await self._store.async_save(data)
@@ -251,7 +254,11 @@ class BalancingManager:
                 await self._coordinator.async_request_refresh()
                 _LOGGER.info("✅ Coordinator refresh scheduled successfully")
             except Exception as e:
-                _LOGGER.error(f"Failed to request coordinator refresh: {e}")
+                _LOGGER.error(
+                    "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                    "Failed to request coordinator refresh: %s",
+                    e,
+                )
                 _LOGGER.info(
                     "✅ Forecast sensor and storage updated with balancing plan"
                 )
@@ -300,7 +307,10 @@ class BalancingManager:
             return active_plan
 
         if force:
-            _LOGGER.warning("🔴 FORCE MODE enabled - creating forced balancing plan!")
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "🔴 FORCE MODE enabled - creating forced balancing plan!"
+            )
             return await self._handle_forced_plan(manual_trigger=True)
 
         days_since_last = self._get_days_since_last_balancing()
@@ -342,7 +352,8 @@ class BalancingManager:
         forced_plan = await self._handle_forced_plan(manual_trigger=False)
         if forced_plan:
             _LOGGER.warning(
-                "🔴 FORCED balancing after %.1f days! Health priority over cost.",
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "🔴 FORCED balancing after %.1f days! Health priority over cost.",
                 days_since_last,
             )
         return forced_plan
@@ -393,9 +404,7 @@ class BalancingManager:
             return None
 
         now = dt_util.now()
-        holding_start = self._normalize_plan_datetime(
-            self._active_plan.holding_start
-        )
+        holding_start = self._normalize_plan_datetime(self._active_plan.holding_start)
         holding_end = self._normalize_plan_datetime(self._active_plan.holding_end)
         if not holding_start or not holding_end:
             return self._active_plan
@@ -410,7 +419,8 @@ class BalancingManager:
 
         if holding_end < now:
             _LOGGER.warning(
-                "⏰ Holding period ended at %s. Clearing expired plan.",
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "⏰ Holding period ended at %s. Clearing expired plan.",
                 holding_end.strftime("%H:%M"),
             )
             self._active_plan = None
@@ -429,10 +439,16 @@ class BalancingManager:
     ) -> Optional[BalancingPlan]:
         forced_plan = await self._create_forced_plan()
         if not forced_plan:
-            _LOGGER.error("Failed to create forced balancing plan!")
+            _LOGGER.error(
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "Failed to create forced balancing plan!"
+            )
             return None
         if manual_trigger:
-            _LOGGER.warning("🔴 FORCED balancing plan created (manual trigger)!")
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "🔴 FORCED balancing plan created (manual trigger)!"
+            )
         await self._activate_plan(forced_plan)
         return forced_plan
 
@@ -523,12 +539,23 @@ class BalancingManager:
             # Recorder DB nemusí být hned po startu připravená
             if "database connection has not been established" in str(e).lower():
                 _LOGGER.warning(
-                    "Error checking balancing completion: Recorder not ready yet; skipping"
+                    "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                    + "Error checking balancing completion: Recorder not ready yet; skipping"
                 )
                 return (False, None)
-            _LOGGER.error(f"Error checking balancing completion: {e}", exc_info=True)
+            _LOGGER.error(
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "Error checking balancing completion: %s",
+                e,
+                exc_info=True,
+            )
         except Exception as e:
-            _LOGGER.error(f"Error checking balancing completion: {e}", exc_info=True)
+            _LOGGER.error(
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                "Error checking balancing completion: %s",
+                e,
+                exc_info=True,
+            )
 
         return (False, None)
 
@@ -540,7 +567,9 @@ class BalancingManager:
             return 30 * 24
         return int(holding_time_hours + 1)
 
-    async def _load_soc_stats(self, battery_sensor_id: str, start_time: datetime, end_time: datetime) -> Optional[List[Any]]:
+    async def _load_soc_stats(
+        self, battery_sensor_id: str, start_time: datetime, end_time: datetime
+    ) -> Optional[List[Any]]:
         from homeassistant.components.recorder.statistics import (
             statistics_during_period,
         )
@@ -678,8 +707,7 @@ class BalancingManager:
         completion_time = last_hold_time + timedelta(hours=1)
         holding_duration = completion_time - holding_start
         if holding_duration >= timedelta(hours=holding_time_hours) and (
-            latest_completion_time is None
-            or completion_time > latest_completion_time
+            latest_completion_time is None or completion_time > latest_completion_time
         ):
             latest_completion = (holding_start, completion_time, holding_duration)
             latest_completion_time = completion_time
@@ -713,7 +741,10 @@ class BalancingManager:
         _LOGGER.debug("_check_natural_balancing: Getting HYBRID timeline...")
         timeline = self._get_hybrid_timeline()
         if not timeline:
-            _LOGGER.warning("No HYBRID timeline available for natural balancing check")
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "No HYBRID timeline available for natural balancing check"
+            )
             return None
 
         _LOGGER.debug(f"Timeline has {len(timeline)} intervals")
@@ -774,7 +805,10 @@ class BalancingManager:
         # Check if SoC meets threshold
         current_soc_percent = await self._get_current_soc_percent()
         if current_soc_percent is None:
-            _LOGGER.warning("Cannot get current SoC for opportunistic balancing")
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "Cannot get current SoC for opportunistic balancing"
+            )
             return None
 
         soc_threshold = self._get_soc_threshold()
@@ -800,7 +834,10 @@ class BalancingManager:
         # 2. Find all possible holding windows in next 48h
         prices = await self._get_spot_prices_48h()
         if not prices:
-            _LOGGER.warning("No spot prices available for cost optimization")
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "No spot prices available for cost optimization"
+            )
             # Fall back to immediate
             holding_start = datetime.now() + timedelta(hours=1)
             holding_end = holding_start + timedelta(
@@ -948,7 +985,8 @@ class BalancingManager:
         )
 
         _LOGGER.warning(
-            f"🔴 FORCED balancing: Health priority! "
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            + f"🔴 FORCED balancing: Health priority! "
             f"Cost={immediate_cost:.2f} CZK (not optimized)"
         )
 
@@ -970,7 +1008,9 @@ class BalancingManager:
         # Start holding when charging completes
         # Round to next 15-min interval
         minutes_from_now = int(charging_hours * 60)
-        minutes_rounded = ((minutes_from_now + 14) // 15) * 15  # Round up to nearest 15min
+        minutes_rounded = (
+            (minutes_from_now + 14) // 15
+        ) * 15  # Round up to nearest 15min
         holding_start = now + timedelta(minutes=minutes_rounded)
         holding_end = holding_start + timedelta(hours=holding_time_hours)
 
@@ -1092,7 +1132,10 @@ class BalancingManager:
         # Get current spot price
         prices = await self._get_spot_prices_48h()
         if not prices:
-            _LOGGER.warning("No spot prices available for immediate cost calculation")
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "No spot prices available for immediate cost calculation"
+            )
             return 999.0  # High cost to prevent selection
 
         now = datetime.now()
@@ -1106,7 +1149,10 @@ class BalancingManager:
                 current_price = price
 
         if current_price is None:
-            _LOGGER.warning("Could not find current spot price")
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "Could not find current spot price"
+            )
             return 999.0
 
         # Calculate charge needed
@@ -1197,7 +1243,9 @@ class BalancingManager:
     def _estimate_grid_consumption(
         self, now: datetime, window_start: datetime
     ) -> float:
-        if not (self._forecast_sensor and hasattr(self._forecast_sensor, "_timeline_data")):
+        if not (
+            self._forecast_sensor and hasattr(self._forecast_sensor, "_timeline_data")
+        ):
             return 0.0
         timeline = self._forecast_sensor._timeline_data
         if not timeline:
@@ -1342,7 +1390,8 @@ class BalancingManager:
 
         if not state or state.state in ["unknown", "unavailable"]:
             _LOGGER.warning(
-                f"Battery capacity sensor {sensor_id} not available or unknown"
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + f"Battery capacity sensor {sensor_id} not available or unknown"
             )
             return None
 
@@ -1372,13 +1421,19 @@ class BalancingManager:
         """
         await asyncio.sleep(0)
         if not self._forecast_sensor:
-            _LOGGER.warning("Forecast sensor not set, cannot get spot prices")
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "Forecast sensor not set, cannot get spot prices"
+            )
             return {}
 
         # Get active timeline from forecast sensor (_timeline_data attribute)
         timeline = getattr(self._forecast_sensor, "_timeline_data", None)
         if not timeline:
-            _LOGGER.warning("No active timeline available for spot prices")
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "No active timeline available for spot prices"
+            )
             return {}
 
         prices = {}

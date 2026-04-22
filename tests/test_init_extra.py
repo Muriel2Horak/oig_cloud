@@ -1,13 +1,256 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
+import importlib.util
+import sys
+import types
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-import custom_components.oig_cloud as init_module
-from custom_components.oig_cloud.const import DOMAIN
-from custom_components.oig_cloud.shield.core import ServiceShield
+
+ROOT = Path(__file__).resolve().parents[1]
+OIG_ROOT = ROOT / "custom_components" / "oig_cloud"
+CORE_ROOT = OIG_ROOT / "core"
+LIB_ROOT = OIG_ROOT / "lib"
+LIB_OIG_ROOT = LIB_ROOT / "oig_cloud_client"
+LIB_API_ROOT = LIB_OIG_ROOT / "api"
+SHIELD_ROOT = OIG_ROOT / "shield"
+TEST_PACKAGE = "init_extra_testpkg"
+
+
+def _ensure_package(name: str, path: Path) -> None:
+    module = sys.modules.get(name)
+    if module is None:
+        module = types.ModuleType(name)
+        module.__path__ = [str(path)]
+        sys.modules[name] = module
+
+
+def _load_package_module(name: str, path: Path) -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        name,
+        path,
+        submodule_search_locations=[str(path.parent)],
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _new_module(name: str, **attrs: object) -> types.ModuleType:
+    module = types.ModuleType(name)
+    module.__dict__.update(attrs)
+    return module
+
+
+def _install_test_stubs() -> None:
+    _ensure_package(TEST_PACKAGE, ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.core", CORE_ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.lib", LIB_ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.lib.oig_cloud_client", LIB_OIG_ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.lib.oig_cloud_client.api", LIB_API_ROOT)
+    _ensure_package(f"{TEST_PACKAGE}.oig_cloud.shield", SHIELD_ROOT)
+
+    try:
+        import homeassistant  # noqa: F401
+        import homeassistant.config_entries  # noqa: F401
+        import homeassistant.const  # noqa: F401
+        import homeassistant.core  # noqa: F401
+        import homeassistant.exceptions  # noqa: F401
+        import homeassistant.helpers.config_validation  # noqa: F401
+        import homeassistant.helpers.event  # noqa: F401
+        import homeassistant.util.dt  # noqa: F401
+    except ImportError:
+        class ConfigEntry:
+            pass
+
+        class ConfigEntryState:
+            SETUP_IN_PROGRESS = "setup_in_progress"
+            LOADED = "loaded"
+
+        class HomeAssistant:
+            pass
+
+        class Context:
+            pass
+
+        class ConfigEntryAuthFailed(Exception):
+            pass
+
+        class ConfigEntryNotReady(Exception):
+            pass
+
+        class Platform:
+            SENSOR = "sensor"
+            SWITCH = "switch"
+
+        def callback(func):
+            return func
+
+        config_entries = _new_module(
+            "homeassistant.config_entries",
+            ConfigEntry=ConfigEntry,
+            ConfigEntryState=ConfigEntryState,
+        )
+        core = _new_module(
+            "homeassistant.core",
+            HomeAssistant=HomeAssistant,
+            Context=Context,
+            callback=callback,
+        )
+        ha_const = _new_module("homeassistant.const", Platform=Platform)
+        exceptions = _new_module(
+            "homeassistant.exceptions",
+            ConfigEntryAuthFailed=ConfigEntryAuthFailed,
+            ConfigEntryNotReady=ConfigEntryNotReady,
+        )
+        config_validation = _new_module(
+            "homeassistant.helpers.config_validation",
+            config_entry_only_config_schema=lambda domain: domain,
+        )
+        event = _new_module(
+            "homeassistant.helpers.event",
+            async_track_state_change_event=lambda *_a, **_k: None,
+            async_track_time_interval=lambda *_a, **_k: None,
+        )
+        helpers = _new_module(
+            "homeassistant.helpers",
+            config_validation=config_validation,
+            event=event,
+        )
+        dt_module = _new_module("homeassistant.util.dt", now=lambda: None)
+        util = _new_module("homeassistant.util", dt=dt_module)
+        homeassistant = _new_module(
+            "homeassistant",
+            config_entries=config_entries,
+            core=core,
+            const=ha_const,
+            exceptions=exceptions,
+            helpers=helpers,
+            util=util,
+        )
+
+        sys.modules["homeassistant"] = homeassistant
+        sys.modules["homeassistant.config_entries"] = config_entries
+        sys.modules["homeassistant.core"] = core
+        sys.modules["homeassistant.const"] = ha_const
+        sys.modules["homeassistant.exceptions"] = exceptions
+        sys.modules["homeassistant.helpers"] = helpers
+        sys.modules["homeassistant.helpers.config_validation"] = config_validation
+        sys.modules["homeassistant.helpers.event"] = event
+        sys.modules["homeassistant.util"] = util
+        sys.modules["homeassistant.util.dt"] = dt_module
+
+    if "voluptuous" not in sys.modules:
+        sys.modules["voluptuous"] = types.ModuleType("voluptuous")
+
+    coordinator_module = _new_module(
+        f"{TEST_PACKAGE}.oig_cloud.core.coordinator",
+        OigCloudCoordinator=type("OigCloudCoordinator", (), {}),
+    )
+    sys.modules.setdefault(
+        f"{TEST_PACKAGE}.oig_cloud.core.coordinator", coordinator_module
+    )
+
+    data_source_module = _new_module(
+        f"{TEST_PACKAGE}.oig_cloud.core.data_source",
+        DATA_SOURCE_CLOUD_ONLY="cloud_only",
+        DEFAULT_DATA_SOURCE_MODE="cloud_only",
+        DEFAULT_LOCAL_EVENT_DEBOUNCE_MS=1000,
+        DEFAULT_PROXY_STALE_MINUTES=5,
+        DataSourceController=type("DataSourceController", (), {}),
+        get_data_source_state=lambda *_a, **_k: SimpleNamespace(
+            effective_mode="cloud_only",
+            configured_mode="cloud_only",
+            local_available=False,
+        ),
+        init_data_source_state=lambda *_a, **_k: None,
+    )
+    sys.modules.setdefault(
+        f"{TEST_PACKAGE}.oig_cloud.core.data_source", data_source_module
+    )
+
+    api_module = _new_module(
+        f"{TEST_PACKAGE}.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api",
+        OigCloudApi=type("OigCloudApi", (), {}),
+        OigCloudAuthError=type("OigCloudAuthError", (Exception,), {}),
+    )
+    sys.modules.setdefault(
+        f"{TEST_PACKAGE}.oig_cloud.lib.oig_cloud_client.api.oig_cloud_api", api_module
+    )
+
+    for module_name in (
+        f"{TEST_PACKAGE}.oig_cloud.shield.dispatch",
+        f"{TEST_PACKAGE}.oig_cloud.shield.queue",
+        f"{TEST_PACKAGE}.oig_cloud.shield.validation",
+    ):
+        module = _new_module(
+            module_name,
+            log_event=lambda *_a, **_k: None,
+            safe_call_service=lambda *_a, **_k: None,
+            start_monitoring_task=lambda *_a, **_k: None,
+            check_entities_periodically=lambda *_a, **_k: None,
+            check_loop=lambda *_a, **_k: None,
+            start_monitoring=lambda *_a, **_k: None,
+            async_check_loop=lambda *_a, **_k: None,
+            extract_expected_entities=lambda *_a, **_k: {},
+            check_entity_state_change=lambda *_a, **_k: True,
+        )
+        sys.modules.setdefault(module_name, module)
+
+    if "homeassistant.helpers.device_registry" not in sys.modules:
+        device_registry_module = _new_module(
+            "homeassistant.helpers.device_registry",
+            async_get=lambda *_a, **_k: None,
+            async_entries_for_config_entry=lambda *_a, **_k: [],
+        )
+        sys.modules.setdefault(
+            "homeassistant.helpers.device_registry", device_registry_module
+        )
+    else:
+        device_registry_module = sys.modules["homeassistant.helpers.device_registry"]
+
+    if "homeassistant.helpers.entity_registry" not in sys.modules:
+        entity_registry_module = _new_module(
+            "homeassistant.helpers.entity_registry",
+            async_get=lambda *_a, **_k: None,
+            async_entries_for_device=lambda *_a, **_k: [],
+            async_entries_for_config_entry=lambda *_a, **_k: [],
+        )
+        sys.modules.setdefault(
+            "homeassistant.helpers.entity_registry", entity_registry_module
+        )
+    else:
+        entity_registry_module = sys.modules["homeassistant.helpers.entity_registry"]
+
+    helpers_module = sys.modules.get("homeassistant.helpers")
+    if helpers_module is not None:
+        setattr(helpers_module, "device_registry", device_registry_module)
+        setattr(helpers_module, "entity_registry", entity_registry_module)
+
+    async def _async_unload_services(*_args, **_kwargs):
+        return None
+
+    services_module = _new_module(
+        f"{TEST_PACKAGE}.oig_cloud.services",
+        async_unload_services=_async_unload_services,
+    )
+    sys.modules.setdefault(f"{TEST_PACKAGE}.oig_cloud.services", services_module)
+
+
+_install_test_stubs()
+
+init_module = _load_package_module(f"{TEST_PACKAGE}.oig_cloud", OIG_ROOT / "__init__.py")
+const_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.const")
+shield_core_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.shield.core")
+
+DOMAIN = const_module.DOMAIN
+ServiceShield = shield_core_module.ServiceShield
 
 
 class DummyDevice:
@@ -59,44 +302,8 @@ class DummyHass:
 
 
 @pytest.mark.asyncio
-async def test_setup_telemetry_success(monkeypatch):
+async def test_setup_telemetry_is_legacy_noop():
     hass = SimpleNamespace(data={"core.uuid": "abc"})
-    handler = object()
-
-    monkeypatch.setattr(
-        "custom_components.oig_cloud.shared.logging.setup_simple_telemetry",
-        lambda *_a, **_k: handler,
-    )
-
-    await init_module._setup_telemetry(hass, "user@example.com")
-
-    assert hass.data[DOMAIN]["telemetry"] is handler
-
-
-@pytest.mark.asyncio
-async def test_setup_telemetry_no_handler(monkeypatch):
-    hass = SimpleNamespace(data={"core.uuid": "abc"})
-
-    monkeypatch.setattr(
-        "custom_components.oig_cloud.shared.logging.setup_simple_telemetry",
-        lambda *_a, **_k: None,
-    )
-
-    await init_module._setup_telemetry(hass, "user@example.com")
-
-    assert DOMAIN not in hass.data or "telemetry" not in hass.data[DOMAIN]
-
-
-@pytest.mark.asyncio
-async def test_setup_telemetry_exception(monkeypatch):
-    hass = SimpleNamespace(data={"core.uuid": "abc"})
-
-    def _raise(*_a, **_k):
-        raise RuntimeError("fail")
-
-    monkeypatch.setattr(
-        "custom_components.oig_cloud.shared.logging.setup_simple_telemetry", _raise
-    )
 
     await init_module._setup_telemetry(hass, "user@example.com")
 

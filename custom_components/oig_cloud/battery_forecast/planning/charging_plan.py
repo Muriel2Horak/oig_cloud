@@ -146,7 +146,9 @@ def economic_charging_plan(
 
     if pv_forecast:
         pv_forecast_kwh = pv_forecast.get("pv_forecast_kwh", pv_forecast_kwh)
-        pv_forecast_confidence = pv_forecast.get("pv_forecast_confidence", pv_forecast_confidence)
+        pv_forecast_confidence = pv_forecast.get(
+            "pv_forecast_confidence", pv_forecast_confidence
+        )
 
     defer_for_pv = should_defer_for_pv(
         pv_forecast_kwh=pv_forecast_kwh,
@@ -247,7 +249,8 @@ def economic_charging_plan(
         )
         if current_soc < flags.pre_peak_charging_canary_soc_threshold_kwh:
             _LOGGER.warning(
-                "PRE_PEAK_CANARY: SOC %.2fkWh below canary threshold %.2fkWh",
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
+                + "PRE_PEAK_CANARY: SOC %.2fkWh below canary threshold %.2fkWh",
                 current_soc,
                 flags.pre_peak_charging_canary_soc_threshold_kwh,
             )
@@ -261,7 +264,8 @@ def economic_charging_plan(
 
     if not candidates:
         _LOGGER.warning(
-            "No economic charging candidates under max_price=%sCZK",
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            + "No economic charging candidates under max_price=%sCZK",
             plan.max_charging_price,
         )
         return timeline, {}
@@ -291,7 +295,9 @@ def economic_charging_plan(
         "target_achieved": target_achieved,
         "min_achieved": min_achieved,
         "shortage_kwh": (
-            max(0, plan.target_capacity_kwh - final_capacity) if not target_achieved else 0
+            max(0, plan.target_capacity_kwh - final_capacity)
+            if not target_achieved
+            else 0
         ),
         "protection_enabled": plan.config.get("enable_blackout_protection", False)
         or plan.config.get("enable_weather_risk", False),
@@ -385,7 +391,10 @@ def smart_charging_plan(
     )
 
     if iteration >= 100:
-        _LOGGER.warning("Reached max iterations in smart charging plan")
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            + "Reached max iterations in smart charging plan"
+        )
 
     final_capacity = timeline[-1].get("battery_capacity_kwh", 0)
     target_achieved = final_capacity >= effective_target
@@ -430,7 +439,8 @@ def _apply_protection_override(
         return protection_soc_kwh, decision_trace
 
     _LOGGER.warning(
-        "PROTECTION OVERRIDE: Need %.2fkWh to reach protection target %.2fkWh (current: %.2fkWh)",
+        "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+        + "PROTECTION OVERRIDE: Need %.2fkWh to reach protection target %.2fkWh (current: %.2fkWh)",
         protection_shortage,
         protection_soc_kwh,
         current_soc,
@@ -444,6 +454,7 @@ def _apply_protection_override(
     )
     if not candidates:
         _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
             "PROTECTION FAILED: No charging candidates under max_price=%sCZK",
             plan.max_charging_price,
         )
@@ -546,7 +557,8 @@ def _apply_economic_candidate(
                 max_charge_per_interval=charge_per_interval,
             )
             _LOGGER.warning(
-                "DEATH VALLEY at %s: Need %.2fkWh (min_soc_wait=%.2fkWh, effective_min=%.2fkWh)",
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "DEATH VALLEY at %s: Need %.2fkWh (min_soc_wait=%.2fkWh, effective_min=%.2fkWh)",
                 timestamp,
                 min_charge,
                 min_soc_wait,
@@ -619,7 +631,11 @@ def _apply_economic_candidate(
             reason_code=REASON_ECONOMIC_CHARGING,
             precedence_level=PrecedenceLevel.ECONOMIC_CHARGING,
             precedence_name=PrecedenceLevel.ECONOMIC_CHARGING.name,
-            details={"price": price, "kwh": charge_per_interval, "savings_per_kwh": savings_per_kwh},
+            details={
+                "price": price,
+                "kwh": charge_per_interval,
+                "savings_per_kwh": savings_per_kwh,
+            },
         )
 
     _LOGGER.debug(
@@ -636,7 +652,11 @@ def _apply_economic_candidate(
         reason_code="insufficient_savings",
         precedence_level=PrecedenceLevel.ECONOMIC_CHARGING,
         precedence_name=PrecedenceLevel.ECONOMIC_CHARGING.name,
-        details={"price": price, "savings_per_kwh": savings_per_kwh, "margin_required": plan.min_savings_margin},
+        details={
+            "price": price,
+            "savings_per_kwh": savings_per_kwh,
+            "margin_required": plan.min_savings_margin,
+        },
     )
 
 
@@ -787,7 +807,8 @@ def _apply_target_charging(
         )
         if not charging_candidates:
             _LOGGER.warning(
-                "No more charging candidates available, shortage: %.2fkWh",
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "No more charging candidates available, shortage: %.2fkWh",
                 shortage,
             )
             break
@@ -926,7 +947,9 @@ def _project_soc_until_index(
     for idx, interval in enumerate(intervals[:end_idx_exclusive]):
         solar_kwh = _get_interval_solar_kwh(interval)
         load_kwh = _get_interval_load_kwh(interval)
-        grid_charge_kwh = _get_interval_grid_charge_kwh(interval) + extra_charge_by_index.get(idx, 0.0)
+        grid_charge_kwh = _get_interval_grid_charge_kwh(
+            interval
+        ) + extra_charge_by_index.get(idx, 0.0)
 
         if grid_charge_kwh > 0.0:
             battery_soc += solar_kwh + grid_charge_kwh
@@ -994,7 +1017,9 @@ def _has_future_negative_price_headroom_risk(
         if price is None or price >= 0.0:
             continue
 
-        future_surplus_kwh = max(0.0, _get_interval_solar_kwh(interval) - _get_interval_load_kwh(interval))
+        future_surplus_kwh = max(
+            0.0, _get_interval_solar_kwh(interval) - _get_interval_load_kwh(interval)
+        )
         if future_surplus_kwh <= 0.0:
             continue
 
@@ -1175,7 +1200,9 @@ def should_pre_charge_for_peak_avoidance(
         )
 
     # Step 5: PV-first check
-    total_solar_kwh = sum(_get_interval_solar_kwh(interval) for _, interval in pre_peak_intervals)
+    total_solar_kwh = sum(
+        _get_interval_solar_kwh(interval) for _, interval in pre_peak_intervals
+    )
     if total_solar_kwh >= 0.5 and flags.pv_first_policy_enabled:
         return PrePeakDecision(
             should_charge=False,
@@ -1212,8 +1239,12 @@ def should_pre_charge_for_peak_avoidance(
         )
 
     # Step 8: Economic calculation with round-trip efficiency
-    peak_prices = [i["spot_price_czk"] for _, i in peak_intervals if "spot_price_czk" in i]
-    pre_peak_prices = [i["spot_price_czk"] for _, i in pre_peak_intervals if "spot_price_czk" in i]
+    peak_prices = [
+        i["spot_price_czk"] for _, i in peak_intervals if "spot_price_czk" in i
+    ]
+    pre_peak_prices = [
+        i["spot_price_czk"] for _, i in pre_peak_intervals if "spot_price_czk" in i
+    ]
 
     if not peak_prices or not pre_peak_prices:
         return PrePeakDecision(
@@ -1230,10 +1261,12 @@ def should_pre_charge_for_peak_avoidance(
     peak_avg = sum(peak_prices) / len(peak_prices)
     pre_peak_avg = sum(pre_peak_prices) / len(pre_peak_prices)
 
-    selected_indices, actual_charge_kwh, charge_per_interval = _select_pre_peak_intervals(
-        pre_peak_intervals=pre_peak_intervals,
-        current_soc_kwh=current_soc_kwh,
-        config=config,
+    selected_indices, actual_charge_kwh, charge_per_interval = (
+        _select_pre_peak_intervals(
+            pre_peak_intervals=pre_peak_intervals,
+            current_soc_kwh=current_soc_kwh,
+            config=config,
+        )
     )
     extra_charge_by_index = _build_extra_charge_by_index(
         selected_indices=selected_indices,
@@ -1290,7 +1323,8 @@ def should_pre_charge_for_peak_avoidance(
             end_idx_exclusive=cheapest_future_idx,
             round_trip_efficiency=config.round_trip_efficiency,
             max_capacity_kwh=config.max_capacity,
-        )[1] >= config.hw_min_soc_kwh
+        )[1]
+        >= config.hw_min_soc_kwh
     ):
         return PrePeakDecision(
             should_charge=False,
@@ -1318,7 +1352,9 @@ def should_pre_charge_for_peak_avoidance(
         )
 
     # Step 10: Return positive decision
-    estimated_saving = (peak_avg - pre_peak_avg / config.round_trip_efficiency) * actual_charge_kwh
+    estimated_saving = (
+        peak_avg - pre_peak_avg / config.round_trip_efficiency
+    ) * actual_charge_kwh
 
     return PrePeakDecision(
         should_charge=True,

@@ -2720,6 +2720,14 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             _LOGGER.exception("OptionsFlow init: pricing mapping failed, keeping raw")
 
         self._wizard_data = backend_options | frontend_pricing
+        for legacy_telemetry_key in (
+            "no_telemetry",
+            "telemetry_mqtt_enabled",
+            "telemetry_mqtt_host",
+            "telemetry_mqtt_port",
+            "telemetry_mqtt_prefix",
+        ):
+            self._wizard_data.pop(legacy_telemetry_key, None)
 
         # Přidat přihlašovací údaje z data (bez hesla)
         self._wizard_data[CONF_USERNAME] = config_entry.data.get(CONF_USERNAME)

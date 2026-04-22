@@ -121,6 +121,7 @@ def extract_expected_entities(
         box_id = _resolve_box_id_for_shield(shield)
         if not box_id:
             _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
                 "[FIND ENTITY] box_id nelze určit, cloud entitu pro suffix '%s' nelze vybrat",
                 suffix,
             )
@@ -133,6 +134,7 @@ def extract_expected_entities(
             return entity_id
 
         _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
             "[FIND ENTITY] NENALEZENA cloud entita sensor.oig_%s_*%s",
             box_id,
             suffix,
@@ -250,7 +252,11 @@ def _expected_boiler_mode(
     }
     expected_value = boiler_mode_mapping.get(mode)
     if not expected_value:
-        _LOGGER.warning("[extract] Unknown boiler mode: %s", mode)
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+            "[extract] Unknown boiler mode: %s",
+            mode,
+        )
         return {}
 
     entity_id = find_entity("_boiler_manual_mode")
@@ -279,6 +285,7 @@ def _expected_grid_delivery(
         return _expected_grid_delivery_mode(shield, data, find_entity)
     if "mode" in data and "limit" in data:
         _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
             "[extract] CHYBA: grid_delivery dostalo mode + limit současně! Wrapper měl rozdělit!"
         )
     return {}
@@ -360,7 +367,11 @@ def _expected_grid_delivery_mode(
         mode_string.lower()
     )
     if not expected_text:
-        _LOGGER.warning("[extract] Unknown grid delivery mode: %s", mode_string)
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+            "[extract] Unknown grid delivery mode: %s",
+            mode_string,
+        )
         return {}
 
     entity_id = find_entity("_invertor_prms_to_grid")

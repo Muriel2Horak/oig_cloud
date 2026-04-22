@@ -17,7 +17,10 @@ async def load_plan_from_storage(
 ) -> Optional[Dict[str, Any]]:
     """Load a plan from Storage Helper for a given date."""
     if not sensor._plans_store:
-        _LOGGER.error(STORAGE_HELPER_NOT_INITIALIZED)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "  # NOSONAR
+            + STORAGE_HELPER_NOT_INITIALIZED
+        )
         return _get_cached_plan(sensor, date_str, STORAGE_HELPER_NOT_INITIALIZED)
 
     try:
@@ -44,7 +47,12 @@ async def load_plan_from_storage(
         return plan
 
     except Exception as err:
-        _LOGGER.error("Error loading plan from Storage: %s", err, exc_info=True)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            + "Error loading plan from Storage: %s",
+            err,
+            exc_info=True,
+        )
         return _get_cached_plan(sensor, date_str, "Storage error")
 
 
@@ -56,7 +64,10 @@ async def save_plan_to_storage(
 ) -> bool:
     """Save a plan to Storage Helper."""
     if not sensor._plans_store:
-        _LOGGER.error(STORAGE_HELPER_NOT_INITIALIZED)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            + STORAGE_HELPER_NOT_INITIALIZED
+        )
         return False
 
     try:
@@ -75,7 +86,12 @@ async def save_plan_to_storage(
         return True
 
     except Exception as err:
-        _LOGGER.error("Error saving plan to Storage: %s", err, exc_info=True)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            + "Error saving plan to Storage: %s",
+            err,
+            exc_info=True,
+        )
         _cache_plan_in_memory(sensor, date_str, intervals, metadata)
         _schedule_retry_save(sensor, date_str)
 
@@ -93,10 +109,17 @@ async def save_plan_to_storage(
         return False
 
 
-def _get_cached_plan(sensor: Any, date_str: str, reason: str) -> Optional[Dict[str, Any]]:
+def _get_cached_plan(
+    sensor: Any, date_str: str, reason: str
+) -> Optional[Dict[str, Any]]:
     cached = getattr(sensor, "_in_memory_plan_cache", {}).get(date_str)
     if cached:
-        _LOGGER.warning("Using in-memory cached plan for %s (%s)", date_str, reason)
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "  # NOSONAR
+            + "Using in-memory cached plan for %s (%s)",
+            date_str,
+            reason,
+        )
         return cached
     return None
 
@@ -128,7 +151,8 @@ def _cache_plan_in_memory(
 
     sensor._in_memory_plan_cache[date_str] = _build_plan_payload(intervals, metadata)
     _LOGGER.warning(
-        "Stored plan in memory cache (Storage failed): date=%s, intervals=%s",
+        "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+        + "Stored plan in memory cache (Storage failed): date=%s, intervals=%s",
         date_str,
         len(intervals),
     )
@@ -154,7 +178,11 @@ def _schedule_retry_save(sensor: Any, date_str: str) -> None:
             _LOGGER.info("Retry successful for %s", date_str)
             del sensor._in_memory_plan_cache[date_str]
         else:
-            _LOGGER.warning("Retry failed for %s", date_str)
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "Retry failed for %s",
+                date_str,
+            )
 
     async_call_later(sensor._hass, 300, retry_save)
 
@@ -175,5 +203,10 @@ async def plan_exists_in_storage(sensor: Any, date_str: str) -> bool:
         return exists
 
     except Exception as err:
-        _LOGGER.error("Error checking plan existence: %s", err, exc_info=True)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            + "Error checking plan existence: %s",
+            err,
+            exc_info=True,
+        )
         return False

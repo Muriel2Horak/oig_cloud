@@ -62,10 +62,7 @@ def get_candidate_intervals(
     candidates.sort(key=lambda x: x["price"])
 
     if not candidates:
-        _LOGGER.warning(
-            "No charging intervals available - all prices above max_charging_price (%.2f Kč/kWh)",
-            max_charging_price,
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No charging intervals available - all prices above max_charging_price (%.2f Kč/kWh)", max_charging_price,)
 
     return candidates
 

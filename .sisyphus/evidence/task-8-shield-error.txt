@@ -1,0 +1,13 @@
+2026-04-20 Task 8 Shield telemetry fail-open verification
+
+Command:
+`/repos/oig-cloud/.venv/bin/pytest tests/test_shield_decision_telemetry.py -q -k "warning_marker or non_blocking"`
+
+Result:
+- collected 6 items / 4 deselected / 2 selected
+- `tests/test_shield_decision_telemetry.py` ..
+- `2 passed, 4 deselected in 0.25s`
+
+Verified scenarios:
+- timeout path emits the canonical warning marker `[OIG_CLOUD_WARNING][component=shield][corr=<id>][run=na] ...`
+- allow path remains non-blocking when the cloud emitter raises

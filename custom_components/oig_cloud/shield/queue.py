@@ -11,6 +11,8 @@ from typing import Any, Dict, Optional, Tuple
 from homeassistant.core import callback
 from homeassistant.util.dt import now as dt_now
 
+from .telemetry import emit_shield_decision_event, render_shield_log_marker
+
 TIMEOUT_MINUTES = 15
 SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
 
@@ -50,6 +52,7 @@ async def handle_remove_from_queue(shield: Any, call: Any) -> None:
 
     if position < 1 or position > total_items:
         _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
             "[OIG Shield] Neplatná pozice: %s (pending: %s, queue: %s)",
             position,
             len(shield.pending),
@@ -59,6 +62,7 @@ async def handle_remove_from_queue(shield: Any, call: Any) -> None:
 
     if position == 1 and len(shield.pending) > 0:
         _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
             "[OIG Shield] Nelze smazat běžící službu na pozici 1 (running: %s)",
             shield.running,
         )
@@ -68,6 +72,7 @@ async def handle_remove_from_queue(shield: Any, call: Any) -> None:
 
     if queue_index < 0 or queue_index >= len(shield.queue):
         _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
             "[OIG Shield] Chyba výpočtu indexu: position=%s, queue_index=%s, queue_len=%s",
             position,
             queue_index,
@@ -149,7 +154,14 @@ async def _handle_timeout(shield: Any, service_name: str, info: Dict[str, Any]) 
         )
         return
 
-    _LOGGER.warning("[OIG Shield] Timeout pro službu %s", service_name)
+    correlation_id = info.get("trace_id") if isinstance(info.get("trace_id"), str) else None
+    _LOGGER.warning(
+        render_shield_log_marker(
+            "WARNING",
+            correlation_id,
+            f"Timeout pro službu {service_name}",
+        )
+    )
     await shield._log_event(
         "timeout",
         service_name,
@@ -159,10 +171,13 @@ async def _handle_timeout(shield: Any, service_name: str, info: Dict[str, Any]) 
             "original_states": info.get("original_states", {}),
         },
     )
-    await shield._log_telemetry(
-        "timeout",
-        service_name,
-        {"params": info["params"], "entities": info["entities"]},
+    await emit_shield_decision_event(
+        shield,
+        event_name="shield_call_timeout",
+        service_name=service_name,
+        correlation_id=correlation_id,
+        expected_entities=info.get("entities", {}),
+        detail_result_reason="timeout_exceeded",
     )
 
 
@@ -174,6 +189,7 @@ def _get_power_monitor_state(
 
     if not power_state:
         _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
             "[OIG Shield] Power monitor: entita %s neexistuje",
             power_entity,
         )
@@ -392,7 +408,11 @@ def _check_power_monitor(shield: Any, info: Dict[str, Any]) -> bool:
             return True
 
     except (ValueError, TypeError) as err:
-        _LOGGER.warning("[OIG Shield] Chyba při parsování power hodnoty: %s", err)
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+            "[OIG Shield] Chyba při parsování power hodnoty: %s",
+            err,
+        )
 
     return False
 
@@ -765,7 +785,9 @@ def start_monitoring(shield: Any) -> None:
 
         if shield.check_task and shield.check_task.done():
             _LOGGER.warning(
-                "[OIG Shield] Předchozí task byl dokončen: %s", shield.check_task
+                "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+                "[OIG Shield] Předchozí task byl dokončen: %s",
+                shield.check_task,
             )
 
         shield.check_task = asyncio.create_task(async_check_loop(shield))
@@ -787,6 +809,9 @@ async def async_check_loop(shield: Any) -> None:
             await asyncio.sleep(1)
         except Exception as err:
             _LOGGER.error(
-                "[OIG Shield] Chyba v monitoring smyčce: %s", err, exc_info=True
+                "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+                "[OIG Shield] Chyba v monitoring smyčce: %s",
+                err,
+                exc_info=True,
             )
             await asyncio.sleep(5)

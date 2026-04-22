@@ -33,7 +33,11 @@ async def _load_storage_plans(sensor: Any) -> Dict[str, Any]:
         )
         return storage_plans
     except Exception as err:
-        _LOGGER.error("Failed to load Storage Helper data: %s", err)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "  # NOSONAR
+            + "Failed to load Storage Helper data: %s",
+            err,
+        )
         return {}
 
 
@@ -231,7 +235,8 @@ async def _load_historical_modes(
         )
     except Exception as err:
         _LOGGER.error(
-            "Failed to fetch historical modes from Recorder for %s: %s",
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            + "Failed to fetch historical modes from Recorder for %s: %s",
             date_str,
             err,
         )
@@ -301,7 +306,8 @@ async def _maybe_repair_baseline(
         repaired = await sensor._create_baseline_plan(date_str)
     except Exception as err:
         _LOGGER.error(
-            "Baseline rebuild failed for %s: %s",
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            + "Baseline rebuild failed for %s: %s",
             date_str,
             err,
             exc_info=True,
@@ -326,7 +332,8 @@ async def _refresh_storage_after_repair(
             return refreshed_plans
     except Exception as err:
         _LOGGER.error(
-            "Failed to reload baseline plan after rebuild for %s: %s",
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            + "Failed to reload baseline plan after rebuild for %s: %s",
             date_str,
             err,
             exc_info=True,
@@ -425,7 +432,11 @@ def _add_past_planned_entries(
             time_str = f"{date_str}T{time_str}:00"
         interval_dt = _parse_iso_datetime(time_str)
         if not interval_dt:
-            _LOGGER.warning("Failed to parse time_str: %s", time_str)
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "Failed to parse time_str: %s",
+                time_str,
+            )
             continue
         interval_dt_naive = (
             interval_dt.replace(tzinfo=None) if interval_dt.tzinfo else interval_dt
@@ -460,9 +471,7 @@ def _add_future_planned_entries(
     return added_future, skipped_future
 
 
-def _interval_status(
-    interval_time: datetime, current_interval_naive: datetime
-) -> str:
+def _interval_status(interval_time: datetime, current_interval_naive: datetime) -> str:
     interval_time_naive = (
         interval_time.replace(tzinfo=None) if interval_time.tzinfo else interval_time
     )
@@ -580,12 +589,18 @@ async def _build_mixed_intervals(
     )
 
 
-def _get_storage_day(storage_plans: Dict[str, Any], date_str: str) -> Optional[Dict[str, Any]]:
+def _get_storage_day(
+    storage_plans: Dict[str, Any], date_str: str
+) -> Optional[Dict[str, Any]]:
     return storage_plans.get("detailed", {}).get(date_str)
 
 
-def _storage_flags(sensor: Any, storage_day: Optional[Dict[str, Any]]) -> tuple[bool, bool]:
-    storage_invalid = sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
+def _storage_flags(
+    sensor: Any, storage_day: Optional[Dict[str, Any]]
+) -> tuple[bool, bool]:
+    storage_invalid = (
+        sensor._is_baseline_plan_invalid(storage_day) if storage_day else True
+    )
     storage_missing = not storage_day or not storage_day.get("intervals")
     return storage_invalid, storage_missing
 
@@ -627,7 +642,8 @@ def _fallback_storage_intervals(
     if past_planned or not storage_day or not storage_day.get("intervals"):
         return past_planned
     _LOGGER.warning(
-        "Using baseline plan for %s despite invalid data (no fallback)",
+        "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+        + "Using baseline plan for %s despite invalid data (no fallback)",
         date_str,
     )
     return storage_day["intervals"]
@@ -670,9 +686,7 @@ async def _resolve_mixed_planned(
     date_str: str,
     day: date,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    past_planned, _ = await _resolve_past_planned(
-        sensor, storage_plans, date_str, day
-    )
+    past_planned, _ = await _resolve_past_planned(sensor, storage_plans, date_str, day)
     future_planned = _collect_future_planned(getattr(sensor, "_timeline_data", []), day)
 
     _LOGGER.debug(
@@ -913,7 +927,12 @@ async def _select_day_intervals(
     storage_plans_dict = storage_plans or {}
     if source == "historical_only":
         return await _build_historical_only_intervals(
-            sensor, day, day_start, storage_plans_dict, date_str, historical_modes_lookup
+            sensor,
+            day,
+            day_start,
+            storage_plans_dict,
+            date_str,
+            historical_modes_lookup,
         )
     if source == "mixed":
         return await _build_mixed_intervals(

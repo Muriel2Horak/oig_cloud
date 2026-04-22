@@ -1,0 +1,16 @@
+Task 9a evidence: auth failure emits once, recovery resets, failure emits again
+
+Command:
+.venv/bin/pytest tests/test_oig_cloud_session_manager.py -k "auth_failure_emits_once_until_success_resets_dedupe"
+
+Result:
+- PASS
+- Verified first auth failure emits `incident_auth_failed`
+- Verified repeated auth failure without recovery is deduped
+- Verified successful `_ensure_auth()` resets `hass.data[DOMAIN][entry_id]["telemetry"]["incident_dedupe"]["incident_auth_failed"]`
+- Verified next auth failure after recovery emits again
+- Verified canonical incident error marker log format and sanitized `error_class` logging
+
+Supporting verification:
+- `.venv/bin/pytest tests/test_oig_cloud_session_manager.py tests/test_emitter.py` → 25 passed
+- `.venv/bin/pytest tests/test_init_setup_entry.py -k "init_session_manager or async_setup_entry_telemetry"` → 5 passed

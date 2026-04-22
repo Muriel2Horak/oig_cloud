@@ -10,10 +10,15 @@ Instead, it wraps API calls to provide:
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
+from ..shared.cloud_contract import (
+    EventName,
+    build_error_summary,
+    build_producer_event,
+)
 
 from ..shared.logging import _redact_sensitive
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +44,8 @@ class OigCloudSessionManager:
         self._last_request_time: Optional[datetime] = None
         self._auth_lock = asyncio.Lock()
         self._request_lock = asyncio.Lock()
+        self._telemetry_emitter: Optional[Any] = None
+        self._telemetry_state: Optional[Dict[str, Any]] = None
 
         # Statistics tracking
         self._stats: Dict[str, Any] = {
@@ -63,6 +70,196 @@ class OigCloudSessionManager:
     def api(self) -> OigCloudApi:
         """Get underlying API instance."""
         return self._api
+
+    def bind_telemetry_emitter(
+        self,
+        emitter: Optional[Any],
+        telemetry_state: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Attach shared telemetry state after entry telemetry initialization."""
+        self._telemetry_emitter = emitter
+
+        if telemetry_state is not None:
+            incident_dedupe = telemetry_state.get("incident_dedupe")
+            if not isinstance(incident_dedupe, dict):
+                telemetry_state["incident_dedupe"] = {}
+            self._telemetry_state = telemetry_state
+
+        if emitter is None:
+            _LOGGER.debug("SessionManager telemetry emitter cleared")
+        else:
+            _LOGGER.debug("SessionManager telemetry emitter bound")
+
+    @staticmethod
+    def _utcnow_iso() -> str:
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def _get_incident_dedupe_state(self) -> Optional[Dict[str, Dict[str, Any]]]:
+        if isinstance(self._telemetry_state, dict):
+            incident_dedupe = self._telemetry_state.get("incident_dedupe")
+            if isinstance(incident_dedupe, dict):
+                return incident_dedupe
+        return None
+
+    def _get_incident_state(self, event_name: str) -> Optional[Dict[str, Any]]:
+        incident_dedupe = self._get_incident_dedupe_state()
+        if incident_dedupe is None:
+            return None
+        state = incident_dedupe.get(event_name)
+        if not isinstance(state, dict):
+            state = {}
+            incident_dedupe[event_name] = state
+        state.setdefault("active", False)
+        state.setdefault("transition_count", 0)
+        state.setdefault("correlation_id", None)
+        return state
+
+    def _get_cloud_context(self) -> Dict[str, Any]:
+        if not isinstance(self._telemetry_state, dict):
+            return {}
+        cloud_context = self._telemetry_state.get("cloud_context")
+        if isinstance(cloud_context, dict):
+            return cloud_context
+        return {}
+
+    def _build_incident_correlation_id(
+        self,
+        event_name: str,
+        transition_count: int,
+    ) -> str:
+        device_id = str(self._get_cloud_context().get("device_id") or "na")
+        return f"{device_id}:{event_name}:{transition_count}:{self._utcnow_iso()}"
+
+    def _resolve_incident_correlation_id(
+        self,
+        event_name: str,
+        preferred_correlation_id: Optional[str] = None,
+    ) -> str:
+        state = self._get_incident_state(event_name)
+        if isinstance(state, dict):
+            existing = state.get("correlation_id")
+            if isinstance(existing, str) and existing:
+                return existing
+        if preferred_correlation_id:
+            return preferred_correlation_id
+        return self._build_incident_correlation_id(
+            event_name,
+            int(state["transition_count"]) + 1 if isinstance(state, dict) else 1,
+        )
+
+    def _reset_incident_state(self, event_name: str) -> None:
+        state = self._get_incident_state(event_name)
+        if state is None:
+            return
+        state["active"] = False
+        state["correlation_id"] = None
+
+    async def _activate_incident(
+        self,
+        *,
+        event_name: str,
+        detail_incident_reason: str,
+        error: Exception,
+        preferred_correlation_id: Optional[str] = None,
+        extra_diagnostics: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        state = self._get_incident_state(event_name)
+        if state is None:
+            return self._resolve_incident_correlation_id(
+                event_name,
+                preferred_correlation_id,
+            )
+
+        if bool(state["active"]):
+            correlation_id = state.get("correlation_id")
+            if isinstance(correlation_id, str) and correlation_id:
+                return correlation_id
+
+        transition_count = int(state["transition_count"]) + 1
+        correlation_id = preferred_correlation_id or self._build_incident_correlation_id(
+            event_name,
+            transition_count,
+        )
+        state["active"] = True
+        state["transition_count"] = transition_count
+        state["correlation_id"] = correlation_id
+
+        await self._emit_incident_event(
+            event_name=event_name,
+            detail_incident_reason=detail_incident_reason,
+            error=error,
+            correlation_id=correlation_id,
+            transition_count=transition_count,
+            extra_diagnostics=extra_diagnostics,
+        )
+        return correlation_id
+
+    async def _emit_incident_event(
+        self,
+        *,
+        event_name: str,
+        detail_incident_reason: str,
+        error: Exception,
+        correlation_id: str,
+        transition_count: int,
+        extra_diagnostics: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if self._telemetry_emitter is None:
+            return
+
+        cloud_context = self._get_cloud_context()
+        device_id = str(cloud_context.get("device_id") or "").strip()
+        install_id_hash = str(cloud_context.get("install_id_hash") or "").strip()
+        integration_version = str(cloud_context.get("integration_version") or "").strip()
+        if not device_id or not install_id_hash or not integration_version:
+            _LOGGER.debug(
+                "Skipping incident telemetry emission for %s because cloud context is incomplete",
+                event_name,
+            )
+            return
+
+        error_class = type(error).__name__
+        diagnostics: Dict[str, Any] = {
+            "metric_transition_count": transition_count,
+            "detail_incident_reason": detail_incident_reason,
+            "detail_error_class": error_class,
+            "detail_error_summary": build_error_summary(error_class),
+        }
+        if extra_diagnostics:
+            diagnostics.update(extra_diagnostics)
+
+        try:
+            event = build_producer_event(
+                event_name=event_name,
+                occurred_at=self._utcnow_iso(),
+                device_id=device_id,
+                install_id_hash=install_id_hash,
+                integration_version=integration_version,
+                run_id=correlation_id,
+                correlation_id=correlation_id,
+                diagnostics=diagnostics,
+            )
+            await self._telemetry_emitter.emit_cloud_event(event)
+        except Exception as err:
+            self._log_incident_warning(
+                correlation_id,
+                "Incident telemetry dispatch failed for "
+                f"{event_name} (error_class={type(err).__name__})",
+            )
+
+    def _log_incident_warning(self, correlation_id: str, message: str) -> None:
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=incident][corr=%s][run=na] %s",
+            correlation_id,
+            message,
+        )
+
+    def _log_incident_error(self, correlation_id: str, message: str) -> None:
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=incident][corr=%s][run=na] %s",
+            correlation_id,
+            message,
+        )
 
     async def _log_api_session_info(self) -> None:
         """Log information about API session configuration and headers."""
@@ -92,7 +289,12 @@ class OigCloudSessionManager:
         try:
             return self._api.get_session()
         except Exception as e:
-            _LOGGER.warning(f"Could not inspect session headers: {e}", exc_info=True)
+            _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=incident][corr=na][run=na] "
+                "Could not inspect session headers: %s",
+                e,
+                exc_info=True,
+            )
             return None
 
     def _log_session_headers(self, session: Any) -> None:
@@ -166,11 +368,25 @@ class OigCloudSessionManager:
                     # Try to inspect session headers (if API creates session)
                     await self._log_api_session_info()
 
+                    self._reset_incident_state(EventName.INCIDENT_AUTH_FAILED.value)
+
                     _LOGGER.info(
                         f"✅ Authentication #{auth_num} successful, session valid until {(datetime.now() + SESSION_TTL).strftime('%H:%M:%S')}"
                     )
                 except Exception as e:
-                    _LOGGER.error(f"❌ Authentication #{auth_num} failed: {e}")
+                    correlation_id = await self._activate_incident(
+                        event_name=EventName.INCIDENT_AUTH_FAILED.value,
+                        detail_incident_reason="source_connection_error",
+                        error=e,
+                        preferred_correlation_id=self._resolve_incident_correlation_id(
+                            EventName.INCIDENT_AUTH_FAILED.value
+                        ),
+                    )
+                    self._log_incident_error(
+                        correlation_id,
+                        "Authentication "
+                        f"#{auth_num} failed (error_class={type(e).__name__})",
+                    )
                     raise
             else:
                 # At this point _last_auth_time is not None because _is_session_expired() returned False
@@ -217,6 +433,7 @@ class OigCloudSessionManager:
         max_retries = 2
         self._stats["total_requests"] += 1
         request_num = self._stats["total_requests"]
+        retry_incident_correlation_id: Optional[str] = None
 
         for attempt in range(max_retries):
             try:
@@ -254,6 +471,7 @@ class OigCloudSessionManager:
 
                 result = await method(*args, **kwargs)
 
+                self._reset_incident_state(EventName.INCIDENT_RETRY_EXHAUSTED.value)
                 self._stats["successful_requests"] += 1
                 _LOGGER.debug(
                     f"✅ Request #{request_num}: {method_name}() successful "
@@ -263,8 +481,15 @@ class OigCloudSessionManager:
 
             except OigCloudAuthError as e:
                 self._stats["retry_count"] += 1
-                _LOGGER.warning(
-                    f"⚠️  Request #{request_num}: Auth error on attempt {attempt + 1}/{max_retries}: {e}"
+                retry_incident_correlation_id = self._resolve_incident_correlation_id(
+                    EventName.INCIDENT_RETRY_EXHAUSTED.value,
+                    retry_incident_correlation_id,
+                )
+                self._log_incident_warning(
+                    retry_incident_correlation_id,
+                    "Request "
+                    f"#{request_num}: auth error on attempt {attempt + 1}/{max_retries} "
+                    f"(error_class={type(e).__name__})",
                 )
 
                 if attempt < max_retries - 1:
@@ -277,16 +502,32 @@ class OigCloudSessionManager:
                     await asyncio.sleep(backoff)
                 else:
                     self._stats["failed_requests"] += 1
-                    _LOGGER.error(
-                        f"❌ Request #{request_num}: All {max_retries} attempts failed "
-                        f"(fail rate: {self._stats['failed_requests']}/{self._stats['total_requests']})"
+                    correlation_id = await self._activate_incident(
+                        event_name=EventName.INCIDENT_RETRY_EXHAUSTED.value,
+                        detail_incident_reason="retry_limit_reached",
+                        error=e,
+                        preferred_correlation_id=retry_incident_correlation_id,
+                        extra_diagnostics={
+                            "metric_retry_count": self._stats["retry_count"],
+                        },
+                    )
+                    self._log_incident_error(
+                        correlation_id,
+                        "Request "
+                        f"#{request_num}: all {max_retries} attempts failed "
+                        f"(error_class={type(e).__name__}, "
+                        f"fail_rate={self._stats['failed_requests']}/{self._stats['total_requests']})",
                     )
                     raise
 
             except Exception as e:
                 self._stats["failed_requests"] += 1
                 _LOGGER.error(
-                    f"❌ Request #{request_num}: Unexpected error in {method.__name__}: {e}"
+                    "[OIG_CLOUD_ERROR][component=incident][corr=na][run=na] "
+                    "❌ Request #%s: Unexpected error in %s: %s",
+                    request_num,
+                    method.__name__,
+                    e,
                 )
                 raise
 

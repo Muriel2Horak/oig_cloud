@@ -431,7 +431,7 @@ async def _load_storage_plans(sensor: Any) -> Dict[str, Any]:
     try:
         return await sensor._plans_store.async_load() or {}
     except Exception as e:
-        _LOGGER.warning(f"Failed to load storage plans: {e}")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + f"Failed to load storage plans: {e}")
         return {}
 
 
@@ -445,7 +445,7 @@ async def _load_today_intervals(
         today_timeline is not None,
     )
     if not today_timeline:
-        _LOGGER.warning("_build_day_timeline returned None for today")
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "_build_day_timeline returned None for today")
         return []
     intervals = today_timeline.get("intervals", [])
     _LOGGER.info("[UCT] Intervals count: %s", len(intervals))

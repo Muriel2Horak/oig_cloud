@@ -231,6 +231,10 @@
           "enable_pricing": "💰 Price sensors and spot prices from OTE",
           "enable_solar_forecast": "☀️ Solar forecast for PV production",
           "enable_statistics": "📊 Statistics and consumption analysis",
+          "telemetry_mqtt_enabled": "📡 MQTT telemetry delivery",
+          "telemetry_mqtt_host": "MQTT broker host",
+          "telemetry_mqtt_port": "MQTT broker port",
+          "telemetry_mqtt_prefix": "MQTT topic prefix",
           "go_back": "⬅️ I want to go back (check + click Submit)"
         },
         "data_description": {
@@ -243,6 +247,10 @@
           "enable_pricing": "Recommended - OTE spot prices + cost calculation",
           "enable_solar_forecast": "Requires API key from Forecast.Solar",
           "enable_statistics": "Recommended - consumption median, predictions",
+          "telemetry_mqtt_enabled": "Publishes telemetry to a local MQTT broker and stays inert until you enable it and set a host",
+          "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
+          "telemetry_mqtt_port": "The standard MQTT port is 1883",
+          "telemetry_mqtt_prefix": "Base topic prefix for published telemetry",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         },
         "description": "{step}\n{progress}\n\nSelect which features you want to use. You can configure each module in detail later.",
@@ -678,6 +686,10 @@
           "enable_pricing": "💰 Price sensors and spot prices from OTE",
           "enable_solar_forecast": "☀️ Solar forecast for PV production",
           "enable_statistics": "📊 Statistics and consumption analysis",
+          "telemetry_mqtt_enabled": "📡 MQTT telemetry delivery",
+          "telemetry_mqtt_host": "MQTT broker host",
+          "telemetry_mqtt_port": "MQTT broker port",
+          "telemetry_mqtt_prefix": "MQTT topic prefix",
           "go_back": "⬅️ I want to go back (check + click Submit)"
         },
         "data_description": {
@@ -690,6 +702,10 @@
           "enable_pricing": "Recommended - spot prices from OTE + cost calculations",
           "enable_solar_forecast": "Requires API key from Forecast.Solar",
           "enable_statistics": "Recommended - consumption median, predictions",
+          "telemetry_mqtt_enabled": "Publishes telemetry to a local MQTT broker and stays inert until you enable it and set a host",
+          "telemetry_mqtt_host": "Hostname or IP address of the MQTT broker; leave empty to keep MQTT delivery disabled",
+          "telemetry_mqtt_port": "The standard MQTT port is 1883",
+          "telemetry_mqtt_prefix": "Base topic prefix for published telemetry",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         },
         "description": "{step}\n{progress}\n\nSelect which features you want to use. You can configure each module in detail later.",
@@ -889,6 +905,10 @@
           "description": "I acknowledge the risks associated with manual boiler mode and accept full responsibility.",
           "name": "Acknowledgement"
         },
+        "device_id": {
+          "description": "Select the Battery Box device when controlling a specific installation.",
+          "name": "Device"
+        },
         "mode": {
           "description": "Select between CBB (automatic) or Manual operation.",
           "name": "Boiler Mode"
@@ -903,6 +923,18 @@
           "description": "Acknowledge mode change",
           "name": "Acknowledgement"
         },
+        "device_id": {
+          "description": "Select the Battery Box device when controlling a specific installation.",
+          "name": "Device"
+        },
+        "home_grid_v": {
+          "description": "Enable supplementary Home Grid V mode when supported.",
+          "name": "Home Grid V"
+        },
+        "home_grid_vi": {
+          "description": "Enable supplementary Home Grid VI mode when supported.",
+          "name": "Home Grid VI"
+        },
         "mode": {
           "description": "Battery Box mode",
           "name": "Mode"
@@ -916,6 +948,10 @@
         "acknowledgement": {
           "description": "I acknowledge that starting battery charging from the grid modifies a live system and accept responsibility.",
           "name": "Acknowledgement"
+        },
+        "device_id": {
+          "description": "Select the Battery Box device when controlling a specific installation.",
+          "name": "Device"
         },
         "limit": {
           "description": "Set the target battery charge percentage.",
@@ -934,6 +970,10 @@
         "acknowledgement": {
           "description": "I acknowledge that enabling this feature modifies a live system. I take full responsibility.",
           "name": "Acknowledgement"
+        },
+        "device_id": {
+          "description": "Select the Battery Box device when controlling a specific installation.",
+          "name": "Device"
         },
         "limit": {
           "description": "Set the maximum allowed export to the grid in watts.",

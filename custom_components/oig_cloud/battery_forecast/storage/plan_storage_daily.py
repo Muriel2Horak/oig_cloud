@@ -35,7 +35,11 @@ async def _ensure_baseline(sensor: Any, today_str: str, now: datetime) -> None:
     if baseline_created:
         _LOGGER.info("Baseline plan created in Storage Helper for %s", today_str)
     else:
-        _LOGGER.warning("Failed to create baseline plan for %s", today_str)
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            + "Failed to create baseline plan for %s",
+            today_str,
+        )
 
 
 async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
@@ -68,7 +72,8 @@ async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
             )
         except Exception as err:
             _LOGGER.error(
-                "Failed to save daily plans archive: %s",
+                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                + "Failed to save daily plans archive: %s",
                 err,
                 exc_info=True,
             )
@@ -143,7 +148,8 @@ async def maybe_fix_daily_plan(sensor: Any) -> None:  # noqa: C901
 
         if not _has_optimization_result(sensor):
             _LOGGER.warning(
-                "No HYBRID optimization result available to fix daily plan for %s",
+                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                + "No HYBRID optimization result available to fix daily plan for %s",
                 today_str,
             )
             sensor._daily_plan_state = _empty_daily_plan(today_str, now)
@@ -181,9 +187,7 @@ def _should_keep_locked_plan(
     )
 
 
-def _should_rebuild_plan(
-    plan_state: Optional[dict[str, Any]], today_str: str
-) -> bool:
+def _should_rebuild_plan(plan_state: Optional[dict[str, Any]], today_str: str) -> bool:
     return bool(
         plan_state is None
         or plan_state.get("date") != today_str
@@ -193,7 +197,8 @@ def _should_rebuild_plan(
 
 def _has_optimization_result(sensor: Any) -> bool:
     return bool(
-        hasattr(sensor, "_mode_optimization_result") and sensor._mode_optimization_result
+        hasattr(sensor, "_mode_optimization_result")
+        and sensor._mode_optimization_result
     )
 
 

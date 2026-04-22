@@ -131,10 +131,7 @@ def fetch_solar_forecast(hass: HomeAssistant, box_id: str) -> list[float]:
         if result is not None:
             return result
 
-    _LOGGER.warning(
-        "Solar forecast sensor unavailable for box_id=%s, using fallback defaults",
-        box_id or "default",
-    )
+    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Solar forecast sensor unavailable for box_id=%s, using fallback defaults", box_id or "default",)  # NOSONAR
     return [_DEFAULT_SOLAR_KWH_15MIN] * _FORECAST_INTERVALS
 
 
@@ -167,10 +164,7 @@ def _collect_load_avg_sensors(hass: HomeAssistant, box_id: str) -> dict[str, Any
 def fetch_load_forecast(hass: HomeAssistant, box_id: str) -> list[float]:
     load_avg_sensors = _collect_load_avg_sensors(hass, box_id)
     if not load_avg_sensors:
-        _LOGGER.warning(
-            "No load_avg sensors available for box_id=%s, using fallback defaults",
-            box_id or "default",
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "No load_avg sensors available for box_id=%s, using fallback defaults", box_id or "default",)
         return [_DEFAULT_LOAD_KWH_15MIN] * _FORECAST_INTERVALS
 
     now = dt_util.now()
@@ -244,16 +238,10 @@ def fetch_prices(
         current_price = _state_float(hass, entity_id)
         if current_price is None:
             continue
-        _LOGGER.warning(
-            "Using flat spot price from %s because interval prices are unavailable",
-            entity_id,
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Using flat spot price from %s because interval prices are unavailable", entity_id,)
         return [max(0.0, current_price)] * _FORECAST_INTERVALS
 
-    _LOGGER.warning(
-        "Spot prices unavailable for box_id=%s, using fallback defaults",
-        box_id or "default",
-    )
+    _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Spot prices unavailable for box_id=%s, using fallback defaults", box_id or "default",)
     return [_DEFAULT_PRICE_CZK_KWH] * _FORECAST_INTERVALS
 
 
@@ -314,10 +302,7 @@ def load_planner_inputs(
     # Validate planning_min >= HW min
     hw_min_percent = (hw_min_kwh / max_capacity_kwh) * 100
     if planning_min_percent < hw_min_percent:
-        _LOGGER.warning(
-            "Planning min %.1f%% is below HW min %.1f%%, adjusting to %.1f%%",
-            planning_min_percent, hw_min_percent, hw_min_percent
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Planning min %.1f%% is below HW min %.1f%%, adjusting to %.1f%%", planning_min_percent, hw_min_percent, hw_min_percent)
         planning_min_percent = hw_min_percent
 
     intervals: List[IntervalData] = [{"index": i} for i in range(_FORECAST_INTERVALS)]
@@ -387,7 +372,7 @@ def run_economic_planning(
         }
 
     except Exception as e:
-        _LOGGER.error("Economic planning failed: %s", e)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Economic planning failed: %s", e)
         return {
             "success": False,
             "error": str(e),

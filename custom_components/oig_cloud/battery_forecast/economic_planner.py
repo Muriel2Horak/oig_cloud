@@ -570,7 +570,7 @@ def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:
         )
 
     except Exception as e:
-        _LOGGER.error("Economic planning failed: %s", e, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Economic planning failed: %s", e, exc_info=True)
         fallback_modes = [CBBMode.HOME_I.value] * len(inputs.intervals)
 
         fallback_states = _simulate_with_modes(fallback_modes, inputs)

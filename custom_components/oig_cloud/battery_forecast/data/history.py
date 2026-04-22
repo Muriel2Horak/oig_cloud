@@ -390,7 +390,7 @@ async def fetch_interval_from_history(  # noqa: C901
         return result
 
     except Exception as err:
-        _LOGGER.warning("Failed to fetch history for %s: %s", start_time, err)
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Failed to fetch history for %s: %s", start_time, err)
         return None
 
 
@@ -467,7 +467,10 @@ async def fetch_mode_history_from_recorder(
 ) -> List[Dict[str, Any]]:
     """Load historical modes from HA Recorder."""
     if not sensor._hass:  # pylint: disable=protected-access
-        _LOGGER.warning("HASS not available, cannot fetch mode history")
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            "HASS not available, cannot fetch mode history"
+        )
         return []
 
     sensor_id = (
@@ -527,10 +530,14 @@ async def fetch_mode_history_from_recorder(
         return mode_intervals
 
     except ImportError:
-        _LOGGER.error("Recorder component not available")
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Recorder component not available")
         return []
     except Exception as err:
-        _LOGGER.error("Error fetching mode history from Recorder: %s", err)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            "Error fetching mode history from Recorder: %s",
+            err,
+        )
         return []
 
 
@@ -553,9 +560,7 @@ def map_mode_name_to_id(mode_name: str) -> int:
 
     mode_id = mode_mapping.get(normalized)
     if mode_id is None:
-        _LOGGER.warning(
-            "Unknown mode name '%s', using fallback mode ID 0 (HOME I)", mode_name
-        )
+        _LOGGER.warning("[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] " + "Unknown mode name '%s', using fallback mode ID 0 (HOME I)", mode_name)
         return CBB_MODE_HOME_I
 
     return mode_id

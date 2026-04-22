@@ -25,6 +25,8 @@ MODE_LABEL_HOME_UPS = "Home UPS"
 MODE_LABEL_HOME_I = "HOME I"
 
 _LOGGER = logging.getLogger(__name__)
+PLANNER_WARNING_MARKER = "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+PLANNER_ERROR_MARKER = "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
 HOME_UPS_LABEL = "HOME UPS"
 
 
@@ -144,7 +146,10 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
             battery_sensor = _find_battery_forecast_sensor(self.hass, self._box_id)
 
             if not battery_sensor:
-                _LOGGER.warning("[GridChargingPlan] BatteryForecastSensor not found")
+                _LOGGER.warning(
+                    PLANNER_WARNING_MARKER
+                    + "[GridChargingPlan] BatteryForecastSensor not found"
+                )
                 return []
 
             precomputed = await battery_sensor._precomputed_store.async_load()
@@ -172,7 +177,12 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
             return ups_blocks
 
         except Exception as err:
-            _LOGGER.error("[GridChargingPlan] Error: %s", err, exc_info=True)
+            _LOGGER.error(
+                PLANNER_ERROR_MARKER
+                + "[GridChargingPlan] Error: %s",
+                err,
+                exc_info=True,
+            )
             return []
 
     def _get_active_plan_key(self) -> str:
@@ -271,7 +281,8 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
 
         except Exception as err:
             _LOGGER.warning(
-                "[GridChargingPlan] ❌ Error getting offset %s→%s, using fallback 300s: %s",
+                PLANNER_WARNING_MARKER
+                + "[GridChargingPlan] ❌ Error getting offset %s→%s, using fallback 300s: %s",
                 from_mode,
                 to_mode,
                 err,
@@ -357,7 +368,8 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
             return start_time, end_time, start_time_str, end_time_str
         except (ValueError, AttributeError):
             _LOGGER.warning(
-                "[GridChargingPlan] Invalid time format: %s - %s",
+                PLANNER_WARNING_MARKER
+                + "[GridChargingPlan] Invalid time format: %s - %s",
                 start_time_str,
                 end_time_str,
             )
@@ -393,8 +405,7 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
         return (
             abs(
                 (
-                    self._parse_time_to_datetime(next_start, day)
-                    - end_time
+                    self._parse_time_to_datetime(next_start, day) - end_time
                 ).total_seconds()
             )
             <= 60
@@ -531,7 +542,11 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
             "next_charging_duration": next_charging_duration,
             "is_charging_planned": len(charging_blocks) > 0,
             **({"decision_trace": decision_trace} if decision_trace else {}),
-            **({"planner_decision_trace": planner_decision_trace} if planner_decision_trace else {}),
+            **(
+                {"planner_decision_trace": planner_decision_trace}
+                if planner_decision_trace
+                else {}
+            ),
         }
 
 

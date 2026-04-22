@@ -11,6 +11,8 @@ from typing import Any, Dict, Optional
 from homeassistant.core import Context
 from homeassistant.util.dt import now as dt_now
 
+from .telemetry import emit_shield_decision_event
+
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_SET_BOX_MODE = "oig_cloud.set_box_mode"
@@ -97,7 +99,7 @@ def _is_duplicate(
             pending_service_key == service_name
             and pending_expected_set == new_expected_set
         ):
-            return "pending"
+            return "running"
 
     return None
 
@@ -242,6 +244,7 @@ async def _handle_duplicate(
     params: Dict[str, Any],
     expected_entities: Dict[str, str],
     context: Optional[Context],
+    correlation_id: str | None = None,
 ) -> None:
     _LOGGER.debug(
         "Intercept: service already in %s; returning early", duplicate_location
@@ -256,14 +259,14 @@ async def _handle_duplicate(
         ),
         context=context,
     )
-    await shield._log_telemetry(
-        "ignored",
-        service_name,
-        {
-            "params": params,
-            "entities": expected_entities,
-            "reason": f"duplicate_in_{duplicate_location}",
-        },
+    await emit_shield_decision_event(
+        shield,
+        event_name="shield_duplicate_blocked",
+        service_name=service_name,
+        correlation_id=correlation_id,
+        expected_entities=expected_entities,
+        detail_result_reason=f"duplicate_in_{duplicate_location}",
+        detail_duplicate_location=duplicate_location,
     )
 
 
@@ -356,6 +359,7 @@ async def _enqueue_or_run(
         service,
         blocking,
         context,
+        trace_id,
     )
 
 
@@ -384,7 +388,6 @@ async def intercept_service_call(
         return
 
     expected_entities = shield.extract_expected_entities(service_name, params)
-    api_info = shield._extract_api_info(service_name, params)
 
     _LOGGER.debug("Intercept service: %s", service_name)
     _LOGGER.debug("Intercept expected entities: %s", expected_entities)
@@ -408,6 +411,14 @@ async def intercept_service_call(
         await original_call(
             domain, service, service_data=params, blocking=blocking, context=context
         )
+        await emit_shield_decision_event(
+            shield,
+            event_name="shield_call_allowed",
+            service_name=service_name,
+            correlation_id=trace_id,
+            expected_entities=expected_entities,
+            detail_result_reason="entity_not_found",
+        )
         await shield._log_event(
             "change_requested",
             service_name,
@@ -425,22 +436,25 @@ async def intercept_service_call(
 
     if duplicate_location:
         await _handle_duplicate(
-            shield, duplicate_location, service_name, params, expected_entities, context
+            shield,
+            duplicate_location,
+            service_name,
+            params,
+            expected_entities,
+            context,
+            trace_id,
         )
         return
 
     if _entities_already_match(shield, expected_entities, params):
         _LOGGER.debug("Intercept: all entities already match; returning early")
-        await shield._log_telemetry(
-            "skipped",
-            service_name,
-            {
-                "trace_id": trace_id,
-                "params": params,
-                "entities": expected_entities,
-                "reason": "already_completed",
-                **api_info,
-            },
+        await emit_shield_decision_event(
+            shield,
+            event_name="shield_guardrail_triggered",
+            service_name=service_name,
+            correlation_id=trace_id,
+            expected_entities=expected_entities,
+            detail_result_reason="already_completed",
         )
         await shield._log_event(
             "skipped",
@@ -452,15 +466,12 @@ async def intercept_service_call(
         return
 
     _LOGGER.debug("Intercept: will execute service; logging telemetry")
-    await shield._log_telemetry(
-        "change_requested",
-        service_name,
-        {
-            "trace_id": trace_id,
-            "params": params,
-            "entities": expected_entities,
-            **api_info,
-        },
+    await emit_shield_decision_event(
+        shield,
+        event_name="shield_call_allowed",
+        service_name=service_name,
+        correlation_id=trace_id,
+        expected_entities=expected_entities,
     )
 
     await _enqueue_or_run(
@@ -487,10 +498,18 @@ async def start_call(
     service: str,
     blocking: bool,
     context: Optional[Context],
+    trace_id: str | None = None,
 ) -> None:
     """Start a call and register pending state."""
     original_states = _capture_original_states(shield, expected_entities)
     power_monitor = _init_power_monitor(shield, service_name, data)
+
+    queue_metadata = shield.queue_metadata.pop((service_name, str(data)), None)
+    resolved_trace_id = trace_id
+    if resolved_trace_id is None and isinstance(queue_metadata, dict):
+        queued_trace_id = queue_metadata.get("trace_id")
+        if isinstance(queued_trace_id, str) and queued_trace_id:
+            resolved_trace_id = queued_trace_id
 
     shield.pending[service_name] = {
         "entities": expected_entities,
@@ -498,10 +517,10 @@ async def start_call(
         "params": data,
         "called_at": datetime.now(),
         "power_monitor": power_monitor,
+        "trace_id": resolved_trace_id,
     }
 
     shield.running = service_name
-    shield.queue_metadata.pop((service_name, str(data)), None)
 
     _fire_queue_info_event(shield)
 
@@ -522,7 +541,12 @@ async def start_call(
             domain, service, service_data=actual_params, blocking=blocking, context=context
         )
     except Exception as err:
-        _LOGGER.error("[OIG Shield] Service call %s failed: %s", service_name, err)
+        _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+            "[OIG Shield] Service call %s failed: %s",
+            service_name,
+            err,
+        )
         shield.pending.pop(service_name, None)
         shield.running = None
         await shield._log_event(
@@ -583,7 +607,12 @@ async def safe_call_service(
         return True  # pragma: no cover
 
     except Exception as err:
-        shield._logger.error("❌ Chyba při volání služby %s: %s", service_name, err)
+        shield._logger.error(
+            "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+            "❌ Chyba při volání služby %s: %s",
+            service_name,
+            err,
+        )
         return False
 
 
@@ -677,7 +706,10 @@ def _init_power_monitor(
         return None
     box_id = _resolve_box_id_for_power_monitor(shield)
     if not box_id:
-        _LOGGER.warning("[OIG Shield] Power monitor: box_id nenalezen!")
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+            "[OIG Shield] Power monitor: box_id nenalezen!"
+        )
         return None
 
     power_entity = _build_power_entity(box_id)
@@ -708,12 +740,14 @@ def _read_power_state(shield: Any, power_entity: str) -> Optional[float]:
     power_state = shield.hass.states.get(power_entity)
     if not power_state:
         _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
             "[OIG Shield] Power monitor: entita %s neexistuje!",
             power_entity,
         )
         return None
     if power_state.state in ["unknown", "unavailable"]:
         _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
             "[OIG Shield] Power monitor: entita %s je %s",
             power_entity,
             power_state.state,
@@ -722,7 +756,11 @@ def _read_power_state(shield: Any, power_entity: str) -> Optional[float]:
     try:
         return float(power_state.state)
     except (ValueError, TypeError) as err:
-        _LOGGER.warning("[OIG Shield] Nelze inicializovat power monitor: %s", err)
+        _LOGGER.warning(
+            "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+            "[OIG Shield] Nelze inicializovat power monitor: %s",
+            err,
+        )
         return None
 
 
@@ -830,10 +868,12 @@ async def _refresh_coordinator_after_call(shield: Any, service_name: str) -> Non
             )
         else:
             _LOGGER.warning(
+                "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
                 "[OIG Shield] Coordinator nenalezen - entity se aktualizují až při příštím scheduled update!"
             )
     except Exception as err:
         _LOGGER.error(
+            "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
             "[OIG Shield] Chyba při refreshu coordinatoru: %s",
             err,
             exc_info=True,

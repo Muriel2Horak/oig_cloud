@@ -52,7 +52,8 @@ def build_extra_state_attributes(
 
     if debug_expose_baseline_timeline:
         _LOGGER.warning(
-            "DEBUG MODE: Full timeline in attributes (280 KB)! "
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            + "DEBUG MODE: Full timeline in attributes (280 KB)! "
             "Set DEBUG_EXPOSE_BASELINE_TIMELINE=False for production."
         )
         attrs["timeline_data"] = sensor._timeline_data

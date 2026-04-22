@@ -8,7 +8,7 @@ import logging
 import re
 from typing import Any, Dict
 
-from homeassistant import config_entries, core
+from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -20,7 +20,6 @@ from .const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
     CONF_EXTENDED_SCAN_INTERVAL,
-    CONF_NO_TELEMETRY,
     CONF_PASSWORD,
     CONF_PLANNING_MIN_PERCENT,
     CONF_STANDARD_SCAN_INTERVAL,
@@ -40,6 +39,7 @@ from .core.data_source import (
     get_data_source_state,
     init_data_source_state,
 )
+from .shared.logging import resolve_no_telemetry
 
 
 BalancingManager: Any = None
@@ -71,6 +71,12 @@ ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
 def _read_manifest_file(path: str) -> str:
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
+
+
+async def _setup_telemetry(hass: HomeAssistant, email_hash: str) -> None:
+    """Legacy bootstrap kept as a no-op after New Relic removal."""
+    _ = hass
+    _ = email_hash
 
 
 def _ensure_data_source_option_defaults(
@@ -214,9 +220,7 @@ async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
     _ = config
     _LOGGER.debug("OIG Cloud setup: starting")
 
-    # OPRAVA: Odstraníme neexistující import setup_telemetry
-    # Initialize telemetry - telemetrie se inicializuje přímo v ServiceShield
-    _LOGGER.debug("OIG Cloud setup: telemetry will be initialized in ServiceShield")
+    _LOGGER.debug("OIG Cloud setup: telemetry will be initialized per entry")
 
     # OPRAVA: ServiceShield se inicializuje pouze v async_setup_entry, ne zde
     # V async_setup pouze připravíme globální strukturu
@@ -310,6 +314,52 @@ async def _load_manifest_version(hass: HomeAssistant) -> str:
     except Exception as exc:
         _LOGGER.warning("Could not load version from manifest: %s", exc)
         return "unknown"
+
+
+def _resolve_install_id_hash(hass: HomeAssistant) -> str:
+    core_uuid = str(hass.data.get("core.uuid", "")).strip()
+    if not core_uuid:
+        return ""
+    return hashlib.sha256(core_uuid.encode("utf-8")).hexdigest()
+
+
+async def _build_cloud_telemetry_context(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    from .shared.cloud_contract import resolve_telemetry_device_id
+
+    try:
+        device_id = resolve_telemetry_device_id(entry)
+    except Exception as err:
+        _LOGGER.debug("Failed to resolve telemetry device_id: %s", err, exc_info=True)
+        device_id = None
+
+    return {
+        "device_id": device_id,
+        "install_id_hash": _resolve_install_id_hash(hass),
+        "integration_version": await _load_manifest_version(hass),
+    }
+
+
+async def _bind_session_manager_telemetry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    session_manager: Any,
+) -> None:
+    entry_data = hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
+    telemetry_state = entry_data.get("telemetry")
+    if not isinstance(telemetry_state, dict):
+        return
+
+    telemetry_state.setdefault("incident_dedupe", {})
+    telemetry_state["cloud_context"] = await _build_cloud_telemetry_context(hass, entry)
+
+    if hasattr(session_manager, "bind_telemetry_emitter"):
+        session_manager.bind_telemetry_emitter(
+            telemetry_state.get("emitter"),
+            telemetry_state,
+        )
 
 
 def _build_dashboard_url(
@@ -921,12 +971,7 @@ def _load_entry_auth_config(
     username = entry.data.get(CONF_USERNAME) or entry.options.get(CONF_USERNAME)
     password = entry.data.get(CONF_PASSWORD) or entry.options.get(CONF_PASSWORD)
 
-    _LOGGER.debug("Username: %s", "***" if username else "MISSING")
-    _LOGGER.debug("Password: %s", "***" if password else "MISSING")
-
-    no_telemetry = entry.data.get(CONF_NO_TELEMETRY, False) or entry.options.get(
-        CONF_NO_TELEMETRY, False
-    )
+    no_telemetry = resolve_no_telemetry(entry)
     standard_scan_interval = entry.options.get("standard_scan_interval") or entry.data.get(
         CONF_STANDARD_SCAN_INTERVAL, 30
     )
@@ -993,6 +1038,7 @@ async def _init_session_manager_and_coordinator(
     from .api.oig_cloud_session_manager import OigCloudSessionManager
 
     session_manager = OigCloudSessionManager(oig_api)
+    await _bind_session_manager_telemetry(hass, entry, session_manager)
 
     state = get_data_source_state(hass, entry.entry_id)
     should_check_cloud_now = state.effective_mode == DATA_SOURCE_CLOUD_ONLY
@@ -1488,7 +1534,11 @@ async def async_setup_entry(
             _LOGGER.error("Username or password is missing from configuration")
             raise ConfigEntryAuthFailed("Missing credentials")
 
-        _LOGGER.debug("Telemetry handled only by ServiceShield, not main module")
+        _LOGGER.debug("Telemetry handled by the shared entry emitter")
+
+        from .shared.emitter import async_setup_entry_telemetry
+
+        await async_setup_entry_telemetry(hass, entry)
 
         coordinator, session_manager = await _init_session_manager_and_coordinator(
             hass,
@@ -1526,7 +1576,8 @@ async def async_setup_entry(
 
         telemetry_store = _init_telemetry_store(hass, entry, coordinator)
 
-        hass.data[DOMAIN][entry.entry_id] = {
+        entry_data = hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
+        entry_data.update({
             "coordinator": coordinator,
             "session_manager": session_manager,  # NOVÉ: Uložit session manager
             "notification_manager": notification_manager,
@@ -1547,7 +1598,7 @@ async def async_setup_entry(
                 "enable_boiler": entry.options.get("enable_boiler", False),  # NOVÉ
                 "enable_dashboard": dashboard_enabled,  # NOVÉ
             },
-        }
+        })
 
         _setup_service_shield_data(hass, entry, coordinator, service_shield)
 
@@ -1609,6 +1660,15 @@ def _setup_service_shield_data(
 ) -> None:
     if not service_shield:
         return
+
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    telemetry_state = entry_data.get("telemetry")
+    telemetry_emitter = None
+    if isinstance(telemetry_state, dict):
+        telemetry_emitter = telemetry_state.get("emitter")
+    if hasattr(service_shield, "bind_telemetry_emitter"):
+        service_shield.bind_telemetry_emitter(telemetry_emitter)
+
     # Vytvoříme globální odkaz na ServiceShield pro senzory
     hass.data[DOMAIN]["shield"] = service_shield
 
@@ -1754,35 +1814,6 @@ def _setup_service_shield_monitoring(
     )
 
 
-async def _setup_telemetry(hass: core.HomeAssistant, username: str) -> None:
-    """Setup telemetry if enabled."""
-    await asyncio.sleep(0)
-    try:
-        _LOGGER.debug("Starting telemetry setup...")
-
-        email_hash = hashlib.sha256(username.encode("utf-8")).hexdigest()
-        hass_id = hashlib.sha256(hass.data["core.uuid"].encode("utf-8")).hexdigest()
-
-        _LOGGER.debug(
-            "Telemetry identifiers - Email hash: %s..., HASS ID: %s...",
-            email_hash[:16],
-            hass_id[:16],
-        )
-
-        from .shared.logging import setup_simple_telemetry
-
-        telemetry = setup_simple_telemetry(email_hash, hass_id)
-        if telemetry:
-            hass.data.setdefault(DOMAIN, {})["telemetry"] = telemetry
-            _LOGGER.info("Telemetry initialized (simple mode)")
-        else:
-            _LOGGER.debug("Telemetry initialization skipped (no handler)")
-
-    except Exception as e:
-        _LOGGER.warning("Failed to setup telemetry: %s", e, exc_info=True)
-        # Pokračujeme bez telemetrie
-
-
 async def async_unload_entry(
     hass: HomeAssistant, entry: config_entries.ConfigEntry
 ) -> bool:
@@ -1815,6 +1846,13 @@ async def async_unload_entry(
                 await boiler_coordinator.async_shutdown()
             except Exception as err:
                 _LOGGER.debug("BoilerCoordinator shutdown failed: %s", err)
+
+        from .shared.emitter import async_shutdown_entry_telemetry
+
+        try:
+            await async_shutdown_entry_telemetry(hass, entry)
+        except Exception as err:
+            _LOGGER.debug("Telemetry shutdown failed: %s", err)
 
         from .services import async_unload_services
 

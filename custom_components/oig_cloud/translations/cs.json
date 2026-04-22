@@ -231,6 +231,10 @@
           "enable_pricing": "💰 Cenové senzory a spotové ceny z OTE",
           "enable_solar_forecast": "☀️ Solární předpověď výroby FVE",
           "enable_statistics": "📊 Statistiky a analýzy spotřeby",
+          "telemetry_mqtt_enabled": "📡 Odesílání telemetrie přes MQTT",
+          "telemetry_mqtt_host": "MQTT broker host",
+          "telemetry_mqtt_port": "MQTT broker port",
+          "telemetry_mqtt_prefix": "MQTT topic prefix",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
@@ -243,6 +247,10 @@
           "enable_pricing": "Doporučeno - spotové ceny z OTE + kalkulace nákladů",
           "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
           "enable_statistics": "Doporučeno - medián spotřeby, predikce",
+          "telemetry_mqtt_enabled": "Publikace telemetrie do lokálního MQTT brokeru; zůstává neaktivní, dokud ji nepovolíte a nenastavíte host",
+          "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
+          "telemetry_mqtt_port": "Standardní MQTT port je 1883",
+          "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         },
         "description": "{step}\n{progress}\n\nVyberte, které funkce chcete používat. Každý modul můžete později podrobně nastavit.",
@@ -556,6 +564,10 @@
           "enable_pricing": "💰 Cenové senzory a spotové ceny z OTE",
           "enable_solar_forecast": "☀️ Solární předpověď výroby FVE",
           "enable_statistics": "📊 Statistiky a analýzy spotřeby",
+          "telemetry_mqtt_enabled": "📡 Odesílání telemetrie přes MQTT",
+          "telemetry_mqtt_host": "MQTT broker host",
+          "telemetry_mqtt_port": "MQTT broker port",
+          "telemetry_mqtt_prefix": "MQTT topic prefix",
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
@@ -568,6 +580,10 @@
           "enable_pricing": "Doporučeno - spotové ceny z OTE + kalkulace nákladů",
           "enable_solar_forecast": "Vyžaduje API klíč od Forecast.Solar",
           "enable_statistics": "Doporučeno - medián spotřeby, predikce",
+          "telemetry_mqtt_enabled": "Publikace telemetrie do lokálního MQTT brokeru; zůstává neaktivní, dokud ji nepovolíte a nenastavíte host",
+          "telemetry_mqtt_host": "Hostname nebo IP MQTT brokeru; ponechte prázdné pro vypnutí MQTT delivery",
+          "telemetry_mqtt_port": "Standardní MQTT port je 1883",
+          "telemetry_mqtt_prefix": "Základ topiců pro publikovanou telemetrii",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         },
         "description": "{step}\n{progress}\n\nVyberte, které funkce chcete používat. Každý modul můžete později podrobně nastavit.",
@@ -759,6 +775,98 @@
         }
       },
       "name": "Naplánovat ohřev bojleru"
+    },
+    "set_boiler_mode": {
+      "description": "Přepne bojler mezi automatickým režimem (CBB) a manuálním režimem.",
+      "fields": {
+        "acknowledgement": {
+          "description": "Potvrzuji rizika manuálního režimu bojleru a přebírám plnou odpovědnost.",
+          "name": "Potvrzení"
+        },
+        "device_id": {
+          "description": "Vyberte Battery Box zařízení, pokud chcete ovládat konkrétní instalaci.",
+          "name": "Zařízení"
+        },
+        "mode": {
+          "description": "Vyberte mezi CBB (automaticky) a Manual.",
+          "name": "Režim bojleru"
+        }
+      },
+      "name": "Nastavit režim bojleru"
+    },
+    "set_box_mode": {
+      "description": "Nastaví režim Battery Boxu (Home 1, Home 2, Home 3, Home UPS, Home 5, Home 6).",
+      "fields": {
+        "acknowledgement": {
+          "description": "Potvrdit změnu režimu.",
+          "name": "Potvrzení"
+        },
+        "device_id": {
+          "description": "Vyberte Battery Box zařízení, pokud chcete ovládat konkrétní instalaci.",
+          "name": "Zařízení"
+        },
+        "home_grid_v": {
+          "description": "Povolí doplňkový režim Home Grid V, pokud je podporován.",
+          "name": "Home Grid V"
+        },
+        "home_grid_vi": {
+          "description": "Povolí doplňkový režim Home Grid VI, pokud je podporován.",
+          "name": "Home Grid VI"
+        },
+        "mode": {
+          "description": "Režim Battery Boxu.",
+          "name": "Režim"
+        }
+      },
+      "name": "Nastavit režim Battery Boxu"
+    },
+    "set_formating_mode": {
+      "description": "Zapne nebo vypne okamžité nabíjení baterie ze sítě.",
+      "fields": {
+        "acknowledgement": {
+          "description": "Potvrzuji, že spuštění nabíjení baterie ze sítě mění živý systém, a přebírám odpovědnost.",
+          "name": "Potvrzení"
+        },
+        "device_id": {
+          "description": "Vyberte Battery Box zařízení, pokud chcete ovládat konkrétní instalaci.",
+          "name": "Zařízení"
+        },
+        "limit": {
+          "description": "Nastavte cílové procento nabití baterie.",
+          "name": "Cílové nabití (%)"
+        },
+        "mode": {
+          "description": "Vyberte spuštění nebo zastavení nabíjení baterie ze sítě.",
+          "name": "Režim nabíjení"
+        }
+      },
+      "name": "Nastavit nabíjení baterie ze sítě"
+    },
+    "set_grid_delivery": {
+      "description": "Nastaví přetoky přebytků do sítě. Ujistěte se, že máte potřebná povolení.",
+      "fields": {
+        "acknowledgement": {
+          "description": "Potvrzuji, že zapnutí této funkce mění živý systém. Přebírám plnou odpovědnost.",
+          "name": "Potvrzení"
+        },
+        "device_id": {
+          "description": "Vyberte Battery Box zařízení, pokud chcete ovládat konkrétní instalaci.",
+          "name": "Zařízení"
+        },
+        "limit": {
+          "description": "Nastaví maximální povolený přetok do sítě ve wattech.",
+          "name": "Limit přetoků (W)"
+        },
+        "mode": {
+          "description": "Vyberte, zda jsou přetoky do sítě povoleny, omezeny nebo zakázány.",
+          "name": "Režim přetoků"
+        },
+        "warning": {
+          "description": "Před povolením přetoků se ujistěte, že máte souhlas distributora. Neoprávněné přetoky mohou vést k sankcím.",
+          "name": "Upozornění k přetokům"
+        }
+      },
+      "name": "Nastavit přetoky do sítě"
     }
   }
 }

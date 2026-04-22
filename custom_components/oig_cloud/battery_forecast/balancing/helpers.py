@@ -93,7 +93,7 @@ async def plan_balancing(
         }
 
     except Exception as err:
-        _LOGGER.error("Failed to plan balancing: %s", err, exc_info=True)
+        _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Failed to plan balancing: %s", err, exc_info=True)
         return {
             "can_do": False,
             "charging_intervals": [],

@@ -12,7 +12,6 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util.dt import now as dt_now
 
-from ..shared.logging import setup_simple_telemetry
 from . import dispatch as shield_dispatch
 from . import queue as shield_queue
 from . import validation as shield_validation
@@ -72,7 +71,7 @@ class ServiceShield:
         self.entry: ConfigEntry = entry
         self._logger: logging.Logger = logging.getLogger(__name__)
         self._active_tasks: Dict[str, Dict[str, Any]] = {}
-        self._telemetry_handler: Optional[Any] = None
+        self._telemetry_emitter: Optional[Any] = None
 
         # Inicializace základních atributů
         self.pending: Dict[str, Dict[str, Any]] = {}
@@ -107,38 +106,18 @@ class ServiceShield:
         # Mode Transition Tracker (bude inicializován později s box_id)
         self.mode_tracker: Optional[Any] = None
 
-        # Setup telemetrie pouze pro ServiceShield
-        if not entry.options.get("no_telemetry", False):
-            self._setup_telemetry()
-
-    def _setup_telemetry(self) -> None:
-        """Nastavit telemetrii pouze pro ServiceShield."""
-        try:
-            import hashlib
-
-            username = self.entry.data.get("username", "")
-            email_hash = hashlib.sha256(username.encode("utf-8")).hexdigest()
-            hass_id = hashlib.sha256(
-                self.hass.data["core.uuid"].encode("utf-8")
-            ).hexdigest()
-
-            # Použijeme setup_simple_telemetry místo setup_otel_logging
-            self._telemetry_handler = setup_simple_telemetry(email_hash, hass_id)
-
-            # Nastavit i pro zpětnou kompatibilitu
-            self.telemetry_handler = self._telemetry_handler
-
-            self._logger.info("ServiceShield telemetry initialized successfully")
-
-        except Exception as e:
-            self._logger.debug(f"Failed to setup ServiceShield telemetry: {e}")
-            # Pokud telemetrie selže, pokračujeme bez ní
-            self.telemetry_handler = None
-            self.telemetry_logger = None
+    def bind_telemetry_emitter(self, emitter: Optional[Any]) -> None:
+        """Attach the shared telemetry emitter after entry telemetry init."""
+        self._telemetry_emitter = emitter
+        self.telemetry_handler = emitter
+        if emitter is None:
+            self._logger.debug("ServiceShield telemetry emitter cleared")
+        else:
+            self._logger.debug("ServiceShield telemetry emitter bound")
 
     def _log_security_event(self, event_type: str, details: Dict[str, Any]) -> None:
         """Zalogovat bezpečnostní událost do telemetrie."""
-        if self._telemetry_handler:
+        if self._telemetry_emitter:
             security_logger = logging.getLogger(
                 "custom_components.oig_cloud.service_shield.security"
             )
@@ -159,45 +138,11 @@ class ServiceShield:
     async def _log_telemetry(
         self, event_type: str, service_name: str, data: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Log telemetry event using SimpleTelemetry."""
-        try:
-            _LOGGER.debug(
-                "Telemetry log start: event_type=%s service=%s",
-                event_type,
-                service_name,
-            )
-            _LOGGER.debug(
-                "Telemetry handler available: %s", self._telemetry_handler is not None
-            )
-
-            if self._telemetry_handler:
-                # Připravíme telemetrii data
-                telemetry_data: Dict[str, Any] = {
-                    "timestamp": dt_now().isoformat(),
-                    "component": "service_shield",
-                }
-
-                if data:
-                    telemetry_data.update(data)
-
-                _LOGGER.debug(
-                    "Telemetry data prepared: %s",
-                    telemetry_data,
-                )
-
-                # Odešleme do SimpleTelemetry
-                await self._telemetry_handler.send_event(
-                    event_type=event_type,
-                    service_name=service_name,
-                    data=telemetry_data,
-                )
-
-                _LOGGER.debug("Telemetry sent successfully")
-            else:
-                _LOGGER.debug("Telemetry handler missing; skipping send")
-
-        except Exception as e:
-            _LOGGER.error("Failed to log telemetry: %s", e, exc_info=True)
+        """Legacy raw telemetry path disabled after New Relic removal."""
+        _ = event_type
+        _ = service_name
+        _ = data
+        return None
 
     def register_state_change_callback(self, callback: Callable[[], None]) -> None:
         """Registruje callback, který se zavolá při změně shield stavu."""
@@ -224,7 +169,11 @@ class ServiceShield:
                     self.hass.async_create_task(result)
                 # Pokud vrátí None (synchronní callback), nic nedělej
             except Exception as e:
-                _LOGGER.error(f"[OIG Shield] Chyba při volání callback: {e}")
+                _LOGGER.error(
+                    "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+                    "[OIG Shield] Chyba při volání callback: %s",
+                    e,
+                )
 
     def _values_match(self, current_value: Any, expected_value: Any) -> bool:
         """Porovná dvě hodnoty s normalizací."""
@@ -346,7 +295,10 @@ class ServiceShield:
 
         except Exception as e:
             _LOGGER.error(
-                f"[OIG Shield] Failed to register services: {e}", exc_info=True
+                "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+                "[OIG Shield] Failed to register services: %s",
+                e,
+                exc_info=True,
             )
             raise
 
@@ -415,6 +367,7 @@ class ServiceShield:
         service: str,
         blocking: bool,
         context: Optional[Context],
+        trace_id: Optional[str] = None,
     ) -> None:
         await shield_dispatch.start_call(
             self,
@@ -426,6 +379,7 @@ class ServiceShield:
             service,
             blocking,
             context,
+            trace_id,
         )
 
     async def cleanup(self) -> None:
@@ -450,35 +404,9 @@ class ServiceShield:
             self._state_listener_unsub = None
             _LOGGER.info("[OIG Shield] State listener zrušen při cleanup")
 
-        if self._telemetry_handler:
-            try:
-                # Odeslat závěrečnou telemetrii
-                if self.telemetry_logger:
-                    self.telemetry_logger.info(
-                        "ServiceShield cleanup initiated",
-                        extra={
-                            "shield_data": {
-                                "event": "cleanup",
-                                "final_queue_length": len(self.queue),
-                                "final_pending_count": len(self.pending),
-                                "timestamp": dt_now().isoformat(),
-                            }
-                        },
-                    )
-
-                # Zavřít handler
-                if hasattr(self._telemetry_handler, "close"):
-                    await self._telemetry_handler.close()
-
-                # Odstranit handler z loggerů
-                shield_logger = logging.getLogger(
-                    "custom_components.oig_cloud.service_shield"
-                )
-                if self._telemetry_handler in shield_logger.handlers:
-                    shield_logger.removeHandler(self._telemetry_handler)
-
-            except Exception as e:
-                self._logger.debug(f"Error cleaning up telemetry: {e}")
+        self._telemetry_emitter = None
+        self.telemetry_handler = None
+        self.telemetry_logger = None
 
         self._logger.debug("[OIG Shield] ServiceShield cleaned up")
 
@@ -630,7 +558,10 @@ class ModeTransitionTracker:
                 }
             except Exception as e:
                 self._logger.error(
-                    f"[ModeTracker] Error calculating stats for {scenario}: {e}"
+                    "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+                    "[ModeTracker] Error calculating stats for %s: %s",
+                    scenario,
+                    e,
                 )
 
         return result
@@ -677,7 +608,9 @@ class ModeTransitionTracker:
             state_list = await self._load_historical_states(sensor_id)
             if not state_list:
                 self._logger.warning(
-                    f"[ModeTracker] No historical data found for {sensor_id}"
+                    "[OIG_CLOUD_WARNING][component=shield][corr=na][run=na] "
+                    "[ModeTracker] No historical data found for %s",
+                    sensor_id,
                 )
                 return
 
@@ -697,7 +630,10 @@ class ModeTransitionTracker:
 
         except Exception as e:
             self._logger.error(
-                f"[ModeTracker] Error loading historical data: {e}", exc_info=True
+                "[OIG_CLOUD_ERROR][component=shield][corr=na][run=na] "
+                "[ModeTracker] Error loading historical data: %s",
+                e,
+                exc_info=True,
             )
 
     async def _load_historical_states(self, sensor_id: str) -> Optional[list[Any]]:

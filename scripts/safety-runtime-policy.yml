@@ -1,0 +1,21 @@
+# Safety policy for runtime dependency vulnerabilities that are currently
+# transitively pinned by the Home Assistant stack used by local CI.
+security:
+  ignore-unpinned-requirements: true
+  ignore-cvss-severity-below: 0
+  ignore-cvss-unknown-severity: false
+  ignore-vulnerabilities:
+    89484:
+      reason: Runtime transitive dependency pinned via homeassistant / acme stack (pyopenssl).
+    89421:
+      reason: Runtime transitive dependency pinned via homeassistant / acme stack (pyopenssl).
+    89028:
+      reason: Runtime transitive dependency pinned via hass-nabucasa / pycognito (pyjwt).
+    85151:
+      reason: Runtime protobuf remains pinned by the Home Assistant stack in local CI.
+    86269:
+      reason: Runtime transitive dependency pinned via homeassistant (pillow).
+    84963:
+      reason: Runtime transitive dependency pinned via homeassistant (orjson).
+    86217:
+      reason: Runtime transitive dependency pinned via homeassistant / cryptography stack.

@@ -117,7 +117,8 @@ def auto_mode_switch_enabled(sensor: Any) -> bool:
     if CONF_AUTO_MODE_SWITCH in data:
         enabled = bool(data.get(CONF_AUTO_MODE_SWITCH, False))
         _LOGGER.warning(
-            "[AutoModeSwitch] Using legacy config source=data for %s=%s (entry.options missing key)",
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            + "[AutoModeSwitch] Using legacy config source=data for %s=%s (entry.options missing key)",
             CONF_AUTO_MODE_SWITCH,
             enabled,
         )
@@ -244,7 +245,9 @@ def stop_auto_switch_watchdog(sensor: Any) -> None:
         _LOGGER.debug("[AutoModeSwitch] Watchdog stopped")
 
 
-def _log_watchdog_correction(sensor: Any, current_mode: Optional[str], desired_mode: str, context: SwitchContext) -> None:
+def _log_watchdog_correction(
+    sensor: Any, current_mode: Optional[str], desired_mode: str, context: SwitchContext
+) -> None:
     log_rl = getattr(sensor, "_log_rate_limited", None)
     if log_rl:
         log_rl(
@@ -295,7 +298,9 @@ async def auto_switch_watchdog_tick(sensor: Any, now: datetime) -> None:
         },
     )
     _log_watchdog_correction(sensor, current_mode, desired_mode, context)
-    await ensure_current_mode(sensor, desired_mode, "watchdog enforcement", context=context)
+    await ensure_current_mode(
+        sensor, desired_mode, "watchdog enforcement", context=context
+    )
 
 
 def get_planned_mode_for_time(
@@ -390,7 +395,8 @@ def get_mode_switch_offset(
         return float(offset_seconds)
     except Exception as err:  # pragma: no cover - defensive
         _LOGGER.warning(
-            "[AutoModeSwitch] Failed to read mode switch offset %s→%s: %s",
+            "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+            + "[AutoModeSwitch] Failed to read mode switch offset %s→%s: %s",
             from_mode,
             to_mode,
             err,
@@ -487,7 +493,8 @@ async def execute_mode_change(
         return context
     except Exception as err:
         _LOGGER.error(
-            "[AutoModeSwitch] Failed to switch to %s: %s",
+            "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+            + "[AutoModeSwitch] Failed to switch to %s: %s",
             target_mode,
             err,
             exc_info=True,
@@ -642,7 +649,9 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
             decision_source="auto_switch",
             details={"timeline_source": timeline_source},
         )
-        await ensure_current_mode(sensor, current_mode, "current planned block", context=context)
+        await ensure_current_mode(
+            sensor, current_mode, "current planned block", context=context
+        )
 
     if not scheduled_events:
         _LOGGER.debug("[AutoModeSwitch] No upcoming mode changes to schedule")
@@ -703,7 +712,10 @@ def _schedule_auto_switch_events(
                 details={"scheduled_time": event_time.isoformat()},
             )
             await execute_mode_change(
-                sensor, desired_mode, f"scheduled {event_time.isoformat()}", context=context
+                sensor,
+                desired_mode,
+                f"scheduled {event_time.isoformat()}",
+                context=context,
             )
 
         unsub = async_track_point_in_time(
