@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -150,10 +151,8 @@ class CloudMqttPublisher:
         self._worker_task = None
         if worker_task is not None:
             worker_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await worker_task
-            except asyncio.CancelledError:
-                pass
 
         dropped_count = self._drop_remaining_queue()
         if dropped_count > 0:

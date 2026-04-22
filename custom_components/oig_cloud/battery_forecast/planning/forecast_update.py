@@ -132,51 +132,80 @@ def _build_planner_summary_diagnostics(
     }
 
     if mode_result is not None:
-        planning_min_kwh = mode_result.get("planning_min_kwh")
-        if isinstance(planning_min_kwh, (int, float)):
-            diagnostics["metric_planning_min_kwh"] = float(planning_min_kwh)
-
-        target_kwh = mode_result.get("target_kwh")
-        if isinstance(target_kwh, (int, float)):
-            diagnostics["metric_target_soc_kwh"] = float(target_kwh)
-
-        infeasible = mode_result.get("infeasible")
-        if isinstance(infeasible, bool):
-            diagnostics["metric_infeasible"] = infeasible
-
-        optimal_modes = mode_result.get("optimal_modes")
-        if isinstance(optimal_modes, list):
-            normalized_modes = [
-                _normalize_planner_mode_name(mode) for mode in optimal_modes
-            ]
-            diagnostics["metric_home_i_count"] = normalized_modes.count("HOME I")
-            diagnostics["metric_home_iii_count"] = normalized_modes.count("HOME III")
-            diagnostics["metric_home_ups_count"] = normalized_modes.count("HOME UPS")
-        else:
-            diagnostics["metric_home_i_count"] = 0
-            diagnostics["metric_home_iii_count"] = 0
-            diagnostics["metric_home_ups_count"] = 0
-
-        if isinstance(decision_trace, list) and decision_trace:
-            first_trace = decision_trace[0]
-            strategy = first_trace.get("strategy")
-            if isinstance(strategy, str):
-                normalized_strategy = strategy.strip().upper()
-                if normalized_strategy in DETAIL_ENUMS["detail_strategy"]:
-                    diagnostics["detail_strategy"] = normalized_strategy
-
-            reason = _normalize_planner_detail_reason(first_trace.get("reason"))
-            if reason is not None:
-                diagnostics["detail_reason"] = reason
+        _apply_mode_result_diagnostics(diagnostics, mode_result)
+        _apply_decision_trace_diagnostics(diagnostics, decision_trace)
     else:
-        failure_class = charging_metrics.get("planner_failure_class")
-        if isinstance(failure_class, str) and failure_class.strip():
-            diagnostics["detail_failure_class"] = failure_class.strip()
-            diagnostics["detail_failure_summary"] = build_failure_summary(
-                failure_class.strip()
-            )
+        _apply_planner_failure_diagnostics(diagnostics, charging_metrics)
 
     return diagnostics
+
+
+def _apply_mode_result_diagnostics(
+    diagnostics: dict[str, Any], mode_result: dict[str, Any]
+) -> None:
+    _set_float_diagnostic(diagnostics, mode_result, "planning_min_kwh", "metric_planning_min_kwh")
+    _set_float_diagnostic(diagnostics, mode_result, "target_kwh", "metric_target_soc_kwh")
+
+    infeasible = mode_result.get("infeasible")
+    if isinstance(infeasible, bool):
+        diagnostics["metric_infeasible"] = infeasible
+
+    _apply_mode_count_diagnostics(diagnostics, mode_result.get("optimal_modes"))
+
+
+def _set_float_diagnostic(
+    diagnostics: dict[str, Any],
+    source: dict[str, Any],
+    source_key: str,
+    target_key: str,
+) -> None:
+    value = source.get(source_key)
+    if isinstance(value, (int, float)):
+        diagnostics[target_key] = float(value)
+
+
+def _apply_mode_count_diagnostics(
+    diagnostics: dict[str, Any], optimal_modes: Any
+) -> None:
+    if not isinstance(optimal_modes, list):
+        diagnostics["metric_home_i_count"] = 0
+        diagnostics["metric_home_iii_count"] = 0
+        diagnostics["metric_home_ups_count"] = 0
+        return
+
+    normalized_modes = [_normalize_planner_mode_name(mode) for mode in optimal_modes]
+    diagnostics["metric_home_i_count"] = normalized_modes.count("HOME I")
+    diagnostics["metric_home_iii_count"] = normalized_modes.count("HOME III")
+    diagnostics["metric_home_ups_count"] = normalized_modes.count("HOME UPS")
+
+
+def _apply_decision_trace_diagnostics(
+    diagnostics: dict[str, Any], decision_trace: Any
+) -> None:
+    if not isinstance(decision_trace, list) or not decision_trace:
+        return
+
+    first_trace = decision_trace[0]
+    strategy = first_trace.get("strategy")
+    if isinstance(strategy, str):
+        normalized_strategy = strategy.strip().upper()
+        if normalized_strategy in DETAIL_ENUMS["detail_strategy"]:
+            diagnostics["detail_strategy"] = normalized_strategy
+
+    reason = _normalize_planner_detail_reason(first_trace.get("reason"))
+    if reason is not None:
+        diagnostics["detail_reason"] = reason
+
+
+def _apply_planner_failure_diagnostics(
+    diagnostics: dict[str, Any], charging_metrics: dict[str, Any]
+) -> None:
+    failure_class = charging_metrics.get("planner_failure_class")
+    if isinstance(failure_class, str) and failure_class.strip():
+        diagnostics["detail_failure_class"] = failure_class.strip()
+        diagnostics["detail_failure_summary"] = build_failure_summary(
+            failure_class.strip()
+        )
 
 
 async def _emit_planner_summary_event(

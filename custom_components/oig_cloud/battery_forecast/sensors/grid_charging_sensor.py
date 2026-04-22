@@ -25,6 +25,8 @@ MODE_LABEL_HOME_UPS = "Home UPS"
 MODE_LABEL_HOME_I = "HOME I"
 
 _LOGGER = logging.getLogger(__name__)
+PLANNER_WARNING_MARKER = "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+PLANNER_ERROR_MARKER = "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
 HOME_UPS_LABEL = "HOME UPS"
 
 
@@ -145,7 +147,7 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
 
             if not battery_sensor:
                 _LOGGER.warning(
-                    "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                    PLANNER_WARNING_MARKER
                     + "[GridChargingPlan] BatteryForecastSensor not found"
                 )
                 return []
@@ -176,7 +178,7 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
 
         except Exception as err:
             _LOGGER.error(
-                "[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] "
+                PLANNER_ERROR_MARKER
                 + "[GridChargingPlan] Error: %s",
                 err,
                 exc_info=True,
