@@ -1,0 +1,16 @@
+Task 6b evidence: PV happy path
+
+RED:
+.venv/bin/python -m pytest tests/test_boiler_task6b_multi_source.py -q
+Result: 7 failed. PV test failed because the existing Task 6a planner chose latest grid-only slots and exposed no per-slot PV/residual allocation.
+
+GREEN / verification:
+.venv/bin/python -m pytest tests/test_boiler_task6a_planner_core.py tests/test_boiler_task6b_multi_source.py -q
+Result: 18 passed.
+
+Broad boiler regression:
+.venv/bin/python -m pytest tests/test_boiler_task1_routing.py tests/test_boiler_task2_boundary.py tests/test_boiler_task3_topology.py tests/test_boiler_task4_contract.py tests/test_boiler_task5_energy_adapter.py tests/test_boiler_task6a_planner_core.py tests/test_boiler_task6b_multi_source.py tests/test_boiler_precedence.py tests/test_boiler_services.py -q
+Result: 196 passed.
+
+Covered by: test_pv_surplus_is_allocated_per_slot_and_residual_is_grid_scored.
+Observed: planner picked the lowest-cost comfort-safe set, allocated 1.4 kWh PV, scored 1.6 kWh residual grid, and reported source_selected_pv with multi_source_scoring explanation.

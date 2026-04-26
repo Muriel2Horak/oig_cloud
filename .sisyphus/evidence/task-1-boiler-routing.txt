@@ -1,0 +1,1222 @@
+=== Task 1 Boiler Routing Evidence ===
+Date: 2026-04-25T16:57:41Z
+
+--- pytest tests/test_boiler_task1_routing.py ---
+============================= test session starts ==============================
+collecting ... collected 19 items
+
+tests/test_boiler_task1_routing.py::test_canonical_resolver_validates_entry_exists PASSED [  5%]
+tests/test_boiler_task1_routing.py::test_canonical_resolver_rejects_mismatched_box_ownership PASSED [ 10%]
+tests/test_boiler_task1_routing.py::test_canonical_resolver_accepts_valid_entry_box_pair PASSED [ 15%]
+tests/test_boiler_task1_routing.py::test_canonical_resolver_validates_box_from_coordinator PASSED [ 21%]
+tests/test_boiler_task1_routing.py::test_boiler_plan_schema_requires_entry_id_and_box_id PASSED [ 26%]
+tests/test_boiler_task1_routing.py::test_boiler_apply_schema_requires_entry_id_and_box_id PASSED [ 31%]
+tests/test_boiler_task1_routing.py::test_boiler_cancel_schema_requires_entry_id_and_box_id PASSED [ 36%]
+tests/test_boiler_task1_routing.py::test_multi_entry_service_routing_no_cross_contamination PASSED [ 42%]
+tests/test_boiler_task1_routing.py::test_no_hardcoded_2206237016_in_task1_target_files PASSED [ 47%]
+tests/test_boiler_task1_routing.py::test_services_yaml_boiler_entries_have_canonical_fields PASSED [ 52%]
+tests/test_boiler_task1_routing.py::test_set_boiler_mode_schema_backward_compat_device_id PASSED [ 57%]
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_no_hardcoded_fallback PASSED [ 63%]
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_resolves_known_box_id PASSED [ 68%]
+tests/test_boiler_task1_routing.py::test_const_py_has_canonical_boiler_identity_constants PASSED [ 73%]
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_no_infer_box_id_from_states PASSED [ 78%]
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_infer_method_removed_or_safe PASSED [ 84%]
+tests/test_boiler_task1_routing.py::test_boiler_services_handlers_resolve_from_call_data PASSED [ 89%]
+tests/test_boiler_task1_routing.py::test_no_hardcoded_2206237016_in_extra_frontend_files PASSED [ 94%]
+tests/test_boiler_task1_routing.py::test_services_yaml_set_boiler_mode_has_canonical_fields PASSED [100%]
+
+============================== 19 passed in 0.51s ==============================
+=== Narrow Local Checks Equivalent ===
+
+--- flake8 ---
+tests/test_coverage_block_more4.py:4:1: F401 'datetime.timezone' imported but unused
+tests/test_coverage_block_more4.py:17:1: F811 redefinition of unused 'CBB_MODE_HOME_I' from line 17
+tests/test_coverage_block_more4.py:30:1: F401 'custom_components.oig_cloud.core.telemetry_store.TelemetryStore' imported but unused
+tests/test_coverage_block_more4.py:249:39: F602 dictionary key variable CBB_MODE_HOME_I repeated with different values
+tests/test_coverage_block_more4.py:249:80: F602 dictionary key variable CBB_MODE_HOME_I repeated with different values
+tests/test_remaining_gap_coverage.py:3:1: F401 'datetime.datetime' imported but unused
+tests/test_remaining_gap_coverage.py:3:1: F401 'datetime.timezone' imported but unused
+flake8: FAIL
+
+--- pytest full suite ---
+============================= test session starts ==============================
+collected 3625 items
+
+tests/e2e/test_auto_mode_switch_e2e.py .                                 [  0%]
+tests/e2e/test_config_flow_modules_e2e.py .......                        [  0%]
+tests/e2e/test_config_flow_runtime_e2e.py .........                      [  0%]
+tests/e2e/test_critical_sensors_e2e.py ...                               [  0%]
+tests/e2e/test_data_refresh_fallback_e2e.py ....                         [  0%]
+tests/e2e/test_forecast_provider_recompute_e2e.py .                      [  0%]
+tests/e2e/test_frontend_flow_e2e.py ..                                   [  0%]
+tests/e2e/test_pricing_timeline_e2e.py ...                               [  0%]
+tests/e2e/test_runtime_history_e2e.py ...                                [  0%]
+tests/e2e/test_services_e2e.py .......                                   [  1%]
+tests/test_adaptive_consumption.py ......                                [  1%]
+tests/test_adaptive_consumption_more.py ....................             [  1%]
+tests/test_adaptive_load_profiles_sensor_more.py .................       [  2%]
+tests/test_adaptive_load_profiles_sensor_more2.py ...................... [  2%]
+...........................                                              [  3%]
+tests/test_api_chmu.py .....                                             [  3%]
+tests/test_api_chmu_more.py ..............                               [  4%]
+tests/test_auto_switch_precedence.py .........                           [  4%]
+tests/test_balancing_core_additional.py ................................ [  5%]
+....................                                                     [  5%]
+tests/test_balancing_core_extra.py ........                              [  6%]
+tests/test_balancing_core_more.py ..........                             [  6%]
+tests/test_balancing_executor_more.py .......                            [  6%]
+tests/test_balancing_executor_more2.py .....                             [  6%]
+tests/test_balancing_helpers.py ..........                               [  6%]
+tests/test_balancing_manager_core.py .............                       [  7%]
+tests/test_balancing_plan_more.py ...                                    [  7%]
+tests/test_balancing_simulation.py .....                                 [  7%]
+tests/test_balancing_state_map.py .......                                [  7%]
+tests/test_base_sensor.py ...                                            [  7%]
+tests/test_battery_efficiency_sensor.py ................................ [  8%]
+.....                                                                    [  8%]
+tests/test_battery_forecast_config_more.py ...                           [  8%]
+tests/test_battery_forecast_ha_sensor_more.py ......                     [  9%]
+tests/test_battery_forecast_ha_sensor_more2.py ......                    [  9%]
+tests/test_battery_forecast_module.py ........                           [  9%]
+tests/test_battery_forecast_remaining_coverage.py ...............        [  9%]
+tests/test_battery_forecast_sensor_runtime_more.py .......               [ 10%]
+tests/test_battery_forecast_sensor_setup_more.py ..                      [ 10%]
+tests/test_battery_forecast_timeline.py ......                           [ 10%]
+tests/test_battery_forecast_types_more.py ...                            [ 10%]
+tests/test_battery_forecast_utils_common.py ......                       [ 10%]
+tests/test_battery_state_helpers.py ..............                       [ 10%]
+tests/test_binary_sensor.py ......                                       [ 11%]
+tests/test_boiler_api_views_helper_branches.py ....                      [ 11%]
+tests/test_boiler_circulation.py .....                                   [ 11%]
+tests/test_boiler_coordinator_more.py .................                  [ 11%]
+tests/test_boiler_module.py ........................                     [ 12%]
+tests/test_boiler_precedence.py ..                                       [ 12%]
+tests/test_boiler_sensors_more.py ..........                             [ 12%]
+tests/test_boiler_services.py ...................                        [ 13%]
+tests/test_boiler_services_extra_coverage.py .........                   [ 13%]
+tests/test_boiler_switch_edge_cases.py ......                            [ 13%]
+tests/test_boiler_switch_wrapper.py ...                                  [ 13%]
+tests/test_boiler_task1_routing.py ...................                   [ 14%]
+tests/test_box_mode_composite.py ...........................             [ 15%]
+tests/test_box_mode_extended_sensor.py .............                     [ 15%]
+tests/test_box_prm2_api.py ......                                        [ 15%]
+tests/test_box_prm2_app_local_proxy_mapping.py ...........               [ 15%]
+tests/test_box_prm2_app_sensor.py .....                                  [ 16%]
+tests/test_charging_plan_adjustments_more.py ............                [ 16%]
+tests/test_charging_plan_more.py ..........                              [ 16%]
+tests/test_charging_plan_more2.py .....                                  [ 16%]
+tests/test_charging_plan_more3.py ..                                     [ 16%]
+tests/test_cloud_contract.py ..........                                  [ 17%]
+tests/test_cloud_redaction.py ......                                     [ 17%]
+tests/test_config_flow_entry.py ...................                      [ 17%]
+tests/test_config_flow_module.py .                                       [ 17%]
+tests/test_config_flow_quick_setup.py ....                               [ 17%]
+tests/test_config_flow_wizard_steps.py ........                          [ 18%]
+tests/test_config_helpers.py ............                                [ 18%]
+tests/test_config_options_flow.py ...........                            [ 18%]
+tests/test_config_steps_coverage_extra.py ....                           [ 18%]
+tests/test_config_steps_distribution.py ...........                      [ 19%]
+tests/test_config_steps_flow.py .......                                  [ 19%]
+tests/test_config_steps_helpers_more.py ....                             [ 19%]
+tests/test_config_steps_helpers_more2.py ..                              [ 19%]
+tests/test_config_steps_more.py .......                                  [ 19%]
+tests/test_config_steps_more3.py ....                                    [ 19%]
+tests/test_config_steps_more4.py ....................................... [ 20%]
+.                                                                        [ 20%]
+tests/test_config_steps_payload.py .                                     [ 21%]
+tests/test_config_steps_pricing.py ..............................        [ 21%]
+tests/test_config_steps_wizard_extra.py .................                [ 22%]
+tests/test_config_validation.py ...........                              [ 22%]
+tests/test_coordinator.py .............................................. [ 23%]
+................................................                         [ 25%]
+tests/test_coordinator_and_ote_api_gaps.py ..                            [ 25%]
+tests/test_coverage_block_more.py ....................                   [ 25%]
+tests/test_coverage_block_more2.py .............                         [ 26%]
+tests/test_coverage_block_more3.py .......                               [ 26%]
+tests/test_coverage_block_more4.py .............                         [ 26%]
+tests/test_data_sensor_extra.py .....                                    [ 26%]
+tests/test_data_sensor_grid_mode.py ........................             [ 27%]
+tests/test_data_sensor_more.py .......................................   [ 28%]
+tests/test_data_source_controller.py ................................... [ 29%]
+.....................                                                    [ 30%]
+tests/test_data_source_helpers.py ......................                 [ 30%]
+tests/test_detail_tabs_blocks.py ..........................              [ 31%]
+tests/test_detail_tabs_summary.py ....                                   [ 31%]
+tests/test_dual_price_simulation.py ..................                   [ 32%]
+tests/test_dynamic_day_policy.py .........................               [ 32%]
+tests/test_e2e_precedence_chain.py ...........                           [ 33%]
+tests/test_economic_planner.py .................................         [ 33%]
+tests/test_economic_planner_integration.py ...........................   [ 34%]
+tests/test_emitter.py ........                                           [ 34%]
+tests/test_entities_adaptive_load_profiles.py ......................     [ 35%]
+tests/test_entities_analytics_sensor.py ......................           [ 36%]
+tests/test_entities_analytics_sensor_edge.py .                           [ 36%]
+tests/test_entities_analytics_sensor_more.py ..............              [ 36%]
+tests/test_entities_analytics_sensor_more2.py ..                         [ 36%]
+tests/test_entities_analytics_sensor_more3.py ....                       [ 36%]
+tests/test_entities_analytics_sensor_more4.py ......                     [ 36%]
+tests/test_entities_analytics_sensor_more5.py ........                   [ 37%]
+tests/test_entities_analytics_sensor_more6.py ........................   [ 37%]
+tests/test_entities_battery_balancing_sensor.py .................        [ 38%]
+tests/test_entities_battery_balancing_sensor_more.py .......             [ 38%]
+tests/test_entities_battery_health_sensor.py ........................    [ 39%]
+tests/test_entities_chmu_sensor.py ...................................   [ 40%]
+tests/test_entities_computed_sensor.py .............                     [ 40%]
+tests/test_entities_computed_sensor_edge.py .                            [ 40%]
+tests/test_entities_computed_sensor_more.py ........................     [ 41%]
+tests/test_entities_computed_sensor_more2.py ..                          [ 41%]
+tests/test_entities_computed_sensor_more3.py ........................... [ 41%]
+................                                                         [ 42%]
+tests/test_entities_data_sensor.py ..............                        [ 42%]
+tests/test_entities_data_sensor_more.py ..                               [ 42%]
+tests/test_entities_data_sensor_more2.py .                               [ 42%]
+tests/test_entities_data_sensor_more3.py ............................... [ 43%]
+...........                                                              [ 44%]
+tests/test_entities_data_source_sensor.py ......                         [ 44%]
+tests/test_entities_runtime.py ...........                               [ 44%]
+tests/test_entities_shield_sensor.py ..........................          [ 45%]
+tests/test_entities_solar_forecast_sensor.py .....................       [ 45%]
+tests/test_entities_solar_forecast_sensor_more.py ............           [ 46%]
+tests/test_entities_solar_forecast_sensor_more2.py ..........            [ 46%]
+tests/test_entities_solar_forecast_sensor_more3.py ..................... [ 46%]
+                                                                         [ 46%]
+tests/test_entities_solar_forecast_sensor_more4.py ..................... [ 47%]
+.......                                                                  [ 47%]
+tests/test_entities_statistics_sensor.py ......................          [ 48%]
+tests/test_entities_statistics_sensor_edge.py .                          [ 48%]
+tests/test_entities_statistics_sensor_more.py .................          [ 48%]
+tests/test_entities_statistics_sensor_more2.py .                         [ 48%]
+tests/test_entities_statistics_sensor_more3.py ....                      [ 48%]
+tests/test_entities_statistics_sensor_more4.py ..............            [ 49%]
+tests/test_entities_statistics_sensor_more5.py ....                      [ 49%]
+tests/test_entities_statistics_sensor_more6.py ..........                [ 49%]
+tests/test_entities_statistics_sensor_more7.py ..........                [ 50%]
+tests/test_entities_statistics_sensor_more8.py ......................... [ 50%]
+..                                                                       [ 50%]
+tests/test_etag_caching.py .......                                       [ 50%]
+tests/test_extended_summary.py ...........                               [ 51%]
+tests/test_forecast_update.py ...........                                [ 51%]
+tests/test_forecast_update_more2.py ..............                       [ 51%]
+tests/test_forecast_update_round_trip_coverage.py ....                   [ 52%]
+tests/test_forecast_update_trace.py .........                            [ 52%]
+tests/test_grid_charging_plan_sensor.py ................................ [ 53%]
+..                                                                       [ 53%]
+tests/test_ha_rest_api_helpers.py ..                                     [ 53%]
+tests/test_ha_rest_api_more.py .......................                   [ 53%]
+tests/test_ha_rest_api_views.py ...................................      [ 54%]
+tests/test_ha_sensor.py .....                                            [ 55%]
+tests/test_ha_sensor_proxy.py ............                               [ 55%]
+tests/test_historical_scenarios.py ...............................       [ 56%]
+tests/test_history_helpers.py ...........................                [ 56%]
+tests/test_home_ii_deficit_critical_bug.py ....                          [ 57%]
+tests/test_hybrid_economic_charging_solar_overflow.py .......            [ 57%]
+tests/test_hybrid_planning_more.py ..........                            [ 57%]
+tests/test_hybrid_scoring_helpers.py .......                             [ 57%]
+tests/test_hybrid_scoring_more2.py .......                               [ 57%]
+tests/test_init_cleanup.py ...........                                   [ 58%]
+tests/test_init_extra.py ................                                [ 58%]
+tests/test_init_frontend.py ..............                               [ 59%]
+tests/test_init_helpers.py ..................                            [ 59%]
+tests/test_init_setup_entry.py ...........................Exception in thread Thread-62 (_thread_main):
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    sock = self._create_socket_connection()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+    return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+.    sock.connect(sa)
+  File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+.Exception in thread Thread-64 (_thread_main):
+    return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+.    raise SocketConnectBlockedError(allowed_list, host)
+pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+........Exception in thread Thread-73 (_thread_main):
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+..  [ 60%]
+tests/test_input_helpers.py ...                                          [ 60%]
+tests/test_input_helpers_more.py .........                               [ 60%]
+tests/test_input_quality_guards.py ...........................           [ 61%]
+tests/test_interval_simulator.py ..........                              [ 62%]
+tests/test_load_and_solar_profiles.py .....                              [ 62%]
+tests/test_load_profiles_more.py .....                                   [ 62%]
+tests/test_local_mapper.py ....                                          [ 62%]
+tests/test_local_mapper_more.py ...............                          [ 62%]
+tests/test_missing_coverage_helpers.py ................................. [ 63%]
+.........                                                                [ 63%]
+tests/test_mode_recommendations.py ...........                           [ 64%]
+tests/test_mode_transition_tracker.py .......                            [ 64%]
+tests/test_models.py ...........................                         [ 65%]
+tests/test_morning_peak_avoidance.py ..........                          [ 65%]
+tests/test_mqtt_config.py ......                                         [ 65%]
+tests/test_mqtt_publisher.py ..........                                  [ 65%]
+tests/test_new_architecture.py ....................                      [ 66%]
+tests/test_no_telemetry_normalization.py ..............................  [ 67%]
+tests/test_observability.py .............................                [ 68%]
+tests/test_oig_cloud_api.py ............................................ [ 69%]
+.....................                                                    [ 69%]
+tests/test_oig_cloud_notification.py ....                                [ 70%]
+tests/test_oig_cloud_notification_manager_more2.py ..................... [ 70%]
+.......                                                                  [ 70%]
+tests/test_oig_cloud_notification_more.py ...........................    [ 71%]
+tests/test_oig_cloud_session_manager.py ..................               [ 72%]
+tests/test_ote_api.py .................................................. [ 73%]
+....                                                                     [ 73%]
+tests/test_ote_api_exception_coverage.py ..                              [ 73%]
+tests/test_physics.py .........                                          [ 73%]
+tests/test_plan_storage_aggregate.py ................                    [ 74%]
+tests/test_plan_storage_baseline.py ....                                 [ 74%]
+tests/test_plan_storage_baseline_more.py ....                            [ 74%]
+tests/test_plan_storage_baseline_more2.py ......                         [ 74%]
+tests/test_plan_storage_daily.py ...........                             [ 74%]
+tests/test_planner_min_recovery.py ..                                    [ 75%]
+tests/test_planner_observability.py .......................              [ 75%]
+tests/test_planner_recommended_sensor.py ..............................  [ 76%]
+tests/test_planner_timeline.py ........                                  [ 76%]
+tests/test_planning_api.py ....................                          [ 77%]
+tests/test_planning_auto_switch.py ...........................           [ 77%]
+tests/test_planning_helpers.py .......................................   [ 79%]
+tests/test_precompute.py .....                                           [ 79%]
+tests/test_precompute_unified_tile.py ........                           [ 79%]
+tests/test_presentation_detail_tabs_more.py ....                         [ 79%]
+tests/test_presentation_helpers.py ............                          [ 79%]
+tests/test_presentation_precompute_more.py ...                           [ 79%]
+tests/test_pricing_coverage.py ...........                               [ 80%]
+tests/test_pricing_fixed_prices.py ..                                    [ 80%]
+tests/test_pricing_helpers.py .........................                  [ 80%]
+tests/test_pricing_more.py .........                                     [ 81%]
+tests/test_pricing_shared_helpers.py ...                                 [ 81%]
+tests/test_pricing_spot_price_15min.py ...............................   [ 82%]
+tests/test_pricing_spot_price_15min_base.py ..                           [ 82%]
+tests/test_pricing_spot_price_export_15min.py .......................... [ 82%]
+                                                                         [ 82%]
+tests/test_pricing_spot_price_hourly.py ................................ [ 83%]
+                                                                         [ 83%]
+tests/test_pricing_spot_price_sensor.py .                                [ 83%]
+tests/test_proxy_entity_contract.py ...............                      [ 84%]
+tests/test_proxy_normalization.py ...................................... [ 85%]
+.......                                                                  [ 85%]
+tests/test_proxy_semantics_regression.py ....                            [ 85%]
+tests/test_pv_first_incident.py ......                                   [ 85%]
+tests/test_recorder_fallback_coverage.py .....                           [ 85%]
+tests/test_regression_cluster_a.py ......................                [ 86%]
+tests/test_regression_cluster_b.py .............                         [ 86%]
+tests/test_regression_peak_cluster.py ........                           [ 87%]
+tests/test_remaining_gap_coverage.py ...........                         [ 87%]
+tests/test_rollout_flags.py ..................                           [ 87%]
+tests/test_rule_matrix_baseline.py ..................................... [ 88%]
+.........                                                                [ 89%]
+tests/test_rule_precedence_contract.py ................................. [ 90%]
+...                                                                      [ 90%]
+tests/test_scenario_analysis.py .............                            [ 90%]
+tests/test_scenario_analysis_inputs.py .                                 [ 90%]
+tests/test_sensor_cleanup_extra.py ....                                  [ 90%]
+tests/test_sensor_full_coverage.py ..................................... [ 91%]
+...                                                                      [ 91%]
+tests/test_sensor_lifecycle.py ......                                    [ 91%]
+tests/test_sensor_registry_cleanup.py ..                                 [ 92%]
+tests/test_sensor_setup_entry.py ....                                    [ 92%]
+tests/test_sensor_setup_helpers.py ........                              [ 92%]
+tests/test_sensor_setup_runtime.py ...                                   [ 92%]
+tests/test_services_actions_coverage.py ................................ [ 93%]
+..                                                                       [ 93%]
+tests/test_services_box_id.py .......                                    [ 93%]
+tests/test_services_init_coverage.py .......................             [ 94%]
+tests/test_set_box_mode_composite.py ........................            [ 94%]
+tests/test_shared_logging.py ..                                          [ 94%]
+tests/test_shared_logging_redact.py ...........                          [ 95%]
+tests/test_shield_composite_box_mode.py ............................     [ 95%]
+tests/test_shield_decision_telemetry.py ......                           [ 96%]
+tests/test_shield_regression_gaps.py .....................               [ 96%]
+tests/test_shield_split_grid_delivery.py ............................... [ 97%]
+..                                                                       [ 97%]
+tests/test_shield_validation.py .....                                    [ 97%]
+tests/test_shield_validation_more.py ...                                 [ 97%]
+tests/test_shield_validation_more2.py .........                          [ 98%]
+tests/test_shield_validation_more3.py ....................               [ 98%]
+tests/test_simulate_interval_new.py ..........................           [ 99%]
+tests/test_statistics_storage.py ..............                          [ 99%]
+tests/test_utilities_coverage.py .........                               [100%]
+
+=============================== warnings summary ===============================
+tests/test_adaptive_consumption.py::test_format_profile_description_strips_similarity
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-40 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_battery_forecast_ha_sensor_more2.py::test_build_strategy_balancing_plan_skips_invalid_intervals
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/unraisableexception.py:85: PytestUnraisableExceptionWarning: Exception ignored in: <coroutine object CloudMqttPublisher._run_worker at 0x7fd90c442f60>
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/asyncio/queues.py", line 158, in get
+      await getter
+  GeneratorExit
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/repos/oig-cloud/custom_components/oig_cloud/shared/mqtt_publisher.py", line 214, in _run_worker
+      queued_event = await self._queue.get()
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/asyncio/queues.py", line 160, in get
+      getter.cancel()  # Just in case getter is not done yet.
+      ^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/asyncio/base_events.py", line 799, in call_soon
+      self._check_closed()
+    File "/usr/lib/python3.12/asyncio/base_events.py", line 545, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_init_session_manager_uses_first_refresh_during_setup
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-43 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_init_session_manager_defers_refresh_during_setup_when_cache_available
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-44 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_cloud_empty_stats
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-47 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_service_shield_failure
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-48 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_cloud_missing_live_data
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-49 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_infer_box_id_exception
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-51 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_notification_manager_fetch_error
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-52 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_pricing_init_error
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-53 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_optional_modules
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-55 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_runtime_flags[True-True-True]
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-56 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_runtime_flags[False-False-False]
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-57 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_boiler_error
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-59 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 845, in create_connection
+      sock = socket(af, socktype, proto)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 89, in __new__
+      raise SocketBlockedError()
+  pytest_socket.SocketBlockedError: A test tried to use socket.socket.
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_notification_manager_no_device
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-61 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 845, in create_connection
+      sock = socket(af, socktype, proto)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 89, in __new__
+      raise SocketBlockedError()
+  pytest_socket.SocketBlockedError: A test tried to use socket.socket.
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_notification_manager_box_id_error
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-58 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_persist_box_id_error
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-60 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_balancing_manager_paths
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-67 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_balancing_manager_no_box_id
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-68 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_balancing_manager_no_box_id
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-69 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_balancing_manager_callbacks
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-70 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_balancing_manager_initial_plan
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-71 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_balancing_manager_box_id_error
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/unraisableexception.py:85: PytestUnraisableExceptionWarning: Exception ignored in: <coroutine object CloudMqttPublisher._run_worker at 0x7fd90765fac0>
+  
+  Traceback (most recent call last):
+    File "/repos/oig-cloud/custom_components/oig_cloud/__init__.py", line 309, in _load_manifest_version
+      manifest_data = await hass.async_add_executor_job(
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  AttributeError: 'DummyHass' object has no attribute 'async_add_executor_job'
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/asyncio/queues.py", line 158, in get
+      await getter
+  GeneratorExit
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/repos/oig-cloud/custom_components/oig_cloud/shared/mqtt_publisher.py", line 214, in _run_worker
+      queued_event = await self._queue.get()
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/asyncio/queues.py", line 160, in get
+      getter.cancel()  # Just in case getter is not done yet.
+      ^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/asyncio/base_events.py", line 799, in call_soon
+      self._check_closed()
+    File "/usr/lib/python3.12/asyncio/base_events.py", line 545, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+tests/test_init_setup_entry.py::test_async_setup_entry_balancing_manager_box_id_error
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-75 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_input_helpers.py::test_get_solar_for_timestamp_today
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/threadexception.py:82: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-76 (_thread_main)
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "/usr/lib/python3.12/threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3591, in _thread_main
+      self.loop_forever(retry_first_connection=True)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1742, in loop_forever
+      self.reconnect()
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 1044, in reconnect
+      sock = self._create_socket_connection()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/paho/mqtt/client.py", line 3685, in _create_socket_connection
+      return socket.create_connection(addr, timeout=self._connect_timeout, source_address=source)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/socket.py", line 850, in create_connection
+      sock.connect(sa)
+    File "/repos/oig-cloud/.ha-env/lib/python3.12/site-packages/pytest_socket.py", line 252, in guarded_connect
+      raise SocketConnectBlockedError(allowed_list, host)
+  pytest_socket.SocketConnectBlockedError: A test tried to use socket.socket.connect() with host "185.64.41.147" (allowed: "127.0.0.1").
+  
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_input_helpers.py::test_get_solar_for_timestamp_today
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/unraisableexception.py:85: PytestUnraisableExceptionWarning: Exception ignored in: <coroutine object CloudMqttPublisher._run_worker at 0x7fd90767d700>
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/asyncio/queues.py", line 158, in get
+      await getter
+  GeneratorExit
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/repos/oig-cloud/custom_components/oig_cloud/shared/mqtt_publisher.py", line 214, in _run_worker
+      queued_event = await self._queue.get()
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/asyncio/queues.py", line 160, in get
+      getter.cancel()  # Just in case getter is not done yet.
+      ^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/asyncio/base_events.py", line 799, in call_soon
+      self._check_closed()
+    File "/usr/lib/python3.12/asyncio/base_events.py", line 545, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+tests/test_input_helpers_more.py::test_get_solar_for_timestamp_tomorrow_and_missing
+  /repos/oig-cloud/.ha-env/lib/python3.12/site-packages/_pytest/unraisableexception.py:85: PytestUnraisableExceptionWarning: Exception ignored in: <coroutine object CloudMqttPublisher._run_worker at 0x7fd90765e9b0>
+  
+  Traceback (most recent call last):
+    File "/usr/lib/python3.12/asyncio/queues.py", line 158, in get
+      await getter
+  GeneratorExit
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/repos/oig-cloud/custom_components/oig_cloud/shared/mqtt_publisher.py", line 214, in _run_worker
+      queued_event = await self._queue.get()
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/asyncio/queues.py", line 160, in get
+      getter.cancel()  # Just in case getter is not done yet.
+      ^^^^^^^^^^^^^^^
+    File "/usr/lib/python3.12/asyncio/base_events.py", line 799, in call_soon
+      self._check_closed()
+    File "/usr/lib/python3.12/asyncio/base_events.py", line 545, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================ 3625 passed, 27 warnings in 115.69s (0:01:55) =================
+
+=== Cleanup Run: 2026-04-25T19:22:00Z ===
+Scope creep removed: .ci-tools, Task 2 files (runtime.py, actuator.py), unrelated evidence/notepads.
+Files reverted: __init__.py, boiler/__init__.py, services/boiler.py, tests/test_boiler_services.py.
+
+--- pytest tests/test_boiler_task1_routing.py tests/test_services_box_id.py tests/test_boiler_services.py -v ---
+49 passed in 1.56s
+
+tests/test_boiler_task1_routing.py::test_canonical_resolver_validates_entry_exists PASSED
+tests/test_boiler_task1_routing.py::test_canonical_resolver_rejects_mismatched_box_ownership PASSED
+tests/test_boiler_task1_routing.py::test_canonical_resolver_accepts_valid_entry_box_pair PASSED
+tests/test_boiler_task1_routing.py::test_canonical_resolver_validates_box_from_coordinator PASSED
+tests/test_boiler_task1_routing.py::test_boiler_plan_schema_requires_entry_id_and_box_id PASSED
+tests/test_boiler_task1_routing.py::test_boiler_apply_schema_requires_entry_id_and_box_id PASSED
+tests/test_boiler_task1_routing.py::test_boiler_cancel_schema_requires_entry_id_and_box_id PASSED
+tests/test_boiler_task1_routing.py::test_multi_entry_service_routing_no_cross_contamination PASSED
+tests/test_boiler_task1_routing.py::test_boiler_strict_resolver_rejects_missing_identity PASSED
+tests/test_boiler_task1_routing.py::test_boiler_strict_resolver_rejects_invalid_device_id PASSED
+tests/test_boiler_task1_routing.py::test_boiler_strict_resolver_accepts_canonical_identity PASSED
+tests/test_boiler_task1_routing.py::test_boiler_plan_schema_requires_identity_in_call_data PASSED
+tests/test_boiler_task1_routing.py::test_no_hardcoded_2206237016_in_task1_target_files PASSED
+tests/test_boiler_task1_routing.py::test_services_yaml_boiler_entries_have_canonical_fields PASSED
+tests/test_boiler_task1_routing.py::test_set_boiler_mode_schema_backward_compat_device_id PASSED
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_no_hardcoded_fallback PASSED
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_resolves_known_box_id PASSED
+tests/test_boiler_task1_routing.py::test_const_py_has_canonical_boiler_identity_constants PASSED
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_no_infer_box_id_from_states PASSED
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_infer_method_removed_or_safe PASSED
+tests/test_boiler_task1_routing.py::test_boiler_services_handlers_resolve_from_call_data PASSED
+tests/test_boiler_task1_routing.py::test_no_hardcoded_2206237016_in_extra_frontend_files PASSED
+tests/test_boiler_task1_routing.py::test_services_yaml_set_boiler_mode_has_canonical_fields PASSED
+tests/test_services_box_id.py::test_get_box_id_from_entry_option PASSED
+tests/test_services_box_id.py::test_get_box_id_from_coordinator_data PASSED
+tests/test_services_box_id.py::test_get_box_id_from_device_identifier PASSED
+tests/test_services_box_id.py::test_get_box_id_device_missing PASSED
+tests/test_services_box_id.py::test_get_box_id_from_entry_data_inverter_sn PASSED
+tests/test_services_box_id.py::test_get_box_id_from_device_identifier_missing_domain PASSED
+tests/test_services_box_id.py::test_get_box_id_none_when_unavailable PASSED
+tests/test_boiler_services.py::test_build_heating_windows_merges_and_routes PASSED
+tests/test_boiler_services.py::test_schedule_switch_window_paths PASSED
+tests/test_boiler_services.py::test_apply_and_cancel_boiler_plan PASSED
+tests/test_boiler_services.py::test_create_boiler_plan_skips_and_creates PASSED
+tests/test_boiler_services.py::test_restore_boiler_schedule PASSED
+tests/test_boiler_services.py::test_helpers_and_validation PASSED
+tests/test_boiler_services.py::test_apply_boiler_plan_missing_configs PASSED
+tests/test_boiler_services.py::test_apply_boiler_plan_missing_wrapper_switches PASSED
+tests/test_boiler_services.py::test_create_boiler_plan_no_profile PASSED
+tests/test_boiler_services.py::test_ensure_schedule_windows PASSED
+tests/test_boiler_services.py::test_setup_boiler_services_skips_if_registered PASSED
+tests/test_boiler_services.py::test_apply_boiler_plan_logs_error_alt_missing PASSED
+tests/test_boiler_services.py::test_apply_boiler_plan_logs_error_pump_missing PASSED
+tests/test_boiler_services.py::test_build_circulation_windows_empty_hourly_avg PASSED
+tests/test_boiler_services.py::test_pick_peak_hours_empty_dict PASSED
+tests/test_boiler_services.py::test_merge_window_first PASSED
+tests/test_boiler_services.py::test_schedule_switch_window_none_entity PASSED
+tests/test_boiler_services.py::test_restore_boiler_schedule_no_data PASSED
+tests/test_boiler_services.py::test_restore_boiler_schedule_exception_handling PASSED
+pytest: PASS
+
+=== Second Correction: 2026-04-25T19:35:00Z ===
+
+Issues fixed after Atlas second rejection:
+1. SET_BOILER_MODE_SCHEMA now requires entry_id + box_id (removed optional device_id)
+2. services.yaml set_boiler_mode fields entry_id and box_id marked required: true
+3. Removed device_id field from set_boiler_mode in services.yaml
+4. Rewrote test_set_boiler_mode_schema_backward_compat_device_id -> test_set_boiler_mode_schema_requires_canonical_identity
+   - Asserts missing canonical identity fails at schema level
+   - Asserts device_id-only fails at schema level
+   - Asserts canonical entry_id+box_id succeeds
+5. Updated test_services_init_coverage.py to use canonical identity for SET_BOILER_MODE_SCHEMA tests
+6. Fixed .sisyphus/boulder.json - removed erroneous task_sessions.todo:2 entry
+7. Fixed custom_components/oig_cloud/boiler/__init__.py - restored final newline
+
+--- pytest tests/test_boiler_task1_routing.py tests/test_services_box_id.py tests/test_boiler_services.py tests/test_services_init_coverage.py -v ---
+72 passed in 1.56s
+
+tests/test_boiler_task1_routing.py::test_canonical_resolver_validates_entry_exists PASSED
+tests/test_boiler_task1_routing.py::test_canonical_resolver_rejects_mismatched_box_ownership PASSED
+tests/test_boiler_task1_routing.py::test_canonical_resolver_accepts_valid_entry_box_pair PASSED
+tests/test_boiler_task1_routing.py::test_canonical_resolver_validates_box_from_coordinator PASSED
+tests/test_boiler_task1_routing.py::test_boiler_plan_schema_requires_entry_id_and_box_id PASSED
+tests/test_boiler_task1_routing.py::test_boiler_apply_schema_requires_entry_id_and_box_id PASSED
+tests/test_boiler_task1_routing.py::test_boiler_cancel_schema_requires_entry_id_and_box_id PASSED
+tests/test_boiler_task1_routing.py::test_multi_entry_service_routing_no_cross_contamination PASSED
+tests/test_boiler_task1_routing.py::test_boiler_strict_resolver_rejects_missing_identity PASSED
+tests/test_boiler_task1_routing.py::test_boiler_strict_resolver_rejects_invalid_device_id PASSED
+tests/test_boiler_task1_routing.py::test_boiler_strict_resolver_accepts_canonical_identity PASSED
+tests/test_boiler_task1_routing.py::test_boiler_plan_schema_requires_identity_in_call_data PASSED
+tests/test_boiler_task1_routing.py::test_no_hardcoded_2206237016_in_task1_target_files PASSED
+tests/test_boiler_task1_routing.py::test_services_yaml_boiler_entries_have_canonical_fields PASSED
+tests/test_boiler_task1_routing.py::test_set_boiler_mode_schema_requires_canonical_identity PASSED
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_no_hardcoded_fallback PASSED
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_resolves_known_box_id PASSED
+tests/test_boiler_task1_routing.py::test_const_py_has_canonical_boiler_identity_constants PASSED
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_no_infer_box_id_from_states PASSED
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_infer_method_removed_or_safe PASSED
+tests/test_boiler_task1_routing.py::test_boiler_services_handlers_resolve_from_call_data PASSED
+tests/test_boiler_task1_routing.py::test_no_hardcoded_2206237016_in_extra_frontend_files PASSED
+tests/test_boiler_task1_routing.py::test_services_yaml_set_boiler_mode_has_canonical_fields PASSED
+tests/test_services_box_id.py::test_get_box_id_from_entry_option PASSED
+tests/test_services_box_id.py::test_get_box_id_from_coordinator_data PASSED
+tests/test_services_box_id.py::test_get_box_id_from_device_identifier PASSED
+tests/test_services_box_id.py::test_get_box_id_device_missing PASSED
+tests/test_services_box_id.py::test_get_box_id_from_entry_data_inverter_sn PASSED
+tests/test_services_box_id.py::test_get_box_id_from_device_identifier_missing_domain PASSED
+tests/test_services_box_id.py::test_get_box_id_none_when_unavailable PASSED
+tests/test_boiler_services.py::test_build_heating_windows_merges_and_routes PASSED
+tests/test_boiler_services.py::test_schedule_switch_window_paths PASSED
+tests/test_boiler_services.py::test_apply_and_cancel_boiler_plan PASSED
+tests/test_boiler_services.py::test_create_boiler_plan_skips_and_creates PASSED
+tests/test_boiler_services.py::test_restore_boiler_schedule PASSED
+tests/test_boiler_services.py::test_helpers_and_validation PASSED
+tests/test_boiler_services.py::test_apply_boiler_plan_missing_configs PASSED
+tests/test_boiler_services.py::test_apply_boiler_plan_missing_wrapper_switches PASSED
+tests/test_boiler_services.py::test_create_boiler_plan_no_profile PASSED
+tests/test_boiler_services.py::test_ensure_schedule_windows PASSED
+tests/test_boiler_services.py::test_setup_boiler_services_skips_if_registered PASSED
+tests/test_boiler_services.py::test_apply_boiler_plan_logs_error_alt_missing PASSED
+tests/test_boiler_services.py::test_apply_boiler_plan_logs_error_pump_missing PASSED
+tests/test_boiler_services.py::test_build_circulation_windows_empty_hourly_avg PASSED
+tests/test_boiler_services.py::test_pick_peak_hours_empty_dict PASSED
+tests/test_boiler_services.py::test_merge_window_first PASSED
+tests/test_boiler_services.py::test_schedule_switch_window_none_entity PASSED
+tests/test_boiler_services.py::test_restore_boiler_schedule_no_data PASSED
+tests/test_boiler_services.py::test_restore_boiler_schedule_exception_handling PASSED
+tests/test_services_init_coverage.py::test_strip_identifier_suffix_shield PASSED
+tests/test_services_init_coverage.py::test_strip_identifier_suffix_analytics PASSED
+tests/test_services_init_coverage.py::test_strip_identifier_suffix_no_suffix PASSED
+tests/test_services_init_coverage.py::test_strip_identifier_suffix_multiple_suffixes PASSED
+tests/test_services_init_coverage.py::test_strip_identifier_suffix_empty_string PASSED
+tests/test_services_init_coverage.py::test_constants_defined PASSED
+tests/test_services_init_coverage.py::test_schemas_defined PASSED
+tests/test_services_init_coverage.py::test_schema_validation_missing_required_fields PASSED
+tests/test_services_init_coverage.py::test_schema_validation_invalid_values PASSED
+tests/test_services_init_coverage.py::test_home_mode_labels PASSED
+tests/test_services_init_coverage.py::test_home_mode_all_keys PASSED
+tests/test_services_init_coverage.py::test_grid_delivery_labels PASSED
+tests/test_services_init_coverage.py::test_grid_delivery_canonical PASSED
+tests/test_services_init_coverage.py::test_grid_delivery_all_keys PASSED
+tests/test_services_init_coverage.py::test_boiler_mode_labels PASSED
+tests/test_services_init_coverage.py::test_boiler_mode_canonical PASSED
+tests/test_services_init_coverage.py::test_boiler_mode_all_keys PASSED
+tests/test_services_init_coverage.py::test_formating_mode_labels PASSED
+tests/test_services_init_coverage.py::test_formating_mode_canonical PASSED
+tests/test_services_init_coverage.py::test_formating_mode_all_keys PASSED
+tests/test_services_init_coverage.py::test_shield_log_prefix PASSED
+tests/test_services_init_coverage.py::test_register_service_already_exists PASSED
+tests/test_services_init_coverage.py::test_register_service_if_missing_registers_new_service PASSED
+
+=== Third Correction: 2026-04-25T19:40:00Z ===
+
+Issues fixed after Atlas third rejection:
+- Removed leftover Task 2 references from tests/test_boiler_services_extra_coverage.py:
+  1. test_setup_boiler_services_registers_handlers_and_invalid_deadline
+     - Removed get_boiler_runtime monkeypatch (nonexistent in Task 1)
+     - Replaced runtime mock assertions with direct _apply_boiler_plan / _cancel_boiler_plan tracking
+     - Fixed invalid deadline assertion: Task 1 handler logs error and returns, does not raise ServiceValidationError
+  2. test_setup_boiler_services_plan_handler_calls_create
+     - Removed get_boiler_runtime monkeypatch (dead code, _create_boiler_plan already monkeypatched)
+  3. test_schedule_switch_window_executes_inner_callbacks
+     - Changed monkeypatch target from custom_components.oig_cloud.boiler.actuator.async_track_point_in_time to module.async_track_point_in_time
+
+--- pytest tests/test_boiler*.py tests/test_services_init_coverage.py tests/test_services_actions_coverage.py tests/test_coverage_block_more4.py tests/test_remaining_gap_coverage.py -v ---
+196 passed, 6 pre-existing errors (fixture 'hass' not found in test_boiler_module.py, unrelated to Task 1)
+
+--- pytest tests/test_boiler_services_extra_coverage.py -v ---
+9 passed

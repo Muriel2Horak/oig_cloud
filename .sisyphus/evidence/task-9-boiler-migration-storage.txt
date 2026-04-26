@@ -1,0 +1,7 @@
+Task 9 stale schedule cleanup evidence
+
+Command: pytest tests/test_boiler_task9_migration_repair.py -q
+Result: 8 passed, 7 warnings in 1.27s.
+
+Scenario covered: test_stale_unversioned_schedule_is_archived_and_not_restored.
+Observed contract: unversioned legacy boiler_schedule payload is treated as legacy schema v1, archived through backup, rewritten as schema_version=2 with empty entries, and restore does not re-arm stale windows.

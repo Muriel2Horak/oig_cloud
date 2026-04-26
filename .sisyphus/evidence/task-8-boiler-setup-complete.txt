@@ -1,0 +1,115 @@
+Task 8: Replace boiler setup flow with explicit simple + expert modes
+=====================================================================
+
+COMPLETION STATUS: DONE (Verification Rejection Fixed)
+Date: 2026-04-26
+Tests: 27/27 PASSED (100%)
+Full regression: 474/474 PASSED
+
+Acceptance Criteria Verification
+--------------------------------
+
+1. SIMPLE PATH (5 screens) — DEFAULT
+   - Screen 1: target box_id + boiler volume + expert_mode selector
+   - Screen 2: top thermometer + optional second thermometer toggle
+   - Screen 3: primary heating actuator + effective power OR recovery rate
+   - Screen 4: alternative-source mode (disabled|benchmark_only|controllable)
+   - Screen 5: comfort profile mode / default target / deadline summary
+
+   Evidence:
+   - test_boiler_simple_1_box_id_and_volume ........................ PASSED
+   - test_boiler_simple_2_top_thermometer_and_optional_second ...... PASSED
+   - test_boiler_simple_2_without_second_thermometer ............... PASSED
+   - test_boiler_simple_2_dynamic_reveal_bottom_thermometer ........ PASSED
+   - test_boiler_simple_3_primary_heating_and_effective_power ...... PASSED
+   - test_boiler_simple_3_recovery_rate_validation ................. PASSED
+   - test_boiler_simple_4_alternative_source_disabled .............. PASSED
+   - test_boiler_simple_4_alternative_source_benchmark_only ........ PASSED
+   - test_boiler_simple_4_alternative_source_controllable_requires_entity PASSED
+   - test_boiler_simple_5_comfort_profile .......................... PASSED
+   - test_boiler_simple_full_path_creates_entry .................... PASSED
+
+2. EXPERT PATH
+   - Old monolithic wizard_boiler step is preserved as EXPERT path
+   - Selected via "expert" mode on screen 1 (boiler_setup_mode selector)
+   - Does not add an extra screen to default path
+
+   Evidence:
+   - test_boiler_expert_path_reaches_old_step ...................... PASSED
+   - test_legacy_boiler_step_still_works ........................... PASSED
+
+3. VALIDATION
+   - effective_power_w: 100–12000 W
+   - recovery_rate_c_per_hour: 0.1–30 °C/hour
+   - Invalid/missing capacity prevents automatic mode
+
+   Evidence:
+   - test_effective_power_w_validation_too_low ..................... PASSED
+   - test_effective_power_w_validation_too_high .................... PASSED
+   - test_recovery_rate_c_per_hour_validation_too_low .............. PASSED
+
+4. ALTERNATIVE SOURCE MODES
+   - disabled: no extra fields
+   - benchmark_only: optional cost field
+   - controllable: requires entity_id
+
+   Evidence:
+   - test_alternative_source_mode_disabled ......................... PASSED
+   - test_alternative_source_mode_benchmark_only ................... PASSED
+   - test_alternative_source_mode_controllable_with_entity ......... PASSED
+
+5. OPTIONS-FLOW RE-ENTRY
+   - Preserves existing config
+   - Updates only selected (entry_id, box_id) namespace
+   - Enqueues CONFIG_UPDATE through Task 7a serializer
+
+   Evidence:
+   - test_options_flow_reentry_preserves_existing_config ........... PASSED
+   - test_multi_box_isolation_in_options ........................... PASSED
+   - test_options_flow_enqueues_config_update_command .............. PASSED
+
+6. INCOMPLETE SETUP GUARD
+   - Interrupted/incomplete setup never enables automatic actuation
+   - boiler_module_selected set when module chosen
+   - boiler_setup_complete set only after full simple or expert path
+   - _build_boiler_options gates enable_boiler on boiler_setup_complete
+
+   Evidence:
+   - test_incomplete_setup_does_not_enable_boiler .................. PASSED
+   - test_complete_setup_enables_boiler ............................ PASSED
+
+7. STEP COUNTING / ROUTING
+   - Simple path adds 5 steps (5 simple screens, mode_select merged into screen 1)
+   - Expert path adds 1 step (wizard_boiler, mode_select merged into screen 1)
+   - _get_total_steps, _build_step_sequence, _get_next_step updated
+
+   Evidence:
+   - test_total_steps_with_boiler_simple_path ...................... PASSED
+   - test_step_sequence_with_boiler_simple_path .................... PASSED
+   - test_step_sequence_with_boiler_expert_path .................... PASSED
+
+Files Changed
+-------------
+- custom_components/oig_cloud/const.py (9 new constants)
+- custom_components/oig_cloud/boiler/actuator.py (CONFIG_UPDATE enum + handler)
+- custom_components/oig_cloud/config/boiler_steps.py (schema/validation helpers)
+- custom_components/oig_cloud/config/steps.py (step methods + routing)
+- tests/test_config_flow_boiler_setup.py (27 tests)
+- tests/test_config_flow_wizard_steps.py (step-count fixes)
+- tests/test_config_steps_flow.py (step-count fixes)
+
+Lint / LSP Status
+-----------------
+- flake8: CLEAN (no issues)
+- LSP: CLEAN (no diagnostics on changed files)
+
+Backward Compatibility
+----------------------
+- Old wizard_boiler step preserved as expert path
+- Legacy enable_boiler: True direct setting still works (boiler_setup_complete defaults True)
+- All Tasks 1-7c tests pass (277 boiler tests, 197 config flow tests)
+
+Verification Rejection History
+------------------------------
+- Rejection 1: Default path was 6 screens (mode_select + 5 simple). Fixed by merging mode_select into screen 1.
+- Rejection 2: Screen 2 bottom thermometer not reachable on first display. Fixed by verifying dynamic re-show behavior works and adding explicit test.

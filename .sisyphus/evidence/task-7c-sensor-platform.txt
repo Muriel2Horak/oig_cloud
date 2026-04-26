@@ -1,0 +1,38 @@
+Task 7c Evidence: Sensor Platform Read Routing
+===============================================
+
+Date: 2026-04-25
+
+1. SENSOR RUNTIME ROUTING
+-------------------------
+- sensor.py _create_boiler_sensors() now looks up runtime via get_boiler_runtime()
+  and passes it to get_boiler_sensors(coordinator, runtime=runtime).
+- BoilerSensorBase accepts optional runtime parameter.
+- BoilerPlanEstimatedCostSensor uses runtime.get_current_plan() when available,
+  falls back to coordinator.data for backward compatibility.
+- BoilerProfileConfidenceSensor uses runtime.get_current_profile() when available,
+  falls back to coordinator.data for backward compatibility.
+- Temperature/energy sensors continue using coordinator.data (public state,
+  not private; runtime read model does not yet expose those values).
+
+2. UNIQUE ID STABILITY
+----------------------
+- Sensor unique IDs unchanged: oig_cloud_{box_id}_boiler_{suffix}
+- Verified by test: test_sensor_unique_id_stable
+
+3. NO DIRECT PRIVATE STATE READS IN ROUTED SENSORS
+---------------------------------------------------
+- Profile and plan sensors no longer read coordinator.data directly when runtime
+  is available; they route through runtime read model.
+- Grep proof: no coordinator._current_profile or coordinator._current_plan reads
+  in boiler/sensors.py.
+
+4. TEST RESULTS
+---------------
+- Task 7c sensor tests: 4 passed, 0 failed
+- Task 7a+7b+7c combined: 93 passed, 0 failed
+- Broad boiler regression (task 1-7c): 287 passed, 0 failed
+
+Files Modified:
+- custom_components/oig_cloud/sensor.py
+- custom_components/oig_cloud/boiler/sensors.py

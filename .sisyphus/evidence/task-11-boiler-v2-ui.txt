@@ -1,0 +1,66 @@
+TASK 11 — Boiler V2 UI: Automatic Planning First
+=================================================
+Date: 2026-04-26
+
+TEST RESULTS
+------------
+npx vitest run src/__tests__/boiler-v2-ui.test.ts
+  Test Files  1 passed (1)
+  Tests  47 passed (47)
+  Duration  921ms
+
+BUILD RESULTS
+-------------
+npm run build
+  tsc && vite build
+  ✓ 404 modules transformed.
+  dist/assets/index.js   450.02 kB │ gzip: 105.59 kB
+  ✓ built in 1.98s
+
+LSP DIAGNOSTICS (changed files)
+--------------------------------
+boiler-data.ts:    No diagnostics found
+components.ts:     No diagnostics found
+types.ts:          No diagnostics found
+index.ts:          No diagnostics found
+app.ts:            No diagnostics found
+
+FILES CHANGED
+-------------
+- custom_components/oig_cloud/www_v2/src/ui/features/boiler/types.ts
+  + BoilerV2Status, BoilerV2PlanSlot, BoilerV2Explanation, BoilerV2ManualOverride, BoilerV2Identity, BoilerV2Data
+  + OVERRIDE_TTL_DEFAULT_MINUTES=120, OVERRIDE_TTL_MIN_MINUTES=15, OVERRIDE_TTL_MAX_MINUTES=1440, OVERRIDE_TTL_STEP_MINUTES=15
+  + BoilerState.currentTemp: number → number | null
+  + BoilerData.v2Data: BoilerV2Data
+
+- custom_components/oig_cloud/www_v2/src/data/boiler-data.ts
+  + export mapCanonicalToV2(canonical: BoilerCanonicalAPI | null): BoilerV2Data
+  + export parseStateForTest(planData, profileData, config): BoilerState
+  + export OVERRIDE_TTL_* constants (re-exported from types)
+  + Fixed: parseState() currentTemp: `|| 45` → `isFinite(...) ? ... : null`
+  + fetchBoilerCanonical() now returns { ..., canonical: BoilerCanonicalAPI | null }
+  + loadBoilerData() populates v2Data via mapCanonicalToV2(canonical)
+  + Removed unused fetchBoilerProfile/fetchBoilerPlan wrappers
+
+- custom_components/oig_cloud/www_v2/src/ui/features/boiler/components.ts
+  + OigBoilerState: currentTemp null → renders '--' instead of 'null°C'
+  + Added CATEGORY_LABELS to import (was missing, caused pre-existing build error)
+  + 5 new Lit components:
+    - OigBoilerStatusPanel (oig-boiler-status-panel)
+    - OigBoilerPlanTimeline (oig-boiler-plan-timeline)
+    - OigBoilerSourceExplanation (oig-boiler-source-explanation)
+    - OigBoilerOverridePanel (oig-boiler-override-panel)
+    - OigBoilerUnavailableState (oig-boiler-unavailable-state)
+
+- custom_components/oig_cloud/www_v2/src/ui/features/boiler/index.ts
+  + Exports 5 new components
+
+- custom_components/oig_cloud/www_v2/src/ui/app.ts
+  + boilerV2Data state property
+  + loadBoilerDataAsync populates boilerV2Data from data.v2Data
+  + Boiler tab restructured: V2 panels first (status → timeline → explanation → override)
+  + Legacy debug/diagnostic sections moved into <details> (subordinate)
+
+NEW FILES
+---------
+- custom_components/oig_cloud/www_v2/src/__tests__/boiler-v2-ui.test.ts (47 tests)

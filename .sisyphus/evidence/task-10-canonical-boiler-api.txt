@@ -1,0 +1,71 @@
+Task 10 — Canonical Boiler API Endpoint Evidence (Updated after broad-regression fix)
+=====================================================================================
+
+1. RED Phase Evidence
+---------------------
+Command: pytest tests/test_boiler_task10_canonical_api.py -v
+Result: 9 FAILED (expected — canonical endpoint did not exist)
+Date: 2026-04-26
+
+2. GREEN Phase Evidence (after implementation)
+----------------------------------------------
+Command: pytest tests/test_boiler_task10_canonical_api.py -v
+Result: 9 PASSED
+Date: 2026-04-26
+
+3. Atlas Verification Rejection Fix
+-----------------------------------
+Broad regression originally failed with 7 failures in tests/test_boiler_module.py:
+- 6 tests expected legacy views to return 200/404/500 but got 410
+- 1 test expected 2 registered views but got 3
+
+Fix: Added explicit compatibility shim to legacy views:
+- BoilerProfileView and BoilerPlanView preserve old behavior when `boiler_coordinator` exists in entry_data
+- When no `boiler_coordinator` exists, return 410 Gone with `api_repair_required`
+- Entry-not-found case still returns 404 (changed check from `if not entry_data` to `if entry_data is None` to avoid treating empty dict as missing)
+- Updated register_boiler_api_views test to expect 3 views
+- Updated 2 Task 10 deprecation tests to set up `hass.data[DOMAIN] = {"entry1": {}}` so entry exists but no legacy coordinator triggers 410
+
+4. Final Verification Results
+-----------------------------
+Broad regression: pytest tests/test_boiler*.py tests/test_init_setup_entry.py -q
+Result: 422 PASSED, 6 pre-existing ERRORs (missing hass fixture), 0 FAILED
+
+Targeted API/contract tests: pytest tests/test_boiler_task10_canonical_api.py tests/test_ha_rest_api_views.py tests/test_boiler_api_views_helper_branches.py -q
+Result: 48 PASSED, 0 FAILED
+
+5. Grep Proof — No Private Coordinator Access in Canonical Endpoint
+---------------------------------------------------------------------
+Command: grep -E 'coordinator\._current_plan|coordinator\._current_profile|coordinator\.data' custom_components/oig_cloud/boiler/api_views.py
+Result: No matches found in canonical assembler path
+
+6. Lint / LSP Results
+---------------------
+- flake8 on api_views.py: clean
+- flake8 on test_boiler_task10_canonical_api.py: clean
+- flake8 on test_boiler_module.py: clean
+- LSP on api_views.py: 0 diagnostics
+- LSP on test_boiler_task10_canonical_api.py: 0 diagnostics
+- LSP on test_boiler_module.py: 0 diagnostics
+- LSP on boiler-data.ts: 0 diagnostics
+
+7. Files Changed
+----------------
+- custom_components/oig_cloud/boiler/api_views.py (canonical endpoint + legacy compatibility shim)
+- custom_components/oig_cloud/www_v2/src/data/boiler-data.ts (frontend bridge to canonical)
+- tests/test_boiler_task10_canonical_api.py (contract tests)
+- tests/test_boiler_module.py (updated for 3 views + 410 deprecation behavior)
+
+8. Endpoint Summary
+-------------------
+NEW canonical endpoint:
+  GET /api/oig_cloud/boiler/{entry_id}/{box_id}
+
+Legacy endpoints (compatibility shim + deprecation):
+  GET /api/oig_cloud/{entry_id}/boiler_profile  → 200 if boiler_coordinator exists, else 410
+  GET /api/oig_cloud/{entry_id}/boiler_plan     → 200 if boiler_coordinator exists, else 410
+
+Canonical DTO top-level keys:
+  entry_id, box_id, current_state, comfort_status, selected_source,
+  actuated_source, plan_slots, reason_codes, freshness, degraded_flags,
+  manual_override

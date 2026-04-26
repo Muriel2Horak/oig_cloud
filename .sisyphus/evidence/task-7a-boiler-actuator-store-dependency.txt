@@ -1,0 +1,44 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.4.2, pluggy-1.6.0 -- /usr/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 3 items
+
+tests/test_boiler_task7a_actuator_serializer.py::TestProductionStoreDependency::test_store_factory_receives_non_none_hass_and_canonical_key PASSED [ 33%]
+tests/test_boiler_task7a_actuator_serializer.py::TestProductionStoreDependency::test_store_factory_receives_real_hass_from_runtime_factory PASSED [ 66%]
+tests/test_boiler_task7a_actuator_serializer.py::TestProductionStoreDependency::test_production_path_without_hass_emits_storage_write_failed PASSED [100%]
+
+=============================== warnings summary ===============================
+../../usr/lib/python3.12/site-packages/josepy/util.py:28
+  /usr/lib/python3.12/site-packages/josepy/util.py:28: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def __init__(self, wrapped: Union[crypto.X509, crypto.X509Req]) -> None:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:280
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:280: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_all_names(loaded_cert_or_req: Union[crypto.X509, crypto.X509Req]
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:291
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:291: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_san(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:318
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:318: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_san_ip(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:338
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:338: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_extract_san_list_raw(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:372
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:372: DeprecationWarning: X509Extension support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    extensions: Optional[List[crypto.X509Extension]] = None,
+
+../../usr/lib/python3.12/site-packages/homeassistant/components/http/__init__.py:310
+  /usr/lib/python3.12/site-packages/homeassistant/components/http/__init__.py:310: DeprecationWarning: Inheritance class HomeAssistantApplication from web.Application is discouraged
+    class HomeAssistantApplication(web.Application):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 3 passed, 7 warnings in 1.25s =========================

@@ -1,0 +1,19 @@
+Task 6b evidence: alternative source scoring
+
+RED:
+.venv/bin/python -m pytest tests/test_boiler_task6b_multi_source.py -q
+Result: 7 failed. Alternative-source tests failed because Task 6a always selected/actuated grid.
+
+GREEN / verification:
+.venv/bin/python -m pytest tests/test_boiler_task6a_planner_core.py tests/test_boiler_task6b_multi_source.py -q
+Result: 18 passed.
+
+Broad boiler regression:
+.venv/bin/python -m pytest tests/test_boiler_task1_routing.py tests/test_boiler_task2_boundary.py tests/test_boiler_task3_topology.py tests/test_boiler_task4_contract.py tests/test_boiler_task5_energy_adapter.py tests/test_boiler_task6a_planner_core.py tests/test_boiler_task6b_multi_source.py tests/test_boiler_precedence.py tests/test_boiler_services.py -q
+Result: 196 passed.
+
+Covered by:
+- test_benchmark_only_alternative_recommends_without_actuating
+- test_controllable_alternative_actuates_when_cheaper_than_grid
+
+Observed: benchmark_only marks alternative as selected/recommended but keeps grid as actuated source; controllable selects and actuates alternative when cheaper than grid.

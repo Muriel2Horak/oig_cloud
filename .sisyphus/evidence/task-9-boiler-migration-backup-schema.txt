@@ -1,0 +1,7 @@
+Task 9 backup/schema versioning evidence
+
+Command: pytest tests/test_boiler_task9_migration_repair.py -q
+Result: 8 passed, 7 warnings in 1.27s.
+
+Scenario covered: test_backup_and_schema_versioning_never_reenable_legacy_automation.
+Observed contract: backup key boiler_legacy_backup_entry9_box9 stores schema_version=2, legacy_schema_version=1, canonical entry_id+box_id, original legacy schedule windows, and restore_policy=backup_only_never_auto_enable; migration state writes schema_version=2 and automation_enabled=false.

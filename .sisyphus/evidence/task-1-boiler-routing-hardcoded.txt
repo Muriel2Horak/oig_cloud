@@ -1,0 +1,15 @@
+=== Task 1 Hardcoded Identity Removal Evidence ===
+Date: 2026-04-25T16:57:49Z
+
+--- pytest tests/test_boiler_task1_routing.py -k hardcoded ---
+============================= test session starts ==============================
+collecting ... collected 19 items / 16 deselected / 3 selected
+
+tests/test_boiler_task1_routing.py::test_no_hardcoded_2206237016_in_task1_target_files PASSED [ 33%]
+tests/test_boiler_task1_routing.py::test_boiler_coordinator_no_hardcoded_fallback PASSED [ 66%]
+tests/test_boiler_task1_routing.py::test_no_hardcoded_2206237016_in_extra_frontend_files PASSED [100%]
+
+======================= 3 passed, 16 deselected in 0.27s =======================
+
+--- grep for 2206237016 in Task 1 target files ---
+NO MATCHES (PASS)

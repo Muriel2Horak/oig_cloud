@@ -1,0 +1,48 @@
+Task 4 Evidence: Canonical Reason Codes
+========================================
+Date: 2026-04-25
+
+Enum: PlannerReasonCode(str, Enum)
+Total count: 29 (exact set from Reason Code Appendix lines 157-188)
+
+Canonical codes verified:
+- comfort_satisfied
+- comfort_unsatisfied
+- no_feasible_plan
+- bootstrap_profile
+- history_profile_low_confidence
+- input_stale_price
+- input_stale_pv
+- input_missing_recorder
+- input_adapter_error
+- input_stale_temperature
+- top_sensor_unavailable
+- bottom_sensor_unavailable_top_only_degraded
+- primary_actuator_unavailable
+- alternative_actuator_unavailable_benchmark_only
+- circulation_pump_unavailable
+- actuator_rate_limited
+- actuator_serializer_error
+- override_active
+- override_expired
+- planner_timeout
+- replan_coalesced
+- source_selected_grid
+- source_selected_pv
+- source_selected_alternative
+- source_benchmark_only
+- setup_incomplete
+- migration_required
+- api_repair_required
+- storage_write_failed
+
+Unknown code rejection:
+- PlannerReasonCode("unknown_ad_hoc_reason") raises ValueError
+
+Tests:
+- test_all_canonical_codes_present PASSED
+- test_count_is_exactly_29 PASSED
+- test_from_string_valid PASSED
+- test_from_string_unknown_raises PASSED
+- test_reason_code_used_in_bootstrap_profile PASSED
+- test_stale_reason_codes_exist PASSED

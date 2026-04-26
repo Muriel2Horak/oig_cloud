@@ -1,0 +1,15 @@
+TASK 11 — Plan Timeline & Source Explanation
+=============================================
+Date: 2026-04-26
+
+OigBoilerPlanTimeline:
+- Property: slots: BoilerV2PlanSlot[]
+- Renders one slot-row per slot with: time range, source, kWh, spot price (if present)
+- data-testid="boiler-plan-timeline"
+
+OigBoilerSourceExplanation:
+- Property: explanation: BoilerV2Explanation | null
+- Renders reason codes (joined), plan creation time, comfort gap if unsatisfied
+- data-testid="boiler-source-explanation"
+
+Both components appear BEFORE the legacy debug panel in app.ts boiler tab.

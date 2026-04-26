@@ -1,0 +1,36 @@
+Task 7c Evidence: Boiler Actuator Circulation Pump Follower
+============================================================
+
+Date: 2026-04-25
+
+1. PUMP FOLLOWER BEHAVIOR
+-------------------------
+- BoilerActuator.async_apply_plan() no longer schedules independent pump windows.
+- Pump follows active heating actuation via _make_heater_callbacks() injected into
+  _schedule_switch_window() on/off callbacks.
+- When heater turns on, pump turns on. When last heater turns off, pump turns off.
+- Pump unavailability emits circulation_pump_unavailable reason code without blocking heating.
+
+2. REASON CODE EMISSION
+-----------------------
+- BoilerActuator._reason_codes collects runtime reason codes.
+- circulation_pump_unavailable appended when pump configured but entity missing.
+- Verified by test: test_pump_unavailable_does_not_block_heating
+
+3. INDEPENDENT SCHEDULER RETIREMENT
+------------------------------------
+- boiler/circulation.py: build_circulation_windows removed; is_circulation_recommended
+  returns False (pump follows heating, no independent scheduling).
+- boiler/actuator.py: _build_circulation_windows no longer called in async_apply_plan.
+- Grep proof: no matches for async_track_point_in_time.*circulation, CirculationScheduler,
+  or build_circulation_windows.*schedule.
+
+4. TEST RESULTS
+---------------
+- Task 7c targeted tests: 21 passed, 0 failed
+- Task 7a+7b+7c combined: 93 passed, 0 failed
+- Broad boiler regression (task 1-7c): 287 passed, 0 failed
+
+Files Modified:
+- custom_components/oig_cloud/boiler/actuator.py
+- custom_components/oig_cloud/boiler/circulation.py

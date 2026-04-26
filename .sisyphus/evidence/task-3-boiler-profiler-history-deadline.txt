@@ -1,0 +1,22 @@
+=== History Deadline + Sample Coverage + Query Budget Tests ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0 -- /repos/oig-cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: aiohttp-1.0.5, socket-0.7.0, picked-0.5.0, requests-mock-1.12.1, homeassistant-custom-component-0.13.205, cov-6.0.0, sugar-1.0.0, xdist-3.6.1, github-actions-annotate-failures-0.2.0, asyncio-0.24.0, timeout-2.3.1, anyio-4.12.1, pytest_freezer-0.4.8, unordered-0.6.1, syrupy-4.8.0, respx-0.21.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+timeout: 60.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 45 items / 38 deselected / 7 selected
+
+tests/test_boiler_task3_topology.py::test_profiler_predict_draw_deadline_insufficient_history PASSED [ 14%]
+tests/test_boiler_task3_topology.py::test_profiler_predict_draw_deadline_with_usable_history PASSED [ 28%]
+tests/test_boiler_task3_topology.py::test_profiler_predict_draw_deadline_detects_draw_event PASSED [ 42%]
+tests/test_boiler_task3_topology.py::test_profiler_count_usable_days_insufficient_samples PASSED [ 57%]
+tests/test_boiler_task3_topology.py::test_profiler_count_usable_days_sufficient_samples PASSED [ 71%]
+tests/test_boiler_task3_topology.py::test_profiler_count_usable_days_partial_coverage_rejected PASSED [ 85%]
+tests/test_boiler_task3_topology.py::test_profiler_predict_draw_deadline_passes_query_budget PASSED [100%]
+
+======================= 7 passed, 38 deselected in 0.24s =======================

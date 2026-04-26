@@ -1,0 +1,31 @@
+Task 4 Evidence: Alternative-Source Capability Enum
+====================================================
+Date: 2026-04-25
+
+Enum definition: AlternativeSourceCapability(str, Enum)
+
+Values:
+- DISABLED = "disabled"
+- BENCHMARK_ONLY = "benchmark_only"
+- CONTROLLABLE = "controllable"
+
+Exact count: 3 values
+No extra values invented.
+
+Contract usage in runtime.py:
+- resolve_alt_source_capability(has_alternative, actuator_model, supported_models)
+- Returns DISABLED when has_alternative=False
+- Returns BENCHMARK_ONLY when actuator_model is None or not in supported_models
+- Returns CONTROLLABLE only when actuator_model is in supported_models
+
+Runtime integration:
+- BoilerRuntime.async_create_plan resolves capability from config and passes it into PlannerInput
+
+Tests:
+- test_enum_has_exactly_three_values PASSED
+- test_disabled_value PASSED
+- test_benchmark_only_value PASSED
+- test_controllable_value PASSED
+- test_no_extra_values PASSED
+- test_from_string_valid PASSED
+- test_from_string_invalid_raises PASSED

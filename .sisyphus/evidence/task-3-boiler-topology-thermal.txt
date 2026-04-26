@@ -1,0 +1,33 @@
+=== Thermal Formula Tests ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0 -- /repos/oig-cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: aiohttp-1.0.5, socket-0.7.0, picked-0.5.0, requests-mock-1.12.1, homeassistant-custom-component-0.13.205, cov-6.0.0, sugar-1.0.0, xdist-3.6.1, github-actions-annotate-failures-0.2.0, asyncio-0.24.0, timeout-2.3.1, anyio-4.12.1, pytest_freezer-0.4.8, unordered-0.6.1, syrupy-4.8.0, respx-0.21.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+timeout: 60.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 45 items / 27 deselected / 18 selected
+
+tests/test_boiler_task3_topology.py::test_boiler_thermal_topology_dataclass PASSED [  5%]
+tests/test_boiler_task3_topology.py::test_calculate_energy_to_heat_basic PASSED [ 11%]
+tests/test_boiler_task3_topology.py::test_calculate_energy_to_heat_no_heating_needed PASSED [ 16%]
+tests/test_boiler_task3_topology.py::test_calculate_stratified_temp_simple_avg PASSED [ 22%]
+tests/test_boiler_task3_topology.py::test_calculate_stratified_temp_two_zone PASSED [ 27%]
+tests/test_boiler_task3_topology.py::test_estimate_residual_energy PASSED [ 33%]
+tests/test_boiler_task3_topology.py::test_standing_loss_per_slot PASSED  [ 38%]
+tests/test_boiler_task3_topology.py::test_heating_per_slot PASSED        [ 44%]
+tests/test_boiler_task3_topology.py::test_predicted_temperature_after_slot PASSED [ 50%]
+tests/test_boiler_task3_topology.py::test_stale_temperature_bias PASSED  [ 55%]
+tests/test_boiler_task3_topology.py::test_utils_calculate_energy_to_heat_delegates PASSED [ 61%]
+tests/test_boiler_task3_topology.py::test_utils_calculate_stratified_temp_delegates PASSED [ 66%]
+tests/test_boiler_task3_topology.py::test_utils_estimate_residual_energy_delegates PASSED [ 72%]
+tests/test_boiler_task3_topology.py::test_thermal_read_model_returns_topology_aware_temps PASSED [ 77%]
+tests/test_boiler_task3_topology.py::test_thermal_read_model_top_only_uses_stratification PASSED [ 83%]
+tests/test_boiler_task3_topology.py::test_energy_state_adapter_uses_thermal_module PASSED [ 88%]
+tests/test_boiler_task3_topology.py::test_topology_changes_affect_energy_calculation PASSED [ 94%]
+tests/test_boiler_task3_topology.py::test_stratification_mode_changes_affect_predicted_temperature PASSED [100%]
+
+====================== 18 passed, 27 deselected in 0.30s =======================

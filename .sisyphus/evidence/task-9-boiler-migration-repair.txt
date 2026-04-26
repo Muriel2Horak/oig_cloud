@@ -1,0 +1,10 @@
+Task 9 unsafe legacy config repair evidence
+
+RED: pytest tests/test_boiler_task9_migration_repair.py -q
+Result: 8 failed; ModuleNotFoundError for custom_components.oig_cloud.boiler.migration.
+
+GREEN: pytest tests/test_boiler_task9_migration_repair.py -q
+Result: 8 passed, 7 warnings in 1.27s.
+
+Scenario covered: test_unsafe_legacy_config_forces_disable_and_repair.
+Observed contract: unsafe denylisted legacy override state disables boiler automation, sets boiler_migration_status=repair_required, stores migration_required repair metadata, and does not guess a partial conversion.

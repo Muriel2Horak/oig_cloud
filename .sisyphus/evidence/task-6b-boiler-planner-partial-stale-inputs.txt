@@ -1,0 +1,19 @@
+Task 6b evidence: partial PV and stale optimization inputs
+
+RED:
+.venv/bin/python -m pytest tests/test_boiler_task6b_multi_source.py -q
+Result: 7 failed. Partial/stale tests failed because Task 6a ignored optimization staleness and had no PV allocation fields.
+
+GREEN / verification:
+.venv/bin/python -m pytest tests/test_boiler_task6a_planner_core.py tests/test_boiler_task6b_multi_source.py -q
+Result: 18 passed.
+
+Broad boiler regression:
+.venv/bin/python -m pytest tests/test_boiler_task1_routing.py tests/test_boiler_task2_boundary.py tests/test_boiler_task3_topology.py tests/test_boiler_task4_contract.py tests/test_boiler_task5_energy_adapter.py tests/test_boiler_task6a_planner_core.py tests/test_boiler_task6b_multi_source.py tests/test_boiler_precedence.py tests/test_boiler_services.py -q
+Result: 196 passed.
+
+Covered by:
+- test_partial_pv_horizon_is_used_only_where_covered_and_marked_degraded
+- test_all_stale_optimization_inputs_keep_comfort_safe_latest_fallback
+
+Observed: covered PV slots are still used while stale/missing horizon data degrades explicitly; all-stale optimization input falls back to a comfort-safe latest grid plan with stale reason codes.

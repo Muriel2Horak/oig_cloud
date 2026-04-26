@@ -1,0 +1,32 @@
+Task 4 Evidence: Freshness Validation
+======================================
+Date: 2026-04-25
+
+Function: validate_freshness(planner_input, slot_minutes=15, now=None)
+
+Rule: Inputs are fresh only when current slot and next two planning slots are covered.
+
+Price freshness:
+- spot_prices must contain keys for: current_slot, current_slot+15min, current_slot+30min
+- Missing any of the three slots → INPUT_STALE_PRICE
+- Non-datetime keys in spot_prices → treated as stale (INPUT_STALE_PRICE)
+
+PV freshness:
+- overflow_windows must cover: current_slot, current_slot+15min, current_slot+30min
+- Missing coverage for any slot → INPUT_STALE_PV
+- Non-datetime window boundaries → treated as stale (INPUT_STALE_PV)
+
+Tests:
+- test_fresh_when_all_three_slots_covered PASSED
+- test_stale_price_when_current_slot_missing PASSED
+- test_stale_price_when_second_slot_missing PASSED
+- test_stale_price_when_third_slot_missing PASSED
+- test_stale_pv_when_current_slot_uncovered PASSED
+- test_stale_pv_when_second_slot_uncovered PASSED
+- test_both_stale_when_both_inputs_bad PASSED
+- test_empty_overflow_is_stale_pv PASSED
+
+Runtime integration:
+- BoilerRuntime.async_create_plan constructs PlannerInput and calls validate_freshness
+- Stale reason codes are logged as DEBUG messages
+- Plan creation continues even when inputs are stale (contract validates, does not block)

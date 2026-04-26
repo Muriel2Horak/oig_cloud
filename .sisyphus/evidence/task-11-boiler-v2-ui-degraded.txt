@@ -1,0 +1,14 @@
+TASK 11 — Degraded State Handling
+===================================
+Date: 2026-04-26
+
+When canonical returns degraded_flags.degraded=true:
+- OigBoilerStatusPanel renders a "Degradováno" badge (always in DOM, ?hidden when not degraded)
+- OigBoilerSourceExplanation shows degradedReasons from explanation.degradedReasons
+- OigBoilerUnavailableState with reason="degraded" renders degraded-msg div
+
+When canonical is null (fetch failed):
+- mapCanonicalToV2(null) returns { status: null, planSlots: [], explanation: null, loadError: 'Nepodařilo se načíst data bojleru', identity: { available: false } }
+- app.ts renders OigBoilerUnavailableState with reason="loading" when status is null
+
+No fake temperatures are fabricated — null is propagated as '--' in all display paths.
