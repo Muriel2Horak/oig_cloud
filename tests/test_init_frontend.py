@@ -81,6 +81,51 @@ async def test_setup_frontend_panel_registers(monkeypatch):
 
     assert "registered" in recorded
     assert "oig_cloud_dashboard_entry1" in recorded["registered"]["frontend_url_path"]
+    assert "oig_cloud_static_v2" in recorded["registered"]["config"]["url"]
+
+
+@pytest.mark.asyncio
+async def test_setup_frontend_panel_registers_v2_as_standard_only(monkeypatch):
+    hass = DummyHass()
+    entry = SimpleNamespace(entry_id="entry1", options={"box_id": "123"})
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": SimpleNamespace(data={"123": {}})}}
+
+    def _read_manifest(_path):
+        return '{"version": "2.0.0"}'
+
+    monkeypatch.setattr(init_module, "_read_manifest_file", _read_manifest)
+    import time as time_module
+    monkeypatch.setattr(time_module, "time", lambda: 100)
+
+    removed_ids = []
+    registered_panels = []
+
+    def _remove_panel(_hass, panel_id, warn_if_unknown=False):
+        removed_ids.append(panel_id)
+
+    def _register_panel(_hass, component_name, **kwargs):
+        registered_panels.append({
+            "frontend_url_path": kwargs.get("frontend_url_path"),
+            "sidebar_title": kwargs.get("sidebar_title"),
+            "config": kwargs.get("config"),
+        })
+
+    import homeassistant.components.frontend as frontend
+
+    monkeypatch.setattr(frontend, "async_remove_panel", _remove_panel)
+    monkeypatch.setattr(frontend, "async_register_built_in_panel", _register_panel)
+
+    await init_module._setup_frontend_panel(hass, entry)
+
+    assert len(registered_panels) == 1, "Exactly one panel must be registered"
+
+    panel = registered_panels[0]
+    assert panel["frontend_url_path"] == "oig_cloud_dashboard_entry1"
+    assert "oig_cloud_static_v2/index.html" in panel["config"]["url"]
+    assert "oig_cloud_static/dashboard.html" not in panel["config"]["url"]
+    assert "V2 (BETA)" not in (panel["sidebar_title"] or "")
+
+    assert "oig_cloud_dashboard_entry1_v2" in removed_ids, "Beta panel must be removed"
 
 
 @pytest.mark.asyncio
@@ -272,3 +317,23 @@ async def test_remove_frontend_panel_unknown(monkeypatch):
     monkeypatch.setattr(frontend, "async_remove_panel", _remove_panel)
 
     await init_module._remove_frontend_panel(hass, entry)
+
+
+@pytest.mark.asyncio
+async def test_remove_frontend_panel_removes_both_standard_and_beta(monkeypatch):
+    hass = DummyHass()
+    entry = SimpleNamespace(entry_id="entry1", options={})
+
+    removed_ids = []
+
+    def _remove_panel(_hass, panel_id, warn_if_unknown=False):
+        removed_ids.append(panel_id)
+
+    import homeassistant.components.frontend as frontend
+
+    monkeypatch.setattr(frontend, "async_remove_panel", _remove_panel)
+
+    await init_module._remove_frontend_panel(hass, entry)
+
+    assert "oig_cloud_dashboard_entry1" in removed_ids
+    assert "oig_cloud_dashboard_entry1_v2" in removed_ids

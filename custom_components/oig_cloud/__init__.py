@@ -366,8 +366,8 @@ def _build_dashboard_url(
     entry_id: str, inverter_sn: str, version: str, cache_bust: int
 ) -> str:
     return (
-        "/oig_cloud_static/dashboard.html"
-        f"?entry_id={entry_id}&inverter_sn={inverter_sn}&v={version}&t={cache_bust}"
+        "/oig_cloud_static_v2/index.html"
+        f"?v={version}&t={cache_bust}&sn={inverter_sn}&entry_id={entry_id}"
     )
 
 
@@ -496,18 +496,10 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
 
         _LOGGER.info("Dashboard URL: %s", dashboard_url)
 
-        # Prevent reload errors ("Overwriting panel ...") by removing any existing panel first.
-        _remove_existing_panel(hass, panel_id)
-        _register_frontend_panel(hass, panel_id, panel_title, dashboard_url)
-
-        # Register V2 panel (parallel run)
         v2_panel_id = f"{panel_id}_v2"
-        v2_panel_title = f"{panel_title} V2 (BETA)"
-        # Use same path as before but with cache busting params
-        v2_dashboard_url = f"/oig_cloud_static_v2/index.html?v={version}&t={cache_bust}&sn={inverter_sn}&entry_id={entry.entry_id}"
+        _remove_existing_panel(hass, panel_id)
         _remove_existing_panel(hass, v2_panel_id)
-        _register_frontend_panel(hass, v2_panel_id, v2_panel_title, v2_dashboard_url)
-        _LOGGER.info("V2 Panel URL: %s", v2_dashboard_url)
+        _register_frontend_panel(hass, panel_id, panel_title, dashboard_url)
 
         _log_dashboard_entities(hass, entry, inverter_sn)
 
@@ -544,6 +536,7 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
                     _LOGGER.debug(
                         "Panel removal handled (panel may not exist): %s", remove_err
                     )
+            _remove_existing_panel(hass, f"{panel_id}_v2")
         else:
             _LOGGER.debug("async_remove_panel not available")
 

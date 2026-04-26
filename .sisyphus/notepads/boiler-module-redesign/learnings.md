@@ -349,3 +349,13 @@
 - .sisyphus/evidence/task-13-boiler-docs-alignment.txt (31/32 assertions)
 - .sisyphus/evidence/task-13-boiler-docs-translations.txt (14/14 assertions)
 - .sisyphus/evidence/task-13-boiler-docs-fixtures.txt (all source files verified, parity confirmed)
+
+## Task: Dashboard V2 as Standard Panel — 2026-04-26
+
+### What Was Done
+- `_build_dashboard_url` updated to return V2 path (`/oig_cloud_static_v2/index.html?v=...&t=...&sn=...&entry_id=...`).
+- `_setup_frontend_panel` now removes both `oig_cloud_dashboard_{entry_id}` and the old beta `oig_cloud_dashboard_{entry_id}_v2` before registering the single standard panel pointing at V2.
+- No more "V2 (BETA)" panel title — standard title from `_panel_title_for_inverter` is used.
+- V1 static files and `/oig_cloud_static` static path registration untouched (deferred cleanup).
+- Regression tests updated: `test_setup_frontend_panel_registers` now asserts V2 URL; new `test_setup_frontend_panel_registers_v2_as_standard_only` asserts exactly one panel registered, V2 URL, no `_v2` suffix, no "V2 (BETA)" title, and beta panel ID removed.
+- All 15 frontend tests pass; flake8 and LSP clean.
