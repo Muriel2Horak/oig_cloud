@@ -1397,18 +1397,69 @@ export class OigBoilerStatusPanel extends LitElement {
 @customElement('oig-boiler-plan-timeline')
 export class OigBoilerPlanTimeline extends LitElement {
   @property({ attribute: false }) slots: BoilerV2PlanSlot[] = [];
+  @property({ type: String }) lang: 'cs' | 'en' = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .wrap { padding: 16px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .heading { font-size: 1.05rem; font-weight: 600; margin-bottom: 12px; }
+    .empty { color: var(--secondary-text-color, #666); padding: 24px 0; text-align: center; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--divider-color, #eee); font-size: 0.9rem; }
+    th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--secondary-text-color, #666); font-weight: 600; }
+    .src { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
+    .src.fve { background: rgba(76,175,80,0.15); color: #2e7d32; }
+    .src.grid { background: rgba(255,152,0,0.15); color: #b75d00; }
+    .src.alternative { background: rgba(33,150,243,0.15); color: #0d47a1; }
+    .src.other { background: rgba(120,120,120,0.15); color: #555; }
+    .badge { padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; }
+    .badge.ok { background: rgba(76,175,80,0.15); color: #2e7d32; }
+    .badge.bad { background: rgba(244,67,54,0.15); color: #b71c1c; }
+  `;
+
+  private srcClass(s: string): string {
+    return ['fve', 'grid', 'alternative'].includes(s) ? s : 'other';
+  }
 
   render() {
+    const lang = this.lang;
+    if (!this.slots || this.slots.length === 0) {
+      return html`<div data-testid="boiler-plan-timeline" class="wrap"><div class="heading">${t('boiler.timeline.heading', lang)}</div><div class="empty">${t('boiler.timeline.empty', lang)}</div></div>`;
+    }
     return html`
-      <div data-testid="boiler-plan-timeline" class="boiler-plan-timeline">
-        ${this.slots.map(s => html`
-          <div class="slot-row">
-            <span class="slot-time">${s.start} – ${s.end}</span>
-            <span class="slot-source">${s.recommendedSource}</span>
-            <span class="slot-kwh">${s.consumptionKwh} kWh</span>
-            ${s.spotPrice != null ? html`<span class="slot-price">${s.spotPrice} Kč</span>` : ''}
-          </div>
-        `)}
+      <div data-testid="boiler-plan-timeline" class="wrap">
+        <div class="heading">${t('boiler.timeline.heading', lang)}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>${t('boiler.timeline.col_time', lang)}</th>
+              <th>${t('boiler.timeline.col_source', lang)}</th>
+              <th>${t('boiler.timeline.col_temp', lang)}</th>
+              <th>${t('boiler.timeline.col_kwh', lang)}</th>
+              <th>${t('boiler.timeline.col_cost', lang)}</th>
+              <th>${t('boiler.timeline.col_pv', lang)}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${this.slots.map((s) => {
+              const comfortBadge = s.comfortSatisfied === true
+                ? html`<span class="badge ok">${t('boiler.timeline.comfort_ok', lang)}</span>`
+                : s.comfortSatisfied === false
+                  ? html`<span class="badge bad">${t('boiler.timeline.comfort_gap', lang)}</span>`
+                  : '';
+              return html`
+                <tr>
+                  <td>${formatTimeRange(s.start, s.end)}</td>
+                  <td><span class="src ${this.srcClass(s.recommendedSource)}">${sourceLabel(s.recommendedSource, lang)}</span></td>
+                  <td>${formatTempC(s.expectedTempTopC ?? null)} ${comfortBadge}</td>
+                  <td>${formatKwh(s.consumptionKwh)}</td>
+                  <td>${formatCzk(s.estimatedCostCzk ?? null)}</td>
+                  <td>${formatPercent(s.pvShare ?? null)}</td>
+                </tr>
+              `;
+            })}
+          </tbody>
+        </table>
       </div>
     `;
   }

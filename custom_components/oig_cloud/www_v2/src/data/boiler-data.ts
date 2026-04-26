@@ -186,6 +186,11 @@ interface BoilerCanonicalSlot {
   spot_price: number | null;
   alt_price: number | null;
   overflow_available: boolean;
+  predicted_temperature_c?: number | null;
+  comfort_satisfied?: boolean | null;
+  estimated_cost_czk?: number | null;
+  pv_share?: number | null;
+  pv_contribution_kwh?: number | null;
 }
 
 interface BoilerCanonicalAPI {
@@ -720,6 +725,14 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null): BoilerV2
     spotPrice: isFinite(s.spot_price as any) ? (s.spot_price ?? null) : null,
     altPrice: isFinite(s.alt_price as any) ? (s.alt_price ?? null) : null,
     overflowAvailable: s.overflow_available,
+    expectedTempTopC: s.predicted_temperature_c ?? null,
+    comfortSatisfied: s.comfort_satisfied ?? null,
+    estimatedCostCzk: s.estimated_cost_czk ?? null,
+    pvShare: typeof s.pv_share === 'number'
+      ? s.pv_share
+      : (s.consumption_kwh && s.pv_contribution_kwh != null
+          ? s.pv_contribution_kwh / s.consumption_kwh
+          : null),
   }));
 
   const freshness = canonical.freshness ?? {};

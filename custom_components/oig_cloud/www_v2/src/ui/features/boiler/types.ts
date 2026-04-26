@@ -32,6 +32,10 @@ export interface BoilerV2PlanSlot {
   spotPrice: number | null;
   altPrice: number | null;
   overflowAvailable: boolean;
+  expectedTempTopC?: number | null;
+  comfortSatisfied?: boolean | null;
+  estimatedCostCzk?: number | null;
+  pvShare?: number | null;
 }
 
 export interface BoilerV2Explanation {

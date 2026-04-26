@@ -743,3 +743,63 @@ describe('OigBoilerStatusPanel — full DTO coverage', () => {
     expect(html).toContain('Grid');
   });
 });
+
+describe('OigBoilerPlanTimeline — per-slot detail', () => {
+  it('renders source, expected temp, comfort, kwh, cost, pv share for each slot', async () => {
+    const el = document.createElement('oig-boiler-plan-timeline') as any;
+    el.lang = 'cs';
+    el.slots = [
+      {
+        start: '2026-04-26T14:00:00Z',
+        end: '2026-04-26T14:15:00Z',
+        consumptionKwh: 0.5,
+        confidence: 1,
+        recommendedSource: 'fve',
+        spotPrice: 1.2,
+        altPrice: null,
+        overflowAvailable: true,
+        expectedTempTopC: 48.5,
+        comfortSatisfied: true,
+        estimatedCostCzk: 0.6,
+        pvShare: 0.8,
+      },
+      {
+        start: '2026-04-26T14:15:00Z',
+        end: '2026-04-26T14:30:00Z',
+        consumptionKwh: 0.3,
+        confidence: 1,
+        recommendedSource: 'grid',
+        spotPrice: 2.1,
+        altPrice: null,
+        overflowAvailable: false,
+        expectedTempTopC: null,
+        comfortSatisfied: false,
+        estimatedCostCzk: 0.63,
+        pvShare: 0,
+      },
+    ];
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('boiler-plan-timeline');
+    expect(html).toContain('FVE');
+    expect(html).toContain('Síť');
+    expect(html).toContain('48.5 °C');
+    expect(html).toContain('Komfort OK');
+    expect(html).toContain('Komfort nesplněn');
+    expect(html).toContain('0.50 kWh');
+    expect(html).toContain('0.60 Kč');
+    expect(html).toContain('80 %');
+    expect(html).toContain('0 %');
+  });
+
+  it('renders translated empty state when no slots', async () => {
+    const el = document.createElement('oig-boiler-plan-timeline') as any;
+    el.lang = 'cs';
+    el.slots = [];
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Plán bojleru zatím není k dispozici');
+  });
+});
