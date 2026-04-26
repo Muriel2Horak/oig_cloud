@@ -467,3 +467,102 @@ Existing examples using `mode: "CBB"` and `mode: "Manual"` in FAQ, TROUBLESHOOTI
 - GREEN (fix present): `pytest tests/test_init_setup_entry.py::test_async_setup_entry_stores_boiler_coordinator_before_init_boiler_runtime tests/test_boiler_task2_boundary.py tests/test_boiler_task10_canonical_api.py -q` → 38 passed
 - flake8 on all changed files: 0 errors
 - LSP diagnostics: 0 errors after moving the test HTTP stub onto `DummyHass.http` instead of assigning it dynamically in the test body.
+
+## Deploy script SSH gzip stale asset issue — 2026-04-26
+
+### Root Cause
+`deploy_to_ha.sh` SSH gzip block used a bare glob in the remote shell:
+```
+for f in ${ASSETS_REMOTE}/*.js ${ASSETS_REMOTE}/*.css; do
+```
+`${ASSETS_REMOTE}` is expanded locally (correct), but `*.css` is sent to the remote shell (zsh) as-is. When no `.css` files exist in the assets directory, zsh's `nomatch` option causes it to exit with `zsh:2: no matches found: .../*.css`. The `|| echo "non-fatal"` swallowed the error but left existing `.gz` files unrefreshed — so browsers received the stale compressed bundle.
+
+### Fix
+Replaced the zsh-hostile glob with `find -maxdepth 1 -type f ( -name '*.js' -o -name '*.css' ) | while IFS= read -r f`:
+- `find` outputs nothing (not an error) when no matches exist
+- Works under zsh, bash, ash (POSIX-compliant)
+- `-maxdepth 1` prevents recursing into subdirs
+- `while IFS= read -r f` handles file names robustly
+
+### Regression Test
+Added `tests/test_deploy_script.py` (7 tests):
+- `test_bash_syntax_is_valid` — `bash -n` clean
+- `test_ssh_gzip_block_uses_find_not_bare_glob` — regex confirms find + *.js + *.css
+- `test_ssh_gzip_block_no_unguarded_css_glob` — confirms old `${ASSETS_REMOTE}/*.css` glob is absent
+- `test_ssh_gzip_block_uses_maxdepth_1` — confirms depth limit
+- `test_ssh_gzip_block_reads_both_js_and_css` — both extensions matched
+- `test_gzip_output_file_is_source_plus_gz` — output is `$f.gz`
+
+### Key Learning
+In bash `for f in glob1 glob2; do [ -f "$f" ] || continue; ...` works because bash leaves unmatched globs as literal strings. In zsh (HA's default shell), unmatched globs are a fatal error unless `nullglob` is set. Always use `find` or `nullglob` guard in SSH commands sent to zsh hosts.
+
+### Correction — test file removed (2026-04-26)
+`tests/test_deploy_script.py` was added in error and has been removed.
+`deploy_to_ha.sh` is listed under `.gitignore` at the "Development and deployment scripts (local only)" section, so it is not tracked by the repo.
+A committed test that reads the ignored local script would fail in a clean checkout.
+Verification of the fix is done via static checks: `bash -n deploy_to_ha.sh` (syntax clean) and manual inspection confirming `${ASSETS_REMOTE}/*.css` glob is absent and `find -maxdepth 1 -type f \( -name '*.js' -o -name '*.css' \)` is present.
+
+### Correction 2 — sudo tee for privileged write (2026-04-26)
+After the zsh glob fix, gzip regeneration still failed:
+```
+zsh:3: permission denied: /config/.../www_v2/dist/assets/index.js.gz
+```
+Root cause: `sudo gzip -9 -c "$f" > "$f.gz"` runs `gzip` as root but the `>` shell redirection is performed by the unprivileged remote user's shell. Existing root-owned `.gz` files cannot be overwritten.
+Fix: replaced `> "$f.gz"` with `| sudo tee "$f.gz" >/dev/null` — both the compression and the write are now privileged:
+```
+sudo gzip -9 -c "$f" | sudo tee "$f.gz" >/dev/null && echo "  gzipped: $f"
+```
+`bash -n` passes; static inspection confirms no bare `> "$f.gz"` redirection in the SSH block.
+
+## Task 15 Issues — 2026-04-26
+
+### Issue: deadline_time type error from HA TimeSelector persistence
+**File**: custom_components/oig_cloud/boiler/runtime.py, custom_components/oig_cloud/boiler/planner_contract.py
+**Problem**: HA's `selector.TimeSelector()` may persist a `datetime.time` object instead of a plain `"HH:MM"` string. `runtime._async_build_planner_input()` passed the raw config value directly to `PlannerInput(deadline_time=...)`, which then called `_validate_deadline_time()` that strictly required a string. This caused recurring log errors: `deadline_time must be a string in HH:MM format`.
+**Root cause**: The boundary at `_async_build_planner_input()` (lines ~810-812) did no type normalization — it passed `config.get(CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME)` directly to `PlannerInput`. The HA selector could produce a `time` object or a `"HH:MM:SS"` string, neither of which `_validate_deadline_time()` accepted.
+**Fix**: Added `_normalize_deadline_time(value, default)` helper in runtime.py (lines 66-78). It handles:
+  - `datetime.time` objects → formatted as `"%H:%M"`
+  - `"HH:MM"` strings → validated and zero-padded, returned as-is
+  - `"HH:MM:SS"` strings → truncated to `"HH:MM"` with validation
+  - anything else → falls back to default
+  The helper is called immediately before `PlannerInput(deadline_time=deadline)` construction.
+**Regression test**: `TestDeadlineTimeNormalization` added to `tests/test_boiler_task4_contract.py` with 4 cases: `time(20,0)` → `"20:00"`, plain `"20:00"` → `"20:00"`, `"20:00:00"` → `"20:00"`, invalid → `DEFAULT_BOILER_DEADLINE_TIME`.
+**Files changed**:
+  - custom_components/oig_cloud/boiler/runtime.py: +import `time as datetime_time`, +`_normalize_deadline_time()` helper, +normalization call at line ~813
+  - tests/test_boiler_task4_contract.py: +imports for `Any`, `CONF_BOILER_DEADLINE_TIME`, `DEFAULT_BOILER_DEADLINE_TIME`, +`TestDeadlineTimeNormalization` class with 4 regression tests
+**Verification**: targeted pytest on `TestDeadlineTimeNormalization` → 4 passed; broader boiler planner suite (85 tests) → all passed; LSP diagnostics on both changed files → 0 errors.
+
+Task 15 cleanup (2026-04-26): Removed nested asyncio executor/run pattern from TestDeadlineTimeNormalization — tests now call await runtime._async_build_planner_input(...) directly. Fixed import order (stdlib first), removed unused top-level asyncio import, moved local asyncio import into the one pre-existing test that still needs asyncio.run(). All 56 tests in file pass; flake8 clean.
+
+## Task 11 V2 UI Rework — 2026-04-26
+
+### What was done
+Rebuilt all 5 V2 boiler UI components with full DTO coverage, EN/CS translations, and explicit unavailable states per the 12-task plan in `.sisyphus/plans/boiler-v2-ui-rework.md`.
+
+**New files created:**
+- `src/i18n/boiler.ts` — lightweight EN/CS translation map (60+ keys) with `resolveLang`, `t`, `reasonLabel`, `sourceLabel` helpers
+- `src/ui/features/boiler/format.ts` — `formatTempC`, `formatKwh`, `formatCzk`, `formatPercent`, `formatTimeRange`, `formatDataAge` (all return `'—'` for null)
+- `playwright/boiler-v2-smoke.mjs` — Playwright Node smoke script asserting all 5 section selectors
+
+**Components rebuilt (TDD, one commit each):**
+- `OigBoilerStatusPanel` — currentState pill, both sources, temp top/bottom, comfort badge, degraded banner, degradedFlags chips, energyNeeded, lastUpdate
+- `OigBoilerPlanTimeline` — per-slot table: time range, translated source, expectedTempTopC, comfort badge, kWh, cost, PV share
+- `OigBoilerSourceExplanation` — split into freshness section (stale/fresh chips), degraded section, other reasons, meta grid (planCreatedAt, planValidUntil, dataAgeSecs, unsatisfiedComfortGapC, temperatureAtDeadlineC)
+- `OigBoilerOverridePanel` — translated heading/subtitle, active badge, identity/capability notices via `?hidden`, preserved all existing capability-gating test selectors
+- `OigBoilerUnavailableState` — explicit `?hidden` per-variant divs (loading/error/degraded/unavailable) with translated headlines
+
+**DTO fields newly surfaced in `BoilerV2PlanSlot`:**
+- `expectedTempTopC`, `comfortSatisfied`, `estimatedCostCzk`, `pvShare` (mapped from `predicted_temperature_c`, `comfort_satisfied`, `estimated_cost_czk`, `pv_share`/`pv_contribution_kwh` in canonical API)
+
+**`BoilerCanonicalSlot` extended** with 5 optional fields to avoid TypeScript errors.
+
+**`app.ts` wired** with `boilerLang` getter (`resolveLang(this.hass)`) and `.lang=${this.boilerLang}` on all 5 components.
+
+**Tests added:** boiler-i18n (6), boiler-format (6), boiler-v2-ui (+12 new, 78 total), app-refresh (+2, 23 total). Total unit suite: 698 tests, all pass.
+
+**Pre-existing test fixes:**
+- `'--'` → `'—'` in "No fabricated temperature values" test (em-dash from new formatters)
+- Degraded banner changed from conditional rendering to `?hidden` so CSS class appears in static template strings (required by `getTemplateStrings` introspection test)
+- Override panel notices changed from conditional to `?hidden` to preserve `capability-notice` in static strings
+
+**Verification:** lint 0 errors, typecheck 0 errors, build 469 kB, deploy hash match, Playwright smoke all 12 selectors true, HA logs clean.

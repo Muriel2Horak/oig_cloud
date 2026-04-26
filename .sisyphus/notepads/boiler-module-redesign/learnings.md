@@ -359,3 +359,44 @@
 - V1 static files and `/oig_cloud_static` static path registration untouched (deferred cleanup).
 - Regression tests updated: `test_setup_frontend_panel_registers` now asserts V2 URL; new `test_setup_frontend_panel_registers_v2_as_standard_only` asserts exactly one panel registered, V2 URL, no `_v2` suffix, no "V2 (BETA)" title, and beta panel ID removed.
 - All 15 frontend tests pass; flake8 and LSP clean.
+
+## Boiler Tab Legacy Cleanup — 2026-04-26
+
+### What Was Done
+1. Removed the entire `<details>Diagnostika a ladění</details>` block from `app.ts` boiler tab:
+   - Removed `oig-boiler-state`, `oig-boiler-status-grid`, `oig-boiler-energy-breakdown`, `oig-boiler-predicted-usage`, `oig-boiler-plan-info`, `oig-boiler-tank`, `oig-boiler-category-select`, `oig-boiler-profiling`, `oig-boiler-heatmap-grid`, `oig-boiler-stats-cards`, `oig-boiler-config-section`
+2. Removed all now-unused state properties: `boilerPlan`, `boilerEnergyBreakdown`, `boilerPredictedUsage`, `boilerConfig`, `boilerHeatmap7x24`, `boilerProfiling`, `boilerCurrentCategory`, `boilerAvailableCategories`, `boilerForecastWindows`.
+3. Removed `onBoilerCategoryChange` event handler (only caller was the removed `oig-boiler-category-select`).
+4. Removed type imports: `BoilerPlan`, `BoilerEnergyBreakdown`, `BoilerPredictedUsage`, `BoilerConfig`, `BoilerHeatmapRow`, `BoilerProfilingData`.
+5. Removed `boilerState` assignments for the removed fields in `loadBoilerDataAsync`.
+6. Removed orphaned `.boiler-visual-grid` CSS from mobile media query.
+7. Added `data-testid="boiler-setup-guide"` CTA element pointing users to HA integration configuration.
+
+### Tests Added to app-refresh.test.ts
+- `OigApp V2 boiler tab — no legacy tags, setup guide present` describe block (13 tests).
+- Added `flattenTemplate` + `getAppTemplateAll` helpers that recursively flatten Lit TemplateResult trees (both strings AND values) into a single string for robust assertion.
+- Critical learning: conditional branches in Lit templates (`${x ? html`...` : nothing}`) put nested TemplateResults into `values`, NOT `strings`. Tests that assert presence/absence of conditional tags MUST use `getAppTemplateAll` (recursive flatten) not `getTemplateStrings`.
+- For always-rendered elements (not in ternary), `strings`-only check still works.
+
+### Verification
+- 670/670 V2 unit tests pass
+- 0 lint errors (221 pre-existing warnings unchanged)
+- 0 typecheck errors
+- LSP diagnostics: 0 errors on `app.ts` and `app-refresh.test.ts`
+
+## V2 UI Rework Learnings — 2026-04-26
+
+### Lightweight i18n strategy
+A simple `Record<string, string>` map keyed by snake-cased `boiler.*` keys, with a `resolveLang(hass)` helper that reads `hass?.locale?.language ?? hass?.language ?? 'cs'`, is sufficient for a 2-language dashboard. No i18n library needed. The `t(key, lang)` function returns the key itself as fallback, making missing translations visible in tests.
+
+### Per-component `lang` property pattern
+Each Lit component gets `@property({ type: String }) lang: 'cs' | 'en' = 'cs'`. The app wires `.lang=${this.boilerLang}` to all 5 components. This is simpler than a context provider and easier to test (just set `el.lang = 'cs'` before `updateComplete`).
+
+### `getTemplateStrings` introspection constraint
+The existing test helper `getTemplateStrings` returns only the static string parts of a Lit template. Conditional rendering (`${condition ? html`...` : ''}`) puts the entire conditional in the *values*, not the *strings*. To make a CSS class or data-testid appear in static strings (required for introspection tests), use `?hidden=${!condition}` instead of conditional rendering. This was needed for: degraded banner, capability-notice, and unavailable-state variant divs.
+
+### Em-dash vs double-hyphen
+The new formatters return `'—'` (U+2014 em dash) for null values. Pre-existing tests that checked for `'--'` (two hyphens) needed updating. The spirit of those tests (no fabricated values) is preserved; only the placeholder character changed.
+
+### Playwright smoke: status panel may be absent on first load
+The `boiler-status-panel` is only rendered when `boilerV2Data?.status` is non-null. On first load the data may not have arrived yet, showing `boiler-unavailable-state` instead. The smoke script should check for `statusOrUnavailable` (either selector) rather than requiring the status panel specifically.
