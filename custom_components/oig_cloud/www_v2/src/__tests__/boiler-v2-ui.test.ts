@@ -529,8 +529,8 @@ describe('No fabricated temperature values', () => {
     const json = JSON.stringify(vals);
     // Value "45" should not appear as a fabricated temperature
     expect(json).not.toMatch(/"45(?:\.0)?(?:°C)?"/);
-    // "--" should appear as the unavailable placeholder  
-    expect(json).toContain('--');
+    // "—" (em dash) should appear as the unavailable placeholder  
+    expect(json).toContain('—');
   });
 });
 
@@ -679,5 +679,67 @@ describe('OigBoilerOverridePanel — capability gating', () => {
   it('mapCanonicalToV2 returns manualOverride=null when canonical is null', () => {
     const v2 = mapCanonicalToV2(null);
     expect(v2.manualOverride).toBeNull();
+  });
+});
+
+describe('OigBoilerStatusPanel — full DTO coverage', () => {
+  it('renders current_state, both sources, comfort and every degraded flag', async () => {
+    const el = document.createElement('oig-boiler-status-panel') as any;
+    el.lang = 'cs';
+    el.data = {
+      currentState: 'heating',
+      comfortSatisfied: false,
+      comfortStatusCode: 'comfort_unsatisfied',
+      selectedSource: 'fve',
+      actuatedSource: 'grid',
+      temperatureTop: 45.2,
+      temperatureBottom: 38.0,
+      energyNeededKwh: 1.234,
+      heating: true,
+      lastUpdate: '2026-04-26T14:00:00Z',
+      degraded: true,
+      degradedFlags: ['input_stale_pv', 'top_sensor_unavailable'],
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('boiler-status-current-state');
+    expect(html).toContain('Ohřev');
+    expect(html).toContain('boiler-status-selected-source');
+    expect(html).toContain('FVE');
+    expect(html).toContain('boiler-status-actuated-source');
+    expect(html).toContain('Síť');
+    expect(html).toContain('boiler-status-comfort');
+    expect(html).toContain('Komfort nesplněn');
+    expect(html).toContain('boiler-status-degraded-flags');
+    expect(html).toContain('FVE predikce není aktuální');
+    expect(html).toContain('Horní teploměr není dostupný');
+    expect(html).toContain('45.2 °C');
+    expect(html).toContain('38.0 °C');
+    expect(html).toContain('1.23 kWh');
+  });
+  it('renders en strings when lang=en', async () => {
+    const el = document.createElement('oig-boiler-status-panel') as any;
+    el.lang = 'en';
+    el.data = {
+      currentState: 'idle',
+      comfortSatisfied: true,
+      comfortStatusCode: 'comfort_satisfied',
+      selectedSource: 'grid',
+      actuatedSource: 'grid',
+      temperatureTop: 50,
+      temperatureBottom: null,
+      energyNeededKwh: 0,
+      heating: false,
+      lastUpdate: null,
+      degraded: false,
+      degradedFlags: [],
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Idle');
+    expect(html).toContain('Comfort satisfied');
+    expect(html).toContain('Grid');
   });
 });

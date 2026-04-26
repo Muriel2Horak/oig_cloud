@@ -28,6 +28,8 @@ import {
   BoilerV2Identity,
 } from './types';
 import { planBoilerHeating, applyBoilerPlan, cancelBoilerPlan } from '@/data/boiler-data';
+import { t, sourceLabel, reasonLabel, type Lang } from '@/i18n/boiler';
+import { formatTempC, formatKwh, formatCzk, formatPercent, formatTimeRange, formatDataAge } from '@/ui/features/boiler/format';
 
 const u = unsafeCSS;
 
@@ -1331,27 +1333,62 @@ export class OigBoilerProfiles extends LitElement {
 @customElement('oig-boiler-status-panel')
 export class OigBoilerStatusPanel extends LitElement {
   @property({ attribute: false }) data: BoilerV2Status | null = null;
+  @property({ type: String }) lang: Lang = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .panel { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .heading { font-size: 1.05rem; font-weight: 600; color: var(--primary-text-color, #222); }
+    .pill { padding: 2px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
+    .pill.heating { background: rgba(255,152,0,0.15); color: #b75d00; }
+    .pill.idle { background: rgba(76,175,80,0.15); color: #2e7d32; }
+    .pill.unknown { background: rgba(120,120,120,0.15); color: #555; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .field { display: flex; flex-direction: column; gap: 2px; }
+    .field label { font-size: 0.75rem; color: var(--secondary-text-color, #666); text-transform: uppercase; letter-spacing: 0.04em; }
+    .field span { font-size: 1.05rem; color: var(--primary-text-color, #111); font-variant-numeric: tabular-nums; }
+    .comfort { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+    .comfort.ok { color: #2e7d32; }
+    .comfort.bad { color: #c62828; }
+    .comfort.unknown { color: #777; }
+    .degraded-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .degraded-tag { padding: 2px 8px; border-radius: 6px; background: rgba(244,67,54,0.12); color: #b71c1c; font-size: 0.8rem; }
+    .degraded-banner { padding: 6px 10px; border-radius: 8px; background: rgba(244,67,54,0.15); color: #b71c1c; font-weight: 600; font-size: 0.85rem; }
+  `;
 
   render() {
     const d = this.data;
-    const tempTop = d?.temperatureTop != null ? `${d.temperatureTop}°C` : '--';
-    const tempBottom = d?.temperatureBottom != null ? `${d.temperatureBottom}°C` : '--';
-    const source = d?.selectedSource ?? '--';
-    const heating = d?.heating ?? false;
-    const degraded = d?.degraded ?? false;
+    const lang = this.lang;
+    const stateKey = (d?.currentState ?? 'unknown') as 'heating' | 'idle' | 'unknown';
+    const stateLabel = t(`boiler.status.${stateKey}` as any, lang);
+    const comfortLabel = d?.comfortSatisfied === true
+      ? t('boiler.status.comfort_satisfied', lang)
+      : d?.comfortSatisfied === false
+        ? t('boiler.status.comfort_unsatisfied', lang)
+        : t('boiler.status.comfort_unknown', lang);
+    const comfortClass = d?.comfortSatisfied === true ? 'ok' : d?.comfortSatisfied === false ? 'bad' : 'unknown';
+    const flags = d?.degradedFlags ?? [];
 
     return html`
-      <div data-testid="boiler-status-panel" class="boiler-status-panel">
-        <div class="degraded-badge" ?hidden=${!degraded}>Degradováno</div>
-        <div class="state-row">
-          <span class="state-label">${heating ? 'Ohřev' : 'Nečinný'}</span>
-          <span class="source-label">${source}</span>
+      <div data-testid="boiler-status-panel" class="panel">
+        <div class="row">
+          <div class="heading">${t('boiler.status.heading', lang)}</div>
+          <span data-testid="boiler-status-current-state" class="pill ${stateKey}">${stateLabel}</span>
         </div>
-        <div class="temps-row">
-          <span class="temp-top">${tempTop}</span>
-          <span class="temp-bottom">${tempBottom}</span>
+        <div class="degraded-banner" ?hidden=${!d?.degraded}>${t('boiler.status.degraded', lang)}</div>
+        <div class="grid">
+          <div class="field"><label>${t('boiler.status.temp_top', lang)}</label><span>${formatTempC(d?.temperatureTop ?? null)}</span></div>
+          <div class="field"><label>${t('boiler.status.temp_bottom', lang)}</label><span>${formatTempC(d?.temperatureBottom ?? null)}</span></div>
+          <div class="field"><label>${t('boiler.status.selected_source', lang)}</label><span data-testid="boiler-status-selected-source">${sourceLabel(d?.selectedSource ?? null, lang)}</span></div>
+          <div class="field"><label>${t('boiler.status.actuated_source', lang)}</label><span data-testid="boiler-status-actuated-source">${sourceLabel(d?.actuatedSource ?? null, lang)}</span></div>
+          <div class="field"><label>${t('boiler.status.energy_needed', lang)}</label><span>${formatKwh(d?.energyNeededKwh ?? null)}</span></div>
+          <div class="field"><label>${t('boiler.status.last_update', lang)}</label><span>${d?.lastUpdate ?? '—'}</span></div>
         </div>
-        ${d?.comfortSatisfied === false ? html`<div class="comfort-gap">Komfort nesplněn</div>` : ''}
+        <div data-testid="boiler-status-comfort" class="comfort ${comfortClass}">${comfortLabel}</div>
+        ${flags.length
+          ? html`<div data-testid="boiler-status-degraded-flags" class="degraded-list">${flags.map((f) => html`<span class="degraded-tag">${reasonLabel(f, lang)}</span>`)}</div>`
+          : ''}
       </div>
     `;
   }
