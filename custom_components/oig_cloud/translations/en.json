@@ -128,13 +128,12 @@
         "data": {
           "boiler_alt_cost_kwh": "Alternative heating cost (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Alternative heat source switch - optional",
+          "boiler_alt_source_mode": "Alternative source mode",
           "boiler_circulation_pump_switch_entity": "Circulation pump switch - optional",
           "boiler_cold_inlet_temp_c": "Cold water inlet temperature (°C)",
           "boiler_deadline_time": "Deadline (time to have heated by)",
-          "boiler_has_alternative_heating": "Does boiler have alternative heat source?",
           "boiler_heater_power_kw_entity": "Heating element power sensor (kW)",
           "boiler_heater_switch_entity": "Heating element switch",
-          "boiler_plan_slot_minutes": "Time slot duration (minutes)",
           "boiler_planning_horizon_hours": "Planning horizon (hours)",
           "boiler_spot_price_sensor": "Spot price sensor",
           "boiler_stratification_mode": "Stratification mode",
@@ -147,13 +146,12 @@
         "data_description": {
           "boiler_alt_cost_kwh": "Cost per kWh from alternative source (e.g., 1.5 CZK/kWh for boiler). Electric heating will be used only when spot price is cheaper.",
           "boiler_alt_heater_switch_entity": "Entity ID of switch for alternative source (e.g., boiler, heat pump). Leave empty if you don't have one.",
+          "boiler_alt_source_mode": "Choose Disabled, Benchmark only, or Controllable. Controllable requires one switch-style entity; unsupported actuator models should stay Benchmark only.",
           "boiler_circulation_pump_switch_entity": "Entity ID of switch for circulation pump. Leave empty if you do not control circulation via a switch.",
           "boiler_cold_inlet_temp_c": "Temperature of incoming cold water from mains (typically 10-15°C)",
-          "boiler_deadline_time": "Time by which you want boiler heated (format HH:MM, e.g., 20:00). Planning will always find cheapest slots BEFORE this time.",
-          "boiler_has_alternative_heating": "Check if you have alternative heating method (boiler, HP) and want to use it when electricity is expensive",
+          "boiler_deadline_time": "Time by which you want boiler heated (format HH:MM, e.g., 20:00). Planning targets comfort by this time while considering source costs and availability.",
           "boiler_heater_power_kw_entity": "Entity ID of sensor with current power (e.g., sensor.boiler_power). If you don't have one, create a helper with constant value (e.g., 2.0 for 2kW)",
           "boiler_heater_switch_entity": "Entity ID of switch for turning on main heating element (e.g., switch.boiler_heater). This will be controlled by the integration.",
-          "boiler_plan_slot_minutes": "Size of time blocks for planning (15-60 minutes). Smaller = more precise, larger = simpler. Recommended 60 minutes.",
           "boiler_planning_horizon_hours": "How far ahead to plan (typically 24-48 hours). More = better optimization but longer calculation.",
           "boiler_spot_price_sensor": "Entity ID of spot price sensor (e.g., sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = average temperature | two_zone = stratified model (more accurate, needs 2 sensors)",
@@ -163,7 +161,7 @@
           "boiler_volume_l": "Total volume of hot water tank (e.g., 120 liters)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         },
-        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently plans boiler heating based on spot electricity prices. Selects the cheapest time slots for heating water before your deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heating element power\n\n💡 **How it works:**\n1. Calculates how much energy you need to heat the water\n2. Finds the cheapest time slots before deadline (e.g., 20:00)\n3. Creates a plan of when to turn on the boiler\n4. Controls a switch for turning heating on/off\n\n⚠️ **Note:** This module only controls WHEN to heat. Physical switching of the boiler must be handled by automation or smart switch.",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nAutomatically plans comfortable boiler heating based on your preferences, current water temperature, and available energy sources. Considers spot prices, alternative source economics, and your comfort deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heating element power\n\n💡 **How it works:**\n1. Reads current boiler temperature (top and bottom if available)\n2. Calculates energy needed to reach target temperature by deadline\n3. Selects optimal heating slots considering price and alternative source economics\n4. Controls the heating switch automatically to maintain comfort\n\n⚠️ **Note:** This module plans WHEN and WHETHER to heat. Physical boiler switching is handled automatically by the integration.",
         "title": "🔥 Boiler Configuration"
       },
       "wizard_credentials": {
@@ -599,12 +597,11 @@
         "data": {
           "boiler_alt_cost_kwh": "Alternative heating cost (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Alternative heater switch - optional",
+          "boiler_alt_source_mode": "Alternative source mode",
           "boiler_cold_inlet_temp_c": "Cold water temperature (°C)",
           "boiler_deadline_time": "Deadline (time to have heated by)",
-          "boiler_has_alternative_heating": "Does boiler have alternative heat source?",
           "boiler_heater_power_kw_entity": "Heater power sensor (kW)",
           "boiler_heater_switch_entity": "Heater switch",
-          "boiler_plan_slot_minutes": "Time slot length (minutes)",
           "boiler_planning_horizon_hours": "Planning horizon (hours)",
           "boiler_spot_price_sensor": "Spot price sensor",
           "boiler_stratification_mode": "Stratification mode",
@@ -617,12 +614,11 @@
         "data_description": {
           "boiler_alt_cost_kwh": "How much 1 kWh from alternative source costs (e.g., 1.5 CZK/kWh for boiler). Electric heating will be used only when spot price is cheaper.",
           "boiler_alt_heater_switch_entity": "Entity ID of switch for alternative source (e.g., boiler, heat pump). Leave empty if you don't have one.",
+          "boiler_alt_source_mode": "Choose Disabled, Benchmark only, or Controllable. Controllable requires one switch-style entity; unsupported actuator models should stay Benchmark only.",
           "boiler_cold_inlet_temp_c": "Cold water inlet temperature from mains (typically 10-15°C)",
-          "boiler_deadline_time": "By when you want boiler heated (format HH:MM, e.g., 20:00). Planning always finds cheapest slots BEFORE this time.",
-          "boiler_has_alternative_heating": "Check if you have alternative heating method (boiler, HP) and want to use it when electricity is expensive",
+          "boiler_deadline_time": "By when you want boiler heated (format HH:MM, e.g., 20:00). Planning targets comfort by this time while considering source costs and availability.",
           "boiler_heater_power_kw_entity": "Entity ID of sensor with current power (e.g., sensor.boiler_power). If you don't have one, create a helper with constant value (e.g., 2.0 for 2kW)",
           "boiler_heater_switch_entity": "Entity ID of switch to turn on main heating element (e.g., switch.boiler_heater). This will be controlled by the integration.",
-          "boiler_plan_slot_minutes": "Size of time blocks for planning (15-60 minutes). Smaller = more precise, larger = simpler. Recommended 60 minutes.",
           "boiler_planning_horizon_hours": "How far ahead to plan (typically 24-48 hours). More = better optimization but longer calculation.",
           "boiler_spot_price_sensor": "Entity ID of spot price sensor (e.g., sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = temperature average | two_zone = stratified model (more accurate, needs 2 sensors)",
@@ -632,7 +628,7 @@
           "boiler_volume_l": "Total volume of hot water tank (e.g., 120 liters)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         },
-        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently plans water heater heating based on spot electricity prices. Selects the cheapest time slots to heat water before your set deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heater power\n\n💡 **How it works:**\n1. Calculates how much energy you need to heat the water\n2. Finds the cheapest time slots before deadline (e.g., 20:00)\n3. Creates a plan when to turn on the boiler\n4. Controls the switch for turning heating on/off\n\n⚠️ **Note:** This module only controls WHEN to heat. Physical boiler switching must be handled via automation or smart switch.",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nAutomatically plans comfortable boiler heating based on your preferences, current water temperature, and available energy sources. Considers spot prices, alternative source economics, and your comfort deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heater power\n\n💡 **How it works:**\n1. Reads current boiler temperature (top and bottom if available)\n2. Calculates energy needed to reach target temperature by deadline\n3. Selects optimal heating slots considering price and alternative source economics\n4. Controls the heating switch automatically to maintain comfort\n\n⚠️ **Note:** This module plans WHEN and WHETHER to heat. Physical boiler switching is handled automatically by the integration.",
         "title": "🔥 Boiler Configuration"
       },
       "wizard_extended": {
@@ -875,21 +871,69 @@
       }
     }
   },
+  "exceptions": {
+    "boiler_box_not_owned": {
+      "message": "Boiler box {box_id} is not owned by config entry {entry_id}."
+    },
+    "boiler_device_not_found": {
+      "message": "Device {device_id} was not found or does not own a boiler box."
+    },
+    "boiler_entry_not_found": {
+      "message": "Config entry {entry_id} was not found for {service}."
+    },
+    "boiler_entry_not_loaded": {
+      "message": "Config entry {entry_id} is not loaded."
+    },
+    "boiler_entry_wrong_domain": {
+      "message": "Config entry {entry_id} does not belong to {domain}."
+    },
+    "boiler_missing_identity": {
+      "message": "Service {service} requires entry_id + box_id, a legacy device_id, or exactly one unambiguous loaded boiler box."
+    }
+  },
   "services": {
     "apply_boiler_plan": {
       "description": "Applies the planned boiler heating. Creates automations for turning on the heating element at planned times.",
+      "fields": {
+        "box_id": {
+          "description": "Box ID of the target boiler box.",
+          "name": "Box ID"
+        },
+        "entry_id": {
+          "description": "Config entry ID that owns the target boiler box.",
+          "name": "Config entry ID"
+        }
+      },
       "name": "Apply heating plan"
     },
     "cancel_boiler_plan": {
       "description": "Cancels the active boiler heating plan and removes planned automations.",
+      "fields": {
+        "box_id": {
+          "description": "Box ID of the target boiler box.",
+          "name": "Box ID"
+        },
+        "entry_id": {
+          "description": "Config entry ID that owns the target boiler box.",
+          "name": "Config entry ID"
+        }
+      },
       "name": "Cancel heating plan"
     },
     "plan_boiler_heating": {
-      "description": "Creates an optimal boiler heating plan based on spot prices. Finds the cheapest time slots before the deadline.",
+      "description": "Creates a comfort-first boiler heating plan from current water temperature, deadline, spot prices, and configured source economics.",
       "fields": {
+        "box_id": {
+          "description": "Box ID of the target boiler box.",
+          "name": "Box ID"
+        },
         "deadline": {
           "description": "Override the default deadline time (format HH:MM, e.g., 20:00)",
           "name": "Override deadline"
+        },
+        "entry_id": {
+          "description": "Config entry ID that owns the target boiler box.",
+          "name": "Config entry ID"
         },
         "force": {
           "description": "Forces plan recalculation even if a valid plan already exists",
@@ -905,9 +949,13 @@
           "description": "I acknowledge the risks associated with manual boiler mode and accept full responsibility.",
           "name": "Acknowledgement"
         },
-        "device_id": {
-          "description": "Select the Battery Box device when controlling a specific installation.",
-          "name": "Device"
+        "box_id": {
+          "description": "Box ID of the target boiler box.",
+          "name": "Box ID"
+        },
+        "entry_id": {
+          "description": "Config entry ID that owns the target boiler box.",
+          "name": "Config entry ID"
         },
         "mode": {
           "description": "Select between CBB (automatic) or Manual operation.",

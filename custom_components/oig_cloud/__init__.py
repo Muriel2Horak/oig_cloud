@@ -1267,6 +1267,21 @@ def _init_ote_api(entry: ConfigEntry) -> Any | None:
         return None
 
 
+async def _run_boiler_migration(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    try:
+        from .boiler.migration import async_migrate_boiler_entry
+
+        result = await async_migrate_boiler_entry(hass, entry)
+        if result.repair_required:
+            _LOGGER.warning(
+                "Boiler migration disabled automation for %s/%s; repair required",
+                result.entry_id,
+                result.box_id,
+            )
+    except Exception as err:
+        _LOGGER.warning("Boiler migration check failed: %s", err, exc_info=True)
+
+
 async def _init_boiler_coordinator(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> Any | None:
@@ -1282,7 +1297,7 @@ async def _init_boiler_coordinator(
         box_id = entry.options.get("box_id")
         if isinstance(box_id, str) and box_id.isdigit():
             boiler_config["box_id"] = box_id
-        coordinator = BoilerCoordinator(hass, boiler_config)
+        coordinator = BoilerCoordinator(hass, boiler_config, entry_id=entry.entry_id)
 
         if getattr(hass, "loop", None) is None:
             await coordinator.async_config_entry_first_refresh()
@@ -1294,6 +1309,47 @@ async def _init_boiler_coordinator(
     except Exception as err:
         _LOGGER.error("Failed to initialize Boiler coordinator: %s", err)
         return None
+
+
+async def _init_boiler_runtime(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> Any | None:
+    if not entry.options.get("enable_boiler", False):
+        return None
+
+    try:
+        from .boiler.runtime import create_boiler_runtime
+
+        boiler_coordinator = hass.data[DOMAIN][entry.entry_id].get("boiler_coordinator")
+        if not boiler_coordinator:
+            return None
+
+        box_id = entry.options.get("box_id")
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            box_id = getattr(boiler_coordinator, "box_id", None)
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            return None
+
+        runtime = create_boiler_runtime(hass, boiler_coordinator, entry.entry_id, box_id)
+        _LOGGER.info("Boiler runtime created for entry %s box %s", entry.entry_id, box_id)
+        return runtime
+    except Exception as err:
+        _LOGGER.error("Failed to initialize Boiler runtime: %s", err)
+        return None
+
+
+async def _teardown_boiler_runtime(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    try:
+        from .boiler.runtime import destroy_boiler_runtime
+
+        box_id = entry.options.get("box_id")
+        if isinstance(box_id, str) and box_id.isdigit():
+            destroy_boiler_runtime(hass, entry.entry_id, box_id)
+            _LOGGER.debug("Boiler runtime destroyed for entry %s box %s", entry.entry_id, box_id)
+    except Exception as err:
+        _LOGGER.debug("Boiler runtime teardown failed: %s", err)
 
 
 async def _init_balancing_manager(
@@ -1518,6 +1574,7 @@ async def async_setup_entry(
     init_data_source_state(hass, entry)
     _maybe_persist_box_id_from_proxy_or_local(hass, entry)
     _migrate_legacy_credentials_from_options(hass, entry)
+    await _run_boiler_migration(hass, entry)
 
     service_shield = await _start_service_shield(hass, entry)
 
@@ -1562,6 +1619,8 @@ async def async_setup_entry(
 
         ote_api = _init_ote_api(entry)
         boiler_coordinator = await _init_boiler_coordinator(hass, entry)
+        boiler_runtime = await _init_boiler_runtime(hass, entry)
+        _ = boiler_runtime
 
         # NOVÉ: Podmíněné nastavení dashboard podle konfigurace
         dashboard_enabled = entry.options.get(
@@ -1839,6 +1898,8 @@ async def async_unload_entry(
                 await data_source_controller.async_stop()
             except Exception as err:
                 _LOGGER.debug("DataSourceController stop failed: %s", err)
+
+        await _teardown_boiler_runtime(hass, entry)
 
         boiler_coordinator = entry_data.get("boiler_coordinator")
         if boiler_coordinator and hasattr(boiler_coordinator, "async_shutdown"):

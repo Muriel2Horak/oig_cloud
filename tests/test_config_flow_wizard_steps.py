@@ -48,7 +48,7 @@ def test_get_total_steps_with_modules():
         "enable_boiler": True,
     }
 
-    assert flow._get_total_steps() == 11
+    assert flow._get_total_steps() == 15
 
 
 def test_get_total_steps_options_flow():

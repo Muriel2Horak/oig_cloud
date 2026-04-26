@@ -433,7 +433,7 @@ async def test_wizard_summary_defaults_for_boiler_fields():
     assert options["boiler_alt_energy_sensor"] == ""
     assert options["boiler_deadline_time"] == "20:00"
     assert options["boiler_planning_horizon_hours"] == 36
-    assert options["boiler_plan_slot_minutes"] == 30
+    assert options["boiler_plan_slot_minutes"] == 15
 
 
 @pytest.mark.asyncio

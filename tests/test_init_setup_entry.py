@@ -766,6 +766,7 @@ async def test_async_setup_entry_infers_box_id_from_registry(monkeypatch):
         "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
         DummySessionManager,
     )
+
     class DummyCoordinatorNoData(DummyCoordinator):
         def __init__(self, hass, session_manager, *_args, **_kwargs):
             super().__init__(hass, session_manager, *_args, **_kwargs)
@@ -1516,9 +1517,10 @@ async def test_async_setup_entry_runtime_flags(
     class DummyBoilerCoordinator:
         refresh_calls = 0
 
-        def __init__(self, hass, config):
+        def __init__(self, hass, config, entry_id=""):
             self.hass = hass
             self.config = config
+            self.entry_id = entry_id
 
         async def async_config_entry_first_refresh(self):
             DummyBoilerCoordinator.refresh_calls += 1

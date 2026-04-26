@@ -358,20 +358,17 @@ async def test_boiler_coordinator_energy_tracking(monkeypatch):
             self.attributes = attrs or {}
 
     hass.states.get = lambda eid: {
-        "sensor.oig_2206237016_boiler_manual_mode": State("Vypnuto"),
-        "sensor.oig_2206237016_boiler_current_cbb_w": State("10"),
-        "sensor.oig_2206237016_boiler_day_w": State("1000"),
+        "sensor.oig_123_boiler_manual_mode": State("Vypnuto"),
+        "sensor.oig_123_boiler_current_cbb_w": State("10"),
+        "sensor.oig_123_boiler_day_w": State("1000"),
         "sensor.alt_energy": State("2000", {"unit_of_measurement": "Wh"}),
     }.get(eid)
 
-    config = {"boiler_alt_energy_sensor": "sensor.alt_energy"}
+    config = {"box_id": "123", "boiler_alt_energy_sensor": "sensor.alt_energy"}
     coordinator = BoilerCoordinator(hass, config)
     stats = await coordinator._track_energy_sources()
     assert stats["current_source"] == EnergySource.FVE.value
     assert stats["alt_kwh"] == 2.0
-
-    coordinator._current_profile = None
-    await coordinator._update_plan()
 
     coordinator._current_profile = BoilerProfile(category="c1")
     coordinator.planner.async_create_plan = SimpleNamespace(side_effect=RuntimeError("boom"))

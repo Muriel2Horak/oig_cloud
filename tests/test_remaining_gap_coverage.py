@@ -158,6 +158,7 @@ async def test_solar_sensor_normalization_and_solcast_error_paths(monkeypatch):
 
 
 def test_boiler_coordinator_infer_box_id_branches(monkeypatch):
+    """_infer_box_id_from_states is removed; _resolve_box_id must not use it."""
     from homeassistant.helpers import frame
 
     monkeypatch.setattr(frame, "report_usage", lambda *_a, **_k: None)
@@ -165,14 +166,14 @@ def test_boiler_coordinator_infer_box_id_branches(monkeypatch):
     hass = SimpleNamespace(
         states=SimpleNamespace(
             async_entity_ids=lambda _domain: [
-                "sensor.invalid",  # len(parts) < 3 branch
-                "sensor.foo_bar_baz",  # parts[1] != oig branch
-                "sensor_oig_123_boiler_day_w",  # valid branch
+                "sensor.invalid",
+                "sensor.foo_bar_baz",
+                "sensor_oig_123_boiler_day_w",
             ]
         )
     )
     coordinator = boiler_coordinator_module.BoilerCoordinator(hass, {})
-    assert coordinator._infer_box_id_from_states() == "123"
+    assert coordinator._resolve_box_id({}) == "unknown"
 
 
 def test_boiler_coordinator_resolve_box_id_forced_branch(monkeypatch):
@@ -470,6 +471,7 @@ def test_hybrid_planning_remaining_single_line_branches(monkeypatch):
 
 
 def test_boiler_coordinator_len_parts_guard_branch(monkeypatch):
+    """_infer_box_id_from_states is removed; _resolve_box_id returns unknown."""
     from homeassistant.helpers import frame
 
     monkeypatch.setattr(frame, "report_usage", lambda *_a, **_k: None)
@@ -489,4 +491,4 @@ def test_boiler_coordinator_len_parts_guard_branch(monkeypatch):
         )
     )
     coordinator = boiler_coordinator_module.BoilerCoordinator(hass, {})
-    assert coordinator._infer_box_id_from_states() is None
+    assert coordinator._resolve_box_id({}) == "unknown"

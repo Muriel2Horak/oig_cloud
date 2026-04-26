@@ -55,11 +55,19 @@ async def test_service_set_grid_delivery_calls_api(e2e_setup, mock_api):
 
 @pytest.mark.e2e
 async def test_service_set_boiler_mode_calls_api(e2e_setup, mock_api):
-    hass, _entry = e2e_setup
+    hass, entry = e2e_setup
+    from homeassistant.config_entries import ConfigEntryState
+
+    entry.mock_state(hass, ConfigEntryState.LOADED)
     await hass.services.async_call(
         DOMAIN,
         "set_boiler_mode",
-        {"mode": "cbb", "acknowledgement": True},
+        {
+            "mode": "cbb",
+            "acknowledgement": True,
+            "entry_id": entry.entry_id,
+            "box_id": entry.options["box_id"],
+        },
         blocking=True,
     )
     mock_api.set_boiler_mode.assert_awaited()

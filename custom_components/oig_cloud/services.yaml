@@ -130,15 +130,16 @@ set_boiler_mode:
     bez ohledu na HDO a nebo výrobu FVE. Defaultně je SSR, kdy si plně CBB řídí nabíjení bojleru podle HDO a přetoků.
     Nastavení Manual všechno toto obchází.
   fields:
-    device_id:
-      description: The ČEZ Battery Box device to control (required only if you have multiple devices)
-      required: false
+    entry_id:
+      description: "Config entry ID vlastnící cílový boiler box"
+      required: true
       selector:
-        device:
-          filter:
-            - integration: oig_cloud
-              manufacturer: OIG
-              model: ČEZ Battery Box Home
+        text:
+    box_id:
+      description: "Box ID cílového boiler boxu"
+      required: true
+      selector:
+        text:
     mode:
       description: Režim bojleru
       selector:
@@ -239,9 +240,19 @@ get_dashboard_tiles:
 plan_boiler_heating:
   name: "🔥 Naplánovat ohřev bojleru"
   description: |
-    Vytvoří plán optimálního ohřevu bojleru na základě spotových cen elektřiny.
-    Vybere nejlevnější časové sloty před deadlinem.
+    Vytvoří komfortní plán ohřevu bojleru podle aktuální teploty vody, deadlinu,
+    spotových cen a nastavené ekonomiky dostupných zdrojů.
   fields:
+    entry_id:
+      description: "Config entry ID vlastnící cílový boiler box"
+      required: true
+      selector:
+        text:
+    box_id:
+      description: "Box ID cílového boiler boxu"
+      required: true
+      selector:
+        text:
     force:
       description: "Vynutit přepočet plánu i když existuje platný plán"
       required: false
@@ -260,8 +271,30 @@ apply_boiler_plan:
   description: |
     Aplikuje naplánovaný ohřev bojleru.
     Vytvoří automatizace pro zapínání topného tělesa v naplánovaných slotech.
+  fields:
+    entry_id:
+      description: "Config entry ID vlastnící cílový boiler box"
+      required: true
+      selector:
+        text:
+    box_id:
+      description: "Box ID cílového boiler boxu"
+      required: true
+      selector:
+        text:
 
 cancel_boiler_plan:
   name: "🔥 Zrušit plán ohřevu"
   description: |
     Zruší aktivní plán ohřevu bojleru a odstraní naplánované automatizace.
+  fields:
+    entry_id:
+      description: "Config entry ID vlastnící cílový boiler box"
+      required: true
+      selector:
+        text:
+    box_id:
+      description: "Box ID cílového boiler boxu"
+      required: true
+      selector:
+        text:
