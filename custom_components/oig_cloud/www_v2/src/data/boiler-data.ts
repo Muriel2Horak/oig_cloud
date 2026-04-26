@@ -7,13 +7,16 @@ import {
   BoilerProfile, BoilerState, BoilerHourData, BoilerPlan,
   BoilerEnergyBreakdown, BoilerPredictedUsage, BoilerConfig,
   BoilerHeatmapRow, BoilerProfilingData, BoilerData, BoilerPlanSlot,
+  BoilerV2Data, BoilerV2PlanSlot,
+  OVERRIDE_TTL_DEFAULT_MINUTES, OVERRIDE_TTL_MIN_MINUTES,
+  OVERRIDE_TTL_MAX_MINUTES, OVERRIDE_TTL_STEP_MINUTES,
   SOURCE_LABELS,
 } from '@/ui/features/boiler/types';
 import { haClient } from '@/data/ha-client';
 import { oigLog } from '@/core/logger';
 
 const params = new URLSearchParams(window.location.search);
-const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
+const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '';
 const ENTRY_ID = params.get('entry_id') || '';
 
 export function getSensorId(sensor: string): string {
@@ -171,34 +174,116 @@ function isNowInWindow(nowMinutes: number, startMinutes: number | null, endMinut
 }
 
 // ============================================================================
-// API FETCHING
+// CANONICAL API FETCHING
 // ============================================================================
 
-async function fetchBoilerProfile(): Promise<BoilerPlanAPI | null> {
+interface BoilerCanonicalSlot {
+  start: string;
+  end: string;
+  consumption_kwh: number;
+  confidence: number;
+  recommended_source: string;
+  spot_price: number | null;
+  alt_price: number | null;
+  overflow_available: boolean;
+}
+
+interface BoilerCanonicalAPI {
+  entry_id: string;
+  box_id: string;
+  current_state: {
+    temperatures: {
+      top?: number;
+      bottom?: number;
+      upper_zone?: number;
+      lower_zone?: number;
+    };
+    energy_state: {
+      avg_temp?: number;
+      energy_needed_kwh?: number;
+    };
+    energy_tracking: {
+      current_source?: string;
+      total_kwh?: number;
+      fve_kwh?: number;
+      grid_kwh?: number;
+      alt_kwh?: number;
+    };
+    heating: boolean;
+    recommended_source: string | null;
+    last_update: string;
+  };
+  comfort_status: {
+    comfort_satisfied: boolean;
+    comfort_status_code: string | null;
+    temperature_at_deadline_c: number | null;
+    unsatisfied_comfort_gap_c: number | null;
+  };
+  selected_source: string | null;
+  actuated_source: string | null;
+  plan_slots: BoilerCanonicalSlot[];
+  reason_codes: string[];
+  freshness: {
+    plan_created_at?: string;
+    plan_valid_until?: string;
+    last_update: string;
+    data_age_seconds: number;
+    profile_last_updated?: string;
+  };
+  degraded_flags: {
+    degraded: boolean;
+    flags: string[];
+    serializer_state: string | null;
+  };
+  manual_override: {
+    active: boolean;
+    state: any;
+  };
+}
+
+async function fetchBoilerCanonical(): Promise<{ profileData: BoilerPlanAPI | null; planData: BoilerPlanAPI | null; canonical: BoilerCanonicalAPI | null }> {
   try {
-    if (!ENTRY_ID) {
-      oigLog.warn('[Boiler] No entry_id — cannot fetch boiler profile');
-      return null;
+    if (!ENTRY_ID || !INVERTER_SN) {
+      oigLog.warn('[Boiler] No entry_id or inverter_sn — cannot fetch boiler canonical');
+      return { profileData: null, planData: null, canonical: null };
     }
-    return await haClient.fetchOIGAPI<BoilerPlanAPI>(`/${ENTRY_ID}/boiler_profile`);
+    const canonical = await haClient.fetchOIGAPI<BoilerCanonicalAPI>(`/boiler/${ENTRY_ID}/${INVERTER_SN}`);
+    if (!canonical) {
+      return { profileData: null, planData: null, canonical: null };
+    }
+    const mappedPlanData: BoilerPlanAPI = {
+      state: {
+        current_temp: canonical.current_state.temperatures?.upper_zone ?? canonical.current_state.temperatures?.top,
+        target_temp: undefined,
+        heating: canonical.current_state.heating,
+        temperatures: canonical.current_state.temperatures,
+        energy_state: canonical.current_state.energy_state,
+        recommended_source: canonical.selected_source || canonical.current_state.recommended_source || undefined,
+        circulation_recommended: false,
+      },
+      slots: canonical.plan_slots.map((s) => ({
+        start: s.start,
+        end: s.end,
+        consumption_kwh: s.consumption_kwh,
+        avg_consumption_kwh: s.consumption_kwh,
+        recommended_source: s.recommended_source,
+        spot_price: s.spot_price ?? undefined,
+      })),
+      total_consumption_kwh: canonical.plan_slots.reduce((sum, s) => sum + (s.consumption_kwh || 0), 0),
+      fve_kwh: canonical.current_state.energy_tracking?.fve_kwh ?? 0,
+      grid_kwh: canonical.current_state.energy_tracking?.grid_kwh ?? 0,
+      alt_kwh: canonical.current_state.energy_tracking?.alt_kwh ?? 0,
+      next_slot: canonical.plan_slots[0] || undefined,
+      profiles: {},
+    };
+    return { profileData: mappedPlanData, planData: mappedPlanData, canonical };
   } catch (err) {
-    oigLog.warn('[Boiler] Failed to fetch profile', { err });
-    return null;
+    oigLog.warn('[Boiler] Failed to fetch canonical', { err });
+    return { profileData: null, planData: null, canonical: null };
   }
 }
 
-async function fetchBoilerPlan(): Promise<BoilerPlanAPI | null> {
-  try {
-    if (!ENTRY_ID) {
-      oigLog.warn('[Boiler] No entry_id — cannot fetch boiler plan');
-      return null;
-    }
-    return await haClient.fetchOIGAPI<BoilerPlanAPI>(`/${ENTRY_ID}/boiler_plan`);
-  } catch (err) {
-    oigLog.warn('[Boiler] Failed to fetch plan', { err });
-    return null;
-  }
-}
+
 
 // ============================================================================
 // PARSERS
@@ -231,7 +316,7 @@ function parseState(planData: BoilerPlanAPI | null, profileData: BoilerPlanAPI |
   const recommendedSource = formatSourceLabel(state?.recommended_source || nextSlot?.recommended_source);
 
   return {
-    currentTemp: state?.current_temp || 45,
+    currentTemp: isFinite(state?.current_temp as any) ? (state?.current_temp ?? null) : null,
     targetTemp: state?.target_temp || targetTemp,
     heating: state?.heating || false,
     tempTop,
@@ -589,24 +674,103 @@ export async function cancelBoilerPlan(): Promise<boolean> {
   return success;
 }
 
+export { OVERRIDE_TTL_DEFAULT_MINUTES, OVERRIDE_TTL_MIN_MINUTES, OVERRIDE_TTL_MAX_MINUTES, OVERRIDE_TTL_STEP_MINUTES };
+
+export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null): BoilerV2Data {
+  const noIdentity = { entryId: null, boxId: null, available: false };
+
+  if (!canonical) {
+    return {
+      status: null,
+      planSlots: [],
+      explanation: null,
+      manualOverride: null,
+      identity: noIdentity,
+      loading: false,
+      loadError: 'Nepodařilo se načíst data bojleru',
+    };
+  }
+
+  const cs = canonical.current_state;
+  const temps = cs.temperatures ?? {};
+  const temperatureTop = isFinite(temps.top as any) ? (temps.top ?? null) : (isFinite(temps.upper_zone as any) ? (temps.upper_zone ?? null) : null);
+  const temperatureBottom = isFinite(temps.bottom as any) ? (temps.bottom ?? null) : (isFinite(temps.lower_zone as any) ? (temps.lower_zone ?? null) : null);
+
+  const status = {
+    currentState: (cs.heating ? 'heating' : 'idle') as 'heating' | 'idle' | 'unknown',
+    comfortSatisfied: canonical.comfort_status.comfort_satisfied,
+    comfortStatusCode: canonical.comfort_status.comfort_status_code,
+    selectedSource: canonical.selected_source,
+    actuatedSource: canonical.actuated_source,
+    temperatureTop,
+    temperatureBottom,
+    energyNeededKwh: isFinite(cs.energy_state?.energy_needed_kwh as any) ? (cs.energy_state?.energy_needed_kwh ?? null) : null,
+    heating: cs.heating,
+    lastUpdate: cs.last_update ?? null,
+    degraded: canonical.degraded_flags.degraded,
+    degradedFlags: canonical.degraded_flags.flags ?? [],
+  };
+
+  const planSlots: BoilerV2PlanSlot[] = (canonical.plan_slots ?? []).map(s => ({
+    start: s.start,
+    end: s.end,
+    consumptionKwh: s.consumption_kwh,
+    confidence: s.confidence,
+    recommendedSource: s.recommended_source,
+    spotPrice: isFinite(s.spot_price as any) ? (s.spot_price ?? null) : null,
+    altPrice: isFinite(s.alt_price as any) ? (s.alt_price ?? null) : null,
+    overflowAvailable: s.overflow_available,
+  }));
+
+  const freshness = canonical.freshness ?? {};
+  const explanation = {
+    reasonCodes: canonical.reason_codes ?? [],
+    planCreatedAt: freshness.plan_created_at ?? null,
+    planValidUntil: freshness.plan_valid_until ?? null,
+    dataAgeSecs: isFinite(freshness.data_age_seconds as any) ? (freshness.data_age_seconds ?? null) : null,
+    degradedReasons: canonical.degraded_flags.flags ?? [],
+    unsatisfiedComfortGapC: canonical.comfort_status.unsatisfied_comfort_gap_c ?? null,
+    temperatureAtDeadlineC: canonical.comfort_status.temperature_at_deadline_c ?? null,
+  };
+
+  const manualOverride = {
+    active: canonical.manual_override?.active ?? false,
+    ttlMinutes: OVERRIDE_TTL_DEFAULT_MINUTES,
+    reason: '',
+    capabilityAvailable: canonical.manual_override != null,
+  };
+
+  const identity = {
+    entryId: canonical.entry_id,
+    boxId: canonical.box_id,
+    available: !!(canonical.entry_id && canonical.box_id),
+  };
+
+  return { status, planSlots, explanation, manualOverride, identity, loading: false, loadError: null };
+}
+
+export function parseStateForTest(
+  planData: BoilerPlanAPI | null,
+  profileData: BoilerPlanAPI | null,
+  config: BoilerConfig,
+): BoilerState {
+  return parseState(planData, profileData, config);
+}
+
 // ============================================================================
 // MAIN LOADER
 // ============================================================================
 
 export async function loadBoilerData(_hass?: any): Promise<BoilerData> {
-  const [profileData, planData] = await Promise.all([
-    fetchBoilerProfile(),
-    fetchBoilerPlan(),
-  ]);
+  const { profileData, planData, canonical } = await fetchBoilerCanonical();
 
-  // Battery timeline for forecast windows
   let batteryTimeline: any[] | null = null;
   try {
     const timelineData = await haClient.loadBatteryTimeline(INVERTER_SN, 'active');
     batteryTimeline = timelineData?.active || timelineData || null;
     if (Array.isArray(batteryTimeline) && batteryTimeline.length === 0) batteryTimeline = null;
-  } catch {
-    // Ignore battery timeline errors
+  } catch (_batteryTimelineError: unknown) {
+    void _batteryTimelineError;
   }
 
   const currentCategory = profileData?.current_category || Object.keys(profileData?.profiles || {})[0] || 'workday_summer';
@@ -627,6 +791,7 @@ export async function loadBoilerData(_hass?: any): Promise<BoilerData> {
     currentCategory,
     availableCategories,
     forecastWindows: parseForecastWindows(planData, batteryTimeline),
+    v2Data: mapCanonicalToV2(canonical),
   };
 }
 

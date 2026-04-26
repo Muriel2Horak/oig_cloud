@@ -101,6 +101,7 @@ vi.mock('@/ui/features/tiles/tile-dialog', () => ({}));
 import { invalidateTimelineCache } from '@/data/pricing-data';
 import { haClient } from '@/data/ha-client';
 import { stateWatcher } from '@/data/state-watcher';
+import { getSensorId } from '@/data/flow-data';
 import { OigApp } from '@/ui/app';
 
 describe('OigApp live refresh', () => {
@@ -110,15 +111,16 @@ describe('OigApp live refresh', () => {
   });
 
   it('prefers entity store values over stale hass snapshot for flow data', () => {
+    const housePowerKey = getSensorId('actual_aco_p');
     const app = new OigApp() as any;
     app.hass = {
       states: {
-        'sensor.oig_2206237016_actual_aco_p': { state: '1200' },
+        [housePowerKey]: { state: '1200' },
       },
     };
     app.entityStore = {
       getAll: () => ({
-        'sensor.oig_2206237016_actual_aco_p': { state: '790' },
+        [housePowerKey]: { state: '790' },
       }),
     };
 
@@ -184,10 +186,11 @@ describe('OigApp live refresh', () => {
   });
 
   it('rebinds entity store when hass context is refreshed', async () => {
+    const housePowerKey = getSensorId('actual_aco_p');
     const app = new OigApp() as any;
     const nextHass = {
       states: {
-        'sensor.oig_2206237016_actual_aco_p': { state: '805', last_updated: '2026-04-03T13:40:00Z' },
+        [housePowerKey]: { state: '805', last_updated: '2026-04-03T13:40:00Z' },
       },
       connection: {
         subscribeEvents: vi.fn().mockResolvedValue(() => {}),

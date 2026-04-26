@@ -929,62 +929,20 @@ async function initializeBoilerChart() {
     await boilerChartInstance.init(canvas, hass, INVERTER_SN);
 }
 
-// Boiler control functions (will use ServiceShield)
+// Boiler control functions — V1 read-only: all write operations blocked, use Dashboard V2
 async function planBoilerHeating() {
-    console.log('[Boiler] Planning heating...');
-
-    const hass = getHass();
-    if (!hass) return;
-
-    try {
-        await hass.callService('oig_cloud', 'plan_boiler_heating', {});
-
-        showNotification('✅ Plán topení byl úspěšně vytvořen', 'success');
-
-        // Refresh after planning
-        setTimeout(() => loadBoilerData(), 2000);
-    } catch (error) {
-        console.error('[Boiler] Failed to plan heating:', error);
-        showNotification('❌ Chyba při plánování topení', 'error');
-    }
+    console.warn('[V1 Boiler] planBoilerHeating blocked — V1 boiler write controls are read-only. Use Dashboard V2.');
+    globalThis.DashboardUtils?.showNotification('Ovládání bojleru', 'Plánování bojleru je dostupné pouze v Dashboard V2. Tato V1 záložka je pouze pro čtení.', 'info');
 }
 
 async function applyBoilerPlan() {
-    console.log('[Boiler] Applying heating plan...');
-
-    const hass = getHass();
-    if (!hass) return;
-
-    try {
-        await hass.callService('oig_cloud', 'apply_boiler_plan', {});
-
-        showNotification('✅ Plán topení byl aplikován', 'success');
-
-        // Refresh after applying
-        setTimeout(() => loadBoilerData(), 2000);
-    } catch (error) {
-        console.error('[Boiler] Failed to apply plan:', error);
-        showNotification('❌ Chyba při aplikaci plánu', 'error');
-    }
+    console.warn('[V1 Boiler] applyBoilerPlan blocked — V1 boiler write controls are read-only. Use Dashboard V2.');
+    globalThis.DashboardUtils?.showNotification('Ovládání bojleru', 'Aplikace plánu bojleru je dostupná pouze v Dashboard V2. Tato V1 záložka je pouze pro čtení.', 'info');
 }
 
 async function cancelBoilerPlan() {
-    console.log('[Boiler] Canceling heating plan...');
-
-    const hass = getHass();
-    if (!hass) return;
-
-    try {
-        await hass.callService('oig_cloud', 'cancel_boiler_plan', {});
-
-        showNotification('✅ Plán topení byl zrušen', 'success');
-
-        // Refresh after canceling
-        setTimeout(() => loadBoilerData(), 2000);
-    } catch (error) {
-        console.error('[Boiler] Failed to cancel plan:', error);
-        showNotification('❌ Chyba při rušení plánu', 'error');
-    }
+    console.warn('[V1 Boiler] cancelBoilerPlan blocked — V1 boiler write controls are read-only. Use Dashboard V2.');
+    globalThis.DashboardUtils?.showNotification('Ovládání bojleru', 'Zrušení plánu bojleru je dostupné pouze v Dashboard V2. Tato V1 záložka je pouze pro čtení.', 'info');
 }
 
 // NEW: Update energy breakdown (grid vs alternative)

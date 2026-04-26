@@ -3,10 +3,74 @@
 // Full feature parity with V1: state, plan, profiles, energy, config, heatmap
 // ============================================================================
 
+export const OVERRIDE_TTL_DEFAULT_MINUTES = 120;
+export const OVERRIDE_TTL_MIN_MINUTES = 15;
+export const OVERRIDE_TTL_MAX_MINUTES = 1440;
+export const OVERRIDE_TTL_STEP_MINUTES = 15;
+
+export interface BoilerV2Status {
+  currentState: 'heating' | 'idle' | 'unknown';
+  comfortSatisfied: boolean | null;
+  comfortStatusCode: string | null;
+  selectedSource: string | null;
+  actuatedSource: string | null;
+  temperatureTop: number | null;
+  temperatureBottom: number | null;
+  energyNeededKwh: number | null;
+  heating: boolean;
+  lastUpdate: string | null;
+  degraded: boolean;
+  degradedFlags: string[];
+}
+
+export interface BoilerV2PlanSlot {
+  start: string;
+  end: string;
+  consumptionKwh: number;
+  confidence: number;
+  recommendedSource: string;
+  spotPrice: number | null;
+  altPrice: number | null;
+  overflowAvailable: boolean;
+}
+
+export interface BoilerV2Explanation {
+  reasonCodes: string[];
+  planCreatedAt: string | null;
+  planValidUntil: string | null;
+  dataAgeSecs: number | null;
+  degradedReasons: string[];
+  unsatisfiedComfortGapC: number | null;
+  temperatureAtDeadlineC: number | null;
+}
+
+export interface BoilerV2ManualOverride {
+  active: boolean;
+  ttlMinutes: number;
+  reason: string;
+  capabilityAvailable: boolean;
+}
+
+export interface BoilerV2Identity {
+  entryId: string | null;
+  boxId: string | null;
+  available: boolean;
+}
+
+export interface BoilerV2Data {
+  status: BoilerV2Status | null;
+  planSlots: BoilerV2PlanSlot[];
+  explanation: BoilerV2Explanation | null;
+  manualOverride: BoilerV2ManualOverride | null;
+  identity: BoilerV2Identity;
+  loading: boolean;
+  loadError: string | null;
+}
+
 // --- State ---
 
 export interface BoilerState {
-  currentTemp: number;
+  currentTemp: number | null;
   targetTemp: number;
   heating: boolean;
   tempTop: number | null;
@@ -159,4 +223,5 @@ export interface BoilerData {
   currentCategory: string;
   availableCategories: string[];
   forecastWindows: { fve: string; grid: string };
+  v2Data: BoilerV2Data;
 }

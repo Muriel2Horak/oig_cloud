@@ -17,7 +17,7 @@ export class EntityStore {
   private stateWatcherUnsub: (() => void) | null = null;
   private inverterSn: string;
 
-  constructor(hass: any, inverterSn: string = '2206237016') {
+  constructor(hass: any, inverterSn: string = '') {
     this.hass = hass;
     this.inverterSn = inverterSn;
     this.init();
@@ -51,7 +51,7 @@ export class EntityStore {
 
   /**
    * Get the sensor entity ID for a given sensor name.
-   * e.g. getSensorId('actual_fv_p1') → 'sensor.oig_2206237016_actual_fv_p1'
+   * e.g. getSensorId('actual_fv_p1') → 'sensor.oig_<sn>_actual_fv_p1'
    */
   getSensorId(sensorName: string): string {
     return `sensor.oig_${this.inverterSn}_${sensorName}`;

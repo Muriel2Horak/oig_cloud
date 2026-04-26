@@ -1715,56 +1715,13 @@ function setGridDeliveryLimit() {
 }
 
 // Set boiler mode
-async function setBoilerMode(mode) {
-    try {
-        // Get current mode
-        const currentModeData = await getSensorStringSafe(getSensorId('boiler_manual_mode'));
-        const currentModeRaw = currentModeData.value || '';
-        const currentMode = currentModeRaw === 'Manuální' ? 'Manual' : currentModeRaw;
-
-        console.log('[Boiler] setBoilerMode called:', { mode, currentMode, currentModeRaw });
-
-        // Check if already active
-        if (currentMode === mode) {
-            console.log('[Boiler] ⏸️ Mode already active, skipping silently');
-            return;
-        }
-
-        const modeName = mode === 'CBB' ? 'Inteligentní' : 'Manuální';
-        const modeIcon = mode === 'CBB' ? '🤖' : '👤';
-
-        // Show acknowledgement dialog
-        const confirmed = await showAcknowledgementDialog(
-            'Změna režimu bojleru',
-            `Chystáte se změnit režim bojleru na <strong>"${modeIcon} ${modeName}"</strong>.<br><br>` +
-            `Tato změna ovlivní chování ohřevu vody a může trvat až 10 minut.`
-        );
-        if (!confirmed) return;
-
-        // Button ID
-        const btnId = `btn-boiler-${mode.toLowerCase()}`;
-
-        // Store expected mode for monitoring
-        const expectedMode = mode === 'CBB' ? 'CBB' : 'Manuální';
-        globalThis._lastRequestedBoilerMode = expectedMode;
-        console.log('[Boiler] Stored expected mode for monitoring:', expectedMode);
-
-        // Execute with pending UI
-        await executeServiceWithPendingUI({
-            serviceName: 'Změna režimu bojleru',
-            buttonId: btnId,
-            serviceCall: async () => {
-                return await callService('oig_cloud', 'set_boiler_mode', {
-                    mode: mode,
-                    acknowledgement: true
-                });
-            }
-        });
-
-    } catch (e) {
-        console.error('[Shield] Error in setBoilerMode:', e);
-        globalThis.DashboardUtils?.showNotification('Chyba', 'Nepodařilo se změnit režim bojleru', 'error');
-    }
+async function setBoilerMode(_mode) {
+    console.warn('[V1 Boiler] setBoilerMode blocked — V1 boiler write controls are read-only. Use Dashboard V2 to control the boiler.');
+    globalThis.DashboardUtils?.showNotification(
+        'Ovládání bojleru',
+        'Změna režimu bojleru je dostupná pouze v Dashboard V2. Tato V1 záložka je pouze pro čtení.',
+        'info'
+    );
 }
 
 // Update solar forecast

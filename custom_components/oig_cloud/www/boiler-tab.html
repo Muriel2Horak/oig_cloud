@@ -4,21 +4,14 @@
     <!-- Boiler Control Panel -->
     <div class="boiler-control-panel minimized" id="boiler-control-panel">
         <button type="button" class="panel-header button-reset" onclick="toggleBoilerControlPanel()">
-            <h3>🛠️ Pokročilé ovládání (Debug)
+            <h3>🛠️ Stav bojleru (Legacy — Pouze pro čtení)
                 <span class="info-bubble">❓
                     <span class="info-bubble-tooltip">
-                        <strong>⚠️ Automatický režim</strong>
-                        Bojler funguje plně automaticky! Systém:
+                        <strong>ℹ️ Záložka pouze pro čtení</strong>
+                        Tato záložka zobrazuje stav a historická data bojleru.
                         <ul>
-                            <li>🤖 <strong>Automaticky plánuje</strong> ohřev každých 5 minut</li>
-                            <li>⏰ <strong>Cíl:</strong> Do deadline (20:00) být nahřátý na cílovou teplotu</li>
-                            <li>💰 <strong>Optimalizuje:</strong> Podle spotových cen a profilu spotřeby</li>
-                        </ul>
-                        <strong>Tlačítka níže jsou jen pro debug/override:</strong>
-                        <ul>
-                            <li><strong>Naplánovat:</strong> Manuálně přeplánovat (normálně automatické)</li>
-                            <li><strong>Aplikovat:</strong> Spustit plán ručně (normálně automatické)</li>
-                            <li><strong>Zrušit:</strong> Zrušit aktuální plán</li>
+                            <li>🤖 <strong>Automatický plán</strong> a <strong>ovládání bojleru</strong> jsou dostupné výhradně v <strong>Dashboard V2</strong>.</li>
+                            <li>📖 V1 záložka je zachována pro monitorování, ale zápis a spouštění akcí jsou zakázány.</li>
                         </ul>
                     </span>
                 </span>
@@ -29,23 +22,14 @@
         </button>
 
         <div class="panel-content">
-            <!-- Boiler Actions -->
-            <div class="control-section">
-                <h4>⚠️ Manuální akce (override)</h4>
-                <div class="button-group">
-                    <button onclick="planBoilerHeating()" id="btn-plan-boiler"
-                        title="[DEBUG] Manuálně přeplánovat - normálně se děje automaticky každých 5 min">
-                        📅 Přeplánovat (debug)
-                    </button>
-                    <button onclick="applyBoilerPlan()" id="btn-apply-boiler"
-                        title="[DEBUG] Spustit plán ručně - normálně automatické">
-                        ✅ Aplikovat ručně
-                    </button>
-                    <button onclick="cancelBoilerPlan()" id="btn-cancel-boiler"
-                        title="Zrušit aktuální automatický plán topení">
-                        ❌ Zrušit plán
-                    </button>
-                </div>
+            <!-- V1 Read-Only Notice -->
+            <div class="control-section" style="border-left: 3px solid var(--warning-color, #ff9800); padding: 10px 12px; background: rgba(255,152,0,0.07); border-radius: 4px; margin-bottom: 8px;">
+                <p style="margin: 0; font-size: 13px; line-height: 1.5;">
+                    📖 <strong>Záložka V1 je pouze pro čtení.</strong><br>
+                    Ovládání bojleru (plánování, aplikace plánu, změna režimu) bylo přesunuto do
+                    <strong>Dashboard V2</strong>. Tato záložka zobrazuje stav a historická data bojleru,
+                    ale zápis a spouštění akcí jsou zakázány.
+                </p>
             </div>
 
             <!-- Boiler Status Info -->

@@ -10,7 +10,7 @@
  */
 
 // Global inverter SN (může být přepsán)
-let INVERTER_SN = new URLSearchParams(globalThis.location.search).get('inverter_sn') || '2206237016';
+let INVERTER_SN = new URLSearchParams(globalThis.location.search).get('inverter_sn') || '';
 
 // ============================================================================
 // HOME ASSISTANT API ACCESS (BEZPORNÍ BEZ MANUÁLNÍHO TOKENU)

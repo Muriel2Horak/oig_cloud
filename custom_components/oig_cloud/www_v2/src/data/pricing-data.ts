@@ -30,7 +30,7 @@ import {
 } from '@/ui/features/pricing/types';
 
 const params = new URLSearchParams(window.location.search);
-const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
+const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '';
 
 function getSensorId(sensor: string): string {
   return `sensor.oig_${INVERTER_SN}_${sensor}`;

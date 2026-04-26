@@ -32,7 +32,7 @@ import './icons/inverter-icon';
 const u = unsafeCSS;
 
 const params = new URLSearchParams(window.location.search);
-const SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
+const SN = params.get('sn') || params.get('inverter_sn') || '';
 const sid = (s: string) => `sensor.oig_${SN}_${s}`;
 
 /** Layout storage key prefix (per breakpoint) */

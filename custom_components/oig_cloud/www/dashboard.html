@@ -96,12 +96,12 @@
                         <span class="info-bubble">❓
                         <span class="info-bubble-tooltip">
                             <strong>Ovládací panel</strong>
-                            Zde můžete měnit režimy systému v reálném čase. Všechny změny jsou chráněny
+                                Zde můžete měnit režimy systému v reálném čase. Všechny změny jsou chráněny
                                 ServiceShield systémem pro bezpečné API volání.
                                 <ul>
                                     <li><strong>Režim střídače:</strong> Home 1-4 režimy</li>
                                     <li><strong>Dodávka do sítě:</strong> On/Off/Limited</li>
-                                    <li><strong>Bojler:</strong> Inteligentní/Manuální</li>
+                                    <li><strong>Bojler:</strong> pouze zobrazení stavu (ovládání v Dashboard V2)</li>
                                 </ul>
                                 Změny jsou vidět ve frontě požadavků níže.
                             </span>
@@ -150,15 +150,15 @@
                         </div>
                     </div>
 
-                    <!-- Boiler -->
+                    <!-- Boiler (V1 read-only) -->
                     <div class="control-section" id="boiler-control-section">
                         <h4>Režim bojleru</h4>
-                        <div class="button-group">
-                            <button onclick="setBoilerMode('CBB')" id="btn-boiler-cbb"
-                                title="CBB: Inteligentní ohřev podle podmínek (FVE, baterie, tarif)">🤖
-                                Inteligentní</button>
-                            <button onclick="setBoilerMode('Manual')" id="btn-boiler-manual"
-                                title="Manuální: Ruční ovládání bojleru bez automatiky">👤 Manuální</button>
+                        <div style="border-left: 2px solid var(--warning-color, #ff9800); padding: 6px 10px; font-size: 12px; line-height: 1.4; background: rgba(255,152,0,0.07); border-radius: 3px;">
+                            📖 <strong>Pouze pro čtení.</strong><br>
+                            Ovládání bojleru je dostupné v <strong>Dashboard V2</strong>.
+                        </div>
+                        <div style="margin-top: 6px; font-size: 12px; color: var(--secondary-text-color, #888);">
+                            Aktuální režim: <span id="boiler-mode-status">--</span>
                         </div>
                     </div>
 

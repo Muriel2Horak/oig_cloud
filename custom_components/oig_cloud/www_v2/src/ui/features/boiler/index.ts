@@ -13,6 +13,11 @@ export {
   OigBoilerState,
   OigBoilerHeatmap,
   OigBoilerProfiles,
+  OigBoilerStatusPanel,
+  OigBoilerPlanTimeline,
+  OigBoilerSourceExplanation,
+  OigBoilerOverridePanel,
+  OigBoilerUnavailableState,
 } from './components';
 
 export * from './types';

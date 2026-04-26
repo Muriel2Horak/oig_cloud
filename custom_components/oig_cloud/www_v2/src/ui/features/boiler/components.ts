@@ -21,10 +21,11 @@ import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import {
-  BoilerState, BoilerPlan, BoilerEnergyBreakdown, BoilerPredictedUsage,
-  BoilerConfig, BoilerHeatmapRow, BoilerProfilingData,
-  BoilerProfile, BoilerHourData,
-  CATEGORY_LABELS,
+  BoilerProfile, BoilerState, BoilerHourData, BoilerPlan,
+  BoilerEnergyBreakdown, BoilerPredictedUsage, BoilerConfig,
+  BoilerHeatmapRow, BoilerProfilingData, CATEGORY_LABELS,
+  BoilerV2Status, BoilerV2PlanSlot, BoilerV2Explanation,
+  BoilerV2Identity,
 } from './types';
 import { planBoilerHeating, applyBoilerPlan, cancelBoilerPlan } from '@/data/boiler-data';
 
@@ -1279,7 +1280,7 @@ export class OigBoilerState extends LitElement {
 
     return html`
       <div class="temp-display">
-        <div class="current-temp">${this.state.currentTemp}°C</div>
+        <div class="current-temp">${this.state.currentTemp != null ? `${this.state.currentTemp}°C` : '--'}</div>
         <div class="target-temp">Cil: ${this.state.targetTemp}°C</div>
       </div>
 
@@ -1327,6 +1328,130 @@ export class OigBoilerProfiles extends LitElement {
   }
 }
 
+@customElement('oig-boiler-status-panel')
+export class OigBoilerStatusPanel extends LitElement {
+  @property({ attribute: false }) data: BoilerV2Status | null = null;
+
+  render() {
+    const d = this.data;
+    const tempTop = d?.temperatureTop != null ? `${d.temperatureTop}°C` : '--';
+    const tempBottom = d?.temperatureBottom != null ? `${d.temperatureBottom}°C` : '--';
+    const source = d?.selectedSource ?? '--';
+    const heating = d?.heating ?? false;
+    const degraded = d?.degraded ?? false;
+
+    return html`
+      <div data-testid="boiler-status-panel" class="boiler-status-panel">
+        <div class="degraded-badge" ?hidden=${!degraded}>Degradováno</div>
+        <div class="state-row">
+          <span class="state-label">${heating ? 'Ohřev' : 'Nečinný'}</span>
+          <span class="source-label">${source}</span>
+        </div>
+        <div class="temps-row">
+          <span class="temp-top">${tempTop}</span>
+          <span class="temp-bottom">${tempBottom}</span>
+        </div>
+        ${d?.comfortSatisfied === false ? html`<div class="comfort-gap">Komfort nesplněn</div>` : ''}
+      </div>
+    `;
+  }
+}
+
+@customElement('oig-boiler-plan-timeline')
+export class OigBoilerPlanTimeline extends LitElement {
+  @property({ attribute: false }) slots: BoilerV2PlanSlot[] = [];
+
+  render() {
+    return html`
+      <div data-testid="boiler-plan-timeline" class="boiler-plan-timeline">
+        ${this.slots.map(s => html`
+          <div class="slot-row">
+            <span class="slot-time">${s.start} – ${s.end}</span>
+            <span class="slot-source">${s.recommendedSource}</span>
+            <span class="slot-kwh">${s.consumptionKwh} kWh</span>
+            ${s.spotPrice != null ? html`<span class="slot-price">${s.spotPrice} Kč</span>` : ''}
+          </div>
+        `)}
+      </div>
+    `;
+  }
+}
+
+@customElement('oig-boiler-source-explanation')
+export class OigBoilerSourceExplanation extends LitElement {
+  @property({ attribute: false }) explanation: BoilerV2Explanation | null = null;
+
+  render() {
+    const e = this.explanation;
+    return html`
+      <div data-testid="boiler-source-explanation" class="boiler-source-explanation">
+        ${e ? html`
+          <div class="reason-codes">${e.reasonCodes.join(', ')}</div>
+          ${e.planCreatedAt ? html`<div class="plan-created">Plán: ${e.planCreatedAt}</div>` : ''}
+          ${e.unsatisfiedComfortGapC != null ? html`<div class="comfort-gap">Rozdíl: ${e.unsatisfiedComfortGapC}°C</div>` : ''}
+        ` : html`<div class="no-explanation">Žádné vysvětlení</div>`}
+      </div>
+    `;
+  }
+}
+
+@customElement('oig-boiler-override-panel')
+export class OigBoilerOverridePanel extends LitElement {
+  @property({ attribute: false }) identity: BoilerV2Identity = { entryId: null, boxId: null, available: false };
+  @property({ attribute: false }) currentOverride: { active: boolean; ttlMinutes: number; reason: string; capabilityAvailable: boolean } | null = null;
+
+  render() {
+    const identityOk = this.identity.available;
+    const capabilityOk = this.currentOverride?.capabilityAvailable ?? false;
+    const canSubmit = identityOk && capabilityOk;
+
+    return html`
+      <div data-testid="boiler-override-panel" class="boiler-override-panel">
+        <div class="unavailable-notice" ?hidden=${identityOk}>Nedostupné – identita bojleru není k dispozici</div>
+        <div class="capability-notice" ?hidden=${!identityOk || capabilityOk}>Přepis není k dispozici – aktuátor nepodporuje ruční přepis</div>
+        <label>
+          Délka přepisu (minuty)
+          <input
+            data-testid="override-ttl-input"
+            type="number"
+            min="15"
+            max="1440"
+            step="15"
+            value="120"
+            ?disabled=${!canSubmit}
+          />
+        </label>
+        <label>
+          Důvod přepisu
+          <textarea
+            data-testid="override-reason-input"
+            required
+            ?disabled=${!canSubmit}
+          ></textarea>
+        </label>
+        <button data-testid="override-submit-btn" ?disabled=${!canSubmit}>Aktivovat přepis</button>
+      </div>
+    `;
+  }
+}
+
+@customElement('oig-boiler-unavailable-state')
+export class OigBoilerUnavailableState extends LitElement {
+  @property({ type: String }) reason: 'loading' | 'error' | 'degraded' | 'unavailable' = 'unavailable';
+  @property({ type: String }) message: string = '';
+
+  render() {
+    return html`
+      <div data-testid="boiler-unavailable-state" class="boiler-unavailable-state">
+        <div class="spinner" ?hidden=${this.reason !== 'loading'}>${this.reason === 'loading' ? 'Načítání…' : ''}</div>
+        <div class="error-msg" ?hidden=${this.reason !== 'error'}>${this.message}</div>
+        <div class="degraded-msg" ?hidden=${this.reason !== 'degraded'}>${this.message}</div>
+        <div class="unavailable-msg" ?hidden=${this.reason === 'loading' || this.reason === 'error' || this.reason === 'degraded'}>${this.message}</div>
+      </div>
+    `;
+  }
+}
+
 // ============================================================================
 // TAG NAME DECLARATIONS
 // ============================================================================
@@ -1347,5 +1472,10 @@ declare global {
     'oig-boiler-state': OigBoilerState;
     'oig-boiler-heatmap': OigBoilerHeatmap;
     'oig-boiler-profiles': OigBoilerProfiles;
+    'oig-boiler-status-panel': OigBoilerStatusPanel;
+    'oig-boiler-plan-timeline': OigBoilerPlanTimeline;
+    'oig-boiler-source-explanation': OigBoilerSourceExplanation;
+    'oig-boiler-override-panel': OigBoilerOverridePanel;
+    'oig-boiler-unavailable-state': OigBoilerUnavailableState;
   }
 }

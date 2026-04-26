@@ -25,10 +25,10 @@ import {
 import { ShieldServiceType } from '@/ui/features/control-panel/types';
 
 const params = new URLSearchParams(window.location.search);
-const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
+const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '';
 
-export function getSensorId(sensor: string): string {
-  return `sensor.oig_${INVERTER_SN}_${sensor}`;
+export function getSensorId(sensor: string, inverterSn: string = INVERTER_SN): string {
+  return `sensor.oig_${inverterSn}_${sensor}`;
 }
 
 interface HassState {
@@ -39,8 +39,8 @@ interface HassState {
 
 type HassStates = Record<string, HassState>;
 
-function findSensorIdSuffix(states: HassStates, baseSensorName: string): string | null {
-  const prefix = getSensorId(baseSensorName);
+function findSensorIdSuffix(states: HassStates, baseSensorName: string, inverterSn: string = INVERTER_SN): string | null {
+  const prefix = getSensorId(baseSensorName, inverterSn);
   if (prefix in states) return prefix;
 
   const withSuffix = Object.keys(states)
@@ -204,9 +204,9 @@ export function buildGridChargingPlan(gridCharging: HassState | null): GridCharg
 /**
  * Extract ALL flow data from hass.states — covers both loadData() and loadNodeDetails() from V1
  */
-export function extractFlowData(hass: any): FlowData {
+export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): FlowData {
   const states = hass?.states || hass || {};
-  const get = (sensor: string): HassState | null => states[getSensorId(sensor)] || null;
+  const get = (sensor: string): HassState | null => states[getSensorId(sensor, inverterSn)] || null;
 
   // Solar — main
   const solarP1 = parseNumber(get('actual_fv_p1'));
@@ -277,8 +277,8 @@ export function extractFlowData(hass: any): FlowData {
   const inverterMode = parseString(get('box_prms_mode'));
 
   // Grid delivery — use canonical model with suffix-safe resolution
-  const gridModeSensorId = findSensorIdSuffix(states, 'invertor_prms_to_grid') || getSensorId('invertor_prms_to_grid');
-  const gridLimitSensorId = findSensorIdSuffix(states, 'invertor_prm1_p_max_feed_grid') || getSensorId('invertor_prm1_p_max_feed_grid');
+  const gridModeSensorId = findSensorIdSuffix(states, 'invertor_prms_to_grid', inverterSn) || getSensorId('invertor_prms_to_grid', inverterSn);
+  const gridLimitSensorId = findSensorIdSuffix(states, 'invertor_prm1_p_max_feed_grid', inverterSn) || getSensorId('invertor_prm1_p_max_feed_grid', inverterSn);
   const gridModeRawState = states[gridModeSensorId];
   const gridLimitRawState = states[gridLimitSensorId];
 
