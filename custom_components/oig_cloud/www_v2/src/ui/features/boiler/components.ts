@@ -1465,19 +1465,77 @@ export class OigBoilerPlanTimeline extends LitElement {
   }
 }
 
+const FRESHNESS_REASONS = new Set([
+  'input_stale_price',
+  'input_stale_pv',
+  'input_stale_temperature',
+  'input_missing_recorder',
+  'input_adapter_error',
+]);
+
 @customElement('oig-boiler-source-explanation')
 export class OigBoilerSourceExplanation extends LitElement {
   @property({ attribute: false }) explanation: BoilerV2Explanation | null = null;
+  @property({ type: String }) lang: 'cs' | 'en' = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .wrap { padding: 16px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: grid; gap: 12px; }
+    .heading { font-size: 1.05rem; font-weight: 600; }
+    .section { display: flex; flex-direction: column; gap: 6px; }
+    .section h4 { margin: 0; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--secondary-text-color, #666); font-weight: 600; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { padding: 2px 8px; border-radius: 6px; font-size: 0.8rem; background: rgba(33,150,243,0.12); color: #0d47a1; }
+    .chip.fresh { background: rgba(76,175,80,0.15); color: #2e7d32; }
+    .chip.stale { background: rgba(255,152,0,0.18); color: #b75d00; }
+    .chip.degraded { background: rgba(244,67,54,0.15); color: #b71c1c; }
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+    .meta { display: flex; flex-direction: column; }
+    .meta label { font-size: 0.72rem; text-transform: uppercase; color: var(--secondary-text-color, #666); }
+    .meta span { font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+    .empty { color: var(--secondary-text-color, #666); }
+  `;
 
   render() {
     const e = this.explanation;
+    const lang = this.lang;
+    if (!e) {
+      return html`<div data-testid="boiler-source-explanation" class="wrap"><div class="heading">${t('boiler.explanation.heading', lang)}</div><div class="empty">${t('boiler.explanation.empty', lang)}</div></div>`;
+    }
+    const reasonCodes = e.reasonCodes ?? [];
+    const freshnessFromReasons = reasonCodes.filter((c) => FRESHNESS_REASONS.has(c));
+    const otherReasons = reasonCodes.filter((c) => !FRESHNESS_REASONS.has(c));
+    const degraded = e.degradedReasons ?? [];
+
     return html`
-      <div data-testid="boiler-source-explanation" class="boiler-source-explanation">
-        ${e ? html`
-          <div class="reason-codes">${e.reasonCodes.join(', ')}</div>
-          ${e.planCreatedAt ? html`<div class="plan-created">Plán: ${e.planCreatedAt}</div>` : ''}
-          ${e.unsatisfiedComfortGapC != null ? html`<div class="comfort-gap">Rozdíl: ${e.unsatisfiedComfortGapC}°C</div>` : ''}
-        ` : html`<div class="no-explanation">Žádné vysvětlení</div>`}
+      <div data-testid="boiler-source-explanation" class="wrap">
+        <div class="heading">${t('boiler.explanation.heading', lang)}</div>
+
+        <div class="section" data-testid="boiler-explanation-freshness">
+          <h4>${t('boiler.explanation.freshness_heading', lang)}</h4>
+          ${freshnessFromReasons.length === 0
+            ? html`<div class="chips"><span class="chip fresh">${t('boiler.explanation.freshness_fresh', lang)}</span></div>`
+            : html`<div class="chips">${freshnessFromReasons.map((c) => html`<span class="chip stale">${reasonLabel(c, lang)}</span>`)}</div>`}
+        </div>
+
+        <div class="section" data-testid="boiler-explanation-degraded">
+          <h4>${t('boiler.explanation.degraded_heading', lang)}</h4>
+          ${degraded.length === 0
+            ? html`<div class="empty">—</div>`
+            : html`<div class="chips">${degraded.map((c) => html`<span class="chip degraded">${reasonLabel(c, lang)}</span>`)}</div>`}
+        </div>
+
+        ${otherReasons.length
+          ? html`<div class="section" data-testid="boiler-explanation-reasons"><h4>Reason codes</h4><div class="chips">${otherReasons.map((c) => html`<span class="chip">${reasonLabel(c, lang)}</span>`)}</div></div>`
+          : ''}
+
+        <div class="meta-grid" data-testid="boiler-explanation-meta">
+          ${e.planCreatedAt ? html`<div class="meta"><label>${t('boiler.explanation.plan_created', lang)}</label><span>${e.planCreatedAt}</span></div>` : ''}
+          ${e.planValidUntil ? html`<div class="meta"><label>${t('boiler.explanation.plan_valid_until', lang)}</label><span>${e.planValidUntil}</span></div>` : ''}
+          ${e.dataAgeSecs != null ? html`<div class="meta"><label>${t('boiler.explanation.data_age', lang)}</label><span>${formatDataAge(e.dataAgeSecs)}</span></div>` : ''}
+          ${e.unsatisfiedComfortGapC != null ? html`<div class="meta"><label>${t('boiler.explanation.unsatisfied_gap', lang)}</label><span>${e.unsatisfiedComfortGapC} °C</span></div>` : ''}
+          ${e.temperatureAtDeadlineC != null ? html`<div class="meta"><label>${t('boiler.explanation.temp_at_deadline', lang)}</label><span>${formatTempC(e.temperatureAtDeadlineC)}</span></div>` : ''}
+        </div>
       </div>
     `;
   }

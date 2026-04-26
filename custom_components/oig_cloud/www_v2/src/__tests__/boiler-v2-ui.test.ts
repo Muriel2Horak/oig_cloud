@@ -803,3 +803,56 @@ describe('OigBoilerPlanTimeline — per-slot detail', () => {
     expect(html).toContain('Plán bojleru zatím není k dispozici');
   });
 });
+
+describe('OigBoilerSourceExplanation — split sections', () => {
+  it('renders translated reasons split into freshness vs degraded vs others', async () => {
+    const el = document.createElement('oig-boiler-source-explanation') as any;
+    el.lang = 'cs';
+    el.explanation = {
+      reasonCodes: ['source_selected_pv', 'input_stale_price'],
+      planCreatedAt: '2026-04-26T13:55:00Z',
+      planValidUntil: '2026-04-27T13:55:00Z',
+      dataAgeSecs: 125,
+      degradedReasons: ['top_sensor_unavailable'],
+      unsatisfiedComfortGapC: 4.2,
+      temperatureAtDeadlineC: 45.5,
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('boiler-source-explanation');
+    expect(html).toContain('Čerstvost');
+    expect(html).toContain('Ceny nejsou aktuální');
+    expect(html).toContain('Degradované');
+    expect(html).toContain('Horní teploměr není dostupný');
+    expect(html).toContain('Vybrán zdroj: FVE');
+    expect(html).toContain('4.2');
+    expect(html).toContain('45.5 °C');
+    expect(html).toContain('2 min');
+  });
+  it('renders fresh-inputs label when no freshness reason present', async () => {
+    const el = document.createElement('oig-boiler-source-explanation') as any;
+    el.lang = 'cs';
+    el.explanation = {
+      reasonCodes: ['source_selected_grid'],
+      planCreatedAt: null,
+      planValidUntil: null,
+      dataAgeSecs: null,
+      degradedReasons: [],
+      unsatisfiedComfortGapC: null,
+      temperatureAtDeadlineC: null,
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('vstupy aktuální');
+  });
+  it('renders empty state when explanation is null', async () => {
+    const el = document.createElement('oig-boiler-source-explanation') as any;
+    el.lang = 'cs';
+    el.explanation = null;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.innerHTML).toContain('Žádné vysvětlení');
+  });
+});
