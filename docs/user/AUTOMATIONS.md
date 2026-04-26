@@ -524,12 +524,14 @@ automation:
 
 ### 13. Inteligentní ohřev bojleru
 
+> ⚠️ **Legacy automatizace** — `set_boiler_mode` je legacy backend služba. V1 panel je pouze pro čtení. Pro boiler ovládání použijte Dashboard V2, který poskytuje komfort-first planner a manuální override. Následující automatizace nebude fyzicky ovládat bojler přes V1.
+
 **Účel:** Ohřev jen když je dostatek FVE nebo levná elektřina.
 
 ```yaml
 automation:
   - alias: "OIG: Bojler podle FVE"
-    description: "CBB režim když je dostatek FVE"
+    description: "CBB režim když je dostatek FVE"  # legacy — Dashboard V2 je primární
     trigger:
       - platform: numeric_state
         entity_id: sensor.oig_2206237016_actual_fv_total
@@ -543,7 +545,7 @@ automation:
     action:
       - service: oig_cloud.set_boiler_mode
         data:
-          mode: "CBB"
+          mode: "CBB"  # legacy — Dashboard V2 pro ovládání
           acknowledgement: true
       - service: notify.mobile_app_phone
         data:
@@ -552,12 +554,14 @@ automation:
 
 ### 14. Vypnutí bojleru v noci
 
+> ⚠️ **Legacy automatizace** — viz poznámka výše. Pro boiler ovládání použijte Dashboard V2.
+
 **Účel:** Úspora elektřiny, bojler jen přes den.
 
 ```yaml
 automation:
   - alias: "OIG: Bojler denní režim"
-    description: "CBB přes den, Manual v noci"
+    description: "CBB přes den, Manual v noci"  # legacy — Dashboard V2 je primární
     trigger:
       - platform: time
         at: "06:00:00"
@@ -572,12 +576,12 @@ automation:
             sequence:
               - service: oig_cloud.set_boiler_mode
                 data:
-                  mode: "CBB"
+                  mode: "CBB"  # legacy — Dashboard V2 pro ovládání
                   acknowledgement: true
           default:
             - service: oig_cloud.set_boiler_mode
               data:
-                mode: "Manual"
+                mode: "Manual"  # legacy — Dashboard V2 pro ovládání
                 acknowledgement: true
 ```
 

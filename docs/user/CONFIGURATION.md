@@ -131,15 +131,19 @@ Analogicky:
 
 ### 10) Bojler (pokud je zapnuto)
 
-Vyplňují se fyzikální a technické parametry bojleru, např.:
+Bojler lze nastavit dvěma způsoby, přepínač je na prvním kroku:
 
-- **boiler_volume_l**
-- **boiler_target_temp_c** / **boiler_cold_inlet_temp_c**
-- Senzory teplot (top/bottom nebo single sensor + pozice)
-- Výkon topné patrony a spínací entita
-- Volitelná entita oběhového čerpadla (cirkulace)
-- Horizon plánování / slot minutes
-- Volitelné alternativní ohřívání
+**Jednoduchý režim (5 kroků, doporučeno):**
+
+1. **Identita a objem** — ID boxu a objem bojleru v litrech. Na tomto kroku lze přepnout na Expert.
+2. **Senzory teplot** — horní senzor (povinný), volitelně spodní senzor (pro přesnější stratifikovaný model, aktivuje se zaškrtnutím volby).
+3. **Ohřev a zdroj** — topné těleso (switch), výkon nebo rychlost regenerace, volitelné cirkulační čerpadlo.
+4. **Alternativní zdroj** — režim alternativního zdroje: vypnuto / pouze benchmarking / ovladatelný (s cenou za kWh).
+5. **Komfort a deadline** — komfortní profil (historie / manuál / výchozí), cílová teplota, čas deadline.
+
+**Expert režim:** Původní jeden krok s pokročilými parametry (stratifikace, plánovací horizont 12–48 h, explicitní režim alternativního zdroje, spotový senzor, atd.). Velikost plánovacího slotu není konfigurovatelná; planner používá pevný 15minutový kontrakt.
+
+Dokončení jednoduchého režimu nastaví `boiler_setup_complete`, což odemkne ovládání bojleru. Expert režim rovněž nastavuje `boiler_setup_complete` po úspěšném uložení.
 
 ### 11) Souhrn
 

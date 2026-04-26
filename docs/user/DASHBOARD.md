@@ -234,14 +234,13 @@ L1: 1.2 kW  │  L2: 1.5 kW  │  L3: 1.4 kW
 
 ---
 
-### 5. 🌡️ Boiler (volitelné)
+### 5. 🌡️ Boiler (volitelné, pouze stav)
 
-Pokud máte připojený bojler:
+Pokud máte připojený bojler, flow diagram zobrazuje aktuální stav (pouze pro čtení):
 
-**Režim:**
+**Aktuální stav:**
 
-- 🤖 Inteligentní (CBB): Automatický ohřev podle podmínek
-- 👤 Manuální: Ruční ovládání
+- Aktuální výkon, energie za dnešek, teplota, stav ohřevu
 
 **Detaily:**
 
@@ -251,6 +250,9 @@ Pokud máte připojený bojler:
 🌡️ Teplota:    55 °C
 🔧 Stav:       Ohřev
 ```
+
+> ℹ️ **Ovládání bojleru** (změna režimu, plánování ohřevu) je dostupné výhradně
+> v **Dashboard V2**. V1 zobrazuje stav, ale žádné write operace nejsou dostupné.
 
 ---
 
@@ -351,28 +353,27 @@ Změnit režim na Home 1?
 
 ---
 
-### 3. 🌡️ Režim bojleru
+### 3. 🌡️ Režim bojleru (V1 — Pouze pro čtení)
 
 ```
 ┌─────────────────────────────────────────┐
 │ 🌡️ Režim bojleru                        │
 │                                         │
-│ [🤖 Inteligentní] [👤 Manuální]         │
+│ 📖 Pouze pro čtení                      │
+│ Ovládání: Dashboard V2                  │
 └─────────────────────────────────────────┘
 ```
 
-**Režimy:**
+> ⚠️ **V1 záložka bojleru je pouze pro čtení.**
+> Ovládání bojleru (plánování ohřevu, změna režimu CBB/Manuální, manuální override) je dostupné
+> výhradně v **Dashboard V2**. V1 zobrazuje aktuální stav bojleru, ale zápis je zablokován.
 
-#### 🤖 Inteligentní (CBB)
+**Zobrazuje:**
 
-- Automatický ohřev podle podmínek
-- Využívá přebytky FVE
-- Optimalizuje podle tarifu a baterie
+- Aktuální režim bojleru (informativně)
+- Stav a historická data v záložce „Bojler & Auto"
 
-#### 👤 Manuální
-
-- Ruční ovládání bojleru
-- Zapnuto/vypnuto podle vaší volby
+**Pro ovládání bojleru použijte Dashboard V2.**
 
 ---
 

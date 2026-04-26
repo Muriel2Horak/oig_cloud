@@ -73,7 +73,7 @@ data:
 
 ## set_boiler_mode
 
-Přepnutí režimu bojleru.
+Přepnutí režimu bojleru (CBB / Manual). Toto je **legacy backend služba** — primární rozhraní pro ovládání bojleru je Dashboard V2. V1 panel bojleru je pouze pro čtení.
 
 **Parametry:**
 
@@ -89,6 +89,8 @@ data:
   mode: manual
   acknowledgement: true
 ```
+
+> V2 dashboard poskytuje manuální override, komfortní stav, a informace o zdroji a plánu. Používejte Dashboard V2 pro běžné ovládání bojleru.
 
 ---
 
@@ -171,9 +173,11 @@ Načte uloženou konfiguraci. Používá se automaticky (response vrací data).
 
 ## Boiler plán
 
+> **Poznámka:** Tyto služby jsou legacy backend/compatibility rozhraní. Primární rozhraní pro boiler planning a ovládání je Dashboard V2 — poskytuje stav, aktuální plán, vysvětlení rozhodnutí a manuální override. Přímé volání služeb `plan_boiler_heating` / `apply_boiler_plan` / `cancel_boiler_plan` z Dashboard V2 není exposed jako UI akce.
+
 ### plan_boiler_heating
 
-Vytvoří plán ohřevu podle spot cen.
+Vytvoří comfort-first plán ohřevu podle aktuální teploty vody, deadline, spot cen a ekonomiky dostupných zdrojů. Backend/advanced služba — není exposed jako tlačítko v Dashboard V2.
 
 **Parametry:**
 
@@ -182,7 +186,7 @@ Vytvoří plán ohřevu podle spot cen.
 
 ### apply_boiler_plan
 
-Aplikuje vytvořený plán a vytvoří automatizace.
+Aplikuje vytvořený plán a vytvoří automatizace. Backend/advanced služba — není exposed jako tlačítko v Dashboard V2.
 
 Poznámka: využívá `boiler_heater_switch_entity` (a volitelně
 `boiler_alt_heater_switch_entity` + `boiler_circulation_pump_switch_entity`).
@@ -191,7 +195,7 @@ Plán se aplikuje přes wrapper switche integrace
 
 ### cancel_boiler_plan
 
-Zruší plán a odstraní automatizace.
+Zruší plán a odstraní automatizace. Backend/advanced služba — není exposed jako tlačítko v Dashboard V2.
 
 ---
 

@@ -201,11 +201,15 @@ Fáze:
 
 ## 🌡️ Bojler (volitelné)
 
+> **V2 dashboard je primární rozhraní pro boiler monitoring a ovládání.**
+> Níže uvedené entity jsou legacy V1 entity. Dashboard V2 poskytuje kompletní přehled
+> včetně stavu, plánu, zdroje, komfortního stavu a manuálního override.
+
 ### Základní info
 
 | Entity ID                             | Název           | Jednotka | Popis           |
 | ------------------------------------- | --------------- | -------- | --------------- |
-| `sensor.oig_XXXXX_boiler_manual_mode` | Režim bojleru   | -        | CBB nebo Manual |
+| `sensor.oig_XXXXX_boiler_manual_mode` | Režim bojleru   | -        | CBB nebo Manual (legacy V1) |
 | `sensor.oig_XXXXX_boiler_status`      | Stav bojleru    | -        | On/Off/Heating  |
 | `sensor.oig_XXXXX_boiler_temperature` | Teplota bojleru | °C       | Teplota vody    |
 
@@ -219,7 +223,7 @@ Fáze:
 **📊 Příklad hodnot:**
 
 ```yaml
-Režim bojleru: Inteligentní (CBB)
+Režim bojleru: Inteligentní (CBB)  # legacy — V2 používá komfortní stav
 Stav: Ohřev
 Teplota: 55°C
 Aktuální výkon: 1200 W
@@ -232,6 +236,8 @@ Spotřeba dnes: 8500 Wh (8.5 kWh)
 - Automatizace podle přebytků FVE
 - Optimalizace spotřeby
 - Kontrola teploty
+
+**Pro ovládání a kompletní stav použijte Dashboard V2.**
 
 ---
 

@@ -252,9 +252,11 @@ script:
           acknowledgement: true
       - service: oig_cloud.set_boiler_mode
         data:
-          mode: "CBB"
+          mode: "CBB"  # legacy — použijte Dashboard V2 pro ovládání bojleru
           acknowledgement: true
 ```
+
+> **Poznámka:** `set_boiler_mode` je legacy backend služba. Pro běžné ovládání bojleru používejte Dashboard V2, který poskytuje komfort-first planner, komfortní stav, a manuální override.
 
 ---
 
@@ -313,16 +315,18 @@ ls www/dashboard.html  # Musí existovat
 
 ### Jak funguje control panel na dashboardu?
 
-**3 části:**
+**Části:**
 
-1. **Box mode** - Home 1/Home 2/Home 3/Home UPS
-2. **Grid delivery** - On/Off/Limited + limit
-3. **Boiler mode** - CBB/Manual
+1. **Box mode** — Home 1/Home 2/Home 3/Home UPS (kliknutím se změní, ServiceShield zpracuje)
+2. **Grid delivery** — On/Off/Limited + limit (kliknutím se změní)
+3. **Bojler** — zobrazení aktuálního stavu (pouze pro čtení; ovládání je v **Dashboard V2**) — legacy V1 čtení
 
-**Kliknutím:**
+> ⚠️ **Ovládání bojleru** (změna režimu CBB/Manuální, plánování ohřevu) bylo přesunuto do
+> **Dashboard V2**. V1 control panel zobrazuje aktuální režim bojleru, ale zápis je zablokován.
 
-- Otevře se modal dialog
-- Změníte hodnotu
+**Kliknutím na Box mode / Grid delivery:**
+
+- Otevře se potvrzovací dialog
 - Potvrdíte
 - ServiceShield to zpracuje
 - Vidíte ve frontě
@@ -359,7 +363,7 @@ await set_boiler_mode("CBB")
 # DOBŘE - fronta = ochrana API
 await shield.add_call(set_box_mode, "Home 1")      # Do fronty
 await shield.add_call(set_grid_delivery, "On")   # Do fronty
-await shield.add_call(set_boiler_mode, "CBB")    # Do fronty
+await shield.add_call(set_boiler_mode, "CBB")    # Do fronty (legacy, prefer Dashboard V2)
 # ✅ Postupné zpracování s prodlevami
 ```
 
