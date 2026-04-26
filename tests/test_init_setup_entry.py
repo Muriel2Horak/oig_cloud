@@ -40,6 +40,7 @@ class DummyHass:
         self.config_entries = DummyConfigEntries()
         self.loop: Any | None = None
         self.config: Any | None = None
+        self.http: Any = SimpleNamespace(register_view=lambda _v: None)
 
     def async_create_task(self, coro):
         if hasattr(coro, "close"):
@@ -1731,6 +1732,72 @@ async def test_async_setup_entry_boiler_error(monkeypatch):
     result = await init_module.async_setup_entry(hass, entry)
 
     assert result is True
+
+
+class _BoilerCoordForTest:
+    def __init__(self, hass, session_manager, *_args, **_kwargs):
+        self.hass = hass
+        self.session_manager = session_manager
+        self.data = {"123": {}}
+        self.api = session_manager
+        self.box_id = "123"
+
+    async def async_config_entry_first_refresh(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_stores_boiler_coordinator_before_init_boiler_runtime(monkeypatch):
+    sentinel = object()
+    captured_in_runtime = []
+
+    async def _stub_runtime(hass, entry):
+        captured_in_runtime.append(
+            hass.data[DOMAIN][entry.entry_id].get("boiler_coordinator", sentinel)
+        )
+        return None
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr("custom_components.oig_cloud.shield.core.ServiceShield", DummyShield)
+    monkeypatch.setattr(init_module, "OigCloudApi", DummyApi)
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.api.oig_cloud_session_manager.OigCloudSessionManager",
+        DummySessionManager,
+    )
+    monkeypatch.setattr(init_module, "OigCloudCoordinator", DummyCoordinator)
+    monkeypatch.setattr(init_module, "DataSourceController", DummyDataSourceController)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module, "get_data_source_state",
+        lambda *_a, **_k: SimpleNamespace(
+            effective_mode="local_only", configured_mode="local_only", local_available=True
+        ),
+    )
+    monkeypatch.setattr("custom_components.oig_cloud.boiler.coordinator.BoilerCoordinator", _BoilerCoordForTest)
+    monkeypatch.setattr(init_module, "_init_boiler_runtime", _stub_runtime)
+    monkeypatch.setattr(init_module, "_cleanup_invalid_empty_devices", _noop)
+    monkeypatch.setattr(init_module, "_remove_frontend_panel", _noop)
+    monkeypatch.setattr("custom_components.oig_cloud.services.async_setup_services", _noop)
+    monkeypatch.setattr("custom_components.oig_cloud.services.async_setup_entry_services_with_shield", _noop)
+    monkeypatch.setattr("custom_components.oig_cloud.api.planning_api.setup_planning_api_views", lambda *_a, **_k: None)
+    monkeypatch.setattr("custom_components.oig_cloud.api.ha_rest_api.setup_api_endpoints", lambda *_a, **_k: None)
+    monkeypatch.setattr("homeassistant.helpers.event.async_track_time_interval", lambda *_a, **_k: lambda: None)
+
+    hass = DummyHass()
+    entry = DummyEntry(
+        data={CONF_USERNAME: "user", CONF_PASSWORD: "pass"},
+        options={"enable_boiler": True, "box_id": "123"},
+    )
+    hass.data[DOMAIN] = {entry.entry_id: {}}
+
+    result = await init_module.async_setup_entry(hass, entry)
+
+    assert result is True
+    assert len(captured_in_runtime) == 1
+    assert captured_in_runtime[0] is not sentinel, "boiler_coordinator not in hass.data when _init_boiler_runtime called"
+    assert captured_in_runtime[0] is not None
 
 
 @pytest.mark.asyncio

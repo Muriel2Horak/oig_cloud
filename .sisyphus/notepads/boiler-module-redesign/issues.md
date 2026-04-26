@@ -433,3 +433,37 @@ Existing examples using `mode: "CBB"` and `mode: "Manual"` in FAQ, TROUBLESHOOTI
 **Files**: `.pylintrc`, `sensor_types.py`, `battery_forecast/balancing/core.py`, `entities/data_sensor.py`, `entities/sensor_runtime.py`, `services/__init__.py`, `boiler/planner_core.py`, `config/steps.py`, `core/coordinator.py`, `api/planning_api.py`
 **Fix**: Removed Pylint 4-incompatible rcfile options, converted sensor type imports to package-relative imports, added local type narrowing for timelines/unsubscribe callbacks/planner best tuple, used safe dynamic fallbacks for optional `opentelemetry` and legacy planning enums, corrected the OTE import path, and replaced direct dynamic forecast attribute access in coordinator with `getattr`-based narrowing.
 **Verification**: Exact Pylint gate `unset PYTHONPATH; .venv/bin/python -m pylint custom_components/oig_cloud --rcfile=.pylintrc --output-format=json` now has 0 `type=error` entries. Targeted touched-area pytest passed (464 tests, plus latest sensor-runtime/balancing reruns). Mypy JSON gate still emits only the pre-existing `annotation-unchecked` note and zero `severity:error` entries.
+
+## Task 14 Issues — 2026-04-26 (post-deploy canonical boiler API 404)
+
+### Issue: Boiler runtime not registered during async_setup_entry — coordinator stored too late
+**File**: `custom_components/oig_cloud/__init__.py`
+**Problem**: `async_setup_entry` called `_init_boiler_coordinator()` (line 1621) then `_init_boiler_runtime()` (line 1622), but `boiler_coordinator` was not stored in `hass.data[DOMAIN][entry.entry_id]` until `entry_data.update({...})` around line 1651. Since `_init_boiler_runtime()` reads `hass.data[DOMAIN][entry.entry_id].get("boiler_coordinator")` at line 1323, it found `None` and returned early — no runtime was registered. The canonical boiler API at `/api/oig_cloud/boiler/{entry_id}/{box_id}` called `_validate_identity()` which requires `KEY_BOILER_RUNTIMES[box_id]` to exist; since no runtime was created, it returned `{"error":"Identity not resolved","reason_code":"api_repair_required"}`.
+**Root cause**: Storage of `boiler_coordinator` in `hass.data` happened ~40 lines AFTER `_init_boiler_runtime()` needed it. The coordinator was available in the local variable but invisible to `_init_boiler_runtime()`.
+**Fix**: Added one line after `_init_boiler_coordinator()` returns: `hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})["boiler_coordinator"] = boiler_coordinator`. This makes the coordinator visible to `_init_boiler_runtime()` before it is called.
+**Regression test**: Added `test_init_boiler_runtime_visible_during_async_setup_entry_coordinator_before_storage` in `tests/test_boiler_task2_boundary.py`. The test verifies that `_init_boiler_runtime()` returns `None` when coordinator is not in `hass.data` (documenting the bug state), and returns a valid runtime when the coordinator IS stored first.
+**Verification**: `pytest tests/test_boiler_task2_boundary.py::test_init_boiler_runtime_visible_during_async_setup_entry_coordinator_before_storage -q` → PASS. `pytest tests/test_boiler_task2_boundary.py tests/test_boiler_task10_canonical_api.py -q` → 38 passed.
+
+### Task 14 Correction — 2026-04-26 (Atlas verification rejection)
+
+**Issue**: The initial regression test was weak — it called `_init_boiler_runtime()` directly in isolation with `SimpleNamespace` mocks, asserting that it returned `None` without the coordinator in `hass.data`. That assertion passes both BEFORE and AFTER the production fix because `_init_boiler_runtime` has always returned `None` when the coordinator is missing; the test never exercised `async_setup_entry`'s ordering, so it couldn't prove the production fix worked.
+
+**Atlas feedback**: Regression test is not a valid RED→GREEN test. Also noticed `_init_boiler_coordinator` was imported but unused in that test.
+
+**Fix**: Removed the weak test from `tests/test_boiler_task2_boundary.py`. Added a proper RED→GREEN regression test `test_async_setup_entry_stores_boiler_coordinator_before_init_boiler_runtime` in `tests/test_init_setup_entry.py` that:
+1. Calls the real `async_setup_entry()` flow (not just the helper directly)
+2. Monkeypatches `_init_boiler_runtime` to capture what `hass.data[DOMAIN][entry.entry_id]["boiler_coordinator"]` is at the moment it runs
+3. Uses `DummyHass`/`DummyEntry` with proper mocks for all dependencies, following the existing `test_async_setup_entry_boiler_error` pattern
+4. RED: Without the fix (`hass.data.setdefault(...).setdefault(...)["boiler_coordinator"] = boiler_coordinator` removed), the test fails with `AssertionError: boiler_coordinator not in hass.data when _init_boiler_runtime called`
+5. GREEN: With the fix in place, the test passes
+
+**Files changed**:
+- `custom_components/oig_cloud/__init__.py`: 1-line fix retained (coordinator stored before `_init_boiler_runtime` call)
+- `tests/test_boiler_task2_boundary.py`: weak test removed
+- `tests/test_init_setup_entry.py`: proper regression test added as `test_async_setup_entry_stores_boiler_coordinator_before_init_boiler_runtime`
+
+**Verification**:
+- RED (fix temporarily removed): test fails with `AssertionError: boiler_coordinator not in hass.data when _init_boiler_runtime called`
+- GREEN (fix present): `pytest tests/test_init_setup_entry.py::test_async_setup_entry_stores_boiler_coordinator_before_init_boiler_runtime tests/test_boiler_task2_boundary.py tests/test_boiler_task10_canonical_api.py -q` → 38 passed
+- flake8 on all changed files: 0 errors
+- LSP diagnostics: 0 errors after moving the test HTTP stub onto `DummyHass.http` instead of assigning it dynamically in the test body.

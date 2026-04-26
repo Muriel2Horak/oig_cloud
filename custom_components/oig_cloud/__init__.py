@@ -1619,6 +1619,7 @@ async def async_setup_entry(
 
         ote_api = _init_ote_api(entry)
         boiler_coordinator = await _init_boiler_coordinator(hass, entry)
+        hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})["boiler_coordinator"] = boiler_coordinator
         boiler_runtime = await _init_boiler_runtime(hass, entry)
         _ = boiler_runtime
 
