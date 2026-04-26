@@ -992,12 +992,13 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("🔋 Battery forecast returned no timeline data")
                 return
 
+            timeline_data = getattr(temp_sensor, "_timeline_data", None) or []
             self.battery_forecast_data = forecast_payload
             self._battery_forecast_last_update = now
             self._battery_forecast_last_inputs_hash = inputs_hash
             _LOGGER.debug(
                 "🔋 Battery forecast data updated in coordinator: %s points",
-                len(temp_sensor._timeline_data or []),
+                len(timeline_data),
             )
 
         except Exception as e:
@@ -1073,20 +1074,22 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         )
 
     def _build_forecast_payload(self, sensor: Any) -> Optional[Dict[str, Any]]:
-        if not sensor._timeline_data:
+        timeline_data = getattr(sensor, "_timeline_data", None)
+        if not timeline_data:
             return None
+        last_update = getattr(sensor, "_last_update", None)
         return {
-            "timeline_data": sensor._timeline_data,
+            "timeline_data": timeline_data,
             "calculation_time": (
-                sensor._last_update.isoformat() if sensor._last_update else None
+                last_update.isoformat() if last_update else None
             ),
             "data_source": "simplified_calculation",
             "current_battery_kwh": (
-                sensor._timeline_data[0].get("battery_capacity_kwh", 0)
-                if sensor._timeline_data
+                timeline_data[0].get("battery_capacity_kwh", 0)
+                if timeline_data
                 else 0
             ),
-            "mode_recommendations": sensor._mode_recommendations or [],
+            "mode_recommendations": getattr(sensor, "_mode_recommendations", None) or [],
         }
 
     def _create_simple_battery_forecast(self) -> Dict[str, Any]:

@@ -17,8 +17,10 @@ Date: 2025-11-02
 
 from __future__ import annotations
 
+import importlib
 import logging
 from datetime import datetime
+from typing import Any
 
 from aiohttp import web
 from homeassistant.core import HomeAssistant
@@ -30,6 +32,12 @@ PLANNING_SYSTEM_NOT_INITIALIZED = "Planning system not initialized"
 
 # API routes base
 API_BASE = "/api/oig_cloud"
+
+
+def _load_plan_filter_enums() -> tuple[Any, Any]:
+    package_root = (__package__ or "custom_components.oig_cloud.api").rsplit(".", 1)[0]
+    plan_manager = importlib.import_module(f"{package_root}.planning.plan_manager")
+    return plan_manager.PlanType, plan_manager.PlanStatus
 
 
 class OIGCloudActivePlanView(HomeAssistantView):
@@ -105,7 +113,7 @@ class OIGCloudPlanListView(HomeAssistantView):
                 )
 
             # List plans
-            from ..planning.plan_manager import PlanStatus, PlanType
+            PlanType, PlanStatus = _load_plan_filter_enums()
 
             plan_type_enum = None
             if plan_type:
