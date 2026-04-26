@@ -1591,14 +1591,27 @@ export class OigBoilerOverridePanel extends LitElement {
 export class OigBoilerUnavailableState extends LitElement {
   @property({ type: String }) reason: 'loading' | 'error' | 'degraded' | 'unavailable' = 'unavailable';
   @property({ type: String }) message: string = '';
+  @property({ type: String }) lang: 'cs' | 'en' = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .wrap { padding: 24px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+    .icon { font-size: 1.6rem; }
+    .headline { font-size: 1rem; font-weight: 600; }
+    .message { color: var(--secondary-text-color, #666); font-size: 0.9rem; }
+  `;
 
   render() {
+    const lang = this.lang;
+    const icon = this.reason === 'loading' ? '⏳' : this.reason === 'error' ? '⚠️' : this.reason === 'degraded' ? '🟠' : 'ℹ️';
     return html`
-      <div data-testid="boiler-unavailable-state" class="boiler-unavailable-state">
-        <div class="spinner" ?hidden=${this.reason !== 'loading'}>${this.reason === 'loading' ? 'Načítání…' : ''}</div>
-        <div class="error-msg" ?hidden=${this.reason !== 'error'}>${this.message}</div>
-        <div class="degraded-msg" ?hidden=${this.reason !== 'degraded'}>${this.message}</div>
-        <div class="unavailable-msg" ?hidden=${this.reason === 'loading' || this.reason === 'error' || this.reason === 'degraded'}>${this.message}</div>
+      <div data-testid="boiler-unavailable-state" class="wrap">
+        <span class="icon">${icon}</span>
+        <div class="headline loading-notice" ?hidden=${this.reason !== 'loading'}>${t('boiler.unavailable.loading', lang)}</div>
+        <div class="headline error-notice" ?hidden=${this.reason !== 'error'}>${t('boiler.unavailable.error', lang)}</div>
+        <div class="headline degraded-notice" ?hidden=${this.reason !== 'degraded'}>${t('boiler.unavailable.degraded', lang)}</div>
+        <div class="headline unavailable-notice" ?hidden=${this.reason !== 'unavailable'}>${t('boiler.unavailable.unavailable', lang)}</div>
+        ${this.message ? html`<div class="message">${this.message}</div>` : ''}
       </div>
     `;
   }

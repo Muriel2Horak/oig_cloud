@@ -888,3 +888,27 @@ describe('OigBoilerOverridePanel — polish', () => {
     expect(el.shadowRoot!.innerHTML).toContain('Přepis aktivní');
   });
 });
+
+describe('OigBoilerUnavailableState — explicit variants', () => {
+  for (const [reason, label] of [
+    ['loading', 'Načítání'],
+    ['error', 'Chyba'],
+    ['degraded', 'degradovaném'],
+    ['unavailable', 'nejsou k dispozici'],
+  ] as const) {
+    it(`renders ${reason} variant in cs`, async () => {
+      const el = document.createElement('oig-boiler-unavailable-state') as any;
+      el.lang = 'cs';
+      el.reason = reason;
+      el.message = 'detail';
+      document.body.appendChild(el);
+      await el.updateComplete;
+      const html = el.shadowRoot!.innerHTML;
+      expect(html).toContain(label);
+      expect(html).toContain('boiler-unavailable-state');
+      if (reason === 'error' || reason === 'degraded') {
+        expect(html).toContain('detail');
+      }
+    });
+  }
+});
