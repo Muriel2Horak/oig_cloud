@@ -1545,37 +1545,43 @@ export class OigBoilerSourceExplanation extends LitElement {
 export class OigBoilerOverridePanel extends LitElement {
   @property({ attribute: false }) identity: BoilerV2Identity = { entryId: null, boxId: null, available: false };
   @property({ attribute: false }) currentOverride: { active: boolean; ttlMinutes: number; reason: string; capabilityAvailable: boolean } | null = null;
+  @property({ type: String }) lang: 'cs' | 'en' = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .wrap { padding: 16px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: grid; gap: 10px; opacity: 0.95; }
+    .heading { font-size: 1rem; font-weight: 600; }
+    .subtitle { font-size: 0.85rem; color: var(--secondary-text-color, #666); }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+    input, textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--divider-color, #ccc); border-radius: 6px; background: var(--secondary-background-color, #fafafa); color: var(--primary-text-color); }
+    button { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--divider-color, #ccc); background: var(--primary-color, #1976d2); color: #fff; font-weight: 600; cursor: pointer; }
+    button[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .notice { padding: 6px 10px; border-radius: 6px; background: rgba(244,67,54,0.12); color: #b71c1c; font-size: 0.85rem; }
+    .active-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(255,152,0,0.2); color: #b75d00; font-weight: 600; font-size: 0.85rem; width: max-content; }
+  `;
 
   render() {
+    const lang = this.lang;
     const identityOk = this.identity.available;
     const capabilityOk = this.currentOverride?.capabilityAvailable ?? false;
     const canSubmit = identityOk && capabilityOk;
-
+    const active = this.currentOverride?.active === true;
     return html`
-      <div data-testid="boiler-override-panel" class="boiler-override-panel">
-        <div class="unavailable-notice" ?hidden=${identityOk}>Nedostupné – identita bojleru není k dispozici</div>
-        <div class="capability-notice" ?hidden=${!identityOk || capabilityOk}>Přepis není k dispozici – aktuátor nepodporuje ruční přepis</div>
+      <div data-testid="boiler-override-panel" class="wrap">
+        <div class="heading">${t('boiler.override.heading', lang)}</div>
+        <div class="subtitle">${t('boiler.override.subtitle', lang)}</div>
+        ${active ? html`<span class="active-badge">${t('boiler.override.active', lang)}</span>` : ''}
+        <div class="notice" ?hidden=${identityOk}>${t('boiler.override.identity_unavailable', lang)}</div>
+        <div class="notice capability-notice" ?hidden=${!identityOk || capabilityOk}>${t('boiler.override.capability_unavailable', lang)}</div>
         <label>
-          Délka přepisu (minuty)
-          <input
-            data-testid="override-ttl-input"
-            type="number"
-            min="15"
-            max="1440"
-            step="15"
-            value="120"
-            ?disabled=${!canSubmit}
-          />
+          ${t('boiler.override.ttl_label', lang)}
+          <input data-testid="override-ttl-input" type="number" min="15" max="1440" step="15" value="120" ?disabled=${!canSubmit} />
         </label>
         <label>
-          Důvod přepisu
-          <textarea
-            data-testid="override-reason-input"
-            required
-            ?disabled=${!canSubmit}
-          ></textarea>
+          ${t('boiler.override.reason_label', lang)}
+          <textarea data-testid="override-reason-input" required ?disabled=${!canSubmit}></textarea>
         </label>
-        <button data-testid="override-submit-btn" ?disabled=${!canSubmit}>Aktivovat přepis</button>
+        <button data-testid="override-submit-btn" ?disabled=${!canSubmit}>${t('boiler.override.submit', lang)}</button>
       </div>
     `;
   }

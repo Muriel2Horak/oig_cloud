@@ -856,3 +856,35 @@ describe('OigBoilerSourceExplanation — split sections', () => {
     expect(el.shadowRoot!.innerHTML).toContain('Žádné vysvětlení');
   });
 });
+
+describe('OigBoilerOverridePanel — polish', () => {
+  it('renders translated heading + subtitle for cs', async () => {
+    const el = document.createElement('oig-boiler-override-panel') as any;
+    el.lang = 'cs';
+    el.identity = { entryId: 'e', boxId: 'b', available: true };
+    el.currentOverride = { active: false, ttlMinutes: 0, reason: '', capabilityAvailable: true };
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Ruční přepis');
+    expect(html).toContain('sekundární');
+  });
+  it('renders en strings for lang=en', async () => {
+    const el = document.createElement('oig-boiler-override-panel') as any;
+    el.lang = 'en';
+    el.identity = { entryId: 'e', boxId: 'b', available: true };
+    el.currentOverride = { active: false, ttlMinutes: 0, reason: '', capabilityAvailable: true };
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.innerHTML).toContain('Manual override');
+  });
+  it('shows active badge when currentOverride.active is true', async () => {
+    const el = document.createElement('oig-boiler-override-panel') as any;
+    el.lang = 'cs';
+    el.identity = { entryId: 'e', boxId: 'b', available: true };
+    el.currentOverride = { active: true, ttlMinutes: 60, reason: 'manual test', capabilityAvailable: true };
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.innerHTML).toContain('Přepis aktivní');
+  });
+});
