@@ -1407,9 +1407,15 @@ def _create_boiler_sensors(hass: HomeAssistant, entry: ConfigEntry) -> List[Any]
 
         _LOGGER.info("🔥 Creating boiler sensors")
 
+        from .boiler.runtime import get_boiler_runtime
         from .boiler.sensors import get_boiler_sensors
 
-        boiler_sensors = get_boiler_sensors(boiler_coordinator)
+        box_id = entry.options.get("box_id")
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            box_id = getattr(boiler_coordinator, "box_id", None)
+        runtime = get_boiler_runtime(hass, entry.entry_id, box_id) if box_id else None
+
+        boiler_sensors = get_boiler_sensors(boiler_coordinator, runtime=runtime)
 
         if boiler_sensors:
             _LOGGER.info(f"Registering {len(boiler_sensors)} boiler sensors")

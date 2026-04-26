@@ -45,6 +45,16 @@ CONF_BOILER_DEADLINE_TIME = "boiler_deadline_time"
 CONF_BOILER_PLANNING_HORIZON_HOURS = "boiler_planning_horizon_hours"
 CONF_BOILER_PLAN_SLOT_MINUTES = "boiler_plan_slot_minutes"
 
+CONF_BOILER_SETUP_MODE = "boiler_setup_mode"
+CONF_BOILER_BOX_ID = "boiler_box_id"
+CONF_BOILER_EFFECTIVE_POWER_W = "boiler_effective_power_w"
+CONF_BOILER_RECOVERY_RATE_C_PER_HOUR = "boiler_recovery_rate_c_per_hour"
+CONF_BOILER_ENABLE_SECOND_THERMOMETER = "boiler_enable_second_thermometer"
+CONF_BOILER_ALT_SOURCE_MODE = "boiler_alt_source_mode"
+CONF_BOILER_COMFORT_PROFILE_MODE = "boiler_comfort_profile_mode"
+CONF_BOILER_SETUP_COMPLETE = "boiler_setup_complete"
+CONF_BOILER_MODULE_SELECTED = "boiler_module_selected"
+
 # Auto Module constants
 CONF_ENABLE_AUTO = "enable_auto"
 CONF_AUTO_MODE_SWITCH = "auto_mode_switch_enabled"
@@ -74,10 +84,15 @@ DEFAULT_BOILER_TEMP_SENSOR_POSITION = (
 )
 DEFAULT_BOILER_STRATIFICATION_MODE = "two_zone"  # Changed from simple_avg
 DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO = 0.5
-DEFAULT_BOILER_HEATER_POWER_KW_ENTITY = "sensor.oig_2206237016_boiler_install_power"
 DEFAULT_BOILER_DEADLINE_TIME = "20:00"
 DEFAULT_BOILER_PLANNING_HORIZON_HOURS = 36
 DEFAULT_BOILER_PLAN_SLOT_MINUTES = 15  # Changed from 30 to 15min intervals
+
+KEY_BOILER_RUNTIMES = "boiler_runtimes"
+ATTR_CONFIG_ENTRY_ID = "entry_id"
+STORAGE_KEY_BOILER_SCHEDULE = "boiler_schedule"
+UNKNOWN_BOX_ID = "unknown"
+DEFAULT_BOILER_HEATER_POWER_ENTITY_ID_PATTERN = "sensor.oig_{box_id}_boiler_install_power"
 
 # Energetic constant for water heating (kWh per liter per °C)
 BOILER_ENERGY_CONSTANT_KWH_L_C = 0.001163  # ≈ 4.186 kJ/kg/°C / 3600

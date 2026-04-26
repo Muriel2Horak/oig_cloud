@@ -141,8 +141,8 @@ async def test_boiler_profile_view_entry_and_module_errors():
     hass = SimpleNamespace(data={DOMAIN: {"entry1": {"enabled": True}}}, http=DummyHttp())
     view = BoilerProfileView(hass)
     response = await view.get(None, "entry1")
-    assert response.status == 404
-    assert _response_json(response)["error"] == "Boiler module not enabled"
+    assert response.status == 410
+    assert _response_json(response)["reason_code"] == "api_repair_required"
 
 
 @pytest.mark.asyncio
@@ -151,7 +151,7 @@ async def test_boiler_profile_view_exception():
         def get_all_profiles(self):
             raise RuntimeError("boom")
 
-    coordinator = SimpleNamespace(profiler=BadProfiler(), _current_profile=None)
+    coordinator = SimpleNamespace(profiler=BadProfiler(), _current_profile=None, box_id="123")
     hass = SimpleNamespace(data={DOMAIN: {"entry1": {"boiler_coordinator": coordinator}}}, http=DummyHttp())
     view = BoilerProfileView(hass)
     response = await view.get(None, "entry1")
@@ -170,6 +170,7 @@ async def test_boiler_profile_view_success_payload():
     coordinator = SimpleNamespace(
         profiler=profiler,
         _current_profile=profile,
+        box_id="123",
         config={
             CONF_BOILER_COLD_INLET_TEMP_C: 12.0,
             CONF_BOILER_TARGET_TEMP_C: 60.0,
@@ -216,6 +217,7 @@ async def test_boiler_plan_view_success_payload():
     )
     coordinator = SimpleNamespace(
         _current_plan=plan,
+        box_id="123",
         data={
             "temperatures": {"upper_zone": 55.0, "lower_zone": 42.0},
             "energy_state": {"avg_temp": 48.5, "energy_needed_kwh": 1.2},
@@ -243,10 +245,10 @@ async def test_boiler_plan_view_module_and_plan_errors():
     hass = SimpleNamespace(data={DOMAIN: {"entry1": {"enabled": True}}}, http=DummyHttp())
     view = BoilerPlanView(hass)
     response = await view.get(None, "entry1")
-    assert response.status == 404
-    assert _response_json(response)["error"] == "Boiler module not enabled"
+    assert response.status == 410
+    assert _response_json(response)["reason_code"] == "api_repair_required"
 
-    coordinator = SimpleNamespace(_current_plan=None)
+    coordinator = SimpleNamespace(_current_plan=None, box_id="123")
     hass = SimpleNamespace(data={DOMAIN: {"entry1": {"boiler_coordinator": coordinator}}}, http=DummyHttp())
     view = BoilerPlanView(hass)
     response = await view.get(None, "entry1")
@@ -257,6 +259,8 @@ async def test_boiler_plan_view_module_and_plan_errors():
 @pytest.mark.asyncio
 async def test_boiler_plan_view_exception():
     class BadCoordinator:
+        box_id = "123"
+
         @property
         def _current_plan(self):
             raise RuntimeError("boom")
@@ -455,6 +459,7 @@ async def test_boiler_planner_create_plan_and_overflow_windows(monkeypatch):
 @pytest.mark.asyncio
 async def test_boiler_coordinator_helpers(hass):
     config = {
+        "box_id": "123",
         CONF_BOILER_TEMP_SENSOR_TOP: "sensor.boiler_top",
         CONF_BOILER_TEMP_SENSOR_POSITION: "top",
         CONF_BOILER_TWO_ZONE_SPLIT_RATIO: 0.5,
@@ -465,8 +470,8 @@ async def test_boiler_coordinator_helpers(hass):
 
     hass.states.async_set("sensor.boiler_top", "50")
     hass.states.async_set("sensor.alt_energy", "500", {"unit_of_measurement": "Wh"})
-    hass.states.async_set("sensor.oig_2206237016_boiler_day_w", "1000")
-    hass.states.async_set("sensor.oig_2206237016_boiler_manual_mode", "Zapnuto")
+    hass.states.async_set("sensor.oig_123_boiler_day_w", "1000")
+    hass.states.async_set("sensor.oig_123_boiler_manual_mode", "Zapnuto")
 
     temps = await coordinator._read_temperatures()
     energy_state = coordinator._calculate_energy_state(temps)
@@ -479,7 +484,9 @@ async def test_boiler_coordinator_helpers(hass):
 
 
 @pytest.mark.asyncio
-async def test_boiler_coordinator_spot_prices_and_overflow(hass):
+async def test_energy_input_adapter_spot_prices_and_overflow(hass):
+    from custom_components.oig_cloud.boiler.runtime import _CoordinatorEnergyInputAdapter
+
     config = {CONF_BOILER_SPOT_PRICE_SENSOR: "sensor.spot_prices"}
     coordinator = BoilerCoordinator(hass, config)
 
@@ -496,11 +503,12 @@ async def test_boiler_coordinator_spot_prices_and_overflow(hass):
         },
     )
 
-    prices = await coordinator._get_spot_prices()
+    adapter = _CoordinatorEnergyInputAdapter(coordinator)
+    prices = await adapter.get_spot_prices()
     assert list(prices.values()) == [3.5]
 
     hass.data[DOMAIN] = {"battery_forecast_coordinator": SimpleNamespace(data=None)}
-    windows = await coordinator._get_overflow_windows()
+    windows = await adapter.get_overflow_windows()
     assert windows == []
 
 
@@ -564,6 +572,7 @@ async def test_boiler_sensor_values_full(hass):
 @pytest.mark.asyncio
 async def test_boiler_sensors_and_api_views():
     coordinator = SimpleNamespace(
+        box_id="123",
         data={
             "temperatures": {"upper_zone": 55.0},
             "energy_state": {"avg_temp": 50.0, "energy_needed_kwh": 2.5},
@@ -617,12 +626,12 @@ async def test_boiler_sensors_and_api_views():
     assert len(sensors) == 14
 
     hass = SimpleNamespace(
-        data={DOMAIN: {"entry1": {"boiler_coordinator": SimpleNamespace(profiler=SimpleNamespace(get_all_profiles=lambda: {"workday_winter": profile}), _current_profile=profile, _current_plan=plan)}}},
+        data={DOMAIN: {"entry1": {"boiler_coordinator": SimpleNamespace(profiler=SimpleNamespace(get_all_profiles=lambda: {"workday_winter": profile}), _current_profile=profile, _current_plan=plan, box_id="123")}}},
         http=DummyHttp(),
     )
 
     register_boiler_api_views(hass)
-    assert len(hass.http.views) == 2
+    assert len(hass.http.views) == 3
 
     profile_view = BoilerProfileView(hass)
     response = await profile_view.get(None, "entry1")

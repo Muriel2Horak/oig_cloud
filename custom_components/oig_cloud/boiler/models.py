@@ -1,9 +1,81 @@
+from __future__ import annotations
+
 """Datové modely pro bojlerový modul."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+
+__all__ = [
+    "StratificationMode",
+    "ThermometerPlacement",
+    "TemperatureTopology",
+    "BoilerThermalTopology",
+    "BootstrapProfile",
+    "EnergySource",
+    "BoilerSlot",
+    "BoilerPlan",
+    "BoilerProfile",
+]
+
+
+class StratificationMode(str, Enum):
+    """Režim stratifikace teploty v bojleru."""
+
+    SIMPLE_AVG = "simple_avg"
+    TWO_ZONE = "two_zone"
+
+
+class ThermometerPlacement(str, Enum):
+    """Umístění teploměru v nádrži."""
+
+    TOP = "top"
+    UPPER_QUARTER = "upper_quarter"
+    MIDDLE = "middle"
+    LOWER_QUARTER = "lower_quarter"
+    BOTTOM = "bottom"
+
+
+class TemperatureTopology(str, Enum):
+    """Konfigurace teplotních senzorů v nádrži."""
+
+    TOP_ONLY = "top_only"
+    TOP_BOTTOM = "top_bottom"
+    BOTTOM_ONLY = "bottom_only"
+
+
+@dataclass
+class BoilerThermalTopology:
+    """Validovaná tepelná topologie bojleru pro plánovač."""
+
+    stratification_mode: StratificationMode | str
+    thermometer_placements: list[ThermometerPlacement | str]
+    temperature_topology: TemperatureTopology | str
+    tank_volume_l: float
+    target_temp_c: float
+    cold_inlet_temp_c: float
+    heater_power_kw: float
+    standing_loss_coefficient: float = 0.02
+
+    def __post_init__(self):
+        if isinstance(self.stratification_mode, str):
+            self.stratification_mode = StratificationMode(self.stratification_mode)
+        if isinstance(self.temperature_topology, str):
+            self.temperature_topology = TemperatureTopology(self.temperature_topology)
+        self.thermometer_placements = [
+            ThermometerPlacement(p) if isinstance(p, str) else p
+            for p in self.thermometer_placements
+        ]
+
+
+@dataclass
+class BootstrapProfile:
+    """Bootstrap profil pro první běh bez historie."""
+
+    profile: "BoilerProfile"
+    confidence: float
+    degraded_reason: str
 
 
 class EnergySource(str, Enum):

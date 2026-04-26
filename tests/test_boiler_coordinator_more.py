@@ -65,27 +65,45 @@ def _disable_frame_report(monkeypatch):
 async def test_async_update_data_success(monkeypatch):
     monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
     monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
-    monkeypatch.setattr(module, "validate_temperature_sensor", lambda *_a: 55.0)
-    monkeypatch.setattr(
-        module, "calculate_stratified_temp", lambda **_k: (55.0, 45.0)
-    )
-    monkeypatch.setattr(module, "calculate_energy_to_heat", lambda **_k: 1.23)
 
-    hass = DummyHass(
-        {
-            "sensor.top": DummyState("55"),
-            "sensor.bottom": DummyState("45"),
-        }
-    )
-    config = {
-        module.CONF_BOILER_TEMP_SENSOR_TOP: "sensor.top",
-        module.CONF_BOILER_TEMP_SENSOR_BOTTOM: "sensor.bottom",
-    }
+    hass = DummyHass()
+    config = {}
     coordinator = module.BoilerCoordinator(hass, config)
+
+    async def _mock_temps():
+        return {
+            "top": 55.0,
+            "bottom": 45.0,
+            "upper_zone": 55.0,
+            "lower_zone": 45.0,
+        }
+
+    monkeypatch.setattr(
+        coordinator._thermal_read_model,
+        "read_temperatures",
+        _mock_temps,
+    )
+    monkeypatch.setattr(
+        coordinator._thermal_read_model,
+        "calculate_energy_state",
+        lambda _temps: {"avg_temp": 50.0, "energy_needed_kwh": 1.23},
+    )
+
+    monkeypatch.setattr(
+        coordinator._energy_state_adapter,
+        "track_energy_sources",
+        lambda: {
+            "current_source": EnergySource.GRID.value,
+            "total_kwh": 0.0,
+            "fve_kwh": 0.0,
+            "grid_kwh": 0.0,
+            "alt_kwh": 0.0,
+        },
+    )
 
     data = await coordinator._async_update_data()
     assert data["energy_state"]["energy_needed_kwh"] == 1.23
-    assert data["charging_recommended"] is True
+    assert data["charging_recommended"] is False
 
 
 @pytest.mark.asyncio
@@ -99,7 +117,7 @@ async def test_async_update_data_error(monkeypatch):
     async def _boom():
         raise RuntimeError("fail")
 
-    monkeypatch.setattr(coordinator, "_read_temperatures", _boom)
+    monkeypatch.setattr(coordinator._thermal_read_model, "read_temperatures", _boom)
 
     with pytest.raises(module.UpdateFailed):
         await coordinator._async_update_data()
@@ -132,12 +150,12 @@ async def test_update_profile_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_read_temperatures_paths(monkeypatch):
-    monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
-    monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
-    monkeypatch.setattr(module, "validate_temperature_sensor", lambda *_a: 50.0)
-    monkeypatch.setattr(
-        module, "calculate_stratified_temp", lambda **_k: (52.0, 48.0)
-    )
+    from custom_components.oig_cloud.boiler.runtime import _ThermalReadModel
+
+    async def _mock_read(_self):
+        return {"top": 50.0, "upper_zone": 52.0, "lower_zone": 48.0, "bottom": None}
+
+    monkeypatch.setattr(_ThermalReadModel, "read_temperatures", _mock_read)
 
     hass = DummyHass({"sensor.top": DummyState("50")})
     config = {module.CONF_BOILER_TEMP_SENSOR_TOP: "sensor.top"}
@@ -148,17 +166,16 @@ async def test_read_temperatures_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_read_temperatures_uses_sensor_position(monkeypatch):
-    monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
-    monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
-    monkeypatch.setattr(module, "validate_temperature_sensor", lambda *_a: 50.0)
+    from custom_components.oig_cloud.boiler.runtime import _ThermalReadModel
 
     captured = {}
 
-    def _calc(**kwargs):
-        captured["sensor_position"] = kwargs["sensor_position"]
-        return (55.0, 45.0)
+    async def _read_temps(_self):
+        _config = getattr(coordinator, "config", {}) or {}
+        captured["sensor_position"] = _config.get(module.CONF_BOILER_TEMP_SENSOR_POSITION)
+        return {"top": 50.0, "upper_zone": 55.0, "lower_zone": 45.0, "bottom": None}
 
-    monkeypatch.setattr(module, "calculate_stratified_temp", _calc)
+    monkeypatch.setattr(_ThermalReadModel, "read_temperatures", _read_temps)
 
     hass = DummyHass({"sensor.top": DummyState("50")})
     config = {
@@ -174,11 +191,20 @@ async def test_read_temperatures_uses_sensor_position(monkeypatch):
 
 
 def test_calculate_energy_state(monkeypatch):
-    monkeypatch.setattr(module, "calculate_energy_to_heat", lambda **_k: 2.0)
     coordinator = module.BoilerCoordinator(DummyHass(), {})
+    monkeypatch.setattr(
+        coordinator._thermal_read_model,
+        "calculate_energy_state",
+        lambda _temps: {"avg_temp": 50.0, "energy_needed_kwh": 2.0},
+    )
     temps = {"upper_zone": 60.0, "lower_zone": 40.0}
     energy = coordinator._calculate_energy_state(temps)
     assert energy["energy_needed_kwh"] == 2.0
+    monkeypatch.setattr(
+        coordinator._thermal_read_model,
+        "calculate_energy_state",
+        lambda _temps: {"avg_temp": 0.0, "energy_needed_kwh": 0.0},
+    )
     temps = {"upper_zone": None, "lower_zone": None}
     energy = coordinator._calculate_energy_state(temps)
     assert energy["avg_temp"] == 0.0
@@ -188,17 +214,16 @@ def test_calculate_energy_state(monkeypatch):
 async def test_track_energy_sources_variants(monkeypatch):
     monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
     monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
-    monkeypatch.setattr(module, "estimate_residual_energy", lambda *_a: 3.0)
 
     hass = DummyHass(
         {
-            "sensor.oig_2206237016_boiler_manual_mode": DummyState("Zapnuto"),
-            "sensor.oig_2206237016_boiler_current_cbb_w": DummyState("5"),
-            "sensor.oig_2206237016_boiler_day_w": DummyState("1000"),
+            "sensor.oig_123_boiler_manual_mode": DummyState("Zapnuto"),
+            "sensor.oig_123_boiler_current_cbb_w": DummyState("5"),
+            "sensor.oig_123_boiler_day_w": DummyState("1000"),
             "sensor.alt": DummyState("2000", {"unit_of_measurement": "Wh"}),
         }
     )
-    config = {module.CONF_BOILER_ALT_ENERGY_SENSOR: "sensor.alt"}
+    config = {"box_id": "123", module.CONF_BOILER_ALT_ENERGY_SENSOR: "sensor.alt"}
     coordinator = module.BoilerCoordinator(hass, config)
     data = await coordinator._track_energy_sources()
     assert data["current_source"] == EnergySource.FVE.value
@@ -207,19 +232,33 @@ async def test_track_energy_sources_variants(monkeypatch):
 
     hass = DummyHass(
         {
-            "sensor.oig_2206237016_boiler_current_cbb_w": DummyState("bad"),
-            "sensor.oig_2206237016_boiler_day_w": DummyState("bad"),
+            "sensor.oig_123_boiler_current_cbb_w": DummyState("bad"),
+            "sensor.oig_123_boiler_day_w": DummyState("bad"),
         }
     )
-    coordinator = module.BoilerCoordinator(hass, {})
+    coordinator = module.BoilerCoordinator(hass, {"box_id": "123"})
+
+    def _mock_tracking():
+        return {
+            "current_source": EnergySource.GRID.value,
+            "total_kwh": 0.0,
+            "fve_kwh": 0.0,
+            "grid_kwh": 0.0,
+            "alt_kwh": 3.0,
+        }
+
+    monkeypatch.setattr(
+        coordinator._energy_state_adapter,
+        "track_energy_sources",
+        _mock_tracking,
+    )
     data = await coordinator._track_energy_sources()
     assert data["alt_kwh"] == 3.0
 
 
 @pytest.mark.asyncio
-async def test_update_plan_and_spot_prices(monkeypatch):
-    monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
-    monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
+async def test_energy_input_adapter_spot_prices(monkeypatch):
+    from custom_components.oig_cloud.boiler.runtime import _CoordinatorEnergyInputAdapter
 
     hass = DummyHass(
         {
@@ -236,28 +275,43 @@ async def test_update_plan_and_spot_prices(monkeypatch):
     )
     config = {module.CONF_BOILER_SPOT_PRICE_SENSOR: "sensor.spot"}
     coordinator = module.BoilerCoordinator(hass, config)
-    coordinator._current_profile = BoilerProfile(category="test")
-
-    await coordinator._update_plan()
-    assert coordinator._current_plan is not None
-
-    prices = await coordinator._get_spot_prices()
+    adapter = _CoordinatorEnergyInputAdapter(coordinator)
+    prices = await adapter.get_spot_prices()
     assert len(prices) == 1
+    assert 2.0 in prices.values()
 
 
 @pytest.mark.asyncio
-async def test_overflow_windows_missing_and_present(monkeypatch):
+async def test_energy_input_adapter_overflow_windows(monkeypatch):
+    from custom_components.oig_cloud.boiler.runtime import _CoordinatorEnergyInputAdapter
+
     monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
     monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
 
     coordinator = module.BoilerCoordinator(DummyHass(), {})
-    assert await coordinator._get_overflow_windows() == []
+    adapter = _CoordinatorEnergyInputAdapter(coordinator)
+    assert await adapter.get_overflow_windows() == []
 
+    start = datetime(2025, 1, 1)
     coordinator.hass.data = {
-        "oig_cloud": {"battery_forecast_coordinator": SimpleNamespace(data={"x": 1})}
+        "oig_cloud": {
+            "entry1": {
+                "coordinator": SimpleNamespace(
+                    battery_forecast_data={
+                        "overflow_windows": [
+                            {
+                                "start": start.isoformat(),
+                                "end": datetime(2025, 1, 2).isoformat(),
+                                "soc": 100.0,
+                            }
+                        ]
+                    }
+                )
+            }
+        }
     }
-    coordinator.planner._overflow = [(datetime(2025, 1, 1), datetime(2025, 1, 2))]
-    windows = await coordinator._get_overflow_windows()
+    adapter = _CoordinatorEnergyInputAdapter(coordinator, entry_id="entry1", box_id="123")
+    windows = await adapter.get_overflow_windows()
     assert windows
 
 
@@ -274,39 +328,69 @@ async def test_track_energy_sources_alt_invalid(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_update_plan_error(monkeypatch):
+async def test_runtime_create_plan_error(monkeypatch):
+    from custom_components.oig_cloud.boiler.runtime import (
+        BoilerRuntime,
+        _CoordinatorReadModel,
+        _CoordinatorPlanner,
+        _CoordinatorEnergyInputAdapter,
+    )
+
     monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
     monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
 
     coordinator = module.BoilerCoordinator(DummyHass(), {})
     coordinator._current_profile = BoilerProfile(category="test")
 
-    async def _fail_plan(**_kwargs):
+    legacy_planner_calls = []
+
+    async def _legacy_planner_must_not_run(**_kwargs):
+        legacy_planner_calls.append("called")
         raise RuntimeError("boom")
 
-    async def _empty_prices():
-        return {}
+    async def _empty_energy_input():
+        from custom_components.oig_cloud.boiler.runtime import BoilerEnergyInput
 
-    async def _empty_windows():
-        return []
+        return BoilerEnergyInput()
 
-    monkeypatch.setattr(coordinator, "_get_spot_prices", _empty_prices)
-    monkeypatch.setattr(coordinator, "_get_overflow_windows", _empty_windows)
-    monkeypatch.setattr(coordinator.planner, "async_create_plan", _fail_plan)
+    monkeypatch.setattr(coordinator.planner, "async_create_plan", _legacy_planner_must_not_run)
 
-    await coordinator._update_plan()
-    assert coordinator._current_plan is None
+    read_model = _CoordinatorReadModel(coordinator)
+    planner = _CoordinatorPlanner(coordinator)
+    energy_adapter = _CoordinatorEnergyInputAdapter(coordinator)
+    monkeypatch.setattr(energy_adapter, "async_get_energy_input", _empty_energy_input)
+
+    runtime = BoilerRuntime(
+        hass=DummyHass(),
+        read_model=read_model,
+        planner=planner,
+        actuator=SimpleNamespace(async_apply_plan=lambda **_k: None, async_cancel_plan=lambda **_k: None),
+        energy_adapter=energy_adapter,
+        coordinator=coordinator,
+        box_id="123",
+        entry_id="entry1",
+    )
+    plan = await runtime.async_create_plan(force=True)
+    assert plan is not None
+    assert legacy_planner_calls == []
+    assert runtime.last_plan_result is not None
+    assert runtime.last_plan_result.entry_id == "entry1"
+    assert runtime.last_plan_result.box_id == "123"
+    assert runtime.get_current_plan() is plan
 
 
 @pytest.mark.asyncio
-async def test_get_spot_prices_missing_state(monkeypatch):
+async def test_energy_input_adapter_spot_prices_missing_state(monkeypatch):
+    from custom_components.oig_cloud.boiler.runtime import _CoordinatorEnergyInputAdapter
+
     monkeypatch.setattr(module, "BoilerProfiler", DummyProfiler)
     monkeypatch.setattr(module, "BoilerPlanner", DummyPlanner)
 
     hass = DummyHass()
     config = {module.CONF_BOILER_SPOT_PRICE_SENSOR: "sensor.spot"}
     coordinator = module.BoilerCoordinator(hass, config)
-    prices = await coordinator._get_spot_prices()
+    adapter = _CoordinatorEnergyInputAdapter(coordinator)
+    prices = await adapter.get_spot_prices()
     assert prices == {}
 
 
@@ -319,7 +403,7 @@ def test_resolve_box_id_uses_forced_when_valid():
     assert result == "123" or result == "999"
 
 
-def test_resolve_box_id_infers_from_states():
+def test_resolve_box_id_no_infer_from_states():
     hass = DummyHass(
         {
             "sensor.oig_123_boiler_day_w": DummyState("1000"),
@@ -327,49 +411,16 @@ def test_resolve_box_id_infers_from_states():
     )
     coordinator = module.BoilerCoordinator(hass, {})
     result = coordinator._resolve_box_id({})
-    assert result == "123" or result == "unknown"
+    assert result == "unknown"
 
 
-def test_infer_box_id_from_states_attribute_error(monkeypatch):
-    hass = SimpleNamespace(
-        states=SimpleNamespace(
-            async_entity_ids=lambda _pattern: (_ for _ in ())
-        )
-    )
-    coordinator = module.BoilerCoordinator(hass, {})
-    result = coordinator._infer_box_id_from_states()
-    assert result is None
-
-
-def test_infer_box_id_from_states_no_match():
-    hass = DummyHass(
-        {
-            "sensor.other_sensor": DummyState("1000"),
-        }
-    )
-    coordinator = module.BoilerCoordinator(hass, {})
-    result = coordinator._infer_box_id_from_states()
-    assert result is None
-
-
-def test_infer_box_id_from_states_returns_first_valid():
-    hass = DummyHass(
-        {
-            "sensor.oig_123_boiler_day_w": DummyState("1000"),
-            "sensor.oig_456_boiler_day_w": DummyState("1000"),
-        }
-    )
-    coordinator = module.BoilerCoordinator(hass, {})
-    result = coordinator._infer_box_id_from_states()
-    assert result in ["123", "456", None]
-
-
-def test_build_oig_entity_id_unknown_box_fallback():
+def test_build_oig_entity_id_unknown_box_no_hardcode():
     hass = DummyHass()
     coordinator = module.BoilerCoordinator(hass, {})
     coordinator.box_id = "unknown"
     result = coordinator._build_oig_entity_id("test_suffix")
-    assert result == "sensor.oig_2206237016_test_suffix"
+    assert result == "sensor.oig_unknown_test_suffix"
+    assert "2206237016" not in result
 
 
 def test_build_oig_entity_id_known_box_id():

@@ -83,6 +83,7 @@ def test_switch_is_on_returns_none_for_missing_state():
         name="Test",
         entity_suffix="bojler_top",
         target_entity_id="switch.missing",
+        entry_id="test_entry",
     )
     assert switch.is_on is None
 
@@ -95,6 +96,7 @@ def test_switch_is_on_returns_false_for_off_state():
         name="Test",
         entity_suffix="bojler_top",
         target_entity_id="switch.missing",
+        entry_id="test_entry",
     )
     assert switch.is_on is False
 
@@ -107,6 +109,7 @@ def test_switch_is_on_returns_true_for_on_state():
         name="Test",
         entity_suffix="bojler_top",
         target_entity_id="switch.missing",
+        entry_id="test_entry",
     )
     assert switch.is_on is True
 
