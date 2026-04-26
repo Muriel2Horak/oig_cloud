@@ -104,6 +104,29 @@ import { stateWatcher } from '@/data/state-watcher';
 import { getSensorId } from '@/data/flow-data';
 import { OigApp } from '@/ui/app';
 
+function flattenTemplate(tmpl: unknown): string {
+  if (tmpl == null || tmpl === false) return '';
+  if (typeof tmpl === 'string') return tmpl;
+  if (typeof tmpl !== 'object') return '';
+  const t = tmpl as Record<string, unknown>;
+  const strs = t['strings']
+    ? Array.from(t['strings'] as ArrayLike<string>).join('')
+    : '';
+  const vals = t['values']
+    ? Array.from(t['values'] as Iterable<unknown>).map(v => flattenTemplate(v)).join('')
+    : '';
+  return strs + vals;
+}
+
+function getAppTemplateAll(app: OigApp): string {
+  const result = Reflect.apply(
+    Reflect.get(Object.getPrototypeOf(app), 'render'),
+    app,
+    [],
+  );
+  return flattenTemplate(result);
+}
+
 describe('OigApp live refresh', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -273,5 +296,123 @@ describe('OigApp live refresh', () => {
     expect(store.get('sensor.oig_2206237016_actual_fv_total')).toBeNull();
 
     store.destroy();
+  });
+});
+
+describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
+  function makeApp(): OigApp {
+    const app = new OigApp() as any;
+    app.loading = false;
+    app.error = null;
+    return app as OigApp;
+  }
+
+  function makeAppWithStatus(): OigApp {
+    const app = new OigApp() as any;
+    app.loading = false;
+    app.error = null;
+    app.boilerV2Data = {
+      status: {
+        currentState: 'heating',
+        heating: true,
+        selectedSource: 'fve',
+        actuatedSource: 'fve',
+        temperatureTop: 55.0,
+        temperatureBottom: null,
+        comfortSatisfied: true,
+        comfortStatusCode: 'ok',
+        energyNeededKwh: 1.0,
+        lastUpdate: null,
+        degraded: false,
+        degradedFlags: [],
+      },
+      planSlots: [],
+      explanation: null,
+      manualOverride: null,
+      identity: { entryId: 'entry1', boxId: 'box1', available: true },
+      loadError: null,
+    };
+    return app as OigApp;
+  }
+
+  it('boiler tab template does NOT contain oig-boiler-state', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).not.toContain('<oig-boiler-state');
+  });
+
+  it('boiler tab template does NOT contain oig-boiler-status-grid', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).not.toContain('<oig-boiler-status-grid');
+  });
+
+  it('boiler tab template does NOT contain boiler-visual-grid class', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).not.toContain('boiler-visual-grid');
+  });
+
+  it('boiler tab template does NOT contain oig-boiler-tank', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).not.toContain('<oig-boiler-tank');
+  });
+
+  it('boiler tab template does NOT contain oig-boiler-heatmap-grid', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).not.toContain('<oig-boiler-heatmap-grid');
+  });
+
+  it('boiler tab template does NOT contain oig-boiler-stats-cards', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).not.toContain('<oig-boiler-stats-cards');
+  });
+
+  it('boiler tab template does NOT contain oig-boiler-config-section', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).not.toContain('<oig-boiler-config-section');
+  });
+
+  it('boiler tab template contains data-testid="boiler-setup-guide"', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).toContain('data-testid="boiler-setup-guide"');
+  });
+
+  it('boiler tab template contains Průvodce nastavením bojleru', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).toContain('Průvodce nastavením bojleru');
+  });
+
+  it('boiler tab template still contains oig-boiler-status-panel when v2 status available', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
+    expect(all).toContain('oig-boiler-status-panel');
+  });
+
+  it('boiler tab template still contains oig-boiler-plan-timeline', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).toContain('<oig-boiler-plan-timeline');
+  });
+
+  it('boiler tab template still contains oig-boiler-source-explanation', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).toContain('<oig-boiler-source-explanation');
+  });
+
+  it('boiler tab template still contains oig-boiler-override-panel', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).toContain('<oig-boiler-override-panel');
+  });
+});
+
+import { resolveLang } from '@/i18n/boiler';
+
+describe('app boiler lang wiring', () => {
+  it('resolves cs from hass.locale', () => {
+    expect(resolveLang({ locale: { language: 'cs' } } as any)).toBe('cs');
+  });
+  it('renders status panel with lang attribute when hass language is en', () => {
+    const app = new OigApp() as any;
+    app.loading = false;
+    app.error = null;
+    app.hass = { locale: { language: 'en' } };
+    const all = getAppTemplateAll(app as OigApp);
+    expect(all).toContain('.lang=');
   });
 });

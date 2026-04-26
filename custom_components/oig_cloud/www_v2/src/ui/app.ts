@@ -9,6 +9,7 @@ import { haClient } from '@/data/ha-client';
 import { extractFlowData } from '@/data/flow-data';
 import { invalidateTimelineCache, loadPricingData } from '@/data/pricing-data';
 import { loadBoilerData } from '@/data/boiler-data';
+import { resolveLang } from '@/i18n/boiler';
 import { extractAnalyticsSensors, loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
 import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
 import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/timeline-data';
@@ -17,8 +18,7 @@ import { FlowData, EMPTY_FLOW_DATA } from '@/ui/features/flow/types';
 import { PricingData } from '@/ui/features/pricing/types';
 import {
   BoilerState,
-  BoilerPlan, BoilerEnergyBreakdown, BoilerPredictedUsage,
-  BoilerConfig, BoilerHeatmapRow, BoilerProfilingData, BoilerV2Data,
+  BoilerV2Data,
 } from '@/ui/features/boiler/types';
 import { oigLog } from '@/core/logger';
 import { throttle, withRetry } from '@/utils/format';
@@ -74,17 +74,12 @@ export class OigApp extends LitElement {
   // Boiler
   @state() private boilerState: BoilerState | null = null;
   @state() private boilerLoading = false;
-  @state() private boilerPlan: BoilerPlan | null = null;
-  @state() private boilerEnergyBreakdown: BoilerEnergyBreakdown | null = null;
-  @state() private boilerPredictedUsage: BoilerPredictedUsage | null = null;
-  @state() private boilerConfig: BoilerConfig | null = null;
-  @state() private boilerHeatmap7x24: BoilerHeatmapRow[] = [];
-  @state() private boilerProfiling: BoilerProfilingData | null = null;
-  @state() private boilerCurrentCategory = '';
-  @state() private boilerAvailableCategories: string[] = [];
-  @state() private boilerForecastWindows: { fve: string; grid: string } = { fve: '--', grid: '--' };
   @state() private boilerV2Data: BoilerV2Data | null = null;
   private boilerRefreshTimer: number | null = null;
+
+  private get boilerLang() {
+    return resolveLang(this.hass);
+  }
 
   // Analytics
   @state() private analyticsData: AnalyticsData = EMPTY_ANALYTICS;
@@ -296,6 +291,34 @@ export class OigApp extends LitElement {
       }
     }
 
+    .boiler-setup-guide {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 16px;
+      background: ${u(CSS_VARS.cardBg)};
+      border: 1px solid ${u(CSS_VARS.divider)};
+      border-radius: 8px;
+      font-size: 13px;
+      color: ${u(CSS_VARS.textSecondary)};
+    }
+
+    .boiler-setup-guide__icon {
+      font-size: 20px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .boiler-setup-guide__text strong {
+      display: block;
+      color: ${u(CSS_VARS.textPrimary)};
+      margin-bottom: 2px;
+    }
+
+    .boiler-setup-guide__text p {
+      margin: 0;
+    }
+
     /* ---- Responsive ---- */
     /* Tablet 768–1200: canvas + control, tiles skryté nebo nahoře */
     @media (max-width: 1200px) {
@@ -320,9 +343,6 @@ export class OigApp extends LitElement {
       }
       .below-chart-pair {
         grid-template-columns: 1fr;
-      }
-      .boiler-visual-grid {
-        grid-template-columns: 1fr !important;
       }
     }
   `;
@@ -567,15 +587,6 @@ export class OigApp extends LitElement {
     try {
       const data = await withRetry(() => loadBoilerData(this.hass));
       this.boilerState = data.state;
-      this.boilerPlan = data.plan;
-      this.boilerEnergyBreakdown = data.energyBreakdown;
-      this.boilerPredictedUsage = data.predictedUsage;
-      this.boilerConfig = data.config;
-      this.boilerHeatmap7x24 = data.heatmap7x24;
-      this.boilerProfiling = data.profiling;
-      this.boilerCurrentCategory = data.currentCategory;
-      this.boilerAvailableCategories = data.availableCategories;
-      this.boilerForecastWindows = data.forecastWindows;
       this.boilerV2Data = data.v2Data;
       this.boilerDirty = false;
 
@@ -715,15 +726,6 @@ export class OigApp extends LitElement {
 
   private onTimelineRefresh(): void {
     this.loadTimelineTabData(this.timelineTab);
-  }
-
-  // Boiler events
-  private onBoilerCategoryChange(e: CustomEvent): void {
-    const category = e.detail.category;
-    this.boilerCurrentCategory = category;
-    // Recompute category-dependent data without refetching API
-    // For now, just trigger a full reload
-    this.loadBoilerDataAsync();
   }
 
   private onEditTile(e: CustomEvent): void {
@@ -951,82 +953,39 @@ export class OigApp extends LitElement {
 
                <!-- V2: Status panel (heating state, source, temperatures, comfort) -->
                ${this.boilerV2Data?.status
-                 ? html`<oig-boiler-status-panel .data=${this.boilerV2Data.status}></oig-boiler-status-panel>`
-                 : this.boilerLoading
-                   ? html`<oig-boiler-unavailable-state reason="loading" message=""></oig-boiler-unavailable-state>`
-                   : this.boilerV2Data?.loadError
-                     ? html`<oig-boiler-unavailable-state reason="error" .message=${this.boilerV2Data.loadError}></oig-boiler-unavailable-state>`
-                     : this.boilerV2Data?.status === null && (this.boilerV2Data?.explanation?.degradedReasons?.length ?? 0) > 0
-                       ? html`<oig-boiler-unavailable-state reason="degraded" .message=${(this.boilerV2Data?.explanation?.degradedReasons ?? []).join(', ')}></oig-boiler-unavailable-state>`
-                       : html`<oig-boiler-unavailable-state reason="unavailable" message="Data bojleru nejsou k dispozici"></oig-boiler-unavailable-state>`}
+                 ? html`<oig-boiler-status-panel .lang=${this.boilerLang} .data=${this.boilerV2Data.status}></oig-boiler-status-panel>`
+                  : this.boilerLoading
+                    ? html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="loading" message=""></oig-boiler-unavailable-state>`
+                    : this.boilerV2Data?.loadError
+                      ? html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="error" .message=${this.boilerV2Data.loadError}></oig-boiler-unavailable-state>`
+                      : this.boilerV2Data?.status === null && (this.boilerV2Data?.explanation?.degradedReasons?.length ?? 0) > 0
+                        ? html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="degraded" .message=${(this.boilerV2Data?.explanation?.degradedReasons ?? []).join(', ')}></oig-boiler-unavailable-state>`
+                        : html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="unavailable" message="Data bojleru nejsou k dispozici"></oig-boiler-unavailable-state>`}
 
                <!-- V2: Plan timeline (slots) -->
-               <oig-boiler-plan-timeline .slots=${this.boilerV2Data?.planSlots ?? []}></oig-boiler-plan-timeline>
+               <oig-boiler-plan-timeline .lang=${this.boilerLang} .slots=${this.boilerV2Data?.planSlots ?? []}></oig-boiler-plan-timeline>
 
                <!-- V2: Source explanation (reason codes, freshness) -->
-               <oig-boiler-source-explanation .explanation=${this.boilerV2Data?.explanation ?? null}></oig-boiler-source-explanation>
+               <oig-boiler-source-explanation .lang=${this.boilerLang} .explanation=${this.boilerV2Data?.explanation ?? null}></oig-boiler-source-explanation>
 
                <!-- V2: Manual override (secondary, collapsed by default) -->
                <details>
                  <summary>Ruční přepis zdroje</summary>
-                 <oig-boiler-override-panel
-                   .identity=${this.boilerV2Data?.identity ?? { entryId: null, boxId: null, available: false }}
+                  <oig-boiler-override-panel
+                    .lang=${this.boilerLang}
+                    .identity=${this.boilerV2Data?.identity ?? { entryId: null, boxId: null, available: false }}
                    .currentOverride=${this.boilerV2Data?.manualOverride ?? null}
                  ></oig-boiler-override-panel>
                </details>
 
-               <!-- Legacy sections (subordinate) -->
-               <details>
-                 <summary>Diagnostika a ladění</summary>
-
-                 <!-- State header (current temp + heating dot) -->
-                 <oig-boiler-state .state=${this.boilerState}></oig-boiler-state>
-
-                 <!-- Status grid (7 cards) -->
-                 <oig-boiler-status-grid .data=${this.boilerState}></oig-boiler-status-grid>
-
-                 <!-- Energy breakdown + ratio bar -->
-                 <oig-boiler-energy-breakdown .data=${this.boilerEnergyBreakdown}></oig-boiler-energy-breakdown>
-
-                 <!-- Predicted usage (5 items) -->
-                 <oig-boiler-predicted-usage .data=${this.boilerPredictedUsage}></oig-boiler-predicted-usage>
-
-                 <!-- Plan info (9 rows) -->
-                 <oig-boiler-plan-info
-                   .plan=${this.boilerPlan}
-                   .forecastWindows=${this.boilerForecastWindows}
-                 ></oig-boiler-plan-info>
-
-                 <!-- Visual section: Tank + Profiling side by side -->
-                 <div class="boiler-visual-grid" style="display:grid; grid-template-columns: 1fr 2fr; gap:16px;">
-                   <!-- Tank thermometer -->
-                   <oig-boiler-tank
-                     .boilerState=${this.boilerState}
-                     .targetTemp=${this.boilerConfig?.targetTempC ?? 60}
-                   ></oig-boiler-tank>
-
-                   <div>
-                     <!-- Category selector -->
-                     <oig-boiler-category-select
-                       .current=${this.boilerCurrentCategory}
-                       .available=${this.boilerAvailableCategories}
-                       @category-change=${this.onBoilerCategoryChange}
-                     ></oig-boiler-category-select>
-
-                     <!-- Profiling (CSS bar chart + stats) -->
-                     <oig-boiler-profiling .data=${this.boilerProfiling}></oig-boiler-profiling>
-                   </div>
+               <!-- Setup guide — CTA to HA integration configuration/options -->
+               <div data-testid="boiler-setup-guide" class="boiler-setup-guide">
+                 <span class="boiler-setup-guide__icon">🧙</span>
+                 <div class="boiler-setup-guide__text">
+                   <strong>Průvodce nastavením bojleru</strong>
+                   <p>Bojler konfigurujte v Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat.</p>
                  </div>
-
-                 <!-- 7x24 heatmap grid -->
-                 <oig-boiler-heatmap-grid .data=${this.boilerHeatmap7x24}></oig-boiler-heatmap-grid>
-
-                 <!-- Stats cards (4 large) -->
-                 <oig-boiler-stats-cards .plan=${this.boilerPlan}></oig-boiler-stats-cards>
-
-                 <!-- Config section (6 cards) -->
-                 <oig-boiler-config-section .config=${this.boilerConfig}></oig-boiler-config-section>
-               </details>
+               </div>
              </div>
           </oig-grid>
         </main>
