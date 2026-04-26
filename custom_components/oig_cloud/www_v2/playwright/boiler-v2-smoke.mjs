@@ -58,6 +58,7 @@ const result = await page.evaluate(() => {
   return {
     ok: true,
     selectors: {
+      statusOrUnavailable: find('[data-testid="boiler-status-panel"]') || find('[data-testid="boiler-unavailable-state"]'),
       status: find('[data-testid="boiler-status-panel"]'),
       timeline: find('[data-testid="boiler-plan-timeline"]'),
       explanation: find('[data-testid="boiler-source-explanation"]'),
@@ -77,7 +78,7 @@ await page.screenshot({ path: '/tmp/boiler-v2-smoke.png', fullPage: true });
 fs.writeFileSync('/tmp/boiler-v2-smoke.log', logs.join('\n'));
 await browser.close();
 
-const requiredCore = ['status','timeline','explanation','override'];
+const requiredCore = ['statusOrUnavailable','timeline','explanation','override'];
 const missing = requiredCore.filter(k => !result?.selectors?.[k]);
 if (missing.length) { console.error('Missing selectors:', missing.join(', ')); process.exit(1); }
 console.log('Smoke OK. Screenshot: /tmp/boiler-v2-smoke.png');
