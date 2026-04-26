@@ -1,0 +1,209 @@
+export type Lang = 'cs' | 'en';
+
+export function resolveLang(hass: any): Lang {
+  const raw = (hass?.locale?.language ?? hass?.language ?? 'cs') as string;
+  return /^en/i.test(raw) ? 'en' : 'cs';
+}
+
+const STRINGS: Record<Lang, Record<string, string>> = {
+  cs: {
+    'boiler.status.heading': 'Stav bojleru',
+    'boiler.status.heating': 'Ohřev',
+    'boiler.status.idle': 'Nečinný',
+    'boiler.status.unknown': 'Neznámý',
+    'boiler.status.selected_source': 'Vybraný zdroj',
+    'boiler.status.actuated_source': 'Aktivní zdroj',
+    'boiler.status.temp_top': 'Teplota nahoře',
+    'boiler.status.temp_bottom': 'Teplota dole',
+    'boiler.status.energy_needed': 'Zbývající energie',
+    'boiler.status.last_update': 'Poslední aktualizace',
+    'boiler.status.degraded': 'Degradováno',
+    'boiler.status.comfort_satisfied': 'Komfort splněn',
+    'boiler.status.comfort_unsatisfied': 'Komfort nesplněn',
+    'boiler.status.comfort_unknown': 'Komfort neznámý',
+
+    'boiler.timeline.heading': 'Plán nabíjení (15 min sloty)',
+    'boiler.timeline.empty': 'Plán bojleru zatím není k dispozici.',
+    'boiler.timeline.col_time': 'Čas',
+    'boiler.timeline.col_source': 'Zdroj',
+    'boiler.timeline.col_temp': 'Teplota',
+    'boiler.timeline.col_kwh': 'Energie',
+    'boiler.timeline.col_cost': 'Cena',
+    'boiler.timeline.col_pv': 'FVE podíl',
+    'boiler.timeline.comfort_ok': 'Komfort OK',
+    'boiler.timeline.comfort_gap': 'Komfort nesplněn',
+
+    'boiler.explanation.heading': 'Vysvětlení',
+    'boiler.explanation.empty': 'Žádné vysvětlení od plánovače.',
+    'boiler.explanation.plan_created': 'Plán vytvořen',
+    'boiler.explanation.plan_valid_until': 'Plán platí do',
+    'boiler.explanation.data_age': 'Stáří dat',
+    'boiler.explanation.freshness_heading': 'Čerstvost vstupů',
+    'boiler.explanation.freshness_fresh': 'vstupy aktuální',
+    'boiler.explanation.degraded_heading': 'Degradované stavy',
+    'boiler.explanation.unsatisfied_gap': 'Komfortní mezera',
+    'boiler.explanation.temp_at_deadline': 'Předpokládaná teplota na deadline',
+
+    'boiler.override.heading': 'Ruční přepis (sekundární)',
+    'boiler.override.subtitle': 'Automatický plán je primární — přepis použijte jen výjimečně.',
+    'boiler.override.ttl_label': 'Délka přepisu (minuty)',
+    'boiler.override.reason_label': 'Důvod přepisu',
+    'boiler.override.submit': 'Aktivovat přepis',
+    'boiler.override.identity_unavailable': 'Nedostupné – identita bojleru není rozpoznána.',
+    'boiler.override.capability_unavailable': 'Aktuátor neumožňuje ruční přepis.',
+    'boiler.override.active': 'Přepis aktivní',
+    'boiler.override.ttl_remaining_min': 'Zbývá',
+
+    'boiler.unavailable.loading': 'Načítání dat bojleru…',
+    'boiler.unavailable.error': 'Chyba při načítání bojleru',
+    'boiler.unavailable.degraded': 'Bojler v degradovaném režimu',
+    'boiler.unavailable.unavailable': 'Data bojleru nejsou k dispozici',
+
+    'boiler.source.fve': 'FVE',
+    'boiler.source.grid': 'Síť',
+    'boiler.source.alternative': 'Alternativa',
+    'boiler.source.none': '—',
+
+    'boiler.reason.comfort_satisfied': 'Komfort splněn',
+    'boiler.reason.comfort_unsatisfied': 'Komfort nelze splnit',
+    'boiler.reason.no_feasible_plan': 'Žádný proveditelný plán',
+    'boiler.reason.bootstrap_profile': 'Učící režim profilu (málo dat)',
+    'boiler.reason.history_profile_low_confidence': 'Profil s nízkou důvěrou',
+    'boiler.reason.input_stale_price': 'Ceny nejsou aktuální',
+    'boiler.reason.input_stale_pv': 'FVE predikce není aktuální',
+    'boiler.reason.input_missing_recorder': 'Chybí historie z recorderu',
+    'boiler.reason.input_adapter_error': 'Chyba vstupního adapteru',
+    'boiler.reason.input_stale_temperature': 'Teplota není aktuální',
+    'boiler.reason.top_sensor_unavailable': 'Horní teploměr není dostupný',
+    'boiler.reason.bottom_sensor_unavailable_top_only_degraded': 'Dolní teploměr není dostupný (top-only režim)',
+    'boiler.reason.primary_actuator_unavailable': 'Hlavní topný aktuátor není dostupný',
+    'boiler.reason.alternative_actuator_unavailable_benchmark_only': 'Alternativní zdroj jen jako benchmark',
+    'boiler.reason.circulation_pump_unavailable': 'Cirkulační čerpadlo není dostupné',
+    'boiler.reason.actuator_rate_limited': 'Aktuátor omezen rychlostním limitem',
+    'boiler.reason.actuator_serializer_error': 'Chyba serializéru aktuátoru',
+    'boiler.reason.override_active': 'Ruční přepis aktivní',
+    'boiler.reason.override_expired': 'Ruční přepis vypršel',
+    'boiler.reason.planner_timeout': 'Plánovač překročil časový limit',
+    'boiler.reason.replan_coalesced': 'Přeplánování sloučeno',
+    'boiler.reason.source_selected_grid': 'Vybrán zdroj: síť',
+    'boiler.reason.source_selected_pv': 'Vybrán zdroj: FVE',
+    'boiler.reason.source_selected_alternative': 'Vybrán zdroj: alternativa',
+    'boiler.reason.source_benchmark_only': 'Alternativa pouze jako srovnání',
+    'boiler.reason.setup_incomplete': 'Konfigurace bojleru není dokončena',
+    'boiler.reason.migration_required': 'Vyžaduje se migrace bojleru',
+    'boiler.reason.api_repair_required': 'Vyžaduje se oprava API',
+    'boiler.reason.storage_write_failed': 'Selhalo uložení stavu bojleru',
+  },
+  en: {
+    'boiler.status.heading': 'Boiler status',
+    'boiler.status.heating': 'Heating',
+    'boiler.status.idle': 'Idle',
+    'boiler.status.unknown': 'Unknown',
+    'boiler.status.selected_source': 'Selected source',
+    'boiler.status.actuated_source': 'Actuated source',
+    'boiler.status.temp_top': 'Top temperature',
+    'boiler.status.temp_bottom': 'Bottom temperature',
+    'boiler.status.energy_needed': 'Energy needed',
+    'boiler.status.last_update': 'Last update',
+    'boiler.status.degraded': 'Degraded',
+    'boiler.status.comfort_satisfied': 'Comfort satisfied',
+    'boiler.status.comfort_unsatisfied': 'Comfort not satisfied',
+    'boiler.status.comfort_unknown': 'Comfort unknown',
+
+    'boiler.timeline.heading': 'Heating plan (15 min slots)',
+    'boiler.timeline.empty': 'No boiler plan available yet.',
+    'boiler.timeline.col_time': 'Time',
+    'boiler.timeline.col_source': 'Source',
+    'boiler.timeline.col_temp': 'Temp',
+    'boiler.timeline.col_kwh': 'Energy',
+    'boiler.timeline.col_cost': 'Cost',
+    'boiler.timeline.col_pv': 'PV share',
+    'boiler.timeline.comfort_ok': 'Comfort OK',
+    'boiler.timeline.comfort_gap': 'Comfort gap',
+
+    'boiler.explanation.heading': 'Explanation',
+    'boiler.explanation.empty': 'No planner explanation yet.',
+    'boiler.explanation.plan_created': 'Plan created',
+    'boiler.explanation.plan_valid_until': 'Plan valid until',
+    'boiler.explanation.data_age': 'Data age',
+    'boiler.explanation.freshness_heading': 'Input freshness',
+    'boiler.explanation.freshness_fresh': 'inputs fresh',
+    'boiler.explanation.degraded_heading': 'Degraded state',
+    'boiler.explanation.unsatisfied_gap': 'Comfort gap',
+    'boiler.explanation.temp_at_deadline': 'Predicted deadline temperature',
+
+    'boiler.override.heading': 'Manual override (secondary)',
+    'boiler.override.subtitle': 'Automatic plan is primary — use override only when necessary.',
+    'boiler.override.ttl_label': 'Override duration (minutes)',
+    'boiler.override.reason_label': 'Override reason',
+    'boiler.override.submit': 'Activate override',
+    'boiler.override.identity_unavailable': 'Unavailable – boiler identity is not resolved.',
+    'boiler.override.capability_unavailable': 'Actuator does not support manual override.',
+    'boiler.override.active': 'Override active',
+    'boiler.override.ttl_remaining_min': 'remaining',
+
+    'boiler.unavailable.loading': 'Loading boiler data…',
+    'boiler.unavailable.error': 'Failed to load boiler data',
+    'boiler.unavailable.degraded': 'Boiler in degraded mode',
+    'boiler.unavailable.unavailable': 'Boiler data unavailable',
+
+    'boiler.source.fve': 'PV',
+    'boiler.source.grid': 'Grid',
+    'boiler.source.alternative': 'Alternative',
+    'boiler.source.none': '—',
+
+    'boiler.reason.comfort_satisfied': 'Comfort satisfied',
+    'boiler.reason.comfort_unsatisfied': 'Comfort cannot be met',
+    'boiler.reason.no_feasible_plan': 'No feasible plan',
+    'boiler.reason.bootstrap_profile': 'Bootstrap profile (low data)',
+    'boiler.reason.history_profile_low_confidence': 'Low-confidence profile',
+    'boiler.reason.input_stale_price': 'Spot prices are stale',
+    'boiler.reason.input_stale_pv': 'PV forecast is stale',
+    'boiler.reason.input_missing_recorder': 'Recorder history missing',
+    'boiler.reason.input_adapter_error': 'Input adapter error',
+    'boiler.reason.input_stale_temperature': 'Temperature reading stale',
+    'boiler.reason.top_sensor_unavailable': 'Top sensor unavailable',
+    'boiler.reason.bottom_sensor_unavailable_top_only_degraded': 'Bottom sensor unavailable (top-only mode)',
+    'boiler.reason.primary_actuator_unavailable': 'Primary heating actuator unavailable',
+    'boiler.reason.alternative_actuator_unavailable_benchmark_only': 'Alternative source benchmark only',
+    'boiler.reason.circulation_pump_unavailable': 'Circulation pump unavailable',
+    'boiler.reason.actuator_rate_limited': 'Actuator rate limited',
+    'boiler.reason.actuator_serializer_error': 'Actuator serializer error',
+    'boiler.reason.override_active': 'Manual override active',
+    'boiler.reason.override_expired': 'Manual override expired',
+    'boiler.reason.planner_timeout': 'Planner timeout',
+    'boiler.reason.replan_coalesced': 'Replan coalesced',
+    'boiler.reason.source_selected_grid': 'Source selected: grid',
+    'boiler.reason.source_selected_pv': 'Source selected: PV',
+    'boiler.reason.source_selected_alternative': 'Source selected: alternative',
+    'boiler.reason.source_benchmark_only': 'Alternative is benchmark only',
+    'boiler.reason.setup_incomplete': 'Boiler setup incomplete',
+    'boiler.reason.migration_required': 'Boiler migration required',
+    'boiler.reason.api_repair_required': 'API repair required',
+    'boiler.reason.storage_write_failed': 'Failed to persist boiler state',
+  },
+};
+
+export type Key = keyof typeof STRINGS['cs'];
+
+export function t(key: Key | string, lang: Lang): string {
+  const table = STRINGS[lang] ?? STRINGS.cs;
+  if (key in table) return table[key as Key];
+  if (key in STRINGS.cs) return STRINGS.cs[key as Key];
+  return key as string;
+}
+
+export function reasonLabel(code: string, lang: Lang): string {
+  const key = `boiler.reason.${code}`;
+  if ((STRINGS[lang] as any)[key]) return (STRINGS[lang] as any)[key];
+  if ((STRINGS.cs as any)[key]) return (STRINGS.cs as any)[key];
+  return code;
+}
+
+export function sourceLabel(source: string | null | undefined, lang: Lang): string {
+  if (!source) return t('boiler.source.none', lang);
+  const key = `boiler.source.${source}` as const;
+  if ((STRINGS[lang] as any)[key]) return (STRINGS[lang] as any)[key];
+  if ((STRINGS.cs as any)[key]) return (STRINGS.cs as any)[key];
+  return source;
+}
