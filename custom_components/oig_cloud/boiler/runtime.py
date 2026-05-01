@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as datetime_time
 from typing import Any, Optional, Protocol
 
 from homeassistant.core import HomeAssistant
@@ -61,6 +61,21 @@ _ACCEPTED_REPLAN_TRIGGERS = frozenset(
     }
 )
 _FORCED_REPLAN_TRIGGERS = frozenset({"override_expiry", "restart_restore"})
+
+
+def _normalize_deadline_time(value: Any, default: str) -> str:
+    if isinstance(value, datetime_time):
+        return value.strftime("%H:%M")
+    if isinstance(value, str):
+        parts = value.split(":")
+        if len(parts) in (2, 3):
+            try:
+                hh, mm = int(parts[0]), int(parts[1])
+                if 0 <= hh <= 23 and 0 <= mm <= 59:
+                    return f"{hh:02d}:{mm:02d}"
+            except ValueError:
+                pass
+    return default
 
 
 class IBoilerReadModel(Protocol):
@@ -810,6 +825,7 @@ class BoilerRuntime:
         deadline = deadline_override or config.get(
             CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
         )
+        deadline = _normalize_deadline_time(deadline, DEFAULT_BOILER_DEADLINE_TIME)
         has_alternative = config.get(CONF_BOILER_HAS_ALTERNATIVE_HEATING, False)
         alt_cost_kwh = config.get(CONF_BOILER_ALT_COST_KWH, 0.0)
         alt_switch = config.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY)

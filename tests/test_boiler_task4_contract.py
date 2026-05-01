@@ -12,9 +12,14 @@ Contract-first tests covering:
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
 import pytest
 
+from custom_components.oig_cloud.const import (
+    CONF_BOILER_DEADLINE_TIME,
+    DEFAULT_BOILER_DEADLINE_TIME,
+)
 from custom_components.oig_cloud.boiler.models import BoilerProfile
 from custom_components.oig_cloud.boiler.planner_contract import (
     AlternativeSourceCapability,
@@ -652,7 +657,6 @@ class TestRuntimeIdentityPropagation:
                 return []
 
         planner = LegacyPlannerShouldNotRun()
-        import asyncio
 
         async def _ensure_profile():
             return SimpleNamespace(category="test")
@@ -697,6 +701,7 @@ class TestRuntimeIdentityPropagation:
             plan = await runtime.async_create_plan(force=True)
             return planner_input, plan
 
+        import asyncio
         planner_input, plan = asyncio.run(_run())
 
         assert isinstance(planner_input, PlannerInput)
@@ -708,3 +713,79 @@ class TestRuntimeIdentityPropagation:
         assert runtime.last_plan_result.entry_id == "entry_99"
         assert runtime.last_plan_result.box_id == "box_42"
         assert runtime.get_current_plan() is plan
+
+
+class TestDeadlineTimeNormalization:
+
+    def _make_minimal_runtime(self, deadline_value: Any) -> tuple:
+        from types import SimpleNamespace
+        from custom_components.oig_cloud.boiler.runtime import BoilerRuntime
+
+        class NoOpPlanner:
+            async def async_create_plan(self, **_kw):
+                raise AssertionError("runtime must use plan_comfort_core directly")
+
+        planner = NoOpPlanner()
+
+        async def _ensure_profile():
+            return SimpleNamespace(category="test")
+
+        async def _energy_input():
+            from custom_components.oig_cloud.boiler.runtime import BoilerEnergyInput
+
+            return BoilerEnergyInput(spot_prices={}, overflow_windows=[])
+
+        coordinator = SimpleNamespace(
+            config={CONF_BOILER_DEADLINE_TIME: deadline_value}
+        )
+        runtime = BoilerRuntime(
+            hass=SimpleNamespace(),
+            read_model=SimpleNamespace(
+                async_ensure_profile=_ensure_profile,
+                get_current_plan=lambda: None,
+            ),
+            planner=planner,
+            actuator=SimpleNamespace(
+                async_apply_plan=lambda **kw: None,
+                async_cancel_plan=lambda **kw: None,
+            ),
+            energy_adapter=SimpleNamespace(
+                async_get_energy_input=_energy_input,
+                get_spot_prices=lambda: {},
+                get_overflow_windows=lambda: [],
+            ),
+            coordinator=coordinator,
+            box_id="box_deadline",
+            entry_id="entry_deadline",
+        )
+        return runtime, planner
+
+    @pytest.mark.asyncio
+    async def test_build_planner_input_accepts_time_object_deadline(self):
+        from datetime import time
+        runtime, _ = self._make_minimal_runtime(time(20, 0))
+        planner_input = await runtime._async_build_planner_input(now=datetime(2026, 4, 26, 12, 0))
+        assert planner_input is not None
+        assert planner_input.deadline_time == "20:00"
+
+    @pytest.mark.asyncio
+    async def test_build_planner_input_accepts_plain_hhmm_string(self):
+        runtime, _ = self._make_minimal_runtime("20:00")
+        planner_input = await runtime._async_build_planner_input(now=datetime(2026, 4, 26, 12, 0))
+        assert planner_input is not None
+        assert planner_input.deadline_time == "20:00"
+
+    @pytest.mark.asyncio
+    async def test_build_planner_input_accepts_hhmm_with_seconds(self):
+        runtime, _ = self._make_minimal_runtime("20:00:00")
+        planner_input = await runtime._async_build_planner_input(now=datetime(2026, 4, 26, 12, 0))
+        assert planner_input is not None
+        assert planner_input.deadline_time == "20:00"
+
+    @pytest.mark.asyncio
+    async def test_build_planner_input_falls_back_to_default_on_invalid(self):
+        runtime, _ = self._make_minimal_runtime("not-a-time")
+        default = DEFAULT_BOILER_DEADLINE_TIME
+        planner_input = await runtime._async_build_planner_input(now=datetime(2026, 4, 26, 12, 0))
+        assert planner_input is not None
+        assert planner_input.deadline_time == default
