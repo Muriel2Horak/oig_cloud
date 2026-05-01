@@ -789,6 +789,11 @@ def _resolve_box_id_for_power_monitor(shield: Any) -> Optional[str]:
     if not shield.hass.data.get("oig_cloud"):
         return None  # pragma: no cover
     for _entry_id, entry_data in shield.hass.data["oig_cloud"].items():
+        # Guard against non-entry values stored alongside per-entry dicts
+        # (e.g. hass.data[DOMAIN]["shield"] = ServiceShield instance set in
+        # __init__._setup_service_shield_data). Mirrors validation.py:441.
+        if not isinstance(entry_data, dict):
+            continue
         if entry_data.get("service_shield") != shield:
             continue  # pragma: no cover
         coordinator = entry_data.get("coordinator")
