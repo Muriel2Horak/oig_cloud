@@ -241,6 +241,30 @@ class OigCloudComputedSensor(_ComputedBase):
             return None
         return float(wr + ws + wt)
 
+    def _nonbackup_phase(self, phase: str) -> Optional[float]:
+        """Non-backup (nezáloha) grid load for one phase, in Watts.
+
+        Proxy-first: the local proxy meters the off-backup section directly
+        (``sensor.oig_local_<box>_tbl_actual_acinb_w{r,s,t}``). When that is
+        not present (cloud-only), fall back to grid import per phase minus
+        backed-up load per phase: ``aci_w* − aco_p*`` (clamped to >= 0).
+        """
+        box = self._box_id
+        if isinstance(box, str) and box.isdigit():
+            proxy = self._get_entity_number(
+                f"sensor.oig_local_{box}_tbl_actual_acinb_w{phase}"
+            )
+            if proxy is not None:
+                return round(float(proxy), 1)
+
+        grid = self._get_oig_number(f"actual_aci_w{phase}")
+        consumption = self._get_oig_number(
+            {"r": "ac_out_aco_pr", "s": "ac_out_aco_ps", "t": "ac_out_aco_pt"}[phase]
+        )
+        if grid is None or consumption is None:
+            return None
+        return round(max(0.0, float(grid) - float(consumption)), 1)
+
     def _sum_two_phase(self, base: str) -> Optional[float]:
         p1 = self._get_oig_number(f"{base}_p1")
         p2 = self._get_oig_number(f"{base}_p2")
@@ -656,6 +680,10 @@ class OigCloudComputedSensor(_ComputedBase):
         return {
             "ac_in_aci_wtotal": lambda: self._sum_three_phase("ac_in_aci"),
             "actual_aci_wtotal": lambda: self._sum_three_phase("actual_aci"),
+            "actual_acinb_wr": lambda: self._nonbackup_phase("r"),
+            "actual_acinb_ws": lambda: self._nonbackup_phase("s"),
+            "actual_acinb_wt": lambda: self._nonbackup_phase("t"),
+            "actual_acinb_wtotal": lambda: self._sum_three_phase("actual_acinb"),
             "dc_in_fv_total": lambda: self._sum_two_phase("dc_in_fv"),
             "actual_fv_total": lambda: self._sum_two_phase("actual_fv"),
             "boiler_current_w": self._get_boiler_consumption_from_entities,

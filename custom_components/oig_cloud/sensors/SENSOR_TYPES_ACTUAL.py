@@ -51,6 +51,56 @@ SENSOR_TYPES_ACTUAL: Dict[str, Dict[str, Any]] = {
         "sensor_type_category": "computed",
         "device_mapping": "main",
     },
+    # --- Non-backup (nezáloha) grid load, per phase + total ---
+    # The load the battery does NOT cover (e.g. the car, other off-backup
+    # circuits). Computed (see entities/computed_sensor.py):
+    #   proxy-first: direct metering sensor.oig_local_<box>_tbl_actual_acinb_w{r,s,t}
+    #   cloud fallback: grid import per phase (aci_w*) − backed-up load per
+    #                   phase (aco_p*), clamped to >= 0.
+    "actual_acinb_wr": {
+        "name": "Non-backup Load Line 1 (live)",
+        "name_cs": "Nezáloha - spotřeba fáze 1 (live)",
+        "device_class": SensorDeviceClass.POWER,
+        "unit_of_measurement": UnitOfPower.WATT,
+        "node_id": None,
+        "node_key": None,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "sensor_type_category": "computed",
+        "device_mapping": "main",
+    },
+    "actual_acinb_ws": {
+        "name": "Non-backup Load Line 2 (live)",
+        "name_cs": "Nezáloha - spotřeba fáze 2 (live)",
+        "device_class": SensorDeviceClass.POWER,
+        "unit_of_measurement": UnitOfPower.WATT,
+        "node_id": None,
+        "node_key": None,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "sensor_type_category": "computed",
+        "device_mapping": "main",
+    },
+    "actual_acinb_wt": {
+        "name": "Non-backup Load Line 3 (live)",
+        "name_cs": "Nezáloha - spotřeba fáze 3 (live)",
+        "device_class": SensorDeviceClass.POWER,
+        "unit_of_measurement": UnitOfPower.WATT,
+        "node_id": None,
+        "node_key": None,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "sensor_type_category": "computed",
+        "device_mapping": "main",
+    },
+    "actual_acinb_wtotal": {
+        "name": "Non-backup Load Total (live)",
+        "name_cs": "Nezáloha - spotřeba celkem (live)",
+        "device_class": SensorDeviceClass.POWER,
+        "unit_of_measurement": UnitOfPower.WATT,
+        "node_id": None,
+        "node_key": None,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "sensor_type_category": "computed",
+        "device_mapping": "main",
+    },
     "actual_aco_p": {
         "name": "Load Total (live)",
         "name_cs": "Zátěž celkem (live)",
