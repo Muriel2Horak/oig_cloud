@@ -22,7 +22,11 @@ from ...shared.cloud_contract import (
 from ...shared.logging import resolve_no_telemetry
 from ..data.adaptive_consumption import AdaptiveConsumptionHelper
 from ..data.input import get_load_avg_for_timestamp, get_solar_for_timestamp
-from ..economic_planner import build_planner_decision_trace, plan_battery_schedule
+from ..economic_planner import (
+    build_planner_decision_trace,
+    plan_battery_schedule,
+    simulate_home_i_detailed,
+)
 from ..economic_planner_types import PlannerInputs
 from ..timeline.planner import (
     add_decision_reasons_to_timeline,
@@ -755,10 +759,24 @@ def _run_planner(
         mode_recommendations = sensor._create_mode_recommendations(
             timeline, hours_ahead=48
         )
+        # Real cost + savings vs the do-nothing (all HOME I) baseline over the
+        # planning horizon. These feed the Ceny "savings vs Home 1" tile, which
+        # previously always read missing keys and showed 0.
+        plan_total_cost = float(getattr(result, "total_cost", 0.0) or 0.0)
+        try:
+            baseline_total_cost = sum(
+                state.cost_czk for state in simulate_home_i_detailed(planner_inputs)
+            )
+        except Exception:  # pragma: no cover - defensive
+            baseline_total_cost = plan_total_cost
+        savings_vs_home_i = baseline_total_cost - plan_total_cost
         mode_result = {
             "optimal_timeline": timeline,
             "optimal_modes": guarded_modes,
             "planner": "economic_planner",
+            "total_cost": round(plan_total_cost, 2),
+            "total_cost_48h": round(plan_total_cost, 2),
+            "total_savings_48h": round(savings_vs_home_i, 2),
             "planning_min_kwh": planning_min_kwh,
             "target_kwh": planning_min_kwh,
             # Emergent dynamic reserve: the peak SoC the plan deliberately builds
