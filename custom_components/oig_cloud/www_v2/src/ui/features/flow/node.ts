@@ -474,6 +474,19 @@ export class OigFlowNode extends LitElement {
     .cons-split-z { background: #4CAF50; transition: width 0.3s; }
     .cons-split-n { background: #FFA726; transition: width 0.3s; }
 
+    .house-corner {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      font-size: 9px;
+      line-height: 1.15;
+      background: rgba(0, 0, 0, 0.18);
+      padding: 2px 5px;
+      border-radius: 5px;
+    }
+    .house-corner .hc-l { font-weight: 700; }
+    .house-corner .hc-v { opacity: 0.7; }
+
     .battery-center {
       display: flex;
       flex-direction: column;
@@ -1680,7 +1693,19 @@ export class OigFlowNode extends LitElement {
     return html`
       <div class="${this.nodeClass('house')}" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house};"
         @click=${(e: Event) => this.toggleExpand('house', e)}>
-        <div class="node-header">
+        <!-- Corner summaries: záloha (left) / nezáloha (right) — power · today -->
+        <button class="indicator house-corner" style="position:absolute;top:4px;left:6px"
+          @click=${openEntity('actual_aco_p')} title="Záloha — aktuální výkon · dnes">
+          <span class="hc-l">🔌 ${formatPower(d.housePower)}</span>
+          <span class="hc-v">${zalohaToday.toFixed(1)} kWh</span>
+        </button>
+        <button class="indicator house-corner" style="position:absolute;top:4px;right:6px;text-align:right"
+          @click=${openEntity('actual_acinb_wtotal')} title="Nezáloha — aktuální výkon · dnes">
+          <span class="hc-l">🚗 ${formatPower(d.nonbackupPower)}</span>
+          <span class="hc-v">${nezalohaToday.toFixed(1)} kWh</span>
+        </button>
+
+        <div class="node-header" style="margin-top:16px">
           <oig-house-icon
             .power=${totalPower}
             .maxPower=${d.boilerInstallPower > 0 ? 10000 : 8000}
@@ -1726,14 +1751,6 @@ export class OigFlowNode extends LitElement {
                 <span class="icon">L3</span>
                 <button class="clickable" @click=${openEntity('ac_out_aco_pt')}>${Math.round(d.houseL3)} W</button>
               </div>
-              <div class="detail-row">
-                <span class="icon">Σ</span>
-                <button class="clickable" @click=${openEntity('actual_aco_p')}>${formatPower(d.housePower)}</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">📊</span>
-                <button class="clickable" @click=${openEntity('ac_out_en_day')}>${zalohaToday.toFixed(1)} kWh</button>
-              </div>
             </div>
             <div>
               <div class="detail-header">🚗 Nezáloha</div>
@@ -1748,14 +1765,6 @@ export class OigFlowNode extends LitElement {
               <div class="detail-row">
                 <span class="icon">L3</span>
                 <button class="clickable" @click=${openEntity('actual_acinb_wt')}>${Math.round(d.nonbackupL3)} W</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">Σ</span>
-                <button class="clickable" @click=${openEntity('actual_acinb_wtotal')}>${formatPower(d.nonbackupPower)}</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">📊</span>
-                <button class="clickable" @click=${openEntity('computed_nonbackup_consumption_today')}>${nezalohaToday.toFixed(1)} kWh</button>
               </div>
             </div>
           </div>
