@@ -161,16 +161,29 @@ def find_expensive_import_moments(
     if not states:
         return moments
 
-    threshold = _percentile_threshold(
-        [max(0.0, p) for p in inputs.prices],
-        inputs.expensive_percentile,
-    )
+    prices = [max(0.0, p) for p in inputs.prices]
+    days = inputs.interval_days
+    if days and len(days) == len(prices):
+        # Per-day percentile: judge each day's expensive intervals against that
+        # day's own price distribution (a cheap day and an expensive day do not
+        # blend into one threshold).
+        by_day: dict[int, List[float]] = {}
+        for idx, day in enumerate(days):
+            by_day.setdefault(day, []).append(prices[idx])
+        day_threshold = {
+            day: _percentile_threshold(values, inputs.expensive_percentile)
+            for day, values in by_day.items()
+        }
+        thresholds = [day_threshold[days[idx]] for idx in range(len(prices))]
+    else:
+        whole = _percentile_threshold(prices, inputs.expensive_percentile)
+        thresholds = [whole] * len(prices)
 
     for interval, state in enumerate(states):
-        price = max(0.0, inputs.prices[interval])
+        price = prices[interval] if interval < len(prices) else 0.0
         if state.grid_import_kwh <= 0.0:
             continue
-        if price + _PRICE_EPS_CZK < threshold:
+        if price + _PRICE_EPS_CZK < thresholds[interval]:
             continue
 
         # The "deficit" for an expensive import is the energy we would like the

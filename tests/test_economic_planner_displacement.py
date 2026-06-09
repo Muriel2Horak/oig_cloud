@@ -348,3 +348,32 @@ def test_displacement_performance_full_horizon() -> None:
         elapsed = time.perf_counter() - started
         assert result.modes, f"n={n} produced no plan"
         assert elapsed < 3.0, f"n={n} planning too slow: {elapsed:.2f}s (perf regression)"
+
+
+# ---------------------------------------------------------------------------
+# Per-day percentile (a cheap day's relative peak is judged per day)
+# ---------------------------------------------------------------------------
+
+
+def test_per_day_percentile_flags_each_days_relative_peak() -> None:
+    """A whole-horizon percentile lets a very expensive day-1 hide day-0's own
+    relative peak. Per-day percentile judges each day independently."""
+    n = 8
+    prices = [1.0, 1.0, 1.0, 5.0, 10.0, 10.0, 10.0, 10.0]
+    # battery at floor -> every interval imports from grid (grid_import > 0)
+    base = dict(
+        current_soc_kwh=2.048, prices=prices, solar_forecast=[0.0] * n,
+        load_forecast=[0.5] * n, hw_min_kwh=2.048, planning_min_percent=20.0,
+        expensive_percentile=0.70,
+    )
+    wh = _build_inputs(**base)
+    wh_flagged = {m.interval for m in find_expensive_import_moments(
+        simulate_home_i_detailed(wh), wh)}
+
+    pd = _build_inputs(**base)
+    pd.interval_days = [0, 0, 0, 0, 1, 1, 1, 1]
+    pd_flagged = {m.interval for m in find_expensive_import_moments(
+        simulate_home_i_detailed(pd), pd)}
+
+    assert 3 not in wh_flagged, "whole-horizon threshold hides day-0 relative peak"
+    assert 3 in pd_flagged, "per-day threshold flags day-0 relative peak"

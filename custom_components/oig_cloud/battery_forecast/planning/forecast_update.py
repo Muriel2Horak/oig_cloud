@@ -608,6 +608,28 @@ def _build_solar_kwh_list(
     return solar_kwh_list
 
 
+def _interval_day_indices(
+    spot_prices: list[dict[str, Any]],
+) -> Optional[List[int]]:
+    """0-based day index (0=first day, 1=next, …) per interval from the price
+    timestamps. Returns None on any parse failure so the planner falls back to a
+    whole-horizon percentile."""
+    days: List[int] = []
+    first_date: Optional[date] = None
+    for point in spot_prices:
+        ts = point.get("time")
+        if not ts:
+            return None
+        try:
+            point_date = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).date()
+        except (ValueError, TypeError):
+            return None
+        if first_date is None:
+            first_date = point_date
+        days.append((point_date - first_date).days)
+    return days or None
+
+
 def _run_planner(
     sensor: Any,
     spot_prices: list[dict[str, Any]],
@@ -639,6 +661,11 @@ def _run_planner(
             hw_min_percent,
         )
 
+        # Per-interval day index (0=today, 1=tomorrow, …) from price timestamps,
+        # so the expensive-price percentile is computed per day, not blended
+        # across a cheap day + an expensive day.
+        interval_days = _interval_day_indices(spot_prices)
+
         planner_inputs = PlannerInputs(
             current_soc_kwh=current_capacity,
             max_capacity_kwh=max_capacity,
@@ -651,6 +678,7 @@ def _run_planner(
             load_forecast=list(load_forecast),
             expensive_percentile=float(opts.get("expensive_percentile", 0.70)),
             round_trip_efficiency=efficiency,
+            interval_days=interval_days,
         )
 
         result = plan_battery_schedule(planner_inputs)

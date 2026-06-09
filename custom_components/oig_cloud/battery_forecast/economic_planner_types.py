@@ -49,6 +49,11 @@ class PlannerInputs:
     expensive_percentile: float = DEFAULT_EXPENSIVE_PERCENTILE
     # Round-trip efficiency η for the economic gate (cheap/η < expensive).
     round_trip_efficiency: float = DEFAULT_ROUND_TRIP_EFFICIENCY
+    # Optional per-interval day index (0=today, 1=tomorrow, ...). When set, the
+    # EXPENSIVE_IMPORT percentile threshold is computed per day instead of over
+    # the whole horizon, so a cheap day and an expensive day are judged
+    # independently. Falls back to a whole-horizon percentile when None.
+    interval_days: Optional[List[int]] = None
 
     @property
     def planning_min_kwh(self) -> float:
