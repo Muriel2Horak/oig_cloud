@@ -27,7 +27,7 @@ from ..economic_planner import (
     plan_battery_schedule,
     simulate_home_i_detailed,
 )
-from ..economic_planner_types import PlannerInputs
+from ..economic_planner_types import DEFAULT_ROUND_TRIP_EFFICIENCY, PlannerInputs
 from ..timeline.planner import (
     add_decision_reasons_to_timeline,
     attach_planner_reasons,
@@ -659,8 +659,17 @@ def _run_planner(
             solar_kwh_list = solar_kwh_list[:max_intervals]
 
         opts = sensor._config_entry.options if sensor._config_entry else {}
-        efficiency = float(sensor._get_battery_efficiency())
-        directional_efficiency = _round_trip_to_directional(efficiency)
+        # NOTE: the `battery_efficiency` sensor measures DC/coulombic efficiency
+        # (~99%) from the battery's own charge/discharge energy counters — it is
+        # NOT the AC round-trip (grid -> house) the planner economics need, which
+        # also pays the inverter conversion losses both ways (~84% total). Use the
+        # planner's AC round-trip constant consistently for the η-gate, the
+        # displayed timeline and the mode guard so they all agree with the cost
+        # simulation (_simulate_interval). The DC sensor stays a battery-health
+        # metric only.
+        directional_efficiency = _round_trip_to_directional(
+            DEFAULT_ROUND_TRIP_EFFICIENCY
+        )
         home_charge_rate_kw = float(opts.get("home_charge_rate", 2.8))
         hw_min_kwh = max_capacity * 0.20
         hw_min_percent = (hw_min_kwh / max_capacity) * 100.0 if max_capacity > 0 else 20.0
@@ -688,7 +697,9 @@ def _run_planner(
             solar_forecast=list(solar_kwh_list),
             load_forecast=list(load_forecast),
             expensive_percentile=float(opts.get("expensive_percentile", 0.70)),
-            round_trip_efficiency=efficiency,
+            # round_trip_efficiency defaults to the AC round-trip constant
+            # (DEFAULT_ROUND_TRIP_EFFICIENCY), matching _simulate_interval — see
+            # the directional_efficiency note above.
             interval_days=interval_days,
         )
 
