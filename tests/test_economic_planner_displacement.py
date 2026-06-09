@@ -377,3 +377,31 @@ def test_per_day_percentile_flags_each_days_relative_peak() -> None:
 
     assert 3 not in wh_flagged, "whole-horizon threshold hides day-0 relative peak"
     assert 3 in pd_flagged, "per-day threshold flags day-0 relative peak"
+
+
+# ---------------------------------------------------------------------------
+# Regression: relative spread but no real cost benefit -> NO grid charging
+# ---------------------------------------------------------------------------
+
+
+def test_no_charge_when_displacement_does_not_lower_cost() -> None:
+    """A gentle price ramp makes the top-percentile intervals "expensive"
+    relatively, but pre-charging them from a similarly-priced earlier slot does
+    not lower total cost once round-trip losses are counted. The planner must
+    NOT grid-charge (this was a real bug: it charged ~7.5 kWh for 0 savings)."""
+    n = 96
+    # Small absolute spread (3.0 .. 3.6), no big cheap/expensive gap.
+    prices = [3.0 + 0.6 * (i / (n - 1)) for i in range(n)]
+    solar = [0.0] * n
+    load = [0.08] * n  # total ~7.7 kWh: battery (14 -> ~6.3) never reaches floor
+    inputs = _build_inputs(
+        current_soc_kwh=14.0, prices=prices, solar_forecast=solar,
+        load_forecast=load, max_capacity_kwh=15.36, hw_min_kwh=3.07,
+        planning_min_percent=20.0, expensive_percentile=0.70,
+        round_trip_efficiency=0.838,
+    )
+    result = plan_battery_schedule(inputs)
+    assert _count_ups(result) == 0, (
+        f"no cost-reducing arbitrage exists, must not grid-charge; got UPS at "
+        f"{_ups_indices(result)}"
+    )

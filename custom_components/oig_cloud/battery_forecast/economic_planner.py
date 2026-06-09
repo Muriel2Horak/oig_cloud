@@ -16,6 +16,11 @@ from .types import CBBMode, DEFAULT_CHARGE_EFFICIENCY, DEFAULT_EFFICIENCY
 _LOGGER = logging.getLogger(__name__)
 _SOLAR_HEADROOM_EPS_KWH = 0.05
 _PRICE_EPS_CZK = 1e-9
+# A displacement grid-charge is only kept if it lowers TOTAL plan cost by at
+# least this much. Using real cost (not "expensive kWh") automatically accounts
+# for round-trip losses, so pre-charging is rejected unless cheap/η < expensive
+# actually pays off — no pointless charging on flat-price days.
+_COST_IMPROVEMENT_EPS_CZK = 1e-4
 
 
 def _simulate_interval(
@@ -405,7 +410,11 @@ def _displace_expensive_imports(
         moments = find_expensive_import_moments(states, inputs)
         if not moments:
             break
-        total = sum(m.deficit_kwh for m in moments)
+        # Improvement is measured in real TOTAL COST, not "expensive kWh": a
+        # pre-charge that merely shifts an import to a similarly priced earlier
+        # slot does not lower cost (and round-trip losses make it worse), so it
+        # must be rejected.
+        total_cost = sum(state.cost_czk for state in states)
 
         # Most expensive first; tie-break on later interval (closer deadline).
         moments.sort(key=lambda m: (m.price_czk or 0.0, m.interval), reverse=True)
@@ -429,15 +438,13 @@ def _displace_expensive_imports(
         if candidate_idx is None:
             break
 
-        # Place tentatively, then verify it actually reduced expensive imports.
+        # Place tentatively, then keep it only if TOTAL plan cost strictly drops.
         modes[candidate_idx] = CBBMode.HOME_UPS.value
         trial_states = _simulate_with_modes(modes, inputs)
-        trial_total = sum(
-            m.deficit_kwh for m in find_expensive_import_moments(trial_states, inputs)
-        )
+        trial_cost = sum(state.cost_czk for state in trial_states)
 
-        if trial_total >= total - _SOLAR_HEADROOM_EPS_KWH:
-            # No economic improvement (charge spilled or drained elsewhere) —
+        if trial_cost >= total_cost - _COST_IMPROVEMENT_EPS_CZK:
+            # Not cost-reducing (no real arbitrage / round-trip loss dominates) —
             # revert, block this candidate, and try the next-cheapest one.
             modes[candidate_idx] = CBBMode.HOME_I.value
             blocked.add(candidate_idx)
