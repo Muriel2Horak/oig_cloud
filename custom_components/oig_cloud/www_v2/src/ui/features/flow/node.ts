@@ -176,6 +176,12 @@ export class OigFlowNode extends LitElement {
     .node-state.st-discharge { color: #ffcc80; }
     .node-state.st-idle { color: rgba(255,255,255,0.55); }
 
+    /* Solar: produced/forecast headline + remaining chip */
+    .nv-sub { font-size: 14px; font-weight: 600; opacity: 0.6; }
+    .solar-rem { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 9px; margin-top: 2px; }
+    .solar-rem.rem-on { background: #ffca5a; color: #101a10; }
+    .solar-rem.rem-off { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
+
     .node:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 16px rgba(0,0,0,0.2);
@@ -1342,35 +1348,49 @@ export class OigFlowNode extends LitElement {
       : NODE_GRADIENTS.solar;
     const border = isNight ? 'rgba(121,134,203,0.5)' : NODE_BORDERS.solar;
 
-    const badgeL = isNight
-      ? 'position:absolute;top:4px;left:6px;font-size:11px;background:rgba(57,73,171,0.35);color:#9fa8da;padding:3px 8px;border-radius:4px;border:1px solid rgba(121,134,203,0.4)'
-      : 'position:absolute;top:4px;left:6px;font-size:9px';
-    const badgeR = isNight
-      ? 'position:absolute;top:4px;right:6px;font-size:11px;background:rgba(57,73,171,0.35);color:#9fa8da;padding:3px 8px;border-radius:4px;border:1px solid rgba(121,134,203,0.4)'
-      : 'position:absolute;top:4px;right:6px;font-size:9px';
+    const producedKwh = d.solarToday / 1000;
+    // Late in the day the forecast-for-today can read 0; never show produced/0.
+    const forecastKwh = Math.max(d.solarForecastToday, producedKwh);
+    const remainingKwh = Math.max(0, forecastKwh - producedKwh);
+    const progressPct = forecastKwh > 0 ? Math.min(100, (producedKwh / forecastKwh) * 100) : 0;
+    const powerKw = d.solarPower / 1000;
+    // Edge colour = production intensity (% of peak): dim orange → bright yellow.
+    const intColor = isNight
+      ? '#5c6bc0'
+      : percent < 20 ? '#ff7043' : percent < 50 ? '#ffa726' : '#ffd54f';
 
     return html`
       <div class="${this.nodeClass('solar', isNight ? 'night' : '')}" style="--node-gradient: ${gradient}; --node-border: ${border};"
         @click=${(e: Event) => this.toggleExpand('solar', e)}>
-        <div class="node-header" style="margin-top:16px">
-          <oig-solar-icon .power=${d.solarPower} .percent=${percent} .maxPower=${5400}></oig-solar-icon>
-          <span class="node-label">Solár</span>
-        </div>
-        <div class="node-value" @click=${openEntity('actual_fv_total')}>
-          ${formatPower(d.solarPower)}
-        </div>
-        <div class="node-subvalue" @click=${openEntity('dc_in_fv_ad')}>
-          Dnes: ${(d.solarToday / 1000).toFixed(2)} kWh
-        </div>
+        ${this.edgeGauge({
+          id: 'gauge-solar',
+          pct: isNight ? 0 : progressPct,
+          stops: [[0, intColor], [1, intColor]],
+          width: 2.5 + Math.min(4, powerKw),
+          pulse: !isNight && d.solarPower > 30,
+          pulseDur: Math.max(0.9, 2.2 - powerKw * 0.35),
+        })}
+        <div class="node-tint" style="background: radial-gradient(120% 70% at 50% 0, ${isNight ? 'rgba(57,73,171,0.18)' : intColor + '22'}, transparent 70%)"></div>
 
-        <button class="indicator" style="${badgeL}" @click=${openEntity('solar_forecast')}
-          title=${d.solarForecastStale ? 'Předpověď je zastaralá' : 'Předpověď FVE na dnes'}>
-          ${d.solarForecastStale ? '⚠' : '🔮'} ${d.solarForecastToday.toFixed(1)} kWh
+        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px;z-index:3" @click=${openEntity('solar_forecast')}
+          title=${d.solarForecastStale ? 'Předpověď zítra (zastaralá)' : 'Předpověď FVE na zítra'}>
+          ${d.solarForecastStale ? '⚠' : '🌅'} ${d.solarForecastTomorrow.toFixed(1)}
         </button>
-        <button class="indicator" style="${badgeR}" @click=${openEntity('solar_forecast')}
-          title=${d.solarForecastStale ? 'Předpověď je zastaralá' : 'Předpověď FVE na zítra'}>
-          ${d.solarForecastStale ? '⚠' : '🌅'} ${d.solarForecastTomorrow.toFixed(1)} kWh
-        </button>
+
+        <div class="node-header node-header--split" style="margin-top:16px">
+          <span class="node-label">☀️ Solár</span>
+          <span class="node-state" style="color:${isNight ? '#9fa8da' : intColor}">
+            ${isNight ? '🌙 Noc' : `${formatPower(d.solarPower)} · ${Math.round(percent)} %`}
+          </span>
+        </div>
+        <div class="node-value" @click=${openEntity('dc_in_fv_ad')}>
+          ${producedKwh.toFixed(1)} <span class="nv-sub">/ ${forecastKwh.toFixed(1)} kWh</span>
+        </div>
+        <div class="node-subvalue">
+          ${remainingKwh > 0.05
+            ? html`<span class="solar-rem ${remainingKwh > 1 ? 'rem-on' : 'rem-off'}">⚡ ještě ~${remainingKwh.toFixed(1)} kWh</span>`
+            : html`<span class="solar-rem rem-off">✓ hotovo dnes</span>`}
+        </div>
 
         <div class="detail-section">
           <div class="solar-strings">
@@ -1661,41 +1681,53 @@ export class OigFlowNode extends LitElement {
   // GRID
   // ==========================================================================
 
-  private getGridStatus(): { text: string; cls: string } {
-    const p = this.data.gridPower;
-    if (p > 10) return { text: '⬇ Import', cls: 'status-importing pulse' };
-    if (p < -10) return { text: '⬆ Export', cls: 'status-exporting pulse' };
-    return { text: '◉ Žádný tok', cls: 'status-idle' };
-  }
-
   private renderGrid() {
     const d = this.data;
-    const status = this.getGridStatus();
+    const importing = d.gridPower > 10;
+    const exporting = d.gridPower < -10;
+    const absW = Math.abs(d.gridPower);
+    const flowKw = absW / 1000;
+    const dirText = importing ? '↓ Odběr ze sítě' : exporting ? '↑ Přetok do sítě' : '◉ Žádný tok';
+    const breakerMax = 25 * 230 * 3; // 25 A / phase
+    const exportLimit = d.inverterGridLimit > 0 ? d.inverterGridLimit : 5000;
+    const limitPct = importing ? (absW / breakerMax) * 100 : exporting ? (absW / exportLimit) * 100 : 0;
+    const limitText = importing ? `${Math.round(limitPct)} % jističe` : exporting ? `${Math.round(limitPct)} % limitu` : '';
+    // Colour by price: import expensive→red / cheap→orange / ≤0→green;
+    // export inverse by sell price (good→green).
+    const gColor = importing
+      ? (d.spotPrice <= 0 ? '#43a047' : d.spotPrice < 3 ? '#ffa726' : '#ef5350')
+      : exporting
+        ? (d.exportPrice >= 3 ? '#43a047' : d.exportPrice >= 1.5 ? '#ffa726' : '#ef5350')
+        : 'rgba(255,255,255,0.35)';
+    const priceState = importing ? `${d.spotPrice.toFixed(2)} Kč` : exporting ? `+${d.exportPrice.toFixed(2)} Kč` : '';
+    const amps = (p: number, v: number) => (v > 10 ? Math.round(Math.abs(p) / v) : 0);
 
     return html`
       <div class="${this.nodeClass('grid')}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid};"
         @click=${(e: Event) => this.toggleExpand('grid', e)}>
+        ${this.edgeGauge({
+          id: 'gauge-grid',
+          pct: limitPct,
+          stops: [[0, gColor], [1, gColor]],
+          width: 2.5 + Math.min(4, flowKw),
+          pulse: importing || exporting,
+          pulseDur: Math.max(0.9, 2.2 - flowKw * 0.35),
+        })}
+        <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 50%, ${gColor}22, transparent 72%)"></div>
 
-        <!-- Tarif badge vlevo nahoře -->
-        <button class="indicator" style="position:absolute;top:4px;left:6px;font-size:9px" @click=${openEntity('current_tariff')}>
+        <button class="indicator" style="position:absolute;top:4px;left:6px;font-size:9px;z-index:3" @click=${openEntity('current_tariff')}>
           ${getTariffDisplay(d.currentTariff)}
         </button>
-        <!-- Frekvence vpravo nahoře -->
-        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${openEntity('ac_in_aci_f')}>
+        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px;z-index:3" @click=${openEntity('ac_in_aci_f')}>
           ${d.gridFrequency.toFixed(1)} Hz
         </button>
 
-        <!-- SVG ikona -->
-        <div class="node-svg-icon" style="margin-top:14px">
-          <oig-grid-icon .power=${d.gridPower} style="width:44px;height:44px"></oig-grid-icon>
+        <div class="node-header node-header--split" style="margin-top:16px">
+          <span class="node-label">🔌 Síť</span>
+          <span class="node-state" style="color:${gColor}">${priceState}</span>
         </div>
-        <div class="node-label" style="margin-bottom:2px">Síť</div>
-
-        <!-- Hlavní hodnota -->
-        <div class="node-value" @click=${openEntity('actual_aci_wtotal')}>
-          ${formatPower(d.gridPower)}
-        </div>
-        <div class="node-status ${status.cls}">${status.text}</div>
+        <div class="node-value" @click=${openEntity('actual_aci_wtotal')}>${formatPower(absW)}</div>
+        <div class="node-subvalue" style="color:${gColor};font-weight:600">${dirText}${limitText ? ' · ' + limitText : ''}</div>
 
         <!-- Ceny — vždy viditelné jako rychlý přehled -->
         <div class="prices-row" style="margin-top:4px">
@@ -1718,18 +1750,18 @@ export class OigFlowNode extends LitElement {
         <div class="phases-grid" style="margin-top:6px">
           <div class="phase-cell">
             <span class="phase-label">L1</span>
-            <button class="phase-val" @click=${openEntity('actual_aci_wr')}>${Math.round(d.gridL1P)}W</button>
-            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('ac_in_aci_vr')}>${Math.round(d.gridL1V)}V</button>
+            <button class="phase-val" @click=${openEntity('actual_aci_wr')}>${amps(d.gridL1P, d.gridL1V)} A</button>
+            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('actual_aci_wr')}>${Math.round(d.gridL1P)} W</button>
           </div>
           <div class="phase-cell">
             <span class="phase-label">L2</span>
-            <button class="phase-val" @click=${openEntity('actual_aci_ws')}>${Math.round(d.gridL2P)}W</button>
-            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('ac_in_aci_vs')}>${Math.round(d.gridL2V)}V</button>
+            <button class="phase-val" @click=${openEntity('actual_aci_ws')}>${amps(d.gridL2P, d.gridL2V)} A</button>
+            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('actual_aci_ws')}>${Math.round(d.gridL2P)} W</button>
           </div>
           <div class="phase-cell">
             <span class="phase-label">L3</span>
-            <button class="phase-val" @click=${openEntity('actual_aci_wt')}>${Math.round(d.gridL3P)}W</button>
-            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('ac_in_aci_vt')}>${Math.round(d.gridL3V)}V</button>
+            <button class="phase-val" @click=${openEntity('actual_aci_wt')}>${amps(d.gridL3P, d.gridL3V)} A</button>
+            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('actual_aci_wt')}>${Math.round(d.gridL3P)} W</button>
           </div>
         </div>
 
