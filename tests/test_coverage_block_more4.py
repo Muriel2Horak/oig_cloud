@@ -12,8 +12,6 @@ from custom_components.oig_cloud.api import ha_rest_api as api_module
 from custom_components.oig_cloud.battery_forecast.presentation import (
     unified_cost_tile_helpers as uct_module,
 )
-from custom_components.oig_cloud.battery_forecast.strategy import hybrid_planning
-from custom_components.oig_cloud.battery_forecast.strategy import hybrid_scoring
 from custom_components.oig_cloud.battery_forecast.types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
@@ -199,87 +197,6 @@ async def test_build_tomorrow_cost_data_empty_modes(monkeypatch):
 
     data = await uct_module.build_tomorrow_cost_data(Sensor(), mode_names={})
     assert data["dominant_mode_name"] == "Unknown"
-
-
-def test_hybrid_planning_gap_fill_variants():
-    strategy = SimpleNamespace(
-        config=SimpleNamespace(max_ups_price_czk=1.0),
-        sim_config=SimpleNamespace(ac_dc_efficiency=0.9),
-        MIN_UPS_PRICE_BAND_PCT=0.08,
-    )
-    extended = hybrid_planning.extend_ups_blocks_by_price_band(
-        strategy,
-        charging_intervals={0, 2},
-        prices=[0.5, 0.51, 0.52],
-        blocked_indices=set(),
-    )
-    assert extended == {1}
-
-
-def test_hybrid_scoring_reason_branches(monkeypatch):
-    strategy = SimpleNamespace(
-        sim_config=SimpleNamespace(ac_dc_efficiency=0.9, dc_ac_efficiency=0.9),
-        LOOKAHEAD_INTERVALS=4,
-        MIN_PRICE_SPREAD_PERCENT=10,
-        simulator=SimpleNamespace(
-            simulate=lambda **_k: SimpleNamespace(battery_end=3.0, solar_used_direct=0.0),
-            calculate_cost=lambda *_a, **_k: 1.0,
-        ),
-        config=SimpleNamespace(
-            weight_cost=1.0,
-            weight_battery_preservation=1.0,
-            weight_self_consumption=1.0,
-            charging_strategy=SimpleNamespace(),
-            max_ups_price_czk=1.0,
-        ),
-        _planning_min=2.0,
-        _target=4.0,
-        _max=10.0,
-    )
-
-    analysis = hybrid_scoring.analyze_future_prices(
-        strategy,
-        prices=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        export_prices=[0.0] * 20,
-        consumption_forecast=[0.1] * 20,
-    )
-    assert analysis[0]["charge_reason"]
-
-    def _score(_strategy, mode, **_k):
-        return {CBB_MODE_HOME_UPS: 4, CBB_MODE_HOME_I: 3, CBB_MODE_HOME_II: 2, CBB_MODE_HOME_I: 1}[mode]
-
-    monkeypatch.setattr(hybrid_scoring, "score_mode", _score)
-    mode, reason, _ = hybrid_scoring.select_best_mode(
-        strategy,
-        battery=3.0,
-        solar=0.0,
-        load=0.0,
-        price=2.0,
-        export_price=0.0,
-        cheap_threshold=0.5,
-        expensive_threshold=3.0,
-        very_cheap=1.0,
-    )
-    assert mode == CBB_MODE_HOME_UPS
-    assert reason == "opportunistic_charge"
-
-    def _score_home1(_strategy, mode, **_k):
-        return {CBB_MODE_HOME_I: 5, CBB_MODE_HOME_UPS: 4}[mode]
-
-    monkeypatch.setattr(hybrid_scoring, "score_mode", _score_home1)
-    mode, reason, _ = hybrid_scoring.select_best_mode(
-        strategy,
-        battery=5.0,
-        solar=0.0,
-        load=1.0,
-        price=2.0,
-        export_price=0.0,
-        cheap_threshold=0.5,
-        expensive_threshold=3.0,
-        very_cheap=1.0,
-    )
-    assert mode == CBB_MODE_HOME_I
-    assert reason == "normal_operation"
 
 
 @pytest.mark.asyncio

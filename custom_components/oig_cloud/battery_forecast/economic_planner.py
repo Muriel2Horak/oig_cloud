@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from math import ceil, isfinite
-from typing import List, Tuple
+from math import ceil
+from typing import List
 
 from .economic_planner_types import (
     CriticalMoment,
@@ -196,162 +196,6 @@ def find_expensive_import_moments(
     return moments
 
 
-def calculate_cost_use_battery(moment: CriticalMoment, inputs: PlannerInputs) -> float:
-    if moment.interval >= len(inputs.intervals):
-        return 0.0
-
-    initial_soc = moment.soc_kwh
-    if initial_soc is None:
-        initial_soc = inputs.current_soc_kwh
-
-    soc = max(inputs.hw_min_kwh, min(initial_soc, inputs.max_capacity_kwh))
-    total_cost = 0.0
-
-    for i in range(moment.interval, len(inputs.intervals)):
-        solar = max(0.0, inputs.solar_forecast[i])
-        load = max(0.0, inputs.load_forecast[i])
-        price = max(0.0, inputs.prices[i])
-
-        soc, _, _, cost = _simulate_interval(
-            soc=soc,
-            solar=solar,
-            load=load,
-            price=price,
-            inputs=inputs,
-            mode=CBBMode.HOME_I.value,
-        )
-        total_cost += cost
-
-    return total_cost
-
-
-def calculate_cost_wait_for_solar(moment: CriticalMoment, inputs: PlannerInputs) -> float:
-    solar_start = None
-    for i in range(moment.interval, len(inputs.intervals)):
-        if inputs.solar_forecast[i] > inputs.load_forecast[i]:
-            solar_start = i
-            break
-
-    if solar_start is None:
-        return float("inf")
-
-    initial_soc = moment.soc_kwh
-    if initial_soc is None:
-        initial_soc = inputs.current_soc_kwh
-
-    soc = max(inputs.hw_min_kwh, min(initial_soc, inputs.max_capacity_kwh))
-    total_cost = 0.0
-
-    for i in range(moment.interval, solar_start):
-        solar = max(0.0, inputs.solar_forecast[i])
-        load = max(0.0, inputs.load_forecast[i])
-        price = max(0.0, inputs.prices[i])
-
-        soc, _, _, cost = _simulate_interval(
-            soc=soc,
-            solar=solar,
-            load=load,
-            price=price,
-            inputs=inputs,
-            mode=CBBMode.HOME_I.value,
-        )
-        total_cost += cost
-
-    return total_cost
-
-
-def calculate_cost_charge_cheapest(
-    start_idx: int,
-    end_idx: int,
-    deficit: float,
-    inputs: PlannerInputs,
-) -> Tuple[float, List[int]]:
-    if (
-        deficit <= 0.0
-        or start_idx >= end_idx
-        or inputs.charge_rate_per_interval <= 0.0
-        or DEFAULT_EFFICIENCY <= 0.0
-    ):
-        return 0.0, []
-
-    bounded_start = max(0, start_idx)
-    bounded_end = min(end_idx, len(inputs.intervals))
-    if bounded_start >= bounded_end:
-        return 0.0, []
-
-    candidates = [(i, max(0.0, inputs.prices[i])) for i in range(bounded_start, bounded_end)]
-    candidates.sort(key=lambda interval_price: interval_price[1])
-
-    total_cost = 0.0
-    remaining_deficit = max(0.0, deficit)
-    charge_intervals: List[int] = []
-
-    for interval_idx, price in candidates:
-        if remaining_deficit <= 0.0:
-            break
-
-        required_input_energy = remaining_deficit / DEFAULT_EFFICIENCY
-        charged_energy = min(inputs.charge_rate_per_interval, required_input_energy)
-        effective_energy = charged_energy * DEFAULT_EFFICIENCY
-
-        total_cost += charged_energy * price
-        remaining_deficit = max(0.0, remaining_deficit - effective_energy)
-        charge_intervals.append(interval_idx)
-
-    return total_cost, charge_intervals
-
-
-def make_economic_decisions(
-    moments: List[CriticalMoment],
-    inputs: PlannerInputs,
-) -> List[Decision]:
-    decisions: List[Decision] = []
-
-    for moment in moments:
-        cost_a = calculate_cost_use_battery(moment, inputs)
-        cost_b, intervals_b = calculate_cost_charge_cheapest(
-            moment.must_start_charging,
-            moment.interval,
-            moment.deficit_kwh,
-            inputs,
-        )
-        cost_c = calculate_cost_wait_for_solar(moment, inputs)
-
-        costs = [
-            ("USE_BATTERY", cost_a, []),
-            ("CHARGE_CHEAPEST", cost_b, intervals_b),
-            ("WAIT_FOR_SOLAR", cost_c, []),
-        ]
-
-        viable_costs = [candidate for candidate in costs if isfinite(candidate[1])]
-
-        if viable_costs:
-            best = min(viable_costs, key=lambda candidate: candidate[1])
-            decisions.append(
-                Decision(
-                    moment=moment,
-                    strategy=best[0],
-                    cost=best[1],
-                    charge_intervals=best[2],
-                    alternatives=[(name, cost) for name, cost, _ in costs],
-                )
-            )
-            continue
-
-        decisions.append(
-            Decision(
-                moment=moment,
-                strategy="USE_BATTERY",
-                cost=float("inf"),
-                charge_intervals=[],
-                alternatives=[(name, cost) for name, cost, _ in costs],
-                reason="EMERGENCY_NO_FINITE_STRATEGY",
-            )
-        )
-
-    return decisions
-
-
 def _compute_soc_trajectory(modes: List[int], inputs: PlannerInputs) -> List[float]:
     soc_trajectory: List[float] = []
     soc = max(inputs.hw_min_kwh, min(inputs.current_soc_kwh, inputs.max_capacity_kwh))
@@ -365,19 +209,6 @@ def _compute_soc_trajectory(modes: List[int], inputs: PlannerInputs) -> List[flo
 
     soc_trajectory.append(soc)
     return soc_trajectory
-
-
-def _deficit_interval_prices(modes: List[int], inputs: PlannerInputs) -> List[float]:
-    prices: List[float] = []
-    soc = max(inputs.hw_min_kwh, min(inputs.current_soc_kwh, inputs.max_capacity_kwh))
-    for i, mode in enumerate(modes):
-        solar = max(0.0, inputs.solar_forecast[i])
-        load = max(0.0, inputs.load_forecast[i])
-        price = max(0.0, inputs.prices[i])
-        soc, grid_import, _, _ = _simulate_interval(soc, solar, load, price, inputs, mode)
-        if mode != CBBMode.HOME_UPS.value and grid_import > 0.0:
-            prices.append(price)
-    return prices
 
 
 def _estimate_future_storable_surplus_kwh(
@@ -636,37 +467,6 @@ def _simulate_with_modes(modes: List[int], inputs: PlannerInputs) -> List[Simula
         )
 
     return states
-
-
-def generate_plan(decisions: List[Decision], inputs: PlannerInputs) -> PlannerResult:
-    n = len(inputs.intervals)
-    modes = [CBBMode.HOME_I.value] * n
-
-    for decision in decisions:
-        if decision.strategy != "CHARGE_CHEAPEST":
-            continue
-        for idx in decision.charge_intervals:
-            if 0 <= idx < n:
-                modes[idx] = CBBMode.HOME_UPS.value
-
-    states = _simulate_with_modes(modes, inputs)
-
-    safety_min_kwh = inputs.hw_min_kwh * 0.95
-    for state in states:
-        if state.soc_kwh < safety_min_kwh:
-            raise ValueError(
-                f"Safety validation failed: interval={state.interval_index}, "
-                f"soc={state.soc_kwh:.3f}kWh, minimum={safety_min_kwh:.3f}kWh"
-            )
-
-    total_cost = sum(state.cost_czk for state in states)
-
-    return PlannerResult(
-        modes=modes,
-        states=states,
-        total_cost=total_cost,
-        decisions=decisions,
-    )
 
 
 def build_planner_decision_trace(
