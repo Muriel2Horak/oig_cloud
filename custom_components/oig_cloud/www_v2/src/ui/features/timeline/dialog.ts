@@ -453,7 +453,7 @@ export class OigTimelineDialog extends LitElement {
   // ---- Main render ----
 
   render() {
-    const tabs: TimelineTab[] = ['yesterday', 'today', 'tomorrow', 'history', 'detail'];
+    const tabs: TimelineTab[] = ['yesterday', 'today', 'tomorrow'];
 
     return html`
       <div class="dialog" @click=${(e: Event) => e.stopPropagation()}>
@@ -987,12 +987,12 @@ export class OigTimelineTile extends LitElement {
   }
 
   render() {
-    const tabs: TimelineTab[] = ['yesterday', 'today', 'tomorrow', 'history', 'detail'];
+    const tabs: TimelineTab[] = ['yesterday', 'today', 'tomorrow'];
 
     return html`
       <div class="tile">
         <div class="tile-header">
-          <span class="tile-title">📅 Plán režimů</span>
+          <span class="tile-title">📊 Plán &amp; realita</span>
           <label class="auto-refresh">
             <input type="checkbox" .checked=${this.autoRefresh} @change=${this.toggleAutoRefresh} />
             Auto

@@ -1101,15 +1101,12 @@ export class OigApp extends LitElement {
                 <oig-pricing-stats ?topOnly=${true} .data=${this.pricingData}></oig-pricing-stats>
                 <oig-pricing-chart .data=${this.pricingData}></oig-pricing-chart>
 
-                <div class="below-chart-pair">
-                  <oig-pricing-stats .data=${this.pricingData}></oig-pricing-stats>
-                  <oig-timeline-tile
-                    .data=${this.timelineData}
-                    .activeTab=${this.timelineTab}
-                    @tab-change=${this.onTimelineTabChange}
-                    @refresh=${this.onTimelineRefresh}
-                  ></oig-timeline-tile>
-                </div>
+                <oig-timeline-tile
+                  .data=${this.timelineData}
+                  .activeTab=${this.timelineTab}
+                  @tab-change=${this.onTimelineTabChange}
+                  @refresh=${this.onTimelineRefresh}
+                ></oig-timeline-tile>
 
                 <div class="analytics-row">
                   <oig-analytics-block title="Účinnost baterie" icon="⚡">

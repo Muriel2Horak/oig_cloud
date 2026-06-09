@@ -463,6 +463,17 @@ export class OigFlowNode extends LitElement {
 
     .phase-sep { color: ${u(CSS_VARS.divider)}; }
 
+    .cons-split {
+      display: flex;
+      height: 5px;
+      border-radius: 3px;
+      overflow: hidden;
+      margin: 5px 0 2px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .cons-split-z { background: #4CAF50; transition: width 0.3s; }
+    .cons-split-n { background: #FFA726; transition: width 0.3s; }
+
     .battery-center {
       display: flex;
       flex-direction: column;
@@ -1691,6 +1702,13 @@ export class OigFlowNode extends LitElement {
             🔮 Záloha plán: ${zalohaForecast.toFixed(1)} kWh
           </div>` : nothing}
 
+        <!-- Split bar: share of záloha (green) vs nezáloha (orange) right now -->
+        ${totalPower > 5 ? html`
+          <div class="cons-split" title="Podíl zálohy vs nezálohy (aktuální výkon)">
+            <div class="cons-split-z" style="width:${(d.housePower / totalPower) * 100}%"></div>
+            <div class="cons-split-n" style="width:${(d.nonbackupPower / totalPower) * 100}%"></div>
+          </div>` : nothing}
+
         <!-- Two columns: Záloha | Nezáloha (per phase + total + today) -->
         <div class="detail-section">
           <div class="solar-strings">
@@ -1739,16 +1757,6 @@ export class OigFlowNode extends LitElement {
                 <span class="icon">📊</span>
                 <button class="clickable" @click=${openEntity('computed_nonbackup_consumption_today')}>${nezalohaToday.toFixed(1)} kWh</button>
               </div>
-              ${d.boilerIsUse ? html`
-                <div class="detail-row">
-                  <span class="icon">🔥</span>
-                  <button class="clickable" @click=${openEntity('boiler_current_cbb_w')}>${formatPower(d.boilerPower)}</button>
-                </div>
-                <div class="detail-row">
-                  <span class="icon">📈</span>
-                  <button class="clickable" @click=${openEntity('boiler_day_w')}>${formatEnergy(d.boilerDayEnergy)}</button>
-                </div>
-              ` : nothing}
             </div>
           </div>
         </div>
