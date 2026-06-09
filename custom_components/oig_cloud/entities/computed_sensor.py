@@ -89,6 +89,10 @@ class OigCloudComputedSensor(_ComputedBase):
             "charge_grid_today": 0.0,
             "charge_grid_month": 0.0,
             "charge_grid_year": 0.0,
+            # Non-backup (nezáloha) consumption, integrated from actual_acinb_wtotal.
+            "nonbackup_today": 0.0,
+            "nonbackup_month": 0.0,
+            "nonbackup_year": 0.0,
         }
 
         self._last_update_time: Optional[datetime] = None
@@ -357,6 +361,9 @@ class OigCloudComputedSensor(_ComputedBase):
             "computed_batt_charge_grid_energy_today": "charge_grid_today",
             "computed_batt_charge_grid_energy_month": "charge_grid_month",
             "computed_batt_charge_grid_energy_year": "charge_grid_year",
+            "computed_nonbackup_consumption_today": "nonbackup_today",
+            "computed_nonbackup_consumption_month": "nonbackup_month",
+            "computed_nonbackup_consumption_year": "nonbackup_year",
         }
         return sensor_map.get(self._sensor_type)
 
@@ -407,6 +414,19 @@ class OigCloudComputedSensor(_ComputedBase):
         self._energy["discharge_today"] += wh_increment
         self._energy["discharge_month"] += wh_increment
         self._energy["discharge_year"] += wh_increment
+
+    def _apply_nonbackup_delta(self, delta_seconds: float) -> None:
+        """Integrate non-backup (nezáloha) load power → energy (Wh).
+
+        Non-backup load is always a draw (>= 0), so this counter only grows
+        within a period and resets daily/monthly/yearly like the others.
+        """
+        nb_power = self._get_oig_number("actual_acinb_wtotal")
+        if nb_power is None or nb_power <= 0:
+            return
+        wh_nb = (float(nb_power) * delta_seconds) / 3600.0
+        for key in ("nonbackup_today", "nonbackup_month", "nonbackup_year"):
+            self._energy[key] = self._energy.get(key, 0.0) + wh_nb
 
     def _maybe_schedule_energy_save(self) -> None:
         if not hasattr(self, "hass") or not self.hass:
@@ -672,7 +692,9 @@ class OigCloudComputedSensor(_ComputedBase):
         handler = self._sensor_mapping().get(self._sensor_type)
         if handler:
             return handler()
-        if self._sensor_type.startswith("computed_batt_"):
+        if self._sensor_type.startswith("computed_batt_") or self._sensor_type.startswith(
+            "computed_nonbackup_"
+        ):
             return self._accumulate_energy()
         return None
 
@@ -799,6 +821,8 @@ class OigCloudComputedSensor(_ComputedBase):
         elif bat_power < 0:
             self._apply_discharge_delta(wh_increment)
 
+        self._apply_nonbackup_delta(delta_seconds)
+
         _LOGGER.debug(
             f"[{self.entity_id}] Δt={delta_seconds:.1f}s bat={bat_power:.1f}W fv={fv_power:.1f}W -> ΔWh={wh_increment:.4f}"
         )
@@ -815,7 +839,7 @@ class OigCloudComputedSensor(_ComputedBase):
 
         energy_key = self._get_energy_value_key()
         if energy_key:
-            return round(self._energy[energy_key], 3)
+            return round(self._energy.get(energy_key, 0.0), 3)
         return None
 
     def _get_boiler_consumption_from_entities(self) -> Optional[float]:
