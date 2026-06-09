@@ -470,7 +470,11 @@ async def _maybe_apply_consumption_boost(
     recent_ratio = await adaptive_helper.calculate_recent_consumption_ratio(
         adaptive_profiles
     )
-    if recent_ratio and recent_ratio > 1.1:
+    # Symmetric short-term correction around a 0.9–1.1 dead band: scale the
+    # near-term load forecast UP when reality runs hotter than the profile, and
+    # DOWN (damped/floored in apply_consumption_boost_to_forecast) when it runs
+    # cooler — so a profile that over-predicts no longer forces over-charging.
+    if recent_ratio and (recent_ratio > 1.1 or recent_ratio < 0.9):
         adaptive_helper.apply_consumption_boost_to_forecast(load_forecast, recent_ratio)
 
 

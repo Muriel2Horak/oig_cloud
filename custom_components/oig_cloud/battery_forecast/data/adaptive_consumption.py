@@ -486,11 +486,17 @@ class AdaptiveConsumptionHelper:
     def apply_consumption_boost_to_forecast(
         load_forecast: List[float], ratio: float, hours: int = 3
     ) -> None:
-        """Navýší krátkodobý load forecast podle zjištěné odchylky."""
+        """Upraví krátkodobý load forecast podle zjištěné odchylky reality.
+
+        Symetricky: navýší při nadspotřebě (ratio > 1, cap 3.0×) i sníží při
+        podspotřebě (ratio < 1, podlaha 0.7× = max −30 %), aby nadpredikující
+        profil nevynucoval zbytečné nabíjení. Podstřelit spotřebu je rizikovější
+        než nadstřelit, proto je pokles tlumený podlahou.
+        """
         if not load_forecast:
             return
 
-        capped_ratio = min(ratio, 3.0)
+        capped_ratio = max(0.7, min(ratio, 3.0))
         intervals = min(
             len(load_forecast),
             max(4, int(math.ceil(hours * 4 * min(capped_ratio, 2.5)))),
@@ -499,9 +505,11 @@ class AdaptiveConsumptionHelper:
         for idx in range(intervals):
             load_forecast[idx] = round(load_forecast[idx] * capped_ratio, 4)
 
+        direction = "Boosted" if capped_ratio >= 1.0 else "Reduced"
         _LOGGER.info(
-            "[LoadForecast] Boosted first %d intervals by %.0f%% due to high "
-            "consumption drift (ratio %.2fx, capped %.2fx)",
+            "[LoadForecast] %s first %d intervals by %.0f%% due to consumption "
+            "drift (ratio %.2fx, capped %.2fx)",
+            direction,
             intervals,
             (capped_ratio - 1) * 100,
             ratio,

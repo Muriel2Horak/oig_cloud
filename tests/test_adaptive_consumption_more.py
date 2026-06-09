@@ -293,11 +293,26 @@ async def test_calculate_recent_consumption_ratio_variants(monkeypatch):
 
 
 def test_apply_consumption_boost_and_similarity():
+    # Down-correction is damped to a 0.7 floor (max -30%): ratio 0.5 -> 0.7.
     forecast = [1.0, 1.0, 1.0, 1.0]
     module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
         forecast, 0.5, hours=1
     )
-    assert forecast[0] == 0.5
+    assert forecast[0] == 0.7
+
+    # A mild under-consumption within the floor scales straight through.
+    mild = [1.0, 1.0, 1.0, 1.0]
+    module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
+        mild, 0.8, hours=1
+    )
+    assert mild[0] == pytest.approx(0.8)
+
+    # Over-consumption is capped at 3.0x.
+    up = [1.0, 1.0, 1.0, 1.0]
+    module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
+        up, 5.0, hours=1
+    )
+    assert up[0] == pytest.approx(3.0)
 
     empty = []
     module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
