@@ -848,6 +848,19 @@ def test_group_intervals_by_mode_handles_unknowns_and_invalid_times():
     assert groups[0]["delta_pct"] == 0.0
 
 
+def test_group_intervals_by_mode_midnight_end_renders_24_00():
+    """A block whose last interval is 23:45 ends at midnight -> '24:00', not '00:00'."""
+    intervals = [
+        {"time": "2025-01-01T23:30:00", "planned": {"mode": 0, "net_cost": 1.0}},
+        {"time": "2025-01-01T23:45:00", "planned": {"mode": 0, "net_cost": 1.0}},
+    ]
+
+    groups = interval_grouping.group_intervals_by_mode(intervals, "planned", {})
+
+    assert groups[0]["start_time"] == "23:30"
+    assert groups[0]["end_time"] == "24:00"
+
+
 def test_group_intervals_by_mode_empty_returns_empty():
     assert interval_grouping.group_intervals_by_mode([], "planned", {}) == []
 

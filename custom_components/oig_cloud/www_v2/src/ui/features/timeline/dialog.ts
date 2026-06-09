@@ -7,6 +7,24 @@ import { formatCurrency } from '@/utils/format';
 
 const u = unsafeCSS;
 
+/** Czech plural: 1→one, 2–4→few, 0 & 5+→many. */
+function czPlural(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n);
+  if (abs === 1) return one;
+  if (abs >= 2 && abs <= 4) return few;
+  return many;
+}
+
+/** "1 blok" / "3 bloky" / "5 bloků" */
+function blocksLabel(n: number): string {
+  return `${n} ${czPlural(n, 'blok', 'bloky', 'bloků')}`;
+}
+
+/** "1 přepnutí" / "3 přepnutí" — neuter, invariant across plural forms */
+function switchesLabel(n: number): string {
+  return `${n} přepnutí`;
+}
+
 @customElement('oig-timeline-dialog')
 export class OigTimelineDialog extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
@@ -536,7 +554,7 @@ export class OigTimelineDialog extends LitElement {
       <!-- Mode blocks timeline -->
       ${d.modeBlocks.length > 0 ? html`
         <div class="modes-section">
-          <div class="section-title">Režimy (${d.modeBlocks.length} bloků, ${s.modeSwitches} přepnutí)</div>
+          <div class="section-title">Režimy (${blocksLabel(d.modeBlocks.length)}, ${switchesLabel(s.modeSwitches)})</div>
           <div class="mode-blocks-timeline">
             ${d.modeBlocks.map(b => this.renderModeBlock(b))}
           </div>
@@ -717,7 +735,7 @@ export class OigTimelineTile extends LitElement {
 
     .mode-blocks-timeline {
       display: flex;
-      gap: 2px;
+      gap: 4px;
       overflow-x: auto;
       padding: 2px 0;
     }
@@ -726,22 +744,26 @@ export class OigTimelineTile extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 5px 6px;
-      border-radius: 6px;
+      justify-content: center;
+      gap: 1px;
+      padding: 8px 8px;
+      border-radius: 8px;
       font-size: 10px;
       color: #fff;
-      min-width: 44px;
+      min-width: 56px;
+      min-height: 54px;
       position: relative;
       cursor: default;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 1px 3px rgba(0,0,0,0.25);
     }
 
     .mode-block.current {
       box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(255,255,255,0.3);
     }
 
-    .mode-block .mode-icon { font-size: 12px; }
-    .mode-block .mode-time { font-size: 8px; opacity: 0.8; }
-    .mode-block .mode-name { font-size: 9px; font-weight: 500; }
+    .mode-block .mode-icon { font-size: 15px; line-height: 1; }
+    .mode-block .mode-time { font-size: 9px; opacity: 0.85; }
+    .mode-block .mode-name { font-size: 10px; font-weight: 600; letter-spacing: 0.2px; }
 
     .mode-mismatch {
       position: absolute;
@@ -1020,7 +1042,7 @@ export class OigTimelineTile extends LitElement {
       <!-- Mode blocks timeline -->
       ${d.modeBlocks.length > 0 ? html`
         <div class="modes-section">
-          <div class="section-title">Režimy (${d.modeBlocks.length} bloků, ${s.modeSwitches} přepnutí)</div>
+          <div class="section-title">Režimy (${blocksLabel(d.modeBlocks.length)}, ${switchesLabel(s.modeSwitches)})</div>
           <div class="mode-blocks-timeline">
             ${d.modeBlocks.map(b => this.renderModeBlock(b))}
           </div>
