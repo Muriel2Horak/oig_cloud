@@ -155,6 +155,27 @@ export class OigFlowNode extends LitElement {
       animation: edgePulse var(--pulse-dur, 1.8s) ease-in-out infinite;
     }
 
+    /* Faint state tint behind content */
+    .node-tint {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      border-radius: 12px;
+    }
+
+    /* Header with label left + state right (approved node skin) */
+    .node-header--split {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .node-state { font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .node-state.st-charge { color: #9fe6a8; }
+    .node-state.st-discharge { color: #ffcc80; }
+    .node-state.st-idle { color: rgba(255,255,255,0.55); }
+
     .node:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 16px rgba(0,0,0,0.2);
@@ -1402,19 +1423,6 @@ export class OigFlowNode extends LitElement {
     }));
   }
 
-  private getBatteryStatus(): { text: string; cls: string } {
-    const d = this.data;
-    if (d.batteryPower > 10) {
-      const t = d.timeToFull ? ` (${d.timeToFull})` : '';
-      return { text: `⚡ Nabíjení${t}`, cls: 'status-charging pulse' };
-    }
-    if (d.batteryPower < -10) {
-      const t = d.timeToEmpty ? ` (${d.timeToEmpty})` : '';
-      return { text: `⚡ Vybíjení${t}`, cls: 'status-discharging pulse' };
-    }
-    return { text: '◉ Klid', cls: 'status-idle' };
-  }
-
   private getBalancingIndicator(): { show: boolean; text: string; icon: string; cls: string } {
     const d = this.data;
     const state = d.balancingState;
@@ -1435,14 +1443,21 @@ export class OigFlowNode extends LitElement {
 
   private renderBattery() {
     const d = this.data;
-    const status = this.getBatteryStatus();
     const balancing = this.getBalancingIndicator();
-    const isCharging = d.batteryPower > 10;
     const tempIcon = d.batteryTemp > 25 ? '🌡️' : d.batteryTemp < 15 ? '🧊' : '🌡️';
     const tempClass = d.batteryTemp > 25 ? 'temp-hot' : d.batteryTemp < 15 ? 'temp-cold' : '';
 
     const batPowerKw = Math.abs(d.batteryPower) / 1000;
     const batActive = Math.abs(d.batteryPower) > 10;
+    const charging = d.batteryPower > 10;
+    const discharging = d.batteryPower < -10;
+    const stateText = charging ? 'Nabíjí' : discharging ? 'Vybíjí' : 'Klid';
+    const stateCls = charging ? 'st-charge' : discharging ? 'st-discharge' : 'st-idle';
+    const powerStr = `${charging ? '+' : discharging ? '−' : ''}${formatPower(Math.abs(d.batteryPower))}`;
+    const timeStr = charging && d.timeToFull ? ` · do plna ${d.timeToFull}`
+      : discharging && d.timeToEmpty ? ` · do vybití ${d.timeToEmpty}` : '';
+    const socTint = d.batterySoC >= 66 ? 'rgba(67,160,71,0.13)'
+      : d.batterySoC >= 33 ? 'rgba(253,216,53,0.10)' : 'rgba(229,57,53,0.12)';
 
     return html`
       <div class="${this.nodeClass('battery')}" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery};"
@@ -1456,25 +1471,19 @@ export class OigFlowNode extends LitElement {
           pulseDur: Math.max(0.9, 2.2 - batPowerKw * 0.35),
         })}
 
-        <div class="node-header">
-          <!-- Jediná ikona: SVG baterie nahrazuje gauge + emoji -->
-          <oig-battery-icon
-            .soc=${d.batterySoC}
-            ?charging=${isCharging && !d.isGridCharging}
-            ?gridCharging=${d.isGridCharging && isCharging}
-            ?discharging=${d.batteryPower < -10}
-          ></oig-battery-icon>
-          <span class="node-label">Baterie</span>
+        <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${socTint}, transparent 72%)"></div>
+
+        <div class="node-header node-header--split">
+          <span class="node-label">🔋 Baterie</span>
+          <span class="node-state ${stateCls}">${stateText}</span>
         </div>
 
         <div class="node-value" @click=${openEntity('batt_bat_c')}>
           ${Math.round(d.batterySoC)} %
         </div>
         <div class="node-subvalue" @click=${openEntity('batt_batt_comp_p')}>
-          ${formatPower(d.batteryPower)}
+          ${powerStr}${timeStr}
         </div>
-
-        <div class="node-status ${status.cls}">${status.text}</div>
 
         ${d.isGridCharging ? html`
           <span class="grid-charging-badge">⚡🔌 Síťové nabíjení</span>
