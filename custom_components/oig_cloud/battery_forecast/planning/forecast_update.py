@@ -660,10 +660,13 @@ def _run_planner(
         home_charge_rate_kw = float(opts.get("home_charge_rate", 2.8))
         hw_min_kwh = max_capacity * 0.20
         hw_min_percent = (hw_min_kwh / max_capacity) * 100.0 if max_capacity > 0 else 20.0
-        planning_min_percent = max(
-            float(opts.get("min_capacity_percent", 33.0)),
-            hw_min_percent,
-        )
+        # Floor defense protects ONLY the hardware safety minimum (20%). Any
+        # reserve above it is built purely by cost-gated displacement (charge
+        # cheap only when it strictly lowers total cost) — no fixed backup that
+        # forces uneconomic grid charging. Verified cheaper than the old 33%
+        # floor on real data (e.g. 21.3 vs 29.0 Kč, more savings). The legacy
+        # `min_capacity_percent` option no longer raises this floor.
+        planning_min_percent = hw_min_percent
 
         # Per-interval day index (0=today, 1=tomorrow, …) from price timestamps,
         # so the expensive-price percentile is computed per day, not blended

@@ -497,15 +497,19 @@ async def test_async_update_happy_path(monkeypatch):
     assert sensor._charging_metrics["planner_decision_trace"] == []
     mode_optimization_result = sensor._mode_optimization_result
     assert mode_optimization_result is not None
-    assert mode_optimization_result["target_kwh"] == pytest.approx(3.3)
+    # Floor defense now targets the 20% hardware minimum (max_capacity 10 -> 2.0),
+    # not the legacy 33% reserve.
+    assert mode_optimization_result["target_kwh"] == pytest.approx(2.0)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "disable_guard,expected_min_percent",
     [
-        (False, 30.0),
-        (True, 30.0),
+        # Floor defense now protects only the hardware safety minimum (20%);
+        # min_capacity_percent no longer raises planning_min_percent.
+        (False, 20.0),
+        (True, 20.0),
     ],
 )
 async def test_async_update_planner_options(monkeypatch, disable_guard, expected_min_percent):
