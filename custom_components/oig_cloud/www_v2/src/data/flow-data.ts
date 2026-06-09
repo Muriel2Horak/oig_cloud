@@ -217,16 +217,22 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
   const solarI1 = parseNumber(get('extended_fve_current_1'));
   const solarI2 = parseNumber(get('extended_fve_current_2'));
   const solarForecast = get('solar_forecast');
-  const forecastToday = solarForecast?.attributes?.today_total_kwh
-    ? parseFloat(solarForecast.attributes.today_total_kwh) || 0
-    : (solarForecast?.attributes?.today_total_sum_kw
-      ? parseFloat(solarForecast.attributes.today_total_sum_kw) || 0
-      : parseNumber(solarForecast));
-  const forecastTomorrow = solarForecast?.attributes?.tomorrow_total_sum_kw
-    ? parseFloat(solarForecast.attributes.tomorrow_total_sum_kw) || 0
-    : (solarForecast?.attributes?.total_tomorrow_kwh
-      ? parseFloat(solarForecast.attributes.total_tomorrow_kwh) || 0
-      : 0);
+  // Read a forecast attribute as a finite number, treating missing/empty as null
+  // (so a legitimate 0 is not confused with "no value").
+  const fcAttr = (name: string): number | null => {
+    const v = solarForecast?.attributes?.[name];
+    if (v === undefined || v === null || v === '') return null;
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  // Today and tomorrow must use the SAME source to be comparable. Prefer the
+  // date-relative daily kWh from the API (*_total_kwh); fall back to the summed
+  // hourly kW (*_sum_kw) only if the daily value is unavailable.
+  const forecastToday =
+    fcAttr('today_total_kwh') ?? fcAttr('today_total_sum_kw') ?? parseNumber(solarForecast);
+  const forecastTomorrow =
+    fcAttr('tomorrow_total_kwh') ?? fcAttr('tomorrow_total_sum_kw') ?? 0;
+  const forecastStale = solarForecast?.attributes?.forecast_stale === true;
 
   // Battery — main
   const batterySoC = parseNumber(get('batt_bat_c'));
@@ -323,6 +329,7 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
     solarToday: parseNumber(get('dc_in_fv_ad')),
     solarForecastToday: forecastToday,
     solarForecastTomorrow: forecastTomorrow,
+    solarForecastStale: forecastStale,
 
     batterySoC, batteryPower, batteryVoltage, batteryCurrent, batteryTemp,
     batteryChargeTotal, batteryDischargeTotal, batteryChargeSolar, batteryChargeGrid,

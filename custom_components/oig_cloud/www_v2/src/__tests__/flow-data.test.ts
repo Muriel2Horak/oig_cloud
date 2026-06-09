@@ -68,6 +68,51 @@ describe('Flow data extraction helpers', () => {
     expect(data.gridPower).toBe(29);
     expect(data.batterySoC).toBe(64);
   });
+
+  it('reads solar forecast today/tomorrow from the same daily-kWh source', () => {
+    const data = extractFlowData({
+      [`sensor.oig_${TEST_SN}_solar_forecast`]: {
+        state: '10.6',
+        attributes: {
+          today_total_kwh: 10.6,
+          tomorrow_total_kwh: 12.3,
+          // Summed-hourly values differ and must NOT be preferred over *_total_kwh
+          today_total_sum_kw: 9.1,
+          tomorrow_total_sum_kw: 0.0,
+        },
+      },
+    }, TEST_SN);
+
+    expect(data.solarForecastToday).toBe(10.6);
+    expect(data.solarForecastTomorrow).toBe(12.3);
+    expect(data.solarForecastStale).toBe(false);
+  });
+
+  it('treats a legitimate zero forecast as a value, not a missing attribute', () => {
+    const data = extractFlowData({
+      [`sensor.oig_${TEST_SN}_solar_forecast`]: {
+        state: '0',
+        attributes: { today_total_kwh: 0, tomorrow_total_kwh: 0, today_total_sum_kw: 5 },
+      },
+    }, TEST_SN);
+
+    // 0 from today_total_kwh must win — no fallthrough to today_total_sum_kw (5)
+    expect(data.solarForecastToday).toBe(0);
+    expect(data.solarForecastTomorrow).toBe(0);
+  });
+
+  it('falls back to summed-hourly kW when daily kWh is absent and flags staleness', () => {
+    const data = extractFlowData({
+      [`sensor.oig_${TEST_SN}_solar_forecast`]: {
+        state: '8.0',
+        attributes: { today_total_sum_kw: 8.0, tomorrow_total_sum_kw: 7.0, forecast_stale: true },
+      },
+    }, TEST_SN);
+
+    expect(data.solarForecastToday).toBe(8.0);
+    expect(data.solarForecastTomorrow).toBe(7.0);
+    expect(data.solarForecastStale).toBe(true);
+  });
 });
 
 describe('Grid delivery derivation from canonical model', () => {

@@ -17,7 +17,7 @@ import { CSS_VARS, getCurrentBreakpoint } from '@/ui/theme';
 import { FlowData, EMPTY_FLOW_DATA, NODE_GRADIENTS, NODE_BORDERS } from './types';
 import { shieldController, ShieldListener } from '@/data/shield-controller';
 import type { ShieldServiceType } from '@/ui/features/control-panel/types';
-import { mapShieldPendingToFlowIndicators, resolveGridFlowState, resolveInverterGridDeliveryDisplay } from './pending';
+import { mapShieldPendingToFlowIndicators, resolveInverterGridDeliveryDisplay } from './pending';
 import type { GridDeliveryStateModel } from '@/data/grid-delivery-model';
 import { formatPower, formatEnergy, getTariffDisplay, getHouseModeInfo, getGridExportDisplay } from '@/data/flow-data';
 import { haClient } from '@/data/ha-client';
@@ -362,6 +362,11 @@ export class OigFlowNode extends LitElement {
 
     .node:hover::after {
       opacity: 0.6;
+    }
+
+    /* Baterie nemá rozbalovací detail (vše je vždy viditelné) — skrýt mrtvou šipku */
+    .node-battery::after {
+      display: none;
     }
 
     /* forecast-badges a boiler-section — vždy collapsed */
@@ -777,12 +782,6 @@ export class OigFlowNode extends LitElement {
         padding-top: 6px;
         border-top: 1px solid ${u(CSS_VARS.divider)};
       }
-      .node-solar .detail-section {
-        max-height: 0;
-        margin-top: 0;
-        padding-top: 0;
-        border-top: none;
-      }
       .boiler-section,
       .grid-charging-plan {
         max-height: 500px;
@@ -869,6 +868,46 @@ export class OigFlowNode extends LitElement {
       .node-icon { font-size: 18px; }
       .node-value { font-size: 16px; }
       .node-label { font-size: 8px; }
+    }
+
+    /* ---- Landscape kiosk (Google Nest Hub ~768×543) — kompaktní pentagon ---- */
+    @media (orientation: landscape) and (max-height: 600px) {
+      .flow-grid {
+        grid-template-columns: 1fr 1.05fr 1fr;
+        grid-template-rows: auto auto auto;
+        gap: 2px;
+        padding: 0;
+      }
+      .node-solar    { grid-column: 1; grid-row: 1; justify-self: center; }
+      .node-house    { grid-column: 3; grid-row: 1; justify-self: center; }
+      .node-inverter { grid-column: 2; grid-row: 2; justify-self: center; }
+      .node-grid     { grid-column: 1; grid-row: 3; justify-self: center; }
+      .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
+      .node { min-width: 96px; max-width: 140px; padding: 3px 6px; }
+      .node-header { margin-bottom: 0; }
+      .node-value { font-size: 14px; margin: 0; }
+      .node-label { font-size: 8px; }
+      .node-subvalue { font-size: 8px; }
+      .node-status { font-size: 8px; padding: 0 4px; margin: 1px 0; }
+      .indicator { font-size: 8px; padding: 1px 3px; }
+      .planner-badge, .shield-badge { font-size: 8px; margin: 1px 0; padding: 0 4px; }
+      .battery-indicators { gap: 2px; margin-top: 1px; }
+      .battery-energy-section { margin-top: 2px; }
+      .detail-header { font-size: 8px; margin-bottom: 0; }
+      .detail-row { font-size: 8px; margin-bottom: 0; }
+      .energy-grid { gap: 0 6px; }
+      .prices-row { margin-top: 2px; }
+      .price-label, .price-val { font-size: 9px; }
+      .phases { font-size: 8px; margin: 1px 0; }
+      .phases-grid { margin-top: 2px; }
+      .phase-label, .phase-val { font-size: 8px; }
+      .planner-badge, .shield-badge { font-size: 8px; }
+      .gc-plan-btn { font-size: 8px; padding: 1px 4px; }
+      .node::after { display: none; }
+      /* Kiosk = přehledový pohled: skrýt těžké rozpady (jsou na ostatních tabech/po rozkliknutí) */
+      .battery-energy-section,
+      .prices-row,
+      .phases-grid { display: none; }
     }
   `;
 
@@ -1217,15 +1256,14 @@ export class OigFlowNode extends LitElement {
         <div class="node-subvalue" @click=${openEntity('dc_in_fv_ad')}>
           Dnes: ${(d.solarToday / 1000).toFixed(2)} kWh
         </div>
-        <div class="node-subvalue" @click=${openEntity('solar_forecast')}>
-          Zítra: ${d.solarForecastTomorrow.toFixed(1)} kWh
-        </div>
 
-        <button class="indicator" style="${badgeL}" @click=${openEntity('solar_forecast')}>
-          🔮 ${d.solarForecastToday.toFixed(1)} kWh
+        <button class="indicator" style="${badgeL}" @click=${openEntity('solar_forecast')}
+          title=${d.solarForecastStale ? 'Předpověď je zastaralá' : 'Předpověď FVE na dnes'}>
+          ${d.solarForecastStale ? '⚠' : '🔮'} ${d.solarForecastToday.toFixed(1)} kWh
         </button>
-        <button class="indicator" style="${badgeR}" @click=${openEntity('solar_forecast')}>
-          🌅 ${d.solarForecastTomorrow.toFixed(1)} kWh
+        <button class="indicator" style="${badgeR}" @click=${openEntity('solar_forecast')}
+          title=${d.solarForecastStale ? 'Předpověď je zastaralá' : 'Předpověď FVE na zítra'}>
+          ${d.solarForecastStale ? '⚠' : '🌅'} ${d.solarForecastTomorrow.toFixed(1)} kWh
         </button>
 
         <div class="detail-section">
@@ -1414,13 +1452,14 @@ export class OigFlowNode extends LitElement {
   // INVERTER
   // ==========================================================================
 
+  /** Krátký popis režimu (bez názvu Home X – ten už je v hlavní hodnotě). */
   private getInverterModeDesc(): string {
     const m = this.data.inverterMode;
-    if (m.includes('Home 1')) return '🏠 Home 1: Max baterie + FVE';
-    if (m.includes('Home 2')) return '🔋 Home 2: Šetří baterii';
-    if (m.includes('Home 3')) return '☀️ Home 3: Priorita nabíjení';
-    if (m.includes('UPS')) return '⚡ UPS: Vše ze sítě';
-    return `⚙️ ${m || '--'}`;
+    if (m.includes('Home 1')) return 'Max baterie + FVE';
+    if (m.includes('Home 2')) return 'Šetří baterii';
+    if (m.includes('Home 3')) return 'Priorita nabíjení';
+    if (m.includes('UPS')) return 'Vše ze sítě';
+    return '';
   }
 
   private renderInverter() {
@@ -1454,17 +1493,11 @@ export class OigFlowNode extends LitElement {
           ></oig-inverter-icon>
           <span class="node-label">Střídač</span>
         </div>
-        ${bypassActive ? html`
-          <button class="bypass-active bypass-warning" style="position:absolute;top:4px;right:6px;font-size:9px" @click=${openEntity('bypass_status')}>
-            🔴 Bypass
-          </button>
-        ` : nothing}
-
         <div class="node-value" @click=${openEntity('box_prms_mode')}>
           ${pending.inverterModeChanging ? html`<span class="spinner spinner--small"></span>` : nothing}
           ${modeInfo.icon} ${modeInfo.text}
         </div>
-        <div class="node-subvalue">${this.getInverterModeDesc()}</div>
+        ${this.getInverterModeDesc() ? html`<div class="node-subvalue">${this.getInverterModeDesc()}</div>` : nothing}
         ${pending.inverterModeText ? html`<div class="pending-text">${pending.inverterModeText}</div>` : nothing}
 
         <div class="planner-badge ${plannerCls}">${plannerText}</div>
@@ -1533,11 +1566,9 @@ export class OigFlowNode extends LitElement {
   private renderGrid() {
     const d = this.data;
     const status = this.getGridStatus();
-    const pending = mapShieldPendingToFlowIndicators(this.pendingServices, this.changingServices);
-    const gridFlow = resolveGridFlowState(this.gridDeliveryState);
 
     return html`
-      <div class="${this.nodeClass('grid', pending.gridExportChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid};"
+      <div class="${this.nodeClass('grid')}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid};"
         @click=${(e: Event) => this.toggleExpand('grid', e)}>
 
         <!-- Tarif badge vlevo nahoře -->
@@ -1560,15 +1591,6 @@ export class OigFlowNode extends LitElement {
           ${formatPower(d.gridPower)}
         </div>
         <div class="node-status ${status.cls}">${status.text}</div>
-        <div class="node-subvalue ${gridFlow.currentUnavailable ? 'current-state-unknown' : ''}" @click=${openEntity('invertor_prms_to_grid')}>
-          ${gridFlow.currentText}
-        </div>
-        ${gridFlow.pendingText ? html`
-          <div class="pending-overlay">
-            <span class="spinner spinner--small"></span>
-            ${gridFlow.pendingText}
-          </div>
-        ` : nothing}
 
         <!-- Ceny — vždy viditelné jako rychlý přehled -->
         <div class="prices-row" style="margin-top:4px">
@@ -1655,13 +1677,13 @@ export class OigFlowNode extends LitElement {
           Dnes: ${(d.houseTodayWh / 1000).toFixed(1)} kWh
         </div>
 
-        <!-- Per-phase consumption (plain, not clickable — same as V1) -->
+        <!-- Per-phase consumption — clickable na entity (konzistentní se Sítí) -->
         <div class="phases">
-          <span>${Math.round(d.houseL1)}W</span>
+          <button class="phase-val" @click=${openEntity('ac_out_aco_pr')}>${Math.round(d.houseL1)}W</button>
           <span class="phase-sep">|</span>
-          <span>${Math.round(d.houseL2)}W</span>
+          <button class="phase-val" @click=${openEntity('ac_out_aco_ps')}>${Math.round(d.houseL2)}W</button>
           <span class="phase-sep">|</span>
-          <span>${Math.round(d.houseL3)}W</span>
+          <button class="phase-val" @click=${openEntity('ac_out_aco_pt')}>${Math.round(d.houseL3)}W</button>
         </div>
 
         ${d.boilerIsUse ? html`

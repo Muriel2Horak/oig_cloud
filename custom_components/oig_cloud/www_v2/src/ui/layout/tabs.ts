@@ -67,6 +67,11 @@ export class OigTabs extends LitElement {
         display: none;
       }
     }
+
+    /* Landscape kiosk (Google Nest Hub): nižší lišta tabů */
+    @media (orientation: landscape) and (max-height: 600px) {
+      .tab { padding: 5px 14px; font-size: 13px; }
+    }
   `;
 
   private onTabClick(tabId: string): void {

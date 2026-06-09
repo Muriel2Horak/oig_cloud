@@ -23,6 +23,7 @@ export interface FlowData {
   solarToday: number;      // Wh
   solarForecastToday: number;
   solarForecastTomorrow: number;
+  solarForecastStale: boolean;
 
   // Battery
   batterySoC: number;
@@ -235,7 +236,7 @@ export const DEFAULT_CONNECTIONS: FlowConnection[] = [
 
 export const EMPTY_FLOW_DATA: FlowData = {
   solarPower: 0, solarP1: 0, solarP2: 0, solarV1: 0, solarV2: 0, solarI1: 0, solarI2: 0,
-  solarPercent: 0, solarToday: 0, solarForecastToday: 0, solarForecastTomorrow: 0,
+  solarPercent: 0, solarToday: 0, solarForecastToday: 0, solarForecastTomorrow: 0, solarForecastStale: false,
   batterySoC: 0, batteryPower: 0, batteryVoltage: 0, batteryCurrent: 0, batteryTemp: 0,
   batteryChargeTotal: 0, batteryDischargeTotal: 0, batteryChargeSolar: 0, batteryChargeGrid: 0,
   isGridCharging: false, timeToEmpty: '', timeToFull: '',

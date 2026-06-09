@@ -345,6 +345,21 @@ export class OigApp extends LitElement {
         grid-template-columns: 1fr;
       }
     }
+
+    /* Landscape kiosk (Google Nest Hub ~768×543): toky + ovládací panel vedle sebe,
+       dlaždice skryté (sekundární), ovládací panel scrolluje uvnitř. */
+    @media (orientation: landscape) and (max-height: 600px) {
+      main { padding: 6px 10px; }
+      .flow-layout {
+        grid-template-columns: 1fr 232px;
+        grid-template-areas: 'canvas control';
+        gap: 8px;
+        align-items: start;
+      }
+      .flow-tiles-stack { display: none; }
+      .flow-center { grid-area: canvas; }
+      .flow-control { grid-area: control; max-height: calc(100vh - 78px); overflow-y: auto; }
+    }
   `;
 
   connectedCallback(): void {
