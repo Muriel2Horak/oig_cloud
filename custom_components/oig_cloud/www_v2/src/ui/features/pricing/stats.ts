@@ -2,14 +2,14 @@
  * OIG Cloud V2 — Pricing Stats Components
  *
  * Full pricing stats implementation:
- * - Current prices (spot, export, average)
+ * - Current prices (spot, export)
+ * - Plan savings tile (plan cost + savings vs all-Home-I, from mode_optimization)
+ * - Solar forecast (today + tomorrow + staleness)
  * - Extreme price blocks (cheapest/expensive buy, best/worst export) with mini sparklines
  * - Planned consumption (today consumed + remaining, tomorrow, trend, profile)
- * - What-if analysis table (optimized cost, savings, mode comparison)
- * - Solar forecast total
  *
  * Port of V1 pricing.js stat cards, planned consumption (2000-2160),
- * what-if analysis (2166-2235), mini sparklines (860-1028).
+ * mini sparklines (860-1028).
  */
 
 import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
@@ -367,7 +367,7 @@ export class OigPricingStats extends LitElement {
     /* Top row: price tiles + extreme blocks in one line */
     .top-row {
       display: grid;
-      grid-template-columns: auto auto auto 1fr 1fr 1fr 1fr;
+      grid-template-columns: auto auto auto auto 1fr 1fr 1fr 1fr;
       gap: 10px;
       margin-bottom: 12px;
       align-items: stretch;
@@ -400,6 +400,14 @@ export class OigPricingStats extends LitElement {
       background: linear-gradient(135deg, rgba(255, 167, 38, 0.2) 0%, rgba(255, 167, 38, 0.1) 100%);
       border-color: rgba(255, 167, 38, 0.3);
     }
+
+    .price-tile.savings {
+      background: linear-gradient(135deg, rgba(41, 182, 246, 0.2) 0%, rgba(41, 182, 246, 0.1) 100%);
+      border-color: rgba(41, 182, 246, 0.3);
+    }
+
+    .price-tile-value.pos { color: #4CAF50; }
+    .price-tile-value.neg { color: #F44336; }
 
     .price-tile-label {
       font-size: 10px;
@@ -559,7 +567,15 @@ export class OigPricingStats extends LitElement {
   private renderPriceTiles() {
     if (!this.data) return nothing;
 
-    const solarAvailable = this.data.solarForecastTotal > 0;
+    const today = this.data.solarForecastTotal;
+    const tomorrow = this.data.solarForecastTomorrow;
+    const stale = this.data.solarForecastStale;
+    const solarAvailable = today > 0 || tomorrow > 0;
+
+    const whatIf = this.data.whatIf;
+    const savings = whatIf?.totalSavings ?? null;
+    const planCost = whatIf?.totalCost ?? null;
+    const savingsVariant = savings == null ? '' : savings >= 0.005 ? 'pos' : savings <= -0.005 ? 'neg' : '';
 
     return html`
       <div class="price-tile spot">
@@ -574,14 +590,32 @@ export class OigPricingStats extends LitElement {
         <div class="price-tile-sub">Za přetok</div>
       </div>
 
+      <div class="price-tile savings">
+        <div class="price-tile-label">💰 Úspora plánu</div>
+        <div class="price-tile-value ${savingsVariant}">
+          ${savings != null
+            ? html`${savings >= 0 ? '+' : ''}${savings.toFixed(0)} <span class="price-tile-unit">Kč</span>`
+            : html`-- <span class="price-tile-unit">Kč</span>`}
+        </div>
+        <div class="price-tile-sub">
+          ${planCost != null ? `Náklady ${planCost.toFixed(0)} Kč · vs Home I` : 'vs Home I'}
+        </div>
+      </div>
+
       <div class="price-tile solar">
-        <div class="price-tile-label">☀ Solar dnes</div>
+        <div class="price-tile-label">☀ Solár předpověď</div>
         <div class="price-tile-value">
           ${solarAvailable
-            ? html`${this.data.solarForecastTotal.toFixed(1)} <span class="price-tile-unit">kWh</span>`
+            ? html`${stale ? '⚠ ' : ''}${today.toFixed(1)} <span class="price-tile-unit">kWh</span>`
             : html`-- <span class="price-tile-unit">kWh</span>`}
         </div>
-        <div class="price-tile-sub">${solarAvailable ? 'Předpověď' : 'Nedostupná'}</div>
+        <div class="price-tile-sub">
+          ${!solarAvailable
+            ? 'Nedostupná'
+            : stale
+              ? 'Zastaralá'
+              : `Zítra ${tomorrow.toFixed(1)} kWh`}
+        </div>
       </div>
     `;
   }
@@ -660,18 +694,20 @@ export class OigPricingStats extends LitElement {
 
     const todayTotal = pc.todayTotalKwh;
     const tomorrow = pc.tomorrowKwh;
+    // Headline = the same total the bar represents (today whole day + tomorrow),
+    // so the big number always equals "Dnes + Zítra" shown below it.
     const total = todayTotal + (tomorrow || 0);
     const todayPercent = total > 0 ? (todayTotal / total) * 100 : 50;
     const tomorrowPercent = total > 0 ? ((tomorrow || 0) / total) * 100 : 50;
 
     return html`
       <div class="planned-section">
-        <div class="section-label" style="margin-bottom: 8px;">Plánovaná spotřeba</div>
+        <div class="section-label" style="margin-bottom: 8px;">Plánovaná spotřeba (dnes + zítra)</div>
         <div class="planned-header">
           <div>
             <div class="planned-main-value">
-              ${pc.totalPlannedKwh > 0
-                ? html`${pc.totalPlannedKwh.toFixed(1)} <span class="unit">kWh</span>`
+              ${total > 0
+                ? html`${total.toFixed(1)} <span class="unit">kWh</span>`
                 : '--'}
             </div>
             <div class="planned-profile">${pc.profile}</div>
@@ -683,7 +719,7 @@ export class OigPricingStats extends LitElement {
 
         <div class="planned-details">
           <div class="planned-detail-item">
-            <div class="planned-detail-label">Dnes spotřeba</div>
+            <div class="planned-detail-label">Dnes spotřebováno</div>
             <div class="planned-detail-value">${pc.todayConsumedKwh.toFixed(1)} kWh</div>
           </div>
           <div class="planned-detail-item">
@@ -693,7 +729,7 @@ export class OigPricingStats extends LitElement {
             </div>
           </div>
           <div class="planned-detail-item">
-            <div class="planned-detail-label">Zítra celkem</div>
+            <div class="planned-detail-label">Zítra plán</div>
             <div class="planned-detail-value">
               ${tomorrow != null ? `${tomorrow.toFixed(1)} kWh` : '--'}
             </div>
@@ -707,7 +743,7 @@ export class OigPricingStats extends LitElement {
                 <div class="bar-tomorrow" style="width: ${tomorrowPercent}%"></div>
               </div>
               <div class="bar-labels">
-                <span>Dnes: ${todayTotal.toFixed(1)}</span>
+                <span>Dnes celkem: ${todayTotal.toFixed(1)}</span>
                 <span>Zítra: ${tomorrow != null ? tomorrow.toFixed(1) : '--'}</span>
               </div>
             `
