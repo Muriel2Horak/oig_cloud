@@ -11,7 +11,7 @@
  * All clickable values → haClient.openEntityDialog()
  */
 
-import { LitElement, html, css, nothing, unsafeCSS, PropertyValues } from 'lit';
+import { LitElement, html, svg, css, nothing, unsafeCSS, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS, getCurrentBreakpoint } from '@/ui/theme';
 import { FlowData, EMPTY_FLOW_DATA, NODE_GRADIENTS, NODE_BORDERS } from './types';
@@ -130,6 +130,29 @@ export class OigFlowNode extends LitElement {
       min-width: 170px;
       max-width: 230px;
       text-align: center;
+    }
+
+    /* Edge-gauge: perimeter progress hugging the node border. */
+    .node > * { position: relative; z-index: 1; }
+    .edge-gauge {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      border-radius: 12px;
+    }
+    .edge-track { fill: none; stroke: rgba(255,255,255,0.07); stroke-width: 2; }
+    .edge-fill {
+      fill: none;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.6s ease, stroke-width 0.4s ease;
+      filter: drop-shadow(0 0 4px rgba(255,255,255,0.18));
+    }
+    @keyframes edgePulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
+    .edge-gauge.pulse .edge-fill {
+      animation: edgePulse var(--pulse-dur, 1.8s) ease-in-out infinite;
     }
 
     .node:hover {
@@ -1053,6 +1076,43 @@ export class OigFlowNode extends LitElement {
     return `node node-${nodeId}${expanded}${extra ? ' ' + extra : ''}`;
   }
 
+  /**
+   * Edge-gauge that hugs the node border. Works on any node size via a
+   * 0–100 viewBox with preserveAspectRatio="none" + non-scaling stroke and
+   * pathLength=100 (so dashoffset = 100 − pct regardless of perimeter length).
+   * Thickness ∝ flow magnitude, pulse speed ∝ flow.
+   */
+  private edgeGauge(opts: {
+    id: string;
+    pct: number;
+    stops: Array<[number, string]>;
+    width?: number;
+    pulse?: boolean;
+    pulseDur?: number;
+    full?: boolean;
+  }) {
+    const pct = Math.max(0, Math.min(100, opts.pct));
+    const w = Math.max(2, Math.min(7, opts.width ?? 3));
+    const dash = opts.full ? 0 : 100 - pct;
+    const stops = opts.stops.map(
+      ([o, c]) => svg`<stop offset="${o}" stop-color="${c}"></stop>`,
+    );
+    const style = opts.pulseDur ? `--pulse-dur:${opts.pulseDur}s` : '';
+    return svg`
+      <svg class="edge-gauge ${opts.pulse ? 'pulse' : ''}" viewBox="0 0 100 100"
+        preserveAspectRatio="none" style=${style}>
+        <defs>
+          <linearGradient id=${opts.id} x1="0" y1="1" x2="0" y2="0">${stops}</linearGradient>
+        </defs>
+        <rect class="edge-track" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"
+          vector-effect="non-scaling-stroke"></rect>
+        <rect class="edge-fill" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"
+          vector-effect="non-scaling-stroke" stroke=${`url(#${opts.id})`}
+          stroke-width=${w} pathLength="100" stroke-dasharray="100"
+          stroke-dashoffset=${dash}></rect>
+      </svg>`;
+  }
+
   private get hasCustomLayout(): boolean {
     return NODE_IDS.some(id => {
       const pos = this.customPositions[id];
@@ -1381,9 +1441,20 @@ export class OigFlowNode extends LitElement {
     const tempIcon = d.batteryTemp > 25 ? '🌡️' : d.batteryTemp < 15 ? '🧊' : '🌡️';
     const tempClass = d.batteryTemp > 25 ? 'temp-hot' : d.batteryTemp < 15 ? 'temp-cold' : '';
 
+    const batPowerKw = Math.abs(d.batteryPower) / 1000;
+    const batActive = Math.abs(d.batteryPower) > 10;
+
     return html`
       <div class="${this.nodeClass('battery')}" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery};"
         @click=${(e: Event) => this.toggleExpand('battery', e)}>
+        ${this.edgeGauge({
+          id: 'gauge-battery',
+          pct: d.batterySoC,
+          stops: [[0, '#e53935'], [0.45, '#fb8c00'], [0.7, '#fdd835'], [1, '#43a047']],
+          width: 2.5 + Math.min(4, batPowerKw),
+          pulse: batActive,
+          pulseDur: Math.max(0.9, 2.2 - batPowerKw * 0.35),
+        })}
 
         <div class="node-header">
           <!-- Jediná ikona: SVG baterie nahrazuje gauge + emoji -->
