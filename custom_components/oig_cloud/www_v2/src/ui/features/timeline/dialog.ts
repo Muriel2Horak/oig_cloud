@@ -493,6 +493,22 @@ export class OigTimelineDialog extends LitElement {
     const s = d.summary;
 
     return html`
+      <!-- Battery savings on the backed-up load only (excludes car + balancing) -->
+      ${s.backupSavings != null
+        ? html`
+            <div class="backup-savings" title="Jen zálohová spotřeba — bez auta a nabíjení baterie ze sítě">
+              <span>Úspora baterie:</span>
+              <span class="bs-value ${s.backupSavings >= 0 ? 'pos' : 'neg'}">
+                ${s.backupSavings >= 0 ? '+' : ''}${formatCurrency(s.backupSavings)}
+              </span>
+              <span class="bs-detail">
+                záloha ${formatCurrency(s.backupActualCost ?? 0)} vs. nedělat nic
+                ${formatCurrency(s.backupBaselineCost ?? 0)}
+              </span>
+            </div>
+          `
+        : null}
+
       <!-- Adherence bar -->
       ${s.overallAdherence > 0 ? html`
         <div class="adherence-bar">
@@ -830,6 +846,33 @@ export class OigTimelineTile extends LitElement {
       color: ${u(CSS_VARS.textSecondary)};
       font-size: 12px;
     }
+
+    /* ---- Battery savings (záloha-only, fair) ---- */
+    .backup-savings {
+      background: ${u(CSS_VARS.bgSecondary)};
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 12px;
+      font-size: 11px;
+      color: ${u(CSS_VARS.textSecondary)};
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .backup-savings .bs-value {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .backup-savings .bs-value.pos { color: var(--success-color, #4caf50); }
+    .backup-savings .bs-value.neg { color: var(--error-color, #f44336); }
+
+    .backup-savings .bs-detail {
+      font-size: 10px;
+      opacity: 0.8;
+    }
   `;
 
   connectedCallback(): void {
@@ -981,6 +1024,22 @@ export class OigTimelineTile extends LitElement {
     const s = d.summary;
 
     return html`
+      <!-- Battery savings on the backed-up load only (excludes car + balancing) -->
+      ${s.backupSavings != null
+        ? html`
+            <div class="backup-savings" title="Jen zálohová spotřeba — bez auta a nabíjení baterie ze sítě">
+              <span>Úspora baterie:</span>
+              <span class="bs-value ${s.backupSavings >= 0 ? 'pos' : 'neg'}">
+                ${s.backupSavings >= 0 ? '+' : ''}${formatCurrency(s.backupSavings)}
+              </span>
+              <span class="bs-detail">
+                záloha ${formatCurrency(s.backupActualCost ?? 0)} vs. nedělat nic
+                ${formatCurrency(s.backupBaselineCost ?? 0)}
+              </span>
+            </div>
+          `
+        : null}
+
       <!-- Adherence bar -->
       ${s.overallAdherence > 0 ? html`
         <div class="adherence-bar">

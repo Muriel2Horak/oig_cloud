@@ -54,6 +54,10 @@ def _build_history_entity_ids(box_id: str) -> list[str]:
         f"sensor.oig_{box_id}_box_prms_mode",
         f"sensor.oig_{box_id}_spot_price_current_15min",
         f"sensor.oig_{box_id}_export_price_current_15min",
+        # For záloha-only cost attribution: subtract non-backup (car/off-backup)
+        # and grid-charging of the battery (incl. balancing) from total import.
+        f"sensor.oig_{box_id}_computed_nonbackup_consumption_today",
+        f"sensor.oig_{box_id}_computed_batt_charge_grid_energy_today",
     ]
 
 
@@ -352,6 +356,25 @@ async def fetch_interval_from_history(  # noqa: C901
         export_revenue = grid_export_kwh * export_price
         net_cost = import_cost - export_revenue
 
+        # Záloha-only attribution: the planner/battery only controls the
+        # backed-up load. Strip the non-backup draw (car etc.) and the
+        # battery's grid-charging (incl. forced balancing) from the import so
+        # the savings comparison reflects only what the control influences.
+        nonbackup_kwh = _calc_delta_kwh(
+            _states(f"sensor.oig_{box_id}_computed_nonbackup_consumption_today"),
+            start_time,
+            end_time,
+        )
+        batt_grid_charge_kwh = _calc_delta_kwh(
+            _states(f"sensor.oig_{box_id}_computed_batt_charge_grid_energy_today"),
+            start_time,
+            end_time,
+        )
+        backup_grid_import_kwh = max(
+            0.0, grid_import_kwh - nonbackup_kwh - batt_grid_charge_kwh
+        )
+        backup_net_cost = backup_grid_import_kwh * spot_price - export_revenue
+
         mode = (
             map_mode_name_to_id(str(mode_raw))
             if mode_raw is not None
@@ -372,6 +395,9 @@ async def fetch_interval_from_history(  # noqa: C901
             "spot_price": round(spot_price, 2),
             "export_price": round(export_price, 2),
             "net_cost": round(net_cost, 2),
+            "nonbackup_kwh": round(nonbackup_kwh, 3),
+            "backup_grid_import_kwh": round(backup_grid_import_kwh, 3),
+            "backup_net_cost": round(backup_net_cost, 2),
         }
 
         if log_rl:

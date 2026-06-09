@@ -458,6 +458,7 @@ export class OigFlowNode extends LitElement {
       color: ${u(CSS_VARS.textSecondary)};
       margin: 4px 0;
       align-items: center;
+      justify-content: center;
     }
 
     .phase-sep { color: ${u(CSS_VARS.divider)}; }
