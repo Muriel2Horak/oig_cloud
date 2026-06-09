@@ -182,6 +182,19 @@ export class OigFlowNode extends LitElement {
     .solar-rem.rem-on { background: #ffca5a; color: #101a10; }
     .solar-rem.rem-off { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
 
+    /* Phase balance (záloha) */
+    .phasebal-head { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-weight: 600; opacity: 0.85; margin-bottom: 7px; }
+    .pb-ok { font-size: 9.5px; font-weight: 700; color: #9fe6a8; background: rgba(76,175,80,0.16); border: 1px solid rgba(76,175,80,0.3); padding: 2px 7px; border-radius: 6px; }
+    .pb-crit { font-size: 9.5px; font-weight: 700; color: #ff9d93; background: rgba(244,67,54,0.18); border: 1px solid rgba(244,67,54,0.4); padding: 2px 7px; border-radius: 6px; }
+    .pb-row { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+    .pb-lab { font-size: 10px; width: 16px; opacity: 0.7; }
+    .pb-track { position: relative; flex: 1; height: 10px; border-radius: 6px; background: rgba(255,255,255,0.07); overflow: hidden; }
+    .pb-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: #4caf50; transition: width 0.4s; }
+    .pb-fill.over { background: linear-gradient(90deg, #fb8c00, #e53935); }
+    .pb-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: rgba(255,255,255,0.55); }
+    .pb-val { font-size: 10px; min-width: 42px; text-align: right; font-weight: 600; background: none; border: none; color: inherit; cursor: pointer; }
+    .pb-val.over { color: #ff9d93; }
+
     .node:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 16px rgba(0,0,0,0.2);
@@ -1606,19 +1619,32 @@ export class OigFlowNode extends LitElement {
       plannerText = 'Plánovač: VYPNUTO';
     }
 
+    const m = d.inverterMode;
+    const modeColor = m.includes('UPS') ? '#ff9800'
+      : m.includes('Home 2') ? '#2196f3'
+      : m.includes('Home 3') ? '#9c27b0' : '#4caf50';
+    const tempColor = d.inverterTemp >= 45 ? '#e53935' : d.inverterTemp >= 35 ? '#ffa726' : '#43a047';
+    const tempPct = Math.max(0, Math.min(100, (d.inverterTemp / 55) * 100));
+    const edgeColor = bypassActive ? '#e53935' : tempColor;
+
     return html`
       <div class="${this.nodeClass('inverter', pending.inverterModeChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter};"
-        @click=${(e: Event) => this.toggleExpand('inverter', e)}>
-        <div class="node-header">
-          <oig-inverter-icon
-            .mode=${d.inverterMode}
-            ?bypassActive=${bypassActive}
-            ?hasAlarm=${d.notificationsError > 0}
-            ?plannerAuto=${d.plannerAutoMode === true}
-          ></oig-inverter-icon>
-          <span class="node-label">Střídač</span>
+        @click=${(e: Event) => this.toggleExpand('inverter', e)}
+        title="Teplota ${d.inverterTemp.toFixed(1)} °C · ${bypassActive ? 'Bypass aktivní' : 'Bypass vyp'}">
+        ${this.edgeGauge({
+          id: 'gauge-inverter',
+          pct: bypassActive ? 100 : tempPct,
+          stops: [[0, edgeColor], [1, edgeColor]],
+          width: bypassActive ? 5 : 3,
+          pulse: bypassActive,
+          pulseDur: 1.1,
+        })}
+        <div class="node-tint" style="background: radial-gradient(120% 90% at 50% 0, ${modeColor}22, transparent 72%)"></div>
+
+        <div class="node-header" style="justify-content:center">
+          <span class="node-label">⚙️ Střídač</span>
         </div>
-        <div class="node-value" @click=${openEntity('box_prms_mode')}>
+        <div class="node-value" @click=${openEntity('box_prms_mode')} style="color:${modeColor}">
           ${pending.inverterModeChanging ? html`<span class="spinner spinner--small"></span>` : nothing}
           ${modeInfo.icon} ${modeInfo.text}
         </div>
@@ -1799,87 +1825,85 @@ export class OigFlowNode extends LitElement {
     const nezalohaToday = d.nonbackupTodayWh / 1000;
     const totalToday = zalohaToday + nezalohaToday;
     const totalPower = d.housePower + d.nonbackupPower;
-    // Záloha day forecast = already consumed + planner's remaining planned load.
     const zalohaForecast = zalohaToday + d.zalohaPlannedRemainingKwh;
+
+    // Live self-sufficiency: share of current load covered by own sources.
+    const battDis = Math.max(0, -d.batteryPower);
+    const fromSolar = Math.min(d.solarPower, totalPower);
+    const fromBat = Math.min(battDis, Math.max(0, totalPower - fromSolar));
+    const fromGrid = Math.max(0, totalPower - fromSolar - fromBat);
+    const selfSuf = totalPower > 5
+      ? ((fromSolar + fromBat) / totalPower) * 100
+      : (d.solarPower > 5 ? 100 : 0);
+    const ssColor = selfSuf >= 66 ? '#43a047' : selfSuf >= 33 ? '#fdd835' : '#e53935';
+    const share = (x: number) => (totalPower > 0 ? Math.round((x / totalPower) * 100) : 0);
+    const ssTitle = `Soběstačnost ${Math.round(selfSuf)} % · FVE ${share(fromSolar)} % · Baterie ${share(fromBat)} % · Síť ${share(fromGrid)} %`;
+
+    // Phase balance (záloha) — critical above 3.3 kW / phase (protects inverter).
+    const CRIT = 3300;
+    const TRACK = 4000;
+    const phases = [
+      { l: 'L1', w: d.houseL1, e: 'ac_out_aco_pr' },
+      { l: 'L2', w: d.houseL2, e: 'ac_out_aco_ps' },
+      { l: 'L3', w: d.houseL3, e: 'ac_out_aco_pt' },
+    ];
+    const critPhase = phases.find((p) => p.w > CRIT);
 
     return html`
       <div class="${this.nodeClass('house')}" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house};"
-        @click=${(e: Event) => this.toggleExpand('house', e)}>
-        <!-- Corner summaries: záloha (left) / nezáloha (right) — power · today -->
-        <button class="indicator house-corner" style="position:absolute;top:4px;left:6px"
-          @click=${openEntity('actual_aco_p')} title="Záloha — aktuální výkon · dnes">
+        @click=${(e: Event) => this.toggleExpand('house', e)} title=${ssTitle}>
+        ${this.edgeGauge({
+          id: 'gauge-house',
+          pct: selfSuf,
+          stops: [[0, '#e53935'], [0.5, '#fdd835'], [1, '#43a047']],
+          width: 2.5 + Math.min(4, totalPower / 1000),
+          pulse: totalPower > 50,
+          pulseDur: Math.max(0.9, 2.2 - (totalPower / 1000) * 0.35),
+        })}
+        <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${ssColor}22, transparent 72%)"></div>
+
+        <button class="indicator house-corner" style="position:absolute;top:4px;left:6px;z-index:3"
+          @click=${openEntity('actual_aco_p')} title="Záloha — výkon · dnes">
           <span class="hc-l">🔌 ${formatPower(d.housePower)}</span>
           <span class="hc-v">${zalohaToday.toFixed(1)} kWh</span>
         </button>
-        <button class="indicator house-corner" style="position:absolute;top:4px;right:6px;text-align:right"
-          @click=${openEntity('actual_acinb_wtotal')} title="Nezáloha — aktuální výkon · dnes">
+        <button class="indicator house-corner" style="position:absolute;top:4px;right:6px;text-align:right;z-index:3"
+          @click=${openEntity('actual_acinb_wtotal')} title="Nezáloha — výkon · dnes">
           <span class="hc-l">🚗 ${formatPower(d.nonbackupPower)}</span>
           <span class="hc-v">${nezalohaToday.toFixed(1)} kWh</span>
         </button>
 
-        <div class="node-header" style="margin-top:16px">
-          <oig-house-icon
-            .power=${totalPower}
-            .maxPower=${d.boilerInstallPower > 0 ? 10000 : 8000}
-            ?boilerActive=${d.boilerIsUse}
-          ></oig-house-icon>
-          <span class="node-label">Spotřeba</span>
+        <div class="node-header" style="margin-top:18px;justify-content:center">
+          <span class="node-label">🏠 Spotřeba</span>
         </div>
-
-        <!-- Summary of both (záloha + nezáloha) -->
-        <div class="node-value" @click=${openEntity('actual_aco_p')}>
-          ${formatPower(totalPower)}
-        </div>
-        <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>
-          Dnes celkem: ${totalToday.toFixed(1)} kWh
-        </div>
+        <div class="node-value" @click=${openEntity('actual_aco_p')}>${formatPower(totalPower)}</div>
+        <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>Dnes celkem: ${totalToday.toFixed(1)} kWh</div>
         ${zalohaForecast > 0 ? html`
           <div class="node-subvalue" @click=${openEntity('battery_forecast')}
-            title="Předpověď zálohové spotřeby na dnešek (skutečné + plán)">
+            title="Předpověď zálohové spotřeby (skutečné + plán)">
             🔮 Záloha plán: ${zalohaForecast.toFixed(1)} kWh
           </div>` : nothing}
 
-        <!-- Split bar: share of záloha (green) vs nezáloha (orange) right now -->
-        ${totalPower > 5 ? html`
-          <div class="cons-split" title="Podíl zálohy vs nezálohy (aktuální výkon)">
-            <div class="cons-split-z" style="width:${(d.housePower / totalPower) * 100}%"></div>
-            <div class="cons-split-n" style="width:${(d.nonbackupPower / totalPower) * 100}%"></div>
-          </div>` : nothing}
-
-        <!-- Two columns: Záloha | Nezáloha (per phase + total + today) -->
+        <!-- Phase balance (záloha) -->
         <div class="detail-section">
-          <div class="solar-strings">
-            <div>
-              <div class="detail-header">🔌 Záloha</div>
-              <div class="detail-row">
-                <span class="icon">L1</span>
-                <button class="clickable" @click=${openEntity('ac_out_aco_pr')}>${Math.round(d.houseL1)} W</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">L2</span>
-                <button class="clickable" @click=${openEntity('ac_out_aco_ps')}>${Math.round(d.houseL2)} W</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">L3</span>
-                <button class="clickable" @click=${openEntity('ac_out_aco_pt')}>${Math.round(d.houseL3)} W</button>
-              </div>
-            </div>
-            <div>
-              <div class="detail-header">🚗 Nezáloha</div>
-              <div class="detail-row">
-                <span class="icon">L1</span>
-                <button class="clickable" @click=${openEntity('actual_acinb_wr')}>${Math.round(d.nonbackupL1)} W</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">L2</span>
-                <button class="clickable" @click=${openEntity('actual_acinb_ws')}>${Math.round(d.nonbackupL2)} W</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">L3</span>
-                <button class="clickable" @click=${openEntity('actual_acinb_wt')}>${Math.round(d.nonbackupL3)} W</button>
-              </div>
-            </div>
+          <div class="phasebal-head">
+            <span>⚖️ Vyvážení fází</span>
+            ${critPhase
+              ? html`<span class="pb-crit">⚠ KRIZOVÝ — ${critPhase.l}</span>`
+              : html`<span class="pb-ok">✓ Vyvážené</span>`}
           </div>
+          ${phases.map((p) => {
+            const over = p.w > CRIT;
+            return html`
+              <div class="pb-row">
+                <span class="pb-lab">${p.l}</span>
+                <div class="pb-track">
+                  <div class="pb-fill ${over ? 'over' : ''}" style="width:${Math.min(100, (p.w / TRACK) * 100)}%"></div>
+                  <div class="pb-mark" style="left:${(CRIT / TRACK) * 100}%"></div>
+                </div>
+                <button class="pb-val ${over ? 'over' : ''}" @click=${openEntity(p.e)}>${(p.w / 1000).toFixed(1)} kW</button>
+              </div>`;
+          })}
         </div>
       </div>
     `;
