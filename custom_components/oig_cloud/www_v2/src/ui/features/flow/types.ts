@@ -66,6 +66,10 @@ export interface FlowData {
   houseL3: number;
   nonbackupPower: number;
   nonbackupTodayWh: number;
+  nonbackupL1: number;
+  nonbackupL2: number;
+  nonbackupL3: number;
+  zalohaPlannedRemainingKwh: number;
 
   // Inverter
   inverterMode: string;
@@ -257,7 +261,8 @@ export const EMPTY_FLOW_DATA: FlowData = {
   gridL1V: 0, gridL2V: 0, gridL3V: 0, gridL1P: 0, gridL2P: 0, gridL3P: 0,
   spotPrice: 0, exportPrice: 0, currentTariff: '',
   housePower: 0, houseTodayWh: 0, houseL1: 0, houseL2: 0, houseL3: 0,
-  nonbackupPower: 0, nonbackupTodayWh: 0,
+  nonbackupPower: 0, nonbackupTodayWh: 0, nonbackupL1: 0, nonbackupL2: 0, nonbackupL3: 0,
+  zalohaPlannedRemainingKwh: 0,
   inverterMode: '', inverterGridMode: 'unknown' as FlowGridDelivery, inverterGridLimit: 0, inverterTemp: 0,
   bypassStatus: 'off', notificationsUnread: 0, notificationsError: 0,
   boilerIsUse: false, boilerPower: 0, boilerDayEnergy: 0, boilerManualMode: '', boilerInstallPower: 3000,

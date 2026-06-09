@@ -281,6 +281,14 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
   // Non-backup (nezáloha) — load not behind the inverter (e.g. car)
   const nonbackupPower = parseNumber(get('actual_acinb_wtotal'));
   const nonbackupTodayWh = parseNumber(get('computed_nonbackup_consumption_today'));
+  const nonbackupL1 = parseNumber(get('actual_acinb_wr'));
+  const nonbackupL2 = parseNumber(get('actual_acinb_ws'));
+  const nonbackupL3 = parseNumber(get('actual_acinb_wt'));
+  // Záloha consumption forecast: today already consumed + planner's remaining
+  // planned záloha load (planned_consumption_today is the REMAINING amount).
+  const batteryForecast = get('battery_forecast');
+  const zalohaPlannedRemainingKwh =
+    Number(batteryForecast?.attributes?.planned_consumption_today) || 0;
 
   // Inverter
   const inverterMode = parseString(get('box_prms_mode'));
@@ -343,7 +351,8 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
     spotPrice, exportPrice, currentTariff,
 
     housePower, houseTodayWh, houseL1, houseL2, houseL3,
-    nonbackupPower, nonbackupTodayWh,
+    nonbackupPower, nonbackupTodayWh, nonbackupL1, nonbackupL2, nonbackupL3,
+    zalohaPlannedRemainingKwh,
 
     inverterMode, inverterGridMode, inverterGridLimit, inverterTemp,
     bypassStatus, notificationsUnread, notificationsError,

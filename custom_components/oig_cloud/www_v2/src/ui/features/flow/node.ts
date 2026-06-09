@@ -1659,66 +1659,99 @@ export class OigFlowNode extends LitElement {
   private renderHouse() {
     const d = this.data;
 
+    const zalohaToday = d.houseTodayWh / 1000;
+    const nezalohaToday = d.nonbackupTodayWh / 1000;
+    const totalToday = zalohaToday + nezalohaToday;
+    const totalPower = d.housePower + d.nonbackupPower;
+    // Záloha day forecast = already consumed + planner's remaining planned load.
+    const zalohaForecast = zalohaToday + d.zalohaPlannedRemainingKwh;
+
     return html`
       <div class="${this.nodeClass('house')}" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house};"
         @click=${(e: Event) => this.toggleExpand('house', e)}>
         <div class="node-header">
           <oig-house-icon
-            .power=${d.housePower}
+            .power=${totalPower}
             .maxPower=${d.boilerInstallPower > 0 ? 10000 : 8000}
             ?boilerActive=${d.boilerIsUse}
           ></oig-house-icon>
           <span class="node-label">Spotřeba</span>
         </div>
 
+        <!-- Summary of both (záloha + nezáloha) -->
         <div class="node-value" @click=${openEntity('actual_aco_p')}>
-          ${formatPower(d.housePower)}
+          ${formatPower(totalPower)}
         </div>
         <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>
-          Dnes: ${(d.houseTodayWh / 1000).toFixed(1)} kWh
+          Dnes celkem: ${totalToday.toFixed(1)} kWh
         </div>
-        <div class="node-subvalue" @click=${openEntity('actual_acinb_wtotal')}
-          title="Spotřeba mimo zálohu (auto, okruhy mimo invertor) — baterie ji nepokrývá">
-          🚗 Nezáloha: ${formatPower(d.nonbackupPower)} · dnes ${(d.nonbackupTodayWh / 1000).toFixed(1)} kWh
-        </div>
+        ${zalohaForecast > 0 ? html`
+          <div class="node-subvalue" @click=${openEntity('battery_forecast')}
+            title="Předpověď zálohové spotřeby na dnešek (skutečné + plán)">
+            🔮 Záloha plán: ${zalohaForecast.toFixed(1)} kWh
+          </div>` : nothing}
 
-        <!-- Per-phase consumption — clickable na entity (konzistentní se Sítí) -->
-        <div class="phases">
-          <button class="phase-val" @click=${openEntity('ac_out_aco_pr')}>${Math.round(d.houseL1)}W</button>
-          <span class="phase-sep">|</span>
-          <button class="phase-val" @click=${openEntity('ac_out_aco_ps')}>${Math.round(d.houseL2)}W</button>
-          <span class="phase-sep">|</span>
-          <button class="phase-val" @click=${openEntity('ac_out_aco_pt')}>${Math.round(d.houseL3)}W</button>
-        </div>
-
-        ${d.boilerIsUse ? html`
-          <div class="boiler-section">
-            <div class="detail-header">🔥 Bojler</div>
-            <div class="detail-row">
-              <span class="icon">⚡</span>
-              <span>Výkon:</span>
-              <button class="clickable" @click=${openEntity('boiler_current_cbb_w')}>
-                ${formatPower(d.boilerPower)}
-              </button>
+        <!-- Two columns: Záloha | Nezáloha (per phase + total + today) -->
+        <div class="detail-section">
+          <div class="solar-strings">
+            <div>
+              <div class="detail-header">🔌 Záloha</div>
+              <div class="detail-row">
+                <span class="icon">L1</span>
+                <button class="clickable" @click=${openEntity('ac_out_aco_pr')}>${Math.round(d.houseL1)} W</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">L2</span>
+                <button class="clickable" @click=${openEntity('ac_out_aco_ps')}>${Math.round(d.houseL2)} W</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">L3</span>
+                <button class="clickable" @click=${openEntity('ac_out_aco_pt')}>${Math.round(d.houseL3)} W</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">Σ</span>
+                <button class="clickable" @click=${openEntity('actual_aco_p')}>${formatPower(d.housePower)}</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">📊</span>
+                <button class="clickable" @click=${openEntity('ac_out_en_day')}>${zalohaToday.toFixed(1)} kWh</button>
+              </div>
             </div>
-            <div class="detail-row">
-              <span class="icon">📊</span>
-              <span>Nabito:</span>
-              <button class="clickable" @click=${openEntity('boiler_day_w')}>
-                ${formatEnergy(d.boilerDayEnergy)}
-              </button>
-            </div>
-            <div class="detail-row">
-              <span class="icon">${d.boilerManualMode === 'CBB' ? '🤖' : d.boilerManualMode === 'Manual' ? '👤' : '⚙️'}</span>
-              <span>Režim:</span>
-              <button class="clickable" @click=${openEntity('boiler_manual_mode')}>
-                ${d.boilerManualMode === 'CBB' ? '🤖 Inteligentní'
-                  : d.boilerManualMode === 'Manual' ? '👤 Manuální'
-                  : d.boilerManualMode || '--'}
-              </button>
+            <div>
+              <div class="detail-header">🚗 Nezáloha</div>
+              <div class="detail-row">
+                <span class="icon">L1</span>
+                <button class="clickable" @click=${openEntity('actual_acinb_wr')}>${Math.round(d.nonbackupL1)} W</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">L2</span>
+                <button class="clickable" @click=${openEntity('actual_acinb_ws')}>${Math.round(d.nonbackupL2)} W</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">L3</span>
+                <button class="clickable" @click=${openEntity('actual_acinb_wt')}>${Math.round(d.nonbackupL3)} W</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">Σ</span>
+                <button class="clickable" @click=${openEntity('actual_acinb_wtotal')}>${formatPower(d.nonbackupPower)}</button>
+              </div>
+              <div class="detail-row">
+                <span class="icon">📊</span>
+                <button class="clickable" @click=${openEntity('computed_nonbackup_consumption_today')}>${nezalohaToday.toFixed(1)} kWh</button>
+              </div>
+              ${d.boilerIsUse ? html`
+                <div class="detail-row">
+                  <span class="icon">🔥</span>
+                  <button class="clickable" @click=${openEntity('boiler_current_cbb_w')}>${formatPower(d.boilerPower)}</button>
+                </div>
+                <div class="detail-row">
+                  <span class="icon">📈</span>
+                  <button class="clickable" @click=${openEntity('boiler_day_w')}>${formatEnergy(d.boilerDayEnergy)}</button>
+                </div>
+              ` : nothing}
             </div>
           </div>
-        ` : nothing}
+        </div>
       </div>
     `;
   }
