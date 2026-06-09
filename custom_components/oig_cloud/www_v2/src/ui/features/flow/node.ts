@@ -1676,6 +1676,10 @@ export class OigFlowNode extends LitElement {
         <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>
           Dnes: ${(d.houseTodayWh / 1000).toFixed(1)} kWh
         </div>
+        <div class="node-subvalue" @click=${openEntity('actual_acinb_wtotal')}
+          title="Spotřeba mimo zálohu (auto, okruhy mimo invertor) — baterie ji nepokrývá">
+          🚗 Nezáloha: ${formatPower(d.nonbackupPower)} · dnes ${(d.nonbackupTodayWh / 1000).toFixed(1)} kWh
+        </div>
 
         <!-- Per-phase consumption — clickable na entity (konzistentní se Sítí) -->
         <div class="phases">
