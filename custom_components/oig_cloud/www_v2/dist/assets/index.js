@@ -2467,12 +2467,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       </div>
 
       <div class="price-tile savings">
-        <div class="price-tile-label">💰 Úspora plánu</div>
+        <div class="price-tile-label">💰 Úspora vs Home I</div>
         <div class="price-tile-value ${l}">
           ${a!=null?c`${a>=0?"+":""}${a.toFixed(0)} <span class="price-tile-unit">Kč</span>`:c`-- <span class="price-tile-unit">Kč</span>`}
         </div>
         <div class="price-tile-sub">
-          ${s!=null?`Náklady ${s.toFixed(0)} Kč · vs Home I`:"vs Home I"}
+          ${s!=null?`Náklady ${s.toFixed(0)} Kč`:O}
         </div>
       </div>
 
@@ -2558,13 +2558,19 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       margin-bottom: 16px;
     }
 
-    /* Top row: price tiles + extreme blocks in one line */
+    /* Top row: 4 price/summary tiles + 4 extreme blocks.
+       minmax(0,…) lets columns shrink below content width so nothing
+       overflows the row; price tiles a touch narrower than the blocks. */
     .top-row {
       display: grid;
-      grid-template-columns: auto auto auto auto 1fr 1fr 1fr 1fr;
+      grid-template-columns: repeat(4, minmax(0, 0.8fr)) repeat(4, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 12px;
       align-items: stretch;
+    }
+
+    .top-row > * {
+      min-width: 0;
     }
 
     /* Compact price tiles: spot, export, solar */
@@ -2733,10 +2739,21 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     }
 
 
-    @media (max-width: 700px) {
+    /* Nest Hub / tablets: 4 tiles per row (price tiles row, then blocks row) */
+    @media (max-width: 1100px) {
       .top-row {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
+    }
+
+    /* Phones: 2 per row */
+    @media (max-width: 560px) {
+      .top-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 700px) {
       .planned-details {
         grid-template-columns: 1fr 1fr;
       }

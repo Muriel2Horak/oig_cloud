@@ -364,13 +364,19 @@ export class OigPricingStats extends LitElement {
       margin-bottom: 16px;
     }
 
-    /* Top row: price tiles + extreme blocks in one line */
+    /* Top row: 4 price/summary tiles + 4 extreme blocks.
+       minmax(0,…) lets columns shrink below content width so nothing
+       overflows the row; price tiles a touch narrower than the blocks. */
     .top-row {
       display: grid;
-      grid-template-columns: auto auto auto auto 1fr 1fr 1fr 1fr;
+      grid-template-columns: repeat(4, minmax(0, 0.8fr)) repeat(4, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 12px;
       align-items: stretch;
+    }
+
+    .top-row > * {
+      min-width: 0;
     }
 
     /* Compact price tiles: spot, export, solar */
@@ -539,10 +545,21 @@ export class OigPricingStats extends LitElement {
     }
 
 
-    @media (max-width: 700px) {
+    /* Nest Hub / tablets: 4 tiles per row (price tiles row, then blocks row) */
+    @media (max-width: 1100px) {
       .top-row {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
+    }
+
+    /* Phones: 2 per row */
+    @media (max-width: 560px) {
+      .top-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 700px) {
       .planned-details {
         grid-template-columns: 1fr 1fr;
       }
@@ -591,14 +608,14 @@ export class OigPricingStats extends LitElement {
       </div>
 
       <div class="price-tile savings">
-        <div class="price-tile-label">💰 Úspora plánu</div>
+        <div class="price-tile-label">💰 Úspora vs Home I</div>
         <div class="price-tile-value ${savingsVariant}">
           ${savings != null
             ? html`${savings >= 0 ? '+' : ''}${savings.toFixed(0)} <span class="price-tile-unit">Kč</span>`
             : html`-- <span class="price-tile-unit">Kč</span>`}
         </div>
         <div class="price-tile-sub">
-          ${planCost != null ? `Náklady ${planCost.toFixed(0)} Kč · vs Home I` : 'vs Home I'}
+          ${planCost != null ? `Náklady ${planCost.toFixed(0)} Kč` : nothing}
         </div>
       </div>
 
