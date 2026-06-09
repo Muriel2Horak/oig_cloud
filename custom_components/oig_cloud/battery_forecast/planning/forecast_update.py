@@ -649,6 +649,8 @@ def _run_planner(
             prices=[float(point.get("price", 0.0) or 0.0) for point in spot_prices],
             solar_forecast=list(solar_kwh_list),
             load_forecast=list(load_forecast),
+            expensive_percentile=float(opts.get("expensive_percentile", 0.70)),
+            round_trip_efficiency=efficiency,
         )
 
         result = plan_battery_schedule(planner_inputs)
@@ -731,6 +733,16 @@ def _run_planner(
             "planner": "economic_planner",
             "planning_min_kwh": planning_min_kwh,
             "target_kwh": planning_min_kwh,
+            # Emergent dynamic reserve: the peak SoC the plan deliberately builds
+            # (via cheap grid pre-charging) to bridge upcoming expensive/low-PV
+            # windows — higher than the static floor when displacement kicks in.
+            "dynamic_reserve_kwh": round(
+                max(
+                    (s.soc_kwh for s in (getattr(result, "states", None) or [])),
+                    default=planning_min_kwh,
+                ),
+                3,
+            ),
             "infeasible": False,
             "infeasible_reason": None,
         }
