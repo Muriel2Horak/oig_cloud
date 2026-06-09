@@ -19,6 +19,7 @@ import { PricingData } from '@/ui/features/pricing/types';
 import {
   BoilerState,
   BoilerV2Data,
+  BoilerConfig,
 } from '@/ui/features/boiler/types';
 import { oigLog } from '@/core/logger';
 import { throttle, withRetry } from '@/utils/format';
@@ -75,6 +76,7 @@ export class OigApp extends LitElement {
   @state() private boilerState: BoilerState | null = null;
   @state() private boilerLoading = false;
   @state() private boilerV2Data: BoilerV2Data | null = null;
+  @state() private boilerConfig: BoilerConfig | null = null;
   private boilerRefreshTimer: number | null = null;
 
   private get boilerLang() {
@@ -210,6 +212,68 @@ export class OigApp extends LitElement {
       gap: 16px;
     }
 
+    .boiler-stage {
+      display: grid;
+      grid-template-areas: 'source shell comfort';
+      grid-template-columns: 1fr 380px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    @media (max-width: 1023px) {
+      .boiler-stage {
+        grid-template-areas:
+          'source'
+          'shell'
+          'comfort';
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 599px) {
+      .boiler-stage {
+        grid-template-areas:
+          'source'
+          'shell'
+          'comfort';
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .boiler-header {
+      margin-bottom: 8px;
+    }
+
+    .boiler-header h1 {
+      margin: 0 0 6px;
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .boiler-badge {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: rgba(35,43,53,1);
+      color: #4ade80;
+      font-weight: 500;
+    }
+
+    .boiler-badge.degr {
+      background: rgba(245,184,0,.15);
+      color: #f5b800;
+    }
+
+    .boiler-header-meta {
+      color: #9aa6b2;
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+
     /* ---- Flow tab layout: tiles | canvas | control ---- */
     .flow-layout {
       display: grid;
@@ -272,9 +336,15 @@ export class OigApp extends LitElement {
 
     .below-chart-pair {
       display: grid;
-      grid-template-columns: 1fr 2fr;
+      /* Same 4-column track + gap as .analytics-row below, so the tile edges
+         line up: planned tile spans 1 column, the mode-plan tile spans 3. */
+      grid-template-columns: repeat(4, 1fr);
       gap: 12px;
+      align-items: start;
     }
+
+    .below-chart-pair > :first-child { grid-column: span 1; }
+    .below-chart-pair > :last-child { grid-column: span 3; }
 
     /* ---- Animations ---- */
     @keyframes fadeIn {
@@ -603,6 +673,7 @@ export class OigApp extends LitElement {
       const data = await withRetry(() => loadBoilerData(this.hass));
       this.boilerState = data.state;
       this.boilerV2Data = data.v2Data;
+      this.boilerConfig = data.config;
       this.boilerDirty = false;
 
       // Start auto-refresh timer (5 min, like V1)
@@ -845,6 +916,103 @@ export class OigApp extends LitElement {
   }
 
   // ==========================================================================
+  // BOILER TAB RENDER HELPERS
+  // ==========================================================================
+
+  private _renderBoilerTabSafe() {
+    try {
+      return this._buildBoilerTabContent();
+    } catch (err) {
+      oigLog.error('Boiler tab render failed', err as Error);
+      return html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="error" .message=${'render_failed'}></oig-boiler-unavailable-state>`;
+    }
+  }
+
+  private _buildBoilerTabContent() {
+    const v2 = this.boilerV2Data;
+
+    if (this.boilerLoading && !v2) {
+      return html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="loading" message=""></oig-boiler-unavailable-state>`;
+    }
+
+    if (v2?.loadError) {
+      return html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="error" .message=${v2.loadError}></oig-boiler-unavailable-state>`;
+    }
+
+    const realDegradedReasons = (v2?.explanation?.degradedReasons ?? []).filter(r => r !== 'config_profile_unavailable');
+    if (v2 && v2.status === null && realDegradedReasons.length > 0) {
+      return html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="degraded" .message=${realDegradedReasons.join(', ')}></oig-boiler-unavailable-state>`;
+    }
+
+    if (!v2) {
+      return html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="unavailable" message="Data bojleru nejsou k dispozici"></oig-boiler-unavailable-state>`;
+    }
+
+    const tz = this.hass?.config?.time_zone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Europe/Prague';
+
+    const heating = v2.status?.heating ?? false;
+    const comfortOk = v2.status?.comfortSatisfied;
+    const statusBadgeText = heating ? 'Nabíjí' : comfortOk === true ? 'Připraveno' : comfortOk === false ? 'Nedostatek' : 'Připraveno';
+    const degradedFlags = v2.status?.degradedFlags ?? [];
+    const degradedBadgeText = degradedFlags.includes('plan_degraded')
+      ? '⚠ Plán s omezenými daty'
+      : degradedFlags.includes('price_degraded')
+        ? '⚠ Ceny: stará data'
+        : degradedFlags.includes('forecast_degraded')
+          ? '⚠ FVE predikce: stará data'
+          : null;
+    const showDegradedBadge = (v2.status?.degraded ?? false) && degradedBadgeText !== null;
+
+    const dataAgeSecs = v2.explanation?.dataAgeSecs ?? null;
+    const lastUpdate = v2.status?.lastUpdate ?? null;
+    const ageText = dataAgeSecs === null ? null
+      : dataAgeSecs < 60 ? `${Math.round(dataAgeSecs)} sekundami`
+      : dataAgeSecs < 3600 ? `${Math.round(dataAgeSecs / 60)} minutami`
+      : `${Math.round(dataAgeSecs / 3600)} hodinami`;
+    const lastUpdateTime = lastUpdate ? (() => {
+      try {
+        const d = new Date(lastUpdate);
+        return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+      } catch { return null; }
+    })() : null;
+
+    return html`
+      <div class="boiler-header">
+        <h1>🔥 Bojler
+          <span class="boiler-badge">${statusBadgeText}</span>
+          ${showDegradedBadge ? html`<span class="boiler-badge degr">${degradedBadgeText}</span>` : ''}
+        </h1>
+        ${ageText || lastUpdateTime ? html`
+          <div class="boiler-header-meta">
+            ${ageText ? `Aktualizováno před ${ageText}` : ''}
+            ${ageText && lastUpdateTime ? ' · ' : ''}
+            ${lastUpdateTime ? `Data k ${lastUpdateTime}` : ''}
+          </div>
+        ` : ''}
+      </div>
+      <div class="boiler-stage">
+        <oig-boiler-metric-panel panelType="source" .data=${v2} .config=${this.boilerConfig} .lang=${this.boilerLang}></oig-boiler-metric-panel>
+        <oig-boiler-v2-shell .data=${v2} .config=${this.boilerConfig} .lang=${this.boilerLang}></oig-boiler-v2-shell>
+        <oig-boiler-metric-panel panelType="comfort" .data=${v2} .config=${this.boilerConfig} .lang=${this.boilerLang}></oig-boiler-metric-panel>
+      </div>
+      <oig-boiler-timeline-chart
+        .data=${v2}
+        .config=${this.boilerConfig}
+        .lang=${this.boilerLang}
+        .timeZone=${tz}
+      ></oig-boiler-timeline-chart>
+      <details data-testid="boiler-advanced-row">
+        <summary>Ruční přepis zdroje</summary>
+        <oig-boiler-override-panel
+          .lang=${this.boilerLang}
+          .identity=${v2.identity ?? { entryId: null, boxId: null, available: false }}
+          .currentOverride=${v2.manualOverride ?? null}
+        ></oig-boiler-override-panel>
+      </details>
+    `;
+  }
+
+  // ==========================================================================
   // RENDER
   // ==========================================================================
 
@@ -959,41 +1127,13 @@ export class OigApp extends LitElement {
 
              <!-- ===== BOILER TAB ===== -->
              <div class="tab-content boiler-layout ${this.activeTab === 'boiler' ? 'active' : ''}" style="position:relative">
-               ${this.boilerLoading ? html`
+               ${this.boilerLoading && this.boilerV2Data ? html`
                  <div class="tab-loading-overlay">
                    <div class="spinner spinner--small"></div>
                    <span>Načítání bojleru...</span>
                  </div>
                ` : nothing}
-
-               <!-- V2: Status panel (heating state, source, temperatures, comfort) -->
-               ${this.boilerV2Data?.status
-                 ? html`<oig-boiler-status-panel .lang=${this.boilerLang} .data=${this.boilerV2Data.status}></oig-boiler-status-panel>`
-                  : this.boilerLoading
-                    ? html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="loading" message=""></oig-boiler-unavailable-state>`
-                    : this.boilerV2Data?.loadError
-                      ? html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="error" .message=${this.boilerV2Data.loadError}></oig-boiler-unavailable-state>`
-                      : this.boilerV2Data?.status === null && (this.boilerV2Data?.explanation?.degradedReasons?.length ?? 0) > 0
-                        ? html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="degraded" .message=${(this.boilerV2Data?.explanation?.degradedReasons ?? []).join(', ')}></oig-boiler-unavailable-state>`
-                        : html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="unavailable" message="Data bojleru nejsou k dispozici"></oig-boiler-unavailable-state>`}
-
-               <!-- V2: Plan timeline (slots) -->
-               <oig-boiler-plan-timeline .lang=${this.boilerLang} .slots=${this.boilerV2Data?.planSlots ?? []}></oig-boiler-plan-timeline>
-
-               <!-- V2: Source explanation (reason codes, freshness) -->
-               <oig-boiler-source-explanation .lang=${this.boilerLang} .explanation=${this.boilerV2Data?.explanation ?? null}></oig-boiler-source-explanation>
-
-               <!-- V2: Manual override (secondary, collapsed by default) -->
-               <details>
-                 <summary>Ruční přepis zdroje</summary>
-                  <oig-boiler-override-panel
-                    .lang=${this.boilerLang}
-                    .identity=${this.boilerV2Data?.identity ?? { entryId: null, boxId: null, available: false }}
-                   .currentOverride=${this.boilerV2Data?.manualOverride ?? null}
-                 ></oig-boiler-override-panel>
-               </details>
-
-               <!-- Setup guide — CTA to HA integration configuration/options -->
+               ${this._renderBoilerTabSafe()}
                <div data-testid="boiler-setup-guide" class="boiler-setup-guide">
                  <span class="boiler-setup-guide__icon">🧙</span>
                  <div class="boiler-setup-guide__text">

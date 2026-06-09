@@ -9282,9 +9282,15 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
 
     .below-chart-pair {
       display: grid;
-      grid-template-columns: 1fr 2fr;
+      /* Same 4-column track + gap as .analytics-row below, so the tile edges
+         line up: planned tile spans 1 column, the mode-plan tile spans 3. */
+      grid-template-columns: repeat(4, 1fr);
       gap: 12px;
+      align-items: start;
     }
+
+    .below-chart-pair > :first-child { grid-column: span 1; }
+    .below-chart-pair > :last-child { grid-column: span 3; }
 
     /* ---- Animations ---- */
     @keyframes fadeIn {
