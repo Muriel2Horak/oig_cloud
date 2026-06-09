@@ -90,6 +90,30 @@ def _daily_value_for_date_or_latest(daily: Dict[str, Any], target_date: date) ->
     return _safe_float(daily[latest_key])
 
 
+def _date_value_kwh(
+    forecast_data: Dict[str, Any], daily_key: str, target_date: date
+) -> float:
+    """Denní kWh pro konkrétní datum z uloženého denního slovníku.
+
+    Na rozdíl od zamrzlých ``*_today_kwh`` polí (počítaných jednorázově při
+    fetchi vůči tehdejšímu dni) se vyhodnocuje vůči *aktuálnímu* dni, takže
+    i u starší předpovědi ukazuje správný kalendářní den. Pokud datum v datech
+    není (zastaralá předpověď), vrací 0 — což je poctivější než zamrzlá hodnota.
+    """
+    return round(_daily_value_for_date(forecast_data.get(daily_key, {}), target_date), 3)
+
+
+def _forecast_age_hours(forecast_data: Dict[str, Any]) -> Optional[float]:
+    """Stáří předpovědi v hodinách dle ``response_time`` (naivní lokální čas)."""
+    rt = forecast_data.get("response_time")
+    if not rt:
+        return None
+    try:
+        return (datetime.now() - datetime.fromisoformat(str(rt))).total_seconds() / 3600.0
+    except (ValueError, TypeError):
+        return None
+
+
 def _get_today_tomorrow() -> tuple[date, date]:
     today = dt_util.now().date()
     return today, today + timedelta(days=1)
@@ -1094,17 +1118,25 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             return None
 
         try:
+            # Stejný zdroj data jako v _build_main_attrs/_build_string_attrs
+            today = datetime.now().date()
             if self._sensor_type == "solar_forecast":
-                # Celková denní výroba z obou stringů v kWh
-                return round(self._last_forecast_data.get("total_today_kwh", 0), 2)
+                # Celková denní výroba z obou stringů v kWh (vůči dnešnímu dni)
+                return round(
+                    _date_value_kwh(self._last_forecast_data, "total_daily", today), 2
+                )
 
             elif self._sensor_type == "solar_forecast_string1":
-                # Denní výroba jen z string1 v kWh
-                return round(self._last_forecast_data.get("string1_today_kwh", 0), 2)
+                # Denní výroba jen z string1 v kWh (vůči dnešnímu dni)
+                return round(
+                    _date_value_kwh(self._last_forecast_data, "string1_daily", today), 2
+                )
 
             elif self._sensor_type == "solar_forecast_string2":
-                # Denní výroba jen z string2 v kWh
-                return round(self._last_forecast_data.get("string2_today_kwh", 0), 2)
+                # Denní výroba jen z string2 v kWh (vůči dnešnímu dni)
+                return round(
+                    _date_value_kwh(self._last_forecast_data, "string2_daily", today), 2
+                )
 
         except Exception as e:
             _LOGGER.error(f"Error getting solar forecast state: {e}")
@@ -1155,13 +1187,31 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             self._split_hourly(string2_hourly, today, tomorrow)
         )
 
+        total_daily = forecast_data.get("total_daily", {})
+        age_hours = _forecast_age_hours(forecast_data)
+        covers_today = (
+            isinstance(total_daily, dict) and today.isoformat() in total_daily
+        )
+        covers_tomorrow = (
+            isinstance(total_daily, dict) and tomorrow.isoformat() in total_daily
+        )
+
         return {
-            "today_total_kwh": forecast_data.get("total_today_kwh", 0),
-            "tomorrow_total_kwh": forecast_data.get("total_tomorrow_kwh", 0),
-            "string1_today_kwh": forecast_data.get("string1_today_kwh", 0),
-            "string1_tomorrow_kwh": forecast_data.get("string1_tomorrow_kwh", 0),
-            "string2_today_kwh": forecast_data.get("string2_today_kwh", 0),
-            "string2_tomorrow_kwh": forecast_data.get("string2_tomorrow_kwh", 0),
+            "today_total_kwh": _date_value_kwh(forecast_data, "total_daily", today),
+            "tomorrow_total_kwh": _date_value_kwh(forecast_data, "total_daily", tomorrow),
+            "string1_today_kwh": _date_value_kwh(forecast_data, "string1_daily", today),
+            "string1_tomorrow_kwh": _date_value_kwh(
+                forecast_data, "string1_daily", tomorrow
+            ),
+            "string2_today_kwh": _date_value_kwh(forecast_data, "string2_daily", today),
+            "string2_tomorrow_kwh": _date_value_kwh(
+                forecast_data, "string2_daily", tomorrow
+            ),
+            "forecast_age_hours": round(age_hours, 1) if age_hours is not None else None,
+            "forecast_stale": bool(age_hours is not None and age_hours > 24)
+            or not covers_tomorrow,
+            "forecast_covers_today": covers_today,
+            "forecast_covers_tomorrow": covers_tomorrow,
             "total_daily": forecast_data.get("total_daily", {}),
             "string1_daily": forecast_data.get("string1_daily", {}),
             "string2_daily": forecast_data.get("string2_daily", {}),
@@ -1192,8 +1242,8 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         )
 
         return {
-            "today_kwh": forecast_data.get(f"{key}_today_kwh", 0),
-            "tomorrow_kwh": forecast_data.get(f"{key}_tomorrow_kwh", 0),
+            "today_kwh": _date_value_kwh(forecast_data, f"{key}_daily", today),
+            "tomorrow_kwh": _date_value_kwh(forecast_data, f"{key}_daily", tomorrow),
             "daily_kwh": forecast_data.get(f"{key}_daily", {}),
             "current_hour_kw": self._current_hour_kw(hourly, current_hour),
             "today_hourly_kw": today_hours,
