@@ -1609,6 +1609,14 @@ class BoilerRuntime:
         )
         await self._serializer.enqueue(cmd)
 
+    def _last_plan_had_stale_inputs(self) -> bool:
+        result = self.last_plan_result
+        codes = getattr(result, "reason_codes", None) or []
+        return (
+            PlannerReasonCode.INPUT_STALE_PRICE in codes
+            or PlannerReasonCode.INPUT_STALE_PV in codes
+        )
+
     async def async_create_plan(
         self,
         force: bool = False,
@@ -1617,7 +1625,13 @@ class BoilerRuntime:
         now = dt_util.now()
         plan = self.get_current_plan()
         if plan and not force and getattr(plan, "valid_until", now) > now:
-            return plan
+            # A cached plan built with stale inputs (e.g. the startup race
+            # where the boiler plans before the battery pipeline publishes
+            # prices/overflow) must NOT be served for its whole 24h validity.
+            # Rebuild on the coordinator cadence until inputs are fresh; if
+            # they are still missing the rebuilt plan is equivalent.
+            if not self._last_plan_had_stale_inputs():
+                return plan
 
         profile = await self.async_ensure_profile()
         if not profile:

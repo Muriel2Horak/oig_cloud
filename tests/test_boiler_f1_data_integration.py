@@ -728,3 +728,28 @@ async def test_adapter_spot_price_naive_keys_match_aware_slot_start():
         f"Parsed aware key {aware_key!r} does not equal slot_start {slot_start!r}; "
         "spot price lookup would silently miss"
     )
+
+
+def test_last_plan_had_stale_inputs_detection():
+    """Cached plans built with stale inputs must not be served for their whole
+    validity window (startup race: boiler plans before battery publishes)."""
+    from types import SimpleNamespace as NS
+    from custom_components.oig_cloud.boiler.runtime import BoilerRuntime
+
+    probe = BoilerRuntime.__new__(BoilerRuntime)
+
+    probe.last_plan_result = NS(
+        reason_codes=[PlannerReasonCode.INPUT_STALE_PRICE]
+    )
+    assert probe._last_plan_had_stale_inputs() is True
+
+    probe.last_plan_result = NS(reason_codes=[PlannerReasonCode.INPUT_STALE_PV])
+    assert probe._last_plan_had_stale_inputs() is True
+
+    probe.last_plan_result = NS(
+        reason_codes=[PlannerReasonCode.COMFORT_SATISFIED]
+    )
+    assert probe._last_plan_had_stale_inputs() is False
+
+    probe.last_plan_result = None
+    assert probe._last_plan_had_stale_inputs() is False
