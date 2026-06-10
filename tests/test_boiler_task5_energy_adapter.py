@@ -348,3 +348,169 @@ def test_runtime_source_has_no_global_battery_forecast_lookup():
     assert "mode_recommendations" not in source
     assert "decision_trace" not in source
     assert "planner_decision_trace" not in source
+
+
+def test_energy_tracking_sensor_agrees_with_api_path():
+    """Cross-consistency: same fixture through _read_energy_tracking and sensor reads."""
+    from custom_components.oig_cloud.boiler.api_views import _read_energy_tracking
+    from custom_components.oig_cloud.boiler import sensors as sensor_mod
+
+    _box_id = "test_box"
+    day_entity = f"sensor.oig_{_box_id}_boiler_day_w"
+    manual_entity = f"sensor.oig_{_box_id}_boiler_manual_mode"
+    cbb_entity = f"sensor.oig_{_box_id}_boiler_current_cbb_w"
+
+    class DummyState:
+        def __init__(self, state):
+            self.state = state
+            self.attributes = {}
+
+    states_map = {
+        day_entity: DummyState("5200"),
+        manual_entity: DummyState("Zapnuto"),
+        cbb_entity: DummyState("0"),
+    }
+
+    class DummyStates:
+        def get(self, entity_id):
+            return states_map.get(entity_id)
+
+    class DummyHassForEnergy:
+        def __init__(self):
+            self.states = DummyStates()
+
+    class DummyCoord:
+        def __init__(self):
+            self.data = {}
+            self.box_id = _box_id
+            self.config = {}
+            self.hass = DummyHassForEnergy()
+
+        def async_add_listener(self, *_a, **_k):
+            return lambda: None
+
+    class DummyRuntimeFVE:
+        class Activity:
+            source = "fve"
+
+        current_activity = Activity()
+
+    coord = DummyCoord()
+    runtime = DummyRuntimeFVE()
+    hass = DummyHassForEnergy()
+    api_result = _read_energy_tracking(hass, _box_id, {}, runtime=runtime)
+    assert api_result["fve_kwh"] == 5.2
+    assert api_result["grid_kwh"] == 0.0
+
+    fve_sensor = sensor_mod.BoilerFVEEnergySensor(coord, runtime=runtime)
+    grid_sensor = sensor_mod.BoilerGridEnergySensor(coord, runtime=runtime)
+    alt_sensor = sensor_mod.BoilerAltEnergySensor(coord, runtime=runtime)
+
+    assert fve_sensor.native_value == api_result["fve_kwh"]
+    assert grid_sensor.native_value == api_result["grid_kwh"]
+    assert alt_sensor.native_value == api_result["alt_kwh"]
+
+
+def test_energy_tracking_sensor_grid_attribution():
+    """Grid source attributes total to grid_kwh, not fve_kwh."""
+    from custom_components.oig_cloud.boiler.api_views import _read_energy_tracking
+    from custom_components.oig_cloud.boiler import sensors as sensor_mod
+
+    _box_id = "test_box"
+    day_entity = f"sensor.oig_{_box_id}_boiler_day_w"
+
+    class DummyState:
+        def __init__(self, state):
+            self.state = state
+            self.attributes = {}
+
+    states_map = {day_entity: DummyState("3100")}
+
+    class DummyStates:
+        def get(self, entity_id):
+            return states_map.get(entity_id)
+
+    class DummyHassForEnergy:
+        def __init__(self):
+            self.states = DummyStates()
+
+    class DummyRuntimeGrid:
+        class Activity:
+            source = "grid"
+
+        current_activity = Activity()
+
+    runtime = DummyRuntimeGrid()
+    hass = DummyHassForEnergy()
+    api_result = _read_energy_tracking(hass, _box_id, {}, runtime=runtime)
+    assert api_result["fve_kwh"] == 0.0
+    assert api_result["grid_kwh"] == 3.1
+
+    class DummyCoordGrid:
+        def __init__(self):
+            self.data = {}
+            self.box_id = _box_id
+            self.config = {}
+            self.hass = DummyHassForEnergy()
+
+        def async_add_listener(self, *_a, **_k):
+            return lambda: None
+
+    coord = DummyCoordGrid()
+    fve_sensor = sensor_mod.BoilerFVEEnergySensor(coord, runtime=runtime)
+    grid_sensor = sensor_mod.BoilerGridEnergySensor(coord, runtime=runtime)
+
+    assert fve_sensor.native_value == 0.0
+    assert grid_sensor.native_value == 3.1
+
+
+def test_energy_tracking_sensor_discharge_attribution():
+    """Discharge source leaves fve/grid zero and alt absorbs total."""
+    from custom_components.oig_cloud.boiler.api_views import _read_energy_tracking
+    from custom_components.oig_cloud.boiler import sensors as sensor_mod
+
+    _box_id = "test_box"
+    day_entity = f"sensor.oig_{_box_id}_boiler_day_w"
+
+    class DummyState:
+        def __init__(self, state):
+            self.state = state
+            self.attributes = {}
+
+    states_map = {day_entity: DummyState("2000")}
+
+    class DummyStates:
+        def get(self, entity_id):
+            return states_map.get(entity_id)
+
+    class DummyHassForEnergy:
+        def __init__(self):
+            self.states = DummyStates()
+
+    class DummyRuntimeDischarge:
+        class Activity:
+            source = "discharge"
+
+        current_activity = Activity()
+
+    runtime = DummyRuntimeDischarge()
+    hass = DummyHassForEnergy()
+    api_result = _read_energy_tracking(hass, _box_id, {}, runtime=runtime)
+    assert api_result["fve_kwh"] == 0.0
+    assert api_result["grid_kwh"] == 0.0
+    assert api_result["alt_kwh"] == 2.0
+
+    class DummyCoordDischarge:
+        def __init__(self):
+            self.data = {}
+            self.box_id = _box_id
+            self.config = {}
+            self.hass = DummyHassForEnergy()
+
+        def async_add_listener(self, *_a, **_k):
+            return lambda: None
+
+    coord = DummyCoordDischarge()
+    alt_sensor = sensor_mod.BoilerAltEnergySensor(coord, runtime=runtime)
+
+    assert alt_sensor.native_value == 2.0

@@ -62,6 +62,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.source.fve': 'FVE',
     'boiler.source.grid': 'Síť',
     'boiler.source.alternative': 'Alternativa',
+    'boiler.source.overflow': 'Přetoky',
+    'boiler.source.discharge': 'Vybíjení',
     'boiler.source.none': '—',
 
     'boiler.reason.comfort_satisfied': 'Komfort splněn',
@@ -93,6 +95,33 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.reason.migration_required': 'Vyžaduje se migrace bojleru',
     'boiler.reason.api_repair_required': 'Vyžaduje se oprava API',
     'boiler.reason.storage_write_failed': 'Selhalo uložení stavu bojleru',
+
+    'boiler.activity.state.charging_fve': 'Nabíjení z FVE',
+    'boiler.activity.state.charging_overflow': 'Nabíjení z přetoků',
+    'boiler.activity.state.charging_grid': 'Nabíjení ze sítě',
+    'boiler.activity.state.discharging': 'Vybíjení',
+    'boiler.activity.state.standby': 'Pohotovost',
+    'boiler.activity.state.unknown': 'Neznámý stav',
+    'boiler.activity.fill_level': 'Úroveň naplnění',
+    'boiler.activity.temp_trend': 'Trend teploty',
+    'boiler.activity.aura_max_temp': 'Max. teplota AURA',
+    'boiler.activity.stale_warning': 'Zastaralá data',
+
+    'boiler.eta.label': 'Odhadovaný čas do cíle',
+    'boiler.eta.already_reached': 'Cíl dosažen',
+    'boiler.eta.unavailable': 'Nelze odhadnout',
+
+    'boiler.config.heater_power_kw': 'Výkon topení (kW)',
+    'boiler.config.deadline': 'Deadline',
+    'boiler.config.goal_temp': 'Cílová teplota',
+
+    'boiler.aria.status_panel': 'Panel stavu bojleru',
+    'boiler.aria.plan_timeline': 'Časová osa plánu bojleru',
+    'boiler.aria.source_explanation': 'Vysvětlení zdroje',
+    'boiler.aria.override_panel': 'Panel ručního přepisu',
+    'boiler.aria.svg_summary': 'Vizualizace bojleru',
+    'boiler.aria.stale': 'Data mohou být zastaralá',
+    'boiler.aria.source_unknown': 'Neznámý zdroj',
   },
   en: {
     'boiler.status.heading': 'Boiler status',
@@ -150,6 +179,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.source.fve': 'PV',
     'boiler.source.grid': 'Grid',
     'boiler.source.alternative': 'Alternative',
+    'boiler.source.overflow': 'Overflow',
+    'boiler.source.discharge': 'Discharge',
     'boiler.source.none': '—',
 
     'boiler.reason.comfort_satisfied': 'Comfort satisfied',
@@ -181,6 +212,33 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.reason.migration_required': 'Boiler migration required',
     'boiler.reason.api_repair_required': 'API repair required',
     'boiler.reason.storage_write_failed': 'Failed to persist boiler state',
+
+    'boiler.activity.state.charging_fve': 'Charging from PV',
+    'boiler.activity.state.charging_overflow': 'Charging from overflow',
+    'boiler.activity.state.charging_grid': 'Charging from grid',
+    'boiler.activity.state.discharging': 'Discharging',
+    'boiler.activity.state.standby': 'Standby',
+    'boiler.activity.state.unknown': 'Unknown state',
+    'boiler.activity.fill_level': 'Fill level',
+    'boiler.activity.temp_trend': 'Temperature trend',
+    'boiler.activity.aura_max_temp': 'AURA max temperature',
+    'boiler.activity.stale_warning': 'Stale data',
+
+    'boiler.eta.label': 'Estimated time to target',
+    'boiler.eta.already_reached': 'Target reached',
+    'boiler.eta.unavailable': 'Cannot estimate',
+
+    'boiler.config.heater_power_kw': 'Heater power (kW)',
+    'boiler.config.deadline': 'Deadline',
+    'boiler.config.goal_temp': 'Target temperature',
+
+    'boiler.aria.status_panel': 'Boiler status panel',
+    'boiler.aria.plan_timeline': 'Boiler plan timeline',
+    'boiler.aria.source_explanation': 'Source explanation',
+    'boiler.aria.override_panel': 'Manual override panel',
+    'boiler.aria.svg_summary': 'Boiler visualization',
+    'boiler.aria.stale': 'Data may be stale',
+    'boiler.aria.source_unknown': 'Unknown source',
   },
 };
 

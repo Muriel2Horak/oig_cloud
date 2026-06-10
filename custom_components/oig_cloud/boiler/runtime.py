@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 import logging
-from dataclasses import dataclass, field
+import math
+import time
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, time as datetime_time
 from typing import Any, Optional, Protocol
 
@@ -19,6 +21,8 @@ from ..const import (
     CONF_BOILER_HAS_ALTERNATIVE_HEATING,
     CONF_BOILER_STRATIFICATION_MODE,
     CONF_BOILER_TARGET_TEMP_C,
+    CONF_BOILER_HEATER_POWER_KW_ENTITY,
+    CONF_BOILER_HEATER_SWITCH_ENTITY,
     CONF_BOILER_TEMP_SENSOR_BOTTOM,
     CONF_BOILER_TEMP_SENSOR_TOP,
     CONF_BOILER_VOLUME_L,
@@ -30,6 +34,12 @@ from ..const import (
     KEY_BOILER_RUNTIMES,
 )
 from .models import BoilerPlan, BoilerProfile, BoilerThermalTopology
+from .classifier import (
+    BoilerActivityClassifier,
+    BoilerActivityDTO,
+    BoilerReading,
+    BoilerSourceHeaterSnapshot,
+)
 from .const import BATTERY_SOC_OVERFLOW_THRESHOLD
 from .planner_contract import (
     BoilerBatterySignals,
@@ -50,6 +60,13 @@ _DEFAULT_HEATER_POWER_KW = 2.0
 _TEMPERATURE_FRESHNESS = timedelta(minutes=15)
 _REPLAN_COOLDOWN = timedelta(seconds=60)
 _TEMPERATURE_REPLAN_DELTA_C = 0.5
+_ACTIVITY_DEBOUNCE_SECONDS = 1.0
+_ACTIVITY_SAMPLE_SECONDS = 60.0
+_ACTIVITY_BUFFER_MAX = 60
+_ACTIVITY_TEMPERATURE_STALE_AFTER = timedelta(seconds=300)
+_ACTIVITY_SOURCE_STALE_AFTER = timedelta(seconds=600)
+_ACTIVITY_STALE_AFTER = timedelta(seconds=600)
+_NORMALIZED_ACTIVITY_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge"})
 _ACCEPTED_REPLAN_TRIGGERS = frozenset(
     {
         "slot_boundary",
@@ -256,6 +273,64 @@ def _append_trigger_reason(
         _append_reason(reasons, PlannerReasonCode.OVERRIDE_EXPIRED)
 
 
+def _append_unique_flag(flags: list[str], flag: str) -> None:
+    if flag not in flags:
+        flags.append(flag)
+
+
+def _copy_activity_dto(
+    activity: BoilerActivityDTO,
+    *,
+    stale_flags: Optional[list[str]] = None,
+) -> BoilerActivityDTO:
+    hint = activity.active_segment_hint
+    copied_hint = dict(hint) if isinstance(hint, dict) else None
+    return replace(
+        activity,
+        active_segment_hint=copied_hint,
+        heater_states=dict(activity.heater_states),
+        stale_flags=list(stale_flags if stale_flags is not None else activity.stale_flags),
+    )
+
+
+def _legacy_detect_energy_source_from_states(
+    manual_mode_state: Any,
+    current_cbb_state: Any,
+) -> Any:
+    from .models import EnergySource
+
+    if manual_mode_state and getattr(manual_mode_state, "state", None) == "Zapnuto":
+        return EnergySource.FVE
+    if current_cbb_state:
+        try:
+            if float(getattr(current_cbb_state, "state", 0.0) or 0.0) > 0:
+                return EnergySource.FVE
+        except (TypeError, ValueError):
+            pass
+    return EnergySource.GRID
+
+
+def _runtime_cached_energy_source_for_coordinator(coordinator: Any) -> Any | None:
+    from .models import EnergySource
+
+    hass = getattr(coordinator, "hass", None)
+    entry_id = str(getattr(coordinator, "entry_id", "") or "")
+    box_id = str(getattr(coordinator, "box_id", "") or "")
+    if not hass or not entry_id or not box_id:
+        return None
+    runtime = get_boiler_runtime(hass, entry_id, box_id)
+    if runtime is None:
+        return None
+    activity = runtime.current_activity
+    if activity is None or activity.state == "unknown":
+        return None
+    if activity.source in ("fve", "overflow"):
+        return EnergySource.FVE
+    if activity.source == "grid":
+        return EnergySource.GRID
+    return None
+
+
 class _CoordinatorReadModel:
     def __init__(self, coordinator: Any) -> None:
         self._coordinator = coordinator
@@ -348,6 +423,24 @@ class _CoordinatorEnergyInputAdapter:
     def _read_spot_prices(
         self,
     ) -> tuple[dict[datetime, float], list[PlannerReasonCode]]:
+        # Primary path: read from battery module's pre-derived spot price dict.
+        battery_data = self._resolve_entry_battery_data()
+        if isinstance(battery_data, dict):
+            raw_prices = battery_data.get("spot_prices_czk_kwh")
+            if isinstance(raw_prices, dict) and raw_prices:
+                result: dict[datetime, float] = {}
+                for ts_str, price in raw_prices.items():
+                    dt_obj = _parse_adapter_datetime(ts_str)
+                    if dt_obj is None:
+                        continue
+                    try:
+                        result[dt_obj] = float(price)
+                    except (TypeError, ValueError):
+                        continue
+                if result:
+                    return result, []
+
+        # Legacy fallback: user-configured HA spot-price sensor.
         from ..const import CONF_BOILER_SPOT_PRICE_SENSOR
 
         config = getattr(self._coordinator, "config", {}) or {}
@@ -362,7 +455,7 @@ class _CoordinatorEnergyInputAdapter:
         if not isinstance(prices_attr, list):
             return {}, [PlannerReasonCode.INPUT_STALE_PRICE]
 
-        result: dict[datetime, float] = {}
+        result = {}
         for entry in prices_attr:
             if not isinstance(entry, dict):
                 continue
@@ -382,11 +475,19 @@ class _CoordinatorEnergyInputAdapter:
     ) -> tuple[list[tuple[datetime, datetime]], list[PlannerReasonCode]]:
         battery_data = self._resolve_entry_battery_data()
         if not isinstance(battery_data, dict):
+            # No battery forecast data at all — genuinely stale.
             return [], [PlannerReasonCode.INPUT_STALE_PV]
 
         raw_box_id = battery_data.get("box_id")
         if raw_box_id and self._box_id and str(raw_box_id) != self._box_id:
             return [], [PlannerReasonCode.INPUT_STALE_PV]
+
+        # If the key is absent entirely, the battery sensor is running older
+        # firmware that does not yet produce overflow_windows.  Treat this as a
+        # graceful degraded mode: no overflow data but not INPUT_STALE_PV
+        # (which would suppress the plan entirely).
+        if "overflow_windows" not in battery_data:
+            return [], []
 
         raw_windows = battery_data.get("overflow_windows")
         if not isinstance(raw_windows, list) or not raw_windows:
@@ -440,10 +541,28 @@ class _CoordinatorEnergyInputAdapter:
 
 
 def _parse_adapter_datetime(value: Any) -> Optional[datetime]:
+    """Parse a datetime value and ensure it is tz-aware.
+
+    OTE and the battery timeline produce naive ISO strings (e.g.
+    ``"2026-06-10T08:15:00"`` without a UTC offset).  When those strings flow
+    through as spot-price dict keys or overflow-window boundaries they must be
+    tz-aware to be comparable with ``slot.start`` (always tz-aware) without
+    raising a ``TypeError`` inside ``_overlap_fraction`` / dict lookups.
+
+    Any naive datetime is coerced to the HA local timezone via
+    ``dt_util.as_local()``.
+    """
     if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return dt_util.as_local(value)
         return value
     if isinstance(value, str):
-        return dt_util.parse_datetime(value)
+        parsed = dt_util.parse_datetime(value)
+        if parsed is None:
+            return None
+        if parsed.tzinfo is None:
+            return dt_util.as_local(parsed)
+        return parsed
     return None
 
 
@@ -459,12 +578,17 @@ def _parse_adapter_overflow_window(
     if not isinstance(raw_window, dict):
         return None
 
-    try:
-        soc = float(raw_window.get("soc", 0.0) or 0.0)
-    except (TypeError, ValueError):
-        soc = 0.0
-    if soc < BATTERY_SOC_OVERFLOW_THRESHOLD:
-        return None
+    # When the window was pre-derived by the battery pipeline (no 'soc' key),
+    # trust it directly.  When 'soc' is present (legacy coordinator format),
+    # still apply the overflow threshold guard.
+    soc_raw = raw_window.get("soc")
+    if soc_raw is not None:
+        try:
+            soc = float(soc_raw)
+        except (TypeError, ValueError):
+            soc = 0.0
+        if soc < BATTERY_SOC_OVERFLOW_THRESHOLD:
+            return None
 
     start = _parse_adapter_datetime(raw_window.get("start"))
     end = _parse_adapter_datetime(raw_window.get("end"))
@@ -621,17 +745,13 @@ class _EnergyStateAdapter:
         return manual_mode_state, current_cbb_state, day_energy_state
 
     def _detect_energy_source(self, manual_mode_state, current_cbb_state):
-        from .models import EnergySource
-
-        if manual_mode_state and manual_mode_state.state == "Zapnuto":
-            return EnergySource.FVE
-        if current_cbb_state:
-            try:
-                if float(current_cbb_state.state) > 0:
-                    return EnergySource.FVE
-            except ValueError:
-                pass
-        return EnergySource.GRID
+        cached_source = _runtime_cached_energy_source_for_coordinator(self._coordinator)
+        if cached_source is not None:
+            return cached_source
+        return _legacy_detect_energy_source_from_states(
+            manual_mode_state,
+            current_cbb_state,
+        )
 
     def _read_total_energy_kwh(self, day_energy_state) -> float:
         if not day_energy_state:
@@ -760,6 +880,531 @@ class BoilerRuntime:
         self._last_replan_temperature_c: Optional[float] = None
         self.last_plan_result: Optional[PlanResult] = None
         self.plan_result_handoff: list[PlanResult] = []
+        self._activity_classifier = BoilerActivityClassifier()
+        self._current_activity: Optional[BoilerActivityDTO] = None
+        self._last_activity_reading: Optional[BoilerReading] = None
+        self._last_classifier_stale_flags: list[str] = []
+        self._timeline_buffer: list[dict[str, Any]] = []
+        self._last_activity_snapshot_at: Optional[datetime] = None
+        self._last_activity_event_at: Optional[datetime] = None
+        self._last_classifier_monotonic: Optional[float] = None
+        self._activity_listener_unsubs: list[Callable[[], None]] = []
+        self._activity_entity_ids: set[str] = set()
+        self._segment_derivation_flags: set[str] = set()
+        self._setup_activity_state_listeners()
+
+    @property
+    def current_activity(self) -> Optional[BoilerActivityDTO]:
+        if self._current_activity is None:
+            return None
+        self._refresh_current_activity_stale_flags(dt_util.now())
+        return _copy_activity_dto(self._current_activity)
+
+    @property
+    def timeline_buffer(self) -> list[dict[str, Any]]:
+        return [dict(entry) for entry in self._timeline_buffer]
+
+    def _setup_activity_state_listeners(self) -> None:
+        self.unload_activity_listeners()
+        self._activity_entity_ids = self._resolve_activity_entity_ids()
+        if not self._activity_entity_ids:
+            return
+        bus = getattr(self.hass, "bus", None)
+        async_listen = getattr(bus, "async_listen", None)
+        if not callable(async_listen):
+            return
+        unsub = async_listen("state_changed", self._handle_activity_state_changed)
+        if callable(unsub):
+            self._activity_listener_unsubs.append(unsub)
+
+    def unload_activity_listeners(self) -> None:
+        for unsub in self._activity_listener_unsubs:
+            try:
+                unsub()
+            except Exception as err:
+                _LOGGER.warning(
+                    "Boiler activity listener unsubscribe failed for %s/%s: %s",
+                    self.entry_id,
+                    self.box_id,
+                    err,
+                    exc_info=True,
+                )
+        self._activity_listener_unsubs.clear()
+
+    async def async_unload(self) -> None:
+        self.unload_activity_listeners()
+
+    def _resolve_activity_entity_ids(self) -> set[str]:
+        config = getattr(self.coordinator, "config", {}) or {}
+        entity_ids: set[str] = set()
+        for key in (
+            CONF_BOILER_TEMP_SENSOR_TOP,
+            CONF_BOILER_TEMP_SENSOR_BOTTOM,
+            CONF_BOILER_HEATER_SWITCH_ENTITY,
+            CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+            CONF_BOILER_HEATER_POWER_KW_ENTITY,
+        ):
+            self._add_activity_entity_id(entity_ids, config.get(key))
+        self._add_activity_entity_id(
+            entity_ids,
+            getattr(self.coordinator, "_oig_manual_mode_entity", None),
+        )
+        self._add_activity_entity_id(
+            entity_ids,
+            getattr(self.coordinator, "_oig_current_cbb_entity", None),
+        )
+        return entity_ids
+
+    def _add_activity_entity_id(self, entity_ids: set[str], entity_id: Any) -> None:
+        if isinstance(entity_id, str) and entity_id:
+            entity_ids.add(entity_id)
+
+    def _handle_activity_state_changed(self, event: Any) -> None:
+        try:
+            data = getattr(event, "data", {}) or {}
+            entity_id = data.get("entity_id") if isinstance(data, dict) else None
+            if entity_id not in self._activity_entity_ids:
+                return
+
+            event_timestamp = self._event_timestamp(event)
+            if self._activity_snapshot_is_older(event_timestamp):
+                return
+
+            monotonic_now = self._activity_monotonic_time()
+            if self._activity_event_is_debounced(monotonic_now):
+                return
+
+            self._update_activity_cache(
+                event_timestamp=event_timestamp,
+                changed_entity_id=entity_id,
+            )
+            self._last_classifier_monotonic = monotonic_now
+        except Exception:
+            _LOGGER.exception(
+                "Boiler activity listener failed for %s/%s",
+                self.entry_id,
+                self.box_id,
+            )
+
+    def _activity_monotonic_time(self) -> float:
+        loop = getattr(self.hass, "loop", None)
+        loop_time = getattr(loop, "time", None)
+        if callable(loop_time):
+            return float(loop_time())
+        return time.monotonic()
+
+    def _activity_event_is_debounced(self, monotonic_now: float) -> bool:
+        last = self._last_classifier_monotonic
+        return last is not None and monotonic_now - last < _ACTIVITY_DEBOUNCE_SECONDS
+
+    def _event_timestamp(self, event: Any) -> datetime:
+        timestamp = getattr(event, "time_fired", None)
+        return timestamp if isinstance(timestamp, datetime) else dt_util.now()
+
+    def _activity_snapshot_is_older(self, event_timestamp: datetime) -> bool:
+        last = self._last_activity_snapshot_at
+        return last is not None and event_timestamp < last
+
+    def _update_activity_cache(
+        self,
+        *,
+        event_timestamp: datetime,
+        changed_entity_id: Optional[str],
+    ) -> None:
+        top_temp = self._read_temperature_for_key(CONF_BOILER_TEMP_SENSOR_TOP)
+        bottom_temp = self._read_temperature_for_key(CONF_BOILER_TEMP_SENSOR_BOTTOM)
+        curr = BoilerReading(
+            timestamp=event_timestamp,
+            top_temp_c=top_temp,
+            bottom_temp_c=bottom_temp,
+            source_key=None,
+        )
+        snapshot = BoilerSourceHeaterSnapshot(
+            current_source=self._read_current_source_snapshot(),
+            active_heaters=self._read_active_heater_states(),
+            overflow_available=self._read_overflow_available(event_timestamp),
+            power_kw=self._read_live_power_kw(),
+        )
+        activity = self._activity_classifier.classify(
+            self._last_activity_reading,
+            curr,
+            snapshot,
+        )
+        self._last_activity_reading = curr
+        self._last_activity_snapshot_at = event_timestamp
+        self._last_activity_event_at = event_timestamp
+        self._last_classifier_stale_flags = list(activity.stale_flags)
+        flags = self._rebuilt_activity_stale_flags(
+            now=event_timestamp,
+            classifier_flags=activity.stale_flags,
+        )
+        self._current_activity = _copy_activity_dto(activity, stale_flags=flags)
+        self._record_timeline_entry(
+            reading=curr,
+            activity=activity,
+            power_kw=snapshot.power_kw,
+            changed_entity_id=changed_entity_id,
+        )
+
+    def _read_temperature_for_key(self, key: str) -> Optional[float]:
+        config = getattr(self.coordinator, "config", {}) or {}
+        entity_id = config.get(key)
+        return _temperature_from_state(_state_for_entity(self.hass, entity_id), entity_id)
+
+    def _read_current_source_snapshot(self) -> Any:
+        manual_state = _state_for_entity(
+            self.hass,
+            getattr(self.coordinator, "_oig_manual_mode_entity", None),
+        )
+        current_cbb_state = _state_for_entity(
+            self.hass,
+            getattr(self.coordinator, "_oig_current_cbb_entity", None),
+        )
+        return _legacy_detect_energy_source_from_states(manual_state, current_cbb_state)
+
+    def _read_active_heater_states(self) -> dict[str, str]:
+        config = getattr(self.coordinator, "config", {}) or {}
+        heaters: dict[str, str] = {}
+        for key in (
+            CONF_BOILER_HEATER_SWITCH_ENTITY,
+            CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+        ):
+            entity_id = config.get(key)
+            if not isinstance(entity_id, str) or not entity_id:
+                continue
+            state = _state_for_entity(self.hass, entity_id)
+            heaters[entity_id] = str(getattr(state, "state", "unavailable") or "")
+        return heaters
+
+    def _read_overflow_available(self, now: datetime) -> Optional[bool]:
+        try:
+            plan = self.get_current_plan()
+            if plan is None or not hasattr(plan, "get_current_slot"):
+                return None
+            slot = plan.get_current_slot(now)
+            if slot is None:
+                return None
+            return bool(getattr(slot, "overflow_available", False))
+        except Exception as err:
+            _LOGGER.debug("Boiler overflow snapshot failed: %s", err, exc_info=True)
+            return None
+
+    def _read_live_power_kw(self) -> Optional[float]:
+        config = getattr(self.coordinator, "config", {}) or {}
+        entity_id = config.get(CONF_BOILER_HEATER_POWER_KW_ENTITY)
+        if not isinstance(entity_id, str) or not entity_id:
+            return None
+        state = _state_for_entity(self.hass, entity_id)
+        if state is None:
+            return None
+        raw = str(getattr(state, "state", "") or "").strip().lower()
+        if raw in _UNAVAILABLE_TEMPERATURE_STATES:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
+    def _record_timeline_entry(
+        self,
+        *,
+        reading: BoilerReading,
+        activity: BoilerActivityDTO,
+        power_kw: Optional[float],
+        changed_entity_id: Optional[str],
+    ) -> None:
+        source_key = self._timeline_source_key(activity)
+        entry = {
+            "timestamp": reading.timestamp,
+            "top_temp_c": reading.top_temp_c,
+            "bottom_temp_c": reading.bottom_temp_c,
+            "source_key": source_key,
+            "power_kw": power_kw,
+            "activity_state": activity.state,
+        }
+        if self._timeline_buffer and self._timeline_buffer[-1]["timestamp"] == reading.timestamp:
+            self._timeline_buffer[-1] = entry
+            return
+
+        if self._should_append_timeline_entry(entry):
+            self._timeline_buffer.append(entry)
+            if len(self._timeline_buffer) > _ACTIVITY_BUFFER_MAX:
+                self._timeline_buffer = self._timeline_buffer[-_ACTIVITY_BUFFER_MAX:]
+            return
+
+        if changed_entity_id == self._configured_power_entity_id() and self._timeline_buffer:
+            self._timeline_buffer[-1]["power_kw"] = power_kw
+
+    def _timeline_source_key(self, activity: BoilerActivityDTO) -> Optional[str]:
+        hint = activity.active_segment_hint
+        if isinstance(hint, dict):
+            key = hint.get("key")
+            if key in _NORMALIZED_ACTIVITY_SOURCE_KEYS:
+                return key
+        return activity.source if activity.source in _NORMALIZED_ACTIVITY_SOURCE_KEYS else None
+
+    def _should_append_timeline_entry(self, entry: dict[str, Any]) -> bool:
+        if not self._timeline_buffer:
+            return True
+        previous = self._timeline_buffer[-1]
+        if previous.get("source_key") != entry.get("source_key"):
+            return True
+        if previous.get("activity_state") != entry.get("activity_state"):
+            return True
+        elapsed = _datetime_age(entry["timestamp"], previous["timestamp"])
+        return elapsed.total_seconds() >= _ACTIVITY_SAMPLE_SECONDS
+
+    def _configured_power_entity_id(self) -> Optional[str]:
+        config = getattr(self.coordinator, "config", {}) or {}
+        entity_id = config.get(CONF_BOILER_HEATER_POWER_KW_ENTITY)
+        return entity_id if isinstance(entity_id, str) and entity_id else None
+
+    def _refresh_current_activity_stale_flags(self, now: datetime) -> None:
+        if self._current_activity is None:
+            return
+        flags = self._rebuilt_activity_stale_flags(
+            now=now,
+            classifier_flags=self._last_classifier_stale_flags,
+        )
+        self._current_activity = _copy_activity_dto(
+            self._current_activity,
+            stale_flags=flags,
+        )
+
+    def _rebuilt_activity_stale_flags(
+        self,
+        *,
+        now: datetime,
+        classifier_flags: Sequence[str],
+    ) -> list[str]:
+        flags: list[str] = []
+        for flag in classifier_flags:
+            _append_unique_flag(flags, flag)
+        for flag in self._elapsed_activity_flags(now):
+            _append_unique_flag(flags, flag)
+        for flag in sorted(self._segment_derivation_flags):
+            _append_unique_flag(flags, flag)
+        return flags
+
+    def _elapsed_activity_flags(self, now: datetime) -> list[str]:
+        flags: list[str] = []
+        if self._temperature_state_is_stale(now):
+            flags.append("temperature_stale")
+        if self._source_state_is_stale(now):
+            flags.append("source_stale")
+        if self._activity_cache_is_stale(now):
+            flags.append("activity_stale")
+        return flags
+
+    def _temperature_state_is_stale(self, now: datetime) -> bool:
+        config = getattr(self.coordinator, "config", {}) or {}
+        for key in (CONF_BOILER_TEMP_SENSOR_TOP, CONF_BOILER_TEMP_SENSOR_BOTTOM):
+            entity_id = config.get(key)
+            if not entity_id:
+                continue
+            state = _state_for_entity(self.hass, entity_id)
+            updated_at = _state_last_updated(state)
+            if updated_at and _datetime_age(now, updated_at) > _ACTIVITY_TEMPERATURE_STALE_AFTER:
+                return True
+        return False
+
+    def _source_state_is_stale(self, now: datetime) -> bool:
+        found_source_state = False
+        for entity_id in (
+            getattr(self.coordinator, "_oig_manual_mode_entity", None),
+            getattr(self.coordinator, "_oig_current_cbb_entity", None),
+        ):
+            state = _state_for_entity(self.hass, entity_id)
+            updated_at = _state_last_updated(state)
+            if updated_at is None:
+                continue
+            found_source_state = True
+            if _datetime_age(now, updated_at) > _ACTIVITY_SOURCE_STALE_AFTER:
+                return True
+        return not found_source_state and self._activity_cache_is_stale(now)
+
+    def _activity_cache_is_stale(self, now: datetime) -> bool:
+        if self._last_activity_event_at is None:
+            return False
+        return _datetime_age(now, self._last_activity_event_at) > _ACTIVITY_STALE_AFTER
+
+    @property
+    def source_segments(self) -> list[dict[str, Any]]:
+        segments = self._derive_source_segments()
+        return self._compute_fill_percentages(segments)
+
+    @property
+    def sparklines(self) -> dict[str, list[float]]:
+        return self._derive_sparklines()
+
+    def _derive_source_segments(self) -> list[dict[str, Any]]:
+        self._segment_derivation_flags.clear()
+        buffer = self._timeline_buffer
+        if not buffer:
+            return []
+
+        segments: list[dict[str, Any]] = []
+        current_segment: dict[str, Any] | None = None
+
+        for i in range(len(buffer)):
+            entry = buffer[i]
+            source_key = entry.get("source_key")
+            timestamp = entry.get("timestamp")
+            power_kw = entry.get("power_kw")
+
+            if source_key is None or source_key == "unknown":
+                if current_segment is not None:
+                    current_segment["end"] = timestamp
+                    current_segment["active"] = False
+                    segments.append(current_segment)
+                    current_segment = None
+                continue
+
+            if current_segment is None or current_segment["key"] != source_key:
+                if current_segment is not None:
+                    current_segment["end"] = timestamp
+                    current_segment["active"] = False
+                    segments.append(current_segment)
+                current_segment = {
+                    "key": source_key,
+                    "start": timestamp,
+                    "end": None,
+                    "energy_kwh": 0.0,
+                    "fill_pct": 0.0,
+                    "active": True,
+                }
+
+            if i + 1 < len(buffer):
+                next_entry = buffer[i + 1]
+                duration_hours = self._duration_hours(timestamp, next_entry.get("timestamp"))
+            elif current_segment is not None and current_segment["key"] == source_key:
+                duration_hours = 0.0
+            else:
+                duration_hours = 0.0
+
+            energy = self._compute_interval_energy(source_key, power_kw, duration_hours)
+            if current_segment is not None:
+                current_segment["energy_kwh"] += energy
+
+        if current_segment is not None:
+            segments.append(current_segment)
+
+        return segments
+
+    def _duration_hours(self, start: Any, end: Any) -> float:
+        if start is None or end is None:
+            return 0.0
+        if not isinstance(start, datetime) or not isinstance(end, datetime):
+            return 0.0
+        delta = end - start
+        return max(0.0, delta.total_seconds() / 3600.0)
+
+    def _compute_interval_energy(
+        self, source_key: str, power_kw: Optional[float], duration_hours: float
+    ) -> float:
+        if power_kw is None:
+            return 0.0
+
+        # Detect sign anomalies before the duration guard so single-entry buffers
+        # (duration=0) still get flagged.
+        if source_key == "discharge":
+            if power_kw >= 0:
+                self._segment_derivation_flags.add("power_sign_mismatch_discharge")
+                return 0.0
+        else:
+            if power_kw < 0:
+                self._segment_derivation_flags.add("power_sign_mismatch_charge")
+                return 0.0
+
+        if duration_hours <= 0.0:
+            return 0.0
+
+        if source_key == "discharge":
+            return abs(power_kw) * duration_hours
+        else:
+            return power_kw * duration_hours
+
+    def _compute_fill_percentages(
+        self, segments: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        if not segments:
+            return []
+
+        current_fill = 0.0
+        activity = self._current_activity
+        if activity is not None:
+            current_fill = getattr(activity, "fill_level_pct", 0.0) or 0.0
+
+        non_discharge_segments = [s for s in segments if s["key"] != "discharge"]
+        total_non_discharge_energy = sum(s["energy_kwh"] for s in non_discharge_segments)
+
+        if total_non_discharge_energy > 0.0:
+            for segment in segments:
+                if segment["key"] == "discharge":
+                    segment["fill_pct"] = 0.0
+                else:
+                    segment["fill_pct"] = round(
+                        (segment["energy_kwh"] / total_non_discharge_energy) * current_fill, 3
+                    )
+        elif non_discharge_segments:
+            equal_fill = round(current_fill / len(non_discharge_segments), 3)
+            for segment in segments:
+                if segment["key"] != "discharge":
+                    segment["fill_pct"] = equal_fill
+                else:
+                    segment["fill_pct"] = 0.0
+        else:
+            for segment in segments:
+                segment["fill_pct"] = 0.0
+
+        self._adjust_fill_invariant(segments, current_fill)
+        return segments
+
+    def _adjust_fill_invariant(
+        self, segments: list[dict[str, Any]], target_fill: float
+    ) -> None:
+        for _ in range(3):
+            non_discharge = [s for s in segments if s["key"] != "discharge"]
+            if not non_discharge:
+                break
+
+            current_sum = sum(s["fill_pct"] for s in non_discharge)
+            delta = round(target_fill - current_sum, 3)
+            if abs(delta) < 0.001:
+                break
+
+            largest = max(non_discharge, key=lambda s: s["fill_pct"])
+            largest["fill_pct"] = round(largest["fill_pct"] + delta, 3)
+
+            clamped = False
+            for segment in non_discharge:
+                old_val = segment["fill_pct"]
+                segment["fill_pct"] = max(0.0, min(target_fill, segment["fill_pct"]))
+                if segment["fill_pct"] != old_val:
+                    clamped = True
+
+            if not clamped:
+                break
+
+    def _derive_sparklines(self) -> dict[str, list[float]]:
+        buffer = self._timeline_buffer
+        temps: list[float] = []
+        powers: list[float] = []
+
+        for entry in buffer:
+            top_temp = entry.get("top_temp_c")
+            if top_temp is not None and isinstance(top_temp, (int, float)):
+                temps.append(float(top_temp))
+
+            power = entry.get("power_kw")
+            if power is not None and isinstance(power, (int, float)):
+                powers.append(float(power))
+
+        return {
+            "temperature": temps[-20:] if len(temps) > 20 else temps,
+            "power": powers[-20:] if len(powers) > 20 else powers,
+        }
 
     def get_current_profile(self) -> Optional[BoilerProfile]:
         return self.read_model.get_current_profile()
@@ -1146,6 +1791,14 @@ def destroy_boiler_runtime(
     if isinstance(runtimes, dict):
         runtime = runtimes.pop(box_id, None)
         if runtime is not None:
+            if hasattr(runtime, "unload_activity_listeners"):
+                try:
+                    runtime.unload_activity_listeners()
+                except Exception as exc:
+                    _LOGGER.warning(
+                        "Error unloading activity listeners during runtime destroy: %s",
+                        exc,
+                    )
             if hasattr(runtime, "_serializer") and runtime._serializer is not None:
                 try:
                     if hasattr(hass, "async_create_task"):

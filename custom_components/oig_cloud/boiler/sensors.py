@@ -17,10 +17,24 @@ from homeassistant.const import (
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from ..const import DOMAIN
+from ..const import (
+    CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+    CONF_BOILER_HEATER_SWITCH_ENTITY,
+    DOMAIN,
+)
 from .coordinator import BoilerCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _read_energy_tracking(
+    hass: Any, box_id: str, config: dict[str, Any], runtime: Any | None = None
+) -> dict[str, Any]:
+    """Module-level seam delegating to api_views._read_energy_tracking.
+    Tests may monkeypatch this to inject fixtures without importing api_views.
+    """
+    from .api_views import _read_energy_tracking as _api_fn
+    return _api_fn(hass, box_id, config, runtime=runtime)
 
 
 def _coordinator_data(coordinator: BoilerCoordinator) -> dict[str, Any]:
@@ -50,6 +64,15 @@ class _SensorReadAdapter:
         return self._fallback_data().get("energy_state", {})
 
     def get_energy_tracking(self) -> dict[str, Any]:
+        coordinator = self._coordinator
+        hass = getattr(coordinator, "hass", None)
+        box_id = getattr(coordinator, "box_id", None)
+        config = getattr(coordinator, "config", {}) or {}
+        if hass is not None and box_id and box_id != "unknown":
+            try:
+                return _read_energy_tracking(hass, box_id, config, runtime=self._runtime)
+            except (ImportError, AttributeError, TypeError, ValueError):
+                pass
         return self._fallback_data().get("energy_tracking", {})
 
     def get_recommended_source(self) -> Any:
@@ -278,6 +301,175 @@ class BoilerAltEnergySensor(BoilerSensorBase):
         return tracking.get("alt_kwh")
 
 
+class BoilerActuatedSourceSensor(BoilerSensorBase):
+    """Aktuální zdroj energie (řízený)."""
+
+    _attr_icon = "mdi:transmission-tower-import"
+
+    def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
+        """Inicializace."""
+        super().__init__(coordinator, "actuated_source", "Aktuální zdroj (řízení)", runtime=runtime)
+
+    @property
+    def native_value(self) -> Optional[str]:  # type: ignore[override]
+        """Vrátí aktuální zdroj."""
+        tracking = self._adapter.get_energy_tracking()
+        source = tracking.get("current_source")
+        from .api_views import _normalize_runtime_source
+        normalized = _normalize_runtime_source(source)
+
+        source_map = {
+            "fve": "FVE",
+            "overflow": "Přetok",
+            "grid": "Síť",
+            "discharge": "Vybíjení",
+        }
+        if normalized is None:
+            return "—"
+        return source_map.get(normalized, normalized)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:  # type: ignore[override]
+        tracking = self._adapter.get_energy_tracking()
+        source = tracking.get("current_source")
+        from .api_views import _normalize_runtime_source
+        normalized_source = _normalize_runtime_source(source)
+        return {
+            "source_key": normalized_source,
+            "source_estimated": tracking.get("source_estimated", True),
+        }
+
+
+class BoilerTemperatureTrendSensor(BoilerSensorBase):
+    """Trend teploty bojleru."""
+
+    _attr_native_unit_of_measurement = "°C/min"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:trending-up"
+
+    def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
+        """Inicializace."""
+        super().__init__(coordinator, "temperature_trend", "Trend teploty", runtime=runtime)
+
+    @property
+    def native_value(self) -> Optional[float]:  # type: ignore[override]
+        """Vrátí trend teploty v °C/min."""
+        runtime = self._runtime
+        if runtime is not None:
+            activity = getattr(runtime, "current_activity", None)
+            if activity is not None:
+                trend = getattr(activity, "temperature_trend_c_per_min", None)
+                if trend is not None:
+                    return round(trend, 4)
+        return None
+
+
+class BoilerHeaterMainStateSensor(BoilerSensorBase):
+    """Stav hlavního topného tělesa."""
+
+    _attr_icon = "mdi:radiator"
+
+    def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
+        """Inicializace."""
+        super().__init__(coordinator, "heater_main_state", "Stav hlavního topení", runtime=runtime)
+
+    @property
+    def native_value(self) -> str:  # type: ignore[override]
+        """Vrátí on/off/unavailable."""
+        config = getattr(self.coordinator, "config", {}) or {}
+        entity_id = config.get(CONF_BOILER_HEATER_SWITCH_ENTITY)
+        if not entity_id:
+            return "unavailable"
+        runtime = self._runtime
+        if runtime is not None:
+            activity = getattr(runtime, "current_activity", None)
+            if activity is not None:
+                heater_states = getattr(activity, "heater_states", {})
+                state = heater_states.get(entity_id)
+                if state in ("on", "off"):
+                    return state
+                return "unavailable"
+        return "unavailable"
+
+
+class BoilerHeaterAltStateSensor(BoilerSensorBase):
+    """Stav alternativního topného tělesa."""
+
+    _attr_icon = "mdi:radiator-disabled"
+
+    def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
+        """Inicializace."""
+        super().__init__(coordinator, "heater_alt_state", "Stav alternativního topení", runtime=runtime)
+
+    @property
+    def native_value(self) -> str:  # type: ignore[override]
+        """Vrátí on/off/unavailable."""
+        config = getattr(self.coordinator, "config", {}) or {}
+        entity_id = config.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY)
+        if not entity_id:
+            return "unavailable"
+        runtime = self._runtime
+        if runtime is not None:
+            activity = getattr(runtime, "current_activity", None)
+            if activity is not None:
+                heater_states = getattr(activity, "heater_states", {})
+                state = heater_states.get(entity_id)
+                if state in ("on", "off"):
+                    return state
+                return "unavailable"
+        return "unavailable"
+
+
+class BoilerPlanComfortSatisfiedSensor(BoilerSensorBase):
+    """Splnění komfortu pro nejbližší slot."""
+
+    def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
+        """Inicializace."""
+        super().__init__(coordinator, "plan_comfort_satisfied", "Komfort splněn", runtime=runtime)
+
+    @property
+    def native_value(self) -> str:  # type: ignore[override]
+        """Vrátí yes/no/unknown."""
+        plan = self._adapter.get_plan()
+        if plan is None or not hasattr(plan, "slots"):
+            return "unknown"
+
+        from datetime import datetime, timezone as _tz
+        now = datetime.now(_tz.utc)
+
+        for slot in plan.slots:
+            slot_end = getattr(slot, "end", None)
+            if slot_end is not None:
+                if getattr(slot_end, "tzinfo", None) is None:
+                    slot_end = slot_end.replace(tzinfo=_tz.utc)
+            if slot_end is not None and slot_end > now:
+                comfort = getattr(slot, "comfort_satisfied", None)
+                if comfort is True:
+                    return "yes"
+                if comfort is False:
+                    return "no"
+                return "unknown"
+        return "unknown"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:  # type: ignore[override]
+        """Atributy s boolean komfortu."""
+        plan = self._adapter.get_plan()
+        comfort = None
+        if plan is not None and hasattr(plan, "slots"):
+            from datetime import datetime, timezone as _tz
+            now = datetime.now(_tz.utc)
+            for slot in plan.slots:
+                slot_end = getattr(slot, "end", None)
+                if slot_end is not None:
+                    if getattr(slot_end, "tzinfo", None) is None:
+                        slot_end = slot_end.replace(tzinfo=_tz.utc)
+                if slot_end is not None and slot_end > now:
+                    comfort = getattr(slot, "comfort_satisfied", None)
+                    break
+        return {"comfort_satisfied": comfort}
+
+
 # ========== PLÁNOVACÍ SENZORY ==========
 
 
@@ -294,15 +486,19 @@ class BoilerCurrentSourceSensor(BoilerSensorBase):
     def native_value(self) -> Optional[str]:  # type: ignore[override]
         """Vrátí aktuální zdroj."""
         tracking = self._adapter.get_energy_tracking()
-        source = tracking.get("current_source", "grid")
+        source = tracking.get("current_source")
+        from .api_views import _normalize_runtime_source
+        normalized = _normalize_runtime_source(source)
 
-        # Překlad do češtiny
         source_map = {
             "fve": "FVE",
+            "overflow": "Přetok",
             "grid": "Síť",
-            "alternative": "Alternativa",
+            "discharge": "Vybíjení",
         }
-        return source_map.get(source, source)
+        if normalized is None:
+            return "—"
+        return source_map.get(normalized, normalized)
 
 
 class BoilerRecommendedSourceSensor(BoilerSensorBase):
@@ -470,6 +666,12 @@ def get_boiler_sensors(coordinator: BoilerCoordinator, runtime: Any | None = Non
         BoilerFVEEnergySensor(coordinator, runtime=runtime),
         BoilerGridEnergySensor(coordinator, runtime=runtime),
         BoilerAltEnergySensor(coordinator, runtime=runtime),
+        # Zdroj / runtime
+        BoilerActuatedSourceSensor(coordinator, runtime=runtime),
+        BoilerTemperatureTrendSensor(coordinator, runtime=runtime),
+        BoilerHeaterMainStateSensor(coordinator, runtime=runtime),
+        BoilerHeaterAltStateSensor(coordinator, runtime=runtime),
+        BoilerPlanComfortSatisfiedSensor(coordinator, runtime=runtime),
         # Plánování
         BoilerCurrentSourceSensor(coordinator, runtime=runtime),
         BoilerRecommendedSourceSensor(coordinator, runtime=runtime),

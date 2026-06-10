@@ -37,6 +37,7 @@ vi.mock('@/data/boiler-data', () => ({
     currentCategory: '',
     availableCategories: [],
     forecastWindows: { fve: '--', grid: '--' },
+    v2Data: null,
   }),
 }));
 
@@ -330,6 +331,39 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
       explanation: null,
       manualOverride: null,
       identity: { entryId: 'entry1', boxId: 'box1', available: true },
+      activity: null,
+      sourceSegments: [],
+      timeline: [],
+      sparkline: null,
+      loading: false,
+      loadError: null,
+    };
+    return app as OigApp;
+  }
+
+  function makeAppWithConfigProfileUnavailable(): OigApp {
+    const app = new OigApp() as any;
+    app.loading = false;
+    app.error = null;
+    app.boilerV2Data = {
+      status: null,
+      planSlots: [],
+      explanation: {
+        reasonCodes: [],
+        planCreatedAt: null,
+        planValidUntil: null,
+        dataAgeSecs: null,
+        degradedReasons: ['config_profile_unavailable'],
+        unsatisfiedComfortGapC: null,
+        temperatureAtDeadlineC: null,
+      },
+      manualOverride: null,
+      identity: { entryId: 'entry1', boxId: 'box1', available: true },
+      activity: null,
+      sourceSegments: [],
+      timeline: [],
+      sparkline: null,
+      loading: false,
       loadError: null,
     };
     return app as OigApp;
@@ -380,24 +414,79 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
     expect(all).toContain('Průvodce nastavením bojleru');
   });
 
-  it('boiler tab template still contains oig-boiler-status-panel when v2 status available', () => {
+  it('boiler tab template contains oig-boiler-v2-shell when v2 data available', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).toContain('oig-boiler-status-panel');
+    expect(all).toContain('oig-boiler-v2-shell');
   });
 
-  it('boiler tab template still contains oig-boiler-plan-timeline', () => {
-    const all = getAppTemplateAll(makeApp());
-    expect(all).toContain('<oig-boiler-plan-timeline');
+  it('boiler tab template contains oig-boiler-metric-panel when v2 data available', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
+    expect(all).toContain('oig-boiler-metric-panel');
   });
 
-  it('boiler tab template still contains oig-boiler-source-explanation', () => {
-    const all = getAppTemplateAll(makeApp());
-    expect(all).toContain('<oig-boiler-source-explanation');
+  it('boiler tab template contains panelType="comfort" and panelType="source"', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
+    expect(all).toContain('panelType="comfort"');
+    expect(all).toContain('panelType="source"');
   });
 
-  it('boiler tab template still contains oig-boiler-override-panel', () => {
+  it('boiler tab template contains oig-boiler-timeline-chart when v2 data available', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
+    expect(all).toContain('oig-boiler-timeline-chart');
+  });
+
+  it('boiler tab template does NOT contain oig-boiler-status-panel', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
+    expect(all).not.toContain('oig-boiler-status-panel');
+  });
+
+  it('boiler tab template does NOT contain oig-boiler-plan-timeline', () => {
     const all = getAppTemplateAll(makeApp());
+    expect(all).not.toContain('oig-boiler-plan-timeline');
+  });
+
+  it('boiler tab template does NOT contain oig-boiler-source-explanation', () => {
+    const all = getAppTemplateAll(makeApp());
+    expect(all).not.toContain('oig-boiler-source-explanation');
+  });
+
+  it('boiler tab template still contains oig-boiler-override-panel when v2 data available', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
     expect(all).toContain('<oig-boiler-override-panel');
+  });
+
+  it('boiler tab template contains data-testid="boiler-advanced-row" when v2 data available', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
+    expect(all).toContain('data-testid="boiler-advanced-row"');
+  });
+
+  it('config_profile_unavailable alone does not block shell render', () => {
+    const all = getAppTemplateAll(makeAppWithConfigProfileUnavailable());
+    expect(all).toContain('oig-boiler-v2-shell');
+    expect(all).not.toContain('reason="degraded"');
+  });
+
+  it('mounted: timeline chart .data is exactly the full boilerV2Data object and .nowMs is not set', async () => {
+    const app = makeAppWithStatus() as any;
+    app.activeTab = 'boiler';
+    document.body.appendChild(app);
+    await app.updateComplete;
+    const timeline = app.shadowRoot!.querySelector('oig-boiler-timeline-chart') as any;
+    expect(timeline).not.toBeNull();
+    expect(timeline.data).toBe(app.boilerV2Data);
+    expect(timeline.nowMs == null).toBe(true);
+    document.body.removeChild(app);
+  });
+
+  it('malformed V2 data does not throw from template render and does not use errorCode or code props', () => {
+    const app = new OigApp() as any;
+    app.loading = false;
+    app.error = null;
+    app.boilerV2Data = { status: null, planSlots: null, explanation: null, manualOverride: null, identity: null, activity: null, sourceSegments: null, timeline: null, sparkline: null, loading: false, loadError: null };
+    expect(() => getAppTemplateAll(app as OigApp)).not.toThrow();
+    const all = getAppTemplateAll(app as OigApp);
+    expect(all).not.toContain('errorCode');
+    expect(all).not.toContain('.code=');
   });
 });
 

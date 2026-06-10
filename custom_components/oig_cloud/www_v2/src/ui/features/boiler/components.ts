@@ -1331,6 +1331,7 @@ export class OigBoilerProfiles extends LitElement {
 }
 
 @customElement('oig-boiler-status-panel')
+// TODO: legacy cleanup after boiler redesign consumers are removed
 export class OigBoilerStatusPanel extends LitElement {
   @property({ attribute: false }) data: BoilerV2Status | null = null;
   @property({ type: String }) lang: Lang = 'cs';
@@ -1395,6 +1396,7 @@ export class OigBoilerStatusPanel extends LitElement {
 }
 
 @customElement('oig-boiler-plan-timeline')
+// TODO: legacy cleanup after boiler redesign consumers are removed
 export class OigBoilerPlanTimeline extends LitElement {
   @property({ attribute: false }) slots: BoilerV2PlanSlot[] = [];
   @property({ type: String }) lang: 'cs' | 'en' = 'cs';
@@ -1417,8 +1419,9 @@ export class OigBoilerPlanTimeline extends LitElement {
     .badge.bad { background: rgba(244,67,54,0.15); color: #b71c1c; }
   `;
 
-  private srcClass(s: string): string {
-    return ['fve', 'grid', 'alternative'].includes(s) ? s : 'other';
+  private srcClass(s: string | null): string {
+    if (!s) return 'other';
+    return ['fve', 'grid', 'alternative', 'overflow', 'discharge'].includes(s) ? s : 'other';
   }
 
   render() {
@@ -1474,6 +1477,7 @@ const FRESHNESS_REASONS = new Set([
 ]);
 
 @customElement('oig-boiler-source-explanation')
+// TODO: legacy cleanup after boiler redesign consumers are removed
 export class OigBoilerSourceExplanation extends LitElement {
   @property({ attribute: false }) explanation: BoilerV2Explanation | null = null;
   @property({ type: String }) lang: 'cs' | 'en' = 'cs';

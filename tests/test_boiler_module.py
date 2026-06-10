@@ -623,7 +623,7 @@ async def test_boiler_sensors_and_api_views():
     assert BoilerProfileConfidenceSensor(coordinator).native_value == 50.0
 
     sensors = get_boiler_sensors(coordinator)
-    assert len(sensors) == 14
+    assert len(sensors) == 19
 
     hass = SimpleNamespace(
         data={DOMAIN: {"entry1": {"boiler_coordinator": SimpleNamespace(profiler=SimpleNamespace(get_all_profiles=lambda: {"workday_winter": profile}), _current_profile=profile, _current_plan=plan, box_id="123")}}},

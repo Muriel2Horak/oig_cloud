@@ -39,7 +39,23 @@ def plan_result_to_boiler_plan(
             recommended_source=_slot_source(slot.source, result),
             spot_price_kwh=_spot_price_for_slot(slot.start, planner_input),
             alt_price_kwh=_alt_price_for_slot(planner_input),
-            overflow_available=slot.pv_kwh > 0.0,
+            overflow_available=(slot.pv_kwh or 0.0) > 0.0,
+            heating_kwh=slot.heating_kwh,
+            pv_kwh=slot.pv_kwh if slot.pv_kwh is not None else 0.0,
+            grid_kwh=slot.grid_kwh if slot.grid_kwh is not None else 0.0,
+            alt_kwh=slot.alt_kwh if slot.alt_kwh is not None else 0.0,
+            estimated_cost_czk=slot.estimated_cost_czk,
+            predicted_top_temp_c=(
+                slot.predicted_top_temp_c
+                if slot.predicted_top_temp_c is not None and slot.predicted_top_temp_c > 0.0
+                else None
+            ),
+            comfort_satisfied=None,
+            pv_share=(
+                (slot.pv_kwh or 0.0) / slot.heating_kwh
+                if slot.heating_kwh > 0
+                else 0.0
+            ),
         )
         for slot in result.slots
     ]

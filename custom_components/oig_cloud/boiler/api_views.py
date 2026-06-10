@@ -1,6 +1,7 @@
 """API views pro bojlerový modul."""
 
 import logging
+import math
 from datetime import datetime
 from typing import Any, Optional
 
@@ -15,6 +16,7 @@ from ..const import (
     CONF_BOILER_COLD_INLET_TEMP_C,
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
     CONF_BOILER_DEADLINE_TIME,
+    CONF_BOILER_EFFECTIVE_POWER_W,
     CONF_BOILER_PLAN_SLOT_MINUTES,
     CONF_BOILER_STRATIFICATION_MODE,
     CONF_BOILER_TARGET_TEMP_C,
@@ -94,6 +96,21 @@ class BoilerProfileView(HomeAssistantView):
 
             boiler_coordinator = entry_data.get("boiler_coordinator")
             if not boiler_coordinator:
+                # Fall back to runtime path for config summary when legacy coordinator
+                # is absent.  Pick the first available runtime for this entry.
+                runtimes: dict = entry_data.get(KEY_BOILER_RUNTIMES) or {}
+                if runtimes:
+                    first_runtime = next(iter(runtimes.values()))
+                    runtime_coordinator = getattr(first_runtime, "coordinator", None)
+                    config_summary = _build_boiler_config_summary(runtime_coordinator)
+                    return web.json_response(
+                        {
+                            "profiles": {},
+                            "current_category": None,
+                            "summary": None,
+                            "config": config_summary,
+                        }
+                    )
                 return _deprecation_response("/api/oig_cloud/boiler/{entry_id}/{box_id}")
 
             profiles = boiler_coordinator.profiler.get_all_profiles()
@@ -187,18 +204,20 @@ class BoilerPlanView(HomeAssistantView):
 
             slots_data = []
             for slot in plan.slots:
-                slots_data.append(
-                    {
-                        "start": slot.start.isoformat(),
-                        "end": slot.end.isoformat(),
-                        "consumption_kwh": round(slot.avg_consumption_kwh, 3),
-                        "confidence": round(slot.confidence, 2),
-                        "recommended_source": slot.recommended_source.value,
-                        "spot_price": slot.spot_price_kwh,
-                        "alt_price": slot.alt_price_kwh,
-                        "overflow_available": slot.overflow_available,
-                    }
-                )
+                rec_source = _normalize_planner_source(slot.recommended_source)
+                slot_entry = {
+                    "start": slot.start.isoformat(),
+                    "end": slot.end.isoformat(),
+                    "consumption_kwh": round(slot.avg_consumption_kwh, 3),
+                    "confidence": round(slot.confidence, 2),
+                    "recommended_source": rec_source,
+                    "spot_price": slot.spot_price_kwh,
+                    "alt_price": slot.alt_price_kwh,
+                    "overflow_available": slot.overflow_available,
+                }
+                if rec_source is None and slot.recommended_source is not None:
+                    slot_entry["source_invalid"] = True
+                slots_data.append(slot_entry)
 
             next_slot = _find_next_heating_slot(plan.slots, now)
 
@@ -353,7 +372,9 @@ def _compute_energy_state(temperatures: dict[str, Any], config: dict[str, Any]) 
     return {"avg_temp": None, "energy_needed_kwh": 0.0}
 
 
-def _read_energy_tracking(hass: HomeAssistant, box_id: str, config: dict[str, Any]) -> dict[str, Any]:
+def _read_energy_tracking(
+    hass: HomeAssistant, box_id: str, config: dict[str, Any], runtime: Any = None
+) -> dict[str, Any]:
     manual_mode_entity = f"sensor.oig_{box_id}_boiler_manual_mode"
     current_cbb_entity = f"sensor.oig_{box_id}_boiler_current_cbb_w"
     day_energy_entity = f"sensor.oig_{box_id}_boiler_day_w"
@@ -363,22 +384,61 @@ def _read_energy_tracking(hass: HomeAssistant, box_id: str, config: dict[str, An
     current_cbb_state = hass.states.get(current_cbb_entity)
     day_energy_state = hass.states.get(day_energy_entity)
 
-    current_source = "grid"
-    if manual_state and manual_state.state == "Zapnuto":
-        current_source = "fve"
-    elif current_cbb_state:
-        try:
-            if float(current_cbb_state.state) > 0:
-                current_source = "fve"
-        except (ValueError, TypeError):
-            pass
-
     total_energy = 0.0
     if day_energy_state:
         try:
             total_energy = float(day_energy_state.state) / 1000.0
         except (ValueError, TypeError):
             pass
+
+    # Try runtime attribution first
+    source_invalid = False
+    current_source: Optional[str] = None
+    fve_kwh = 0.0
+    grid_kwh = 0.0
+    runtime_attribution_resolved = False
+
+    if runtime is not None:
+        activity = getattr(runtime, "current_activity", None)
+        if activity is not None:
+            raw_source = getattr(activity, "source", None)
+            normalized = _normalize_runtime_source(raw_source)
+            if normalized in ("fve", "overflow"):
+                current_source = normalized if normalized in _PLANNER_SOURCE_KEYS else "fve"
+                fve_kwh = total_energy
+                grid_kwh = 0.0
+            elif normalized == "grid":
+                current_source = "grid"
+                fve_kwh = 0.0
+                grid_kwh = total_energy
+            elif normalized == "discharge":
+                current_source = None
+                fve_kwh = 0.0
+                grid_kwh = 0.0
+            else:
+                source_invalid = True
+                current_source = None
+            runtime_attribution_resolved = True
+
+    if not runtime_attribution_resolved:
+        # Legacy heuristic fallback
+        if manual_state and manual_state.state == "Zapnuto":
+            current_source = "fve"
+            fve_kwh = total_energy
+            grid_kwh = 0.0
+        elif current_cbb_state:
+            try:
+                if float(current_cbb_state.state) > 0:
+                    current_source = "fve"
+                    fve_kwh = total_energy
+                    grid_kwh = 0.0
+            except (ValueError, TypeError):
+                pass
+
+        if current_source is None:
+            current_source = "grid"
+            fve_kwh = 0.0
+            grid_kwh = total_energy
 
     alt_kwh = None
     if alt_energy_sensor:
@@ -394,33 +454,115 @@ def _read_energy_tracking(hass: HomeAssistant, box_id: str, config: dict[str, An
 
     if alt_kwh is None:
         from .thermal import estimate_residual_energy
-        alt_kwh = estimate_residual_energy(total_energy, 0.0, 0.0)
+        alt_kwh = estimate_residual_energy(total_energy, fve_kwh, grid_kwh)
 
-    return {
+    result: dict[str, Any] = {
         "current_source": current_source,
         "total_kwh": round(total_energy, 3),
-        "fve_kwh": 0.0,
-        "grid_kwh": round(total_energy, 3),
+        "fve_kwh": round(fve_kwh, 3),
+        "grid_kwh": round(grid_kwh, 3),
         "alt_kwh": round(alt_kwh, 3),
+        "source_estimated": not runtime_attribution_resolved,
     }
+    if source_invalid:
+        result["source_invalid"] = True
+    return result
 
 
-def _assemble_plan_slots(plan: Any) -> list[dict[str, Any]]:
+def _assemble_plan_slots(
+    plan: Any, target_temp_c: float = DEFAULT_BOILER_TARGET_TEMP_C
+) -> list[dict[str, Any]]:
     slots: list[dict[str, Any]] = []
     if not plan or not hasattr(plan, "slots"):
         return slots
     for slot in plan.slots:
-        slots.append({
-            "start": slot.start.isoformat() if hasattr(slot.start, "isoformat") else str(slot.start),
-            "end": slot.end.isoformat() if hasattr(slot.end, "isoformat") else str(slot.end),
+        recommended_source = _normalize_planner_source(
+            getattr(slot, "recommended_source", None)
+        )
+        raw_predicted = getattr(slot, "predicted_top_temp_c", None)
+        predicted_top_temp_c = None
+        comfort_satisfied = None
+        if (
+            raw_predicted is not None
+            and isinstance(raw_predicted, (int, float))
+            and math.isfinite(raw_predicted)
+            and raw_predicted > 0.0
+        ):
+            predicted_top_temp_c = raw_predicted
+            comfort_satisfied = raw_predicted >= target_temp_c
+
+        slot_data: dict[str, Any] = {
+            "start": (
+                slot.start.isoformat()
+                if hasattr(slot.start, "isoformat")
+                else str(slot.start)
+            ),
+            "end": (
+                slot.end.isoformat()
+                if hasattr(slot.end, "isoformat")
+                else str(slot.end)
+            ),
             "consumption_kwh": round(getattr(slot, "avg_consumption_kwh", 0.0), 3),
             "confidence": round(getattr(slot, "confidence", 0.0), 2),
-            "recommended_source": getattr(slot, "recommended_source", None),
+            "recommended_source": recommended_source,
             "spot_price": getattr(slot, "spot_price_kwh", None),
             "alt_price": getattr(slot, "alt_price_kwh", None),
             "overflow_available": getattr(slot, "overflow_available", False),
-        })
+            "heating_kwh": round(getattr(slot, "heating_kwh", 0.0), 3),
+            "pv_kwh": round(getattr(slot, "pv_kwh", 0.0), 3),
+            "grid_kwh": round(getattr(slot, "grid_kwh", 0.0), 3),
+            "alt_kwh": round(getattr(slot, "alt_kwh", 0.0), 3),
+            "estimated_cost_czk": round(getattr(slot, "estimated_cost_czk", 0.0), 2),
+            "predicted_top_temp_c": predicted_top_temp_c,
+            "comfort_satisfied": comfort_satisfied,
+            "pv_share": round(getattr(slot, "pv_share", 0.0), 3),
+        }
+        if recommended_source is None and getattr(slot, "recommended_source", None) is not None:
+            slot_data["source_invalid"] = True
+        slots.append(slot_data)
     return slots
+
+
+_RUNTIME_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge"})
+_PLANNER_SOURCE_KEYS = frozenset({"fve", "overflow", "grid"})
+
+
+def _normalize_runtime_source(source: Any) -> Optional[str]:
+    """Normalize any raw source value to runtime source keys: fve|overflow|grid|discharge|null."""
+    if source is None:
+        return None
+    if hasattr(source, "value"):
+        source = source.value
+    if not isinstance(source, str):
+        return None
+    key = source.lower().strip()
+    if key in _RUNTIME_SOURCE_KEYS:
+        return key
+    # Map known aliases
+    if key in ("zapnuto", "manual"):
+        return "fve"
+    if key in ("alternative", "alt"):
+        return "grid"
+    return None
+
+
+def _normalize_planner_source(source: Any) -> Optional[str]:
+    """Normalize any raw source value to planner source keys: fve|overflow|grid|null."""
+    if source is None:
+        return None
+    if hasattr(source, "value"):
+        source = source.value
+    if not isinstance(source, str):
+        return None
+    key = source.lower().strip()
+    if key in _PLANNER_SOURCE_KEYS:
+        return key
+    # Map known aliases
+    if key in ("zapnuto", "manual"):
+        return "fve"
+    if key in ("alternative", "alt"):
+        return "grid"
+    return None
 
 
 def _resolve_source_value(source: Any) -> Optional[str]:
@@ -429,6 +571,14 @@ def _resolve_source_value(source: Any) -> Optional[str]:
     if hasattr(source, "value"):
         return str(source.value)
     return str(source)
+
+
+def _iso_or_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
 
 def _assemble_canonical_dto(
@@ -440,10 +590,11 @@ def _assemble_canonical_dto(
 
     config = getattr(runtime.coordinator, "config", {}) or {} if runtime.coordinator else {}
     now = dt_util.now()
+    target_temp_c = config.get(CONF_BOILER_TARGET_TEMP_C, DEFAULT_BOILER_TARGET_TEMP_C)
 
     temperatures = _read_temperatures_from_hass(hass, config)
     energy_state = _compute_energy_state(temperatures, config)
-    energy_tracking = _read_energy_tracking(hass, box_id, config)
+    energy_tracking = _read_energy_tracking(hass, box_id, config, runtime=runtime)
 
     plan = runtime.get_current_plan() if hasattr(runtime, "get_current_plan") else None
     profile = runtime.get_current_profile() if hasattr(runtime, "get_current_profile") else None
@@ -483,6 +634,9 @@ def _assemble_canonical_dto(
         current_slot = plan.get_current_slot(now) if hasattr(plan, "get_current_slot") else None
         if current_slot is not None:
             selected_source = _resolve_source_value(getattr(current_slot, "recommended_source", None))
+
+    selected_source = _normalize_planner_source(selected_source)
+    actuated_source = _normalize_planner_source(actuated_source)
 
     reason_codes = list(plan_reason_codes)
     if serializer is not None:
@@ -526,6 +680,77 @@ def _assemble_canonical_dto(
             else str(profile.last_updated)
         )
 
+    activity_data: dict[str, Any] | None = None
+    aura_data: dict[str, Any] | None = None
+    source_segments: list[dict[str, Any]] = []
+    timeline: list[dict[str, Any]] = []
+    sparklines: dict[str, list[float]] = {}
+
+    if runtime is not None:
+        activity = getattr(runtime, "current_activity", None)
+        if activity is not None:
+            activity_source = _normalize_runtime_source(getattr(activity, "source", None))
+            activity_data = {
+                "state": getattr(activity, "state", "unknown"),
+                "source": activity_source,
+                "temperature_trend_c_per_min": getattr(activity, "temperature_trend_c_per_min", None),
+                "fill_level_pct": round(getattr(activity, "fill_level_pct", 0.0), 3),
+                "aura_max_temp_c": getattr(activity, "aura_max_temp_c", 80.0),
+                "stale_flags": list(getattr(activity, "stale_flags", [])),
+                "heater_states": dict(getattr(activity, "heater_states", {})),
+            }
+            if activity_data["source"] is None and getattr(activity, "source", None) is not None:
+                activity_data["source_invalid"] = True
+
+            current_temp_c = temperatures.get("top")
+            aura_data = {
+                "fill_level_pct": activity_data["fill_level_pct"],
+                "max_temp_c": activity_data["aura_max_temp_c"],
+                "current_temp_c": current_temp_c,
+            }
+        else:
+            activity_data = {
+                "state": "unknown",
+                "source": None,
+                "temperature_trend_c_per_min": None,
+                "fill_level_pct": 0.0,
+                "aura_max_temp_c": 80.0,
+                "stale_flags": ["runtime_cache_empty"],
+                "heater_states": {},
+            }
+            aura_data = {
+                "fill_level_pct": 0.0,
+                "max_temp_c": 80.0,
+                "current_temp_c": temperatures.get("top"),
+            }
+
+        for seg in getattr(runtime, "source_segments", []):
+            key = _normalize_runtime_source(seg.get("key"))
+            seg_data: dict[str, Any] = {
+                "key": key,
+                "start": _iso_or_str(seg.get("start")),
+                "end": _iso_or_str(seg.get("end")),
+                "energy_kwh": max(0.0, round(seg.get("energy_kwh", 0.0), 3)),
+                "fill_pct": 0.0 if key == "discharge" else round(seg.get("fill_pct", 0.0), 3),
+                "active": seg.get("active", False),
+            }
+            if key is None and seg.get("key") is not None:
+                seg_data["source_invalid"] = True
+            source_segments.append(seg_data)
+
+        for entry in getattr(runtime, "timeline_buffer", []):
+            entry_source = _normalize_runtime_source(entry.get("source_key"))
+            timeline.append({
+                "timestamp": _iso_or_str(entry.get("timestamp")),
+                "top_temp_c": entry.get("top_temp_c"),
+                "bottom_temp_c": entry.get("bottom_temp_c"),
+                "source_key": entry_source,
+                "power_kw": entry.get("power_kw"),
+                "activity_state": entry.get("activity_state"),
+            })
+
+        sparklines = dict(getattr(runtime, "sparklines", {}))
+
     return {
         "entry_id": entry_id,
         "box_id": box_id,
@@ -545,7 +770,7 @@ def _assemble_canonical_dto(
         },
         "selected_source": selected_source,
         "actuated_source": actuated_source,
-        "plan_slots": _assemble_plan_slots(plan),
+        "plan_slots": _assemble_plan_slots(plan, target_temp_c=target_temp_c),
         "reason_codes": reason_codes,
         "freshness": freshness,
         "degraded_flags": {
@@ -560,12 +785,17 @@ def _assemble_canonical_dto(
             "active": manual_override_state is not None,
             "state": manual_override_state,
         },
+        "activity": activity_data,
+        "aura": aura_data,
+        "source_segments": source_segments,
+        "timeline": timeline,
+        "sparklines": sparklines,
     }
 
 
 def _build_boiler_config_summary(coordinator) -> dict:
     config = getattr(coordinator, "config", {}) or {}
-    return {
+    result = {
         "volume_l": config.get(CONF_BOILER_VOLUME_L, 0),
         "target_temp_c": config.get(CONF_BOILER_TARGET_TEMP_C, DEFAULT_BOILER_TARGET_TEMP_C),
         "cold_inlet_temp_c": config.get(
@@ -587,7 +817,19 @@ def _build_boiler_config_summary(coordinator) -> dict:
         "circulation_pump_switch_entity": config.get(
             CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY
         ),
+        "aura_max_temp_c": 80.0,
     }
+
+    raw_power = config.get(CONF_BOILER_EFFECTIVE_POWER_W)
+    if raw_power is not None and raw_power != "":
+        try:
+            val = float(raw_power)
+            if math.isfinite(val):
+                result["heater_power_kw"] = val / 1000.0
+        except (TypeError, ValueError):
+            pass
+
+    return result
 
 
 def _build_profile_summary(profile, coordinator) -> dict:
@@ -654,16 +896,20 @@ def _find_next_heating_slot(slots, now: datetime):
 
 
 def _serialize_slot(slot) -> dict:
-    return {
+    rec_source = _normalize_planner_source(slot.recommended_source)
+    result = {
         "start": slot.start.isoformat(),
         "end": slot.end.isoformat(),
         "consumption_kwh": round(slot.avg_consumption_kwh, 3),
         "confidence": round(slot.confidence, 2),
-        "recommended_source": slot.recommended_source.value,
+        "recommended_source": rec_source,
         "spot_price": slot.spot_price_kwh,
         "alt_price": slot.alt_price_kwh,
         "overflow_available": slot.overflow_available,
     }
+    if rec_source is None and slot.recommended_source is not None:
+        result["source_invalid"] = True
+    return result
 
 
 def _build_state_payload(coordinator) -> dict:

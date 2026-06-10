@@ -20,4 +20,10 @@ export {
   OigBoilerUnavailableState,
 } from './components';
 
+export { OigBoilerV2Svg } from './boiler-svg';
+export { OigBoilerV2Shell } from './boiler-shell';
+export { OigBoilerMetricPanel } from './boiler-metric-panel';
+export { OigBoilerSparkline } from './boiler-sparkline';
+export { OigBoilerTimelineChart, resolveTimelineNowMs, minutesSinceMidnightInTimeZone } from './boiler-timeline-chart';
+
 export * from './types';

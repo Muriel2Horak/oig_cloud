@@ -98,6 +98,18 @@ class BoilerSlot:
     spot_price_kwh: Optional[float] = None  # Cena ze sítě (Kč/kWh)
     alt_price_kwh: Optional[float] = None  # Cena z alternativy (Kč/kWh)
     overflow_available: bool = False  # Je k dispozici FVE overflow
+    # Attribution fields copied from PlanSlotAction (planner_core.py PlanSlotAction
+    # uses identical names for heating_kwh, pv_kwh, grid_kwh, alt_kwh,
+    # estimated_cost_czk; heating_kwh is a convenience alias for avg_consumption_kwh).
+    heating_kwh: float = 0.0  # Spotřeba energie na topení v tomto slotu (kWh)
+    pv_kwh: float = 0.0  # FVE energie použitá v tomto slotu (kWh)
+    grid_kwh: float = 0.0  # Síťová energie v tomto slotu (kWh)
+    alt_kwh: float = 0.0  # Alternativní energie v tomto slotu (kWh)
+    estimated_cost_czk: float = 0.0  # Odhadovaná cena za energii v tomto slotu (Kč)
+    # Normalize PlanSlotAction.predicted_top_temp_c: only values > 0.0 are valid.
+    predicted_top_temp_c: Optional[float] = None  # Predikovaná horní teplota (°C)
+    comfort_satisfied: Optional[bool] = None  # Splnění komfortu (None = nehodnoceno)
+    pv_share: float = 0.0  # Podíl FVE energie na topení (0.0-1.0)
 
 
 @dataclass

@@ -28,14 +28,19 @@ export interface BoilerV2PlanSlot {
   end: string;
   consumptionKwh: number;
   confidence: number;
-  recommendedSource: string;
+  recommendedSource: string | null;
   spotPrice: number | null;
   altPrice: number | null;
   overflowAvailable: boolean;
+  heatingKwh?: number | null;
+  pvKwh?: number | null;
+  gridKwh?: number | null;
+  altKwh?: number | null;
   expectedTempTopC?: number | null;
   comfortSatisfied?: boolean | null;
   estimatedCostCzk?: number | null;
   pvShare?: number | null;
+  sourceInvalid?: boolean | null;
 }
 
 export interface BoilerV2Explanation {
@@ -46,6 +51,39 @@ export interface BoilerV2Explanation {
   degradedReasons: string[];
   unsatisfiedComfortGapC: number | null;
   temperatureAtDeadlineC: number | null;
+}
+
+export interface BoilerV2Activity {
+  state: 'charging_fve' | 'charging_overflow' | 'charging_grid' | 'discharging' | 'standby' | 'unknown';
+  source: 'fve' | 'overflow' | 'grid' | 'discharge' | null;
+  temperatureTrendCPerMin: number | null;
+  fillLevelPct: number | null;
+  auraMaxTempC: number;
+  heaterStates: Record<string, 'on' | 'off' | 'unavailable'>;
+  staleFlags: string[];
+}
+
+export interface BoilerV2SourceSegment {
+  key: 'fve' | 'overflow' | 'grid' | 'discharge' | null;
+  start: string;
+  end: string | null;
+  energyKwh: number;
+  fillPct: number;
+  active: boolean;
+}
+
+export interface BoilerV2TimelinePoint {
+  timestamp: string;
+  topTempC: number | null;
+  bottomTempC: number | null;
+  powerKw: number | null;
+  sourceKey: 'fve' | 'overflow' | 'grid' | 'discharge' | null;
+  activityState: string;
+}
+
+export interface BoilerV2Sparkline {
+  temperature: number[];
+  power: number[];
 }
 
 export interface BoilerV2ManualOverride {
@@ -67,6 +105,10 @@ export interface BoilerV2Data {
   explanation: BoilerV2Explanation | null;
   manualOverride: BoilerV2ManualOverride | null;
   identity: BoilerV2Identity;
+  activity: BoilerV2Activity | null;
+  sourceSegments: BoilerV2SourceSegment[];
+  timeline: BoilerV2TimelinePoint[];
+  sparkline: BoilerV2Sparkline | null;
   loading: boolean;
   loadError: string | null;
 }
@@ -143,11 +185,13 @@ export interface BoilerPredictedUsage {
 export interface BoilerConfig {
   volumeL: number | null;
   heaterPowerW: number | null;
+  heaterPowerKw: number | null;
   targetTempC: number | null;
   deadlineTime: string;
   stratificationMode: string;
   kCoefficient: string;
   coldInletTempC: number;
+  auraMaxTempC: number | null;
 }
 
 // --- Profile ---
@@ -201,6 +245,13 @@ export const SOURCE_COLORS: Record<string, string> = {
   fve: '#4CAF50',
   grid: '#FF9800',
   alternative: '#2196F3',
+};
+
+export const BOILER_SOURCE_COLORS: Record<string, string> = {
+  fve: '#4CAF50',
+  overflow: '#8BC34A',
+  grid: '#FF9800',
+  discharge: '#2196F3',
 };
 
 export const SOURCE_LABELS: Record<string, string> = {

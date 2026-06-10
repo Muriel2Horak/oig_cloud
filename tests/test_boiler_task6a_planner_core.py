@@ -499,3 +499,275 @@ async def test_runtime_create_plan_uses_core_and_stores_adapted_plan(monkeypatch
         sum(slot.heating_kwh for slot in runtime.last_plan_result.slots)
     )
     assert any(slot.avg_consumption_kwh > 0.0 for slot in result.slots)
+
+
+# ---------------------------------------------------------------------------
+# Task 2: BoilerSlot attribution field preservation
+# ---------------------------------------------------------------------------
+
+
+def test_plan_slot_preserves_attribution_fields():
+    """BoilerSlot fields (heating_kwh, pv_kwh, grid_kwh, alt_kwh,
+    estimated_cost_czk, predicted_top_temp_c > 0) survive
+    PlanResult -> BoilerPlan conversion."""
+    from custom_components.oig_cloud.boiler.planner import plan_result_to_boiler_plan
+    from custom_components.oig_cloud.boiler.planner_core import PlanResult, PlanSlotAction
+
+    now = datetime(2026, 4, 25, 0, 0, tzinfo=timezone.utc)
+    slot = PlanSlotAction(
+        start=now,
+        end=now + timedelta(minutes=15),
+        action="heat",
+        source=EnergySource.FVE,
+        heating_kwh=1.5,
+        pv_kwh=1.2,
+        grid_kwh=0.2,
+        alt_kwh=0.1,
+        estimated_cost_czk=4.80,
+        predicted_top_temp_c=55.5,
+    )
+    result = PlanResult(
+        entry_id="test_entry",
+        box_id="test_box",
+        created_at=now,
+        valid_until=now + timedelta(hours=1),
+        deadline=now + timedelta(hours=1),
+        slots=[slot],
+        selected_source=EnergySource.FVE,
+        actuated_source=EnergySource.FVE,
+        comfort_satisfied=True,
+        estimated_cost_czk=4.80,
+        pv_kwh=1.2,
+        grid_kwh=0.2,
+        alt_kwh=0.1,
+    )
+
+    plan = plan_result_to_boiler_plan(result)
+
+    assert len(plan.slots) == 1
+    s = plan.slots[0]
+    assert s.heating_kwh == 1.5
+    assert s.pv_kwh == 1.2
+    assert s.grid_kwh == 0.2
+    assert s.alt_kwh == 0.1
+    assert s.estimated_cost_czk == 4.80
+    assert s.predicted_top_temp_c == 55.5
+    assert s.comfort_satisfied is None
+
+
+def test_plan_slot_pv_share_computed():
+    """pv_share is computed as (pv_kwh / heating_kwh) when heating_kwh > 0,
+    else 0.0. pv_kwh=None is treated as 0.0."""
+    from custom_components.oig_cloud.boiler.planner import plan_result_to_boiler_plan
+    from custom_components.oig_cloud.boiler.planner_core import PlanResult, PlanSlotAction
+
+    now = datetime(2026, 4, 25, 0, 0, tzinfo=timezone.utc)
+
+    slot_normal = PlanSlotAction(
+        start=now,
+        end=now + timedelta(minutes=15),
+        action="heat",
+        source=EnergySource.FVE,
+        heating_kwh=2.0,
+        pv_kwh=1.5,
+        grid_kwh=0.5,
+        alt_kwh=0.0,
+        estimated_cost_czk=2.00,
+        predicted_top_temp_c=60.0,
+    )
+    slot_zero_heat = PlanSlotAction(
+        start=now,
+        end=now + timedelta(minutes=15),
+        action="idle",
+        source=None,
+        heating_kwh=0.0,
+        pv_kwh=0.0,
+        grid_kwh=0.0,
+        alt_kwh=0.0,
+        estimated_cost_czk=0.0,
+        predicted_top_temp_c=0.0,
+    )
+    result = PlanResult(
+        entry_id="test_entry",
+        box_id="test_box",
+        created_at=now,
+        valid_until=now + timedelta(hours=1),
+        deadline=now + timedelta(hours=1),
+        slots=[slot_normal, slot_zero_heat],
+        selected_source=EnergySource.FVE,
+        actuated_source=EnergySource.FVE,
+        comfort_satisfied=True,
+        estimated_cost_czk=2.00,
+        pv_kwh=1.5,
+        grid_kwh=0.5,
+        alt_kwh=0.0,
+    )
+
+    plan = plan_result_to_boiler_plan(result)
+
+    assert len(plan.slots) == 2
+    assert plan.slots[0].pv_share == pytest.approx(0.75)
+    assert plan.slots[1].pv_share == 0.0
+
+
+def test_plan_slot_pv_share_with_none_pv_kwh():
+    from custom_components.oig_cloud.boiler.planner import plan_result_to_boiler_plan
+    from custom_components.oig_cloud.boiler.planner_core import PlanResult, PlanSlotAction
+
+    now = datetime(2026, 4, 25, 0, 0, tzinfo=timezone.utc)
+
+    slot = PlanSlotAction(
+        start=now,
+        end=now + timedelta(minutes=15),
+        action="heat",
+        source=EnergySource.FVE,
+        heating_kwh=2.0,
+        pv_kwh=None,
+        grid_kwh=0.5,
+        alt_kwh=0.0,
+        estimated_cost_czk=2.00,
+        predicted_top_temp_c=55.5,
+    )
+    result = PlanResult(
+        entry_id="test_entry",
+        box_id="test_box",
+        created_at=now,
+        valid_until=now + timedelta(hours=1),
+        deadline=now + timedelta(hours=1),
+        slots=[slot],
+        selected_source=EnergySource.FVE,
+        actuated_source=EnergySource.FVE,
+        comfort_satisfied=True,
+        estimated_cost_czk=2.00,
+        pv_kwh=0.0,
+        grid_kwh=0.5,
+        alt_kwh=0.0,
+    )
+
+    plan = plan_result_to_boiler_plan(result)
+
+    assert len(plan.slots) == 1
+    assert plan.slots[0].pv_kwh == 0.0
+    assert plan.slots[0].pv_share == 0.0
+    assert plan.slots[0].overflow_available is False
+
+
+def test_plan_slot_prediction_zero_normalizes_to_none():
+    from custom_components.oig_cloud.boiler.planner import plan_result_to_boiler_plan
+    from custom_components.oig_cloud.boiler.planner_core import PlanResult, PlanSlotAction
+
+    now = datetime(2026, 4, 25, 0, 0, tzinfo=timezone.utc)
+
+    slot_zero_pred = PlanSlotAction(
+        start=now,
+        end=now + timedelta(minutes=15),
+        action="heat",
+        source=EnergySource.GRID,
+        heating_kwh=1.0,
+        pv_kwh=0.0,
+        grid_kwh=1.0,
+        alt_kwh=0.0,
+        estimated_cost_czk=3.00,
+        predicted_top_temp_c=0.0,
+    )
+    slot_negative_pred = PlanSlotAction(
+        start=now + timedelta(minutes=15),
+        end=now + timedelta(minutes=30),
+        action="heat",
+        source=EnergySource.GRID,
+        heating_kwh=1.0,
+        pv_kwh=0.0,
+        grid_kwh=1.0,
+        alt_kwh=0.0,
+        estimated_cost_czk=3.00,
+        predicted_top_temp_c=-5.0,
+    )
+    slot_none_pred = PlanSlotAction(
+        start=now + timedelta(minutes=30),
+        end=now + timedelta(minutes=45),
+        action="heat",
+        source=EnergySource.GRID,
+        heating_kwh=1.0,
+        pv_kwh=0.0,
+        grid_kwh=1.0,
+        alt_kwh=0.0,
+        estimated_cost_czk=3.00,
+        predicted_top_temp_c=0.0,
+    )
+    slot_valid_pred = PlanSlotAction(
+        start=now + timedelta(minutes=45),
+        end=now + timedelta(minutes=60),
+        action="heat",
+        source=EnergySource.FVE,
+        heating_kwh=1.0,
+        pv_kwh=1.0,
+        grid_kwh=0.0,
+        alt_kwh=0.0,
+        estimated_cost_czk=0.0,
+        predicted_top_temp_c=62.3,
+    )
+    result = PlanResult(
+        entry_id="test_entry",
+        box_id="test_box",
+        created_at=now,
+        valid_until=now + timedelta(hours=1),
+        deadline=now + timedelta(hours=1),
+        slots=[slot_zero_pred, slot_negative_pred, slot_none_pred, slot_valid_pred],
+        selected_source=EnergySource.GRID,
+        actuated_source=EnergySource.GRID,
+        comfort_satisfied=False,
+        estimated_cost_czk=9.00,
+        pv_kwh=1.0,
+        grid_kwh=3.0,
+        alt_kwh=0.0,
+    )
+
+    plan = plan_result_to_boiler_plan(result)
+
+    assert len(plan.slots) == 4
+    assert plan.slots[0].predicted_top_temp_c is None
+    assert plan.slots[1].predicted_top_temp_c is None
+
+    predicted = plan.slots[2].predicted_top_temp_c
+    assert predicted is None, f"slot_none_pred predicted_top_temp_c should be None, got {predicted}"
+    assert plan.slots[3].predicted_top_temp_c == 62.3
+
+
+def test_plan_slot_prediction_none_input_becomes_none():
+    from custom_components.oig_cloud.boiler.planner import plan_result_to_boiler_plan
+    from custom_components.oig_cloud.boiler.planner_core import PlanResult, PlanSlotAction
+
+    now = datetime(2026, 4, 25, 0, 0, tzinfo=timezone.utc)
+
+    slot = PlanSlotAction(
+        start=now,
+        end=now + timedelta(minutes=15),
+        action="heat",
+        source=EnergySource.GRID,
+        heating_kwh=1.5,
+        pv_kwh=0.0,
+        grid_kwh=1.5,
+        alt_kwh=0.0,
+        estimated_cost_czk=4.50,
+        predicted_top_temp_c=None,
+    )
+    result = PlanResult(
+        entry_id="test_entry",
+        box_id="test_box",
+        created_at=now,
+        valid_until=now + timedelta(hours=1),
+        deadline=now + timedelta(hours=1),
+        slots=[slot],
+        selected_source=EnergySource.GRID,
+        actuated_source=EnergySource.GRID,
+        comfort_satisfied=False,
+        estimated_cost_czk=4.50,
+        pv_kwh=0.0,
+        grid_kwh=1.5,
+        alt_kwh=0.0,
+    )
+
+    plan = plan_result_to_boiler_plan(result)
+
+    assert len(plan.slots) == 1
+    assert plan.slots[0].predicted_top_temp_c is None
