@@ -490,16 +490,23 @@ class _CoordinatorEnergyInputAdapter:
             return [], []
 
         raw_windows = battery_data.get("overflow_windows")
-        if not isinstance(raw_windows, list) or not raw_windows:
+        if not isinstance(raw_windows, list):
             return [], [PlannerReasonCode.INPUT_STALE_PV]
 
+        # An EMPTY list is fresh, valid data: the battery pipeline ran and
+        # predicts no overflow (e.g. night, battery far from full). That is
+        # not staleness — flagging it as stale kept the plan degraded at
+        # night even with perfectly fresh inputs.
         windows: list[tuple[datetime, datetime]] = []
         for raw_window in raw_windows:
             parsed = _parse_adapter_overflow_window(raw_window)
             if parsed:
                 windows.append(parsed)
 
-        reasons = [] if windows else [PlannerReasonCode.INPUT_STALE_PV]
+        # Stale only when entries existed but none could be parsed.
+        reasons = (
+            [PlannerReasonCode.INPUT_STALE_PV] if raw_windows and not windows else []
+        )
         return windows, reasons
 
     def _resolve_entry_battery_data(self) -> Optional[dict[str, Any]]:

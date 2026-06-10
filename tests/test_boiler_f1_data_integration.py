@@ -419,14 +419,36 @@ async def test_adapter_clears_stale_pv_when_pipeline_windows_present():
 
 
 @pytest.mark.asyncio
-async def test_adapter_stale_pv_when_no_windows():
-    """INPUT_STALE_PV returned when battery data has empty overflow_windows."""
+async def test_adapter_empty_windows_is_fresh_not_stale():
+    """An EMPTY overflow_windows list is fresh data (battery pipeline ran and
+    predicts no overflow — e.g. night, battery far from full), NOT staleness.
+    Flagging it stale kept the plan degraded every night."""
     domain_data = {
         "entry_1": {
             "coordinator": SimpleNamespace(
                 battery_forecast_data={
                     "spot_prices_czk_kwh": {},
                     "overflow_windows": [],
+                }
+            )
+        }
+    }
+    adapter = _make_adapter(domain_data)
+    energy_input = await adapter.async_get_energy_input()
+
+    assert PlannerReasonCode.INPUT_STALE_PV not in energy_input.reason_codes
+    assert energy_input.overflow_windows == []
+
+
+@pytest.mark.asyncio
+async def test_adapter_stale_pv_when_windows_unparseable():
+    """Stale only when entries existed but none could be parsed."""
+    domain_data = {
+        "entry_1": {
+            "coordinator": SimpleNamespace(
+                battery_forecast_data={
+                    "spot_prices_czk_kwh": {},
+                    "overflow_windows": [{"start": "garbage", "end": None}],
                 }
             )
         }
