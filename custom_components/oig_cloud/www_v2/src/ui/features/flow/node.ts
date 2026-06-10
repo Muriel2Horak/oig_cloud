@@ -143,7 +143,7 @@ export class OigFlowNode extends LitElement {
       pointer-events: none;
       border-radius: 12px;
     }
-    .edge-track { fill: none; stroke: rgba(255,255,255,0.07); stroke-width: 2; }
+    .edge-track { fill: none; stroke: rgba(255,255,255,0.07); stroke-width: 1.4; }
     .edge-fill {
       fill: none;
       stroke-linecap: round;
@@ -1132,7 +1132,9 @@ export class OigFlowNode extends LitElement {
     full?: boolean;
   }) {
     const pct = Math.max(0, Math.min(100, opts.pct));
-    const w = Math.max(2, Math.min(7, opts.width ?? 3));
+    // Width in viewBox units (NOT non-scaling-stroke: that breaks pathLength dash
+    // normalisation in Chromium → the fill no longer matches the %).
+    const w = Math.max(1.4, Math.min(3.6, opts.width ?? 2));
     const dash = opts.full ? 0 : 100 - pct;
     const stops = opts.stops.map(
       ([o, c]) => svg`<stop offset="${o}" stop-color="${c}"></stop>`,
@@ -1144,12 +1146,10 @@ export class OigFlowNode extends LitElement {
         <defs>
           <linearGradient id=${opts.id} x1="0" y1="1" x2="0" y2="0">${stops}</linearGradient>
         </defs>
-        <rect class="edge-track" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"
-          vector-effect="non-scaling-stroke"></rect>
+        <rect class="edge-track" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"></rect>
         <rect class="edge-fill" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"
-          vector-effect="non-scaling-stroke" stroke=${`url(#${opts.id})`}
-          stroke-width=${w} pathLength="100" stroke-dasharray="100"
-          stroke-dashoffset=${dash}></rect>
+          stroke=${`url(#${opts.id})`} stroke-width=${w} pathLength="100"
+          stroke-dasharray="100" stroke-dashoffset=${dash}></rect>
       </svg>`;
   }
 
@@ -1379,7 +1379,7 @@ export class OigFlowNode extends LitElement {
           id: 'gauge-solar',
           pct: isNight ? 0 : progressPct,
           stops: [[0, intColor], [1, intColor]],
-          width: 2.5 + Math.min(4, powerKw),
+          width: 1.6 + Math.min(2, powerKw),
           pulse: !isNight && d.solarPower > 30,
           pulseDur: Math.max(0.9, 2.2 - powerKw * 0.35),
         })}
@@ -1393,11 +1393,14 @@ export class OigFlowNode extends LitElement {
         <div class="node-header node-header--split" style="margin-top:16px">
           <span class="node-label">☀️ Solár</span>
           <span class="node-state" style="color:${isNight ? '#9fa8da' : intColor}">
-            ${isNight ? '🌙 Noc' : `${formatPower(d.solarPower)} · ${Math.round(percent)} %`}
+            ${isNight ? '🌙 Noc' : `${Math.round(percent)} % špičky`}
           </span>
         </div>
-        <div class="node-value" @click=${openEntity('dc_in_fv_ad')}>
-          ${producedKwh.toFixed(1)} <span class="nv-sub">/ ${forecastKwh.toFixed(1)} kWh</span>
+        <div class="node-value" @click=${openEntity('actual_fv_total')}>
+          ${formatPower(d.solarPower)}
+        </div>
+        <div class="node-subvalue" @click=${openEntity('dc_in_fv_ad')}>
+          Dnes ${producedKwh.toFixed(1)} <span class="nv-sub">/ ${forecastKwh.toFixed(1)} kWh</span>
         </div>
         <div class="node-subvalue">
           ${remainingKwh > 0.05
@@ -1499,7 +1502,7 @@ export class OigFlowNode extends LitElement {
           id: 'gauge-battery',
           pct: d.batterySoC,
           stops: [[0, '#e53935'], [0.45, '#fb8c00'], [0.7, '#fdd835'], [1, '#43a047']],
-          width: 2.5 + Math.min(4, batPowerKw),
+          width: 1.6 + Math.min(2, batPowerKw),
           pulse: batActive,
           pulseDur: Math.max(0.9, 2.2 - batPowerKw * 0.35),
         })}
@@ -1635,7 +1638,7 @@ export class OigFlowNode extends LitElement {
           id: 'gauge-inverter',
           pct: bypassActive ? 100 : tempPct,
           stops: [[0, edgeColor], [1, edgeColor]],
-          width: bypassActive ? 5 : 3,
+          width: bypassActive ? 3.4 : 2,
           pulse: bypassActive,
           pulseDur: 1.1,
         })}
@@ -1717,7 +1720,6 @@ export class OigFlowNode extends LitElement {
     const breakerMax = 25 * 230 * 3; // 25 A / phase
     const exportLimit = d.inverterGridLimit > 0 ? d.inverterGridLimit : 5000;
     const limitPct = importing ? (absW / breakerMax) * 100 : exporting ? (absW / exportLimit) * 100 : 0;
-    const limitText = importing ? `${Math.round(limitPct)} % jističe` : exporting ? `${Math.round(limitPct)} % limitu` : '';
     // Colour by price: import expensive→red / cheap→orange / ≤0→green;
     // export inverse by sell price (good→green).
     const gColor = importing
@@ -1735,7 +1737,7 @@ export class OigFlowNode extends LitElement {
           id: 'gauge-grid',
           pct: limitPct,
           stops: [[0, gColor], [1, gColor]],
-          width: 2.5 + Math.min(4, flowKw),
+          width: 1.6 + Math.min(2, flowKw),
           pulse: importing || exporting,
           pulseDur: Math.max(0.9, 2.2 - flowKw * 0.35),
         })}
@@ -1753,7 +1755,7 @@ export class OigFlowNode extends LitElement {
           <span class="node-state" style="color:${gColor}">${priceState}</span>
         </div>
         <div class="node-value" @click=${openEntity('actual_aci_wtotal')}>${formatPower(absW)}</div>
-        <div class="node-subvalue" style="color:${gColor};font-weight:600">${dirText}${limitText ? ' · ' + limitText : ''}</div>
+        <div class="node-subvalue" style="color:${gColor};font-weight:600">${dirText}</div>
 
         <!-- Ceny — vždy viditelné jako rychlý přehled -->
         <div class="prices-row" style="margin-top:4px">
@@ -1856,7 +1858,7 @@ export class OigFlowNode extends LitElement {
           id: 'gauge-house',
           pct: selfSuf,
           stops: [[0, '#e53935'], [0.5, '#fdd835'], [1, '#43a047']],
-          width: 2.5 + Math.min(4, totalPower / 1000),
+          width: 1.6 + Math.min(2, totalPower / 1000),
           pulse: totalPower > 50,
           pulseDur: Math.max(0.9, 2.2 - (totalPower / 1000) * 0.35),
         })}

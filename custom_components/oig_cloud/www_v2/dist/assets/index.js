@@ -768,22 +768,20 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       0%, 100% { opacity: 0.3; r: 6; }
       50%       { opacity: 1;   r: 8; }
     }
-  `;er([g({type:String})],St.prototype,"mode",2);er([g({type:Boolean})],St.prototype,"bypassActive",2);er([g({type:Boolean})],St.prototype,"hasAlarm",2);er([g({type:Boolean})],St.prototype,"plannerAuto",2);St=er([E("oig-inverter-icon")],St);var Zc=Object.defineProperty,Qc=Object.getOwnPropertyDescriptor,He=(e,t,i,r)=>{for(var n=r>1?void 0:r?Qc(t,i):t,a=e.length-1,s;a>=0;a--)(s=e[a])&&(n=(r?s(t,i,n):s(n))||n);return r&&n&&Zc(t,i,n),n};const U=Z,Pa=new URLSearchParams(window.location.search),Xc=Pa.get("sn")||Pa.get("inverter_sn")||"",Jc=e=>`sensor.oig_${Xc}_${e}`,on="oig_v2_flow_layout_",gt=["solar","battery","inverter","grid","house"],ed={solar:{top:"0%",left:"0%"},house:{top:"0%",left:"65%"},inverter:{top:"35%",left:"35%"},grid:{top:"70%",left:"0%"},battery:{top:"70%",left:"65%"}};function H(e){return()=>re.openEntityDialog(Jc(e))}let Ee=class extends D{constructor(){super(...arguments),this.data=On,this.editMode=!1,this.pendingServices=new Map,this.changingServices=new Set,this.shieldStatus="idle",this.shieldQueueCount=0,this.gridDeliveryState={currentLiveDelivery:"unknown",currentLiveLimit:null,pendingDeliveryTarget:null,pendingLimitTarget:null,isTransitioning:!1,isUnavailable:!1},this.shieldUnsub=null,this.expandedNodes=new Set,this.customPositions={},this.draggedNodeId=null,this.dragStartX=0,this.dragStartY=0,this.dragStartTop=0,this.dragStartLeft=0,this.onShieldUpdate=e=>{this.pendingServices=e.pendingServices,this.changingServices=e.changingServices,this.shieldStatus=e.status,this.shieldQueueCount=e.queueCount,this.gridDeliveryState=e.gridDeliveryState},this.handleDragStart=e=>{if(!this.editMode)return;e.preventDefault(),e.stopPropagation();const i=e.target.closest(".node");if(!i)return;const r=this.findNodeId(i);if(!r)return;this.draggedNodeId=r,i.classList.add("dragging");const n=i.getBoundingClientRect();this.dragStartX=e.clientX,this.dragStartY=e.clientY,this.dragStartTop=n.top,this.dragStartLeft=n.left},this.handleTouchStart=e=>{if(!this.editMode)return;e.preventDefault();const i=e.target.closest(".node");if(!i)return;const r=this.findNodeId(i);if(!r)return;this.draggedNodeId=r,i.classList.add("dragging");const n=e.touches[0],a=i.getBoundingClientRect();this.dragStartX=n.clientX,this.dragStartY=n.clientY,this.dragStartTop=a.top,this.dragStartLeft=a.left},this.handleDragMove=e=>{!this.draggedNodeId||!this.editMode||(e.preventDefault(),this.updateDragPosition(e.clientX,e.clientY))},this.handleTouchMove=e=>{if(!this.draggedNodeId||!this.editMode)return;e.preventDefault();const t=e.touches[0];this.updateDragPosition(t.clientX,t.clientY)},this.handleDragEnd=e=>{var r;if(!this.draggedNodeId||!this.editMode)return;const t=(r=this.shadowRoot)==null?void 0:r.querySelector(".flow-grid"),i=t==null?void 0:t.querySelector(`.node-${this.draggedNodeId}`);i&&i.classList.remove("dragging"),this.saveLayout(),this.dispatchEvent(new CustomEvent("layout-changed",{bubbles:!0,composed:!0})),this.draggedNodeId=null},this.handleTouchEnd=e=>{this.handleDragEnd(e)}}connectedCallback(){super.connectedCallback(),this.loadSavedLayout(),this.shieldUnsub=ie.subscribe(this.onShieldUpdate)}disconnectedCallback(){var e;super.disconnectedCallback(),this.removeDragListeners(),(e=this.shieldUnsub)==null||e.call(this),this.shieldUnsub=null}updated(e){e.has("editMode")&&(this.editMode?(this.setAttribute("editmode",""),this.loadSavedLayout(),this.requestUpdate(),this.updateComplete.then(()=>this.applySavedPositions())):(this.removeAttribute("editmode"),this.removeDragListeners(),this.clearInlinePositions(),this.updateComplete.then(()=>this.applyCustomPositions()))),!this.editMode&&this.hasCustomLayout&&this.updateComplete.then(()=>this.applyCustomPositions())}loadSavedLayout(){const e=Kt(window.innerWidth),t=`${on}${e}`;try{const i=localStorage.getItem(t);i&&(this.customPositions=JSON.parse(i),_.debug("[FlowNode] Loaded layout for "+e))}catch{}}applySavedPositions(){var t;if(!this.editMode)return;const e=(t=this.shadowRoot)==null?void 0:t.querySelector(".flow-grid");if(e){for(const i of gt){const r=this.customPositions[i];if(!r)continue;const n=e.querySelector(`.node-${i}`);n&&(n.style.top=r.top,n.style.left=r.left)}this.initDragListeners()}}clearInlinePositions(){var t;const e=(t=this.shadowRoot)==null?void 0:t.querySelector(".flow-grid");if(e)for(const i of gt){const r=e.querySelector(`.node-${i}`);r&&(r.style.top="",r.style.left="")}}saveLayout(){const e=Kt(window.innerWidth),t=`${on}${e}`;try{localStorage.setItem(t,JSON.stringify(this.customPositions)),_.debug("[FlowNode] Saved layout for "+e)}catch{}}toggleExpand(e,t){const i=t.target;if(i.closest(".clickable")||i.closest(".indicator")||i.closest(".forecast-badge")||i.closest(".node-value")||i.closest(".node-subvalue")||i.closest(".gc-plan-btn"))return;const r=new Set(this.expandedNodes);r.has(e)?r.delete(e):r.add(e),this.expandedNodes=r}nodeClass(e,t=""){const i=this.expandedNodes.has(e)?" expanded":"";return`node node-${e}${i}${t?" "+t:""}`}edgeGauge(e){const t=Math.max(0,Math.min(100,e.pct)),i=Math.max(2,Math.min(7,e.width??3)),r=e.full?0:100-t,n=e.stops.map(([s,l])=>G`<stop offset="${s}" stop-color="${l}"></stop>`),a=e.pulseDur?`--pulse-dur:${e.pulseDur}s`:"";return G`
+  `;er([g({type:String})],St.prototype,"mode",2);er([g({type:Boolean})],St.prototype,"bypassActive",2);er([g({type:Boolean})],St.prototype,"hasAlarm",2);er([g({type:Boolean})],St.prototype,"plannerAuto",2);St=er([E("oig-inverter-icon")],St);var Zc=Object.defineProperty,Qc=Object.getOwnPropertyDescriptor,He=(e,t,i,r)=>{for(var n=r>1?void 0:r?Qc(t,i):t,a=e.length-1,s;a>=0;a--)(s=e[a])&&(n=(r?s(t,i,n):s(n))||n);return r&&n&&Zc(t,i,n),n};const U=Z,Pa=new URLSearchParams(window.location.search),Xc=Pa.get("sn")||Pa.get("inverter_sn")||"",Jc=e=>`sensor.oig_${Xc}_${e}`,on="oig_v2_flow_layout_",gt=["solar","battery","inverter","grid","house"],ed={solar:{top:"0%",left:"0%"},house:{top:"0%",left:"65%"},inverter:{top:"35%",left:"35%"},grid:{top:"70%",left:"0%"},battery:{top:"70%",left:"65%"}};function H(e){return()=>re.openEntityDialog(Jc(e))}let Ee=class extends D{constructor(){super(...arguments),this.data=On,this.editMode=!1,this.pendingServices=new Map,this.changingServices=new Set,this.shieldStatus="idle",this.shieldQueueCount=0,this.gridDeliveryState={currentLiveDelivery:"unknown",currentLiveLimit:null,pendingDeliveryTarget:null,pendingLimitTarget:null,isTransitioning:!1,isUnavailable:!1},this.shieldUnsub=null,this.expandedNodes=new Set,this.customPositions={},this.draggedNodeId=null,this.dragStartX=0,this.dragStartY=0,this.dragStartTop=0,this.dragStartLeft=0,this.onShieldUpdate=e=>{this.pendingServices=e.pendingServices,this.changingServices=e.changingServices,this.shieldStatus=e.status,this.shieldQueueCount=e.queueCount,this.gridDeliveryState=e.gridDeliveryState},this.handleDragStart=e=>{if(!this.editMode)return;e.preventDefault(),e.stopPropagation();const i=e.target.closest(".node");if(!i)return;const r=this.findNodeId(i);if(!r)return;this.draggedNodeId=r,i.classList.add("dragging");const n=i.getBoundingClientRect();this.dragStartX=e.clientX,this.dragStartY=e.clientY,this.dragStartTop=n.top,this.dragStartLeft=n.left},this.handleTouchStart=e=>{if(!this.editMode)return;e.preventDefault();const i=e.target.closest(".node");if(!i)return;const r=this.findNodeId(i);if(!r)return;this.draggedNodeId=r,i.classList.add("dragging");const n=e.touches[0],a=i.getBoundingClientRect();this.dragStartX=n.clientX,this.dragStartY=n.clientY,this.dragStartTop=a.top,this.dragStartLeft=a.left},this.handleDragMove=e=>{!this.draggedNodeId||!this.editMode||(e.preventDefault(),this.updateDragPosition(e.clientX,e.clientY))},this.handleTouchMove=e=>{if(!this.draggedNodeId||!this.editMode)return;e.preventDefault();const t=e.touches[0];this.updateDragPosition(t.clientX,t.clientY)},this.handleDragEnd=e=>{var r;if(!this.draggedNodeId||!this.editMode)return;const t=(r=this.shadowRoot)==null?void 0:r.querySelector(".flow-grid"),i=t==null?void 0:t.querySelector(`.node-${this.draggedNodeId}`);i&&i.classList.remove("dragging"),this.saveLayout(),this.dispatchEvent(new CustomEvent("layout-changed",{bubbles:!0,composed:!0})),this.draggedNodeId=null},this.handleTouchEnd=e=>{this.handleDragEnd(e)}}connectedCallback(){super.connectedCallback(),this.loadSavedLayout(),this.shieldUnsub=ie.subscribe(this.onShieldUpdate)}disconnectedCallback(){var e;super.disconnectedCallback(),this.removeDragListeners(),(e=this.shieldUnsub)==null||e.call(this),this.shieldUnsub=null}updated(e){e.has("editMode")&&(this.editMode?(this.setAttribute("editmode",""),this.loadSavedLayout(),this.requestUpdate(),this.updateComplete.then(()=>this.applySavedPositions())):(this.removeAttribute("editmode"),this.removeDragListeners(),this.clearInlinePositions(),this.updateComplete.then(()=>this.applyCustomPositions()))),!this.editMode&&this.hasCustomLayout&&this.updateComplete.then(()=>this.applyCustomPositions())}loadSavedLayout(){const e=Kt(window.innerWidth),t=`${on}${e}`;try{const i=localStorage.getItem(t);i&&(this.customPositions=JSON.parse(i),_.debug("[FlowNode] Loaded layout for "+e))}catch{}}applySavedPositions(){var t;if(!this.editMode)return;const e=(t=this.shadowRoot)==null?void 0:t.querySelector(".flow-grid");if(e){for(const i of gt){const r=this.customPositions[i];if(!r)continue;const n=e.querySelector(`.node-${i}`);n&&(n.style.top=r.top,n.style.left=r.left)}this.initDragListeners()}}clearInlinePositions(){var t;const e=(t=this.shadowRoot)==null?void 0:t.querySelector(".flow-grid");if(e)for(const i of gt){const r=e.querySelector(`.node-${i}`);r&&(r.style.top="",r.style.left="")}}saveLayout(){const e=Kt(window.innerWidth),t=`${on}${e}`;try{localStorage.setItem(t,JSON.stringify(this.customPositions)),_.debug("[FlowNode] Saved layout for "+e)}catch{}}toggleExpand(e,t){const i=t.target;if(i.closest(".clickable")||i.closest(".indicator")||i.closest(".forecast-badge")||i.closest(".node-value")||i.closest(".node-subvalue")||i.closest(".gc-plan-btn"))return;const r=new Set(this.expandedNodes);r.has(e)?r.delete(e):r.add(e),this.expandedNodes=r}nodeClass(e,t=""){const i=this.expandedNodes.has(e)?" expanded":"";return`node node-${e}${i}${t?" "+t:""}`}edgeGauge(e){const t=Math.max(0,Math.min(100,e.pct)),i=Math.max(1.4,Math.min(3.6,e.width??2)),r=e.full?0:100-t,n=e.stops.map(([s,l])=>G`<stop offset="${s}" stop-color="${l}"></stop>`),a=e.pulseDur?`--pulse-dur:${e.pulseDur}s`:"";return G`
       <svg class="edge-gauge ${e.pulse?"pulse":""}" viewBox="0 0 100 100"
         preserveAspectRatio="none" style=${a}>
         <defs>
           <linearGradient id=${e.id} x1="0" y1="1" x2="0" y2="0">${n}</linearGradient>
         </defs>
-        <rect class="edge-track" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"
-          vector-effect="non-scaling-stroke"></rect>
+        <rect class="edge-track" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"></rect>
         <rect class="edge-fill" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"
-          vector-effect="non-scaling-stroke" stroke=${`url(#${e.id})`}
-          stroke-width=${i} pathLength="100" stroke-dasharray="100"
-          stroke-dashoffset=${r}></rect>
+          stroke=${`url(#${e.id})`} stroke-width=${i} pathLength="100"
+          stroke-dasharray="100" stroke-dashoffset=${r}></rect>
       </svg>`}get hasCustomLayout(){return gt.some(e=>{const t=this.customPositions[e];return(t==null?void 0:t.top)!=null&&(t==null?void 0:t.left)!=null})}applyCustomPositions(){var t;if(this.editMode||!this.hasCustomLayout)return;const e=(t=this.shadowRoot)==null?void 0:t.querySelector(".flow-grid");if(e)for(const i of gt){const r=e.querySelector(`.node-${i}`);if(!r)continue;const n=this.customPositions[i]??ed[i];r.style.top=n.top,r.style.left=n.left}}resetLayout(){const e=Kt(window.innerWidth),t=`${on}${e}`;localStorage.removeItem(t),this.customPositions={},this.clearInlinePositions(),this.editMode&&this.requestUpdate(),_.debug("[FlowNode] Reset layout for "+e)}initDragListeners(){var t;const e=(t=this.shadowRoot)==null?void 0:t.querySelector(".flow-grid");if(e){for(const i of gt){const r=e.querySelector(`.node-${i}`);r&&(r.addEventListener("mousedown",this.handleDragStart),r.addEventListener("touchstart",this.handleTouchStart,{passive:!1}))}document.addEventListener("mousemove",this.handleDragMove),document.addEventListener("mouseup",this.handleDragEnd),document.addEventListener("touchmove",this.handleTouchMove,{passive:!1}),document.addEventListener("touchend",this.handleTouchEnd)}}removeDragListeners(){document.removeEventListener("mousemove",this.handleDragMove),document.removeEventListener("mouseup",this.handleDragEnd),document.removeEventListener("touchmove",this.handleTouchMove),document.removeEventListener("touchend",this.handleTouchEnd)}findNodeId(e){for(const i of gt)if(e.classList.contains(`node-${i}`))return i;const t=e.closest('[class*="node-"]');if(!t)return null;for(const i of gt)if(t.classList.contains(`node-${i}`))return i;return null}updateDragPosition(e,t){var y;if(!this.draggedNodeId)return;const i=(y=this.shadowRoot)==null?void 0:y.querySelector(".flow-grid");if(!i)return;const r=i.querySelector(`.node-${this.draggedNodeId}`);if(!r)return;const n=i.getBoundingClientRect(),a=r.getBoundingClientRect(),s=e-this.dragStartX,l=t-this.dragStartY,d=this.dragStartLeft+s,u=this.dragStartTop+l,p=n.left,h=n.right-a.width,m=n.top,f=n.bottom-a.height,b=Math.max(p,Math.min(h,d)),v=Math.max(m,Math.min(f,u)),$=(b-n.left)/n.width*100,w=(v-n.top)/n.height*100;r.style.left=`${$}%`,r.style.top=`${w}%`,this.customPositions[this.draggedNodeId]={top:`${w}%`,left:`${$}%`},this.dispatchEvent(new CustomEvent("layout-changed",{bubbles:!0,composed:!0}))}renderSolar(){const e=this.data,t=e.solarPercent,i=t<2,r=i?"linear-gradient(135deg, rgba(57,73,171,0.25) 0%, rgba(26,35,126,0.18) 100%)":vi.solar,n=i?"rgba(121,134,203,0.5)":yi.solar,a=e.solarToday/1e3,s=Math.max(e.solarForecastToday,a),l=Math.max(0,s-a),d=s>0?Math.min(100,a/s*100):0,u=e.solarPower/1e3,p=i?"#5c6bc0":t<20?"#ff7043":t<50?"#ffa726":"#ffd54f";return c`
       <div class="${this.nodeClass("solar",i?"night":"")}" style="--node-gradient: ${r}; --node-border: ${n};"
         @click=${h=>this.toggleExpand("solar",h)}>
-        ${this.edgeGauge({id:"gauge-solar",pct:i?0:d,stops:[[0,p],[1,p]],width:2.5+Math.min(4,u),pulse:!i&&e.solarPower>30,pulseDur:Math.max(.9,2.2-u*.35)})}
+        ${this.edgeGauge({id:"gauge-solar",pct:i?0:d,stops:[[0,p],[1,p]],width:1.6+Math.min(2,u),pulse:!i&&e.solarPower>30,pulseDur:Math.max(.9,2.2-u*.35)})}
         <div class="node-tint" style="background: radial-gradient(120% 70% at 50% 0, ${i?"rgba(57,73,171,0.18)":p+"22"}, transparent 70%)"></div>
 
         <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px;z-index:3" @click=${H("solar_forecast")}
@@ -794,11 +792,14 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
         <div class="node-header node-header--split" style="margin-top:16px">
           <span class="node-label">☀️ Solár</span>
           <span class="node-state" style="color:${i?"#9fa8da":p}">
-            ${i?"🌙 Noc":`${Ft(e.solarPower)} · ${Math.round(t)} %`}
+            ${i?"🌙 Noc":`${Math.round(t)} % špičky`}
           </span>
         </div>
-        <div class="node-value" @click=${H("dc_in_fv_ad")}>
-          ${a.toFixed(1)} <span class="nv-sub">/ ${s.toFixed(1)} kWh</span>
+        <div class="node-value" @click=${H("actual_fv_total")}>
+          ${Ft(e.solarPower)}
+        </div>
+        <div class="node-subvalue" @click=${H("dc_in_fv_ad")}>
+          Dnes ${a.toFixed(1)} <span class="nv-sub">/ ${s.toFixed(1)} kWh</span>
         </div>
         <div class="node-subvalue">
           ${l>.05?c`<span class="solar-rem ${l>1?"rem-on":"rem-off"}">⚡ ještě ~${l.toFixed(1)} kWh</span>`:c`<span class="solar-rem rem-off">✓ hotovo dnes</span>`}
@@ -842,7 +843,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     `}openGridChargingDialog(){this.dispatchEvent(new CustomEvent("oig-grid-charging-open",{bubbles:!0,composed:!0,detail:{data:this.data.gridChargingPlan}}))}getBalancingIndicator(){const e=this.data,t=e.balancingState;return t!=="charging"&&t!=="holding"&&t!=="completed"?{show:!1,text:"",icon:"",cls:""}:t==="charging"?{show:!0,text:`Nabíjení${e.balancingTimeRemaining?` (${e.balancingTimeRemaining})`:""}`,icon:"⚡",cls:"charging"}:t==="holding"?{show:!0,text:`Držení${e.balancingTimeRemaining?` (${e.balancingTimeRemaining})`:""}`,icon:"⏸️",cls:"holding"}:{show:!0,text:"Dokončeno",icon:"✅",cls:"completed"}}renderBattery(){const e=this.data,t=this.getBalancingIndicator(),i=e.batteryTemp>25?"🌡️":e.batteryTemp<15?"🧊":"🌡️",r=e.batteryTemp>25?"temp-hot":e.batteryTemp<15?"temp-cold":"",n=Math.abs(e.batteryPower)/1e3,a=Math.abs(e.batteryPower)>10,s=e.batteryPower>10,l=e.batteryPower<-10,d=s?"Nabíjí":l?"Vybíjí":"Klid",u=s?"st-charge":l?"st-discharge":"st-idle",p=`${s?"+":l?"−":""}${Ft(Math.abs(e.batteryPower))}`,h=s&&e.timeToFull?` · do plna ${e.timeToFull}`:l&&e.timeToEmpty?` · do vybití ${e.timeToEmpty}`:"",m=e.batterySoC>=66?"rgba(67,160,71,0.13)":e.batterySoC>=33?"rgba(253,216,53,0.10)":"rgba(229,57,53,0.12)";return c`
       <div class="${this.nodeClass("battery")}" style="--node-gradient: ${vi.battery}; --node-border: ${yi.battery};"
         @click=${f=>this.toggleExpand("battery",f)}>
-        ${this.edgeGauge({id:"gauge-battery",pct:e.batterySoC,stops:[[0,"#e53935"],[.45,"#fb8c00"],[.7,"#fdd835"],[1,"#43a047"]],width:2.5+Math.min(4,n),pulse:a,pulseDur:Math.max(.9,2.2-n*.35)})}
+        ${this.edgeGauge({id:"gauge-battery",pct:e.batterySoC,stops:[[0,"#e53935"],[.45,"#fb8c00"],[.7,"#fdd835"],[1,"#43a047"]],width:1.6+Math.min(2,n),pulse:a,pulseDur:Math.max(.9,2.2-n*.35)})}
 
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${m}, transparent 72%)"></div>
 
@@ -925,7 +926,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       <div class="${this.nodeClass("inverter",a.inverterModeChanging?"mode-changing":"")}" style="--node-gradient: ${vi.inverter}; --node-border: ${yi.inverter};"
         @click=${b=>this.toggleExpand("inverter",b)}
         title="Teplota ${e.inverterTemp.toFixed(1)} °C · ${i?"Bypass aktivní":"Bypass vyp"}">
-        ${this.edgeGauge({id:"gauge-inverter",pct:i?100:m,stops:[[0,f],[1,f]],width:i?5:3,pulse:i,pulseDur:1.1})}
+        ${this.edgeGauge({id:"gauge-inverter",pct:i?100:m,stops:[[0,f],[1,f]],width:i?3.4:2,pulse:i,pulseDur:1.1})}
         <div class="node-tint" style="background: radial-gradient(120% 90% at 50% 0, ${p}22, transparent 72%)"></div>
 
         <div class="node-header" style="justify-content:center">
@@ -987,11 +988,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
           `:O}
         </div>
       </div>
-    `}renderGrid(){const e=this.data,t=e.gridPower>10,i=e.gridPower<-10,r=Math.abs(e.gridPower),n=r/1e3,a=t?"↓ Odběr ze sítě":i?"↑ Přetok do sítě":"◉ Žádný tok",s=25*230*3,l=e.inverterGridLimit>0?e.inverterGridLimit:5e3,d=t?r/s*100:i?r/l*100:0,u=t?`${Math.round(d)} % jističe`:i?`${Math.round(d)} % limitu`:"",p=t?e.spotPrice<=0?"#43a047":e.spotPrice<3?"#ffa726":"#ef5350":i?e.exportPrice>=3?"#43a047":e.exportPrice>=1.5?"#ffa726":"#ef5350":"rgba(255,255,255,0.35)",h=t?`${e.spotPrice.toFixed(2)} Kč`:i?`+${e.exportPrice.toFixed(2)} Kč`:"",m=(f,b)=>b>10?Math.round(Math.abs(f)/b):0;return c`
+    `}renderGrid(){const e=this.data,t=e.gridPower>10,i=e.gridPower<-10,r=Math.abs(e.gridPower),n=r/1e3,a=t?"↓ Odběr ze sítě":i?"↑ Přetok do sítě":"◉ Žádný tok",s=25*230*3,l=e.inverterGridLimit>0?e.inverterGridLimit:5e3,d=t?r/s*100:i?r/l*100:0,u=t?e.spotPrice<=0?"#43a047":e.spotPrice<3?"#ffa726":"#ef5350":i?e.exportPrice>=3?"#43a047":e.exportPrice>=1.5?"#ffa726":"#ef5350":"rgba(255,255,255,0.35)",p=t?`${e.spotPrice.toFixed(2)} Kč`:i?`+${e.exportPrice.toFixed(2)} Kč`:"",h=(m,f)=>f>10?Math.round(Math.abs(m)/f):0;return c`
       <div class="${this.nodeClass("grid")}" style="--node-gradient: ${vi.grid}; --node-border: ${yi.grid};"
-        @click=${f=>this.toggleExpand("grid",f)}>
-        ${this.edgeGauge({id:"gauge-grid",pct:d,stops:[[0,p],[1,p]],width:2.5+Math.min(4,n),pulse:t||i,pulseDur:Math.max(.9,2.2-n*.35)})}
-        <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 50%, ${p}22, transparent 72%)"></div>
+        @click=${m=>this.toggleExpand("grid",m)}>
+        ${this.edgeGauge({id:"gauge-grid",pct:d,stops:[[0,u],[1,u]],width:1.6+Math.min(2,n),pulse:t||i,pulseDur:Math.max(.9,2.2-n*.35)})}
+        <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 50%, ${u}22, transparent 72%)"></div>
 
         <button class="indicator" style="position:absolute;top:4px;left:6px;font-size:9px;z-index:3" @click=${H("current_tariff")}>
           ${$l(e.currentTariff)}
@@ -1002,10 +1003,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
 
         <div class="node-header node-header--split" style="margin-top:16px">
           <span class="node-label">🔌 Síť</span>
-          <span class="node-state" style="color:${p}">${h}</span>
+          <span class="node-state" style="color:${u}">${p}</span>
         </div>
         <div class="node-value" @click=${H("actual_aci_wtotal")}>${Ft(r)}</div>
-        <div class="node-subvalue" style="color:${p};font-weight:600">${a}${u?" · "+u:""}</div>
+        <div class="node-subvalue" style="color:${u};font-weight:600">${a}</div>
 
         <!-- Ceny — vždy viditelné jako rychlý přehled -->
         <div class="prices-row" style="margin-top:4px">
@@ -1028,17 +1029,17 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
         <div class="phases-grid" style="margin-top:6px">
           <div class="phase-cell">
             <span class="phase-label">L1</span>
-            <button class="phase-val" @click=${H("actual_aci_wr")}>${m(e.gridL1P,e.gridL1V)} A</button>
+            <button class="phase-val" @click=${H("actual_aci_wr")}>${h(e.gridL1P,e.gridL1V)} A</button>
             <button class="phase-val" style="font-size:10px;color:${U(o.textSecondary)}" @click=${H("actual_aci_wr")}>${Math.round(e.gridL1P)} W</button>
           </div>
           <div class="phase-cell">
             <span class="phase-label">L2</span>
-            <button class="phase-val" @click=${H("actual_aci_ws")}>${m(e.gridL2P,e.gridL2V)} A</button>
+            <button class="phase-val" @click=${H("actual_aci_ws")}>${h(e.gridL2P,e.gridL2V)} A</button>
             <button class="phase-val" style="font-size:10px;color:${U(o.textSecondary)}" @click=${H("actual_aci_ws")}>${Math.round(e.gridL2P)} W</button>
           </div>
           <div class="phase-cell">
             <span class="phase-label">L3</span>
-            <button class="phase-val" @click=${H("actual_aci_wt")}>${m(e.gridL3P,e.gridL3V)} A</button>
+            <button class="phase-val" @click=${H("actual_aci_wt")}>${h(e.gridL3P,e.gridL3V)} A</button>
             <button class="phase-val" style="font-size:10px;color:${U(o.textSecondary)}" @click=${H("actual_aci_wt")}>${Math.round(e.gridL3P)} W</button>
           </div>
         </div>
@@ -1066,7 +1067,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     `}renderHouse(){const e=this.data,t=e.houseTodayWh/1e3,i=e.nonbackupTodayWh/1e3,r=t+i,n=e.housePower+e.nonbackupPower,a=t+e.zalohaPlannedRemainingKwh,s=Math.max(0,-e.batteryPower),l=Math.min(e.solarPower,n),d=Math.min(s,Math.max(0,n-l)),u=Math.max(0,n-l-d),p=n>5?(l+d)/n*100:e.solarPower>5?100:0,h=p>=66?"#43a047":p>=33?"#fdd835":"#e53935",m=y=>n>0?Math.round(y/n*100):0,f=`Soběstačnost ${Math.round(p)} % · FVE ${m(l)} % · Baterie ${m(d)} % · Síť ${m(u)} %`,b=3300,v=4e3,$=[{l:"L1",w:e.houseL1,e:"ac_out_aco_pr"},{l:"L2",w:e.houseL2,e:"ac_out_aco_ps"},{l:"L3",w:e.houseL3,e:"ac_out_aco_pt"}],w=$.find(y=>y.w>b);return c`
       <div class="${this.nodeClass("house")}" style="--node-gradient: ${vi.house}; --node-border: ${yi.house};"
         @click=${y=>this.toggleExpand("house",y)} title=${f}>
-        ${this.edgeGauge({id:"gauge-house",pct:p,stops:[[0,"#e53935"],[.5,"#fdd835"],[1,"#43a047"]],width:2.5+Math.min(4,n/1e3),pulse:n>50,pulseDur:Math.max(.9,2.2-n/1e3*.35)})}
+        ${this.edgeGauge({id:"gauge-house",pct:p,stops:[[0,"#e53935"],[.5,"#fdd835"],[1,"#43a047"]],width:1.6+Math.min(2,n/1e3),pulse:n>50,pulseDur:Math.max(.9,2.2-n/1e3*.35)})}
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${h}22, transparent 72%)"></div>
 
         <button class="indicator house-corner" style="position:absolute;top:4px;left:6px;z-index:3"
@@ -1169,7 +1170,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       pointer-events: none;
       border-radius: 12px;
     }
-    .edge-track { fill: none; stroke: rgba(255,255,255,0.07); stroke-width: 2; }
+    .edge-track { fill: none; stroke: rgba(255,255,255,0.07); stroke-width: 1.4; }
     .edge-fill {
       fill: none;
       stroke-linecap: round;
