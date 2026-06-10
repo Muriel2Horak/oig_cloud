@@ -7,7 +7,14 @@ import type {
   BatteryBalancingData,
   CostComparisonData,
 } from './types';
-import { formatPercent, formatEnergy, formatCurrency } from '@/utils/format';
+import { formatPercent, formatCurrency } from '@/utils/format';
+
+/** Backend analytics attributes are in kWh (…_kwh) — format directly, do NOT
+ *  feed them to formatEnergy() which expects Wh (caused a 1000× display bug). */
+function formatKwh(v: number | null | undefined): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return '-- kWh';
+  return `${v.toFixed(Math.abs(v) >= 10 ? 1 : 2)} kWh`;
+}
 
 const u = unsafeCSS;
 
@@ -163,7 +170,10 @@ export class OigBatteryEfficiency extends LitElement {
 
     return html`
       <div class="efficiency-value">${formatPercent(this.data.efficiency, 1)}</div>
-      <div class="period-label">${periodLabel}</div>
+      <div class="period-label"
+        title="Coulombická (DC) účinnost článků baterie. Celková AC účinnost vč. střídače, se kterou počítá ekonomika plánovače, je ~84 %.">
+        ${periodLabel} · DC (články)
+      </div>
 
       ${this.data.trend !== 0 ? html`
         <div class="comparison ${trendClass}">
@@ -173,15 +183,15 @@ export class OigBatteryEfficiency extends LitElement {
 
       <div class="stats-grid">
         <div class="stat">
-          <div class="stat-value">${formatEnergy(this.data.charged)}</div>
+          <div class="stat-value">${formatKwh(this.data.charged)}</div>
           <div class="stat-label">Nabito</div>
         </div>
         <div class="stat">
-          <div class="stat-value">${formatEnergy(this.data.discharged)}</div>
+          <div class="stat-value">${formatKwh(this.data.discharged)}</div>
           <div class="stat-label">Vybito</div>
         </div>
         <div class="stat">
-          <div class="stat-value">${formatEnergy(this.data.losses)}</div>
+          <div class="stat-value">${formatKwh(this.data.losses)}</div>
           <div class="stat-label">Ztráty</div>
           ${this.data.lossesPct ? html`
             <div class="losses-pct">${formatPercent(this.data.lossesPct, 1)}</div>
@@ -306,15 +316,15 @@ export class OigBatteryHealth extends LitElement {
         </div>
         <div class="metric">
           <span class="metric-label">Kapacita (P80)</span>
-          <span class="metric-value">${formatEnergy(this.data.capacity)}</span>
+          <span class="metric-value">${formatKwh(this.data.capacity)}</span>
         </div>
         <div class="metric">
           <span class="metric-label">Min. kapacita (P20)</span>
-          <span class="metric-value">${formatEnergy(this.data.minCapacity)}</span>
+          <span class="metric-value">${formatKwh(this.data.minCapacity)}</span>
         </div>
         <div class="metric">
           <span class="metric-label">Nominální kapacita</span>
-          <span class="metric-value">${formatEnergy(this.data.nominalCapacity)}</span>
+          <span class="metric-value">${formatKwh(this.data.nominalCapacity)}</span>
         </div>
         <div class="metric">
           <span class="metric-label">Počet měření</span>
@@ -433,23 +443,54 @@ export class OigBatteryBalancing extends LitElement {
     return 'ok';
   }
 
+  /** Czech status label; backend reports raw states like "unknown"/"idle". */
+  private statusLabel(s: string): string {
+    const map: Record<string, string> = {
+      unknown: 'Žádné', idle: 'Nečinné', charging: 'Nabíjení',
+      holding: 'Držení 100 %', completed: 'Dokončeno',
+    };
+    return map[s?.toLowerCase?.()] ?? s;
+  }
+
   render() {
     if (!this.data) return html`<div>Načítání...</div>`;
+
+    const hasAny = (this.data.lastBalancing && this.data.lastBalancing !== '—')
+      || this.data.nextScheduled != null
+      || this.data.progressPercent != null;
+    const noInfo = !hasAny
+      && (this.data.status ?? 'unknown').toLowerCase() === 'unknown';
+
+    if (noInfo) {
+      // No balancing recorded yet — say so instead of "unknown · — · 0.00".
+      return html`
+        <oig-analytics-block title="Balancování" icon="⚖️">
+          <div class="metric">
+            <span class="metric-label">Stav</span>
+            <span class="metric-value">Žádné balancování zaznamenáno</span>
+          </div>
+        </oig-analytics-block>
+      `;
+    }
 
     return html`
       <oig-analytics-block title="Balancování" icon="⚖️">
         <div class="metric">
           <span class="metric-label">Stav</span>
-          <span class="metric-value">${this.data.status}</span>
+          <span class="metric-value">${this.statusLabel(this.data.status)}</span>
         </div>
-        <div class="metric">
-          <span class="metric-label">Poslední</span>
-          <span class="metric-value">${this.data.lastBalancing}</span>
-        </div>
-        <div class="metric">
-          <span class="metric-label">Náklady</span>
-          <span class="metric-value">${formatCurrency(this.data.cost)}</span>
-        </div>
+        ${this.data.lastBalancing && this.data.lastBalancing !== '—' ? html`
+          <div class="metric">
+            <span class="metric-label">Poslední</span>
+            <span class="metric-value">${this.data.lastBalancing}</span>
+          </div>
+        ` : null}
+        ${this.data.cost > 0 ? html`
+          <div class="metric">
+            <span class="metric-label">Náklady</span>
+            <span class="metric-value">${formatCurrency(this.data.cost)}</span>
+          </div>
+        ` : null}
         ${this.data.nextScheduled ? html`
           <div class="metric">
             <span class="metric-label">Plánováno</span>
@@ -547,7 +588,7 @@ export class OigCostComparison extends LitElement {
           <span class="cost-value">${formatCurrency(this.data.actualSpent)}</span>
         </div>
         <div class="cost-row">
-          <span class="cost-label">Plán celkem</span>
+          <span class="cost-label">Odhad dnes celkem</span>
           <span class="cost-value">${formatCurrency(this.data.planTotalCost)}</span>
         </div>
         <div class="cost-row">
