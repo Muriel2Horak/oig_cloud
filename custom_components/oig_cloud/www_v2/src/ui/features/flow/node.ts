@@ -81,6 +81,8 @@ export class OigFlowNode extends LitElement {
 
   // Expand/collapse state for mobile/tablet
   @state() private expandedNodes = new Set<NodeId>();
+  /** Tap-friendly gauge detail (mobile can't hover): which node's popover is open. */
+  @state() private gaugeDetailOpen: NodeId | null = null;
 
   // DnD state
   @state() private customPositions: SavedLayout = {};
@@ -130,6 +132,11 @@ export class OigFlowNode extends LitElement {
       min-width: 170px;
       max-width: 230px;
       text-align: center;
+    }
+
+    /* Desktop: keep the star layout visually balanced (similar node heights). */
+    @media (min-width: 769px) {
+      .node { min-height: 206px; }
     }
 
     /* Edge-gauge: perimeter progress hugging the node border. */
@@ -194,6 +201,87 @@ export class OigFlowNode extends LitElement {
     .pb-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: rgba(255,255,255,0.55); }
     .pb-val { font-size: 10px; min-width: 42px; text-align: right; font-weight: 600; background: none; border: none; color: inherit; cursor: pointer; }
     .pb-val.over { color: #ff9d93; }
+
+    /* Inverter — clean rows (approved mockup C) */
+    .inv-chip {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      border-radius: 6px;
+      padding: 2px 9px;
+      margin: 4px auto 7px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .inv-chip.planner-auto { background: rgba(76,175,80,0.16); border-color: rgba(76,175,80,0.35); color: #bdf0c4; }
+    .inv-chip.planner-off { background: rgba(244,67,54,0.14); border-color: rgba(244,67,54,0.3); color: #ff9d93; }
+    .inv-rows { text-align: left; }
+    .inv-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      padding: 4px 2px;
+      border-bottom: 1px dashed rgba(255,255,255,0.1);
+    }
+    .inv-row:last-child { border-bottom: none; }
+    .inv-lab { opacity: 0.62; white-space: nowrap; }
+    .inv-val { font-weight: 600; background: none; border: none; color: inherit; cursor: pointer; font-size: 11px; text-align: right; padding: 0; }
+    .inv-pill { font-size: 10px; font-weight: 700; border: none; border-radius: 5px; padding: 1px 8px; cursor: pointer; }
+    .inv-pill.pill-green { background: rgba(76,175,80,0.2); color: #bdf0c4; }
+    .inv-pill.pill-red { background: rgba(244,67,54,0.22); color: #ff9d93; }
+    .inv-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      width: 100%;
+      font-size: 10px;
+      background: rgba(120,160,255,0.12);
+      border: 1px solid rgba(120,160,255,0.25);
+      color: inherit;
+      border-radius: 7px;
+      padding: 4px 8px;
+      margin-top: 7px;
+      cursor: pointer;
+    }
+    .inv-note.warn { background: rgba(244,67,54,0.14); border-color: rgba(244,67,54,0.35); color: #ffb3ab; }
+
+    /* Gauge detail pill + popover (tap-friendly; sits on the bottom edge) */
+    .ss-pill {
+      position: absolute;
+      bottom: -9px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 4;
+      font-size: 10px;
+      font-weight: 800;
+      background: #131f33;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 9px;
+      padding: 2px 9px;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .ss-pop {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 6;
+      width: 180px;
+      background: #0e1828;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 10px;
+      padding: 9px 11px;
+      box-shadow: 0 10px 26px rgba(0,0,0,0.55);
+      text-align: left;
+    }
+    .ss-pop-h { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+    .ss-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 5px; background: rgba(255,255,255,0.06); }
+    .ss-bar i { display: block; }
+    .ss-leg { display: flex; justify-content: space-between; font-size: 9px; opacity: 0.85; }
 
     .node:hover {
       transform: translateY(-2px);
@@ -1041,6 +1129,36 @@ export class OigFlowNode extends LitElement {
     if (!this.editMode && this.hasCustomLayout) {
       this.updateComplete.then(() => this.applyCustomPositions());
     }
+    this.measureNodes();
+  }
+
+  /**
+   * Measure node boxes so each edge-gauge gets a real-pixel viewBox.
+   * With a fixed 0–100 viewBox + preserveAspectRatio=none, the stroke scales
+   * anisotropically (horizontal edges thicker than vertical on tall nodes);
+   * a matching viewBox keeps the stroke uniform. Guarded so it only sets
+   * state when a dimension actually changed (no update loops).
+   */
+  @state() private nodeDims: Record<string, { w: number; h: number }> = {};
+
+  private measureNodes(): void {
+    const grid = this.shadowRoot?.querySelector('.flow-grid');
+    if (!grid) return;
+    let changed = false;
+    const dims = { ...this.nodeDims };
+    for (const id of NODE_IDS) {
+      const el = grid.querySelector(`.node-${id}`) as HTMLElement | null;
+      if (!el) continue;
+      const w = Math.round(el.offsetWidth);
+      const h = Math.round(el.offsetHeight);
+      if (w < 10 || h < 10) continue;
+      const cur = dims[id];
+      if (!cur || Math.abs(cur.w - w) > 1 || Math.abs(cur.h - h) > 1) {
+        dims[id] = { w, h };
+        changed = true;
+      }
+    }
+    if (changed) this.nodeDims = dims;
   }
 
   private loadSavedLayout(): void {
@@ -1124,6 +1242,7 @@ export class OigFlowNode extends LitElement {
    */
   private edgeGauge(opts: {
     id: string;
+    nodeId?: string;
     pct: number;
     stops: Array<[number, string]>;
     width?: number;
@@ -1132,22 +1251,29 @@ export class OigFlowNode extends LitElement {
     full?: boolean;
   }) {
     const pct = Math.max(0, Math.min(100, opts.pct));
-    // Width in viewBox units (NOT non-scaling-stroke: that breaks pathLength dash
-    // normalisation in Chromium → the fill no longer matches the %).
-    const w = Math.max(1.4, Math.min(3.6, opts.width ?? 2));
+    // Stroke width in px (no non-scaling-stroke: breaks pathLength dashes in
+    // Chromium; instead the viewBox matches the measured node box so the
+    // stroke stays uniform on all four edges).
+    const w = Math.max(1.5, Math.min(6, opts.width ?? 2.5));
+    const dim = opts.nodeId ? this.nodeDims[opts.nodeId] : undefined;
+    const W = dim?.w ?? 180;
+    const H = dim?.h ?? 180;
+    const inset = 1.5;
     const dash = opts.full ? 0 : 100 - pct;
     const stops = opts.stops.map(
       ([o, c]) => svg`<stop offset="${o}" stop-color="${c}"></stop>`,
     );
     const style = opts.pulseDur ? `--pulse-dur:${opts.pulseDur}s` : '';
     return svg`
-      <svg class="edge-gauge ${opts.pulse ? 'pulse' : ''}" viewBox="0 0 100 100"
+      <svg class="edge-gauge ${opts.pulse ? 'pulse' : ''}" viewBox="0 0 ${W} ${H}"
         preserveAspectRatio="none" style=${style}>
         <defs>
           <linearGradient id=${opts.id} x1="0" y1="1" x2="0" y2="0">${stops}</linearGradient>
         </defs>
-        <rect class="edge-track" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"></rect>
-        <rect class="edge-fill" x="1.3" y="1.3" width="97.4" height="97.4" rx="6"
+        <rect class="edge-track" x=${inset} y=${inset}
+          width=${W - inset * 2} height=${H - inset * 2} rx="10.5"></rect>
+        <rect class="edge-fill" x=${inset} y=${inset}
+          width=${W - inset * 2} height=${H - inset * 2} rx="10.5"
           stroke=${`url(#${opts.id})`} stroke-width=${w} pathLength="100"
           stroke-dasharray="100" stroke-dashoffset=${dash}></rect>
       </svg>`;
@@ -1377,9 +1503,10 @@ export class OigFlowNode extends LitElement {
         @click=${(e: Event) => this.toggleExpand('solar', e)}>
         ${this.edgeGauge({
           id: 'gauge-solar',
+          nodeId: 'solar',
           pct: isNight ? 0 : progressPct,
           stops: [[0, intColor], [1, intColor]],
-          width: 1.6 + Math.min(2, powerKw),
+          width: 2 + Math.min(3, powerKw),
           pulse: !isNight && d.solarPower > 30,
           pulseDur: Math.max(0.9, 2.2 - powerKw * 0.35),
         })}
@@ -1490,8 +1617,11 @@ export class OigFlowNode extends LitElement {
     const stateText = charging ? 'Nabíjí' : discharging ? 'Vybíjí' : 'Klid';
     const stateCls = charging ? 'st-charge' : discharging ? 'st-discharge' : 'st-idle';
     const powerStr = `${charging ? '+' : discharging ? '−' : ''}${formatPower(Math.abs(d.batteryPower))}`;
-    const timeStr = charging && d.timeToFull ? ` · do plna ${d.timeToFull}`
-      : discharging && d.timeToEmpty ? ` · do vybití ${d.timeToEmpty}` : '';
+    // Only show the time when it's an actual duration (sensor may report
+    // "N/A" / "Nabito" / "Vybíjí se" etc.).
+    const validTime = (t: string | null | undefined) => !!t && /\d/.test(t);
+    const timeStr = charging && validTime(d.timeToFull) ? ` · do plna ${d.timeToFull}`
+      : discharging && validTime(d.timeToEmpty) ? ` · do vybití ${d.timeToEmpty}` : '';
     const socTint = d.batterySoC >= 66 ? 'rgba(67,160,71,0.13)'
       : d.batterySoC >= 33 ? 'rgba(253,216,53,0.10)' : 'rgba(229,57,53,0.12)';
 
@@ -1500,9 +1630,10 @@ export class OigFlowNode extends LitElement {
         @click=${(e: Event) => this.toggleExpand('battery', e)}>
         ${this.edgeGauge({
           id: 'gauge-battery',
+          nodeId: 'battery',
           pct: d.batterySoC,
           stops: [[0, '#e53935'], [0.45, '#fb8c00'], [0.7, '#fdd835'], [1, '#43a047']],
-          width: 1.6 + Math.min(2, batPowerKw),
+          width: 2 + Math.min(3, batPowerKw),
           pulse: batActive,
           pulseDur: Math.max(0.9, 2.2 - batPowerKw * 0.35),
         })}
@@ -1636,9 +1767,10 @@ export class OigFlowNode extends LitElement {
         title="Teplota ${d.inverterTemp.toFixed(1)} °C · ${bypassActive ? 'Bypass aktivní' : 'Bypass vyp'}">
         ${this.edgeGauge({
           id: 'gauge-inverter',
+          nodeId: 'inverter',
           pct: bypassActive ? 100 : tempPct,
           stops: [[0, edgeColor], [1, edgeColor]],
-          width: bypassActive ? 3.4 : 2,
+          width: bypassActive ? 4 : 2.5,
           pulse: bypassActive,
           pulseDur: 1.1,
         })}
@@ -1654,54 +1786,58 @@ export class OigFlowNode extends LitElement {
         ${this.getInverterModeDesc() ? html`<div class="node-subvalue">${this.getInverterModeDesc()}</div>` : nothing}
         ${pending.inverterModeText ? html`<div class="pending-text">${pending.inverterModeText}</div>` : nothing}
 
-        <div class="planner-badge ${plannerCls}">${plannerText}</div>
-        <div class="shield-badge ${this.shieldStatus === 'running' ? 'shield-running' : 'shield-idle'}">
-          🛡️ ${this.shieldStatus === 'running' ? 'Zpracovávám' : 'Nečinný'}${this.shieldQueueCount > 0 ? html` <span class="shield-queue">(${this.shieldQueueCount})</span>` : nothing}
+        <div class="inv-chip ${plannerCls}">🤖 ${plannerText}</div>
+
+        <div class="inv-rows">
+          <div class="inv-row">
+            <span class="inv-lab">${tempIcon} Teplota</span>
+            <button class="inv-pill" style="background:${tempColor}26;color:${tempColor}"
+              @click=${openEntity('box_temp')}>${d.inverterTemp.toFixed(1)} °C</button>
+          </div>
+          <div class="inv-row">
+            <span class="inv-lab">🔁 Bypass</span>
+            <button class="inv-pill ${bypassActive ? 'pill-red' : 'pill-green'}"
+              @click=${openEntity('bypass_status')}>${bypassActive ? 'ZAP' : 'Vyp'}</button>
+          </div>
+          <div class="inv-row">
+            <span class="inv-lab">${gridExport.icon} Dodávka</span>
+            <button class="inv-val ${gridDelivery.isUnavailable ? 'current-state-unknown' : ''}"
+              @click=${openEntity('invertor_prms_to_grid')}>${gridDelivery.currentModeText}</button>
+          </div>
+          ${gridDelivery.limitLabel !== null ? html`
+            <div class="inv-row">
+              <span class="inv-lab">🌊 ${gridDelivery.limitLabel}</span>
+              <button class="inv-val ${gridDelivery.showLimitAsActive ? 'limit-active' : ''}"
+                @click=${openEntity('invertor_prm1_p_max_feed_grid')}>${gridDelivery.limitValue}</button>
+            </div>
+          ` : nothing}
+          <div class="inv-row">
+            <span class="inv-lab">🛡️ Shield</span>
+            <span class="inv-val">${this.shieldStatus === 'running' ? 'Zpracovávám' : 'Nečinný'}${this.shieldQueueCount > 0 ? ` (${this.shieldQueueCount})` : ''}</span>
+          </div>
         </div>
 
-        <div class="battery-indicators" style="margin-top:6px">
-          <button class="indicator" @click=${openEntity('box_temp')}>
-            ${tempIcon} ${d.inverterTemp.toFixed(1)} °C
-          </button>
-          <button class="indicator ${bypassActive ? 'bypass-warning' : ''}" @click=${openEntity('bypass_status')}>
-            <span id="inverter-bypass-icon">${bypassActive ? '🔴' : '🟢'}</span> Bypass: ${bypassActive ? 'ON' : 'OFF'}
-          </button>
-        </div>
+        <button class="inv-note ${d.notificationsError > 0 ? 'warn' : ''}"
+          @click=${openEntity('notification_count_unread')}>
+          🔔 ${d.notificationsError > 0
+            ? `${d.notificationsError} chyb · ${d.notificationsUnread} nepřečtených`
+            : d.notificationsUnread > 0
+              ? `${d.notificationsUnread} nepřečtených`
+              : 'Bez notifikací'}
+        </button>
 
-        <!-- Přetoky + notifikace — vždy viditelné -->
-        <div class="battery-indicators" style="margin-top:4px">
-          <button class="indicator ${gridDelivery.isUnavailable ? 'current-state-unknown' : ''}" @click=${openEntity('invertor_prms_to_grid')}>
-            ${gridExport.icon} ${gridDelivery.currentModeText}
-          </button>
-          <button class="clickable notif-badge ${d.notificationsError > 0 ? 'has-error' : d.notificationsUnread > 0 ? 'has-unread' : 'indicator'}"
-            @click=${openEntity('notification_count_unread')}>
-            🔔 ${d.notificationsUnread}/${d.notificationsError}
-          </button>
-        </div>
         ${gridDelivery.pendingModeText ? html`
           <div class="pending-overlay">
             <span class="spinner spinner--small"></span>
             ${gridDelivery.pendingModeText}
           </div>
         ` : nothing}
-
-        <div class="detail-section">
-          <div class="detail-header">🌊 Přetoky — limit</div>
-          ${gridDelivery.limitLabel !== null ? html`
-            <div class="detail-row">
-              <span class="detail-label">${gridDelivery.limitLabel}</span>
-              <button class="clickable ${gridDelivery.showLimitAsActive ? 'limit-active' : ''}" @click=${openEntity('invertor_prm1_p_max_feed_grid')}>
-                ${gridDelivery.limitValue}
-              </button>
-            </div>
-          ` : nothing}
-          ${gridDelivery.pendingLimitText ? html`
-            <div class="pending-overlay">
-              <span class="spinner spinner--small"></span>
-              ${gridDelivery.pendingLimitText}
-            </div>
-          ` : nothing}
-        </div>
+        ${gridDelivery.pendingLimitText ? html`
+          <div class="pending-overlay">
+            <span class="spinner spinner--small"></span>
+            ${gridDelivery.pendingLimitText}
+          </div>
+        ` : nothing}
       </div>
     `;
   }
@@ -1735,9 +1871,10 @@ export class OigFlowNode extends LitElement {
         @click=${(e: Event) => this.toggleExpand('grid', e)}>
         ${this.edgeGauge({
           id: 'gauge-grid',
+          nodeId: 'grid',
           pct: limitPct,
           stops: [[0, gColor], [1, gColor]],
-          width: 1.6 + Math.min(2, flowKw),
+          width: 2 + Math.min(3, flowKw),
           pulse: importing || exporting,
           pulseDur: Math.max(0.9, 2.2 - flowKw * 0.35),
         })}
@@ -1856,13 +1993,35 @@ export class OigFlowNode extends LitElement {
         @click=${(e: Event) => this.toggleExpand('house', e)} title=${ssTitle}>
         ${this.edgeGauge({
           id: 'gauge-house',
+          nodeId: 'house',
           pct: selfSuf,
           stops: [[0, '#e53935'], [0.5, '#fdd835'], [1, '#43a047']],
-          width: 1.6 + Math.min(2, totalPower / 1000),
+          width: 2 + Math.min(3, totalPower / 1000),
           pulse: totalPower > 50,
           pulseDur: Math.max(0.9, 2.2 - (totalPower / 1000) * 0.35),
         })}
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${ssColor}22, transparent 72%)"></div>
+
+        <!-- Gauge detail: tap-friendly (hover title is desktop-only) -->
+        <button class="ss-pill" style="color:${ssColor};border-color:${ssColor}55"
+          @click=${(e: Event) => { e.stopPropagation(); this.gaugeDetailOpen = this.gaugeDetailOpen === 'house' ? null : 'house'; }}
+          title=${ssTitle}>
+          🛡 ${Math.round(selfSuf)} %
+        </button>
+        ${this.gaugeDetailOpen === 'house' ? html`
+          <div class="ss-pop" style="border-color:${ssColor}66" @click=${(e: Event) => e.stopPropagation()}>
+            <div class="ss-pop-h"><span>Soběstačnost</span><b style="color:${ssColor}">${Math.round(selfSuf)} %</b></div>
+            <div class="ss-bar">
+              <i style="width:${share(fromSolar)}%;background:#ffca5a"></i>
+              <i style="width:${share(fromBat)}%;background:#4caf50"></i>
+              <i style="width:${share(fromGrid)}%;background:#ef5350"></i>
+            </div>
+            <div class="ss-leg">
+              <span>☀️ FVE ${share(fromSolar)}%</span>
+              <span>🔋 Bat ${share(fromBat)}%</span>
+              <span>🔌 Síť ${share(fromGrid)}%</span>
+            </div>
+          </div>` : nothing}
 
         <button class="indicator house-corner" style="position:absolute;top:4px;left:6px;z-index:3"
           @click=${openEntity('actual_aco_p')} title="Záloha — výkon · dnes">

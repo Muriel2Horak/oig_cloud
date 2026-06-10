@@ -510,7 +510,7 @@ export class OigTimelineDialog extends LitElement {
         : null}
 
       <!-- Adherence bar -->
-      ${s.overallAdherence > 0 ? html`
+      ${d.modeBlocks.length > 1 && s.overallAdherence > 0 ? html`
         <div class="adherence-bar">
           <div class="adherence-header">
             <span>Soulad s plánem</span>
@@ -561,7 +561,7 @@ export class OigTimelineDialog extends LitElement {
 
       <!-- Metrics grid -->
       <div class="metrics-grid">
-        ${this.renderMetricTile('Náklady', s.metrics.cost)}
+        ${this.renderMetricTile('Náklady zálohy (vs nedělat nic)', s.metrics.cost)}
         ${this.renderMetricTile('Solár', s.metrics.solar)}
         ${this.renderMetricTile('Spotřeba', s.metrics.consumption)}
         ${this.renderMetricTile('Síť', s.metrics.grid)}
@@ -762,12 +762,12 @@ export class OigTimelineTile extends LitElement {
       align-items: center;
       justify-content: center;
       gap: 1px;
-      padding: 8px 8px;
+      padding: 5px 8px;
       border-radius: 8px;
       font-size: 10px;
       color: #fff;
       min-width: 56px;
-      min-height: 54px;
+      min-height: 40px;
       position: relative;
       cursor: default;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 1px 3px rgba(0,0,0,0.25);
@@ -1041,7 +1041,7 @@ export class OigTimelineTile extends LitElement {
         : null}
 
       <!-- Adherence bar -->
-      ${s.overallAdherence > 0 ? html`
+      ${d.modeBlocks.length > 1 && s.overallAdherence > 0 ? html`
         <div class="adherence-bar">
           <div class="adherence-header">
             <span>Soulad s plánem</span>
@@ -1092,7 +1092,7 @@ export class OigTimelineTile extends LitElement {
 
       <!-- Metrics grid -->
       <div class="metrics-grid">
-        ${this.renderMetricTile('Náklady', s.metrics.cost)}
+        ${this.renderMetricTile('Náklady zálohy (vs nedělat nic)', s.metrics.cost)}
         ${this.renderMetricTile('Solár', s.metrics.solar)}
         ${this.renderMetricTile('Spotřeba', s.metrics.consumption)}
         ${this.renderMetricTile('Síť', s.metrics.grid)}
