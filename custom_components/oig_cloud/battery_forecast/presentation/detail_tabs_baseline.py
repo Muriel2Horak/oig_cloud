@@ -22,6 +22,12 @@ from ..economic_planner_types import DEFAULT_ROUND_TRIP_EFFICIENCY
 # Single-direction efficiency consistent with the planner cost simulation.
 _DIRECTIONAL_EFF = math.sqrt(DEFAULT_ROUND_TRIP_EFFICIENCY)
 _HW_MIN_FRACTION = 0.20
+# Max grid draw per 15 min treated as the inverter's irreducible trickle
+# (≈240 W continuous) when crediting the do-nothing baseline.
+_TRICKLE_CAP_KWH_15MIN = 0.06
+# Sim vs actual battery level gap below which the trajectories are considered
+# converged (no outstanding control divergence) and the sim re-syncs.
+_SOC_SYNC_TOLERANCE_KWH = 0.8
 
 
 def _branch_value(
@@ -117,6 +123,7 @@ def compute_do_nothing_baseline(
     soc_actual_end: Optional[float] = None
 
     for interval in elapsed:
+        actual_payload = interval.get("actual") or {}
         price = _coalesce(
             _branch_value(interval, "planned", "spot_price", "spot_price_czk"),
             _branch_value(interval, "actual", "spot_price", "spot_price_czk"),
@@ -141,8 +148,8 @@ def compute_do_nothing_baseline(
             discharge_efficiency=_DIRECTIONAL_EFF,
             home_charge_rate_kwh_15min=0.0,
         )
-        soc = result.new_soc_kwh
-        baseline_cost += result.grid_import_kwh * price
+        sim_soc_after = result.new_soc_kwh
+        sim_cost = result.grid_import_kwh * price
 
         # Záloha-only actual cost: prefer backup_net_cost (total import minus
         # non-backup + battery grid-charge); fall back to total net_cost.
@@ -151,12 +158,46 @@ def compute_do_nothing_baseline(
             actual_net = _branch_value(interval, "actual", "net_cost")
         if actual_net is not None:
             actual_cost += actual_net
+
+        # Per-interval actual battery level + mode (for re-sync below).
+        end_kwh = _as_kwh(_branch_value(interval, "actual", "battery_kwh"), capacity)
+        if end_kwh is None:
+            end_kwh = _as_kwh(
+                _branch_value(interval, "actual", "battery_soc"), capacity
+            )
+
+        actual_mode = actual_payload.get("mode")
+        same_mode = actual_mode in (HOME_I, None)
+        in_sync = (
+            same_mode
+            and actual_net is not None
+            and end_kwh is not None
+            and abs(sim_soc_after - end_kwh) <= _SOC_SYNC_TOLERANCE_KWH
+        )
+
+        if in_sync and actual_net is not None and end_kwh is not None:
+            # Control made the SAME choice as the do-nothing baseline and the
+            # battery trajectories agree → any cost difference is simulation
+            # error (real inverter losses, grid trickle), not a control
+            # effect. Take reality for the baseline and re-sync the sim SoC
+            # so model drift doesn't accumulate into fake (de)savings.
+            baseline_cost += actual_net
+            soc = end_kwh
+        else:
+            # Control diverged (UPS window, or the SoC gap it created):
+            # keep the pure HOME I simulation, plus the irreducible grid
+            # trickle the real inverter always draws (~≤240 W) which BOTH
+            # worlds pay — capped so genuine control effects are never
+            # absorbed.
+            baseline_cost += sim_cost
+            if actual_net is not None:
+                residual = max(0.0, actual_net - sim_cost)
+                trickle_cap_cost = _TRICKLE_CAP_KWH_15MIN * price
+                baseline_cost += min(residual, max(0.0, trickle_cap_cost))
+            soc = sim_soc_after
         if price > 0:
             price_sum += price
             price_n += 1
-        end_kwh = _as_kwh(_branch_value(interval, "actual", "battery_kwh"), capacity)
-        if end_kwh is None:
-            end_kwh = _as_kwh(_branch_value(interval, "actual", "battery_soc"), capacity)
         if end_kwh is not None:
             soc_actual_end = end_kwh
 
