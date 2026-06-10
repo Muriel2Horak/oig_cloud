@@ -846,18 +846,166 @@ def _update_timeline_hash(sensor: Any, timeline: list[dict[str, Any]]) -> None:
         _LOGGER.debug("Timeline data unchanged (same hash)")
 
 
+def _normalize_ts_to_aware(ts_str: str) -> str:
+    """Parse an ISO timestamp string and return a tz-aware ISO string.
+
+    OTE produces naive strings such as ``"2026-06-10T08:15:00"``.  These must be
+    normalized to tz-aware local time before being stored as keys in the
+    ``spot_prices_czk_kwh`` dict so that boiler runtime can compare them against
+    tz-aware ``slot.start`` values without a silent mismatch (naive != aware dict
+    lookup would always miss).
+    """
+    dt = datetime.fromisoformat(ts_str)
+    if dt.tzinfo is None:
+        dt = dt_util.as_local(dt)
+    return dt.isoformat()
+
+
+def _derive_spot_prices_czk_kwh(
+    timeline_data: list[dict[str, Any]],
+) -> dict[str, float]:
+    """Build {ISO-timestamp: price} dict from planner timeline for boiler consumption.
+
+    Timestamps are normalized to tz-aware local time so that boiler runtime can
+    compare them directly against tz-aware ``slot.start`` keys without a silent
+    mismatch (naive != aware).
+    """
+    result: dict[str, float] = {}
+    for entry in timeline_data:
+        ts_str = entry.get("time") or entry.get("timestamp")
+        price = entry.get("spot_price")
+        if ts_str and price is not None:
+            try:
+                ts_aware = _normalize_ts_to_aware(str(ts_str))
+                result[ts_aware] = float(price)
+            except (TypeError, ValueError):
+                continue
+    return result
+
+
+def _derive_overflow_windows(
+    timeline_data: list[dict[str, Any]],
+    max_capacity_kwh: Optional[float],
+) -> list[dict[str, str]]:
+    """Derive overflow windows from timeline: contiguous slots where solar > load AND battery full.
+
+    Each window is a dict with 'start' and 'end' ISO-string keys.  Both values
+    are normalized to tz-aware local time so that boiler planner_core can
+    compare them with tz-aware ``slot.start`` / ``slot.end`` values without a
+    ``TypeError`` in ``_overlap_fraction``.
+
+    The 15-min slot interval length is inferred from consecutive timestamps;
+    defaults to 15 minutes when only a single entry is present.
+    """
+    from datetime import timedelta as _timedelta
+
+    if not timeline_data:
+        return []
+
+    # Determine slot duration from first two timestamps (default 15 min).
+    slot_minutes = 15
+    if len(timeline_data) >= 2:
+        try:
+            t0 = datetime.fromisoformat(
+                str(timeline_data[0].get("time") or timeline_data[0].get("timestamp") or "")
+            )
+            t1 = datetime.fromisoformat(
+                str(timeline_data[1].get("time") or timeline_data[1].get("timestamp") or "")
+            )
+            diff = int((t1 - t0).total_seconds() / 60)
+            if diff > 0:
+                slot_minutes = diff
+        except Exception:
+            pass
+
+    _OVERFLOW_SOC_FRAC = 0.98  # treat battery as "full" at ≥98 % of max
+
+    windows: list[dict[str, str]] = []
+    run_start: Optional[str] = None
+    run_last: Optional[str] = None  # start of the last overflow slot in the current run
+
+    def _close_run(start: str, last: str) -> dict[str, str]:
+        """Return a window dict with tz-aware ISO strings; end = last-slot-start + slot_minutes."""
+        try:
+            last_dt = datetime.fromisoformat(last)
+            if last_dt.tzinfo is None:
+                last_dt = dt_util.as_local(last_dt)
+            end_str = (last_dt + _timedelta(minutes=slot_minutes)).isoformat()
+        except Exception:
+            end_str = last
+        # Normalize start to tz-aware as well.
+        try:
+            start_dt = datetime.fromisoformat(start)
+            if start_dt.tzinfo is None:
+                start_dt = dt_util.as_local(start_dt)
+            start_norm = start_dt.isoformat()
+        except Exception:
+            start_norm = start
+        return {"start": start_norm, "end": end_str}
+
+    for entry in timeline_data:
+        ts_str = entry.get("time") or entry.get("timestamp")
+        if not ts_str:
+            if run_start is not None and run_last is not None:
+                windows.append(_close_run(run_start, run_last))
+                run_start = None
+                run_last = None
+            continue
+
+        solar = float(entry.get("solar_kwh", 0.0) or 0.0)
+        load = float(entry.get("load_kwh", 0.0) or 0.0)
+        soc = float(entry.get("battery_capacity_kwh", 0.0) or 0.0)
+
+        is_overflow = solar > load
+        if max_capacity_kwh and max_capacity_kwh > 0:
+            is_overflow = is_overflow and (soc >= max_capacity_kwh * _OVERFLOW_SOC_FRAC)
+
+        if is_overflow:
+            if run_start is None:
+                run_start = str(ts_str)
+            run_last = str(ts_str)
+        else:
+            if run_start is not None and run_last is not None:
+                windows.append(_close_run(run_start, run_last))
+                run_start = None
+                run_last = None
+
+    # Close any trailing run.
+    if run_start is not None and run_last is not None:
+        windows.append(_close_run(run_start, run_last))
+
+    return windows
+
+
 def _save_forecast_to_coordinator(sensor: Any) -> None:
     if hasattr(sensor.coordinator, "battery_forecast_data"):
+        timeline_data: list[dict[str, Any]] = sensor._timeline_data or []
+
+        # Derive boiler-consumable price dict and overflow windows from the
+        # planner timeline so the boiler module does not need to iterate
+        # timeline_data itself.
+        spot_prices_czk_kwh = _derive_spot_prices_czk_kwh(timeline_data)
+        max_cap = None
+        try:
+            max_cap = sensor._get_max_battery_capacity()
+        except Exception:
+            pass
+        overflow_windows = _derive_overflow_windows(timeline_data, max_cap)
+
         forecast_data = {
-            "timeline_data": sensor._timeline_data,
+            "timeline_data": timeline_data,
             "calculation_time": sensor._last_update.isoformat(),
             "data_source": "simplified_calculation",
             "current_battery_kwh": (
-                sensor._timeline_data[0].get("battery_capacity_kwh", 0)
-                if sensor._timeline_data
+                timeline_data[0].get("battery_capacity_kwh", 0)
+                if timeline_data
                 else 0
             ),
             "mode_recommendations": sensor._mode_recommendations or [],
+            # Boiler integration: pre-derived keys so boiler runtime never
+            # needs to inspect timeline_data directly.
+            "spot_prices_czk_kwh": spot_prices_czk_kwh,
+            "overflow_windows": overflow_windows,
         }
         # Propagate decision_trace from charging metrics if present (backward compatible)
         if hasattr(sensor, "_charging_metrics") and sensor._charging_metrics:
