@@ -1,0 +1,92 @@
+/**
+ * OIG Cloud V2 — Dashboard settings (module config) data layer.
+ *
+ * Talks to GET/POST /api/oig_cloud/<sn>/module_config — a whitelisted,
+ * validated bridge to the config-entry options, so common module settings
+ * can be edited from the dashboard instead of the HA options flow.
+ */
+
+import { haClient } from '@/data/ha-client';
+import { oigLog } from '@/core/logger';
+
+const params = new URLSearchParams(window.location.search);
+const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '';
+
+export interface ModulesConfig {
+  enable_solar_forecast: boolean;
+  enable_battery_prediction: boolean;
+  enable_pricing: boolean;
+  enable_boiler: boolean;
+  enable_statistics: boolean;
+  enable_extended_sensors: boolean;
+  enable_chmu_warnings: boolean;
+}
+
+export interface BatteryConfig {
+  auto_mode_switch_enabled: boolean;
+  charge_rate_kw: number | null;
+  expensive_percentile: number | null;
+  balancing_enabled: boolean;
+  balancing_interval_days: number | null;
+  balancing_hold_hours: number | null;
+  balancing_opportunistic_threshold: number | null;
+  balancing_economic_threshold: number | null;
+  cheap_window_percentile: number | null;
+}
+
+export interface SolarConfig {
+  solar_forecast_provider: string;
+  solar_forecast_mode: string;
+  solar_forecast_api_key_set?: boolean;
+  solcast_api_key_set?: boolean;
+  solcast_site_id: string;
+  solar_forecast_latitude: number | null;
+  solar_forecast_longitude: number | null;
+  solar_forecast_string1_enabled: boolean;
+  solar_forecast_string1_declination: number | null;
+  solar_forecast_string1_azimuth: number | null;
+  solar_forecast_string1_kwp: number | null;
+  solar_forecast_string2_enabled: boolean;
+  solar_forecast_string2_declination: number | null;
+  solar_forecast_string2_azimuth: number | null;
+  solar_forecast_string2_kwp: number | null;
+}
+
+export interface ModuleConfig {
+  modules: ModulesConfig;
+  battery: BatteryConfig;
+  solar: SolarConfig;
+}
+
+export type SettingsSection = 'modules' | 'battery' | 'solar';
+
+export async function loadModuleConfig(): Promise<ModuleConfig | null> {
+  const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(
+    `/${INVERTER_SN}/module_config`,
+  );
+  if (!data || (data as any).error) {
+    oigLog.warn('[Settings] module_config load failed', data as any);
+    return null;
+  }
+  return data as ModuleConfig;
+}
+
+export interface SaveResult {
+  ok: boolean;
+  /** Per-field validation errors from the backend, if any. */
+  fields?: Record<string, string>;
+}
+
+export async function saveModuleConfig(
+  section: SettingsSection,
+  values: Record<string, unknown>,
+): Promise<SaveResult> {
+  const res = await haClient.fetchOIGAPI<any>(`/${INVERTER_SN}/module_config`, {
+    method: 'POST',
+    body: JSON.stringify({ section, values }),
+  });
+  if (res && (res.updated === true || res.updated === false)) {
+    return { ok: true };
+  }
+  return { ok: false, fields: res?.fields };
+}

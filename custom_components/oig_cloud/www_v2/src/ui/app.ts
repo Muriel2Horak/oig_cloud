@@ -36,6 +36,7 @@ import '@/ui/features/boiler';
 import '@/ui/features/control-panel';
 import '@/ui/features/analytics';
 import '@/ui/features/chmu';
+import '@/ui/features/settings';
 import '@/ui/features/timeline';
 import '@/ui/features/tiles';
 import '@/ui/features/tiles/icon-picker';
@@ -52,6 +53,7 @@ const DEFAULT_TABS: Tab[] = [
   { id: 'flow', label: 'Toky', icon: '⚡' },
   { id: 'pricing', label: 'Ceny', icon: '💰' },
   { id: 'boiler', label: 'Bojler', icon: '🔥' },
+  { id: 'settings', label: 'Nastavení', icon: '⚙️' },
 ];
 
 @customElement('oig-app')
@@ -1138,6 +1140,11 @@ export class OigApp extends LitElement {
                    <p>Bojler konfigurujte v Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat.</p>
                  </div>
                </div>
+             </div>
+
+             <!-- ===== SETTINGS TAB ===== -->
+             <div class="tab-content ${this.activeTab === 'settings' ? 'active' : ''}">
+               ${this.activeTab === 'settings' ? html`<oig-settings></oig-settings>` : nothing}
              </div>
           </oig-grid>
         </main>

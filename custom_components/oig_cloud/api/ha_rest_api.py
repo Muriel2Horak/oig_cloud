@@ -1064,6 +1064,181 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
         )
 
 
+# ============================================================================
+# Module config (dashboard settings wizards)
+# ============================================================================
+
+# Whitelist of options writable from the dashboard, with validation.
+# type: bool | float | int | str; rng: (min, max); enum: allowed values.
+_MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
+    "modules": {
+        "enable_solar_forecast": {"type": bool},
+        "enable_battery_prediction": {"type": bool},
+        "enable_pricing": {"type": bool},
+        "enable_boiler": {"type": bool},
+        "enable_statistics": {"type": bool},
+        "enable_extended_sensors": {"type": bool},
+        "enable_chmu_warnings": {"type": bool},
+    },
+    "battery": {
+        "auto_mode_switch_enabled": {"type": bool},
+        "charge_rate_kw": {"type": float, "rng": (0.5, 10.0)},
+        "expensive_percentile": {"type": float, "rng": (0.5, 0.95)},
+        "balancing_enabled": {"type": bool},
+        "balancing_interval_days": {"type": int, "rng": (3, 30)},
+        "balancing_hold_hours": {"type": int, "rng": (1, 12)},
+        "balancing_opportunistic_threshold": {"type": float, "rng": (0.5, 5.0)},
+        "balancing_economic_threshold": {"type": float, "rng": (0.5, 10.0)},
+        "cheap_window_percentile": {"type": int, "rng": (5, 80)},
+    },
+    "solar": {
+        "solar_forecast_provider": {"type": str, "enum": ("forecast_solar", "solcast")},
+        "solar_forecast_mode": {
+            "type": str,
+            "enum": ("hourly", "every_4h", "daily_optimized"),
+        },
+        "solar_forecast_api_key": {"type": str},
+        "solcast_api_key": {"type": str},
+        "solcast_site_id": {"type": str},
+        "solar_forecast_latitude": {"type": float, "rng": (-90.0, 90.0)},
+        "solar_forecast_longitude": {"type": float, "rng": (-180.0, 180.0)},
+        "solar_forecast_string1_enabled": {"type": bool},
+        "solar_forecast_string1_declination": {"type": int, "rng": (0, 90)},
+        "solar_forecast_string1_azimuth": {"type": int, "rng": (-180, 180)},
+        "solar_forecast_string1_kwp": {"type": float, "rng": (0.1, 50.0)},
+        "solar_forecast_string2_enabled": {"type": bool},
+        "solar_forecast_string2_declination": {"type": int, "rng": (0, 90)},
+        "solar_forecast_string2_azimuth": {"type": int, "rng": (-180, 180)},
+        "solar_forecast_string2_kwp": {"type": float, "rng": (0.1, 50.0)},
+    },
+}
+
+# Mirrors kept in sync for legacy readers.
+_MODULE_CONFIG_MIRRORS = {"charge_rate_kw": "home_charge_rate"}
+
+_SECRET_FIELDS = {"solar_forecast_api_key", "solcast_api_key"}
+
+
+def _coerce_module_value(spec: dict[str, Any], value: Any) -> Any:
+    """Validate + coerce one field; raises ValueError on bad input."""
+    typ = spec["type"]
+    if typ is bool:
+        if not isinstance(value, bool):
+            raise ValueError("expected boolean")
+        return value
+    if typ in (int, float):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("expected number")
+        value = typ(value)
+        rng = spec.get("rng")
+        if rng and not (rng[0] <= value <= rng[1]):
+            raise ValueError(f"out of range {rng[0]}..{rng[1]}")
+        return value
+    if typ is str:
+        if not isinstance(value, str):
+            raise ValueError("expected string")
+        enum = spec.get("enum")
+        if enum and value not in enum:
+            raise ValueError(f"expected one of {enum}")
+        return value[:200]
+    raise ValueError("unsupported type")
+
+
+class OIGCloudModuleConfigView(HomeAssistantView):
+    """Read/update per-module options from the dashboard settings UI.
+
+    GET  -> current values of all whitelisted fields, grouped by section
+            (secrets masked to a boolean *_set flag).
+    POST -> {"section": "battery", "values": {...}} — validates against the
+            whitelist and updates the config entry (admin only); the entry's
+            update listener applies/reloads as needed.
+    """
+
+    url = f"{API_BASE}/{{box_id}}/module_config"
+    name = "api:oig_cloud:module_config"
+    requires_auth = True
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        opts = dict(entry.options)
+        out: dict[str, Any] = {}
+        for section, fields in _MODULE_CONFIG_FIELDS.items():
+            sec: dict[str, Any] = {}
+            for key, spec in fields.items():
+                if key in _SECRET_FIELDS:
+                    sec[f"{key}_set"] = bool(opts.get(key))
+                    continue
+                default: Any = False if spec["type"] is bool else (
+                    "" if spec["type"] is str else None
+                )
+                sec[key] = opts.get(key, default)
+            out[section] = sec
+        return web.json_response(out)
+
+    async def post(self, request: web.Request, box_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        user = request.get("hass_user") or request.app.get("hass_user")
+        if user is not None and not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+
+        section = payload.get("section") if isinstance(payload, dict) else None
+        values = payload.get("values") if isinstance(payload, dict) else None
+        fields = _MODULE_CONFIG_FIELDS.get(section or "")
+        if not fields or not isinstance(values, dict):
+            return web.json_response(
+                {"error": "Expected {section, values} with a known section"},
+                status=400,
+            )
+
+        updates: dict[str, Any] = {}
+        errors: dict[str, str] = {}
+        for key, value in values.items():
+            spec = fields.get(key)
+            if spec is None:
+                errors[key] = "unknown field"
+                continue
+            # Empty secret = keep current value
+            if key in _SECRET_FIELDS and value == "":
+                continue
+            try:
+                updates[key] = _coerce_module_value(spec, value)
+            except ValueError as err:
+                errors[key] = str(err)
+
+        if errors:
+            return web.json_response({"error": "validation", "fields": errors}, status=400)
+        if not updates:
+            return web.json_response({"updated": False})
+
+        new_options = dict(entry.options)
+        new_options.update(updates)
+        for src, dst in _MODULE_CONFIG_MIRRORS.items():
+            if src in updates:
+                new_options[dst] = updates[src]
+
+        hass.config_entries.async_update_entry(entry, options=new_options)
+        _LOGGER.info(
+            "Module config updated for %s (%s): %s",
+            box_id,
+            section,
+            {k: ("***" if k in _SECRET_FIELDS else v) for k, v in updates.items()},
+        )
+        return web.json_response({"updated": True, "keys": sorted(updates)})
+
+
 class OIGCloudDashboardModulesView(HomeAssistantView):
     """API endpoint to read enabled dashboard modules for an entry."""
 
@@ -1102,6 +1277,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudDetailTabsView())
     hass.http.register_view(OIGCloudPlannerSettingsView())
     hass.http.register_view(OIGCloudDashboardModulesView())
+    hass.http.register_view(OIGCloudModuleConfigView())
     hass.http.register_view(OIGCloudSpotPricesView())
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())
