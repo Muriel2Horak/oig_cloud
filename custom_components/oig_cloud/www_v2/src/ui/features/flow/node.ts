@@ -120,7 +120,9 @@ export class OigFlowNode extends LitElement {
     .node {
       position: relative;
       background: var(--node-gradient);
-      border: 1px solid rgba(255,255,255,0.08);
+      /* The edge-gauge is the only ring — a visible card border would read
+         as a permanently "full" gauge (caught by user on the solar node). */
+      border: 1px solid transparent;
       border-radius: 12px;
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
@@ -282,6 +284,10 @@ export class OigFlowNode extends LitElement {
     .ss-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 5px; background: rgba(255,255,255,0.06); }
     .ss-bar i { display: block; }
     .ss-leg { display: flex; justify-content: space-between; font-size: 9px; opacity: 0.85; }
+    .gp-r { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; padding: 3px 0; border-bottom: 1px dashed rgba(255,255,255,0.1); }
+    .gp-r:last-child { border-bottom: none; }
+    .gp-r span { opacity: 0.65; }
+    .gp-r b { font-weight: 600; }
 
     .node:hover {
       transform: translateY(-2px);
@@ -1240,6 +1246,22 @@ export class OigFlowNode extends LitElement {
    * pathLength=100 (so dashoffset = 100 − pct regardless of perimeter length).
    * Thickness ∝ flow magnitude, pulse speed ∝ flow.
    */
+  /** Bottom-edge % pill + tap popover with the gauge's detail (mobile has no
+   *  hover). Generic rule: every edge-gauge gets one. */
+  private gaugePill(nodeId: NodeId, label: string, color: string, detail: unknown) {
+    const open = this.gaugeDetailOpen === nodeId;
+    return html`
+      <button class="ss-pill" style="color:${color};border-color:${color}55"
+        @click=${(e: Event) => {
+          e.stopPropagation();
+          this.gaugeDetailOpen = open ? null : nodeId;
+        }}>${label}</button>
+      ${open ? html`
+        <div class="ss-pop" style="border-color:${color}66"
+          @click=${(e: Event) => e.stopPropagation()}>${detail}</div>` : nothing}
+    `;
+  }
+
   private edgeGauge(opts: {
     id: string;
     nodeId?: string;
@@ -1483,9 +1505,9 @@ export class OigFlowNode extends LitElement {
     const isNight = percent < 2;
 
     const gradient = isNight
-      ? 'linear-gradient(135deg, rgba(57,73,171,0.25) 0%, rgba(26,35,126,0.18) 100%)'
+      ? 'linear-gradient(135deg, rgba(38,48,82,0.45) 0%, rgba(23,31,58,0.3) 100%)'
       : NODE_GRADIENTS.solar;
-    const border = isNight ? 'rgba(121,134,203,0.5)' : NODE_BORDERS.solar;
+    const border = 'transparent';
 
     const producedKwh = d.solarToday / 1000;
     // Late in the day the forecast-for-today can read 0; never show produced/0.
@@ -1516,6 +1538,13 @@ export class OigFlowNode extends LitElement {
           title=${d.solarForecastStale ? 'Předpověď zítra (zastaralá)' : 'Předpověď FVE na zítra'}>
           ${d.solarForecastStale ? '⚠' : '🌅'} ${d.solarForecastTomorrow.toFixed(1)}
         </button>
+        ${this.gaugePill('solar', `${Math.round(progressPct)} %`, isNight ? '#7986cb' : intColor, html`
+          <div class="ss-pop-h"><span>Výroba dne</span><b style="color:${isNight ? '#9fa8da' : intColor}">${Math.round(progressPct)} %</b></div>
+          <div class="gp-r"><span>Vyrobeno</span><b>${producedKwh.toFixed(1)} kWh</b></div>
+          <div class="gp-r"><span>Předpověď</span><b>${forecastKwh.toFixed(1)} kWh</b></div>
+          <div class="gp-r"><span>Ještě vyrobí</span><b>~${remainingKwh.toFixed(1)} kWh</b></div>
+          <div class="gp-r"><span>Aktuální výkon</span><b>${formatPower(d.solarPower)} · ${Math.round(percent)} % špičky</b></div>
+        `)}
 
         <div class="node-header node-header--split" style="margin-top:16px">
           <span class="node-label">☀️ Solár</span>
@@ -1624,6 +1653,8 @@ export class OigFlowNode extends LitElement {
       : discharging && validTime(d.timeToEmpty) ? ` · do vybití ${d.timeToEmpty}` : '';
     const socTint = d.batterySoC >= 66 ? 'rgba(67,160,71,0.13)'
       : d.batterySoC >= 33 ? 'rgba(253,216,53,0.10)' : 'rgba(229,57,53,0.12)';
+    const socPillColor = d.batterySoC >= 66 ? '#43a047'
+      : d.batterySoC >= 33 ? '#fdd835' : '#e53935';
 
     return html`
       <div class="${this.nodeClass('battery')}" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery};"
@@ -1639,6 +1670,13 @@ export class OigFlowNode extends LitElement {
         })}
 
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${socTint}, transparent 72%)"></div>
+        ${this.gaugePill('battery', `${Math.round(d.batterySoC)} %`, socPillColor, html`
+          <div class="ss-pop-h"><span>Nabití baterie</span><b style="color:${socPillColor}">${Math.round(d.batterySoC)} %</b></div>
+          <div class="gp-r"><span>Stav</span><b>${stateText} ${powerStr}</b></div>
+          ${timeStr ? html`<div class="gp-r"><span>Čas</span><b>${timeStr.replace(' · ', '')}</b></div>` : nothing}
+          <div class="gp-r"><span>Dnes nabito</span><b>${formatEnergy(d.batteryChargeTotal)}</b></div>
+          <div class="gp-r"><span>Dnes vybito</span><b>${formatEnergy(d.batteryDischargeTotal)}</b></div>
+        `)}
 
         <div class="node-header node-header--split">
           <span class="node-label">🔋 Baterie</span>
@@ -1776,6 +1814,12 @@ export class OigFlowNode extends LitElement {
         })}
         <div class="node-tint" style="background: radial-gradient(120% 90% at 50% 0, ${modeColor}22, transparent 72%)"></div>
 
+        ${this.gaugePill('inverter', bypassActive ? '⚠ BYPASS' : `${d.inverterTemp.toFixed(0)} °C`, edgeColor, html`
+          <div class="ss-pop-h"><span>Teplota střídače</span><b style="color:${tempColor}">${d.inverterTemp.toFixed(1)} °C</b></div>
+          <div class="gp-r"><span>Bypass</span><b>${bypassActive ? '🔴 AKTIVNÍ' : 'Vypnutý'}</b></div>
+          <div class="gp-r"><span>Režim</span><b>${modeInfo.text}</b></div>
+        `)}
+
         <div class="node-header" style="justify-content:center">
           <span class="node-label">⚙️ Střídač</span>
         </div>
@@ -1886,6 +1930,13 @@ export class OigFlowNode extends LitElement {
         <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px;z-index:3" @click=${openEntity('ac_in_aci_f')}>
           ${d.gridFrequency.toFixed(1)} Hz
         </button>
+
+        ${this.gaugePill('grid', importing || exporting ? `${Math.round(limitPct)} %` : '0 %', gColor, html`
+          <div class="ss-pop-h"><span>${importing ? 'Vytížení jističe' : exporting ? 'Vytížení limitu přetoku' : 'Síť v klidu'}</span><b style="color:${gColor}">${Math.round(limitPct)} %</b></div>
+          <div class="gp-r"><span>Tok</span><b>${dirText} · ${formatPower(absW)}</b></div>
+          <div class="gp-r"><span>Limit</span><b>${importing ? `${(breakerMax / 1000).toFixed(1)} kW (25 A/fáze)` : `${(exportLimit / 1000).toFixed(1)} kW přetok`}</b></div>
+          <div class="gp-r"><span>Spot / Výkup</span><b>${d.spotPrice.toFixed(2)} / ${d.exportPrice.toFixed(2)} Kč</b></div>
+        `)}
 
         <div class="node-header node-header--split" style="margin-top:16px">
           <span class="node-label">🔌 Síť</span>
@@ -2002,26 +2053,19 @@ export class OigFlowNode extends LitElement {
         })}
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${ssColor}22, transparent 72%)"></div>
 
-        <!-- Gauge detail: tap-friendly (hover title is desktop-only) -->
-        <button class="ss-pill" style="color:${ssColor};border-color:${ssColor}55"
-          @click=${(e: Event) => { e.stopPropagation(); this.gaugeDetailOpen = this.gaugeDetailOpen === 'house' ? null : 'house'; }}
-          title=${ssTitle}>
-          🛡 ${Math.round(selfSuf)} %
-        </button>
-        ${this.gaugeDetailOpen === 'house' ? html`
-          <div class="ss-pop" style="border-color:${ssColor}66" @click=${(e: Event) => e.stopPropagation()}>
-            <div class="ss-pop-h"><span>Soběstačnost</span><b style="color:${ssColor}">${Math.round(selfSuf)} %</b></div>
-            <div class="ss-bar">
-              <i style="width:${share(fromSolar)}%;background:#ffca5a"></i>
-              <i style="width:${share(fromBat)}%;background:#4caf50"></i>
-              <i style="width:${share(fromGrid)}%;background:#ef5350"></i>
-            </div>
-            <div class="ss-leg">
-              <span>☀️ FVE ${share(fromSolar)}%</span>
-              <span>🔋 Bat ${share(fromBat)}%</span>
-              <span>🔌 Síť ${share(fromGrid)}%</span>
-            </div>
-          </div>` : nothing}
+        ${this.gaugePill('house', `🛡 ${Math.round(selfSuf)} %`, ssColor, html`
+          <div class="ss-pop-h"><span>Soběstačnost</span><b style="color:${ssColor}">${Math.round(selfSuf)} %</b></div>
+          <div class="ss-bar">
+            <i style="width:${share(fromSolar)}%;background:#ffca5a"></i>
+            <i style="width:${share(fromBat)}%;background:#4caf50"></i>
+            <i style="width:${share(fromGrid)}%;background:#ef5350"></i>
+          </div>
+          <div class="ss-leg">
+            <span>☀️ FVE ${share(fromSolar)}%</span>
+            <span>🔋 Bat ${share(fromBat)}%</span>
+            <span>🔌 Síť ${share(fromGrid)}%</span>
+          </div>
+        `)}
 
         <button class="indicator house-corner" style="position:absolute;top:4px;left:6px;z-index:3"
           @click=${openEntity('actual_aco_p')} title="Záloha — výkon · dnes">
