@@ -35,50 +35,35 @@ def test_migrate_import_percentage_single_tariff_branch():
 
 
 @pytest.mark.asyncio
-async def test_wizard_battery_invalid_hysteresis_and_hold_hours():
+async def test_wizard_battery_invalid_percentile_low():
     flow = DummyWizard()
     result = await flow.async_step_wizard_battery(
-        {
-            "min_capacity_percent": 20.0,
-            "target_capacity_percent": 80.0,
-            "max_ups_price_czk": 10.0,
-            "price_hysteresis_czk": -0.1,
-            "hw_min_hold_hours": 0.5,
-        }
+        {"charge_rate_kw": 2.8, "expensive_percentile_pct": 40}
     )
 
     assert result["type"] == "form"
-    assert result["errors"]["price_hysteresis_czk"] == "invalid_hysteresis"
-    assert result["errors"]["hw_min_hold_hours"] == "invalid_hours"
+    assert result["errors"]["expensive_percentile_pct"] == "invalid_percentile"
 
 
 @pytest.mark.asyncio
-async def test_wizard_battery_hysteresis_too_high():
+async def test_wizard_battery_invalid_percentile_high():
     flow = DummyWizard()
     result = await flow.async_step_wizard_battery(
-        {
-            "min_capacity_percent": 20.0,
-            "target_capacity_percent": 80.0,
-            "max_ups_price_czk": 10.0,
-            "price_hysteresis_czk": 6.0,
-        }
+        {"charge_rate_kw": 2.8, "expensive_percentile_pct": 99}
     )
 
     assert result["type"] == "form"
-    assert result["errors"]["price_hysteresis_czk"] == "invalid_hysteresis"
+    assert result["errors"]["expensive_percentile_pct"] == "invalid_percentile"
 
 
 @pytest.mark.asyncio
-async def test_wizard_battery_hw_min_hold_hours_too_high():
+async def test_wizard_battery_invalid_charge_rate():
     flow = DummyWizard()
     result = await flow.async_step_wizard_battery(
-        {
-            "min_capacity_percent": 20.0,
-            "target_capacity_percent": 80.0,
-            "max_ups_price_czk": 10.0,
-            "hw_min_hold_hours": 25.0,
-        }
+        {"charge_rate_kw": 0.1, "expensive_percentile_pct": 70}
     )
 
     assert result["type"] == "form"
-    assert result["errors"]["hw_min_hold_hours"] == "invalid_hours"
+    assert result["errors"]["charge_rate_kw"] == "invalid_charge_rate_kw"
+
+

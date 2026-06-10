@@ -546,9 +546,14 @@ async def test_wizard_battery_initial_form():
 
 def test_battery_schema_uses_defaults():
     flow = DummyWizard()
-    flow._wizard_data = {"min_capacity_percent": 30.0}
+    flow._wizard_data = {"expensive_percentile": 0.8}
     schema = flow._get_battery_schema()
-    assert "min_capacity_percent" in schema.schema
+    keys = {str(k) for k in schema.schema}
+    # Slimmed form: only live planner params remain
+    assert "expensive_percentile_pct" in keys
+    assert "charge_rate_kw" in keys
+    assert "min_capacity_percent" not in keys
+    assert "price_hysteresis_czk" not in keys
 
 
 @pytest.mark.asyncio

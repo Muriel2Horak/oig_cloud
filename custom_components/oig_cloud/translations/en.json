@@ -102,7 +102,8 @@
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
           "price_hysteresis_czk": "Price hysteresis (CZK/kWh)",
           "hw_min_hold_hours": "Max hours at HW minimum",
-          "target_capacity_percent": "Target battery capacity (%)"
+          "target_capacity_percent": "Target battery capacity (%)",
+          "expensive_percentile_pct": "Expensive-hours threshold (percentile, %)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "When enabled the integration calls the set_box_mode service automatically according to the computed schedule (same as Config Flow).",
@@ -119,7 +120,8 @@
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
           "price_hysteresis_czk": "Minimum price delta for hold vs. wait decisions",
           "hw_min_hold_hours": "Maximum time to stay at hardware minimum before forcing recharge",
-          "target_capacity_percent": "Optimal capacity to charge to"
+          "target_capacity_percent": "Optimal capacity to charge to",
+          "expensive_percentile_pct": "Imports above this per-day price percentile are candidates for cheap battery pre-charging. Default 70%."
         },
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently optimizes home battery charging according to spot electricity prices and solar production forecast. Automatically charges during cheapest hours.\n\n🔧 **What is needed:**\n• ☀️ Solar forecast (must be enabled)\n• ⚡ Extended sensors (must be enabled)\n• 📈 Spot electricity prices\n\n⚠️ **Experimental feature** - may require fine-tuning of parameters\n\n⚠️ **This module is required for:**\n• 📊 Dashboard (web interface)",
         "title": "🔋 Battery Prediction Configuration"
@@ -575,7 +577,8 @@
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
           "min_capacity_percent": "Minimum battery capacity (%)",
           "disable_planning_min_guard": "Disable planning minimum guard",
-          "target_capacity_percent": "Target battery capacity (%)"
+          "target_capacity_percent": "Target battery capacity (%)",
+          "expensive_percentile_pct": "Expensive-hours threshold (percentile, %)"
         },
         "data_description": {
           "balancing_economic_threshold": "On days 5-7 after last balance, use this price threshold (typically 2.5 CZK/kWh)",
@@ -588,7 +591,8 @@
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
           "min_capacity_percent": "If capacity drops below this value, charging starts",
           "disable_planning_min_guard": "Allows the planner to go below the planning minimum (more aggressive optimization)",
-          "target_capacity_percent": "Optimal capacity to charge to"
+          "target_capacity_percent": "Optimal capacity to charge to",
+          "expensive_percentile_pct": "Imports above this per-day price percentile are candidates for cheap battery pre-charging. Default 70%."
         },
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently optimizes home battery charging according to spot electricity prices and solar production forecast. Automatically charges during cheapest hours.\n\n🔧 **What is needed:**\n• ☀️ Solar forecast (must be enabled)\n• ⚡ Extended sensors (must be enabled)\n• 📈 Spot electricity prices\n\n⚠️ **Experimental feature** - may require fine-tuning of parameters\n\n⚠️ **This module is required for:**\n• 📊 Dashboard (web interface)",
         "title": "🔋 Battery Prediction Configuration"
@@ -830,6 +834,19 @@
       "wizard_welcome_reconfigure": {
         "description": "🔧 **OIG Cloud Configuration Change**\n\nThis wizard will guide you through updating your integration configuration.\n\n**What you can change:**\n• 📦 Enable/disable modules and features\n• ⏱️ Adjust data update intervals\n• ☀️ Change solar forecast settings\n• 🔋 Adjust battery prediction parameters\n• 💰 Change pricing settings\n• ⚡ Adjust extended sensors\n\n**Note:** Login credentials cannot be changed here - you must delete and re-add the integration.\n\nClick \"Submit\" to continue with the setup.",
         "title": "🔧 OIG Cloud Configuration Change"
+      },
+      "init": {
+        "title": "OIG Cloud Settings",
+        "description": "Pick the section you want to change. Saving a section applies immediately.",
+        "menu_options": {
+          "section_modules": "🧩 Modules (enable/disable)",
+          "section_intervals": "⏱️ Connection & intervals",
+          "section_solar": "☀️ Solar forecast",
+          "section_battery": "🔋 Battery & planner",
+          "section_pricing": "💰 Energy pricing",
+          "section_boiler": "🔥 Boiler",
+          "section_all": "🧙 Full wizard"
+        }
       }
     }
   },

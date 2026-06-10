@@ -429,7 +429,13 @@ class WizardMixin:
             CONF_CHARGE_RATE_KW,
             wizard_data.get("home_charge_rate", DEFAULT_CHARGE_RATE_KW),
         )
+        expensive_pct = wizard_data.get("expensive_percentile_pct")
+        if expensive_pct is None:
+            expensive_fraction = float(wizard_data.get("expensive_percentile", 0.70))
+        else:
+            expensive_fraction = float(expensive_pct) / 100.0
         return {
+            "expensive_percentile": round(expensive_fraction, 2),
             "min_capacity_percent": wizard_data.get("min_capacity_percent", 20.0),
             "target_capacity_percent": wizard_data.get("target_capacity_percent", 80.0),
             "home_charge_rate": charge_rate_kw,
@@ -1192,8 +1198,23 @@ Kliknutím na "Odeslat" spustíte průvodce.
         placeholders.update(kwargs)
         return placeholders
 
+    # Last step of each options-flow section; after it we jump straight to
+    # the summary (save) instead of walking the whole wizard.
+    _SECTION_LAST_STEP = {
+        "modules": "wizard_modules",
+        "intervals": "wizard_intervals",
+        "solar": "wizard_solar",
+        "battery": "wizard_battery",
+        "pricing": "wizard_pricing_distribution",
+        # boiler chains already end right before the summary
+    }
+
     def _get_next_step(self, current_step: str) -> str:
         """Determine next step based on enabled modules."""
+        section = getattr(self, "_section", None)
+        if section and current_step == self._SECTION_LAST_STEP.get(section):
+            return "wizard_summary"
+
         all_steps = [
             "wizard_welcome",
             "wizard_credentials",
@@ -1686,37 +1707,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return vol.Schema(schema_fields)
 
     def _validate_battery_config(self, user_input: Dict[str, Any]) -> Dict[str, str]:
-        """Validate battery configuration inputs."""
-        errors = {}
-
-        # Validace min < target
-        min_cap = user_input.get("min_capacity_percent", 20.0)
-        target_cap = user_input.get("target_capacity_percent", 80.0)
-        if min_cap >= target_cap:
-            errors["min_capacity_percent"] = "min_must_be_less_than_target"
-
-        planning_min = user_input.get(CONF_PLANNING_MIN_PERCENT, DEFAULT_PLANNING_MIN_PERCENT)
-        if planning_min < DEFAULT_HW_MIN_PERCENT:
-            errors[CONF_PLANNING_MIN_PERCENT] = "planning_min_below_hw"
-
-        # Validace max price
-        max_price = user_input.get("max_ups_price_czk", 10.0)
-        if max_price < 1.0 or max_price > 50.0:
-            errors["max_ups_price_czk"] = "invalid_price"
+        """Validate battery configuration inputs (slimmed form)."""
+        errors: Dict[str, str] = {}
 
         charge_rate_kw = user_input.get(CONF_CHARGE_RATE_KW, DEFAULT_CHARGE_RATE_KW)
         if charge_rate_kw < 0.5 or charge_rate_kw > 10.0:
             errors[CONF_CHARGE_RATE_KW] = "invalid_charge_rate_kw"
 
-        # Validace hysteresis
-        hysteresis = user_input.get("price_hysteresis_czk", 0.01)
-        if hysteresis < 0.0 or hysteresis > 5.0:
-            errors["price_hysteresis_czk"] = "invalid_hysteresis"
-
-        # Validace hw_min_hold
-        hw_min_hold = user_input.get("hw_min_hold_hours", 6.0)
-        if hw_min_hold < 1.0 or hw_min_hold > 24.0:
-            errors["hw_min_hold_hours"] = "invalid_hours"
+        pct = user_input.get("expensive_percentile_pct", 70)
+        try:
+            pct = float(pct)
+        except (TypeError, ValueError):
+            pct = 70.0
+        if pct < 50 or pct > 95:
+            errors["expensive_percentile_pct"] = "invalid_percentile"
 
         return errors
 
@@ -1756,7 +1760,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
     def _get_battery_schema(
         self, defaults: Optional[Dict[str, Any]] = None
     ) -> vol.Schema:
-        """Get schema for battery prediction step."""
+        """Schema for the battery planner step.
+
+        Slimmed to the parameters the live planner actually reads. Legacy
+        fields (min/target capacity, planning-min guard, max UPS price,
+        hysteresis, hw-min hold) were dead after the 2026-06 planner redesign
+        (hard 20% HW floor + dynamic target + cost-gated displacement) and
+        only confused users; their option keys keep defaults for back-compat.
+        """
         if defaults is None:
             defaults = self._wizard_data if self._wizard_data else {}
 
@@ -1765,35 +1776,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 CONF_AUTO_MODE_SWITCH,
                 default=defaults.get(CONF_AUTO_MODE_SWITCH, False),
             ): bool,
-            vol.Optional(
-                "min_capacity_percent",
-                default=defaults.get("min_capacity_percent", 20.0),
-            ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=95.0)),
-            vol.Optional(
-                CONF_PLANNING_MIN_PERCENT,
-                default=defaults.get(
-                    CONF_PLANNING_MIN_PERCENT,
-                    defaults.get("min_capacity_percent", DEFAULT_PLANNING_MIN_PERCENT),
-                ),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=DEFAULT_HW_MIN_PERCENT,
-                    max=100,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                )
-            ),
-            vol.Optional(
-                "disable_planning_min_guard",
-                default=defaults.get("disable_planning_min_guard", False),
-            ): selector.BooleanSelector(),
-            vol.Optional(
-                "target_capacity_percent",
-                default=defaults.get("target_capacity_percent", 80.0),
-            ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=100.0)),
-            vol.Optional(
-                "home_charge_rate", default=defaults.get("home_charge_rate", 2.8)
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
             vol.Optional(
                 CONF_CHARGE_RATE_KW,
                 default=defaults.get(
@@ -1808,20 +1790,16 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     mode=selector.NumberSelectorMode.BOX,
                 )
             ),
-            # SAFETY LIMIT (applies to planner)
+            # Displacement threshold: imports priced above this per-day
+            # percentile are candidates for cheap pre-charging.
             vol.Optional(
-                "max_ups_price_czk", default=defaults.get("max_ups_price_czk", 10.0)
-            ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
-            vol.Optional(
-                "price_hysteresis_czk",
-                default=defaults.get("price_hysteresis_czk", 0.01),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
-            vol.Optional(
-                "hw_min_hold_hours",
-                default=defaults.get("hw_min_hold_hours", 6.0),
+                "expensive_percentile_pct",
+                default=int(
+                    round(float(defaults.get("expensive_percentile", 0.70)) * 100)
+                ),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
+                    min=50, max=95, step=5, mode=selector.NumberSelectorMode.SLIDER
                 )
             ),
             # BATTERY BALANCING PARAMETERS
@@ -3265,7 +3243,69 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
-        """Entry point for options flow - redirect to wizard welcome."""
+        """Entry point: section menu — jump straight to what you want to change.
+
+        Previously this re-ran the WHOLE wizard (up to ~12 steps) even for a
+        single value change. Each section now ends at the summary (save).
+        """
+        menu = ["section_modules", "section_intervals"]
+        if self._wizard_data.get("enable_solar_forecast"):
+            menu.append("section_solar")
+        if self._wizard_data.get("enable_battery_prediction"):
+            menu.append("section_battery")
+        if self._wizard_data.get("enable_pricing"):
+            menu.append("section_pricing")
+        if self._wizard_data.get("enable_boiler") or self._wizard_data.get(
+            "boiler_setup_complete"
+        ):
+            menu.append("section_boiler")
+        menu.append("section_all")
+        return self.async_show_menu(step_id="init", menu_options=menu)
+
+    async def _enter_section(self, section: str, first_step: str) -> ConfigFlowResult:
+        self._section = section
+        self._step_history = ["init"]
+        return await getattr(self, f"async_step_{first_step}")()
+
+    async def async_step_section_modules(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("modules", "wizard_modules")
+
+    async def async_step_section_intervals(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("intervals", "wizard_intervals")
+
+    async def async_step_section_solar(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("solar", "wizard_solar")
+
+    async def async_step_section_battery(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("battery", "wizard_battery")
+
+    async def async_step_section_pricing(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("pricing", "wizard_pricing_import")
+
+    async def async_step_section_boiler(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        first = (
+            "wizard_boiler"
+            if self._wizard_data.get("boiler_setup_mode") == "expert"
+            else "wizard_boiler_simple_1"
+        )
+        return await self._enter_section("boiler", first)
+
+    async def async_step_section_all(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        self._section = None
         return await self.async_step_wizard_welcome_reconfigure()
 
     async def async_step_wizard_welcome_reconfigure(

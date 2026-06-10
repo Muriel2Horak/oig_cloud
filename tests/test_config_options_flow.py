@@ -56,8 +56,11 @@ async def test_options_flow_init_redirect():
     flow.hass = DummyHass()
 
     result = await flow.async_step_init()
-    assert result["type"] == "form"
-    assert result["step_id"] == "wizard_welcome_reconfigure"
+    # Options flow now opens a section menu instead of re-running the wizard
+    assert result["type"] == "menu"
+    assert result["step_id"] == "init"
+    assert "section_modules" in result["menu_options"]
+    assert "section_all" in result["menu_options"]
 
 
 @pytest.mark.asyncio
@@ -316,3 +319,31 @@ async def test_options_flow_summary_auto_balancing_solar_string2():
     assert options["solar_forecast_string2_declination"] == 40
     assert options["solar_forecast_string2_azimuth"] == 190
     assert options["solar_forecast_string2_kwp"] == 2.4
+
+
+@pytest.mark.asyncio
+async def test_options_flow_section_jumps_to_summary():
+    """In section mode the flow ends at the summary instead of walking on."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            "enable_battery_prediction": True,
+            "enable_pricing": True,
+            "enable_boiler": False,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    flow._section = "battery"
+    assert flow._get_next_step("wizard_battery") == "wizard_summary"
+
+    flow._section = "pricing"
+    assert flow._get_next_step("wizard_pricing_distribution") == "wizard_summary"
+    # inside the pricing section the chain still walks normally
+    assert flow._get_next_step("wizard_pricing_import") == "wizard_pricing_export"
+
+    flow._section = None
+    # without a section, battery continues into pricing as before
+    assert flow._get_next_step("wizard_battery") == "wizard_pricing_import"

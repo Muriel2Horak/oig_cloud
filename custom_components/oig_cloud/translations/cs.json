@@ -102,7 +102,8 @@
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "price_hysteresis_czk": "Hystereze ceny (CZK/kWh)",
           "hw_min_hold_hours": "Max. hodin na HW minimu",
-          "target_capacity_percent": "Cílová kapacita baterie (%)"
+          "target_capacity_percent": "Cílová kapacita baterie (%)",
+          "expensive_percentile_pct": "Práh drahých hodin (percentil, %)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat službu změny režimu (set_box_mode) automaticky podle vypočteného plánu. Stejné nastavení jako v průvodci.",
@@ -119,7 +120,8 @@
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "price_hysteresis_czk": "Minimální cenový rozdíl pro rozhodnutí držet vs. čekat",
           "hw_min_hold_hours": "Maximální doba na HW minimu před nuceným dobitím",
-          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
+          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
+          "expensive_percentile_pct": "Importy dražší než tento denní percentil se plánovač snaží pokrýt levným přednabitím baterie. Výchozí 70 %."
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "title": "🔋 Konfigurace predikce baterie"
@@ -451,7 +453,8 @@
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "min_capacity_percent": "Minimální kapacita baterie (%)",
           "disable_planning_min_guard": "Vypnout ochranu plánovacího minima",
-          "target_capacity_percent": "Cílová kapacita baterie (%)"
+          "target_capacity_percent": "Cílová kapacita baterie (%)",
+          "expensive_percentile_pct": "Práh drahých hodin (percentil, %)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat službu změny režimu (set_box_mode) automaticky podle vypočteného plánu.",
@@ -466,7 +469,8 @@
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
           "disable_planning_min_guard": "Povolí plánovači jít níž než plánovací minimum (agresivnější optimalizace)",
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
-          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
+          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
+          "expensive_percentile_pct": "Importy dražší než tento denní percentil se plánovač snaží pokrýt levným přednabitím baterie. Výchozí 70 %."
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "title": "🔋 Konfigurace predikce baterie"
@@ -708,6 +712,19 @@
       "wizard_welcome_reconfigure": {
         "description": "🔧 **Změna nastavení OIG Cloud**\n\nTento průvodce vás provede úpravou konfigurace integrace.\n\n**Co můžete změnit:**\n• 📦 Zapnout/vypnout moduly a funkce\n• ⏱️ Upravit intervaly načítání dat\n• ☀️ Změnit nastavení solární předpovědi\n• 🔋 Upravit parametry predikce baterie\n• 💰 Změnit cenové nastavení\n• ⚡ Upravit rozšířené senzory\n\n**Poznámka:** Přihlašovací údaje nelze měnit zde - musíte smazat a znovu přidat integraci.\n\nKliknutím na \"Odeslat\" pokračujte v nastavení.",
         "title": "🔧 Změna nastavení OIG Cloud"
+      },
+      "init": {
+        "title": "Nastavení OIG Cloud",
+        "description": "Vyberte sekci, kterou chcete upravit. Po uložení sekce se změny rovnou aplikují.",
+        "menu_options": {
+          "section_modules": "🧩 Moduly (zapnout/vypnout)",
+          "section_intervals": "⏱️ Připojení a intervaly",
+          "section_solar": "☀️ Solární předpověď",
+          "section_battery": "🔋 Baterie a plánovač",
+          "section_pricing": "💰 Ceny energie",
+          "section_boiler": "🔥 Bojler",
+          "section_all": "🧙 Celý průvodce znovu"
+        }
       }
     }
   },
