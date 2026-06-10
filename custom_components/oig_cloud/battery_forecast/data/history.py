@@ -153,6 +153,13 @@ def _build_actual_interval_entry(
         "grid_import_kwh": round(actual_data.get("grid_import", 0), 4),
         "grid_export_kwh": round(actual_data.get("grid_export", 0), 4),
         "net_cost": round(actual_data.get("net_cost", 0), 2),
+        # Záloha-only attribution (total import minus non-backup + battery
+        # grid-charge) — needed by the fair do-nothing savings comparison.
+        "nonbackup_kwh": round(actual_data.get("nonbackup_kwh", 0) or 0, 3),
+        "backup_grid_import_kwh": round(
+            actual_data.get("backup_grid_import_kwh", 0) or 0, 3
+        ),
+        "backup_net_cost": actual_data.get("backup_net_cost"),
         "spot_price": round(actual_data.get("spot_price", 0), 2),
         "export_price": round(actual_data.get("export_price", 0), 2),
         "mode": actual_data.get("mode", 0),
@@ -165,7 +172,10 @@ async def _patch_existing_actual(
 ) -> List[Dict[str, Any]]:
     patched_existing: List[Dict[str, Any]] = []
     for interval in existing_actual:
-        if interval.get("net_cost") is not None:
+        if (
+            interval.get("net_cost") is not None
+            and interval.get("backup_net_cost") is not None
+        ):
             patched_existing.append(interval)
             continue
         start_dt = _parse_interval_start(interval.get("time"))
@@ -180,6 +190,13 @@ async def _patch_existing_actual(
             interval = {
                 **interval,
                 "net_cost": round(historical_patch.get("net_cost", 0), 2),
+                "backup_net_cost": historical_patch.get("backup_net_cost"),
+                "backup_grid_import_kwh": round(
+                    historical_patch.get("backup_grid_import_kwh", 0) or 0, 3
+                ),
+                "nonbackup_kwh": round(
+                    historical_patch.get("nonbackup_kwh", 0) or 0, 3
+                ),
                 "spot_price": round(historical_patch.get("spot_price", 0), 2),
                 "export_price": round(historical_patch.get("export_price", 0), 2),
             }

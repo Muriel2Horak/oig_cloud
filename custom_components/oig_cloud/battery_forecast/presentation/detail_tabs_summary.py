@@ -176,6 +176,18 @@ def _attach_backup_savings(
     summary["backup_savings"] = baseline["savings"]
     summary["backup_battery_value_delta"] = baseline.get("battery_value_delta")
 
+    # The cost metric's "plan" used to come from the idealized stored plan
+    # (projected ~0 grid import) which made every actual look bad. Replace it
+    # with the honest pair: do-nothing baseline vs záloha-only actual cost.
+    metrics = summary.get("metrics")
+    if isinstance(metrics, dict) and baseline.get("actual_cost") is not None:
+        metrics["cost"] = {
+            "plan": round(baseline["baseline_cost"], 2),
+            "actual": round(baseline["actual_cost"], 2),
+            "unit": "Kč",
+            "has_actual": True,
+        }
+
 
 def _default_tab_summary() -> Dict[str, Any]:
     return {
