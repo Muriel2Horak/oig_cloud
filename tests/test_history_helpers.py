@@ -267,12 +267,17 @@ async def test_patch_existing_actual(monkeypatch):
     existing = [
         {"time": "2025-01-01T00:00:00", "net_cost": None},
         {"time": "bad", "net_cost": None},
+        # has net_cost but no backup_net_cost -> re-patched (backfill)
         {"time": "2025-01-01T00:15:00", "net_cost": 1.0},
+        # fully populated -> untouched
+        {"time": "2025-01-01T00:30:00", "net_cost": 1.0, "backup_net_cost": 0.8},
     ]
     patched = await history_module._patch_existing_actual(sensor, existing)
     assert patched[0]["net_cost"] == 1.2
     assert patched[1]["time"] == "bad"
-    assert patched[2]["net_cost"] == 1.0
+    assert patched[2]["net_cost"] == 1.2
+    assert patched[3]["net_cost"] == 1.0
+    assert patched[3]["backup_net_cost"] == 0.8
 
 
 @pytest.mark.asyncio
