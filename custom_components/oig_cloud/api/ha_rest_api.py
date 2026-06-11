@@ -1243,6 +1243,12 @@ class OIGCloudModuleConfigView(HomeAssistantView):
             if src in updates:
                 new_options[dst] = updates[src]
 
+        # Boiler runtime snapshots its config at entry setup (unlike battery,
+        # which reads options each cycle) — request a full entry reload so the
+        # new sensors/volume take effect immediately.
+        if section == "boiler":
+            new_options["_needs_reload"] = True
+
         hass.config_entries.async_update_entry(entry, options=new_options)
         _LOGGER.info(
             "Module config updated for %s (%s): %s",
