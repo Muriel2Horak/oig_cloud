@@ -404,13 +404,9 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
     expect(all).not.toContain('<oig-boiler-config-section');
   });
 
-  it('boiler tab template contains data-testid="boiler-setup-guide"', () => {
-    const all = getAppTemplateAll(makeApp());
+  it('boiler tab keeps setup guide inside the collapsed controls section', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
     expect(all).toContain('data-testid="boiler-setup-guide"');
-  });
-
-  it('boiler tab template contains Průvodce nastavením bojleru', () => {
-    const all = getAppTemplateAll(makeApp());
     expect(all).toContain('Průvodce nastavením bojleru');
   });
 
@@ -430,9 +426,9 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
     expect(all).toContain('panelType="source"');
   });
 
-  it('boiler tab template contains oig-boiler-timeline-chart when v2 data available', () => {
+  it('boiler tab template does NOT contain oig-boiler-timeline-chart (removed in Task 3)', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).toContain('oig-boiler-timeline-chart');
+    expect(all).not.toContain('oig-boiler-timeline-chart');
   });
 
   it('boiler tab template does NOT contain oig-boiler-status-panel', () => {
@@ -450,14 +446,25 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
     expect(all).not.toContain('oig-boiler-source-explanation');
   });
 
-  it('boiler tab template still contains oig-boiler-override-panel when v2 data available', () => {
+  it('boiler tab keeps the manual override panel inside the collapsed controls section', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
     expect(all).toContain('<oig-boiler-override-panel');
   });
 
-  it('boiler tab template contains data-testid="boiler-advanced-row" when v2 data available', () => {
+  it('boiler tab template does NOT contain oig-boiler-energy-today (removed in Task 3)', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).toContain('data-testid="boiler-advanced-row"');
+    expect(all).not.toContain('oig-boiler-energy-today');
+  });
+
+  it('boiler tab renders the collapsed Ovládání a nastavení controls section', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
+    expect(all).toContain('boiler-controls-section');
+    expect(all).toContain('Ovládání a nastavení');
+  });
+
+  it('boiler tab template does NOT contain data-testid="boiler-advanced-row" (removed per mockup)', () => {
+    const all = getAppTemplateAll(makeAppWithStatus());
+    expect(all).not.toContain('data-testid="boiler-advanced-row"');
   });
 
   it('config_profile_unavailable alone does not block shell render', () => {
@@ -466,15 +473,13 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
     expect(all).not.toContain('reason="degraded"');
   });
 
-  it('mounted: timeline chart .data is exactly the full boilerV2Data object and .nowMs is not set', async () => {
+  it('mounted: boiler tab does NOT contain oig-boiler-timeline-chart (removed in Task 3)', async () => {
     const app = makeAppWithStatus() as any;
     app.activeTab = 'boiler';
     document.body.appendChild(app);
     await app.updateComplete;
-    const timeline = app.shadowRoot!.querySelector('oig-boiler-timeline-chart') as any;
-    expect(timeline).not.toBeNull();
-    expect(timeline.data).toBe(app.boilerV2Data);
-    expect(timeline.nowMs == null).toBe(true);
+    const timeline = app.shadowRoot!.querySelector('oig-boiler-timeline-chart');
+    expect(timeline).toBeNull();
     document.body.removeChild(app);
   });
 

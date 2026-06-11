@@ -1337,7 +1337,15 @@ export class OigBoilerDemandMap extends LitElement {
       color: ${u(CSS_VARS.accent)};
     }
 
-    /* Meta line */
+    /* Meta line — now inline in heading */
+    .meta-inline {
+      font-size: 10.5px;
+      opacity: 0.55;
+      font-weight: 400;
+      margin-left: auto;
+    }
+
+    /* Legacy meta block (kept for backwards compat if still used elsewhere) */
     .meta {
       font-size: 11px;
       color: ${u(CSS_VARS.textSecondary)};
@@ -1425,9 +1433,17 @@ export class OigBoilerDemandMap extends LitElement {
       return 'rgba(33,150,243,0.90)';
     };
 
+    const metaStr = (t('boiler.demand_map.meta', lang) as string)
+      .replace('{n}', String(dm.profile.daysUsed))
+      .replace('{cat}', CATEGORY_LABELS[dm.profile.category] || dm.profile.label);
+    const confidenceStr = `${t('boiler.demand_map.confidence', lang)} ${Math.round(dm.confidence * 100)} %`;
+
     return html`
       <div class="card" data-testid="boiler-demand-map">
-        <div class="heading">💧 ${heading}</div>
+        <div class="heading">
+          💧 ${heading}
+          <span class="meta-inline">${metaStr} · ${confidenceStr}${dm.profile.fallbackUsed ? html` · <span class="fallback-notice">${t('boiler.demand_map.fallback_notice', lang)}</span>` : nothing}</span>
+        </div>
 
         <div class="heatmap-wrap">
           <div class="heatmap">
@@ -1466,26 +1482,12 @@ export class OigBoilerDemandMap extends LitElement {
                 <span class="chip">
                   ${emoji}
                   <span class="chip-time">${timeStr}</span>
-                  &ge; ${litersRounded} L (${kwhFmt} kWh)
+                  &ge; <b>${litersRounded} L</b> (${kwhFmt} kWh)
                 </span>
               `;
             })}
           </div>
         ` : nothing}
-
-        <div class="meta">
-          <span>
-            ${(t('boiler.demand_map.meta', lang) as string)
-              .replace('{n}', String(dm.profile.daysUsed))
-              .replace('{cat}', CATEGORY_LABELS[dm.profile.category] || dm.profile.label)}
-          </span>
-          <span class="confidence-badge ${dm.confidence < 0.5 ? 'low' : ''}">
-            ${t('boiler.demand_map.confidence', lang)} ${Math.round(dm.confidence * 100)}&nbsp;%
-          </span>
-          ${dm.profile.fallbackUsed ? html`
-            <span class="fallback-notice">${t('boiler.demand_map.fallback_notice', lang)}</span>
-          ` : nothing}
-        </div>
       </div>
     `;
   }

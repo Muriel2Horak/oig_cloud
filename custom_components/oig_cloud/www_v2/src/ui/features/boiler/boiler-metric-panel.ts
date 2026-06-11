@@ -4,23 +4,108 @@ import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import {
-  BOILER_SOURCE_COLORS,
   type BoilerV2Data,
   type BoilerConfig,
+  type BoilerV2PlanSlot,
 } from './types';
-import { t, sourceLabel, type Lang } from '@/i18n/boiler';
-import {
-  formatTempC,
-  formatKwh,
-  formatCzk,
-} from './format';
+import { t, type Lang } from '@/i18n/boiler';
 
 const u = unsafeCSS;
 
-function srcColor(key: string | null | undefined): string {
-  if (!key) return '#9E9E9E';
-  return (BOILER_SOURCE_COLORS as Record<string, string>)[key] ?? '#9E9E9E';
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/** Human-readable source label + emoji for a plan slot recommendedSource (next-action row) */
+function sourceHumanLabel(source: string | null | undefined, lang: Lang): string {
+  switch (source) {
+    case 'fve':
+    case 'overflow': return t('boiler.panel.source_overflow', lang);
+    case 'grid':     return t('boiler.panel.source_grid', lang);
+    case 'battery':  return t('boiler.panel.source_battery_short', lang);
+    case 'alternative': return t('boiler.panel.source_alt', lang);
+    default:         return source ?? '—';
+  }
 }
+
+/** Window emoji for demand window label */
+function windowEmoji(label: string): string {
+  switch (label) {
+    case 'morning':   return '🌅';
+    case 'afternoon': return '☀️';
+    case 'evening':   return '🌆';
+    case 'night':     return '🌙';
+    default:          return '💧';
+  }
+}
+
+/** Window Czech/English human name — lowercase for inline use */
+function windowName(label: string, lang: Lang): string {
+  const key = `boiler.demand_map.window.${label}` as any;
+  const v = t(key, lang);
+  return v !== key ? v.toLowerCase() : label;
+}
+
+/** Format slot index (0-95, 15-min) to HH:MM */
+function slotToHhmm(slotIndex: number): string {
+  const totalMin = slotIndex * 15;
+  const h = Math.floor(totalMin / 60) % 24;
+  const m = totalMin % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Extract HH:MM from an ISO timestamp */
+function isoToHhmm(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '??:??';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Find the next future heating slot (heatingKwh > 0 or recommendedSource set
+ * and heatingKwh not explicitly 0). Returns null when none found.
+ */
+interface NextAction {
+  label: string;   // e.g. "☀️ Přetoky"
+  timeStr: string; // e.g. "13:30"
+  isTomorrow: boolean;
+}
+
+function findNextHeatingSlot(
+  planSlots: BoilerV2PlanSlot[],
+  lang: Lang,
+): NextAction | null {
+  const now = Date.now();
+  for (const slot of planSlots) {
+    const startMs = new Date(slot.start).getTime();
+    if (!Number.isFinite(startMs)) continue;
+    // Only future slots
+    if (startMs < now - 60_000) continue;
+    // Must have heating_kwh > 0 or be a heating slot (if heatingKwh null, rely on source)
+    const kwh = slot.heatingKwh ?? null;
+    if (kwh !== null && kwh <= 0) continue;
+    const src = slot.recommendedSource;
+    if (!src) continue;
+
+    // Check if it's tomorrow (wall-clock date comparison)
+    const slotDate = new Date(startMs);
+    const today = new Date();
+    const isTomorrow =
+      slotDate.getDate() !== today.getDate() ||
+      slotDate.getMonth() !== today.getMonth() ||
+      slotDate.getFullYear() !== today.getFullYear();
+
+    const label = sourceHumanLabel(src, lang);
+    const timeStr = `${String(slotDate.getHours()).padStart(2, '0')}:${String(slotDate.getMinutes()).padStart(2, '0')}`;
+
+    return { label, timeStr, isTomorrow };
+  }
+  return null;
+}
+
+// ============================================================================
+// Component
+// ============================================================================
 
 @customElement('oig-boiler-metric-panel')
 export class OigBoilerMetricPanel extends LitElement {
@@ -35,175 +120,64 @@ export class OigBoilerMetricPanel extends LitElement {
       font-family: ${u(CSS_VARS.fontFamily)};
     }
 
+    /* ── Side panel wrapper ── */
     .panel {
       background: ${u(CSS_VARS.cardBg)};
-      border: 1px solid ${u(CSS_VARS.divider)};
       border-radius: 12px;
-      padding: 18px;
+      padding: 12px 14px;
       box-sizing: border-box;
     }
 
+    /* ── Section heading: UPPERCASE muted ── */
     .panel-title {
+      margin: 0 0 8px;
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: ${u(CSS_VARS.textSecondary)};
-      margin: 0 0 14px;
-    }
-
-    .section-title {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: ${u(CSS_VARS.textSecondary)};
-      margin: 18px 0 0;
-      padding-bottom: 6px;
-    }
-
-    /* stat-row: label | sparkline | value */
-    .stat-row {
-      display: grid;
-      grid-template-columns: 1fr 60px auto;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 0;
-      border-bottom: 1px solid ${u(CSS_VARS.divider)};
-    }
-
-    .stat-row:last-child {
-      border-bottom: none;
-    }
-
-    .stat-row.no-spark {
-      grid-template-columns: 1fr auto;
-    }
-
-    .stat-row.sub {
-      padding: 5px 0;
-    }
-
-    .stat-row.sub .stat-label,
-    .stat-row.sub .stat-value {
-      font-size: 11px;
-      color: ${u(CSS_VARS.textSecondary)};
-    }
-
-    .stat-label {
-      color: ${u(CSS_VARS.textSecondary)};
-      font-size: 12px;
-    }
-
-    .stat-value {
-      font-size: 15px;
-      font-weight: 600;
+      opacity: 0.7;
       color: ${u(CSS_VARS.textPrimary)};
-      text-align: right;
-      white-space: nowrap;
     }
 
-    .stat-value.lg {
-      font-size: 22px;
-    }
-
-    .stat-unit {
-      color: ${u(CSS_VARS.textSecondary)};
-      font-size: 12px;
-      margin-left: 3px;
-      font-weight: 400;
-    }
-
-    .stat-spark {
-      width: 60px;
-      height: 18px;
-      opacity: 0.85;
-    }
-
-    /* Komfort banner */
-    .komfort-banner {
+    /* ── KV row: label left (muted), bold value right, dashed separator ── */
+    .kv {
       display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 14px;
-      border-radius: 10px;
-      margin-bottom: 14px;
+      justify-content: space-between;
+      font-size: 11.5px;
+      padding: 4px 0;
+      border-bottom: 1px dashed rgba(255,255,255,.1);
     }
+    .kv:last-child { border-bottom: none; }
+    .kv span { opacity: 0.6; }
+    .kv b { font-weight: 600; }
 
-    .komfort-banner.ok {
-      background: rgba(76, 175, 80, 0.08);
-      border: 1px solid rgba(76, 175, 80, 0.25);
-    }
-
-    .komfort-banner.gap {
-      background: rgba(255, 152, 0, 0.08);
-      border: 1px solid rgba(255, 152, 0, 0.25);
-    }
-
-    .komfort-banner.unknown {
-      background: rgba(158, 158, 158, 0.08);
-      border: 1px solid rgba(158, 158, 158, 0.25);
-    }
-
-    .komfort-circle {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      font-weight: 800;
-      flex-shrink: 0;
-    }
-
-    .komfort-circle.ok {
-      background: #4CAF50;
-      color: #fff;
-    }
-
-    .komfort-circle.gap {
-      background: #FF9800;
-      color: #fff;
-    }
-
-    .komfort-circle.unknown {
-      background: #9E9E9E;
-      color: #fff;
-    }
-
-    .komfort-text-main {
-      font-size: 15px;
-      font-weight: 700;
-    }
-
-    .komfort-text-main.ok { color: #4CAF50; }
-    .komfort-text-main.gap { color: #FF9800; }
-    .komfort-text-main.unknown { color: #9E9E9E; }
-
-    .komfort-text-sub {
-      font-size: 11px;
-      color: ${u(CSS_VARS.textSecondary)};
-      margin-top: 2px;
-    }
-
-    /* Source dot */
-    .source-dot {
+    /* ── OK chip: green, per mockup ── */
+    .okchip {
       display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      margin-right: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(76,175,80,.16);
+      border: 1px solid rgba(76,175,80,.35);
+      color: #9fe6a8;
+      border-radius: 7px;
+      padding: 3px 10px;
+      margin-bottom: 8px;
     }
 
-    .source-value {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 0;
+    /* ── Gap chip: amber ── */
+    .gapcip {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(255,152,0,.16);
+      border: 1px solid rgba(255,152,0,.35);
+      color: #ffd17c;
+      border-radius: 7px;
+      padding: 3px 10px;
+      margin-bottom: 8px;
     }
 
+    /* fallback panel */
     .empty-panel {
       color: ${u(CSS_VARS.textSecondary)};
       font-size: 12px;
@@ -227,203 +201,249 @@ export class OigBoilerMetricPanel extends LitElement {
     }
   }
 
+  // ── ZDROJ & NÁKLADY ──────────────────────────────────────────────────────
+
   private _renderSourcePanel() {
     const data = this.data;
+    const lang = this.lang;
+    const energy = data?.energyToday ?? null;
+    const planSummary = data?.planSummary ?? null;
     const activity = data?.activity ?? null;
-    const status = data?.status ?? null;
     const planSlots = data?.planSlots ?? [];
-    const sourceSegments = data?.sourceSegments ?? [];
-    const sparkPower = data?.sparkline?.power ?? [];
 
-    const activeSourceKey = activity?.source ?? status?.selectedSource ?? null;
-    const recSourceKey = planSlots[0]?.recommendedSource ?? null;
+    // Row 1: Cena dnes — from plan_summary.estimated_cost_czk
+    const costCzk: number | null = planSummary?.estimatedCostCzk ?? null;
 
-    const totalEnergyKwh = (status as any)?.energyTracking?.totalKwh
-      ?? sourceSegments.reduce((s, seg) => s + (seg.energyKwh ?? 0), 0) / 1000;
+    // Row 2: Energie dnes — energy_today.total_kwh
+    const totalKwh: number | null = energy?.totalKwh ?? null;
 
-    const bySource: Record<string, number> = {};
-    for (const seg of sourceSegments) {
-      if (seg.key) {
-        bySource[seg.key] = (bySource[seg.key] ?? 0) + (seg.energyKwh ?? 0) / 1000;
+    // Row 3: ☀️ z FVE
+    const fveKwh: number | null = energy?.fveKwh ?? null;
+
+    // Row 4: 🔌 ze sítě
+    const gridKwh: number | null = energy?.gridKwh ?? null;
+
+    // Row 5: 🔥 z plynu / alt — only when alt configured or kwh > 0
+    const altKwh: number | null = energy?.altKwh ?? null;
+    const showAlt = altKwh != null && altKwh > 0;
+    // alt type label: generic unless we have a type
+    const altLabel = t('boiler.panel.alt_label', lang);
+
+    // Row 6: 🔋→🔥 z baterie — only when > 0
+    const batteryKwh: number | null = energy?.batteryKwh ?? null;
+    const showBattery = batteryKwh != null && batteryKwh > 0;
+
+    // Row 7: Ušetřeno vs. plyn — savings (cost_if_all_alt − estimated_cost_czk), only when cost_if_all_alt > 0
+    const costIfAllAlt = planSummary?.costIfAllAlt ?? null;
+    const savings = (costIfAllAlt != null && costIfAllAlt > 0 && costCzk != null)
+      ? costIfAllAlt - costCzk
+      : null;
+    const savingsLabel = (savings != null && savings >= 0)
+      ? `${savings.toFixed(1).replace('.', ',')} Kč`
+      : null;
+
+    // Row 8: Aktuální zdroj
+    const sourceKey = activity?.source ?? null;
+    const currentSourceLabel: string = (() => {
+      switch (sourceKey) {
+        case 'fve':
+        case 'overflow': return t('boiler.panel.source_overflow', lang);
+        case 'grid':     return t('boiler.panel.source_grid_short', lang);
+        case 'discharge': return t('boiler.panel.source_battery_short', lang);
+        default: return '—';
       }
-    }
+    })();
 
-    const costTodayCzk: number | null = (data as any)?.costTodayCzk ?? null;
-    const savingsTodayCzk: number | null = (data as any)?.savingsTodayCzk ?? null;
-    const pvShare7dPct: number | null = (data as any)?.pvShare7dPct ?? null;
-
-    const fveKwh = bySource['fve'] ?? null;
-    const overflowKwh = bySource['overflow'] ?? null;
-    const gridKwh = bySource['grid'] ?? null;
-
-    const hasSpark = sparkPower.length > 0;
+    // Row 9: Další akce — next future heating slot
+    const nextAction = findNextHeatingSlot(planSlots, lang);
 
     return html`
       <div class="panel" data-testid="boiler-source-panel">
-        <div class="panel-title">Zdroj &amp; náklady</div>
+        <h3 class="panel-title">${t('boiler.panel.source_title', lang)}</h3>
 
-        <div class="stat-row ${hasSpark ? '' : 'no-spark'}">
-          <span class="stat-label">Cena dnes</span>
-          ${hasSpark ? html`<oig-boiler-sparkline class="stat-spark" .values=${sparkPower} color="#f5b800" .sparkWidth=${60} .sparkHeight=${18}></oig-boiler-sparkline>` : ''}
-          <span class="stat-value">${costTodayCzk != null ? formatCzk(costTodayCzk) : '—'}<span class="stat-unit">Kč</span></span>
-        </div>
-
-        <div class="stat-row ${hasSpark ? '' : 'no-spark'}">
-          <span class="stat-label">Energie dnes</span>
-          ${hasSpark ? html`<oig-boiler-sparkline class="stat-spark" .values=${sparkPower} color="#60a5fa" .sparkWidth=${60} .sparkHeight=${18}></oig-boiler-sparkline>` : ''}
-          <span class="stat-value">${totalEnergyKwh > 0 ? formatKwh(totalEnergyKwh) : '—'}</span>
-        </div>
-
-        ${fveKwh != null ? html`
-          <div class="stat-row sub no-spark">
-            <span class="stat-label">Z FVE</span>
-            <span class="stat-value" style="color:${srcColor('fve')}">${formatKwh(fveKwh)}</span>
+        ${costCzk != null ? html`
+          <div class="kv">
+            <span>${t('boiler.panel.cost_today', lang)}</span>
+            <b>${costCzk.toFixed(1).replace('.', ',')} Kč</b>
           </div>
         ` : nothing}
 
-        ${overflowKwh != null ? html`
-          <div class="stat-row sub no-spark">
-            <span class="stat-label">Z přetoku</span>
-            <span class="stat-value" style="color:${srcColor('overflow')}">${formatKwh(overflowKwh)}</span>
+        ${totalKwh != null ? html`
+          <div class="kv">
+            <span>${t('boiler.panel.energy_today', lang)}</span>
+            <b>${totalKwh.toFixed(1).replace('.', ',')} kWh</b>
           </div>
         ` : nothing}
 
-        ${gridKwh != null ? html`
-          <div class="stat-row sub no-spark">
-            <span class="stat-label">Ze sítě</span>
-            <span class="stat-value" style="color:${srcColor('grid')}">${formatKwh(gridKwh)}</span>
+        ${fveKwh != null && fveKwh > 0 ? html`
+          <div class="kv">
+            <span>${t('boiler.panel.fve_label', lang)}</span>
+            <b style="color:#ffd479">${fveKwh.toFixed(1).replace('.', ',')} kWh</b>
           </div>
         ` : nothing}
 
-        <div class="stat-row no-spark">
-          <span class="stat-label">Ušetřeno vs. neoptim.</span>
-          <span class="stat-value">${savingsTodayCzk != null ? `~${formatCzk(savingsTodayCzk)}` : '—'}<span class="stat-unit">${savingsTodayCzk != null ? 'Kč' : ''}</span></span>
+        ${gridKwh != null && gridKwh > 0 ? html`
+          <div class="kv">
+            <span>${t('boiler.panel.grid_label', lang)}</span>
+            <b style="color:#81d4fa">${gridKwh.toFixed(1).replace('.', ',')} kWh</b>
+          </div>
+        ` : nothing}
+
+        ${showAlt ? html`
+          <div class="kv">
+            <span>${altLabel}</span>
+            <b style="color:#ffab91">${altKwh!.toFixed(1).replace('.', ',')} kWh</b>
+          </div>
+        ` : nothing}
+
+        ${showBattery ? html`
+          <div class="kv">
+            <span>${t('boiler.panel.battery_label', lang)}</span>
+            <b style="color:#ce93d8">${batteryKwh!.toFixed(1).replace('.', ',')} kWh</b>
+          </div>
+        ` : nothing}
+
+        ${savingsLabel != null ? html`
+          <div class="kv">
+            <span>${t('boiler.panel.savings_label', lang)}</span>
+            <b style="color:#9fe6a8">${savingsLabel}</b>
+          </div>
+        ` : nothing}
+
+        <div class="kv">
+          <span>${t('boiler.panel.current_source', lang)}</span>
+          <b>${currentSourceLabel}</b>
         </div>
 
-        <div class="stat-row no-spark">
-          <span class="stat-label">FVE podíl (7d)</span>
-          <span class="stat-value">${pvShare7dPct != null ? `${Math.round(pvShare7dPct)} %` : '—'}</span>
-        </div>
-
-        <div class="stat-row no-spark">
-          <span class="stat-label">Aktivní zdroj</span>
-          <span class="stat-value source-value">
-            ${activeSourceKey
-              ? html`<span class="source-dot" style="background:${srcColor(activeSourceKey)}"></span>${sourceLabel(activeSourceKey, this.lang)}`
-              : '—'}
-          </span>
-        </div>
-
-        <div class="stat-row no-spark">
-          <span class="stat-label">Doporučený zdroj</span>
-          <span class="stat-value source-value">
-            ${recSourceKey
-              ? html`<span class="source-dot" style="background:${srcColor(recSourceKey)}"></span>${sourceLabel(recSourceKey, this.lang)}`
-              : '—'}
-          </span>
-        </div>
+        ${nextAction != null ? html`
+          <div class="kv" data-testid="boiler-next-action">
+            <span>${t('boiler.panel.next_action', lang)}</span>
+            <b>${nextAction.isTomorrow
+              ? html`${nextAction.label} ${t('boiler.panel.tomorrow', lang)} ${nextAction.timeStr}`
+              : html`${nextAction.label} ${nextAction.timeStr}`
+            }</b>
+          </div>
+        ` : nothing}
       </div>
     `;
   }
 
+  // ── KOMFORT ──────────────────────────────────────────────────────────────
+
   private _renderComfortPanel() {
     const data = this.data;
-    const status = data?.status ?? null;
-    const explanation = data?.explanation ?? null;
-    const cfg = this.config;
+    const lang = this.lang;
+    const comfortStatus = (data?.status as any)?.comfortSatisfied ?? null;
+
+    // Comfort chip
+    const comfortSatisfied: boolean | null = comfortStatus;
+
+    // Demand windows (max 3)
+    const demandMap = data?.demandMap ?? null;
+    const windows = demandMap?.windows?.slice(0, 3) ?? [];
+
+    // Deadline from plan_summary; fallback to config.deadlineTime
+    const planSummary = data?.planSummary ?? null;
+    const deadlineTime = planSummary?.deadlineTime
+      ?? (this.config?.deadlineTime !== '--:--' ? this.config?.deadlineTime : null)
+      ?? null;
+    // target temp from config
+    const targetTempC = this.config?.targetTempC ?? null;
+
+    // Legionella
+    const legionella = data?.legionella ?? null;
+    const legionellaStr: string | null = (() => {
+      if (!legionella) return null;
+      if (!legionella.enabled) return t('boiler.panel.legionella_off', lang);
+      if (legionella.scheduledStart) {
+        // extract HH:MM from ISO or HH:MM string
+        const raw = legionella.scheduledStart;
+        const timeStr = raw.includes('T') ? isoToHhmm(raw) : raw.substring(0, 5);
+        return `${t('boiler.panel.legionella_plan', lang)} ${timeStr}`;
+      }
+      const daysSince = legionella.daysSinceLast ?? null;
+      const interval = legionella.intervalDays ?? null;
+      if (daysSince !== null && interval !== null) {
+        const remaining = interval - daysSince;
+        if (remaining <= 0) {
+          return t('boiler.panel.legionella_overdue', lang);
+        }
+        return `${t('boiler.panel.legionella_in', lang)} ${remaining} ${t('boiler.panel.legionella_days', lang)}`;
+      }
+      return t('boiler.panel.legionella_scheduled', lang);
+    })();
+
+    // Trend (same as tank chip)
     const activity = data?.activity ?? null;
-    const sparkTemp = data?.sparkline?.temperature ?? [];
-
-    const comfortOk = status?.comfortSatisfied;
-    const cls = comfortOk === true ? 'ok' : comfortOk === false ? 'gap' : 'unknown';
-    const comfortLabel =
-      comfortOk === true
-        ? t('boiler.status.comfort_satisfied', this.lang)
-        : comfortOk === false
-          ? t('boiler.status.comfort_unsatisfied', this.lang)
-          : t('boiler.status.comfort_unknown', this.lang);
-
-    const gapC = explanation?.unsatisfiedComfortGapC ?? null;
-    const targetTempC = cfg?.targetTempC ?? null;
-    const subText =
-      gapC != null && targetTempC != null
-        ? `Mezera do cíle: ${gapC.toFixed(1)} °C · cíl ${targetTempC.toFixed(0)} °C`
-        : targetTempC != null
-          ? `Cíl: ${targetTempC.toFixed(0)} °C`
-          : '';
-
-    const topTempC = status?.temperatureTop ?? null;
-    const bottomTempC = status?.temperatureBottom ?? null;
-    const stratDeltaC =
-      topTempC != null && bottomTempC != null ? topTempC - bottomTempC : null;
-
-    const trendCPerMin = activity?.temperatureTrendCPerMin ?? null;
-    const trendText = trendCPerMin != null
-      ? `${trendCPerMin >= 0 ? '+' : ''}${trendCPerMin.toFixed(1)} °C/min`
+    const trend = activity?.temperatureTrendCPerMin ?? null;
+    const trendStr: string | null = trend != null
+      ? `${trend >= 0 ? '+' : ''}${trend.toFixed(1).replace('.', ',')} °C/min`
       : null;
 
-    const hasSpark = sparkTemp.length > 0;
+    // Circulation
+    const circRuns = data?.circulationRuns ?? [];
+    const circStr: string | null = (() => {
+      if (!circRuns.length) return null;
+      const first = circRuns[0];
+      const timeStr = isoToHhmm(first.start);
+      return `💧 ${timeStr} (${t('boiler.panel.circ_before_peak', lang)})`;
+    })();
 
     return html`
       <div class="panel" data-testid="boiler-comfort-panel">
-        <div class="panel-title">Komfort</div>
+        <h3 class="panel-title">${t('boiler.panel.comfort_title', lang)}</h3>
 
-        <div class="komfort-banner ${cls}">
-          <div class="komfort-circle ${cls}">${comfortOk === true ? '✓' : comfortOk === false ? '!' : '?'}</div>
-          <div>
-            <div class="komfort-text-main ${cls}">${comfortLabel}</div>
-            ${subText ? html`<div class="komfort-text-sub">${subText}</div>` : nothing}
+        ${comfortSatisfied === true
+          ? html`<span class="okchip" data-testid="boiler-comfort-chip">✓ ${t('boiler.status.comfort_satisfied', lang)}</span>`
+          : comfortSatisfied === false
+            ? html`<span class="gapcip" data-testid="boiler-comfort-chip">⚠ ${t('boiler.status.comfort_unsatisfied', lang)}</span>`
+            : nothing}
+
+        ${windows.map(w => {
+          const emoji = windowEmoji(w.label);
+          const name = windowName(w.label, lang);
+          const timeStr = slotToHhmm(w.slotIndex);
+          const liters = Math.round(w.liters);
+          return html`
+            <div class="kv" data-testid="boiler-demand-window">
+              <span>${emoji} ${name} ${timeStr}</span>
+              <b>≥${liters} L</b>
+            </div>
+          `;
+        })}
+
+        ${deadlineTime && deadlineTime !== '--:--' ? html`
+          <div class="kv" data-testid="boiler-deadline-row">
+            <span>${t('boiler.panel.deadline_label', lang)}</span>
+            <b>${deadlineTime.substring(0, 5)}${targetTempC != null ? html` · ${targetTempC.toFixed(0)} °C` : nothing}</b>
           </div>
-        </div>
+        ` : nothing}
 
-        ${cfg?.deadlineTime && cfg.deadlineTime !== '--:--'
-          ? html`
-            <div class="stat-row no-spark">
-              <span class="stat-label">${t('boiler.config.deadline', this.lang)}</span>
-              <span class="stat-value">${cfg.deadlineTime}</span>
-            </div>
-          `
-          : nothing}
+        ${legionellaStr != null ? html`
+          <div class="kv" data-testid="boiler-legionella-row">
+            <span>${t('boiler.panel.legionella_label', lang)}</span>
+            <b>${legionellaStr}</b>
+          </div>
+        ` : nothing}
 
-        <div class="stat-row ${hasSpark ? '' : 'no-spark'}">
-          <span class="stat-label">${t('boiler.status.temp_top', this.lang)}</span>
-          ${hasSpark ? html`<oig-boiler-sparkline class="stat-spark" .values=${sparkTemp} color="#ff7a45" .sparkWidth=${60} .sparkHeight=${18}></oig-boiler-sparkline>` : ''}
-          <span class="stat-value">${formatTempC(topTempC)}</span>
-        </div>
+        ${trendStr != null ? html`
+          <div class="kv" data-testid="boiler-trend-row">
+            <span>${t('boiler.panel.trend_label', lang)}</span>
+            <b>${trendStr}</b>
+          </div>
+        ` : nothing}
 
-        ${bottomTempC != null
-          ? html`
-            <div class="stat-row ${hasSpark ? '' : 'no-spark'}">
-              <span class="stat-label">${t('boiler.status.temp_bottom', this.lang)}</span>
-              ${hasSpark ? html`<oig-boiler-sparkline class="stat-spark" .values=${sparkTemp} color="#6688a8" .sparkWidth=${60} .sparkHeight=${18}></oig-boiler-sparkline>` : ''}
-              <span class="stat-value">${formatTempC(bottomTempC)}</span>
-            </div>
-          `
-          : html`
-            <div class="stat-row no-spark">
-              <span class="stat-label">${t('boiler.status.temp_bottom', this.lang)}</span>
-              <span class="stat-value">—</span>
-            </div>
-          `}
-
-        ${stratDeltaC != null
-          ? html`
-            <div class="stat-row ${hasSpark ? '' : 'no-spark'}">
-              <span class="stat-label">Stratifikace ΔT</span>
-              ${hasSpark ? html`<oig-boiler-sparkline class="stat-spark" .values=${sparkTemp} color="#a78bfa" .sparkWidth=${60} .sparkHeight=${18}></oig-boiler-sparkline>` : ''}
-              <span class="stat-value">${stratDeltaC.toFixed(1)}<span class="stat-unit">°C</span></span>
-            </div>
-          `
-          : nothing}
-
-        ${trendText != null
-          ? html`
-            <div class="stat-row no-spark">
-              <span class="stat-label">Trend</span>
-              <span class="stat-value">${trendText}</span>
-            </div>
-          `
-          : nothing}
+        ${circStr != null ? html`
+          <div class="kv" data-testid="boiler-circ-row">
+            <span>${t('boiler.panel.circ_label', lang)}</span>
+            <b>${circStr}</b>
+          </div>
+        ` : html`
+          <div class="kv" data-testid="boiler-circ-row">
+            <span>${t('boiler.panel.circ_label', lang)}</span>
+            <b style="opacity:0.5">${t('boiler.panel.circ_off', lang)}</b>
+          </div>
+        `}
       </div>
     `;
   }

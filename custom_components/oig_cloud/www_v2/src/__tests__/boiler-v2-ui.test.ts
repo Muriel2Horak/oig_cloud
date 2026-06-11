@@ -1745,12 +1745,13 @@ describe('OigBoilerV2Svg', () => {
     expect(json).toContain('"fve"');
   });
 
-  it('renders active segment with aura-segment--active class', () => {
+  it('renders active segment: surf--charging class on surf ellipse when charging', () => {
     const el = new OigBoilerV2Svg();
     el.fillLevelPct = 0.5;
     el.sourceSegments = [makeSeg('fve', 0.5, true)];
+    el.chargingLabel = '⚡ NABÍJÍ';
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('aura-segment--active');
+    expect(json).toContain('surf--charging');
   });
 
   it('inactive segment does not have aura-segment--active class', () => {
@@ -1761,28 +1762,30 @@ describe('OigBoilerV2Svg', () => {
     expect(json).not.toContain('aura-segment--active');
   });
 
-  it('uses BOILER_SOURCE_COLORS for fve', () => {
+  it('uses orange gradient for fve source layer', () => {
     const el = new OigBoilerV2Svg();
     el.fillLevelPct = 0.5;
     el.sourceSegments = [makeSeg('fve', 0.5, false)];
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain(BOILER_SOURCE_COLORS.fve);
+    // fve uses orange gradient matching mockup
+    expect(json).toContain('255,213,79');
   });
 
-  it('uses BOILER_SOURCE_COLORS for overflow', () => {
+  it('uses orange gradient for overflow source layer', () => {
     const el = new OigBoilerV2Svg();
     el.fillLevelPct = 0.5;
     el.sourceSegments = [makeSeg('overflow', 0.5, false)];
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain(BOILER_SOURCE_COLORS.overflow);
+    expect(json).toContain('255,213,79');
   });
 
-  it('uses BOILER_SOURCE_COLORS for grid', () => {
+  it('uses blue gradient for grid source layer', () => {
     const el = new OigBoilerV2Svg();
     el.fillLevelPct = 0.5;
     el.sourceSegments = [makeSeg('grid', 0.5, false)];
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain(BOILER_SOURCE_COLORS.grid);
+    // grid uses blue gradient matching mockup
+    expect(json).toContain('79,195,247');
   });
 
   it('renders multiple segments stacked', () => {
@@ -1794,35 +1797,36 @@ describe('OigBoilerV2Svg', () => {
     expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('neutral fallback fill=0.5 renders height ~174 (half of TANK_H=348)', () => {
+  it('neutral fallback fill=0.5 passes fillPct value to aura style', () => {
     const el = new OigBoilerV2Svg();
     el.fillLevelPct = 0.5;
     el.sourceSegments = [];
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain(',174,');
+    // The .aura div style contains "50.00" (height:50.00%)
+    expect(json).toContain('50.00');
   });
 
-  it('segment fill=0.5 renders height ~174 (half of TANK_H=348)', () => {
+  it('segment fill=0.5 passes layer height value in style', () => {
     const el = new OigBoilerV2Svg();
     el.fillLevelPct = 0.5;
     el.sourceSegments = [makeSeg('fve', 0.5, false)];
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain(',174,');
+    // Layer height style contains "50.00"
+    expect(json).toContain('50.00');
   });
 
-  it('renders viewBox 0 0 320 440', () => {
+  it('renders .tank and .shell CSS classes in template', () => {
     const el = new OigBoilerV2Svg();
     const strings = getTemplateStrings(el);
-    expect(strings).toContain('viewBox="0 0');
-    const vals = getTemplateValues(el);
-    expect(vals).toContain(320);
-    expect(vals).toContain(440);
+    // HTML div-based tank has class="tank" and class="shell"
+    expect(strings).toContain('class="tank"');
+    expect(strings).toContain('class="shell"');
   });
 
-  it('renders clipPath for tank shape', () => {
+  it('renders .aura element inside tank', () => {
     const el = new OigBoilerV2Svg();
     const strings = getTemplateStrings(el);
-    expect(strings).toContain('clipPath');
+    expect(strings).toContain('class="aura"');
   });
 
   it('null key segment renders data-source-key=unknown', () => {
@@ -1839,10 +1843,11 @@ describe('OigBoilerV2Svg', () => {
     expect(strings).toContain('data-testid="boiler-temp-top-label"');
   });
 
-  it('renders boiler-temp-bottom-label testid in template strings', () => {
+  it('renders boiler-temp-bottom-label testid when bottomTempC is set', () => {
     const el = new OigBoilerV2Svg();
-    const strings = getTemplateStrings(el);
-    expect(strings).toContain('data-testid="boiler-temp-bottom-label"');
+    el.bottomTempC = 40;
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('boiler-temp-bottom-label');
   });
 
   it('renders top temp value in template values', () => {
@@ -1859,11 +1864,21 @@ describe('OigBoilerV2Svg', () => {
     expect(json).toContain('42');
   });
 
-  it('renders boiler-volume-badge when volumeL is set', () => {
+  it('renders boiler-volume-badge when readyLiters is set', () => {
     const el = new OigBoilerV2Svg();
-    el.volumeL = 120;
+    el.readyLiters = 120;
     const json = JSON.stringify(getTemplateValues(el));
     expect(json).toContain('boiler-volume-badge');
+    expect(json).toContain('120');
+  });
+
+  it('renders boiler-volume-badge with computed readyLiters from fillLevelPct * volumeL', () => {
+    const el = new OigBoilerV2Svg();
+    el.volumeL = 200;
+    el.fillLevelPct = 0.6;
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('boiler-volume-badge');
+    // 200 * 0.6 = 120
     expect(json).toContain('120');
   });
 
@@ -1895,14 +1910,18 @@ describe('OigBoilerV2Svg', () => {
     el.lang = 'en';
     const json = JSON.stringify(getTemplateValues(el));
     expect(json).toContain('boiler-source-chip');
-    expect(json).toContain('PV');
+    // en label for fve source chip
+    expect(json).toContain('Charging from PV overflow');
   });
 
-  it('does not render boiler-source-chip when sourceKey is null', () => {
+  it('renders idle source chip when sourceKey is null', () => {
+    // Per mockup: always render source chip; show "Neohřívá" when idle
     const el = new OigBoilerV2Svg();
     el.sourceKey = null;
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).not.toContain('boiler-source-chip');
+    expect(json).toContain('boiler-source-chip');
+    // idle chip shows "not heating" text
+    expect(json).toMatch(/Neohřívá|Not heating/);
   });
 
   it('aria-label contains top temp value', () => {
@@ -1948,6 +1967,97 @@ describe('OigBoilerV2Svg', () => {
     expect(() => getTemplateStrings(el)).not.toThrow();
     const strings = getTemplateStrings(el);
     expect(strings).toContain('data-testid="boiler-svg"');
+  });
+
+  // ── New mockup-fidelity tests ──
+
+  it('renders trend chip data-testid="boiler-trend-chip" in template values', () => {
+    const el = new OigBoilerV2Svg();
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('boiler-trend-chip');
+  });
+
+  it('trend chip has green class when chargingLabel is set', () => {
+    const el = new OigBoilerV2Svg();
+    el.chargingLabel = '⚡ NABÍJÍ +0,4 °C/min';
+    const json = JSON.stringify(getTemplateValues(el));
+    // green tint: class "trend" without "trend--idle"
+    expect(json).not.toContain('trend--idle');
+    expect(json).toContain('⚡ NABÍJÍ');
+  });
+
+  it('trend chip shows idle indicator when chargingLabel is null', () => {
+    const el = new OigBoilerV2Svg();
+    el.chargingLabel = null;
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('trend--idle');
+  });
+
+  it('aura layers stacked bottom-up: first layer cumulative bottom starts at 0', () => {
+    const el = new OigBoilerV2Svg();
+    el.fillLevelPct = 0.8;
+    el.sourceSegments = [makeSeg('grid', 0.4, false), makeSeg('fve', 0.4, false)];
+    const json = JSON.stringify(getTemplateValues(el));
+    // The first layer bottom=0 appears in style: bottom:0.00% — "0.00" is in values
+    // Two layers render, first starts at 0.00 (bottom), second at ~40.00
+    expect(json).toContain('"0.00"');
+    // Second layer starts at 40.00%
+    expect(json).toContain('"40.00"');
+  });
+
+  it('vol-caption contains ready text in template values', () => {
+    const el = new OigBoilerV2Svg();
+    el.readyLiters = 150;
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('vol-caption');
+  });
+
+  it('does not render vol pill when readyLiters=null and no fillLevelPct/volumeL', () => {
+    const el = new OigBoilerV2Svg();
+    el.readyLiters = null;
+    el.volumeL = null;
+    el.fillLevelPct = null;
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).not.toContain('boiler-volume-badge');
+  });
+
+  it('idle source chip renders "Neohřívá" in cs', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = null;
+    el.lang = 'cs';
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('Neohřívá');
+  });
+
+  it('grid source chip renders grid label', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'grid';
+    el.lang = 'cs';
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('Nabíjí ze sítě');
+  });
+
+  it('battery/discharge source chip renders battery label', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'battery';
+    el.lang = 'cs';
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('Ohřev z baterie');
+  });
+
+  it('bottom temp label shows "dole X °C" format', () => {
+    const el = new OigBoilerV2Svg();
+    el.bottomTempC = 42;
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('dole 42.0 °C');
+  });
+
+  it('no pipe labels (Cirk./TUV/Vstup) in rendered output', () => {
+    const el = new OigBoilerV2Svg();
+    const strings = getTemplateStrings(el);
+    expect(strings).not.toContain('Cirk');
+    expect(strings).not.toContain('TUV');
+    expect(strings).not.toContain('Vstup');
   });
 });
 
@@ -2064,9 +2174,10 @@ describe('OigBoilerV2Shell', () => {
     expect(strings).toContain('aria-live="polite"');
   });
 
-  it('renders ETA label when config and activity are present', () => {
+  it('passes computed etaText to oig-boiler-v2-svg when config and activity are present', () => {
     const el = new OigBoilerV2Shell();
     el.data = makeMinimalData({
+      status: { ...makeMinimalData().status!, temperatureTop: 55 },
       activity: { ...makeMinimalData().activity!, temperatureTrendCPerMin: 0.5 },
     });
     el.config = {
@@ -2077,12 +2188,14 @@ describe('OigBoilerV2Shell', () => {
       deadlineTime: '07:00',
       stratificationMode: 'top',
       kCoefficient: '0.5',
+      coldIntelTempC: 10,
       coldInletTempC: 10,
       auraMaxTempC: 75,
-    };
+    } as any;
     el.lang = 'en';
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('Estimated time to target');
+    // ETA is computed (55→65 at 0.5°C/min = 20 min) and passed to SVG with full format
+    expect(json).toContain('~20 min');
   });
 
   it('renders ETA already_reached when target already met', () => {
@@ -2106,25 +2219,36 @@ describe('OigBoilerV2Shell', () => {
     expect(json).toContain('Target reached');
   });
 
-  it('renders source legend chips for non-discharge segments', () => {
+  it('passes sourceSegments to oig-boiler-v2-svg', () => {
     const el = new OigBoilerV2Shell();
-    el.data = makeMinimalData({
-      sourceSegments: [makeSeg('fve', 0.5, false), makeSeg('grid', 0.3, false)],
-    });
+    const segs = [makeSeg('fve', 0.5, false), makeSeg('grid', 0.3, false)];
+    el.data = makeMinimalData({ sourceSegments: segs });
     el.lang = 'en';
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('PV');
-    expect(json).toContain('Grid');
+    // sourceSegments array is passed as a prop — should contain the source keys
+    expect(json).toContain('"fve"');
+    expect(json).toContain('"grid"');
   });
 
-  it('does not render discharge in source legend', () => {
-    const el = new OigBoilerV2Shell();
-    el.data = makeMinimalData({
-      sourceSegments: [makeSeg('discharge', 0.5, true)],
-    });
+  it('source chip shows fve label when sourceKey is fve', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'fve';
     el.lang = 'en';
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).not.toContain('Discharge');
+    // fve renders PV overflow chip
+    expect(json).toContain('PV overflow');
+  });
+
+  it('discharge source chip renders battery label (not raw Discharge text)', () => {
+    // discharge maps to battery chip — renders battery label for the chip
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'discharge';
+    el.lang = 'en';
+    const json = JSON.stringify(getTemplateValues(el));
+    // source chip shows Battery heating
+    expect(json).toContain('Battery heating');
+    // The chip label itself is not "Discharge"
+    expect(json).not.toContain('"Discharge"');
   });
 
   it('renders with null data without throwing', () => {
@@ -2340,29 +2464,27 @@ describe('OigBoilerMetricPanel source panel', () => {
     document.body.removeChild(el);
   });
 
-  it('renders source dot when selectedSource is set', async () => {
+  it('renders current source row when activity.source is set', async () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
     el.data = makeMinimalBoilerData({
-      status: {
-        currentState: 'heating',
-        comfortSatisfied: true,
-        comfortStatusCode: null,
-        selectedSource: 'fve',
-        actuatedSource: 'fve',
-        temperatureTop: 60,
-        temperatureBottom: 50,
-        energyNeededKwh: 0.5,
-        heating: true,
-        lastUpdate: null,
-        degraded: false,
-        degradedFlags: [],
+      activity: {
+        state: 'charging_fve',
+        source: 'fve',
+        temperatureTrendCPerMin: null,
+        fillLevelPct: null,
+        auraMaxTempC: 75,
+        heaterStates: {},
+        staleFlags: [],
       },
     });
     document.body.appendChild(el);
     await el.updateComplete;
-    const dot = el.shadowRoot!.querySelector('.source-dot');
-    expect(dot).not.toBeNull();
+    const html = el.shadowRoot!.innerHTML;
+    // New panel shows "Aktuální zdroj" row with the source label
+    expect(html).toContain('Aktuální zdroj');
+    // fve/overflow maps to '☀️ přetoky'
+    expect(html).toContain('přetoky');
     document.body.removeChild(el);
   });
 
@@ -3308,5 +3430,360 @@ describe('Task 10 — config_profile_unavailable does not block shell render', (
     const el = new OigBoilerUnavailableState();
     expect('errorCode' in el).toBe(false);
     expect('code' in el).toBe(false);
+  });
+});
+
+// ============================================================================
+// Task 2 — New Zdroj & náklady panel rows (mockup fidelity)
+// ============================================================================
+
+describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
+  it('renders Cena dnes row when estimatedCostCzk is present', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      planSummary: { estimatedCostCzk: 22.7, costIfAllGrid: 30.0, costIfAllAlt: null, deadlineTime: '18:00' },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Cena dnes');
+    // Czech comma decimal
+    expect(html).toMatch(/22[,.]7/);
+    document.body.removeChild(el);
+  });
+
+  it('does not render Cena dnes row when planSummary is null', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({ planSummary: null });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.innerHTML).not.toContain('Cena dnes');
+    document.body.removeChild(el);
+  });
+
+  it('renders Energie dnes row when energyToday is present', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      energyToday: { totalKwh: 16.9, fveKwh: 2.1, gridKwh: 0.5, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Energie dnes');
+    expect(html).toMatch(/16[,.]9/);
+    document.body.removeChild(el);
+  });
+
+  it('renders ☀️ z FVE row with orange color when fveKwh > 0', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      energyToday: { totalKwh: 5.0, fveKwh: 2.1, gridKwh: 0, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('z FVE');
+    expect(html).toContain('#ffd479');
+    document.body.removeChild(el);
+  });
+
+  it('renders 🔌 ze sítě row with blue color when gridKwh > 0', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      energyToday: { totalKwh: 1.0, fveKwh: 0, gridKwh: 0.5, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('ze sítě');
+    expect(html).toContain('#81d4fa');
+    document.body.removeChild(el);
+  });
+
+  it('renders alt row with salmon color only when altKwh > 0', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      energyToday: { totalKwh: 14.3, fveKwh: 0, gridKwh: 0, altKwh: 14.3, batteryKwh: 0, sourceInvalid: false },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('z plynu');
+    expect(html).toContain('#ffab91');
+    document.body.removeChild(el);
+  });
+
+  it('does not render alt row when altKwh is 0', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      energyToday: { totalKwh: 2.0, fveKwh: 2.0, gridKwh: 0, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.innerHTML).not.toContain('z plynu');
+    document.body.removeChild(el);
+  });
+
+  it('renders battery row only when batteryKwh > 0', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      energyToday: { totalKwh: 3.0, fveKwh: 0, gridKwh: 0, altKwh: 0, batteryKwh: 2.5, sourceInvalid: false },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('z baterie');
+    document.body.removeChild(el);
+  });
+
+  it('does not render battery row when batteryKwh is 0', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      energyToday: { totalKwh: 2.0, fveKwh: 2.0, gridKwh: 0, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.innerHTML).not.toContain('z baterie');
+    document.body.removeChild(el);
+  });
+
+  it('renders Ušetřeno vs. plyn row with green color when savings > 0', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      planSummary: { estimatedCostCzk: 22.7, costIfAllGrid: null, costIfAllAlt: 28.4, deadlineTime: '18:00' },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Ušetřeno vs. plyn');
+    expect(html).toContain('#9fe6a8');
+    document.body.removeChild(el);
+  });
+
+  it('does not render Ušetřeno when costIfAllAlt is 0 or null', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      planSummary: { estimatedCostCzk: 5.0, costIfAllGrid: 0, costIfAllAlt: null, deadlineTime: '18:00' },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.innerHTML).not.toContain('Ušetřeno');
+    document.body.removeChild(el);
+  });
+
+  it('always renders Aktuální zdroj row', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData();
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.innerHTML).toContain('Aktuální zdroj');
+    document.body.removeChild(el);
+  });
+
+  it('renders source panel heading "Zdroj & náklady"', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData();
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.textContent).toMatch(/Zdroj.*náklady/);
+    document.body.removeChild(el);
+  });
+});
+
+// ============================================================================
+// Task 2 — New Komfort panel rows (mockup fidelity)
+// ============================================================================
+
+describe('OigBoilerMetricPanel comfort panel — mockup rows (Task 2)', () => {
+  it('renders okchip for comfort_satisfied=true', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({
+      status: {
+        currentState: 'idle', comfortSatisfied: true, comfortStatusCode: null,
+        selectedSource: null, actuatedSource: null, temperatureTop: 60,
+        temperatureBottom: null, energyNeededKwh: null, heating: false,
+        lastUpdate: null, degraded: false, degradedFlags: [],
+      },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const chip = el.shadowRoot!.querySelector('.okchip');
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toContain('Komfort splněn');
+    document.body.removeChild(el);
+  });
+
+  it('renders gapcip for comfort_satisfied=false', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({
+      status: {
+        currentState: 'idle', comfortSatisfied: false, comfortStatusCode: null,
+        selectedSource: null, actuatedSource: null, temperatureTop: 45,
+        temperatureBottom: null, energyNeededKwh: null, heating: false,
+        lastUpdate: null, degraded: false, degradedFlags: [],
+      },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const chip = el.shadowRoot!.querySelector('.gapcip');
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toContain('nesplněn');
+    document.body.removeChild(el);
+  });
+
+  it('renders demand window rows from demandMap.windows', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({
+      demandMap: {
+        slotDurationMin: 15,
+        slotsP50: [],
+        slotsP80: [],
+        windows: [
+          { slotIndex: 26, startMinute: 390, p80Kwh: 3.2, liters: 110, label: 'morning' },
+          { slotIndex: 78, startMinute: 1170, p80Kwh: 4.1, liters: 140, label: 'evening' },
+        ],
+        profile: { category: 'workday_spring', level: 'exact', daysUsed: 14, label: 'test', fallbackUsed: false },
+        confidence: 0.78,
+      },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    // Morning window: slotIndex 26 → 06:30
+    expect(html).toContain('06:30');
+    expect(html).toContain('110');
+    // Evening window: slotIndex 78 → 19:30
+    expect(html).toContain('19:30');
+    expect(html).toContain('140');
+    document.body.removeChild(el);
+  });
+
+  it('renders Pojistka row from planSummary.deadlineTime', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({
+      planSummary: { estimatedCostCzk: null, costIfAllGrid: null, costIfAllAlt: null, deadlineTime: '18:00' },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Pojistka');
+    expect(html).toContain('18:00');
+    document.body.removeChild(el);
+  });
+
+  it('renders Anti-legionella row as "vypnuto" when legionella.enabled=false', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({
+      legionella: { enabled: false, daysSinceLast: null, intervalDays: null, scheduledStart: null },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Anti-legionella');
+    expect(html).toContain('vypnuto');
+    document.body.removeChild(el);
+  });
+
+  it('renders Anti-legionella row as "za X dní" when enabled with days info', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({
+      legionella: { enabled: true, daysSinceLast: 4, intervalDays: 7, scheduledStart: null },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('za');
+    expect(html).toContain('3');
+    document.body.removeChild(el);
+  });
+
+  it('renders Trend row from activity.temperatureTrendCPerMin', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({
+      activity: {
+        state: 'charging_fve', source: 'fve',
+        temperatureTrendCPerMin: 0.4,
+        fillLevelPct: 0.5, auraMaxTempC: 75,
+        heaterStates: {}, staleFlags: [],
+      },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Trend');
+    expect(html).toMatch(/\+0[,.]4/);
+    document.body.removeChild(el);
+  });
+
+  it('renders Cirkulace row as "vypnuta" when circulationRuns is empty', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({ circulationRuns: [] });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Cirkulace');
+    expect(html).toContain('vypnuta');
+    document.body.removeChild(el);
+  });
+
+  it('renders Cirkulace row with time when circulationRuns present', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({
+      circulationRuns: [
+        { start: '2026-06-11T17:15:00Z', end: '2026-06-11T17:20:00Z', label: 'pre-peak' },
+      ],
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('Cirkulace');
+    // circulationRuns[0] start is 17:15 UTC → just check the time appears
+    expect(html).toMatch(/\d\d:\d\d/);
+    document.body.removeChild(el);
+  });
+
+  it('renders comfort panel heading "Komfort"', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData();
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.textContent).toContain('Komfort');
+    document.body.removeChild(el);
+  });
+
+  it('uses kv class for rows (dashed separators)', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'comfort';
+    el.data = makeMinimalBoilerData({
+      planSummary: { estimatedCostCzk: null, costIfAllGrid: null, costIfAllAlt: null, deadlineTime: '18:00' },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const kvRows = el.shadowRoot!.querySelectorAll('.kv');
+    expect(kvRows.length).toBeGreaterThan(0);
+    document.body.removeChild(el);
   });
 });

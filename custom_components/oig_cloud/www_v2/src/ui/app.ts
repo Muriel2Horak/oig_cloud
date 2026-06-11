@@ -217,7 +217,7 @@ export class OigApp extends LitElement {
     .boiler-stage {
       display: grid;
       grid-template-areas: 'source shell comfort';
-      grid-template-columns: 1fr 380px 1fr;
+      grid-template-columns: 1fr 300px 1fr;
       gap: 24px;
       align-items: start;
     }
@@ -270,10 +270,51 @@ export class OigApp extends LitElement {
       color: #f5b800;
     }
 
-    .boiler-header-meta {
+    .boiler-badge.boiler-badge--age {
+      background: rgba(255,255,255,.06);
       color: #9aa6b2;
-      font-size: 12px;
-      margin-bottom: 16px;
+      font-weight: 400;
+    }
+
+    .boiler-status-chip-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 6px;
+    }
+
+    .boiler-controls-section {
+      margin-top: 4px;
+    }
+
+    .boiler-controls-section > summary {
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: #9aa6b2;
+      padding: 8px 0;
+      list-style: none;
+      user-select: none;
+    }
+
+    .boiler-controls-section > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .boiler-controls-section > summary::before {
+      content: '▶ ';
+      font-size: 9px;
+      opacity: 0.6;
+    }
+
+    .boiler-controls-section[open] > summary::before {
+      content: '▼ ';
+    }
+
+    .boiler-controls-body {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-top: 8px;
     }
 
     /* ---- Flow tab layout: tiles | canvas | control ---- */
@@ -950,48 +991,21 @@ export class OigApp extends LitElement {
       return html`<oig-boiler-unavailable-state .lang=${this.boilerLang} reason="unavailable" message="Data bojleru nejsou k dispozici"></oig-boiler-unavailable-state>`;
     }
 
-    const tz = this.hass?.config?.time_zone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Europe/Prague';
-
-    const heating = v2.status?.heating ?? false;
-    const comfortOk = v2.status?.comfortSatisfied;
-    const statusBadgeText = heating ? 'Nabíjí' : comfortOk === true ? 'Připraveno' : comfortOk === false ? 'Nedostatek' : 'Připraveno';
-    const degradedFlags = v2.status?.degradedFlags ?? [];
-    const degradedBadgeText = degradedFlags.includes('plan_degraded')
-      ? '⚠ Plán s omezenými daty'
-      : degradedFlags.includes('price_degraded')
-        ? '⚠ Ceny: stará data'
-        : degradedFlags.includes('forecast_degraded')
-          ? '⚠ FVE predikce: stará data'
-          : null;
-    const showDegradedBadge = (v2.status?.degraded ?? false) && degradedBadgeText !== null;
-
+    // Compact status chip — only when something is actually wrong (stale data
+    // or degraded plan). Mockup has a clean tab; the chip appears on demand.
     const dataAgeSecs = v2.explanation?.dataAgeSecs ?? null;
-    const lastUpdate = v2.status?.lastUpdate ?? null;
-    const ageText = dataAgeSecs === null ? null
-      : dataAgeSecs < 60 ? `${Math.round(dataAgeSecs)} sekundami`
-      : dataAgeSecs < 3600 ? `${Math.round(dataAgeSecs / 60)} minutami`
-      : `${Math.round(dataAgeSecs / 3600)} hodinami`;
-    const lastUpdateTime = lastUpdate ? (() => {
-      try {
-        const d = new Date(lastUpdate);
-        return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
-      } catch { return null; }
-    })() : null;
+    const isStale = dataAgeSecs !== null && dataAgeSecs > 600;
+    const isDegraded = (v2.status?.degraded ?? false) && realDegradedReasons.length > 0;
+    const staleChip = isStale || isDegraded
+      ? html`<div class="boiler-status-chip-row">
+          <span class="boiler-badge boiler-badge--age" data-testid="boiler-stale-chip">
+            ${isDegraded ? '⚠ Plán v degradovaném režimu' : `⚠ Data stará ${Math.round((dataAgeSecs ?? 0) / 60)} min`}
+          </span>
+        </div>`
+      : nothing;
 
     return html`
-      <div class="boiler-header">
-        <h1>🔥 Bojler
-          <span class="boiler-badge">${statusBadgeText}</span>
-          ${showDegradedBadge ? html`<span class="boiler-badge degr">${degradedBadgeText}</span>` : ''}
-        </h1>
-        ${ageText || lastUpdateTime ? html`
-          <div class="boiler-header-meta">
-            ${ageText ? `Aktualizováno před ${ageText}` : ''}
-            ${ageText && lastUpdateTime ? ' · ' : ''}
-            ${lastUpdateTime ? `Data k ${lastUpdateTime}` : ''}
-          </div>
-        ` : ''}
-      </div>
+      ${staleChip}
       <div class="boiler-stage">
         <oig-boiler-metric-panel panelType="source" .data=${v2} .config=${this.boilerConfig} .lang=${this.boilerLang}></oig-boiler-metric-panel>
         <oig-boiler-v2-shell .data=${v2} .config=${this.boilerConfig} .lang=${this.boilerLang}></oig-boiler-v2-shell>
@@ -1009,24 +1023,22 @@ export class OigApp extends LitElement {
         .planSummary=${v2.planSummary ?? null}
         .lang=${this.boilerLang}
       ></oig-boiler-plan-strip>
-      <oig-boiler-energy-today
-        .energy=${v2.energyToday ?? null}
-        .planSummary=${v2.planSummary ?? null}
-        .lang=${this.boilerLang}
-      ></oig-boiler-energy-today>
-      <oig-boiler-timeline-chart
-        .data=${v2}
-        .config=${this.boilerConfig}
-        .lang=${this.boilerLang}
-        .timeZone=${tz}
-      ></oig-boiler-timeline-chart>
-      <details data-testid="boiler-advanced-row">
-        <summary>Ruční přepis zdroje</summary>
-        <oig-boiler-override-panel
-          .lang=${this.boilerLang}
-          .identity=${v2.identity ?? { entryId: null, boxId: null, available: false }}
-          .currentOverride=${v2.manualOverride ?? null}
-        ></oig-boiler-override-panel>
+      <details class="boiler-controls-section" data-testid="boiler-controls-section">
+        <summary>⚙️ Ovládání a nastavení</summary>
+        <div class="boiler-controls-body">
+          <oig-boiler-override-panel
+            .lang=${this.boilerLang}
+            .identity=${v2.identity ?? { entryId: null, boxId: null, available: false }}
+            .currentOverride=${v2.manualOverride ?? null}
+          ></oig-boiler-override-panel>
+          <div data-testid="boiler-setup-guide" class="boiler-setup-guide">
+            <span class="boiler-setup-guide__icon">🧙</span>
+            <div class="boiler-setup-guide__text">
+              <strong>Průvodce nastavením bojleru</strong>
+              <p>Bojler konfigurujte v Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat.</p>
+            </div>
+          </div>
+        </div>
       </details>
     `;
   }
@@ -1150,13 +1162,6 @@ export class OigApp extends LitElement {
                  </div>
                ` : nothing}
                ${this._renderBoilerTabSafe()}
-               <div data-testid="boiler-setup-guide" class="boiler-setup-guide">
-                 <span class="boiler-setup-guide__icon">🧙</span>
-                 <div class="boiler-setup-guide__text">
-                   <strong>Průvodce nastavením bojleru</strong>
-                   <p>Bojler konfigurujte v Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat.</p>
-                 </div>
-               </div>
              </div>
 
              <!-- ===== SETTINGS TAB ===== -->
