@@ -390,7 +390,9 @@ class TestFreshnessValidation:
         assert is_fresh is False
         assert PlannerReasonCode.INPUT_STALE_PRICE in reasons
 
-    def test_stale_pv_when_current_slot_uncovered(self):
+    def test_windows_not_covering_now_are_still_fresh(self):
+        """Overflow windows are a schedule of opportunities, not a freshness
+        signal (F1): a window later today with none right now is fresh."""
         now = datetime(2026, 4, 25, 12, 7)
         slot0 = self._slot_start(now)
         spot = {
@@ -398,42 +400,26 @@ class TestFreshnessValidation:
             slot0 + timedelta(minutes=15): 2.0,
             slot0 + timedelta(minutes=30): 3.0,
         }
-        # Window starts AFTER current slot
+        # Window starts AFTER current slot — perfectly valid forecast.
         overflow = [(slot0 + timedelta(minutes=15), slot0 + timedelta(minutes=45))]
         inp = self._make_input(spot_prices=spot, overflow_windows=overflow)
         is_fresh, reasons = validate_freshness(inp, slot_minutes=self.SLOT_MINUTES, now=now)
-        assert is_fresh is False
-        assert PlannerReasonCode.INPUT_STALE_PV in reasons
+        assert is_fresh is True
+        assert reasons == []
 
-    def test_stale_pv_when_second_slot_uncovered(self):
+    def test_only_price_stale_when_both_inputs_empty(self):
+        """Empty overflow windows are fresh "no overflow expected" data; only
+        the missing prices make the input stale."""
         now = datetime(2026, 4, 25, 12, 7)
-        slot0 = self._slot_start(now)
-        spot = {
-            slot0: 1.0,
-            slot0 + timedelta(minutes=15): 2.0,
-            slot0 + timedelta(minutes=30): 3.0,
-        }
-        # Covers slot 0 and 2 but not 1
-        overflow = [
-            (slot0, slot0 + timedelta(minutes=15)),
-            (slot0 + timedelta(minutes=30), slot0 + timedelta(minutes=45)),
-        ]
-        inp = self._make_input(spot_prices=spot, overflow_windows=overflow)
-        is_fresh, reasons = validate_freshness(inp, slot_minutes=self.SLOT_MINUTES, now=now)
-        assert is_fresh is False
-        assert PlannerReasonCode.INPUT_STALE_PV in reasons
-
-    def test_both_stale_when_both_inputs_bad(self):
-        now = datetime(2026, 4, 25, 12, 7)
-        spot = {}
-        overflow = []
-        inp = self._make_input(spot_prices=spot, overflow_windows=overflow)
+        inp = self._make_input(spot_prices={}, overflow_windows=[])
         is_fresh, reasons = validate_freshness(inp, slot_minutes=self.SLOT_MINUTES, now=now)
         assert is_fresh is False
         assert PlannerReasonCode.INPUT_STALE_PRICE in reasons
-        assert PlannerReasonCode.INPUT_STALE_PV in reasons
+        assert PlannerReasonCode.INPUT_STALE_PV not in reasons
 
-    def test_empty_overflow_is_stale_pv(self):
+    def test_empty_overflow_is_fresh(self):
+        """Regression: an empty window list must NOT degrade the plan —
+        before this fix every night carried INPUT_STALE_PV."""
         now = datetime(2026, 4, 25, 12, 7)
         slot0 = self._slot_start(now)
         spot = {
@@ -443,9 +429,8 @@ class TestFreshnessValidation:
         }
         inp = self._make_input(spot_prices=spot, overflow_windows=[])
         is_fresh, reasons = validate_freshness(inp, slot_minutes=self.SLOT_MINUTES, now=now)
-        assert is_fresh is False
-        assert PlannerReasonCode.INPUT_STALE_PV in reasons
-        assert PlannerReasonCode.INPUT_STALE_PRICE not in reasons
+        assert is_fresh is True
+        assert reasons == []
 
 
 # ============================================================================
@@ -636,7 +621,8 @@ class TestContractIntegration:
         is_fresh, reasons = validate_freshness(inp, slot_minutes=15, now=now)
         assert is_fresh is False
         assert PlannerReasonCode.INPUT_STALE_PRICE in reasons
-        assert PlannerReasonCode.INPUT_STALE_PV in reasons
+        # Empty overflow windows are fresh data (F1) — only prices are stale.
+        assert PlannerReasonCode.INPUT_STALE_PV not in reasons
 
 
 class TestRuntimeIdentityPropagation:

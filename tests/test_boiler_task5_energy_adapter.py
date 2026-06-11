@@ -186,7 +186,8 @@ async def test_runtime_appends_validate_freshness_reasons(monkeypatch):
     assert planner.calls == []
     assert runtime.last_plan_result is not None
     assert PlannerReasonCode.INPUT_STALE_PRICE in runtime.last_plan_result.reason_codes
-    assert PlannerReasonCode.INPUT_STALE_PV in runtime.last_plan_result.reason_codes
+    # Empty overflow windows are fresh data since F1 — no INPUT_STALE_PV.
+    assert PlannerReasonCode.INPUT_STALE_PV not in runtime.last_plan_result.reason_codes
 
 
 @pytest.mark.asyncio

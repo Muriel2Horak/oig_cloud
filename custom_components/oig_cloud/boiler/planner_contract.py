@@ -202,29 +202,14 @@ def validate_freshness(
     if price_missing:
         reasons.append(PlannerReasonCode.INPUT_STALE_PRICE)
 
-    # PV coverage check (overflow_windows must cover all three slots)
-    pv_missing = False
-    for slot in required_slots:
-        slot_end = slot + timedelta(minutes=slot_minutes)
-        covered = False
-        for window in planner_input.overflow_windows:
-            try:
-                window_start, window_end = window
-                if (
-                    isinstance(window_start, datetime)
-                    and isinstance(window_end, datetime)
-                    and slot < window_end
-                    and slot_end > window_start
-                ):
-                    covered = True
-                    break
-            except (TypeError, ValueError):
-                pass
-        if not covered:
-            pv_missing = True
-            break
-    if pv_missing:
-        reasons.append(PlannerReasonCode.INPUT_STALE_PV)
+    # PV freshness: overflow windows are a SCHEDULE OF OPPORTUNITIES, not a
+    # freshness signal. Since F1 they come from the battery pipeline, and an
+    # empty/non-covering window list is perfectly fresh data ("no overflow
+    # expected now" — e.g. every night). Requiring windows to cover the next
+    # slots kept the plan degraded with INPUT_STALE_PV all night. True PV
+    # staleness (pipeline missing, unparseable payload) is flagged by the
+    # energy-input adapter and propagates via planner_input.reason_codes, so
+    # no coverage check belongs here.
 
     is_fresh = len(reasons) == 0
     return is_fresh, reasons
