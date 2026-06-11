@@ -8,6 +8,7 @@ import {
   BoilerEnergyBreakdown, BoilerPredictedUsage, BoilerConfig,
   BoilerHeatmapRow, BoilerProfilingData, BoilerData, BoilerPlanSlot,
   BoilerV2Data, BoilerV2PlanSlot, DemandMapData,
+  CirculationRun, LegionellaStatus, PlanSummary, EnergyToday,
   OVERRIDE_TTL_DEFAULT_MINUTES, OVERRIDE_TTL_MIN_MINUTES,
   OVERRIDE_TTL_MAX_MINUTES, OVERRIDE_TTL_STEP_MINUTES,
   SOURCE_LABELS,
@@ -20,8 +21,9 @@ const PLANNER_SOURCE_MAP: Record<string, string> = {
   pv: 'fve',
   overflow: 'overflow',
   grid: 'grid',
-  alternative: 'grid',
-  alt: 'grid',
+  // 'alternative' is kept distinct so the plan strip can render orange alt bands
+  alternative: 'alternative',
+  alt: 'alternative',
   // R3: battery source emitted when Home 5 maneuver is active
   battery: 'battery',
 };
@@ -249,6 +251,8 @@ interface BoilerCanonicalSlot {
   pv_kwh?: number | null;
   grid_kwh?: number | null;
   alt_kwh?: number | null;
+  /** Purpose: 'comfort' (default) or 'legionella' — R9/R12 */
+  purpose?: string | null;
 }
 
 interface BoilerCanonicalActivity {
@@ -358,6 +362,31 @@ interface BoilerCanonicalAPI {
       fallback_used: boolean;
     };
     confidence: number;
+  } | null;
+  circulation_runs?: Array<{
+    start: string;
+    end: string;
+    label: string;
+  }> | null;
+  legionella?: {
+    enabled: boolean;
+    days_since_last: number | null;
+    interval_days: number | null;
+    scheduled_start: string | null;
+  } | null;
+  plan_summary?: {
+    estimated_cost_czk: number | null;
+    cost_if_all_grid: number | null;
+    cost_if_all_alt: number | null;
+    deadline_time: string;
+  } | null;
+  energy_today?: {
+    total_kwh: number;
+    fve_kwh: number;
+    grid_kwh: number;
+    alt_kwh: number;
+    battery_kwh: number;
+    source_invalid: boolean;
   } | null;
 }
 
@@ -846,6 +875,10 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
       timeline: [],
       sparkline: null,
       demandMap: null,
+      circulationRuns: [],
+      legionella: null,
+      planSummary: null,
+      energyToday: null,
       loading: false,
       loadError: 'Nepodařilo se načíst data bojleru',
     };
@@ -895,6 +928,8 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
         : (s.consumption_kwh && s.pv_contribution_kwh != null
             ? s.pv_contribution_kwh / s.consumption_kwh
             : null),
+      // R9/R12: purpose — 'comfort' (default) or 'legionella'
+      purpose: s.purpose ?? null,
     };
   });
 
@@ -986,6 +1021,41 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     confidence: rawDemandMap.confidence,
   } : null;
 
+  // circulation_runs
+  const rawCirc = canonical.circulation_runs ?? [];
+  const circulationRuns: CirculationRun[] = Array.isArray(rawCirc)
+    ? rawCirc.map(r => ({ start: r.start, end: r.end, label: r.label || '' }))
+    : [];
+
+  // legionella
+  const rawLeg = canonical.legionella ?? null;
+  const legionella: LegionellaStatus | null = rawLeg != null ? {
+    enabled: rawLeg.enabled === true,
+    daysSinceLast: typeof rawLeg.days_since_last === 'number' ? rawLeg.days_since_last : null,
+    intervalDays: typeof rawLeg.interval_days === 'number' ? rawLeg.interval_days : null,
+    scheduledStart: rawLeg.scheduled_start ?? null,
+  } : null;
+
+  // plan_summary
+  const rawPS = canonical.plan_summary ?? null;
+  const planSummary: PlanSummary | null = rawPS != null ? {
+    estimatedCostCzk: typeof rawPS.estimated_cost_czk === 'number' ? rawPS.estimated_cost_czk : null,
+    costIfAllGrid: typeof rawPS.cost_if_all_grid === 'number' ? rawPS.cost_if_all_grid : null,
+    costIfAllAlt: typeof rawPS.cost_if_all_alt === 'number' ? rawPS.cost_if_all_alt : null,
+    deadlineTime: rawPS.deadline_time || '18:00',
+  } : null;
+
+  // energy_today
+  const rawET = canonical.energy_today ?? null;
+  const energyToday: EnergyToday | null = rawET != null ? {
+    totalKwh: typeof rawET.total_kwh === 'number' ? rawET.total_kwh : 0,
+    fveKwh: typeof rawET.fve_kwh === 'number' ? rawET.fve_kwh : 0,
+    gridKwh: typeof rawET.grid_kwh === 'number' ? rawET.grid_kwh : 0,
+    altKwh: typeof rawET.alt_kwh === 'number' ? rawET.alt_kwh : 0,
+    batteryKwh: typeof rawET.battery_kwh === 'number' ? rawET.battery_kwh : 0,
+    sourceInvalid: rawET.source_invalid === true,
+  } : null;
+
   return {
     status,
     planSlots,
@@ -997,6 +1067,10 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     timeline,
     sparkline,
     demandMap,
+    circulationRuns,
+    legionella,
+    planSummary,
+    energyToday,
     loading: false,
     loadError: null,
   };

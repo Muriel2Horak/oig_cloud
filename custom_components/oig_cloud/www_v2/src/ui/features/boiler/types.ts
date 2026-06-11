@@ -41,6 +41,8 @@ export interface BoilerV2PlanSlot {
   estimatedCostCzk?: number | null;
   pvShare?: number | null;
   sourceInvalid?: boolean | null;
+  /** Purpose of this slot: 'comfort' (default) or 'legionella' */
+  purpose?: string | null;
 }
 
 export interface BoilerV2Explanation {
@@ -124,6 +126,39 @@ export interface DemandMapData {
   confidence: number;
 }
 
+/** Single circulation pump run (start/end ISO, label) */
+export interface CirculationRun {
+  start: string;
+  end: string;
+  label: string;
+}
+
+/** Legionella status from the canonical DTO */
+export interface LegionellaStatus {
+  enabled: boolean;
+  daysSinceLast: number | null;
+  intervalDays: number | null;
+  scheduledStart: string | null; // ISO or null
+}
+
+/** Plan cost benchmarks + deadline from plan_summary DTO */
+export interface PlanSummary {
+  estimatedCostCzk: number | null;
+  costIfAllGrid: number | null;
+  costIfAllAlt: number | null;
+  deadlineTime: string; // "HH:MM"
+}
+
+/** Energy-today breakdown from energy_today DTO (Task C / F4) */
+export interface EnergyToday {
+  totalKwh: number;
+  fveKwh: number;
+  gridKwh: number;
+  altKwh: number;
+  batteryKwh: number;
+  sourceInvalid: boolean;
+}
+
 export interface BoilerV2Data {
   status: BoilerV2Status | null;
   planSlots: BoilerV2PlanSlot[];
@@ -135,6 +170,10 @@ export interface BoilerV2Data {
   timeline: BoilerV2TimelinePoint[];
   sparkline: BoilerV2Sparkline | null;
   demandMap: DemandMapData | null;
+  circulationRuns: CirculationRun[];
+  legionella: LegionellaStatus | null;
+  planSummary: PlanSummary | null;
+  energyToday: EnergyToday | null;
   loading: boolean;
   loadError: string | null;
 }

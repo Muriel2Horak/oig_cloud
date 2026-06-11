@@ -557,8 +557,9 @@ async def test_canonical_view_source_no_leak_normalized():
 
     assert response.status == 200
     first = payload["plan_slots"][0]
-    assert first["recommended_source"] == "grid"
-    assert "alternative" not in json.dumps(payload)
+    # 'alternative' is now kept as a distinct source key (not collapsed to 'grid')
+    # so that the FE plan strip can render orange alternative bands.
+    assert first["recommended_source"] == "alternative"
     assert "manual" not in json.dumps(payload).lower() or payload.get("manual_override") is not None
     assert "ALTERNATIVE" not in json.dumps(payload)
 

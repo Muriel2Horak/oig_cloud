@@ -955,12 +955,12 @@ describe('normalizePlannerSource', () => {
     expect(normalizePlannerSource('grid')).toEqual({ source: 'grid', sourceInvalid: false });
   });
 
-  it('maps alternative -> grid', () => {
-    expect(normalizePlannerSource('alternative')).toEqual({ source: 'grid', sourceInvalid: false });
+  it('maps alternative -> alternative (kept distinct for plan strip rendering)', () => {
+    expect(normalizePlannerSource('alternative')).toEqual({ source: 'alternative', sourceInvalid: false });
   });
 
-  it('maps alt -> grid', () => {
-    expect(normalizePlannerSource('alt')).toEqual({ source: 'grid', sourceInvalid: false });
+  it('maps alt -> alternative', () => {
+    expect(normalizePlannerSource('alt')).toEqual({ source: 'alternative', sourceInvalid: false });
   });
 
   it('maps null -> null, no sourceInvalid', () => {
@@ -1032,7 +1032,7 @@ describe('mapCanonicalToV2 — sourceInvalid propagation', () => {
     expect(v2.planSlots[0].recommendedSource).toBeNull();
   });
 
-  it('maps alternative -> grid (normalized)', () => {
+  it('maps alternative -> alternative (kept distinct for plan strip rendering)', () => {
     const withAlt = {
       ...FULL_CANONICAL,
       plan_slots: [
@@ -1040,7 +1040,7 @@ describe('mapCanonicalToV2 — sourceInvalid propagation', () => {
       ],
     };
     const v2 = mapCanonicalToV2(withAlt);
-    expect(v2.planSlots[0].recommendedSource).toBe('grid');
+    expect(v2.planSlots[0].recommendedSource).toBe('alternative');
     expect(v2.planSlots[0].sourceInvalid).toBeFalsy();
   });
 
@@ -1487,9 +1487,9 @@ describe('mapCanonicalToV2 — selectedSource/actuatedSource normalization', () 
     expect(v2.status?.selectedSource).toBe('fve');
   });
 
-  it('normalizes selectedSource alternative to grid (known alias)', () => {
+  it('normalizes selectedSource alternative to alternative (kept distinct)', () => {
     const v2 = mapCanonicalToV2({ ...FULL_CANONICAL, selected_source: 'alternative' });
-    expect(v2.status?.selectedSource).toBe('grid');
+    expect(v2.status?.selectedSource).toBe('alternative');
   });
 
   it('normalizes selectedSource manual to null (invalid planner source)', () => {
@@ -1984,6 +1984,10 @@ function makeMinimalData(overrides: Partial<BoilerV2Data> = {}): BoilerV2Data {
     timeline: [],
     sparkline: null,
     demandMap: null,
+    circulationRuns: [],
+    legionella: null,
+    planSummary: null,
+    energyToday: null,
     loading: false,
     loadError: null,
     ...overrides,
@@ -2209,6 +2213,10 @@ function makeMinimalBoilerData(overrides: Partial<BoilerV2Data> = {}): BoilerV2D
     timeline: [],
     sparkline: null,
     demandMap: null,
+    circulationRuns: [],
+    legionella: null,
+    planSummary: null,
+    energyToday: null,
     loading: false,
     loadError: null,
     ...overrides,

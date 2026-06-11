@@ -1001,6 +1001,19 @@ export class OigApp extends LitElement {
         .data=${v2.demandMap ?? null}
         .lang=${this.boilerLang}
       ></oig-boiler-demand-map>
+      <oig-boiler-plan-strip
+        .slots=${v2.planSlots}
+        .demandMap=${v2.demandMap ?? null}
+        .circulationRuns=${v2.circulationRuns}
+        .legionella=${v2.legionella ?? null}
+        .planSummary=${v2.planSummary ?? null}
+        .lang=${this.boilerLang}
+      ></oig-boiler-plan-strip>
+      <oig-boiler-energy-today
+        .energy=${v2.energyToday ?? null}
+        .planSummary=${v2.planSummary ?? null}
+        .lang=${this.boilerLang}
+      ></oig-boiler-energy-today>
       <oig-boiler-timeline-chart
         .data=${v2}
         .config=${this.boilerConfig}

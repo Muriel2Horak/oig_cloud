@@ -537,7 +537,7 @@ def _assemble_plan_slots(
 
 
 _RUNTIME_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge", "battery"})
-_PLANNER_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "battery"})
+_PLANNER_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "battery", "alternative"})
 
 
 def _normalize_runtime_source(source: Any) -> Optional[str]:
@@ -560,7 +560,7 @@ def _normalize_runtime_source(source: Any) -> Optional[str]:
 
 
 def _normalize_planner_source(source: Any) -> Optional[str]:
-    """Normalize any raw source value to planner source keys: fve|overflow|grid|battery|null."""
+    """Normalize any raw source value to planner source keys: fve|overflow|grid|battery|alternative|null."""
     if source is None:
         return None
     if hasattr(source, "value"):
@@ -573,8 +573,8 @@ def _normalize_planner_source(source: Any) -> Optional[str]:
     # Map known aliases
     if key in ("zapnuto", "manual"):
         return "fve"
-    if key in ("alternative", "alt"):
-        return "grid"
+    if key == "alt":
+        return "alternative"
     return None
 
 
@@ -806,6 +806,24 @@ def _assemble_canonical_dto(
     # R3: Home 5 maneuver status DTO
     home5_dto: dict[str, Any] = _build_home5_dto(runtime, config)
 
+    # F4: energy_today — top-level reuse of _read_energy_tracking result.
+    # battery_kwh is not tracked retroactively yet (Home 5 engagement attribution
+    # TODO: attribute battery slots when Home 5 runtime logs segment energy).
+    energy_today_dto: dict[str, Any] = {
+        "total_kwh": energy_tracking.get("total_kwh", 0.0),
+        "fve_kwh": energy_tracking.get("fve_kwh", 0.0),
+        "grid_kwh": energy_tracking.get("grid_kwh", 0.0),
+        "alt_kwh": energy_tracking.get("alt_kwh", 0.0),
+        "battery_kwh": 0.0,  # TODO: attribute from Home 5 source_segments when available
+        "source_invalid": bool(energy_tracking.get("source_invalid", False)),
+    }
+
+    # F4: plan_summary — cost benchmarks + deadline from plan_result + config.
+    # Null-safe: emits None when no plan has been computed yet.
+    plan_summary_dto: dict[str, Any] | None = _build_plan_summary_dto(
+        plan_result, config
+    )
+
     return {
         "entry_id": entry_id,
         "box_id": box_id,
@@ -849,6 +867,50 @@ def _assemble_canonical_dto(
         "source_segments": source_segments,
         "timeline": timeline,
         "sparklines": sparklines,
+        "energy_today": energy_today_dto,
+        "plan_summary": plan_summary_dto,
+    }
+
+
+def _build_plan_summary_dto(
+    plan_result: Any,
+    config: dict[str, Any],
+) -> Optional[dict[str, Any]]:
+    """Build the plan_summary sub-DTO for the canonical endpoint (F4).
+
+    Returns None when no plan has been computed yet (null-safe).
+    Schema:
+        {estimated_cost_czk, cost_if_all_grid, cost_if_all_alt, deadline_time: "HH:MM"}
+    """
+    deadline_time: str = config.get(CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME) or DEFAULT_BOILER_DEADLINE_TIME
+
+    if plan_result is None:
+        # No plan yet — still emit deadline_time so FE can draw the dashed line.
+        return {
+            "estimated_cost_czk": None,
+            "cost_if_all_grid": None,
+            "cost_if_all_alt": None,
+            "deadline_time": deadline_time,
+        }
+
+    estimated_cost = getattr(plan_result, "estimated_cost_czk", None)
+    cost_if_all_grid = getattr(plan_result, "cost_if_all_grid", None)
+    cost_if_all_alt = getattr(plan_result, "cost_if_all_alt", None)
+
+    def _safe_round(val: Any) -> Optional[float]:
+        if val is None:
+            return None
+        try:
+            f = float(val)
+            return round(f, 2) if math.isfinite(f) else None
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "estimated_cost_czk": _safe_round(estimated_cost),
+        "cost_if_all_grid": _safe_round(cost_if_all_grid),
+        "cost_if_all_alt": _safe_round(cost_if_all_alt),
+        "deadline_time": deadline_time,
     }
 
 

@@ -21,6 +21,23 @@ export {
   OigBoilerDemandMap,
 } from './components';
 
+export {
+  OigBoilerPlanStrip,
+  groupSlotsToBands,
+  normalizeDisplaySource,
+  isoToFraction,
+  nowFraction,
+  deadlineFraction,
+} from './boiler-plan-strip';
+
+export {
+  OigBoilerEnergyToday,
+  buildSourceTiles,
+  altTypeLabel,
+  computeSavingsLabel,
+  formatKwhLocale,
+} from './boiler-energy-today';
+
 export { OigBoilerV2Svg } from './boiler-svg';
 export { OigBoilerV2Shell } from './boiler-shell';
 export { OigBoilerMetricPanel } from './boiler-metric-panel';
