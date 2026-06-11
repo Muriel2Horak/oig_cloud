@@ -1992,11 +1992,10 @@ describe('OigBoilerV2Svg', () => {
     el.fillLevelPct = 0.8;
     el.sourceSegments = [makeSeg('grid', 0.4, false), makeSeg('fve', 0.4, false)];
     const json = JSON.stringify(getTemplateValues(el));
-    // The first layer bottom=0 appears in style: bottom:0.00% — "0.00" is in values
-    // Two layers render, first starts at 0.00 (bottom), second at ~40.00
+    // Layer heights are relative to the .aura container (already sized to
+    // fill% of the tank): 0.4/0.8 → 50% each, stacked at bottom 0% and 50%.
     expect(json).toContain('"0.00"');
-    // Second layer starts at 40.00%
-    expect(json).toContain('"40.00"');
+    expect(json).toContain('"50.00"');
   });
 
   it('vol-caption contains ready text in template values', () => {

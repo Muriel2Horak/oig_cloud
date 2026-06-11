@@ -54,7 +54,8 @@ function buildAuraLayers(
       {
         key: null,
         background: `linear-gradient(180deg,${NEUTRAL_COLOR},${NEUTRAL_COLOR})`,
-        heightPct: fill * 100,
+        // Relative to the .aura container (already sized to fill%).
+        heightPct: 100,
         active: false,
       },
     ];
@@ -71,7 +72,10 @@ function buildAuraLayers(
     layers.push({
       key: seg.key,
       background: srcGradient(seg.key),
-      heightPct: layerFill * 100,
+      // Layers render INSIDE the .aura container (already sized to fill%),
+      // so heights must be relative to the aura, not the tank — otherwise
+      // the fill is double-scaled (fill² of the tank).
+      heightPct: (layerFill / fill) * 100,
       active: seg.active,
     });
     remaining -= layerFill;
