@@ -16,9 +16,17 @@ from homeassistant.util import dt as dt_util
 from ..const import (
     CONF_BOILER_ALT_COST_KWH,
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+    CONF_BOILER_CIRCULATION_ENABLED,
+    CONF_BOILER_CIRCULATION_LEAD_MINUTES,
+    CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY,
+    CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES,
+    CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
+    CONF_BOILER_CIRCULATION_RUN_MINUTES,
     CONF_BOILER_COLD_INLET_TEMP_C,
     CONF_BOILER_DEADLINE_TIME,
     CONF_BOILER_HAS_ALTERNATIVE_HEATING,
+    CONF_BOILER_HOME5_MANEUVER_ENABLED,
+    CONF_BOX_HAS_HOME56,
     CONF_BOILER_STRATIFICATION_MODE,
     CONF_BOILER_TARGET_TEMP_C,
     CONF_BOILER_HEATER_POWER_KW_ENTITY,
@@ -26,8 +34,15 @@ from ..const import (
     CONF_BOILER_TEMP_SENSOR_BOTTOM,
     CONF_BOILER_TEMP_SENSOR_TOP,
     CONF_BOILER_VOLUME_L,
+    DEFAULT_BOILER_CIRCULATION_ENABLED,
+    DEFAULT_BOILER_CIRCULATION_LEAD_MINUTES,
+    DEFAULT_BOILER_CIRCULATION_MAX_RUNS_PER_DAY,
+    DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES,
+    DEFAULT_BOILER_CIRCULATION_RUN_MINUTES,
     DEFAULT_BOILER_COLD_INLET_TEMP_C,
     DEFAULT_BOILER_DEADLINE_TIME,
+    DEFAULT_BOILER_HOME5_MANEUVER_ENABLED,
+    DEFAULT_BOX_HAS_HOME56,
     DEFAULT_BOILER_STRATIFICATION_MODE,
     DEFAULT_BOILER_TARGET_TEMP_C,
     DOMAIN,
@@ -44,6 +59,7 @@ from .const import BATTERY_SOC_OVERFLOW_THRESHOLD
 from .planner_contract import (
     BoilerBatterySignals,
     DemandTarget,
+    LegionellaObligation,
     PlannerInput,
     PlannerReasonCode,
     resolve_alt_source_capability,
@@ -952,6 +968,295 @@ def _build_demand_targets(
         return []
 
 
+# ---------------------------------------------------------------------------
+# R9: Legionella last-event detection helper
+# ---------------------------------------------------------------------------
+
+_LEGIONELLA_CACHE_REFRESH_INTERVAL = timedelta(hours=6)
+
+
+@dataclass
+class _LegionellaCache:
+    """In-memory cache for legionella detection result."""
+
+    last_checked_at: Optional[datetime] = None
+    # datetime of the most recent reading >= legionella_target_temp_c (or None)
+    last_achieved_at: Optional[datetime] = None
+
+
+async def _async_detect_last_legionella_event(
+    hass: HomeAssistant,
+    *,
+    top_sensor_entity: str,
+    legionella_target_temp_c: float,
+    interval_days: int,
+    now: datetime,
+    cache: _LegionellaCache,
+    current_top_temp_c: Optional[float] = None,
+) -> Optional[datetime]:
+    """Return the datetime of the most recent top-sensor reading >= legionella_target_temp_c.
+
+    Caches the result for up to 6 h to avoid hammering the recorder.
+    Short-circuits to now() when the current live temperature already satisfies
+    the target (records the achievement in cache.last_achieved_at).
+
+    Returns None when:
+    - recorder is unavailable (caller should treat as unknown → no scheduling)
+    - no qualifying reading found in the lookback window
+    """
+    # Short-circuit: if current temp >= target, record achievement and return now.
+    if (
+        current_top_temp_c is not None
+        and current_top_temp_c >= legionella_target_temp_c
+    ):
+        cache.last_achieved_at = now
+        cache.last_checked_at = now
+        _LOGGER.debug(
+            "Legionella: current top temp %.1f°C >= target %.1f°C — obligation satisfied",
+            current_top_temp_c,
+            legionella_target_temp_c,
+        )
+        return now
+
+    # Cache freshness check: skip recorder scan if cache is recent.
+    if (
+        cache.last_checked_at is not None
+        and _datetime_age(now, cache.last_checked_at) < _LEGIONELLA_CACHE_REFRESH_INTERVAL
+    ):
+        return cache.last_achieved_at
+
+    # Recorder scan over the lookback window.
+    lookback_days = max(interval_days + 1, 14)  # at least 14 days to catch slow cycles
+    start_time = now - timedelta(days=lookback_days)
+    last_event: Optional[datetime] = None
+
+    try:
+        from homeassistant.components.recorder.history import state_changes_during_period
+        from homeassistant.helpers.recorder import get_instance
+
+        instance = get_instance(hass)
+        if instance is None:
+            _LOGGER.debug(
+                "Legionella detection: recorder not available for %s", top_sensor_entity
+            )
+            cache.last_checked_at = now
+            return None
+
+        temp_states = await instance.async_add_executor_job(
+            state_changes_during_period,
+            hass,
+            start_time,
+            now,
+            top_sensor_entity,
+        )
+        records = temp_states.get(top_sensor_entity, [])
+        for state in records:
+            try:
+                temp = float(state.state)
+                ts = state.last_updated
+                if temp >= legionella_target_temp_c:
+                    if last_event is None or ts > last_event:
+                        last_event = ts
+            except (ValueError, AttributeError):
+                continue
+
+        _LOGGER.debug(
+            "Legionella detection: scanned %d records for %s → last_event=%s",
+            len(records),
+            top_sensor_entity,
+            last_event,
+        )
+    except Exception as err:
+        _LOGGER.debug(
+            "Legionella detection failed for %s (treating as unknown): %s",
+            top_sensor_entity,
+            err,
+            exc_info=True,
+        )
+        cache.last_checked_at = now
+        return None
+
+    cache.last_checked_at = now
+    cache.last_achieved_at = last_event
+    return last_event
+
+
+async def _async_build_legionella_obligation(
+    hass: HomeAssistant,
+    *,
+    config: dict[str, Any],
+    now: datetime,
+    current_top_temp_c: Optional[float],
+    topology: Any,
+    cache: _LegionellaCache,
+) -> Optional[LegionellaObligation]:
+    """Build a LegionellaObligation from config and recorder history.
+
+    Returns None when the feature is disabled (interval_days == 0).
+    Returns a not-overdue obligation when the last event is recent.
+    Returns an overdue obligation when days_since >= interval_days.
+    """
+    from ..const import (
+        CONF_BOILER_LEGIONELLA_INTERVAL_DAYS,
+        CONF_BOILER_LEGIONELLA_TARGET_TEMP_C,
+        DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS,
+        DEFAULT_BOILER_LEGIONELLA_TARGET_TEMP_C,
+        CONF_BOILER_TEMP_SENSOR_TOP,
+    )
+
+    interval_days = int(
+        config.get(CONF_BOILER_LEGIONELLA_INTERVAL_DAYS, DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS)
+    )
+    if interval_days <= 0:
+        return None  # feature disabled
+
+    legionella_target = float(
+        config.get(CONF_BOILER_LEGIONELLA_TARGET_TEMP_C, DEFAULT_BOILER_LEGIONELLA_TARGET_TEMP_C)
+    )
+    top_sensor = config.get(CONF_BOILER_TEMP_SENSOR_TOP)
+    if not top_sensor:
+        return None  # no sensor configured → cannot detect
+
+    last_event = await _async_detect_last_legionella_event(
+        hass,
+        top_sensor_entity=top_sensor,
+        legionella_target_temp_c=legionella_target,
+        interval_days=interval_days,
+        now=now,
+        cache=cache,
+        current_top_temp_c=current_top_temp_c,
+    )
+
+    days_since: Optional[int] = None
+    overdue = False
+
+    if last_event is None:
+        # Recorder unavailable or no qualifying reading found.
+        # Treat unknown → do NOT schedule to avoid false alarms.
+        overdue = False
+    else:
+        age = _datetime_age(now, last_event)
+        days_since = int(age.total_seconds() // 86400)
+        overdue = days_since >= interval_days
+
+    # Compute required kWh: energy to raise TOP zone (full tank as top-only
+    # estimate with safety factor) from current_top_temp to legionella_target.
+    required_kwh = 0.0
+    if overdue and topology is not None and current_top_temp_c is not None:
+        tank_volume = getattr(topology, "tank_volume_l", 200.0)
+        from .thermal import calculate_energy_to_heat
+        from .planner_core import TOP_ONLY_REQUIRED_ENERGY_SAFETY_FACTOR
+        required_kwh = (
+            calculate_energy_to_heat(
+                volume_liters=tank_volume,
+                temp_current=float(current_top_temp_c),
+                temp_target=legionella_target,
+            )
+            * TOP_ONLY_REQUIRED_ENERGY_SAFETY_FACTOR
+        )
+
+    return LegionellaObligation(
+        overdue=overdue,
+        required_kwh=required_kwh,
+        legionella_target_temp_c=legionella_target,
+        days_since_last=days_since,
+        interval_days=interval_days,
+    )
+
+
+# ---------------------------------------------------------------------------
+# R5: Circulation pre-peak scheduling helpers
+# ---------------------------------------------------------------------------
+
+def _build_circulation_schedule(
+    *,
+    demand_targets: list[DemandTarget],
+    now: datetime,
+    config: dict[str, Any],
+) -> list[tuple[datetime, datetime, str]]:
+    """Build a circulation run schedule from the current demand targets.
+
+    Returns an empty list when circulation is disabled (feature flag off) or
+    when no demand targets are available.  Never raises.
+    """
+    from .circulation import build_circulation_runs
+
+    enabled = bool(config.get(CONF_BOILER_CIRCULATION_ENABLED, DEFAULT_BOILER_CIRCULATION_ENABLED))
+    if not enabled:
+        return []
+
+    lead_min = int(config.get(CONF_BOILER_CIRCULATION_LEAD_MINUTES, DEFAULT_BOILER_CIRCULATION_LEAD_MINUTES))
+    run_min = int(config.get(CONF_BOILER_CIRCULATION_RUN_MINUTES, DEFAULT_BOILER_CIRCULATION_RUN_MINUTES))
+    max_runs = int(config.get(CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY, DEFAULT_BOILER_CIRCULATION_MAX_RUNS_PER_DAY))
+    min_gap = int(config.get(CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES, DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES))
+
+    try:
+        return build_circulation_runs(
+            demand_targets,
+            now,
+            lead_min=lead_min,
+            run_min=run_min,
+            max_runs=max_runs,
+            min_gap_min=min_gap,
+        )
+    except Exception as err:  # pragma: no cover
+        _LOGGER.warning("Circulation schedule build failed: %s", err, exc_info=True)
+        return []
+
+
+async def _async_actuate_circulation_pump(
+    hass: HomeAssistant,
+    *,
+    pump_entity: str,
+    turn_on: bool,
+) -> bool:
+    """Call homeassistant switch turn_on / turn_off on the pump entity.
+
+    Returns True on success, False when the entity is unavailable or call fails.
+    Safety: never turns on when entity state is 'unavailable' or 'unknown'.
+    """
+    if not pump_entity:
+        return False
+
+    state = _state_for_entity(hass, pump_entity)
+    entity_state_str = str(getattr(state, "state", "unavailable") or "unavailable").lower()
+
+    if turn_on and entity_state_str in ("unavailable", "unknown", ""):
+        _LOGGER.debug(
+            "Circulation pump %s is %s — skipping turn_on",
+            pump_entity,
+            entity_state_str,
+        )
+        return False
+
+    service = "turn_on" if turn_on else "turn_off"
+    try:
+        services = getattr(hass, "services", None)
+        if services is None or not hasattr(services, "async_call"):
+            return False
+        await services.async_call(
+            "switch",
+            service,
+            {"entity_id": pump_entity},
+            blocking=False,
+        )
+        _LOGGER.debug(
+            "Circulation pump %s: called switch.%s",
+            pump_entity,
+            service,
+        )
+        return True
+    except Exception as err:
+        _LOGGER.warning(
+            "Circulation pump %s switch.%s failed: %s",
+            pump_entity,
+            service,
+            err,
+            exc_info=True,
+        )
+        return False
+
+
 class BoilerRuntime:
     def __init__(
         self,
@@ -978,6 +1283,12 @@ class BoilerRuntime:
         self._last_replan_at: Optional[datetime] = None
         self._last_replan_temperature_c: Optional[float] = None
         self.last_plan_result: Optional[PlanResult] = None
+        self._legionella_cache = _LegionellaCache()
+        # R5: Circulation scheduling state
+        self._circulation_runs: list[tuple[datetime, datetime, str]] = []
+        self._circulation_pump_on: bool = False  # True = we turned the pump on
+        # R3: Home 5 maneuver tracking — True when WE enabled Home 5 (non-interference)
+        self._home5_engaged_by_planner: bool = False
         self.plan_result_handoff: list[PlanResult] = []
         self._activity_classifier = BoilerActivityClassifier()
         self._current_activity: Optional[BoilerActivityDTO] = None
@@ -1578,8 +1889,19 @@ class BoilerRuntime:
             actuator_model="switch" if alt_switch else None,
             supported_models={"switch"},
         )
-        battery_signals = BoilerBatterySignals.from_raw(
-            {"overflow_windows": overflow_windows}
+        # R3: pass battery_usable_kwh from battery forecast data if available.
+        battery_raw: dict[str, Any] = {"overflow_windows": overflow_windows}
+        battery_data = self.energy_adapter._resolve_entry_battery_data() if hasattr(
+            self.energy_adapter, "_resolve_entry_battery_data"
+        ) else None
+        if isinstance(battery_data, dict) and "battery_usable_kwh" in battery_data:
+            battery_raw["battery_usable_kwh"] = battery_data["battery_usable_kwh"]
+        battery_signals = BoilerBatterySignals.from_raw(battery_raw)
+
+        # R3/R7: home5_available requires BOTH box capability AND boiler opt-in flags.
+        home5_available = bool(
+            config.get(CONF_BOX_HAS_HOME56, DEFAULT_BOX_HAS_HOME56)
+            and config.get(CONF_BOILER_HOME5_MANEUVER_ENABLED, DEFAULT_BOILER_HOME5_MANEUVER_ENABLED)
         )
 
         # F3a: derive demand_targets from coordinator._demand_profiler.
@@ -1593,6 +1915,18 @@ class BoilerRuntime:
             horizon_hours=planner_input_horizon_hours(config),
         )
 
+        # R9: build legionella obligation from config + recorder history.
+        # Runs only when CONF_BOILER_LEGIONELLA_INTERVAL_DAYS > 0 (default 7).
+        topology_for_legionella = _build_planner_topology(config)
+        legionella_obligation = await _async_build_legionella_obligation(
+            self.hass,
+            config=config,
+            now=now,
+            current_top_temp_c=temperature_state.top_temp_c,
+            topology=topology_for_legionella,
+            cache=self._legionella_cache,
+        )
+
         planner_input = PlannerInput(
             entry_id=self.entry_id,
             box_id=self.box_id,
@@ -1600,7 +1934,7 @@ class BoilerRuntime:
             spot_prices=spot_prices,
             overflow_windows=overflow_windows,
             deadline_time=deadline,
-            topology=_build_planner_topology(config),
+            topology=topology_for_legionella,
             current_top_temp_c=temperature_state.top_temp_c,
             current_bottom_temp_c=temperature_state.bottom_temp_c,
             temperature_updated_at=temperature_state.top_updated_at,
@@ -1611,6 +1945,8 @@ class BoilerRuntime:
             battery_signals=battery_signals,
             reason_codes=reason_codes,
             demand_targets=demand_targets,
+            legionella_obligation=legionella_obligation,
+            home5_available=home5_available,
         )
 
         is_fresh, stale_reasons = validate_freshness(planner_input, now=now)
@@ -1765,7 +2101,231 @@ class BoilerRuntime:
         )
         self._current_plan = new_plan
 
+        # R5: rebuild circulation schedule from the same demand_targets used for planning.
+        config = getattr(self.coordinator, "config", {}) or {}
+        self._circulation_runs = _build_circulation_schedule(
+            demand_targets=planner_input.demand_targets,
+            now=now,
+            config=config,
+        )
+
+        # R3: Home 5 maneuver actuation — tick on every plan cycle.
+        await self._async_tick_home5_maneuver(now=now)
+
         return new_plan
+
+    async def _async_tick_circulation_pump(self) -> None:
+        """Called each 5-min coordinator cycle to actuate the circulation pump.
+
+        Logic:
+        - Feature disabled or no pump entity → always turn_off if we turned it on.
+        - Inside a run window → turn_on (if not already on and entity available).
+        - Outside all run windows → turn_off only if we turned it on (non-interference).
+        - Pump entity unavailable → emit CIRCULATION_PUMP_UNAVAILABLE reason code;
+          do not turn_on.
+        """
+        config = getattr(self.coordinator, "config", {}) or {}
+        enabled = bool(config.get(CONF_BOILER_CIRCULATION_ENABLED, DEFAULT_BOILER_CIRCULATION_ENABLED))
+        pump_entity = config.get(CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY)
+
+        # Feature turned off mid-flight or pump entity removed: turn off pump if we turned it on.
+        if not enabled or not pump_entity:
+            if self._circulation_pump_on:
+                if pump_entity:
+                    await _async_actuate_circulation_pump(
+                        self.hass,
+                        pump_entity=pump_entity,
+                        turn_on=False,
+                    )
+                else:
+                    # pump_entity was removed from config while pump was running.
+                    # We can't issue a service call without an entity — log the orphan.
+                    _LOGGER.warning(
+                        "Circulation pump entity removed while pump was ON for entry=%s box=%s; "
+                        "pump may still be running — please turn it off manually.",
+                        self.entry_id,
+                        self.box_id,
+                    )
+                self._circulation_pump_on = False
+            return
+
+        # Check entity existence.
+        state = _state_for_entity(self.hass, pump_entity)
+        if state is None:
+            # Entity not registered in HA yet — emit reason code.
+            if self.last_plan_result is not None:
+                _append_reason(
+                    self.last_plan_result.reason_codes,
+                    PlannerReasonCode.CIRCULATION_PUMP_UNAVAILABLE,
+                )
+            if self._circulation_pump_on:
+                # We can't turn it off either, just reset our flag.
+                self._circulation_pump_on = False
+            return
+
+        now = dt_util.now()
+        inside_run = False
+        for run_start, run_end, _label in self._circulation_runs:
+            if run_start <= now < run_end:
+                inside_run = True
+                break
+
+        if inside_run and not self._circulation_pump_on:
+            success = await _async_actuate_circulation_pump(
+                self.hass,
+                pump_entity=pump_entity,
+                turn_on=True,
+            )
+            if success:
+                self._circulation_pump_on = True
+        elif not inside_run and self._circulation_pump_on:
+            await _async_actuate_circulation_pump(
+                self.hass,
+                pump_entity=pump_entity,
+                turn_on=False,
+            )
+            self._circulation_pump_on = False
+
+    def _is_home5_currently_set(self) -> bool:
+        """Return True when the hardware home_grid_v bit is already ON.
+
+        Reads box_prm2.app from coordinator data (same path as the service handler).
+        Returns False when state is unknown (bit 0 is unset for raw values 0, 2, 4).
+        """
+        try:
+            coordinator_data = getattr(self.coordinator, "data", None)
+            if not isinstance(coordinator_data, dict):
+                return False
+            # Try direct box_prm2 key first (single-box layout).
+            box_prm2 = coordinator_data.get("box_prm2")
+            if isinstance(box_prm2, dict):
+                raw = box_prm2.get("app")
+                if isinstance(raw, str) and raw.isdigit():
+                    raw = int(raw)
+                if isinstance(raw, int):
+                    return bool(raw & 1)  # bit 0 = home_grid_v
+            # Multi-box layout: iterate device buckets.
+            for device_data in coordinator_data.values():
+                if not isinstance(device_data, dict):
+                    continue
+                box_prm2 = device_data.get("box_prm2")
+                if not isinstance(box_prm2, dict):
+                    continue
+                raw = box_prm2.get("app")
+                if isinstance(raw, str) and raw.isdigit():
+                    raw = int(raw)
+                if isinstance(raw, int):
+                    return bool(raw & 1)
+        except Exception:
+            pass
+        return False
+
+    async def _async_tick_home5_maneuver(self, *, now: Optional[datetime] = None) -> None:
+        """Actuate Home 5 (battery-discharge) bit based on current plan slot source.
+
+        Non-interference rule: we only clear the bit if WE set it
+        (_home5_engaged_by_planner). If the user manually enabled Home 5 before
+        a battery slot starts, we skip ownership claim entirely.
+
+        Safety: wraps the service call in try/except — service raises when box is
+        in flexibilita mode (box_prm2.app == 4).  On turn-ON failure the flag is
+        cleared; on turn-OFF failure the flag is kept so the next tick retries.
+        """
+        if now is None:
+            now = dt_util.now()
+
+        config = getattr(self.coordinator, "config", {}) or {}
+        home5_feature_on = bool(
+            config.get(CONF_BOX_HAS_HOME56, DEFAULT_BOX_HAS_HOME56)
+            and config.get(CONF_BOILER_HOME5_MANEUVER_ENABLED, DEFAULT_BOILER_HOME5_MANEUVER_ENABLED)
+        )
+
+        # Feature turned off mid-flight: release the bit if we set it.
+        if not home5_feature_on:
+            if self._home5_engaged_by_planner:
+                await self._async_set_home5_bit(False)
+            return
+
+        # Determine whether current plan slot is battery-sourced.
+        current_slot_is_battery = False
+        plan_result = self.last_plan_result
+        if plan_result is not None:
+            for slot in getattr(plan_result, "slots", []):
+                if slot.start <= now < slot.end:
+                    from .models import EnergySource
+                    current_slot_is_battery = getattr(slot, "source", None) == EnergySource.BATTERY
+                    break
+
+        if current_slot_is_battery and not self._home5_engaged_by_planner:
+            # Non-interference: if the user already has Home 5 active before the
+            # battery slot starts, do NOT claim ownership — we would later turn it
+            # off when the slot ends, violating the user's setting.
+            if self._is_home5_currently_set():
+                _LOGGER.debug(
+                    "Home 5 maneuver: bit already set by user for entry=%s box=%s — "
+                    "skipping ownership claim",
+                    self.entry_id,
+                    self.box_id,
+                )
+                return
+            # Turn Home 5 ON — battery source slot, feature enabled.
+            await self._async_set_home5_bit(True)
+        elif not current_slot_is_battery and self._home5_engaged_by_planner:
+            # Turn Home 5 OFF — no longer in a battery source slot.
+            await self._async_set_home5_bit(False)
+
+    async def _async_set_home5_bit(self, enable: bool) -> None:
+        """Call oig_cloud.set_box_mode to toggle the Home 5 (home_grid_v) bit.
+
+        Targets the correct box using device_id from the HA device registry so
+        multi-entry installations always toggle the right inverter.
+
+        On success, updates _home5_engaged_by_planner.
+        On turn-ON failure: clears the flag (we don't own the bit).
+        On turn-OFF failure: keeps _home5_engaged_by_planner=True so the next
+          coordinator tick retries, preventing a permanently stuck Home 5 bit.
+        """
+        # Resolve device_id so the service targets our specific entry/box, not
+        # whichever entry registered the service first (multi-entry safety).
+        service_data: dict = {"home_grid_v": enable, "acknowledgement": True}
+        try:
+            from homeassistant.helpers import device_registry as dr
+            _dr = dr.async_get(self.hass)
+            _dev = _dr.async_get_device(identifiers={(DOMAIN, self.box_id)})
+            if _dev is not None:
+                service_data["device_id"] = _dev.id
+        except Exception:
+            pass  # device registry unavailable in tests — proceed without device_id
+
+        try:
+            await self.hass.services.async_call(
+                "oig_cloud",
+                "set_box_mode",
+                service_data,
+                blocking=True,
+            )
+            self._home5_engaged_by_planner = enable
+            _LOGGER.debug(
+                "Home 5 maneuver: home_grid_v=%s for entry=%s box=%s",
+                enable,
+                self.entry_id,
+                self.box_id,
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Home 5 maneuver: failed to set home_grid_v=%s for entry=%s box=%s: %s",
+                enable,
+                self.entry_id,
+                self.box_id,
+                err,
+            )
+            if enable:
+                # Turn-ON failed: we don't own the bit, clear the flag.
+                self._home5_engaged_by_planner = False
+            # Turn-OFF failed (e.g. flexibilita mode active): keep
+            # _home5_engaged_by_planner=True so next coordinator tick retries.
+            # This prevents the bit from being permanently stuck when flexibilita
+            # is later deactivated.
 
     async def async_apply_plan(self, entry_id: str) -> None:
         plan = self.get_current_plan()
@@ -1940,3 +2500,27 @@ def destroy_boiler_runtime(
                     _LOGGER.warning(
                         "Error cancelling plan during runtime destroy: %s", exc
                     )
+            # R3/R5: release Home 5 bit and turn off circulation pump on unload
+            # so hardware is not left in an active state after HA reload/restart.
+            if hasattr(hass, "async_create_task"):
+                if (
+                    hasattr(runtime, "_home5_engaged_by_planner")
+                    and runtime._home5_engaged_by_planner
+                ):
+                    try:
+                        hass.async_create_task(runtime._async_set_home5_bit(False))
+                    except Exception as exc:
+                        _LOGGER.warning(
+                            "Error releasing Home 5 bit during runtime destroy: %s", exc
+                        )
+                if (
+                    hasattr(runtime, "_circulation_pump_on")
+                    and runtime._circulation_pump_on
+                    and hasattr(runtime, "_async_tick_circulation_pump")
+                ):
+                    try:
+                        hass.async_create_task(runtime._async_tick_circulation_pump())
+                    except Exception as exc:
+                        _LOGGER.warning(
+                            "Error turning off circulation pump during runtime destroy: %s", exc
+                        )

@@ -13,10 +13,15 @@ from homeassistant.util import dt as dt_util
 from ..const import DOMAIN, KEY_BOILER_RUNTIMES
 from ..const import (
     BOILER_ENERGY_CONSTANT_KWH_L_C,
+    CONF_BOILER_CIRCULATION_ENABLED,
     CONF_BOILER_COLD_INLET_TEMP_C,
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
     CONF_BOILER_DEADLINE_TIME,
     CONF_BOILER_EFFECTIVE_POWER_W,
+    CONF_BOILER_HOME5_MANEUVER_ENABLED,
+    CONF_BOX_HAS_HOME56,
+    CONF_BOILER_LEGIONELLA_INTERVAL_DAYS,
+    CONF_BOILER_LEGIONELLA_TARGET_TEMP_C,
     CONF_BOILER_PLAN_SLOT_MINUTES,
     CONF_BOILER_STRATIFICATION_MODE,
     CONF_BOILER_TARGET_TEMP_C,
@@ -25,8 +30,13 @@ from ..const import (
     CONF_BOILER_TEMP_SENSOR_BOTTOM,
     CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
     CONF_BOILER_VOLUME_L,
+    DEFAULT_BOILER_CIRCULATION_ENABLED,
     DEFAULT_BOILER_COLD_INLET_TEMP_C,
     DEFAULT_BOILER_DEADLINE_TIME,
+    DEFAULT_BOILER_HOME5_MANEUVER_ENABLED,
+    DEFAULT_BOX_HAS_HOME56,
+    DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS,
+    DEFAULT_BOILER_LEGIONELLA_TARGET_TEMP_C,
     DEFAULT_BOILER_PLAN_SLOT_MINUTES,
     DEFAULT_BOILER_STRATIFICATION_MODE,
     DEFAULT_BOILER_TARGET_TEMP_C,
@@ -512,10 +522,13 @@ def _assemble_plan_slots(
             "pv_kwh": round(getattr(slot, "pv_kwh", 0.0), 3),
             "grid_kwh": round(getattr(slot, "grid_kwh", 0.0), 3),
             "alt_kwh": round(getattr(slot, "alt_kwh", 0.0), 3),
+            "battery_kwh": round(getattr(slot, "battery_kwh", 0.0), 3),
             "estimated_cost_czk": round(getattr(slot, "estimated_cost_czk", 0.0), 2),
             "predicted_top_temp_c": predicted_top_temp_c,
             "comfort_satisfied": comfort_satisfied,
             "pv_share": round(getattr(slot, "pv_share", 0.0), 3),
+            # R9: purpose field — "comfort" (default) or "legionella"
+            "purpose": getattr(slot, "purpose", "comfort"),
         }
         if recommended_source is None and getattr(slot, "recommended_source", None) is not None:
             slot_data["source_invalid"] = True
@@ -523,8 +536,8 @@ def _assemble_plan_slots(
     return slots
 
 
-_RUNTIME_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge"})
-_PLANNER_SOURCE_KEYS = frozenset({"fve", "overflow", "grid"})
+_RUNTIME_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge", "battery"})
+_PLANNER_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "battery"})
 
 
 def _normalize_runtime_source(source: Any) -> Optional[str]:
@@ -547,7 +560,7 @@ def _normalize_runtime_source(source: Any) -> Optional[str]:
 
 
 def _normalize_planner_source(source: Any) -> Optional[str]:
-    """Normalize any raw source value to planner source keys: fve|overflow|grid|null."""
+    """Normalize any raw source value to planner source keys: fve|overflow|grid|battery|null."""
     if source is None:
         return None
     if hasattr(source, "value"):
@@ -784,6 +797,15 @@ def _assemble_canonical_dto(
     # Demand map (F2): read from coordinator's demand profiler if available
     demand_map_dto: dict | None = _read_demand_map_dto(runtime, config)
 
+    # R9: legionella status DTO (null when disabled or runtime absent)
+    legionella_dto: dict | None = _build_legionella_dto(runtime, config, plan_result)
+
+    # R5: circulation runs DTO — list[{start, end, label}], empty when disabled
+    circulation_runs_dto: list[dict[str, Any]] = _build_circulation_runs_dto(runtime, config)
+
+    # R3: Home 5 maneuver status DTO
+    home5_dto: dict[str, Any] = _build_home5_dto(runtime, config)
+
     return {
         "entry_id": entry_id,
         "box_id": box_id,
@@ -821,9 +843,115 @@ def _assemble_canonical_dto(
         "activity": activity_data,
         "aura": aura_data,
         "demand_map": demand_map_dto,
+        "legionella": legionella_dto,
+        "circulation_runs": circulation_runs_dto,
+        "home5": home5_dto,
         "source_segments": source_segments,
         "timeline": timeline,
         "sparklines": sparklines,
+    }
+
+
+def _build_legionella_dto(
+    runtime: Any,
+    config: dict[str, Any],
+    plan_result: Any,
+) -> Optional[dict[str, Any]]:
+    """Build the legionella status sub-DTO for the canonical endpoint.
+
+    Always returns a dict (FE can unconditionally read legionella.enabled).
+    Schema:
+        {enabled, days_since_last (int|null), interval_days, scheduled_start (ISO|null)}
+    """
+    interval_days = int(
+        config.get(CONF_BOILER_LEGIONELLA_INTERVAL_DAYS, DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS)
+    )
+    enabled = interval_days > 0
+
+    # PlanResult does not carry planner_input; days_since comes from the
+    # runtime's legionella cache. scheduled_start comes from plan slot purpose tags.
+    days_since: Optional[int] = None
+    if runtime is not None:
+        cache = getattr(runtime, "_legionella_cache", None)
+        if cache is not None:
+            last_achieved = getattr(cache, "last_achieved_at", None)
+            if last_achieved is not None:
+                now = dt_util.now()
+                age = now - last_achieved
+                days_since = int(age.total_seconds() // 86400)
+
+    # scheduled_start: first legionella-purpose slot in the current plan.
+    scheduled_start: Optional[str] = None
+    if plan_result is not None:
+        slots = getattr(plan_result, "slots", None) or []
+        for slot in slots:
+            if getattr(slot, "purpose", "comfort") == "legionella":
+                try:
+                    scheduled_start = slot.start.isoformat()
+                except Exception:
+                    pass
+                break
+
+    return {
+        "enabled": enabled,
+        "days_since_last": days_since,
+        "interval_days": interval_days,
+        "scheduled_start": scheduled_start,
+    }
+
+
+def _build_circulation_runs_dto(
+    runtime: Any,
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Build the circulation_runs sub-DTO for the canonical endpoint.
+
+    Returns an empty list when the feature is disabled or runtime is absent.
+    Schema: [{start: ISO, end: ISO, label: str}]
+    """
+    enabled = bool(config.get(CONF_BOILER_CIRCULATION_ENABLED, DEFAULT_BOILER_CIRCULATION_ENABLED))
+    if not enabled or runtime is None:
+        return []
+
+    runs = getattr(runtime, "_circulation_runs", []) or []
+    result: list[dict[str, Any]] = []
+    for run_start, run_end, label in runs:
+        try:
+            result.append({
+                "start": run_start.isoformat() if hasattr(run_start, "isoformat") else str(run_start),
+                "end": run_end.isoformat() if hasattr(run_end, "isoformat") else str(run_end),
+                "label": label,
+            })
+        except Exception:
+            pass
+    return result
+
+
+def _build_home5_dto(
+    runtime: Any,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the Home 5 maneuver status sub-DTO for the canonical endpoint.
+
+    Schema:
+        {capability: bool, enabled: bool, engaged: bool}
+
+    capability: box supports Home 5/6 (CONF_BOX_HAS_HOME56)
+    enabled:    boiler planner opt-in (CONF_BOILER_HOME5_MANEUVER_ENABLED)
+    engaged:    planner currently has the Home 5 bit set
+    """
+    capability = bool(config.get(CONF_BOX_HAS_HOME56, DEFAULT_BOX_HAS_HOME56))
+    enabled = bool(
+        capability
+        and config.get(CONF_BOILER_HOME5_MANEUVER_ENABLED, DEFAULT_BOILER_HOME5_MANEUVER_ENABLED)
+    )
+    engaged = False
+    if runtime is not None:
+        engaged = bool(getattr(runtime, "_home5_engaged_by_planner", False))
+    return {
+        "capability": capability,
+        "enabled": enabled,
+        "engaged": engaged,
     }
 
 

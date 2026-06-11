@@ -56,6 +56,9 @@ def plan_result_to_boiler_plan(
                 if slot.heating_kwh > 0
                 else 0.0
             ),
+            # R3/R9: propagate battery_kwh and purpose so canonical DTO can expose them
+            battery_kwh=slot.battery_kwh if getattr(slot, "battery_kwh", None) is not None else 0.0,
+            purpose=getattr(slot, "purpose", "comfort"),
         )
         for slot in result.slots
     ]
@@ -403,6 +406,12 @@ class BoilerPlanner:
                 alt_kwh += consumption
                 if slot.alt_price_kwh is not None:
                     total_cost += consumption * slot.alt_price_kwh
+            elif slot.recommended_source == EnergySource.BATTERY:
+                # R3: Battery-sourced slots discharge the home battery.
+                # Cost is already accounted for in planner_core via BATTERY_CYCLE_COST.
+                # For the legacy totals, count battery under alt_kwh (non-grid) so that
+                # fve_kwh + grid_kwh + alt_kwh == total_consumption_kwh.
+                alt_kwh += consumption
 
         plan.total_consumption_kwh = total_consumption
         plan.estimated_cost_czk = total_cost

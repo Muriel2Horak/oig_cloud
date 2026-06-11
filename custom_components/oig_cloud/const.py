@@ -54,6 +54,20 @@ CONF_BOILER_ALT_SOURCE_MODE = "boiler_alt_source_mode"
 CONF_BOILER_COMFORT_PROFILE_MODE = "boiler_comfort_profile_mode"
 CONF_BOILER_SETUP_COMPLETE = "boiler_setup_complete"
 CONF_BOILER_MODULE_SELECTED = "boiler_module_selected"
+# R9: Anti-legionella obligation (default ON with 7-day interval, 60 °C target)
+CONF_BOILER_LEGIONELLA_INTERVAL_DAYS = "boiler_legionella_interval_days"  # 0 = disabled
+CONF_BOILER_LEGIONELLA_TARGET_TEMP_C = "boiler_legionella_target_temp_c"
+# R5: Circulation pre-peak independent scheduling (default OFF)
+CONF_BOILER_CIRCULATION_ENABLED = "boiler_circulation_enabled"  # False = disabled
+CONF_BOILER_CIRCULATION_LEAD_MINUTES = "boiler_circulation_lead_minutes"
+CONF_BOILER_CIRCULATION_RUN_MINUTES = "boiler_circulation_run_minutes"
+CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY = "boiler_circulation_max_runs_per_day"
+CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES = "boiler_circulation_min_gap_minutes"
+# R3/R7: Home 5 maneuver (battery-discharge boiler heating)
+# Box-level capability flag — also gates control-panel buttons (F5).
+CONF_BOX_HAS_HOME56 = "box_has_home56"  # default False
+# Boiler-planner opt-in — requires CONF_BOX_HAS_HOME56 AND this flag.
+CONF_BOILER_HOME5_MANEUVER_ENABLED = "boiler_home5_maneuver_enabled"  # default False
 
 # Auto Module constants
 CONF_ENABLE_AUTO = "enable_auto"
@@ -87,6 +101,17 @@ DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO = 0.5
 DEFAULT_BOILER_DEADLINE_TIME = "20:00"
 DEFAULT_BOILER_PLANNING_HORIZON_HOURS = 36
 DEFAULT_BOILER_PLAN_SLOT_MINUTES = 15  # Changed from 30 to 15min intervals
+DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS = 0   # 0 = disabled (opt-in via config flow)
+DEFAULT_BOILER_LEGIONELLA_TARGET_TEMP_C = 60.0
+# R5: Circulation scheduling defaults
+DEFAULT_BOILER_CIRCULATION_ENABLED = False
+DEFAULT_BOILER_CIRCULATION_LEAD_MINUTES = 15
+DEFAULT_BOILER_CIRCULATION_RUN_MINUTES = 10
+DEFAULT_BOILER_CIRCULATION_MAX_RUNS_PER_DAY = 3
+DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES = 120
+# R3/R7: Home 5 maneuver defaults
+DEFAULT_BOX_HAS_HOME56 = False
+DEFAULT_BOILER_HOME5_MANEUVER_ENABLED = False
 
 KEY_BOILER_RUNTIMES = "boiler_runtimes"
 ATTR_CONFIG_ENTRY_ID = "entry_id"

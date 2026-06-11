@@ -56,3 +56,11 @@ BATTERY_SOC_OVERFLOW_THRESHOLD: Final[float] = 100.0  # %
 # Planning
 DEFAULT_HYSTERESIS_TEMP: Final[float] = 5.0  # °C
 MIN_SLOT_DURATION: Final[int] = 15  # minut
+
+# R3: Home 5 maneuver — nominal battery wear cost per kWh cycled through
+# the boiler.  0.50 CZK/kWh is a conservative estimate until calibration data
+# is available (typical Li-ion wear is ~0.10–0.50 CZK/kWh depending on cycle
+# count warranty and current replacement price).  This cost makes battery
+# cheaper than expensive day-ahead grid (>0.50 CZK/kWh) but more expensive
+# than cheap night grid or PV overflow (~0 CZK/kWh).
+BATTERY_CYCLE_COST_CZK_PER_KWH: Final[float] = 0.50

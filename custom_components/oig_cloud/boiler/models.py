@@ -56,7 +56,11 @@ class BoilerThermalTopology:
     target_temp_c: float
     cold_inlet_temp_c: float
     heater_power_kw: float
-    standing_loss_coefficient: float = 0.02
+    # Default is 0.0 — the previously-used 0.02 kWh/(l·°C·h) produced ~20 kWh
+    # loss per 15-min slot on a 100 l tank (40× heater output) which is
+    # physically wrong.  Callers that have calibration data may pass a value
+    # ≤ 0.0003 kWh/(l·°C·h).
+    standing_loss_coefficient: float = 0.0
 
     def __post_init__(self):
         if isinstance(self.stratification_mode, str):
@@ -84,6 +88,7 @@ class EnergySource(str, Enum):
     FVE = "fve"  # Fotovoltaika (režim CBB - "Zapnuto")
     GRID = "grid"  # Síť (normální režim - "Vypnuto")
     ALTERNATIVE = "alternative"  # Alternativní zdroj (např. tepelné čerpadlo)
+    BATTERY = "battery"  # R3: Baterie (Home 5 manévr — vybití baterie do bojleru)
 
 
 @dataclass
@@ -110,6 +115,9 @@ class BoilerSlot:
     predicted_top_temp_c: Optional[float] = None  # Predikovaná horní teplota (°C)
     comfort_satisfied: Optional[bool] = None  # Splnění komfortu (None = nehodnoceno)
     pv_share: float = 0.0  # Podíl FVE energie na topení (0.0-1.0)
+    # R3/R9: battery and purpose propagated from PlanSlotAction for canonical DTO
+    battery_kwh: float = 0.0  # Energie z baterie v tomto slotu (kWh) — R3 Home 5
+    purpose: str = "comfort"  # "comfort" | "legionella" — R9
 
 
 @dataclass

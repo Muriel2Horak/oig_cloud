@@ -98,6 +98,12 @@ CANONICAL_REASON_CODES = frozenset({
     "storage_write_failed",
     # F3a: demand-target miss indicator
     "demand_target_missed",
+    # R9: anti-legionella obligation reason codes
+    "legionella_scheduled",
+    "legionella_overdue_infeasible",
+    "legionella_already_satisfied",
+    # R3: Home 5 maneuver (battery-discharge boiler heating)
+    "source_selected_battery",
 })
 
 
@@ -109,9 +115,9 @@ class TestPlannerReasonCode:
             f"Extra: {enum_values - CANONICAL_REASON_CODES}"
         )
 
-    def test_count_is_exactly_30(self):
-        # F3a added DEMAND_TARGET_MISSED → 30 codes total
-        assert len(PlannerReasonCode) == 30
+    def test_count_is_exactly_34(self):
+        # R9 added LEGIONELLA_ALREADY_SATISFIED → 34 codes total
+        assert len(PlannerReasonCode) == 34
 
     def test_from_string_valid(self):
         for code in CANONICAL_REASON_CODES:
@@ -442,7 +448,7 @@ class TestFreshnessValidation:
 
 class TestBoilerBatterySignals:
     def test_allowed_fields_exact(self):
-        assert BoilerBatterySignals.ALLOWED_FIELDS == frozenset({"overflow_windows"})
+        assert BoilerBatterySignals.ALLOWED_FIELDS == frozenset({"overflow_windows", "battery_usable_kwh"})
 
     def test_from_raw_extracts_only_allowed(self):
         raw = {
@@ -491,7 +497,7 @@ class TestBoilerBatterySignals:
     def test_allowed_fields_is_class_constant(self):
         # ALLOWED_FIELDS must be a class-level constant, not overridable per instance
         assert hasattr(BoilerBatterySignals, "ALLOWED_FIELDS")
-        assert BoilerBatterySignals.ALLOWED_FIELDS == frozenset({"overflow_windows"})
+        assert BoilerBatterySignals.ALLOWED_FIELDS == frozenset({"overflow_windows", "battery_usable_kwh"})
         # Creating an instance must not allow overriding ALLOWED_FIELDS
         signals = BoilerBatterySignals(overflow_windows=[])
         assert not hasattr(signals, "ALLOWED_FIELDS") or isinstance(

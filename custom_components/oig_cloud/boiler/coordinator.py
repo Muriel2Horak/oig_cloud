@@ -137,6 +137,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             energy_tracking = self._energy_state_adapter.track_energy_sources()
 
             # 5. Update plánu přes runtime seam (pokud je profil dostupný)
+            runtime = None
             if self._current_profile and self.entry_id:
                 from .runtime import get_boiler_runtime
 
@@ -144,6 +145,12 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if runtime:
                     await runtime.async_create_plan()
                     self._current_plan = runtime.get_current_plan()
+                    # R5: tick circulation pump actuation each 5-min cycle
+                    await runtime._async_tick_circulation_pump()
+                    # R3: tick Home 5 maneuver actuation each 5-min cycle
+                    # (async_create_plan may return early on cache hit, so we must
+                    # tick independently to release the bit when a battery slot ends)
+                    await runtime._async_tick_home5_maneuver()
 
             # 6. Aktuální slot a doporučení
             current_slot = None
@@ -167,7 +174,13 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "charging_recommended": charging_recommended,
                 "recommended_source": recommended_source,
                 "circulation_recommended": is_circulation_recommended(
-                    self._current_profile, now
+                    self._current_profile,
+                    now,
+                    schedule=(
+                        runtime._circulation_runs
+                        if runtime is not None
+                        else ()
+                    ),
                 ),
                 "last_update": now,
             }

@@ -11,10 +11,12 @@ from typing import Any, Callable, Optional
 
 from homeassistant.util import dt as dt_util
 
+from .const import BATTERY_CYCLE_COST_CZK_PER_KWH
 from .models import BoilerThermalTopology, EnergySource, TemperatureTopology
 from .planner_contract import (
     AlternativeSourceCapability,
     DemandTarget,
+    LegionellaObligation,
     PlannerInput,
     PlannerReasonCode,
 )
@@ -46,8 +48,12 @@ class PlanSlotAction:
     pv_kwh: float = 0.0
     grid_kwh: float = 0.0
     alt_kwh: float = 0.0
+    # R3: battery_kwh > 0 when Home 5 maneuver sourced this slot
+    battery_kwh: float = 0.0
     estimated_cost_czk: float = 0.0
     predicted_top_temp_c: float = 0.0
+    # R9: "comfort" (default) | "legionella" — distinguishes obligation type
+    purpose: str = "comfort"
 
 
 @dataclass(frozen=True)
@@ -71,6 +77,8 @@ class PlanResult:
     pv_kwh: float = 0.0
     grid_kwh: float = 0.0
     alt_kwh: float = 0.0
+    # R3: battery_kwh > 0 when Home 5 maneuver sourced any slots
+    battery_kwh: float = 0.0
     safe_hold: bool = False
     degraded: bool = False
     explanation: dict[str, Any] = field(default_factory=dict)
@@ -90,6 +98,8 @@ class _SlotAllocation:
     grid_kwh: float
     alt_kwh: float
     cost_czk: float
+    # R3: battery_kwh > 0 when Home 5 maneuver sourced this slot
+    battery_kwh: float = 0.0
 
 
 def plan_comfort_core(
@@ -174,6 +184,24 @@ def plan_comfort_core(
         reasons=reasons,
     )
 
+    # R9: anti-legionella obligation — allocate AFTER comfort, on remaining capacity.
+    legionella_starts: set[datetime] = set()
+    obligation = getattr(planner_input, "legionella_obligation", None)
+    if (
+        obligation is not None
+        and isinstance(obligation, LegionellaObligation)
+        and obligation.overdue
+        and obligation.interval_days > 0
+    ):
+        heat_allocations, legionella_starts = _allocate_legionella(
+            slots=slots,
+            comfort_allocated=heat_allocations,
+            required_kwh=obligation.required_kwh,
+            planner_input=planner_input,
+            heat_kwh=heat_kwh,
+            reasons=reasons,
+        )
+
     planned_slots, temperature_at_deadline = _predict_slots(
         slots,
         heat_allocations,
@@ -181,6 +209,7 @@ def plan_comfort_core(
         top_temp,
         heat_kwh,
         deadline,
+        legionella_starts=legionella_starts if legionella_starts else None,
     )
     # Overall comfort_satisfied: safety-net deadline reachable AND (no demand
     # targets OR all demand targets met).
@@ -386,14 +415,28 @@ def _choose_heat_allocations(
     feasible: bool,
     planner_input: PlannerInput,
     heat_kwh: float,
+    battery_budget_remaining: Optional[list[float]] = None,
 ) -> dict[datetime, _SlotAllocation]:
+    """Build allocation dict for selected slots, tracking battery budget.
+
+    battery_budget_remaining: single-element list used as a mutable float
+    reference so callers can observe/update the running battery budget.
+    If None, battery is treated as unavailable (0.0 budget).
+    """
     if required_heat_slots <= 0:
         return {}
+
+    budget_ref = battery_budget_remaining  # mutable list[float] or None
+
     if not feasible:
-        return {
-            slot.start: _slot_allocation(slot, planner_input, heat_kwh)
-            for slot in deadline_slots
-        }
+        result: dict[datetime, _SlotAllocation] = {}
+        for slot in deadline_slots:
+            bkwh = budget_ref[0] if budget_ref is not None else 0.0
+            alloc = _slot_allocation(slot, planner_input, heat_kwh, bkwh)
+            if budget_ref is not None:
+                budget_ref[0] = max(0.0, budget_ref[0] - alloc.battery_kwh)
+            result[slot.start] = alloc
+        return result
 
     selected = _best_heat_slot_combination(
         deadline_slots,
@@ -401,10 +444,14 @@ def _choose_heat_allocations(
         planner_input,
         heat_kwh,
     )
-    return {
-        slot.start: _slot_allocation(slot, planner_input, heat_kwh)
-        for slot in selected
-    }
+    result = {}
+    for slot in selected:
+        bkwh = budget_ref[0] if budget_ref is not None else 0.0
+        alloc = _slot_allocation(slot, planner_input, heat_kwh, bkwh)
+        if budget_ref is not None:
+            budget_ref[0] = max(0.0, budget_ref[0] - alloc.battery_kwh)
+        result[slot.start] = alloc
+    return result
 
 
 def _allocate_multi_target(
@@ -442,6 +489,9 @@ def _allocate_multi_target(
     allocated_kwh: float = 0.0
     all_targets_met = True
 
+    # R3: shared mutable battery budget reference across all allocation passes.
+    battery_budget_ref: Optional[list[float]] = _make_battery_budget_ref(planner_input)
+
     for target in demand_targets:
         # Slots available for this target: end <= target.start and not yet
         # allocated.
@@ -478,7 +528,11 @@ def _allocate_multi_target(
         demand_labels.append(target.label)
         for slot in selected:
             if slot.start not in allocated:
-                allocated[slot.start] = _slot_allocation(slot, planner_input, heat_kwh)
+                bkwh = battery_budget_ref[0] if battery_budget_ref is not None else 0.0
+                alloc = _slot_allocation(slot, planner_input, heat_kwh, bkwh)
+                if battery_budget_ref is not None:
+                    battery_budget_ref[0] = max(0.0, battery_budget_ref[0] - alloc.battery_kwh)
+                allocated[slot.start] = alloc
                 allocated_kwh += heat_kwh
 
     # Safety-net pass: allocate remaining slots between last demand target
@@ -502,7 +556,11 @@ def _allocate_multi_target(
             safety_selected = list(remaining_deadline_slots)
         for slot in safety_selected:
             if slot.start not in allocated:
-                allocated[slot.start] = _slot_allocation(slot, planner_input, heat_kwh)
+                bkwh = battery_budget_ref[0] if battery_budget_ref is not None else 0.0
+                alloc = _slot_allocation(slot, planner_input, heat_kwh, bkwh)
+                if battery_budget_ref is not None:
+                    battery_budget_ref[0] = max(0.0, battery_budget_ref[0] - alloc.battery_kwh)
+                allocated[slot.start] = alloc
 
     return allocated, demands_met, demand_labels, all_targets_met
 
@@ -595,7 +653,13 @@ def _combination_score(
       2. transition count (fewer on/off transitions preferred)
       3. negative sum of timestamps (later slots preferred when tied)
     """
-    allocations = [_slot_allocation(slot, planner_input, heat_kwh) for slot in slots]
+    # R3: pass full battery budget for scoring — cost ordering is correct
+    # even if the actual allocation caps usage at the real remaining budget.
+    battery_budget = _battery_budget_for_scoring(planner_input, heat_kwh)
+    allocations = [
+        _slot_allocation(slot, planner_input, heat_kwh, battery_budget)
+        for slot in slots
+    ]
     total_cost = sum(allocation.cost_czk for allocation in allocations)
     total_pv = sum(allocation.pv_kwh for allocation in allocations)
 
@@ -628,7 +692,9 @@ def _slot_score(
     heat_kwh: float,
 ) -> tuple[float, float, float]:
     """Score a single slot for greedy selection (lower is better)."""
-    allocation = _slot_allocation(slot, planner_input, heat_kwh)
+    # R3: pass full battery budget for scoring
+    battery_budget = _battery_budget_for_scoring(planner_input, heat_kwh)
+    allocation = _slot_allocation(slot, planner_input, heat_kwh, battery_budget)
     # For greedy, we approximate standing-loss penalty as cost of one wait slot
     # per unit of earliness (the timestamp term already handles recency bias).
     loss_penalty = _standing_loss_cost_per_wait_slot(planner_input, slot, heat_kwh)
@@ -638,6 +704,50 @@ def _slot_score(
         -round(allocation.pv_kwh, 9),
         -slot.start.timestamp(),
     )
+
+
+def _make_battery_budget_ref(
+    planner_input: PlannerInput,
+) -> Optional[list[float]]:
+    """Return a single-element mutable list [budget_kwh] for battery tracking.
+
+    Returns None when feature is off or no capacity available — callers then
+    always pass 0.0 to _slot_allocation.
+    """
+    if not getattr(planner_input, "home5_available", False):
+        return None
+    signals = planner_input.battery_signals
+    if signals is None:
+        return None
+    usable = getattr(signals, "battery_usable_kwh", None)
+    if usable is None:
+        return None
+    usable = float(usable)
+    if usable <= 0.0:
+        return None
+    return [usable]
+
+
+def _battery_budget_for_scoring(
+    planner_input: PlannerInput,
+    heat_kwh: float,
+) -> float:
+    """Return the battery budget to use during slot *scoring*.
+
+    For scoring we pass the full usable-kWh so all candidate battery slots
+    receive their correct (lower) cost.  The actual cap is enforced during
+    real-allocation via a running counter.  When the feature is off or no
+    capacity is available, returns 0.0 so _slot_allocation never picks battery.
+    """
+    if not getattr(planner_input, "home5_available", False):
+        return 0.0
+    signals = planner_input.battery_signals
+    if signals is None:
+        return 0.0
+    usable = getattr(signals, "battery_usable_kwh", None)
+    if usable is None:
+        return 0.0
+    return max(0.0, float(usable))
 
 
 def _transition_count(slots: tuple[PlanSlotAction, ...]) -> int:
@@ -657,7 +767,15 @@ def _slot_allocation(
     slot: PlanSlotAction,
     planner_input: PlannerInput,
     heat_kwh: float,
+    battery_kwh_remaining: float = 0.0,
 ) -> _SlotAllocation:
+    """Compute source allocation for a single heating slot.
+
+    battery_kwh_remaining: how much battery energy is still available for
+    R3 Home-5 maneuver slots.  Pass 0.0 (default) when feature is off or
+    budget is exhausted.  Only used when home5_available is True on
+    planner_input.
+    """
     pv_kwh = min(
         heat_kwh,
         _pv_surplus_for_slot(slot, planner_input.overflow_windows, heat_kwh),
@@ -690,6 +808,28 @@ def _slot_allocation(
             cost_czk=residual_kwh * planner_input.alt_cost_kwh,
         )
 
+    # R3: Home 5 maneuver — battery wins over grid when:
+    #   - home5_available is True in planner_input
+    #   - there is remaining battery budget
+    #   - slot lies BEFORE at least one future overflow window (battery recharge window)
+    #   - battery cost < grid cost (BATTERY_CYCLE_COST_CZK_PER_KWH < spot_price)
+    if (
+        getattr(planner_input, "home5_available", False)
+        and battery_kwh_remaining >= residual_kwh - 1e-9
+        and battery_kwh_remaining > 0.0
+        and _slot_has_future_overflow(slot, planner_input.overflow_windows)
+        and _battery_is_cheaper(spot_price)
+    ):
+        return _SlotAllocation(
+            source=EnergySource.BATTERY,
+            selected_source=EnergySource.BATTERY,
+            pv_kwh=pv_kwh,
+            grid_kwh=0.0,
+            alt_kwh=0.0,
+            battery_kwh=residual_kwh,
+            cost_czk=residual_kwh * BATTERY_CYCLE_COST_CZK_PER_KWH,
+        )
+
     selected_source = EnergySource.GRID
     if (
         planner_input.alt_source_capability == AlternativeSourceCapability.BENCHMARK_ONLY
@@ -720,6 +860,35 @@ def _alternative_is_cheaper(
     if PlannerReasonCode.INPUT_STALE_PRICE in planner_input.reason_codes:
         return False
     return planner_input.alt_cost_kwh < spot_price
+
+
+def _battery_is_cheaper(spot_price: Optional[float]) -> bool:
+    """Return True when battery cycle cost is cheaper than the grid spot price."""
+    if spot_price is None:
+        return False
+    return BATTERY_CYCLE_COST_CZK_PER_KWH < spot_price
+
+
+def _slot_has_future_overflow(
+    slot: PlanSlotAction,
+    overflow_windows: list[Any],
+) -> bool:
+    """Return True if there is at least one overflow window that starts AFTER
+    this slot's start time.
+
+    Rationale: the battery-discharge maneuver only makes economic sense when
+    PV will recharge the battery later in the same planning horizon.  If the
+    slot is already inside or after all overflow windows the battery would not
+    be topped up again.
+    """
+    for window in overflow_windows:
+        parsed = _parse_overflow_window(window, 0.0)
+        if parsed is None:
+            continue
+        window_start, _end, _surplus = parsed
+        if window_start > slot.start:
+            return True
+    return False
 
 
 def _spot_price_for_slot(
@@ -803,6 +972,82 @@ def _float_or_none(value: Any) -> Optional[float]:
         return None
 
 
+def _allocate_legionella(
+    *,
+    slots: list[PlanSlotAction],
+    comfort_allocated: dict[datetime, _SlotAllocation],
+    required_kwh: float,
+    planner_input: PlannerInput,
+    heat_kwh: float,
+    reasons: list[PlannerReasonCode],
+) -> tuple[dict[datetime, _SlotAllocation], set[datetime]]:
+    """Allocate legionella-obligation heat slots on top of comfort allocation.
+
+    Finds the cheapest CONTIGUOUS feasible window in the full horizon for
+    the additional energy needed, without stealing comfort-allocated slots.
+    Returns updated combined allocations + the set of legionella-slot starts.
+
+    When no feasible contiguous window exists (horizon too short / heater too
+    weak), appends LEGIONELLA_OVERDUE_INFEASIBLE and returns unchanged
+    comfort allocations with an empty legionella set.
+    """
+    if required_kwh <= 0 or heat_kwh <= 0:
+        # Temperature already at/above legionella target — obligation is met, no slots needed.
+        _append_reason(reasons, PlannerReasonCode.LEGIONELLA_ALREADY_SATISFIED)
+        return dict(comfort_allocated), set()
+
+    slots_needed = _required_heat_slots(required_kwh, heat_kwh)
+    # Candidate slots: any slot in the full horizon not already comfort-allocated.
+    free_slots = [s for s in slots if s.start not in comfort_allocated]
+
+    # R3: compute remaining battery budget after comfort allocation.
+    battery_budget_ref: Optional[list[float]] = _make_battery_budget_ref(planner_input)
+    if battery_budget_ref is not None:
+        used_battery = sum(
+            alloc.battery_kwh for alloc in comfort_allocated.values()
+        )
+        battery_budget_ref[0] = max(0.0, battery_budget_ref[0] - used_battery)
+
+    # Find cheapest contiguous window of length slots_needed.
+    # For scoring pass the full remaining budget (same slot may appear in any window).
+    best_window: Optional[list[PlanSlotAction]] = None
+    best_cost = float("inf")
+
+    for i in range(len(free_slots) - slots_needed + 1):
+        window = free_slots[i : i + slots_needed]
+        # Contiguity check: each slot's end must equal next slot's start.
+        contiguous = all(
+            window[j].end == window[j + 1].start for j in range(len(window) - 1)
+        )
+        if not contiguous:
+            continue
+        budget_for_scoring = battery_budget_ref[0] if battery_budget_ref is not None else 0.0
+        cost = sum(
+            _slot_allocation(s, planner_input, heat_kwh, budget_for_scoring).cost_czk
+            for s in window
+        )
+        if cost < best_cost:
+            best_cost = cost
+            best_window = window
+
+    if best_window is None:
+        _append_reason(reasons, PlannerReasonCode.LEGIONELLA_OVERDUE_INFEASIBLE)
+        return dict(comfort_allocated), set()
+
+    legionella_starts: set[datetime] = set()
+    combined = dict(comfort_allocated)
+    for slot in best_window:
+        bkwh = battery_budget_ref[0] if battery_budget_ref is not None else 0.0
+        alloc = _slot_allocation(slot, planner_input, heat_kwh, bkwh)
+        if battery_budget_ref is not None:
+            battery_budget_ref[0] = max(0.0, battery_budget_ref[0] - alloc.battery_kwh)
+        combined[slot.start] = alloc
+        legionella_starts.add(slot.start)
+
+    _append_reason(reasons, PlannerReasonCode.LEGIONELLA_SCHEDULED)
+    return combined, legionella_starts
+
+
 def _predict_slots(
     slots: list[PlanSlotAction],
     heat_allocations: dict[datetime, _SlotAllocation],
@@ -810,6 +1055,7 @@ def _predict_slots(
     starting_top_temp: float,
     heat_kwh: float,
     deadline: datetime,
+    legionella_starts: Optional[set[datetime]] = None,
 ) -> tuple[list[PlanSlotAction], float]:
     predicted_top = starting_top_temp
     temperature_at_deadline = starting_top_temp
@@ -826,6 +1072,12 @@ def _predict_slots(
             )
         action = "heat" if heating_kwh > 0 else "idle"
         source = allocation.source if allocation is not None else None
+        # R9: mark legionella-obligation slots
+        purpose = (
+            "legionella"
+            if (legionella_starts and slot.start in legionella_starts)
+            else "comfort"
+        )
         planned.append(
             replace(
                 slot,
@@ -835,8 +1087,10 @@ def _predict_slots(
                 pv_kwh=allocation.pv_kwh if allocation is not None else 0.0,
                 grid_kwh=allocation.grid_kwh if allocation is not None else 0.0,
                 alt_kwh=allocation.alt_kwh if allocation is not None else 0.0,
+                battery_kwh=allocation.battery_kwh if allocation is not None else 0.0,
                 estimated_cost_czk=allocation.cost_czk if allocation is not None else 0.0,
                 predicted_top_temp_c=predicted_top,
+                purpose=purpose,
             )
         )
         if slot.end <= deadline:
@@ -863,10 +1117,11 @@ def _plan_result(
     pv_kwh = sum(slot.pv_kwh for slot in slots)
     grid_kwh = sum(slot.grid_kwh for slot in slots)
     alt_kwh = sum(slot.alt_kwh for slot in slots)
+    battery_kwh = sum(getattr(slot, "battery_kwh", 0.0) for slot in slots)
     estimated_cost = sum(slot.estimated_cost_czk for slot in slots)
     benchmark_selected = _benchmark_alternative_selected(planner_input, slots)
-    selected_source = _selected_source(pv_kwh, grid_kwh, alt_kwh, benchmark_selected)
-    actuated_source = _actuated_source(pv_kwh, grid_kwh, alt_kwh)
+    selected_source = _selected_source(pv_kwh, grid_kwh, alt_kwh, benchmark_selected, battery_kwh)
+    actuated_source = _actuated_source(pv_kwh, grid_kwh, alt_kwh, battery_kwh)
     if comfort_satisfied:
         _append_reason(reasons, PlannerReasonCode.COMFORT_SATISFIED)
         comfort_status = PlannerReasonCode.COMFORT_SATISFIED
@@ -876,7 +1131,7 @@ def _plan_result(
         _append_reason(reasons, PlannerReasonCode.NO_FEASIBLE_PLAN)
         comfort_status = PlannerReasonCode.COMFORT_UNSATISFIED
         gap = max(0.0, topology.target_temp_c - temperature_at_deadline)
-    _append_source_reasons(reasons, selected_source, pv_kwh, grid_kwh, alt_kwh)
+    _append_source_reasons(reasons, selected_source, pv_kwh, grid_kwh, alt_kwh, battery_kwh)
     if benchmark_selected:
         _append_reason(reasons, PlannerReasonCode.SOURCE_BENCHMARK_ONLY)
     stale_optimization = _has_stale_optimization_inputs(reasons)
@@ -912,6 +1167,7 @@ def _plan_result(
         pv_kwh=pv_kwh,
         grid_kwh=grid_kwh,
         alt_kwh=alt_kwh,
+        battery_kwh=battery_kwh,
         safe_hold=False,
         degraded=degraded_top_only or stale_optimization,
         explanation=_explanation(
@@ -937,9 +1193,12 @@ def _selected_source(
     grid_kwh: float,
     alt_kwh: float,
     benchmark_selected: bool,
+    battery_kwh: float = 0.0,
 ) -> Optional[EnergySource]:
     if alt_kwh > 0 or benchmark_selected:
         return EnergySource.ALTERNATIVE
+    if battery_kwh > 0:
+        return EnergySource.BATTERY
     if pv_kwh > 0:
         return EnergySource.FVE
     if grid_kwh > 0:
@@ -951,9 +1210,12 @@ def _actuated_source(
     pv_kwh: float,
     grid_kwh: float,
     alt_kwh: float,
+    battery_kwh: float = 0.0,
 ) -> Optional[EnergySource]:
     if alt_kwh > 0:
         return EnergySource.ALTERNATIVE
+    if battery_kwh > 0:
+        return EnergySource.BATTERY
     if grid_kwh > 0:
         return EnergySource.GRID
     if pv_kwh > 0:
@@ -984,11 +1246,14 @@ def _append_source_reasons(
     pv_kwh: float,
     grid_kwh: float,
     alt_kwh: float,
+    battery_kwh: float = 0.0,
 ) -> None:
     if pv_kwh > 0:
         _append_reason(reasons, PlannerReasonCode.SOURCE_SELECTED_PV)
     if alt_kwh > 0 or selected_source == EnergySource.ALTERNATIVE:
         _append_reason(reasons, PlannerReasonCode.SOURCE_SELECTED_ALTERNATIVE)
+    if battery_kwh > 0 or selected_source == EnergySource.BATTERY:
+        _append_reason(reasons, PlannerReasonCode.SOURCE_SELECTED_BATTERY)
     if grid_kwh > 0 or selected_source == EnergySource.GRID:
         _append_reason(reasons, PlannerReasonCode.SOURCE_SELECTED_GRID)
 

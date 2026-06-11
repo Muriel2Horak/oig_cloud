@@ -22,6 +22,8 @@ const PLANNER_SOURCE_MAP: Record<string, string> = {
   grid: 'grid',
   alternative: 'grid',
   alt: 'grid',
+  // R3: battery source emitted when Home 5 maneuver is active
+  battery: 'battery',
 };
 
 const RUNTIME_SOURCE_MAP: Record<string, string> = {

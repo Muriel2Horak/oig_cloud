@@ -61,6 +61,12 @@ class PlannerReasonCode(str, Enum):
     API_REPAIR_REQUIRED = "api_repair_required"
     STORAGE_WRITE_FAILED = "storage_write_failed"
     DEMAND_TARGET_MISSED = "demand_target_missed"
+    # R9: anti-legionella obligation reason codes
+    LEGIONELLA_SCHEDULED = "legionella_scheduled"
+    LEGIONELLA_OVERDUE_INFEASIBLE = "legionella_overdue_infeasible"
+    LEGIONELLA_ALREADY_SATISFIED = "legionella_already_satisfied"
+    # R3: Home 5 maneuver (battery-discharge boiler heating)
+    SOURCE_SELECTED_BATTERY = "source_selected_battery"
 
 
 @dataclass
@@ -81,15 +87,44 @@ class DemandTarget:
 
 
 @dataclass
+class LegionellaObligation:
+    """Legionella heating obligation to pass into the planner.
+
+    When overdue (days_since >= interval_days and interval_days > 0), the
+    planner allocates extra slots to reach legionella_target_temp_c on top
+    of the comfort plan.
+
+    Fields
+    ------
+    overdue:              True when anti-legionella heating is due.
+    required_kwh:         kWh needed to raise TOP zone to legionella_target_temp_c.
+    legionella_target_temp_c: Target temperature for legionella kill.
+    days_since_last:      Days since last verified legionella-temperature event
+                          (None when unknown / recorder unavailable).
+    interval_days:        Configured check interval (0 = disabled).
+    """
+
+    overdue: bool
+    required_kwh: float
+    legionella_target_temp_c: float
+    days_since_last: Optional[int]
+    interval_days: int
+
+
+@dataclass
 class BoilerBatterySignals:
     """Explicitly allowed battery-derived signals for boiler planner input.
 
     Rejects or ignores forbidden battery planner internals by contract.
     """
 
-    ALLOWED_FIELDS: ClassVar[frozenset[str]] = frozenset({"overflow_windows"})
+    ALLOWED_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {"overflow_windows", "battery_usable_kwh"}
+    )
 
     overflow_windows: list[tuple[datetime, datetime]] = field(default_factory=list)
+    # R3: kWh available above the reserve/min-SoC right now; None when unknown.
+    battery_usable_kwh: Optional[float] = None
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> "BoilerBatterySignals":
@@ -97,7 +132,16 @@ class BoilerBatterySignals:
         if not isinstance(raw, dict):
             raise TypeError("raw battery data must be a dict")
         allowed = {k: v for k, v in raw.items() if k in cls.ALLOWED_FIELDS}
-        return cls(overflow_windows=allowed.get("overflow_windows", []))
+        battery_usable_kwh = allowed.get("battery_usable_kwh")
+        if battery_usable_kwh is not None:
+            try:
+                battery_usable_kwh = float(battery_usable_kwh)
+            except (TypeError, ValueError):
+                battery_usable_kwh = None
+        return cls(
+            overflow_windows=allowed.get("overflow_windows", []),
+            battery_usable_kwh=battery_usable_kwh,
+        )
 
 
 @dataclass
@@ -125,6 +169,11 @@ class PlannerInput:
     horizon_hours: Optional[int] = None
     reason_codes: list[PlannerReasonCode] = field(default_factory=list)
     demand_targets: list[DemandTarget] = field(default_factory=list)
+    # R9: anti-legionella obligation (None = disabled / not yet detected)
+    legionella_obligation: Optional[LegionellaObligation] = None
+    # R3: Home 5 maneuver available (both CONF_BOX_HAS_HOME56 AND
+    # CONF_BOILER_HOME5_MANEUVER_ENABLED must be True, set by runtime).
+    home5_available: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.entry_id, str) or not self.entry_id:
