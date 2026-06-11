@@ -25,7 +25,7 @@ import {
   BoilerEnergyBreakdown, BoilerPredictedUsage, BoilerConfig,
   BoilerHeatmapRow, BoilerProfilingData, CATEGORY_LABELS,
   BoilerV2Status, BoilerV2PlanSlot, BoilerV2Explanation,
-  BoilerV2Identity,
+  BoilerV2Identity, DemandMapData,
 } from './types';
 import { planBoilerHeating, applyBoilerPlan, cancelBoilerPlan } from '@/data/boiler-data';
 import { t, sourceLabel, reasonLabel, type Lang } from '@/i18n/boiler';
@@ -1214,7 +1214,285 @@ export class OigBoilerConfigSection extends LitElement {
 }
 
 // ============================================================================
-// 12. LEGACY WRAPPERS (keep old tag names working for backwards compat)
+// 12. DEMAND MAP (Mapa odběrů) — F2
+// ============================================================================
+
+/** Convert slot index (0-95) to HH:MM display string */
+function slotToHhmm(slotIndex: number, slotDurationMin: number): string {
+  const totalMin = slotIndex * slotDurationMin;
+  const h = Math.floor(totalMin / 60) % 24;
+  const m = totalMin % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Emoji for window label */
+function windowEmoji(label: string): string {
+  switch (label) {
+    case 'morning': return '🌅';
+    case 'afternoon': return '☀️';
+    case 'evening': return '🌆';
+    case 'night': return '🌙';
+    default: return '💧';
+  }
+}
+
+@customElement('oig-boiler-demand-map')
+export class OigBoilerDemandMap extends LitElement {
+  @property({ attribute: false }) data: DemandMapData | null = null;
+  @property({ type: String }) lang: Lang = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+
+    .card {
+      ${cardBase};
+      padding: 16px;
+    }
+
+    .heading {
+      ${sectionTitle};
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Empty / collecting state */
+    .empty-state {
+      text-align: center;
+      padding: 24px 0;
+      color: ${u(CSS_VARS.textSecondary)};
+      font-size: 13px;
+    }
+
+    /* Heatmap: 48 columns (2 slots aggregated per column) */
+    .heatmap-wrap {
+      overflow-x: auto;
+    }
+
+    .heatmap {
+      display: grid;
+      grid-template-columns: repeat(48, 1fr);
+      gap: 2px;
+      min-width: 280px;
+      margin-bottom: 6px;
+    }
+
+    .heatmap-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+    }
+
+    .heatmap-bar {
+      width: 100%;
+      min-height: 2px;
+      border-radius: 2px 2px 0 0;
+      transition: opacity 0.15s;
+    }
+
+    .heatmap-bar:hover { opacity: 0.75; }
+
+    /* Hour axis labels: show at 0, 6, 12, 18, 24 (index 0, 6, 12, 18 in 48-col map) */
+    .hour-axis {
+      display: grid;
+      grid-template-columns: repeat(48, 1fr);
+      min-width: 280px;
+      margin-bottom: 10px;
+    }
+
+    .hour-label {
+      grid-column: span 1;
+      font-size: 9px;
+      color: ${u(CSS_VARS.textSecondary)};
+      text-align: left;
+    }
+
+    .hour-label.hidden { visibility: hidden; }
+
+    /* Readiness chips */
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(33,150,243,0.12);
+      color: ${u(CSS_VARS.textPrimary)};
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .chip-time {
+      font-weight: 700;
+      color: ${u(CSS_VARS.accent)};
+    }
+
+    /* Meta line */
+    .meta {
+      font-size: 11px;
+      color: ${u(CSS_VARS.textSecondary)};
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .confidence-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(76,175,80,0.15);
+      color: #2e7d32;
+    }
+
+    .confidence-badge.low {
+      background: rgba(255,152,0,0.18);
+      color: #b75d00;
+    }
+
+    .fallback-notice {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 10px;
+      background: rgba(255,152,0,0.12);
+      color: #b75d00;
+    }
+  `;
+
+  render() {
+    const lang = this.lang;
+    const heading = t('boiler.demand_map.heading', lang);
+
+    if (!this.data) {
+      return html`
+        <div class="card" data-testid="boiler-demand-map">
+          <div class="heading">💧 ${heading}</div>
+          <div class="empty-state">${t('boiler.demand_map.empty', lang)}</div>
+        </div>
+      `;
+    }
+
+    const dm = this.data;
+    const slotDur = dm.slotDurationMin || 15;
+
+    // Aggregate 96 slots → 48 columns (pair of slots per column)
+    const numCols = 48;
+    const slotsPerCol = Math.ceil(dm.slotsP80.length / numCols);
+    const colsP80: number[] = [];
+    const colsP50: number[] = [];
+    for (let c = 0; c < numCols; c++) {
+      let sumP80 = 0;
+      let sumP50 = 0;
+      for (let s = 0; s < slotsPerCol; s++) {
+        const idx = c * slotsPerCol + s;
+        sumP80 += dm.slotsP80[idx] ?? 0;
+        sumP50 += dm.slotsP50[idx] ?? 0;
+      }
+      colsP80.push(sumP80);
+      colsP50.push(sumP50);
+    }
+
+    const maxVal = Math.max(...colsP80, 0.001);
+    const CHART_HEIGHT_PX = 60;
+
+    // Columns that get hour labels (0=00h, 12=06h, 24=12h, 36=18h, 47=24h)
+    const hourLabelCols: Record<number, string> = {
+      0: '00',
+      12: '06',
+      24: '12',
+      36: '18',
+    };
+
+    // Color mapping: low intensity = navy tint, high = cyan-blue, peak = accent
+    const colColor = (val: number) => {
+      const ratio = val / maxVal;
+      if (ratio < 0.15) return 'rgba(255,255,255,0.06)';
+      if (ratio < 0.40) return 'rgba(33,150,243,0.25)';
+      if (ratio < 0.70) return 'rgba(33,150,243,0.55)';
+      return 'rgba(33,150,243,0.90)';
+    };
+
+    return html`
+      <div class="card" data-testid="boiler-demand-map">
+        <div class="heading">💧 ${heading}</div>
+
+        <div class="heatmap-wrap">
+          <div class="heatmap">
+            ${colsP80.map((val, ci) => {
+              const barH = Math.max(2, Math.round((val / maxVal) * CHART_HEIGHT_PX));
+              const tipTime = slotToHhmm(ci * slotsPerCol, slotDur);
+              const tipKwh = val.toFixed(2);
+              return html`
+                <div class="heatmap-col" title="${tipTime}: ${tipKwh} kWh">
+                  <div class="heatmap-bar"
+                       style="height:${barH}px; background:${colColor(val)};">
+                  </div>
+                </div>
+              `;
+            })}
+          </div>
+
+          <div class="hour-axis">
+            ${Array.from({ length: numCols }, (_, ci) => {
+              const lbl = hourLabelCols[ci];
+              return lbl !== undefined
+                ? html`<span class="hour-label">${lbl}</span>`
+                : html`<span class="hour-label hidden"></span>`;
+            })}
+          </div>
+        </div>
+
+        ${dm.windows.length > 0 ? html`
+          <div class="chips">
+            ${dm.windows.slice(0, 3).map(w => {
+              const timeStr = slotToHhmm(w.slotIndex, slotDur);
+              const emoji = windowEmoji(w.label);
+              const litersRounded = Math.round(w.liters);
+              const kwhFmt = w.p80Kwh.toFixed(1);
+              return html`
+                <span class="chip">
+                  ${emoji}
+                  <span class="chip-time">${timeStr}</span>
+                  &ge; ${litersRounded} L (${kwhFmt} kWh)
+                </span>
+              `;
+            })}
+          </div>
+        ` : nothing}
+
+        <div class="meta">
+          <span>
+            ${(t('boiler.demand_map.meta', lang) as string)
+              .replace('{n}', String(dm.profile.daysUsed))
+              .replace('{cat}', CATEGORY_LABELS[dm.profile.category] || dm.profile.label)}
+          </span>
+          <span class="confidence-badge ${dm.confidence < 0.5 ? 'low' : ''}">
+            ${t('boiler.demand_map.confidence', lang)} ${Math.round(dm.confidence * 100)}&nbsp;%
+          </span>
+          ${dm.profile.fallbackUsed ? html`
+            <span class="fallback-notice">${t('boiler.demand_map.fallback_notice', lang)}</span>
+          ` : nothing}
+        </div>
+      </div>
+    `;
+  }
+}
+
+// ============================================================================
+// 13. LEGACY WRAPPERS (keep old tag names working for backwards compat)
 // ============================================================================
 
 @customElement('oig-boiler-state')
@@ -1646,5 +1924,6 @@ declare global {
     'oig-boiler-source-explanation': OigBoilerSourceExplanation;
     'oig-boiler-override-panel': OigBoilerOverridePanel;
     'oig-boiler-unavailable-state': OigBoilerUnavailableState;
+    'oig-boiler-demand-map': OigBoilerDemandMap;
   }
 }

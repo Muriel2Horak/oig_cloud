@@ -7,7 +7,7 @@ import {
   BoilerProfile, BoilerState, BoilerHourData, BoilerPlan,
   BoilerEnergyBreakdown, BoilerPredictedUsage, BoilerConfig,
   BoilerHeatmapRow, BoilerProfilingData, BoilerData, BoilerPlanSlot,
-  BoilerV2Data, BoilerV2PlanSlot,
+  BoilerV2Data, BoilerV2PlanSlot, DemandMapData,
   OVERRIDE_TTL_DEFAULT_MINUTES, OVERRIDE_TTL_MIN_MINUTES,
   OVERRIDE_TTL_MAX_MINUTES, OVERRIDE_TTL_STEP_MINUTES,
   SOURCE_LABELS,
@@ -337,6 +337,26 @@ interface BoilerCanonicalAPI {
   source_segments?: BoilerCanonicalSourceSegment[] | null;
   timeline?: BoilerCanonicalTimelinePoint[] | null;
   sparkline?: BoilerCanonicalSparkline | null;
+  demand_map?: {
+    slot_duration_min: number;
+    slots_p50: number[];
+    slots_p80: number[];
+    windows: Array<{
+      slot_index: number;
+      start_minute: number;
+      p80_kwh: number;
+      liters: number;
+      label: string;
+    }>;
+    profile: {
+      category: string;
+      level: string;
+      days_used: number;
+      label: string;
+      fallback_used: boolean;
+    };
+    confidence: number;
+  } | null;
 }
 
 async function fetchBoilerCanonical(): Promise<{ profileData: BoilerPlanAPI | null; planData: BoilerPlanAPI | null; canonical: BoilerCanonicalAPI | null; configProfileUnavailable: boolean; boilerProfileConfig: Record<string, any> | null }> {
@@ -823,6 +843,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
       sourceSegments: [],
       timeline: [],
       sparkline: null,
+      demandMap: null,
       loading: false,
       loadError: 'Nepodařilo se načíst data bojleru',
     };
@@ -941,6 +962,28 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     power: Array.isArray(rawSparkline.power) ? rawSparkline.power : [],
   } : null;
 
+  const rawDemandMap = canonical.demand_map ?? null;
+  const demandMap: DemandMapData | null = rawDemandMap != null ? {
+    slotDurationMin: rawDemandMap.slot_duration_min,
+    slotsP50: Array.isArray(rawDemandMap.slots_p50) ? rawDemandMap.slots_p50 : [],
+    slotsP80: Array.isArray(rawDemandMap.slots_p80) ? rawDemandMap.slots_p80 : [],
+    windows: Array.isArray(rawDemandMap.windows) ? rawDemandMap.windows.map(w => ({
+      slotIndex: w.slot_index,
+      startMinute: w.start_minute,
+      p80Kwh: w.p80_kwh,
+      liters: w.liters,
+      label: w.label,
+    })) : [],
+    profile: {
+      category: rawDemandMap.profile.category,
+      level: rawDemandMap.profile.level,
+      daysUsed: rawDemandMap.profile.days_used,
+      label: rawDemandMap.profile.label,
+      fallbackUsed: rawDemandMap.profile.fallback_used,
+    },
+    confidence: rawDemandMap.confidence,
+  } : null;
+
   return {
     status,
     planSlots,
@@ -951,6 +994,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     sourceSegments,
     timeline,
     sparkline,
+    demandMap,
     loading: false,
     loadError: null,
   };

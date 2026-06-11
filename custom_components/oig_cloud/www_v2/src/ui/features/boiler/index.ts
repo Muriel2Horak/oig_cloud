@@ -18,6 +18,7 @@ export {
   OigBoilerSourceExplanation,
   OigBoilerOverridePanel,
   OigBoilerUnavailableState,
+  OigBoilerDemandMap,
 } from './components';
 
 export { OigBoilerV2Svg } from './boiler-svg';

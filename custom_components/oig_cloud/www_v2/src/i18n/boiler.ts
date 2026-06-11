@@ -122,6 +122,16 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.aria.svg_summary': 'Vizualizace bojleru',
     'boiler.aria.stale': 'Data mohou být zastaralá',
     'boiler.aria.source_unknown': 'Neznámý zdroj',
+
+    'boiler.demand_map.heading': 'Mapa odběrů',
+    'boiler.demand_map.empty': 'Sbírám data o odběrech — mapa se objeví po pár dnech',
+    'boiler.demand_map.confidence': 'Spolehlivost',
+    'boiler.demand_map.fallback_notice': 'Přibližný profil (málo dat)',
+    'boiler.demand_map.meta': 'Profil z historie ({n} dní, {cat})',
+    'boiler.demand_map.window.morning': 'Ráno',
+    'boiler.demand_map.window.afternoon': 'Odpoledne',
+    'boiler.demand_map.window.evening': 'Večer',
+    'boiler.demand_map.window.night': 'Noc',
   },
   en: {
     'boiler.status.heading': 'Boiler status',
@@ -239,6 +249,16 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.aria.svg_summary': 'Boiler visualization',
     'boiler.aria.stale': 'Data may be stale',
     'boiler.aria.source_unknown': 'Unknown source',
+
+    'boiler.demand_map.heading': 'Demand Map',
+    'boiler.demand_map.empty': 'Collecting usage data — map will appear in a few days',
+    'boiler.demand_map.confidence': 'Confidence',
+    'boiler.demand_map.fallback_notice': 'Approximate profile (low data)',
+    'boiler.demand_map.meta': 'Profile from history ({n} days, {cat})',
+    'boiler.demand_map.window.morning': 'Morning',
+    'boiler.demand_map.window.afternoon': 'Afternoon',
+    'boiler.demand_map.window.evening': 'Evening',
+    'boiler.demand_map.window.night': 'Night',
   },
 };
 

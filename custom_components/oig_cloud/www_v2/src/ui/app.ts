@@ -997,6 +997,10 @@ export class OigApp extends LitElement {
         <oig-boiler-v2-shell .data=${v2} .config=${this.boilerConfig} .lang=${this.boilerLang}></oig-boiler-v2-shell>
         <oig-boiler-metric-panel panelType="comfort" .data=${v2} .config=${this.boilerConfig} .lang=${this.boilerLang}></oig-boiler-metric-panel>
       </div>
+      <oig-boiler-demand-map
+        .data=${v2.demandMap ?? null}
+        .lang=${this.boilerLang}
+      ></oig-boiler-demand-map>
       <oig-boiler-timeline-chart
         .data=${v2}
         .config=${this.boilerConfig}

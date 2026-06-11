@@ -99,6 +99,31 @@ export interface BoilerV2Identity {
   available: boolean;
 }
 
+export interface DemandMapWindow {
+  slotIndex: number;
+  startMinute: number;
+  p80Kwh: number;
+  liters: number;
+  label: string; // "morning" | "afternoon" | "evening" | "night"
+}
+
+export interface DemandMapProfile {
+  category: string;
+  level: string; // "exact" | "same_day_type" | "global" | "bootstrap"
+  daysUsed: number;
+  label: string;
+  fallbackUsed: boolean;
+}
+
+export interface DemandMapData {
+  slotDurationMin: number;
+  slotsP50: number[];   // 96 values
+  slotsP80: number[];   // 96 values
+  windows: DemandMapWindow[];
+  profile: DemandMapProfile;
+  confidence: number;
+}
+
 export interface BoilerV2Data {
   status: BoilerV2Status | null;
   planSlots: BoilerV2PlanSlot[];
@@ -109,6 +134,7 @@ export interface BoilerV2Data {
   sourceSegments: BoilerV2SourceSegment[];
   timeline: BoilerV2TimelinePoint[];
   sparkline: BoilerV2Sparkline | null;
+  demandMap: DemandMapData | null;
   loading: boolean;
   loadError: string | null;
 }
