@@ -423,8 +423,10 @@ export class OigBoilerPlanStrip extends LitElement {
 
     // NOW and deadline
     const nowFrac = nowFraction(planStartIso);
-    const deadlineStr = this.planSummary?.deadlineTime ?? null;
-    const deadlineFrac = deadlineStr ? deadlineFraction(planStartIso, deadlineStr) : null;
+    // Config may store HH:MM:SS — display as HH:MM (parsing handles both).
+    const deadlineRaw = this.planSummary?.deadlineTime ?? null;
+    const deadlineStr = deadlineRaw ? deadlineRaw.slice(0, 5) : null;
+    const deadlineFrac = deadlineStr ? deadlineFraction(planStartIso, deadlineRaw!) : null;
 
     // Legionella standalone marker (scheduled_start outside heat bands)
     const legMarkerFrac = this._legionellaStandaloneMarker(planStartIso, bands);
