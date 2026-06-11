@@ -33,6 +33,47 @@ interface AuraLayer {
   active: boolean;
 }
 
+/** Today's per-source energy mix (kWh) used to layer the aura — mockup:
+ *  „aura modelu = z čeho je voda nabitá (vrstvy zdrojů)". */
+export interface AuraEnergyMix {
+  fve: number;
+  grid: number;
+  battery: number;
+  alt: number;
+  unattributed: number;
+}
+
+const UNATTRIBUTED_GRADIENT = 'linear-gradient(180deg,rgba(158,158,158,.55),rgba(120,130,150,.5))';
+
+/**
+ * Build aura layers from today's energy mix. Layer heights are proportional
+ * to each source's share of today's heating energy; rendered bottom→top in
+ * fixed order grid → battery → alt → unattributed → fve (FVE on top, per
+ * mockup). Heights are relative to the .aura container (already sized to
+ * the fill level).
+ */
+export function buildAuraLayersFromMix(mix: AuraEnergyMix): AuraLayer[] {
+  const parts: Array<[string, number, string]> = [
+    ['grid', Math.max(0, mix.grid), SOURCE_GRADIENTS.grid],
+    ['battery', Math.max(0, mix.battery), SOURCE_GRADIENTS.battery],
+    ['alternative', Math.max(0, mix.alt), SOURCE_GRADIENTS.alternative],
+    ['unattributed', Math.max(0, mix.unattributed), UNATTRIBUTED_GRADIENT],
+    ['fve', Math.max(0, mix.fve), SOURCE_GRADIENTS.fve],
+  ];
+  const total = parts.reduce((a, [, v]) => a + v, 0);
+  if (total < 0.05) return [];
+  return parts
+    .filter(([, v]) => v / total >= 0.02) // skip slivers under 2 %
+    .map(([key, v]) => ({
+      key,
+      background: srcGradient(key) === srcGradient(null) && key === 'unattributed'
+        ? UNATTRIBUTED_GRADIENT
+        : (key === 'unattributed' ? UNATTRIBUTED_GRADIENT : srcGradient(key)),
+      heightPct: (v / total) * 100,
+      active: false,
+    }));
+}
+
 /**
  * Build aura layers (bottom-up) as percentage heights.
  * Each layer is expressed as a percentage of the total tank height.
@@ -107,6 +148,8 @@ function buildAriaLabel(
 export class OigBoilerV2Svg extends LitElement {
   @property({ type: Number }) fillLevelPct: number | null = null;
   @property({ type: Array }) sourceSegments: BoilerV2SourceSegment[] = [];
+  /** Today's per-source kWh mix — preferred source for aura layering. */
+  @property({ type: Object }) energyMix: AuraEnergyMix | null = null;
   @property({ type: Number }) topTempC: number | null = null;
   @property({ type: Number }) bottomTempC: number | null = null;
   @property({ type: Number }) lowerZoneTempC: number | null = null;
@@ -343,7 +386,12 @@ export class OigBoilerV2Svg extends LitElement {
   }
 
   private _renderTank() {
-    const layers = buildAuraLayers(this.fillLevelPct, this.sourceSegments);
+    // Prefer today's energy mix (mockup: aura = z čeho je voda nabitá);
+    // fall back to live source segments when no energy flowed today.
+    const mixLayers = this.energyMix ? buildAuraLayersFromMix(this.energyMix) : [];
+    const layers = mixLayers.length > 0
+      ? mixLayers
+      : buildAuraLayers(this.fillLevelPct, this.sourceSegments);
     const ariaLabel = buildAriaLabel(
       this.topTempC,
       this.bottomTempC,

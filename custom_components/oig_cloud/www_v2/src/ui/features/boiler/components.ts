@@ -1270,46 +1270,43 @@ export class OigBoilerDemandMap extends LitElement {
       overflow-x: auto;
     }
 
+    /* Mockup .heat: row of equal-height rounded cells, red intensity ramp */
     .heatmap {
       display: grid;
       grid-template-columns: repeat(48, 1fr);
-      gap: 2px;
+      gap: 1.5px;
+      height: 30px;
       min-width: 280px;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
     }
 
     .heatmap-col {
       display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 1px;
+      height: 100%;
     }
 
     .heatmap-bar {
       width: 100%;
-      min-height: 2px;
-      border-radius: 2px 2px 0 0;
+      height: 100%;
+      border-radius: 2px;
       transition: opacity 0.15s;
     }
 
     .heatmap-bar:hover { opacity: 0.75; }
 
-    /* Hour axis labels: show at 0, 6, 12, 18, 24 (index 0, 6, 12, 18 in 48-col map) */
+    /* Mockup .hl: five labels spread across the strip */
     .hour-axis {
-      display: grid;
-      grid-template-columns: repeat(48, 1fr);
+      display: flex;
+      justify-content: space-between;
       min-width: 280px;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
 
     .hour-label {
-      grid-column: span 1;
       font-size: 9px;
       color: ${u(CSS_VARS.textSecondary)};
-      text-align: left;
+      opacity: 0.7;
     }
-
-    .hour-label.hidden { visibility: hidden; }
 
     /* Readiness chips */
     .chips {
@@ -1414,23 +1411,14 @@ export class OigBoilerDemandMap extends LitElement {
     }
 
     const maxVal = Math.max(...colsP80, 0.001);
-    const CHART_HEIGHT_PX = 60;
 
-    // Columns that get hour labels (0=00h, 12=06h, 24=12h, 36=18h, 47=24h)
-    const hourLabelCols: Record<number, string> = {
-      0: '00',
-      12: '06',
-      24: '12',
-      36: '18',
-    };
-
-    // Color mapping: low intensity = navy tint, high = cyan-blue, peak = accent
+    // Mockup color ramp: red-orange intensity, faint grey baseline for ~zero.
     const colColor = (val: number) => {
-      const ratio = val / maxVal;
-      if (ratio < 0.15) return 'rgba(255,255,255,0.06)';
-      if (ratio < 0.40) return 'rgba(33,150,243,0.25)';
-      if (ratio < 0.70) return 'rgba(33,150,243,0.55)';
-      return 'rgba(33,150,243,0.90)';
+      const v = Math.min(1, val / maxVal);
+      if (v < 0.08) return 'rgba(255,255,255,.05)';
+      const r = Math.round(120 + 135 * v);
+      const g = Math.round(60 + 50 * (1 - v));
+      return `rgba(${r}, ${g}, 60, ${(0.12 + 0.85 * v).toFixed(2)})`;
     };
 
     const metaStr = (t('boiler.demand_map.meta', lang) as string)
@@ -1448,26 +1436,20 @@ export class OigBoilerDemandMap extends LitElement {
         <div class="heatmap-wrap">
           <div class="heatmap">
             ${colsP80.map((val, ci) => {
-              const barH = Math.max(2, Math.round((val / maxVal) * CHART_HEIGHT_PX));
               const tipTime = slotToHhmm(ci * slotsPerCol, slotDur);
               const tipKwh = val.toFixed(2);
               return html`
                 <div class="heatmap-col" title="${tipTime}: ${tipKwh} kWh">
-                  <div class="heatmap-bar"
-                       style="height:${barH}px; background:${colColor(val)};">
-                  </div>
+                  <div class="heatmap-bar" style="background:${colColor(val)};"></div>
                 </div>
               `;
             })}
           </div>
 
           <div class="hour-axis">
-            ${Array.from({ length: numCols }, (_, ci) => {
-              const lbl = hourLabelCols[ci];
-              return lbl !== undefined
-                ? html`<span class="hour-label">${lbl}</span>`
-                : html`<span class="hour-label hidden"></span>`;
-            })}
+            ${['00:00', '06:00', '12:00', '18:00', '24:00'].map(
+              lbl => html`<span class="hour-label">${lbl}</span>`,
+            )}
           </div>
         </div>
 

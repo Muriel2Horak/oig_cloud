@@ -218,8 +218,14 @@ export class OigApp extends LitElement {
       display: grid;
       grid-template-areas: 'source shell comfort';
       grid-template-columns: 1fr 300px 1fr;
-      gap: 24px;
-      align-items: start;
+      gap: 12px;
+      /* mockup: all three cards share the tank card's height */
+      align-items: stretch;
+    }
+
+    .boiler-stage > oig-boiler-metric-panel,
+    .boiler-stage > oig-boiler-v2-shell {
+      height: 100%;
     }
 
     @media (max-width: 1023px) {

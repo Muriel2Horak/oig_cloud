@@ -3450,13 +3450,14 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     document.body.removeChild(el);
   });
 
-  it('does not render Cena dnes row when planSummary is null', async () => {
+  it('renders Cena dnes row with placeholder when planSummary is null (mockup: full row set)', async () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
     el.data = makeMinimalBoilerData({ planSummary: null });
     document.body.appendChild(el);
     await el.updateComplete;
-    expect(el.shadowRoot!.innerHTML).not.toContain('Cena dnes');
+    expect(el.shadowRoot!.innerHTML).toContain('Cena dnes');
+    expect(el.shadowRoot!.innerHTML).toContain('—');
     document.body.removeChild(el);
   });
 
@@ -3524,7 +3525,8 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     });
     document.body.appendChild(el);
     await el.updateComplete;
-    expect(el.shadowRoot!.innerHTML).not.toContain('z plynu');
+    // mockup full row set: alt row renders with 0,0 kWh value
+    expect(el.shadowRoot!.innerHTML).toContain('0,0 kWh');
     document.body.removeChild(el);
   });
 
@@ -3575,7 +3577,9 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     });
     document.body.appendChild(el);
     await el.updateComplete;
-    expect(el.shadowRoot!.innerHTML).not.toContain('Ušetřeno');
+    // mockup full row set: row stays with placeholder when not computable
+    expect(el.shadowRoot!.innerHTML).toContain('Ušetřeno');
+    expect(el.shadowRoot!.innerHTML).toContain('—');
     document.body.removeChild(el);
   });
 

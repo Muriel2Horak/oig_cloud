@@ -121,11 +121,14 @@ export class OigBoilerMetricPanel extends LitElement {
     }
 
     /* ── Side panel wrapper ── */
+    :host { height: 100%; }
+
     .panel {
       background: ${u(CSS_VARS.cardBg)};
       border-radius: 12px;
       padding: 12px 14px;
       box-sizing: border-box;
+      height: 100%;
     }
 
     /* ── Section heading: UPPERCASE muted ── */
@@ -272,33 +275,25 @@ export class OigBoilerMetricPanel extends LitElement {
       <div class="panel" data-testid="boiler-source-panel">
         <h3 class="panel-title">${t('boiler.panel.source_title', lang)}</h3>
 
-        ${costCzk != null ? html`
-          <div class="kv">
-            <span>${t('boiler.panel.cost_today', lang)}</span>
-            <b>${costCzk.toFixed(1).replace('.', ',')} Kč</b>
-          </div>
-        ` : nothing}
+        <div class="kv">
+          <span>${t('boiler.panel.cost_today', lang)}</span>
+          <b>${costCzk != null ? `${costCzk.toFixed(1).replace('.', ',')} Kč` : '—'}</b>
+        </div>
 
-        ${totalKwh != null ? html`
-          <div class="kv">
-            <span>${t('boiler.panel.energy_today', lang)}</span>
-            <b>${totalKwh.toFixed(1).replace('.', ',')} kWh</b>
-          </div>
-        ` : nothing}
+        <div class="kv">
+          <span>${t('boiler.panel.energy_today', lang)}</span>
+          <b>${totalKwh != null ? `${totalKwh.toFixed(1).replace('.', ',')} kWh` : '—'}</b>
+        </div>
 
-        ${fveKwh != null && fveKwh > 0 ? html`
-          <div class="kv">
-            <span>${t('boiler.panel.fve_label', lang)}</span>
-            <b style="color:#ffd479">${fveKwh.toFixed(1).replace('.', ',')} kWh</b>
-          </div>
-        ` : nothing}
+        <div class="kv">
+          <span>${t('boiler.panel.fve_label', lang)}</span>
+          <b style="color:#ffd479">${fveKwh != null ? `${fveKwh.toFixed(1).replace('.', ',')} kWh` : '—'}</b>
+        </div>
 
-        ${gridKwh != null && gridKwh > 0 ? html`
-          <div class="kv">
-            <span>${t('boiler.panel.grid_label', lang)}</span>
-            <b style="color:#81d4fa">${gridKwh.toFixed(1).replace('.', ',')} kWh</b>
-          </div>
-        ` : nothing}
+        <div class="kv">
+          <span>${t('boiler.panel.grid_label', lang)}</span>
+          <b style="color:#81d4fa">${gridKwh != null ? `${gridKwh.toFixed(1).replace('.', ',')} kWh` : '—'}</b>
+        </div>
 
         ${showUnattributed ? html`
           <div class="kv">
@@ -307,10 +302,10 @@ export class OigBoilerMetricPanel extends LitElement {
           </div>
         ` : nothing}
 
-        ${showAlt ? html`
+        ${showAlt || altKwh != null ? html`
           <div class="kv">
             <span>${altLabel}</span>
-            <b style="color:#ffab91">${altKwh!.toFixed(1).replace('.', ',')} kWh</b>
+            <b style="color:#ffab91">${altKwh != null ? `${altKwh.toFixed(1).replace('.', ',')} kWh` : '—'}</b>
           </div>
         ` : nothing}
 
@@ -321,27 +316,25 @@ export class OigBoilerMetricPanel extends LitElement {
           </div>
         ` : nothing}
 
-        ${savingsLabel != null ? html`
-          <div class="kv">
-            <span>${t('boiler.panel.savings_label', lang)}</span>
-            <b style="color:#9fe6a8">${savingsLabel}</b>
-          </div>
-        ` : nothing}
+        <div class="kv">
+          <span>${t('boiler.panel.savings_label', lang)}</span>
+          <b style="color:#9fe6a8">${savingsLabel != null ? savingsLabel : '—'}</b>
+        </div>
 
         <div class="kv" data-testid="boiler-current-source-row">
           <span>${t('boiler.panel.current_source', lang)}</span>
           <b>${currentSourceDisplay}</b>
         </div>
 
-        ${nextAction != null ? html`
-          <div class="kv" data-testid="boiler-next-action">
-            <span>${t('boiler.panel.next_action', lang)}</span>
-            <b>${nextAction.isTomorrow
-              ? html`${nextAction.label} ${t('boiler.panel.tomorrow', lang)} ${nextAction.timeStr}`
-              : html`${nextAction.label} ${nextAction.timeStr}`
-            }</b>
-          </div>
-        ` : nothing}
+        <div class="kv" data-testid="boiler-next-action">
+          <span>${t('boiler.panel.next_action', lang)}</span>
+          <b>${nextAction != null
+            ? (nextAction.isTomorrow
+                ? html`${nextAction.label} ${t('boiler.panel.tomorrow', lang)} ${nextAction.timeStr}`
+                : html`${nextAction.label} ${nextAction.timeStr}`)
+            : '—'
+          }</b>
+        </div>
       </div>
     `;
   }

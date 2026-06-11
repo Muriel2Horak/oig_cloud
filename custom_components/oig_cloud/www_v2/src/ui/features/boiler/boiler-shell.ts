@@ -188,6 +188,13 @@ export class OigBoilerV2Shell extends LitElement {
           <oig-boiler-v2-svg
             .fillLevelPct="${fillFraction}"
             .sourceSegments="${data?.sourceSegments ?? []}"
+            .energyMix="${data?.energyToday ? {
+              fve: data.energyToday.fveKwh,
+              grid: data.energyToday.gridKwh,
+              battery: data.energyToday.batteryKwh,
+              alt: data.energyToday.altKwh,
+              unattributed: data.energyToday.unattributedKwh,
+            } : null}"
             .topTempC="${status?.temperatureTop ?? null}"
             .bottomTempC="${status?.temperatureBottom ?? null}"
             .lowerZoneTempC="${lowerZoneTempC}"
