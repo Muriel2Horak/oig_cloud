@@ -478,6 +478,99 @@ async def _maybe_apply_consumption_boost(
         adaptive_helper.apply_consumption_boost_to_forecast(load_forecast, recent_ratio)
 
 
+def _read_boiler_grid_load_overlay(sensor: Any) -> dict[datetime, float]:
+    """Return {slot_start: grid_kwh} from the boiler runtime's last plan.
+
+    Reads boiler runtime via hass.data boundary (same pattern as F1 battery→boiler
+    signal, reversed).  Returns {} silently on any error or when the boiler
+    module is not configured — this is always a soft dependency.
+
+    One-cycle lag: the boiler plan is from the *previous* planner cycle.  The
+    first battery forecast after a new plan will see zero boiler load; this is
+    intentional and documented in the design.
+
+    Only grid_kwh is included.  Overflow-sourced heating (pv_kwh) is excluded
+    because the battery sim already exports that surplus; adding it would
+    double-count PV and inflate the charging target.
+
+    Note: adaptive_profiles already capture historical boiler grid consumption.
+    The overlay intentionally adds PLANNED future load on top; this over-estimates
+    total draw by up to one boiler heating cycle worth of grid kWh in steady-state,
+    causing modest over-charging (self-limiting at battery max capacity).
+    Accepted trade-off per R6 design.
+    """
+    try:
+        hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+        if hass is None:
+            return {}
+
+        hass_data = getattr(hass, "data", None)
+        if not isinstance(hass_data, dict):
+            return {}
+
+        from ...const import DOMAIN, KEY_BOILER_RUNTIMES
+
+        runtimes_by_entry: dict[str, Any] = {}
+        for entry_id, entry_data in hass_data.get(DOMAIN, {}).items():
+            if not isinstance(entry_data, dict):
+                continue
+            runtimes = entry_data.get(KEY_BOILER_RUNTIMES, {})
+            if isinstance(runtimes, dict):
+                runtimes_by_entry.update(runtimes)
+
+        overlay: dict[datetime, float] = {}
+        for _key, runtime in runtimes_by_entry.items():
+            plan_result = getattr(runtime, "last_plan_result", None)
+            if plan_result is None:
+                continue
+            for slot in getattr(plan_result, "slots", []):
+                grid_kwh = getattr(slot, "grid_kwh", 0.0)
+                if grid_kwh <= 0.0:
+                    continue
+                slot_start = slot.start
+                # Normalise to tz-aware local time for key matching with the
+                # spot_prices timestamps (which are parsed as local-aware by
+                # _append_load_for_price).
+                if slot_start.tzinfo is None:
+                    slot_start = dt_util.as_local(slot_start)
+                overlay[slot_start] = overlay.get(slot_start, 0.0) + grid_kwh
+
+        return overlay
+
+    except Exception as exc:
+        _LOGGER.debug("_read_boiler_grid_load_overlay skipped: %s", exc)
+        return {}
+
+
+def _apply_boiler_grid_load_overlay(
+    sensor: Any,
+    spot_prices: list[dict[str, Any]],
+    load_forecast: list[float],
+) -> None:
+    """Add boiler planned grid-heating kWh into the load forecast in place.
+
+    Matches boiler slot timestamps against spot_price[i]["time"] by converting
+    both sides to tz-aware local datetimes.  Unmatched slots are silently
+    ignored (they may be outside the planning horizon).
+    """
+    overlay = _read_boiler_grid_load_overlay(sensor)
+    if not overlay:
+        return
+
+    for i, sp in enumerate(spot_prices):
+        if i >= len(load_forecast):
+            break
+        try:
+            ts = datetime.fromisoformat(sp["time"])
+            if ts.tzinfo is None:
+                ts = dt_util.as_local(ts)
+            boiler_kwh = overlay.get(ts, 0.0)
+            if boiler_kwh > 0.0:
+                load_forecast[i] += boiler_kwh
+        except Exception:
+            pass  # Defensive; never crash the forecast pipeline.
+
+
 def _resolve_load_kwh(
     sensor: Any,
     timestamp: datetime,
@@ -1199,6 +1292,13 @@ async def _prepare_forecast_inputs(sensor: Any, bucket_start: datetime) -> Optio
         adaptive_profiles,
         load_avg_sensors,
     )
+
+    # R6: overlay boiler planned grid load (one-cycle lag — the boiler runtime
+    # must have a plan_result from the previous cycle for this to take effect).
+    # Overflow-sourced heating is excluded: it consumes PV surplus, not grid
+    # load, and the battery sim already models export; adding it would double-
+    # count and artificially inflate the charging target.
+    _apply_boiler_grid_load_overlay(sensor, spot_prices, load_forecast)
 
     return (
         current_capacity,
