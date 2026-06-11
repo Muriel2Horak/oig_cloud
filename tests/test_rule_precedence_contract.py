@@ -55,8 +55,8 @@ class TestPrecedenceLevel:
                 assert level > PrecedenceLevel.PLANNING_TARGET
 
     def test_level_count(self):
-        """There should be exactly 11 precedence levels (including PRE_PEAK_AVOIDANCE)."""
-        assert len(list(PrecedenceLevel)) == 11
+        """There should be exactly 12 precedence levels (including PRE_PEAK_AVOIDANCE and FLOOR_DWELL_GUARD)."""
+        assert len(list(PrecedenceLevel)) == 12
 
 
 class TestPrecedenceLadder:
@@ -81,6 +81,7 @@ class TestPrecedenceLadder:
             PrecedenceLevel.PROTECTION_SAFETY,
             PrecedenceLevel.PRE_PEAK_AVOIDANCE,
             PrecedenceLevel.DEATH_VALLEY,
+            PrecedenceLevel.FLOOR_DWELL_GUARD,
             PrecedenceLevel.BALANCING_OVERRIDE,
             PrecedenceLevel.MODE_GUARD,
             PrecedenceLevel.RECOVERY_MODE,
@@ -265,8 +266,9 @@ class TestHelperFunctions:
     def test_get_precedence_rank(self):
         """get_precedence_rank should return correct 1-indexed position."""
         assert get_precedence_rank(PrecedenceLevel.PV_FIRST) == 1
-        assert get_precedence_rank(PrecedenceLevel.PLANNING_TARGET) == 11
+        assert get_precedence_rank(PrecedenceLevel.PLANNING_TARGET) == 12
         assert get_precedence_rank(PrecedenceLevel.PROTECTION_SAFETY) == 2
+        assert get_precedence_rank(PrecedenceLevel.FLOOR_DWELL_GUARD) == 5
 
     def test_is_higher_priority(self):
         """is_higher_priority should return correct comparison."""
@@ -297,7 +299,7 @@ class TestHelperFunctions:
         summary = get_precedence_summary()
         assert "PRECEDENCE CONTRACT SUMMARY" in summary
         assert "PV_FIRST" in summary
-        assert "Total levels: 11" in summary
+        assert "Total levels: 12" in summary
         assert "Total order valid: True" in summary
 
 

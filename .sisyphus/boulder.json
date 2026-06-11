@@ -1,13 +1,88 @@
 {
-  "active_plan": "/repos/oig-cloud/.sisyphus/plans/boiler-module-redesign.md",
-  "started_at": "2026-04-25T16:33:04.894Z",
+  "active_plan": "/repos/oig-cloud/.sisyphus/plans/boiler-v2-redesign-implementation.md",
+  "started_at": "2026-05-04T06:54:01.774Z",
   "session_ids": [
-    "ses_23abd5251ffeWVBmpcdaPbQuDn"
+    "ses_20e3c170cffeYe8pP2K58y16p6",
+    "ses_20e3ae6beffeJHvhZfj8xu5AsO",
+    "ses_20e3ae67fffeW9qL4XjWlmDC2V",
+    "ses_20e3ae67dffevwR8f8qVm4OnQ7",
+    "ses_20e3ae657ffeEMY2We10M7ABpN"
   ],
   "session_origins": {
-    "ses_23abd5251ffeWVBmpcdaPbQuDn": "direct"
+    "ses_20e3c170cffeYe8pP2K58y16p6": "direct",
+    "ses_20e3ae6beffeJHvhZfj8xu5AsO": "appended",
+    "ses_20e3ae67fffeW9qL4XjWlmDC2V": "appended",
+    "ses_20e3ae67dffevwR8f8qVm4OnQ7": "appended",
+    "ses_20e3ae657ffeEMY2We10M7ABpN": "appended"
   },
-  "plan_name": "boiler-module-redesign",
+  "plan_name": "boiler-v2-redesign-implementation",
   "agent": "atlas",
-  "task_sessions": {}
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Add pure BoilerActivityClassifier and activity model",
+      "session_id": "ses_20e326618ffe2iarKi76bli4Oa",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-05-04T07:13:14.534Z"
+    },
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "Extend frontend DTOs, mapping, formatters, and i18n contract",
+      "session_id": "ses_20e173894ffeEulTSRRq3gsCG3",
+      "updated_at": "2026-05-04T07:55:14.765Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Derive source segments, fill percentages, and sparklines from runtime buffer",
+      "session_id": "ses_20ddd9f1affeJ3T816JTPGZyzf",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-04T08:45:51.913Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Enrich canonical API and deduplicate energy tracking",
+      "session_id": "ses_20dcf2d73ffeYW6IScthqrXAON",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-04T09:07:53.186Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Fix energy/source sensors and attribution consistency",
+      "session_id": "ses_20db6bd5affeQ789bjkXc1trp8",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-04T09:38:13.460Z"
+    },
+    "todo:8": {
+      "task_key": "todo:8",
+      "task_label": "8",
+      "task_title": "Build central boiler shell and SVG aura",
+      "session_id": "ses_20d8edcddffeYwcBSrgowsgmsT",
+      "updated_at": "2026-05-04T10:29:09.562Z"
+    },
+    "todo:12": {
+      "task_key": "todo:12",
+      "task_label": "12",
+      "task_title": "Local HA deploy verification and repository cleanup",
+      "session_id": "ses_20c5d8414ffeUunXcA6M8x4Fua",
+      "updated_at": "2026-05-04T16:02:35.978Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan Compliance Audit — oracle",
+      "session_id": "ses_20bce2763ffePgXhuOhU7OS0xW",
+      "agent": "oracle",
+      "category": "",
+      "updated_at": "2026-05-04T18:15:23.924Z"
+    }
+  }
 }

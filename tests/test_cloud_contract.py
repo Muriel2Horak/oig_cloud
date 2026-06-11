@@ -242,6 +242,7 @@ def test_allowlisted_keys_and_detail_enums_are_frozen():
                 "would_waste_headroom",
                 "price_band_continuation",
                 "gap_fill",
+                "floor_dwell_guard",
                 "unknown",
             }
         ),

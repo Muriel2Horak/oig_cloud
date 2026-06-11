@@ -10,6 +10,42 @@ from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Box forced-balancing dwell constants
+# ---------------------------------------------------------------------------
+# When the battery sits at or near the hardware floor for longer than
+# BOX_FLOOR_DWELL_TRIGGER_MIN minutes the box autonomously triggers cell-
+# balancing and force-charges the battery from the grid to nearly full —
+# at whatever the current spot price happens to be.  These constants let the
+# simulation model that cost so that candidate plans which dwell at the floor
+# carry their realistic cost penalty and the optimiser avoids them naturally.
+
+# How long (minutes) at the floor before the box fires forced balancing.
+BOX_FLOOR_DWELL_TRIGGER_MIN: int = 60
+
+# The SoC fraction the box charges to during forced balancing (conservative:
+# assume it tops up to 100 %).
+BOX_FORCED_CHARGE_TARGET_PCT: float = 1.0
+
+# A simulated SoC is "at the floor" when it is within this fraction of floor_kwh.
+# Using 1 % headroom absorbs the sim-fidelity drift (~1 h earlier in reality)
+# without over-triggering on shallow draw-downs.
+FLOOR_DWELL_EPS_PCT: float = 0.01
+
+# ---------------------------------------------------------------------------
+# Floor dwell prevention (Task B)
+# ---------------------------------------------------------------------------
+# Measured fact: the real battery reaches the hw floor ~1 hour earlier than the
+# simulation (sim-fidelity drift).  The prevention target therefore adds a
+# hysteresis buffer above the trigger floor so that even if the real SoC
+# hits the floor 1 h sooner than modelled, there is still margin before the
+# 60-min dwell window expires.
+#
+# 0.3 kWh ≈ 2 % of a 15.3 kWh pack, or about 3 % of a 10.24 kWh pack —
+# chosen to absorb the sim-drift without forcing unnecessary grid charging on
+# systems that genuinely want to discharge to a deep floor.
+FLOOR_DWELL_HYSTERESIS_KWH: float = 0.3
+
 
 def get_candidate_intervals(
     timeline: List[Dict[str, Any]],
