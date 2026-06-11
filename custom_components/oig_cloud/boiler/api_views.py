@@ -507,9 +507,16 @@ def _read_energy_tracking(
             except (ValueError, TypeError):
                 pass
 
+    unattributed_kwh = 0.0
     if alt_kwh is None:
         from .thermal import estimate_residual_energy
         alt_kwh = estimate_residual_energy(total_energy, fve_kwh, grid_kwh)
+    else:
+        # Alt is metered separately (gas) — the box day counter is ELECTRIC
+        # energy only. Any electric energy the accumulators could not attribute
+        # (e.g. pre-restart gap) is honestly reported as 'unattributed' instead
+        # of being silently dumped into a source bucket.
+        unattributed_kwh = max(0.0, total_energy - fve_kwh - grid_kwh)
 
     result: dict[str, Any] = {
         "current_source": current_source,
@@ -517,7 +524,8 @@ def _read_energy_tracking(
         "fve_kwh": round(fve_kwh, 3),
         "grid_kwh": round(grid_kwh, 3),
         "alt_kwh": round(alt_kwh, 3),
-        "source_estimated": source_estimated,
+        "unattributed_kwh": round(unattributed_kwh, 3),
+        "source_estimated": source_estimated or unattributed_kwh > 0.01,
     }
     return result
 
@@ -859,6 +867,7 @@ def _assemble_canonical_dto(
         "grid_kwh": energy_tracking.get("grid_kwh", 0.0),
         "alt_kwh": energy_tracking.get("alt_kwh", 0.0),
         "battery_kwh": 0.0,  # TODO: attribute from Home 5 source_segments when available
+        "unattributed_kwh": energy_tracking.get("unattributed_kwh", 0.0),
         "source_invalid": bool(energy_tracking.get("source_invalid", False)),
     }
 

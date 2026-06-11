@@ -1568,10 +1568,13 @@ class BoilerRuntime:
         # so we leave the gap unattributed rather than fabricate grid energy.
         activity = self._current_activity
         state = getattr(activity, "state", None) if activity is not None else None
-        source = getattr(activity, "source", None) if activity is not None else None
-        if state in ("charging_fve", "charging_overflow") or source in ("fve", "overflow"):
+        # Gate strictly on ACTIVE charging states. The legacy source snapshot
+        # reports e.g. 'grid' even during standby (it is "last known source"),
+        # so source-based fallbacks here would re-introduce the very
+        # misattribution this guard exists to prevent.
+        if state in ("charging_fve", "charging_overflow"):
             self._daily_source_kwh["fve"] = self._daily_source_kwh.get("fve", 0.0) + gap
-        elif state == "charging_grid" or source == "grid":
+        elif state == "charging_grid":
             self._daily_source_kwh["grid"] = self._daily_source_kwh.get("grid", 0.0) + gap
         # standby / charging_alt / unknown: leave gap unattributed (honest)
         self._daily_source_reseeded = True

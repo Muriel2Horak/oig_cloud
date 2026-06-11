@@ -157,6 +157,8 @@ export interface EnergyToday {
   gridKwh: number;
   altKwh: number;
   batteryKwh: number;
+  /** Electric kWh whose source could not be determined (e.g. pre-restart gap). */
+  unattributedKwh: number;
   sourceInvalid: boolean;
 }
 

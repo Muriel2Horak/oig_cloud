@@ -388,6 +388,7 @@ interface BoilerCanonicalAPI {
     grid_kwh: number;
     alt_kwh: number;
     battery_kwh: number;
+    unattributed_kwh?: number;
     source_invalid: boolean;
   } | null;
 }
@@ -1056,6 +1057,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     gridKwh: typeof rawET.grid_kwh === 'number' ? rawET.grid_kwh : 0,
     altKwh: typeof rawET.alt_kwh === 'number' ? rawET.alt_kwh : 0,
     batteryKwh: typeof rawET.battery_kwh === 'number' ? rawET.battery_kwh : 0,
+    unattributedKwh: typeof rawET.unattributed_kwh === 'number' ? rawET.unattributed_kwh : 0,
     sourceInvalid: rawET.source_invalid === true,
   } : null;
 

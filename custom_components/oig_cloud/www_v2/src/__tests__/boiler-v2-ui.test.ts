@@ -3464,7 +3464,7 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
     el.data = makeMinimalBoilerData({
-      energyToday: { totalKwh: 16.9, fveKwh: 2.1, gridKwh: 0.5, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+      energyToday: { totalKwh: 16.9, fveKwh: 2.1, gridKwh: 0.5, altKwh: 0, batteryKwh: 0, unattributedKwh: 0, sourceInvalid: false },
     });
     document.body.appendChild(el);
     await el.updateComplete;
@@ -3478,7 +3478,7 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
     el.data = makeMinimalBoilerData({
-      energyToday: { totalKwh: 5.0, fveKwh: 2.1, gridKwh: 0, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+      energyToday: { totalKwh: 5.0, fveKwh: 2.1, gridKwh: 0, altKwh: 0, batteryKwh: 0, unattributedKwh: 0, sourceInvalid: false },
     });
     document.body.appendChild(el);
     await el.updateComplete;
@@ -3492,7 +3492,7 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
     el.data = makeMinimalBoilerData({
-      energyToday: { totalKwh: 1.0, fveKwh: 0, gridKwh: 0.5, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+      energyToday: { totalKwh: 1.0, fveKwh: 0, gridKwh: 0.5, altKwh: 0, batteryKwh: 0, unattributedKwh: 0, sourceInvalid: false },
     });
     document.body.appendChild(el);
     await el.updateComplete;
@@ -3506,7 +3506,7 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
     el.data = makeMinimalBoilerData({
-      energyToday: { totalKwh: 14.3, fveKwh: 0, gridKwh: 0, altKwh: 14.3, batteryKwh: 0, sourceInvalid: false },
+      energyToday: { totalKwh: 14.3, fveKwh: 0, gridKwh: 0, altKwh: 14.3, batteryKwh: 0, unattributedKwh: 0, sourceInvalid: false },
     });
     document.body.appendChild(el);
     await el.updateComplete;
@@ -3520,7 +3520,7 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
     el.data = makeMinimalBoilerData({
-      energyToday: { totalKwh: 2.0, fveKwh: 2.0, gridKwh: 0, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+      energyToday: { totalKwh: 2.0, fveKwh: 2.0, gridKwh: 0, altKwh: 0, batteryKwh: 0, unattributedKwh: 0, sourceInvalid: false },
     });
     document.body.appendChild(el);
     await el.updateComplete;
@@ -3532,7 +3532,7 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
     el.data = makeMinimalBoilerData({
-      energyToday: { totalKwh: 3.0, fveKwh: 0, gridKwh: 0, altKwh: 0, batteryKwh: 2.5, sourceInvalid: false },
+      energyToday: { totalKwh: 3.0, fveKwh: 0, gridKwh: 0, altKwh: 0, batteryKwh: 2.5, unattributedKwh: 0, sourceInvalid: false },
     });
     document.body.appendChild(el);
     await el.updateComplete;
@@ -3545,7 +3545,7 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
     el.data = makeMinimalBoilerData({
-      energyToday: { totalKwh: 2.0, fveKwh: 2.0, gridKwh: 0, altKwh: 0, batteryKwh: 0, sourceInvalid: false },
+      energyToday: { totalKwh: 2.0, fveKwh: 2.0, gridKwh: 0, altKwh: 0, batteryKwh: 0, unattributedKwh: 0, sourceInvalid: false },
     });
     document.body.appendChild(el);
     await el.updateComplete;

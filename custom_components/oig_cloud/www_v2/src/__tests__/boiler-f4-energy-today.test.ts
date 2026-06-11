@@ -56,6 +56,7 @@ function makeEnergy(overrides: Partial<EnergyToday> = {}): EnergyToday {
     gridKwh: 0.5,
     altKwh: 2.4,
     batteryKwh: 0.0,
+    unattributedKwh: 0.0,
     sourceInvalid: false,
     ...overrides,
   };
