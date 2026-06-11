@@ -243,6 +243,7 @@ interface BoilerCanonicalSlot {
   alt_price: number | null;
   overflow_available: boolean;
   predicted_temperature_c?: number | null;
+  predicted_top_temp_c?: number | null;
   comfort_satisfied?: boolean | null;
   estimated_cost_czk?: number | null;
   pv_share?: number | null;
@@ -920,7 +921,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
       pvKwh: s.pv_kwh ?? null,
       gridKwh: s.grid_kwh ?? null,
       altKwh: s.alt_kwh ?? null,
-      expectedTempTopC: s.predicted_temperature_c ?? null,
+      expectedTempTopC: s.predicted_top_temp_c ?? s.predicted_temperature_c ?? null,
       comfortSatisfied: s.comfort_satisfied ?? null,
       estimatedCostCzk: s.estimated_cost_czk ?? null,
       pvShare: typeof s.pv_share === 'number'

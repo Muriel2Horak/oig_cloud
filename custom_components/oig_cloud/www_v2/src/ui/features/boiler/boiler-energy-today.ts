@@ -113,6 +113,9 @@ export function computeSavingsLabel(
   if (!planSummary) return null;
   const { estimatedCostCzk, costIfAllGrid } = planSummary;
   if (estimatedCostCzk == null || costIfAllGrid == null) return null;
+  // costIfAllGrid <= 0 means slots are unpriced (e.g. input_stale_price right
+  // after a restart) — a "0.0 Kč" benchmark is noise, not information.
+  if (costIfAllGrid <= 0) return null;
   const savings = costIfAllGrid - estimatedCostCzk;
   if (savings < 0) return null;
   const prefix = t('boiler.energy_today.benchmark_savings', lang);
@@ -256,7 +259,10 @@ export class OigBoilerEnergyToday extends LitElement {
       }));
 
     // Benchmark
-    const benchmarkCostGrid = planSummary?.costIfAllGrid ?? null;
+    const benchmarkCostGridRaw = planSummary?.costIfAllGrid ?? null;
+    // Hide the benchmark entirely when slots are unpriced (0/negative).
+    const benchmarkCostGrid =
+      benchmarkCostGridRaw != null && benchmarkCostGridRaw > 0 ? benchmarkCostGridRaw : null;
     const savingsLabel = computeSavingsLabel(planSummary, lang);
 
     return html`
