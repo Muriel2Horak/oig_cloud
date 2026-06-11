@@ -146,7 +146,11 @@ export class OigBoilerV2Shell extends LitElement {
     const cfg = this.config;
 
     const etaText = data && cfg ? computeEtaText(data, cfg, this.lang) : null;
-    const sourceKey = activity?.source ?? null;
+    // Source chip reflects ACTIVE heating only — activity.source is "last
+    // known source" and survives standby, which made the chip claim
+    // „Nabíjí ze sítě" while nothing was heating.
+    const isActivelyCharging = activity?.state?.startsWith('charging_') ?? false;
+    const sourceKey = isActivelyCharging ? (activity?.source ?? null) : null;
 
     // Trend chip label: Czech-friendly format per mockup.
     // charging_alt (gas) uses "🔥 OHŘÍVÁ" with orange tint; others use "⚡ NABÍJÍ".

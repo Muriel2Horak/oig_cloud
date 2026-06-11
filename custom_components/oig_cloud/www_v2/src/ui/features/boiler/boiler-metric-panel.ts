@@ -245,8 +245,10 @@ export class OigBoilerMetricPanel extends LitElement {
       ? `${savings.toFixed(1).replace('.', ',')} Kč`
       : null;
 
-    // Row 8: Aktuální zdroj
-    const sourceKey = activity?.source ?? null;
+    // Row 8: Aktuální zdroj — only while ACTIVELY heating. activity.source is
+    // "last known source" and survives standby (showed „síť" at 0 W all day).
+    const isActivelyCharging = activity?.state?.startsWith('charging_') ?? false;
+    const sourceKey = isActivelyCharging ? (activity?.source ?? null) : null;
     const sourceEstimated = (activity as any)?.sourceEstimated === true;
     const currentSourceLabel: string = (() => {
       switch (sourceKey) {
