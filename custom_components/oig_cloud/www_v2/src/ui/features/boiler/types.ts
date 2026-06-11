@@ -56,17 +56,18 @@ export interface BoilerV2Explanation {
 }
 
 export interface BoilerV2Activity {
-  state: 'charging_fve' | 'charging_overflow' | 'charging_grid' | 'discharging' | 'standby' | 'unknown';
-  source: 'fve' | 'overflow' | 'grid' | 'discharge' | null;
+  state: 'charging_fve' | 'charging_overflow' | 'charging_grid' | 'charging_alt' | 'discharging' | 'standby' | 'unknown';
+  source: 'fve' | 'overflow' | 'grid' | 'discharge' | 'alternative' | null;
   temperatureTrendCPerMin: number | null;
   fillLevelPct: number | null;
   auraMaxTempC: number;
   heaterStates: Record<string, 'on' | 'off' | 'unavailable'>;
   staleFlags: string[];
+  sourceEstimated?: boolean;
 }
 
 export interface BoilerV2SourceSegment {
-  key: 'fve' | 'overflow' | 'grid' | 'discharge' | null;
+  key: 'fve' | 'overflow' | 'grid' | 'discharge' | 'alternative' | null;
   start: string;
   end: string | null;
   energyKwh: number;
@@ -79,7 +80,7 @@ export interface BoilerV2TimelinePoint {
   topTempC: number | null;
   bottomTempC: number | null;
   powerKw: number | null;
-  sourceKey: 'fve' | 'overflow' | 'grid' | 'discharge' | null;
+  sourceKey: 'fve' | 'overflow' | 'grid' | 'discharge' | 'alternative' | null;
   activityState: string;
 }
 

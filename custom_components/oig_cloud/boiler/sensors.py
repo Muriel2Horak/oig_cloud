@@ -323,6 +323,7 @@ class BoilerActuatedSourceSensor(BoilerSensorBase):
             "overflow": "Přetok",
             "grid": "Síť",
             "discharge": "Vybíjení",
+            "alternative": "Alternativa",
         }
         if normalized is None:
             return "—"
@@ -495,6 +496,7 @@ class BoilerCurrentSourceSensor(BoilerSensorBase):
             "overflow": "Přetok",
             "grid": "Síť",
             "discharge": "Vybíjení",
+            "alternative": "Alternativa",
         }
         if normalized is None:
             return "—"

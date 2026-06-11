@@ -33,8 +33,9 @@ const RUNTIME_SOURCE_MAP: Record<string, string> = {
   pv: 'fve',
   overflow: 'overflow',
   grid: 'grid',
-  alternative: 'grid',
-  alt: 'grid',
+  // 'alternative'/'alt' kept distinct — gas/alt heating is NOT the same as grid
+  alternative: 'alternative',
+  alt: 'alternative',
   discharge: 'discharge',
   discharging: 'discharge',
 };
@@ -843,12 +844,12 @@ export async function cancelBoilerPlan(): Promise<boolean> {
 }
 
 const VALID_ACTIVITY_STATES = new Set([
-  'charging_fve', 'charging_overflow', 'charging_grid', 'discharging', 'standby', 'unknown',
+  'charging_fve', 'charging_overflow', 'charging_grid', 'charging_alt', 'discharging', 'standby', 'unknown',
 ]);
 
-function normalizeActivityState(raw: string | null | undefined): 'charging_fve' | 'charging_overflow' | 'charging_grid' | 'discharging' | 'standby' | 'unknown' {
+function normalizeActivityState(raw: string | null | undefined): 'charging_fve' | 'charging_overflow' | 'charging_grid' | 'charging_alt' | 'discharging' | 'standby' | 'unknown' {
   if (raw && VALID_ACTIVITY_STATES.has(raw)) {
-    return raw as 'charging_fve' | 'charging_overflow' | 'charging_grid' | 'discharging' | 'standby' | 'unknown';
+    return raw as 'charging_fve' | 'charging_overflow' | 'charging_grid' | 'charging_alt' | 'discharging' | 'standby' | 'unknown';
   }
   return 'unknown';
 }
@@ -966,7 +967,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
   const rawActivity = canonical.activity ?? null;
   const activity = rawActivity != null ? {
     state: normalizeActivityState(rawActivity.state),
-    source: normalizeRuntimeSource(rawActivity.source) as 'fve' | 'overflow' | 'grid' | 'discharge' | null,
+    source: normalizeRuntimeSource(rawActivity.source) as 'fve' | 'overflow' | 'grid' | 'discharge' | 'alternative' | null,
     temperatureTrendCPerMin: isFinite(rawActivity.temperature_trend_c_per_min as any) ? (rawActivity.temperature_trend_c_per_min ?? null) : null,
     fillLevelPct: isFinite(rawActivity.fill_level_pct as any) ? (rawActivity.fill_level_pct ?? null) : null,
     auraMaxTempC: isFinite(rawActivity.aura_max_temp_c as any) ? rawActivity.aura_max_temp_c : 0,
@@ -974,10 +975,11 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
       Object.entries(rawActivity.heater_states ?? {}).map(([k, v]) => [k, normalizeHeaterState(v)])
     ),
     staleFlags: filterPublicFlags(Array.isArray(rawActivity.stale_flags) ? rawActivity.stale_flags : []),
+    sourceEstimated: (rawActivity as any).source_estimated === true,
   } : null;
 
   const sourceSegments = (canonical.source_segments ?? []).map(seg => ({
-    key: normalizeRuntimeSource(seg.key) as 'fve' | 'overflow' | 'grid' | 'discharge' | null,
+    key: normalizeRuntimeSource(seg.key) as 'fve' | 'overflow' | 'grid' | 'discharge' | 'alternative' | null,
     start: seg.start,
     end: seg.end,
     energyKwh: isFinite(seg.energy_kwh as any) ? seg.energy_kwh : 0,
@@ -990,7 +992,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     topTempC: isFinite(pt.top_temp_c as any) ? (pt.top_temp_c ?? null) : null,
     bottomTempC: isFinite(pt.bottom_temp_c as any) ? (pt.bottom_temp_c ?? null) : null,
     powerKw: isFinite(pt.power_kw as any) ? (pt.power_kw ?? null) : null,
-    sourceKey: normalizeRuntimeSource(pt.source_key) as 'fve' | 'overflow' | 'grid' | 'discharge' | null,
+    sourceKey: normalizeRuntimeSource(pt.source_key) as 'fve' | 'overflow' | 'grid' | 'discharge' | 'alternative' | null,
     activityState: normalizeActivityState(pt.activity_state),
   }));
 

@@ -1111,6 +1111,20 @@ _MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "solar_forecast_string2_azimuth": {"type": int, "rng": (-180, 180)},
         "solar_forecast_string2_kwp": {"type": float, "rng": (0.1, 50.0)},
     },
+    # Task B: boiler section — all configurable boiler parameters
+    "boiler": {
+        "boiler_volume_l": {"type": float, "rng": (30.0, 1000.0)},
+        "boiler_temp_sensor_top": {"type": str},
+        "boiler_temp_sensor_bottom": {"type": str},
+        "boiler_enable_second_thermometer": {"type": bool},
+        "boiler_current_power_entity": {"type": str},
+        "boiler_alt_energy_sensor": {"type": str},
+        "boiler_alt_energy_daily": {"type": bool},
+        "boiler_alt_cost_kwh": {"type": float, "rng": (0.0, 20.0)},
+        "boiler_has_alternative_heating": {"type": bool},
+        "boiler_target_temp_c": {"type": float, "rng": (40.0, 85.0)},
+        "boiler_deadline_time": {"type": str},
+    },
 }
 
 # Mirrors kept in sync for legacy readers.

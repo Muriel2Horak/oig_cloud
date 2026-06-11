@@ -23,6 +23,7 @@ from ..const import (
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
     CONF_BOILER_CIRCULATION_RUN_MINUTES,
     CONF_BOILER_COLD_INLET_TEMP_C,
+    CONF_BOILER_CURRENT_POWER_ENTITY,
     CONF_BOILER_DEADLINE_TIME,
     CONF_BOILER_HAS_ALTERNATIVE_HEATING,
     CONF_BOILER_HOME5_MANEUVER_ENABLED,
@@ -87,7 +88,7 @@ _ACTIVITY_BUFFER_MAX = 60
 _ACTIVITY_TEMPERATURE_STALE_AFTER = timedelta(seconds=300)
 _ACTIVITY_SOURCE_STALE_AFTER = timedelta(seconds=600)
 _ACTIVITY_STALE_AFTER = timedelta(seconds=600)
-_NORMALIZED_ACTIVITY_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge"})
+_NORMALIZED_ACTIVITY_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge", "alternative"})
 _ACCEPTED_REPLAN_TRIGGERS = frozenset(
     {
         "slot_boundary",
@@ -1301,6 +1302,13 @@ class BoilerRuntime:
         self._activity_listener_unsubs: list[Callable[[], None]] = []
         self._activity_entity_ids: set[str] = set()
         self._segment_derivation_flags: set[str] = set()
+        # Task B: per-source daily energy attribution accumulators.
+        # Keys: 'fve', 'grid', 'alternative'; values: cumulative kWh since midnight.
+        # Reset when local date changes; re-seeded on restart from box day counter.
+        self._daily_source_kwh: dict[str, float] = {"fve": 0.0, "grid": 0.0, "alternative": 0.0}
+        self._daily_source_date: Optional[Any] = None  # date object of last accumulation day
+        self._daily_source_last_update_at: Optional[datetime] = None
+        self._daily_source_reseeded: bool = False  # guard: reseed runs at most once per day
         self._setup_activity_state_listeners()
 
     @property
@@ -1353,12 +1361,14 @@ class BoilerRuntime:
             CONF_BOILER_HEATER_SWITCH_ENTITY,
             CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
             CONF_BOILER_HEATER_POWER_KW_ENTITY,
+            CONF_BOILER_CURRENT_POWER_ENTITY,
         ):
             self._add_activity_entity_id(entity_ids, config.get(key))
         self._add_activity_entity_id(
             entity_ids,
             getattr(self.coordinator, "_oig_manual_mode_entity", None),
         )
+        # Always include the auto-resolved CBB entity (may differ from CONF_BOILER_CURRENT_POWER_ENTITY)
         self._add_activity_entity_id(
             entity_ids,
             getattr(self.coordinator, "_oig_current_cbb_entity", None),
@@ -1429,11 +1439,18 @@ class BoilerRuntime:
             bottom_temp_c=bottom_temp,
             source_key=None,
         )
+        overflow_avail = self._read_overflow_available(event_timestamp)
         snapshot = BoilerSourceHeaterSnapshot(
             current_source=self._read_current_source_snapshot(),
             active_heaters=self._read_active_heater_states(),
-            overflow_available=self._read_overflow_available(event_timestamp),
+            overflow_available=overflow_avail,
             power_kw=self._read_live_power_kw(),
+            # Task A: power-first classification inputs
+            power_w=self._read_cbb_power_w(),
+            box_boiler_mode=self._read_box_boiler_mode(),
+            grid_import_w=self._read_grid_import_w(),
+            pv_surplus_hint=overflow_avail,
+            alt_heat_delta_kwh=self._read_alt_heat_delta_kwh(),
         )
         activity = self._activity_classifier.classify(
             self._last_activity_reading,
@@ -1449,12 +1466,115 @@ class BoilerRuntime:
             classifier_flags=activity.stale_flags,
         )
         self._current_activity = _copy_activity_dto(activity, stale_flags=flags)
+        self._update_daily_source_accumulators(activity, snapshot, event_timestamp)
         self._record_timeline_entry(
             reading=curr,
             activity=activity,
             power_kw=snapshot.power_kw,
             changed_entity_id=changed_entity_id,
         )
+
+    def _update_daily_source_accumulators(
+        self,
+        activity: BoilerActivityDTO,
+        snapshot: BoilerSourceHeaterSnapshot,
+        now: datetime,
+    ) -> None:
+        """Accumulate per-source electric energy into daily buckets.
+
+        Driven by _update_activity_cache (which fires on every relevant state
+        change).  The duration is computed from the wall-clock gap since the
+        previous update; if no previous update exists the interval is 0.
+
+        Midnight reset: when the local date changes the buckets are zeroed.
+        The box day counter (total_kwh) is NOT re-seeded here — api_views
+        handles that when it reads the result (re-seed on restart).
+        """
+        local_date = dt_util.now().date()
+
+        # Midnight reset
+        if self._daily_source_date is not None and local_date != self._daily_source_date:
+            self._daily_source_kwh = {"fve": 0.0, "grid": 0.0, "alternative": 0.0}
+            self._daily_source_reseeded = False  # allow reseed on new day
+        self._daily_source_date = local_date
+
+        prev_update = self._daily_source_last_update_at
+        self._daily_source_last_update_at = now
+
+        if prev_update is None:
+            # First call — no interval to integrate yet
+            return
+
+        # Compute interval duration in hours
+        try:
+            delta = now - prev_update
+            duration_h = max(0.0, delta.total_seconds() / 3600.0)
+        except Exception:
+            return
+
+        # Only accumulate when the boiler is actively heating electrically
+        state = getattr(activity, "state", None)
+        if state not in ("charging_fve", "charging_overflow", "charging_grid"):
+            return
+
+        # Determine power in kW: prefer direct CBB sensor, fall back to legacy power_kw
+        power_kw: Optional[float] = None
+        power_w = getattr(snapshot, "power_w", None)
+        if isinstance(power_w, (int, float)) and math.isfinite(power_w) and power_w > 0:
+            power_kw = power_w / 1000.0
+        elif snapshot.power_kw is not None and snapshot.power_kw > 0:
+            power_kw = snapshot.power_kw
+
+        if power_kw is None or power_kw <= 0:
+            return
+
+        energy_kwh = power_kw * duration_h
+        source = getattr(activity, "source", None)
+        if state in ("charging_fve", "charging_overflow") or source in ("fve", "overflow"):
+            self._daily_source_kwh["fve"] = self._daily_source_kwh.get("fve", 0.0) + energy_kwh
+        else:
+            self._daily_source_kwh["grid"] = self._daily_source_kwh.get("grid", 0.0) + energy_kwh
+
+    def get_daily_source_kwh(self) -> dict[str, float]:
+        """Return a snapshot of today's per-source energy accumulators."""
+        return dict(self._daily_source_kwh)
+
+    def reseed_daily_source_kwh(self, total_kwh: float) -> None:
+        """Re-seed the fve+grid buckets once after HA restart.
+
+        Called from api_views on every API read, but executes at most once per
+        calendar day (guarded by _daily_source_reseeded).  The guard prevents
+        the continuous-drip misattribution bug where each polling cycle would
+        treat the incremental box-counter growth as 'current source' energy
+        instead of letting the classifier accumulate it organically.
+
+        On restart the accumulated totals are zero and the box day counter may
+        already hold pre-restart energy.  We cannot know the true split, so we
+        attribute the gap to 'grid' only when the boiler is actively drawing
+        from the grid.  During standby or gas heating (most of the day) the gap
+        is left unattributed (both fve and grid stay at zero) — this is
+        conservative but honest: the UI shows 'unknown' rather than wrong data.
+        """
+        if self._daily_source_reseeded:
+            return
+        accum_total = self._daily_source_kwh.get("fve", 0.0) + self._daily_source_kwh.get("grid", 0.0)
+        gap = total_kwh - accum_total
+        if gap <= 0.001:
+            # Accumulators already account for the day's energy — mark done.
+            self._daily_source_reseeded = True
+            return
+        # Only attribute the gap when the boiler is actively heating electrically.
+        # During standby / gas-heat we cannot know the pre-restart source split,
+        # so we leave the gap unattributed rather than fabricate grid energy.
+        activity = self._current_activity
+        state = getattr(activity, "state", None) if activity is not None else None
+        source = getattr(activity, "source", None) if activity is not None else None
+        if state in ("charging_fve", "charging_overflow") or source in ("fve", "overflow"):
+            self._daily_source_kwh["fve"] = self._daily_source_kwh.get("fve", 0.0) + gap
+        elif state == "charging_grid" or source == "grid":
+            self._daily_source_kwh["grid"] = self._daily_source_kwh.get("grid", 0.0) + gap
+        # standby / charging_alt / unknown: leave gap unattributed (honest)
+        self._daily_source_reseeded = True
 
     def _read_temperature_for_key(self, key: str) -> Optional[float]:
         config = getattr(self.coordinator, "config", {}) or {}
@@ -1515,6 +1635,130 @@ class BoilerRuntime:
         except (TypeError, ValueError):
             return None
         return value if math.isfinite(value) else None
+
+    def _resolve_cbb_entity_id(self) -> Optional[str]:
+        """Return the entity ID for the CBB→boiler power sensor.
+
+        Checks CONF_BOILER_CURRENT_POWER_ENTITY from config first (explicit
+        override); falls back to the auto-resolved coordinator entity which
+        follows the standard sensor.oig_{box_id}_boiler_current_cbb_w naming.
+        """
+        config = getattr(self.coordinator, "config", {}) or {}
+        override = config.get(CONF_BOILER_CURRENT_POWER_ENTITY)
+        if isinstance(override, str) and override.strip():
+            return override.strip()
+        return getattr(self.coordinator, "_oig_current_cbb_entity", None)
+
+    def _read_cbb_power_w(self) -> Optional[float]:
+        """Read live CBB→boiler power in Watts.
+
+        Uses CONF_BOILER_CURRENT_POWER_ENTITY when configured, otherwise
+        auto-resolves sensor.oig_{box_id}_boiler_current_cbb_w via coordinator.
+        This is the authoritative signal of electric heating.  Returns None when
+        the sensor is absent (old installs without a current-power sensor).
+        """
+        entity_id = self._resolve_cbb_entity_id()
+        if not isinstance(entity_id, str) or not entity_id:
+            return None
+        state = _state_for_entity(self.hass, entity_id)
+        if state is None:
+            return None
+        raw = str(getattr(state, "state", "") or "").strip().lower()
+        if raw in _UNAVAILABLE_TEMPERATURE_STATES:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
+    def _read_box_boiler_mode(self) -> Optional[str]:
+        """Read normalised box boiler mode from sensor.oig_{box_id}_boiler_manual_mode.
+
+        The OIG box reports 'CBB' (= surplus/auto mode) or manual-mode strings.
+        Returns 'cbb' when CBB mode, 'manual' otherwise.  None = unavailable.
+        """
+        entity_id = getattr(self.coordinator, "_oig_manual_mode_entity", None)
+        if not isinstance(entity_id, str) or not entity_id:
+            return None
+        state = _state_for_entity(self.hass, entity_id)
+        if state is None:
+            return None
+        raw = str(getattr(state, "state", "") or "").strip()
+        if not raw or raw.lower() in _UNAVAILABLE_TEMPERATURE_STATES:
+            return None
+        # The OIG box reports 'CBB' for the surplus/auto mode.
+        if raw.upper() == "CBB":
+            return "cbb"
+        return "manual"
+
+    def _read_grid_import_w(self) -> Optional[float]:
+        """Read total household grid import in Watts.
+
+        Uses sensor.oig_{box_id}_actual_aci_wtotal (sum of three phases).
+        Falls back gracefully to None when the entity is absent or unavailable.
+
+        This sensor is NOT configurable — it follows the standard OIG naming
+        convention and is always present on active OIG installations.
+        """
+        box_id = getattr(self.coordinator, "box_id", None)
+        if not box_id or box_id == "unknown":
+            return None
+        entity_id = f"sensor.oig_{box_id}_actual_aci_wtotal"
+        state = _state_for_entity(self.hass, entity_id)
+        if state is None:
+            return None
+        raw = str(getattr(state, "state", "") or "").strip().lower()
+        if raw in _UNAVAILABLE_TEMPERATURE_STATES:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
+    def _read_alt_heat_delta_kwh(self) -> Optional[float]:
+        """Read the gas/alt-heat meter delta since the previous classify call.
+
+        Uses the configured ``boiler_alt_energy_sensor`` (e.g.
+        ``sensor.termostat_energy_gas_hot_water`` — daily kWh counter).
+        Returns positive delta when gas/heat-pump fired since the last call.
+        Returns None when no sensor is configured.
+
+        Implementation note: we track the last-seen value and return the
+        difference.  The counter resets at midnight — that case produces a
+        negative delta which is clamped to zero.
+        """
+        from ..const import CONF_BOILER_ALT_ENERGY_SENSOR
+        config = getattr(self.coordinator, "config", {}) or {}
+        entity_id = config.get(CONF_BOILER_ALT_ENERGY_SENSOR)
+        if not isinstance(entity_id, str) or not entity_id:
+            return None
+        state = _state_for_entity(self.hass, entity_id)
+        if state is None:
+            return None
+        raw = str(getattr(state, "state", "") or "").strip().lower()
+        if raw in _UNAVAILABLE_TEMPERATURE_STATES:
+            return None
+        try:
+            current_kwh = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(current_kwh):
+            return None
+
+        # Convert Wh to kWh if needed (unit attribute check)
+        attrs = getattr(state, "attributes", {}) or {}
+        if attrs.get("unit_of_measurement") == "Wh":
+            current_kwh /= 1000.0
+
+        prev_kwh = getattr(self, "_last_alt_heat_kwh", None)
+        self._last_alt_heat_kwh: float = current_kwh
+        if prev_kwh is None:
+            return None
+        delta = current_kwh - prev_kwh
+        # Clamp midnight-reset negatives to zero
+        return max(0.0, delta)
 
     def _record_timeline_entry(
         self,

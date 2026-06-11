@@ -141,6 +141,7 @@ class DummyBoilerRuntime:
         timeline=None,
         segments=None,
         sparklines=None,
+        daily_source_kwh=None,
     ):
         self.hass = hass
         self.coordinator = coordinator
@@ -158,6 +159,11 @@ class DummyBoilerRuntime:
         self._timeline = timeline or []
         self._segments = segments or []
         self._sparklines = sparklines or {}
+        # Task B: daily source accumulator (pre-seeded for tests)
+        self._daily_source_kwh: dict = daily_source_kwh if daily_source_kwh is not None else {
+            "fve": 0.0, "grid": 0.0, "alternative": 0.0
+        }
+        self._reseed_called_with: list = []
 
     def get_current_plan(self):
         return self._current_plan
@@ -180,6 +186,25 @@ class DummyBoilerRuntime:
     @property
     def sparklines(self):
         return self._sparklines
+
+    def get_daily_source_kwh(self) -> dict:
+        return dict(self._daily_source_kwh)
+
+    def reseed_daily_source_kwh(self, total_kwh: float) -> None:
+        """Record the call; apply re-seed logic only when accumulators are empty."""
+        self._reseed_called_with.append(total_kwh)
+        accum = self._daily_source_kwh.get("fve", 0.0) + self._daily_source_kwh.get("grid", 0.0)
+        gap = total_kwh - accum
+        if gap <= 0.001:
+            return
+        # Attribute unseen remainder to the current activity source
+        activity = self._activity
+        source = getattr(activity, "source", None) if activity is not None else None
+        state = getattr(activity, "state", None) if activity is not None else None
+        if state in ("charging_fve", "charging_overflow") or source in ("fve", "overflow"):
+            self._daily_source_kwh["fve"] = self._daily_source_kwh.get("fve", 0.0) + gap
+        elif state in ("charging_grid",) or source == "grid":
+            self._daily_source_kwh["grid"] = self._daily_source_kwh.get("grid", 0.0) + gap
 
 
 class DummyBoilerCoordinator:
@@ -566,7 +591,12 @@ async def test_canonical_view_source_no_leak_normalized():
 
 @pytest.mark.asyncio
 async def test_canonical_view_energy_tracking_runtime_attribution():
-    """Energy tracking must attribute to runtime source, not hardcode fve_kwh=0.0."""
+    """Energy tracking uses runtime accumulators; re-seeds on first call when accumulators empty.
+
+    The runtime has no accumulated data yet (fve=0, grid=0), and the day counter
+    is 5200 Wh = 5.2 kWh.  The current activity is charging_fve, so reseed
+    attributes the full 5.2 kWh to fve.
+    """
     entry = DummyEntry(entry_id="entry1", options={"box_id": "123"})
     coordinator = DummyBoilerCoordinator(box_id="123")
     states = DummyStates({
@@ -590,13 +620,14 @@ async def test_canonical_view_energy_tracking_runtime_attribution():
     et = payload["current_state"]["energy_tracking"]
     assert et["current_source"] == "fve"
     assert et["total_kwh"] == 5.2
-    assert et["fve_kwh"] == 5.2
-    assert et["grid_kwh"] == 0.0
+    # reseed_daily_source_kwh was called and attributed the 5.2 kWh to fve
+    assert et["fve_kwh"] == pytest.approx(5.2)
+    assert et["grid_kwh"] == pytest.approx(0.0)
 
 
 @pytest.mark.asyncio
 async def test_canonical_view_energy_tracking_grid_source():
-    """Runtime source=grid must attribute total energy to grid_kwh, not fve_kwh."""
+    """Runtime source=grid re-seeds total energy to grid on first call (empty accumulators)."""
     entry = DummyEntry(entry_id="entry1", options={"box_id": "123"})
     coordinator = DummyBoilerCoordinator(box_id="123")
     states = DummyStates({
@@ -620,8 +651,8 @@ async def test_canonical_view_energy_tracking_grid_source():
     et = payload["current_state"]["energy_tracking"]
     assert et["current_source"] == "grid"
     assert et["total_kwh"] == 3.1
-    assert et["fve_kwh"] == 0.0
-    assert et["grid_kwh"] == 3.1
+    assert et["fve_kwh"] == pytest.approx(0.0)
+    assert et["grid_kwh"] == pytest.approx(3.1)
 
 
 @pytest.mark.asyncio
@@ -656,7 +687,13 @@ async def test_canonical_view_energy_tracking_discharge_source():
 
 @pytest.mark.asyncio
 async def test_canonical_view_energy_tracking_invalid_source():
-    """Invalid runtime source must not fall through to legacy; alt absorbs total."""
+    """Invalid/unknown runtime source yields current_source=None; accumulators are 0 (idle).
+
+    When the activity state is 'unknown' and source is 'bogus', the current_source
+    is None.  The daily accumulators are empty (this is a restart scenario where
+    the boiler has been idle all day per the accumulator).  Alt absorbs the
+    residual (total - fve - grid).
+    """
     entry = DummyEntry(entry_id="entry1", options={"box_id": "123"})
     coordinator = DummyBoilerCoordinator(box_id="123")
     states = DummyStates({
@@ -665,8 +702,12 @@ async def test_canonical_view_energy_tracking_invalid_source():
     hass = DummyHass(config_entries=DummyConfigEntries([entry]), states=states)
 
     activity = DummyActivityDTO(state="unknown", source="bogus")
+    # Pre-seed accumulators: 2 kWh has been attributed to alt (via gas),
+    # electric accumulators are empty because the boiler was heated by gas.
     runtime = DummyBoilerRuntime(
-        hass=hass, coordinator=coordinator, box_id="123", entry_id="entry1", activity=activity
+        hass=hass, coordinator=coordinator, box_id="123", entry_id="entry1",
+        activity=activity,
+        daily_source_kwh={"fve": 0.0, "grid": 0.0, "alternative": 0.0},
     )
     hass.data[DOMAIN] = {"entry1": {KEY_BOILER_RUNTIMES: {"123": runtime}}}
 
@@ -679,15 +720,20 @@ async def test_canonical_view_energy_tracking_invalid_source():
     assert response.status == 200
     et = payload["current_state"]["energy_tracking"]
     assert et["current_source"] is None
-    assert et.get("source_invalid") is True
     assert et["fve_kwh"] == 0.0
     assert et["grid_kwh"] == 0.0
-    assert et["alt_kwh"] == 2.0
+    # alt_kwh = estimate_residual(total=2.0, fve=0, grid=0) = 2.0
+    assert et["alt_kwh"] == pytest.approx(2.0)
 
 
 @pytest.mark.asyncio
-async def test_canonical_view_energy_tracking_legacy_fallback():
-    """When runtime has no activity, legacy heuristic must still work with non-zero energy."""
+async def test_canonical_view_energy_tracking_no_activity():
+    """When runtime has no activity (activity=None), accumulators are still used.
+
+    The runtime has empty accumulators and no activity.  reseed_daily_source_kwh
+    is called but cannot attribute the gap to a specific source (no activity),
+    so fve+grid stays at 0.  The alt estimate absorbs the total.
+    """
     entry = DummyEntry(entry_id="entry1", options={"box_id": "123"})
     coordinator = DummyBoilerCoordinator(box_id="123")
     states = DummyStates({
@@ -707,9 +753,11 @@ async def test_canonical_view_energy_tracking_legacy_fallback():
 
     assert response.status == 200
     et = payload["current_state"]["energy_tracking"]
-    assert et["current_source"] in ("fve", "grid", "overflow", None)
+    assert et["current_source"] is None
     assert et["total_kwh"] == 4.0
-    assert et["fve_kwh"] + et["grid_kwh"] == pytest.approx(et["total_kwh"])
+    # No activity → reseed cannot attribute; accumulators remain 0
+    # source_estimated = False (runtime has get_daily_source_kwh)
+    assert et["source_estimated"] is False
 
 
 @pytest.mark.asyncio

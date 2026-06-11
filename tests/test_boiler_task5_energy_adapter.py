@@ -390,18 +390,29 @@ def test_energy_tracking_sensor_agrees_with_api_path():
         def async_add_listener(self, *_a, **_k):
             return lambda: None
 
-    class DummyRuntimeFVE:
-        class Activity:
-            source = "fve"
+    class DummyActivityFVE:
+        source = "fve"
+        state = "charging_fve"
 
-        current_activity = Activity()
+    class DummyRuntimeFVE:
+        current_activity = DummyActivityFVE()
+        _daily = {"fve": 0.0, "grid": 0.0, "alternative": 0.0}
+
+        def get_daily_source_kwh(self):
+            return dict(self._daily)
+
+        def reseed_daily_source_kwh(self, total_kwh):
+            # Attribute the gap to fve (current activity is charging_fve)
+            gap = total_kwh - (self._daily["fve"] + self._daily["grid"])
+            if gap > 0.001:
+                self._daily["fve"] += gap
 
     coord = DummyCoord()
     runtime = DummyRuntimeFVE()
     hass = DummyHassForEnergy()
     api_result = _read_energy_tracking(hass, _box_id, {}, runtime=runtime)
-    assert api_result["fve_kwh"] == 5.2
-    assert api_result["grid_kwh"] == 0.0
+    assert api_result["fve_kwh"] == pytest.approx(5.2)
+    assert api_result["grid_kwh"] == pytest.approx(0.0)
 
     fve_sensor = sensor_mod.BoilerFVEEnergySensor(coord, runtime=runtime)
     grid_sensor = sensor_mod.BoilerGridEnergySensor(coord, runtime=runtime)
@@ -435,17 +446,27 @@ def test_energy_tracking_sensor_grid_attribution():
         def __init__(self):
             self.states = DummyStates()
 
-    class DummyRuntimeGrid:
-        class Activity:
-            source = "grid"
+    class DummyActivityGrid:
+        source = "grid"
+        state = "charging_grid"
 
-        current_activity = Activity()
+    class DummyRuntimeGrid:
+        current_activity = DummyActivityGrid()
+        _daily = {"fve": 0.0, "grid": 0.0, "alternative": 0.0}
+
+        def get_daily_source_kwh(self):
+            return dict(self._daily)
+
+        def reseed_daily_source_kwh(self, total_kwh):
+            gap = total_kwh - (self._daily["fve"] + self._daily["grid"])
+            if gap > 0.001:
+                self._daily["grid"] += gap
 
     runtime = DummyRuntimeGrid()
     hass = DummyHassForEnergy()
     api_result = _read_energy_tracking(hass, _box_id, {}, runtime=runtime)
-    assert api_result["fve_kwh"] == 0.0
-    assert api_result["grid_kwh"] == 3.1
+    assert api_result["fve_kwh"] == pytest.approx(0.0)
+    assert api_result["grid_kwh"] == pytest.approx(3.1)
 
     class DummyCoordGrid:
         def __init__(self):

@@ -382,16 +382,52 @@ def _compute_energy_state(temperatures: dict[str, Any], config: dict[str, Any]) 
     return {"avg_temp": None, "energy_needed_kwh": 0.0}
 
 
+def _read_alt_energy_cumulative_delta(runtime: Any, current_kwh: float) -> float:
+    """Return today's alt-energy delta from a cumulative (non-resetting) sensor.
+
+    Stores a midnight baseline in runtime._alt_energy_cumul_baseline (a dict with
+    'date' and 'value').  When the date changes, resets the baseline to current_kwh
+    so today's delta starts at 0.  Returns max(0, current - baseline).
+
+    Degrades gracefully when runtime is None or lacks the attribute.
+    """
+    import datetime as _dt
+    today = dt_util.now().date()
+    baseline_attr = "_alt_energy_cumul_baseline"
+    baseline: Optional[dict] = getattr(runtime, baseline_attr, None)
+
+    if baseline is None or baseline.get("date") != today:
+        new_baseline: dict = {"date": today, "value": current_kwh}
+        try:
+            if runtime is not None:
+                setattr(runtime, baseline_attr, new_baseline)
+        except Exception:
+            pass
+        # First read of the day: delta is 0 (baseline just set)
+        return 0.0
+
+    return max(0.0, current_kwh - baseline["value"])
+
+
 def _read_energy_tracking(
     hass: HomeAssistant, box_id: str, config: dict[str, Any], runtime: Any = None
 ) -> dict[str, Any]:
-    manual_mode_entity = f"sensor.oig_{box_id}_boiler_manual_mode"
-    current_cbb_entity = f"sensor.oig_{box_id}_boiler_current_cbb_w"
+    """Read and attribute today's boiler energy to sources (fve, grid, alternative).
+
+    Attribution strategy (Task B):
+    1. Electric split (fve / grid): use per-source accumulators on the runtime
+       that are updated on every classifier call (integrating power × duration).
+       On the first read after restart we re-seed the accumulators from the box
+       day counter so the total matches without losing unseen history.
+       NEVER assign the entire day total to the momentary source.
+    2. Alternative (gas/heat-pump): read the daily alt-energy meter directly.
+       If the meter is unavailable, estimate the residual.
+    3. Box day counter (sensor.oig_{box_id}_boiler_day_w Wh) is the ground-truth
+       electric total; fve+grid are derived from accumulators clamped to that total.
+    """
     day_energy_entity = f"sensor.oig_{box_id}_boiler_day_w"
     alt_energy_sensor = config.get("boiler_alt_energy_sensor")
 
-    manual_state = hass.states.get(manual_mode_entity)
-    current_cbb_state = hass.states.get(current_cbb_entity)
     day_energy_state = hass.states.get(day_energy_entity)
 
     total_energy = 0.0
@@ -401,56 +437,59 @@ def _read_energy_tracking(
         except (ValueError, TypeError):
             pass
 
-    # Try runtime attribution first
-    source_invalid = False
-    current_source: Optional[str] = None
+    # --- Electric split from runtime accumulators ---
     fve_kwh = 0.0
     grid_kwh = 0.0
-    runtime_attribution_resolved = False
+    current_source: Optional[str] = None
+    source_estimated = True
 
     if runtime is not None:
+        # Re-seed on restart: if accumulators are empty but box counter > 0
+        reseed_fn = getattr(runtime, "reseed_daily_source_kwh", None)
+        if callable(reseed_fn):
+            reseed_fn(total_energy)
+
+        get_daily_fn = getattr(runtime, "get_daily_source_kwh", None)
+        if callable(get_daily_fn):
+            daily = get_daily_fn()
+            fve_kwh = daily.get("fve", 0.0)
+            grid_kwh = daily.get("grid", 0.0)
+            source_estimated = False
+
+        # Clamp so fve+grid never exceeds total_energy
+        electric_total = fve_kwh + grid_kwh
+        if electric_total > total_energy + 0.001 and electric_total > 0:
+            scale = total_energy / electric_total
+            fve_kwh *= scale
+            grid_kwh *= scale
+
+        # current_source from live activity
         activity = getattr(runtime, "current_activity", None)
         if activity is not None:
             raw_source = getattr(activity, "source", None)
             normalized = _normalize_runtime_source(raw_source)
             if normalized in ("fve", "overflow"):
-                current_source = normalized if normalized in _PLANNER_SOURCE_KEYS else "fve"
-                fve_kwh = total_energy
-                grid_kwh = 0.0
+                current_source = "fve"
             elif normalized == "grid":
                 current_source = "grid"
-                fve_kwh = 0.0
-                grid_kwh = total_energy
-            elif normalized == "discharge":
-                current_source = None
-                fve_kwh = 0.0
-                grid_kwh = 0.0
-            else:
-                source_invalid = True
-                current_source = None
-            runtime_attribution_resolved = True
+            elif normalized == "alternative":
+                current_source = "alternative"
 
-    if not runtime_attribution_resolved:
-        # Legacy heuristic fallback
-        if manual_state and manual_state.state == "Zapnuto":
-            current_source = "fve"
-            fve_kwh = total_energy
-            grid_kwh = 0.0
-        elif current_cbb_state:
-            try:
-                if float(current_cbb_state.state) > 0:
-                    current_source = "fve"
-                    fve_kwh = total_energy
-                    grid_kwh = 0.0
-            except (ValueError, TypeError):
-                pass
+    if runtime is None or source_estimated:
+        # Legacy fallback: no runtime available — avoid assigning the full day to
+        # the momentary source.  We do NOT know the split; leave both at 0 and
+        # mark source_estimated=True so the UI shows the uncertainty.
+        fve_kwh = 0.0
+        grid_kwh = 0.0
+        source_estimated = True
+        current_source = None
 
-        if current_source is None:
-            current_source = "grid"
-            fve_kwh = 0.0
-            grid_kwh = total_energy
-
-    alt_kwh = None
+    # --- Alt energy meter ---
+    # boiler_alt_energy_daily (default True): sensor resets at midnight.
+    #   True  → read value directly as today's kWh.
+    #   False → cumulative lifetime sensor; compute today's delta from midnight baseline.
+    alt_kwh: Optional[float] = None
+    alt_energy_daily: bool = bool(config.get("boiler_alt_energy_daily", True))
     if alt_energy_sensor:
         alt_state = hass.states.get(alt_energy_sensor)
         if alt_state:
@@ -458,7 +497,13 @@ def _read_energy_tracking(
                 alt_val = float(alt_state.state)
                 if getattr(alt_state, "attributes", {}).get("unit_of_measurement") == "Wh":
                     alt_val /= 1000.0
-                alt_kwh = alt_val
+                if math.isfinite(alt_val) and alt_val >= 0:
+                    if alt_energy_daily:
+                        alt_kwh = alt_val
+                    else:
+                        # Cumulative sensor: store midnight baseline in runtime and
+                        # return today's delta (current − baseline at midnight).
+                        alt_kwh = _read_alt_energy_cumulative_delta(runtime, alt_val)
             except (ValueError, TypeError):
                 pass
 
@@ -472,10 +517,8 @@ def _read_energy_tracking(
         "fve_kwh": round(fve_kwh, 3),
         "grid_kwh": round(grid_kwh, 3),
         "alt_kwh": round(alt_kwh, 3),
-        "source_estimated": not runtime_attribution_resolved,
+        "source_estimated": source_estimated,
     }
-    if source_invalid:
-        result["source_invalid"] = True
     return result
 
 
@@ -536,12 +579,12 @@ def _assemble_plan_slots(
     return slots
 
 
-_RUNTIME_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge", "battery"})
+_RUNTIME_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge", "battery", "alternative"})
 _PLANNER_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "battery", "alternative"})
 
 
 def _normalize_runtime_source(source: Any) -> Optional[str]:
-    """Normalize any raw source value to runtime source keys: fve|overflow|grid|discharge|null."""
+    """Normalize any raw source value to runtime source keys: fve|overflow|grid|discharge|alternative|null."""
     if source is None:
         return None
     if hasattr(source, "value"):
@@ -554,8 +597,8 @@ def _normalize_runtime_source(source: Any) -> Optional[str]:
     # Map known aliases
     if key in ("zapnuto", "manual"):
         return "fve"
-    if key in ("alternative", "alt"):
-        return "grid"
+    if key == "alt":
+        return "alternative"
     return None
 
 
@@ -741,6 +784,7 @@ def _assemble_canonical_dto(
                 "aura_max_temp_c": getattr(activity, "aura_max_temp_c", 80.0),
                 "stale_flags": list(getattr(activity, "stale_flags", [])),
                 "heater_states": dict(getattr(activity, "heater_states", {})),
+                "source_estimated": bool(getattr(activity, "source_estimated", False)),
             }
             if activity_data["source"] is None and getattr(activity, "source", None) is not None:
                 activity_data["source_invalid"] = True
@@ -831,7 +875,7 @@ def _assemble_canonical_dto(
             "temperatures": temperatures,
             "energy_state": energy_state,
             "energy_tracking": energy_tracking,
-            "heating": energy_tracking.get("current_source") == "fve",
+            "heating": energy_tracking.get("current_source") in ("fve", "alternative"),
             "recommended_source": selected_source,
             "last_update": now.isoformat(),
         },

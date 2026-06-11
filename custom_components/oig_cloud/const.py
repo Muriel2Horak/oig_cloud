@@ -40,6 +40,10 @@ CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY = "boiler_circulation_pump_switch_ent
 CONF_BOILER_HAS_ALTERNATIVE_HEATING = "boiler_has_alternative_heating"
 CONF_BOILER_ALT_COST_KWH = "boiler_alt_cost_kwh"
 CONF_BOILER_ALT_ENERGY_SENSOR = "boiler_alt_energy_sensor"  # NEW: Měřič alternativy
+# Task B: direct CBB→boiler power entity (auto-resolves to sensor.oig_{box_id}_boiler_current_cbb_w)
+CONF_BOILER_CURRENT_POWER_ENTITY = "boiler_current_power_entity"
+# Task B: daily-reset semantics for the alt energy meter (True = counter resets at midnight)
+CONF_BOILER_ALT_ENERGY_DAILY = "boiler_alt_energy_daily"
 CONF_BOILER_SPOT_PRICE_SENSOR = "boiler_spot_price_sensor"
 CONF_BOILER_DEADLINE_TIME = "boiler_deadline_time"
 CONF_BOILER_PLANNING_HORIZON_HOURS = "boiler_planning_horizon_hours"
@@ -112,6 +116,9 @@ DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES = 120
 # R3/R7: Home 5 maneuver defaults
 DEFAULT_BOX_HAS_HOME56 = False
 DEFAULT_BOILER_HOME5_MANEUVER_ENABLED = False
+# Task B: current power entity resolves automatically; alt energy meter defaults to daily-reset
+DEFAULT_BOILER_CURRENT_POWER_ENTITY = ""  # empty = auto-resolve from box_id
+DEFAULT_BOILER_ALT_ENERGY_DAILY = True  # daily-reset counter (resets at midnight)
 
 KEY_BOILER_RUNTIMES = "boiler_runtimes"
 ATTR_CONFIG_ENTRY_ID = "entry_id"

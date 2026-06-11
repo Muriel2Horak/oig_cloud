@@ -173,13 +173,14 @@ def test_actuated_source_sensor_attributes():
 
 
 def test_actuated_source_no_leak_raw_labels():
+    # Task A fix: 'alternative' now maps to 'alternative' (NOT 'grid').
     coordinator = DummyCoordinator({"energy_tracking": {"current_source": "alternative"}})
     sensor = module.BoilerActuatedSourceSensor(coordinator)
     attrs = sensor.extra_state_attributes
-    assert attrs["source_key"] != "alternative"
+    assert attrs["source_key"] == "alternative"
     assert attrs["source_key"] != "manual"
     assert attrs["source_key"] != "zapnuto"
-    assert sensor.native_value == "Síť"
+    assert sensor.native_value == "Alternativa"
 
     coordinator = DummyCoordinator({"energy_tracking": {"current_source": "manual"}})
     sensor = module.BoilerActuatedSourceSensor(coordinator)

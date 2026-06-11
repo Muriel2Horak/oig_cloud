@@ -244,15 +244,21 @@ export class OigBoilerMetricPanel extends LitElement {
 
     // Row 8: Aktuální zdroj
     const sourceKey = activity?.source ?? null;
+    const sourceEstimated = (activity as any)?.sourceEstimated === true;
     const currentSourceLabel: string = (() => {
       switch (sourceKey) {
         case 'fve':
         case 'overflow': return t('boiler.panel.source_overflow', lang);
         case 'grid':     return t('boiler.panel.source_grid_short', lang);
         case 'discharge': return t('boiler.panel.source_battery_short', lang);
+        case 'alternative': return t('boiler.panel.source_alt', lang);
         default: return '—';
       }
     })();
+    // Append "(odhad)" when source was estimated from switch state (no live power sensor)
+    const currentSourceDisplay = sourceEstimated && sourceKey != null
+      ? `${currentSourceLabel} (${t('boiler.tank.source_estimated_suffix', lang)})`
+      : currentSourceLabel;
 
     // Row 9: Další akce — next future heating slot
     const nextAction = findNextHeatingSlot(planSlots, lang);
@@ -310,9 +316,9 @@ export class OigBoilerMetricPanel extends LitElement {
           </div>
         ` : nothing}
 
-        <div class="kv">
+        <div class="kv" data-testid="boiler-current-source-row">
           <span>${t('boiler.panel.current_source', lang)}</span>
-          <b>${currentSourceLabel}</b>
+          <b>${currentSourceDisplay}</b>
         </div>
 
         ${nextAction != null ? html`

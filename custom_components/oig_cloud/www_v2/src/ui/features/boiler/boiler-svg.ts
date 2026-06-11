@@ -116,6 +116,10 @@ export class OigBoilerV2Svg extends LitElement {
   @property({ type: String }) sourceKey: string | null = null;
   @property({ type: Boolean }) stale = false;
   @property({ type: String }) chargingLabel: string | null = null;
+  /** Set to true when the active source is alternative (gas/alt-heat) — applies orange tint to trend chip */
+  @property({ type: Boolean }) altCharging = false;
+  /** Set to true when source was estimated (no live power sensor) — appends "(odhad)" to source chip */
+  @property({ type: Boolean }) sourceEstimated = false;
   @property({ type: String }) lang: Lang = 'cs';
 
   static styles = css`
@@ -215,6 +219,13 @@ export class OigBoilerV2Svg extends LitElement {
       background: rgba(33,150,243,.15);
       border-color: rgba(33,150,243,.35);
       color: #81d4fa;
+    }
+
+    /* ── alt/gas heating: orange tint ── */
+    .trend--alt {
+      background: rgba(255,138,101,.18);
+      border-color: rgba(255,138,101,.4);
+      color: #ffab91;
     }
 
     /* ── top temperature ── */
@@ -429,10 +440,10 @@ export class OigBoilerV2Svg extends LitElement {
     const label = this.chargingLabel;
 
     if (label != null) {
-      // Charging: green tint
-      // Rewrite the label to friendly format: "⚡ NABÍJÍ +0,4 °C/min"
+      // alt heating: orange tint; electric charging: green tint
+      const cls = this.altCharging ? 'trend trend--alt' : 'trend';
       return html`
-        <div class="trend" data-testid="boiler-trend-chip">${label}</div>
+        <div class="${cls}" data-testid="boiler-trend-chip">${label}</div>
       `;
     }
 
@@ -470,9 +481,12 @@ export class OigBoilerV2Svg extends LitElement {
 
     const label = labels[sourceKey] ?? sourceLabel(sourceKey, this.lang);
     const cls = chipClasses[sourceKey] ?? 'srcchip';
+    const estimatedSuffix = this.sourceEstimated
+      ? html` <small data-testid="boiler-source-estimated">${t('boiler.tank.source_estimated_suffix', this.lang)}</small>`
+      : nothing;
 
     return html`
-      <div class="${cls}" data-testid="boiler-source-chip">${label}</div>
+      <div class="${cls}" data-testid="boiler-source-chip">${label}${estimatedSuffix}</div>
     `;
   }
 }

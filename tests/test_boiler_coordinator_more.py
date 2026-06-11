@@ -568,8 +568,8 @@ def test_runtime_activity_listener_filters_and_updates_cache(monkeypatch):
     _set_state(hass, "switch.main", "on", now)
     _set_state(hass, "switch.alt", "off", now)
     _set_state(hass, "sensor.power_kw", "2.5", now)
-    _set_state(hass, "sensor.manual_mode", "Zapnuto", now)
-    _set_state(hass, "sensor.current_cbb", "10", now)
+    _set_state(hass, "sensor.manual_mode", "CBB", now)  # CBB mode → power-first: overflow
+    _set_state(hass, "sensor.current_cbb", "2000", now)  # 2000 W > threshold → electric
     plan = BoilerPlan(
         created_at=now,
         valid_until=now + timedelta(hours=1),
@@ -612,7 +612,8 @@ def test_runtime_activity_listener_filters_and_updates_cache(monkeypatch):
     activity = runtime.current_activity
     assert activity is not None
     assert activity.state == "charging_overflow"
-    assert activity.source == "fve"
+    # Task A: power-first classifier. CBB=2000W + CBB mode + overflow → source='overflow'.
+    assert activity.source == "overflow"
     assert activity.heater_states == {
         "switch.main": "on",
         "switch.alt": "off",
@@ -642,6 +643,9 @@ def test_runtime_activity_debounce_power_update_and_boundary_sampling():
     _set_state(hass, "switch.main", "on", now)
     _set_state(hass, "sensor.power_kw", "2.0", now)
     _set_state(hass, "sensor.manual_mode", "Vypnuto", now)
+    # CBB = 0 W → power-first: NOT charging (correct behavior post Task A fix).
+    # Even though switch.main is "on", 0 W CBB power means the box is not
+    # actually sending electricity to the boiler.
     _set_state(hass, "sensor.current_cbb", "0", now)
     runtime, _coordinator = _make_activity_runtime(hass, config=config)
     spy = CountingClassifier()
@@ -652,7 +656,10 @@ def test_runtime_activity_debounce_power_update_and_boundary_sampling():
 
     assert len(spy.calls) == 1
     assert len(runtime.timeline_buffer) == 1
-    assert runtime.timeline_buffer[0]["activity_state"] == "charging_grid"
+    # Task A: 0 W CBB power → standby, NOT charging_grid.
+    # This is the exact bug that was fixed: UI was claiming "charging" when
+    # the box was actually sending 0 W to the boiler.
+    assert runtime.timeline_buffer[0]["activity_state"] == "standby"
 
     hass.loop.now = 0.5
     _set_state(hass, "sensor.power_kw", "4.0", now + timedelta(seconds=1))

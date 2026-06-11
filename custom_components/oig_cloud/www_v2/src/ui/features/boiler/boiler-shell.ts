@@ -148,16 +148,18 @@ export class OigBoilerV2Shell extends LitElement {
     const etaText = data && cfg ? computeEtaText(data, cfg, this.lang) : null;
     const sourceKey = activity?.source ?? null;
 
-    // Trend chip label: Czech-friendly format per mockup
-    // "⚡ NABÍJÍ +0,4 °C/min" — use Czech decimal comma via toLocaleString
+    // Trend chip label: Czech-friendly format per mockup.
+    // charging_alt (gas) uses "🔥 OHŘÍVÁ" with orange tint; others use "⚡ NABÍJÍ".
+    const isAltCharging = activity?.state === 'charging_alt';
     const chargingLabel: string | null = (() => {
       if (!activity?.state?.startsWith('charging_')) return null;
+      const prefix = isAltCharging ? '🔥 OHŘÍVÁ' : '⚡ NABÍJÍ';
       if (activity.temperatureTrendCPerMin != null) {
         const sign = activity.temperatureTrendCPerMin >= 0 ? '+' : '';
         const trendStr = activity.temperatureTrendCPerMin.toLocaleString('cs-CZ', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-        return `⚡ NABÍJÍ ${sign}${trendStr} °C/min`;
+        return `${prefix} ${sign}${trendStr} °C/min`;
       }
-      return '⚡ NABÍJÍ';
+      return prefix;
     })();
 
     const lowerZoneTempC = (data?.status as any)?.lowerZoneTempC ?? null;
@@ -190,6 +192,8 @@ export class OigBoilerV2Shell extends LitElement {
             .etaText="${etaText}"
             .sourceKey="${sourceKey}"
             .chargingLabel="${chargingLabel}"
+            .altCharging="${isAltCharging}"
+            .sourceEstimated="${activity?.sourceEstimated === true}"
             .stale="${stale}"
             .lang="${this.lang}"
           ></oig-boiler-v2-svg>

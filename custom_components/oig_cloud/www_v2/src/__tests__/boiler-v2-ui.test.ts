@@ -1000,8 +1000,12 @@ describe('normalizeRuntimeSource', () => {
     expect(normalizeRuntimeSource('discharging')).toBe('discharge');
   });
 
-  it('maps alternative -> grid', () => {
-    expect(normalizeRuntimeSource('alternative')).toBe('grid');
+  it('maps alternative -> alternative (gas/alt-heat kept distinct from grid)', () => {
+    expect(normalizeRuntimeSource('alternative')).toBe('alternative');
+  });
+
+  it('maps alt -> alternative', () => {
+    expect(normalizeRuntimeSource('alt')).toBe('alternative');
   });
 
   it('maps null -> null', () => {
@@ -1549,14 +1553,14 @@ describe('mapCanonicalToV2 — sourceSegments invalid key becomes null', () => {
     expect(v2.sourceSegments[0].key).toBe('discharge');
   });
 
-  it('alternative raw key becomes grid (known alias, not leaked as raw)', () => {
+  it('alternative raw key is preserved as alternative (gas/alt-heat kept distinct from grid)', () => {
     const v2 = mapCanonicalToV2({
       ...FULL_CANONICAL,
       source_segments: [
         { key: 'alternative', start: '2026-04-26T08:00:00Z', end: null, energy_kwh: 0.5, fill_pct: 10, active: false },
       ],
     });
-    expect(v2.sourceSegments[0].key).toBe('grid');
+    expect(v2.sourceSegments[0].key).toBe('alternative');
   });
 });
 
@@ -3778,5 +3782,325 @@ describe('OigBoilerMetricPanel comfort panel — mockup rows (Task 2)', () => {
     const kvRows = el.shadowRoot!.querySelectorAll('.kv');
     expect(kvRows.length).toBeGreaterThan(0);
     document.body.removeChild(el);
+  });
+});
+
+// ============================================================================
+// Task C — charging_alt / alternative source truth tests
+// ============================================================================
+
+describe('normalizeRuntimeSource — alternative kept distinct', () => {
+  it('maps alternative -> alternative (not grid)', () => {
+    expect(normalizeRuntimeSource('alternative')).toBe('alternative');
+  });
+
+  it('maps alt -> alternative', () => {
+    expect(normalizeRuntimeSource('alt')).toBe('alternative');
+  });
+
+  it('maps grid -> grid (no cross-contamination)', () => {
+    expect(normalizeRuntimeSource('grid')).toBe('grid');
+  });
+});
+
+describe('normalizeActivityState — charging_alt', () => {
+  it('mapCanonicalToV2 preserves charging_alt activity state', () => {
+    const canonical = {
+      ...FULL_CANONICAL,
+      activity: {
+        state: 'charging_alt',
+        source: 'alternative',
+        temperature_trend_c_per_min: 0.3,
+        fill_level_pct: 0.6,
+        aura_max_temp_c: 75,
+        heater_states: {},
+        stale_flags: [],
+        source_estimated: false,
+      },
+    };
+    const v2 = mapCanonicalToV2(canonical as any);
+    expect(v2.activity).not.toBeNull();
+    expect(v2.activity!.state).toBe('charging_alt');
+    expect(v2.activity!.source).toBe('alternative');
+  });
+
+  it('mapCanonicalToV2 maps source_estimated=true to activity.sourceEstimated=true', () => {
+    const canonical = {
+      ...FULL_CANONICAL,
+      activity: {
+        state: 'charging_alt',
+        source: 'alternative',
+        temperature_trend_c_per_min: null,
+        fill_level_pct: null,
+        aura_max_temp_c: 0,
+        heater_states: {},
+        stale_flags: [],
+        source_estimated: true,
+      },
+    };
+    const v2 = mapCanonicalToV2(canonical as any);
+    expect(v2.activity!.sourceEstimated).toBe(true);
+  });
+
+  it('mapCanonicalToV2 defaults sourceEstimated=false when field absent', () => {
+    const canonical = {
+      ...FULL_CANONICAL,
+      activity: {
+        state: 'standby',
+        source: null,
+        temperature_trend_c_per_min: null,
+        fill_level_pct: null,
+        aura_max_temp_c: 0,
+        heater_states: {},
+        stale_flags: [],
+        // no source_estimated field
+      },
+    };
+    const v2 = mapCanonicalToV2(canonical as any);
+    expect(v2.activity!.sourceEstimated).toBe(false);
+  });
+});
+
+describe('OigBoilerV2Shell — charging_alt trend chip', () => {
+  it('renders 🔥 OHŘÍVÁ trend chip for charging_alt state', () => {
+    const el = new OigBoilerV2Shell();
+    el.data = makeMinimalData({
+      activity: {
+        state: 'charging_alt',
+        source: 'alternative',
+        temperatureTrendCPerMin: 0.3,
+        fillLevelPct: 0.5,
+        auraMaxTempC: 75,
+        heaterStates: {},
+        staleFlags: [],
+      },
+    });
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).toContain('OHŘÍVÁ');
+    expect(json).not.toContain('NABÍJÍ');
+  });
+
+  it('renders ⚡ NABÍJÍ trend chip for charging_fve state', () => {
+    const el = new OigBoilerV2Shell();
+    el.data = makeMinimalData({
+      activity: {
+        state: 'charging_fve',
+        source: 'fve',
+        temperatureTrendCPerMin: 0.4,
+        fillLevelPct: 0.5,
+        auraMaxTempC: 75,
+        heaterStates: {},
+        staleFlags: [],
+      },
+    });
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).toContain('NABÍJÍ');
+    expect(json).not.toContain('OHŘÍVÁ');
+  });
+
+  it('passes altCharging=true to oig-boiler-v2-svg for charging_alt', () => {
+    const el = new OigBoilerV2Shell();
+    el.data = makeMinimalData({
+      activity: {
+        state: 'charging_alt',
+        source: 'alternative',
+        temperatureTrendCPerMin: null,
+        fillLevelPct: null,
+        auraMaxTempC: 0,
+        heaterStates: {},
+        staleFlags: [],
+      },
+    });
+    const vals = getTemplateValues(el);
+    // altCharging prop is set to true — find it in values
+    expect(vals).toContain(true);
+  });
+});
+
+describe('OigBoilerV2Svg — source chip for alternative', () => {
+  it('renders srcchip--alt class for source=alternative', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'alternative';
+    el.lang = 'cs';
+    // Dynamic class is in template values, not static strings
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).toContain('srcchip--alt');
+  });
+
+  it('renders 🔥 Ohřev plynem label for source=alternative in cs', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'alternative';
+    el.lang = 'cs';
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).toContain('Ohřev plynem');
+  });
+
+  it('renders 🔥 Gas heating label for source=alternative in en', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'alternative';
+    el.lang = 'en';
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).toContain('Gas heating');
+  });
+
+  it('renders (odhad) suffix when sourceEstimated=true', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'fve';
+    el.sourceEstimated = true;
+    el.lang = 'cs';
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).toContain('odhad');
+  });
+
+  it('renders (estimated) suffix when sourceEstimated=true in en', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'grid';
+    el.sourceEstimated = true;
+    el.lang = 'en';
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).toContain('estimated');
+  });
+
+  it('does not render estimated suffix when sourceEstimated=false', () => {
+    const el = new OigBoilerV2Svg();
+    el.sourceKey = 'fve';
+    el.sourceEstimated = false;
+    el.lang = 'cs';
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).not.toContain('odhad');
+  });
+
+  it('renders trend--alt class when altCharging=true', () => {
+    const el = new OigBoilerV2Svg();
+    el.chargingLabel = '🔥 OHŘÍVÁ +0,3 °C/min';
+    el.altCharging = true;
+    el.lang = 'cs';
+    // Dynamic class value is in template values
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).toContain('trend--alt');
+  });
+
+  it('does not render trend--alt class when altCharging=false', () => {
+    const el = new OigBoilerV2Svg();
+    el.chargingLabel = '⚡ NABÍJÍ +0,4 °C/min';
+    el.altCharging = false;
+    el.lang = 'cs';
+    // Dynamic class value is in template values — just "trend" not "trend--alt"
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).not.toContain('trend--alt');
+    expect(json).toContain('"trend"');
+  });
+
+  it('aura SOURCE_GRADIENTS includes alternative key (orange-red)', () => {
+    // Verify the gradient record has 'alternative' — tested via the data-source-key attribute
+    const el = new OigBoilerV2Svg();
+    el.fillLevelPct = 0.6;
+    el.sourceSegments = [{ key: 'alternative', start: '', end: null, energyKwh: 1.0, fillPct: 0.6, active: true }];
+    el.lang = 'cs';
+    const vals = getTemplateValues(el);
+    const json = JSON.stringify(vals);
+    expect(json).toContain('"alternative"');
+  });
+});
+
+describe('OigBoilerMetricPanel — alternative source in Aktuální zdroj row', () => {
+  it('shows 🔥 plyn for alternative source in cs', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      activity: {
+        state: 'charging_alt',
+        source: 'alternative',
+        temperatureTrendCPerMin: 0.3,
+        fillLevelPct: 0.5,
+        auraMaxTempC: 75,
+        heaterStates: {},
+        staleFlags: [],
+      },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('plyn');
+    document.body.removeChild(el);
+  });
+
+  it('shows (odhad) suffix in current_source row when sourceEstimated=true', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      activity: {
+        state: 'charging_alt',
+        source: 'alternative',
+        temperatureTrendCPerMin: null,
+        fillLevelPct: null,
+        auraMaxTempC: 0,
+        heaterStates: {},
+        staleFlags: [],
+        sourceEstimated: true,
+      } as any,
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).toContain('odhad');
+    document.body.removeChild(el);
+  });
+
+  it('does not show (odhad) when sourceEstimated is absent', async () => {
+    const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
+    el.panelType = 'source';
+    el.data = makeMinimalBoilerData({
+      activity: {
+        state: 'charging_fve',
+        source: 'fve',
+        temperatureTrendCPerMin: 0.5,
+        fillLevelPct: 0.7,
+        auraMaxTempC: 75,
+        heaterStates: {},
+        staleFlags: [],
+      },
+    });
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML;
+    expect(html).not.toContain('odhad');
+    document.body.removeChild(el);
+  });
+});
+
+describe('i18n — charging_alt and gas labels', () => {
+  it('cs has boiler.activity.state.charging_alt = 🔥 Ohřev plynem', () => {
+    expect(t('boiler.activity.state.charging_alt', 'cs')).toBe('🔥 Ohřev plynem');
+  });
+
+  it('en has boiler.activity.state.charging_alt = 🔥 Gas heating', () => {
+    expect(t('boiler.activity.state.charging_alt', 'en')).toBe('🔥 Gas heating');
+  });
+
+  it('cs has boiler.tank.source_alt = 🔥 Ohřev plynem', () => {
+    expect(t('boiler.tank.source_alt', 'cs')).toBe('🔥 Ohřev plynem');
+  });
+
+  it('en has boiler.tank.source_alt = 🔥 Gas heating', () => {
+    expect(t('boiler.tank.source_alt', 'en')).toBe('🔥 Gas heating');
+  });
+
+  it('cs has boiler.tank.source_estimated_suffix = (odhad)', () => {
+    expect(t('boiler.tank.source_estimated_suffix', 'cs')).toBe('(odhad)');
+  });
+
+  it('en has boiler.tank.source_estimated_suffix = (estimated)', () => {
+    expect(t('boiler.tank.source_estimated_suffix', 'en')).toBe('(estimated)');
   });
 });
