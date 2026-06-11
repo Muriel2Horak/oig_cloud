@@ -43,10 +43,15 @@ from .classifier import (
 from .const import BATTERY_SOC_OVERFLOW_THRESHOLD
 from .planner_contract import (
     BoilerBatterySignals,
+    DemandTarget,
     PlannerInput,
     PlannerReasonCode,
     resolve_alt_source_capability,
     validate_freshness,
+)
+from .demand_profiler import (
+    MIN_CONFIDENCE_THRESHOLD,
+    _get_day_category,
 )
 from .planner_core import PlanResult, plan_comfort_core
 from .planner import plan_result_to_boiler_plan
@@ -849,6 +854,12 @@ def _build_planner_topology(config: dict[str, Any]) -> BoilerThermalTopology:
             "boiler_heater_power_kw",
             _DEFAULT_HEATER_POWER_KW,
         ),
+        # F3a: standing-loss coefficient is set to 0.0 until per-installation
+        # calibration data is available.  The model default of 0.02 is
+        # physically unrealistic (produces ~20 kWh/slot on a 100 l tank,
+        # 40x the heater output) and would cause the JIT bias in
+        # _combination_score to completely overwhelm real price differences.
+        # A calibrated value must be ≤ 0.0003 kWh/(l·°C·h).
         standing_loss_coefficient=0.0,
     )
 
@@ -858,6 +869,87 @@ def _float_config(config: dict[str, Any], key: str, default: float) -> float:
         return float(config.get(key, default))
     except (TypeError, ValueError):
         return default
+
+
+def planner_input_horizon_hours(config: dict[str, Any]) -> int:
+    """Return the effective planner horizon hours from config."""
+    from .planner_core import DEFAULT_HORIZON_HOURS
+    return int(_float_config(config, "boiler_horizon_hours", DEFAULT_HORIZON_HOURS))
+
+
+def _build_demand_targets(
+    *,
+    coordinator: Any,
+    now: datetime,
+    horizon_hours: int,
+) -> list[DemandTarget]:
+    """Derive demand targets from the F2 demand profiler on the coordinator.
+
+    Returns [] when:
+    - coordinator has no _demand_profiler (bootstrap install)
+    - profiler confidence < MIN_CONFIDENCE_THRESHOLD
+    - profiler level is 'bootstrap'
+    - any unexpected error (defensive; zero regression for fresh installs)
+
+    The safety-net deadline target is NOT included here — plan_comfort_core
+    adds it internally from the topology and deadline_time.
+    """
+    try:
+        demand_profiler = getattr(coordinator, "_demand_profiler", None)
+        if demand_profiler is None:
+            return []
+
+        horizon_end = now + timedelta(hours=horizon_hours)
+        targets: list[DemandTarget] = []
+
+        for day_offset in range(2):  # today and tomorrow
+            day_date = (now + timedelta(days=day_offset)).date()
+            category = _get_day_category(now + timedelta(days=day_offset))
+            demand_map = demand_profiler.get_demand_map(category)
+
+            # Confidence / bootstrap gate.
+            if demand_map.confidence < MIN_CONFIDENCE_THRESHOLD:
+                continue
+            if demand_map.meta.level == "bootstrap":
+                continue
+
+            day_label = "today" if day_offset == 0 else "tomorrow"
+
+            for window in demand_map.windows:
+                start_h = window.start_minute // 60
+                start_m = window.start_minute % 60
+                # Combine with the local date using now's timezone.
+                try:
+                    from datetime import time as _time
+                    wall_time = _time(start_h, start_m)
+                    target_start = datetime.combine(
+                        day_date,
+                        wall_time,
+                        tzinfo=now.tzinfo,
+                    )
+                    # Advance through any DST gap (same helper as deadline).
+                    from .planner_core import _advance_nonexistent_wall_time
+                    target_start = _advance_nonexistent_wall_time(target_start)
+                except Exception:
+                    continue
+
+                # Only include windows that are in the future and within horizon.
+                if target_start <= now:
+                    continue
+                if target_start >= horizon_end:
+                    continue
+
+                targets.append(DemandTarget(
+                    start=target_start,
+                    required_kwh=window.p80_kwh,
+                    label=f"{day_label}_{window.label}",
+                ))
+
+        return targets
+
+    except Exception as exc:  # pragma: no cover
+        _LOGGER.warning("_build_demand_targets failed (fallback to legacy): %s", exc)
+        return []
 
 
 class BoilerRuntime:
@@ -1490,6 +1582,17 @@ class BoilerRuntime:
             {"overflow_windows": overflow_windows}
         )
 
+        # F3a: derive demand_targets from coordinator._demand_profiler.
+        # Falls back to [] (legacy single-deadline mode) when:
+        # - demand profiler is absent (bootstrap install),
+        # - confidence < MIN_CONFIDENCE_THRESHOLD (low-history path),
+        # - any unexpected error (defensive; zero regression).
+        demand_targets = _build_demand_targets(
+            coordinator=self.coordinator,
+            now=now,
+            horizon_hours=planner_input_horizon_hours(config),
+        )
+
         planner_input = PlannerInput(
             entry_id=self.entry_id,
             box_id=self.box_id,
@@ -1507,6 +1610,7 @@ class BoilerRuntime:
             pv_confidence=energy_input.pv_confidence,
             battery_signals=battery_signals,
             reason_codes=reason_codes,
+            demand_targets=demand_targets,
         )
 
         is_fresh, stale_reasons = validate_freshness(planner_input, now=now)

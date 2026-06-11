@@ -60,6 +60,24 @@ class PlannerReasonCode(str, Enum):
     MIGRATION_REQUIRED = "migration_required"
     API_REPAIR_REQUIRED = "api_repair_required"
     STORAGE_WRITE_FAILED = "storage_write_failed"
+    DEMAND_TARGET_MISSED = "demand_target_missed"
+
+
+@dataclass
+class DemandTarget:
+    """A single demand readiness target derived from the F2 demand profiler.
+
+    start: earliest time by which the required energy must be available.
+    required_kwh: cumulative hot-water energy needed at *start*.
+    label: human-readable identifier (e.g. "workday_summer_morning").
+
+    When demand_targets is empty (bootstrap / low-confidence path) the planner
+    degenerates to the existing single-deadline model — zero regression.
+    """
+
+    start: datetime
+    required_kwh: float
+    label: str
 
 
 @dataclass
@@ -106,6 +124,7 @@ class PlannerInput:
     temperature_updated_at: Optional[datetime] = None
     horizon_hours: Optional[int] = None
     reason_codes: list[PlannerReasonCode] = field(default_factory=list)
+    demand_targets: list[DemandTarget] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not isinstance(self.entry_id, str) or not self.entry_id:

@@ -14,6 +14,7 @@ from homeassistant.util import dt as dt_util
 from .models import BoilerThermalTopology, EnergySource, TemperatureTopology
 from .planner_contract import (
     AlternativeSourceCapability,
+    DemandTarget,
     PlannerInput,
     PlannerReasonCode,
 )
@@ -22,6 +23,7 @@ from .thermal import (
     heating_per_slot,
     predicted_temperature_after_slot,
     stale_temperature_bias,
+    standing_loss_per_slot,
 )
 
 SLOT_MINUTES = 15
@@ -72,6 +74,12 @@ class PlanResult:
     safe_hold: bool = False
     degraded: bool = False
     explanation: dict[str, Any] = field(default_factory=dict)
+    # F3a: cost benchmarks (default 0.0 so frozen replace() calls need no change)
+    cost_if_all_grid: float = 0.0
+    cost_if_all_alt: float = 0.0
+    # F3a: per-demand-target satisfaction flags (informational; empty = legacy)
+    demands_met: list[bool] = field(default_factory=list)
+    demand_labels: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -152,14 +160,18 @@ def plan_comfort_core(
         bottom_temp,
         degraded_top_only,
     )
-    required_heat_slots = _required_heat_slots(required_kwh, heat_kwh)
-    feasible = required_heat_slots <= len(deadline_slots)
-    heat_allocations = _choose_heat_allocations(
-        deadline_slots,
-        required_heat_slots,
-        feasible,
-        planner_input,
-        heat_kwh,
+
+    # F3a: multi-target allocation — degenerates to single-target when
+    # demand_targets is empty (legacy path, zero regression).
+    heat_allocations, demands_met, demand_labels, all_targets_met = _allocate_multi_target(
+        slots=slots,
+        deadline=deadline,
+        deadline_slots=deadline_slots,
+        required_kwh=required_kwh,
+        planner_input=planner_input,
+        heat_kwh=heat_kwh,
+        topology=topology,
+        reasons=reasons,
     )
 
     planned_slots, temperature_at_deadline = _predict_slots(
@@ -170,6 +182,15 @@ def plan_comfort_core(
         heat_kwh,
         deadline,
     )
+    # Overall comfort_satisfied: safety-net deadline reachable AND (no demand
+    # targets OR all demand targets met).
+    safety_net_satisfied = (
+        len(deadline_slots) > 0
+        and sum(1 for s in deadline_slots if s.start in heat_allocations)
+        >= _required_heat_slots(required_kwh, heat_kwh)
+        or _required_heat_slots(required_kwh, heat_kwh) == 0
+    ) and temperature_at_deadline >= topology.target_temp_c
+    comfort_satisfied = safety_net_satisfied and all_targets_met
     result = _plan_result(
         planner_input,
         now,
@@ -178,9 +199,11 @@ def plan_comfort_core(
         topology,
         top_temp,
         temperature_at_deadline,
-        feasible and temperature_at_deadline >= topology.target_temp_c,
+        comfort_satisfied,
         reasons,
         degraded_top_only,
+        demands_met=demands_met,
+        demand_labels=demand_labels,
     )
     return _timeout_result_if_needed(
         result,
@@ -384,6 +407,106 @@ def _choose_heat_allocations(
     }
 
 
+def _allocate_multi_target(
+    *,
+    slots: list[PlanSlotAction],
+    deadline: datetime,
+    deadline_slots: list[PlanSlotAction],
+    required_kwh: float,
+    planner_input: PlannerInput,
+    heat_kwh: float,
+    topology: Any,
+    reasons: list[PlannerReasonCode],
+) -> tuple[dict[datetime, _SlotAllocation], list[bool], list[str], bool]:
+    """Allocate heat slots across multiple demand targets + safety-net deadline.
+
+    When demand_targets is empty this reduces exactly to the single-deadline
+    path (_choose_heat_allocations over deadline_slots) — zero regression.
+
+    Returns:
+        (heat_allocations, demands_met, demand_labels, all_targets_met)
+        where heat_allocations maps slot.start → _SlotAllocation.
+    """
+    demand_targets: list[DemandTarget] = list(planner_input.demand_targets)
+
+    # Sort by start time so we process earliest target first.
+    demand_targets.sort(key=lambda t: t.start)
+
+    # Safety-net target is derived from the full required_kwh at the deadline.
+    # It is NOT appended to demand_targets; it is handled as the final sweep
+    # over all deadline_slots minus already-allocated slots.
+
+    allocated: dict[datetime, _SlotAllocation] = {}
+    demands_met: list[bool] = []
+    demand_labels: list[str] = []
+    allocated_kwh: float = 0.0
+    all_targets_met = True
+
+    for target in demand_targets:
+        # Slots available for this target: end <= target.start and not yet
+        # allocated.
+        available = [
+            s for s in slots
+            if s.end <= target.start and s.start not in allocated
+        ]
+        remaining_kwh = max(0.0, target.required_kwh - allocated_kwh)
+        required_slots_i = _required_heat_slots(remaining_kwh, heat_kwh)
+
+        if required_slots_i <= 0:
+            # Already satisfied by earlier allocations.
+            demands_met.append(True)
+            demand_labels.append(target.label)
+            allocated_kwh += 0.0  # no new heat needed
+            continue
+
+        feasible_i = required_slots_i <= len(available)
+        if feasible_i:
+            selected = _best_heat_slot_combination(
+                available,
+                required_slots_i,
+                planner_input,
+                heat_kwh,
+            )
+            demands_met.append(True)
+        else:
+            # Infeasible: heat all available slots.
+            selected = list(available)
+            demands_met.append(False)
+            all_targets_met = False
+            _append_reason(reasons, PlannerReasonCode.DEMAND_TARGET_MISSED)
+
+        demand_labels.append(target.label)
+        for slot in selected:
+            if slot.start not in allocated:
+                allocated[slot.start] = _slot_allocation(slot, planner_input, heat_kwh)
+                allocated_kwh += heat_kwh
+
+    # Safety-net pass: allocate remaining slots between last demand target
+    # (or now) and the deadline to ensure the topology target_temp is met.
+    remaining_deadline_slots = [
+        s for s in deadline_slots if s.start not in allocated
+    ]
+    safety_kwh = max(0.0, required_kwh - allocated_kwh)
+    safety_slots_needed = _required_heat_slots(safety_kwh, heat_kwh)
+    safety_feasible = safety_slots_needed <= len(remaining_deadline_slots)
+
+    if safety_slots_needed > 0:
+        if safety_feasible:
+            safety_selected = _best_heat_slot_combination(
+                remaining_deadline_slots,
+                safety_slots_needed,
+                planner_input,
+                heat_kwh,
+            )
+        else:
+            safety_selected = list(remaining_deadline_slots)
+        for slot in safety_selected:
+            if slot.start not in allocated:
+                allocated[slot.start] = _slot_allocation(slot, planner_input, heat_kwh)
+
+    return allocated, demands_met, demand_labels, all_targets_met
+
+
 def _best_heat_slot_combination(
     deadline_slots: list[PlanSlotAction],
     required_heat_slots: int,
@@ -426,16 +549,73 @@ def _greedy_heat_slots(
     return sorted(ranked[:required_heat_slots], key=lambda slot: slot.start)
 
 
+def _standing_loss_cost_per_wait_slot(
+    planner_input: PlannerInput,
+    slot: PlanSlotAction,
+    heat_kwh: float,
+) -> float:
+    """Cost of one slot's standing loss waiting after heating.
+
+    Used to bias the score toward just-in-time heating: heating earlier than
+    needed incurs a penalty equal to the expected standing loss * grid price
+    per wait slot.  Returns 0.0 when standing_loss_coefficient is 0.0 (default
+    for legacy configs) so behaviour is unchanged without explicit opt-in.
+    """
+    topology = planner_input.topology
+    if topology is None:
+        return 0.0
+    loss_coeff = getattr(topology, "standing_loss_coefficient", 0.0)
+    if not loss_coeff:
+        return 0.0
+    ambient_c = getattr(topology, "cold_inlet_temp_c", 10.0)
+    target_c = getattr(topology, "target_temp_c", 55.0)
+    loss_kwh = standing_loss_per_slot(
+        topology.tank_volume_l,
+        target_c,
+        ambient_c,
+        SLOT_MINUTES,
+        loss_coeff,
+    )
+    # Price per kWh: use slot's grid price or fallback to 0 (free overflow).
+    spot_price = _spot_price_for_slot(slot.start, planner_input.spot_prices)
+    price = spot_price if spot_price is not None else 0.0
+    return loss_kwh * price
+
+
 def _combination_score(
     slots: tuple[PlanSlotAction, ...],
     planner_input: PlannerInput,
     heat_kwh: float,
 ) -> tuple[float, float, int, float]:
+    """Score a candidate combination of heating slots.
+
+    Tuple components (lower is better):
+      0. total monetary cost + standing-loss penalty (just-in-time bias)
+      1. negative total PV (more PV → lower score)
+      2. transition count (fewer on/off transitions preferred)
+      3. negative sum of timestamps (later slots preferred when tied)
+    """
     allocations = [_slot_allocation(slot, planner_input, heat_kwh) for slot in slots]
     total_cost = sum(allocation.cost_czk for allocation in allocations)
     total_pv = sum(allocation.pv_kwh for allocation in allocations)
+
+    # Standing-loss bias: each heated slot that is *not* the last in the
+    # combination incurs one extra wait-slot penalty.  The last slot (latest
+    # timestamp) has zero wait.
+    sorted_slots = sorted(slots, key=lambda s: s.start)
+    loss_per_wait = [
+        _standing_loss_cost_per_wait_slot(planner_input, s, heat_kwh)
+        for s in sorted_slots
+    ]
+    # Slot i waits (N - 1 - i) slots after it, where N = len(sorted_slots).
+    n = len(sorted_slots)
+    standing_loss_penalty = sum(
+        loss_per_wait[i] * (n - 1 - i) for i in range(n)
+    )
+    total_cost_adj = total_cost + standing_loss_penalty
+
     return (
-        round(total_cost, 9),
+        round(total_cost_adj, 9),
         -round(total_pv, 9),
         _transition_count(slots),
         -sum(slot.start.timestamp() for slot in slots),
@@ -447,9 +627,14 @@ def _slot_score(
     planner_input: PlannerInput,
     heat_kwh: float,
 ) -> tuple[float, float, float]:
+    """Score a single slot for greedy selection (lower is better)."""
     allocation = _slot_allocation(slot, planner_input, heat_kwh)
+    # For greedy, we approximate standing-loss penalty as cost of one wait slot
+    # per unit of earliness (the timestamp term already handles recency bias).
+    loss_penalty = _standing_loss_cost_per_wait_slot(planner_input, slot, heat_kwh)
+    cost_adj = allocation.cost_czk + loss_penalty
     return (
-        round(allocation.cost_czk, 9),
+        round(cost_adj, 9),
         -round(allocation.pv_kwh, 9),
         -slot.start.timestamp(),
     )
@@ -670,6 +855,9 @@ def _plan_result(
     comfort_satisfied: bool,
     reasons: list[PlannerReasonCode],
     degraded_top_only: bool,
+    *,
+    demands_met: list[bool] | None = None,
+    demand_labels: list[str] | None = None,
 ) -> PlanResult:
     heated_kwh = sum(slot.heating_kwh for slot in slots)
     pv_kwh = sum(slot.pv_kwh for slot in slots)
@@ -692,6 +880,20 @@ def _plan_result(
     if benchmark_selected:
         _append_reason(reasons, PlannerReasonCode.SOURCE_BENCHMARK_ONLY)
     stale_optimization = _has_stale_optimization_inputs(reasons)
+
+    # F3a: compute cost benchmarks over heated slots.
+    heated_slots = [s for s in slots if s.heating_kwh > 0]
+    heat_kwh_per_slot = heated_slots[0].heating_kwh if heated_slots else 0.0
+    cost_if_all_grid = sum(
+        (heat_kwh_per_slot or s.heating_kwh)
+        * ((_spot_price_for_slot(s.start, planner_input.spot_prices) or 0.0))
+        for s in heated_slots
+    )
+    cost_if_all_alt = sum(
+        (heat_kwh_per_slot or s.heating_kwh) * planner_input.alt_cost_kwh
+        for s in heated_slots
+    )
+
     return PlanResult(
         entry_id=planner_input.entry_id,
         box_id=planner_input.box_id,
@@ -723,6 +925,10 @@ def _plan_result(
             benchmark_selected,
             stale_optimization,
         ),
+        cost_if_all_grid=cost_if_all_grid,
+        cost_if_all_alt=cost_if_all_alt,
+        demands_met=list(demands_met) if demands_met is not None else [],
+        demand_labels=list(demand_labels) if demand_labels is not None else [],
     )
 
 

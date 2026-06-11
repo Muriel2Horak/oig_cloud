@@ -96,6 +96,8 @@ CANONICAL_REASON_CODES = frozenset({
     "migration_required",
     "api_repair_required",
     "storage_write_failed",
+    # F3a: demand-target miss indicator
+    "demand_target_missed",
 })
 
 
@@ -107,8 +109,9 @@ class TestPlannerReasonCode:
             f"Extra: {enum_values - CANONICAL_REASON_CODES}"
         )
 
-    def test_count_is_exactly_29(self):
-        assert len(PlannerReasonCode) == 29
+    def test_count_is_exactly_30(self):
+        # F3a added DEMAND_TARGET_MISSED → 30 codes total
+        assert len(PlannerReasonCode) == 30
 
     def test_from_string_valid(self):
         for code in CANONICAL_REASON_CODES:

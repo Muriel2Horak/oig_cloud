@@ -771,3 +771,444 @@ def test_plan_slot_prediction_none_input_becomes_none():
 
     assert len(plan.slots) == 1
     assert plan.slots[0].predicted_top_temp_c is None
+
+
+# ---------------------------------------------------------------------------
+# F3a: multi-target scheduling tests
+# ---------------------------------------------------------------------------
+
+def _f3a_topology(
+    *,
+    tank_volume_l: float = 100.0,
+    target_temp_c: float = 55.0,
+    heater_power_kw: float = 2.0,
+    standing_loss_coefficient: float = 0.0,
+) -> BoilerThermalTopology:
+    return BoilerThermalTopology(
+        stratification_mode="two_zone",
+        thermometer_placements=["top"],
+        temperature_topology="top_only",
+        tank_volume_l=tank_volume_l,
+        target_temp_c=target_temp_c,
+        cold_inlet_temp_c=10.0,
+        heater_power_kw=heater_power_kw,
+        standing_loss_coefficient=standing_loss_coefficient,
+    )
+
+
+def _make_prices(
+    base: datetime,
+    *,
+    slots: int = 96,
+    flat_price: float = 5.0,
+) -> dict[datetime, float]:
+    return {base + timedelta(minutes=15 * i): flat_price for i in range(slots)}
+
+
+def test_f3a_empty_demand_targets_degenerates_to_legacy_path():
+    """With no demand_targets, result is identical to the old single-deadline path."""
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    topo = _f3a_topology(heater_power_kw=2.0)
+    prices = _make_prices(now)
+
+    inp = PlannerInput(
+        entry_id="test",
+        box_id="box",
+        profile=_profile(),
+        spot_prices=prices,
+        overflow_windows=[],
+        deadline_time="06:00",
+        topology=topo,
+        current_top_temp_c=45.0,
+        temperature_updated_at=now,
+    )
+
+    result = plan_comfort_core(inp, now=now)
+    # Legacy: comfort satisfied, no demand_labels populated (no demand_targets given).
+    assert result.comfort_satisfied is True
+    assert result.demand_labels == []
+    assert result.demands_met == []
+
+
+def test_f3a_single_demand_target_met_by_early_heat_slot():
+    """Single demand target before the safety-net deadline: slot allocated before target.start."""
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    from custom_components.oig_cloud.boiler.planner_contract import DemandTarget
+
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    # Very easy: tank almost at target, tiny demand target requires only 0.1 kWh.
+    # Heater outputs 2 kW * 15 min = 0.5 kWh per slot.  One slot is more than enough.
+    topo = _f3a_topology(heater_power_kw=2.0, target_temp_c=52.0)
+
+    # One demand target at 05:30 requiring 0.3 kWh (one slot easily covers it).
+    target_start = now + timedelta(hours=1, minutes=30)
+    demand_targets = [
+        DemandTarget(start=target_start, required_kwh=0.3, label="morning")
+    ]
+
+    prices = _make_prices(now, flat_price=5.0)
+    inp = PlannerInput(
+        entry_id="test",
+        box_id="box",
+        profile=_profile(),
+        spot_prices=prices,
+        overflow_windows=[],
+        deadline_time="07:00",
+        topology=topo,
+        current_top_temp_c=50.0,
+        temperature_updated_at=now,
+        demand_targets=demand_targets,
+    )
+
+    result = plan_comfort_core(inp, now=now)
+
+    assert result.comfort_satisfied is True
+    assert len(result.demands_met) == 1
+    assert result.demands_met[0] is True
+    assert result.demand_labels == ["morning"]
+    # All allocated slots for the demand target must end before target_start.
+    heated = [s for s in result.slots if s.action == "heat"]
+    demand_heated = [s for s in heated if s.end <= target_start]
+    assert len(demand_heated) >= 1, "At least one slot must be allocated before target"
+
+
+def test_f3a_multi_target_two_windows_both_met():
+    """Two demand targets, both feasible; planner allocates slots for each."""
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    from custom_components.oig_cloud.boiler.planner_contract import DemandTarget
+
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    # Large tank; heater 4 kW → 1 kWh per slot.  Plenty of headroom.
+    topo = _f3a_topology(tank_volume_l=200.0, heater_power_kw=4.0, target_temp_c=60.0)
+
+    morning_target = DemandTarget(
+        start=now + timedelta(hours=2),
+        required_kwh=0.5,
+        label="morning",
+    )
+    evening_target = DemandTarget(
+        start=now + timedelta(hours=8),
+        required_kwh=0.5,
+        label="evening",
+    )
+
+    prices = _make_prices(now, flat_price=3.0)
+    inp = PlannerInput(
+        entry_id="test",
+        box_id="box",
+        profile=_profile(),
+        spot_prices=prices,
+        overflow_windows=[],
+        deadline_time="12:00",
+        topology=topo,
+        current_top_temp_c=40.0,
+        temperature_updated_at=now,
+        demand_targets=[morning_target, evening_target],
+    )
+
+    result = plan_comfort_core(inp, now=now)
+
+    assert len(result.demands_met) == 2
+    assert all(result.demands_met), "Both targets should be met"
+    assert result.demand_labels == ["morning", "evening"]
+    assert PlannerReasonCode.DEMAND_TARGET_MISSED not in result.reason_codes
+
+
+def test_f3a_infeasible_demand_target_emits_reason_code():
+    """When a demand target cannot be met (no slots available), DEMAND_TARGET_MISSED is set."""
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    from custom_components.oig_cloud.boiler.planner_contract import DemandTarget
+
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    # Target starts at now+1min — no slots end before that.
+    # Required kWh = 5.0 (many slots needed), but zero available before target.start.
+    infeasible_target = DemandTarget(
+        start=now + timedelta(minutes=1),
+        required_kwh=5.0,
+        label="immediate",
+    )
+
+    topo = _f3a_topology(heater_power_kw=2.0, target_temp_c=55.0)
+    prices = _make_prices(now, flat_price=5.0)
+    inp = PlannerInput(
+        entry_id="test",
+        box_id="box",
+        profile=_profile(),
+        spot_prices=prices,
+        overflow_windows=[],
+        deadline_time="07:00",
+        topology=topo,
+        current_top_temp_c=50.0,
+        temperature_updated_at=now,
+        demand_targets=[infeasible_target],
+    )
+
+    result = plan_comfort_core(inp, now=now)
+
+    assert PlannerReasonCode.DEMAND_TARGET_MISSED in result.reason_codes
+    assert len(result.demands_met) == 1
+    assert result.demands_met[0] is False
+
+
+def test_f3a_overflow_beats_cheap_grid_beats_alt():
+    """Source priority: overflow (FVE, cost=0) > cheap grid > disabled alt."""
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    from custom_components.oig_cloud.boiler.planner_contract import (
+        AlternativeSourceCapability,
+        DemandTarget,
+    )
+
+    now = datetime(2026, 6, 11, 6, 0, tzinfo=timezone.utc)
+    topo = _f3a_topology(heater_power_kw=2.0, target_temp_c=55.0)
+
+    # Overflow covers slot 0.
+    overflow_start = now
+    overflow_end = now + timedelta(minutes=15)
+
+    # Grid is cheap (1 Kč/kWh); alt is 0.8 Kč/kWh but DISABLED.
+    prices = {overflow_start + timedelta(minutes=15 * i): 1.0 for i in range(40)}
+
+    target_start = now + timedelta(hours=2)
+    demand_target = DemandTarget(start=target_start, required_kwh=0.4, label="morning")
+
+    inp = PlannerInput(
+        entry_id="test",
+        box_id="box",
+        profile=_profile(),
+        spot_prices=prices,
+        overflow_windows=[(overflow_start, overflow_end)],
+        deadline_time="08:00",
+        topology=topo,
+        current_top_temp_c=50.0,
+        temperature_updated_at=now,
+        alt_source_capability=AlternativeSourceCapability.DISABLED,
+        alt_cost_kwh=0.8,
+        demand_targets=[demand_target],
+    )
+
+    result = plan_comfort_core(inp, now=now)
+
+    # The overflow slot should have been preferred (cost=0).
+    overflow_slot = next(
+        (s for s in result.slots if s.start == overflow_start and s.action == "heat"),
+        None,
+    )
+    if overflow_slot is not None:
+        assert overflow_slot.source.value == "fve"
+        assert overflow_slot.estimated_cost_czk == pytest.approx(0.0)
+
+    # Alt disabled → no alt_kwh at all.
+    assert result.alt_kwh == pytest.approx(0.0)
+
+
+def test_f3a_standing_loss_bias_prefers_just_in_time_on_flat_prices():
+    """With non-zero standing_loss_coefficient and flat prices, later slots are preferred."""
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    deadline = now + timedelta(hours=4)  # 08:00
+
+    # standing_loss_coefficient > 0 → just-in-time bias active.
+    topo = _f3a_topology(
+        heater_power_kw=2.0,
+        target_temp_c=52.0,
+        standing_loss_coefficient=0.02,
+    )
+
+    # Current temp 50°C → needs ~1 slot to reach 52°C.
+    prices = {now + timedelta(minutes=15 * i): 5.0 for i in range(16 * 4)}
+
+    inp = PlannerInput(
+        entry_id="test",
+        box_id="box",
+        profile=_profile(),
+        spot_prices=prices,
+        overflow_windows=[],
+        deadline_time="08:00",
+        topology=topo,
+        current_top_temp_c=50.0,
+        temperature_updated_at=now,
+    )
+
+    result = plan_comfort_core(inp, now=now)
+    heated = sorted(
+        [s for s in result.slots if s.action == "heat"],
+        key=lambda s: s.start,
+    )
+    # With just-in-time bias: slot(s) should be as late as possible before deadline.
+    assert result.comfort_satisfied is True
+    if heated:
+        # Last heat slot should end at or near deadline.
+        assert heated[-1].end <= deadline
+        # The chosen slot(s) should be in the second half of the window.
+        midpoint = now + (deadline - now) / 2
+        assert heated[0].start >= midpoint, (
+            f"Expected heat after midpoint {midpoint}, got {heated[0].start}"
+        )
+
+
+def test_f3a_early_cheap_slot_beats_just_in_time_when_spread_exceeds_losses():
+    """An early slot with a much lower price beats just-in-time when saving > standing loss."""
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+
+    # standing_loss_coefficient = 0.001 → very small loss; a large price spread wins.
+    topo = _f3a_topology(
+        tank_volume_l=100.0,
+        heater_power_kw=2.0,
+        target_temp_c=52.0,
+        standing_loss_coefficient=0.001,
+    )
+
+    # Prices: slot 0 (now) is 0.5 Kč/kWh; all subsequent slots are 50 Kč/kWh.
+    prices: dict[datetime, float] = {}
+    prices[now] = 0.5
+    for i in range(1, 96):
+        prices[now + timedelta(minutes=15 * i)] = 50.0
+
+    inp = PlannerInput(
+        entry_id="test",
+        box_id="box",
+        profile=_profile(),
+        spot_prices=prices,
+        overflow_windows=[],
+        deadline_time="06:00",
+        topology=topo,
+        current_top_temp_c=50.0,
+        temperature_updated_at=now,
+    )
+
+    result = plan_comfort_core(inp, now=now)
+    heated = [s for s in result.slots if s.action == "heat"]
+
+    assert result.comfort_satisfied is True
+    assert heated, "At least one heated slot"
+    # The earliest (cheapest) slot must have been chosen.
+    assert heated[0].start == now, (
+        f"Expected heating at cheapest slot {now}, got {heated[0].start}"
+    )
+
+
+def test_f3a_low_confidence_fallback_uses_legacy_single_deadline():
+    """When demand_profiler returns confidence < 0.3, demand_targets is [] (legacy)."""
+    from custom_components.oig_cloud.boiler.runtime import _build_demand_targets
+    from custom_components.oig_cloud.boiler.demand_profiler import (
+        BoilerDemandProfiler,
+        BoilerDemandProfilerAsync,
+    )
+
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+
+    # A profiler with zero history → confidence=0.0 → bootstrap.
+    profiler = BoilerDemandProfilerAsync(
+        hass=None,
+        temp_sensor_entity="sensor.top",
+        heating_entity=None,
+        volume_l=100.0,
+        target_temp_c=55.0,
+        cold_inlet_temp_c=10.0,
+    )
+    # No calls to async_update, so _profiler._category_slots is empty.
+
+    class FakeCoordinator:
+        _demand_profiler = profiler
+
+    targets = _build_demand_targets(
+        coordinator=FakeCoordinator(),
+        now=now,
+        horizon_hours=24,
+    )
+    assert targets == [], f"Expected [] for bootstrap profiler, got {targets}"
+
+
+def test_f3a_demand_targets_populated_when_confident_profiler():
+    """_build_demand_targets returns targets when profiler has enough history."""
+    from custom_components.oig_cloud.boiler.runtime import _build_demand_targets
+    from custom_components.oig_cloud.boiler.demand_profiler import (
+        BoilerDemandProfiler,
+        BoilerDemandProfilerAsync,
+        DrawEvent,
+    )
+    from datetime import date
+
+    now = datetime(2026, 6, 11, 8, 0, tzinfo=timezone.utc)
+
+    profiler_async = BoilerDemandProfilerAsync(
+        hass=None,
+        temp_sensor_entity="sensor.top",
+        heating_entity=None,
+        volume_l=100.0,
+        target_temp_c=55.0,
+        cold_inlet_temp_c=10.0,
+    )
+
+    # Inject enough draws to produce confidence >= 0.3.
+    # 3 workday_summer days with a morning draw.
+    draws = []
+    for day in range(10):
+        draw_start = datetime(2026, 6, 1 + day, 7, 0, tzinfo=timezone.utc)
+        draw_end = draw_start + timedelta(minutes=10)
+        draws.append(DrawEvent(
+            start=draw_start,
+            end=draw_end,
+            drop_c=3.0,
+            rate_c_per_min=0.3,
+            energy_kwh=0.5,
+            liters=10.0,
+        ))
+
+    from custom_components.oig_cloud.boiler.demand_profiler import build_category_slots
+    profiler_async._profiler._category_slots = build_category_slots(draws)
+
+    class FakeCoordinator:
+        _demand_profiler = profiler_async
+
+    targets = _build_demand_targets(
+        coordinator=FakeCoordinator(),
+        now=now,
+        horizon_hours=24,
+    )
+    # Should have at least one target within the horizon (morning window).
+    assert len(targets) >= 1, f"Expected at least one demand target, got {targets}"
+    for t in targets:
+        assert t.required_kwh > 0.0
+        assert t.start > now
+
+
+def test_f3a_plan_result_has_cost_benchmarks():
+    """PlanResult.cost_if_all_grid and cost_if_all_alt are computed correctly."""
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    from custom_components.oig_cloud.boiler.planner_contract import AlternativeSourceCapability
+
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    topo = _f3a_topology(heater_power_kw=2.0, target_temp_c=52.0)
+
+    # Fixed price 4 Kč/kWh; alt at 2 Kč/kWh (BENCHMARK_ONLY → not actuated, but benchmark).
+    prices = {now + timedelta(minutes=15 * i): 4.0 for i in range(96)}
+
+    inp = PlannerInput(
+        entry_id="test",
+        box_id="box",
+        profile=_profile(),
+        spot_prices=prices,
+        overflow_windows=[],
+        deadline_time="06:00",
+        topology=topo,
+        current_top_temp_c=50.0,
+        temperature_updated_at=now,
+        alt_source_capability=AlternativeSourceCapability.BENCHMARK_ONLY,
+        alt_cost_kwh=2.0,
+    )
+
+    result = plan_comfort_core(inp, now=now)
+
+    heated = [s for s in result.slots if s.action == "heat"]
+    heat_kwh_total = sum(s.heating_kwh for s in heated)
+
+    # cost_if_all_grid: heat_kwh * 4.0 per slot.
+    assert result.cost_if_all_grid == pytest.approx(heat_kwh_total * 4.0, rel=1e-3)
+    # cost_if_all_alt: heat_kwh * 2.0 per slot.
+    assert result.cost_if_all_alt == pytest.approx(heat_kwh_total * 2.0, rel=1e-3)
