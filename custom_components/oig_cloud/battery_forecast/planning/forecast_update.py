@@ -479,7 +479,7 @@ async def _maybe_apply_consumption_boost(
 
 
 def _read_boiler_grid_load_overlay(sensor: Any) -> dict[datetime, float]:
-    """Return {slot_start: grid_kwh} from the boiler runtime's last plan.
+    """Return {slot_start: boiler_load_kwh} from the boiler runtime's last plan.
 
     Reads boiler runtime via hass.data boundary (same pattern as F1 battery→boiler
     signal, reversed).  Returns {} silently on any error or when the boiler
@@ -489,13 +489,15 @@ def _read_boiler_grid_load_overlay(sensor: Any) -> dict[datetime, float]:
     first battery forecast after a new plan will see zero boiler load; this is
     intentional and documented in the design.
 
-    Only grid_kwh is included.  Overflow-sourced heating (pv_kwh) is excluded
-    because the battery sim already exports that surplus; adding it would
-    double-count PV and inflate the charging target.
+    Included: grid_kwh (normal grid heating) AND battery_kwh (R3 Home 5 maneuver
+    — battery is behind the inverter, so boiler battery load is a real inverter
+    discharge load that must be accounted for in the battery sim).
+    Excluded: pv_kwh (FVE overflow) — the battery sim already accounts for PV
+    export; adding it would double-count and inflate the charging target.
 
     Note: adaptive_profiles already capture historical boiler grid consumption.
     The overlay intentionally adds PLANNED future load on top; this over-estimates
-    total draw by up to one boiler heating cycle worth of grid kWh in steady-state,
+    total draw by up to one boiler heating cycle worth of kWh in steady-state,
     causing modest over-charging (self-limiting at battery max capacity).
     Accepted trade-off per R6 design.
     """
@@ -524,8 +526,11 @@ def _read_boiler_grid_load_overlay(sensor: Any) -> dict[datetime, float]:
             if plan_result is None:
                 continue
             for slot in getattr(plan_result, "slots", []):
+                # Include grid_kwh + battery_kwh; exclude pv_kwh.
                 grid_kwh = getattr(slot, "grid_kwh", 0.0)
-                if grid_kwh <= 0.0:
+                battery_kwh = getattr(slot, "battery_kwh", 0.0)
+                load_kwh = (grid_kwh or 0.0) + (battery_kwh or 0.0)
+                if load_kwh <= 0.0:
                     continue
                 slot_start = slot.start
                 # Normalise to tz-aware local time for key matching with the
@@ -533,7 +538,7 @@ def _read_boiler_grid_load_overlay(sensor: Any) -> dict[datetime, float]:
                 # _append_load_for_price).
                 if slot_start.tzinfo is None:
                     slot_start = dt_util.as_local(slot_start)
-                overlay[slot_start] = overlay.get(slot_start, 0.0) + grid_kwh
+                overlay[slot_start] = overlay.get(slot_start, 0.0) + load_kwh
 
         return overlay
 
@@ -1085,7 +1090,18 @@ def _save_forecast_to_coordinator(sensor: Any) -> None:
             pass
         overflow_windows = _derive_overflow_windows(timeline_data, max_cap)
 
-        forecast_data = {
+        # R3: derive battery_usable_kwh = max(0, current − min_capacity).
+        # Published so the boiler planner can use it for Home 5 maneuver sizing.
+        battery_usable_kwh: Optional[float] = None
+        try:
+            current_cap = sensor._get_current_battery_capacity()
+            min_cap = sensor._get_min_battery_capacity()
+            if current_cap is not None and min_cap is not None:
+                battery_usable_kwh = max(0.0, float(current_cap) - float(min_cap))
+        except Exception:
+            pass  # defensive: leave None so boiler skips maneuver
+
+        forecast_data: dict[str, Any] = {
             "timeline_data": timeline_data,
             "calculation_time": sensor._last_update.isoformat(),
             "data_source": "simplified_calculation",
@@ -1100,6 +1116,8 @@ def _save_forecast_to_coordinator(sensor: Any) -> None:
             "spot_prices_czk_kwh": spot_prices_czk_kwh,
             "overflow_windows": overflow_windows,
         }
+        if battery_usable_kwh is not None:
+            forecast_data["battery_usable_kwh"] = battery_usable_kwh
         # Propagate decision_trace from charging metrics if present (backward compatible)
         if hasattr(sensor, "_charging_metrics") and sensor._charging_metrics:
             decision_trace = sensor._charging_metrics.get("decision_trace")
