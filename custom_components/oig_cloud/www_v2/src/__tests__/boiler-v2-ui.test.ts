@@ -1971,26 +1971,20 @@ describe('OigBoilerV2Svg', () => {
 
   // ── New mockup-fidelity tests ──
 
-  it('renders trend chip data-testid="boiler-trend-chip" in template values', () => {
-    const el = new OigBoilerV2Svg();
-    const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('boiler-trend-chip');
-  });
-
-  it('trend chip has green class when chargingLabel is set', () => {
+  it('renders trend chip when charging', () => {
     const el = new OigBoilerV2Svg();
     el.chargingLabel = '⚡ NABÍJÍ +0,4 °C/min';
     const json = JSON.stringify(getTemplateValues(el));
-    // green tint: class "trend" without "trend--idle"
+    expect(json).toContain('boiler-trend-chip');
     expect(json).not.toContain('trend--idle');
     expect(json).toContain('⚡ NABÍJÍ');
   });
 
-  it('trend chip shows idle indicator when chargingLabel is null', () => {
+  it('trend chip is absent when chargingLabel is null (no empty pill)', () => {
     const el = new OigBoilerV2Svg();
     el.chargingLabel = null;
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('trend--idle');
+    expect(json).not.toContain('boiler-trend-chip');
   });
 
   it('aura layers stacked bottom-up: first layer cumulative bottom starts at 0', () => {

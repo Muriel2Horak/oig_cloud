@@ -84,6 +84,7 @@ export class OigBoilerV2Shell extends LitElement {
     }
 
     .shell {
+      position: relative;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -91,20 +92,27 @@ export class OigBoilerV2Shell extends LitElement {
       padding: 16px;
       max-width: 300px;
       margin: 0 auto;
+      /* mockup .bwrap: the tank sits on its own card */
+      background: ${u(CSS_VARS.cardBg)};
+      border-radius: 12px;
     }
 
+    /* Compact corner chip — mockup has no full-width banner. */
     .stale-warning {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 2;
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      border-radius: 8px;
-      background: ${u(CSS_VARS.warning)};
-      color: #fff;
-      font-size: 13px;
-      font-weight: 500;
-      width: 100%;
-      box-sizing: border-box;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(255, 152, 0, 0.15);
+      border: 1px solid rgba(255, 152, 0, 0.4);
+      color: #ffcc80;
+      font-size: 10.5px;
+      font-weight: 600;
     }
 
     .svg-wrapper {

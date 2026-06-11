@@ -432,10 +432,9 @@ export class OigBoilerV2Svg extends LitElement {
       `;
     }
 
-    // No charging label = idle or cooling — render neutral pause indicator
-    return html`
-      <div class="trend trend--idle" data-testid="boiler-trend-chip">⏸</div>
-    `;
+    // No charging label = idle/cooling — per mockup the chip only appears
+    // while charging; an empty grey pill is just visual noise.
+    return nothing;
   }
 
   private _renderSourceChipBelow() {
