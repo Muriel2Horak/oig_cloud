@@ -28,6 +28,7 @@ from ..const import (  # noqa: F401
     CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
     DEFAULT_BOILER_DEADLINE_TIME,
 )
+from .demand_profiler import BoilerDemandProfilerAsync
 from .models import BoilerPlan, BoilerProfile
 from .planner import BoilerPlanner
 from .profiler import BoilerProfiler
@@ -93,6 +94,24 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._thermal_read_model = _ThermalReadModel(self)
         self._energy_state_adapter = _EnergyStateAdapter(self)
+
+        # F2: Demand-map profiler — wired up so _read_demand_map_dto can find it
+        _temp_sensor = config.get("boiler_temp_sensor_top")
+        _heating_entity = config.get("boiler_heater_switch_entity")
+        _volume_l = float(config.get("boiler_volume_l") or 200.0)
+        _target_temp_c = float(config.get("boiler_target_temp_c") or 60.0)
+        _cold_inlet_temp_c = float(config.get("boiler_cold_inlet_temp_c") or 10.0)
+        if _temp_sensor:
+            self._demand_profiler: Optional[BoilerDemandProfilerAsync] = BoilerDemandProfilerAsync(
+                hass=hass,
+                temp_sensor_entity=_temp_sensor,
+                heating_entity=_heating_entity,
+                volume_l=_volume_l,
+                target_temp_c=_target_temp_c,
+                cold_inlet_temp_c=_cold_inlet_temp_c,
+            )
+        else:
+            self._demand_profiler = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         """
@@ -182,6 +201,10 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         except Exception as err:
             _LOGGER.error("Chyba při aktualizaci profilů: %s", err)
+
+        # F2: Update demand profiler on the same 24-hour cadence
+        if self._demand_profiler is not None:
+            await self._demand_profiler.async_update()
 
     async def _read_temperatures(self) -> dict[str, Optional[float]]:
         """Načte teploty z teploměrů."""

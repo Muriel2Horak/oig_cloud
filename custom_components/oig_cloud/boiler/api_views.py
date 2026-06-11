@@ -581,6 +581,36 @@ def _iso_or_str(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _read_demand_map_dto(runtime: Any, config: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """Read demand map DTO from coordinator's demand profiler.
+
+    Returns None if no demand profiler is configured or no data is available yet.
+    Backward compatible: absent key = no demand map (older FE ignores it).
+    """
+    try:
+        coordinator = getattr(runtime, "coordinator", None) if runtime else None
+        demand_profiler = getattr(coordinator, "_demand_profiler", None)
+        if demand_profiler is None:
+            return None
+
+        # Determine current category from now()
+        from homeassistant.util import dt as dt_util
+        from .profiler import _get_profile_category
+
+        now = dt_util.now()
+        category = _get_profile_category(now)
+        demand_map = demand_profiler.get_demand_map(category)
+
+        # Don't serialize bootstrap/empty maps
+        if demand_map.meta.level == "bootstrap" and demand_map.meta.days_used == 0:
+            return None
+
+        return demand_map.to_dto()
+    except Exception as err:
+        _LOGGER.debug("Could not read demand map: %s", err, exc_info=True)
+        return None
+
+
 def _assemble_canonical_dto(
     hass: HomeAssistant, entry_id: str, box_id: str
 ) -> dict[str, Any] | web.Response:
@@ -751,6 +781,9 @@ def _assemble_canonical_dto(
 
         sparklines = dict(getattr(runtime, "sparklines", {}))
 
+    # Demand map (F2): read from coordinator's demand profiler if available
+    demand_map_dto: dict | None = _read_demand_map_dto(runtime, config)
+
     return {
         "entry_id": entry_id,
         "box_id": box_id,
@@ -787,6 +820,7 @@ def _assemble_canonical_dto(
         },
         "activity": activity_data,
         "aura": aura_data,
+        "demand_map": demand_map_dto,
         "source_segments": source_segments,
         "timeline": timeline,
         "sparklines": sparklines,
