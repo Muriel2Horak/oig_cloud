@@ -15,14 +15,15 @@ import {
 
 const u = unsafeCSS;
 
+// Flags that mean "the DISPLAYED VALUES cannot be trusted" — only these
+// justify the „Data mohou být zastaralá" chip. Accounting anomalies
+// (power_sign_mismatch_*) and push-on-change source entities being quiet
+// (source_stale) are not display-staleness and kept the chip on permanently.
 const STALE_INDICATOR_FLAGS = new Set([
   'temperature_unavailable',
   'temperature_stale',
-  'source_stale',
   'activity_stale',
   'source_invalid',
-  'power_sign_mismatch_charge',
-  'power_sign_mismatch_discharge',
   'runtime_cache_empty',
   'config_profile_unavailable',
 ]);

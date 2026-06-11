@@ -2132,13 +2132,13 @@ describe('OigBoilerV2Shell', () => {
     expect(json).toContain('boiler-stale-warning');
   });
 
-  it('renders stale warning when status.degradedFlags contains source_stale', () => {
+  it('does NOT render stale warning for source_stale (push-on-change quiet is normal)', () => {
     const el = new OigBoilerV2Shell();
     el.data = makeMinimalData({
       status: { ...makeMinimalData().status!, degradedFlags: ['source_stale'] },
     });
     const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('boiler-stale-warning');
+    expect(json).not.toContain('boiler-stale-warning');
   });
 
   it('renders stale warning when explanation.degradedReasons contains activity_stale', () => {
@@ -2263,14 +2263,14 @@ describe('OigBoilerV2Shell', () => {
   });
 
   it('all stale indicator flags trigger stale warning', () => {
+    // Only display-trust flags trigger the chip; source_stale and
+    // power_sign_mismatch_* are accounting/quiet-entity signals, not
+    // display staleness.
     const flags = [
       'temperature_unavailable',
       'temperature_stale',
-      'source_stale',
       'activity_stale',
       'source_invalid',
-      'power_sign_mismatch_charge',
-      'power_sign_mismatch_discharge',
       'runtime_cache_empty',
       'config_profile_unavailable',
     ];

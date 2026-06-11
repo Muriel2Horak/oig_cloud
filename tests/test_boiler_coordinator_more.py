@@ -782,7 +782,9 @@ def test_runtime_activity_listener_exceptions_do_not_propagate():
 
 
 def test_runtime_activity_stale_flags_rebuild_and_clear(monkeypatch):
-    old = datetime(2026, 5, 4, 11, 40, tzinfo=timezone.utc)
+    # temperature_stale now requires a genuinely dead sensor (>60 min);
+    # source_stale requires unusable (unavailable) source entities.
+    old = datetime(2026, 5, 4, 10, 0, tzinfo=timezone.utc)
     now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
     fresh = now + timedelta(seconds=602)
     _freeze_runtime_now(monkeypatch, now)
@@ -793,8 +795,8 @@ def test_runtime_activity_stale_flags_rebuild_and_clear(monkeypatch):
     }
     _set_state(hass, "sensor.top", "50", old)
     _set_state(hass, "switch.main", "on", old)
-    _set_state(hass, "sensor.manual_mode", "Vypnuto", old)
-    _set_state(hass, "sensor.current_cbb", "0", old)
+    _set_state(hass, "sensor.manual_mode", "unavailable", old)
+    _set_state(hass, "sensor.current_cbb", "unavailable", old)
     runtime, _coordinator = _make_activity_runtime(hass, config=config)
 
     hass.bus.fire_state_changed("sensor.top", now)

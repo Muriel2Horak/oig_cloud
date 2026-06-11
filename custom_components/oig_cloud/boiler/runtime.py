@@ -85,8 +85,11 @@ _TEMPERATURE_REPLAN_DELTA_C = 0.5
 _ACTIVITY_DEBOUNCE_SECONDS = 1.0
 _ACTIVITY_SAMPLE_SECONDS = 60.0
 _ACTIVITY_BUFFER_MAX = 60
-_ACTIVITY_TEMPERATURE_STALE_AFTER = timedelta(seconds=300)
-_ACTIVITY_SOURCE_STALE_AFTER = timedelta(seconds=600)
+# HA updates entity state only on CHANGE — an idle boiler temperature can sit
+# unchanged for tens of minutes, which is perfectly healthy. "Stale" must mean
+# "cannot be trusted", not "has not changed lately" (the 5-min window kept the
+# UI permanently waving „Data mohou být zastaralá" at the user).
+_ACTIVITY_TEMPERATURE_STALE_AFTER = timedelta(minutes=60)
 _ACTIVITY_STALE_AFTER = timedelta(seconds=600)
 _NORMALIZED_ACTIVITY_SOURCE_KEYS = frozenset({"fve", "overflow", "grid", "discharge", "alternative"})
 _ACCEPTED_REPLAN_TRIGGERS = frozenset(
@@ -1867,19 +1870,27 @@ class BoilerRuntime:
         return False
 
     def _source_state_is_stale(self, now: datetime) -> bool:
-        found_source_state = False
+        """Source entities push on change — a constant value is NOT stale.
+
+        boiler_manual_mode reads "CBB" for days and cbb power sits at 0 W for
+        hours; age-based staleness produced permanent false alarms. Stale only
+        when no source entity provides a usable state.
+        """
+        found_any = False
         for entity_id in (
             getattr(self.coordinator, "_oig_manual_mode_entity", None),
             getattr(self.coordinator, "_oig_current_cbb_entity", None),
         ):
             state = _state_for_entity(self.hass, entity_id)
-            updated_at = _state_last_updated(state)
-            if updated_at is None:
+            if state is None:
                 continue
-            found_source_state = True
-            if _datetime_age(now, updated_at) > _ACTIVITY_SOURCE_STALE_AFTER:
-                return True
-        return not found_source_state and self._activity_cache_is_stale(now)
+            found_any = True
+            raw = str(getattr(state, "state", "")).lower()
+            if raw not in ("unknown", "unavailable", ""):
+                return False
+        if found_any:
+            return True
+        return self._activity_cache_is_stale(now)
 
     def _activity_cache_is_stale(self, now: datetime) -> bool:
         if self._last_activity_event_at is None:
@@ -1966,7 +1977,9 @@ class BoilerRuntime:
         # Detect sign anomalies before the duration guard so single-entry buffers
         # (duration=0) still get flagged.
         if source_key == "discharge":
-            if power_kw >= 0:
+            # Strictly positive power during discharge is an anomaly; 0 W is
+            # a normal idle reading, not a sign mismatch.
+            if power_kw > 0:
                 self._segment_derivation_flags.add("power_sign_mismatch_discharge")
                 return 0.0
         else:
