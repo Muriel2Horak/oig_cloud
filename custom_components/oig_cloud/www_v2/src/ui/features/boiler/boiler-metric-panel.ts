@@ -9,6 +9,7 @@ import {
   type BoilerV2PlanSlot,
 } from './types';
 import { t, type Lang } from '@/i18n/boiler';
+import { altTypeLabel } from './boiler-energy-today';
 
 const u = unsafeCSS;
 
@@ -232,8 +233,8 @@ export class OigBoilerMetricPanel extends LitElement {
     // Row 5b: ⚡ nerozlišený zdroj (např. el. energie z doby před restartem)
     const unattributedKwh: number | null = energy?.unattributedKwh ?? null;
     const showUnattributed = unattributedKwh != null && unattributedKwh > 0.05;
-    // alt type label: generic unless we have a type
-    const altLabel = t('boiler.panel.alt_label', lang);
+    // F5/Task C: dynamic alt type label from data.altSourceType
+    const altLabel = altTypeLabel(data?.altSourceType, lang);
 
     // Row 6: 🔋→🔥 z baterie — only when > 0
     const batteryKwh: number | null = energy?.batteryKwh ?? null;

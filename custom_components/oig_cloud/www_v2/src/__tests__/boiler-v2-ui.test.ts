@@ -1716,38 +1716,9 @@ describe('OigBoilerV2Svg', () => {
     expect(json).not.toContain('boiler-aura-fill');
   });
 
-  it('renders neutral fallback rect when fillLevelPct>0 but no usable segments', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.6;
-    el.sourceSegments = [];
-    const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('boiler-aura-fill');
-    expect(json).toContain('unknown');
-  });
 
-  it('neutral fallback uses #9E9E9E fill', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.6;
-    el.sourceSegments = [];
-    const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('#9E9E9E');
-  });
 
-  it('renders discharge-only segments as neutral fallback', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.4;
-    el.sourceSegments = [makeSeg('discharge', 0.4, true)];
-    const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('unknown');
-  });
 
-  it('renders fve segment with correct source key', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.5;
-    el.sourceSegments = [makeSeg('fve', 0.5, false)];
-    const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('"fve"');
-  });
 
   it('renders active segment: surf--charging class on surf ellipse when charging', () => {
     const el = new OigBoilerV2Svg();
@@ -1766,58 +1737,11 @@ describe('OigBoilerV2Svg', () => {
     expect(json).not.toContain('aura-segment--active');
   });
 
-  it('uses orange gradient for fve source layer', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.5;
-    el.sourceSegments = [makeSeg('fve', 0.5, false)];
-    const json = JSON.stringify(getTemplateValues(el));
-    // fve uses orange gradient matching mockup
-    expect(json).toContain('255,213,79');
-  });
 
-  it('uses orange gradient for overflow source layer', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.5;
-    el.sourceSegments = [makeSeg('overflow', 0.5, false)];
-    const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('255,213,79');
-  });
 
-  it('uses blue gradient for grid source layer', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.5;
-    el.sourceSegments = [makeSeg('grid', 0.5, false)];
-    const json = JSON.stringify(getTemplateValues(el));
-    // grid uses blue gradient matching mockup
-    expect(json).toContain('79,195,247');
-  });
 
-  it('renders multiple segments stacked', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.8;
-    el.sourceSegments = [makeSeg('fve', 0.4, false), makeSeg('grid', 0.4, false)];
-    const json = JSON.stringify(getTemplateValues(el));
-    const matches = json.match(/boiler-aura-fill/g) ?? [];
-    expect(matches.length).toBeGreaterThanOrEqual(2);
-  });
 
-  it('neutral fallback fill=0.5 passes fillPct value to aura style', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.5;
-    el.sourceSegments = [];
-    const json = JSON.stringify(getTemplateValues(el));
-    // The .aura div style contains "50.00" (height:50.00%)
-    expect(json).toContain('50.00');
-  });
 
-  it('segment fill=0.5 passes layer height value in style', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.5;
-    el.sourceSegments = [makeSeg('fve', 0.5, false)];
-    const json = JSON.stringify(getTemplateValues(el));
-    // Layer height style contains "50.00"
-    expect(json).toContain('50.00');
-  });
 
   it('renders .tank and .shell CSS classes in template', () => {
     const el = new OigBoilerV2Svg();
@@ -1827,19 +1751,7 @@ describe('OigBoilerV2Svg', () => {
     expect(strings).toContain('class="shell"');
   });
 
-  it('renders .aura element inside tank', () => {
-    const el = new OigBoilerV2Svg();
-    const strings = getTemplateStrings(el);
-    expect(strings).toContain('class="aura"');
-  });
 
-  it('null key segment renders data-source-key=unknown', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.3;
-    el.sourceSegments = [makeSeg(null, 0.3, false)];
-    const json = JSON.stringify(getTemplateValues(el));
-    expect(json).toContain('unknown');
-  });
 
   it('renders boiler-temp-top-label testid in template strings', () => {
     const el = new OigBoilerV2Svg();
@@ -1991,16 +1903,6 @@ describe('OigBoilerV2Svg', () => {
     expect(json).not.toContain('boiler-trend-chip');
   });
 
-  it('aura layers stacked bottom-up: first layer cumulative bottom starts at 0', () => {
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.8;
-    el.sourceSegments = [makeSeg('grid', 0.4, false), makeSeg('fve', 0.4, false)];
-    const json = JSON.stringify(getTemplateValues(el));
-    // Layer heights are relative to the .aura container (already sized to
-    // fill% of the tank): 0.4/0.8 → 50% each, stacked at bottom 0% and 50%.
-    expect(json).toContain('"0.00"');
-    expect(json).toContain('"50.00"');
-  });
 
   it('vol-caption contains ready text in template values', () => {
     const el = new OigBoilerV2Svg();
@@ -3506,13 +3408,16 @@ describe('OigBoilerMetricPanel source panel — mockup rows (Task 2)', () => {
   it('renders alt row with salmon color only when altKwh > 0', async () => {
     const el = document.createElement('oig-boiler-metric-panel') as OigBoilerMetricPanel;
     el.panelType = 'source';
+    // F5/Task C: altSourceType="gas" → "🔥 Plyn" label (R12 short label)
     el.data = makeMinimalBoilerData({
       energyToday: { totalKwh: 14.3, fveKwh: 0, gridKwh: 0, altKwh: 14.3, batteryKwh: 0, unattributedKwh: 0, sourceInvalid: false },
+      altSourceType: 'gas',
     });
     document.body.appendChild(el);
     await el.updateComplete;
     const html = el.shadowRoot!.innerHTML;
-    expect(html).toContain('z plynu');
+    // F5/Task C: dynamic label from altSourceType — "🔥 Plyn" for gas
+    expect(html).toContain('Plyn');
     expect(html).toContain('#ffab91');
     document.body.removeChild(el);
   });
@@ -4005,16 +3910,6 @@ describe('OigBoilerV2Svg — source chip for alternative', () => {
     expect(json).toContain('"trend"');
   });
 
-  it('aura SOURCE_GRADIENTS includes alternative key (orange-red)', () => {
-    // Verify the gradient record has 'alternative' — tested via the data-source-key attribute
-    const el = new OigBoilerV2Svg();
-    el.fillLevelPct = 0.6;
-    el.sourceSegments = [{ key: 'alternative', start: '', end: null, energyKwh: 1.0, fillPct: 0.6, active: true }];
-    el.lang = 'cs';
-    const vals = getTemplateValues(el);
-    const json = JSON.stringify(vals);
-    expect(json).toContain('"alternative"');
-  });
 });
 
 describe('OigBoilerMetricPanel — alternative source in Aktuální zdroj row', () => {
@@ -4106,5 +4001,71 @@ describe('i18n — charging_alt and gas labels', () => {
 
   it('en has boiler.tank.source_estimated_suffix = (estimated)', () => {
     expect(t('boiler.tank.source_estimated_suffix', 'en')).toBe('(estimated)');
+  });
+});
+
+
+// ============================================================================
+// Thermal tank (2026-06-12): tank always full, color = stratification
+// ============================================================================
+import { tempColor, readyLineTopPct } from '@/ui/features/boiler/boiler-svg';
+
+describe('OigBoilerV2Svg — thermal gradient tank', () => {
+  it('tempColor maps cold/boundary/hot correctly', () => {
+    expect(tempColor(5)).toBe('rgb(21,101,192)');
+    expect(tempColor(40)).toBe('rgb(255,183,77)');
+    expect(tempColor(90)).toBe('rgb(230,74,25)');
+    expect(tempColor(null)).toBe('#37474f');
+  });
+
+  it('tempColor interpolates between stops', () => {
+    // 32.5 °C = midpoint cyan(25)→amber(40)
+    expect(tempColor(32.5)).toBe('rgb(147,191,148)');
+  });
+
+  it('readyLineTopPct maps fraction to top offset, hides at extremes', () => {
+    expect(readyLineTopPct(0.43)).toBeCloseTo(57.0, 5);
+    expect(readyLineTopPct(0)).toBeNull();
+    expect(readyLineTopPct(1)).toBeNull();
+    expect(readyLineTopPct(null)).toBeNull();
+  });
+
+  it('renders full-tank thermal element with top/bottom temp colors', () => {
+    const el = new OigBoilerV2Svg();
+    el.topTempC = 44.6;
+    el.bottomTempC = 19.9;
+    el.fillLevelPct = 0.43;
+    const strings = getTemplateStrings(el);
+    const json = JSON.stringify(getTemplateValues(el));
+    expect(strings).toContain('class="thermal"');
+    expect(json).toContain('linear-gradient(180deg');
+    expect(json).toContain(tempColor(44.6));
+    expect(json).toContain(tempColor(19.9));
+  });
+
+  it('renders ready-line at correct top offset, hidden when all cold', () => {
+    const el = new OigBoilerV2Svg();
+    el.topTempC = 44.6;
+    el.bottomTempC = 19.9;
+    el.fillLevelPct = 0.43;
+    let json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('boiler-ready-line');
+    expect(json).toContain('"57.0"');
+
+    el.fillLevelPct = 0;
+    json = JSON.stringify(getTemplateValues(el));
+    expect(json).not.toContain('boiler-ready-line');
+  });
+
+  it('surf pulse renders only while charging', () => {
+    const el = new OigBoilerV2Svg();
+    el.topTempC = 40;
+    el.chargingLabel = '⚡ NABÍJÍ';
+    let json = JSON.stringify(getTemplateValues(el));
+    expect(json).toContain('surf--charging');
+
+    el.chargingLabel = null;
+    json = JSON.stringify(getTemplateValues(el));
+    expect(json).not.toContain('surf--charging');
   });
 });

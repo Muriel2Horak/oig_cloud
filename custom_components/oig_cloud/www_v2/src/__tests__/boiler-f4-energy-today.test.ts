@@ -73,41 +73,51 @@ function makePlanSummary(overrides: Partial<PlanSummary> = {}): PlanSummary {
 }
 
 // ── altTypeLabel ──────────────────────────────────────────────────────────────
+// F5/Task C: R12 spec — short Czech labels for alt source types
 
 describe('altTypeLabel', () => {
-  it('returns gas label for cs', () => {
-    const label = altTypeLabel('gas', 'cs');
-    expect(label).toBe('🔥 Plynový kotel');
+  it('gas → short Czech label "🔥 Plyn"', () => {
+    expect(altTypeLabel('gas', 'cs')).toBe('🔥 Plyn');
   });
 
-  it('returns gas label for en', () => {
-    const label = altTypeLabel('gas', 'en');
-    expect(label).toBe('🔥 Gas boiler');
+  it('gas → short English label "🔥 Gas"', () => {
+    expect(altTypeLabel('gas', 'en')).toBe('🔥 Gas');
   });
 
-  it('returns heat_pump label for cs', () => {
-    const label = altTypeLabel('heat_pump', 'cs');
-    expect(label).toBe('🔥 Tepelné čerpadlo');
+  it('heat_pump → Czech label "🔥 Tepelné čerpadlo"', () => {
+    expect(altTypeLabel('heat_pump', 'cs')).toBe('🔥 Tepelné čerpadlo');
   });
 
-  it('returns generic cs fallback for unknown type', () => {
-    const label = altTypeLabel('unknown_type', 'cs');
-    expect(label).toBe('🔥 Alternativní zdroj');
+  it('heat_pump → English label "🔥 Heat pump"', () => {
+    expect(altTypeLabel('heat_pump', 'en')).toBe('🔥 Heat pump');
   });
 
-  it('returns generic en fallback for null', () => {
-    const label = altTypeLabel(null, 'en');
-    expect(label).toBe('🔥 Alternative source');
+  it('fireplace → Czech label "🔥 Krb"', () => {
+    expect(altTypeLabel('fireplace', 'cs')).toBe('🔥 Krb');
   });
 
-  it('returns generic cs fallback for undefined', () => {
-    const label = altTypeLabel(undefined, 'cs');
-    expect(label).toBe('🔥 Alternativní zdroj');
+  it('fireplace → English label "🔥 Fireplace"', () => {
+    expect(altTypeLabel('fireplace', 'en')).toBe('🔥 Fireplace');
   });
 
-  it('returns electric label for cs', () => {
-    const label = altTypeLabel('electric', 'cs');
-    expect(label).toBe('🔥 Přímotop');
+  it('other → Czech generic label', () => {
+    expect(altTypeLabel('other', 'cs')).toBe('🔥 Alternativní zdroj');
+  });
+
+  it('other → English generic label', () => {
+    expect(altTypeLabel('other', 'en')).toBe('🔥 Alternative source');
+  });
+
+  it('unknown type → Czech generic fallback', () => {
+    expect(altTypeLabel('unknown_type', 'cs')).toBe('🔥 Alternativní zdroj');
+  });
+
+  it('null → English generic fallback', () => {
+    expect(altTypeLabel(null, 'en')).toBe('🔥 Alternative source');
+  });
+
+  it('undefined → Czech generic fallback', () => {
+    expect(altTypeLabel(undefined, 'cs')).toBe('🔥 Alternativní zdroj');
   });
 });
 
@@ -193,11 +203,11 @@ describe('buildSourceTiles', () => {
     expect(keys).toEqual(['fve', 'grid', 'alt']);
   });
 
-  it('uses altTypeLabel for alt tile label', () => {
+  it('uses altTypeLabel for alt tile label (R12: short label)', () => {
     const energy = makeEnergy({ altKwh: 1.0 });
     const tiles = buildSourceTiles(energy, 'cs', 'gas');
     const alt = tiles.find(t => t.key === 'alt');
-    expect(alt?.label).toBe('🔥 Plynový kotel');
+    expect(alt?.label).toBe('🔥 Plyn');
   });
 
   it('uses generic alt label when altType not provided', () => {

@@ -386,10 +386,14 @@ describe('OigBoilerPlanStrip component', () => {
     // for a plan that spans the current wall-clock time.
     // Instead, test via the rendered output: if plan starts in the past (now > T0),
     // the NOW line should appear.
-    // We'll create a plan starting well in the past so now is within horizon.
-    const pastStart = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
-    const futureEnd = new Date(Date.now() + 18 * 3600 * 1000).toISOString();
-    el.slots = [makeSlot(pastStart, futureEnd, 'fve', 1.0)];
+    // We'll create a plan starting TODAY at local midnight so "now" always
+    // falls inside the 00-24 axis window regardless of wall-clock time
+    // (the previous Date.now()-6h fixture crossed midnight between 00:00 and
+    // 06:00 and made nowFraction() > 1 — time-of-day flaky).
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(todayMidnight.getTime() + 24 * 3600 * 1000);
+    el.slots = [makeSlot(todayMidnight.toISOString(), endOfDay.toISOString(), 'fve', 1.0)];
     const out = joinTemplate(el);
     expect(out).toContain('plan-strip-now-line');
   });

@@ -10,6 +10,7 @@ import { extractFlowData } from '@/data/flow-data';
 import { invalidateTimelineCache, loadPricingData } from '@/data/pricing-data';
 import { loadBoilerData } from '@/data/boiler-data';
 import { resolveLang } from '@/i18n/boiler';
+import { loadModuleConfig } from '@/data/settings-data';
 import { extractAnalyticsSensors, loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
 import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
 import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/timeline-data';
@@ -80,6 +81,10 @@ export class OigApp extends LitElement {
   @state() private boilerV2Data: BoilerV2Data | null = null;
   @state() private boilerConfig: BoilerConfig | null = null;
   private boilerRefreshTimer: number | null = null;
+
+  // R7: box_has_home56 flag — loaded from module_config boiler section.
+  // Default false = Home 5/6 toggles hidden until user enables in Nastavení.
+  @state() private boxHasHome56 = false;
 
   private get boilerLang() {
     return resolveLang(this.hass);
@@ -557,6 +562,18 @@ export class OigApp extends LitElement {
       this.loadBoilerDataAsync();
       this.loadAnalyticsAsync();
       this.loadTilesAsync();
+      // R7: load box_has_home56 from module_config (best-effort, no throw)
+      this.loadBoxHasHome56();
+
+      // Boiler tab live refresh: the canonical DTO changes server-side every
+      // coordinator cycle without any entity-state event, so poll it while
+      // the tab is visible (the state-watcher throttle alone left the tab
+      // looking frozen).
+      this.boilerRefreshTimer = window.setInterval(() => {
+        if (this.activeTab === 'boiler' && document.visibilityState !== 'hidden') {
+          void this.loadBoilerDataAsync();
+        }
+      }, 30_000);
 
       this.loading = false;
       oigLog.info('App initialized', {
@@ -742,6 +759,16 @@ export class OigApp extends LitElement {
       this.analyticsDirty = false;
     } catch (err) {
       oigLog.error('Failed to load analytics', err as Error);
+    }
+  }
+
+  /** R7: load box_has_home56 from module_config boiler section (best-effort). */
+  private async loadBoxHasHome56(): Promise<void> {
+    try {
+      const cfg = await loadModuleConfig();
+      this.boxHasHome56 = cfg?.boiler?.box_has_home56 === true;
+    } catch {
+      // silently ignore — default false means Home 5/6 hidden, safe
     }
   }
 
@@ -1028,6 +1055,7 @@ export class OigApp extends LitElement {
         .legionella=${v2.legionella ?? null}
         .planSummary=${v2.planSummary ?? null}
         .lang=${this.boilerLang}
+        .altSourceType=${v2.altSourceType ?? null}
       ></oig-boiler-plan-strip>
       <details class="boiler-controls-section" data-testid="boiler-controls-section">
         <summary>⚙️ Ovládání a nastavení</summary>
@@ -1121,7 +1149,7 @@ export class OigApp extends LitElement {
 
                 <!-- Ovládací panel: pravý sloupec -->
                 <div class="flow-control">
-                  <oig-control-panel></oig-control-panel>
+                  <oig-control-panel .boxHasHome56=${this.boxHasHome56}></oig-control-panel>
                 </div>
               </div>
             </div>

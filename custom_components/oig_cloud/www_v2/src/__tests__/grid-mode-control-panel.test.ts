@@ -446,6 +446,8 @@ describe('OigControlPanel — supplementary controls integration', () => {
   it('renders supplementary controls independently from the main Home 1..UPS selector', async () => {
     const subscribeSpy = vi.spyOn(shieldController, 'subscribe').mockReturnValue(() => {});
     const panel = document.createElement('oig-control-panel') as OigControlPanel;
+    // R7: must set boxHasHome56=true to make the supplementary section visible
+    panel.boxHasHome56 = true;
 
     Reflect.set(panel, 'shieldState', {
       ...EMPTY_SHIELD_STATE,
@@ -476,6 +478,8 @@ describe('OigControlPanel — supplementary controls integration', () => {
   it('disables supplementary controls when Flexibilita is active', async () => {
     const subscribeSpy = vi.spyOn(shieldController, 'subscribe').mockReturnValue(() => {});
     const panel = document.createElement('oig-control-panel') as OigControlPanel;
+    // R7: must set boxHasHome56=true to make the supplementary section visible
+    panel.boxHasHome56 = true;
 
     Reflect.set(panel, 'shieldState', {
       ...EMPTY_SHIELD_STATE,

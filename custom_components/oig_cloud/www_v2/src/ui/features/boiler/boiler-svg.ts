@@ -79,7 +79,7 @@ export function buildAuraLayersFromMix(mix: AuraEnergyMix): AuraLayer[] {
  * Each layer is expressed as a percentage of the total tank height.
  * The first element in the returned array is the bottommost layer.
  */
-function buildAuraLayers(
+export function buildAuraLayers(
   fillLevelPct: number | null,
   sourceSegments: BoilerV2SourceSegment[],
 ): AuraLayer[] {
@@ -124,6 +124,57 @@ function buildAuraLayers(
   }
 
   return layers;
+}
+
+// ============================================================================
+// Thermal stratification rendering (user decision 2026-06-12):
+// the tank is ALWAYS physically full — the fill-level look suggested water
+// being refilled. Render a full tank with a vertical temperature gradient
+// (top sensor color → bottom sensor color, linear stratification) and a thin
+// marker line at the 40 °C "ready" boundary. Source accounting stays in the
+// Zdroj & náklady panel, not in the tank.
+// ============================================================================
+
+/** Piecewise-linear temperature → color scale (cold blue → cyan → amber → hot orange-red). */
+export function tempColor(tempC: number | null | undefined): string {
+  if (tempC == null || !isFinite(tempC)) return '#37474f';
+  const stops: Array<[number, [number, number, number]]> = [
+    [10, [21, 101, 192]],   // #1565c0 cold blue
+    [25, [38, 198, 218]],   // #26c6da cyan
+    [40, [255, 183, 77]],   // #ffb74d amber (ready boundary)
+    [55, [255, 112, 67]],   // #ff7043 hot orange
+    [70, [230, 74, 25]],    // #e64a19 deep red-orange
+  ];
+  if (tempC <= stops[0][0]) return rgbStr(stops[0][1]);
+  if (tempC >= stops[stops.length - 1][0]) return rgbStr(stops[stops.length - 1][1]);
+  for (let i = 1; i < stops.length; i++) {
+    if (tempC <= stops[i][0]) {
+      const [t0, c0] = stops[i - 1];
+      const [t1, c1] = stops[i];
+      const f = (tempC - t0) / (t1 - t0);
+      return rgbStr([
+        Math.round(c0[0] + (c1[0] - c0[0]) * f),
+        Math.round(c0[1] + (c1[1] - c0[1]) * f),
+        Math.round(c0[2] + (c1[2] - c0[2]) * f),
+      ]);
+    }
+  }
+  return rgbStr(stops[stops.length - 1][1]);
+}
+
+function rgbStr(c: [number, number, number]): string {
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+/**
+ * Position of the 40 °C ready-boundary line as % from the TANK TOP,
+ * derived from the ready fraction (fraction of volume ≥ 40 °C).
+ * Returns null when the boundary is outside the tank (all cold / all ready).
+ */
+export function readyLineTopPct(readyFraction: number | null | undefined): number | null {
+  if (readyFraction == null || !isFinite(readyFraction)) return null;
+  if (readyFraction <= 0.005 || readyFraction >= 0.995) return null;
+  return (1 - readyFraction) * 100;
 }
 
 function buildAriaLabel(
@@ -196,7 +247,23 @@ export class OigBoilerV2Svg extends LitElement {
       box-shadow: inset 0 0 26px rgba(0,0,0,.6), 0 10px 26px rgba(0,0,0,.5);
     }
 
-    /* ── aura fill (total, bottom-anchored) ── */
+    /* ── full-tank thermal gradient (stratification) ── */
+    .thermal {
+      position: absolute;
+      inset: 0;
+    }
+
+    /* thin marker at the 40 °C ready boundary */
+    .ready-line {
+      position: absolute;
+      left: 6%;
+      right: 6%;
+      height: 0;
+      border-top: 1.5px dashed rgba(255, 255, 255, 0.55);
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.25);
+    }
+
+    /* ── aura fill (legacy, kept for tests/back-compat) ── */
     .aura {
       position: absolute;
       left: 0;
@@ -218,11 +285,11 @@ export class OigBoilerV2Svg extends LitElement {
       position: absolute;
       left: 0;
       right: 0;
-      top: -6px;
-      height: 12px;
+      top: 0;
+      height: 10px;
       border-radius: 50%;
-      background: rgba(255,255,255,.5);
-      box-shadow: 0 0 12px rgba(255,255,255,.4);
+      background: rgba(255,255,255,.35);
+      box-shadow: 0 0 12px rgba(255,255,255,.35);
     }
 
     /* ── surf pulse when charging ── */
@@ -386,12 +453,6 @@ export class OigBoilerV2Svg extends LitElement {
   }
 
   private _renderTank() {
-    // Prefer today's energy mix (mockup: aura = z čeho je voda nabitá);
-    // fall back to live source segments when no energy flowed today.
-    const mixLayers = this.energyMix ? buildAuraLayersFromMix(this.energyMix) : [];
-    const layers = mixLayers.length > 0
-      ? mixLayers
-      : buildAuraLayers(this.fillLevelPct, this.sourceSegments);
     const ariaLabel = buildAriaLabel(
       this.topTempC,
       this.bottomTempC,
@@ -401,7 +462,6 @@ export class OigBoilerV2Svg extends LitElement {
     );
 
     const fill = this.fillLevelPct ?? null;
-    const fillPct = fill != null ? Math.max(0, Math.min(100, fill * 100)) : 0;
 
     const topTempStr = this.topTempC != null
       ? `${this.topTempC.toFixed(1)} °C`
@@ -419,30 +479,13 @@ export class OigBoilerV2Svg extends LitElement {
 
     // Trend chip
     const trendChip = this._renderTrendChip();
-
-    // Top layer gets surf + pulse class
     const isCharging = this.chargingLabel != null;
-    const topLayerIdx = layers.length - 1; // last layer is topmost
 
-    // Stacked layers: layers[0]=bottom ... layers[n-1]=top
-    // We need to lay them out bottom→up. Each layer sits on top of the previous.
-    // Use bottom=0 for layer[0], bottom=layer[0].heightPct% for layer[1], etc.
-    let cumulativeBottom = 0;
-    const layerEls = layers.map((layer, i) => {
-      const bottom = cumulativeBottom;
-      cumulativeBottom += layer.heightPct;
-      const isTop = i === topLayerIdx;
-      return html`
-        <div
-          class="seg"
-          data-testid="boiler-aura-fill"
-          data-source-key="${layer.key ?? 'unknown'}"
-          style="bottom:${bottom.toFixed(2)}%;height:${layer.heightPct.toFixed(2)}%;background:${layer.background};"
-        >
-          ${isTop ? html`<div class="surf ${isCharging ? 'surf--charging' : ''}"></div>` : nothing}
-        </div>
-      `;
-    });
+    // Full-tank thermal gradient (linear stratification top→bottom).
+    const topColor = tempColor(this.topTempC);
+    const bottomColor = tempColor(effectiveBottomTemp ?? this.topTempC);
+    const thermalBg = `linear-gradient(180deg, ${topColor} 0%, ${bottomColor} 100%)`;
+    const readyLinePos = readyLineTopPct(fill);
 
     // Source chip text below tank
     const srcChipContent = this._renderSourceChipBelow();
@@ -451,8 +494,19 @@ export class OigBoilerV2Svg extends LitElement {
       <div class="bwrap" data-testid="boiler-svg" role="img" aria-label="${ariaLabel}">
         <div class="tank">
           <div class="shell">
-            <div class="aura" style="height:${fillPct.toFixed(2)}%">
-              ${layerEls}
+            <div
+              class="thermal"
+              data-testid="boiler-thermal-fill"
+              style="background:${thermalBg};"
+            >
+              ${isCharging ? html`<div class="surf surf--charging"></div>` : nothing}
+              ${readyLinePos != null ? html`
+                <div
+                  class="ready-line"
+                  data-testid="boiler-ready-line"
+                  style="top:${readyLinePos.toFixed(1)}%;"
+                ></div>
+              ` : nothing}
             </div>
           </div>
 
