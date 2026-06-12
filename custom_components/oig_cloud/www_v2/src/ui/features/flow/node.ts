@@ -2026,6 +2026,9 @@ export class OigFlowNode extends LitElement {
       ? ((fromSolar + fromBat) / totalPower) * 100
       : (d.solarPower > 5 ? 100 : 0);
     const ssColor = selfSuf >= 66 ? '#43a047' : selfSuf >= 33 ? '#fdd835' : '#e53935';
+    // Gauge color = VALUE (smooth red→green hue), not a rainbow along the arc —
+    // a fully self-sufficient house must not show any red (user 2026-06-12).
+    const ssGaugeColor = `hsl(${Math.round(Math.max(0, Math.min(120, selfSuf * 1.2)))}, 72%, 46%)`;
     const share = (x: number) => (totalPower > 0 ? Math.round((x / totalPower) * 100) : 0);
     const ssTitle = `Soběstačnost ${Math.round(selfSuf)} % · FVE ${share(fromSolar)} % · Baterie ${share(fromBat)} % · Síť ${share(fromGrid)} %`;
 
@@ -2046,7 +2049,7 @@ export class OigFlowNode extends LitElement {
           id: 'gauge-house',
           nodeId: 'house',
           pct: selfSuf,
-          stops: [[0, '#e53935'], [0.5, '#fdd835'], [1, '#43a047']],
+          stops: [[0, ssGaugeColor], [1, ssGaugeColor]],
           width: 2 + Math.min(3, totalPower / 1000),
           pulse: totalPower > 50,
           pulseDur: Math.max(0.9, 2.2 - (totalPower / 1000) * 0.35),
