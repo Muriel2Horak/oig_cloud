@@ -26,6 +26,7 @@ from ..const import (
     CONF_BOILER_CURRENT_POWER_ENTITY,
     CONF_BOILER_DEADLINE_TIME,
     CONF_BOILER_HAS_ALTERNATIVE_HEATING,
+    CONF_BOILER_BATTERY_CYCLE_COST,
     CONF_BOILER_HOME5_MANEUVER_ENABLED,
     CONF_BOX_HAS_HOME56,
     CONF_BOILER_STRATIFICATION_MODE,
@@ -42,6 +43,7 @@ from ..const import (
     DEFAULT_BOILER_CIRCULATION_RUN_MINUTES,
     DEFAULT_BOILER_COLD_INLET_TEMP_C,
     DEFAULT_BOILER_DEADLINE_TIME,
+    DEFAULT_BOILER_BATTERY_CYCLE_COST,
     DEFAULT_BOILER_HOME5_MANEUVER_ENABLED,
     DEFAULT_BOX_HAS_HOME56,
     DEFAULT_BOILER_STRATIFICATION_MODE,
@@ -1454,6 +1456,13 @@ class BoilerRuntime:
             grid_import_w=self._read_grid_import_w(),
             pv_surplus_hint=overflow_avail,
             alt_heat_delta_kwh=self._read_alt_heat_delta_kwh(),
+            # Explicit capability flag — without it the trend-based gas
+            # detection never fires (see _snapshot_has_alternative).
+            has_alternative=bool(
+                (getattr(self.coordinator, "config", {}) or {}).get(
+                    CONF_BOILER_HAS_ALTERNATIVE_HEATING, False
+                )
+            ),
         )
         activity = self._activity_classifier.classify(
             self._last_activity_reading,
@@ -2187,6 +2196,11 @@ class BoilerRuntime:
             cache=self._legionella_cache,
         )
 
+        # F5: read configured battery cycle cost (fallback to const default).
+        battery_cycle_cost = float(
+            config.get(CONF_BOILER_BATTERY_CYCLE_COST, DEFAULT_BOILER_BATTERY_CYCLE_COST)
+        )
+
         planner_input = PlannerInput(
             entry_id=self.entry_id,
             box_id=self.box_id,
@@ -2207,6 +2221,7 @@ class BoilerRuntime:
             demand_targets=demand_targets,
             legionella_obligation=legionella_obligation,
             home5_available=home5_available,
+            battery_cycle_cost_czk_kwh=battery_cycle_cost,
         )
 
         is_fresh, stale_reasons = validate_freshness(planner_input, now=now)

@@ -121,6 +121,15 @@ class BoilerSourceHeaterSnapshot:
     alt_heat_delta_kwh: float | None = None
     """Gas/alt-heat meter delta since last call (kWh).  None = no meter."""
 
+    has_alternative: bool | None = None
+    """Explicit capability flag from config (boiler_has_alternative_heating).
+
+    The legacy derivation from ``current_source == 'alternative'`` never fires
+    on real installs (the runtime source snapshot reports grid/fve modes), so
+    without this flag the trend-based gas detection (Branch C) was dead: gas
+    heating at +1.9 °C/min showed as 'standby'.  None = unknown → legacy
+    derivation."""
+
 
 @dataclass
 class BoilerActivityDTO:
@@ -515,11 +524,15 @@ def _snapshot_has_alternative(
 ) -> bool:
     """Return True when the runtime signals that alternative heating exists.
 
-    Checks:
+    Checks (in order):
+    - ``snapshot.has_alternative`` — explicit config capability flag (preferred;
+      the source-based derivations below never fire on real installs).
     - ``source == 'alternative'`` (current source resolved to alternative)
     - ``snapshot.current_source`` is a raw 'alternative' / 'alt' string or
       EnergySource.ALTERNATIVE enum value.
     """
+    if snapshot.has_alternative is not None:
+        return bool(snapshot.has_alternative)
     if source == "alternative":
         return True
     raw = snapshot.current_source

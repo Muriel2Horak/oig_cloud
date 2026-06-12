@@ -621,3 +621,56 @@ class TestSourceEstimatedField:
 
         assert dto.state == "standby"
         assert dto.source_estimated is False
+
+
+# ---------------------------------------------------------------------------
+# Regression: gas heating with a PRESENT-but-silent meter must classify as
+# charging_alt via the trend branch (live incident 2026-06-12: trend
+# +1.9 °C/min, meter daily counter 0 → UI showed 'standby').
+# ---------------------------------------------------------------------------
+
+def _trend_reading(ts, top, bottom=None):
+    from custom_components.oig_cloud.boiler.classifier import BoilerReading
+    return BoilerReading(timestamp=ts, top_temp_c=top, bottom_temp_c=bottom)
+
+
+def test_trend_alt_fires_with_silent_meter_and_config_flag():
+    from datetime import datetime, timedelta, timezone
+    from custom_components.oig_cloud.boiler.classifier import (
+        BoilerActivityClassifier,
+        BoilerSourceHeaterSnapshot,
+    )
+
+    t0 = datetime(2026, 6, 12, 6, 0, tzinfo=timezone.utc)
+    prev = _trend_reading(t0, 38.0)
+    curr = _trend_reading(t0 + timedelta(minutes=5), 47.5)  # +1.9 C/min
+    snap = BoilerSourceHeaterSnapshot(
+        current_source="grid",  # legacy snapshot reports grid even in standby
+        power_w=0.0,
+        alt_heat_delta_kwh=0.0,  # meter present, daily counter silent
+        has_alternative=True,    # config capability flag
+    )
+    dto = BoilerActivityClassifier().classify(prev, curr, snap)
+    assert dto.state == "charging_alt"
+    assert dto.source == "alternative"
+    assert dto.source_estimated is True
+
+
+def test_trend_alt_does_not_fire_without_capability():
+    from datetime import datetime, timedelta, timezone
+    from custom_components.oig_cloud.boiler.classifier import (
+        BoilerActivityClassifier,
+        BoilerSourceHeaterSnapshot,
+    )
+
+    t0 = datetime(2026, 6, 12, 6, 0, tzinfo=timezone.utc)
+    prev = _trend_reading(t0, 38.0)
+    curr = _trend_reading(t0 + timedelta(minutes=5), 47.5)
+    snap = BoilerSourceHeaterSnapshot(
+        current_source="grid",
+        power_w=0.0,
+        alt_heat_delta_kwh=0.0,
+        has_alternative=False,
+    )
+    dto = BoilerActivityClassifier().classify(prev, curr, snap)
+    assert dto.state == "standby"
