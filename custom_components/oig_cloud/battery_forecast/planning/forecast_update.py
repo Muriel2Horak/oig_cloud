@@ -275,6 +275,54 @@ async def _emit_planner_summary_event(
         )
 
 
+def _resolve_proxy_bat_min_pct(sensor: Any) -> Optional[float]:
+    """Read the BOX bat_min trigger (%) from the local-proxy sensor if available.
+
+    Entity: ``sensor.oig_local_{box_id}_tbl_batt_prms_bat_min``. Cloud-only
+    installs do not have it; callers fall back to the hw 20 % floor. Returned
+    as a plain float so the pure planning layer stays HA-agnostic.
+    """
+    try:
+        box_id = getattr(sensor, "_box_id", None)
+        if not box_id:
+            return None
+        hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
+        if hass is None:
+            return None
+        entity_id = f"sensor.oig_local_{box_id}_tbl_batt_prms_bat_min"
+        state = hass.states.get(entity_id)
+        if state is None or state.state in {"unknown", "unavailable", "", None}:
+            return None
+        value = float(state.state)
+        if 0.0 < value < 100.0:
+            return value
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return None
+
+
+# The BOX itself force-balances (uncontrolled grid charge to ~full) whenever
+# the battery DWELLS at its bat_min trigger for ~1 h (user-observed). The plan
+# must therefore never AIM at the trigger: the defended planning floor sits a
+# safety margin above it, so the box logic simply never fires. The margin also
+# absorbs the measured ~1 h sim-vs-reality drift toward the floor.
+BOX_FLOOR_SAFETY_MARGIN_PCT = 2.0
+
+
+def _derive_planning_min_percent(
+    hw_min_percent: float, proxy_bat_min_pct: Optional[float]
+) -> float:
+    """Planning floor = box trigger + safety margin (never below hw floor).
+
+    Prevention by construction: the existing proactive floor defense
+    (cheapest-window pre-charging) keeps the trajectory above this floor, so
+    "drain to the box trigger and wait" can never appear in a plan. No box
+    behavior emulation, no post-hoc plan patching.
+    """
+    trigger_pct = proxy_bat_min_pct if proxy_bat_min_pct is not None else hw_min_percent
+    return max(hw_min_percent, trigger_pct + BOX_FLOOR_SAFETY_MARGIN_PCT)
+
+
 def _round_trip_to_directional(efficiency: float) -> float:
     """Convert round-trip efficiency to a single-direction factor."""
     try:
@@ -771,13 +819,16 @@ def _run_planner(
         home_charge_rate_kw = float(opts.get("home_charge_rate", 2.8))
         hw_min_kwh = max_capacity * 0.20
         hw_min_percent = (hw_min_kwh / max_capacity) * 100.0 if max_capacity > 0 else 20.0
-        # Floor defense protects ONLY the hardware safety minimum (20%). Any
-        # reserve above it is built purely by cost-gated displacement (charge
-        # cheap only when it strictly lowers total cost) — no fixed backup that
-        # forces uneconomic grid charging. Verified cheaper than the old 33%
-        # floor on real data (e.g. 21.3 vs 29.0 Kč, more savings). The legacy
+        # Floor defense protects the hardware safety minimum PLUS a small
+        # margin above the BOX bat_min trigger: dwelling at the trigger makes
+        # the box force-balance from grid uncontrolled, so the plan must never
+        # aim at it (see _derive_planning_min_percent). Any reserve above this
+        # floor is still built purely by cost-gated displacement — no fixed
+        # backup that forces uneconomic grid charging. The legacy
         # `min_capacity_percent` option no longer raises this floor.
-        planning_min_percent = hw_min_percent
+        planning_min_percent = _derive_planning_min_percent(
+            hw_min_percent, _resolve_proxy_bat_min_pct(sensor)
+        )
 
         # Per-interval day index (0=today, 1=tomorrow, …) from price timestamps,
         # so the expensive-price percentile is computed per day, not blended
