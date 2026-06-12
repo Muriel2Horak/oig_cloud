@@ -55,14 +55,6 @@ class PlannerInputs:
     # independently. Falls back to a whole-horizon percentile when None.
     interval_days: Optional[List[int]] = None
 
-    # Optional hardware floor percentage read from the local-proxy sensor
-    # ``sensor.oig_local_{box_id}_tbl_batt_prms_bat_min``.  When present it
-    # overrides the default 20 % hw_min assumption used by the dwell-injection
-    # model.  Expressed as a percentage (0–100); None → fall back to the
-    # hw_min_kwh already in this struct (which was derived from 20 % of
-    # max_capacity_kwh by the caller).
-    proxy_bat_min_pct: Optional[float] = None
-
     @property
     def planning_min_kwh(self) -> float:
         return self.max_capacity_kwh * (self.planning_min_percent / 100.0)
@@ -123,9 +115,6 @@ class SimulatedState:
     grid_export_kwh: float
     cost_czk: float
     mode: int
-    # Set when the floor-dwell model injected a forced grid charge this interval.
-    # None = no injection; float > 0 = kWh of forced charge absorbed.
-    box_forced_balancing_kwh: Optional[float] = None
 
 
 @dataclass
@@ -163,8 +152,3 @@ class PlannerResult:
     states: List[SimulatedState]
     total_cost: float
     decisions: List[Decision] = field(default_factory=list)
-    # Indices of intervals where the floor-dwell guard inserted a controlled
-    # pre-charge to prevent the box's autonomous forced-balancing.  Empty when
-    # no guard action was required.  Consumers should treat this as informational
-    # and not mutate it.
-    dwell_guard_intervals: List[int] = field(default_factory=list)

@@ -314,7 +314,6 @@ DETAIL_ENUMS = {
             "would_waste_headroom",
             "price_band_continuation",
             "gap_fill",
-            "floor_dwell_guard",
             "unknown",
         }
     ),

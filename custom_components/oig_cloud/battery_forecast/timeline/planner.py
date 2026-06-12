@@ -129,9 +129,6 @@ def format_planner_reason(
     if reason_code == "holding_period":
         return "Balancování: držení 100 %"
 
-    if reason_code == "floor_dwell_guard":
-        return "Ochrana před vynuceným balancováním boxu"
-
     if reason_code in {"negative_price_charge", "auto_negative_charge"}:
         return "Negativní cena: nabíjení ze sítě"
     if reason_code in {"negative_price_curtail", "auto_negative_curtail"}:

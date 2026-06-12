@@ -275,66 +275,6 @@ async def _emit_planner_summary_event(
         )
 
 
-def _apply_dwell_guard_reasons_to_timeline(
-    timeline: list[dict[str, Any]],
-    guard_indices: list[int],
-) -> None:
-    """Annotate floor-dwell guard intervals in the published UI timeline.
-
-    Sets ``decision_reason`` and ``decision_metrics.planner_reason_code`` on
-    each guard interval so the UI can render the Czech label
-    "Ochrana před vynuceným balancováním boxu" (mapped by
-    ``format_planner_reason("floor_dwell_guard")``).
-
-    Only sets the reason when no existing reason is present at that slot,
-    to avoid overwriting mode-guard or balancing annotations.
-    """
-    for idx in guard_indices:
-        if idx < 0 or idx >= len(timeline):
-            continue
-        entry = timeline[idx]
-        # Only annotate if no higher-priority reason is already set.
-        if not entry.get("decision_reason"):
-            entry["decision_reason"] = "Ochrana před vynuceným balancováním boxu"
-        metrics = entry.get("decision_metrics") or {}
-        metrics.setdefault("planner_reason_code", "floor_dwell_guard")
-        metrics.setdefault("planner_reason", "floor_dwell_guard")
-        entry["decision_metrics"] = metrics
-
-
-def _resolve_proxy_bat_min_pct(sensor: Any) -> Optional[float]:
-    """Read the hardware floor percentage from the local-proxy sensor if available.
-
-    Entity: ``sensor.oig_local_{box_id}_tbl_batt_prms_bat_min``
-
-    This entity is published by the OIG Local integration when the system runs
-    in local/proxy mode.  Cloud-only installs will not have it; the planner
-    falls back to the default 20 % hw_min in that case.
-
-    The value is returned as a percentage (0–100) and is passed *into* the
-    pure planning layer as a plain float so the planning modules themselves
-    stay HA-agnostic.  Returns ``None`` when the sensor is absent or has an
-    unusable state.
-    """
-    try:
-        box_id = getattr(sensor, "_box_id", None)
-        if not box_id:
-            return None
-        hass = getattr(sensor, "hass", None) or getattr(sensor, "_hass", None)
-        if hass is None:
-            return None
-        entity_id = f"sensor.oig_local_{box_id}_tbl_batt_prms_bat_min"
-        state = hass.states.get(entity_id)
-        if state is None or state.state in {"unknown", "unavailable", "", None}:
-            return None
-        value = float(state.state)
-        if 0.0 < value < 100.0:
-            return value
-    except (TypeError, ValueError, AttributeError):
-        pass
-    return None
-
-
 def _round_trip_to_directional(efficiency: float) -> float:
     """Convert round-trip efficiency to a single-direction factor."""
     try:
@@ -844,11 +784,6 @@ def _run_planner(
         # across a cheap day + an expensive day.
         interval_days = _interval_day_indices(spot_prices)
 
-        # Read optional hardware floor from the local-proxy sensor so the
-        # dwell-injection model uses the measured value instead of the default
-        # 20 % assumption.  Cloud-only installs get None → planner falls back.
-        proxy_bat_min_pct = _resolve_proxy_bat_min_pct(sensor)
-
         planner_inputs = PlannerInputs(
             current_soc_kwh=current_capacity,
             max_capacity_kwh=max_capacity,
@@ -864,7 +799,6 @@ def _run_planner(
             # (DEFAULT_ROUND_TRIP_EFFICIENCY), matching _simulate_interval — see
             # the directional_efficiency note above.
             interval_days=interval_days,
-            proxy_bat_min_pct=proxy_bat_min_pct,
         )
 
         result = plan_battery_schedule(planner_inputs)
@@ -938,14 +872,6 @@ def _run_planner(
             None,
             mode_names=CBB_MODE_NAMES,
         )
-        # Annotate guard-inserted intervals with the floor_dwell_guard reason so
-        # the UI can display a human-readable explanation.  The guard intervals
-        # refer to the *pre-guard-mode* positions in result.modes; after
-        # apply_mode_guard the mapping is the same (mode guard may reorder but
-        # keeps the same indices).
-        _apply_dwell_guard_reasons_to_timeline(
-            timeline, list(getattr(result, "dwell_guard_intervals", []))
-        )
         mode_recommendations = sensor._create_mode_recommendations(
             timeline, hours_ahead=48
         )
@@ -981,10 +907,6 @@ def _run_planner(
             ),
             "infeasible": False,
             "infeasible_reason": None,
-            # Floor-dwell guard: list of interval indices where a controlled
-            # pre-charge was inserted to prevent the box's autonomous forced-
-            # balancing.  Empty when no guard action was required.
-            "dwell_guard_intervals": list(getattr(result, "dwell_guard_intervals", [])),
         }
         return timeline, mode_result, mode_recommendations
     except Exception as err:

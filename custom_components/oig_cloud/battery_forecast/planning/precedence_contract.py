@@ -32,14 +32,13 @@ class PrecedenceLevel(IntEnum):
     2. PROTECTION_SAFETY (900) - Hardware protection, safety limits
     3. PRE_PEAK_AVOIDANCE (850) - Morning peak pre-charge/avoidance
     4. DEATH_VALLEY (800) - Minimum SOC enforcement
-    5. FLOOR_DWELL_GUARD (750) - Prevent box autonomous forced-balancing
-    6. BALANCING_OVERRIDE (700) - Balancing mode overrides
-    7. MODE_GUARD (600) - Mode guard/stability enforcement
-    8. RECOVERY_MODE (500) - Recovery from error states
-    9. ECONOMIC_CHARGING (400) - Economic grid charging (dynamic-by-day)
-    10. OPPORTUNISTIC (300) - Natural/opportunistic balancing
-    11. AUTO_SWITCH (200) - Auto-switch enforcement
-    12. PLANNING_TARGET (100) - Planning target/minimum achieved
+    5. BALANCING_OVERRIDE (700) - Balancing mode overrides
+    6. MODE_GUARD (600) - Mode guard/stability enforcement
+    7. RECOVERY_MODE (500) - Recovery from error states
+    8. ECONOMIC_CHARGING (400) - Economic grid charging (dynamic-by-day)
+    9. OPPORTUNISTIC (300) - Natural/opportunistic balancing
+    10. AUTO_SWITCH (200) - Auto-switch enforcement
+    11. PLANNING_TARGET (100) - Planning target/minimum achieved
     """
 
     # HIGHEST PRIORITY: PV-first policy
@@ -58,16 +57,6 @@ class PrecedenceLevel(IntEnum):
     # Death Valley / Minimum SOC enforcement
     # SOC-004, SOC-016, BA-019 - prevent battery from hitting HW minimum
     DEATH_VALLEY = 800
-
-    # Floor Dwell Guard — prevent the box's autonomous forced-balancing.
-    # When the battery dwells at the hw floor for ≥ BOX_FLOOR_DWELL_TRIGGER_MIN
-    # minutes the box fires an uncontrolled full-charge from the grid at whatever
-    # the current price is.  The guard inserts a controlled pre-charge at the
-    # cheapest available slot before the dwell window.
-    # Precedence rationale: higher than BALANCING_OVERRIDE (the box's own
-    # balancing is the risk we are preventing) but lower than DEATH_VALLEY (the
-    # hard SoC floor always wins).  750 sits squarely in this band.
-    FLOOR_DWELL_GUARD = 750
 
     # Balancing mode overrides - cell calibration requirements
     # BA-021, BA-022, BA-024 - periodic full-charge for cell health
@@ -110,7 +99,6 @@ PRECEDENCE_LADDER: List[PrecedenceLevel] = [
     PrecedenceLevel.PROTECTION_SAFETY,
     PrecedenceLevel.PRE_PEAK_AVOIDANCE,
     PrecedenceLevel.DEATH_VALLEY,
-    PrecedenceLevel.FLOOR_DWELL_GUARD,
     PrecedenceLevel.BALANCING_OVERRIDE,
     PrecedenceLevel.MODE_GUARD,
     PrecedenceLevel.RECOVERY_MODE,
