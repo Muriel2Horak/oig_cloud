@@ -293,6 +293,8 @@ interface BoilerCanonicalSparkline {
 interface BoilerCanonicalAPI {
   entry_id: string;
   box_id: string;
+  /** F5/Task C: alt source type ("gas"|"heat_pump"|"fireplace"|"other") */
+  alt_source_type?: string | null;
   current_state: {
     temperatures: {
       top?: number;
@@ -884,6 +886,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
       energyToday: null,
       loading: false,
       loadError: 'Nepodařilo se načíst data bojleru',
+      altSourceType: null,
     };
   }
 
@@ -1078,6 +1081,8 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     energyToday,
     loading: false,
     loadError: null,
+    // F5/Task C: pass alt_source_type from canonical DTO to FE consumers
+    altSourceType: typeof canonical.alt_source_type === 'string' ? canonical.alt_source_type : null,
   };
 }
 

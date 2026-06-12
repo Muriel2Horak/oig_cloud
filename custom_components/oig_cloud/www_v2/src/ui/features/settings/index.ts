@@ -2,9 +2,9 @@
  * OIG Cloud V2 — ⚙️ Nastavení tab.
  *
  * Simple per-module wizards backed by the module_config REST endpoint:
- * module toggles, battery/planner parameters and solar-forecast setup —
- * editable from the dashboard with friendly hints, no HA options flow
- * page-walking. Pricing/boiler (multi-step) stay in the HA wizard.
+ * module toggles, battery/planner parameters, solar-forecast setup, and
+ * boiler configuration — editable from the dashboard with friendly hints,
+ * no HA options flow page-walking.
  */
 
 import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
@@ -66,6 +66,50 @@ const SOLAR_FIELDS: FieldDef[] = [
   { key: 'solar_forecast_string2_kwp', label: 'String 2 výkon (kWp)', type: 'number', min: 0.1, max: 50, step: 0.1 },
   { key: 'solar_forecast_string2_declination', label: 'String 2 sklon (°)', type: 'number', min: 0, max: 90, step: 1 },
   { key: 'solar_forecast_string2_azimuth', label: 'String 2 azimut (°)', type: 'number', min: -180, max: 180, step: 1 },
+];
+
+// Dynamic hint for alt source type based on selected value
+function altSourceHint(type: string): string {
+  if (type === 'gas') return 'Plyn — cena tepla včetně účinnosti kotle (např. 1,5 Kč/kWh)';
+  if (type === 'heat_pump') return 'Tepelné čerpadlo — cena ≈ cena elektřiny / COP';
+  if (type === 'fireplace') return 'Krb — orientační cena tepla z dřeva/pelet';
+  return 'Zadej orientační cenu tepla v Kč/kWh';
+}
+
+/**
+ * All boiler fields (static list used for field-key coverage tests).
+ * Conditional rendering is handled in renderBoilerCard, not here.
+ * Mirrors ha_rest_api._MODULE_CONFIG_FIELDS['boiler'] — keep in sync!
+ */
+export const BOILER_FIELDS_ALL: FieldDef[] = [
+  // Nádrž a čidla
+  { key: 'boiler_volume_l', label: 'Objem nádrže (l)', type: 'number', min: 30, max: 1000, step: 1, hint: 'Jmenovitý objem zásobníku v litrech' },
+  { key: 'boiler_temp_sensor_top', label: 'Čidlo teploty — vrchní', type: 'text', hint: 'ID entity senzoru teploty (např. sensor.bojler_top)' },
+  { key: 'boiler_temp_sensor_bottom', label: 'Čidlo teploty — spodní', type: 'text', hint: 'Jen pokud máš druhý teploměr (ID entity senzoru)' },
+  { key: 'boiler_enable_second_thermometer', label: 'Druhý teploměr aktivní', type: 'bool', hint: 'Zapni, pokud máš spodní čidlo teploty' },
+  { key: 'boiler_current_power_entity', label: 'Senzor příkonu bojleru', type: 'text', hint: 'ID entity senzoru výkonu (W); volitelné, upřesňuje plánovač' },
+  // Teplota a čas
+  { key: 'boiler_target_temp_c', label: 'Cílová teplota (°C)', type: 'number', min: 40, max: 85, step: 1, hint: 'Požadovaná teplota vody před deadline' },
+  { key: 'boiler_deadline_time', label: 'Deadline (HH:MM)', type: 'text', hint: 'Čas, do kdy musí být voda nahřátá (formát HH:MM, např. 07:00)' },
+  // Alternativní zdroj
+  { key: 'boiler_has_alternative_heating', label: 'Alternativní zdroj tepla', type: 'bool', hint: 'Bojler má jiný zdroj ohřevu (plyn, TČ, krb…)' },
+  { key: 'boiler_alt_source_type', label: 'Typ alternativního zdroje', type: 'select', options: [['gas', 'Plyn'], ['heat_pump', 'Tepelné čerpadlo'], ['fireplace', 'Krb'], ['other', 'Jiný']] },
+  { key: 'boiler_alt_cost_kwh', label: 'Cena tepla (Kč/kWh)', type: 'number', min: 0, max: 20, step: 0.1, hint: 'Cena tepla z alternativního zdroje v Kč/kWh' },
+  { key: 'boiler_alt_energy_sensor', label: 'Senzor energie alt. zdroje', type: 'text', hint: 'ID entity senzoru energie (kWh); volitelné' },
+  { key: 'boiler_alt_energy_daily', label: 'Denní přírůstek energie', type: 'bool', hint: 'Zapni, pokud senzor měří denní (ne celkový) přírůstek' },
+  // Home 5/6 + baterie
+  { key: 'box_has_home56', label: 'Box má Home 5/6', type: 'bool', hint: 'Aktivuje Home 5/6 (OIG CBB) — umožňuje 🔋→🔥 ohřev z baterie' },
+  { key: 'boiler_home5_maneuver_enabled', label: '🔋→🔥 Ohřev z baterie', type: 'bool', hint: 'Plánovač může použít baterii k ohřevu (vyžaduje Home 5/6)' },
+  { key: 'boiler_battery_cycle_cost_czk_kwh', label: 'Cena cyklu baterie (Kč/kWh)', type: 'number', min: 0, max: 5, step: 0.05, hint: 'Degradace baterie za kWh; plánovač porovná s cenou sítě' },
+  // Cirkulace
+  { key: 'boiler_circulation_enabled', label: 'Cirkulace teplé vody', type: 'bool', hint: 'Zapnutí cirkulačního čerpadla TUV' },
+  { key: 'boiler_circulation_lead_minutes', label: 'Předstih cirkulace (min)', type: 'number', min: 0, max: 120, step: 5, hint: 'Jak dlouho před odběrem pustit čerpadlo' },
+  { key: 'boiler_circulation_run_minutes', label: 'Délka běhu cirkulace (min)', type: 'number', min: 1, max: 60, step: 1 },
+  { key: 'boiler_circulation_max_runs_per_day', label: 'Max. počet běhů/den', type: 'number', min: 1, max: 20, step: 1 },
+  { key: 'boiler_circulation_min_gap_minutes', label: 'Min. pauza mezi běhy (min)', type: 'number', min: 10, max: 480, step: 10 },
+  // Anti-legionella
+  { key: 'boiler_legionella_interval_days', label: 'Interval ochrany (dny)', type: 'number', min: 0, max: 30, step: 1, hint: '0 = vypnuto; doporučeno 7–14 dní' },
+  { key: 'boiler_legionella_target_temp_c', label: 'Teplota dezinfekce (°C)', type: 'number', min: 60, max: 75, step: 1, hint: 'Min. 60 °C pro spolehlivé usmrcení legionelly' },
 ];
 
 @customElement('oig-settings')
@@ -168,6 +212,18 @@ export class OigSettings extends LitElement {
     }
 
     .loading { padding: 30px; text-align: center; color: ${u(CSS_VARS.textSecondary)}; }
+
+    .group-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: ${u(CSS_VARS.textSecondary)};
+      margin: 12px 0 4px;
+      padding-top: 6px;
+      border-top: 1px solid ${u(CSS_VARS.divider)};
+    }
+    .group-label:first-of-type { border-top: none; margin-top: 0; }
   `;
 
   connectedCallback(): void {
@@ -293,6 +349,121 @@ export class OigSettings extends LitElement {
       </div>`;
   }
 
+  /**
+   * Render the boiler card with conditional field visibility.
+   *
+   * Groups:
+   *   1. Nádrž a čidla
+   *   2. Zdroje tepla (alt source type + cost + Home 5/6 + 🔋→🔥)
+   *   3. Cirkulace (detail fields only when enabled)
+   *   4. Ochrana proti legionelle (target temp only when interval > 0)
+   */
+  private renderBoilerCard() {
+    const section: SettingsSection = 'boiler';
+    const toast = this.toast?.section === section ? this.toast : null;
+
+    const hasAlt = !!this.current(section, 'boiler_has_alternative_heating');
+    const altType = String(this.current(section, 'boiler_alt_source_type') ?? 'gas');
+    const hasHome56 = !!this.current(section, 'box_has_home56');
+    const circEnabled = !!this.current(section, 'boiler_circulation_enabled');
+    const legInterval = Number(this.current(section, 'boiler_legionella_interval_days') ?? 0);
+    const secondTherm = !!this.current(section, 'boiler_enable_second_thermometer');
+
+    // Dynamic alt cost hint based on type
+    const altCostField: FieldDef = {
+      key: 'boiler_alt_cost_kwh',
+      label: 'Cena tepla (Kč/kWh)',
+      type: 'number',
+      min: 0,
+      max: 20,
+      step: 0.1,
+      hint: altSourceHint(altType),
+    };
+
+    // Home5 maneuver field — disabled (rendered but greyed out) when box_has_home56=false
+    const home5Field: FieldDef = {
+      key: 'boiler_home5_maneuver_enabled',
+      label: '🔋→🔥 Ohřev z baterie',
+      type: 'bool',
+      hint: hasHome56
+        ? 'Plánovač použije baterii (Home 5) k ohřevu, pokud je levnější než síť'
+        : 'Vyžaduje aktivaci „Box má Home 5/6" výše',
+    };
+
+    return html`
+      <div class="card">
+        <h2>🔥 Bojler</h2>
+        <div class="sub">Parametry inteligentního ohřevu vody — mirroruje průvodce v HA.</div>
+
+        <!-- Nádrž a čidla -->
+        <div class="group-label">Nádrž a čidla</div>
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_volume_l')!)}
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_temp_sensor_top')!)}
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_enable_second_thermometer')!)}
+        ${secondTherm ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_temp_sensor_bottom')!) : nothing}
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_current_power_entity')!)}
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_target_temp_c')!)}
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_deadline_time')!)}
+
+        <!-- Zdroje -->
+        <div class="group-label">Zdroje tepla</div>
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_has_alternative_heating')!)}
+        ${hasAlt ? html`
+          ${this.renderField(section, { ...BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_source_type')!, hint: undefined })}
+          ${this.renderField(section, altCostField)}
+          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_sensor')!)}
+          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_daily')!)}
+        ` : nothing}
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'box_has_home56')!)}
+        <div class="note" style="margin-top:6px;margin-bottom:2px">
+          Po změně „Box má Home 5/6" a uložení nastavení je nutné obnovit stránku (F5), aby se ovládací panel správně aktualizoval.
+        </div>
+        ${this.renderFieldDisableable(section, home5Field, !hasHome56)}
+        ${hasHome56 ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_battery_cycle_cost_czk_kwh')!) : nothing}
+
+        <!-- Cirkulace -->
+        <div class="group-label">Cirkulace teplé vody</div>
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_enabled')!)}
+        ${circEnabled ? html`
+          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_lead_minutes')!)}
+          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_run_minutes')!)}
+          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_max_runs_per_day')!)}
+          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_min_gap_minutes')!)}
+        ` : nothing}
+
+        <!-- Anti-legionella -->
+        <div class="group-label">Ochrana proti legionelle</div>
+        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_legionella_interval_days')!)}
+        ${legInterval > 0 ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_legionella_target_temp_c')!) : nothing}
+
+        <div class="actions">
+          <button class="save" ?disabled=${!this.isDirty(section) || this.saving === section}
+            @click=${() => this.save(section)}>
+            ${this.saving === section ? 'Ukládám…' : 'Uložit'}
+          </button>
+          ${toast ? html`<span class="toast ${toast.ok ? 'ok' : 'err'}">${toast.text}</span>` : nothing}
+        </div>
+      </div>`;
+  }
+
+  /**
+   * Like renderField but can disable a bool toggle with a greyed hint.
+   */
+  private renderFieldDisableable(section: SettingsSection, f: FieldDef, disabled: boolean) {
+    if (f.type !== 'bool') return this.renderField(section, f);
+    const raw = this.current(section, f.key);
+    const checked = !disabled && !!raw;
+    return html`
+      <div class="row" style=${disabled ? 'opacity:0.45;pointer-events:none' : ''}>
+        <span class="lab">${f.label}${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}</span>
+        <label class="switch">
+          <input type="checkbox" .checked=${checked} ?disabled=${disabled}
+            @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLInputElement).checked)} />
+          <span class="slider"></span>
+        </label>
+      </div>`;
+  }
+
   render() {
     if (this.loading) return html`<div class="loading">Načítání nastavení…</div>`;
     if (!this.config) {
@@ -304,11 +475,7 @@ export class OigSettings extends LitElement {
         ${this.renderCard('modules', '🧩 Moduly', 'Zapnutí modulu přidá senzory a záložky; konfigurace níže.', MODULE_FIELDS)}
         ${this.renderCard('battery', '🔋 Baterie a plánovač', 'Parametry ekonomického plánovače a balancování.', BATTERY_FIELDS)}
         ${this.renderCard('solar', '☀️ Solární předpověď', 'Poskytovatel a geometrie stringů.', SOLAR_FIELDS)}
-      </div>
-      <div class="note">
-        💰 Ceny energie a 🔥 Bojler mají vícekrokové průvodce — najdeš je v
-        <b>HA → Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat</b>
-        (menu skočí rovnou na sekci).
+        ${this.renderBoilerCard()}
       </div>
     `;
   }

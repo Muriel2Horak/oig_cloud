@@ -635,6 +635,68 @@
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nAutomatically plans comfortable boiler heating based on your preferences, current water temperature, and available energy sources. Considers spot prices, alternative source economics, and your comfort deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heater power\n\n💡 **How it works:**\n1. Reads current boiler temperature (top and bottom if available)\n2. Calculates energy needed to reach target temperature by deadline\n3. Selects optimal heating slots considering price and alternative source economics\n4. Controls the heating switch automatically to maintain comfort\n\n⚠️ **Note:** This module plans WHEN and WHETHER to heat. Physical boiler switching is handled automatically by the integration.",
         "title": "🔥 Boiler Configuration"
       },
+      "wizard_boiler_simple_6": {
+        "data": {
+          "boiler_has_alternative_heating": "Alternative heat source (gas, heat pump, fireplace…)",
+          "boiler_alt_source_type": "Type of alternative source",
+          "boiler_alt_cost_kwh": "Heat cost (CZK/kWh)",
+          "box_has_home56": "Box has Home 5/6",
+          "boiler_home5_maneuver_enabled": "🔋→🔥 Heating from battery",
+          "boiler_battery_cycle_cost_czk_kwh": "Battery cycle cost (CZK/kWh)",
+          "go_back": "⬅️ I want to go back (check + click Submit)"
+        },
+        "data_description": {
+          "boiler_has_alternative_heating": "Enable if the boiler can be heated by another source (gas boiler, heat pump, fireplace…)",
+          "boiler_alt_source_type": "Used only for labels; does not affect calculations. Gas: include boiler efficiency in the price.",
+          "boiler_alt_cost_kwh": "Cost per kWh of heat from the alternative source (e.g. 1.5 CZK/kWh for gas incl. efficiency). Electric heating is used only when cheaper.",
+          "box_has_home56": "Enables Home 5/6 (OIG CBB) toggles on the dashboard and allows battery-to-boiler heating",
+          "boiler_home5_maneuver_enabled": "Planner may use battery (Home 5) to heat the boiler when cheaper than the grid. Requires Home 5/6.",
+          "boiler_battery_cycle_cost_czk_kwh": "Battery degradation cost per kWh (recommended 0.40–0.60 CZK/kWh). Planner compares this with spot price.",
+          "go_back": "Check this box and press 'Submit' - you will go back one step"
+        },
+        "description": "{step}\n{progress}\n\n🔥 **Krok 6 — Heat sources**\n\nConfigure the alternative heat source and the Home 5 battery maneuver.",
+        "title": "🔥 Boiler — Heat Sources"
+      },
+      "wizard_boiler_simple_7": {
+        "data": {
+          "boiler_circulation_enabled": "Hot water circulation",
+          "boiler_circulation_lead_minutes": "Circulation lead time (min)",
+          "boiler_circulation_run_minutes": "Circulation run duration (min)",
+          "boiler_circulation_max_runs_per_day": "Max runs per day",
+          "boiler_circulation_min_gap_minutes": "Min gap between runs (min)",
+          "boiler_legionella_interval_days": "Anti-legionella interval (days)",
+          "boiler_legionella_target_temp_c": "Disinfection temperature (°C)",
+          "go_back": "⬅️ I want to go back (check + click Submit)"
+        },
+        "data_description": {
+          "boiler_circulation_enabled": "Turn on the DHW circulation pump automatically at set times",
+          "boiler_circulation_lead_minutes": "How many minutes before use to start the pump (0–120)",
+          "boiler_circulation_run_minutes": "How long each pump run lasts (1–60 min)",
+          "boiler_circulation_max_runs_per_day": "Maximum number of pump starts per day (1–20)",
+          "boiler_circulation_min_gap_minutes": "Minimum pause between two pump runs (10–480 min)",
+          "boiler_legionella_interval_days": "Heat to disinfection temperature every N days (0 = disabled; recommended 7–14)",
+          "boiler_legionella_target_temp_c": "Minimum temperature for reliable legionella kill (min 60 °C)",
+          "go_back": "Check this box and press 'Submit' - you will go back one step"
+        },
+        "description": "{step}\n{progress}\n\n🚿 **Krok 7 — Comfort & hygiene**\n\nConfigure DHW circulation scheduling and anti-legionella protection.",
+        "title": "🚿 Boiler — Comfort & Hygiene"
+      },
+      "wizard_boiler_simple_8": {
+        "data": {
+          "boiler_current_power_entity": "Boiler power sensor",
+          "boiler_alt_energy_sensor": "Alternative energy sensor",
+          "boiler_alt_energy_daily": "Daily energy increment",
+          "go_back": "⬅️ I want to go back (check + click Submit)"
+        },
+        "data_description": {
+          "boiler_current_power_entity": "Entity ID of a power sensor (W) — optional; improves planner accuracy",
+          "boiler_alt_energy_sensor": "Entity ID of an energy sensor (kWh) for the alternative source — optional",
+          "boiler_alt_energy_daily": "Enable if the sensor reports daily increment rather than cumulative total",
+          "go_back": "Check this box and press 'Submit' - you will go back one step"
+        },
+        "description": "{step}\n{progress}\n\n⚙️ **Krok 8 — Advanced**\n\nOptional power and energy sensors for more accurate planning.",
+        "title": "⚙️ Boiler — Advanced"
+      },
       "wizard_extended": {
         "data": {
           "enable_extended_battery_sensors": "🔋 Extended battery sensors",

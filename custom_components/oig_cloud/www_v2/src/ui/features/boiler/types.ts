@@ -179,6 +179,8 @@ export interface BoilerV2Data {
   energyToday: EnergyToday | null;
   loading: boolean;
   loadError: string | null;
+  /** F5/Task C: alt source type from config ("gas"|"heat_pump"|"fireplace"|"other") */
+  altSourceType?: string | null;
 }
 
 // --- State ---

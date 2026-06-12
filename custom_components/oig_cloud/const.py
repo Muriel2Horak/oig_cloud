@@ -116,6 +116,12 @@ DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES = 120
 # R3/R7: Home 5 maneuver defaults
 DEFAULT_BOX_HAS_HOME56 = False
 DEFAULT_BOILER_HOME5_MANEUVER_ENABLED = False
+# R1/R8: Alt source type (drives labels/hints only, NOT COP math — cost entered directly)
+CONF_BOILER_ALT_SOURCE_TYPE = "boiler_alt_source_type"  # gas|heat_pump|fireplace|other
+DEFAULT_BOILER_ALT_SOURCE_TYPE = "gas"
+# F5: Configurable battery cycle cost for Home 5 arbitrage (replaces hardcoded const)
+CONF_BOILER_BATTERY_CYCLE_COST = "boiler_battery_cycle_cost_czk_kwh"
+DEFAULT_BOILER_BATTERY_CYCLE_COST = 0.50
 # Task B: current power entity resolves automatically; alt energy meter defaults to daily-reset
 DEFAULT_BOILER_CURRENT_POWER_ENTITY = ""  # empty = auto-resolve from box_id
 DEFAULT_BOILER_ALT_ENERGY_DAILY = True  # daily-reset counter (resets at midnight)

@@ -13,6 +13,7 @@ from homeassistant.util import dt as dt_util
 from ..const import DOMAIN, KEY_BOILER_RUNTIMES
 from ..const import (
     BOILER_ENERGY_CONSTANT_KWH_L_C,
+    CONF_BOILER_ALT_SOURCE_TYPE,
     CONF_BOILER_CIRCULATION_ENABLED,
     CONF_BOILER_COLD_INLET_TEMP_C,
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
@@ -30,6 +31,7 @@ from ..const import (
     CONF_BOILER_TEMP_SENSOR_BOTTOM,
     CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
     CONF_BOILER_VOLUME_L,
+    DEFAULT_BOILER_ALT_SOURCE_TYPE,
     DEFAULT_BOILER_CIRCULATION_ENABLED,
     DEFAULT_BOILER_COLD_INLET_TEMP_C,
     DEFAULT_BOILER_DEADLINE_TIME,
@@ -877,9 +879,13 @@ def _assemble_canonical_dto(
         plan_result, config
     )
 
+    # R1/R8: alt_source_type — string label for FE ("gas"|"heat_pump"|"fireplace"|"other").
+    alt_source_type: str = config.get(CONF_BOILER_ALT_SOURCE_TYPE, DEFAULT_BOILER_ALT_SOURCE_TYPE) or DEFAULT_BOILER_ALT_SOURCE_TYPE
+
     return {
         "entry_id": entry_id,
         "box_id": box_id,
+        "alt_source_type": alt_source_type,
         "current_state": {
             "temperatures": temperatures,
             "energy_state": energy_state,

@@ -48,7 +48,8 @@ def test_get_total_steps_with_modules():
         "enable_boiler": True,
     }
 
-    assert flow._get_total_steps() == 15
+    # Base 4 + solar 1 + battery 1 + pricing 3 + boiler 8 + summary 1 = 18
+    assert flow._get_total_steps() == 18
 
 
 def test_get_total_steps_options_flow():

@@ -14,7 +14,7 @@
  */
 
 import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
-import { customElement, state, query } from 'lit/decorators.js';
+import { customElement, state, property, query } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import { shieldController, ShieldListener } from '@/data/shield-controller';
 import {
@@ -44,6 +44,9 @@ const u = unsafeCSS;
 
 @customElement('oig-control-panel')
 export class OigControlPanel extends LitElement {
+  /** R7: when false, Home 5/6 toggle buttons are hidden (box lacks the hardware). */
+  @property({ type: Boolean }) boxHasHome56 = false;
+
   @state() private shieldState: ShieldState = {
     ...EMPTY_SHIELD_STATE,
     pendingServices: new Map(),
@@ -444,7 +447,8 @@ export class OigControlPanel extends LitElement {
 
           <div class="section-divider"></div>
 
-          <!-- Supplementary Toggles (Home 5 / Home 6) -->
+          <!-- Supplementary Toggles (Home 5 / Home 6) — hidden when box_has_home56=false -->
+          ${this.boxHasHome56 ? html`
           <div class="selector-section">
             <oig-supplementary-selector
               .homeGridV=${this.supplementaryView.home_grid_v}
@@ -455,8 +459,8 @@ export class OigControlPanel extends LitElement {
               @supplementary-toggle=${this.onSupplementaryToggle}
             ></oig-supplementary-selector>
           </div>
-
           <div class="section-divider"></div>
+          ` : nothing}
 
           <!-- Grid Delivery Selector -->
           <div class="selector-section">

@@ -513,6 +513,68 @@
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nAutomaticky plánuje komfortní ohřev bojleru na základě vašich preferencí, aktuální teploty vody a dostupných zdrojů energie. Zohledňuje spotové ceny, ekonomiku alternativního zdroje a váš komfortní deadline.\n\n🔧 **Co je potřeba:**\n• 💰 Spotové ceny (musí být zapnuté)\n• 🌡️ Teplotní senzory bojleru (horní a volitelně dolní)\n• ⚡ Výkon topného tělesa\n\n💡 **Jak to funguje:**\n1. Načte aktuální teplotu bojleru (shora i zdola, pokud je k dispozici)\n2. Vypočítá energii potřebnou k dosažení cílové teploty do deadlinu\n3. Vybere optimální časové sloty s ohledem na cenu a ekonomiku alternativního zdroje\n4. Automaticky ovládá spínací prvek pro udržení komfortu\n\n⚠️ **Poznámka:** Tento modul plánuje KDY a ZDA vůbec topit. Fyzické spínání bojleru zajišťuje automaticky integrace.",
         "title": "🔥 Konfigurace bojleru"
       },
+      "wizard_boiler_simple_6": {
+        "data": {
+          "boiler_has_alternative_heating": "Alternativní zdroj tepla (plyn, TČ, krb…)",
+          "boiler_alt_source_type": "Typ alternativního zdroje",
+          "boiler_alt_cost_kwh": "Cena tepla (Kč/kWh)",
+          "box_has_home56": "Box má Home 5/6",
+          "boiler_home5_maneuver_enabled": "🔋→🔥 Ohřev z baterie",
+          "boiler_battery_cycle_cost_czk_kwh": "Cena cyklu baterie (Kč/kWh)",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "boiler_has_alternative_heating": "Zapni, pokud může bojler ohřát i jiný zdroj (plynový kotel, tepelné čerpadlo, krb…)",
+          "boiler_alt_source_type": "Použito pouze pro štítky; nemá vliv na výpočty. Plyn: do ceny zahrň účinnost kotle.",
+          "boiler_alt_cost_kwh": "Cena tepla z alternativního zdroje v Kč/kWh (např. 1,5 Kč/kWh pro plyn vč. účinnosti). Elektrický ohřev se použije jen když je levnější.",
+          "box_has_home56": "Aktivuje Home 5/6 (OIG CBB) přepínače na dashboardu a umožňuje ohřev baterie→bojler",
+          "boiler_home5_maneuver_enabled": "Plánovač může použít baterii (Home 5) k ohřevu, pokud je levnější než síť. Vyžaduje Home 5/6.",
+          "boiler_battery_cycle_cost_czk_kwh": "Cena degradace baterie za kWh (doporučeno 0,40–0,60 Kč/kWh). Plánovač ji porovná se spotovou cenou.",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        },
+        "description": "{step}\n{progress}\n\n🔥 **Krok 6 — Zdroje tepla**\n\nNastav alternativní zdroj ohřevu a manévr Home 5 (ohřev z baterie).",
+        "title": "🔥 Bojler — Zdroje tepla"
+      },
+      "wizard_boiler_simple_7": {
+        "data": {
+          "boiler_circulation_enabled": "Cirkulace teplé vody",
+          "boiler_circulation_lead_minutes": "Předstih cirkulace (min)",
+          "boiler_circulation_run_minutes": "Délka běhu cirkulace (min)",
+          "boiler_circulation_max_runs_per_day": "Max. počet běhů/den",
+          "boiler_circulation_min_gap_minutes": "Min. pauza mezi běhy (min)",
+          "boiler_legionella_interval_days": "Interval ochrany (dny)",
+          "boiler_legionella_target_temp_c": "Teplota dezinfekce (°C)",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "boiler_circulation_enabled": "Automaticky spouštět cirkulační čerpadlo TUV v naplánovaných časech",
+          "boiler_circulation_lead_minutes": "Kolik minut před odběrem pustit čerpadlo (0–120)",
+          "boiler_circulation_run_minutes": "Jak dlouho trvá jeden běh čerpadla (1–60 min)",
+          "boiler_circulation_max_runs_per_day": "Maximální počet startů čerpadla za den (1–20)",
+          "boiler_circulation_min_gap_minutes": "Minimální pauza mezi dvěma běhy čerpadla (10–480 min)",
+          "boiler_legionella_interval_days": "Ohřej na dezinfekční teplotu každých N dní (0 = vypnuto; doporučeno 7–14)",
+          "boiler_legionella_target_temp_c": "Minimální teplota pro spolehlivé usmrcení legionelly (min 60 °C)",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        },
+        "description": "{step}\n{progress}\n\n🚿 **Krok 7 — Komfort a hygiena**\n\nNastav plánování cirkulace TUV a ochranu proti legionelle.",
+        "title": "🚿 Bojler — Komfort a hygiena"
+      },
+      "wizard_boiler_simple_8": {
+        "data": {
+          "boiler_current_power_entity": "Senzor příkonu bojleru",
+          "boiler_alt_energy_sensor": "Senzor energie alt. zdroje",
+          "boiler_alt_energy_daily": "Denní přírůstek energie",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "boiler_current_power_entity": "Entity ID senzoru výkonu (W) — volitelné; zpřesňuje plánovač",
+          "boiler_alt_energy_sensor": "Entity ID senzoru energie (kWh) alternativního zdroje — volitelné",
+          "boiler_alt_energy_daily": "Zapni, pokud senzor měří denní přírůstek (ne celkový součet)",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        },
+        "description": "{step}\n{progress}\n\n⚙️ **Krok 8 — Pokročilé**\n\nVolitelné senzory výkonu a energie pro přesnější plánování.",
+        "title": "⚙️ Bojler — Pokročilé"
+      },
       "wizard_extended": {
         "data": {
           "enable_extended_battery_sensors": "🔋 Rozšířené senzory baterie",

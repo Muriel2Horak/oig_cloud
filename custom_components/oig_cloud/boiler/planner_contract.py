@@ -174,6 +174,9 @@ class PlannerInput:
     # R3: Home 5 maneuver available (both CONF_BOX_HAS_HOME56 AND
     # CONF_BOILER_HOME5_MANEUVER_ENABLED must be True, set by runtime).
     home5_available: bool = False
+    # F5: configurable battery cycle cost for Home 5 arbitrage (Kč/kWh).
+    # Falls back to BATTERY_CYCLE_COST_CZK_PER_KWH const when not set.
+    battery_cycle_cost_czk_kwh: Optional[float] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.entry_id, str) or not self.entry_id:

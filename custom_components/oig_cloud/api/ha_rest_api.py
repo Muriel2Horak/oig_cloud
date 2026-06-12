@@ -1111,7 +1111,7 @@ _MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "solar_forecast_string2_azimuth": {"type": int, "rng": (-180, 180)},
         "solar_forecast_string2_kwp": {"type": float, "rng": (0.1, 50.0)},
     },
-    # Task B: boiler section — all configurable boiler parameters
+    # Task B + F5: boiler section — all configurable boiler parameters
     "boiler": {
         "boiler_volume_l": {"type": float, "rng": (30.0, 1000.0)},
         "boiler_temp_sensor_top": {"type": str},
@@ -1124,6 +1124,25 @@ _MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "boiler_has_alternative_heating": {"type": bool},
         "boiler_target_temp_c": {"type": float, "rng": (40.0, 85.0)},
         "boiler_deadline_time": {"type": str},
+        # R1/R8: alt source type (gas|heat_pump|fireplace|other)
+        "boiler_alt_source_type": {
+            "type": str,
+            "enum": ("gas", "heat_pump", "fireplace", "other"),
+        },
+        # F5: configurable battery cycle cost for Home 5 arbitrage
+        "boiler_battery_cycle_cost_czk_kwh": {"type": float, "rng": (0.0, 5.0), "default": 0.50},
+        # R3/R7: Home 5/6 capability + boiler opt-in
+        "box_has_home56": {"type": bool},
+        "boiler_home5_maneuver_enabled": {"type": bool},
+        # R5: circulation scheduling
+        "boiler_circulation_enabled": {"type": bool},
+        "boiler_circulation_lead_minutes": {"type": int, "rng": (0, 120)},
+        "boiler_circulation_run_minutes": {"type": int, "rng": (1, 60)},
+        "boiler_circulation_max_runs_per_day": {"type": int, "rng": (1, 20)},
+        "boiler_circulation_min_gap_minutes": {"type": int, "rng": (10, 480)},
+        # R9: anti-legionella
+        "boiler_legionella_interval_days": {"type": int, "rng": (0, 30)},
+        "boiler_legionella_target_temp_c": {"type": float, "rng": (60.0, 75.0)},
     },
 }
 
@@ -1186,9 +1205,11 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                 if key in _SECRET_FIELDS:
                     sec[f"{key}_set"] = bool(opts.get(key))
                     continue
-                default: Any = False if spec["type"] is bool else (
-                    "" if spec["type"] is str else None
-                )
+                default: Any = spec.get("default", (
+                    False if spec["type"] is bool else (
+                        "" if spec["type"] is str else None
+                    )
+                ))
                 sec[key] = opts.get(key, default)
             out[section] = sec
         return web.json_response(out)

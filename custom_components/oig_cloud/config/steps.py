@@ -28,11 +28,17 @@ from .boiler_steps import (
     get_boiler_simple_3_schema,
     get_boiler_simple_4_schema,
     get_boiler_simple_5_schema,
+    get_boiler_simple_6_schema,
+    get_boiler_simple_7_schema,
+    get_boiler_simple_8_schema,
     validate_boiler_simple_1,
     validate_boiler_simple_2,
     validate_boiler_simple_3,
     validate_boiler_simple_4,
     validate_boiler_simple_5,
+    validate_boiler_simple_6,
+    validate_boiler_simple_7,
+    validate_boiler_simple_8,
 )
 from ..core.data_source import PROXY_BOX_ID_ENTITY_ID, PROXY_LAST_DATA_ENTITY_ID
 from .schema import (
@@ -548,6 +554,44 @@ class WizardMixin:
                 )
             ),
             "boiler_plan_slot_minutes": DEFAULT_BOILER_PLAN_SLOT_MINUTES,
+            # F5 new keys (steps 6–8)
+            "boiler_alt_source_type": wizard_data.get(
+                "boiler_alt_source_type", "gas"
+            ),
+            "boiler_battery_cycle_cost_czk_kwh": wizard_data.get(
+                "boiler_battery_cycle_cost_czk_kwh", 0.50
+            ),
+            "box_has_home56": wizard_data.get("box_has_home56", False),
+            "boiler_home5_maneuver_enabled": wizard_data.get(
+                "boiler_home5_maneuver_enabled", False
+            ),
+            "boiler_circulation_enabled": wizard_data.get(
+                "boiler_circulation_enabled", False
+            ),
+            "boiler_circulation_lead_minutes": wizard_data.get(
+                "boiler_circulation_lead_minutes", 15
+            ),
+            "boiler_circulation_run_minutes": wizard_data.get(
+                "boiler_circulation_run_minutes", 10
+            ),
+            "boiler_circulation_max_runs_per_day": wizard_data.get(
+                "boiler_circulation_max_runs_per_day", 3
+            ),
+            "boiler_circulation_min_gap_minutes": wizard_data.get(
+                "boiler_circulation_min_gap_minutes", 120
+            ),
+            "boiler_legionella_interval_days": wizard_data.get(
+                "boiler_legionella_interval_days", 0
+            ),
+            "boiler_legionella_target_temp_c": wizard_data.get(
+                "boiler_legionella_target_temp_c", 60.0
+            ),
+            "boiler_current_power_entity": wizard_data.get(
+                "boiler_current_power_entity", ""
+            ),
+            "boiler_alt_energy_daily": wizard_data.get(
+                "boiler_alt_energy_daily", True
+            ),
         }
 
     @staticmethod
@@ -1089,7 +1133,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if self._wizard_data.get("boiler_setup_mode") == "expert":
                 total += 1
             else:
-                total += 5
+                total += 8
 
         total += 1
 
@@ -1165,6 +1209,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                         "wizard_boiler_simple_3",
                         "wizard_boiler_simple_4",
                         "wizard_boiler_simple_5",
+                        "wizard_boiler_simple_6",
+                        "wizard_boiler_simple_7",
+                        "wizard_boiler_simple_8",
                     ]
                 )
 
@@ -1230,6 +1277,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_boiler_simple_3",
             "wizard_boiler_simple_4",
             "wizard_boiler_simple_5",
+            "wizard_boiler_simple_6",
+            "wizard_boiler_simple_7",
+            "wizard_boiler_simple_8",
             "wizard_boiler",
             "wizard_summary",
         ]
@@ -1266,6 +1316,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_boiler_simple_3",
             "wizard_boiler_simple_4",
             "wizard_boiler_simple_5",
+            "wizard_boiler_simple_6",
+            "wizard_boiler_simple_7",
+            "wizard_boiler_simple_8",
         }:
             return not self._wizard_data.get("enable_boiler") or self._wizard_data.get("boiler_setup_mode") == "expert"
         if step == "wizard_boiler":
@@ -2897,15 +2950,102 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ),
                 )
             self._wizard_data.update(user_input)
-            self._wizard_data["boiler_setup_complete"] = True
             self._step_history.append("wizard_boiler_simple_5")
-            return await self.async_step_wizard_summary()
+            return await self.async_step_wizard_boiler_simple_6()
 
         return self.async_show_form(
             step_id="wizard_boiler_simple_5",
             data_schema=get_boiler_simple_5_schema(self._wizard_data),
             description_placeholders=self._get_step_placeholders(
                 "wizard_boiler_simple_5"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_6(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Krok 6 — Zdroje ohřevu (alternativní zdroj + Home 5)."""
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_6")
+            errors = validate_boiler_simple_6(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_6",
+                    data_schema=get_boiler_simple_6_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_6"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_boiler_simple_6")
+            return await self.async_step_wizard_boiler_simple_7()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_6",
+            data_schema=get_boiler_simple_6_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_6"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_7(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Krok 7 — Komfort + hygiena (cirkulace + legionella)."""
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_7")
+            errors = validate_boiler_simple_7(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_7",
+                    data_schema=get_boiler_simple_7_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_7"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_boiler_simple_7")
+            return await self.async_step_wizard_boiler_simple_8()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_7",
+            data_schema=get_boiler_simple_7_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_7"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_8(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Krok 8 — Pokročilé (měřiče výkonu a alternativní energie)."""
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_8")
+            errors = validate_boiler_simple_8(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_8",
+                    data_schema=get_boiler_simple_8_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_8"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            self._wizard_data["boiler_setup_complete"] = True
+            self._step_history.append("wizard_boiler_simple_8")
+            return await self.async_step_wizard_summary()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_8",
+            data_schema=get_boiler_simple_8_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_8"
             ),
         )
 

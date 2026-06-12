@@ -812,13 +812,14 @@ def _slot_allocation(
     #   - home5_available is True in planner_input
     #   - there is remaining battery budget
     #   - slot lies BEFORE at least one future overflow window (battery recharge window)
-    #   - battery cost < grid cost (BATTERY_CYCLE_COST_CZK_PER_KWH < spot_price)
+    #   - battery cost < grid cost (battery_cycle_cost_czk_kwh < spot_price)
+    _batt_cost = _resolve_battery_cycle_cost(planner_input)
     if (
         getattr(planner_input, "home5_available", False)
         and battery_kwh_remaining >= residual_kwh - 1e-9
         and battery_kwh_remaining > 0.0
         and _slot_has_future_overflow(slot, planner_input.overflow_windows)
-        and _battery_is_cheaper(spot_price)
+        and _battery_is_cheaper(spot_price, _batt_cost)
     ):
         return _SlotAllocation(
             source=EnergySource.BATTERY,
@@ -827,7 +828,7 @@ def _slot_allocation(
             grid_kwh=0.0,
             alt_kwh=0.0,
             battery_kwh=residual_kwh,
-            cost_czk=residual_kwh * BATTERY_CYCLE_COST_CZK_PER_KWH,
+            cost_czk=residual_kwh * _batt_cost,
         )
 
     selected_source = EnergySource.GRID
@@ -862,11 +863,19 @@ def _alternative_is_cheaper(
     return planner_input.alt_cost_kwh < spot_price
 
 
-def _battery_is_cheaper(spot_price: Optional[float]) -> bool:
+def _resolve_battery_cycle_cost(planner_input: "PlannerInput") -> float:
+    """Return the effective battery cycle cost from config or the hardcoded fallback."""
+    configured = getattr(planner_input, "battery_cycle_cost_czk_kwh", None)
+    if configured is not None and isinstance(configured, (int, float)) and configured >= 0:
+        return float(configured)
+    return BATTERY_CYCLE_COST_CZK_PER_KWH
+
+
+def _battery_is_cheaper(spot_price: Optional[float], battery_cost: float) -> bool:
     """Return True when battery cycle cost is cheaper than the grid spot price."""
     if spot_price is None:
         return False
-    return BATTERY_CYCLE_COST_CZK_PER_KWH < spot_price
+    return battery_cost < spot_price
 
 
 def _slot_has_future_overflow(

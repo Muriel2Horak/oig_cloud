@@ -254,12 +254,12 @@ def test_battery_plan_result_battery_kwh_sum():
 
 def test_battery_cheaper_than_expensive_grid():
     """Battery (0.50) beats expensive grid (10.0 CZK/kWh)."""
-    assert _battery_is_cheaper(10.0)
+    assert _battery_is_cheaper(10.0, battery_cost=0.50)
 
 
 def test_battery_not_cheaper_than_cheap_grid():
     """Battery (0.50) does NOT beat cheap grid (0.30 CZK/kWh)."""
-    assert not _battery_is_cheaper(0.30)
+    assert not _battery_is_cheaper(0.30, battery_cost=0.50)
 
 
 def test_battery_not_cheaper_than_free_overflow():

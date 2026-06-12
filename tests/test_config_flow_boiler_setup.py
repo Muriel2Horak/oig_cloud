@@ -219,8 +219,9 @@ async def test_boiler_simple_5_comfort_profile():
         }
     )
 
-    assert result["type"] == "create_entry"
-    assert flow._wizard_data["boiler_setup_complete"] is True
+    # Step 5 now leads to step 6 (Zdroje); setup_complete is set after step 8
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_boiler_simple_6"
 
 
 @pytest.mark.asyncio
@@ -251,11 +252,40 @@ async def test_boiler_simple_full_path_creates_entry():
     await flow.async_step_wizard_boiler_simple_4(
         {"boiler_alt_source_mode": "disabled"}
     )
-    result = await flow.async_step_wizard_boiler_simple_5(
+    await flow.async_step_wizard_boiler_simple_5(
         {
             "boiler_comfort_profile_mode": "history_driven",
             "boiler_target_temp_c": 55.0,
             "boiler_deadline_time": "19:00",
+        }
+    )
+    # Step 5 leads to step 6; continue to step 6, 7, 8
+    await flow.async_step_wizard_boiler_simple_6(
+        {
+            "boiler_has_alternative_heating": False,
+            "boiler_alt_source_type": "gas",
+            "boiler_alt_cost_kwh": 0.0,
+            "box_has_home56": False,
+            "boiler_home5_maneuver_enabled": False,
+            "boiler_battery_cycle_cost_czk_kwh": 0.50,
+        }
+    )
+    await flow.async_step_wizard_boiler_simple_7(
+        {
+            "boiler_circulation_enabled": False,
+            "boiler_circulation_lead_minutes": 15,
+            "boiler_circulation_run_minutes": 10,
+            "boiler_circulation_max_runs_per_day": 3,
+            "boiler_circulation_min_gap_minutes": 120,
+            "boiler_legionella_interval_days": 0,
+            "boiler_legionella_target_temp_c": 60.0,
+        }
+    )
+    result = await flow.async_step_wizard_boiler_simple_8(
+        {
+            "boiler_current_power_entity": "",
+            "boiler_alt_energy_sensor": "",
+            "boiler_alt_energy_daily": True,
         }
     )
 
@@ -268,6 +298,11 @@ async def test_boiler_simple_full_path_creates_entry():
     assert options["boiler_effective_power_w"] == 2000
     assert options["boiler_alt_source_mode"] == "disabled"
     assert options["boiler_comfort_profile_mode"] == "history_driven"
+    # New F5 keys present
+    assert options["boiler_alt_source_type"] == "gas"
+    assert options["boiler_battery_cycle_cost_czk_kwh"] == 0.50
+    assert options["boiler_circulation_enabled"] is False
+    assert options["boiler_legionella_interval_days"] == 0
 
 
 @pytest.mark.asyncio
@@ -671,7 +706,8 @@ def test_total_steps_with_boiler_simple_path():
     flow._wizard_data = {"enable_boiler": True, "boiler_setup_mode": "simple"}
 
     total = flow._get_total_steps()
-    assert total == 10
+    # Base 4 steps + 8 boiler simple steps + 1 summary = 13
+    assert total == 13
 
 
 def test_step_sequence_with_boiler_simple_path():
@@ -681,6 +717,9 @@ def test_step_sequence_with_boiler_simple_path():
     steps = flow._build_step_sequence(False)
     assert "wizard_boiler_simple_1" in steps
     assert "wizard_boiler_simple_5" in steps
+    assert "wizard_boiler_simple_6" in steps
+    assert "wizard_boiler_simple_7" in steps
+    assert "wizard_boiler_simple_8" in steps
     assert "wizard_boiler" not in steps
 
 

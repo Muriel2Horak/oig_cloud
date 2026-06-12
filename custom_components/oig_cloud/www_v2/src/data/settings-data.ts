@@ -52,13 +52,46 @@ export interface SolarConfig {
   solar_forecast_string2_kwp: number | null;
 }
 
+/** F5/Task B — Boiler config section (mirrors ha_rest_api _MODULE_CONFIG_FIELDS['boiler']). */
+export interface BoilerConfig {
+  // Nádrž a čidla
+  boiler_volume_l: number | null;
+  boiler_temp_sensor_top: string;
+  boiler_temp_sensor_bottom: string;
+  boiler_enable_second_thermometer: boolean;
+  boiler_current_power_entity: string;
+  // Alternativní zdroj
+  boiler_has_alternative_heating: boolean;
+  boiler_alt_source_type: string;
+  boiler_alt_cost_kwh: number | null;
+  boiler_alt_energy_sensor: string;
+  boiler_alt_energy_daily: boolean;
+  // Home 5/6 + baterie
+  box_has_home56: boolean;
+  boiler_home5_maneuver_enabled: boolean;
+  boiler_battery_cycle_cost_czk_kwh: number | null;
+  // Teplota a čas
+  boiler_target_temp_c: number | null;
+  boiler_deadline_time: string;
+  // Cirkulace
+  boiler_circulation_enabled: boolean;
+  boiler_circulation_lead_minutes: number | null;
+  boiler_circulation_run_minutes: number | null;
+  boiler_circulation_max_runs_per_day: number | null;
+  boiler_circulation_min_gap_minutes: number | null;
+  // Anti-legionella
+  boiler_legionella_interval_days: number | null;
+  boiler_legionella_target_temp_c: number | null;
+}
+
 export interface ModuleConfig {
   modules: ModulesConfig;
   battery: BatteryConfig;
   solar: SolarConfig;
+  boiler: BoilerConfig;
 }
 
-export type SettingsSection = 'modules' | 'battery' | 'solar';
+export type SettingsSection = 'modules' | 'battery' | 'solar' | 'boiler';
 
 export async function loadModuleConfig(): Promise<ModuleConfig | null> {
   const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(

@@ -21,14 +21,15 @@ const u = unsafeCSS;
 
 /**
  * Returns the Czech/English label for the alternative source.
- * F5 will pass an alt_type string (e.g. 'gas', 'heat_pump'); for now we
- * return a generic label.  Extend this map when F5 lands.
+ * F5: maps alt_source_type values from config to human-readable labels (R12).
+ * Labels are intentionally short for UI chips and plan-strip legends.
  */
 export function altTypeLabel(altType: string | null | undefined, lang: Lang): string {
   const map: Record<string, Record<Lang, string>> = {
-    gas:        { cs: '🔥 Plynový kotel', en: '🔥 Gas boiler' },
-    heat_pump:  { cs: '🔥 Tepelné čerpadlo', en: '🔥 Heat pump' },
-    electric:   { cs: '🔥 Přímotop', en: '🔥 Electric heater' },
+    gas:        { cs: '🔥 Plyn',              en: '🔥 Gas' },
+    heat_pump:  { cs: '🔥 Tepelné čerpadlo',  en: '🔥 Heat pump' },
+    fireplace:  { cs: '🔥 Krb',               en: '🔥 Fireplace' },
+    other:      { cs: '🔥 Alternativní zdroj', en: '🔥 Alternative source' },
   };
   if (altType && map[altType]) return map[altType][lang];
   // Generic fallback per R12

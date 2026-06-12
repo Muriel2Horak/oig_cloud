@@ -23,6 +23,7 @@ import type {
   PlanSummary,
 } from './types';
 import { t, type Lang } from '@/i18n/boiler';
+import { altTypeLabel } from './boiler-energy-today';
 
 const u = unsafeCSS;
 
@@ -208,6 +209,8 @@ export class OigBoilerPlanStrip extends LitElement {
   @property({ attribute: false }) legionella: LegionellaStatus | null = null;
   @property({ attribute: false }) planSummary: PlanSummary | null = null;
   @property({ type: String }) lang: Lang = 'cs';
+  /** F5/Task C: alt source type for dynamic legend/band labels (e.g. "gas", "heat_pump") */
+  @property({ type: String }) altSourceType: string | null = null;
 
   static styles = css`
     :host { display: block; }
@@ -666,7 +669,8 @@ export class OigBoilerPlanStrip extends LitElement {
       case 'fve': return t('boiler.plan_strip.source_overflow', lang);
       case 'grid': return t('boiler.plan_strip.source_grid', lang);
       case 'battery': return t('boiler.plan_strip.source_battery', lang);
-      case 'alternative': return t('boiler.plan_strip.source_alt', lang);
+      // F5/Task C: use dynamic alt type label when available
+      case 'alternative': return altTypeLabel(this.altSourceType, lang);
       default: return source;
     }
   }
@@ -676,7 +680,8 @@ export class OigBoilerPlanStrip extends LitElement {
       case 'fve': return t('boiler.plan_strip.legend_overflow', lang);
       case 'grid': return t('boiler.plan_strip.legend_grid', lang);
       case 'battery': return t('boiler.plan_strip.legend_battery', lang);
-      case 'alternative': return t('boiler.plan_strip.legend_alt', lang);
+      // F5/Task C: use dynamic alt type label for legend
+      case 'alternative': return altTypeLabel(this.altSourceType, lang);
       default: return source;
     }
   }
