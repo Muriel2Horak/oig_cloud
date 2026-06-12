@@ -5,21 +5,33 @@
  * module toggles, battery/planner parameters, solar-forecast setup, and
  * boiler configuration — editable from the dashboard with friendly hints,
  * no HA options flow page-walking.
+ *
+ * Task B additions:
+ *   - Entity picker (<oig-entity-picker>) for all entity fields.
+ *   - Boiler section: collapsible sub-sections with status badges.
+ *   - Sticky dirty bar (Neuložené změny · Uložit · Zahodit).
+ *   - entityCatalog built from hass.states (passed as property).
  */
 
 import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import {
   loadModuleConfig,
   saveModuleConfig,
+  waitForModuleConfigAfterReload,
   ModuleConfig,
   SettingsSection,
 } from '@/data/settings-data';
+import {
+  buildEntityCatalog,
+  EntityEntry,
+} from '@/ui/components/entity-picker';
+import '@/ui/components/entity-picker';
 
 const u = unsafeCSS;
 
-interface FieldDef {
+export interface FieldDef {
   key: string;
   label: string;
   hint?: string;
@@ -30,7 +42,22 @@ interface FieldDef {
   options?: Array<[string, string]>;
   /** Display multiplier (e.g. fraction stored, % shown) */
   scale?: number;
+  /** Field is optional — user may leave it blank; label shows "(volitelné)" */
+  optional?: boolean;
+  /** Entity picker metadata — if present, renders entity picker instead of text input */
+  entity?: { domain: string };
 }
+
+/**
+ * Sections whose POST triggers a config-entry reload on the backend.
+ * After save, the GET /module_config will return 404 for a short window —
+ * this is expected and must not surface as an error.
+ */
+export const RELOAD_SECTIONS: ReadonlySet<SettingsSection> = new Set(['boiler']);
+
+// ============================================================================
+// FIELD DEFINITIONS
+// ============================================================================
 
 const MODULE_FIELDS: FieldDef[] = [
   { key: 'enable_battery_prediction', label: 'Predikce baterie a plánovač', type: 'bool', hint: 'Ekonomické plánování nabíjení, timeline, úspory' },
@@ -84,10 +111,10 @@ function altSourceHint(type: string): string {
 export const BOILER_FIELDS_ALL: FieldDef[] = [
   // Nádrž a čidla
   { key: 'boiler_volume_l', label: 'Objem nádrže (l)', type: 'number', min: 30, max: 1000, step: 1, hint: 'Jmenovitý objem zásobníku v litrech' },
-  { key: 'boiler_temp_sensor_top', label: 'Čidlo teploty — vrchní', type: 'text', hint: 'ID entity senzoru teploty (např. sensor.bojler_top)' },
-  { key: 'boiler_temp_sensor_bottom', label: 'Čidlo teploty — spodní', type: 'text', hint: 'Jen pokud máš druhý teploměr (ID entity senzoru)' },
+  { key: 'boiler_temp_sensor_top', label: 'Čidlo teploty — vrchní', type: 'text', hint: 'ID entity senzoru teploty (např. sensor.bojler_top)', entity: { domain: 'sensor' } },
+  { key: 'boiler_temp_sensor_bottom', label: 'Čidlo teploty — spodní', type: 'text', hint: 'Jen pokud máš druhý teploměr (ID entity senzoru)', optional: true, entity: { domain: 'sensor' } },
   { key: 'boiler_enable_second_thermometer', label: 'Druhý teploměr aktivní', type: 'bool', hint: 'Zapni, pokud máš spodní čidlo teploty' },
-  { key: 'boiler_current_power_entity', label: 'Senzor příkonu bojleru', type: 'text', hint: 'ID entity senzoru výkonu (W); volitelné, upřesňuje plánovač' },
+  { key: 'boiler_current_power_entity', label: 'Senzor příkonu bojleru', type: 'text', hint: 'ID entity senzoru výkonu (W); upřesňuje plánovač', optional: true, entity: { domain: 'sensor' } },
   // Teplota a čas
   { key: 'boiler_target_temp_c', label: 'Cílová teplota (°C)', type: 'number', min: 40, max: 85, step: 1, hint: 'Požadovaná teplota vody před deadline' },
   { key: 'boiler_deadline_time', label: 'Deadline (HH:MM)', type: 'text', hint: 'Čas, do kdy musí být voda nahřátá (formát HH:MM, např. 07:00)' },
@@ -95,7 +122,7 @@ export const BOILER_FIELDS_ALL: FieldDef[] = [
   { key: 'boiler_has_alternative_heating', label: 'Alternativní zdroj tepla', type: 'bool', hint: 'Bojler má jiný zdroj ohřevu (plyn, TČ, krb…)' },
   { key: 'boiler_alt_source_type', label: 'Typ alternativního zdroje', type: 'select', options: [['gas', 'Plyn'], ['heat_pump', 'Tepelné čerpadlo'], ['fireplace', 'Krb'], ['other', 'Jiný']] },
   { key: 'boiler_alt_cost_kwh', label: 'Cena tepla (Kč/kWh)', type: 'number', min: 0, max: 20, step: 0.1, hint: 'Cena tepla z alternativního zdroje v Kč/kWh' },
-  { key: 'boiler_alt_energy_sensor', label: 'Senzor energie alt. zdroje', type: 'text', hint: 'ID entity senzoru energie (kWh); volitelné' },
+  { key: 'boiler_alt_energy_sensor', label: 'Senzor energie alt. zdroje', type: 'text', hint: 'ID entity senzoru energie (kWh)', optional: true, entity: { domain: 'sensor' } },
   { key: 'boiler_alt_energy_daily', label: 'Denní přírůstek energie', type: 'bool', hint: 'Zapni, pokud senzor měří denní (ne celkový) přírůstek' },
   // Home 5/6 + baterie
   { key: 'box_has_home56', label: 'Box má Home 5/6', type: 'bool', hint: 'Aktivuje Home 5/6 (OIG CBB) — umožňuje 🔋→🔥 ohřev z baterie' },
@@ -112,14 +139,84 @@ export const BOILER_FIELDS_ALL: FieldDef[] = [
   { key: 'boiler_legionella_target_temp_c', label: 'Teplota dezinfekce (°C)', type: 'number', min: 60, max: 75, step: 1, hint: 'Min. 60 °C pro spolehlivé usmrcení legionelly' },
 ];
 
+// ============================================================================
+// STATUS BADGE HELPERS — pure functions exported for unit tests
+// ============================================================================
+
+/** Alt source label short form for the section badge. */
+export function altSourceLabel(type: string): string {
+  if (type === 'gas') return 'plyn';
+  if (type === 'heat_pump') return 'TČ';
+  if (type === 'fireplace') return 'krb';
+  return type || 'jiný';
+}
+
+/**
+ * Build the status badge text for the "Zdroje tepla" section summary.
+ * Shown when section is collapsed so user sees state without expanding.
+ *
+ * @param hasAlt Whether alternative heating is enabled.
+ * @param altType The alt source type key.
+ * @param altCostKwh The alt source cost per kWh.
+ * @param hasHome56 Whether Home 5/6 is present.
+ * @param home5Enabled Whether battery→heat maneuver is enabled.
+ */
+export function sourceSectionBadge(
+  hasAlt: boolean,
+  altType: string,
+  altCostKwh: number | null,
+  hasHome56: boolean,
+  home5Enabled: boolean,
+): string {
+  const parts: string[] = [];
+  if (hasAlt) {
+    const label = altSourceLabel(altType);
+    const cost = altCostKwh != null ? ` · ${Number(altCostKwh).toFixed(1).replace('.', ',')} Kč/kWh` : '';
+    parts.push(`${label}${cost}`);
+  }
+  if (hasHome56 && home5Enabled) {
+    parts.push('🔋→🔥');
+  }
+  if (parts.length === 0) {
+    return hasHome56 ? 'Home 5/6' : 'pouze elektřina';
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * Build the status badge text for the "Cirkulace" section summary.
+ */
+export function circulationSectionBadge(circEnabled: boolean): string {
+  return circEnabled ? 'zapnuto' : 'vypnuto';
+}
+
+/**
+ * Build the status badge text for the "Ochrana proti legionelle" section summary.
+ */
+export function legionellaSectionBadge(intervalDays: number): string {
+  if (intervalDays <= 0) return 'vypnuto';
+  return `1×/${intervalDays} dní`;
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
 @customElement('oig-settings')
 export class OigSettings extends LitElement {
+  /** hass.states catalog — passed from oig-app. Used to build entity picker catalog. */
+  @property({ attribute: false }) hassStates: Record<string, any> | null = null;
+
   @state() private config: ModuleConfig | null = null;
   @state() private loading = true;
   /** Pending (edited, unsaved) values per section. */
   @state() private pending: Record<string, Record<string, unknown>> = {};
   @state() private saving: string | null = null;
   @state() private toast: { section: string; ok: boolean; text: string } | null = null;
+
+  /** Cached entity catalog built from hassStates (rebuilt when hassStates changes). */
+  private _entityCatalog: EntityEntry[] = [];
+  private _lastHassStates: Record<string, any> | null = null;
 
   static styles = css`
     :host { display: block; }
@@ -136,6 +233,7 @@ export class OigSettings extends LitElement {
       border-radius: 12px;
       padding: 16px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
+      position: relative;
     }
 
     .card h2 {
@@ -150,18 +248,38 @@ export class OigSettings extends LitElement {
       margin-bottom: 12px;
     }
 
+    /* ---- Rows ---- */
     .row {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      padding: 7px 0;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 0;
       border-bottom: 1px dashed ${u(CSS_VARS.divider)};
     }
     .row:last-of-type { border-bottom: none; }
 
-    .lab { font-size: 12.5px; color: ${u(CSS_VARS.textPrimary)}; }
-    .hint { display: block; font-size: 10.5px; color: ${u(CSS_VARS.textSecondary)}; margin-top: 1px; max-width: 270px; }
+    .lab {
+      font-size: 12.5px;
+      color: ${u(CSS_VARS.textPrimary)};
+      flex: 1;
+      min-width: 0;
+    }
+
+    .hint {
+      display: block;
+      font-size: 10.5px;
+      color: ${u(CSS_VARS.textSecondary)};
+      margin-top: 3px;
+      line-height: 1.4;
+    }
+
+    .row-control {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
 
     input[type='number'], input[type='text'], select {
       background: ${u(CSS_VARS.bgSecondary)};
@@ -170,9 +288,9 @@ export class OigSettings extends LitElement {
       border-radius: 7px;
       padding: 5px 8px;
       font-size: 12.5px;
-      width: 130px;
+      max-width: 120px;
     }
-    input[type='text'] { width: 170px; }
+    input[type='text'] { max-width: 170px; }
     input.dirty, select.dirty { border-color: ${u(CSS_VARS.accent)}; }
 
     /* toggle */
@@ -189,6 +307,7 @@ export class OigSettings extends LitElement {
     .switch input:checked + .slider { background: ${u(CSS_VARS.accent)}; }
     .switch input:checked + .slider:before { transform: translateX(18px); }
 
+    /* ---- Actions ---- */
     .actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
     button.save {
       background: ${u(CSS_VARS.accent)};
@@ -200,6 +319,7 @@ export class OigSettings extends LitElement {
     .toast.ok { color: #9fe6a8; }
     .toast.err { color: #ff9d93; }
 
+    /* ---- Note box ---- */
     .note {
       font-size: 11.5px;
       color: ${u(CSS_VARS.textSecondary)};
@@ -213,6 +333,7 @@ export class OigSettings extends LitElement {
 
     .loading { padding: 30px; text-align: center; color: ${u(CSS_VARS.textSecondary)}; }
 
+    /* ---- Group label (non-boiler cards) ---- */
     .group-label {
       font-size: 11px;
       font-weight: 700;
@@ -224,11 +345,114 @@ export class OigSettings extends LitElement {
       border-top: 1px solid ${u(CSS_VARS.divider)};
     }
     .group-label:first-of-type { border-top: none; margin-top: 0; }
+
+    /* ---- Optional badge ---- */
+    .optional-badge {
+      font-size: 10px;
+      color: ${u(CSS_VARS.textSecondary)};
+      font-style: italic;
+      margin-left: 2px;
+    }
+
+    /* ---- Collapsible boiler sub-sections ---- */
+    .bsec {
+      border-top: 1px solid ${u(CSS_VARS.divider)};
+      margin-top: 10px;
+    }
+
+    .bsec > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 9px 0 7px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: ${u(CSS_VARS.textSecondary)};
+    }
+    .bsec > summary::-webkit-details-marker { display: none; }
+    .bsec > summary::before {
+      content: '▶';
+      font-size: 8px;
+      opacity: 0.5;
+      transition: transform 0.15s;
+      flex-shrink: 0;
+    }
+    .bsec[open] > summary::before {
+      transform: rotate(90deg);
+    }
+
+    .bsec-badge {
+      margin-left: auto;
+      font-size: 10.5px;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      color: ${u(CSS_VARS.textSecondary)};
+      background: rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 2px 7px;
+      white-space: nowrap;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bsec-body {
+      padding-bottom: 6px;
+    }
+
+    /* ---- Sticky dirty bar ---- */
+    .dirty-bar {
+      position: sticky;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: ${u(CSS_VARS.cardBg)};
+      border-top: 1px solid ${u(CSS_VARS.accent)};
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 -16px -16px;
+      border-radius: 0 0 12px 12px;
+      z-index: 10;
+    }
+
+    .dirty-bar-label {
+      font-size: 11.5px;
+      color: ${u(CSS_VARS.textSecondary)};
+      flex: 1;
+    }
+
+    button.discard {
+      background: transparent;
+      border: 1px solid ${u(CSS_VARS.divider)};
+      color: ${u(CSS_VARS.textSecondary)};
+      border-radius: 7px;
+      padding: 5px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    button.discard:hover { border-color: ${u(CSS_VARS.textSecondary)}; }
   `;
 
   connectedCallback(): void {
     super.connectedCallback();
     void this.refresh();
+  }
+
+  /** Build entity catalog lazily — only when hassStates reference changes. */
+  private get entityCatalog(): EntityEntry[] {
+    if (this.hassStates !== this._lastHassStates) {
+      this._lastHassStates = this.hassStates;
+      this._entityCatalog = this.hassStates ? buildEntityCatalog(this.hassStates) : [];
+    }
+    return this._entityCatalog;
   }
 
   private async refresh(): Promise<void> {
@@ -256,6 +480,11 @@ export class OigSettings extends LitElement {
     return Object.keys(this.pending[section] ?? {}).length > 0;
   }
 
+  private discardPending(section: SettingsSection): void {
+    this.pending = { ...this.pending, [section]: {} };
+    this.toast = null;
+  }
+
   private async save(section: SettingsSection): Promise<void> {
     const values = this.pending[section];
     if (!values || this.saving) return;
@@ -263,15 +492,59 @@ export class OigSettings extends LitElement {
     this.toast = null;
     const res = await saveModuleConfig(section, values);
     this.saving = null;
-    if (res.ok) {
-      this.toast = { section, ok: true, text: '✓ Uloženo — integrace se aplikuje během chvilky' };
-      await this.refresh();
-    } else {
+
+    if (!res.ok) {
       const detail = res.fields
         ? Object.entries(res.fields).map(([k, v]) => `${k}: ${v}`).join(', ')
         : 'uložení selhalo';
       this.toast = { section, ok: false, text: `✗ ${detail}` };
+      return;
     }
+
+    // Optimistic merge: treat values as saved immediately (the POST succeeded).
+    if (this.config) {
+      this.config = {
+        ...this.config,
+        [section]: { ...(this.config as any)[section], ...values },
+      } as ModuleConfig;
+    }
+    this.pending = { ...this.pending, [section]: {} };
+
+    if (RELOAD_SECTIONS.has(section)) {
+      this.toast = { section, ok: true, text: '✓ Uloženo — integrace se restartuje…' };
+      void waitForModuleConfigAfterReload(
+        (cfg) => {
+          this.config = cfg;
+          this.toast = { section, ok: true, text: '✓ Aplikováno' };
+        },
+        () => {
+          this.toast = {
+            section,
+            ok: true,
+            text: 'Integrace se restartuje déle než obvykle — obnov stránku',
+          };
+        },
+      );
+    } else {
+      this.toast = { section, ok: true, text: '✓ Uloženo' };
+      this.loading = true;
+      const fresh = await loadModuleConfig();
+      if (fresh) this.config = fresh;
+      this.loading = false;
+    }
+  }
+
+  // ==========================================================================
+  // RENDER HELPERS
+  // ==========================================================================
+
+  /** Render label text with optional "(volitelné)" suffix and hint below. */
+  private renderLabel(f: FieldDef) {
+    return html`
+      <span class="lab">
+        ${f.label}${f.optional ? html`<span class="optional-badge"> (volitelné)</span>` : nothing}
+        ${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}
+      </span>`;
   }
 
   private renderField(section: SettingsSection, f: FieldDef) {
@@ -282,12 +555,14 @@ export class OigSettings extends LitElement {
       const checked = !!raw;
       return html`
         <div class="row">
-          <span class="lab">${f.label}${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}</span>
-          <label class="switch">
-            <input type="checkbox" .checked=${checked}
-              @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLInputElement).checked)} />
-            <span class="slider"></span>
-          </label>
+          ${this.renderLabel(f)}
+          <div class="row-control">
+            <label class="switch">
+              <input type="checkbox" .checked=${checked}
+                @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLInputElement).checked)} />
+              <span class="slider"></span>
+            </label>
+          </div>
         </div>`;
     }
 
@@ -295,11 +570,13 @@ export class OigSettings extends LitElement {
       const val = String(raw ?? '');
       return html`
         <div class="row">
-          <span class="lab">${f.label}${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}</span>
-          <select class=${dirty ? 'dirty' : ''}
-            @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLSelectElement).value)}>
-            ${(f.options ?? []).map(([v, l]) => html`<option value=${v} ?selected=${v === val}>${l}</option>`)}
-          </select>
+          ${this.renderLabel(f)}
+          <div class="row-control">
+            <select class=${dirty ? 'dirty' : ''}
+              @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLSelectElement).value)}>
+              ${(f.options ?? []).map(([v, l]) => html`<option value=${v} ?selected=${v === val}>${l}</option>`)}
+            </select>
+          </div>
         </div>`;
     }
 
@@ -308,136 +585,64 @@ export class OigSettings extends LitElement {
       const shown = raw == null || raw === '' ? '' : String(Math.round((Number(raw) * scale + Number.EPSILON) * 10000) / 10000);
       return html`
         <div class="row">
-          <span class="lab">${f.label}${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}</span>
-          <input type="number" class=${dirty ? 'dirty' : ''} .value=${shown}
-            min=${f.min ?? nothing} max=${f.max ?? nothing} step=${f.step ?? nothing}
-            @change=${(e: Event) => {
-              const v = (e.target as HTMLInputElement).value;
-              if (v === '') return;
-              this.setPending(section, f.key, Number(v) / scale);
-            }} />
+          ${this.renderLabel(f)}
+          <div class="row-control">
+            <input type="number" class=${dirty ? 'dirty' : ''} .value=${shown}
+              min=${f.min ?? nothing} max=${f.max ?? nothing} step=${f.step ?? nothing}
+              @change=${(e: Event) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v === '') return;
+                this.setPending(section, f.key, Number(v) / scale);
+              }} />
+          </div>
         </div>`;
     }
 
-    // text — secrets come back as <key>_set booleans; show placeholder
+    // text — may be entity field or plain text / secret
+    if (f.entity) {
+      // Entity picker
+      const currentVal = String(raw ?? '');
+      return html`
+        <div class="row">
+          ${this.renderLabel(f)}
+          <div class="row-control">
+            <oig-entity-picker
+              .value=${currentVal}
+              .domain=${f.entity.domain}
+              .optional=${!!f.optional}
+              .dirty=${dirty}
+              .entities=${this.entityCatalog}
+              @entity-change=${(e: CustomEvent) => this.setPending(section, f.key, e.detail.value)}
+            ></oig-entity-picker>
+          </div>
+        </div>`;
+    }
+
+    // Plain text (secret or non-entity)
     const isSecret = f.key.endsWith('api_key');
     const secretSet = isSecret && !!this.current(section, `${f.key}_set`);
     const val = isSecret ? '' : String(raw ?? '');
     return html`
       <div class="row">
-        <span class="lab">${f.label}${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}</span>
-        <input type="text" class=${dirty ? 'dirty' : ''} .value=${val}
-          placeholder=${isSecret ? (secretSet ? '••••• (nastaveno)' : 'nenastaveno') : ''}
-          @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLInputElement).value)} />
+        ${this.renderLabel(f)}
+        <div class="row-control">
+          <input type="text" class=${dirty ? 'dirty' : ''} .value=${val}
+            placeholder=${isSecret ? (secretSet ? '••••• (nastaveno)' : 'nenastaveno') : (f.optional ? 'nevyplněno' : '')}
+            @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLInputElement).value)} />
+        </div>
       </div>`;
   }
 
   private renderCard(section: SettingsSection, title: string, sub: string, fields: FieldDef[]) {
     const toast = this.toast?.section === section ? this.toast : null;
+    const dirty = this.isDirty(section);
     return html`
       <div class="card">
         <h2>${title}</h2>
         <div class="sub">${sub}</div>
         ${fields.map((f) => this.renderField(section, f))}
         <div class="actions">
-          <button class="save" ?disabled=${!this.isDirty(section) || this.saving === section}
-            @click=${() => this.save(section)}>
-            ${this.saving === section ? 'Ukládám…' : 'Uložit'}
-          </button>
-          ${toast ? html`<span class="toast ${toast.ok ? 'ok' : 'err'}">${toast.text}</span>` : nothing}
-        </div>
-      </div>`;
-  }
-
-  /**
-   * Render the boiler card with conditional field visibility.
-   *
-   * Groups:
-   *   1. Nádrž a čidla
-   *   2. Zdroje tepla (alt source type + cost + Home 5/6 + 🔋→🔥)
-   *   3. Cirkulace (detail fields only when enabled)
-   *   4. Ochrana proti legionelle (target temp only when interval > 0)
-   */
-  private renderBoilerCard() {
-    const section: SettingsSection = 'boiler';
-    const toast = this.toast?.section === section ? this.toast : null;
-
-    const hasAlt = !!this.current(section, 'boiler_has_alternative_heating');
-    const altType = String(this.current(section, 'boiler_alt_source_type') ?? 'gas');
-    const hasHome56 = !!this.current(section, 'box_has_home56');
-    const circEnabled = !!this.current(section, 'boiler_circulation_enabled');
-    const legInterval = Number(this.current(section, 'boiler_legionella_interval_days') ?? 0);
-    const secondTherm = !!this.current(section, 'boiler_enable_second_thermometer');
-
-    // Dynamic alt cost hint based on type
-    const altCostField: FieldDef = {
-      key: 'boiler_alt_cost_kwh',
-      label: 'Cena tepla (Kč/kWh)',
-      type: 'number',
-      min: 0,
-      max: 20,
-      step: 0.1,
-      hint: altSourceHint(altType),
-    };
-
-    // Home5 maneuver field — disabled (rendered but greyed out) when box_has_home56=false
-    const home5Field: FieldDef = {
-      key: 'boiler_home5_maneuver_enabled',
-      label: '🔋→🔥 Ohřev z baterie',
-      type: 'bool',
-      hint: hasHome56
-        ? 'Plánovač použije baterii (Home 5) k ohřevu, pokud je levnější než síť'
-        : 'Vyžaduje aktivaci „Box má Home 5/6" výše',
-    };
-
-    return html`
-      <div class="card">
-        <h2>🔥 Bojler</h2>
-        <div class="sub">Parametry inteligentního ohřevu vody — mirroruje průvodce v HA.</div>
-
-        <!-- Nádrž a čidla -->
-        <div class="group-label">Nádrž a čidla</div>
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_volume_l')!)}
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_temp_sensor_top')!)}
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_enable_second_thermometer')!)}
-        ${secondTherm ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_temp_sensor_bottom')!) : nothing}
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_current_power_entity')!)}
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_target_temp_c')!)}
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_deadline_time')!)}
-
-        <!-- Zdroje -->
-        <div class="group-label">Zdroje tepla</div>
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_has_alternative_heating')!)}
-        ${hasAlt ? html`
-          ${this.renderField(section, { ...BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_source_type')!, hint: undefined })}
-          ${this.renderField(section, altCostField)}
-          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_sensor')!)}
-          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_daily')!)}
-        ` : nothing}
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'box_has_home56')!)}
-        <div class="note" style="margin-top:6px;margin-bottom:2px">
-          Po změně „Box má Home 5/6" a uložení nastavení je nutné obnovit stránku (F5), aby se ovládací panel správně aktualizoval.
-        </div>
-        ${this.renderFieldDisableable(section, home5Field, !hasHome56)}
-        ${hasHome56 ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_battery_cycle_cost_czk_kwh')!) : nothing}
-
-        <!-- Cirkulace -->
-        <div class="group-label">Cirkulace teplé vody</div>
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_enabled')!)}
-        ${circEnabled ? html`
-          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_lead_minutes')!)}
-          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_run_minutes')!)}
-          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_max_runs_per_day')!)}
-          ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_min_gap_minutes')!)}
-        ` : nothing}
-
-        <!-- Anti-legionella -->
-        <div class="group-label">Ochrana proti legionelle</div>
-        ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_legionella_interval_days')!)}
-        ${legInterval > 0 ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_legionella_target_temp_c')!) : nothing}
-
-        <div class="actions">
-          <button class="save" ?disabled=${!this.isDirty(section) || this.saving === section}
+          <button class="save" ?disabled=${!dirty || this.saving === section}
             @click=${() => this.save(section)}>
             ${this.saving === section ? 'Ukládám…' : 'Uložit'}
           </button>
@@ -455,12 +660,155 @@ export class OigSettings extends LitElement {
     const checked = !disabled && !!raw;
     return html`
       <div class="row" style=${disabled ? 'opacity:0.45;pointer-events:none' : ''}>
-        <span class="lab">${f.label}${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}</span>
-        <label class="switch">
-          <input type="checkbox" .checked=${checked} ?disabled=${disabled}
-            @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLInputElement).checked)} />
-          <span class="slider"></span>
-        </label>
+        ${this.renderLabel(f)}
+        <div class="row-control">
+          <label class="switch">
+            <input type="checkbox" .checked=${checked} ?disabled=${disabled}
+              @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLInputElement).checked)} />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>`;
+  }
+
+  /**
+   * Render the boiler card with collapsible sub-sections and status badges.
+   *
+   * Sub-sections:
+   *   1. Nádrž a čidla — OPEN by default
+   *   2. Zdroje tepla — collapsed, badge: "plyn · 1,5 Kč/kWh" / "pouze elektřina"
+   *   3. Cirkulace teplé vody — collapsed, badge: "zapnuto" / "vypnuto"
+   *   4. Ochrana proti legionelle — collapsed, badge: "1×/7 dní" / "vypnuto"
+   */
+  private renderBoilerCard() {
+    const section: SettingsSection = 'boiler';
+    const toast = this.toast?.section === section ? this.toast : null;
+
+    const hasAlt = !!this.current(section, 'boiler_has_alternative_heating');
+    const altType = String(this.current(section, 'boiler_alt_source_type') ?? 'gas');
+    const altCostKwh = this.current(section, 'boiler_alt_cost_kwh') as number | null;
+    const hasHome56 = !!this.current(section, 'box_has_home56');
+    const home5Enabled = !!this.current(section, 'boiler_home5_maneuver_enabled');
+    const circEnabled = !!this.current(section, 'boiler_circulation_enabled');
+    const legInterval = Number(this.current(section, 'boiler_legionella_interval_days') ?? 0);
+    const secondTherm = !!this.current(section, 'boiler_enable_second_thermometer');
+
+    const dirty = this.isDirty(section);
+
+    // Dynamic alt cost hint based on type
+    const altCostField: FieldDef = {
+      key: 'boiler_alt_cost_kwh',
+      label: 'Cena tepla (Kč/kWh)',
+      type: 'number',
+      min: 0,
+      max: 20,
+      step: 0.1,
+      hint: altSourceHint(altType),
+    };
+
+    // Home5 maneuver field — disabled when box_has_home56=false
+    const home5Field: FieldDef = {
+      key: 'boiler_home5_maneuver_enabled',
+      label: '🔋→🔥 Ohřev z baterie',
+      type: 'bool',
+      hint: hasHome56
+        ? 'Plánovač použije baterii (Home 5) k ohřevu, pokud je levnější než síť'
+        : 'Vyžaduje aktivaci „Box má Home 5/6" výše',
+    };
+
+    // Section badges
+    const sourceBadge = sourceSectionBadge(hasAlt, altType, altCostKwh, hasHome56, home5Enabled);
+    const circBadge = circulationSectionBadge(circEnabled);
+    const legBadge = legionellaSectionBadge(legInterval);
+
+    return html`
+      <div class="card">
+        <h2>🔥 Bojler</h2>
+        <div class="sub">Parametry inteligentního ohřevu vody — mirroruje průvodce v HA.</div>
+
+        <!-- ══ Nádrž a čidla — OPEN by default ══ -->
+        <details class="bsec" open>
+          <summary>Nádrž a čidla</summary>
+          <div class="bsec-body">
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_volume_l')!)}
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_temp_sensor_top')!)}
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_enable_second_thermometer')!)}
+            ${secondTherm ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_temp_sensor_bottom')!) : nothing}
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_current_power_entity')!)}
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_target_temp_c')!)}
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_deadline_time')!)}
+          </div>
+        </details>
+
+        <!-- ══ Zdroje tepla — collapsed ══ -->
+        <details class="bsec">
+          <summary>
+            Zdroje tepla
+            <span class="bsec-badge" data-testid="badge-sources">${sourceBadge}</span>
+          </summary>
+          <div class="bsec-body">
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_has_alternative_heating')!)}
+            ${hasAlt ? html`
+              ${this.renderField(section, { ...BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_source_type')!, hint: undefined })}
+              ${this.renderField(section, altCostField)}
+              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_sensor')!)}
+              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_daily')!)}
+            ` : nothing}
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'box_has_home56')!)}
+            <div class="note" style="margin-top:6px;margin-bottom:2px">
+              Po změně „Box má Home 5/6" a uložení nastavení je nutné obnovit stránku (F5), aby se ovládací panel správně aktualizoval.
+            </div>
+            ${this.renderFieldDisableable(section, home5Field, !hasHome56)}
+            ${hasHome56 ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_battery_cycle_cost_czk_kwh')!) : nothing}
+          </div>
+        </details>
+
+        <!-- ══ Cirkulace teplé vody — collapsed ══ -->
+        <details class="bsec">
+          <summary>
+            Cirkulace teplé vody
+            <span class="bsec-badge" data-testid="badge-circulation">${circBadge}</span>
+          </summary>
+          <div class="bsec-body">
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_enabled')!)}
+            ${circEnabled ? html`
+              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_lead_minutes')!)}
+              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_run_minutes')!)}
+              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_max_runs_per_day')!)}
+              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_min_gap_minutes')!)}
+            ` : nothing}
+          </div>
+        </details>
+
+        <!-- ══ Ochrana proti legionelle — collapsed ══ -->
+        <details class="bsec">
+          <summary>
+            Ochrana proti legionelle
+            <span class="bsec-badge" data-testid="badge-legionella">${legBadge}</span>
+          </summary>
+          <div class="bsec-body">
+            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_legionella_interval_days')!)}
+            ${legInterval > 0 ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_legionella_target_temp_c')!) : nothing}
+          </div>
+        </details>
+
+        <!-- ══ Dirty bar / Actions ══ -->
+        ${dirty ? html`
+          <div class="dirty-bar" data-testid="boiler-dirty-bar">
+            <span class="dirty-bar-label">Neuložené změny</span>
+            ${toast ? html`<span class="toast ${toast.ok ? 'ok' : 'err'}">${toast.text}</span>` : nothing}
+            <button class="discard" @click=${() => this.discardPending(section)}>Zahodit</button>
+            <button class="save" ?disabled=${this.saving === section}
+              @click=${() => this.save(section)}>
+              ${this.saving === section ? 'Ukládám…' : 'Uložit'}
+            </button>
+          </div>
+        ` : html`
+          <div class="actions">
+            <button class="save" disabled>Uložit</button>
+            ${toast ? html`<span class="toast ${toast.ok ? 'ok' : 'err'}">${toast.text}</span>` : nothing}
+          </div>
+        `}
       </div>`;
   }
 

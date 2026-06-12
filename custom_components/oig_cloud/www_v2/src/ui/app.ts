@@ -1200,7 +1200,7 @@ export class OigApp extends LitElement {
 
              <!-- ===== SETTINGS TAB ===== -->
              <div class="tab-content ${this.activeTab === 'settings' ? 'active' : ''}">
-               ${this.activeTab === 'settings' ? html`<oig-settings></oig-settings>` : nothing}
+               ${this.activeTab === 'settings' ? html`<oig-settings .hassStates=${this.hass?.states ?? null}></oig-settings>` : nothing}
              </div>
           </oig-grid>
         </main>

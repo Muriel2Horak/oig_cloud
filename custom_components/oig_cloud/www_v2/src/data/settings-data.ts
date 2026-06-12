@@ -104,6 +104,37 @@ export async function loadModuleConfig(): Promise<ModuleConfig | null> {
   return data as ModuleConfig;
 }
 
+/**
+ * Poll loadModuleConfig with exponential backoff until it returns a valid
+ * config or the timeout expires.  Used after saving a section that triggers
+ * a config-entry reload (e.g. boiler) — during the reload window the GET
+ * returns 404 / "Box not found", which is EXPECTED and must NOT surface as
+ * an error to the user.
+ *
+ * @param onSuccess  Called on first successful poll (receives the new config).
+ * @param onTimeout  Called if the poll limit is reached without success.
+ * @param delaysMs   Backoff delays in ms between polls (default: 2s 4s 8s 15s 30s).
+ */
+export async function waitForModuleConfigAfterReload(
+  onSuccess: (cfg: ModuleConfig) => void,
+  onTimeout: () => void,
+  delaysMs: number[] = [2000, 4000, 8000, 15000, 30000],
+): Promise<void> {
+  for (const delay of delaysMs) {
+    await new Promise<void>((res) => setTimeout(res, delay));
+    // Deliberately call fetchOIGAPI directly to silence the normal warn path.
+    const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(
+      `/${INVERTER_SN}/module_config`,
+    );
+    if (data && !(data as any).error) {
+      onSuccess(data as ModuleConfig);
+      return;
+    }
+    // 404 / "Box not found" during reload window — silently continue.
+  }
+  onTimeout();
+}
+
 export interface SaveResult {
   ok: boolean;
   /** Per-field validation errors from the backend, if any. */
