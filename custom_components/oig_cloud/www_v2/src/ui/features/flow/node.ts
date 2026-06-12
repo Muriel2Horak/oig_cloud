@@ -56,6 +56,22 @@ const DEFAULT_POSITIONS: Record<NodeId, NodePosition> = {
 type SavedLayout = Partial<Record<NodeId, NodePosition>>;
 
 /** Open HA entity dialog on click */
+const EXPANDED_NODES_LS_KEY = 'oig_v2_flow_expanded_nodes';
+
+function loadExpandedNodes(): Set<NodeId> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_NODES_LS_KEY);
+    if (raw) return new Set(JSON.parse(raw) as NodeId[]);
+  } catch { /* ignore */ }
+  return new Set<NodeId>(['solar', 'house']);
+}
+
+function saveExpandedNodes(nodes: Set<NodeId>): void {
+  try {
+    localStorage.setItem(EXPANDED_NODES_LS_KEY, JSON.stringify([...nodes]));
+  } catch { /* ignore */ }
+}
+
 function openEntity(sensor: string): () => void {
   return () => haClient.openEntityDialog(sid(sensor));
 }
@@ -80,7 +96,9 @@ export class OigFlowNode extends LitElement {
   private shieldUnsub: (() => void) | null = null;
 
   // Expand/collapse state for mobile/tablet
-  @state() private expandedNodes = new Set<NodeId>();
+  // Solar + house start expanded (user 2026-06-12: details are the point of
+  // the Flow tab); the user's collapse/expand choice persists per browser.
+  @state() private expandedNodes = loadExpandedNodes();
   /** Tap-friendly gauge detail (mobile can't hover): which node's popover is open. */
   @state() private gaugeDetailOpen: NodeId | null = null;
 
@@ -631,18 +649,33 @@ export class OigFlowNode extends LitElement {
     .cons-split-z { background: #4CAF50; transition: width 0.3s; }
     .cons-split-n { background: #FFA726; transition: width 0.3s; }
 
+    /* Corner chips — same visual language as .ss-pill (dark, bordered, round) */
     .house-corner {
       display: flex;
       flex-direction: column;
       gap: 1px;
       font-size: 9px;
-      line-height: 1.15;
-      background: rgba(0, 0, 0, 0.18);
-      padding: 2px 5px;
-      border-radius: 5px;
+      line-height: 1.2;
+      background: #131f33;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      padding: 3px 8px;
+      border-radius: 9px;
     }
-    .house-corner .hc-l { font-weight: 700; }
+    .house-corner:hover { border-color: rgba(255, 255, 255, 0.4); }
+    .house-corner .hc-l {
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
     .house-corner .hc-v { opacity: 0.7; }
+    .hc-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
 
     .battery-center {
       display: flex;
@@ -1232,6 +1265,7 @@ export class OigFlowNode extends LitElement {
       next.add(nodeId);
     }
     this.expandedNodes = next;
+    saveExpandedNodes(next);
   }
 
   /** Get CSS class string for a node (includes expanded state) */
@@ -2071,14 +2105,14 @@ export class OigFlowNode extends LitElement {
         `)}
 
         <button class="indicator house-corner" style="position:absolute;top:4px;left:6px;z-index:3"
-          @click=${openEntity('actual_aco_p')} title="Záloha — výkon · dnes">
-          <span class="hc-l">🔌 ${formatPower(d.housePower)}</span>
-          <span class="hc-v">${zalohaToday.toFixed(1)} kWh</span>
+          @click=${openEntity('actual_aco_p')} title="Záloha — aktuální výkon · dnes">
+          <span class="hc-l"><i class="hc-dot" style="background:#4CAF50"></i>Záloha</span>
+          <span class="hc-v">${formatPower(d.housePower)} · ${zalohaToday.toFixed(1)} kWh</span>
         </button>
         <button class="indicator house-corner" style="position:absolute;top:4px;right:6px;text-align:right;z-index:3"
-          @click=${openEntity('actual_acinb_wtotal')} title="Nezáloha — výkon · dnes">
-          <span class="hc-l">🚗 ${formatPower(d.nonbackupPower)}</span>
-          <span class="hc-v">${nezalohaToday.toFixed(1)} kWh</span>
+          @click=${openEntity('actual_acinb_wtotal')} title="Nezáloha — aktuální výkon · dnes">
+          <span class="hc-l" style="justify-content:flex-end"><i class="hc-dot" style="background:#FFA726"></i>Nezáloha</span>
+          <span class="hc-v">${formatPower(d.nonbackupPower)} · ${nezalohaToday.toFixed(1)} kWh</span>
         </button>
 
         <div class="node-header" style="margin-top:18px;justify-content:center">
