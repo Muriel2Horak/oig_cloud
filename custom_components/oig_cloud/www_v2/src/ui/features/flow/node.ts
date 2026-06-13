@@ -829,8 +829,27 @@ export class OigFlowNode extends LitElement {
       background: linear-gradient(90deg,rgba(76,175,80,0),rgba(76,175,80,.12),rgba(76,175,80,0));
       border-color: rgba(76,175,80,.4);
     }
-    .pg-spread.unbal { animation: pg-shimmer 1.6s ease-in-out infinite; }
-    @keyframes pg-shimmer { 0%,100% { opacity:.5; } 50% { opacity:1; } }
+    .pg-spread.unbal {
+      border-color: rgba(229,57,53,.9);
+      background: linear-gradient(90deg,rgba(229,57,53,.05),rgba(229,57,53,.28),rgba(229,57,53,.05));
+      box-shadow: 0 0 8px rgba(229,57,53,.45);
+      animation: pg-shimmer 1.4s ease-in-out infinite;
+    }
+    @keyframes pg-shimmer { 0%,100% { opacity:.6; } 50% { opacity:1; } }
+    /* ⚖️ warning marker sitting on top of an unbalanced band */
+    .pg-spread-mark {
+      position: absolute;
+      top: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      line-height: 1;
+      background: #e53935;
+      border-radius: 5px;
+      padding: 1px 3px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.5);
+      white-space: nowrap;
+    }
 
     /* mobile: tighten phase graph a bit */
     @media (max-width: 768px) {
@@ -2294,6 +2313,9 @@ export class OigFlowNode extends LitElement {
     ) as [number, number, number];
     const totalZalohaW = d.houseL1 + d.houseL2 + d.houseL3;
     const spreadBand = computeSpreadBand(zalohaWidthsPct, totalZalohaW);
+    const spreadStr = ps.spreadW >= 1000
+      ? `${(ps.spreadW / 1000).toFixed(1).replace('.', ',')} kW`
+      : `${Math.round(ps.spreadW)} W`;
 
     // Format watts/kW for inline segment label
     const fmtKw = (w: number) => w >= 1000 ? `${(w / 1000).toFixed(1).replace('.', ',')}` : `${Math.round(w)} W`;
@@ -2363,7 +2385,9 @@ export class OigFlowNode extends LitElement {
           <!-- Spread band overlay -->
           ${spreadBand.widthPct > 0 ? html`
             <div class="pg-spread ${ps.balanced ? 'balanced' : 'unbal'}"
+              title=${ps.balanced ? 'Fáze vyvážené' : `Fáze nevyvážené — rozdíl ${spreadStr}`}
               style="left:calc(10px + ${spreadBand.leftPct.toFixed(2)}% * (100% - 61px) / 100);width:calc(${spreadBand.widthPct.toFixed(2)}% * (100% - 61px) / 100)">
+              ${ps.balanced ? nothing : html`<span class="pg-spread-mark">⚖️ ${spreadStr}</span>`}
             </div>` : nothing}
           <!-- Phase rows: NO L1/L2/L3 labels per spec -->
           ${phases.map((p) => {
