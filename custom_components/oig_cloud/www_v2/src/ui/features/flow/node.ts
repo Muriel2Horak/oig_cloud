@@ -1226,6 +1226,16 @@ export class OigFlowNode extends LitElement {
     .gd-head-ico { width: 15px; height: 15px; }
     .gd-cap { font-size: 11px; font-weight: 700; letter-spacing: .6px; }
 
+    /* Frequency (top-left inside header) */
+    .gd-hz {
+      position: absolute; left: 0; top: -1px;
+      background: none; border: none; cursor: pointer; font-family: inherit;
+      font-size: 9px; font-weight: 800; opacity: .7; color: inherit; padding: 0;
+    }
+    .gd-hz:hover { text-decoration: underline; opacity: 1; }
+    .gd-hz.warn { color: #ffcc80; opacity: 1; }
+    .gd-hz.crit { color: #ff8a80; opacity: 1; }
+
     /* Tariff badge (top-right inside header) */
     .gd-tar {
       position: absolute;
@@ -1297,17 +1307,30 @@ export class OigFlowNode extends LitElement {
     .gd-chip.bad   { background: rgba(229,57,53,.16);  border-color: rgba(229,57,53,.5);  color: #ff8a80; }
     .gd-chip.neutral { background: rgba(120,160,255,.10); border-color: rgba(120,160,255,.3); color: #cfe0ff; }
 
-    /* ── Daily/month cost row ── */
-    .gd-costrow {
-      display: flex; align-items: center; justify-content: center; gap: 4px;
-      font-size: 9.5px; margin-bottom: 6px; opacity: .85;
+    /* ── Money columns: prodej (dodávka) left · nákup (odběr) right ── */
+    .gd-cols { display: flex; gap: 8px; margin: 6px 0 2px; }
+    .gd-col {
+      flex: 1; border-radius: 10px; padding: 6px 5px; text-align: center;
+      border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.14);
     }
-    .gd-costnet {
-      background: none; border: none; cursor: pointer; font-family: inherit;
-      font-size: 9.5px; color: inherit; padding: 0;
+    .gd-cprice { font-size: 13px; font-weight: 800; }
+    .gd-cprice small { font-size: 7.5px; opacity: .6; font-weight: 600; }
+    .gd-cmoney {
+      display: flex; align-items: baseline; justify-content: center; gap: 4px;
+      margin-top: 3px; background: none; border: none; cursor: pointer;
+      font-family: inherit; padding: 0; color: inherit; width: 100%;
+      white-space: nowrap;
     }
-    .gd-costnet:hover { text-decoration: underline; }
-    .gd-cost-sep { opacity: .5; }
+    .gd-cmoney:hover { text-decoration: underline; }
+    .gd-cmoney .gd-ic { width: 11px; height: 11px; align-self: center; flex: none; }
+    .gd-md { font-size: 13px; font-weight: 800; white-space: nowrap; }
+    .gd-md small { font-size: 7.5px; opacity: .6; font-weight: 700; }
+    .gd-mm { font-size: 9px; opacity: .6; font-weight: 700; white-space: nowrap; }
+    .gd-clbl {
+      font-size: 8px; font-weight: 700; opacity: .7; margin-top: 3px;
+      display: flex; align-items: center; justify-content: center; gap: 3px;
+    }
+    .gd-moneyhdr { text-align: center; font-size: 7.5px; opacity: .4; margin: 0 0 6px; }
 
     /* ── Phase bars ── */
     .gd-ph {
@@ -1354,60 +1377,44 @@ export class OigFlowNode extends LitElement {
     }
     .gd-phends span { display: flex; align-items: center; gap: 2px; }
 
-    /* ── Voltage band ── */
+    /* ── Voltage: dynamic-zoom axis ── */
     .gd-volt {
       background: rgba(0,0,0,.18); border-radius: 9px;
-      padding: 7px 9px 5px; margin-bottom: 6px;
+      padding: 8px 10px 6px; margin-bottom: 2px;
     }
-    .gd-vh {
+    .gd-vnums {
       display: flex; justify-content: space-between;
-      font-size: 9px; opacity: .6; margin-bottom: 5px;
+      font-size: 9px; margin-bottom: 13px;
     }
+    .gd-vval {
+      background: none; border: none; cursor: pointer; font-family: inherit;
+      font-size: 9px; color: inherit; padding: 0; opacity: .85;
+    }
+    .gd-vval b { font-weight: 800; font-size: 11px; opacity: 1; }
+    .gd-vval:hover { text-decoration: underline; opacity: 1; }
     .gd-vband {
-      position: relative; height: 8px; border-radius: 4px;
-      background: linear-gradient(90deg,#e53935 0%,#ffa726 12%,#43a047 30%,#43a047 70%,#ffa726 88%,#e53935 100%);
-      opacity: .45;
+      position: relative; height: 11px; border-radius: 5px;
+      background: rgba(76,175,80,.12);
+    }
+    .gd-vwarn { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+    .gd-vwarn-hi { background: linear-gradient(90deg, rgba(255,167,38,0), rgba(229,57,53,.5)); }
+    .gd-vwarn-lo { background: linear-gradient(90deg, rgba(229,57,53,.5), rgba(255,167,38,0)); }
+    .gd-vnom { position: absolute; top: -2px; bottom: -2px; width: 1.5px; background: rgba(255,255,255,.4); z-index: 1; }
+    .gd-vdl {
+      position: absolute; top: -11px; transform: translateX(-50%);
+      font-size: 7px; font-weight: 800; opacity: .7; z-index: 3;
     }
     .gd-vdot {
       position: absolute; top: 50%; width: 10px; height: 10px;
-      border-radius: 50%; border: 2px solid rgba(0,0,0,.6);
-      transform: translate(-50%, -50%); z-index: 2;
+      border-radius: 50%; border: 2px solid #0e1726;
+      transform: translate(-50%, -50%); z-index: 3;
     }
     @keyframes gdVoltPulse { 0%,100%{box-shadow:0 0 4px currentColor;} 50%{box-shadow:0 0 10px currentColor;} }
     .gd-vdot-crit { animation: gdVoltPulse 1s ease-in-out infinite; }
     .gd-vsc {
       display: flex; justify-content: space-between;
-      font-size: 7px; opacity: .4; margin-top: 3px;
+      font-size: 7.5px; opacity: .5; margin-top: 5px;
     }
-    .gd-vnums {
-      display: flex; justify-content: space-between;
-      font-size: 8px; margin-top: 4px;
-    }
-    .gd-vval {
-      background: none; border: none; cursor: pointer; font-family: inherit;
-      font-size: 8px; color: inherit; padding: 0;
-    }
-    .gd-vval:hover { text-decoration: underline; }
-
-    /* ── Footer: Hz + energy ── */
-    .gd-foot {
-      display: flex; justify-content: space-between; align-items: center;
-      font-size: 10px;
-    }
-    .gd-fval {
-      background: none; border: none; cursor: pointer; font-family: inherit;
-      font-size: 10px; color: inherit; padding: 0;
-    }
-    .gd-fval:hover { text-decoration: underline; }
-    .gd-iet {
-      display: flex; gap: 7px; font-size: 9px; align-items: center;
-    }
-    .gd-iet button {
-      background: none; border: none; cursor: pointer; font-family: inherit;
-      font-size: 9px; color: inherit; padding: 0;
-      display: flex; align-items: center; gap: 2px;
-    }
-    .gd-iet button:hover { text-decoration: underline; }
 
     @media (min-width: 1025px) {
       .detail-section {
@@ -2456,6 +2463,14 @@ export class OigFlowNode extends LitElement {
               fill="none" stroke="currentColor" stroke-width="2.2"
               stroke-linecap="round" stroke-linejoin="round"/>
           </g>
+          <g id="gi-cost">
+            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M9 12h6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+          </g>
+          <g id="gi-earn">
+            <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M12 9v6M9 12h6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+          </g>
         </defs>
       </svg>`;
   }
@@ -2484,109 +2499,112 @@ export class OigFlowNode extends LitElement {
     const phases: [number, number, number] = [d.gridL1P, d.gridL2P, d.gridL3P];
     const anyImport = phases.some(p => p > 10);
     const anyExport = phases.some(p => p < -10);
-    // Grid state category
     const isCombined = anyImport && anyExport;
     const isPureImport = anyImport && !anyExport;
     const isPureExport = anyExport && !anyImport;
 
-    // Net balance (positive = net import)
     const netW = phases.reduce((s, p) => s + p, 0);
     const absNetW = Math.abs(netW);
-
-    // Σ imports / Σ exports for combination display
     const sumImportW = phases.filter(p => p > 0).reduce((s, p) => s + p, 0);
     const sumExportW = phases.filter(p => p < 0).reduce((s, p) => s + Math.abs(p), 0);
+    const flowKw = absNetW / 1000;
 
-    // Edge gauge — color by net direction
+    // ── Financial balance (drives aura + pill) ───────────────────────────
+    // netToday = earnings − cost. Positive = wallet gain (green), negative (red).
+    const hasCost = d.gridImportCostToday !== null || d.gridExportEarningsToday !== null;
+    const costToday = d.gridImportCostToday ?? 0;
+    const earnToday = d.gridExportEarningsToday ?? 0;
+    const netToday = earnToday - costToday;
+    const netMonth = (d.gridExportEarningsMonth ?? 0) - (d.gridImportCostMonth ?? 0);
+    const balColor = netToday >= 0 ? '#9fe6a8' : '#ff8a80';
+    const fmtCz = (v: number) => v.toFixed(2).replace('.', ',');
+    const fmtSigned = (v: number) => (v >= 0 ? '+' : '−') + fmtCz(Math.abs(v));
+
+    // Power-flow magnitude (edge gauge fill when no cost sensors yet)
     const breakerMax = 25 * 230 * 3;
     const exportLimit = d.inverterGridLimit > 0 ? d.inverterGridLimit : 5000;
-    const flowKw = absNetW / 1000;
-    const limitPct = isPureImport
-      ? (absNetW / breakerMax) * 100
-      : isPureExport ? (absNetW / exportLimit) * 100 : 0;
+    const flowPct = isPureExport ? (absNetW / exportLimit) * 100 : (absNetW / breakerMax) * 100;
 
-    // Color: for aura/edge only
-    const gColor = isPureImport
-      ? (d.spotPrice <= 0 ? '#43a047' : d.spotPrice < 3 ? '#ffa726' : '#ef5350')
-      : isPureExport
-        ? (d.exportPrice >= 3 ? '#43a047' : d.exportPrice >= 1.5 ? '#ffa726' : '#ef5350')
-        : 'rgba(120,160,255,0.55)';
+    // ── Money cells (color by SIGN of wallet impact, NOT by direction) ───
+    // dodávka column = earnings (>0 good/green). odběr column = cost (>0 expense
+    // /red; <0 negative spot price → you earn, green). Show magnitude, prefix
+    // only the exceptional sign so a normal day reads "1,28" / "0,00".
+    const earnCell = (v: number) => {
+      const loss = v < 0;
+      return { txt: (loss ? '−' : '') + fmtCz(Math.abs(v)), cls: loss ? 'gd-col-imp' : 'gd-col-exp', earn: !loss };
+    };
+    const costCell = (v: number) => {
+      const gain = v < 0;
+      return { txt: (gain ? '+' : '') + fmtCz(Math.abs(v)), cls: gain ? 'gd-col-exp' : 'gd-col-imp', earn: gain };
+    };
+    const expToday = earnCell(earnToday);
+    const expMonth = earnCell(d.gridExportEarningsMonth ?? 0);
+    const impToday = costCell(costToday);
+    const impMonth = costCell(d.gridImportCostMonth ?? 0);
+    // Price colored by sign of wallet impact for that direction.
+    const sellCls = d.exportPrice >= 0 ? 'gd-col-exp' : 'gd-col-imp'; // negative sell price = you pay
+    const buyCls = d.spotPrice <= 0 ? 'gd-col-exp' : 'gd-col-imp';    // negative spot price = you earn
 
-    // ── Price chip tinting ───────────────────────────────────────────────
-    // Buy chip: good (green) when <= 3 Kč, bad (red) when > 5 Kč, neutral otherwise.
-    // Sell chip: good (green) when > 0 Kč, bad (red) when <= 0.
-    const buyChipCls = d.spotPrice <= 3 ? 'gd-chip good' : d.spotPrice > 5 ? 'gd-chip bad' : 'gd-chip neutral';
-    const sellChipCls = d.exportPrice > 0 ? 'gd-chip good' : 'gd-chip bad';
+    // ── Voltage: dynamic-zoom axis (zoom to the actual phase spread) ──────
+    const VMIN = 207, VMAX = 253, VAL = 212, VAH = 248;
+    const vRaw = [
+      { v: d.gridL1V, label: 'L1', entity: 'ac_in_aci_vr' },
+      { v: d.gridL2V, label: 'L2', entity: 'ac_in_aci_vs' },
+      { v: d.gridL3V, label: 'L3', entity: 'ac_in_aci_vt' },
+    ];
+    const vValid = vRaw.filter(x => x.v > 0);
+    const hasVolt = vValid.length > 0;
+    const vAvg = hasVolt ? vValid.reduce((s, x) => s + x.v, 0) / vValid.length : 230;
+    const vLo = hasVolt ? Math.min(...vValid.map(x => x.v)) : 230;
+    const vHi = hasVolt ? Math.max(...vValid.map(x => x.v)) : 230;
+    const halfSpan = Math.max((vHi - vLo) / 2 + 3, 4); // min ±4 V window so dots never overlap
+    const winLo = vAvg - halfSpan, winHi = vAvg + halfSpan, winRange = winHi - winLo;
+    const vcolor = (v: number) => (v < VMIN || v > VMAX) ? '#e53935' : (v < VAL || v > VAH) ? '#ffa726' : '#66bb6a';
+    const vpct = (v: number) => Math.max(0, Math.min(100, ((v - winLo) / winRange) * 100));
+    const voltDots = vRaw.map(x => ({ ...x, color: x.v > 0 ? vcolor(x.v) : 'rgba(0,0,0,0)', pct: x.v > 0 ? vpct(x.v) : 50 }));
+    const voltWarn = voltDots.some(x => x.v > 0 && x.color === '#e53935');
+    const warnHi = winHi > VAH ? vpct(VAH) : null;
+    const warnLo = winLo < VAL ? vpct(VAL) : null;
+    const nomIn = winLo <= 230 && 230 <= winHi;
+    const vCenterLabel = warnHi !== null ? `limit ${VMAX} V →`
+      : warnLo !== null ? `← limit ${VMIN} V`
+      : 'norma 230 V ±10 %';
 
-    // ── Voltage ─────────────────────────────────────────────────────────
-    const VOLT_MIN = 207;   // 230 × 0.9
-    const VOLT_MAX = 253;   // 230 × 1.1
-    const VOLT_RANGE = VOLT_MAX - VOLT_MIN;
-    const voltDots: Array<{ v: number; pct: number; color: string; label: string }> = [
-      { v: d.gridL1V, label: 'L1' },
-      { v: d.gridL2V, label: 'L2' },
-      { v: d.gridL3V, label: 'L3' },
-    ].map(({ v, label }) => {
-      const pct = Math.max(0, Math.min(100, ((v - VOLT_MIN) / VOLT_RANGE) * 100));
-      // v <= 0: no data (startup / grid disconnected) — show as transparent, never alarm
-      // Color: safe zone 30-70%, amber near edges (pre-warn at ±3.5%), red outside ±10%
-      // VOLT_AMBER_LOW=212 V, VOLT_AMBER_HIGH=248 V (pre-warn buffer before ±10% trip limit)
-      const VOLT_AMBER_LOW = 212;
-      const VOLT_AMBER_HIGH = 248;
-      const color = (v <= 0) ? 'rgba(0,0,0,0)'
-        : (v < VOLT_MIN || v > VOLT_MAX) ? '#e53935'
-        : (v < VOLT_AMBER_LOW || v > VOLT_AMBER_HIGH) ? '#ffa726' : '#66bb6a';
-      return { v, pct, color, label };
-    });
-    const voltWarn = voltDots.some(d2 => d2.color === '#e53935');
-    const badVoltLabel = voltDots.filter(d2 => d2.color === '#e53935').map(d2 => d2.label).join(', ');
-
-    // ── Frequency ───────────────────────────────────────────────────────
-    // Grid frequency health. Normal grid drifts ±0.05–0.2 Hz routinely with no
-    // fault — warning at ±0.01/0.05 would be a permanent false alarm. Match the
-    // physics like voltage does: amber when leaving the normal band (±0.2 Hz),
-    // red near the inverter grid-code disconnect window (±0.5 Hz).
+    // ── Frequency (header top-left) ──────────────────────────────────────
+    // Normal grid drifts ±0.05–0.2 Hz routinely; amber when leaving the normal
+    // band (±0.2 Hz), red near the grid-code disconnect window (±0.5 Hz).
     const freqDev = d.gridFrequency > 0 ? Math.abs(d.gridFrequency - 50) : 0;
     const freqCrit = d.gridFrequency > 0 && freqDev > 0.5;
     const freqWarn = d.gridFrequency > 0 && freqDev > 0.2;
-    const freqColor = freqCrit ? '#ff8a80' : freqWarn ? '#ffcc80' : 'inherit';
+    const freqCls = freqCrit ? 'gd-hz crit' : freqWarn ? 'gd-hz warn' : 'gd-hz';
 
-    // ── Tariff badge ────────────────────────────────────────────────────
+    // ── Tariff badge ─────────────────────────────────────────────────────
     const tariffVT = d.currentTariff === 'VT' || d.currentTariff?.includes('vysoký');
     const tariffNT = d.currentTariff === 'NT' || d.currentTariff?.includes('nízký');
     const tariffCls = tariffVT ? 'gd-tar vt' : tariffNT ? 'gd-tar nt' : 'gd-tar';
     const tariffLabel = tariffVT ? 'VT' : tariffNT ? 'NT' : (d.currentTariff || '--');
 
-    // ── Phase bars: dynamic scale = max |phase| ──────────────────────────
-    const maxPhase = Math.max(50, ...phases.map(Math.abs));
-
-    // ── Cost display ────────────────────────────────────────────────────
-    const hasCost = d.gridImportCostToday !== null || d.gridExportEarningsToday !== null;
-    const netToday = (d.gridExportEarningsToday ?? 0) - (d.gridImportCostToday ?? 0);
-    const netMonth = (d.gridExportEarningsMonth ?? 0) - (d.gridImportCostMonth ?? 0);
-    const fmtNet = (v: number) => {
-      const s = Math.abs(v).toFixed(2).replace('.', ',');
-      return v >= 0 ? `+${s}` : `−${s}`;
-    };
+    // ── Phase bars: dynamic zero (slides left when no export) ────────────
+    const maxImp = Math.max(0, ...phases.filter(p => p > 0));
+    const maxExp = Math.max(0, ...phases.filter(p => p < 0).map(Math.abs));
+    const barSpan = Math.max(50, maxImp + maxExp);
+    const zeroPct = (maxExp / barSpan) * 100;
 
     // ── Popover detail ───────────────────────────────────────────────────
     const popoverDetail = html`
-      <div class="ss-pop-h"><span>${isCombined ? 'Kombinace' : isPureImport ? 'Odběr' : isPureExport ? 'Dodávka' : 'Síť v klidu'}</span>
-        <b style="color:${gColor}">${this.fmtKwGrid(netW)} net</b></div>
-      <div class="gp-r"><span>Odběr dnes</span><b class="gd-col-imp">${formatEnergy(d.gridImportToday)}</b></div>
-      <div class="gp-r"><span>Dodávka dnes</span><b class="gd-col-exp">${formatEnergy(d.gridExportToday)}</b></div>
-      <div class="gp-r"><span>Spot nákup</span><b>${d.spotPrice.toFixed(2)} Kč/kWh</b></div>
-      <div class="gp-r"><span>Výkupní cena</span><b>${d.exportPrice.toFixed(2)} Kč/kWh</b></div>
-      ${hasCost ? html`
+      <div class="ss-pop-h"><span>Bilance dnes</span>
+        <b style="color:${balColor}">${fmtSigned(netToday)} Kč</b></div>
+      <div class="gp-r"><span>Výdělek z dodávky</span><b class="gd-col-exp">${fmtCz(earnToday)} Kč</b></div>
+      <div class="gp-r"><span>Náklad za odběr</span><b class="gd-col-imp">${fmtCz(costToday)} Kč</b></div>
+      ${(d.gridImportCostMonth !== null || d.gridExportEarningsMonth !== null) ? html`
         <div class="gp-r" style="margin-top:4px;border-top:1px solid rgba(255,255,255,.12);padding-top:4px">
-          <span>Útrata dnes</span><b class="gd-col-imp">${(d.gridImportCostToday ?? 0).toFixed(2).replace('.', ',')} Kč</b>
-        </div>
-        <div class="gp-r"><span>Výdělek dnes</span><b class="gd-col-exp">${(d.gridExportEarningsToday ?? 0).toFixed(2).replace('.', ',')} Kč</b></div>
-        ${d.gridImportCostMonth !== null ? html`
-          <div class="gp-r"><span>Útrata měsíc</span><b class="gd-col-imp">${(d.gridImportCostMonth ?? 0).toFixed(2).replace('.', ',')} Kč</b></div>
-          <div class="gp-r"><span>Výdělek měsíc</span><b class="gd-col-exp">${(d.gridExportEarningsMonth ?? 0).toFixed(2).replace('.', ',')} Kč</b></div>
-        ` : nothing}
+          <span>Bilance měsíc</span><b style="color:${netMonth >= 0 ? '#9fe6a8' : '#ff8a80'}">${fmtSigned(netMonth)} Kč</b></div>
       ` : nothing}
+      <div class="gp-r" style="margin-top:4px;border-top:1px solid rgba(255,255,255,.12);padding-top:4px">
+        <span>Odběr dnes</span><b class="gd-col-imp">${formatEnergy(d.gridImportToday)}</b></div>
+      <div class="gp-r"><span>Dodávka dnes</span><b class="gd-col-exp">${formatEnergy(d.gridExportToday)}</b></div>
+      ${hasVolt ? html`<div class="gp-r"><span>Napětí fází</span><b>${vRaw.map(x => x.v > 0 ? x.v.toFixed(0) : '–').join(' · ')} V</b></div>` : nothing}
+      <div class="gp-r"><span>Frekvence</span><b>${d.gridFrequency > 0 ? d.gridFrequency.toFixed(2) : '–'} Hz</b></div>
     `;
 
     return html`
@@ -2598,19 +2616,23 @@ export class OigFlowNode extends LitElement {
         ${this.edgeGauge({
           id: 'gauge-grid',
           nodeId: 'grid',
-          pct: limitPct,
-          stops: [[0, gColor], [1, gColor]],
-          width: 2 + Math.min(3, flowKw),
+          pct: hasCost ? 100 : flowPct,
+          stops: [[0, balColor], [1, balColor]],
+          width: hasCost ? 3 : 2 + Math.min(3, flowKw),
           pulse: anyImport || anyExport,
           pulseDur: Math.max(0.9, 2.2 - flowKw * 0.35),
         })}
 
-        <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 50%, ${gColor}22, transparent 72%)"></div>
+        <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 50%, ${balColor}22, transparent 72%)"></div>
 
-        ${this.gaugePill('grid', isPureImport || isPureExport || isCombined ? `${Math.round(limitPct)} %` : '0 %', gColor, popoverDetail)}
+        ${this.gaugePill('grid', hasCost ? `${fmtSigned(netToday)} Kč` : `${Math.round(flowPct)} %`, balColor, popoverDetail)}
 
-        <!-- ── HEADER: grid icon · SÍŤ · tariff badge ── -->
+        <!-- ── HEADER: frequency (left) · SÍŤ · tariff (right) ── -->
         <div class="gd-head" style="margin-top:16px">
+          ${d.gridFrequency > 0 ? html`
+            <button class="${freqCls}" @click=${openEntity('ac_in_aci_f')}>
+              ${freqWarn ? '⚠' : '⚡'} ${d.gridFrequency.toFixed(2)} Hz
+            </button>` : nothing}
           ${svg`<svg class="gd-head-ico" viewBox="0 0 24 24" fill="none" stroke="#cfe0ff" stroke-width="2" stroke-linejoin="round">
             <path d="M12 2v20M5 6l7-4 7 4M5 6v5l7 4 7-4V6M5 16l7 4 7-4"/>
           </svg>`}
@@ -2623,7 +2645,6 @@ export class OigFlowNode extends LitElement {
 
         <!-- ── POWER / DIRECTION (3 states) ── -->
         ${isCombined ? html`
-          <!-- KOMBINACE: dodávka | BILANCE (net) | odběr -->
           <div class="gd-combo">
             <div class="gd-cside gd-col-exp">
               ${this.iExp()} ${this.fmtKwGrid(sumExportW)}
@@ -2638,7 +2659,6 @@ export class OigFlowNode extends LitElement {
           </div>
           <div class="gd-combolbl">⇅ Kombinace · bilance uprostřed</div>
         ` : html`
-          <!-- ČISTÝ STAV: velké číslo + směr -->
           <div class="gd-pure">
             <button class="gd-pn" @click=${openEntity('actual_aci_wtotal')}>
               ${this.fmtKwGrid(absNetW)}
@@ -2651,53 +2671,60 @@ export class OigFlowNode extends LitElement {
           </div>
         `}
 
-        <!-- ── PRICE CHIPS ── -->
-        <div class="gd-price">
-          <button class="${buyChipCls}" @click=${openEntity('spot_price_current_15min')}>
-            ${this.iImp()} ${d.spotPrice.toFixed(2).replace('.', ',')} <small>Kč</small>
-          </button>
-          <button class="${sellChipCls}" @click=${openEntity('export_price_current_15min')}>
-            ${this.iExp()} ${d.exportPrice.toFixed(2).replace('.', ',')} <small>Kč</small>
-          </button>
-        </div>
-
-        <!-- ── TODAY / MONTH NET COST (only when sensors present) ── -->
+        <!-- ── MONEY COLUMNS: dodávka | odběr (price + dnes·měsíc) ── -->
         ${hasCost ? html`
-          <div class="gd-costrow">
-            <button class="gd-costnet" @click=${openEntity('computed_grid_import_cost_today')}
-              title="dnes: útrata ${(d.gridImportCostToday ?? 0).toFixed(2)} Kč · výdělek ${(d.gridExportEarningsToday ?? 0).toFixed(2)} Kč">
-              dnes ${fmtNet(netToday)} Kč
-            </button>
-            ${(d.gridImportCostMonth !== null || d.gridExportEarningsMonth !== null) ? html`
-              <span class="gd-cost-sep">·</span>
-              <button class="gd-costnet" @click=${openEntity('computed_grid_import_cost_month')}
-                title="měsíc: útrata ${(d.gridImportCostMonth ?? 0).toFixed(2)} Kč · výdělek ${(d.gridExportEarningsMonth ?? 0).toFixed(2)} Kč">
-                měsíc ${fmtNet(netMonth)} Kč
+          <div class="gd-cols">
+            <div class="gd-col">
+              <div class="gd-cprice ${sellCls}">${fmtCz(d.exportPrice)} <small>Kč/kWh</small></div>
+              <button class="gd-cmoney" @click=${openEntity('computed_grid_export_earnings_today')}>
+                ${svg`<svg class="gd-ic ${expToday.cls}" viewBox="0 0 24 24"><use href="#${expToday.earn ? 'gi-earn' : 'gi-cost'}"/></svg>`}
+                <span class="gd-md ${expToday.cls}">${expToday.txt}<small> Kč</small></span>
+                <span class="gd-mm ${expMonth.cls}">${expMonth.txt}</span>
               </button>
-            ` : nothing}
+              <div class="gd-clbl gd-col-exp">${this.iExp()} dodávka</div>
+            </div>
+            <div class="gd-col">
+              <div class="gd-cprice ${buyCls}">${fmtCz(d.spotPrice)} <small>Kč/kWh</small></div>
+              <button class="gd-cmoney" @click=${openEntity('computed_grid_import_cost_today')}>
+                ${svg`<svg class="gd-ic ${impToday.cls}" viewBox="0 0 24 24"><use href="#${impToday.earn ? 'gi-earn' : 'gi-cost'}"/></svg>`}
+                <span class="gd-md ${impToday.cls}">${impToday.txt}<small> Kč</small></span>
+                <span class="gd-mm ${impMonth.cls}">${impMonth.txt}</span>
+              </button>
+              <div class="gd-clbl gd-col-imp">${this.iImp()} odběr</div>
+            </div>
           </div>
-        ` : nothing}
+          <div class="gd-moneyhdr">velké = dnes · malé = měsíc</div>
+        ` : html`
+          <div class="gd-price">
+            <button class="gd-chip ${d.exportPrice >= 0 ? 'good' : 'bad'}" @click=${openEntity('export_price_current_15min')}>
+              ${this.iExp()} ${fmtCz(d.exportPrice)} <small>Kč</small>
+            </button>
+            <button class="gd-chip ${d.spotPrice <= 3 ? 'good' : d.spotPrice > 5 ? 'bad' : 'neutral'}" @click=${openEntity('spot_price_current_15min')}>
+              ${this.iImp()} ${fmtCz(d.spotPrice)} <small>Kč</small>
+            </button>
+          </div>
+        `}
 
-        <!-- ── PHASE BARS: bidirectional, dynamic scale ── -->
+        <!-- ── PHASE BARS: bidirectional, dynamic zero ── -->
         <div class="gd-ph">
           ${(['L1','L2','L3'] as const).map((lbl, i) => {
             const pw = phases[i];
             const absPw = Math.abs(pw);
-            const barPct = Math.min(100, (absPw / maxPhase) * 50); // 50% = half-track
+            const w = Math.min(100, (absPw / barSpan) * 100);
             const isImp = pw > 10;
             const isExp = pw < -10;
             return html`
               <div class="gd-phr">
                 <span class="gd-pll">${lbl}</span>
                 <div class="gd-ptr">
-                  <div class="gd-zero"></div>
+                  <div class="gd-zero" style="left:${zeroPct.toFixed(1)}%"></div>
                   ${isExp ? html`
-                    <div class="gd-seg gd-sexp" style="width:${barPct.toFixed(1)}%">
-                      ${barPct >= 20 ? html`${this.fmtKwGrid(absPw)}` : nothing}
+                    <div class="gd-seg gd-sexp" style="left:${(zeroPct - w).toFixed(1)}%;width:${w.toFixed(1)}%">
+                      ${w >= 22 ? html`${this.fmtKwGrid(absPw)}` : nothing}
                     </div>` : nothing}
                   ${isImp ? html`
-                    <div class="gd-seg gd-simp" style="width:${barPct.toFixed(1)}%">
-                      ${barPct >= 20 ? html`${this.fmtKwGrid(absPw)}` : nothing}
+                    <div class="gd-seg gd-simp" style="left:${zeroPct.toFixed(1)}%;width:${w.toFixed(1)}%">
+                      ${w >= 22 ? html`${this.fmtKwGrid(absPw)}` : nothing}
                     </div>` : nothing}
                 </div>
               </div>`;
@@ -2708,39 +2735,30 @@ export class OigFlowNode extends LitElement {
           </div>
         </div>
 
-        <!-- ── VOLTAGE BAND ── -->
-        <div class="gd-volt">
-          <div class="gd-vh">
-            <span>Napětí fází</span>
-            <span style="color:${voltWarn ? '#ff8a80' : 'rgba(255,255,255,.55)'}">
-              ${voltWarn ? `⚠ ${badVoltLabel} mimo limit` : '230 V ±10 %'}
-            </span>
+        <!-- ── VOLTAGE: dynamic-zoom axis + per-phase values ── -->
+        ${hasVolt ? html`
+          <div class="gd-volt">
+            <div class="gd-vnums">
+              ${voltDots.map((x, idx) => html`
+                <button class="gd-vval" style="${x.v > 0 && x.color !== '#66bb6a' ? `color:${x.color}` : ''}" @click=${openEntity(x.entity)}>
+                  ${x.label} <b>${x.v > 0 ? x.v.toFixed(0) : '–'}</b>${idx === 2 ? html` V` : nothing}
+                </button>`)}
+            </div>
+            <div class="gd-vband">
+              ${warnHi !== null ? html`<div class="gd-vwarn gd-vwarn-hi" style="left:${warnHi.toFixed(1)}%;right:0"></div>` : nothing}
+              ${warnLo !== null ? html`<div class="gd-vwarn gd-vwarn-lo" style="left:0;width:${warnLo.toFixed(1)}%"></div>` : nothing}
+              ${nomIn ? html`<div class="gd-vnom" style="left:${vpct(230).toFixed(1)}%"></div>` : nothing}
+              ${voltDots.filter(x => x.v > 0).map(x => html`
+                <span class="gd-vdl" style="left:${x.pct.toFixed(1)}%">${x.label}</span>
+                <div class="gd-vdot ${x.color === '#e53935' ? 'gd-vdot-crit' : ''}" style="left:${x.pct.toFixed(1)}%;background:${x.color}"></div>`)}
+            </div>
+            <div class="gd-vsc">
+              <span>${winLo.toFixed(0)} V</span>
+              <span style="${voltWarn ? 'color:#ff8a80;opacity:.9' : 'opacity:.7'}">${vCenterLabel}</span>
+              <span>${winHi.toFixed(0)} V</span>
+            </div>
           </div>
-          <div class="gd-vband">
-            ${voltDots.map(dot => html`
-              <div class="gd-vdot ${dot.color === '#e53935' ? 'gd-vdot-crit' : ''}"
-                style="left:${dot.pct.toFixed(1)}%;background:${dot.color}"></div>`)}
-          </div>
-          <div class="gd-vsc"><span>207 V</span><span>230 V</span><span>253 V</span></div>
-          <div class="gd-vnums">
-            ${voltDots.map(dot => html`
-              <button class="gd-vval" style="color:${dot.color !== '#66bb6a' ? dot.color : 'inherit'}"
-                @click=${openEntity(dot.label === 'L1' ? 'ac_in_aci_vr' : dot.label === 'L2' ? 'ac_in_aci_vs' : 'ac_in_aci_vt')}>
-                ${dot.label} ${dot.v.toFixed(1)} V
-              </button>`)}
-          </div>
-        </div>
-
-        <!-- ── FOOTER: frequency + energy today ── -->
-        <div class="gd-foot">
-          <button class="gd-fval" style="color:${freqColor}" @click=${openEntity('ac_in_aci_f')}>
-            ${freqWarn ? '⚠' : '⚡'} <b>${d.gridFrequency.toFixed(2)}</b> Hz
-          </button>
-          <span class="gd-iet">
-            <button class="gd-col-imp" @click=${openEntity('ac_in_ac_ad')}>${this.iImp()}${(d.gridImportToday / 1000).toFixed(1).replace('.', ',')} kWh</button>
-            <button class="gd-col-exp" @click=${openEntity('ac_in_ac_pd')}>${this.iExp()}${(d.gridExportToday / 1000).toFixed(1).replace('.', ',')} kWh</button>
-          </span>
-        </div>
+        ` : nothing}
 
       </div>
     `;
