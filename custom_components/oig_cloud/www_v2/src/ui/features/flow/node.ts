@@ -294,9 +294,9 @@ export class OigFlowNode extends LitElement {
     /* Compact 2-col strings */
     .sol-str { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: rgba(0,0,0,.18); border-radius: 9px; padding: 7px 8px; margin-top: 10px; }
     .sol-sc { text-align: center; }
-    .sol-sc .sol-sh { font-size: 9px; opacity: .55; margin-bottom: 2px; }
-    .sol-sc .sol-sw { font-size: 14px; font-weight: 800; color: #ffca5a; }
-    .sol-sc .sol-sd { font-size: 9px; opacity: .6; margin-top: 1px; }
+    .sol-sc .sol-sh { font-size: 9px; opacity: .55; margin-bottom: 2px; white-space: nowrap; }
+    .sol-sc .sol-sw { font-size: 14px; font-weight: 800; color: #ffca5a; white-space: nowrap; }
+    .sol-sc .sol-sd { font-size: 9px; opacity: .6; margin-top: 1px; white-space: nowrap; }
     .sol-sc.sol-off .sol-sw { color: #5a6677; }
     /* Tomorrow chip */
     .sol-tmr { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 9px;
@@ -875,6 +875,11 @@ export class OigFlowNode extends LitElement {
     @media (max-width: 768px) {
       .pg { padding: 6px 8px; }
       .pg-row { height: 15px; }
+      /* solar strings: keep on one line in the narrow 2-col mobile node */
+      .sol-str { gap: 4px; padding: 6px 5px; }
+      .sol-sc .sol-sw { font-size: 12px; }
+      .sol-sc .sol-sh { font-size: 8px; }
+      .sol-sc .sol-sd { font-size: 7.5px; }
     }
 
     .battery-center {
