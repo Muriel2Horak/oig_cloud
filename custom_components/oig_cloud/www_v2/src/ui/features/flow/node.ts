@@ -809,7 +809,7 @@ export class OigFlowNode extends LitElement {
       font-size: 9px;
       font-weight: 700;
       opacity: .8;
-      width: 34px;
+      width: 48px;
       text-align: right;
       font-variant-numeric: tabular-nums;
       flex-shrink: 0;
@@ -2321,7 +2321,7 @@ export class OigFlowNode extends LitElement {
     const spreadBand = computeSpreadBand(zalohaWidthsPct, totalZalohaW);
 
     // Format watts/kW for inline segment label
-    const fmtKw = (w: number) => w >= 1000 ? `${(w / 1000).toFixed(1).replace('.', ',')}` : `${Math.round(w)} W`;
+    const fmtKw = (w: number) => w >= 1000 ? `${(w / 1000).toFixed(1).replace('.', ',')} kW` : `${Math.round(w)} W`;
     // Show label inside segment only when wide enough (≥14% of track width ≈ enough for "0.9")
     const LABEL_THRESHOLD_PCT = 14;
 
@@ -2389,7 +2389,7 @@ export class OigFlowNode extends LitElement {
           ${spreadBand.widthPct > 0 ? html`
             <div class="pg-spread ${ps.balanced ? 'balanced' : 'unbal'}"
               title=${ps.balanced ? 'Fáze vyvážené' : `Fáze nevyvážené — rozdíl ${spreadStr}`}
-              style="left:calc(10px + ${spreadBand.leftPct.toFixed(2)}% * (100% - 61px) / 100);width:calc(${spreadBand.widthPct.toFixed(2)}% * (100% - 61px) / 100)"></div>` : nothing}
+              style="left:calc(10px + ${spreadBand.leftPct.toFixed(2)}% * (100% - 75px) / 100);width:calc(${spreadBand.widthPct.toFixed(2)}% * (100% - 75px) / 100)"></div>` : nothing}
           <!-- Phase rows: NO L1/L2/L3 labels per spec -->
           ${phases.map((p) => {
             const zOver = p.z >= BACKUP_PHASE_LIMIT_W;
@@ -2411,7 +2411,7 @@ export class OigFlowNode extends LitElement {
                     </div>` : nothing}
                   ${showLimTick ? html`<div class="pg-lim" style="left:${limPct.toFixed(1)}%"></div>` : nothing}
                 </div>
-                <span class="pg-tot">${((phaseTotal) / 1000).toFixed(1).replace('.', ',')}</span>
+                <span class="pg-tot">${fmtKw(phaseTotal)}</span>
               </div>`;
           })}
         </div>

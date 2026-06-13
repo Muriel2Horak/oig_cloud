@@ -1109,7 +1109,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
 
         </div>
       </div>
-    `}renderHouse(){const e=this.data,t=e.houseTodayWh/1e3,i=e.nonbackupTodayWh/1e3,n=t+i,r=e.housePower+e.nonbackupPower,a=t+e.zalohaPlannedRemainingKwh,o=e.selfSufficiencyTodayPct,l=e.houseTodayWh+e.nonbackupTodayWh,d=l>0?e.srcBatteryTodayKwh*1e3/l*100:0,p=l>0?e.srcFveTodayKwh*1e3/l*100:0,u=l>0?e.srcGridTodayKwh*1e3/l*100:0,h=o>=66?"#43a047":o>=33?"#fdd835":"#e53935",b=`hsl(${Math.round(Math.max(0,Math.min(120,o*1.2)))}, 72%, 46%)`,f=n>0,m=f?n:1,y=f?Math.round(e.srcFveTodayKwh/m*100):0,S=f?Math.round(e.srcBatteryTodayKwh/m*100):0,x=f?Math.max(0,100-y-S):0,$=`Denní soběstačnost ${Math.round(o)} % · FVE ${y} % · Baterie ${S} % · Síť ${x} %`,P=wd([e.houseL1,e.houseL2,e.houseL3]),W=[{z:e.houseL1,n:e.nonbackupL1,ze:"ac_out_aco_pr"},{z:e.houseL2,n:e.nonbackupL2,ze:"ac_out_aco_ps"},{z:e.houseL3,n:e.nonbackupL3,ze:"ac_out_aco_pt"}],A=Math.max(300,...W.map(ee=>ee.z+ee.n)),R=Mn/A*100,k=R<=100,L=P.spreadW>=1e3?`${(P.spreadW/1e3).toFixed(1).replace(".",",")} kW`:`${Math.round(P.spreadW)} W`,O=W.map(ee=>Math.max(0,ee.z)/A*100),q=e.houseL1+e.houseL2+e.houseL3,G=_d(O,q),N=ee=>ee>=1e3?`${(ee/1e3).toFixed(1).replace(".",",")}`:`${Math.round(ee)} W`,H=14,Pe=`Záloha ${He(e.housePower)} · dnes ${t.toFixed(1)} kWh${e.zalohaPlannedRemainingKwh>0?` · plán ${a.toFixed(1)} kWh`:""}`,Re=`Nezáloha ${He(e.nonbackupPower)} · dnes ${i.toFixed(1)} kWh`;return c`
+    `}renderHouse(){const e=this.data,t=e.houseTodayWh/1e3,i=e.nonbackupTodayWh/1e3,n=t+i,r=e.housePower+e.nonbackupPower,a=t+e.zalohaPlannedRemainingKwh,o=e.selfSufficiencyTodayPct,l=e.houseTodayWh+e.nonbackupTodayWh,d=l>0?e.srcBatteryTodayKwh*1e3/l*100:0,p=l>0?e.srcFveTodayKwh*1e3/l*100:0,u=l>0?e.srcGridTodayKwh*1e3/l*100:0,h=o>=66?"#43a047":o>=33?"#fdd835":"#e53935",b=`hsl(${Math.round(Math.max(0,Math.min(120,o*1.2)))}, 72%, 46%)`,f=n>0,m=f?n:1,y=f?Math.round(e.srcFveTodayKwh/m*100):0,S=f?Math.round(e.srcBatteryTodayKwh/m*100):0,x=f?Math.max(0,100-y-S):0,$=`Denní soběstačnost ${Math.round(o)} % · FVE ${y} % · Baterie ${S} % · Síť ${x} %`,P=wd([e.houseL1,e.houseL2,e.houseL3]),W=[{z:e.houseL1,n:e.nonbackupL1,ze:"ac_out_aco_pr"},{z:e.houseL2,n:e.nonbackupL2,ze:"ac_out_aco_ps"},{z:e.houseL3,n:e.nonbackupL3,ze:"ac_out_aco_pt"}],A=Math.max(300,...W.map(ee=>ee.z+ee.n)),R=Mn/A*100,k=R<=100,L=P.spreadW>=1e3?`${(P.spreadW/1e3).toFixed(1).replace(".",",")} kW`:`${Math.round(P.spreadW)} W`,O=W.map(ee=>Math.max(0,ee.z)/A*100),q=e.houseL1+e.houseL2+e.houseL3,G=_d(O,q),N=ee=>ee>=1e3?`${(ee/1e3).toFixed(1).replace(".",",")} kW`:`${Math.round(ee)} W`,H=14,Pe=`Záloha ${He(e.housePower)} · dnes ${t.toFixed(1)} kWh${e.zalohaPlannedRemainingKwh>0?` · plán ${a.toFixed(1)} kWh`:""}`,Re=`Nezáloha ${He(e.nonbackupPower)} · dnes ${i.toFixed(1)} kWh`;return c`
       <div class="${this.nodeClass("house")}" style="--node-gradient: ${_i.house}; --node-border: ${hn.house};"
         @click=${ee=>this.toggleExpand("house",ee)} title=${$}>
 
@@ -1161,7 +1161,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
           ${G.widthPct>0?c`
             <div class="pg-spread ${P.balanced?"balanced":"unbal"}"
               title=${P.balanced?"Fáze vyvážené":`Fáze nevyvážené — rozdíl ${L}`}
-              style="left:calc(10px + ${G.leftPct.toFixed(2)}% * (100% - 61px) / 100);width:calc(${G.widthPct.toFixed(2)}% * (100% - 61px) / 100)"></div>`:_}
+              style="left:calc(10px + ${G.leftPct.toFixed(2)}% * (100% - 75px) / 100);width:calc(${G.widthPct.toFixed(2)}% * (100% - 75px) / 100)"></div>`:_}
           <!-- Phase rows: NO L1/L2/L3 labels per spec -->
           ${W.map(ee=>{const _e=ee.z>=Mn,w=ee.z+ee.n,Q=Math.max(0,ee.z)/A*100,se=Math.max(0,ee.n)/A*100,vt=Q>=H&&ee.z>100,Le=se>=H&&ee.n>100;return c`
               <div class="pg-row">
@@ -1176,7 +1176,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
                     </div>`:_}
                   ${k?c`<div class="pg-lim" style="left:${R.toFixed(1)}%"></div>`:_}
                 </div>
-                <span class="pg-tot">${(w/1e3).toFixed(1).replace(".",",")}</span>
+                <span class="pg-tot">${N(w)}</span>
               </div>`})}
         </div>
 
@@ -1829,7 +1829,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       font-size: 9px;
       font-weight: 700;
       opacity: .8;
-      width: 34px;
+      width: 48px;
       text-align: right;
       font-variant-numeric: tabular-nums;
       flex-shrink: 0;
