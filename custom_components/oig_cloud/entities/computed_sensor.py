@@ -24,6 +24,9 @@ _energy_data_cache: Dict[str, Dict[str, float]] = {}
 _energy_last_update_cache: Dict[str, datetime] = {}
 _energy_cache_loaded: Dict[str, bool] = {}
 _energy_restore_tasks: Dict[str, asyncio.Task[None]] = {}
+# Standalone Δt tracker for grid-cost accumulation (independent of battery sensor).
+# Ensures cost integration continues even when batt_batt_comp_p is unavailable.
+_grid_cost_last_update_cache: Dict[str, datetime] = {}
 PROXY_LAST_DATA_ENTITY_ID = "sensor.oig_local_oig_proxy_proxy_status_last_data"
 
 _LANGS: Dict[str, Dict[str, str]] = {
@@ -93,6 +96,27 @@ class OigCloudComputedSensor(_ComputedBase):
             "nonbackup_today": 0.0,
             "nonbackup_month": 0.0,
             "nonbackup_year": 0.0,
+            # Per-phase grid import cost (CZK) — today/month/year.
+            # Accumulated only when enable_pricing + enable_battery_prediction are on.
+            "grid_import_cost_l1_today": 0.0,
+            "grid_import_cost_l1_month": 0.0,
+            "grid_import_cost_l1_year": 0.0,
+            "grid_import_cost_l2_today": 0.0,
+            "grid_import_cost_l2_month": 0.0,
+            "grid_import_cost_l2_year": 0.0,
+            "grid_import_cost_l3_today": 0.0,
+            "grid_import_cost_l3_month": 0.0,
+            "grid_import_cost_l3_year": 0.0,
+            # Per-phase grid export earnings (CZK) — today/month/year.
+            "grid_export_earn_l1_today": 0.0,
+            "grid_export_earn_l1_month": 0.0,
+            "grid_export_earn_l1_year": 0.0,
+            "grid_export_earn_l2_today": 0.0,
+            "grid_export_earn_l2_month": 0.0,
+            "grid_export_earn_l2_year": 0.0,
+            "grid_export_earn_l3_today": 0.0,
+            "grid_export_earn_l3_month": 0.0,
+            "grid_export_earn_l3_year": 0.0,
         }
 
         self._last_update_time: Optional[datetime] = None
@@ -364,6 +388,13 @@ class OigCloudComputedSensor(_ComputedBase):
             "computed_nonbackup_consumption_today": "nonbackup_today",
             "computed_nonbackup_consumption_month": "nonbackup_month",
             "computed_nonbackup_consumption_year": "nonbackup_year",
+            # Per-phase grid cost/earnings sensors (today only — exposed as entities)
+            "computed_grid_import_cost_l1_today": "grid_import_cost_l1_today",
+            "computed_grid_import_cost_l2_today": "grid_import_cost_l2_today",
+            "computed_grid_import_cost_l3_today": "grid_import_cost_l3_today",
+            "computed_grid_export_earnings_l1_today": "grid_export_earn_l1_today",
+            "computed_grid_export_earnings_l2_today": "grid_export_earn_l2_today",
+            "computed_grid_export_earnings_l3_today": "grid_export_earn_l3_today",
         }
         return sensor_map.get(self._sensor_type)
 
@@ -427,6 +458,91 @@ class OigCloudComputedSensor(_ComputedBase):
         wh_nb = (float(nb_power) * delta_seconds) / 3600.0
         for key in ("nonbackup_today", "nonbackup_month", "nonbackup_year"):
             self._energy[key] = self._energy.get(key, 0.0) + wh_nb
+
+    # ── Grid cost / earnings accumulation ────────────────────────────────────
+
+    def _apply_grid_cost_delta(self, delta_seconds: float) -> None:
+        """Integrate per-phase grid power into CZK cost/earnings accumulators.
+
+        Sign convention for actual_aci_w{r,s,t}:
+          > 0  → import (odběr) — consumer pays buy_price
+          < 0  → export (dodávka) — consumer earns sell_price
+          = 0  → no contribution
+
+        Prices are read live from the spot-price sensor entities so that every
+        coordinator cycle uses the current 15-minute slot price.  The prices
+        already include all components (distribution, VAT, etc.) — no extra
+        math required.
+        """
+        buy_price = self._get_oig_number("spot_price_current_15min")
+        sell_price = self._get_oig_number("export_price_current_15min")
+        if buy_price is None or sell_price is None:
+            return  # pricing module not ready or disabled
+
+        phase_keys = (
+            ("actual_aci_wr", "l1"),
+            ("actual_aci_ws", "l2"),
+            ("actual_aci_wt", "l3"),
+        )
+        dt_h = delta_seconds / 3600.0  # Δt in hours
+
+        for oig_key, phase in phase_keys:
+            power_w = self._get_oig_number(oig_key)
+            if power_w is None:
+                continue
+            energy_kwh = power_w * dt_h / 1000.0
+
+            if power_w > 0:
+                # Import — positive energy → cost in CZK
+                cost = energy_kwh * float(buy_price)
+                for period in ("today", "month", "year"):
+                    k = f"grid_import_cost_{phase}_{period}"
+                    self._energy[k] = self._energy.get(k, 0.0) + cost
+            elif power_w < 0:
+                # Export — negative energy → earnings in CZK (stored positive)
+                earn = abs(energy_kwh) * float(sell_price)
+                for period in ("today", "month", "year"):
+                    k = f"grid_export_earn_{phase}_{period}"
+                    self._energy[k] = self._energy.get(k, 0.0) + earn
+
+    def _get_grid_cost_total_value(self) -> Optional[float]:
+        """Return total (L1+L2+L3) for the aggregate grid cost/earnings sensors."""
+        total_map: Dict[str, tuple[str, ...]] = {
+            "computed_grid_import_cost_today": (
+                "grid_import_cost_l1_today",
+                "grid_import_cost_l2_today",
+                "grid_import_cost_l3_today",
+            ),
+            "computed_grid_import_cost_month": (
+                "grid_import_cost_l1_month",
+                "grid_import_cost_l2_month",
+                "grid_import_cost_l3_month",
+            ),
+            "computed_grid_import_cost_year": (
+                "grid_import_cost_l1_year",
+                "grid_import_cost_l2_year",
+                "grid_import_cost_l3_year",
+            ),
+            "computed_grid_export_earnings_today": (
+                "grid_export_earn_l1_today",
+                "grid_export_earn_l2_today",
+                "grid_export_earn_l3_today",
+            ),
+            "computed_grid_export_earnings_month": (
+                "grid_export_earn_l1_month",
+                "grid_export_earn_l2_month",
+                "grid_export_earn_l3_month",
+            ),
+            "computed_grid_export_earnings_year": (
+                "grid_export_earn_l1_year",
+                "grid_export_earn_l2_year",
+                "grid_export_earn_l3_year",
+            ),
+        }
+        keys = total_map.get(self._sensor_type)
+        if keys is None:
+            return None
+        return round(sum(self._energy.get(k, 0.0) for k in keys), 4)
 
     def _maybe_schedule_energy_save(self) -> None:
         if not hasattr(self, "hass") or not self.hass:
@@ -712,6 +828,8 @@ class OigCloudComputedSensor(_ComputedBase):
             "computed_nonbackup_"
         ):
             return self._accumulate_energy()
+        if self._sensor_type.startswith("computed_grid_"):
+            return self._accumulate_grid_cost()
         return None
 
     def _sensor_mapping(self) -> Dict[str, Any]:
@@ -838,6 +956,12 @@ class OigCloudComputedSensor(_ComputedBase):
             self._apply_discharge_delta(wh_increment)
 
         self._apply_nonbackup_delta(delta_seconds)
+        # Grid cost integration: same Δt, runs for all sensors sharing this box's energy cache.
+        # We update the standalone grid-cost timestamp so _accumulate_grid_cost() knows
+        # this cycle was already covered and won't double-count.
+        self._apply_grid_cost_delta(delta_seconds)
+        if self._box_id and self._box_id != "unknown":
+            _grid_cost_last_update_cache[self._box_id] = now
 
         _LOGGER.debug(
             f"[{self.entity_id}] Δt={delta_seconds:.1f}s bat={bat_power:.1f}W fv={fv_power:.1f}W -> ΔWh={wh_increment:.4f}"
@@ -857,6 +981,72 @@ class OigCloudComputedSensor(_ComputedBase):
         if energy_key:
             return round(self._energy.get(energy_key, 0.0), 3)
         return None
+
+    def _accumulate_grid_cost(self) -> Optional[float]:
+        """Return the current value for this grid cost/earnings sensor.
+
+        Primary path: the integration (Δt × price × power) is driven by
+        _apply_energy_accumulation() which runs as part of the battery energy
+        accumulation cycle so that all accumulators for the same box share a
+        consistent Δt.
+
+        Fallback path: when batt_batt_comp_p is unavailable (comms hiccup, HA
+        restart, firmware update), the battery-driven path stalls.  To prevent
+        silent gaps in grid cost accounting we maintain a standalone per-box
+        timestamp (_grid_cost_last_update_cache) and integrate directly here
+        whenever the shared cache is stale (i.e., the battery sensor skipped
+        this cycle).  A 5-second tolerance avoids double-counting when both
+        paths run in the same coordinator tick.
+        """
+        self._update_shared_energy_cache()
+        try:
+            if not _energy_cache_loaded.get(self._box_id, False):
+                # Restore not finished yet — skip integration to avoid
+                # double-counting when historical data is loaded from storage.
+                pass
+            else:
+                now = datetime.now(timezone.utc)
+                last_gc = _grid_cost_last_update_cache.get(self._box_id)
+                if last_gc is None:
+                    # First call — record the timestamp but don't integrate yet
+                    # (no valid Δt reference yet).
+                    _grid_cost_last_update_cache[self._box_id] = now
+                else:
+                    elapsed = (now - last_gc).total_seconds()
+                    # Only run the standalone path if the battery-driven path
+                    # has NOT already updated the grid-cost cache in this cycle
+                    # (tolerance: 5 s to account for sub-second HA scheduling).
+                    battery_ran_this_cycle = elapsed < 5.0
+                    if not battery_ran_this_cycle and elapsed > 0:
+                        # Battery sensor was unavailable — drive integration ourselves.
+                        _LOGGER.debug(
+                            "[%s] grid-cost standalone fallback: Δt=%.1f s (battery stalled)",
+                            self.entity_id,
+                            elapsed,
+                        )
+                        self._apply_grid_cost_delta(elapsed)
+                        _grid_cost_last_update_cache[self._box_id] = now
+                        # Persist updated cache so other sensors in this box see it.
+                        if self._box_id and self._box_id != "unknown":
+                            _energy_data_cache[self._box_id] = self._energy
+
+            self._attr_extra_state_attributes = {
+                k: round(v, 4)
+                for k, v in self._energy.items()
+                if k.startswith("grid_import_cost_") or k.startswith("grid_export_earn_")
+            }
+
+            # Per-phase today value
+            energy_key = self._get_energy_value_key()
+            if energy_key is not None:
+                return round(self._energy.get(energy_key, 0.0), 4)
+
+            # Total (L1+L2+L3 sum) for aggregate sensors
+            return self._get_grid_cost_total_value()
+
+        except Exception as err:
+            _LOGGER.error("Error reading grid cost: %s", err, exc_info=True)
+            return None
 
     def _get_boiler_consumption_from_entities(self) -> Optional[float]:
         """Estimate boiler power using only `sensor.oig_{box}_*` entities."""

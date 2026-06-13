@@ -373,6 +373,16 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
   const spotPrice = parseNumber(get('spot_price_current_15min'));
   const exportPrice = parseNumber(get('export_price_current_15min'));
   const currentTariff = parseString(get('current_tariff'));
+  // Grid cost sensors (null when modules disabled / sensor absent)
+  const parseNullable = (s: HassState | null): number | null => {
+    if (!s || !s.state || s.state === 'unknown' || s.state === 'unavailable') return null;
+    const v = parseFloat(s.state);
+    return isNaN(v) ? null : v;
+  };
+  const gridImportCostToday = parseNullable(get('computed_grid_import_cost_today'));
+  const gridImportCostMonth = parseNullable(get('computed_grid_import_cost_month'));
+  const gridExportEarningsToday = parseNullable(get('computed_grid_export_earnings_today'));
+  const gridExportEarningsMonth = parseNullable(get('computed_grid_export_earnings_month'));
 
   // House — main
   const housePower = parseNumber(get('actual_aco_p'));
@@ -465,6 +475,8 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
     gridPower, gridVoltage, gridFrequency, gridImportToday, gridExportToday,
     gridL1V, gridL2V, gridL3V, gridL1P, gridL2P, gridL3P,
     spotPrice, exportPrice, currentTariff,
+    gridImportCostToday, gridImportCostMonth,
+    gridExportEarningsToday, gridExportEarningsMonth,
 
     housePower, houseTodayWh, houseL1, houseL2, houseL3,
     nonbackupPower, nonbackupTodayWh, nonbackupL1, nonbackupL2, nonbackupL3,

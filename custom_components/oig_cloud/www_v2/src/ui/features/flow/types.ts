@@ -57,6 +57,11 @@ export interface FlowData {
   spotPrice: number;
   exportPrice: number;
   currentTariff: string;
+  // Grid cost sensors (present only when both pricing + battery-prediction modules enabled)
+  gridImportCostToday: number | null;
+  gridImportCostMonth: number | null;
+  gridExportEarningsToday: number | null;
+  gridExportEarningsMonth: number | null;
 
   // House
   housePower: number;
@@ -266,6 +271,8 @@ export const EMPTY_FLOW_DATA: FlowData = {
   gridPower: 0, gridVoltage: 0, gridFrequency: 0, gridImportToday: 0, gridExportToday: 0,
   gridL1V: 0, gridL2V: 0, gridL3V: 0, gridL1P: 0, gridL2P: 0, gridL3P: 0,
   spotPrice: 0, exportPrice: 0, currentTariff: '',
+  gridImportCostToday: null, gridImportCostMonth: null,
+  gridExportEarningsToday: null, gridExportEarningsMonth: null,
   housePower: 0, houseTodayWh: 0, houseL1: 0, houseL2: 0, houseL3: 0,
   nonbackupPower: 0, nonbackupTodayWh: 0, nonbackupL1: 0, nonbackupL2: 0, nonbackupL3: 0,
   zalohaPlannedRemainingKwh: 0,

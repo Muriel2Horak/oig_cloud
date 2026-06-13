@@ -117,7 +117,12 @@ class OigCloudSensorRuntimeMixin(_EntityBase):
                 via_device=(DOMAIN, self._box_id),
             )
 
-        if sensor_category in ["statistics", "solar_forecast", "pricing"]:
+        if sensor_category in [
+            "statistics",
+            "solar_forecast",
+            "pricing",
+            "grid_cost_computed",
+        ]:
             return DeviceInfo(
                 identifiers={(DOMAIN, f"{self._box_id}_analytics")},
                 name=f"Analytics & Predictions {self._box_id}",

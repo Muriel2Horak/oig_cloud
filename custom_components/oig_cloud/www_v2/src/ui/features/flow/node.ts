@@ -19,7 +19,7 @@ import { shieldController, ShieldListener } from '@/data/shield-controller';
 import type { ShieldServiceType } from '@/ui/features/control-panel/types';
 import { mapShieldPendingToFlowIndicators, resolveInverterGridDeliveryDisplay } from './pending';
 import type { GridDeliveryStateModel } from '@/data/grid-delivery-model';
-import { formatPower, formatEnergy, getTariffDisplay, getHouseModeInfo, getGridExportDisplay } from '@/data/flow-data';
+import { formatPower, formatEnergy, getHouseModeInfo, getGridExportDisplay } from '@/data/flow-data';
 import { haClient } from '@/data/ha-client';
 import { oigLog } from '@/core/logger';
 import './battery-gauge';
@@ -1204,6 +1204,211 @@ export class OigFlowNode extends LitElement {
     .price-spot { color: #ef5350; }
     .price-export { color: #66bb6a; }
 
+    /* ====================================================================
+       Grid tile V4 — .gd-* namespace (compact, approved mock grid4.html)
+       ==================================================================== */
+
+    /* Shared icon (1em square SVG, inline) */
+    .gd-ic { width: 1em; height: 1em; vertical-align: -2px; }
+
+    /* Header row */
+    .gd-head {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .5px;
+      opacity: .85;
+      position: relative;
+    }
+    .gd-head-ico { width: 15px; height: 15px; }
+    .gd-cap { font-size: 11px; font-weight: 700; letter-spacing: .6px; }
+
+    /* Tariff badge (top-right inside header) */
+    .gd-tar {
+      position: absolute;
+      right: 0;
+      top: -1px;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 9px;
+      font-weight: 800;
+      border-radius: 6px;
+      padding: 1px 6px;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+    }
+    .gd-tar svg { width: 10px; height: 10px; }
+    .gd-tar.vt { background: rgba(255,167,38,.16); border: 1px solid rgba(255,167,38,.45); color: #ffcc80; }
+    .gd-tar.nt { background: rgba(76,175,80,.16); border: 1px solid rgba(76,175,80,.45); color: #9fe6a8; }
+    .gd-tar:not(.vt):not(.nt) { background: rgba(120,160,255,.12); border: 1px solid rgba(120,160,255,.25); color: #cfe0ff; }
+
+    /* Colours for import/export */
+    .gd-col-imp { color: #ff8a80; }
+    .gd-col-exp { color: #9fe6a8; }
+
+    /* ── Pure state ── */
+    .gd-pure { text-align: center; margin: 5px 0 2px; }
+    .gd-pn {
+      font-size: 26px; font-weight: 800; line-height: 1;
+      background: none; border: none; color: inherit; cursor: pointer; padding: 0;
+    }
+    .gd-pn:hover { text-decoration: underline; }
+    .gd-pd {
+      font-size: 11px; font-weight: 800; margin-top: 2px;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+
+    /* ── Combination ── */
+    .gd-combo {
+      display: flex; justify-content: center; align-items: center;
+      gap: 8px; margin: 5px 0 0;
+    }
+    .gd-cside {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 13px; font-weight: 800; line-height: 1;
+    }
+    .gd-cbal {
+      font-size: 22px; font-weight: 800; line-height: 1;
+      display: flex; align-items: center; gap: 4px;
+      background: none; border: none; cursor: pointer; padding: 0; color: inherit;
+    }
+    .gd-cbal:hover { text-decoration: underline; }
+    .gd-combolbl {
+      text-align: center; font-size: 10px; font-weight: 800; opacity: .7; margin-top: 3px;
+    }
+
+    /* ── Price chips ── */
+    .gd-price {
+      display: flex; gap: 6px; margin: 6px 0 5px;
+    }
+    .gd-chip {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+      border-radius: 8px; padding: 4px 3px; border: 1px solid;
+      font-weight: 800; font-size: 12px; cursor: pointer; font-family: inherit;
+    }
+    .gd-chip small { font-size: 8px; opacity: .6; font-weight: 600; }
+    .gd-chip:hover { opacity: .85; }
+    .gd-chip.good  { background: rgba(76,175,80,.15);  border-color: rgba(76,175,80,.4);  color: #9fe6a8; }
+    .gd-chip.bad   { background: rgba(229,57,53,.16);  border-color: rgba(229,57,53,.5);  color: #ff8a80; }
+    .gd-chip.neutral { background: rgba(120,160,255,.10); border-color: rgba(120,160,255,.3); color: #cfe0ff; }
+
+    /* ── Daily/month cost row ── */
+    .gd-costrow {
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      font-size: 9.5px; margin-bottom: 6px; opacity: .85;
+    }
+    .gd-costnet {
+      background: none; border: none; cursor: pointer; font-family: inherit;
+      font-size: 9.5px; color: inherit; padding: 0;
+    }
+    .gd-costnet:hover { text-decoration: underline; }
+    .gd-cost-sep { opacity: .5; }
+
+    /* ── Phase bars ── */
+    .gd-ph {
+      background: rgba(0,0,0,.18); border-radius: 9px;
+      padding: 6px 8px; margin-bottom: 7px;
+    }
+    .gd-phr {
+      display: flex; align-items: center; gap: 5px; height: 15px; margin: 3px 0;
+    }
+    .gd-pll { font-size: 9px; font-weight: 700; opacity: .55; width: 13px; }
+    .gd-ptr {
+      position: relative; flex: 1; height: 13px;
+      background: rgba(255,255,255,.05); border-radius: 4px; overflow: hidden;
+    }
+    /* Vertical centre line */
+    .gd-zero {
+      position: absolute; left: 50%; top: 0; bottom: 0;
+      width: 1.5px; background: rgba(255,255,255,.28); z-index: 2;
+    }
+    /* Import: right half, orange gradient */
+    .gd-seg {
+      position: absolute; top: 0; bottom: 0;
+      display: flex; align-items: center;
+      font-size: 8px; font-weight: 800; white-space: nowrap;
+    }
+    .gd-simp {
+      left: 50%;
+      background: linear-gradient(90deg, #fb8c00, #ff7043);
+      color: #2b1500;
+      justify-content: flex-end;
+      padding-right: 3px;
+    }
+    /* Export: left half, green gradient (RTL from centre) */
+    .gd-sexp {
+      right: 50%;
+      background: linear-gradient(90deg, #43a047, #66bb6a);
+      color: #06270c;
+      justify-content: flex-start;
+      padding-left: 3px;
+    }
+    .gd-phends {
+      display: flex; justify-content: space-between;
+      font-size: 8px; opacity: .55; margin-top: 2px;
+    }
+    .gd-phends span { display: flex; align-items: center; gap: 2px; }
+
+    /* ── Voltage band ── */
+    .gd-volt {
+      background: rgba(0,0,0,.18); border-radius: 9px;
+      padding: 7px 9px 5px; margin-bottom: 6px;
+    }
+    .gd-vh {
+      display: flex; justify-content: space-between;
+      font-size: 9px; opacity: .6; margin-bottom: 5px;
+    }
+    .gd-vband {
+      position: relative; height: 8px; border-radius: 4px;
+      background: linear-gradient(90deg,#e53935 0%,#ffa726 12%,#43a047 30%,#43a047 70%,#ffa726 88%,#e53935 100%);
+      opacity: .45;
+    }
+    .gd-vdot {
+      position: absolute; top: 50%; width: 10px; height: 10px;
+      border-radius: 50%; border: 2px solid rgba(0,0,0,.6);
+      transform: translate(-50%, -50%); z-index: 2;
+    }
+    @keyframes gdVoltPulse { 0%,100%{box-shadow:0 0 4px currentColor;} 50%{box-shadow:0 0 10px currentColor;} }
+    .gd-vdot-crit { animation: gdVoltPulse 1s ease-in-out infinite; }
+    .gd-vsc {
+      display: flex; justify-content: space-between;
+      font-size: 7px; opacity: .4; margin-top: 3px;
+    }
+    .gd-vnums {
+      display: flex; justify-content: space-between;
+      font-size: 8px; margin-top: 4px;
+    }
+    .gd-vval {
+      background: none; border: none; cursor: pointer; font-family: inherit;
+      font-size: 8px; color: inherit; padding: 0;
+    }
+    .gd-vval:hover { text-decoration: underline; }
+
+    /* ── Footer: Hz + energy ── */
+    .gd-foot {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 10px;
+    }
+    .gd-fval {
+      background: none; border: none; cursor: pointer; font-family: inherit;
+      font-size: 10px; color: inherit; padding: 0;
+    }
+    .gd-fval:hover { text-decoration: underline; }
+    .gd-iet {
+      display: flex; gap: 7px; font-size: 9px; align-items: center;
+    }
+    .gd-iet button {
+      background: none; border: none; cursor: pointer; font-family: inherit;
+      font-size: 9px; color: inherit; padding: 0;
+      display: flex; align-items: center; gap: 2px;
+    }
+    .gd-iet button:hover { text-decoration: underline; }
+
     @media (min-width: 1025px) {
       .detail-section {
         max-height: 500px;
@@ -1338,6 +1543,8 @@ export class OigFlowNode extends LitElement {
       .prices-row,
       .phases-grid,
       .pg { display: none; }
+      /* Grid tile kiosk: hide heavy sections */
+      .gd-ph, .gd-volt, .gd-costrow { display: none; }
     }
   `;
 
@@ -2230,116 +2437,308 @@ export class OigFlowNode extends LitElement {
   // GRID
   // ==========================================================================
 
+  /**
+   * Shared SVG sprite for import (arrow down into tray) and export (arrow up out of tray).
+   * Rendered once as an invisible SVG with <defs> so <use href="#gi-imp" /> / <use href="#gi-exp" />
+   * works anywhere in this shadow-root.
+   */
+  private gridIconDefs() {
+    return svg`
+      <svg width="0" height="0" style="position:absolute;pointer-events:none">
+        <defs>
+          <g id="gi-imp">
+            <path d="M4 20h16M12 4v10M8 10l4 4 4-4"
+              fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+          </g>
+          <g id="gi-exp">
+            <path d="M4 20h16M12 16V6M8 10l4-4 4 4"
+              fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+          </g>
+        </defs>
+      </svg>`;
+  }
+
+  /** Inline 1em SVG using the shared import icon sprite. */
+  private iImp() {
+    return svg`<svg class="gd-ic" viewBox="0 0 24 24"><use href="#gi-imp"/></svg>`;
+  }
+
+  /** Inline 1em SVG using the shared export icon sprite. */
+  private iExp() {
+    return svg`<svg class="gd-ic" viewBox="0 0 24 24"><use href="#gi-exp"/></svg>`;
+  }
+
+  /** Format W / kW with Czech comma. Returns e.g. "116 W" or "1,2 kW". */
+  private fmtKwGrid(w: number): string {
+    const abs = Math.abs(w);
+    if (abs >= 1000) return `${(abs / 1000).toFixed(1).replace('.', ',')} kW`;
+    return `${Math.round(abs)} W`;
+  }
+
   private renderGrid() {
     const d = this.data;
-    const importing = d.gridPower > 10;
-    const exporting = d.gridPower < -10;
-    const absW = Math.abs(d.gridPower);
-    const flowKw = absW / 1000;
-    const dirText = importing ? '↓ Odběr ze sítě' : exporting ? '↑ Přetok do sítě' : '◉ Žádný tok';
-    const breakerMax = 25 * 230 * 3; // 25 A / phase
+
+    // ── Phase signs (>0 = import, <0 = export) ──────────────────────────
+    const phases: [number, number, number] = [d.gridL1P, d.gridL2P, d.gridL3P];
+    const anyImport = phases.some(p => p > 10);
+    const anyExport = phases.some(p => p < -10);
+    // Grid state category
+    const isCombined = anyImport && anyExport;
+    const isPureImport = anyImport && !anyExport;
+    const isPureExport = anyExport && !anyImport;
+
+    // Net balance (positive = net import)
+    const netW = phases.reduce((s, p) => s + p, 0);
+    const absNetW = Math.abs(netW);
+
+    // Σ imports / Σ exports for combination display
+    const sumImportW = phases.filter(p => p > 0).reduce((s, p) => s + p, 0);
+    const sumExportW = phases.filter(p => p < 0).reduce((s, p) => s + Math.abs(p), 0);
+
+    // Edge gauge — color by net direction
+    const breakerMax = 25 * 230 * 3;
     const exportLimit = d.inverterGridLimit > 0 ? d.inverterGridLimit : 5000;
-    const limitPct = importing ? (absW / breakerMax) * 100 : exporting ? (absW / exportLimit) * 100 : 0;
-    // Colour by price: import expensive→red / cheap→orange / ≤0→green;
-    // export inverse by sell price (good→green).
-    const gColor = importing
+    const flowKw = absNetW / 1000;
+    const limitPct = isPureImport
+      ? (absNetW / breakerMax) * 100
+      : isPureExport ? (absNetW / exportLimit) * 100 : 0;
+
+    // Color: for aura/edge only
+    const gColor = isPureImport
       ? (d.spotPrice <= 0 ? '#43a047' : d.spotPrice < 3 ? '#ffa726' : '#ef5350')
-      : exporting
+      : isPureExport
         ? (d.exportPrice >= 3 ? '#43a047' : d.exportPrice >= 1.5 ? '#ffa726' : '#ef5350')
-        : 'rgba(255,255,255,0.35)';
-    const priceState = importing ? `${d.spotPrice.toFixed(2)} Kč` : exporting ? `+${d.exportPrice.toFixed(2)} Kč` : '';
-    const amps = (p: number, v: number) => (v > 10 ? Math.round(Math.abs(p) / v) : 0);
+        : 'rgba(120,160,255,0.55)';
+
+    // ── Price chip tinting ───────────────────────────────────────────────
+    // Buy chip: good (green) when <= 3 Kč, bad (red) when > 5 Kč, neutral otherwise.
+    // Sell chip: good (green) when > 0 Kč, bad (red) when <= 0.
+    const buyChipCls = d.spotPrice <= 3 ? 'gd-chip good' : d.spotPrice > 5 ? 'gd-chip bad' : 'gd-chip neutral';
+    const sellChipCls = d.exportPrice > 0 ? 'gd-chip good' : 'gd-chip bad';
+
+    // ── Voltage ─────────────────────────────────────────────────────────
+    const VOLT_MIN = 207;   // 230 × 0.9
+    const VOLT_MAX = 253;   // 230 × 1.1
+    const VOLT_RANGE = VOLT_MAX - VOLT_MIN;
+    const voltDots: Array<{ v: number; pct: number; color: string; label: string }> = [
+      { v: d.gridL1V, label: 'L1' },
+      { v: d.gridL2V, label: 'L2' },
+      { v: d.gridL3V, label: 'L3' },
+    ].map(({ v, label }) => {
+      const pct = Math.max(0, Math.min(100, ((v - VOLT_MIN) / VOLT_RANGE) * 100));
+      // v <= 0: no data (startup / grid disconnected) — show as transparent, never alarm
+      // Color: safe zone 30-70%, amber near edges (pre-warn at ±3.5%), red outside ±10%
+      // VOLT_AMBER_LOW=212 V, VOLT_AMBER_HIGH=248 V (pre-warn buffer before ±10% trip limit)
+      const VOLT_AMBER_LOW = 212;
+      const VOLT_AMBER_HIGH = 248;
+      const color = (v <= 0) ? 'rgba(0,0,0,0)'
+        : (v < VOLT_MIN || v > VOLT_MAX) ? '#e53935'
+        : (v < VOLT_AMBER_LOW || v > VOLT_AMBER_HIGH) ? '#ffa726' : '#66bb6a';
+      return { v, pct, color, label };
+    });
+    const voltWarn = voltDots.some(d2 => d2.color === '#e53935');
+    const badVoltLabel = voltDots.filter(d2 => d2.color === '#e53935').map(d2 => d2.label).join(', ');
+
+    // ── Frequency ───────────────────────────────────────────────────────
+    // Spec: warn outside 50 ± 0.01 Hz. Using 0.05 Hz threshold to suppress
+    // sub-cycle measurement noise while still flagging real grid stress (>0.05 Hz).
+    const freqOk = Math.abs(d.gridFrequency - 50) <= 0.05;
+    const freqWarn = !freqOk && d.gridFrequency > 0;
+    const freqColor = freqWarn ? '#ff8a80' : 'inherit';
+
+    // ── Tariff badge ────────────────────────────────────────────────────
+    const tariffVT = d.currentTariff === 'VT' || d.currentTariff?.includes('vysoký');
+    const tariffNT = d.currentTariff === 'NT' || d.currentTariff?.includes('nízký');
+    const tariffCls = tariffVT ? 'gd-tar vt' : tariffNT ? 'gd-tar nt' : 'gd-tar';
+    const tariffLabel = tariffVT ? 'VT' : tariffNT ? 'NT' : (d.currentTariff || '--');
+
+    // ── Phase bars: dynamic scale = max |phase| ──────────────────────────
+    const maxPhase = Math.max(50, ...phases.map(Math.abs));
+
+    // ── Cost display ────────────────────────────────────────────────────
+    const hasCost = d.gridImportCostToday !== null || d.gridExportEarningsToday !== null;
+    const netToday = (d.gridExportEarningsToday ?? 0) - (d.gridImportCostToday ?? 0);
+    const netMonth = (d.gridExportEarningsMonth ?? 0) - (d.gridImportCostMonth ?? 0);
+    const fmtNet = (v: number) => {
+      const s = Math.abs(v).toFixed(2).replace('.', ',');
+      return v >= 0 ? `+${s}` : `−${s}`;
+    };
+
+    // ── Popover detail ───────────────────────────────────────────────────
+    const popoverDetail = html`
+      <div class="ss-pop-h"><span>${isCombined ? 'Kombinace' : isPureImport ? 'Odběr' : isPureExport ? 'Dodávka' : 'Síť v klidu'}</span>
+        <b style="color:${gColor}">${this.fmtKwGrid(netW)} net</b></div>
+      <div class="gp-r"><span>Odběr dnes</span><b class="gd-col-imp">${formatEnergy(d.gridImportToday)}</b></div>
+      <div class="gp-r"><span>Dodávka dnes</span><b class="gd-col-exp">${formatEnergy(d.gridExportToday)}</b></div>
+      <div class="gp-r"><span>Spot nákup</span><b>${d.spotPrice.toFixed(2)} Kč/kWh</b></div>
+      <div class="gp-r"><span>Výkupní cena</span><b>${d.exportPrice.toFixed(2)} Kč/kWh</b></div>
+      ${hasCost ? html`
+        <div class="gp-r" style="margin-top:4px;border-top:1px solid rgba(255,255,255,.12);padding-top:4px">
+          <span>Útrata dnes</span><b class="gd-col-imp">${(d.gridImportCostToday ?? 0).toFixed(2).replace('.', ',')} Kč</b>
+        </div>
+        <div class="gp-r"><span>Výdělek dnes</span><b class="gd-col-exp">${(d.gridExportEarningsToday ?? 0).toFixed(2).replace('.', ',')} Kč</b></div>
+        ${d.gridImportCostMonth !== null ? html`
+          <div class="gp-r"><span>Útrata měsíc</span><b class="gd-col-imp">${(d.gridImportCostMonth ?? 0).toFixed(2).replace('.', ',')} Kč</b></div>
+          <div class="gp-r"><span>Výdělek měsíc</span><b class="gd-col-exp">${(d.gridExportEarningsMonth ?? 0).toFixed(2).replace('.', ',')} Kč</b></div>
+        ` : nothing}
+      ` : nothing}
+    `;
 
     return html`
       <div class="${this.nodeClass('grid')}" style="--node-gradient: ${NODE_GRADIENTS.grid}; --node-border: ${NODE_BORDERS.grid};"
         @click=${(e: Event) => this.toggleExpand('grid', e)}>
+
+        ${this.gridIconDefs()}
+
         ${this.edgeGauge({
           id: 'gauge-grid',
           nodeId: 'grid',
           pct: limitPct,
           stops: [[0, gColor], [1, gColor]],
           width: 2 + Math.min(3, flowKw),
-          pulse: importing || exporting,
+          pulse: anyImport || anyExport,
           pulseDur: Math.max(0.9, 2.2 - flowKw * 0.35),
         })}
+
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 50%, ${gColor}22, transparent 72%)"></div>
 
-        <button class="indicator" style="position:absolute;top:4px;left:6px;font-size:9px;z-index:3" @click=${openEntity('current_tariff')}>
-          ${getTariffDisplay(d.currentTariff)}
-        </button>
-        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px;z-index:3" @click=${openEntity('ac_in_aci_f')}>
-          ${d.gridFrequency.toFixed(1)} Hz
-        </button>
+        ${this.gaugePill('grid', isPureImport || isPureExport || isCombined ? `${Math.round(limitPct)} %` : '0 %', gColor, popoverDetail)}
 
-        ${this.gaugePill('grid', importing || exporting ? `${Math.round(limitPct)} %` : '0 %', gColor, html`
-          <div class="ss-pop-h"><span>${importing ? 'Vytížení jističe' : exporting ? 'Vytížení limitu přetoku' : 'Síť v klidu'}</span><b style="color:${gColor}">${Math.round(limitPct)} %</b></div>
-          <div class="gp-r"><span>Tok</span><b>${dirText} · ${formatPower(absW)}</b></div>
-          <div class="gp-r"><span>Limit</span><b>${importing ? `${(breakerMax / 1000).toFixed(1)} kW (25 A/fáze)` : `${(exportLimit / 1000).toFixed(1)} kW přetok`}</b></div>
-          <div class="gp-r"><span>Spot / Výkup</span><b>${d.spotPrice.toFixed(2)} / ${d.exportPrice.toFixed(2)} Kč</b></div>
-        `)}
-
-        <div class="node-header node-header--split" style="margin-top:16px">
-          <span class="node-label">🔌 Síť</span>
-          <span class="node-state" style="color:${gColor}">${priceState}</span>
-        </div>
-        <div class="node-value" @click=${openEntity('actual_aci_wtotal')}>${formatPower(absW)}</div>
-        <div class="node-subvalue" style="color:${gColor};font-weight:600">${dirText}</div>
-
-        <!-- Ceny — vždy viditelné jako rychlý přehled -->
-        <div class="prices-row" style="margin-top:4px">
-          <div class="price-cell">
-            <span class="price-label">⬇ Spot</span>
-            <button class="price-val price-spot" @click=${openEntity('spot_price_current_15min')}>
-              ${d.spotPrice.toFixed(2)} Kč
-            </button>
-          </div>
-          <div class="energy-divider-v"></div>
-          <div class="price-cell">
-            <span class="price-label">⬆ Výkup</span>
-            <button class="price-val price-export" @click=${openEntity('export_price_current_15min')}>
-              ${d.exportPrice.toFixed(2)} Kč
-            </button>
-          </div>
+        <!-- ── HEADER: grid icon · SÍŤ · tariff badge ── -->
+        <div class="gd-head" style="margin-top:16px">
+          ${svg`<svg class="gd-head-ico" viewBox="0 0 24 24" fill="none" stroke="#cfe0ff" stroke-width="2" stroke-linejoin="round">
+            <path d="M12 2v20M5 6l7-4 7 4M5 6v5l7 4 7-4V6M5 16l7 4 7-4"/>
+          </svg>`}
+          <span class="gd-cap">SÍŤ</span>
+          <button class="${tariffCls}" @click=${openEntity('current_tariff')}>
+            ${svg`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>`}
+            ${tariffLabel}
+          </button>
         </div>
 
-        <!-- 3 fáze — vždy viditelné -->
-        <div class="phases-grid" style="margin-top:6px">
-          <div class="phase-cell">
-            <span class="phase-label">L1</span>
-            <button class="phase-val" @click=${openEntity('actual_aci_wr')}>${amps(d.gridL1P, d.gridL1V)} A</button>
-            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('actual_aci_wr')}>${Math.round(d.gridL1P)} W</button>
-          </div>
-          <div class="phase-cell">
-            <span class="phase-label">L2</span>
-            <button class="phase-val" @click=${openEntity('actual_aci_ws')}>${amps(d.gridL2P, d.gridL2V)} A</button>
-            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('actual_aci_ws')}>${Math.round(d.gridL2P)} W</button>
-          </div>
-          <div class="phase-cell">
-            <span class="phase-label">L3</span>
-            <button class="phase-val" @click=${openEntity('actual_aci_wt')}>${amps(d.gridL3P, d.gridL3V)} A</button>
-            <button class="phase-val" style="font-size:10px;color:${u(CSS_VARS.textSecondary)}" @click=${openEntity('actual_aci_wt')}>${Math.round(d.gridL3P)} W</button>
-          </div>
-        </div>
-
-        <div class="detail-section">
-          <!-- Energie dnes — odběr vlevo, dodávka vpravo -->
-          <div class="energy-symmetric">
-            <div class="energy-side">
-              <span class="energy-side-label">⬇ Odběr</span>
-              <button class="energy-side-val energy-import" @click=${openEntity('ac_in_ac_ad')}>
-                ${formatEnergy(d.gridImportToday)}
-              </button>
+        <!-- ── POWER / DIRECTION (3 states) ── -->
+        ${isCombined ? html`
+          <!-- KOMBINACE: dodávka | BILANCE (net) | odběr -->
+          <div class="gd-combo">
+            <div class="gd-cside gd-col-exp">
+              ${this.iExp()} ${this.fmtKwGrid(sumExportW)}
             </div>
-            <div class="energy-divider-v"></div>
-            <div class="energy-side">
-              <span class="energy-side-label">⬆ Dodávka</span>
-              <button class="energy-side-val energy-export" @click=${openEntity('ac_in_ac_pd')}>
-                ${formatEnergy(d.gridExportToday)}
-              </button>
+            <button class="gd-cbal ${netW >= 0 ? 'gd-col-imp' : 'gd-col-exp'}" @click=${openEntity('actual_aci_wtotal')}>
+              ${netW >= 0 ? this.iImp() : this.iExp()}
+              ${this.fmtKwGrid(absNetW)}
+            </button>
+            <div class="gd-cside gd-col-imp">
+              ${this.iImp()} ${this.fmtKwGrid(sumImportW)}
             </div>
           </div>
+          <div class="gd-combolbl">⇅ Kombinace · bilance uprostřed</div>
+        ` : html`
+          <!-- ČISTÝ STAV: velké číslo + směr -->
+          <div class="gd-pure">
+            <button class="gd-pn" @click=${openEntity('actual_aci_wtotal')}>
+              ${this.fmtKwGrid(absNetW)}
+            </button>
+            <div class="gd-pd ${isPureImport ? 'gd-col-imp' : isPureExport ? 'gd-col-exp' : ''}">
+              ${isPureImport ? html`${this.iImp()} Odběr ze sítě`
+                : isPureExport ? html`${this.iExp()} Dodávka do sítě`
+                : '◉ Žádný tok'}
+            </div>
+          </div>
+        `}
 
+        <!-- ── PRICE CHIPS ── -->
+        <div class="gd-price">
+          <button class="${buyChipCls}" @click=${openEntity('spot_price_current_15min')}>
+            ${this.iImp()} ${d.spotPrice.toFixed(2).replace('.', ',')} <small>Kč</small>
+          </button>
+          <button class="${sellChipCls}" @click=${openEntity('export_price_current_15min')}>
+            ${this.iExp()} ${d.exportPrice.toFixed(2).replace('.', ',')} <small>Kč</small>
+          </button>
         </div>
+
+        <!-- ── TODAY / MONTH NET COST (only when sensors present) ── -->
+        ${hasCost ? html`
+          <div class="gd-costrow">
+            <button class="gd-costnet" @click=${openEntity('computed_grid_import_cost_today')}
+              title="dnes: útrata ${(d.gridImportCostToday ?? 0).toFixed(2)} Kč · výdělek ${(d.gridExportEarningsToday ?? 0).toFixed(2)} Kč">
+              dnes ${fmtNet(netToday)} Kč
+            </button>
+            ${(d.gridImportCostMonth !== null || d.gridExportEarningsMonth !== null) ? html`
+              <span class="gd-cost-sep">·</span>
+              <button class="gd-costnet" @click=${openEntity('computed_grid_import_cost_month')}
+                title="měsíc: útrata ${(d.gridImportCostMonth ?? 0).toFixed(2)} Kč · výdělek ${(d.gridExportEarningsMonth ?? 0).toFixed(2)} Kč">
+                měsíc ${fmtNet(netMonth)} Kč
+              </button>
+            ` : nothing}
+          </div>
+        ` : nothing}
+
+        <!-- ── PHASE BARS: bidirectional, dynamic scale ── -->
+        <div class="gd-ph">
+          ${(['L1','L2','L3'] as const).map((lbl, i) => {
+            const pw = phases[i];
+            const absPw = Math.abs(pw);
+            const barPct = Math.min(100, (absPw / maxPhase) * 50); // 50% = half-track
+            const isImp = pw > 10;
+            const isExp = pw < -10;
+            return html`
+              <div class="gd-phr">
+                <span class="gd-pll">${lbl}</span>
+                <div class="gd-ptr">
+                  <div class="gd-zero"></div>
+                  ${isExp ? html`
+                    <div class="gd-seg gd-sexp" style="width:${barPct.toFixed(1)}%">
+                      ${barPct >= 20 ? html`${this.fmtKwGrid(absPw)}` : nothing}
+                    </div>` : nothing}
+                  ${isImp ? html`
+                    <div class="gd-seg gd-simp" style="width:${barPct.toFixed(1)}%">
+                      ${barPct >= 20 ? html`${this.fmtKwGrid(absPw)}` : nothing}
+                    </div>` : nothing}
+                </div>
+              </div>`;
+          })}
+          <div class="gd-phends">
+            <span class="gd-col-exp">${this.iExp()}dodávka</span>
+            <span class="gd-col-imp">odběr${this.iImp()}</span>
+          </div>
+        </div>
+
+        <!-- ── VOLTAGE BAND ── -->
+        <div class="gd-volt">
+          <div class="gd-vh">
+            <span>Napětí fází</span>
+            <span style="color:${voltWarn ? '#ff8a80' : 'rgba(255,255,255,.55)'}">
+              ${voltWarn ? `⚠ ${badVoltLabel} mimo limit` : '230 V ±10 %'}
+            </span>
+          </div>
+          <div class="gd-vband">
+            ${voltDots.map(dot => html`
+              <div class="gd-vdot ${dot.color === '#e53935' ? 'gd-vdot-crit' : ''}"
+                style="left:${dot.pct.toFixed(1)}%;background:${dot.color}"></div>`)}
+          </div>
+          <div class="gd-vsc"><span>207 V</span><span>230 V</span><span>253 V</span></div>
+          <div class="gd-vnums">
+            ${voltDots.map(dot => html`
+              <button class="gd-vval" style="color:${dot.color !== '#66bb6a' ? dot.color : 'inherit'}"
+                @click=${openEntity(dot.label === 'L1' ? 'ac_in_aci_vr' : dot.label === 'L2' ? 'ac_in_aci_vs' : 'ac_in_aci_vt')}>
+                ${dot.label} ${dot.v.toFixed(1)} V
+              </button>`)}
+          </div>
+        </div>
+
+        <!-- ── FOOTER: frequency + energy today ── -->
+        <div class="gd-foot">
+          <button class="gd-fval" style="color:${freqColor}" @click=${openEntity('ac_in_aci_f')}>
+            ${freqWarn ? '⚠' : '⚡'} <b>${d.gridFrequency.toFixed(2)}</b> Hz
+          </button>
+          <span class="gd-iet">
+            <button class="gd-col-imp" @click=${openEntity('ac_in_ac_ad')}>${this.iImp()}${(d.gridImportToday / 1000).toFixed(1).replace('.', ',')} kWh</button>
+            <button class="gd-col-exp" @click=${openEntity('ac_in_ac_pd')}>${this.iExp()}${(d.gridExportToday / 1000).toFixed(1).replace('.', ',')} kWh</button>
+          </span>
+        </div>
+
       </div>
     `;
   }
