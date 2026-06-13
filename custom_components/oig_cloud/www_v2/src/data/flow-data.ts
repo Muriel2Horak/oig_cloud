@@ -506,6 +506,7 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
     boilerIsUse, boilerPower, boilerDayEnergy, boilerManualMode, boilerInstallPower,
 
     plannerAutoMode: null, // Loaded async via PlannerState
+    plannerRecommendedMode: parseString(get('planner_recommended_mode')),
     lastUpdate,
   };
 }

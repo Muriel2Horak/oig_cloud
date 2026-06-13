@@ -19,7 +19,7 @@ import { shieldController, ShieldListener } from '@/data/shield-controller';
 import type { ShieldServiceType } from '@/ui/features/control-panel/types';
 import { mapShieldPendingToFlowIndicators, resolveInverterGridDeliveryDisplay } from './pending';
 import type { GridDeliveryStateModel } from '@/data/grid-delivery-model';
-import { formatPower, formatEnergy, getHouseModeInfo, getGridExportDisplay } from '@/data/flow-data';
+import { formatPower, formatEnergy, getHouseModeInfo } from '@/data/flow-data';
 import { haClient } from '@/data/ha-client';
 import { oigLog } from '@/core/logger';
 import './battery-gauge';
@@ -1501,6 +1501,75 @@ export class OigFlowNode extends LitElement {
     .bt-met button.bt-hot { color: #ff8a80; }
     .bt-met button.bt-cold { color: #80d8ff; }
 
+    /* ====================================================================
+       Inverter (Střídač) tile — .iv-* namespace (compact, approved mock inv1)
+       ==================================================================== */
+    .iv-ic { width: 1em; height: 1em; vertical-align: -2px; }
+    .iv-head {
+      position: relative; display: flex; align-items: center; justify-content: center;
+      gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .5px; opacity: .85;
+      margin-top: 16px;
+    }
+    .iv-head-ico { width: 16px; height: 16px; }
+    .iv-cap { font-size: 11px; font-weight: 700; letter-spacing: .6px; }
+    .iv-bpbadge {
+      position: absolute; right: 0; top: -2px; display: flex; align-items: center; gap: 3px;
+      font-size: 9px; font-weight: 800; border-radius: 6px; padding: 1px 7px;
+      background: rgba(229,57,53,.18); border: 1px solid rgba(229,57,53,.5); color: #ff8a80;
+    }
+    .iv-bpbadge svg { width: 10px; height: 10px; }
+
+    /* hero = working mode */
+    .iv-mode { text-align: center; margin: 5px 0 1px; }
+    .iv-mn {
+      font-size: 23px; font-weight: 800; line-height: 1;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      background: none; border: none; cursor: pointer; padding: 0;
+    }
+    .iv-mn:hover { text-decoration: underline; }
+    .iv-mn svg { width: 20px; height: 20px; }
+    .iv-md { font-size: 11px; font-weight: 700; opacity: .6; margin-top: 2px; }
+
+    /* planner chip */
+    .iv-plan {
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+      font-size: 10px; font-weight: 800; border-radius: 8px; padding: 4px 8px; margin: 8px 0 7px;
+    }
+    .iv-plan svg { width: 13px; height: 13px; }
+    .iv-plan.iv-plan-auto { background: rgba(76,175,80,.14); border: 1px solid rgba(76,175,80,.4); color: #9fe6a8; }
+    .iv-plan.iv-plan-off { background: rgba(120,140,200,.12); border: 1px solid rgba(120,140,200,.3); color: #cfe0ff; }
+    .iv-rec { opacity: .7; font-weight: 700; }
+
+    /* status strip: Bypass · Dodávka */
+    .iv-strip { display: flex; gap: 8px; margin-bottom: 7px; }
+    .iv-sp {
+      flex: 1; border-radius: 9px; padding: 6px 7px; text-align: center;
+      border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.14);
+      cursor: pointer; font-family: inherit; color: inherit;
+    }
+    .iv-sp:hover { text-decoration: underline; }
+    .iv-spl {
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      font-size: 8px; font-weight: 700; opacity: .6; text-transform: uppercase; letter-spacing: .3px;
+    }
+    .iv-spl svg { width: 11px; height: 11px; }
+    .iv-spv { font-size: 13px; font-weight: 800; margin-top: 2px; }
+    .iv-ok { color: #9fe6a8; }
+    .iv-warn { color: #ffcc80; }
+    .iv-bad { color: #ff8a80; }
+    .iv-off { color: #9aa7ba; }
+
+    /* notifications */
+    .iv-notif {
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+      font-size: 10px; font-weight: 700; border-radius: 8px; padding: 4px 8px; width: 100%;
+      background: rgba(0,0,0,.14); border: 1px solid rgba(255,255,255,.07);
+      cursor: pointer; font-family: inherit; color: inherit;
+    }
+    .iv-notif svg { width: 12px; height: 12px; opacity: .7; }
+    .iv-notif.warn { background: rgba(255,167,38,.12); border-color: rgba(255,167,38,.4); color: #ffcc80; }
+    .iv-notif.warn svg { opacity: 1; }
+
     @media (min-width: 1025px) {
       .detail-section {
         max-height: 500px;
@@ -1638,9 +1707,8 @@ export class OigFlowNode extends LitElement {
       .pg { display: none; }
       /* Grid tile kiosk: hide heavy sections (price is on the Ceny tab) */
       .gd-ph, .gd-volt, .gd-costrow, .gd-cols { display: none; }
-      /* Střídač kiosk: hide the detail rows (Teplota/Bypass/Dodávka/limit/Shield)
-         — keep mode + planner; details are on click / other tabs. */
-      .inv-rows { display: none; }
+      /* Střídač kiosk: keep mode + planner; hide status strip + notifications. */
+      .iv-strip, .iv-notif { display: none; }
       /* Battery kiosk: keep SoC (aura+pill) + power; hide heavy blocks */
       .bt-soc, .bt-today, .bt-met { display: none; }
     }
@@ -2434,37 +2502,64 @@ export class OigFlowNode extends LitElement {
     return '';
   }
 
+  /** Shared SVG sprite for the inverter tile icons. */
+  private inverterIconDefs() {
+    return svg`
+      <svg width="0" height="0" style="position:absolute;pointer-events:none"><defs>
+        <g id="iv-cog"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM3 12h2M19 12h2M12 3v2M12 19v2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></g>
+        <g id="iv-bolt"><path d="M13 2L4 14h6l-1 8 9-12h-6z" fill="currentColor"/></g>
+        <g id="iv-swap"><path d="M7 7h11l-3-3M17 17H6l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+        <g id="iv-exp"><path d="M4 20h16M12 16V6M8 10l4-4 4 4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+        <g id="iv-bot"><rect x="4" y="8" width="16" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4v4M8.5 13h.01M15.5 13h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></g>
+        <g id="iv-bell"><path d="M6 9a6 6 0 0 1 12 0c0 7 2 8 2 8H4s2-1 2-8M10 21a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+        <g id="iv-warn"><path d="M12 3l9 16H3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4M12 17h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></g>
+      </defs></svg>`;
+  }
+
   private renderInverter() {
     const d = this.data;
     const modeInfo = getHouseModeInfo(d.inverterMode);
     const bypassActive = d.bypassStatus.toLowerCase() === 'on' || d.bypassStatus === '1';
-    const tempIcon = d.inverterTemp > 35 ? '🔥' : '🌡️';
-    const gridExport = getGridExportDisplay(d.inverterGridMode);
     const pending = mapShieldPendingToFlowIndicators(this.pendingServices, this.changingServices);
     const gridDelivery = resolveInverterGridDeliveryDisplay(this.gridDeliveryState);
 
-    let plannerCls = 'planner-unknown';
-    let plannerText = 'Plánovač: N/A';
-    if (d.plannerAutoMode === true) {
-      plannerCls = 'planner-auto';
-      plannerText = 'Plánovač: AUTO';
-    } else if (d.plannerAutoMode === false) {
-      plannerCls = 'planner-off';
-      plannerText = 'Plánovač: VYPNUTO';
-    }
-
     const m = d.inverterMode;
-    const modeColor = m.includes('UPS') ? '#ff9800'
-      : m.includes('Home 2') ? '#2196f3'
-      : m.includes('Home 3') ? '#9c27b0' : '#4caf50';
+    const modeColor = m.includes('UPS') ? '#ffa726'
+      : m.includes('Home 2') ? '#42a5f5'
+      : m.includes('Home 3') ? '#ba68c8' : '#5cc46a';
     const tempColor = d.inverterTemp >= 45 ? '#e53935' : d.inverterTemp >= 35 ? '#ffa726' : '#43a047';
     const tempPct = Math.max(0, Math.min(100, (d.inverterTemp / 55) * 100));
     const edgeColor = bypassActive ? '#e53935' : tempColor;
 
+    // ── Planner chip ──
+    const planAuto = d.plannerAutoMode;
+    const planText = planAuto === true ? 'řídí · AUTO' : planAuto === false ? 'VYPNUTO' : 'N/A';
+    const planCls = planAuto === true ? 'iv-plan-auto' : 'iv-plan-off';
+    const recInfo = d.plannerRecommendedMode ? getHouseModeInfo(d.plannerRecommendedMode) : null;
+    const showRec = !!recInfo && !!recInfo.text && recInfo.text !== modeInfo.text;
+
+    // ── Dodávka (přetoky) pill: state + limit ──
+    const gm = d.inverterGridMode;
+    const deliveryVal = gm === 'limited' ? this.fmtKwGrid(d.inverterGridLimit)
+      : gm === 'on' ? 'Zap' : gm === 'off' ? 'Vyp' : '—';
+    const deliveryCls = gm === 'on' ? 'iv-ok' : gm === 'limited' ? 'iv-warn' : 'iv-off';
+
+    const modeDesc = this.getInverterModeDesc();
+    const shieldText = this.shieldStatus === 'running'
+      ? `Zpracovávám${this.shieldQueueCount > 0 ? ` (${this.shieldQueueCount})` : ''}` : 'Nečinný';
+
+    // Czech plural: 1 → one, 2–4 → few, else → many.
+    const czPlural = (n: number, one: string, few: string, many: string) =>
+      n === 1 ? one : (n >= 2 && n <= 4) ? few : many;
+    const errWord = czPlural(d.notificationsError, 'chyba', 'chyby', 'chyb');
+    const unreadWord = czPlural(d.notificationsUnread, 'nepřečtená', 'nepřečtené', 'nepřečtených');
+
     return html`
       <div class="${this.nodeClass('inverter', pending.inverterModeChanging ? 'mode-changing' : '')}" style="--node-gradient: ${NODE_GRADIENTS.inverter}; --node-border: ${NODE_BORDERS.inverter};"
-        @click=${(e: Event) => this.toggleExpand('inverter', e)}
-        title="Teplota ${d.inverterTemp.toFixed(1)} °C · ${bypassActive ? 'Bypass aktivní' : 'Bypass vyp'}">
+        @click=${(e: Event) => this.toggleExpand('inverter', e)}>
+
+        ${this.inverterIconDefs()}
+
         ${this.edgeGauge({
           id: 'gauge-inverter',
           nodeId: 'inverter',
@@ -2477,72 +2572,63 @@ export class OigFlowNode extends LitElement {
         <div class="node-tint" style="background: radial-gradient(120% 90% at 50% 0, ${modeColor}22, transparent 72%)"></div>
 
         ${this.gaugePill('inverter', bypassActive ? '⚠ BYPASS' : `${d.inverterTemp.toFixed(0)} °C`, edgeColor, html`
-          <div class="ss-pop-h"><span>Teplota střídače</span><b style="color:${tempColor}">${d.inverterTemp.toFixed(1)} °C</b></div>
-          <div class="gp-r"><span>Bypass</span><b>${bypassActive ? '🔴 AKTIVNÍ' : 'Vypnutý'}</b></div>
-          <div class="gp-r"><span>Režim</span><b>${modeInfo.text}</b></div>
+          <div class="ss-pop-h"><span>Střídač</span><b style="color:${modeColor}">${modeInfo.text}</b></div>
+          <div class="gp-r"><span>Teplota</span><b style="color:${tempColor}">${d.inverterTemp.toFixed(1)} °C</b></div>
+          <div class="gp-r"><span>Bypass</span><b style="color:${bypassActive ? '#ff8a80' : 'inherit'}">${bypassActive ? 'AKTIVNÍ' : 'Vypnutý'}</b></div>
+          ${modeDesc ? html`<div class="gp-r"><span>Režim</span><b>${modeDesc}</b></div>` : nothing}
+          <div class="gp-r"><span>Dodávka</span><b>${gridDelivery.currentModeText}${gm === 'limited' ? ` · ${this.fmtKwGrid(d.inverterGridLimit)}` : ''}</b></div>
+          <div class="gp-r"><span>Plánovač</span><b>${planText}${showRec ? ` · doporučuje ${recInfo!.text}` : ''}</b></div>
+          <div class="gp-r"><span>Shield</span><b>${shieldText}</b></div>
         `)}
 
-        <div class="node-header" style="justify-content:center">
-          <span class="node-label">⚙️ Střídač</span>
-        </div>
-        <div class="node-value" @click=${openEntity('box_prms_mode')} style="color:${modeColor}">
-          ${pending.inverterModeChanging ? html`<span class="spinner spinner--small"></span>` : nothing}
-          ${modeInfo.icon} ${modeInfo.text}
-        </div>
-        ${this.getInverterModeDesc() ? html`<div class="node-subvalue">${this.getInverterModeDesc()}</div>` : nothing}
-        ${pending.inverterModeText ? html`<div class="pending-text">${pending.inverterModeText}</div>` : nothing}
-
-        <div class="inv-chip ${plannerCls}">🤖 ${plannerText}</div>
-
-        <div class="inv-rows">
-          <div class="inv-row">
-            <span class="inv-lab">${tempIcon} Teplota</span>
-            <button class="inv-pill" style="background:${tempColor}26;color:${tempColor}"
-              @click=${openEntity('box_temp')}>${d.inverterTemp.toFixed(1)} °C</button>
-          </div>
-          <div class="inv-row">
-            <span class="inv-lab">🔁 Bypass</span>
-            <button class="inv-pill ${bypassActive ? 'pill-red' : 'pill-green'}"
-              @click=${openEntity('bypass_status')}>${bypassActive ? 'ZAP' : 'Vyp'}</button>
-          </div>
-          <div class="inv-row">
-            <span class="inv-lab">${gridExport.icon} Dodávka</span>
-            <button class="inv-val ${gridDelivery.isUnavailable ? 'current-state-unknown' : ''}"
-              @click=${openEntity('invertor_prms_to_grid')}>${gridDelivery.currentModeText}</button>
-          </div>
-          ${gridDelivery.limitLabel !== null ? html`
-            <div class="inv-row">
-              <span class="inv-lab">🌊 ${gridDelivery.limitLabel}</span>
-              <button class="inv-val ${gridDelivery.showLimitAsActive ? 'limit-active' : ''}"
-                @click=${openEntity('invertor_prm1_p_max_feed_grid')}>${gridDelivery.limitValue}</button>
-            </div>
-          ` : nothing}
-          <div class="inv-row">
-            <span class="inv-lab">🛡️ Shield</span>
-            <span class="inv-val">${this.shieldStatus === 'running' ? 'Zpracovávám' : 'Nečinný'}${this.shieldQueueCount > 0 ? ` (${this.shieldQueueCount})` : ''}</span>
-          </div>
+        <!-- HEADER: ⚙️ STŘÍDAČ · bypass badge (when active) -->
+        <div class="iv-head">
+          ${svg`<svg class="iv-head-ico" viewBox="0 0 24 24" fill="none" stroke="#cfe0ff" stroke-width="2"><use href="#iv-cog"/></svg>`}
+          <span class="iv-cap">STŘÍDAČ</span>
+          ${bypassActive ? html`<span class="iv-bpbadge">${svg`<svg viewBox="0 0 24 24"><use href="#iv-warn"/></svg>`} BYPASS</span>` : nothing}
         </div>
 
-        <button class="inv-note ${d.notificationsError > 0 ? 'warn' : ''}"
-          @click=${openEntity('notification_count_unread')}>
-          🔔 ${d.notificationsError > 0
-            ? `${d.notificationsError} chyb · ${d.notificationsUnread} nepřečtených`
+        <!-- HERO: working mode + description -->
+        <div class="iv-mode">
+          <button class="iv-mn" style="color:${modeColor}" @click=${openEntity('box_prms_mode')}>
+            ${pending.inverterModeChanging ? html`<span class="spinner spinner--small"></span>` : svg`<svg class="iv-ic" viewBox="0 0 24 24"><use href="#iv-bolt"/></svg>`}
+            ${modeInfo.text}
+          </button>
+          ${modeDesc ? html`<div class="iv-md">${modeDesc}</div>` : nothing}
+          ${pending.inverterModeText ? html`<div class="pending-text">${pending.inverterModeText}</div>` : nothing}
+        </div>
+
+        <!-- PLANNER chip -->
+        <div class="iv-plan ${planCls}">
+          ${svg`<svg viewBox="0 0 24 24"><use href="#iv-bot"/></svg>`} Plánovač ${planText}${showRec ? html`<span class="iv-rec"> · doporučuje ${recInfo!.text}</span>` : nothing}
+        </div>
+
+        <!-- STATUS strip: Bypass · Dodávka -->
+        <div class="iv-strip">
+          <button class="iv-sp" @click=${openEntity('bypass_status')}>
+            <div class="iv-spl">${svg`<svg viewBox="0 0 24 24"><use href="#iv-swap"/></svg>`} Bypass</div>
+            <div class="iv-spv ${bypassActive ? 'iv-bad' : 'iv-ok'}">${bypassActive ? 'ZAP' : 'Vyp'}</div>
+          </button>
+          <button class="iv-sp" @click=${openEntity(gm === 'limited' ? 'invertor_prm1_p_max_feed_grid' : 'invertor_prms_to_grid')}>
+            <div class="iv-spl">${svg`<svg viewBox="0 0 24 24"><use href="#iv-exp"/></svg>`} Dodávka</div>
+            <div class="iv-spv ${deliveryCls}">${deliveryVal}</div>
+          </button>
+        </div>
+
+        <!-- NOTIFICATIONS -->
+        <button class="iv-notif ${d.notificationsError > 0 ? 'warn' : ''}" @click=${openEntity('notification_count_unread')}>
+          ${d.notificationsError > 0
+            ? html`${svg`<svg viewBox="0 0 24 24"><use href="#iv-warn"/></svg>`} ${d.notificationsError} ${errWord} · ${d.notificationsUnread} ${unreadWord}`
             : d.notificationsUnread > 0
-              ? `${d.notificationsUnread} nepřečtených`
-              : 'Bez notifikací'}
+              ? html`${svg`<svg viewBox="0 0 24 24"><use href="#iv-bell"/></svg>`} ${d.notificationsUnread} ${unreadWord}`
+              : html`${svg`<svg viewBox="0 0 24 24"><use href="#iv-bell"/></svg>`} Bez notifikací`}
         </button>
 
         ${gridDelivery.pendingModeText ? html`
-          <div class="pending-overlay">
-            <span class="spinner spinner--small"></span>
-            ${gridDelivery.pendingModeText}
-          </div>
+          <div class="pending-overlay"><span class="spinner spinner--small"></span>${gridDelivery.pendingModeText}</div>
         ` : nothing}
         ${gridDelivery.pendingLimitText ? html`
-          <div class="pending-overlay">
-            <span class="spinner spinner--small"></span>
-            ${gridDelivery.pendingLimitText}
-          </div>
+          <div class="pending-overlay"><span class="spinner spinner--small"></span>${gridDelivery.pendingLimitText}</div>
         ` : nothing}
       </div>
     `;

@@ -109,6 +109,7 @@ export interface FlowData {
 
   // Planner
   plannerAutoMode: boolean | null;
+  plannerRecommendedMode: string;
 
   // Meta
   lastUpdate: string;
@@ -293,5 +294,6 @@ export const EMPTY_FLOW_DATA: FlowData = {
   bypassStatus: 'off', notificationsUnread: 0, notificationsError: 0,
   boilerIsUse: false, boilerPower: 0, boilerDayEnergy: 0, boilerManualMode: '', boilerInstallPower: 3000,
   plannerAutoMode: null,
+  plannerRecommendedMode: '',
   lastUpdate: '',
 };
