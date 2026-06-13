@@ -1167,7 +1167,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
               ${C.overloadPhase?c`<span class="bdg warn" title="Přetížení ${C.overloadPhase} — nad 3,3 kW">⚡ Přetížení ${C.overloadPhase}</span>`:c`<span class="bdg ok" title="Vytížení nejvyšší fáze vůči limitu 3,3 kW">⚡ ${Math.round(C.worstPct)} %</span>`}
             </span>
           </div>
-          ${F.map(L=>{const U=L.z>=Mn,j=L.z+L.n,V=L.z/R*100,ke=L.n/R*100,Ne=V>34&&L.z>100,je=ke>34&&L.n>100;return c`
+          ${F.map(L=>{const U=L.z>=Mn,j=L.z+L.n,V=L.z/R*100,ke=L.n/R*100,Ne=V>48&&L.z>100,je=ke>48&&L.n>100;return c`
               <div class="prow">
                 <span class="pl">${L.l}</span>
                 <div class="ptrack">

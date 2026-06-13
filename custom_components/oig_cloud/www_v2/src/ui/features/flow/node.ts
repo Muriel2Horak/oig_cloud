@@ -2348,8 +2348,10 @@ export class OigFlowNode extends LitElement {
             const phaseTotal = p.z + p.n;
             const zWidthPct = (p.z / maxPhaseTotal) * 100;
             const nWidthPct = (p.n / maxPhaseTotal) * 100;
-            const showZLabel = zWidthPct > 34 && p.z > 100;
-            const showNLabel = nWidthPct > 34 && p.n > 100;
+            // Inline numeric label only when the segment is wide enough to fit
+            // it without clipping (≈"1.3 kW" needs ~48% of a ~150px track).
+            const showZLabel = zWidthPct > 48 && p.z > 100;
+            const showNLabel = nWidthPct > 48 && p.n > 100;
             return html`
               <div class="prow">
                 <span class="pl">${p.l}</span>
