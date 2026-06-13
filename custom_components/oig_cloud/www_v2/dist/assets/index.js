@@ -1763,6 +1763,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       gap: 5px;
       font-size: 14px;
       font-weight: 800;
+      white-space: nowrap;
       cursor: pointer;
       background: none;
       border: none;

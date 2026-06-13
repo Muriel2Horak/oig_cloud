@@ -725,6 +725,7 @@ export class OigFlowNode extends LitElement {
       gap: 5px;
       font-size: 14px;
       font-weight: 800;
+      white-space: nowrap;
       cursor: pointer;
       background: none;
       border: none;
