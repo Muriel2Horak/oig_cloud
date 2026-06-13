@@ -1611,15 +1611,19 @@ export class OigFlowNode extends LitElement {
 
     /* ---- Mobile (<768px) ---- */
     @media (max-width: 768px) {
-      /* Keep the SAME star/pentagon as the web, just compact to fit the narrow
-         screen (like the Nest kiosk). Heavy detail blocks are hidden — the tile
-         shows its headline + pill; detail is on click / other tabs. */
+      /* SAME star/pentagon as the web with FULL-detail tiles (nothing hidden) —
+         the whole pentagon is just zoomed down to fit the narrow screen. Using
+         zoom (not transform) reflows the box, so there is no empty space below
+         and no horizontal overflow; connector lines measure the zoomed rects. */
       .flow-grid {
-        grid-template-columns: 1fr 1.05fr 1fr !important;
+        grid-template-columns: 1fr 1.15fr 1fr !important;
         grid-template-rows: auto auto auto !important;
-        gap: 3px;
-        padding: 4px;
-        max-width: 100%;
+        width: 760px;
+        max-width: 760px;
+        gap: 8px;
+        padding: 8px;
+        margin: 0 auto;
+        zoom: 0.50;
       }
       .node-solar    { grid-column: 1; grid-row: 1; justify-self: center; }
       .node-house    { grid-column: 3; grid-row: 1; justify-self: center; }
@@ -1628,30 +1632,11 @@ export class OigFlowNode extends LitElement {
       .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
 
       .node {
-        width: 100%;
-        min-width: 0;
-        max-width: none;
+        width: 224px;
+        min-width: 224px;
+        max-width: 224px;
         min-height: 0;
-        padding: 6px 7px;
       }
-      /* compact overview — hide heavy detail blocks */
-      .gd-cols, .gd-ph, .gd-volt, .gd-costrow,
-      .bt-soc, .bt-today, .bt-met,
-      .iv-strip, .iv-notif,
-      .pg, .prices-row, .phases-grid, .battery-energy-section { display: none; }
-      /* tighter headlines so they fit the narrow tile */
-      .gd-pn, .bt-pn, .iv-mn { font-size: 17px; }
-      .gd-cbal { font-size: 16px; }
-      .bt-pd, .iv-md, .gd-pd { font-size: 9px; }
-      .iv-plan, .iv-mode .iv-md { font-size: 9px; }
-      .node-icon { font-size: 20px; }
-      .node-value { font-size: 18px; }
-      .node-label { font-size: 9px; }
-      .node-subvalue { font-size: 9px; }
-      .node-status { font-size: 8px; padding: 1px 4px; }
-      .phases { font-size: 9px; gap: 2px; }
-      .indicator { font-size: 9px; padding: 1px 3px; }
-      .battery-indicators { gap: 3px; }
     }
 
     /* ---- Nest Hub landscape (769-1200px landscape) ---- */
@@ -1669,13 +1654,13 @@ export class OigFlowNode extends LitElement {
       .node-label { font-size: 9px; }
     }
 
-    /* ---- Extra small (<380px) — inherits the compact pentagon, tighter ---- */
+    /* ---- Extra small (<380px) — zoom the full pentagon down a touch more ---- */
     @media (max-width: 380px) {
+      .flow-grid { zoom: 0.46; }
       .node {
-        width: 100%;
-        min-width: 0;
-        max-width: none;
-        padding: 4px 5px;
+        width: 224px;
+        min-width: 224px;
+        max-width: 224px;
       }
       .node-icon { font-size: 18px; }
       .node-value { font-size: 16px; }
