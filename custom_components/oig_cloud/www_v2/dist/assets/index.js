@@ -2729,28 +2729,39 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
 
     /* ---- Mobile (<768px) ---- */
     @media (max-width: 768px) {
-      /* Single column: the rich tiles need full width to read well; a 2-col
-         grid squished them (~185px) and mismatched heights left big gaps. */
+      /* Keep the SAME star/pentagon as the web, just compact to fit the narrow
+         screen (like the Nest kiosk). Heavy detail blocks are hidden — the tile
+         shows its headline + pill; detail is on click / other tabs. */
       .flow-grid {
-        grid-template-columns: 1fr !important;
-        grid-template-rows: repeat(5, auto) !important;
-        gap: 10px;
-        padding: 8px;
-        max-width: 440px;
+        grid-template-columns: 1fr 1.05fr 1fr !important;
+        grid-template-rows: auto auto auto !important;
+        gap: 3px;
+        padding: 4px;
+        max-width: 100%;
       }
-      .node-solar    { grid-column: 1; grid-row: 1; justify-self: stretch; }
-      .node-house    { grid-column: 1; grid-row: 2; justify-self: stretch; }
-      .node-inverter { grid-column: 1; grid-row: 3; justify-self: stretch; }
-      .node-grid     { grid-column: 1; grid-row: 4; justify-self: stretch; }
-      .node-battery  { grid-column: 1; grid-row: 5; justify-self: stretch; }
+      .node-solar    { grid-column: 1; grid-row: 1; justify-self: center; }
+      .node-house    { grid-column: 3; grid-row: 1; justify-self: center; }
+      .node-inverter { grid-column: 2; grid-row: 2; justify-self: center; }
+      .node-grid     { grid-column: 1; grid-row: 3; justify-self: center; }
+      .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
 
       .node {
         width: 100%;
         min-width: 0;
         max-width: none;
         min-height: 0;
-        padding: 11px 13px;
+        padding: 6px 7px;
       }
+      /* compact overview — hide heavy detail blocks */
+      .gd-cols, .gd-ph, .gd-volt, .gd-costrow,
+      .bt-soc, .bt-today, .bt-met,
+      .iv-strip, .iv-notif,
+      .pg, .prices-row, .phases-grid, .battery-energy-section { display: none; }
+      /* tighter headlines so they fit the narrow tile */
+      .gd-pn, .bt-pn, .iv-mn { font-size: 17px; }
+      .gd-cbal { font-size: 16px; }
+      .bt-pd, .iv-md, .gd-pd { font-size: 9px; }
+      .iv-plan, .iv-mode .iv-md { font-size: 9px; }
       .node-icon { font-size: 20px; }
       .node-value { font-size: 18px; }
       .node-label { font-size: 9px; }
@@ -2776,13 +2787,13 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       .node-label { font-size: 9px; }
     }
 
-    /* ---- Extra small (<380px) ---- */
+    /* ---- Extra small (<380px) — inherits the compact pentagon, tighter ---- */
     @media (max-width: 380px) {
       .node {
         width: 100%;
         min-width: 0;
         max-width: none;
-        padding: 9px 10px;
+        padding: 4px 5px;
       }
       .node-icon { font-size: 18px; }
       .node-value { font-size: 16px; }
@@ -2871,11 +2882,9 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       .flow-grid-wrapper { min-height: 500px; }
     }
 
-    /* Mobile: compact single-column stack — the flow connector lines + particles
-       only make sense in the pentagon layout; hide them when tiles are stacked. */
+    /* Mobile: compact pentagon (star), connector lines kept */
     @media (max-width: 768px) {
       .flow-grid-wrapper { min-height: auto; }
-      .connections-layer, .particles-layer { display: none; }
     }
 
     /* Nest Hub landscape */
