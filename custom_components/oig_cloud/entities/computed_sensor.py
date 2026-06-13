@@ -483,6 +483,22 @@ class OigCloudComputedSensor(_ComputedBase):
         """Save energy data to persistent storage (throttled to every 5 min unless forced)."""
         now = datetime.now(timezone.utc)
 
+        # CRITICAL: never persist before the startup restore has completed.
+        # On restart the entity starts with a zeroed _energy dict and the restore
+        # runs as a background task. The first coordinator update fires a
+        # (non-forced) save while _last_storage_save is still None — which used
+        # to overwrite the good storage file with zeros BEFORE restore could read
+        # it, permanently wiping daily/monthly/yearly counters. The forced saves
+        # issued AT THE END of the restore path (which set _energy_cache_loaded
+        # first) are exempt via `force`.
+        if (
+            not force
+            and self._box_id
+            and self._box_id != "unknown"
+            and not _energy_cache_loaded.get(self._box_id)
+        ):
+            return
+
         # Throttle saves unless forced
         if not force and self._last_storage_save:
             elapsed = now - self._last_storage_save

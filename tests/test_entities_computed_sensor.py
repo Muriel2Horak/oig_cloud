@@ -328,3 +328,37 @@ async def test_async_added_to_hass_restores_from_state(monkeypatch):
 
     assert sensor._energy["charge_today"] == 1.0
     assert module._energy_cache_loaded.get(sensor._box_id) is True
+
+
+@pytest.mark.asyncio
+async def test_save_skipped_before_restore_completes(monkeypatch):
+    """Regression: a non-forced save before the startup restore finishes must
+    NOT overwrite the (still un-read) good storage file with zeros.
+
+    Reproduces the data-wipe race: after restart _energy starts zeroed, restore
+    runs in the background, but the first coordinator update fired a save while
+    _last_storage_save was None (throttle inactive) → zeros clobbered storage
+    before restore could read it.
+    """
+    dummy_store = DummyStore()
+    monkeypatch.setattr(module, "Store", lambda *_a, **_k: dummy_store)
+    module._energy_stores.clear()
+    module._energy_data_cache.clear()
+    module._energy_cache_loaded.clear()
+
+    sensor = _make_sensor()
+    sensor.hass = DummyHass({})
+    # restore NOT yet completed for this box
+    box_id = sensor._box_id
+    module._energy_cache_loaded.pop(box_id, None)
+
+    sensor._energy["nonbackup_today"] = 0.0  # zeroed startup state
+    await sensor._save_energy_to_storage()  # non-forced, restore not done
+    assert dummy_store.saved is None, "must not persist before restore completes"
+
+    # once restore marks the box loaded, saving works again
+    module._energy_cache_loaded[box_id] = True
+    sensor._energy["nonbackup_today"] = 31000.0
+    await sensor._save_energy_to_storage(force=True)
+    assert dummy_store.saved is not None
+    assert dummy_store.saved["energy"]["nonbackup_today"] == 31000.0
