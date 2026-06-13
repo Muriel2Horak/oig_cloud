@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computePhaseStatus,
+  computeSpreadBand,
   BALANCE_UNBALANCED_W,
   BACKUP_PHASE_LIMIT_W,
   BALANCE_CALM_W,
@@ -186,4 +187,87 @@ describe('phase status constants', () => {
   it('BALANCE_UNBALANCED_W is 1000', () => expect(BALANCE_UNBALANCED_W).toBe(1000));
   it('BACKUP_PHASE_LIMIT_W is 3300', () => expect(BACKUP_PHASE_LIMIT_W).toBe(3300));
   it('BALANCE_CALM_W is 300', () => expect(BALANCE_CALM_W).toBe(300));
+});
+
+// ---------------------------------------------------------------------------
+// computeSpreadBand — geometry helper for the balance band
+// ---------------------------------------------------------------------------
+
+describe('computeSpreadBand', () => {
+  it('returns widthPct=0 (hide band) when totalZalohaW < BALANCE_CALM_W', () => {
+    const result = computeSpreadBand([10, 15, 12], 200); // 200 < 300 = calm
+    expect(result.widthPct).toBe(0);
+    expect(result.leftPct).toBe(0);
+  });
+
+  it('returns widthPct=0 when totalZalohaW exactly at calm threshold boundary', () => {
+    const result = computeSpreadBand([5, 8, 6], BALANCE_CALM_W - 1);
+    expect(result.widthPct).toBe(0);
+  });
+
+  it('computes leftPct = min záloha width, widthPct = max-min when total ≥ BALANCE_CALM_W', () => {
+    // widths: L1=6%, L2=2%, L3=13% → left=2, width=13-2=11
+    const result = computeSpreadBand([6, 2, 13], 1700);
+    expect(result.leftPct).toBeCloseTo(2, 6);
+    expect(result.widthPct).toBeCloseTo(11, 6);
+  });
+
+  it('all phases equal → widthPct=0 (no spread), leftPct=that value', () => {
+    const result = computeSpreadBand([25, 25, 25], 2700);
+    expect(result.leftPct).toBe(25);
+    expect(result.widthPct).toBe(0);
+  });
+
+  it('large unbalanced case returns correct band geometry', () => {
+    // L1=52%, L2=29%, L3=8% → left=8, width=52-8=44
+    const result = computeSpreadBand([52, 29, 8], 5300);
+    expect(result.leftPct).toBeCloseTo(8, 6);
+    expect(result.widthPct).toBeCloseTo(44, 6);
+  });
+
+  it('two phases at zero still works (only one phase active)', () => {
+    const result = computeSpreadBand([0, 0, 40], 3600);
+    expect(result.leftPct).toBeCloseTo(0, 6);
+    expect(result.widthPct).toBeCloseTo(40, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computePhaseStatus → band tint/animation integration checks
+// (these verify the combined decision logic for the band: tint + shimmer)
+// ---------------------------------------------------------------------------
+
+describe('phase status + spread band tint integration', () => {
+  it('calm state → band hidden (widthPct=0) regardless of spread shape', () => {
+    const zaloha: [number, number, number] = [80, 90, 100];
+    const ps = computePhaseStatus(zaloha);
+    const widthsPct: [number, number, number] = [8, 9, 10];
+    const band = computeSpreadBand(widthsPct, zaloha[0] + zaloha[1] + zaloha[2]);
+    expect(ps.calm).toBe(true);
+    expect(band.widthPct).toBe(0); // hidden because calm
+  });
+
+  it('balanced state → band shown with .balanced class (no shimmer)', () => {
+    const zaloha: [number, number, number] = [1000, 1200, 1250];
+    const ps = computePhaseStatus(zaloha);
+    const total = 1000 + 1200 + 1250;
+    const maxTotal = Math.max(3600, 1000 + 0, 1200 + 0, 1250 + 0);
+    const widthsPct: [number, number, number] = zaloha.map(w => (w / maxTotal) * 100) as [number, number, number];
+    const band = computeSpreadBand(widthsPct, total);
+    expect(ps.balanced).toBe(true);
+    expect(ps.calm).toBe(false);
+    expect(band.widthPct).toBeGreaterThan(0);
+  });
+
+  it('unbalanced state → band shown with .unbal class (shimmer)', () => {
+    const zaloha: [number, number, number] = [3800, 2100, 600];
+    const ps = computePhaseStatus(zaloha);
+    const total = 3800 + 2100 + 600;
+    const maxTotal = Math.max(3600, 3800, 2100, 600);
+    const widthsPct: [number, number, number] = zaloha.map(w => (w / maxTotal) * 100) as [number, number, number];
+    const band = computeSpreadBand(widthsPct, total);
+    expect(ps.balanced).toBe(false);
+    expect(ps.calm).toBe(false);
+    expect(band.widthPct).toBeGreaterThan(0);
+  });
 });

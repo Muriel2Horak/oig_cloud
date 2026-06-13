@@ -113,6 +113,27 @@ export function computePhaseStatus(zaloha: [number, number, number]): PhaseStatu
   return { spreadW, balanced, calm, worstPct, overloadPhase };
 }
 
+/**
+ * Compute the spread-band geometry for the phase graph.
+ *
+ * The band spans from the MIN záloha segment-end to the MAX záloha
+ * segment-end across all three rows, expressed as percentages of the
+ * track width.  Returns {leftPct, widthPct} where widthPct=0 means
+ * "hide the band" (calm state: total záloha < BALANCE_CALM_W).
+ *
+ * @param zalohaWidthsPct  [L1, L2, L3] záloha segment widths as % of track (0-100 each)
+ * @param totalZalohaW     summed záloha watts across all phases (for calm detection)
+ */
+export function computeSpreadBand(
+  zalohaWidthsPct: [number, number, number],
+  totalZalohaW: number,
+): { leftPct: number; widthPct: number } {
+  if (totalZalohaW < BALANCE_CALM_W) return { leftPct: 0, widthPct: 0 };
+  const minEnd = Math.min(...zalohaWidthsPct);
+  const maxEnd = Math.max(...zalohaWidthsPct);
+  return { leftPct: minEnd, widthPct: maxEnd - minEnd };
+}
+
 @customElement('oig-flow-node')
 export class OigFlowNode extends LitElement {
   @property({ type: Object }) data: FlowData = EMPTY_FLOW_DATA;
@@ -138,6 +159,8 @@ export class OigFlowNode extends LitElement {
   @state() private expandedNodes = loadExpandedNodes();
   /** Tap-friendly gauge detail (mobile can't hover): which node's popover is open. */
   @state() private gaugeDetailOpen: NodeId | null = null;
+  /** Phase history modal open state */
+  @state() private phaseHistoryOpen = false;
 
   // DnD state
   @state() private customPositions: SavedLayout = {};
@@ -689,128 +712,199 @@ export class OigFlowNode extends LitElement {
       flex-shrink: 0;
     }
 
-    /* ---- Spotřeba: split chips (Záloha / Nezáloha) ---- */
-    .sc-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      margin: 8px 0 10px;
-    }
-    .sc-chip {
-      background: rgba(255,255,255,.05);
-      border: 1px solid rgba(255,255,255,.08);
-      border-radius: 10px;
-      padding: 6px 9px;
-      text-align: left;
-      cursor: pointer;
-      color: inherit;
-    }
-    .sc-chip:hover { border-color: rgba(255,255,255,.22); }
-    .sc-label {
+    /* ---- Spotřeba: compact split row (dot + kW inline) ---- */
+    .csplit {
       display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 9.5px;
-      opacity: .7;
-      margin-bottom: 2px;
-    }
-    .sc-val { font-size: 14px; font-weight: 800; }
-    .sc-sub { font-size: 9px; opacity: .55; margin-top: 1px; }
-
-    /* ---- Spotřeba: phase block ---- */
-    .pblock {
-      background: rgba(0,0,0,.16);
-      border-radius: 10px;
-      padding: 8px 10px 7px;
-      margin-top: 4px;
-    }
-    .pbh {
-      display: flex;
-      flex-direction: column;
-      align-items: stretch;
-      font-size: 10.5px;
-      opacity: .85;
-      margin-bottom: 8px;
-      gap: 5px;
-    }
-    .pbh-title { opacity: .85; }
-    .badges { display: flex; gap: 5px; }
-    .badges .bdg { flex: 1; justify-content: center; }
-    .bdg {
-      font-size: 9px;
-      font-weight: 700;
-      border-radius: 6px;
-      padding: 2px 6px;
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-    }
-    .bdg.ok  { background: rgba(76,175,80,.16); border: 1px solid rgba(76,175,80,.4); color: #9fe6a8; }
-    .bdg.warn { background: rgba(229,57,53,.18); border: 1px solid rgba(229,57,53,.55); color: #ff8a80; }
-    .prow {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      margin: 5px 0;
-    }
-    .pl { font-size: 10px; font-weight: 700; opacity: .7; width: 16px; flex-shrink: 0; }
-    .ptrack {
-      position: relative;
-      flex: 1;
-      height: 15px;
-      background: rgba(255,255,255,.05);
-      border-radius: 5px;
-      overflow: visible;
-      display: flex;
-    }
-    .pseg {
-      position: relative;
-      height: 100%;
-      display: flex;
-      align-items: center;
       justify-content: center;
-      font-size: 8px;
-      font-weight: 800;
-      overflow: hidden;
-      white-space: nowrap;
+      gap: 16px;
+      margin: 4px 0 9px;
     }
-    .pz      { background: #43a047; color: #06270c; }
-    .pz-crit { background: #e53935; color: #fff; }
-    .pn      { background: #fb8c00; color: #2b1500; }
-    .pdiv    { width: 2px; background: rgba(13,21,38,.9); height: 100%; flex-shrink: 0; }
-    .plim    { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; box-shadow: 0 0 5px rgba(255,255,255,.7); z-index: 3; pointer-events: none; }
-    .pv {
-      font-size: 9px;
-      opacity: .78;
-      width: 52px;
-      text-align: right;
-      font-variant-numeric: tabular-nums;
+    .cs {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
       background: none;
       border: none;
       color: inherit;
-      cursor: pointer;
-      flex-shrink: 0;
       padding: 0;
     }
-    .pv:hover { text-decoration: underline; }
-    .pleg {
-      display: flex;
-      gap: 10px;
-      justify-content: center;
-      font-size: 9px;
-      opacity: .72;
-      margin-top: 7px;
-      flex-wrap: wrap;
-    }
-    .pleg span { display: flex; align-items: center; gap: 3px; }
-    .pleg-d { width: 9px; height: 9px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+    .cs:hover { opacity: .8; }
+    .cs .d { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .cs small { font-size: 9px; font-weight: 600; opacity: .55; }
 
-    /* mobile: tighten phase block a bit */
+    /* ---- Spotřeba: phase graph ---- */
+    .pg-lbl {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 9px;
+      opacity: .55;
+      margin-bottom: 3px;
+    }
+    .pg-hist { font-size: 10px; cursor: pointer; }
+    .pg {
+      position: relative;
+      background: rgba(0,0,0,.18);
+      border-radius: 9px;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+    .pg:hover { background: rgba(0,0,0,.24); }
+    .pg-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      height: 18px;
+      margin: 4px 0;
+    }
+    .pg-track {
+      position: relative;
+      flex: 1;
+      height: 100%;
+      background: rgba(255,255,255,.05);
+      border-radius: 4px;
+      overflow: visible;
+      display: flex;
+    }
+    .pg-z {
+      height: 100%;
+      background: #43a047;
+      display: flex;
+      align-items: center;
+      padding-left: 4px;
+      font-size: 8.5px;
+      font-weight: 800;
+      color: #06270c;
+      white-space: nowrap;
+      overflow: hidden;
+      border-radius: 4px 0 0 4px;
+    }
+    .pg-z.crit { background: #e53935; color: #fff; }
+    .pg-div { width: 1.5px; background: #0d1526; height: 100%; flex-shrink: 0; }
+    .pg-n {
+      height: 100%;
+      background: #fb8c00;
+      display: flex;
+      align-items: center;
+      padding-left: 4px;
+      font-size: 8.5px;
+      font-weight: 800;
+      color: #2b1500;
+      white-space: nowrap;
+      overflow: hidden;
+      border-radius: 0 4px 4px 0;
+    }
+    .pg-lim {
+      position: absolute;
+      top: -3px;
+      bottom: -3px;
+      width: 2px;
+      background: #fff;
+      box-shadow: 0 0 5px rgba(255,255,255,.7);
+      z-index: 4;
+      pointer-events: none;
+    }
+    .pg-tot {
+      font-size: 9px;
+      font-weight: 700;
+      opacity: .8;
+      width: 34px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+    /* Spread band: absolute overlay spanning záloha spread region */
+    .pg-spread {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      z-index: 3;
+      border-left: 1.5px dashed rgba(255,255,255,.5);
+      border-right: 1.5px dashed rgba(255,255,255,.5);
+      background: linear-gradient(90deg,rgba(229,57,53,0),rgba(229,57,53,.14),rgba(229,57,53,0));
+      pointer-events: none;
+    }
+    .pg-spread.balanced {
+      background: linear-gradient(90deg,rgba(76,175,80,0),rgba(76,175,80,.12),rgba(76,175,80,0));
+      border-color: rgba(76,175,80,.4);
+    }
+    .pg-spread.unbal { animation: pg-shimmer 1.6s ease-in-out infinite; }
+    @keyframes pg-shimmer { 0%,100% { opacity:.5; } 50% { opacity:1; } }
+
+    /* ---- Phase history modal ---- */
+    .ph-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9100;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      animation: fadeIn .18s ease;
+    }
+    .ph-dialog {
+      position: relative;
+      background: #0e1828;
+      border: 1px solid rgba(120,160,220,.3);
+      border-radius: 16px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      max-width: 420px;
+      width: 100%;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      animation: slideUp .2s ease;
+    }
+    .ph-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+      flex-shrink: 0;
+    }
+    .ph-title { flex: 1; font-size: 14px; font-weight: 700; }
+    .ph-close {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: rgba(255,255,255,.55);
+      font-size: 18px;
+      padding: 4px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ph-close:hover { background: rgba(255,255,255,.08); color: #eef4fb; }
+    .ph-body {
+      padding: 16px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .ph-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100px;
+      font-size: 12px;
+      opacity: .55;
+      text-align: center;
+    }
+
+    /* mobile: tighten phase graph a bit */
     @media (max-width: 768px) {
-      .sc-val { font-size: 12px; }
-      .sc-sub { font-size: 8px; }
-      .pblock { padding: 6px 8px 5px; }
-      .ptrack { height: 13px; }
+      .pg { padding: 6px 8px; }
+      .pg-row { height: 15px; }
     }
 
     .battery-center {
@@ -1259,7 +1353,8 @@ export class OigFlowNode extends LitElement {
       .battery-energy-section,
       .prices-row,
       .phases-grid,
-      .pblock { display: none; }
+      .pg-lbl,
+      .pg { display: none; }
     }
   `;
 
@@ -2252,30 +2347,38 @@ export class OigFlowNode extends LitElement {
 
     // --- Phase status (záloha) ---
     const ps = computePhaseStatus([d.houseL1, d.houseL2, d.houseL3]);
-    const spreadStr = ps.spreadW >= 1000
-      ? `${(ps.spreadW / 1000).toFixed(1)} kW`
-      : `${Math.round(ps.spreadW)} W`;
 
     // Phase track scale: auto-scale to max total (záloha+nezáloha) across L1-3,
     // with a floor of 3600 W so the 3300 W limit tick is always visible.
     const phases = [
-      { l: 'L1', z: d.houseL1, n: d.nonbackupL1, ze: 'ac_out_aco_pr', ne: 'actual_acinb_wr' },
-      { l: 'L2', z: d.houseL2, n: d.nonbackupL2, ze: 'ac_out_aco_ps', ne: 'actual_acinb_ws' },
-      { l: 'L3', z: d.houseL3, n: d.nonbackupL3, ze: 'ac_out_aco_pt', ne: 'actual_acinb_wt' },
+      { z: d.houseL1, n: d.nonbackupL1, ze: 'ac_out_aco_pr' },
+      { z: d.houseL2, n: d.nonbackupL2, ze: 'ac_out_aco_ps' },
+      { z: d.houseL3, n: d.nonbackupL3, ze: 'ac_out_aco_pt' },
     ];
     const maxPhaseTotal = Math.max(3600, ...phases.map(p => p.z + p.n));
     const limPct = (BACKUP_PHASE_LIMIT_W / maxPhaseTotal) * 100;
-    // Whether any phase has nonbackup > 0 (affects legend).
-    const hasNonbackup = phases.some(p => p.n > 0);
+
+    // Záloha segment widths as % of track, for spread band geometry
+    const zalohaWidthsPct: [number, number, number] = phases.map(p =>
+      (Math.max(0, p.z) / maxPhaseTotal) * 100,
+    ) as [number, number, number];
+    const totalZalohaW = d.houseL1 + d.houseL2 + d.houseL3;
+    const spreadBand = computeSpreadBand(zalohaWidthsPct, totalZalohaW);
 
     // Format watts/kW for inline segment label
-    const fmtW = (w: number) => w >= 1000 ? `${(w / 1000).toFixed(1)} kW` : `${Math.round(w)} W`;
+    const fmtKw = (w: number) => w >= 1000 ? `${(w / 1000).toFixed(1).replace('.', ',')}` : `${Math.round(w)} W`;
+    // Show label inside segment only when wide enough (≥14% of track width ≈ enough for "0.9")
+    const LABEL_THRESHOLD_PCT = 14;
+
+    // Tooltip data for compact split row
+    const zalohaTitle = `Záloha ${formatPower(d.housePower)} · dnes ${zalohaToday.toFixed(1)} kWh${d.zalohaPlannedRemainingKwh > 0 ? ` · plán ${zalohaForecast.toFixed(1)} kWh` : ''}`;
+    const nezalohaTitle = `Nezáloha ${formatPower(d.nonbackupPower)} · dnes ${nezalohaToday.toFixed(1)} kWh`;
 
     return html`
       <div class="${this.nodeClass('house')}" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house};"
         @click=${(e: Event) => this.toggleExpand('house', e)} title=${ssTitle}>
 
-        <!-- MULTI-SEGMENT AURA: battery (green) → FVE (yellow) → grid (red) -->
+        <!-- MULTI-SEGMENT AURA: battery (green) → FVE (yellow) → grid (red) — UNCHANGED -->
         ${this.edgeGaugeSegments({
           nodeId: 'house',
           segments: [
@@ -2287,7 +2390,7 @@ export class OigFlowNode extends LitElement {
         })}
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${ssColor}22, transparent 72%)"></div>
 
-        <!-- GAUGE PILL: daily self-sufficiency with kWh popover -->
+        <!-- GAUGE PILL: daily self-sufficiency with kWh popover — UNCHANGED -->
         ${this.gaugePill('house', `⚡ Soběstačnost ${Math.round(dailySS)} %`, ssGaugeColor, html`
           <div class="ss-pop-h"><span>Denní soběstačnost</span><b style="color:${ssGaugeColor}">${Math.round(dailySS)} %</b></div>
           ${hasLoad ? html`
@@ -2305,78 +2408,78 @@ export class OigFlowNode extends LitElement {
           ` : html`<div class="gp-r" style="opacity:.6"><span>Žádná spotřeba dnes zatím</span></div>`}
         `)}
 
-        <!-- HEADER: centred label + big power -->
+        <!-- COMPACT HEADER: small label · big kW · tiny kWh dnes -->
         <div class="node-header" style="margin-top:18px;justify-content:center">
           <span class="node-label">🏠 Spotřeba</span>
         </div>
         <div class="node-value" @click=${openEntity('actual_aco_p')}>${formatPower(totalPower)}</div>
-        <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>dnes celkem ${totalToday.toFixed(1)} kWh</div>
+        <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>${totalToday.toFixed(1)} kWh dnes</div>
 
-        <!-- SPLIT CHIPS: Záloha | Nezáloha -->
-        <div class="sc-row">
-          <button class="sc-chip" @click=${openEntity('actual_aco_p')} title="Záloha — aktuální výkon · dnes · plán">
-            <div class="sc-label"><i class="hc-dot" style="background:#43a047"></i>Záloha</div>
-            <div class="sc-val">${formatPower(d.housePower)}</div>
-            <div class="sc-sub">dnes ${zalohaToday.toFixed(1)}${d.zalohaPlannedRemainingKwh > 0 ? html` · 🔮 plán ${zalohaForecast.toFixed(1)}` : ' kWh'}</div>
+        <!-- COMPACT SPLIT ROW: colored dot + value, tooltip carries detail -->
+        <div class="csplit">
+          <button class="cs" @click=${openEntity('actual_aco_p')} title=${zalohaTitle}>
+            <span class="d" style="background:#43a047"></span>${formatPower(d.housePower)}
           </button>
-          <button class="sc-chip" @click=${openEntity('actual_acinb_wtotal')} title="Nezáloha — aktuální výkon · dnes">
-            <div class="sc-label"><i class="hc-dot" style="background:#fb8c00"></i>Nezáloha</div>
-            <div class="sc-val">${formatPower(d.nonbackupPower)}</div>
-            <div class="sc-sub">dnes ${nezalohaToday.toFixed(1)} kWh</div>
+          <button class="cs" @click=${openEntity('actual_acinb_wtotal')} title=${nezalohaTitle}>
+            <span class="d" style="background:#fb8c00"></span>${formatPower(d.nonbackupPower)}
           </button>
         </div>
 
-        <!-- PHASE BLOCK -->
-        <div class="pblock">
-          <div class="pbh">
-            <span class="pbh-title">Fáze · odběr (záloha)</span>
-            <span class="badges">
-              <!-- Balance badge -->
-              ${ps.calm
-                ? html`<span class="bdg ok" title="Záloha v klidu — vyvážení nepodstatné">⚖️ Klid</span>`
-                : ps.balanced
-                  ? html`<span class="bdg ok" title="Vyvážené fáze — rozdíl ${spreadStr}">⚖️ Vyvážené · Δ${spreadStr}</span>`
-                  : html`<span class="bdg warn" title="Nevyvážené fáze — rozdíl ${spreadStr} (práh 1 kW)">⚖️ Nevyvážené · Δ${spreadStr}</span>`}
-              <!-- Overload badge -->
-              ${ps.overloadPhase
-                ? html`<span class="bdg warn" title="Přetížení ${ps.overloadPhase} — nad 3,3 kW">⚡ Přetížení ${ps.overloadPhase}</span>`
-                : html`<span class="bdg ok" title="Vytížení nejvyšší fáze vůči limitu 3,3 kW">⚡ ${Math.round(ps.worstPct)} %</span>`}
-            </span>
-          </div>
+        <!-- PHASE GRAPH (phasegraph2 design) -->
+        <div class="pg-lbl">
+          <span>Fáze · odběr</span>
+          <span class="pg-hist" title="Otevřít historii fází"
+            @click=${(e: Event) => { e.stopPropagation(); this.phaseHistoryOpen = true; }}>📈</span>
+        </div>
+        <div class="pg" @click=${(e: Event) => { e.stopPropagation(); this.phaseHistoryOpen = true; }}
+          title="Kliknutím otevřít historii fází">
+          <!-- Spread band overlay -->
+          ${spreadBand.widthPct > 0 ? html`
+            <div class="pg-spread ${ps.balanced ? 'balanced' : 'unbal'}"
+              style="left:calc(10px + ${spreadBand.leftPct.toFixed(2)}% * (100% - 61px) / 100);width:calc(${spreadBand.widthPct.toFixed(2)}% * (100% - 61px) / 100)">
+            </div>` : nothing}
+          <!-- Phase rows: NO L1/L2/L3 labels per spec -->
           ${phases.map((p) => {
             const zOver = p.z >= BACKUP_PHASE_LIMIT_W;
             const phaseTotal = p.z + p.n;
-            const zWidthPct = (p.z / maxPhaseTotal) * 100;
-            const nWidthPct = (p.n / maxPhaseTotal) * 100;
-            // Inline numeric label only when the segment is wide enough to fit
-            // it without clipping (≈"1.3 kW" needs ~48% of a ~150px track).
-            const showZLabel = zWidthPct > 48 && p.z > 100;
-            const showNLabel = nWidthPct > 48 && p.n > 100;
+            const zWidthPct = (Math.max(0, p.z) / maxPhaseTotal) * 100;
+            const nWidthPct = (Math.max(0, p.n) / maxPhaseTotal) * 100;
+            const showZLabel = zWidthPct >= LABEL_THRESHOLD_PCT && p.z > 100;
+            const showNLabel = nWidthPct >= LABEL_THRESHOLD_PCT && p.n > 100;
             return html`
-              <div class="prow">
-                <span class="pl">${p.l}</span>
-                <div class="ptrack">
-                  <div class="pseg ${zOver ? 'pz-crit' : 'pz'}" style="width:${zWidthPct.toFixed(1)}%">
-                    ${showZLabel ? html`${fmtW(p.z)}` : nothing}
+              <div class="pg-row">
+                <div class="pg-track">
+                  <div class="pg-z ${zOver ? 'crit' : ''}" style="width:${zWidthPct.toFixed(1)}%">
+                    ${showZLabel ? fmtKw(p.z) : nothing}
                   </div>
                   ${p.n > 0 ? html`
-                    <div class="pdiv"></div>
-                    <div class="pseg pn" style="width:${nWidthPct.toFixed(1)}%">
-                      ${showNLabel ? html`${fmtW(p.n)}` : nothing}
+                    <div class="pg-div"></div>
+                    <div class="pg-n" style="width:${nWidthPct.toFixed(1)}%">
+                      ${showNLabel ? fmtKw(p.n) : nothing}
                     </div>` : nothing}
-                  <div class="plim" style="left:${limPct.toFixed(1)}%"></div>
+                  <div class="pg-lim" style="left:${limPct.toFixed(1)}%"></div>
                 </div>
-                <button class="pv" @click=${openEntity(p.ze)}>${(phaseTotal / 1000).toFixed(2)}</button>
+                <span class="pg-tot">${((phaseTotal) / 1000).toFixed(1).replace('.', ',')}</span>
               </div>`;
           })}
-          <!-- Legend -->
-          <div class="pleg">
-            <span><i class="pleg-d" style="background:#43a047"></i>záloha</span>
-            ${ps.overloadPhase ? html`<span><i class="pleg-d" style="background:#e53935"></i>přetížená</span>` : nothing}
-            ${hasNonbackup ? html`<span><i class="pleg-d" style="background:#fb8c00"></i>nezáloha</span>` : nothing}
-            <span><i class="pleg-d" style="background:#fff"></i>limit zálohy</span>
-          </div>
         </div>
+
+        <!-- PHASE HISTORY MODAL -->
+        ${this.phaseHistoryOpen ? html`
+          <div class="ph-overlay" @click=${() => { this.phaseHistoryOpen = false; }}
+            @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') this.phaseHistoryOpen = false; }}>
+            <div class="ph-dialog" role="dialog" aria-modal="true" aria-label="Historie fází"
+              @click=${(e: Event) => e.stopPropagation()}>
+              <div class="ph-header">
+                <span>📈</span>
+                <span class="ph-title">Historie fází</span>
+                <button class="ph-close" @click=${() => { this.phaseHistoryOpen = false; }}>✕</button>
+              </div>
+              <div class="ph-body">
+                <div class="ph-placeholder">Graf průběhu — připravujeme</div>
+              </div>
+            </div>
+          </div>` : nothing}
       </div>
     `;
   }
