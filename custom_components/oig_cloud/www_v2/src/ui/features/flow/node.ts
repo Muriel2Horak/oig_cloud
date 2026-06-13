@@ -1780,6 +1780,7 @@ export class OigFlowNode extends LitElement {
 
   private renderSolar() {
     const d = this.data;
+    const fmtKw = (w: number) => w >= 1000 ? `${(w / 1000).toFixed(1).replace('.', ',')} kW` : `${Math.round(w)} W`;
     const percent = d.solarPercent;
     const isNight = percent < 2;
 
@@ -1891,12 +1892,12 @@ export class OigFlowNode extends LitElement {
         <div class="sol-str">
           <div class="sol-sc ${str1Active ? '' : 'sol-off'}">
             <div class="sol-sh">🔆 String 1</div>
-            <div class="sol-sw">${Math.round(d.solarP1)} W</div>
+            <div class="sol-sw">${fmtKw(d.solarP1)}</div>
             <div class="sol-sd">${Math.round(d.solarV1)} V · ${d.solarI1.toFixed(1).replace('.', ',')} A</div>
           </div>
           <div class="sol-sc ${str2Active ? '' : 'sol-off'}">
             <div class="sol-sh">🔆 String 2</div>
-            <div class="sol-sw">${Math.round(d.solarP2)} W</div>
+            <div class="sol-sw">${fmtKw(d.solarP2)}</div>
             <div class="sol-sd">${Math.round(d.solarV2)} V · ${d.solarI2.toFixed(1).replace('.', ',')} A</div>
           </div>
         </div>
