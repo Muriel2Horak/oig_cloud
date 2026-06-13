@@ -726,15 +726,16 @@ export class OigFlowNode extends LitElement {
     }
     .pbh {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      flex-direction: column;
+      align-items: stretch;
       font-size: 10.5px;
       opacity: .85;
       margin-bottom: 8px;
-      flex-wrap: wrap;
-      gap: 4px;
+      gap: 5px;
     }
-    .badges { display: flex; gap: 4px; flex-wrap: wrap; }
+    .pbh-title { opacity: .85; }
+    .badges { display: flex; gap: 5px; }
+    .badges .bdg { flex: 1; justify-content: center; }
     .bdg {
       font-size: 9px;
       font-weight: 700;
@@ -2328,18 +2329,18 @@ export class OigFlowNode extends LitElement {
         <!-- PHASE BLOCK -->
         <div class="pblock">
           <div class="pbh">
-            <span>Fáze · odběr</span>
+            <span class="pbh-title">Fáze · odběr (záloha)</span>
             <span class="badges">
               <!-- Balance badge -->
               ${ps.calm
-                ? html`<span class="bdg ok">⚖️ Klid</span>`
+                ? html`<span class="bdg ok" title="Záloha v klidu — vyvážení nepodstatné">⚖️ Klid</span>`
                 : ps.balanced
-                  ? html`<span class="bdg ok">⚖️ Vyvážené Δ${spreadStr}</span>`
-                  : html`<span class="bdg warn">⚖️ Nevyvážené Δ${spreadStr}</span>`}
+                  ? html`<span class="bdg ok" title="Vyvážené fáze — rozdíl ${spreadStr}">⚖️ Vyvážené · Δ${spreadStr}</span>`
+                  : html`<span class="bdg warn" title="Nevyvážené fáze — rozdíl ${spreadStr} (práh 1 kW)">⚖️ Nevyvážené · Δ${spreadStr}</span>`}
               <!-- Overload badge -->
               ${ps.overloadPhase
-                ? html`<span class="bdg warn">⚡ Přetížení ${ps.overloadPhase}</span>`
-                : html`<span class="bdg ok">⚡ ${Math.round(ps.worstPct)} %</span>`}
+                ? html`<span class="bdg warn" title="Přetížení ${ps.overloadPhase} — nad 3,3 kW">⚡ Přetížení ${ps.overloadPhase}</span>`
+                : html`<span class="bdg ok" title="Vytížení nejvyšší fáze vůči limitu 3,3 kW">⚡ ${Math.round(ps.worstPct)} %</span>`}
             </span>
           </div>
           ${phases.map((p) => {
@@ -2347,8 +2348,8 @@ export class OigFlowNode extends LitElement {
             const phaseTotal = p.z + p.n;
             const zWidthPct = (p.z / maxPhaseTotal) * 100;
             const nWidthPct = (p.n / maxPhaseTotal) * 100;
-            const showZLabel = zWidthPct > 22 && p.z > 100;
-            const showNLabel = nWidthPct > 22 && p.n > 100;
+            const showZLabel = zWidthPct > 34 && p.z > 100;
+            const showNLabel = nWidthPct > 34 && p.n > 100;
             return html`
               <div class="prow">
                 <span class="pl">${p.l}</span>
@@ -2359,7 +2360,7 @@ export class OigFlowNode extends LitElement {
                   ${p.n > 0 ? html`
                     <div class="pdiv"></div>
                     <div class="pseg pn" style="width:${nWidthPct.toFixed(1)}%">
-                      ${showNLabel ? html`nezáloha ${fmtW(p.n)}` : nothing}
+                      ${showNLabel ? html`${fmtW(p.n)}` : nothing}
                     </div>` : nothing}
                   <div class="plim" style="left:${limPct.toFixed(1)}%"></div>
                 </div>
