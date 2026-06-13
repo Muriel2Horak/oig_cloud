@@ -76,6 +76,43 @@ function openEntity(sensor: string): () => void {
   return () => haClient.openEntityDialog(sid(sensor));
 }
 
+// ==========================================================================
+// PHASE STATUS — exported pure helper for tests
+// ==========================================================================
+
+/** Watt spread threshold: above this value the záloha phases are "unbalanced". */
+export const BALANCE_UNBALANCED_W = 1000;
+/** Backup-phase overload limit set by inverter manufacturer. Not configurable. */
+export const BACKUP_PHASE_LIMIT_W = 3300;
+/** Below this total záloha wattage phase balance is irrelevant — show "Klid". */
+export const BALANCE_CALM_W = 300;
+
+export interface PhaseStatus {
+  spreadW: number;             // max − min of záloha phases [W]
+  balanced: boolean;           // spreadW ≤ BALANCE_UNBALANCED_W
+  calm: boolean;               // total záloha < BALANCE_CALM_W
+  worstPct: number;            // worstPhase / BACKUP_PHASE_LIMIT_W × 100
+  overloadPhase: 'L1' | 'L2' | 'L3' | null;   // first phase ≥ limit, or null
+}
+
+/**
+ * Derive phase-balance / overload status from the three záloha phase powers.
+ * @param zaloha [L1, L2, L3] záloha watt readings (ac_out_aco_pr/ps/pt)
+ */
+export function computePhaseStatus(zaloha: [number, number, number]): PhaseStatus {
+  const [l1, l2, l3] = zaloha.map(w => Math.max(0, isFinite(w) ? w : 0)) as [number, number, number];
+  const total = l1 + l2 + l3;
+  const spreadW = Math.max(l1, l2, l3) - Math.min(l1, l2, l3);
+  const calm = total < BALANCE_CALM_W;
+  const balanced = spreadW <= BALANCE_UNBALANCED_W;
+  const worst = Math.max(l1, l2, l3);
+  const worstPct = (worst / BACKUP_PHASE_LIMIT_W) * 100;
+  const phaseLabels = ['L1', 'L2', 'L3'] as const;
+  const overloadIndex = [l1, l2, l3].findIndex(w => w >= BACKUP_PHASE_LIMIT_W);
+  const overloadPhase = overloadIndex >= 0 ? phaseLabels[overloadIndex] : null;
+  return { spreadW, balanced, calm, worstPct, overloadPhase };
+}
+
 @customElement('oig-flow-node')
 export class OigFlowNode extends LitElement {
   @property({ type: Object }) data: FlowData = EMPTY_FLOW_DATA;
@@ -209,18 +246,7 @@ export class OigFlowNode extends LitElement {
     .solar-rem.rem-on { background: #ffca5a; color: #101a10; }
     .solar-rem.rem-off { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
 
-    /* Phase balance (záloha) */
-    .phasebal-head { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-weight: 600; opacity: 0.85; margin-bottom: 7px; }
-    .pb-ok { font-size: 9.5px; font-weight: 700; color: #9fe6a8; background: rgba(76,175,80,0.16); border: 1px solid rgba(76,175,80,0.3); padding: 2px 7px; border-radius: 6px; }
-    .pb-crit { font-size: 9.5px; font-weight: 700; color: #ff9d93; background: rgba(244,67,54,0.18); border: 1px solid rgba(244,67,54,0.4); padding: 2px 7px; border-radius: 6px; }
-    .pb-row { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
-    .pb-lab { font-size: 10px; width: 16px; opacity: 0.7; }
-    .pb-track { position: relative; flex: 1; height: 10px; border-radius: 6px; background: rgba(255,255,255,0.07); overflow: hidden; }
-    .pb-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: #4caf50; transition: width 0.4s; }
-    .pb-fill.over { background: linear-gradient(90deg, #fb8c00, #e53935); }
-    .pb-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: rgba(255,255,255,0.55); }
-    .pb-val { font-size: 10px; min-width: 42px; text-align: right; font-weight: 600; background: none; border: none; color: inherit; cursor: pointer; }
-    .pb-val.over { color: #ff9d93; }
+    /* (Phase balance legacy CSS removed — replaced by .pblock/.prow/.pseg/.ptrack system) */
 
     /* Inverter — clean rows (approved mockup C) */
     .inv-chip {
@@ -283,6 +309,11 @@ export class OigFlowNode extends LitElement {
       padding: 2px 9px;
       cursor: pointer;
       box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    /* House tile: pill sits at the TOP (center-top, approved design) */
+    .node-house .ss-pill {
+      bottom: auto;
+      top: -11px;
     }
     .ss-pop {
       position: absolute;
@@ -649,32 +680,136 @@ export class OigFlowNode extends LitElement {
     .cons-split-z { background: #4CAF50; transition: width 0.3s; }
     .cons-split-n { background: #FFA726; transition: width 0.3s; }
 
-    /* Corner chips — same visual language as .ss-pill (dark, bordered, round) */
-    .house-corner {
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
-      font-size: 9px;
-      line-height: 1.2;
-      background: #131f33;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      padding: 3px 8px;
-      border-radius: 9px;
-    }
-    .house-corner:hover { border-color: rgba(255, 255, 255, 0.4); }
-    .house-corner .hc-l {
-      font-weight: 800;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .house-corner .hc-v { opacity: 0.7; }
+    /* (house-corner legacy CSS removed — replaced by .sc-chip system) */
     .hc-dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
       display: inline-block;
       flex-shrink: 0;
+    }
+
+    /* ---- Spotřeba: split chips (Záloha / Nezáloha) ---- */
+    .sc-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin: 8px 0 10px;
+    }
+    .sc-chip {
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 10px;
+      padding: 6px 9px;
+      text-align: left;
+      cursor: pointer;
+      color: inherit;
+    }
+    .sc-chip:hover { border-color: rgba(255,255,255,.22); }
+    .sc-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 9.5px;
+      opacity: .7;
+      margin-bottom: 2px;
+    }
+    .sc-val { font-size: 14px; font-weight: 800; }
+    .sc-sub { font-size: 9px; opacity: .55; margin-top: 1px; }
+
+    /* ---- Spotřeba: phase block ---- */
+    .pblock {
+      background: rgba(0,0,0,.16);
+      border-radius: 10px;
+      padding: 8px 10px 7px;
+      margin-top: 4px;
+    }
+    .pbh {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10.5px;
+      opacity: .85;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .badges { display: flex; gap: 4px; flex-wrap: wrap; }
+    .bdg {
+      font-size: 9px;
+      font-weight: 700;
+      border-radius: 6px;
+      padding: 2px 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .bdg.ok  { background: rgba(76,175,80,.16); border: 1px solid rgba(76,175,80,.4); color: #9fe6a8; }
+    .bdg.warn { background: rgba(229,57,53,.18); border: 1px solid rgba(229,57,53,.55); color: #ff8a80; }
+    .prow {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 5px 0;
+    }
+    .pl { font-size: 10px; font-weight: 700; opacity: .7; width: 16px; flex-shrink: 0; }
+    .ptrack {
+      position: relative;
+      flex: 1;
+      height: 15px;
+      background: rgba(255,255,255,.05);
+      border-radius: 5px;
+      overflow: visible;
+      display: flex;
+    }
+    .pseg {
+      position: relative;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      font-weight: 800;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .pz      { background: #43a047; color: #06270c; }
+    .pz-crit { background: #e53935; color: #fff; }
+    .pn      { background: #fb8c00; color: #2b1500; }
+    .pdiv    { width: 2px; background: rgba(13,21,38,.9); height: 100%; flex-shrink: 0; }
+    .plim    { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; box-shadow: 0 0 5px rgba(255,255,255,.7); z-index: 3; pointer-events: none; }
+    .pv {
+      font-size: 9px;
+      opacity: .78;
+      width: 52px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      flex-shrink: 0;
+      padding: 0;
+    }
+    .pv:hover { text-decoration: underline; }
+    .pleg {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      font-size: 9px;
+      opacity: .72;
+      margin-top: 7px;
+      flex-wrap: wrap;
+    }
+    .pleg span { display: flex; align-items: center; gap: 3px; }
+    .pleg-d { width: 9px; height: 9px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+
+    /* mobile: tighten phase block a bit */
+    @media (max-width: 768px) {
+      .sc-val { font-size: 12px; }
+      .sc-sub { font-size: 8px; }
+      .pblock { padding: 6px 8px 5px; }
+      .ptrack { height: 13px; }
     }
 
     .battery-center {
@@ -1122,7 +1257,8 @@ export class OigFlowNode extends LitElement {
       /* Kiosk = přehledový pohled: skrýt těžké rozpady (jsou na ostatních tabech/po rozkliknutí) */
       .battery-energy-section,
       .prices-row,
-      .phases-grid { display: none; }
+      .phases-grid,
+      .pblock { display: none; }
     }
   `;
 
@@ -1332,6 +1468,45 @@ export class OigFlowNode extends LitElement {
           width=${W - inset * 2} height=${H - inset * 2} rx="10.5"
           stroke=${`url(#${opts.id})`} stroke-width=${w} pathLength="100"
           stroke-dasharray="100" stroke-dashoffset=${dash}></rect>
+      </svg>`;
+  }
+
+  /**
+   * Multi-segment edge gauge — proportional coloured arcs around the node border.
+   * Each segment uses pathLength=100 + stroke-dasharray="${frac} 100" positioned
+   * via stroke-dashoffset = -(cumulative offset of previous segments).
+   * Order: render segments in the array order (caller decides clockwise sequence).
+   * Empty-load guard: if all fracs are 0, only the track rect is rendered.
+   */
+  private edgeGaugeSegments(opts: {
+    nodeId: string;
+    segments: Array<{ frac: number; color: string }>;
+    width?: number;
+  }) {
+    const w = Math.max(1.5, Math.min(6, opts.width ?? 3.5));
+    const dim = this.nodeDims[opts.nodeId];
+    const W = dim?.w ?? 180;
+    const H = dim?.h ?? 180;
+    const inset = 1.5;
+    const rx = 10.5;
+    // Filter out zero-fraction segments to avoid rendering invisible rects.
+    const segs = opts.segments.filter(s => s.frac > 0.001);
+    let offset = 0;
+    const arcs = segs.map((seg) => {
+      const dashOffset = -offset;
+      offset += seg.frac;
+      return svg`<rect x=${inset} y=${inset}
+        width=${W - inset * 2} height=${H - inset * 2} rx=${rx}
+        fill="none" stroke=${seg.color} stroke-width=${w}
+        pathLength="100"
+        stroke-dasharray="${seg.frac} 100"
+        stroke-dashoffset="${dashOffset}"></rect>`;
+    });
+    return svg`
+      <svg class="edge-gauge" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        <rect class="edge-track" x=${inset} y=${inset}
+          width=${W - inset * 2} height=${H - inset * 2} rx=${rx}></rect>
+        ${arcs}
       </svg>`;
   }
 
@@ -2051,101 +2226,153 @@ export class OigFlowNode extends LitElement {
     const totalPower = d.housePower + d.nonbackupPower;
     const zalohaForecast = zalohaToday + d.zalohaPlannedRemainingKwh;
 
-    // Live self-sufficiency: share of current load covered by own sources.
-    const battDis = Math.max(0, -d.batteryPower);
-    const fromSolar = Math.min(d.solarPower, totalPower);
-    const fromBat = Math.min(battDis, Math.max(0, totalPower - fromSolar));
-    const fromGrid = Math.max(0, totalPower - fromSolar - fromBat);
-    const selfSuf = totalPower > 5
-      ? ((fromSolar + fromBat) / totalPower) * 100
-      : (d.solarPower > 5 ? 100 : 0);
-    const ssColor = selfSuf >= 66 ? '#43a047' : selfSuf >= 33 ? '#fdd835' : '#e53935';
-    // Gauge color = VALUE (smooth red→green hue), not a rainbow along the arc —
-    // a fully self-sufficient house must not show any red (user 2026-06-12).
-    const ssGaugeColor = `hsl(${Math.round(Math.max(0, Math.min(120, selfSuf * 1.2)))}, 72%, 46%)`;
-    const share = (x: number) => (totalPower > 0 ? Math.round((x / totalPower) * 100) : 0);
-    const ssTitle = `Soběstačnost ${Math.round(selfSuf)} % · FVE ${share(fromSolar)} % · Baterie ${share(fromBat)} % · Síť ${share(fromGrid)} %`;
+    // --- DAILY self-sufficiency (aura) from Task A precomputed fields ---
+    const dailySS = d.selfSufficiencyTodayPct;
+    const totalTodayWh = d.houseTodayWh + d.nonbackupTodayWh;
+    // Arc fractions (0..100 each, summing to 100) for the multi-segment aura.
+    // green=battery, yellow=FVE, red=grid (clockwise from top).
+    const arcBat = totalTodayWh > 0 ? (d.srcBatteryTodayKwh * 1000 / totalTodayWh) * 100 : 0;
+    const arcFve = totalTodayWh > 0 ? (d.srcFveTodayKwh * 1000 / totalTodayWh) * 100 : 0;
+    const arcGrid = totalTodayWh > 0 ? (d.srcGridTodayKwh * 1000 / totalTodayWh) * 100 : 0;
 
-    // Phase balance (záloha) — critical above 3.3 kW / phase (protects inverter).
-    const CRIT = 3300;
-    const TRACK = 4000;
+    // Pill colour: smooth hsl red→green by self-suff value (same logic as other gauges).
+    const ssColor = dailySS >= 66 ? '#43a047' : dailySS >= 33 ? '#fdd835' : '#e53935';
+    const ssGaugeColor = `hsl(${Math.round(Math.max(0, Math.min(120, dailySS * 1.2)))}, 72%, 46%)`;
+
+    // Popover breakdown kWh + %
+    // When no data yet (totalToday = 0), show '—' rather than the contradictory 'Síť 100 %'.
+    const hasLoad = totalToday > 0;
+    const totalKwh = hasLoad ? totalToday : 1; // avoid /0
+    const pctFve = hasLoad ? Math.round((d.srcFveTodayKwh / totalKwh) * 100) : 0;
+    const pctBat = hasLoad ? Math.round((d.srcBatteryTodayKwh / totalKwh) * 100) : 0;
+    // Clamp to 0 so rounding of near-100% self-sufficiency cannot yield -1.
+    const pctGrid = hasLoad ? Math.max(0, 100 - pctFve - pctBat) : 0;
+    const ssTitle = `Denní soběstačnost ${Math.round(dailySS)} % · FVE ${pctFve} % · Baterie ${pctBat} % · Síť ${pctGrid} %`;
+
+    // --- Phase status (záloha) ---
+    const ps = computePhaseStatus([d.houseL1, d.houseL2, d.houseL3]);
+    const spreadStr = ps.spreadW >= 1000
+      ? `${(ps.spreadW / 1000).toFixed(1)} kW`
+      : `${Math.round(ps.spreadW)} W`;
+
+    // Phase track scale: auto-scale to max total (záloha+nezáloha) across L1-3,
+    // with a floor of 3600 W so the 3300 W limit tick is always visible.
     const phases = [
-      { l: 'L1', w: d.houseL1, e: 'ac_out_aco_pr' },
-      { l: 'L2', w: d.houseL2, e: 'ac_out_aco_ps' },
-      { l: 'L3', w: d.houseL3, e: 'ac_out_aco_pt' },
+      { l: 'L1', z: d.houseL1, n: d.nonbackupL1, ze: 'ac_out_aco_pr', ne: 'actual_acinb_wr' },
+      { l: 'L2', z: d.houseL2, n: d.nonbackupL2, ze: 'ac_out_aco_ps', ne: 'actual_acinb_ws' },
+      { l: 'L3', z: d.houseL3, n: d.nonbackupL3, ze: 'ac_out_aco_pt', ne: 'actual_acinb_wt' },
     ];
-    const critPhase = phases.find((p) => p.w > CRIT);
+    const maxPhaseTotal = Math.max(3600, ...phases.map(p => p.z + p.n));
+    const limPct = (BACKUP_PHASE_LIMIT_W / maxPhaseTotal) * 100;
+    // Whether any phase has nonbackup > 0 (affects legend).
+    const hasNonbackup = phases.some(p => p.n > 0);
+
+    // Format watts/kW for inline segment label
+    const fmtW = (w: number) => w >= 1000 ? `${(w / 1000).toFixed(1)} kW` : `${Math.round(w)} W`;
 
     return html`
       <div class="${this.nodeClass('house')}" style="--node-gradient: ${NODE_GRADIENTS.house}; --node-border: ${NODE_BORDERS.house};"
         @click=${(e: Event) => this.toggleExpand('house', e)} title=${ssTitle}>
-        ${this.edgeGauge({
-          id: 'gauge-house',
+
+        <!-- MULTI-SEGMENT AURA: battery (green) → FVE (yellow) → grid (red) -->
+        ${this.edgeGaugeSegments({
           nodeId: 'house',
-          pct: selfSuf,
-          stops: [[0, ssGaugeColor], [1, ssGaugeColor]],
-          width: 2 + Math.min(3, totalPower / 1000),
-          pulse: totalPower > 50,
-          pulseDur: Math.max(0.9, 2.2 - (totalPower / 1000) * 0.35),
+          segments: [
+            { frac: arcBat,  color: '#43a047' },
+            { frac: arcFve,  color: '#ffca28' },
+            { frac: arcGrid, color: '#e53935' },
+          ],
+          width: 3.5,
         })}
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${ssColor}22, transparent 72%)"></div>
 
-        ${this.gaugePill('house', `🛡 ${Math.round(selfSuf)} %`, ssColor, html`
-          <div class="ss-pop-h"><span>Soběstačnost</span><b style="color:${ssColor}">${Math.round(selfSuf)} %</b></div>
-          <div class="ss-bar">
-            <i style="width:${share(fromSolar)}%;background:#ffca5a"></i>
-            <i style="width:${share(fromBat)}%;background:#4caf50"></i>
-            <i style="width:${share(fromGrid)}%;background:#ef5350"></i>
-          </div>
-          <div class="ss-leg">
-            <span>☀️ FVE ${share(fromSolar)}%</span>
-            <span>🔋 Bat ${share(fromBat)}%</span>
-            <span>🔌 Síť ${share(fromGrid)}%</span>
-          </div>
+        <!-- GAUGE PILL: daily self-sufficiency with kWh popover -->
+        ${this.gaugePill('house', `⚡ Soběstačnost ${Math.round(dailySS)} %`, ssGaugeColor, html`
+          <div class="ss-pop-h"><span>Denní soběstačnost</span><b style="color:${ssGaugeColor}">${Math.round(dailySS)} %</b></div>
+          ${hasLoad ? html`
+            <div class="ss-bar">
+              <i style="width:${pctBat}%;background:#43a047"></i>
+              <i style="width:${pctFve}%;background:#ffca28"></i>
+              <i style="width:${pctGrid}%;background:#e53935"></i>
+            </div>
+            <div class="gp-r"><span>☀️ FVE</span><b>${d.srcFveTodayKwh.toFixed(1)} kWh · ${pctFve} %</b></div>
+            <div class="gp-r"><span>🔋 Baterie</span><b>${d.srcBatteryTodayKwh.toFixed(1)} kWh · ${pctBat} %</b></div>
+            <div class="gp-r"><span>🔌 Síť</span><b>${d.srcGridTodayKwh.toFixed(1)} kWh · ${pctGrid} %</b></div>
+            <div class="gp-r" style="margin-top:4px;border-top:1px solid rgba(255,255,255,.12);padding-top:4px">
+              <span>Celkem dnes</span><b>${totalToday.toFixed(1)} kWh</b>
+            </div>
+          ` : html`<div class="gp-r" style="opacity:.6"><span>Žádná spotřeba dnes zatím</span></div>`}
         `)}
 
-        <button class="indicator house-corner" style="position:absolute;top:4px;left:6px;z-index:3"
-          @click=${openEntity('actual_aco_p')} title="Záloha — aktuální výkon · dnes">
-          <span class="hc-l"><i class="hc-dot" style="background:#4CAF50"></i>Záloha</span>
-          <span class="hc-v">${formatPower(d.housePower)} · ${zalohaToday.toFixed(1)} kWh</span>
-        </button>
-        <button class="indicator house-corner" style="position:absolute;top:4px;right:6px;text-align:right;z-index:3"
-          @click=${openEntity('actual_acinb_wtotal')} title="Nezáloha — aktuální výkon · dnes">
-          <span class="hc-l" style="justify-content:flex-end"><i class="hc-dot" style="background:#FFA726"></i>Nezáloha</span>
-          <span class="hc-v">${formatPower(d.nonbackupPower)} · ${nezalohaToday.toFixed(1)} kWh</span>
-        </button>
-
+        <!-- HEADER: centred label + big power -->
         <div class="node-header" style="margin-top:18px;justify-content:center">
           <span class="node-label">🏠 Spotřeba</span>
         </div>
         <div class="node-value" @click=${openEntity('actual_aco_p')}>${formatPower(totalPower)}</div>
-        <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>Dnes celkem: ${totalToday.toFixed(1)} kWh</div>
-        ${zalohaForecast > 0 ? html`
-          <div class="node-subvalue" @click=${openEntity('battery_forecast')}
-            title="Předpověď zálohové spotřeby (skutečné + plán)">
-            🔮 Záloha plán: ${zalohaForecast.toFixed(1)} kWh
-          </div>` : nothing}
+        <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>dnes celkem ${totalToday.toFixed(1)} kWh</div>
 
-        <!-- Phase balance (záloha) -->
-        <div class="detail-section">
-          <div class="phasebal-head">
-            <span>⚖️ Vyvážení fází</span>
-            ${critPhase
-              ? html`<span class="pb-crit">⚠ KRIZOVÝ — ${critPhase.l}</span>`
-              : html`<span class="pb-ok">✓ Vyvážené</span>`}
+        <!-- SPLIT CHIPS: Záloha | Nezáloha -->
+        <div class="sc-row">
+          <button class="sc-chip" @click=${openEntity('actual_aco_p')} title="Záloha — aktuální výkon · dnes · plán">
+            <div class="sc-label"><i class="hc-dot" style="background:#43a047"></i>Záloha</div>
+            <div class="sc-val">${formatPower(d.housePower)}</div>
+            <div class="sc-sub">dnes ${zalohaToday.toFixed(1)}${d.zalohaPlannedRemainingKwh > 0 ? html` · 🔮 plán ${zalohaForecast.toFixed(1)}` : ' kWh'}</div>
+          </button>
+          <button class="sc-chip" @click=${openEntity('actual_acinb_wtotal')} title="Nezáloha — aktuální výkon · dnes">
+            <div class="sc-label"><i class="hc-dot" style="background:#fb8c00"></i>Nezáloha</div>
+            <div class="sc-val">${formatPower(d.nonbackupPower)}</div>
+            <div class="sc-sub">dnes ${nezalohaToday.toFixed(1)} kWh</div>
+          </button>
+        </div>
+
+        <!-- PHASE BLOCK -->
+        <div class="pblock">
+          <div class="pbh">
+            <span>Fáze · odběr</span>
+            <span class="badges">
+              <!-- Balance badge -->
+              ${ps.calm
+                ? html`<span class="bdg ok">⚖️ Klid</span>`
+                : ps.balanced
+                  ? html`<span class="bdg ok">⚖️ Vyvážené Δ${spreadStr}</span>`
+                  : html`<span class="bdg warn">⚖️ Nevyvážené Δ${spreadStr}</span>`}
+              <!-- Overload badge -->
+              ${ps.overloadPhase
+                ? html`<span class="bdg warn">⚡ Přetížení ${ps.overloadPhase}</span>`
+                : html`<span class="bdg ok">⚡ ${Math.round(ps.worstPct)} %</span>`}
+            </span>
           </div>
           ${phases.map((p) => {
-            const over = p.w > CRIT;
+            const zOver = p.z >= BACKUP_PHASE_LIMIT_W;
+            const phaseTotal = p.z + p.n;
+            const zWidthPct = (p.z / maxPhaseTotal) * 100;
+            const nWidthPct = (p.n / maxPhaseTotal) * 100;
+            const showZLabel = zWidthPct > 22 && p.z > 100;
+            const showNLabel = nWidthPct > 22 && p.n > 100;
             return html`
-              <div class="pb-row">
-                <span class="pb-lab">${p.l}</span>
-                <div class="pb-track">
-                  <div class="pb-fill ${over ? 'over' : ''}" style="width:${Math.min(100, (p.w / TRACK) * 100)}%"></div>
-                  <div class="pb-mark" style="left:${(CRIT / TRACK) * 100}%"></div>
+              <div class="prow">
+                <span class="pl">${p.l}</span>
+                <div class="ptrack">
+                  <div class="pseg ${zOver ? 'pz-crit' : 'pz'}" style="width:${zWidthPct.toFixed(1)}%">
+                    ${showZLabel ? html`${fmtW(p.z)}` : nothing}
+                  </div>
+                  ${p.n > 0 ? html`
+                    <div class="pdiv"></div>
+                    <div class="pseg pn" style="width:${nWidthPct.toFixed(1)}%">
+                      ${showNLabel ? html`nezáloha ${fmtW(p.n)}` : nothing}
+                    </div>` : nothing}
+                  <div class="plim" style="left:${limPct.toFixed(1)}%"></div>
                 </div>
-                <button class="pb-val ${over ? 'over' : ''}" @click=${openEntity(p.e)}>${(p.w / 1000).toFixed(1)} kW</button>
+                <button class="pv" @click=${openEntity(p.ze)}>${(phaseTotal / 1000).toFixed(2)}</button>
               </div>`;
           })}
+          <!-- Legend -->
+          <div class="pleg">
+            <span><i class="pleg-d" style="background:#43a047"></i>záloha</span>
+            ${ps.overloadPhase ? html`<span><i class="pleg-d" style="background:#e53935"></i>přetížená</span>` : nothing}
+            ${hasNonbackup ? html`<span><i class="pleg-d" style="background:#fb8c00"></i>nezáloha</span>` : nothing}
+            <span><i class="pleg-d" style="background:#fff"></i>limit zálohy</span>
+          </div>
         </div>
       </div>
     `;

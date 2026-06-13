@@ -71,6 +71,12 @@ export interface FlowData {
   nonbackupL3: number;
   zalohaPlannedRemainingKwh: number;
 
+  // Daily self-sufficiency (aura data)
+  selfSufficiencyTodayPct: number;   // 0-100
+  srcFveTodayKwh: number;            // kWh served by FVE (yellow arc)
+  srcBatteryTodayKwh: number;        // kWh served by battery (green arc)
+  srcGridTodayKwh: number;           // kWh served by grid (red arc)
+
   // Inverter
   inverterMode: string;
   inverterGridMode: FlowGridDelivery;
@@ -263,6 +269,7 @@ export const EMPTY_FLOW_DATA: FlowData = {
   housePower: 0, houseTodayWh: 0, houseL1: 0, houseL2: 0, houseL3: 0,
   nonbackupPower: 0, nonbackupTodayWh: 0, nonbackupL1: 0, nonbackupL2: 0, nonbackupL3: 0,
   zalohaPlannedRemainingKwh: 0,
+  selfSufficiencyTodayPct: 0, srcFveTodayKwh: 0, srcBatteryTodayKwh: 0, srcGridTodayKwh: 0,
   inverterMode: '', inverterGridMode: 'unknown' as FlowGridDelivery, inverterGridLimit: 0, inverterTemp: 0,
   bypassStatus: 'off', notificationsUnread: 0, notificationsError: 0,
   boilerIsUse: false, boilerPower: 0, boilerDayEnergy: 0, boilerManualMode: '', boilerInstallPower: 3000,
