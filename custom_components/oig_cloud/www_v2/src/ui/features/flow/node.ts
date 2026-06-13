@@ -378,14 +378,20 @@ export class OigFlowNode extends LitElement {
     /* House tile: pill sits at the TOP (center-top, approved design) */
     .node-house .ss-pill {
       bottom: auto;
-      top: -11px;
+      top: -13px;
+      font-size: 14px;
+      padding: 3px 13px;
+      border-radius: 11px;
     }
     /* House popover drops DOWN from the top pill */
     .node-house .ss-pop { bottom: auto; top: 16px; }
     /* Solar tile: pill sits at the TOP (variant B approved design) */
     .node-solar .ss-pill {
       bottom: auto;
-      top: -11px;
+      top: -13px;
+      font-size: 14px;
+      padding: 3px 13px;
+      border-radius: 11px;
     }
     /* Solar popover drops DOWN from the top pill */
     .node-solar .ss-pop { bottom: auto; top: 16px; }
@@ -1816,7 +1822,7 @@ export class OigFlowNode extends LitElement {
     const auraPct  = isNight ? 0 : percent;
     const auraColor = isNight ? '#5a6480' : intColor;
     const pillColor = isNight ? '#9fa8da' : intColor;
-    const pillLabel = isNight ? '🌙 Noc' : `${Math.round(percent)} % špičky`;
+    const pillLabel = isNight ? '🌙 Noc' : `${Math.round(percent)} %`;
 
     // Production bar colours: amber by day, muted blue-grey at night.
     const barGrad = overplan
