@@ -207,9 +207,10 @@ export class OigFlowNode extends LitElement {
       box-shadow: 0 2px 12px rgba(0,0,0,0.15);
       transition: transform 0.2s, box-shadow 0.2s;
       overflow: visible;
-      width: fit-content;
-      min-width: 170px;
-      max-width: 230px;
+      /* Uniform width so every tile matches the refactored ones (no content-driven
+         width drift). Per-breakpoint widths are set in the media queries below. */
+      width: 230px;
+      max-width: 100%;
       text-align: center;
     }
 
@@ -1436,8 +1437,7 @@ export class OigFlowNode extends LitElement {
     /* ---- Tablet (768-1024px) ---- */
     @media (min-width: 769px) and (max-width: 1024px) {
       .node {
-        min-width: 140px;
-        max-width: 200px;
+        width: 205px;
         padding: 8px 10px;
       }
       .node-icon { font-size: 20px; }
@@ -1464,9 +1464,11 @@ export class OigFlowNode extends LitElement {
       .node-grid { grid-column: 1; grid-row: 3; }
       .node-battery { grid-column: 2; grid-row: 3; }
 
+      /* Fill the 1fr column → both columns equal width */
       .node {
-        min-width: 120px;
-        max-width: 170px;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
         padding: 8px 8px;
       }
       .node-icon { font-size: 20px; }
@@ -1486,8 +1488,7 @@ export class OigFlowNode extends LitElement {
         transform-origin: top center;
       }
       .node {
-        min-width: 130px;
-        max-width: 180px;
+        width: 185px;
         padding: 8px 10px;
       }
       .node-icon { font-size: 20px; }
@@ -1502,8 +1503,9 @@ export class OigFlowNode extends LitElement {
         transform-origin: top center;
       }
       .node {
-        min-width: 100px;
-        max-width: 150px;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
         padding: 6px;
       }
       .node-icon { font-size: 18px; }
@@ -1524,7 +1526,7 @@ export class OigFlowNode extends LitElement {
       .node-inverter { grid-column: 2; grid-row: 2; justify-self: center; }
       .node-grid     { grid-column: 1; grid-row: 3; justify-self: center; }
       .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
-      .node { min-width: 96px; max-width: 140px; padding: 3px 6px; }
+      .node { width: 140px; max-width: 100%; min-width: 0; padding: 3px 6px; }
       .node-header { margin-bottom: 0; }
       .node-value { font-size: 14px; margin: 0; }
       .node-label { font-size: 8px; }
@@ -1550,8 +1552,11 @@ export class OigFlowNode extends LitElement {
       .prices-row,
       .phases-grid,
       .pg { display: none; }
-      /* Grid tile kiosk: hide heavy sections */
-      .gd-ph, .gd-volt, .gd-costrow { display: none; }
+      /* Grid tile kiosk: hide heavy sections (price is on the Ceny tab) */
+      .gd-ph, .gd-volt, .gd-costrow, .gd-cols { display: none; }
+      /* Střídač kiosk: hide the detail rows (Teplota/Bypass/Dodávka/limit/Shield)
+         — keep mode + planner; details are on click / other tabs. */
+      .inv-rows { display: none; }
     }
   `;
 

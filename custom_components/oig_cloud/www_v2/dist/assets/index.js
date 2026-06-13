@@ -1308,9 +1308,10 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       box-shadow: 0 2px 12px rgba(0,0,0,0.15);
       transition: transform 0.2s, box-shadow 0.2s;
       overflow: visible;
-      width: fit-content;
-      min-width: 170px;
-      max-width: 230px;
+      /* Uniform width so every tile matches the refactored ones (no content-driven
+         width drift). Per-breakpoint widths are set in the media queries below. */
+      width: 230px;
+      max-width: 100%;
       text-align: center;
     }
 
@@ -2537,8 +2538,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     /* ---- Tablet (768-1024px) ---- */
     @media (min-width: 769px) and (max-width: 1024px) {
       .node {
-        min-width: 140px;
-        max-width: 200px;
+        width: 205px;
         padding: 8px 10px;
       }
       .node-icon { font-size: 20px; }
@@ -2565,9 +2565,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       .node-grid { grid-column: 1; grid-row: 3; }
       .node-battery { grid-column: 2; grid-row: 3; }
 
+      /* Fill the 1fr column → both columns equal width */
       .node {
-        min-width: 120px;
-        max-width: 170px;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
         padding: 8px 8px;
       }
       .node-icon { font-size: 20px; }
@@ -2587,8 +2589,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
         transform-origin: top center;
       }
       .node {
-        min-width: 130px;
-        max-width: 180px;
+        width: 185px;
         padding: 8px 10px;
       }
       .node-icon { font-size: 20px; }
@@ -2603,8 +2604,9 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
         transform-origin: top center;
       }
       .node {
-        min-width: 100px;
-        max-width: 150px;
+        width: 100%;
+        min-width: 0;
+        max-width: none;
         padding: 6px;
       }
       .node-icon { font-size: 18px; }
@@ -2625,7 +2627,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       .node-inverter { grid-column: 2; grid-row: 2; justify-self: center; }
       .node-grid     { grid-column: 1; grid-row: 3; justify-self: center; }
       .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
-      .node { min-width: 96px; max-width: 140px; padding: 3px 6px; }
+      .node { width: 140px; max-width: 100%; min-width: 0; padding: 3px 6px; }
       .node-header { margin-bottom: 0; }
       .node-value { font-size: 14px; margin: 0; }
       .node-label { font-size: 8px; }
@@ -2651,8 +2653,11 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       .prices-row,
       .phases-grid,
       .pg { display: none; }
-      /* Grid tile kiosk: hide heavy sections */
-      .gd-ph, .gd-volt, .gd-costrow { display: none; }
+      /* Grid tile kiosk: hide heavy sections (price is on the Ceny tab) */
+      .gd-ph, .gd-volt, .gd-costrow, .gd-cols { display: none; }
+      /* Střídač kiosk: hide the detail rows (Teplota/Bypass/Dodávka/limit/Shield)
+         — keep mode + planner; details are on click / other tabs. */
+      .inv-rows { display: none; }
     }
   `;We([g({type:Object})],Ae.prototype,"data",2);We([g({type:Boolean})],Ae.prototype,"editMode",2);We([M()],Ae.prototype,"pendingServices",2);We([M()],Ae.prototype,"changingServices",2);We([M()],Ae.prototype,"shieldStatus",2);We([M()],Ae.prototype,"shieldQueueCount",2);We([M()],Ae.prototype,"gridDeliveryState",2);We([M()],Ae.prototype,"expandedNodes",2);We([M()],Ae.prototype,"gaugeDetailOpen",2);We([M()],Ae.prototype,"customPositions",2);We([M()],Ae.prototype,"nodeDims",2);Ae=We([O("oig-flow-node")],Ae);var Pd=Object.defineProperty,Md=Object.getOwnPropertyDescriptor,Kt=(e,t,i,r)=>{for(var n=r>1?void 0:r?Md(t,i):t,a=e.length-1,o;a>=0;a--)(o=e[a])&&(n=(r?o(t,i,n):o(n))||n);return r&&n&&Pd(t,i,n),n};function Dd(e,t){return{fromColor:Ga[e]||"#9e9e9e",toColor:Ga[t]||"#9e9e9e"}}const zd=Q;let it=class extends E{constructor(){super(...arguments),this.data=wa,this.particlesEnabled=!0,this.active=!0,this.editMode=!1,this.lines=[],this.animationId=null,this.lastSpawnTime={},this.particleCount=0,this.MAX_PARTICLES=50,this.onVisibilityChange=()=>{this.updateAnimationState()},this.onLayoutChanged=()=>{this.drawConnectionsDeferred()}}connectedCallback(){super.connectedCallback(),document.addEventListener("visibilitychange",this.onVisibilityChange),this.addEventListener("layout-changed",this.onLayoutChanged)}disconnectedCallback(){super.disconnectedCallback(),document.removeEventListener("visibilitychange",this.onVisibilityChange),this.removeEventListener("layout-changed",this.onLayoutChanged),this.stopAnimation()}updated(e){e.has("data")&&(this.updateLines(),this.animationId!==null&&this.spawnParticles()),(e.has("active")||e.has("particlesEnabled"))&&this.updateAnimationState(),this.drawConnectionsDeferred()}firstUpdated(){this.updateLines(),this.updateAnimationState(),new ResizeObserver(()=>this.drawConnectionsDeferred()).observe(this)}drawConnectionsDeferred(){requestAnimationFrame(()=>this.drawConnectionsSVG())}getParticlesLayer(){var e;return(e=this.renderRoot)==null?void 0:e.querySelector(".particles-layer")}getGridMetrics(){var a,o;const e=(a=this.renderRoot)==null?void 0:a.querySelector("oig-flow-node");if(!e)return null;const i=(e.renderRoot||e.shadowRoot||e).querySelector(".flow-grid");if(!i)return null;const r=(o=this.renderRoot)==null?void 0:o.querySelector(".canvas-container");if(!r)return null;const n=i.getBoundingClientRect();return n.width===0||n.height===0?null:{grid:i,gridRect:n,canvasRect:r.getBoundingClientRect()}}positionOverlayLayer(e,t,i){const r=t.left-i.left,n=t.top-i.top;e.style.left=`${r}px`,e.style.top=`${n}px`,e.style.width=`${t.width}px`,e.style.height=`${t.height}px`}updateLines(){const e=this.data,t=[],i=e.solarPower>50;t.push({id:"solar-inverter",from:"solar",to:"inverter",color:Xt.solar,power:i?e.solarPower:0,params:i?Hr(e.solarPower,Rr.solar,"solar"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:i});const r=Math.abs(e.batteryPower)>50,n=e.batteryPower>0;t.push({id:"battery-inverter",from:r&&n?"inverter":"battery",to:r&&n?"battery":"inverter",color:Xt.battery,power:r?Math.abs(e.batteryPower):0,params:r?Hr(e.batteryPower,Rr.battery,"battery"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:r});const a=Math.abs(e.gridPower)>50,o=e.gridPower>0;t.push({id:"grid-inverter",from:a?o?"grid":"inverter":"grid",to:a?o?"inverter":"grid":"inverter",color:a?o?Xt.grid_import:Xt.grid_export:Xt.grid_import,power:a?Math.abs(e.gridPower):0,params:a?Hr(e.gridPower,Rr.grid,"grid"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:a});const s=e.housePower>50;t.push({id:"inverter-house",from:"inverter",to:"house",color:Xt.house,power:s?e.housePower:0,params:s?Hr(e.housePower,Rr.house,"house"):{active:!1,intensity:0,count:0,speed:0,size:0,opacity:0},active:s}),this.lines=t}calcEdgePoint(e,t,i,r){const n=t.x-e.x,a=t.y-e.y;if(n===0&&a===0)return{...e};const o=Math.abs(n),s=Math.abs(a),d=o*r>s*i?i/o:r/s;return{x:e.x+n*d,y:e.y+a*d}}getNodeInfo(e,t,i){const r=e.querySelector(`.node-${i}`);if(!r)return null;const n=r.getBoundingClientRect();return{x:n.left+n.width/2-t.left,y:n.top+n.height/2-t.top,hw:n.width/2,hh:n.height/2}}drawConnectionsSVG(){const e=this.svgEl;if(!e)return;const t=this.getGridMetrics();if(!t)return;const{grid:i,gridRect:r,canvasRect:n}=t;this.positionOverlayLayer(e,r,n),e.setAttribute("viewBox",`0 0 ${r.width} ${r.height}`);const a=this.getParticlesLayer();a&&this.positionOverlayLayer(a,r,n),e.innerHTML="";const o="http://www.w3.org/2000/svg",s=document.createElementNS(o,"defs"),d=document.createElementNS(o,"filter");d.setAttribute("id","neon-glow"),d.setAttribute("x","-50%"),d.setAttribute("y","-50%"),d.setAttribute("width","200%"),d.setAttribute("height","200%");const p=document.createElementNS(o,"feGaussianBlur");p.setAttribute("in","SourceGraphic"),p.setAttribute("stdDeviation","3"),p.setAttribute("result","blur"),d.appendChild(p);const u=document.createElementNS(o,"feMerge"),h=document.createElementNS(o,"feMergeNode");h.setAttribute("in","blur"),u.appendChild(h);const b=document.createElementNS(o,"feMergeNode");b.setAttribute("in","SourceGraphic"),u.appendChild(b),d.appendChild(u),s.appendChild(d),e.appendChild(s);for(const f of this.lines){const m=this.getNodeInfo(i,r,f.from),y=this.getNodeInfo(i,r,f.to);if(!m||!y)continue;const S={x:m.x,y:m.y},v={x:y.x,y:y.y},$=this.calcEdgePoint(S,v,m.hw,m.hh),T=this.calcEdgePoint(v,S,y.hw,y.hh),W=T.x-$.x,F=T.y-$.y,R=Math.sqrt(W*W+F*F),k=Math.min(R*.2,40),A=-F/R,D=W/R,K=($.x+T.x)/2,q=($.y+T.y)/2,B=K+A*k,H=q+D*k,Pe=`grad-${f.id}`,{fromColor:Ne,toColor:X}=Dd(f.from,f.to),be=document.createElementNS(o,"linearGradient");be.setAttribute("id",Pe),be.setAttribute("x1","0%"),be.setAttribute("y1","0%"),be.setAttribute("x2","100%"),be.setAttribute("y2","0%");const _=document.createElementNS(o,"stop");_.setAttribute("offset","0%"),_.setAttribute("stop-color",Ne);const Z=document.createElementNS(o,"stop");Z.setAttribute("offset","100%"),Z.setAttribute("stop-color",X),be.appendChild(_),be.appendChild(Z),s.appendChild(be);const re=document.createElementNS(o,"path");if(re.setAttribute("d",`M ${$.x} ${$.y} Q ${B} ${H} ${T.x} ${T.y}`),re.setAttribute("stroke",`url(#${Pe})`),re.setAttribute("stroke-width","3"),re.setAttribute("stroke-linecap","round"),re.setAttribute("fill","none"),re.setAttribute("opacity",f.active?"0.8":"0.18"),f.active&&re.setAttribute("filter","url(#neon-glow)"),re.classList.add("flow-line"),f.active||re.classList.add("flow-line--inactive"),e.appendChild(re),f.params.active){const Se=document.createElementNS(o,"polygon");Se.setAttribute("points",`0,-6 ${6*1.2},0 0,6`),Se.setAttribute("fill",f.color),Se.setAttribute("opacity","0.9");const Oe=document.createElementNS(o,"animateMotion");Oe.setAttribute("dur",`${Math.max(1,f.params.speed/1e3)}s`),Oe.setAttribute("repeatCount","indefinite"),Oe.setAttribute("path",`M ${$.x} ${$.y} Q ${B} ${H} ${T.x} ${T.y}`),Oe.setAttribute("rotate","auto"),Se.appendChild(Oe),e.appendChild(Se)}}}updateAnimationState(){this.particlesEnabled&&this.active&&!document.hidden&&!je.reduceMotion?(this.spawnParticles(),this.startAnimation()):this.stopAnimation()}startAnimation(){if(this.animationId!==null)return;const e=()=>{this.spawnParticles(),this.animationId=requestAnimationFrame(e)};this.animationId=requestAnimationFrame(e)}stopAnimation(){this.animationId!==null&&(cancelAnimationFrame(this.animationId),this.animationId=null)}spawnParticles(){if(this.particleCount>=this.MAX_PARTICLES)return;const e=this.getParticlesLayer();if(!e)return;const t=this.getGridMetrics();if(!t)return;const{grid:i,gridRect:r,canvasRect:n}=t;this.positionOverlayLayer(e,r,n);const a=performance.now();for(const o of this.lines){if(!o.params.active)continue;const s=o.params.speed,d=this.lastSpawnTime[o.id]||0;if(a-d<s)continue;const p=this.getNodeInfo(i,r,o.from),u=this.getNodeInfo(i,r,o.to);if(!p||!u)continue;const h={x:p.x,y:p.y},b={x:u.x,y:u.y},f=this.calcEdgePoint(h,b,p.hw,p.hh),m=this.calcEdgePoint(b,h,u.hw,u.hh);this.lastSpawnTime[o.id]=a;const y=o.params.count;for(let S=0;S<y&&!(this.particleCount>=this.MAX_PARTICLES);S++)this.createParticle(e,f,m,o.color,o.params,S*(o.params.speed/y/2))}}createParticle(e,t,i,r,n,a){const o=document.createElement("div");o.className="particle";const s=n.size;o.style.width=`${s}px`,o.style.height=`${s}px`,o.style.background=r,o.style.left=`${t.x}px`,o.style.top=`${t.y}px`,o.style.boxShadow=`0 0 ${s}px ${r}`,o.style.opacity="0",e.appendChild(o),this.particleCount++;const d=n.speed;setTimeout(()=>{let p=!1;const u=()=>{p||(p=!0,o.isConnected&&o.remove(),this.particleCount=Math.max(0,this.particleCount-1))};if(typeof o.animate=="function"){const h=o.animate([{left:`${t.x}px`,top:`${t.y}px`,opacity:0,offset:0},{opacity:n.opacity,offset:.1},{opacity:n.opacity,offset:.9},{left:`${i.x}px`,top:`${i.y}px`,opacity:0,offset:1}],{duration:d,easing:"linear"});h.onfinish=u,h.oncancel=u}else o.style.transition=`left ${d}ms linear, top ${d}ms linear, opacity ${d}ms linear`,o.style.opacity=`${n.opacity}`,requestAnimationFrame(()=>{o.style.left=`${i.x}px`,o.style.top=`${i.y}px`,o.style.opacity="0"}),o.addEventListener("transitionend",u,{once:!0}),window.setTimeout(u,d+50)},a)}render(){return c`
       <div class="canvas-container">
