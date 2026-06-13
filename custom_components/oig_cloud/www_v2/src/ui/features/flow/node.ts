@@ -160,7 +160,6 @@ export class OigFlowNode extends LitElement {
   /** Tap-friendly gauge detail (mobile can't hover): which node's popover is open. */
   @state() private gaugeDetailOpen: NodeId | null = null;
   /** Phase history modal open state */
-  @state() private phaseHistoryOpen = false;
 
   // DnD state
   @state() private customPositions: SavedLayout = {};
@@ -338,6 +337,12 @@ export class OigFlowNode extends LitElement {
       bottom: auto;
       top: -11px;
     }
+    /* House popover drops DOWN from the top pill */
+    .node-house .ss-pop { bottom: auto; top: 16px; }
+    /* House header: SVG icon + caps label */
+    .house-head { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; }
+    .house-ico { width: 15px; height: 15px; opacity: .85; }
+    .house-cap { font-size: 11px; font-weight: 700; letter-spacing: .6px; opacity: .7; }
     .ss-pop {
       position: absolute;
       bottom: 14px;
@@ -721,10 +726,9 @@ export class OigFlowNode extends LitElement {
     }
     .cs {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 5px;
-      font-size: 14px;
-      font-weight: 800;
+      gap: 1px;
       white-space: nowrap;
       cursor: pointer;
       background: none;
@@ -733,19 +737,11 @@ export class OigFlowNode extends LitElement {
       padding: 0;
     }
     .cs:hover { opacity: .8; }
-    .cs .d { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-    .cs small { font-size: 9px; font-weight: 600; opacity: .55; }
+    .cs-top { display: flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 800; }
+    .cs-top .d { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .cs-day { font-size: 9.5px; font-weight: 600; opacity: .55; }
 
     /* ---- Spotřeba: phase graph ---- */
-    .pg-lbl {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 9px;
-      opacity: .55;
-      margin-bottom: 3px;
-    }
-    .pg-hist { font-size: 10px; cursor: pointer; }
     .pg {
       position: relative;
       background: rgba(0,0,0,.18);
@@ -835,72 +831,6 @@ export class OigFlowNode extends LitElement {
     }
     .pg-spread.unbal { animation: pg-shimmer 1.6s ease-in-out infinite; }
     @keyframes pg-shimmer { 0%,100% { opacity:.5; } 50% { opacity:1; } }
-
-    /* ---- Phase history modal ---- */
-    .ph-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 9100;
-      background: rgba(0,0,0,.55);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-      animation: fadeIn .18s ease;
-    }
-    .ph-dialog {
-      position: relative;
-      background: #0e1828;
-      border: 1px solid rgba(120,160,220,.3);
-      border-radius: 16px;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      box-shadow: 0 8px 32px rgba(0,0,0,.4);
-      max-width: 420px;
-      width: 100%;
-      max-height: 70vh;
-      display: flex;
-      flex-direction: column;
-      animation: slideUp .2s ease;
-    }
-    .ph-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 16px 12px;
-      border-bottom: 1px solid rgba(255,255,255,.1);
-      flex-shrink: 0;
-    }
-    .ph-title { flex: 1; font-size: 14px; font-weight: 700; }
-    .ph-close {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: rgba(255,255,255,.55);
-      font-size: 18px;
-      padding: 4px;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .ph-close:hover { background: rgba(255,255,255,.08); color: #eef4fb; }
-    .ph-body {
-      padding: 16px;
-      overflow-y: auto;
-      flex: 1;
-    }
-    .ph-placeholder {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100px;
-      font-size: 12px;
-      opacity: .55;
-      text-align: center;
-    }
 
     /* mobile: tighten phase graph a bit */
     @media (max-width: 768px) {
@@ -1354,7 +1284,6 @@ export class OigFlowNode extends LitElement {
       .battery-energy-section,
       .prices-row,
       .phases-grid,
-      .pg-lbl,
       .pg { display: none; }
     }
   `;
@@ -2392,7 +2321,7 @@ export class OigFlowNode extends LitElement {
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${ssColor}22, transparent 72%)"></div>
 
         <!-- GAUGE PILL: daily self-sufficiency with kWh popover — UNCHANGED -->
-        ${this.gaugePill('house', `⚡ Soběstačnost ${Math.round(dailySS)} %`, ssGaugeColor, html`
+        ${this.gaugePill('house', `${Math.round(dailySS)} %`, ssGaugeColor, html`
           <div class="ss-pop-h"><span>Denní soběstačnost</span><b style="color:${ssGaugeColor}">${Math.round(dailySS)} %</b></div>
           ${hasLoad ? html`
             <div class="ss-bar">
@@ -2409,31 +2338,28 @@ export class OigFlowNode extends LitElement {
           ` : html`<div class="gp-r" style="opacity:.6"><span>Žádná spotřeba dnes zatím</span></div>`}
         `)}
 
-        <!-- COMPACT HEADER: small label · big kW · tiny kWh dnes -->
-        <div class="node-header" style="margin-top:18px;justify-content:center">
-          <span class="node-label">🏠 Spotřeba</span>
+        <!-- COMPACT HEADER: SVG house icon · big kW · tiny kWh -->
+        <div class="house-head">
+          ${svg`<svg class="house-ico" viewBox="0 0 24 24" fill="none" stroke="#cfe0ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M3 11l9-7 9 7"></path><path d="M5 10v10h14V10"></path></svg>`}
+          <span class="house-cap">SPOTŘEBA</span>
         </div>
         <div class="node-value" @click=${openEntity('actual_aco_p')}>${formatPower(totalPower)}</div>
-        <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>${totalToday.toFixed(1)} kWh dnes</div>
+        <div class="node-subvalue" @click=${openEntity('ac_out_en_day')}>${totalToday.toFixed(1).replace('.', ',')} kWh</div>
 
         <!-- COMPACT SPLIT ROW: colored dot + value, tooltip carries detail -->
         <div class="csplit">
           <button class="cs" @click=${openEntity('actual_aco_p')} title=${zalohaTitle}>
-            <span class="d" style="background:#43a047"></span>${formatPower(d.housePower)}
+            <span class="cs-top"><span class="d" style="background:#43a047"></span>${formatPower(d.housePower)}</span>
+            <span class="cs-day">${zalohaToday.toFixed(1).replace('.', ',')} kWh</span>
           </button>
           <button class="cs" @click=${openEntity('actual_acinb_wtotal')} title=${nezalohaTitle}>
-            <span class="d" style="background:#fb8c00"></span>${formatPower(d.nonbackupPower)}
+            <span class="cs-top"><span class="d" style="background:#fb8c00"></span>${formatPower(d.nonbackupPower)}</span>
+            <span class="cs-day">${nezalohaToday.toFixed(1).replace('.', ',')} kWh</span>
           </button>
         </div>
 
         <!-- PHASE GRAPH (phasegraph2 design) -->
-        <div class="pg-lbl">
-          <span>Fáze · odběr</span>
-          <span class="pg-hist" title="Otevřít historii fází"
-            @click=${(e: Event) => { e.stopPropagation(); this.phaseHistoryOpen = true; }}>📈</span>
-        </div>
-        <div class="pg" @click=${(e: Event) => { e.stopPropagation(); this.phaseHistoryOpen = true; }}
-          title="Kliknutím otevřít historii fází">
+        <div class="pg">
           <!-- Spread band overlay -->
           ${spreadBand.widthPct > 0 ? html`
             <div class="pg-spread ${ps.balanced ? 'balanced' : 'unbal'}"
@@ -2465,22 +2391,6 @@ export class OigFlowNode extends LitElement {
           })}
         </div>
 
-        <!-- PHASE HISTORY MODAL -->
-        ${this.phaseHistoryOpen ? html`
-          <div class="ph-overlay" @click=${() => { this.phaseHistoryOpen = false; }}
-            @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') this.phaseHistoryOpen = false; }}>
-            <div class="ph-dialog" role="dialog" aria-modal="true" aria-label="Historie fází"
-              @click=${(e: Event) => e.stopPropagation()}>
-              <div class="ph-header">
-                <span>📈</span>
-                <span class="ph-title">Historie fází</span>
-                <button class="ph-close" @click=${() => { this.phaseHistoryOpen = false; }}>✕</button>
-              </div>
-              <div class="ph-body">
-                <div class="ph-placeholder">Graf průběhu — připravujeme</div>
-              </div>
-            </div>
-          </div>` : nothing}
       </div>
     `;
   }
