@@ -291,6 +291,8 @@ export class OigFlowNode extends LitElement {
     .sol-pbar-fill { height: 100%; display: flex; align-items: center; padding-left: 7px; font-size: 8.5px; font-weight: 800; color: #3a2600; white-space: nowrap; }
     .sol-night .sol-pbar-fill { color: #dde3f5; }
     .sol-pbar-lbl { display: flex; justify-content: space-between; font-size: 9px; opacity: .6; margin-top: 3px; }
+    .sol-pbar-tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; box-shadow: 0 0 4px rgba(255,255,255,.7); }
+    .sol-over { color: #9fe6a8; font-weight: 800; opacity: 1; }
     /* Compact 2-col strings */
     .sol-str { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: rgba(0,0,0,.18); border-radius: 9px; padding: 7px 8px; margin-top: 10px; }
     .sol-sc { text-align: center; }
@@ -303,6 +305,7 @@ export class OigFlowNode extends LitElement {
       font-size: 10.5px; background: rgba(255,202,90,.1); border: 1px solid rgba(255,202,90,.3);
       border-radius: 8px; padding: 4px 8px; color: #ffe0a0; cursor: pointer; }
     .sol-tmr b { font-weight: 800; color: #fff; }
+    .sol-tmr-ico { width: 14px; height: 14px; flex-shrink: 0; }
     /* Kiosk: hide strings in landscape-kiosk, keep header+power+bar+tomorrow */
     @media (orientation: landscape) and (max-height: 600px) {
       .sol-str { display: none; }
@@ -1790,10 +1793,18 @@ export class OigFlowNode extends LitElement {
     const border = 'transparent';
 
     const producedKwh = d.solarToday / 1000;
-    // Late in the day the forecast-for-today can read 0; never show produced/0.
-    const forecastKwh = Math.max(d.solarForecastToday, producedKwh);
+    // Forecast = the day's TARGET. Keep it real so overproduction is visible
+    // (don't clamp to produced). Late-day sensor can read 0 → fall back to
+    // produced so we don't divide by zero.
+    const forecastKwh = d.solarForecastToday > 0.1 ? d.solarForecastToday : producedKwh;
     const remainingKwh = Math.max(0, forecastKwh - producedKwh);
-    const progressPct = forecastKwh > 0 ? Math.min(100, (producedKwh / forecastKwh) * 100) : 0;
+    const overKwh = Math.max(0, producedKwh - forecastKwh);
+    const overplan = overKwh > 0.05;
+    const pctOfPlan = forecastKwh > 0 ? Math.round((producedKwh / forecastKwh) * 100) : 100;
+    // Bar scale grows past the target when over plan; target tick marks the plan.
+    const barScale = Math.max(forecastKwh, producedKwh, 0.1);
+    const fillPct = Math.min(100, (producedKwh / barScale) * 100);
+    const targetPct = (forecastKwh / barScale) * 100;
     const powerKw = d.solarPower / 1000;
 
     // Edge colour = production intensity (% of peak): dim orange → bright yellow.
@@ -1808,9 +1819,11 @@ export class OigFlowNode extends LitElement {
     const pillLabel = isNight ? '🌙 Noc' : `${Math.round(percent)} % špičky`;
 
     // Production bar colours: amber by day, muted blue-grey at night.
-    const barGrad = isNight
-      ? 'linear-gradient(90deg,#6b7390,#8a93b5)'
-      : 'linear-gradient(90deg,#ffd54f,#ffa726)';
+    const barGrad = overplan
+      ? 'linear-gradient(90deg,#ffd54f,#66bb6a)'
+      : isNight
+        ? 'linear-gradient(90deg,#6b7390,#8a93b5)'
+        : 'linear-gradient(90deg,#ffd54f,#ffa726)';
 
     // String active check
     const str1Active = d.solarP1 > 0 || d.solarV1 > 0;
@@ -1850,7 +1863,11 @@ export class OigFlowNode extends LitElement {
           <div class="gp-r"><span>Aktuální výkon</span><b>${isNight ? '0 W' : `${formatPower(d.solarPower)} · ${Math.round(percent)} % špičky`}</b></div>
           <div class="gp-r"><span>Vyrobeno</span><b>${producedKwh.toFixed(1).replace('.', ',')} kWh</b></div>
           <div class="gp-r"><span>Předpověď</span><b>${forecastKwh.toFixed(1).replace('.', ',')} kWh</b></div>
-          <div class="gp-r"><span>Ještě vyrobí</span><b>${(isNight || remainingKwh < 0.05) ? 'hotovo' : `~${remainingKwh.toFixed(1).replace('.', ',')} kWh`}</b></div>
+          <div class="gp-r"><span>${overplan ? 'Nad plánem' : 'Ještě vyrobí'}</span><b>${
+            overplan ? `+${overKwh.toFixed(1).replace('.', ',')} kWh`
+              : isNight ? 'den skončil'
+              : remainingKwh < 0.05 ? 'splněno' : `~${remainingKwh.toFixed(1).replace('.', ',')} kWh`
+          }</b></div>
           <div class="gp-r"><span>Zítra</span><b>${d.solarForecastTomorrow.toFixed(1).replace('.', ',')} kWh${d.solarForecastStale ? ' ⚠' : ''}</b></div>
         `)}
 
@@ -1877,15 +1894,22 @@ export class OigFlowNode extends LitElement {
           dnes ${producedKwh.toFixed(1).replace('.', ',')} z ${forecastKwh.toFixed(1).replace('.', ',')} kWh
         </div>
 
-        <!-- PRODUCTION BAR -->
+        <!-- PRODUCTION BAR: fill = vyrobeno, target tick = plán, přerůstá nad plán -->
         <div class="sol-pbar">
-          <div class="sol-pbar-fill" style="width:${progressPct.toFixed(1)}%;background:${barGrad}">
-            ${progressPct >= 30 ? `${producedKwh.toFixed(1).replace('.', ',')} kWh` : ''}
+          <div class="sol-pbar-fill" style="width:${fillPct.toFixed(1)}%;background:${barGrad}">
+            ${fillPct >= 30 ? `${producedKwh.toFixed(1).replace('.', ',')} kWh` : ''}
           </div>
+          ${overplan ? html`<div class="sol-pbar-tick" style="left:${targetPct.toFixed(1)}%" title="Plán ${forecastKwh.toFixed(1).replace('.', ',')} kWh"></div>` : nothing}
         </div>
         <div class="sol-pbar-lbl">
-          <span>vyrobeno ${Math.round(progressPct)} %</span>
-          <span>${isNight || remainingKwh < 0.05 ? 'hotovo' : `ještě ~${remainingKwh.toFixed(1).replace('.', ',')} kWh`}</span>
+          <span>vyrobeno ${pctOfPlan} %</span>
+          <span>${
+            overplan
+              ? html`<span class="sol-over">+${overKwh.toFixed(1).replace('.', ',')} kWh nad plán</span>`
+              : isNight
+                ? 'den skončil'
+                : remainingKwh < 0.05 ? 'splněno' : `ještě ~${remainingKwh.toFixed(1).replace('.', ',')} kWh`
+          }</span>
         </div>
 
         <!-- COMPACT STRINGS (always visible, 2-col) -->
@@ -1904,7 +1928,8 @@ export class OigFlowNode extends LitElement {
 
         <!-- TOMORROW CHIP -->
         <div class="sol-tmr" @click=${openEntity('solar_forecast')}>
-          🌅 Zítra <b>${d.solarForecastTomorrow.toFixed(1).replace('.', ',')} kWh</b>
+          ${svg`<svg class="sol-tmr-ico" viewBox="0 0 24 24" fill="none" stroke="#ffd479" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18"></path><path d="M7 18a5 5 0 0 1 10 0"></path><path d="M12 5v2M5.6 8.6l1.4 1.4M18.4 8.6l-1.4 1.4M2.5 13h2M19.5 13h2"></path></svg>`}
+          Zítra <b>${d.solarForecastTomorrow.toFixed(1).replace('.', ',')} kWh</b>
           ${d.solarForecastStale ? html`<span title="Předpověď zastaralá">⚠</span>` : nothing}
         </div>
       </div>
