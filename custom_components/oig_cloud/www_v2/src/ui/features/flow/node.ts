@@ -1131,6 +1131,25 @@ export class OigFlowNode extends LitElement {
       margin: 2px 0;
     }
 
+    /* ── Phase identity colours (ČSN 33 2000-5-51, adapted for dark theme) ── */
+    /* L1 hnědá → bronz · L2 černá → posvícená světlá · L3 šedá */
+    :host {
+      --phase-l1: #d49a63;
+      --phase-l2: #cdd6e6;
+      --phase-l3: #7d8aa1;
+    }
+    .l1 { color: var(--phase-l1); }
+    .l2 { color: var(--phase-l2); }
+    .l3 { color: var(--phase-l3); }
+    /* Small phase-colour dot (used where a phase row has no L1/L2/L3 text) */
+    .pg-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex: none;
+      border: 1.5px solid #0e1726;
+    }
+    .pg-dot.l1 { background: var(--phase-l1); }
+    .pg-dot.l2 { background: var(--phase-l2); }
+    .pg-dot.l3 { background: var(--phase-l3); }
+
     /* ---- Energie symetricky (odběr vlevo, dodávka vpravo) ---- */
     .energy-symmetric {
       display: flex;
@@ -1307,30 +1326,31 @@ export class OigFlowNode extends LitElement {
     .gd-chip.bad   { background: rgba(229,57,53,.16);  border-color: rgba(229,57,53,.5);  color: #ff8a80; }
     .gd-chip.neutral { background: rgba(120,160,255,.10); border-color: rgba(120,160,255,.3); color: #cfe0ff; }
 
-    /* ── Money columns: prodej (dodávka) left · nákup (odběr) right ── */
-    .gd-cols { display: flex; gap: 8px; margin: 6px 0 2px; }
+    /* ── Money columns: prodej (dodávka) left · nákup (odběr) right ──
+       Compact: line1 = directional arrow + price · line2 = dnes · měsíc Kč.
+       Single direction cue (arrow); colour = sign of wallet impact. */
+    .gd-cols { display: flex; gap: 8px; margin: 7px 0 1px; }
     .gd-col {
-      flex: 1; border-radius: 10px; padding: 6px 5px; text-align: center;
+      flex: 1; border-radius: 9px; padding: 5px 5px; text-align: center;
       border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.14);
     }
-    .gd-cprice { font-size: 13px; font-weight: 800; }
+    .gd-cprice {
+      font-size: 13px; font-weight: 800; white-space: nowrap;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
     .gd-cprice small { font-size: 7.5px; opacity: .6; font-weight: 600; }
+    .gd-cprice .gd-ic { width: 11px; height: 11px; flex: none; }
     .gd-cmoney {
-      display: flex; align-items: baseline; justify-content: center; gap: 4px;
-      margin-top: 3px; background: none; border: none; cursor: pointer;
+      margin-top: 3px; white-space: nowrap;
+      background: none; border: none; cursor: pointer;
       font-family: inherit; padding: 0; color: inherit; width: 100%;
-      white-space: nowrap;
     }
     .gd-cmoney:hover { text-decoration: underline; }
-    .gd-cmoney .gd-ic { width: 11px; height: 11px; align-self: center; flex: none; }
-    .gd-md { font-size: 13px; font-weight: 800; white-space: nowrap; }
-    .gd-md small { font-size: 7.5px; opacity: .6; font-weight: 700; }
-    .gd-mm { font-size: 9px; opacity: .6; font-weight: 700; white-space: nowrap; }
-    .gd-clbl {
-      font-size: 8px; font-weight: 700; opacity: .7; margin-top: 3px;
-      display: flex; align-items: center; justify-content: center; gap: 3px;
-    }
-    .gd-moneyhdr { text-align: center; font-size: 7.5px; opacity: .4; margin: 0 0 6px; }
+    .gd-md { font-size: 13px; font-weight: 800; }
+    .gd-sep { opacity: .4; font-size: 10px; margin: 0 2px; }
+    .gd-mm { font-size: 10px; opacity: .6; font-weight: 700; }
+    .gd-un { font-size: 8px; opacity: .6; font-weight: 700; margin-left: 2px; }
+    .gd-moneyhdr { text-align: center; font-size: 7.5px; opacity: .4; margin: 1px 0 6px; }
 
     /* ── Phase bars ── */
     .gd-ph {
@@ -1340,7 +1360,7 @@ export class OigFlowNode extends LitElement {
     .gd-phr {
       display: flex; align-items: center; gap: 5px; height: 15px; margin: 3px 0;
     }
-    .gd-pll { font-size: 9px; font-weight: 700; opacity: .55; width: 13px; }
+    .gd-pll { font-size: 9px; font-weight: 800; opacity: .9; width: 14px; }
     .gd-ptr {
       position: relative; flex: 1; height: 13px;
       background: rgba(255,255,255,.05); border-radius: 4px; overflow: hidden;
@@ -1377,39 +1397,35 @@ export class OigFlowNode extends LitElement {
     }
     .gd-phends span { display: flex; align-items: center; gap: 2px; }
 
-    /* ── Voltage: dynamic-zoom axis ── */
+    /* ── Voltage: graph-only, dynamic-zoom axis, value-on-dot, phase colour ── */
     .gd-volt {
       background: rgba(0,0,0,.18); border-radius: 9px;
-      padding: 8px 10px 6px; margin-bottom: 2px;
+      padding: 15px 11px 6px; margin-bottom: 2px;
     }
-    .gd-vnums {
-      display: flex; justify-content: space-between;
-      font-size: 9px; margin-bottom: 13px;
-    }
-    .gd-vval {
-      background: none; border: none; cursor: pointer; font-family: inherit;
-      font-size: 9px; color: inherit; padding: 0; opacity: .85;
-    }
-    .gd-vval b { font-weight: 800; font-size: 11px; opacity: 1; }
-    .gd-vval:hover { text-decoration: underline; opacity: 1; }
     .gd-vband {
       position: relative; height: 11px; border-radius: 5px;
-      background: rgba(76,175,80,.12);
+      background: rgba(255,255,255,.06);
     }
     .gd-vwarn { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
     .gd-vwarn-hi { background: linear-gradient(90deg, rgba(255,167,38,0), rgba(229,57,53,.5)); }
     .gd-vwarn-lo { background: linear-gradient(90deg, rgba(229,57,53,.5), rgba(255,167,38,0)); }
     .gd-vnom { position: absolute; top: -2px; bottom: -2px; width: 1.5px; background: rgba(255,255,255,.4); z-index: 1; }
-    .gd-vdl {
-      position: absolute; top: -11px; transform: translateX(-50%);
-      font-size: 7px; font-weight: 800; opacity: .7; z-index: 3;
+    /* Value label sits above its dot, coloured by phase (or amber/red when out of band) */
+    .gd-vval {
+      position: absolute; top: -13px; transform: translateX(-50%);
+      font-size: 9px; font-weight: 800; opacity: .95; z-index: 3; white-space: nowrap;
     }
     .gd-vdot {
-      position: absolute; top: 50%; width: 10px; height: 10px;
+      position: absolute; top: 50%; left: 0; width: 11px; height: 11px;
       border-radius: 50%; border: 2px solid #0e1726;
       transform: translate(-50%, -50%); z-index: 3;
+      background: none; cursor: pointer; padding: 0;
     }
-    @keyframes gdVoltPulse { 0%,100%{box-shadow:0 0 4px currentColor;} 50%{box-shadow:0 0 10px currentColor;} }
+    .gd-vdot.l1 { background: var(--phase-l1); }
+    .gd-vdot.l2 { background: var(--phase-l2); }
+    .gd-vdot.l3 { background: var(--phase-l3); }
+    .gd-vdot-warn { box-shadow: 0 0 0 2px #ffa726; }
+    @keyframes gdVoltPulse { 0%,100%{box-shadow:0 0 0 2px #ff5252;} 50%{box-shadow:0 0 6px 2px #ff5252;} }
     .gd-vdot-crit { animation: gdVoltPulse 1s ease-in-out infinite; }
     .gd-vsc {
       display: flex; justify-content: space-between;
@@ -2559,10 +2575,11 @@ export class OigFlowNode extends LitElement {
     const vHi = hasVolt ? Math.max(...vValid.map(x => x.v)) : 230;
     const halfSpan = Math.max((vHi - vLo) / 2 + 3, 4); // min ±4 V window so dots never overlap
     const winLo = vAvg - halfSpan, winHi = vAvg + halfSpan, winRange = winHi - winLo;
-    const vcolor = (v: number) => (v < VMIN || v > VMAX) ? '#e53935' : (v < VAL || v > VAH) ? '#ffa726' : '#66bb6a';
+    const vsev = (v: number) => (v < VMIN || v > VMAX) ? 'crit' : (v < VAL || v > VAH) ? 'warn' : 'ok';
     const vpct = (v: number) => Math.max(0, Math.min(100, ((v - winLo) / winRange) * 100));
-    const voltDots = vRaw.map(x => ({ ...x, color: x.v > 0 ? vcolor(x.v) : 'rgba(0,0,0,0)', pct: x.v > 0 ? vpct(x.v) : 50 }));
-    const voltWarn = voltDots.some(x => x.v > 0 && x.color === '#e53935');
+    // Dot color = phase identity (ČSN palette); severity shown via ring + value color.
+    const voltDots = vRaw.map((x, i) => ({ ...x, sev: x.v > 0 ? vsev(x.v) : 'na', pct: x.v > 0 ? vpct(x.v) : 50, lcls: `l${i + 1}` }));
+    const voltWarn = voltDots.some(x => x.v > 0 && x.sev === 'crit');
     const warnHi = winHi > VAH ? vpct(VAH) : null;
     const warnLo = winLo < VAL ? vpct(VAL) : null;
     const nomIn = winLo <= 230 && 230 <= winHi;
@@ -2675,22 +2692,22 @@ export class OigFlowNode extends LitElement {
         ${hasCost ? html`
           <div class="gd-cols">
             <div class="gd-col">
-              <div class="gd-cprice ${sellCls}">${fmtCz(d.exportPrice)} <small>Kč/kWh</small></div>
+              <div class="gd-cprice ${sellCls}">${this.iExp()} ${fmtCz(d.exportPrice)} <small>Kč/kWh</small></div>
               <button class="gd-cmoney" @click=${openEntity('computed_grid_export_earnings_today')}>
-                ${svg`<svg class="gd-ic ${expToday.cls}" viewBox="0 0 24 24"><use href="#${expToday.earn ? 'gi-earn' : 'gi-cost'}"/></svg>`}
-                <span class="gd-md ${expToday.cls}">${expToday.txt}<small> Kč</small></span>
+                <span class="gd-md ${expToday.cls}">${expToday.txt}</span>
+                <span class="gd-sep">·</span>
                 <span class="gd-mm ${expMonth.cls}">${expMonth.txt}</span>
+                <span class="gd-un">Kč</span>
               </button>
-              <div class="gd-clbl gd-col-exp">${this.iExp()} dodávka</div>
             </div>
             <div class="gd-col">
-              <div class="gd-cprice ${buyCls}">${fmtCz(d.spotPrice)} <small>Kč/kWh</small></div>
+              <div class="gd-cprice ${buyCls}">${this.iImp()} ${fmtCz(d.spotPrice)} <small>Kč/kWh</small></div>
               <button class="gd-cmoney" @click=${openEntity('computed_grid_import_cost_today')}>
-                ${svg`<svg class="gd-ic ${impToday.cls}" viewBox="0 0 24 24"><use href="#${impToday.earn ? 'gi-earn' : 'gi-cost'}"/></svg>`}
-                <span class="gd-md ${impToday.cls}">${impToday.txt}<small> Kč</small></span>
+                <span class="gd-md ${impToday.cls}">${impToday.txt}</span>
+                <span class="gd-sep">·</span>
                 <span class="gd-mm ${impMonth.cls}">${impMonth.txt}</span>
+                <span class="gd-un">Kč</span>
               </button>
-              <div class="gd-clbl gd-col-imp">${this.iImp()} odběr</div>
             </div>
           </div>
           <div class="gd-moneyhdr">velké = dnes · malé = měsíc</div>
@@ -2715,7 +2732,7 @@ export class OigFlowNode extends LitElement {
             const isExp = pw < -10;
             return html`
               <div class="gd-phr">
-                <span class="gd-pll">${lbl}</span>
+                <span class="gd-pll l${i + 1}">${lbl}</span>
                 <div class="gd-ptr">
                   <div class="gd-zero" style="left:${zeroPct.toFixed(1)}%"></div>
                   ${isExp ? html`
@@ -2738,19 +2755,13 @@ export class OigFlowNode extends LitElement {
         <!-- ── VOLTAGE: dynamic-zoom axis + per-phase values ── -->
         ${hasVolt ? html`
           <div class="gd-volt">
-            <div class="gd-vnums">
-              ${voltDots.map((x, idx) => html`
-                <button class="gd-vval" style="${x.v > 0 && x.color !== '#66bb6a' ? `color:${x.color}` : ''}" @click=${openEntity(x.entity)}>
-                  ${x.label} <b>${x.v > 0 ? x.v.toFixed(0) : '–'}</b>${idx === 2 ? html` V` : nothing}
-                </button>`)}
-            </div>
             <div class="gd-vband">
               ${warnHi !== null ? html`<div class="gd-vwarn gd-vwarn-hi" style="left:${warnHi.toFixed(1)}%;right:0"></div>` : nothing}
               ${warnLo !== null ? html`<div class="gd-vwarn gd-vwarn-lo" style="left:0;width:${warnLo.toFixed(1)}%"></div>` : nothing}
               ${nomIn ? html`<div class="gd-vnom" style="left:${vpct(230).toFixed(1)}%"></div>` : nothing}
               ${voltDots.filter(x => x.v > 0).map(x => html`
-                <span class="gd-vdl" style="left:${x.pct.toFixed(1)}%">${x.label}</span>
-                <div class="gd-vdot ${x.color === '#e53935' ? 'gd-vdot-crit' : ''}" style="left:${x.pct.toFixed(1)}%;background:${x.color}"></div>`)}
+                <span class="gd-vval ${x.sev === 'ok' ? x.lcls : ''}" style="left:${x.pct.toFixed(1)}%;${x.sev === 'crit' ? 'color:#ff8a80' : x.sev === 'warn' ? 'color:#ffcc80' : ''}">${x.v.toFixed(0)}</span>
+                <button class="gd-vdot ${x.lcls} ${x.sev === 'warn' ? 'gd-vdot-warn' : ''} ${x.sev === 'crit' ? 'gd-vdot-crit' : ''}" style="left:${x.pct.toFixed(1)}%" @click=${openEntity(x.entity)}></button>`)}
             </div>
             <div class="gd-vsc">
               <span>${winLo.toFixed(0)} V</span>
@@ -2897,8 +2908,8 @@ export class OigFlowNode extends LitElement {
             <div class="pg-spread ${ps.balanced ? 'balanced' : 'unbal'}"
               title=${ps.balanced ? 'Fáze vyvážené' : `Fáze nevyvážené — rozdíl ${spreadStr}`}
               style="left:calc(10px + ${spreadBand.leftPct.toFixed(2)}% * (100% - 75px) / 100);width:calc(${spreadBand.widthPct.toFixed(2)}% * (100% - 75px) / 100)"></div>` : nothing}
-          <!-- Phase rows: NO L1/L2/L3 labels per spec -->
-          ${phases.map((p) => {
+          <!-- Phase rows: no L1/L2/L3 text, just the ČSN phase-color dot -->
+          ${phases.map((p, i) => {
             const zOver = p.z >= BACKUP_PHASE_LIMIT_W;
             const phaseTotal = p.z + p.n;
             const zWidthPct = (Math.max(0, p.z) / maxPhaseTotal) * 100;
@@ -2907,6 +2918,7 @@ export class OigFlowNode extends LitElement {
             const showNLabel = nWidthPct >= LABEL_THRESHOLD_PCT && p.n > 100;
             return html`
               <div class="pg-row">
+                <span class="pg-dot l${i + 1}" title="L${i + 1}"></span>
                 <div class="pg-track">
                   <div class="pg-z ${zOver ? 'crit' : ''}" style="width:${zWidthPct.toFixed(1)}%">
                     ${showZLabel ? fmtKw(p.z) : nothing}
