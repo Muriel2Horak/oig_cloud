@@ -262,11 +262,51 @@ export class OigFlowNode extends LitElement {
     .node-state.st-discharge { color: #ffcc80; }
     .node-state.st-idle { color: rgba(255,255,255,0.55); }
 
-    /* Solar: produced/forecast headline + remaining chip */
+    /* Solar: forecast headline ref */
     .nv-sub { font-size: 14px; font-weight: 600; opacity: 0.6; }
-    .solar-rem { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 9px; margin-top: 2px; }
-    .solar-rem.rem-on { background: #ffca5a; color: #101a10; }
-    .solar-rem.rem-off { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
+
+    /* ---- Solar V2 compact tile ---- */
+    /* Animated sun icon (rays + core) */
+    @keyframes sol-spin  { to { transform: rotate(360deg); } }
+    @keyframes sol-pulse { 0%,100% { opacity:.85; } 50% { opacity:1; } }
+    .sol-rays { transform-origin: 12px 12px; animation: sol-spin 18s linear infinite; }
+    .sol-core { filter: drop-shadow(0 0 4px #ffca5a); animation: sol-pulse 2.6s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .sol-rays { animation: none; }
+      .sol-core { animation: none; }
+    }
+    /* Compact header row: icon + SOLÁR caps */
+    .sol-head { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 14px; margin-bottom: 2px; }
+    .sol-ico  { width: 18px; height: 18px; flex-shrink: 0; }
+    .sol-cap  { font-size: 11px; font-weight: 700; letter-spacing: .6px; opacity: .75; }
+    /* Big power value */
+    .sol-power { text-align: center; font-size: 26px; font-weight: 800; line-height: 1.05; cursor: pointer; }
+    .sol-power:hover { text-decoration: underline; }
+    .sol-power small { font-size: 13px; opacity: .6; }
+    .sol-night .sol-power { color: #aeb9d4; }
+    /* Tiny subline: dnes X z Y kWh */
+    .sol-sub { text-align: center; font-size: 10px; opacity: .55; margin: 1px 0 8px; cursor: pointer; }
+    /* Production bar */
+    .sol-pbar { position: relative; height: 14px; background: rgba(255,255,255,.06); border-radius: 7px; overflow: hidden; }
+    .sol-pbar-fill { height: 100%; display: flex; align-items: center; padding-left: 7px; font-size: 8.5px; font-weight: 800; color: #3a2600; white-space: nowrap; }
+    .sol-night .sol-pbar-fill { color: #dde3f5; }
+    .sol-pbar-lbl { display: flex; justify-content: space-between; font-size: 9px; opacity: .6; margin-top: 3px; }
+    /* Compact 2-col strings */
+    .sol-str { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: rgba(0,0,0,.18); border-radius: 9px; padding: 7px 8px; margin-top: 10px; }
+    .sol-sc { text-align: center; }
+    .sol-sc .sol-sh { font-size: 9px; opacity: .55; margin-bottom: 2px; }
+    .sol-sc .sol-sw { font-size: 14px; font-weight: 800; color: #ffca5a; }
+    .sol-sc .sol-sd { font-size: 9px; opacity: .6; margin-top: 1px; }
+    .sol-sc.sol-off .sol-sw { color: #5a6677; }
+    /* Tomorrow chip */
+    .sol-tmr { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 9px;
+      font-size: 10.5px; background: rgba(255,202,90,.1); border: 1px solid rgba(255,202,90,.3);
+      border-radius: 8px; padding: 4px 8px; color: #ffe0a0; cursor: pointer; }
+    .sol-tmr b { font-weight: 800; color: #fff; }
+    /* Kiosk: hide strings in landscape-kiosk, keep header+power+bar+tomorrow */
+    @media (orientation: landscape) and (max-height: 600px) {
+      .sol-str { display: none; }
+    }
 
     /* (Phase balance legacy CSS removed — replaced by .pblock/.prow/.pseg/.ptrack system) */
 
@@ -339,6 +379,13 @@ export class OigFlowNode extends LitElement {
     }
     /* House popover drops DOWN from the top pill */
     .node-house .ss-pop { bottom: auto; top: 16px; }
+    /* Solar tile: pill sits at the TOP (variant B approved design) */
+    .node-solar .ss-pill {
+      bottom: auto;
+      top: -11px;
+    }
+    /* Solar popover drops DOWN from the top pill */
+    .node-solar .ss-pop { bottom: auto; top: 16px; }
     /* House header: SVG icon + caps label */
     .house-head { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; }
     .house-ico { width: 15px; height: 15px; opacity: .85; }
@@ -603,8 +650,7 @@ export class OigFlowNode extends LitElement {
       display: none;
     }
 
-    /* forecast-badges a boiler-section — vždy collapsed */
-    .forecast-badges,
+    /* boiler-section / grid-charging-plan — vždy collapsed */
     .boiler-section,
     .grid-charging-plan {
       max-height: 0;
@@ -615,7 +661,6 @@ export class OigFlowNode extends LitElement {
       transition: max-height 0.3s ease;
     }
 
-    .node.expanded .forecast-badges,
     .node.expanded .boiler-section,
     .node.expanded .grid-charging-plan {
       max-height: 500px;
@@ -660,30 +705,6 @@ export class OigFlowNode extends LitElement {
 
     .clickable:hover { text-decoration: underline; }
 
-    .solar-strings {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-    }
-
-    .forecast-badges {
-      display: flex;
-      gap: 8px;
-      margin-top: 6px;
-    }
-
-    .forecast-badge {
-      font-size: 10px;
-      cursor: pointer;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: #fff8e1;
-      color: #f57f17;
-      border: none;
-      font-family: inherit;
-    }
-
-    .forecast-badge:hover { background: #fff3c4; }
 
     .phases {
       display: flex;
@@ -1434,7 +1455,7 @@ export class OigFlowNode extends LitElement {
   private toggleExpand(nodeId: NodeId, e: Event): void {
     // Don't toggle if clicking a clickable value/button
     const target = e.target as HTMLElement;
-    if (target.closest('.clickable') || target.closest('.indicator') || target.closest('.forecast-badge') || target.closest('.node-value') || target.closest('.node-subvalue') || target.closest('.gc-plan-btn')) {
+    if (target.closest('.clickable') || target.closest('.indicator') || target.closest('.node-value') || target.closest('.node-subvalue') || target.closest('.gc-plan-btn')) {
       return;
     }
 
@@ -1758,7 +1779,7 @@ export class OigFlowNode extends LitElement {
     const isNight = percent < 2;
 
     const gradient = isNight
-      ? 'linear-gradient(135deg, rgba(38,48,82,0.45) 0%, rgba(23,31,58,0.3) 100%)'
+      ? 'linear-gradient(160deg,#1a1f30,#161a28)'
       : NODE_GRADIENTS.solar;
     const border = 'transparent';
 
@@ -1768,88 +1789,117 @@ export class OigFlowNode extends LitElement {
     const remainingKwh = Math.max(0, forecastKwh - producedKwh);
     const progressPct = forecastKwh > 0 ? Math.min(100, (producedKwh / forecastKwh) * 100) : 0;
     const powerKw = d.solarPower / 1000;
+
     // Edge colour = production intensity (% of peak): dim orange → bright yellow.
     const intColor = isNight
       ? '#5c6bc0'
       : percent < 20 ? '#ff7043' : percent < 50 ? '#ffa726' : '#ffd54f';
 
+    // Aura = peak % (dc_in_fv_proc) by day; 0/grey at night.
+    const auraPct  = isNight ? 0 : percent;
+    const auraColor = isNight ? '#5a6480' : intColor;
+    const pillColor = isNight ? '#9fa8da' : intColor;
+    const pillLabel = isNight ? '🌙 Noc' : `${Math.round(percent)} % špičky`;
+
+    // Production bar colours: amber by day, muted blue-grey at night.
+    const barGrad = isNight
+      ? 'linear-gradient(90deg,#6b7390,#8a93b5)'
+      : 'linear-gradient(90deg,#ffd54f,#ffa726)';
+
+    // String active check
+    const str1Active = d.solarP1 > 0 || d.solarV1 > 0;
+    const str2Active = d.solarP2 > 0 || d.solarV2 > 0;
+
+    // Format power with Czech comma and <small> unit tag
+    const powerDisplay = isNight
+      ? html`0 <small>W</small>`
+      : (() => {
+          const w = d.solarPower;
+          if (w >= 1000) {
+            return html`${(w / 1000).toFixed(1).replace('.', ',')} <small>kW</small>`;
+          }
+          return html`${Math.round(w)} <small>W</small>`;
+        })();
+
     return html`
-      <div class="${this.nodeClass('solar', isNight ? 'night' : '')}" style="--node-gradient: ${gradient}; --node-border: ${border};"
-        @click=${(e: Event) => this.toggleExpand('solar', e)}>
+      <div class="${this.nodeClass('solar', isNight ? 'sol-night' : '')}"
+        style="--node-gradient: ${gradient}; --node-border: ${border};">
+
         ${this.edgeGauge({
           id: 'gauge-solar',
           nodeId: 'solar',
-          pct: isNight ? 0 : progressPct,
-          stops: [[0, intColor], [1, intColor]],
-          width: 2 + Math.min(3, powerKw),
+          pct: auraPct,
+          stops: [[0, auraColor], [1, auraColor]],
+          width: isNight ? 2 : 2 + Math.min(3, powerKw),
           pulse: !isNight && d.solarPower > 30,
           pulseDur: Math.max(0.9, 2.2 - powerKw * 0.35),
+          full: isNight,
         })}
+
         <div class="node-tint" style="background: radial-gradient(120% 70% at 50% 0, ${isNight ? 'rgba(57,73,171,0.18)' : intColor + '22'}, transparent 70%)"></div>
 
-        <button class="indicator" style="position:absolute;top:4px;right:6px;font-size:9px;z-index:3" @click=${openEntity('solar_forecast')}
-          title=${d.solarForecastStale ? 'Předpověď zítra (zastaralá)' : 'Předpověď FVE na zítra'}>
-          ${d.solarForecastStale ? '⚠' : '🌅'} ${d.solarForecastTomorrow.toFixed(1)}
-        </button>
-        ${this.gaugePill('solar', `${Math.round(progressPct)} %`, isNight ? '#7986cb' : intColor, html`
-          <div class="ss-pop-h"><span>Výroba dne</span><b style="color:${isNight ? '#9fa8da' : intColor}">${Math.round(progressPct)} %</b></div>
-          <div class="gp-r"><span>Vyrobeno</span><b>${producedKwh.toFixed(1)} kWh</b></div>
-          <div class="gp-r"><span>Předpověď</span><b>${forecastKwh.toFixed(1)} kWh</b></div>
-          <div class="gp-r"><span>Ještě vyrobí</span><b>~${remainingKwh.toFixed(1)} kWh</b></div>
-          <div class="gp-r"><span>Aktuální výkon</span><b>${formatPower(d.solarPower)} · ${Math.round(percent)} % špičky</b></div>
+        <!-- GAUGE PILL: peak % špičky or 🌙 Noc -->
+        ${this.gaugePill('solar', pillLabel, pillColor, html`
+          <div class="ss-pop-h"><span>Solární výkon</span><b style="color:${pillColor}">${isNight ? '🌙 Noc' : `${Math.round(percent)} % špičky`}</b></div>
+          <div class="gp-r"><span>Aktuální výkon</span><b>${isNight ? '0 W' : `${formatPower(d.solarPower)} · ${Math.round(percent)} % špičky`}</b></div>
+          <div class="gp-r"><span>Vyrobeno</span><b>${producedKwh.toFixed(1).replace('.', ',')} kWh</b></div>
+          <div class="gp-r"><span>Předpověď</span><b>${forecastKwh.toFixed(1).replace('.', ',')} kWh</b></div>
+          <div class="gp-r"><span>Ještě vyrobí</span><b>${(isNight || remainingKwh < 0.05) ? 'hotovo' : `~${remainingKwh.toFixed(1).replace('.', ',')} kWh`}</b></div>
+          <div class="gp-r"><span>Zítra</span><b>${d.solarForecastTomorrow.toFixed(1).replace('.', ',')} kWh${d.solarForecastStale ? ' ⚠' : ''}</b></div>
         `)}
 
-        <div class="node-header node-header--split" style="margin-top:16px">
-          <span class="node-label">☀️ Solár</span>
-          <span class="node-state" style="color:${isNight ? '#9fa8da' : intColor}">
-            ${isNight ? '🌙 Noc' : `${Math.round(percent)} % špičky`}
-          </span>
-        </div>
-        <div class="node-value" @click=${openEntity('actual_fv_total')}>
-          ${formatPower(d.solarPower)}
-        </div>
-        <div class="node-subvalue" @click=${openEntity('dc_in_fv_ad')}>
-          Dnes ${producedKwh.toFixed(1)} <span class="nv-sub">/ ${forecastKwh.toFixed(1)} kWh</span>
-        </div>
-        <div class="node-subvalue">
-          ${remainingKwh > 0.05
-            ? html`<span class="solar-rem ${remainingKwh > 1 ? 'rem-on' : 'rem-off'}">⚡ ještě ~${remainingKwh.toFixed(1)} kWh</span>`
-            : html`<span class="solar-rem rem-off">✓ hotovo dnes</span>`}
+        <!-- HEADER: animated sun SVG by day / moon SVG at night -->
+        <div class="sol-head">
+          ${isNight
+            ? svg`<svg class="sol-ico" viewBox="0 0 24 24" fill="none" stroke="#9fa8da" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 14.5A8 8 0 1 1 9.5 4 6.2 6.2 0 0 0 20 14.5z" fill="#2a3050"/>
+              </svg>`
+            : svg`<svg class="sol-ico" viewBox="0 0 24 24" fill="none" stroke="${intColor}" stroke-width="2" stroke-linecap="round">
+                <g class="sol-rays"><path d="M12 1.5v2.5M12 20v2.5M1.5 12h2.5M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M19.4 4.6l-1.8 1.8M6.4 17.6l-1.8 1.8"/></g>
+                <circle class="sol-core" cx="12" cy="12" r="4.2" fill="${intColor}" stroke="none"/>
+              </svg>`}
+          <span class="sol-cap">SOLÁR</span>
         </div>
 
-        <div class="detail-section">
-          <div class="solar-strings">
-            <div>
-              <div class="detail-header">🏭 String 1</div>
-              <div class="detail-row">
-                <span class="icon">⚡</span>
-                <button class="clickable" @click=${openEntity('extended_fve_voltage_1')}>${Math.round(d.solarV1)}V</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">〰️</span>
-                <button class="clickable" @click=${openEntity('extended_fve_current_1')}>${d.solarI1.toFixed(1)}A</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">⚡</span>
-                <button class="clickable" @click=${openEntity('dc_in_fv_p1')}>${Math.round(d.solarP1)} W</button>
-              </div>
-            </div>
-            <div>
-              <div class="detail-header">🏭 String 2</div>
-              <div class="detail-row">
-                <span class="icon">⚡</span>
-                <button class="clickable" @click=${openEntity('extended_fve_voltage_2')}>${Math.round(d.solarV2)}V</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">〰️</span>
-                <button class="clickable" @click=${openEntity('extended_fve_current_2')}>${d.solarI2.toFixed(1)}A</button>
-              </div>
-              <div class="detail-row">
-                <span class="icon">⚡</span>
-                <button class="clickable" @click=${openEntity('dc_in_fv_p2')}>${Math.round(d.solarP2)} W</button>
-              </div>
-            </div>
+        <!-- BIG CURRENT POWER -->
+        <div class="sol-power" @click=${openEntity('actual_fv_total')}>
+          ${powerDisplay}
+        </div>
+
+        <!-- TINY SUBLINE: dnes X z Y kWh -->
+        <div class="sol-sub" @click=${openEntity('dc_in_fv_ad')}>
+          dnes ${producedKwh.toFixed(1).replace('.', ',')} z ${forecastKwh.toFixed(1).replace('.', ',')} kWh
+        </div>
+
+        <!-- PRODUCTION BAR -->
+        <div class="sol-pbar">
+          <div class="sol-pbar-fill" style="width:${progressPct.toFixed(1)}%;background:${barGrad}">
+            ${progressPct >= 30 ? `${producedKwh.toFixed(1).replace('.', ',')} kWh` : ''}
           </div>
+        </div>
+        <div class="sol-pbar-lbl">
+          <span>vyrobeno ${Math.round(progressPct)} %</span>
+          <span>${isNight || remainingKwh < 0.05 ? 'hotovo' : `ještě ~${remainingKwh.toFixed(1).replace('.', ',')} kWh`}</span>
+        </div>
+
+        <!-- COMPACT STRINGS (always visible, 2-col) -->
+        <div class="sol-str">
+          <div class="sol-sc ${str1Active ? '' : 'sol-off'}">
+            <div class="sol-sh">🔆 String 1</div>
+            <div class="sol-sw">${Math.round(d.solarP1)} W</div>
+            <div class="sol-sd">${Math.round(d.solarV1)} V · ${d.solarI1.toFixed(1).replace('.', ',')} A</div>
+          </div>
+          <div class="sol-sc ${str2Active ? '' : 'sol-off'}">
+            <div class="sol-sh">🔆 String 2</div>
+            <div class="sol-sw">${Math.round(d.solarP2)} W</div>
+            <div class="sol-sd">${Math.round(d.solarV2)} V · ${d.solarI2.toFixed(1).replace('.', ',')} A</div>
+          </div>
+        </div>
+
+        <!-- TOMORROW CHIP -->
+        <div class="sol-tmr" @click=${openEntity('solar_forecast')}>
+          🌅 Zítra <b>${d.solarForecastTomorrow.toFixed(1).replace('.', ',')} kWh</b>
+          ${d.solarForecastStale ? html`<span title="Předpověď zastaralá">⚠</span>` : nothing}
         </div>
       </div>
     `;
