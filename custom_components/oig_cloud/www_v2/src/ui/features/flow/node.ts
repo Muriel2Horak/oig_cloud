@@ -290,7 +290,7 @@ export class OigFlowNode extends LitElement {
     .sol-pbar { position: relative; height: 14px; background: rgba(255,255,255,.06); border-radius: 7px; overflow: hidden; }
     .sol-pbar-fill { height: 100%; display: flex; align-items: center; padding-left: 7px; font-size: 8.5px; font-weight: 800; color: #3a2600; white-space: nowrap; }
     .sol-night .sol-pbar-fill { color: #dde3f5; }
-    .sol-pbar-lbl { display: flex; justify-content: space-between; font-size: 9px; opacity: .6; margin-top: 3px; }
+    .sol-pbar-lbl { display: flex; justify-content: space-between; font-size: 9px; opacity: .6; margin-top: 3px; white-space: nowrap; }
     .sol-pbar-tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; box-shadow: 0 0 4px rgba(255,255,255,.7); }
     .sol-over { color: #9fe6a8; font-weight: 800; opacity: 1; }
     /* Compact 2-col strings */
@@ -1905,7 +1905,7 @@ export class OigFlowNode extends LitElement {
           <span>vyrobeno ${pctOfPlan} %</span>
           <span>${
             overplan
-              ? html`<span class="sol-over">+${overKwh.toFixed(1).replace('.', ',')} kWh nad plán</span>`
+              ? html`<span class="sol-over">+${overKwh.toFixed(1).replace('.', ',')} kWh</span>`
               : isNight
                 ? 'den skončil'
                 : remainingKwh < 0.05 ? 'splněno' : `ještě ~${remainingKwh.toFixed(1).replace('.', ',')} kWh`
