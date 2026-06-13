@@ -797,34 +797,39 @@ export class OigFlowNode extends LitElement {
       overflow: visible;
       display: flex;
     }
+    /* Záloha (solid) + nezáloha (faded) — both in the row's ČSN phase colour. */
     .pg-z {
       height: 100%;
-      background: #43a047;
+      background: #43a047; /* fallback; overridden per-phase below */
       display: flex;
       align-items: center;
       padding-left: 4px;
       font-size: 8.5px;
       font-weight: 800;
-      color: #06270c;
+      color: #0c1320;
       white-space: nowrap;
       overflow: hidden;
       border-radius: 4px 0 0 4px;
     }
-    .pg-z.crit { background: #e53935; color: #fff; }
+    .pg-z.crit { background: #e53935 !important; color: #fff; opacity: 1; }
     .pg-div { width: 1.5px; background: #0d1526; height: 100%; flex-shrink: 0; }
     .pg-n {
       height: 100%;
-      background: #fb8c00;
+      background: #fb8c00; /* fallback; overridden per-phase below */
+      opacity: .45;
       display: flex;
       align-items: center;
       padding-left: 4px;
       font-size: 8.5px;
       font-weight: 800;
-      color: #2b1500;
+      color: #0c1320;
       white-space: nowrap;
       overflow: hidden;
       border-radius: 0 4px 4px 0;
     }
+    .pg-row.l1 .pg-z, .pg-row.l1 .pg-n { background: var(--phase-l1); }
+    .pg-row.l2 .pg-z, .pg-row.l2 .pg-n { background: var(--phase-l2); }
+    .pg-row.l3 .pg-z, .pg-row.l3 .pg-n { background: var(--phase-l3); }
     .pg-lim {
       position: absolute;
       top: -3px;
@@ -839,6 +844,7 @@ export class OigFlowNode extends LitElement {
       font-size: 9px;
       font-weight: 700;
       opacity: .8;
+      color: ${u(CSS_VARS.textPrimary)};
       width: 48px;
       text-align: right;
       font-variant-numeric: tabular-nums;
@@ -1141,14 +1147,6 @@ export class OigFlowNode extends LitElement {
     .l1 { color: var(--phase-l1); }
     .l2 { color: var(--phase-l2); }
     .l3 { color: var(--phase-l3); }
-    /* Small phase-colour dot (used where a phase row has no L1/L2/L3 text) */
-    .pg-dot {
-      width: 7px; height: 7px; border-radius: 50%; flex: none;
-      border: 1.5px solid #0e1726;
-    }
-    .pg-dot.l1 { background: var(--phase-l1); }
-    .pg-dot.l2 { background: var(--phase-l2); }
-    .pg-dot.l3 { background: var(--phase-l3); }
 
     /* ---- Energie symetricky (odběr vlevo, dodávka vpravo) ---- */
     .energy-symmetric {
@@ -1360,7 +1358,6 @@ export class OigFlowNode extends LitElement {
     .gd-phr {
       display: flex; align-items: center; gap: 5px; height: 15px; margin: 3px 0;
     }
-    .gd-pll { font-size: 9px; font-weight: 800; opacity: .9; width: 14px; }
     .gd-ptr {
       position: relative; flex: 1; height: 13px;
       background: rgba(255,255,255,.05); border-radius: 4px; overflow: hidden;
@@ -1370,66 +1367,54 @@ export class OigFlowNode extends LitElement {
       position: absolute; left: 50%; top: 0; bottom: 0;
       width: 1.5px; background: rgba(255,255,255,.28); z-index: 2;
     }
-    /* Import: right half, orange gradient */
+    /* Bar fill = phase colour (ČSN); direction = which side of the zero line */
     .gd-seg {
       position: absolute; top: 0; bottom: 0;
-      display: flex; align-items: center;
+      display: flex; align-items: center; justify-content: center;
       font-size: 8px; font-weight: 800; white-space: nowrap;
+      color: #0c1320; border-radius: 3px; padding: 0 3px;
     }
-    .gd-simp {
-      left: 50%;
-      background: linear-gradient(90deg, #fb8c00, #ff7043);
-      color: #2b1500;
-      justify-content: flex-end;
-      padding-right: 3px;
-    }
-    /* Export: left half, green gradient (RTL from centre) */
-    .gd-sexp {
-      right: 50%;
-      background: linear-gradient(90deg, #43a047, #66bb6a);
-      color: #06270c;
-      justify-content: flex-start;
-      padding-left: 3px;
-    }
+    .gd-seg.l1 { background: var(--phase-l1); }
+    .gd-seg.l2 { background: var(--phase-l2); }
+    .gd-seg.l3 { background: var(--phase-l3); }
     .gd-phends {
       display: flex; justify-content: space-between;
       font-size: 8px; opacity: .55; margin-top: 2px;
     }
     .gd-phends span { display: flex; align-items: center; gap: 2px; }
 
-    /* ── Voltage: graph-only, dynamic-zoom axis, value-on-dot, phase colour ── */
+    /* ── Voltage: dynamic-zoom axis, criticality gradient, value ON the axis ──
+       No bubbles: a thin phase-coloured tick marks each phase's position, the
+       value sits above (outer two) / below (middle) so they never overlap. */
     .gd-volt {
       background: rgba(0,0,0,.18); border-radius: 9px;
-      padding: 15px 11px 6px; margin-bottom: 2px;
+      padding: 16px 12px 17px; margin-bottom: 2px;
     }
     .gd-vband {
-      position: relative; height: 11px; border-radius: 5px;
-      background: rgba(255,255,255,.06);
+      position: relative; height: 7px; border-radius: 4px;
+      background: rgba(255,255,255,.07); /* overridden inline with criticality gradient */
     }
-    .gd-vwarn { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
-    .gd-vwarn-hi { background: linear-gradient(90deg, rgba(255,167,38,0), rgba(229,57,53,.5)); }
-    .gd-vwarn-lo { background: linear-gradient(90deg, rgba(229,57,53,.5), rgba(255,167,38,0)); }
-    .gd-vnom { position: absolute; top: -2px; bottom: -2px; width: 1.5px; background: rgba(255,255,255,.4); z-index: 1; }
-    /* Value label sits above its dot, coloured by phase (or amber/red when out of band) */
-    .gd-vval {
-      position: absolute; top: -13px; transform: translateX(-50%);
-      font-size: 9px; font-weight: 800; opacity: .95; z-index: 3; white-space: nowrap;
+    .gd-vtick {
+      position: absolute; top: -2px; bottom: -2px; width: 2px;
+      transform: translateX(-50%); border-radius: 1px; z-index: 2;
     }
-    .gd-vdot {
-      position: absolute; top: 50%; left: 0; width: 11px; height: 11px;
-      border-radius: 50%; border: 2px solid #0e1726;
-      transform: translate(-50%, -50%); z-index: 3;
-      background: none; cursor: pointer; padding: 0;
+    .gd-vtick.l1 { background: var(--phase-l1); }
+    .gd-vtick.l2 { background: var(--phase-l2); }
+    .gd-vtick.l3 { background: var(--phase-l3); }
+    .gd-vlab {
+      position: absolute; transform: translateX(-50%);
+      font-size: 11px; font-weight: 800; white-space: nowrap; z-index: 3;
+      background: none; border: none; cursor: pointer; font-family: inherit; padding: 0;
     }
-    .gd-vdot.l1 { background: var(--phase-l1); }
-    .gd-vdot.l2 { background: var(--phase-l2); }
-    .gd-vdot.l3 { background: var(--phase-l3); }
-    .gd-vdot-warn { box-shadow: 0 0 0 2px #ffa726; }
-    @keyframes gdVoltPulse { 0%,100%{box-shadow:0 0 0 2px #ff5252;} 50%{box-shadow:0 0 6px 2px #ff5252;} }
-    .gd-vdot-crit { animation: gdVoltPulse 1s ease-in-out infinite; }
+    .gd-vlab.above { top: -15px; }
+    .gd-vlab.below { top: 11px; }
+    .gd-vlab.l1 { color: var(--phase-l1); }
+    .gd-vlab.l2 { color: var(--phase-l2); }
+    .gd-vlab.l3 { color: var(--phase-l3); }
+    .gd-vlab:hover { text-decoration: underline; }
     .gd-vsc {
       display: flex; justify-content: space-between;
-      font-size: 7.5px; opacity: .5; margin-top: 5px;
+      font-size: 7.5px; opacity: .5; margin-top: 16px;
     }
 
     @media (min-width: 1025px) {
@@ -2573,19 +2558,29 @@ export class OigFlowNode extends LitElement {
     const vAvg = hasVolt ? vValid.reduce((s, x) => s + x.v, 0) / vValid.length : 230;
     const vLo = hasVolt ? Math.min(...vValid.map(x => x.v)) : 230;
     const vHi = hasVolt ? Math.max(...vValid.map(x => x.v)) : 230;
-    const halfSpan = Math.max((vHi - vLo) / 2 + 3, 4); // min ±4 V window so dots never overlap
+    const halfSpan = Math.max((vHi - vLo) / 2 + 1.5, 2.5); // tight zoom so values never overlap
     const winLo = vAvg - halfSpan, winHi = vAvg + halfSpan, winRange = winHi - winLo;
     const vsev = (v: number) => (v < VMIN || v > VMAX) ? 'crit' : (v < VAL || v > VAH) ? 'warn' : 'ok';
     const vpct = (v: number) => Math.max(0, Math.min(100, ((v - winLo) / winRange) * 100));
-    // Dot color = phase identity (ČSN palette); severity shown via ring + value color.
-    const voltDots = vRaw.map((x, i) => ({ ...x, sev: x.v > 0 ? vsev(x.v) : 'na', pct: x.v > 0 ? vpct(x.v) : 50, lcls: `l${i + 1}` }));
-    const voltWarn = voltDots.some(x => x.v > 0 && x.sev === 'crit');
-    const warnHi = winHi > VAH ? vpct(VAH) : null;
-    const warnLo = winLo < VAL ? vpct(VAL) : null;
-    const nomIn = winLo <= 230 && 230 <= winHi;
-    const vCenterLabel = warnHi !== null ? `limit ${VMAX} V →`
-      : warnLo !== null ? `← limit ${VMIN} V`
-      : 'norma 230 V ±10 %';
+    // Tick color = phase identity (ČSN palette); value below the band for the
+    // middle phase (so the three values can't overlap), outer two above.
+    let voltDots = vRaw.map((x, i) => ({ ...x, sev: x.v > 0 ? vsev(x.v) : 'na', pct: x.v > 0 ? vpct(x.v) : 50, lcls: `l${i + 1}`, below: false }));
+    const vSorted = voltDots.filter(x => x.v > 0).slice().sort((a, b) => a.pct - b.pct);
+    const midPct = vSorted.length === 3 ? vSorted[1].pct : null;
+    voltDots = voltDots.map(x => ({ ...x, below: x.v > 0 && midPct !== null && x.pct === midPct }));
+    // Criticality colour scale baked into the band, zoom-aware: green safe band
+    // (212–248 V), amber near the ±10 % limits, red beyond — only the part that
+    // falls inside the current zoom window is drawn.
+    const zoneCol = (v: number) => (v < VMIN || v > VMAX) ? 'rgba(229,57,53,.45)'
+      : (v < VAL || v > VAH) ? 'rgba(255,167,38,.4)' : 'rgba(76,175,80,.22)';
+    const vThr = [VMIN, VAL, VAH, VMAX].filter(t => t > winLo && t < winHi);
+    const gradStops = [`${zoneCol(winLo + 0.001)} 0%`];
+    for (const t of vThr) {
+      const p = vpct(t).toFixed(1);
+      gradStops.push(`${zoneCol(t - 0.001)} ${p}%`, `${zoneCol(t + 0.001)} ${p}%`);
+    }
+    gradStops.push(`${zoneCol(winHi - 0.001)} 100%`);
+    const voltGrad = `linear-gradient(90deg, ${gradStops.join(', ')})`;
 
     // ── Frequency (header top-left) ──────────────────────────────────────
     // Normal grid drifts ±0.05–0.2 Hz routinely; amber when leaving the normal
@@ -2724,7 +2719,7 @@ export class OigFlowNode extends LitElement {
 
         <!-- ── PHASE BARS: bidirectional, dynamic zero ── -->
         <div class="gd-ph">
-          ${(['L1','L2','L3'] as const).map((lbl, i) => {
+          ${(['L1','L2','L3'] as const).map((_lbl, i) => {
             const pw = phases[i];
             const absPw = Math.abs(pw);
             const w = Math.min(100, (absPw / barSpan) * 100);
@@ -2732,15 +2727,14 @@ export class OigFlowNode extends LitElement {
             const isExp = pw < -10;
             return html`
               <div class="gd-phr">
-                <span class="gd-pll l${i + 1}">${lbl}</span>
                 <div class="gd-ptr">
                   <div class="gd-zero" style="left:${zeroPct.toFixed(1)}%"></div>
                   ${isExp ? html`
-                    <div class="gd-seg gd-sexp" style="left:${(zeroPct - w).toFixed(1)}%;width:${w.toFixed(1)}%">
+                    <div class="gd-seg l${i + 1}" style="left:${(zeroPct - w).toFixed(1)}%;width:${w.toFixed(1)}%">
                       ${w >= 22 ? html`${this.fmtKwGrid(absPw)}` : nothing}
                     </div>` : nothing}
                   ${isImp ? html`
-                    <div class="gd-seg gd-simp" style="left:${zeroPct.toFixed(1)}%;width:${w.toFixed(1)}%">
+                    <div class="gd-seg l${i + 1}" style="left:${zeroPct.toFixed(1)}%;width:${w.toFixed(1)}%">
                       ${w >= 22 ? html`${this.fmtKwGrid(absPw)}` : nothing}
                     </div>` : nothing}
                 </div>
@@ -2755,17 +2749,16 @@ export class OigFlowNode extends LitElement {
         <!-- ── VOLTAGE: dynamic-zoom axis + per-phase values ── -->
         ${hasVolt ? html`
           <div class="gd-volt">
-            <div class="gd-vband">
-              ${warnHi !== null ? html`<div class="gd-vwarn gd-vwarn-hi" style="left:${warnHi.toFixed(1)}%;right:0"></div>` : nothing}
-              ${warnLo !== null ? html`<div class="gd-vwarn gd-vwarn-lo" style="left:0;width:${warnLo.toFixed(1)}%"></div>` : nothing}
-              ${nomIn ? html`<div class="gd-vnom" style="left:${vpct(230).toFixed(1)}%"></div>` : nothing}
+            <div class="gd-vband" style="background:${voltGrad}">
               ${voltDots.filter(x => x.v > 0).map(x => html`
-                <span class="gd-vval ${x.sev === 'ok' ? x.lcls : ''}" style="left:${x.pct.toFixed(1)}%;${x.sev === 'crit' ? 'color:#ff8a80' : x.sev === 'warn' ? 'color:#ffcc80' : ''}">${x.v.toFixed(0)}</span>
-                <button class="gd-vdot ${x.lcls} ${x.sev === 'warn' ? 'gd-vdot-warn' : ''} ${x.sev === 'crit' ? 'gd-vdot-crit' : ''}" style="left:${x.pct.toFixed(1)}%" @click=${openEntity(x.entity)}></button>`)}
+                <div class="gd-vtick ${x.lcls}" style="left:${x.pct.toFixed(1)}%"></div>`)}
+              ${voltDots.filter(x => x.v > 0).map(x => html`
+                <button class="gd-vlab ${x.below ? 'below' : 'above'} ${x.sev === 'ok' ? x.lcls : ''}"
+                  style="left:${x.pct.toFixed(1)}%;${x.sev === 'crit' ? 'color:#ff8a80' : x.sev === 'warn' ? 'color:#ffcc80' : ''}"
+                  @click=${openEntity(x.entity)}>${x.v.toFixed(0)}</button>`)}
             </div>
             <div class="gd-vsc">
               <span>${winLo.toFixed(0)} V</span>
-              <span style="${voltWarn ? 'color:#ff8a80;opacity:.9' : 'opacity:.7'}">${vCenterLabel}</span>
               <span>${winHi.toFixed(0)} V</span>
             </div>
           </div>
@@ -2908,7 +2901,8 @@ export class OigFlowNode extends LitElement {
             <div class="pg-spread ${ps.balanced ? 'balanced' : 'unbal'}"
               title=${ps.balanced ? 'Fáze vyvážené' : `Fáze nevyvážené — rozdíl ${spreadStr}`}
               style="left:calc(10px + ${spreadBand.leftPct.toFixed(2)}% * (100% - 75px) / 100);width:calc(${spreadBand.widthPct.toFixed(2)}% * (100% - 75px) / 100)"></div>` : nothing}
-          <!-- Phase rows: no L1/L2/L3 text, just the ČSN phase-color dot -->
+          <!-- Phase rows: whole bar in the ČSN phase colour (záloha solid,
+               nezáloha faded); no L1/L2/L3 text — colour identifies the phase. -->
           ${phases.map((p, i) => {
             const zOver = p.z >= BACKUP_PHASE_LIMIT_W;
             const phaseTotal = p.z + p.n;
@@ -2917,8 +2911,7 @@ export class OigFlowNode extends LitElement {
             const showZLabel = zWidthPct >= LABEL_THRESHOLD_PCT && p.z > 100;
             const showNLabel = nWidthPct >= LABEL_THRESHOLD_PCT && p.n > 100;
             return html`
-              <div class="pg-row">
-                <span class="pg-dot l${i + 1}" title="L${i + 1}"></span>
+              <div class="pg-row l${i + 1}">
                 <div class="pg-track">
                   <div class="pg-z ${zOver ? 'crit' : ''}" style="width:${zWidthPct.toFixed(1)}%">
                     ${showZLabel ? fmtKw(p.z) : nothing}
