@@ -815,27 +815,26 @@ export class OigFlowNode extends LitElement {
       flex-shrink: 0;
     }
     /* Spread band: absolute overlay spanning záloha spread region */
-    .pg-spread {
-      position: absolute;
-      top: 4px;
-      bottom: 4px;
-      z-index: 3;
-      border-left: 1.5px dashed rgba(255,255,255,.5);
-      border-right: 1.5px dashed rgba(255,255,255,.5);
-      background: linear-gradient(90deg,rgba(229,57,53,0),rgba(229,57,53,.14),rgba(229,57,53,0));
-      pointer-events: none;
+    .bal-chip {
+      display: flex;
+      width: fit-content;
+      align-items: center;
+      gap: 4px;
+      align-self: center;
+      margin: 2px auto 6px;
+      font-size: 9.5px;
+      font-weight: 700;
+      border-radius: 7px;
+      padding: 2px 8px;
     }
-    .pg-spread.balanced {
-      background: linear-gradient(90deg,rgba(76,175,80,0),rgba(76,175,80,.12),rgba(76,175,80,0));
-      border-color: rgba(76,175,80,.4);
+    .bal-chip.ok { background: rgba(76,175,80,.15); border: 1px solid rgba(76,175,80,.4); color: #9fe6a8; }
+    .bal-chip.warn {
+      background: rgba(229,57,53,.18);
+      border: 1px solid rgba(229,57,53,.6);
+      color: #ff8a80;
+      animation: bal-pulse 1.4s ease-in-out infinite;
     }
-    .pg-spread.unbal {
-      border-color: rgba(229,57,53,.9);
-      background: linear-gradient(90deg,rgba(229,57,53,.05),rgba(229,57,53,.28),rgba(229,57,53,.05));
-      box-shadow: 0 0 8px rgba(229,57,53,.45);
-      animation: pg-shimmer 1.4s ease-in-out infinite;
-    }
-    @keyframes pg-shimmer { 0%,100% { opacity:.6; } 50% { opacity:1; } }
+    @keyframes bal-pulse { 0%,100% { opacity:.75; } 50% { opacity:1; } } 50% { opacity:1; } }
     /* ⚖️ warning marker sitting on top of an unbalanced band */
     .pg-spread-mark {
       position: absolute;
@@ -2307,12 +2306,6 @@ export class OigFlowNode extends LitElement {
     const maxPhaseTotal = Math.max(3600, ...phases.map(p => p.z + p.n));
     const limPct = (BACKUP_PHASE_LIMIT_W / maxPhaseTotal) * 100;
 
-    // Záloha segment widths as % of track, for spread band geometry
-    const zalohaWidthsPct: [number, number, number] = phases.map(p =>
-      (Math.max(0, p.z) / maxPhaseTotal) * 100,
-    ) as [number, number, number];
-    const totalZalohaW = d.houseL1 + d.houseL2 + d.houseL3;
-    const spreadBand = computeSpreadBand(zalohaWidthsPct, totalZalohaW);
     const spreadStr = ps.spreadW >= 1000
       ? `${(ps.spreadW / 1000).toFixed(1).replace('.', ',')} kW`
       : `${Math.round(ps.spreadW)} W`;
@@ -2380,15 +2373,16 @@ export class OigFlowNode extends LitElement {
           </button>
         </div>
 
+        <!-- BALANCE CHIP: clear one-line status (replaces abstract spread band) -->
+        ${ps.calm
+          ? nothing
+          : html`<div class="bal-chip ${ps.balanced ? 'ok' : 'warn'}"
+              title="Rozdíl odběru mezi zálohovými fázemi (práh 1 kW)">
+              ⚖️ ${ps.balanced ? 'Fáze vyvážené' : html`Nevyvážené · Δ${spreadStr}`}
+            </div>`}
+
         <!-- PHASE GRAPH (phasegraph2 design) -->
         <div class="pg">
-          <!-- Spread band overlay -->
-          ${spreadBand.widthPct > 0 ? html`
-            <div class="pg-spread ${ps.balanced ? 'balanced' : 'unbal'}"
-              title=${ps.balanced ? 'Fáze vyvážené' : `Fáze nevyvážené — rozdíl ${spreadStr}`}
-              style="left:calc(10px + ${spreadBand.leftPct.toFixed(2)}% * (100% - 61px) / 100);width:calc(${spreadBand.widthPct.toFixed(2)}% * (100% - 61px) / 100)">
-              ${ps.balanced ? nothing : html`<span class="pg-spread-mark">⚖️ ${spreadStr}</span>`}
-            </div>` : nothing}
           <!-- Phase rows: NO L1/L2/L3 labels per spec -->
           ${phases.map((p) => {
             const zOver = p.z >= BACKUP_PHASE_LIMIT_W;
