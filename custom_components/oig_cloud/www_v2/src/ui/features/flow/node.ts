@@ -1327,28 +1327,29 @@ export class OigFlowNode extends LitElement {
     /* ── Money columns: prodej (dodávka) left · nákup (odběr) right ──
        Compact: line1 = directional arrow + price · line2 = dnes · měsíc Kč.
        Single direction cue (arrow); colour = sign of wallet impact. */
-    .gd-cols { display: flex; gap: 8px; margin: 7px 0 1px; }
+    .gd-cols { display: flex; gap: 8px; margin: 7px 0 7px; }
     .gd-col {
-      flex: 1; border-radius: 9px; padding: 5px 5px; text-align: center;
+      flex: 1; border-radius: 9px; padding: 5px 7px;
       border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.14);
     }
-    .gd-cprice {
-      font-size: 13px; font-weight: 800; white-space: nowrap;
-      display: flex; align-items: center; justify-content: center; gap: 4px;
+    /* RATE = hero */
+    .gd-crate {
+      font-size: 15px; font-weight: 800; white-space: nowrap;
+      display: flex; align-items: baseline; justify-content: center; gap: 4px;
     }
-    .gd-cprice small { font-size: 7.5px; opacity: .6; font-weight: 600; }
-    .gd-cprice .gd-ic { width: 11px; height: 11px; flex: none; }
+    .gd-crate small { font-size: 8px; opacity: .55; font-weight: 600; }
+    .gd-crate .gd-ic { width: 11px; height: 11px; align-self: center; flex: none; }
+    /* Accumulated: dnes (left, full) · měsíc (right, muted); units kept, no labels */
     .gd-cmoney {
-      margin-top: 3px; white-space: nowrap;
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-top: 4px; white-space: nowrap; font-size: 9.5px; font-weight: 800;
       background: none; border: none; cursor: pointer;
       font-family: inherit; padding: 0; color: inherit; width: 100%;
     }
     .gd-cmoney:hover { text-decoration: underline; }
-    .gd-md { font-size: 13px; font-weight: 800; }
-    .gd-sep { opacity: .4; font-size: 10px; margin: 0 2px; }
-    .gd-mm { font-size: 10px; opacity: .6; font-weight: 700; }
-    .gd-un { font-size: 8px; opacity: .6; font-weight: 700; margin-left: 2px; }
-    .gd-moneyhdr { text-align: center; font-size: 7.5px; opacity: .4; margin: 1px 0 6px; }
+    .gd-cmoney small { font-size: 7px; opacity: .55; font-weight: 700; margin-left: 1px; }
+    .gd-md { } /* dnes — full */
+    .gd-mm { opacity: .55; } /* měsíc — muted */
 
     /* ── Phase bars ── */
     .gd-ph {
@@ -1377,18 +1378,14 @@ export class OigFlowNode extends LitElement {
     .gd-seg.l1 { background: var(--phase-l1); }
     .gd-seg.l2 { background: var(--phase-l2); }
     .gd-seg.l3 { background: var(--phase-l3); }
-    .gd-phends {
-      display: flex; justify-content: space-between;
-      font-size: 8px; opacity: .55; margin-top: 2px;
-    }
-    .gd-phends span { display: flex; align-items: center; gap: 2px; }
 
     /* ── Voltage: dynamic-zoom axis, criticality gradient, value ON the axis ──
        No bubbles: a thin phase-coloured tick marks each phase's position, the
-       value sits above (outer two) / below (middle) so they never overlap. */
+       value sits above (outer two) / below (middle) so they never overlap. The
+       window bounds live on the below line at the edges (no extra row). */
     .gd-volt {
       background: rgba(0,0,0,.18); border-radius: 9px;
-      padding: 16px 12px 17px; margin-bottom: 2px;
+      padding: 15px 11px 14px; margin-bottom: 2px;
     }
     .gd-vband {
       position: relative; height: 7px; border-radius: 4px;
@@ -1403,19 +1400,21 @@ export class OigFlowNode extends LitElement {
     .gd-vtick.l3 { background: var(--phase-l3); }
     .gd-vlab {
       position: absolute; transform: translateX(-50%);
-      font-size: 11px; font-weight: 800; white-space: nowrap; z-index: 3;
+      font-size: 10px; font-weight: 800; white-space: nowrap; z-index: 3;
       background: none; border: none; cursor: pointer; font-family: inherit; padding: 0;
     }
-    .gd-vlab.above { top: -15px; }
+    .gd-vlab small { font-size: 7px; opacity: .6; font-weight: 700; }
+    .gd-vlab.above { top: -14px; }
     .gd-vlab.below { top: 11px; }
     .gd-vlab.l1 { color: var(--phase-l1); }
     .gd-vlab.l2 { color: var(--phase-l2); }
     .gd-vlab.l3 { color: var(--phase-l3); }
     .gd-vlab:hover { text-decoration: underline; }
-    .gd-vsc {
-      display: flex; justify-content: space-between;
-      font-size: 7.5px; opacity: .5; margin-top: 16px;
+    .gd-vbound {
+      position: absolute; top: 11px; font-size: 8px; font-weight: 700; opacity: .5;
     }
+    .gd-vbound.lo { left: 0; }
+    .gd-vbound.hi { right: 0; }
 
     @media (min-width: 1025px) {
       .detail-section {
@@ -2006,7 +2005,10 @@ export class OigFlowNode extends LitElement {
     const d = this.data;
     const fmtKw = (w: number) => w >= 1000 ? `${(w / 1000).toFixed(1).replace('.', ',')} kW` : `${Math.round(w)} W`;
     const percent = d.solarPercent;
-    const isNight = percent < 2;
+    // Night = no real production. Must key off actual power, NOT the rounded
+    // peak-% (dc_in_fv_proc): a 5,4 kWp string making 76 W reads 1 %, which the
+    // old `percent < 2` test wrongly classified as night and forced "0 W".
+    const isNight = d.solarPower < 5;
 
     const gradient = isNight
       ? 'linear-gradient(160deg,#1a1f30,#161a28)'
@@ -2530,13 +2532,17 @@ export class OigFlowNode extends LitElement {
     // dodávka column = earnings (>0 good/green). odběr column = cost (>0 expense
     // /red; <0 negative spot price → you earn, green). Show magnitude, prefix
     // only the exceptional sign so a normal day reads "1,28" / "0,00".
+    // Dynamic money: keep it short so a month total in the thousands never
+    // overflows the narrow column — <10 → 1 decimal, <1000 → whole, else "1,2k".
+    const fmtMoneyDyn = (a: number) => a >= 1000 ? `${(a / 1000).toFixed(1).replace('.', ',')}k`
+      : a >= 10 ? `${Math.round(a)}` : a.toFixed(1).replace('.', ',');
     const earnCell = (v: number) => {
       const loss = v < 0;
-      return { txt: (loss ? '−' : '') + fmtCz(Math.abs(v)), cls: loss ? 'gd-col-imp' : 'gd-col-exp', earn: !loss };
+      return { txt: (loss ? '−' : '') + fmtMoneyDyn(Math.abs(v)), cls: loss ? 'gd-col-imp' : 'gd-col-exp', earn: !loss };
     };
     const costCell = (v: number) => {
       const gain = v < 0;
-      return { txt: (gain ? '+' : '') + fmtCz(Math.abs(v)), cls: gain ? 'gd-col-exp' : 'gd-col-imp', earn: gain };
+      return { txt: (gain ? '+' : '') + fmtMoneyDyn(Math.abs(v)), cls: gain ? 'gd-col-exp' : 'gd-col-imp', earn: gain };
     };
     const expToday = earnCell(earnToday);
     const expMonth = earnCell(d.gridExportEarningsMonth ?? 0);
@@ -2571,8 +2577,8 @@ export class OigFlowNode extends LitElement {
     // Criticality colour scale baked into the band, zoom-aware: green safe band
     // (212–248 V), amber near the ±10 % limits, red beyond — only the part that
     // falls inside the current zoom window is drawn.
-    const zoneCol = (v: number) => (v < VMIN || v > VMAX) ? 'rgba(229,57,53,.45)'
-      : (v < VAL || v > VAH) ? 'rgba(255,167,38,.4)' : 'rgba(76,175,80,.22)';
+    const zoneCol = (v: number) => (v < VMIN || v > VMAX) ? 'rgba(229,57,53,.6)'
+      : (v < VAL || v > VAH) ? 'rgba(255,167,38,.55)' : 'rgba(76,175,80,.4)';
     const vThr = [VMIN, VAL, VAH, VMAX].filter(t => t > winLo && t < winHi);
     const gradStops = [`${zoneCol(winLo + 0.001)} 0%`];
     for (const t of vThr) {
@@ -2683,29 +2689,28 @@ export class OigFlowNode extends LitElement {
           </div>
         `}
 
-        <!-- ── MONEY COLUMNS: dodávka | odběr (price + dnes·měsíc) ── -->
+        <!-- ── MONEY COLUMNS: dodávka (prodej) left · odběr (nákup) right ──
+             rate = hero · accumulated dnes (left) · měsíc (right, muted),
+             units kept, no text labels (what-is-what is on hover). -->
         ${hasCost ? html`
           <div class="gd-cols">
             <div class="gd-col">
-              <div class="gd-cprice ${sellCls}">${this.iExp()} ${fmtCz(d.exportPrice)} <small>Kč/kWh</small></div>
-              <button class="gd-cmoney" @click=${openEntity('computed_grid_export_earnings_today')}>
-                <span class="gd-md ${expToday.cls}">${expToday.txt}</span>
-                <span class="gd-sep">·</span>
-                <span class="gd-mm ${expMonth.cls}">${expMonth.txt}</span>
-                <span class="gd-un">Kč</span>
+              <div class="gd-crate ${sellCls}">${this.iExp()} ${fmtCz(d.exportPrice)} <small>Kč/kWh</small></div>
+              <button class="gd-cmoney" @click=${openEntity('computed_grid_export_earnings_today')}
+                title="dodávka — dnes ${expToday.txt} Kč · tento měsíc ${expMonth.txt} Kč">
+                <span class="gd-md ${expToday.cls}">${expToday.txt}<small> Kč</small></span>
+                <span class="gd-mm ${expMonth.cls}">${expMonth.txt}<small> Kč</small></span>
               </button>
             </div>
             <div class="gd-col">
-              <div class="gd-cprice ${buyCls}">${this.iImp()} ${fmtCz(d.spotPrice)} <small>Kč/kWh</small></div>
-              <button class="gd-cmoney" @click=${openEntity('computed_grid_import_cost_today')}>
-                <span class="gd-md ${impToday.cls}">${impToday.txt}</span>
-                <span class="gd-sep">·</span>
-                <span class="gd-mm ${impMonth.cls}">${impMonth.txt}</span>
-                <span class="gd-un">Kč</span>
+              <div class="gd-crate ${buyCls}">${this.iImp()} ${fmtCz(d.spotPrice)} <small>Kč/kWh</small></div>
+              <button class="gd-cmoney" @click=${openEntity('computed_grid_import_cost_today')}
+                title="odběr — dnes ${impToday.txt} Kč · tento měsíc ${impMonth.txt} Kč">
+                <span class="gd-md ${impToday.cls}">${impToday.txt}<small> Kč</small></span>
+                <span class="gd-mm ${impMonth.cls}">${impMonth.txt}<small> Kč</small></span>
               </button>
             </div>
           </div>
-          <div class="gd-moneyhdr">velké = dnes · malé = měsíc</div>
         ` : html`
           <div class="gd-price">
             <button class="gd-chip ${d.exportPrice >= 0 ? 'good' : 'bad'}" @click=${openEntity('export_price_current_15min')}>
@@ -2740,13 +2745,11 @@ export class OigFlowNode extends LitElement {
                 </div>
               </div>`;
           })}
-          <div class="gd-phends">
-            <span class="gd-col-exp">${this.iExp()}dodávka</span>
-            <span class="gd-col-imp">odběr${this.iImp()}</span>
-          </div>
         </div>
 
-        <!-- ── VOLTAGE: dynamic-zoom axis + per-phase values ── -->
+        <!-- ── VOLTAGE: dynamic-zoom axis · phase-coloured ticks · value on axis
+             (outer above, middle below); window bounds sit on the below line at
+             the edges so a near-edge value never collides with them. ── -->
         ${hasVolt ? html`
           <div class="gd-volt">
             <div class="gd-vband" style="background:${voltGrad}">
@@ -2755,11 +2758,9 @@ export class OigFlowNode extends LitElement {
               ${voltDots.filter(x => x.v > 0).map(x => html`
                 <button class="gd-vlab ${x.below ? 'below' : 'above'} ${x.sev === 'ok' ? x.lcls : ''}"
                   style="left:${x.pct.toFixed(1)}%;${x.sev === 'crit' ? 'color:#ff8a80' : x.sev === 'warn' ? 'color:#ffcc80' : ''}"
-                  @click=${openEntity(x.entity)}>${x.v.toFixed(0)}</button>`)}
-            </div>
-            <div class="gd-vsc">
-              <span>${winLo.toFixed(0)} V</span>
-              <span>${winHi.toFixed(0)} V</span>
+                  @click=${openEntity(x.entity)}>${x.v.toFixed(0)}<small> V</small></button>`)}
+              <span class="gd-vbound lo">${winLo.toFixed(0)} V</span>
+              <span class="gd-vbound hi">${winHi.toFixed(0)} V</span>
             </div>
           </div>
         ` : nothing}
