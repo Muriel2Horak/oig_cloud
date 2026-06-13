@@ -2323,7 +2323,7 @@ export class OigFlowNode extends LitElement {
     // Format watts/kW for inline segment label
     const fmtKw = (w: number) => w >= 1000 ? `${(w / 1000).toFixed(1).replace('.', ',')} kW` : `${Math.round(w)} W`;
     // Show label inside segment only when wide enough (≥14% of track width ≈ enough for "0.9")
-    const LABEL_THRESHOLD_PCT = 14;
+    const LABEL_THRESHOLD_PCT = 26;  // wide enough that the unit (W/kW) never clips
 
     // Tooltip data for compact split row
     const zalohaTitle = `Záloha ${formatPower(d.housePower)} · dnes ${zalohaToday.toFixed(1)} kWh${d.zalohaPlannedRemainingKwh > 0 ? ` · plán ${zalohaForecast.toFixed(1)} kWh` : ''}`;
