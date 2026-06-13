@@ -739,6 +739,39 @@ def _latest_bypass_status(matches: List[Tuple[int, bool]]) -> bool:
     return max(matches, key=lambda item: item[0])[1]
 
 
+def _classify_bypass_message(message: str) -> Optional[bool]:
+    """On/off bypass state from a SINGLE notification message, or None."""
+    normalized = " ".join(message.lower().split())
+    compact = normalized.replace(" ", "")
+    matches = _collect_bypass_matches(normalized, compact)
+    if matches:
+        # Within one message there is normally a single bypass mention; if more,
+        # the later one (by position) wins.
+        return _latest_bypass_status(matches)
+    return _indicator_status(compact)
+
+
+def bypass_status_from_notifications(
+    notifications: List["OigNotification"],
+) -> Optional[bool]:
+    """Current bypass state = the LATEST bypass event by timestamp.
+
+    The OIG notification feed is not reliably ordered in the raw text, so the
+    old position-based scan could keep an old "zapnut" event winning over a
+    newer "vypnut" — bypass then only cleared at midnight when the window rolled.
+    Picking the most recent bypass event by its parsed timestamp fixes that.
+    Returns None when there is no bypass event (caller falls back / treats off).
+    """
+    candidates: List[Tuple[datetime, bool]] = []
+    for notif in notifications:
+        status = _classify_bypass_message(notif.message)
+        if status is not None:
+            candidates.append((notif.timestamp, status))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[0])[1]
+
+
 def _indicator_status(compact: str) -> Optional[bool]:
     positive_indicators = [
         '"bypass":true',
@@ -979,14 +1012,21 @@ class OigNotificationManager:
                 if notif.device_id == self._device_id or notif.device_id is None
             ]
 
-            bypass_status = self._parser.detect_bypass_status(content)
             await self._update_notifications(filtered_notifications)
-            self._bypass_status = bypass_status
+
+            # Bypass = the LATEST bypass event BY TIME. The raw-text scan picked
+            # the event by position, so a newer "vypnut" lost to an older
+            # "zapnut" and bypass hung until midnight. Use timestamps; fall back
+            # to the content scan only if no timestamped bypass event was parsed.
+            bypass_status = bypass_status_from_notifications(filtered_notifications)
+            if bypass_status is None:
+                bypass_status = self._parser.detect_bypass_status(content)
+            self._bypass_status = bool(bypass_status)
 
             _LOGGER.info(
                 "Successfully updated %d notifications, bypass: %s",
                 len(self._notifications),
-                bypass_status,
+                self._bypass_status,
             )
             return True
 

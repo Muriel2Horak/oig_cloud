@@ -635,7 +635,13 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     def _configure_notification_manager(
         self, use_cloud: bool, cloud_notifications_enabled: bool
     ) -> None:
-        if use_cloud and cloud_notifications_enabled:
+        # NOTE: `use_cloud` is the TELEMETRY source, not whether the cloud API is
+        # reachable. Cloud notifications come from the cloud API (`self.api`),
+        # which is available even in local-telemetry mode (it's already used for
+        # config-node fill and extended stats). Gating the manager on `use_cloud`
+        # meant local-telemetry users got NO notifications at all — so we gate
+        # only on the feature flag.
+        if cloud_notifications_enabled:
             if (
                 not hasattr(self, "notification_manager")
                 or self.notification_manager is None
@@ -718,17 +724,20 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Last extended update: %s", self._last_extended_update)
         _LOGGER.debug("Extended interval: %ss", self.extended_interval)
 
-        if use_cloud and extended_enabled and should_update_extended:
-            await self._refresh_extended_stats(cloud_notifications_enabled)
-            return
-
-        if not extended_enabled:
+        # `use_cloud` (telemetry source) is intentionally NOT a gate: both
+        # extended stats and cloud notifications come from the cloud API, which
+        # is reachable even when telemetry is served locally. Extended stats run
+        # when the feature is enabled; notifications refresh independently
+        # (throttled internally), so local-telemetry users still get both.
+        _ = use_cloud
+        if extended_enabled and should_update_extended:
+            await self._refresh_extended_stats()
+        elif not extended_enabled:
             _LOGGER.debug("Extended sensors disabled in configuration")
-            await self._maybe_refresh_notifications_standalone(
-                cloud_notifications_enabled
-            )
 
-    async def _refresh_extended_stats(self, cloud_notifications_enabled: bool) -> None:
+        await self._maybe_refresh_notifications_standalone(cloud_notifications_enabled)
+
+    async def _refresh_extended_stats(self) -> None:
         _LOGGER.info("Fetching extended stats (FVE, LOAD, BATT, GRID)")
         try:
             today_from, today_to = self._today_range()
@@ -755,10 +764,6 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             }
             self._last_extended_update = dt_util.now()
             _LOGGER.debug("Extended stats updated successfully")
-
-            await self._maybe_refresh_notifications_with_extended(
-                cloud_notifications_enabled
-            )
 
         except Exception as e:
             _LOGGER.warning(f"Failed to fetch extended stats: {e}")
