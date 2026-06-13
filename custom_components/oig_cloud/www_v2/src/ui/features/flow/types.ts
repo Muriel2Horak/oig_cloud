@@ -35,6 +35,15 @@ export interface FlowData {
   batteryDischargeTotal: number;
   batteryChargeSolar: number;
   batteryChargeGrid: number;
+  batteryChargeMonth: number;   // Wh this month
+  batteryDischargeMonth: number;
+  batteryFloorPct: number;      // % floor (batt_bat_min, force-charge trigger)
+  batteryUsableKwh: number;     // kWh currently available
+  batteryInstalledKwh: number;  // kWh installed capacity
+  batteryMissingKwh: number;    // kWh to full
+  batterySoH: number;           // % state of health
+  batteryEfficiency: number;    // % round-trip (month)
+  batteryForecastKwh: number;   // kWh predicted capacity
   isGridCharging: boolean;
   timeToEmpty: string;
   timeToFull: string;
@@ -256,6 +265,9 @@ export const EMPTY_FLOW_DATA: FlowData = {
   solarPercent: 0, solarToday: 0, solarForecastToday: 0, solarForecastTomorrow: 0, solarForecastStale: false,
   batterySoC: 0, batteryPower: 0, batteryVoltage: 0, batteryCurrent: 0, batteryTemp: 0,
   batteryChargeTotal: 0, batteryDischargeTotal: 0, batteryChargeSolar: 0, batteryChargeGrid: 0,
+  batteryChargeMonth: 0, batteryDischargeMonth: 0,
+  batteryFloorPct: 0, batteryUsableKwh: 0, batteryInstalledKwh: 0, batteryMissingKwh: 0,
+  batterySoH: 0, batteryEfficiency: 0, batteryForecastKwh: 0,
   isGridCharging: false, timeToEmpty: '', timeToFull: '',
   balancingState: 'standby', balancingTimeRemaining: '',
   gridChargingPlan: {

@@ -348,6 +348,16 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
   const batteryDischargeTotal = parseNumber(get('computed_batt_discharge_energy_today'));
   const batteryChargeSolar = parseNumber(get('computed_batt_charge_fve_energy_today'));
   const batteryChargeGrid = parseNumber(get('computed_batt_charge_grid_energy_today'));
+  const batteryChargeMonth = parseNumber(get('computed_batt_charge_energy_month'));
+  const batteryDischargeMonth = parseNumber(get('computed_batt_discharge_energy_month'));
+  // Battery — capacity / health (cloud integration)
+  const batteryFloorPct = parseNumber(get('batt_bat_min'));                     // % floor (force-charge trigger)
+  const batteryUsableKwh = parseNumber(get('usable_battery_capacity'));         // kWh currently available
+  const batteryInstalledKwh = parseNumber(get('installed_battery_capacity_kwh')) / 1000; // sensor is in Wh
+  const batteryMissingKwh = parseNumber(get('missing_battery_kwh'));            // kWh to full
+  const batterySoH = parseNumber(get('battery_health'));                        // % state of health
+  const batteryEfficiency = parseNumber(get('battery_efficiency'));             // % round-trip (month)
+  const batteryForecastKwh = parseNumber(get('battery_forecast'));              // kWh predicted capacity
   const gridCharging = get('grid_charging_planned');
   const isGridCharging = parseBool(gridCharging);
   const timeToEmpty = parseString(get('time_to_empty'));
@@ -470,6 +480,9 @@ export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): Fl
 
     batterySoC, batteryPower, batteryVoltage, batteryCurrent, batteryTemp,
     batteryChargeTotal, batteryDischargeTotal, batteryChargeSolar, batteryChargeGrid,
+    batteryChargeMonth, batteryDischargeMonth,
+    batteryFloorPct, batteryUsableKwh, batteryInstalledKwh, batteryMissingKwh,
+    batterySoH, batteryEfficiency, batteryForecastKwh,
     isGridCharging, timeToEmpty, timeToFull, balancingState, balancingTimeRemaining, gridChargingPlan,
 
     gridPower, gridVoltage, gridFrequency, gridImportToday, gridExportToday,

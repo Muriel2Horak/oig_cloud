@@ -1417,6 +1417,90 @@ export class OigFlowNode extends LitElement {
     .gd-vbound.lo { left: 0; }
     .gd-vbound.hi { right: 0; }
 
+    /* ====================================================================
+       Battery tile — .bt-* namespace (compact, approved mock bat2.html)
+       ==================================================================== */
+    .bt-ic { width: 1em; height: 1em; vertical-align: -2px; }
+    .bt-head {
+      position: relative; display: flex; align-items: center; justify-content: center;
+      gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .5px; opacity: .85;
+      margin-top: 16px;
+    }
+    .bt-head-ico { width: 17px; height: 17px; }
+    .bt-cap { font-size: 11px; font-weight: 700; letter-spacing: .6px; }
+    .bt-soh {
+      position: absolute; right: 0; top: -2px; display: flex; align-items: center; gap: 3px;
+      font-size: 9px; font-weight: 800; border-radius: 6px; padding: 1px 7px;
+      border: 1px solid; cursor: pointer; font-family: inherit;
+    }
+    .bt-soh svg { width: 10px; height: 10px; }
+
+    .bt-pure { text-align: center; margin: 4px 0 2px; }
+    .bt-pn {
+      font-size: 25px; font-weight: 800; line-height: 1;
+      background: none; border: none; color: inherit; cursor: pointer; padding: 0;
+    }
+    .bt-pn:hover { text-decoration: underline; }
+    .bt-pd {
+      font-size: 11px; font-weight: 800; margin-top: 2px;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    .bt-pd .bt-sep { opacity: .4; font-weight: 400; }
+    .bt-chg { color: #9fe6a8; }
+    .bt-dis { color: #ffcc80; }
+
+    /* SoC bar: reserve (below floor) + fill + floor marker + usable kWh */
+    .bt-soc { background: rgba(0,0,0,.18); border-radius: 9px; padding: 8px 11px 7px; margin: 8px 0 7px; }
+    .bt-soctop { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+    .bt-kwh {
+      font-size: 14px; font-weight: 800; background: none; border: none; color: inherit;
+      cursor: pointer; padding: 0; font-family: inherit;
+    }
+    .bt-kwh:hover { text-decoration: underline; }
+    .bt-kwh small { font-size: 8px; opacity: .6; }
+    .bt-cap2 { font-size: 8px; opacity: .5; }
+    .bt-socbar { position: relative; height: 12px; border-radius: 5px; background: rgba(255,255,255,.06); overflow: hidden; }
+    .bt-socres {
+      position: absolute; left: 0; top: 0; bottom: 0;
+      background: repeating-linear-gradient(45deg, rgba(229,57,53,.30) 0, rgba(229,57,53,.30) 4px, rgba(229,57,53,.12) 4px, rgba(229,57,53,.12) 8px);
+    }
+    .bt-socfill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; }
+    .bt-socfloor { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 2px solid #ff8a80; z-index: 3; }
+    .bt-socfloor svg { position: absolute; top: -9px; left: -5px; width: 9px; height: 9px; color: #ff8a80; }
+    .bt-socsc { display: flex; justify-content: space-between; font-size: 7.5px; opacity: .5; margin-top: 7px; }
+
+    /* Today: charge (FVE/grid split) · discharge → home */
+    .bt-today { display: flex; gap: 8px; }
+    .bt-tc {
+      flex: 1; border-radius: 9px; padding: 6px 8px; text-align: center;
+      border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.14);
+      cursor: pointer; font-family: inherit; color: inherit;
+    }
+    .bt-tc:hover { text-decoration: underline; }
+    .bt-tch { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 14px; font-weight: 800; }
+    .bt-tch svg { width: 12px; height: 12px; }
+    .bt-tch small { font-size: 8px; opacity: .6; }
+    .bt-split { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-top: 5px; }
+    .bt-sp-fve { background: #ffd54f; }
+    .bt-sp-grid { background: #fb8c00; }
+    .bt-splitleg { display: flex; justify-content: space-between; font-size: 8px; opacity: .75; margin-top: 3px; font-weight: 700; }
+    .bt-splitleg span { display: flex; align-items: center; gap: 2px; }
+    .bt-splitleg svg { width: 9px; height: 9px; }
+    .bt-tc-mid { display: flex; align-items: center; justify-content: center; margin-top: 8px; opacity: .4; }
+    .bt-tc-mid svg { width: 14px; height: 14px; }
+
+    /* Metrics: V · A · °C */
+    .bt-met { display: flex; justify-content: space-between; gap: 6px; margin-top: 8px; }
+    .bt-met button {
+      flex: 1; background: rgba(0,0,0,.14); border: 1px solid rgba(255,255,255,.07);
+      border-radius: 8px; padding: 4px 2px; font-size: 9.5px; font-weight: 700;
+      color: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px;
+      font-family: inherit;
+    }
+    .bt-met button svg { width: 11px; height: 11px; opacity: .7; }
+    .bt-met button.bt-hot { color: #ff8a80; }
+    .bt-met button.bt-cold { color: #80d8ff; }
+
     @media (min-width: 1025px) {
       .detail-section {
         max-height: 500px;
@@ -1557,6 +1641,8 @@ export class OigFlowNode extends LitElement {
       /* Střídač kiosk: hide the detail rows (Teplota/Bypass/Dodávka/limit/Shield)
          — keep mode + planner; details are on click / other tabs. */
       .inv-rows { display: none; }
+      /* Battery kiosk: keep SoC (aura+pill) + power; hide heavy blocks */
+      .bt-soc, .bt-today, .bt-met { display: none; }
     }
   `;
 
@@ -2169,14 +2255,6 @@ export class OigFlowNode extends LitElement {
   // ==========================================================================
 
   /** Dispatch event to open grid charging dialog */
-  private openGridChargingDialog(): void {
-    this.dispatchEvent(new CustomEvent('oig-grid-charging-open', {
-      bubbles: true,
-      composed: true,
-      detail: { data: this.data.gridChargingPlan },
-    }));
-  }
-
   private getBalancingIndicator(): { show: boolean; text: string; icon: string; cls: string } {
     const d = this.data;
     const state = d.balancingState;
@@ -2195,32 +2273,60 @@ export class OigFlowNode extends LitElement {
     return { show: true, text: 'Dokončeno', icon: '✅', cls: 'completed' };
   }
 
+  /** Shared SVG sprite for the battery tile icons. */
+  private batteryIconDefs() {
+    return svg`
+      <svg width="0" height="0" style="position:absolute;pointer-events:none"><defs>
+        <g id="bt-dn"><path d="M12 4v14M6 12l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+        <g id="bt-up"><path d="M12 20V6M6 12l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+        <g id="bt-bolt"><path d="M13 2L4 14h6l-1 8 9-12h-6z" fill="currentColor"/></g>
+        <g id="bt-temp"><path d="M12 3a2 2 0 0 1 2 2v8.5a4 4 0 1 1-4 0V5a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2"/></g>
+        <g id="bt-amp"><path d="M3 12h4l2-5 4 10 2-5h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+        <g id="bt-clock"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></g>
+        <g id="bt-heart"><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 5.5-7 10-7 10z" fill="currentColor"/></g>
+        <g id="bt-sun"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></g>
+        <g id="bt-plug"><path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0zM12 16v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+        <g id="bt-home"><path d="M3 11l9-8 9 8M5 10v10h14V10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>
+        <g id="bt-floor"><path d="M4 18h16M12 4v9M8 9l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+      </defs></svg>`;
+  }
+
   private renderBattery() {
     const d = this.data;
     const balancing = this.getBalancingIndicator();
-    const tempIcon = d.batteryTemp > 25 ? '🌡️' : d.batteryTemp < 15 ? '🧊' : '🌡️';
-    const tempClass = d.batteryTemp > 25 ? 'temp-hot' : d.batteryTemp < 15 ? 'temp-cold' : '';
+    const tempCls = d.batteryTemp > 35 ? 'bt-hot' : d.batteryTemp < 10 ? 'bt-cold' : '';
 
     const batPowerKw = Math.abs(d.batteryPower) / 1000;
     const batActive = Math.abs(d.batteryPower) > 10;
     const charging = d.batteryPower > 10;
     const discharging = d.batteryPower < -10;
     const stateText = charging ? 'Nabíjí' : discharging ? 'Vybíjí' : 'Klid';
-    const stateCls = charging ? 'st-charge' : discharging ? 'st-discharge' : 'st-idle';
-    const powerStr = `${charging ? '+' : discharging ? '−' : ''}${formatPower(Math.abs(d.batteryPower))}`;
-    // Only show the time when it's an actual duration (sensor may report
-    // "N/A" / "Nabito" / "Vybíjí se" etc.).
+    const dirCls = charging ? 'bt-chg' : discharging ? 'bt-dis' : '';
+
     const validTime = (t: string | null | undefined) => !!t && /\d/.test(t);
-    const timeStr = charging && validTime(d.timeToFull) ? ` · do plna ${d.timeToFull}`
-      : discharging && validTime(d.timeToEmpty) ? ` · do vybití ${d.timeToEmpty}` : '';
-    const socTint = d.batterySoC >= 66 ? 'rgba(67,160,71,0.13)'
-      : d.batterySoC >= 33 ? 'rgba(253,216,53,0.10)' : 'rgba(229,57,53,0.12)';
-    const socPillColor = d.batterySoC >= 66 ? '#43a047'
-      : d.batterySoC >= 33 ? '#fdd835' : '#e53935';
+    const rawTime = charging && validTime(d.timeToFull) ? d.timeToFull
+      : discharging && validTime(d.timeToEmpty) ? d.timeToEmpty : '';
+    // Shorten "19 hodin 32 minut" → "19 h 32 min" so it fits on narrow tiles.
+    const timeStr = rawTime.replace(/\s*hodin[aquy]*/gi, ' h').replace(/\s*minut[ay]*/gi, ' min').replace(/\s+/g, ' ').trim();
+
+    const soc = Math.round(d.batterySoC);
+    const socTint = soc >= 66 ? 'rgba(67,160,71,0.13)' : soc >= 33 ? 'rgba(253,216,53,0.10)' : 'rgba(229,57,53,0.12)';
+    const socColor = soc >= 66 ? '#43a047' : soc >= 33 ? '#fdd835' : '#e53935';
+
+    const floor = Math.round(d.batteryFloorPct);
+    const fmtKwh = (v: number) => v.toFixed(1).replace('.', ',');
+    // Charge source split (FVE vs grid)
+    const chgSplitTotal = d.batteryChargeSolar + d.batteryChargeGrid;
+    const fvePct = chgSplitTotal > 0 ? (d.batteryChargeSolar / chgSplitTotal) * 100 : 0;
+    const gridPct = 100 - fvePct;
+    const sohColor = d.batterySoH >= 90 ? '#9fe6a8' : d.batterySoH >= 75 ? '#ffcc80' : '#ff8a80';
 
     return html`
       <div class="${this.nodeClass('battery')}" style="--node-gradient: ${NODE_GRADIENTS.battery}; --node-border: ${NODE_BORDERS.battery};"
         @click=${(e: Event) => this.toggleExpand('battery', e)}>
+
+        ${this.batteryIconDefs()}
+
         ${this.edgeGauge({
           id: 'gauge-battery',
           nodeId: 'battery',
@@ -2232,89 +2338,83 @@ export class OigFlowNode extends LitElement {
         })}
 
         <div class="node-tint" style="background: radial-gradient(120% 80% at 50% 100%, ${socTint}, transparent 72%)"></div>
-        ${this.gaugePill('battery', `${Math.round(d.batterySoC)} %`, socPillColor, html`
-          <div class="ss-pop-h"><span>Nabití baterie</span><b style="color:${socPillColor}">${Math.round(d.batterySoC)} %</b></div>
-          <div class="gp-r"><span>Stav</span><b>${stateText} ${powerStr}</b></div>
-          ${timeStr ? html`<div class="gp-r"><span>Čas</span><b>${timeStr.replace(' · ', '')}</b></div>` : nothing}
-          <div class="gp-r"><span>Dnes nabito</span><b>${formatEnergy(d.batteryChargeTotal)}</b></div>
-          <div class="gp-r"><span>Dnes vybito</span><b>${formatEnergy(d.batteryDischargeTotal)}</b></div>
+
+        ${this.gaugePill('battery', `${soc} %`, socColor, html`
+          <div class="ss-pop-h"><span>Nabití baterie</span><b style="color:${socColor}">${soc} % · ${fmtKwh(d.batteryUsableKwh)} kWh</b></div>
+          <div class="gp-r"><span>Stav</span><b>${stateText}${batActive ? ` ${formatPower(Math.abs(d.batteryPower))}` : ''}</b></div>
+          ${timeStr ? html`<div class="gp-r"><span>${charging ? 'Do plna' : 'Do vybití'}</span><b>${timeStr}</b></div>` : nothing}
+          <div class="gp-r" style="margin-top:4px;border-top:1px solid rgba(255,255,255,.12);padding-top:4px"><span>Kapacita</span><b>${fmtKwh(d.batteryUsableKwh)} / ${fmtKwh(d.batteryInstalledKwh)} kWh</b></div>
+          <div class="gp-r"><span>Do plna chybí</span><b>${fmtKwh(d.batteryMissingKwh)} kWh</b></div>
+          <div class="gp-r"><span>Podlaha</span><b>${floor} %</b></div>
+          <div class="gp-r"><span>Zdraví (SoH)</span><b style="color:${sohColor}">${Math.round(d.batterySoH)} %</b></div>
+          <div class="gp-r"><span>Účinnost</span><b>${d.batteryEfficiency.toFixed(1).replace('.', ',')} %</b></div>
+          <div class="gp-r"><span>Predikce kapacity</span><b>${fmtKwh(d.batteryForecastKwh)} kWh</b></div>
+          <div class="gp-r" style="margin-top:4px;border-top:1px solid rgba(255,255,255,.12);padding-top:4px"><span>Nabito dnes / měsíc</span><b>${formatEnergy(d.batteryChargeTotal)} / ${formatEnergy(d.batteryChargeMonth)}</b></div>
+          <div class="gp-r"><span>Vybito dnes / měsíc</span><b>${formatEnergy(d.batteryDischargeTotal)} / ${formatEnergy(d.batteryDischargeMonth)}</b></div>
+          ${balancing.show ? html`<div class="gp-r"><span>Vyrovnávání</span><b>${balancing.icon} ${balancing.text}</b></div>` : nothing}
         `)}
 
-        <div class="node-header node-header--split">
-          <span class="node-label">🔋 Baterie</span>
-          <span class="node-state ${stateCls}">${stateText}</span>
-        </div>
-
-        <div class="node-value" @click=${openEntity('batt_bat_c')}>
-          ${Math.round(d.batterySoC)} %
-        </div>
-        <div class="node-subvalue" @click=${openEntity('batt_batt_comp_p')}>
-          ${powerStr}${timeStr}
-        </div>
-
-        ${d.isGridCharging ? html`
-          <span class="grid-charging-badge">⚡🔌 Síťové nabíjení</span>
-        ` : nothing}
-        ${balancing.show ? html`
-          <span class="balancing-indicator ${balancing.cls}">
-            <span>${balancing.icon}</span>
-            <span>${balancing.text}</span>
-          </span>
-        ` : nothing}
-
-        <div class="battery-indicators">
-          <button class="indicator" @click=${openEntity('extended_battery_voltage')}>
-            ⚡ ${d.batteryVoltage.toFixed(1)} V
-          </button>
-          <button class="indicator" @click=${openEntity('extended_battery_current')}>
-            〰️ ${d.batteryCurrent.toFixed(1)} A
-          </button>
-          <button class="indicator ${tempClass}" @click=${openEntity('extended_battery_temperature')}>
-            ${tempIcon} ${d.batteryTemp.toFixed(1)} °C
+        <!-- HEADER: battery · BATERIE · SoH badge -->
+        <div class="bt-head">
+          ${svg`<svg class="bt-head-ico" viewBox="0 0 24 24" fill="none" stroke="#cfe0ff" stroke-width="2" stroke-linejoin="round">
+            <rect x="4" y="7" width="15" height="10" rx="2"/><path d="M21 10v4"/>
+            <rect x="6" y="9.5" width="${Math.max(1, (soc / 100) * 11).toFixed(1)}" height="5" rx="1" fill="${socColor}" stroke="none"/>
+          </svg>`}
+          <span class="bt-cap">BATERIE</span>
+          <button class="bt-soh" style="color:${sohColor};border-color:${sohColor}66;background:${sohColor}1f"
+            @click=${openEntity('battery_health')} title="Zdraví baterie (SoH)">
+            ${svg`<svg viewBox="0 0 24 24"><use href="#bt-heart"/></svg>`} ${Math.round(d.batterySoH)} %
           </button>
         </div>
 
-        <!-- Energie + gc-plan vždy viditelné (ne v detail-section) -->
-        <div class="battery-energy-section">
-          <div class="detail-header">⚡ Energie dnes</div>
-          <div class="energy-grid">
-            <div class="detail-row">
-              <span class="icon">⬆️</span>
-              <button class="clickable" @click=${openEntity('computed_batt_charge_energy_today')}>
-                Nab: ${formatEnergy(d.batteryChargeTotal)}
-              </button>
-            </div>
-            <div class="detail-row">
-              <span class="icon">⬇️</span>
-              <button class="clickable" @click=${openEntity('computed_batt_discharge_energy_today')}>
-                Vyb: ${formatEnergy(d.batteryDischargeTotal)}
-              </button>
-            </div>
-            <div class="detail-row">
-              <span class="icon">☀️</span>
-              <button class="clickable" @click=${openEntity('computed_batt_charge_fve_energy_today')}>
-                FVE: ${formatEnergy(d.batteryChargeSolar)}
-              </button>
-            </div>
-            <div class="detail-row">
-              <span class="icon">🔌</span>
-              <button class="clickable" @click=${openEntity('computed_batt_charge_grid_energy_today')}>
-                Síť: ${formatEnergy(d.batteryChargeGrid)}
-              </button>
-            </div>
+        <!-- HERO: power + direction + time -->
+        <div class="bt-pure">
+          <button class="bt-pn" @click=${openEntity('batt_batt_comp_p')}>${this.fmtKwGrid(Math.abs(d.batteryPower))}</button>
+          <div class="bt-pd ${dirCls}">
+            ${charging ? html`${svg`<svg class="bt-ic" viewBox="0 0 24 24"><use href="#bt-up"/></svg>`} Nabíjí`
+              : discharging ? html`${svg`<svg class="bt-ic" viewBox="0 0 24 24"><use href="#bt-dn"/></svg>`} Vybíjí`
+              : '◉ Klid'}
+            ${timeStr ? html`<span class="bt-sep">·</span>${svg`<svg class="bt-ic" viewBox="0 0 24 24"><use href="#bt-clock"/></svg>`} ${timeStr}` : nothing}
           </div>
+        </div>
 
-          <!-- Grid charging plan — always visible badge -->
-          <div class="grid-charging-plan-summary">
-            <button class="gc-plan-btn ${d.gridChargingPlan.hasBlocks ? 'has-plan' : ''}"
-              @click=${(e: Event) => { e.stopPropagation(); this.openGridChargingDialog(); }}>
-              🔌
-              ${d.gridChargingPlan.hasBlocks
-                ? html`Plán: ${d.gridChargingPlan.totalEnergyKwh.toFixed(1)} kWh`
-                : html`Plán nabíjení`}
-              <span class="gc-plan-arrow">›</span>
-            </button>
+        <!-- SoC bar with reserve + floor marker + usable kWh -->
+        <div class="bt-soc">
+          <div class="bt-soctop">
+            <button class="bt-kwh" @click=${openEntity('usable_battery_capacity')}>${fmtKwh(d.batteryUsableKwh)} <small>kWh</small></button>
+            <span class="bt-cap2">z ${fmtKwh(d.batteryInstalledKwh)} kWh</span>
           </div>
+          <div class="bt-socbar">
+            ${floor > 0 ? html`<div class="bt-socres" style="width:${floor}%"></div>` : nothing}
+            <div class="bt-socfill" style="width:${soc}%;background:${socColor}"></div>
+            ${floor > 0 ? html`<div class="bt-socfloor" style="left:${floor}%" title="Podlaha ${floor} %">
+              ${svg`<svg viewBox="0 0 24 24"><use href="#bt-floor"/></svg>`}</div>` : nothing}
+          </div>
+          <div class="bt-socsc"><span>0 %</span><span>100 %</span></div>
+        </div>
+
+        <!-- TODAY: charge (FVE/grid split) · discharge -->
+        <div class="bt-today">
+          <button class="bt-tc" @click=${openEntity('computed_batt_charge_energy_today')}>
+            <div class="bt-tch bt-chg">${svg`<svg class="bt-ic" viewBox="0 0 24 24"><use href="#bt-up"/></svg>`} ${fmtKwh(d.batteryChargeTotal / 1000)} <small>kWh</small></div>
+            ${chgSplitTotal > 0 ? html`
+              <div class="bt-split"><div class="bt-sp-fve" style="width:${fvePct.toFixed(0)}%"></div><div class="bt-sp-grid" style="width:${gridPct.toFixed(0)}%"></div></div>
+              <div class="bt-splitleg">
+                <span style="color:#ffd54f">${svg`<svg viewBox="0 0 24 24"><use href="#bt-sun"/></svg>`} ${fmtKwh(d.batteryChargeSolar / 1000)}</span>
+                <span style="color:#fb8c00">${svg`<svg viewBox="0 0 24 24"><use href="#bt-plug"/></svg>`} ${fmtKwh(d.batteryChargeGrid / 1000)}</span>
+              </div>` : nothing}
+          </button>
+          <button class="bt-tc" @click=${openEntity('computed_batt_discharge_energy_today')}>
+            <div class="bt-tch bt-dis">${svg`<svg class="bt-ic" viewBox="0 0 24 24"><use href="#bt-dn"/></svg>`} ${fmtKwh(d.batteryDischargeTotal / 1000)} <small>kWh</small></div>
+            <div class="bt-tc-mid">${svg`<svg viewBox="0 0 24 24"><use href="#bt-home"/></svg>`}</div>
+          </button>
+        </div>
+
+        <!-- METRICS: voltage · current · temperature -->
+        <div class="bt-met">
+          <button @click=${openEntity('extended_battery_voltage')}>${svg`<svg viewBox="0 0 24 24"><use href="#bt-bolt"/></svg>`} ${d.batteryVoltage.toFixed(1).replace('.', ',')} V</button>
+          <button @click=${openEntity('extended_battery_current')}>${svg`<svg viewBox="0 0 24 24"><use href="#bt-amp"/></svg>`} ${Math.abs(d.batteryCurrent).toFixed(1).replace('.', ',')} A</button>
+          <button class="${tempCls}" @click=${openEntity('extended_battery_temperature')}>${svg`<svg viewBox="0 0 24 24"><use href="#bt-temp"/></svg>`} ${d.batteryTemp.toFixed(1).replace('.', ',')} °C</button>
         </div>
       </div>
     `;
