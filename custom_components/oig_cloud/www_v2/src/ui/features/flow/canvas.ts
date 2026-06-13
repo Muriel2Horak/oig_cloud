@@ -78,9 +78,11 @@ export class OigFlowCanvas extends LitElement {
       .flow-grid-wrapper { min-height: 500px; }
     }
 
-    /* Mobile: compact */
+    /* Mobile: compact single-column stack — the flow connector lines + particles
+       only make sense in the pentagon layout; hide them when tiles are stacked. */
     @media (max-width: 768px) {
       .flow-grid-wrapper { min-height: auto; }
+      .connections-layer, .particles-layer { display: none; }
     }
 
     /* Nest Hub landscape */

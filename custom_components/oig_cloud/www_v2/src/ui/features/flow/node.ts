@@ -1450,15 +1450,20 @@ export class OigFlowNode extends LitElement {
     .bt-dis { color: #ffcc80; }
 
     /* SoC bar: reserve (below floor) + fill + floor marker + usable kWh */
-    .bt-soc { background: rgba(0,0,0,.18); border-radius: 9px; padding: 8px 11px 7px; margin: 8px 0 7px; }
-    .bt-soctop { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
-    .bt-kwh {
-      font-size: 14px; font-weight: 800; background: none; border: none; color: inherit;
-      cursor: pointer; padding: 0; font-family: inherit;
-    }
-    .bt-kwh:hover { text-decoration: underline; }
-    .bt-kwh small { font-size: 8px; opacity: .6; }
-    .bt-cap2 { font-size: 8px; opacity: .5; }
+    .bt-soc { background: rgba(0,0,0,.18); border-radius: 9px; padding: 9px 11px 7px; margin: 8px 0 7px; }
+    .bt-soctop { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px; }
+    /* autonomy (left, hero of the block) */
+    .bt-aut { display: flex; align-items: center; gap: 5px; }
+    .bt-aut-ico { width: 14px; height: 14px; opacity: .8; }
+    .bt-aut-lbl { font-size: 8px; opacity: .5; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+    .bt-aut-v { font-size: 18px; font-weight: 800; line-height: 1.05; white-space: nowrap; }
+    .bt-aut-v.bt-dis { color: #ff8a80; }
+    /* usable kWh above floor (right) */
+    .bt-use { text-align: right; background: none; border: none; cursor: pointer; padding: 0; color: inherit; font-family: inherit; }
+    .bt-use:hover { text-decoration: underline; }
+    .bt-use-lbl { display: block; font-size: 8px; opacity: .5; font-weight: 700; }
+    .bt-use-v { font-size: 14px; font-weight: 800; }
+    .bt-use-v small { font-size: 8px; opacity: .6; }
     .bt-socbar { position: relative; height: 12px; border-radius: 5px; background: rgba(255,255,255,.06); overflow: hidden; }
     .bt-socres {
       position: absolute; left: 0; top: 0; bottom: 0;
@@ -1468,6 +1473,7 @@ export class OigFlowNode extends LitElement {
     .bt-socfloor { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 2px solid #ff8a80; z-index: 3; }
     .bt-socfloor svg { position: absolute; top: -9px; left: -5px; width: 9px; height: 9px; color: #ff8a80; }
     .bt-socsc { display: flex; justify-content: space-between; font-size: 7.5px; opacity: .5; margin-top: 7px; }
+    .bt-socsc .bt-fl { color: #ff8a80; opacity: .8; }
 
     /* Today: charge (FVE/grid split) · discharge → home */
     .bt-today { display: flex; gap: 8px; }
@@ -1605,24 +1611,27 @@ export class OigFlowNode extends LitElement {
 
     /* ---- Mobile (<768px) ---- */
     @media (max-width: 768px) {
+      /* Single column: the rich tiles need full width to read well; a 2-col
+         grid squished them (~185px) and mismatched heights left big gaps. */
       .flow-grid {
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto auto auto auto;
-        gap: 6px;
+        grid-template-columns: 1fr !important;
+        grid-template-rows: repeat(5, auto) !important;
+        gap: 10px;
         padding: 8px;
+        max-width: 440px;
       }
-      .node-solar { grid-column: 1; grid-row: 1; justify-self: center; }
-      .node-house { grid-column: 2; grid-row: 1; justify-self: center; }
-      .node-inverter { grid-column: 1 / span 2; grid-row: 2; justify-self: center; }
-      .node-grid { grid-column: 1; grid-row: 3; }
-      .node-battery { grid-column: 2; grid-row: 3; }
+      .node-solar    { grid-column: 1; grid-row: 1; justify-self: stretch; }
+      .node-house    { grid-column: 1; grid-row: 2; justify-self: stretch; }
+      .node-inverter { grid-column: 1; grid-row: 3; justify-self: stretch; }
+      .node-grid     { grid-column: 1; grid-row: 4; justify-self: stretch; }
+      .node-battery  { grid-column: 1; grid-row: 5; justify-self: stretch; }
 
-      /* Fill the 1fr column → both columns equal width */
       .node {
         width: 100%;
         min-width: 0;
         max-width: none;
-        padding: 8px 8px;
+        min-height: 0;
+        padding: 11px 13px;
       }
       .node-icon { font-size: 20px; }
       .node-value { font-size: 18px; }
@@ -1651,15 +1660,11 @@ export class OigFlowNode extends LitElement {
 
     /* ---- Extra small (<380px) ---- */
     @media (max-width: 380px) {
-      .flow-grid {
-        transform: scale(0.88);
-        transform-origin: top center;
-      }
       .node {
         width: 100%;
         min-width: 0;
         max-width: none;
-        padding: 6px;
+        padding: 9px 10px;
       }
       .node-icon { font-size: 18px; }
       .node-value { font-size: 16px; }
@@ -2383,6 +2388,32 @@ export class OigFlowNode extends LitElement {
 
     const floor = Math.round(d.batteryFloorPct);
     const fmtKwh = (v: number) => v.toFixed(1).replace('.', ',');
+
+    // ── Usable energy above the floor + backup autonomy ──────────────────
+    // "Reálně použitelné" = energy above the force-charge floor (you can't draw
+    // below it). Autonomy = how long that lasts if the grid failed NOW, with
+    // current FVE offsetting the backed-up load.
+    const usableAboveFloorKwh = Math.max(0, (d.batterySoC - d.batteryFloorPct) / 100) * d.batteryInstalledKwh;
+    const netDrawKw = Math.max(0, (d.housePower - d.solarPower) / 1000);
+    let autonomyText: string;
+    if (usableAboveFloorKwh <= 0.05) {
+      autonomyText = '0 h';
+    } else if (netDrawKw <= 0.05) {
+      autonomyText = '∞'; // FVE covers the load — battery not draining
+    } else {
+      const h = usableAboveFloorKwh / netDrawKw;
+      if (h >= 24) {
+        autonomyText = '> 24 h';
+      } else if (h >= 10) {
+        autonomyText = `${Math.round(h)} h`; // minutes are false precision at 10h+
+      } else if (h >= 1) {
+        const hh = Math.floor(h);
+        autonomyText = `${hh} h ${Math.round((h - hh) * 60)} min`;
+      } else {
+        autonomyText = `${Math.max(1, Math.round(h * 60))} min`;
+      }
+    }
+
     // Charge source split (FVE vs grid)
     const chgSplitTotal = d.batteryChargeSolar + d.batteryChargeGrid;
     const fvePct = chgSplitTotal > 0 ? (d.batteryChargeSolar / chgSplitTotal) * 100 : 0;
@@ -2435,22 +2466,27 @@ export class OigFlowNode extends LitElement {
           </button>
         </div>
 
-        <!-- HERO: power + direction + time -->
+        <!-- HERO: power + direction -->
         <div class="bt-pure">
           <button class="bt-pn" @click=${openEntity('batt_batt_comp_p')}>${this.fmtKwGrid(Math.abs(d.batteryPower))}</button>
           <div class="bt-pd ${dirCls}">
             ${charging ? html`${svg`<svg class="bt-ic" viewBox="0 0 24 24"><use href="#bt-up"/></svg>`} Nabíjí`
               : discharging ? html`${svg`<svg class="bt-ic" viewBox="0 0 24 24"><use href="#bt-dn"/></svg>`} Vybíjí`
               : '◉ Klid'}
-            ${timeStr ? html`<span class="bt-sep">·</span>${svg`<svg class="bt-ic" viewBox="0 0 24 24"><use href="#bt-clock"/></svg>`} ${timeStr}` : nothing}
           </div>
         </div>
 
-        <!-- SoC bar with reserve + floor marker + usable kWh -->
+        <!-- SoC: backup autonomy (hero) + usable kWh above floor + bar -->
         <div class="bt-soc">
           <div class="bt-soctop">
-            <button class="bt-kwh" @click=${openEntity('usable_battery_capacity')}>${fmtKwh(d.batteryUsableKwh)} <small>kWh</small></button>
-            <span class="bt-cap2">z ${fmtKwh(d.batteryInstalledKwh)} kWh</span>
+            <div class="bt-aut" title="Kdyby teď vypadla síť: použitelné kWh nad podlahou / (zálohová spotřeba − FVE)">
+              ${svg`<svg class="bt-aut-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><use href="#bt-clock"/></svg>`}
+              <div><div class="bt-aut-lbl">vydrží</div><div class="bt-aut-v ${usableAboveFloorKwh <= 0.05 ? 'bt-dis' : ''}">${autonomyText}</div></div>
+            </div>
+            <button class="bt-use" @click=${openEntity('usable_battery_capacity')}>
+              <span class="bt-use-lbl">využitelných</span>
+              <span class="bt-use-v">${fmtKwh(usableAboveFloorKwh)} <small>kWh</small></span>
+            </button>
           </div>
           <div class="bt-socbar">
             ${floor > 0 ? html`<div class="bt-socres" style="width:${floor}%"></div>` : nothing}
@@ -2458,7 +2494,7 @@ export class OigFlowNode extends LitElement {
             ${floor > 0 ? html`<div class="bt-socfloor" style="left:${floor}%" title="Podlaha ${floor} %">
               ${svg`<svg viewBox="0 0 24 24"><use href="#bt-floor"/></svg>`}</div>` : nothing}
           </div>
-          <div class="bt-socsc"><span>0 %</span><span>100 %</span></div>
+          <div class="bt-socsc"><span>0 %</span>${floor > 0 ? html`<span class="bt-fl">podlaha ${floor} %</span>` : nothing}<span>100 %</span></div>
         </div>
 
         <!-- TODAY: charge (FVE/grid split) · discharge -->
