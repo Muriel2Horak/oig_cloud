@@ -2542,11 +2542,14 @@ export class OigFlowNode extends LitElement {
     const badVoltLabel = voltDots.filter(d2 => d2.color === '#e53935').map(d2 => d2.label).join(', ');
 
     // ── Frequency ───────────────────────────────────────────────────────
-    // Spec: warn outside 50 ± 0.01 Hz. Using 0.05 Hz threshold to suppress
-    // sub-cycle measurement noise while still flagging real grid stress (>0.05 Hz).
-    const freqOk = Math.abs(d.gridFrequency - 50) <= 0.05;
-    const freqWarn = !freqOk && d.gridFrequency > 0;
-    const freqColor = freqWarn ? '#ff8a80' : 'inherit';
+    // Grid frequency health. Normal grid drifts ±0.05–0.2 Hz routinely with no
+    // fault — warning at ±0.01/0.05 would be a permanent false alarm. Match the
+    // physics like voltage does: amber when leaving the normal band (±0.2 Hz),
+    // red near the inverter grid-code disconnect window (±0.5 Hz).
+    const freqDev = d.gridFrequency > 0 ? Math.abs(d.gridFrequency - 50) : 0;
+    const freqCrit = d.gridFrequency > 0 && freqDev > 0.5;
+    const freqWarn = d.gridFrequency > 0 && freqDev > 0.2;
+    const freqColor = freqCrit ? '#ff8a80' : freqWarn ? '#ffcc80' : 'inherit';
 
     // ── Tariff badge ────────────────────────────────────────────────────
     const tariffVT = d.currentTariff === 'VT' || d.currentTariff?.includes('vysoký');
