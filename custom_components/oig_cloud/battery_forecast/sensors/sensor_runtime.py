@@ -50,7 +50,19 @@ def handle_coordinator_update(sensor) -> None:
 
 
 def get_state(sensor) -> Optional[Union[float, str]]:
-    """Return battery capacity value for sensor state."""
+    """Return the real current battery capacity (kWh) as the sensor state.
+
+    Uses the live SoC (total capacity × batt_bat_c%), NOT the first planned
+    timeline interval — the latter lags ~15 min and over-reports while charging
+    / under-reports while discharging. Falls back to the first timeline point
+    only when the live SoC is unavailable.
+    """
+    try:
+        cap = sensor._get_current_battery_capacity()
+    except Exception:
+        cap = None
+    if cap is not None:
+        return round(float(cap), 2)
     timeline = getattr(sensor, "_timeline_data", None)
     if timeline:
         capacity = timeline[0].get("battery_soc")

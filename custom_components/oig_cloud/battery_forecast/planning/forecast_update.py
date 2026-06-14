@@ -1211,6 +1211,7 @@ def _save_forecast_to_coordinator(sensor: Any) -> None:
         # R3: derive battery_usable_kwh = max(0, current − min_capacity).
         # Published so the boiler planner can use it for Home 5 maneuver sizing.
         battery_usable_kwh: Optional[float] = None
+        current_cap: Optional[float] = None
         try:
             current_cap = sensor._get_current_battery_capacity()
             min_cap = sensor._get_min_battery_capacity()
@@ -1224,9 +1225,13 @@ def _save_forecast_to_coordinator(sensor: Any) -> None:
             "calculation_time": sensor._last_update.isoformat(),
             "data_source": "simplified_calculation",
             "current_battery_kwh": (
-                timeline_data[0].get("battery_capacity_kwh", 0)
-                if timeline_data
-                else 0
+                round(float(current_cap), 2)
+                if current_cap is not None
+                else (
+                    timeline_data[0].get("battery_capacity_kwh", 0)
+                    if timeline_data
+                    else 0
+                )
             ),
             "mode_recommendations": sensor._mode_recommendations or [],
             # Boiler integration: pre-derived keys so boiler runtime never
