@@ -256,6 +256,9 @@ def detect_draws(
                 j += 1
                 continue
 
+            observed_drop = prev["temp"] - curr["temp"]
+            observed_rate = (observed_drop / interval_sec) * 60.0  # degC/min
+
             p_curr = _record_power_w(curr)
             p_prev = _record_power_w(prev)
             if p_curr is None and p_prev is None:
@@ -264,12 +267,20 @@ def detect_draws(
                     break
                 heat_gain_c = 0.0
             else:
-                # Heat added by the element over the interval → expected rise.
-                power_w = max(p_curr or 0.0, p_prev or 0.0)
-                heat_kwh = (power_w / 1000.0) * (interval_sec / 3600.0)
-                heat_gain_c = (heat_kwh / heat_capacity) if heat_capacity > 0 else 0.0
+                # Calorimetric correction only SIZES a draw that the temperature
+                # already shows — the top must actually be falling at draw rate.
+                # Crediting heating that merely fails to raise a flat/stratified
+                # top manufactured huge phantom draws: the non-backup power proxy
+                # includes house load, and with multiple elements the top stays
+                # flat while only the bottom heats. So require a real fall first;
+                # heating then just adds back what it offset during the draw.
+                if observed_rate < threshold_c_per_min:
+                    heat_gain_c = 0.0
+                else:
+                    power_w = max(p_curr or 0.0, p_prev or 0.0)
+                    heat_kwh = (power_w / 1000.0) * (interval_sec / 3600.0)
+                    heat_gain_c = (heat_kwh / heat_capacity) if heat_capacity > 0 else 0.0
 
-            observed_drop = prev["temp"] - curr["temp"]
             effective_drop = observed_drop + heat_gain_c
             effective_rate = (effective_drop / interval_sec) * 60.0  # degC/min
 
@@ -998,10 +1009,15 @@ class BoilerDemandProfilerAsync:
                 p = _value_at(ts, power_ts, power_vals)
                 if p is None:
                     return None
+                p = max(0.0, p)
                 cmd = _value_at(ts, command_ts, command_vals)
-                if cmd is not None and cmd < COMMAND_ON_W:
-                    return 0.0
-                return max(0.0, p)
+                if cmd is not None:
+                    if cmd < COMMAND_ON_W:
+                        return 0.0
+                    # Cap at the commanded heater power (cbb_w ≈ element nameplate):
+                    # non-backup power above it is house load, not boiler heating.
+                    return min(p, cmd)
+                return p
 
             have_power = bool(power_ts)
 

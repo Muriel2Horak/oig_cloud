@@ -269,19 +269,35 @@ class TestDetectDrawsDuringHeating:
     """F3b: calorimetric draw detection while the boiler is heating (power_w)."""
 
     def test_draw_detected_while_heating(self):
-        """Temp dropping despite full-power heating → draw the element can't offset."""
-        # Heating at 6.6 kW for 10 min adds ~7.9 degC to a 120 L tank; the tank
-        # instead drops 0.5 degC/interval → a large effective draw.
+        """Top ACTUALLY falling at draw-rate despite heating → draw, sized up."""
+        # 3 degC/10min = 0.3 degC/min (above threshold) while heating 6.6 kW →
+        # the calorimetric correction adds back the element's heat → big draw.
         readings = _make_history_p([
-            (7, 0, 58.0, "on", 6600.0),
-            (7, 10, 57.5, "on", 6600.0),
-            (7, 20, 57.0, "on", 6600.0),
+            (7, 0, 60.0, "on", 6600.0),
+            (7, 10, 57.0, "on", 6600.0),
+            (7, 20, 54.0, "on", 6600.0),
         ])
         events = detect_draws(readings, VOLUME_L, TARGET_TEMP_C, COLD_INLET_C)
         assert len(events) == 1
-        # Effective drop accounts for the heat the element added, so energy is
-        # much larger than the bare 1.0 degC the thermometer fell.
+        # Effective drop > the bare 6 degC the thermometer fell (heat added back).
         assert events[0].drop_c > 10.0
+
+    def test_flat_top_during_heating_not_a_draw(self):
+        """Regression: flat/slow top while heating must NOT manufacture a draw.
+
+        This was the 2026-06-14 phantom bug — 9 identical ~41 L 'draws' in a row
+        during a long heating session because the non-backup power proxy (house
+        load) + stratification (top flat while bottom heats) were credited as a
+        draw. The top barely moves (0.01 degC/min), so it is not a draw.
+        """
+        readings = _make_history_p([
+            (8, 30, 58.0, "on", 6600.0),
+            (8, 45, 57.9, "on", 6600.0),
+            (9, 0, 57.8, "on", 6600.0),
+            (9, 15, 57.7, "on", 6600.0),
+        ])
+        events = detect_draws(readings, VOLUME_L, TARGET_TEMP_C, COLD_INLET_C)
+        assert len(events) == 0
 
     def test_same_drop_without_power_is_suppressed(self):
         """Identical temps but no power data → legacy path skips heating → no draw."""
