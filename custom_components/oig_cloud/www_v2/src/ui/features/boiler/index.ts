@@ -39,6 +39,7 @@ export {
 } from './boiler-energy-today';
 
 export { OigBoilerDrawMap, pickProfile, drawWindows } from './boiler-draw-map';
+export { OigBoilerPlan, buildPlanAgenda } from './boiler-plan';
 export { OigBoilerV2Svg } from './boiler-svg';
 export { OigBoilerV2Shell } from './boiler-shell';
 export { OigBoilerMetricPanel } from './boiler-metric-panel';
