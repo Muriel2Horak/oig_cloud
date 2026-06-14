@@ -1445,13 +1445,20 @@ class BoilerRuntime:
             source_key=None,
         )
         overflow_avail = self._read_overflow_available(event_timestamp)
+        # Real electric power: the box cbb_w reports the COMMANDED power and is
+        # blind to the thermostat cutting the element. Recover the true power by
+        # fusing it with the non-backup draw + temperature trend.
+        commanded_w = self._read_cbb_power_w()
+        actual_power_w, _heating_method = self._estimate_actual_power_w(
+            commanded_w, curr
+        )
         snapshot = BoilerSourceHeaterSnapshot(
             current_source=self._read_current_source_snapshot(),
             active_heaters=self._read_active_heater_states(),
             overflow_available=overflow_avail,
             power_kw=self._read_live_power_kw(),
-            # Task A: power-first classification inputs
-            power_w=self._read_cbb_power_w(),
+            # Task A: power-first classification inputs (real power, not command)
+            power_w=actual_power_w,
             box_boiler_mode=self._read_box_boiler_mode(),
             grid_import_w=self._read_grid_import_w(),
             pv_surplus_hint=overflow_avail,
@@ -1731,6 +1738,79 @@ class BoilerRuntime:
         except (TypeError, ValueError):
             return None
         return value if math.isfinite(value) else None
+
+    def _read_nonbackup_power_w(self) -> Optional[float]:
+        """Read live non-backup circuit power in Watts (actual_acinb_wtotal).
+
+        The boiler sits on the non-backup circuit; its real draw is this value
+        minus the learned other-loads baseline. Not configurable (standard OIG
+        naming); None when absent/unavailable.
+        """
+        box_id = getattr(self.coordinator, "box_id", None)
+        if not box_id or box_id == "unknown":
+            return None
+        entity_id = f"sensor.oig_{box_id}_actual_acinb_wtotal"
+        state = _state_for_entity(self.hass, entity_id)
+        if state is None:
+            return None
+        raw = str(getattr(state, "state", "") or "").strip().lower()
+        if raw in _UNAVAILABLE_TEMPERATURE_STATES:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
+    def _estimate_actual_power_w(
+        self, commanded_w: Optional[float], curr: BoilerReading
+    ) -> tuple[Optional[float], str]:
+        """Estimate the boiler's REAL electric power (W), fusing the box command
+        with the non-backup draw and the tank temperature trend.
+
+        Returns (power_w, method). Returns (None, "legacy") when neither a CBB
+        nor a non-backup signal exists, so the classifier keeps its switch-based
+        fallback for old installs.
+        """
+        from ..const import CONF_BOILER_VOLUME_L
+        from .heating_estimator import estimate_heating
+
+        nb_w = self._read_nonbackup_power_w()
+        if commanded_w is None and nb_w is None:
+            return None, "legacy"
+
+        # Temperature trend (°C/min) from the previous reading; the top sensor
+        # tracks the thermostat zone best.
+        trend: Optional[float] = None
+        prev = self._last_activity_reading
+        if (
+            prev is not None
+            and prev.top_temp_c is not None
+            and curr.top_temp_c is not None
+        ):
+            try:
+                dt_min = (curr.timestamp - prev.timestamp).total_seconds() / 60.0
+                if dt_min > 0:
+                    trend = (curr.top_temp_c - prev.top_temp_c) / dt_min
+            except Exception:
+                trend = None
+
+        config = getattr(self.coordinator, "config", {}) or {}
+        try:
+            volume_l = float(config.get(CONF_BOILER_VOLUME_L, 200.0) or 200.0)
+        except (TypeError, ValueError):
+            volume_l = 200.0
+
+        estimate = estimate_heating(
+            commanded_w=commanded_w,
+            nonbackup_total_w=nb_w,
+            temp_trend_c_per_min=trend,
+            volume_l=volume_l,
+            baseline_w=getattr(self, "_boiler_other_load_baseline_w", None),
+        )
+        self._boiler_other_load_baseline_w = estimate.baseline_w
+        self._last_heating_estimate = estimate
+        return estimate.power_w, estimate.method
 
     def _read_alt_heat_delta_kwh(self) -> Optional[float]:
         """Read the gas/alt-heat meter delta since the previous classify call.
