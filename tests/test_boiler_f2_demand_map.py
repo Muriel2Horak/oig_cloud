@@ -620,6 +620,30 @@ class TestDemandMapToDto:
             # Must have at most 3 decimal places
             assert round(v, 3) == v
 
+    def test_dto_drives_plan_true_when_confident(self):
+        """confidence >= threshold and non-bootstrap → windows drive the plan."""
+        from custom_components.oig_cloud.boiler.demand_profiler import (
+            MIN_CONFIDENCE_THRESHOLD,
+        )
+        dm = self._make_demand_map()  # confidence 0.8, level "exact"
+        dto = dm.to_dto()
+        assert dto["drives_plan"] is True
+        assert dto["min_confidence"] == MIN_CONFIDENCE_THRESHOLD
+
+    def test_dto_drives_plan_false_low_confidence(self):
+        """Below the confidence threshold the plan ignores the windows."""
+        dm = self._make_demand_map()
+        dm.confidence = 0.1
+        dto = dm.to_dto()
+        assert dto["drives_plan"] is False
+
+    def test_dto_drives_plan_false_bootstrap(self):
+        """Bootstrap profile never drives the plan even if confidence is high."""
+        dm = self._make_demand_map()
+        dm.meta.level = "bootstrap"
+        dto = dm.to_dto()
+        assert dto["drives_plan"] is False
+
 
 # ---------------------------------------------------------------------------
 # 8. _read_demand_map_dto integration with canonical DTO

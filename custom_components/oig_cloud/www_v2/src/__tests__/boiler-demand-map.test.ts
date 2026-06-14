@@ -350,6 +350,16 @@ describe('OigBoilerDemandMap — full demand_map data', () => {
     expect(all).not.toMatch(/Přibližný profil|Approximate profile/i);
   });
 
+  it('renders "řídí plán" badge when drivesPlan=true (confidence 0.8 exact)', () => {
+    const el = new OigBoilerDemandMap();
+    el.data = makeDemandMap();
+    el.lang = 'cs';
+    expect(el.data!.drivesPlan).toBe(true);
+    const all = joinTemplate(el as any);
+    expect(all).toMatch(/řídí plán/i);
+    expect(all).not.toMatch(/učí se/i);
+  });
+
   it('renders heatmap columns (48-col pattern in template strings)', () => {
     const el = new OigBoilerDemandMap();
     el.data = makeDemandMap();
@@ -406,6 +416,16 @@ describe('OigBoilerDemandMap — zero-history (fallback) state', () => {
     el.lang = 'cs';
     const all = joinTemplate(el as any);
     expect(all).toContain('10');
+  });
+
+  it('renders "učí se" badge when drivesPlan=false (low confidence / bootstrap)', () => {
+    const el = new OigBoilerDemandMap();
+    el.data = makeZeroData();
+    el.lang = 'cs';
+    expect(el.data!.drivesPlan).toBe(false);
+    const all = joinTemplate(el as any);
+    expect(all).toMatch(/učí se/i);
+    expect(all).not.toMatch(/řídí plán/i);
   });
 });
 

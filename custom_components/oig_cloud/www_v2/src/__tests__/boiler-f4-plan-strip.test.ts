@@ -427,6 +427,8 @@ describe('OigBoilerPlanStrip component', () => {
       windows: [],
       profile: { category: 'workday_summer', level: 'exact', daysUsed: 14, label: 'Pracovní den', fallbackUsed: false },
       confidence: 0.9,
+      minConfidence: 0.3,
+      drivesPlan: true,
     };
     // Draws appear in tl section as elements with class="draw"
     // (nested template strings are JSON-serialized so quotes are escaped)

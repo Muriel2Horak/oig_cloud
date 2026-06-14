@@ -366,6 +366,8 @@ interface BoilerCanonicalAPI {
       fallback_used: boolean;
     };
     confidence: number;
+    min_confidence?: number;
+    drives_plan?: boolean;
   } | null;
   circulation_runs?: Array<{
     start: string;
@@ -1030,6 +1032,8 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
       fallbackUsed: rawDemandMap.profile.fallback_used,
     },
     confidence: rawDemandMap.confidence,
+    minConfidence: typeof rawDemandMap.min_confidence === 'number' ? rawDemandMap.min_confidence : 0.3,
+    drivesPlan: rawDemandMap.drives_plan ?? (rawDemandMap.confidence >= 0.3 && rawDemandMap.profile.level !== 'bootstrap'),
   } : null;
 
   // circulation_runs

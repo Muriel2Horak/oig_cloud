@@ -121,6 +121,14 @@ class DemandMap:
 
     def to_dto(self) -> dict[str, Any]:
         """Serialize to canonical DTO dict (lean, rounded)."""
+        # drives_plan mirrors the exact gate in runtime._build_demand_targets:
+        # windows only feed the planner when confidence clears the threshold and
+        # the profile is past bootstrap. When False, the FE shows the windows as
+        # a learning estimate that the plan does NOT yet act on.
+        drives_plan = (
+            self.confidence >= MIN_CONFIDENCE_THRESHOLD
+            and self.meta.level != "bootstrap"
+        )
         return {
             "slot_duration_min": SLOT_DURATION_MIN,
             "slots_p50": [round(s.p50_kwh, 3) for s in self.slots],
@@ -145,6 +153,8 @@ class DemandMap:
                 "source_category": self.meta.source_category,
             },
             "confidence": round(self.confidence, 2),
+            "min_confidence": MIN_CONFIDENCE_THRESHOLD,
+            "drives_plan": drives_plan,
         }
 
 

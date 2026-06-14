@@ -3566,6 +3566,8 @@ describe('OigBoilerMetricPanel comfort panel — mockup rows (Task 2)', () => {
         ],
         profile: { category: 'workday_spring', level: 'exact', daysUsed: 14, label: 'test', fallbackUsed: false },
         confidence: 0.78,
+        minConfidence: 0.3,
+        drivesPlan: true,
       },
     });
     document.body.appendChild(el);

@@ -133,6 +133,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.demand_map.window.afternoon': 'Odpoledne',
     'boiler.demand_map.window.evening': 'Večer',
     'boiler.demand_map.window.night': 'Noc',
+    'boiler.demand_map.drives_plan': 'řídí plán',
+    'boiler.demand_map.learning': 'učí se — mimo plán',
 
     'boiler.plan_strip.heading': 'Plán ohřevu 24 h',
     'boiler.plan_strip.meta': 'zdroje + odběry + teplota + cirkulace',
@@ -332,6 +334,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.demand_map.window.afternoon': 'Afternoon',
     'boiler.demand_map.window.evening': 'Evening',
     'boiler.demand_map.window.night': 'Night',
+    'boiler.demand_map.drives_plan': 'drives plan',
+    'boiler.demand_map.learning': 'learning — not driving plan',
 
     'boiler.plan_strip.heading': 'Heating plan 24 h',
     'boiler.plan_strip.meta': 'sources + demands + temperature + circulation',

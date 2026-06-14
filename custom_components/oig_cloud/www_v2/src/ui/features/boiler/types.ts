@@ -125,6 +125,10 @@ export interface DemandMapData {
   windows: DemandMapWindow[];
   profile: DemandMapProfile;
   confidence: number;
+  /** Threshold the plan requires before windows drive charging (default 0.3). */
+  minConfidence: number;
+  /** True when these windows actually feed the planner; false = learning estimate only. */
+  drivesPlan: boolean;
 }
 
 /** Single circulation pump run (start/end ISO, label) */

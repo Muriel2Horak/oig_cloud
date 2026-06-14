@@ -1367,6 +1367,21 @@ export class OigBoilerDemandMap extends LitElement {
       color: #b75d00;
     }
 
+    .plan-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(76,175,80,0.15);
+      color: #2e7d32;
+    }
+
+    .plan-badge.learning {
+      background: rgba(255,152,0,0.18);
+      color: #b75d00;
+    }
+
     .fallback-notice {
       display: inline-block;
       padding: 1px 7px;
@@ -1425,11 +1440,15 @@ export class OigBoilerDemandMap extends LitElement {
       .replace('{n}', String(dm.profile.daysUsed))
       .replace('{cat}', CATEGORY_LABELS[dm.profile.category] || dm.profile.label);
     const confidenceStr = `${t('boiler.demand_map.confidence', lang)} ${Math.round(dm.confidence * 100)} %`;
+    const planBadge = dm.drivesPlan
+      ? html`<span class="plan-badge" data-testid="demand-plan-badge" title="${t('boiler.demand_map.confidence', lang)} ≥ ${Math.round(dm.minConfidence * 100)} %">${t('boiler.demand_map.drives_plan', lang)}</span>`
+      : html`<span class="plan-badge learning" data-testid="demand-plan-badge" title="${t('boiler.demand_map.confidence', lang)} &lt; ${Math.round(dm.minConfidence * 100)} %">${t('boiler.demand_map.learning', lang)}</span>`;
 
     return html`
       <div class="card" data-testid="boiler-demand-map">
         <div class="heading">
           💧 ${heading}
+          ${planBadge}
           <span class="meta-inline">${metaStr} · ${confidenceStr}${dm.profile.fallbackUsed ? html` · <span class="fallback-notice">${t('boiler.demand_map.fallback_notice', lang)}</span>` : nothing}</span>
         </div>
 
