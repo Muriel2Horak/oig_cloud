@@ -79,14 +79,18 @@ def test_no_signals_falls_back_to_command():
 
 
 def test_baseline_noise_floor_tracker():
-    # Seeds from the first sample.
+    # Cold start during heating seeds LOW (≤ SEED_FLOOR) so the boiler is still
+    # detected immediately rather than swallowed into the baseline.
+    assert update_baseline(None, 3800.0) == pytest.approx(800.0)
+    # A low first sample seeds at its own value.
     assert update_baseline(None, 400.0) == pytest.approx(400.0)
     # Follows a new low instantly (the floor = other loads when boiler off).
     assert update_baseline(500.0, 300.0) == pytest.approx(300.0)
-    # Rises only slowly when the live value is higher (boiler running) → it does
-    # NOT jump to the boiler level (this was the oscillation bug).
-    risen = update_baseline(300.0, 3800.0)
-    assert 300.0 < risen < 400.0
+    # Rises slowly toward a small (non-boiler) increase.
+    assert update_baseline(500.0, 600.0) == pytest.approx(502.0)
+    # FREEZES when a boiler-sized load is present → never creeps up and loses it
+    # during a long continuous heat (this was the "stuck standby" bug).
+    assert update_baseline(500.0, 3800.0) == pytest.approx(500.0)
 
 
 def test_calorimetric_power_helper():

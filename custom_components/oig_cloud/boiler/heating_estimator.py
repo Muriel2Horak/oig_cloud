@@ -37,6 +37,7 @@ COMMAND_ON_W = 100.0          # cbb_w above this → the box is commanding heat
 MIN_ELEMENT_W = 1500.0        # smallest plausible real element draw (W)
 TEMP_RISE_C_PER_MIN = 0.05    # temperature rising ≥ this → heat input present
 BASELINE_RISE_ALPHA = 0.02    # noise-floor: rise slowly toward the live value
+SEED_FLOOR_W = 800.0          # cold-start cap for the assumed other-loads floor
 MAX_PLAUSIBLE_W = 8000.0      # clamp for the calorimetric power estimate
 
 
@@ -54,16 +55,25 @@ class HeatingEstimate:
 def update_baseline(baseline_w: Optional[float], nonbackup_total_w: Optional[float]) -> Optional[float]:
     """Noise-floor tracker for the *other* non-backup loads.
 
-    Follows the live non-backup power DOWN instantly (a new low is the floor) and
-    UP only slowly, so it converges to the level of everything on the non-backup
-    circuit *except* the boiler — independent of the heating decision (no loop).
+    Converges to the level of everything on the non-backup circuit *except* the
+    boiler, independent of the heating decision (no feedback loop):
+    - seeded LOW (``min(live, SEED_FLOOR_W)``) so a cold start that begins during
+      heating still detects the boiler immediately (rather than swallowing it);
+    - follows the live value DOWN instantly (a new low is the real floor);
+    - rises slowly toward the live value ONLY when the gap is not boiler-sized
+      (i.e. the boiler is off) — so a long continuous heat never creeps the floor
+      up and "loses" the boiler.
     """
     if nonbackup_total_w is None:
         return baseline_w
     nb = float(nonbackup_total_w)
-    if baseline_w is None or nb < baseline_w:
+    if baseline_w is None:
+        return min(nb, SEED_FLOOR_W)
+    if nb < baseline_w:
         return nb
-    return baseline_w + BASELINE_RISE_ALPHA * (nb - baseline_w)
+    if (nb - baseline_w) < MIN_ELEMENT_W:
+        return baseline_w + BASELINE_RISE_ALPHA * (nb - baseline_w)
+    return baseline_w  # boiler-sized load present → freeze the floor
 
 
 def calorimetric_power_w(
@@ -95,11 +105,13 @@ def estimate_heating(
     """
     commanded = commanded_w is not None and commanded_w > COMMAND_ON_W
 
-    # Boiler draw over the *previous* floor, then advance the floor tracker.
-    nb_excess: Optional[float] = None
-    if nonbackup_total_w is not None and baseline_w is not None:
-        nb_excess = max(0.0, float(nonbackup_total_w) - float(baseline_w))
+    # Advance the other-loads floor, then take the boiler draw over it. Using the
+    # updated floor means a cold start (no prior baseline) still detects heating
+    # on the first cycle instead of swallowing the boiler.
     new_baseline = update_baseline(baseline_w, nonbackup_total_w)
+    nb_excess: Optional[float] = None
+    if nonbackup_total_w is not None and new_baseline is not None:
+        nb_excess = max(0.0, float(nonbackup_total_w) - float(new_baseline))
 
     temp_rising = (
         temp_trend_c_per_min is not None
