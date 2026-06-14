@@ -1,6 +1,7 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
+import { renderIcon } from '@/utils/render-icon';
 
 const u = unsafeCSS;
 
@@ -10,8 +11,6 @@ export class OigHeader extends LitElement {
   @property({ type: String }) time = '';
   @property({ type: Boolean }) showStatus = false;
   @property({ type: Number }) alertCount = 0;
-  @property({ type: Boolean }) leftPanelCollapsed = false;
-  @property({ type: Boolean }) rightPanelCollapsed = false;
 
   static styles = css`
     :host {
@@ -33,15 +32,8 @@ export class OigHeader extends LitElement {
       margin: 0;
     }
 
-    .title-icon { font-size: 20px; }
-
-    .version {
-      font-size: 11px;
-      color: ${u(CSS_VARS.textSecondary)};
-      background: ${u(CSS_VARS.bgSecondary)};
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
+    .title-icon { font-size: 20px; color: ${u(CSS_VARS.accent)}; display: inline-flex; }
+    .oig-mdi { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; display: inline-block; }
 
     .time {
       font-size: 13px;
@@ -101,6 +93,7 @@ export class OigHeader extends LitElement {
       justify-content: center;
       color: ${u(CSS_VARS.textSecondary)};
       transition: all 0.2s;
+      font-size: 18px;
     }
 
     .action-btn:hover {
@@ -126,27 +119,18 @@ export class OigHeader extends LitElement {
     this.dispatchEvent(new CustomEvent('reset-click', { bubbles: true }));
   }
 
-  private onToggleLeftPanel(): void {
-    this.dispatchEvent(new CustomEvent('toggle-left-panel', { bubbles: true }));
-  }
-
-  private onToggleRightPanel(): void {
-    this.dispatchEvent(new CustomEvent('toggle-right-panel', { bubbles: true }));
-  }
-
   render() {
     const statusClass = this.alertCount > 0 ? 'warning' : 'ok';
 
     return html`
       <h1 class="title">
-        <span class="title-icon">⚡</span>
+        <span class="title-icon">${renderIcon('mdi:lightning-bolt')}</span>
         ${this.title}
-        <span class="version">V2</span>
         ${this.time ? html`<span class="time">${this.time}</span>` : null}
       </h1>
-      
+
       <div class="spacer"></div>
-      
+
       ${this.showStatus ? html`
         <div class="status-badge ${statusClass}" @click=${this.onStatusClick}>
           ${this.alertCount > 0 ? html`
@@ -155,19 +139,13 @@ export class OigHeader extends LitElement {
           <span>${this.alertCount > 0 ? 'Výstrahy' : 'OK'}</span>
         </div>
       ` : null}
-      
+
        <div class="actions">
-         <button class="action-btn ${this.leftPanelCollapsed ? 'active' : ''}" @click=${this.onToggleLeftPanel} title="Přepnout levý panel">
-           ◀️
+         <button class="action-btn" @click=${this.onEditClick} title="Upravit rozložení dlaždic">
+           ${renderIcon('mdi:pencil')}
          </button>
-         <button class="action-btn ${this.rightPanelCollapsed ? 'active' : ''}" @click=${this.onToggleRightPanel} title="Přepnout pravý panel">
-           ▶️
-         </button>
-         <button class="action-btn" @click=${this.onEditClick} title="Upravit layout">
-           ✏️
-         </button>
-         <button class="action-btn" @click=${this.onResetClick} title="Reset layout">
-           ↺
+         <button class="action-btn" @click=${this.onResetClick} title="Obnovit rozložení">
+           ${renderIcon('mdi:refresh')}
          </button>
        </div>
     `;

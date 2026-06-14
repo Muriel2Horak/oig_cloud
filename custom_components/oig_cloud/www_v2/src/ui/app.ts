@@ -51,10 +51,10 @@ const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '';
 const OIG_SENSOR_PREFIX = `sensor.oig_${INVERTER_SN}_`;
 
 const DEFAULT_TABS: Tab[] = [
-  { id: 'flow', label: 'Toky', icon: '⚡' },
-  { id: 'pricing', label: 'Ceny', icon: '💰' },
-  { id: 'boiler', label: 'Bojler', icon: '🔥' },
-  { id: 'settings', label: 'Nastavení', icon: '⚙️' },
+  { id: 'flow', label: 'Toky', icon: 'mdi:lightning-bolt' },
+  { id: 'pricing', label: 'Ceny', icon: 'mdi:cash' },
+  { id: 'boiler', label: 'Bojler', icon: 'mdi:water-boiler' },
+  { id: 'settings', label: 'Nastavení', icon: 'mdi:cog' },
 ];
 
 @customElement('oig-app')
@@ -65,8 +65,6 @@ export class OigApp extends LitElement {
   @state() private activeTab = 'flow';
   @state() private editMode = false;
   @state() private time = '';
-  @state() private leftPanelCollapsed = false;
-  @state() private rightPanelCollapsed = false;
 
   // Flow
   @state() private flowData: FlowData = EMPTY_FLOW_DATA;
@@ -918,14 +916,6 @@ export class OigApp extends LitElement {
     }
   }
 
-  protected onToggleLeftPanel(): void {
-    this.leftPanelCollapsed = !this.leftPanelCollapsed;
-  }
-
-  protected onToggleRightPanel(): void {
-    this.rightPanelCollapsed = !this.rightPanelCollapsed;
-  }
-
   // ČHMÚ events
   private onChmuBadgeClick(): void {
     this.chmuModalOpen = true;
@@ -1168,13 +1158,9 @@ export class OigApp extends LitElement {
           .time=${this.time}
           .showStatus=${true}
           .alertCount=${chmuAlertCount}
-          .leftPanelCollapsed=${this.leftPanelCollapsed}
-          .rightPanelCollapsed=${this.rightPanelCollapsed}
           @edit-click=${this.onEditClick}
           @reset-click=${this.onResetClick}
           @status-click=${this.onChmuBadgeClick}
-          @toggle-left-panel=${this.onToggleLeftPanel}
-          @toggle-right-panel=${this.onToggleRightPanel}
         >
         </oig-header>
 
