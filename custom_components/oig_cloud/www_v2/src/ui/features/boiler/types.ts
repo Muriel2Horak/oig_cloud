@@ -37,12 +37,36 @@ export interface BoilerV2PlanSlot {
   gridKwh?: number | null;
   altKwh?: number | null;
   expectedTempTopC?: number | null;
+  /** Predicted ready (>=40 degC) litres at this slot — the forward SoC curve. */
+  readyLiters?: number | null;
   comfortSatisfied?: boolean | null;
   estimatedCostCzk?: number | null;
   pvShare?: number | null;
   sourceInvalid?: boolean | null;
   /** Purpose of this slot: 'comfort' (default) or 'legionella' */
   purpose?: string | null;
+}
+
+/** One day of the weekly draw heatmap (litres ≥40 °C). */
+export interface DrawMapDay {
+  date: string;          // YYYY-MM-DD
+  category: string;      // e.g. "workday_summer"
+  dayType: string;       // "workday" | "weekend"
+  slotsLiters: number[]; // 96 values (15-min)
+  totalLiters: number;
+}
+
+/** P90 typical-day profile for one category (litres per 15-min slot). */
+export interface DrawMapProfile {
+  slotsLitersP90: number[]; // 96 values
+  days: number;
+}
+
+/** Draw map = weekly heatmap + per-category P90 day profiles. */
+export interface DrawMapData {
+  slotDurationMin: number;
+  weekly: DrawMapDay[];
+  profiles: Record<string, DrawMapProfile>;
 }
 
 export interface BoilerV2Explanation {
@@ -183,6 +207,7 @@ export interface BoilerV2Data {
   timeline: BoilerV2TimelinePoint[];
   sparkline: BoilerV2Sparkline | null;
   demandMap: DemandMapData | null;
+  drawMap: DrawMapData | null;
   circulationRuns: CirculationRun[];
   legionella: LegionellaStatus | null;
   planSummary: PlanSummary | null;

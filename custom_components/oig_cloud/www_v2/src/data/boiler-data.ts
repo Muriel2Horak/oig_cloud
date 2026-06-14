@@ -7,7 +7,7 @@ import {
   BoilerProfile, BoilerState, BoilerHourData, BoilerPlan,
   BoilerEnergyBreakdown, BoilerPredictedUsage, BoilerConfig,
   BoilerHeatmapRow, BoilerProfilingData, BoilerData, BoilerPlanSlot,
-  BoilerV2Data, BoilerV2PlanSlot, DemandMapData,
+  BoilerV2Data, BoilerV2PlanSlot, DemandMapData, DrawMapData,
   CirculationRun, LegionellaStatus, PlanSummary, EnergyToday,
   OVERRIDE_TTL_DEFAULT_MINUTES, OVERRIDE_TTL_MIN_MINUTES,
   OVERRIDE_TTL_MAX_MINUTES, OVERRIDE_TTL_STEP_MINUTES,
@@ -245,6 +245,7 @@ interface BoilerCanonicalSlot {
   overflow_available: boolean;
   predicted_temperature_c?: number | null;
   predicted_top_temp_c?: number | null;
+  ready_liters?: number | null;
   comfort_satisfied?: boolean | null;
   estimated_cost_czk?: number | null;
   pv_share?: number | null;
@@ -368,6 +369,17 @@ interface BoilerCanonicalAPI {
     confidence: number;
     min_confidence?: number;
     drives_plan?: boolean;
+  } | null;
+  draw_map?: {
+    slot_duration_min: number;
+    weekly: Array<{
+      date: string;
+      category: string;
+      day_type: string;
+      slots_liters: number[];
+      total_liters: number;
+    }>;
+    profiles: Record<string, { slots_liters_p90: number[]; days: number }>;
   } | null;
   circulation_runs?: Array<{
     start: string;
@@ -886,6 +898,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
       timeline: [],
       sparkline: null,
       demandMap: null,
+      drawMap: null,
       circulationRuns: [],
       legionella: null,
       planSummary: null,
@@ -933,6 +946,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
       gridKwh: s.grid_kwh ?? null,
       altKwh: s.alt_kwh ?? null,
       expectedTempTopC: s.predicted_top_temp_c ?? s.predicted_temperature_c ?? null,
+      readyLiters: s.ready_liters ?? null,
       comfortSatisfied: s.comfort_satisfied ?? null,
       estimatedCostCzk: s.estimated_cost_czk ?? null,
       pvShare: typeof s.pv_share === 'number'
@@ -1036,6 +1050,24 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     drivesPlan: rawDemandMap.drives_plan ?? (rawDemandMap.confidence >= 0.3 && rawDemandMap.profile.level !== 'bootstrap'),
   } : null;
 
+  const rawDrawMap = canonical.draw_map ?? null;
+  const drawMap: DrawMapData | null = rawDrawMap != null ? {
+    slotDurationMin: rawDrawMap.slot_duration_min,
+    weekly: Array.isArray(rawDrawMap.weekly) ? rawDrawMap.weekly.map(d => ({
+      date: d.date,
+      category: d.category,
+      dayType: d.day_type,
+      slotsLiters: Array.isArray(d.slots_liters) ? d.slots_liters : [],
+      totalLiters: d.total_liters,
+    })) : [],
+    profiles: Object.fromEntries(
+      Object.entries(rawDrawMap.profiles ?? {}).map(([k, v]) => [k, {
+        slotsLitersP90: Array.isArray(v.slots_liters_p90) ? v.slots_liters_p90 : [],
+        days: v.days,
+      }])
+    ),
+  } : null;
+
   // circulation_runs
   const rawCirc = canonical.circulation_runs ?? [];
   const circulationRuns: CirculationRun[] = Array.isArray(rawCirc)
@@ -1087,6 +1119,7 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     timeline,
     sparkline,
     demandMap,
+    drawMap,
     circulationRuns,
     legionella,
     planSummary,
