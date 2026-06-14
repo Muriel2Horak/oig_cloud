@@ -1068,7 +1068,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
             <path d="M12 9v6M9 12h6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
           </g>
         </defs>
-      </svg>`}iImp(){return F`<svg class="gd-ic" viewBox="0 0 24 24"><use href="#gi-imp"/></svg>`}iExp(){return F`<svg class="gd-ic" viewBox="0 0 24 24"><use href="#gi-exp"/></svg>`}fmtKwGrid(e){const t=Math.abs(e);return t>=1e3?`${(t/1e3).toFixed(1).replace(".",",")} kW`:`${Math.round(t)} W`}renderGrid(){var Or,Fr;const e=this.data,t=[e.gridL1P,e.gridL2P,e.gridL3P],i=t.some(S=>S>10),r=t.some(S=>S<-10),n=i&&r,a=i&&!r,o=r&&!i,l=t.reduce((S,se)=>S+se,0),d=Math.abs(l),p=t.filter(S=>S>0).reduce((S,se)=>S+se,0),u=t.filter(S=>S<0).reduce((S,se)=>S+Math.abs(se),0),h=d/1e3,m=e.gridImportCostToday!==null||e.gridExportEarningsToday!==null,v=e.gridImportCostToday??0,f=e.gridExportEarningsToday??0,b=f-v,k=(e.gridExportEarningsMonth??0)-(e.gridImportCostMonth??0),y=b>=0?"#9fe6a8":"#ff8a80",_=S=>S.toFixed(2).replace(".",","),M=S=>(S>=0?"+":"−")+_(Math.abs(S)),j=25*230*3,P=e.inverterGridLimit>0?e.inverterGridLimit:5e3,B=o?d/P*100:d/j*100,$=S=>S>=1e3?`${(S/1e3).toFixed(1).replace(".",",")}k`:S>=10?`${Math.round(S)}`:S.toFixed(1).replace(".",","),L=S=>{const se=S<0;return{txt:(se?"−":"")+$(Math.abs(S)),cls:se?"gd-col-imp":"gd-col-exp",earn:!se}},H=S=>{const se=S<0;return{txt:(se?"+":"")+$(Math.abs(S)),cls:se?"gd-col-exp":"gd-col-imp",earn:se}},K=L(f),q=L(e.gridExportEarningsMonth??0),W=H(v),Z=H(e.gridImportCostMonth??0),Le=e.exportPrice>=0?"gd-col-exp":"gd-col-imp",Ie=e.spotPrice<=0?"gd-col-exp":"gd-col-imp",X=207,pe=253,C=212,Y=248,ie=[{v:e.gridL1V,label:"L1",entity:"ac_in_aci_vr"},{v:e.gridL2V,label:"L2",entity:"ac_in_aci_vs"},{v:e.gridL3V,label:"L3",entity:"ac_in_aci_vt"}],Ce=ie.filter(S=>S.v>0),Se=Ce.length>0,Pe=Se?Ce.reduce((S,se)=>S+se.v,0)/Ce.length:230,Vn=Se?Math.min(...Ce.map(S=>S.v)):230,Tn=Se?Math.max(...Ce.map(S=>S.v)):230,Sr=Math.max((Tn-Vn)/2+1.5,2.5),wt=Pe-Sr,Ut=Pe+Sr,Mr=Ut-wt,Pn=S=>S<X||S>pe?"crit":S<C||S>Y?"warn":"ok",Ar=S=>Math.max(0,Math.min(100,(S-wt)/Mr*100));let _t=ie.map((S,se)=>({...S,sev:S.v>0?Pn(S.v):"na",pct:S.v>0?Ar(S.v):50,lcls:`l${se+1}`,below:!1}));const Lr=_t.filter(S=>S.v>0).slice().sort((S,se)=>S.pct-se.pct),Hr=Lr.length===3?Lr[1].pct:null;_t=_t.map(S=>({...S,below:S.v>0&&Hr!==null&&S.pct===Hr}));const Yt=S=>S<X||S>pe?"rgba(229,57,53,.6)":S<C||S>Y?"rgba(255,167,38,.55)":"rgba(76,175,80,.4)",zn=[X,C,Y,pe].filter(S=>S>wt&&S<Ut),Pi=[`${Yt(wt+.001)} 0%`];for(const S of zn){const se=Ar(S).toFixed(1);Pi.push(`${Yt(S-.001)} ${se}%`,`${Yt(S+.001)} ${se}%`)}Pi.push(`${Yt(Ut-.001)} 100%`);const Dn=`linear-gradient(90deg, ${Pi.join(", ")})`,$t=e.gridFrequency>0?Math.abs(e.gridFrequency-50):0,En=e.gridFrequency>0&&$t>.5,Vr=e.gridFrequency>0&&$t>.2,On=En?"gd-hz crit":Vr?"gd-hz warn":"gd-hz",Tr=e.currentTariff==="VT"||((Or=e.currentTariff)==null?void 0:Or.includes("vysoký")),Pr=e.currentTariff==="NT"||((Fr=e.currentTariff)==null?void 0:Fr.includes("nízký")),zr=Tr?"gd-tar vt":Pr?"gd-tar nt":"gd-tar",Fn=Tr?"VT":Pr?"NT":e.currentTariff||"--",In=Math.max(0,...t.filter(S=>S>0)),Dr=Math.max(0,...t.filter(S=>S<0).map(Math.abs)),Er=Math.max(50,In+Dr),Qt=Dr/Er*100,Bn=c`
+      </svg>`}iImp(){return F`<svg class="gd-ic" viewBox="0 0 24 24"><use href="#gi-imp"/></svg>`}iExp(){return F`<svg class="gd-ic" viewBox="0 0 24 24"><use href="#gi-exp"/></svg>`}fmtKwGrid(e){const t=Math.abs(e);return t>=1e3?`${(t/1e3).toFixed(1).replace(".",",")} kW`:`${Math.round(t)} W`}renderGrid(){var Or,Fr;const e=this.data,t=[e.gridL1P,e.gridL2P,e.gridL3P],i=t.some(S=>S>10),r=t.some(S=>S<-10),n=i&&r,a=i&&!r,o=r&&!i,l=t.reduce((S,se)=>S+se,0),d=Math.abs(l),p=t.filter(S=>S>0).reduce((S,se)=>S+se,0),u=t.filter(S=>S<0).reduce((S,se)=>S+Math.abs(se),0),h=d/1e3,m=e.gridImportCostToday!==null||e.gridExportEarningsToday!==null,v=e.gridImportCostToday??0,f=e.gridExportEarningsToday??0,b=f-v,k=(e.gridExportEarningsMonth??0)-(e.gridImportCostMonth??0),y=b>=0?"#9fe6a8":"#ff8a80",_=S=>S.toFixed(2).replace(".",","),M=S=>(S>=0?"+":"−")+_(Math.abs(S)),j=25*230*3,P=e.inverterGridLimit>0?e.inverterGridLimit:5e3,B=o?d/P*100:d/j*100,$=S=>S>=1e3?`${(S/1e3).toFixed(1).replace(".",",")}k`:S>=10?`${Math.round(S)}`:S.toFixed(1).replace(".",","),L=S=>{const se=S<0;return{txt:(se?"−":"")+$(Math.abs(S)),cls:se?"gd-col-imp":"gd-col-exp",earn:!se}},H=S=>{const se=S<0;return{txt:(se?"+":"")+$(Math.abs(S)),cls:se?"gd-col-exp":"gd-col-imp",earn:se}},K=L(f),q=L(e.gridExportEarningsMonth??0),W=H(v),Z=H(e.gridImportCostMonth??0),Le=e.spotPrice<=2?"gd-col-exp":e.spotPrice<=4?"gd-col-warn":"gd-col-imp",Ie=e.exportPrice>=2?"gd-col-exp":e.exportPrice>=.5?"gd-col-warn":"gd-col-imp",X=207,pe=253,C=212,Y=248,ie=[{v:e.gridL1V,label:"L1",entity:"ac_in_aci_vr"},{v:e.gridL2V,label:"L2",entity:"ac_in_aci_vs"},{v:e.gridL3V,label:"L3",entity:"ac_in_aci_vt"}],Ce=ie.filter(S=>S.v>0),Se=Ce.length>0,Pe=Se?Ce.reduce((S,se)=>S+se.v,0)/Ce.length:230,Vn=Se?Math.min(...Ce.map(S=>S.v)):230,Tn=Se?Math.max(...Ce.map(S=>S.v)):230,Sr=Math.max((Tn-Vn)/2+1.5,2.5),wt=Pe-Sr,Ut=Pe+Sr,Mr=Ut-wt,Pn=S=>S<X||S>pe?"crit":S<C||S>Y?"warn":"ok",Ar=S=>Math.max(0,Math.min(100,(S-wt)/Mr*100));let _t=ie.map((S,se)=>({...S,sev:S.v>0?Pn(S.v):"na",pct:S.v>0?Ar(S.v):50,lcls:`l${se+1}`,below:!1}));const Lr=_t.filter(S=>S.v>0).slice().sort((S,se)=>S.pct-se.pct),Hr=Lr.length===3?Lr[1].pct:null;_t=_t.map(S=>({...S,below:S.v>0&&Hr!==null&&S.pct===Hr}));const Yt=S=>S<X||S>pe?"rgba(229,57,53,.6)":S<C||S>Y?"rgba(255,167,38,.55)":"rgba(76,175,80,.4)",zn=[X,C,Y,pe].filter(S=>S>wt&&S<Ut),Pi=[`${Yt(wt+.001)} 0%`];for(const S of zn){const se=Ar(S).toFixed(1);Pi.push(`${Yt(S-.001)} ${se}%`,`${Yt(S+.001)} ${se}%`)}Pi.push(`${Yt(Ut-.001)} 100%`);const Dn=`linear-gradient(90deg, ${Pi.join(", ")})`,$t=e.gridFrequency>0?Math.abs(e.gridFrequency-50):0,En=e.gridFrequency>0&&$t>.5,Vr=e.gridFrequency>0&&$t>.2,On=En?"gd-hz crit":Vr?"gd-hz warn":"gd-hz",Tr=e.currentTariff==="VT"||((Or=e.currentTariff)==null?void 0:Or.includes("vysoký")),Pr=e.currentTariff==="NT"||((Fr=e.currentTariff)==null?void 0:Fr.includes("nízký")),zr=Tr?"gd-tar vt":Pr?"gd-tar nt":"gd-tar",Fn=Tr?"VT":Pr?"NT":e.currentTariff||"--",In=Math.max(0,...t.filter(S=>S>0)),Dr=Math.max(0,...t.filter(S=>S<0).map(Math.abs)),Er=Math.max(50,In+Dr),Qt=Dr/Er*100,Bn=c`
       <div class="ss-pop-h"><span>Bilance dnes</span>
         <b style="color:${y}">${M(b)} Kč</b></div>
       <div class="gp-r"><span>Výdělek z dodávky</span><b class="gd-col-exp">${_(f)} Kč</b></div>
@@ -1124,7 +1124,6 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
               ${this.iImp()} ${this.fmtKwGrid(p)}
             </div>
           </div>
-          <div class="gd-combolbl">⇅ Kombinace · bilance uprostřed</div>
         `:c`
           <div class="gd-pure">
             <button class="gd-pn" @click=${le("actual_aci_wtotal")}>
@@ -1142,7 +1141,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
         ${m?c`
           <div class="gd-cols">
             <div class="gd-col">
-              <div class="gd-crate ${Le}">${this.iExp()} ${_(e.exportPrice)} <small>Kč/kWh</small></div>
+              <div class="gd-crate ${Ie}">${this.iExp()} ${_(e.exportPrice)} <small>Kč/kWh</small></div>
               <button class="gd-cmoney" @click=${le("computed_grid_export_earnings_today")}
                 title="dodávka — dnes ${K.txt} Kč · tento měsíc ${q.txt} Kč">
                 <span class="gd-md ${K.cls}">${K.txt}<small> Kč</small></span>
@@ -1150,7 +1149,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
               </button>
             </div>
             <div class="gd-col">
-              <div class="gd-crate ${Ie}">${this.iImp()} ${_(e.spotPrice)} <small>Kč/kWh</small></div>
+              <div class="gd-crate ${Le}">${this.iImp()} ${_(e.spotPrice)} <small>Kč/kWh</small></div>
               <button class="gd-cmoney" @click=${le("computed_grid_import_cost_today")}
                 title="odběr — dnes ${W.txt} Kč · tento měsíc ${Z.txt} Kč">
                 <span class="gd-md ${W.cls}">${W.txt}<small> Kč</small></span>
@@ -2397,6 +2396,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     /* Colours for import/export */
     .gd-col-imp { color: #ff8a80; }
     .gd-col-exp { color: #9fe6a8; }
+    .gd-col-warn { color: #ffcc80; }
 
     /* ── Pure state ── */
     .gd-pure { text-align: center; margin: 5px 0 2px; }
@@ -2417,17 +2417,14 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     }
     .gd-cside {
       display: flex; align-items: center; gap: 4px;
-      font-size: 13px; font-weight: 800; line-height: 1;
+      font-size: 12px; font-weight: 700; line-height: 1; opacity: .55;
     }
     .gd-cbal {
-      font-size: 22px; font-weight: 800; line-height: 1;
+      font-size: 24px; font-weight: 800; line-height: 1;
       display: flex; align-items: center; gap: 4px;
-      background: none; border: none; cursor: pointer; padding: 0; color: inherit;
+      background: none; border: none; cursor: pointer; padding: 0 2px; color: inherit;
     }
     .gd-cbal:hover { text-decoration: underline; }
-    .gd-combolbl {
-      text-align: center; font-size: 10px; font-weight: 800; opacity: .7; margin-top: 3px;
-    }
 
     /* ── Price chips ── */
     .gd-price {

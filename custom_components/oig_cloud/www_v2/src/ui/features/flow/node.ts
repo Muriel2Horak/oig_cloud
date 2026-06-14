@@ -1279,6 +1279,7 @@ export class OigFlowNode extends LitElement {
     /* Colours for import/export */
     .gd-col-imp { color: #ff8a80; }
     .gd-col-exp { color: #9fe6a8; }
+    .gd-col-warn { color: #ffcc80; }
 
     /* ── Pure state ── */
     .gd-pure { text-align: center; margin: 5px 0 2px; }
@@ -1299,17 +1300,14 @@ export class OigFlowNode extends LitElement {
     }
     .gd-cside {
       display: flex; align-items: center; gap: 4px;
-      font-size: 13px; font-weight: 800; line-height: 1;
+      font-size: 12px; font-weight: 700; line-height: 1; opacity: .55;
     }
     .gd-cbal {
-      font-size: 22px; font-weight: 800; line-height: 1;
+      font-size: 24px; font-weight: 800; line-height: 1;
       display: flex; align-items: center; gap: 4px;
-      background: none; border: none; cursor: pointer; padding: 0; color: inherit;
+      background: none; border: none; cursor: pointer; padding: 0 2px; color: inherit;
     }
     .gd-cbal:hover { text-decoration: underline; }
-    .gd-combolbl {
-      text-align: center; font-size: 10px; font-weight: 800; opacity: .7; margin-top: 3px;
-    }
 
     /* ── Price chips ── */
     .gd-price {
@@ -2779,8 +2777,10 @@ export class OigFlowNode extends LitElement {
     const impToday = costCell(costToday);
     const impMonth = costCell(d.gridImportCostMonth ?? 0);
     // Price colored by sign of wallet impact for that direction.
-    const sellCls = d.exportPrice >= 0 ? 'gd-col-exp' : 'gd-col-imp'; // negative sell price = you pay
-    const buyCls = d.spotPrice <= 0 ? 'gd-col-exp' : 'gd-col-imp';    // negative spot price = you earn
+    // Rate colour = FAVORABILITY (how good the price is), not just its sign:
+    // cheap to buy / high to sell → green; expensive / low → red; mid → amber.
+    const buyCls = d.spotPrice <= 2 ? 'gd-col-exp' : d.spotPrice <= 4 ? 'gd-col-warn' : 'gd-col-imp';
+    const sellCls = d.exportPrice >= 2 ? 'gd-col-exp' : d.exportPrice >= 0.5 ? 'gd-col-warn' : 'gd-col-imp';
 
     // ── Voltage: dynamic-zoom axis (zoom to the actual phase spread) ──────
     const VMIN = 207, VMAX = 253, VAL = 212, VAH = 248;
@@ -2905,7 +2905,6 @@ export class OigFlowNode extends LitElement {
               ${this.iImp()} ${this.fmtKwGrid(sumImportW)}
             </div>
           </div>
-          <div class="gd-combolbl">⇅ Kombinace · bilance uprostřed</div>
         ` : html`
           <div class="gd-pure">
             <button class="gd-pn" @click=${openEntity('actual_aci_wtotal')}>
