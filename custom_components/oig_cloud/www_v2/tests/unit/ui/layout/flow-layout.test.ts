@@ -23,7 +23,7 @@ describe('FlowLayout', () => {
 
   describe('Desktop Layout (≥1024px)', () => {
     it('should have 3-column grid layout for desktop', () => {
-      expect(styleText).toContain('grid-template-columns: 200px 1fr 300px');
+      expect(styleText).toContain('grid-template-columns: 212px 1fr 300px');
       expect(styleText).toContain("grid-template-areas: 'tiles canvas control'");
     });
 
@@ -44,7 +44,7 @@ describe('FlowLayout', () => {
       
       if (tabletMediaQuery) {
         const tabletStyles = tabletMediaQuery[1];
-        expect(tabletStyles).toContain('grid-template-columns: 160px 1fr 260px');
+        expect(tabletStyles).toContain('grid-template-columns: 168px 1fr 248px');
         expect(tabletStyles).toContain('gap: 8px');
       }
     });
@@ -86,7 +86,7 @@ describe('FlowLayout', () => {
 
   describe('Desktop Defaults', () => {
     it('should use desktop columns by default', () => {
-      expect(styleText).toContain('grid-template-columns: 200px 1fr 300px');
+      expect(styleText).toContain('grid-template-columns: 212px 1fr 300px');
     });
 
     it('should not require a dedicated desktop media query', () => {
