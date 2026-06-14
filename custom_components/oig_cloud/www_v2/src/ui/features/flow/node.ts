@@ -1618,12 +1618,12 @@ export class OigFlowNode extends LitElement {
       .flow-grid {
         grid-template-columns: 1fr 1.15fr 1fr !important;
         grid-template-rows: auto auto auto !important;
-        width: 760px;
-        max-width: 760px;
+        width: 820px;
+        max-width: 820px;
         gap: 8px;
-        padding: 8px;
+        padding: 6px;
         margin: 0 auto;
-        zoom: 0.50;
+        zoom: 0.45;
       }
       .node-solar    { grid-column: 1; grid-row: 1; justify-self: center; }
       .node-house    { grid-column: 3; grid-row: 1; justify-self: center; }
@@ -1631,10 +1631,11 @@ export class OigFlowNode extends LitElement {
       .node-grid     { grid-column: 1; grid-row: 3; justify-self: center; }
       .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
 
+      /* Wider tiles than desktop so long lines (Solár plán, fáze) don't spill. */
       .node {
-        width: 224px;
-        min-width: 224px;
-        max-width: 224px;
+        width: 244px;
+        min-width: 244px;
+        max-width: 244px;
         min-height: 0;
       }
     }
@@ -1656,11 +1657,11 @@ export class OigFlowNode extends LitElement {
 
     /* ---- Extra small (<380px) — zoom the full pentagon down a touch more ---- */
     @media (max-width: 380px) {
-      .flow-grid { zoom: 0.46; }
+      .flow-grid { zoom: 0.42; }
       .node {
-        width: 224px;
-        min-width: 224px;
-        max-width: 224px;
+        width: 244px;
+        min-width: 244px;
+        max-width: 244px;
       }
       .node-icon { font-size: 18px; }
       .node-value { font-size: 16px; }
