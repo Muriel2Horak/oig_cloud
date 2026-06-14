@@ -31,6 +31,9 @@ ENERGY_CONSTANT_KWH_L_K: float = 4186.0 / 3_600_000.0  # ~1.163e-3 kWh/(L·K)
 DRAW_RATE_THRESHOLD_C_PER_MIN: float = 0.15  # degC/min — rejects standing loss (~0.05)
 DRAW_MIN_DROP_C: float = 0.5  # minimum total drop to count as draw
 DRAW_MIN_INTERVALS: int = 2  # sustained over at least 2 consecutive intervals
+# Commanded-heater threshold [W]: below this cbb_w counts as "off", so any
+# non-backup power is house load and is not credited as boiler heating.
+COMMAND_ON_W: float = 100.0
 
 # Slot model
 SLOT_DURATION_MIN: int = 15
@@ -162,6 +165,19 @@ class DemandMap:
 # Draw detection
 # ---------------------------------------------------------------------------
 
+def _record_power_w(entry: dict) -> Optional[float]:
+    """Return the boiler heating power [W] recorded for a history entry, or None.
+
+    When present, ``power_w`` is the calorimetric heating-power proxy the
+    coordinator attaches (non-backup circuit power gated by the commanded
+    heater). Its presence is what enables draw detection *during* heating.
+    """
+    p = entry.get("power_w")
+    if isinstance(p, (int, float)) and p >= 0.0:
+        return float(p)
+    return None
+
+
 def detect_draws(
     history: list[dict],
     volume_l: float,
@@ -173,9 +189,23 @@ def detect_draws(
 ) -> list[DrawEvent]:
     """Detect hot-water draw events from temperature history.
 
+    Two detection modes, chosen per-interval by whether power data is present:
+
+    * **Power-aware (calorimetric)** — when an interval carries ``power_w``
+      (boiler heating power proxy) the heat the element added is converted to an
+      expected temperature *rise* and added back to the observed drop. A draw is
+      then any sustained interval whose *effective* drop (observed drop + heating
+      that should have offset it) clears the rate threshold. This detects draws
+      that happen *while the boiler is heating* (the element can't keep up with a
+      shower), which the temperature-only path misses entirely.
+    * **Temperature-only (legacy)** — when no power data is present, heating
+      periods (per the ``heating`` flag) are skipped, exactly as before. This
+      keeps behaviour unchanged for installs without a power signal.
+
     Args:
         history: Sorted list of dicts with keys: timestamp (datetime),
-                 temp (float), heating (str "on"|"off").
+                 temp (float), heating (str "on"|"off"), and optionally
+                 power_w (float, boiler heating power [W]).
         volume_l: Tank volume [L].
         target_temp_c: Target hot-water temperature [degC].
         cold_inlet_temp_c: Cold-inlet temperature [degC].
@@ -194,51 +224,69 @@ def detect_draws(
     if delta_t <= 0.0:
         delta_t = 30.0  # fallback
 
+    heat_capacity = volume_l * ENERGY_CONSTANT_KWH_L_K  # kWh per degC of tank
+
     events: list[DrawEvent] = []
     i = 0
     n = len(sorted_history)
 
     while i < n - 1:
         entry = sorted_history[i]
-        # Skip heating periods
-        if entry.get("heating", "off") == "on":
+        # Legacy path only: skip a window that *starts* during heating when we
+        # have no power data to reason about it. With power data we never skip —
+        # the calorimetric correction handles heating intervals directly.
+        if _record_power_w(entry) is None and entry.get("heating", "off") == "on":
             i += 1
             continue
 
-        # Look for a rate-based draw starting at i
-        # A draw = consecutive intervals each with rate >= threshold,
-        # heating off throughout, total drop >= min_drop_c
+        # A draw = consecutive intervals each with EFFECTIVE rate >= threshold.
+        # effective_drop = observed_drop + heating_gain (heating gain is 0 when
+        # the boiler is off or when no power data is available).
         draw_start = i
         sustained = 0
+        cumulative_effective_drop = 0.0
         j = i + 1
 
         while j < n:
             curr = sorted_history[j]
             prev = sorted_history[j - 1]
 
-            # If heating comes on, break the draw window
-            if curr.get("heating", "off") == "on":
-                break
-
             interval_sec = (curr["timestamp"] - prev["timestamp"]).total_seconds()
             if interval_sec <= 0:
                 j += 1
                 continue
 
-            drop = prev["temp"] - curr["temp"]
-            rate = (drop / interval_sec) * 60.0  # degC/min
+            p_curr = _record_power_w(curr)
+            p_prev = _record_power_w(prev)
+            if p_curr is None and p_prev is None:
+                # No power data → legacy behaviour: heating breaks the window.
+                if curr.get("heating", "off") == "on":
+                    break
+                heat_gain_c = 0.0
+            else:
+                # Heat added by the element over the interval → expected rise.
+                power_w = max(p_curr or 0.0, p_prev or 0.0)
+                heat_kwh = (power_w / 1000.0) * (interval_sec / 3600.0)
+                heat_gain_c = (heat_kwh / heat_capacity) if heat_capacity > 0 else 0.0
 
-            if rate >= threshold_c_per_min:
+            observed_drop = prev["temp"] - curr["temp"]
+            effective_drop = observed_drop + heat_gain_c
+            effective_rate = (effective_drop / interval_sec) * 60.0  # degC/min
+
+            if effective_rate >= threshold_c_per_min:
                 sustained += 1
+                cumulative_effective_drop += effective_drop
                 j += 1
             else:
-                # Rate dropped below threshold — stop extending
+                # Effective rate below threshold — stop extending
                 break
 
-        # Check if we had enough sustained intervals and enough total drop
+        # Check if we had enough sustained intervals and enough total drop.
+        # cumulative_effective_drop equals the endpoint temperature drop in the
+        # legacy (no-heating) path, so energy/liters are unchanged there.
         if sustained >= min_intervals:
             draw_end_idx = j - 1
-            total_drop = sorted_history[draw_start]["temp"] - sorted_history[draw_end_idx]["temp"]
+            total_drop = cumulative_effective_drop
             if total_drop >= min_drop_c:
                 start_dt = sorted_history[draw_start]["timestamp"]
                 end_dt = sorted_history[draw_end_idx]["timestamp"]
@@ -521,7 +569,8 @@ class BoilerDemandProfiler:
 
         Args:
             history: List of dicts with keys: timestamp (datetime),
-                     temp (float), heating (str "on"|"off").
+                     temp (float), heating (str "on"|"off"), and optionally
+                     power_w (float) to enable during-heating draw detection.
         """
         draws = detect_draws(
             history,
@@ -705,10 +754,18 @@ class BoilerDemandProfilerAsync:
         cold_inlet_temp_c: float,
         lookback_days: int = 90,
         draw_threshold_c_per_min: float = DRAW_RATE_THRESHOLD_C_PER_MIN,
+        power_entity: Optional[str] = None,
+        command_entity: Optional[str] = None,
     ) -> None:
         self.hass = hass
         self.temp_sensor_entity = temp_sensor_entity
         self.heating_entity = heating_entity
+        # power_entity = live non-backup circuit power [W]; command_entity = the
+        # commanded heater power (cbb_w, 0/install_power). Together they yield a
+        # calorimetric heating-power proxy that lets detect_draws find draws that
+        # occur while the boiler is heating. Both optional (no power → legacy).
+        self.power_entity = power_entity
+        self.command_entity = command_entity
         self.lookback_days = lookback_days
         self._profiler = BoilerDemandProfiler(
             volume_l=volume_l,
@@ -777,6 +834,62 @@ class BoilerDemandProfilerAsync:
                     return False
                 return heating_on_list[idx]
 
+            async def _fetch_numeric_series(
+                entity_id: Optional[str],
+            ) -> tuple[list[datetime], list[float]]:
+                """Fetch a numeric entity's history as sorted (ts, value) lists."""
+                if not entity_id:
+                    return [], []
+                raw = await instance.async_add_executor_job(
+                    state_changes_during_period,
+                    self.hass,
+                    start_time,
+                    end_time,
+                    entity_id,
+                )
+                num_pairs: list[tuple[datetime, float]] = []
+                for state in raw.get(entity_id, []):
+                    try:
+                        num_pairs.append((state.last_updated, float(state.state)))
+                    except (ValueError, AttributeError, TypeError):
+                        pass
+                num_pairs.sort(key=lambda p: p[0])
+                return [p[0] for p in num_pairs], [p[1] for p in num_pairs]
+
+            # Non-backup circuit power [W] and commanded heater power (cbb_w).
+            power_ts, power_vals = await _fetch_numeric_series(self.power_entity)
+            command_ts, command_vals = await _fetch_numeric_series(self.command_entity)
+
+            def _value_at(
+                ts: datetime, ts_list: list[datetime], val_list: list[float]
+            ) -> Optional[float]:
+                if not ts_list:
+                    return None
+                idx = bisect.bisect_right(ts_list, ts) - 1
+                if idx < 0:
+                    return None
+                return val_list[idx]
+
+            def _boiler_power_w_at(ts: datetime) -> Optional[float]:
+                """Calorimetric heating-power proxy [W] at ts, or None if unknown.
+
+                The non-backup power is the authority for *actual* electrical
+                draw (it falls to ~0 when the tank thermostat cuts even though
+                cbb_w stays commanded-on). We therefore use the non-backup power
+                but gate it on the heater actually being commanded: when cbb_w is
+                ~0 the boiler contributes nothing, so any non-backup power is pure
+                house load and must not be credited as heating.
+                """
+                p = _value_at(ts, power_ts, power_vals)
+                if p is None:
+                    return None
+                cmd = _value_at(ts, command_ts, command_vals)
+                if cmd is not None and cmd < COMMAND_ON_W:
+                    return 0.0
+                return max(0.0, p)
+
+            have_power = bool(power_ts)
+
             # Build history list
             temp_list = temp_states.get(self.temp_sensor_entity, [])
             history: list[dict] = []
@@ -785,11 +898,16 @@ class BoilerDemandProfilerAsync:
                     temp = float(state.state)
                     ts = state.last_updated
                     heating_on = _is_heating_on_at(ts)
-                    history.append({
+                    record: dict = {
                         "timestamp": ts,
                         "temp": temp,
                         "heating": "on" if heating_on else "off",
-                    })
+                    }
+                    if have_power:
+                        bp = _boiler_power_w_at(ts)
+                        if bp is not None:
+                            record["power_w"] = bp
+                    history.append(record)
                 except (ValueError, AttributeError):
                     continue
 

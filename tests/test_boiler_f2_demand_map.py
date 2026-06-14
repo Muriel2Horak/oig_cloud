@@ -76,6 +76,24 @@ def _make_history(
     ]
 
 
+def _make_history_p(
+    readings: list[tuple[int, int, float, str, float]],  # (h, m, temp, heating, power_w)
+    day: int = 4,
+    month: int = 6,
+    year: int = 2026,
+) -> list[dict]:
+    """History records that also carry the boiler heating-power proxy (power_w)."""
+    return [
+        {
+            "timestamp": _ts(h, m, day=day, month=month, year=year),
+            "temp": temp,
+            "heating": heating,
+            "power_w": power_w,
+        }
+        for h, m, temp, heating, power_w in readings
+    ]
+
+
 # ---------------------------------------------------------------------------
 # 1. Percentile helper
 # ---------------------------------------------------------------------------
@@ -240,6 +258,63 @@ class TestDetectDraws:
         ev = events[0]
         expected_liters = ev.energy_kwh / (ENERGY_CONSTANT_KWH_L_K * 50.0)
         assert abs(ev.liters - expected_liters) < 1.0
+
+
+class TestDetectDrawsDuringHeating:
+    """F3b: calorimetric draw detection while the boiler is heating (power_w)."""
+
+    def test_draw_detected_while_heating(self):
+        """Temp dropping despite full-power heating → draw the element can't offset."""
+        # Heating at 6.6 kW for 10 min adds ~7.9 degC to a 120 L tank; the tank
+        # instead drops 0.5 degC/interval → a large effective draw.
+        readings = _make_history_p([
+            (7, 0, 58.0, "on", 6600.0),
+            (7, 10, 57.5, "on", 6600.0),
+            (7, 20, 57.0, "on", 6600.0),
+        ])
+        events = detect_draws(readings, VOLUME_L, TARGET_TEMP_C, COLD_INLET_C)
+        assert len(events) == 1
+        # Effective drop accounts for the heat the element added, so energy is
+        # much larger than the bare 1.0 degC the thermometer fell.
+        assert events[0].drop_c > 10.0
+
+    def test_same_drop_without_power_is_suppressed(self):
+        """Identical temps but no power data → legacy path skips heating → no draw."""
+        readings = _make_history([
+            (7, 0, 58.0, "on"),
+            (7, 10, 57.5, "on"),
+            (7, 20, 57.0, "on"),
+        ])
+        events = detect_draws(readings, VOLUME_L, TARGET_TEMP_C, COLD_INLET_C)
+        assert len(events) == 0
+
+    def test_pure_heating_no_draw(self):
+        """Tank rising as heating predicts → effective drop ~0 → no false draw."""
+        # 6.6 kW over 10 min ≈ +7.88 degC for 120 L; let the tank rise ~7.9.
+        readings = _make_history_p([
+            (7, 0, 50.0, "on", 6600.0),
+            (7, 10, 57.9, "on", 6600.0),
+            (7, 20, 65.8, "on", 6600.0),
+        ])
+        events = detect_draws(readings, VOLUME_L, TARGET_TEMP_C, COLD_INLET_C)
+        assert len(events) == 0
+
+    def test_thermostat_cut_no_false_positive(self):
+        """Commanded on but power proxy ~0 (thermostat cut) + flat temp → no draw."""
+        readings = _make_history_p([
+            (7, 0, 60.0, "on", 0.0),
+            (7, 10, 59.95, "on", 0.0),
+            (7, 20, 59.90, "on", 0.0),
+        ])
+        events = detect_draws(readings, VOLUME_L, TARGET_TEMP_C, COLD_INLET_C)
+        assert len(events) == 0
+
+    def test_record_power_helper(self):
+        from custom_components.oig_cloud.boiler.demand_profiler import _record_power_w
+        assert _record_power_w({"power_w": 3300.0}) == 3300.0
+        assert _record_power_w({"power_w": 0.0}) == 0.0
+        assert _record_power_w({}) is None
+        assert _record_power_w({"power_w": None}) is None
 
 
 # ---------------------------------------------------------------------------

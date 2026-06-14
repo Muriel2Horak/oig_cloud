@@ -101,6 +101,19 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _volume_l = float(config.get("boiler_volume_l") or 200.0)
         _target_temp_c = float(config.get("boiler_target_temp_c") or 60.0)
         _cold_inlet_temp_c = float(config.get("boiler_cold_inlet_temp_c") or 10.0)
+        # Calorimetric power proxy (F3b): non-backup circuit power is the
+        # authority for actual electric heating, gated by commanded cbb_w. Lets
+        # the demand profiler detect draws that happen *while* the boiler heats.
+        _power_entity = (
+            self._build_oig_entity_id("actual_acinb_wtotal")
+            if self.box_id and self.box_id != "unknown"
+            else None
+        )
+        _command_entity = (
+            self._build_oig_entity_id("boiler_current_cbb_w")
+            if self.box_id and self.box_id != "unknown"
+            else None
+        )
         if _temp_sensor:
             self._demand_profiler: Optional[BoilerDemandProfilerAsync] = BoilerDemandProfilerAsync(
                 hass=hass,
@@ -109,6 +122,8 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 volume_l=_volume_l,
                 target_temp_c=_target_temp_c,
                 cold_inlet_temp_c=_cold_inlet_temp_c,
+                power_entity=_power_entity,
+                command_entity=_command_entity,
             )
         else:
             self._demand_profiler = None
