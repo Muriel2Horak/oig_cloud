@@ -47,6 +47,12 @@ export class OigControlPanel extends LitElement {
   /** R7: when false, Home 5/6 toggle buttons are hidden (box lacks the hardware). */
   @property({ type: Boolean }) boxHasHome56 = false;
 
+  /**
+   * When embedded inside the unified "Ovládání" card, drop the panel's own
+   * card chrome + header so it sits as a plain block under a shared header.
+   */
+  @property({ type: Boolean, reflect: true }) embedded = false;
+
   @state() private shieldState: ShieldState = {
     ...EMPTY_SHIELD_STATE,
     pendingServices: new Map(),
@@ -76,6 +82,17 @@ export class OigControlPanel extends LitElement {
       box-shadow: ${u(CSS_VARS.cardShadow)};
       overflow: hidden;
     }
+
+    /* Embedded in the unified Ovládání card: no own chrome / header. */
+    :host([embedded]) { margin-top: 0; }
+    :host([embedded]) .control-panel {
+      background: transparent;
+      box-shadow: none;
+      border-radius: 0;
+      overflow: visible;
+    }
+    :host([embedded]) .panel-header { display: none; }
+    :host([embedded]) .panel-body { padding: 0; }
 
     .panel-header {
       display: flex;

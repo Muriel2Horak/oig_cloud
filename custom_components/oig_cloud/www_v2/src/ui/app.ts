@@ -328,23 +328,14 @@ export class OigApp extends LitElement {
       padding-top: 8px;
     }
 
-    /* ---- Flow tab layout: tiles | canvas | control ---- */
+    /* ---- Flow tab layout: canvas | ovládání ---- */
     .flow-layout {
       display: grid;
-      grid-template-columns: 200px 1fr 300px;
-      grid-template-areas: 'tiles canvas control';
+      grid-template-columns: 1fr 320px;
+      grid-template-areas: 'canvas control';
       gap: 12px;
       width: 100%;
       align-items: start;
-    }
-
-    .flow-tiles-stack {
-      grid-area: tiles;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      min-width: 0;
-      overflow: hidden;
     }
 
     .flow-center {
@@ -355,6 +346,79 @@ export class OigApp extends LitElement {
     .flow-control {
       grid-area: control;
       min-width: 0;
+    }
+
+    /* ---- Unified "Ovládání" card: Systém OIG + Moje dlaždice ---- */
+    .control-stack {
+      background: ${u(CSS_VARS.cardBg)};
+      border-radius: 16px;
+      box-shadow: ${u(CSS_VARS.cardShadow)};
+      overflow: hidden;
+    }
+
+    .control-stack__head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 18px 12px;
+      border-bottom: 1px solid ${u(CSS_VARS.divider)};
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: ${u(CSS_VARS.textPrimary)};
+    }
+
+    .control-stack__block {
+      padding: 14px 18px;
+    }
+
+    .control-stack__sep {
+      height: 1px;
+      background: ${u(CSS_VARS.divider)};
+      margin: 0 18px;
+    }
+
+    .control-stack__label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: ${u(CSS_VARS.textSecondary)};
+    }
+
+    .control-stack__add {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border: 1px solid color-mix(in srgb, ${u(CSS_VARS.accent)} 45%, transparent);
+      background: color-mix(in srgb, ${u(CSS_VARS.accent)} 12%, transparent);
+      color: ${u(CSS_VARS.accent)};
+      border-radius: 8px;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+
+    .control-stack__add:hover {
+      background: color-mix(in srgb, ${u(CSS_VARS.accent)} 22%, transparent);
+      transform: translateY(-1px);
+    }
+
+    .control-stack__tiles-empty {
+      font-size: 12px;
+      color: ${u(CSS_VARS.textSecondary)};
+      opacity: 0.6;
+      text-align: center;
+      padding: 6px 0 2px;
     }
 
     /* ---- Pricing tab layout ---- */
@@ -444,22 +508,21 @@ export class OigApp extends LitElement {
     }
 
     /* ---- Responsive ---- */
-    /* Tablet 768–1200: canvas + control, tiles skryté nebo nahoře */
+    /* Tablet 768–1200: canvas + unified Ovládání, mírně užší */
     @media (max-width: 1200px) {
       .flow-layout {
-        grid-template-columns: 160px 1fr 260px;
+        grid-template-columns: 1fr 280px;
         gap: 8px;
       }
     }
 
-    /* Mobile <768: Single column */
+    /* Mobile <768: Single column — canvas nahoře, Ovládání pod ním */
     @media (max-width: 768px) {
       .flow-layout {
         grid-template-columns: 1fr;
         grid-template-areas:
           'canvas'
-          'control'
-          'tiles';
+          'control';
         gap: 8px;
       }
       .analytics-row {
@@ -470,19 +533,22 @@ export class OigApp extends LitElement {
       }
     }
 
-    /* Landscape kiosk (Google Nest Hub ~768×543): toky + ovládací panel vedle sebe,
-       dlaždice skryté (sekundární), ovládací panel scrolluje uvnitř. */
+    /* Landscape kiosk (Google Nest Hub ~768×543): toky + Ovládání vedle sebe,
+       sekce scrolluje uvnitř. */
     @media (orientation: landscape) and (max-height: 600px) {
       main { padding: 6px 10px; }
       .flow-layout {
-        grid-template-columns: 1fr 232px;
+        grid-template-columns: 1fr 252px;
         grid-template-areas: 'canvas control';
         gap: 8px;
         align-items: start;
       }
-      .flow-tiles-stack { display: none; }
       .flow-center { grid-area: canvas; }
-      .flow-control { grid-area: control; max-height: calc(100vh - 78px); overflow-y: auto; }
+      .flow-control {
+        grid-area: control;
+        max-height: calc(100vh - 78px);
+        overflow-y: auto;
+      }
     }
   `;
 
@@ -890,6 +956,14 @@ export class OigApp extends LitElement {
     this.loadTimelineTabData(this.timelineTab);
   }
 
+  private onAddTile(): void {
+    // New tile: index -1 lets onTileSaved drop it into the first free slot.
+    this.editingTileIndex = -1;
+    this.editingTileSide = 'left';
+    this.editingTileConfig = null;
+    this.tileDialogOpen = true;
+  }
+
   private onEditTile(e: CustomEvent): void {
     const { entityId } = e.detail;
     let foundIndex = -1;
@@ -1126,16 +1200,6 @@ export class OigApp extends LitElement {
             <!-- ===== FLOW TAB ===== -->
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
               <div class="flow-layout">
-                <!-- Tiles: sloupec vlevo -->
-                <div class="flow-tiles-stack">
-                  <oig-tiles-container
-                    .tiles=${[...this.tilesLeft, ...this.tilesRight]}
-                    .editMode=${this.editMode}
-                    @edit-tile=${this.onEditTile}
-                    @delete-tile=${this.onDeleteTile}
-                  ></oig-tiles-container>
-                </div>
-
                 <!-- Canvas: střed -->
                 <div class="flow-center">
                   <oig-flow-canvas
@@ -1147,9 +1211,38 @@ export class OigApp extends LitElement {
                   ></oig-flow-canvas>
                 </div>
 
-                <!-- Ovládací panel: pravý sloupec -->
+                <!-- Sjednocené Ovládání: Systém OIG + Moje dlaždice -->
                 <div class="flow-control">
-                  <oig-control-panel .boxHasHome56=${this.boxHasHome56}></oig-control-panel>
+                  <div class="control-stack">
+                    <div class="control-stack__head">🛡️ Ovládání</div>
+
+                    <!-- Blok 1: systémové přepínače (shield + confirm + fronta) -->
+                    <div class="control-stack__block">
+                      <div class="control-stack__label">Systém OIG</div>
+                      <oig-control-panel embedded .boxHasHome56=${this.boxHasHome56}></oig-control-panel>
+                    </div>
+
+                    <div class="control-stack__sep"></div>
+
+                    <!-- Blok 2: uživatelské dlaždice -->
+                    <div class="control-stack__block">
+                      <div class="control-stack__label">
+                        <span>Moje dlaždice</span>
+                        <button class="control-stack__add" type="button"
+                          title="Přidat dlaždici" @click=${this.onAddTile}>+</button>
+                      </div>
+                      ${this.tilesLeft.length + this.tilesRight.length > 0 ? html`
+                        <oig-tiles-container
+                          .tiles=${[...this.tilesLeft, ...this.tilesRight]}
+                          .editMode=${this.editMode}
+                          @edit-tile=${this.onEditTile}
+                          @delete-tile=${this.onDeleteTile}
+                        ></oig-tiles-container>
+                      ` : html`
+                        <div class="control-stack__tiles-empty">Zatím žádné dlaždice — přidej tlačítkem +</div>
+                      `}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

@@ -368,14 +368,14 @@ export class OigTilesContainer extends LitElement {
 
   static styles = css`
     :host {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
       gap: 6px;
       min-width: 0;
-      overflow: hidden;
     }
 
     .empty-state {
+      grid-column: 1 / -1;
       font-size: 12px;
       color: ${u(CSS_VARS.textSecondary)};
       padding: 8px;
