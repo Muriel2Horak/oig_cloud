@@ -762,6 +762,73 @@ def _build_solar_kwh_list(
     return solar_kwh_list
 
 
+async def _get_recent_solar_ratio(
+    sensor: Any, solar_forecast: Any, hours: int = 2
+) -> Optional[float]:
+    """Actual solar produced over the last N hours vs what the forecast predicted
+    for the same window. >1 = sunnier than forecast, <1 = cloudier. None on any
+    data gap (caller then skips the correction)."""
+    from datetime import timedelta
+
+    try:
+        from homeassistant.components.recorder.history import get_significant_states
+        from homeassistant.helpers.recorder import get_instance
+
+        from ..data.history import _calc_delta_kwh
+
+        box_id = sensor._box_id  # pylint: disable=protected-access
+        now = dt_util.now()
+        start = now - timedelta(hours=hours)
+        eid = f"sensor.oig_{box_id}_dc_in_fv_ad"
+
+        instance = get_instance(sensor._hass)  # pylint: disable=protected-access
+        states = await instance.async_add_executor_job(
+            get_significant_states, sensor._hass, start, now, [eid], None, True
+        )
+        series = states.get(eid, []) if states else []
+        actual_kwh = _calc_delta_kwh(series, start, now)
+        if not actual_kwh or actual_kwh <= 0:
+            return None
+
+        forecast_kwh = 0.0
+        for k in range(hours * 4):
+            ts = dt_util.as_local(start + timedelta(minutes=15 * k))
+            forecast_kwh += get_solar_for_timestamp(
+                ts, solar_forecast, log_rate_limited=sensor._log_rate_limited
+            )
+        if forecast_kwh <= 0:
+            return None
+
+        ratio = actual_kwh / forecast_kwh
+        _LOGGER.debug(
+            "[SolarForecast] Recent solar ratio (last %dh): actual=%.2f kWh, "
+            "forecast=%.2f kWh → %.2fx",
+            hours,
+            actual_kwh,
+            forecast_kwh,
+            ratio,
+        )
+        return ratio
+    except Exception as err:  # pragma: no cover - recorder/runtime guard
+        _LOGGER.debug("Solar ratio calculation failed: %s", err)
+        return None
+
+
+async def _maybe_apply_solar_correction(
+    sensor: Any,
+    adaptive_helper: AdaptiveConsumptionHelper,
+    solar_forecast: Any,
+    solar_kwh_list: list[float],
+) -> None:
+    """Damp same-day solar drift into the forward solar list (dead band 0.85–1.15),
+    mirroring the consumption boost. Prevents an under-forecast (sunnier than
+    Solcast) from forcing unnecessary grid-charging, and lets a cloudier-than-
+    forecast day pull in protective charging earlier."""
+    ratio = await _get_recent_solar_ratio(sensor, solar_forecast)
+    if ratio and (ratio > 1.15 or ratio < 0.85):
+        adaptive_helper.apply_solar_correction_to_forecast(solar_kwh_list, ratio)
+
+
 def _interval_day_indices(
     spot_prices: list[dict[str, Any]],
 ) -> Optional[List[int]]:
@@ -1429,6 +1496,11 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
 
         # Build load forecast list (kWh/15min for each interval)
         solar_kwh_list = _build_solar_kwh_list(sensor, spot_prices, solar_forecast)
+        # Same-day reality correction: damp solar drift (sunnier/cloudier than
+        # forecast) into the near-term solar list before planning.
+        await _maybe_apply_solar_correction(
+            sensor, adaptive_helper, solar_forecast, solar_kwh_list
+        )
         timeline, mode_result, recommendations = _run_planner(
             sensor,
             spot_prices,
