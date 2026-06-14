@@ -76,6 +76,27 @@ export function getChmuIcon(eventType: string): string {
   return '⚠️';
 }
 
+/** ČHMÚ event type → MDI icon name (consistent with the weather forecast UI). */
+const CHMU_ICON_MAP_MDI: Record<string, string> = {
+  'vítr': 'mdi:weather-windy',
+  'déšť': 'mdi:weather-pouring',
+  'sníh': 'mdi:weather-snowy',
+  'bouřky': 'mdi:weather-lightning',
+  'mráz': 'mdi:snowflake',
+  'vedro': 'mdi:weather-sunny',
+  'mlha': 'mdi:weather-fog',
+  'náledí': 'mdi:snowflake',
+  'laviny': 'mdi:alert-circle',
+};
+
+export function getChmuIconMdi(eventType: string): string {
+  const lower = eventType.toLowerCase();
+  for (const [key, icon] of Object.entries(CHMU_ICON_MAP_MDI)) {
+    if (lower.includes(key)) return icon;
+  }
+  return 'mdi:alert-circle';
+}
+
 export const SEVERITY_LABELS: Record<number, string> = {
   0: 'Bez výstrahy',
   1: 'Nízká',

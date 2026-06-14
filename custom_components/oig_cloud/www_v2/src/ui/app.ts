@@ -13,6 +13,7 @@ import { resolveLang } from '@/i18n/boiler';
 import { loadModuleConfig } from '@/data/settings-data';
 import { extractAnalyticsSensors, loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
 import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
+import { loadWeatherData, type WeatherData, EMPTY_WEATHER_DATA } from '@/data/weather-data';
 import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/timeline-data';
 import { loadTilesConfig, saveTilesConfig, resolveTiles, type TilesConfig, type TileConfig, type ResolvedTile } from '@/data/tiles-data';
 import { FlowData, EMPTY_FLOW_DATA } from '@/ui/features/flow/types';
@@ -36,7 +37,7 @@ import '@/ui/features/pricing';
 import '@/ui/features/boiler';
 import '@/ui/features/control-panel';
 import '@/ui/features/analytics';
-import '@/ui/features/chmu';
+import '@/ui/features/weather';
 import '@/ui/features/settings';
 import '@/ui/features/timeline';
 import '@/ui/features/tiles';
@@ -91,9 +92,11 @@ export class OigApp extends LitElement {
   // Analytics
   @state() private analyticsData: AnalyticsData = EMPTY_ANALYTICS;
 
-  // ČHMÚ
+  // Počasí (weather entity) + ČHMÚ výstrahy — sdílejí jeden modal/badge
   @state() private chmuData: ChmuData = EMPTY_CHMU_DATA;
+  @state() private weatherData: WeatherData = EMPTY_WEATHER_DATA;
   @state() private chmuModalOpen = false;
+  private weatherRefreshTimer: number | null = null;
 
   // Timeline
   @state() private timelineTab: TimelineTab = 'today';
@@ -618,6 +621,12 @@ export class OigApp extends LitElement {
       // R7: load box_has_home56 from module_config (best-effort, no throw)
       this.loadBoxHasHome56();
 
+      // Weather forecast (current + hourly/daily) — refreshed periodically
+      void this.loadWeather();
+      this.weatherRefreshTimer = window.setInterval(() => {
+        if (document.visibilityState !== 'hidden') void this.loadWeather();
+      }, 15 * 60 * 1000);
+
       // Boiler tab live refresh: the canonical DTO changes server-side every
       // coordinator cycle without any entity-state event, so poll it while
       // the tab is visible (the state-watcher throttle alone left the tab
@@ -665,6 +674,10 @@ export class OigApp extends LitElement {
     if (this.boilerRefreshTimer !== null) {
       clearInterval(this.boilerRefreshTimer);
       this.boilerRefreshTimer = null;
+    }
+    if (this.weatherRefreshTimer !== null) {
+      clearInterval(this.weatherRefreshTimer);
+      this.weatherRefreshTimer = null;
     }
   }
 
@@ -917,7 +930,16 @@ export class OigApp extends LitElement {
   }
 
   // ČHMÚ events
+  private async loadWeather(): Promise<void> {
+    try {
+      this.weatherData = await loadWeatherData();
+    } catch {
+      /* weather entity may be absent — badge falls back to warnings-only */
+    }
+  }
+
   private onChmuBadgeClick(): void {
+    void this.loadWeather();
     this.chmuModalOpen = true;
   }
 
@@ -1158,6 +1180,9 @@ export class OigApp extends LitElement {
           .time=${this.time}
           .showStatus=${true}
           .alertCount=${chmuAlertCount}
+          .weatherAvailable=${this.weatherData.available}
+          .weatherCondition=${this.weatherData.condition}
+          .weatherTemp=${this.weatherData.temperature}
           @edit-click=${this.onEditClick}
           @reset-click=${this.onResetClick}
           @status-click=${this.onChmuBadgeClick}
@@ -1273,11 +1298,12 @@ export class OigApp extends LitElement {
         </main>
 
         <!-- ===== GLOBAL OVERLAYS ===== -->
-        <oig-chmu-modal
+        <oig-weather-modal
           ?open=${this.chmuModalOpen}
-          .data=${this.chmuData}
+          .weather=${this.weatherData}
+          .chmu=${this.chmuData}
           @close=${this.onChmuModalClose}
-        ></oig-chmu-modal>
+        ></oig-weather-modal>
 
         <oig-tile-dialog
           ?open=${this.tileDialogOpen}
