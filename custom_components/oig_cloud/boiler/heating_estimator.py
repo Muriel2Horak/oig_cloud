@@ -3,22 +3,26 @@
 The box's CBB power sensor (``cbb_w``) reports the **commanded** power (0 or the
 element nameplate, e.g. 6600 W) and is blind to the tank thermostat cutting the
 element — so it reads full power while the element is actually off, inflating
-``day_w`` and faking the source. This module recovers the true power by fusing
-three independent signals:
+``day_w`` and faking the source. This module recovers the true power.
 
-- **cbb_w** — the box command. If it is 0/None the box is not commanding heat
-  (definitely off). It is only a *gate*, never the magnitude.
-- **non-backup live power** (``actual_acinb_wtotal``) — how many Watts the
-  non-backup circuit (where the boiler sits) actually draws. The boiler's
-  contribution is ``measured − other-loads baseline``; the baseline is learned
-  online while not heating, so other appliances are subtracted out.
-- **tank temperature trend** — only the boiler moves the water temperature, so a
-  rising temperature confirms real heat input and a flat temperature while
-  commanded means the thermostat has cut the element.
+**Non-backup live power is the authority** for *how many Watts* the boiler draws
+(``actual_acinb_wtotal`` minus a learned other-loads floor). It directly shows
+the 0 / 3.3 / 6.6 kW levels — including the case where only one of two elements
+runs (top of the tank already hot, bottom element still heating at 3.3 kW), which
+a single top temperature sensor would miss entirely.
 
-Generic across installs (1..N elements, any wattage, 1..2 temp sensors): element
-wattage is read from the non-backup step (never configured), and the energy can
-also be derived calorimetrically from the temperature rise (element-agnostic).
+The tank **temperature trend** is a secondary signal: it confirms heat input and
+provides a calorimetric (element-agnostic) power estimate when the non-backup
+power is unavailable. It is NEVER used to veto a measured non-backup draw — a
+flat top temperature does not mean "off" when the bottom element is heating.
+
+The other-loads **baseline** is a noise-floor tracker (follows the non-backup
+power down instantly, rises only slowly), so it sits at the level of the *other*
+non-backup appliances regardless of the boiler — no feedback loop with the
+heating decision.
+
+Generic across installs: element wattage is read from the non-backup step, never
+configured; works with 1..N elements and 1..2 temperature sensors.
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ WATER_WH_PER_L_K = 1.163
 COMMAND_ON_W = 100.0          # cbb_w above this → the box is commanding heat
 MIN_ELEMENT_W = 1500.0        # smallest plausible real element draw (W)
 TEMP_RISE_C_PER_MIN = 0.05    # temperature rising ≥ this → heat input present
-BASELINE_EMA_ALPHA = 0.15     # learning rate for the "other non-backup loads" baseline
+BASELINE_RISE_ALPHA = 0.02    # noise-floor: rise slowly toward the live value
 MAX_PLAUSIBLE_W = 8000.0      # clamp for the calorimetric power estimate
 
 
@@ -44,7 +48,22 @@ class HeatingEstimate:
     power_w: float
     confidence: float          # 0..1
     method: str                # "nonbackup" | "calorimetry" | "command" | "off"
-    baseline_w: Optional[float]  # updated other-loads baseline to persist
+    baseline_w: Optional[float]  # updated other-loads floor to persist
+
+
+def update_baseline(baseline_w: Optional[float], nonbackup_total_w: Optional[float]) -> Optional[float]:
+    """Noise-floor tracker for the *other* non-backup loads.
+
+    Follows the live non-backup power DOWN instantly (a new low is the floor) and
+    UP only slowly, so it converges to the level of everything on the non-backup
+    circuit *except* the boiler — independent of the heating decision (no loop).
+    """
+    if nonbackup_total_w is None:
+        return baseline_w
+    nb = float(nonbackup_total_w)
+    if baseline_w is None or nb < baseline_w:
+        return nb
+    return baseline_w + BASELINE_RISE_ALPHA * (nb - baseline_w)
 
 
 def calorimetric_power_w(
@@ -53,7 +72,7 @@ def calorimetric_power_w(
     """Electric power implied by the tank temperature rise (W).
 
     ``P = dT/min × volume × 1.163 Wh/L·K × 60``. Returns None when the trend is
-    non-positive or the volume is unusable (i.e. no usable calorimetric signal).
+    non-positive or the volume is unusable.
     """
     if trend_c_per_min is None or trend_c_per_min <= 0 or volume_l <= 0:
         return None
@@ -72,62 +91,51 @@ def estimate_heating(
     """Fuse command + non-backup power + temperature into a real-power estimate.
 
     The returned ``baseline_w`` must be persisted by the caller and passed back
-    on the next call (online learning of the non-backup other-loads baseline).
+    on the next call.
     """
     commanded = commanded_w is not None and commanded_w > COMMAND_ON_W
-    has_nb = nonbackup_total_w is not None
+
+    # Boiler draw over the *previous* floor, then advance the floor tracker.
     nb_excess: Optional[float] = None
-    if has_nb and baseline_w is not None:
+    if nonbackup_total_w is not None and baseline_w is not None:
         nb_excess = max(0.0, float(nonbackup_total_w) - float(baseline_w))
+    new_baseline = update_baseline(baseline_w, nonbackup_total_w)
+
     temp_rising = (
         temp_trend_c_per_min is not None
         and temp_trend_c_per_min >= TEMP_RISE_C_PER_MIN
     )
 
-    # ── decide heating ────────────────────────────────────────────────────
     if not commanded:
-        heating, method = False, "off"
-    elif nb_excess is not None and nb_excess >= MIN_ELEMENT_W:
-        heating, method = True, "nonbackup"          # non-backup shows the load
+        heating, method, power = False, "off", 0.0
+    elif nb_excess is not None:
+        # Non-backup power is the authority — it sees one or both elements and
+        # is not fooled by a flat top temperature.
+        if nb_excess >= MIN_ELEMENT_W:
+            heating, method, power = True, "nonbackup", nb_excess
+        else:
+            heating, method, power = False, "off", 0.0
     elif temp_rising:
-        heating, method = True, "calorimetry"        # temperature confirms heat
-    elif (nb_excess is not None and nb_excess < MIN_ELEMENT_W) or (
-        temp_trend_c_per_min is not None and not temp_rising
-    ):
-        # Commanded, but neither the non-backup draw nor the temperature shows
-        # heat → the tank thermostat has cut the element.
-        heating, method = False, "off"
+        cal = calorimetric_power_w(temp_trend_c_per_min, volume_l)
+        heating, method, power = True, "calorimetry", (
+            cal if cal and cal > 0 else float(commanded_w or 0.0)
+        )
+    elif temp_trend_c_per_min is not None:
+        # Commanded, no non-backup signal, temperature flat → thermostat cut.
+        heating, method, power = False, "off", 0.0
     else:
         # Commanded with no usable corroborating signal → trust the command.
-        heating, method = True, "command"
-
-    # ── power magnitude ───────────────────────────────────────────────────
-    if not heating:
-        power = 0.0
-    elif method == "nonbackup":
-        power = float(nb_excess)
-    else:
-        cal = calorimetric_power_w(temp_trend_c_per_min, volume_l)
-        power = cal if cal and cal > 0 else float(commanded_w or 0.0)
+        heating, method, power = True, "command", float(commanded_w or 0.0)
 
     # ── confidence ────────────────────────────────────────────────────────
-    nb_agree = nb_excess is not None and nb_excess >= MIN_ELEMENT_W
-    if nb_agree and temp_rising:
-        confidence = 0.95
-    elif nb_agree or temp_rising:
-        confidence = 0.75
+    if heating and method == "nonbackup":
+        confidence = 0.95 if temp_rising else 0.8
+    elif heating and method == "calorimetry":
+        confidence = 0.7
     elif method == "command":
         confidence = 0.4
     else:
-        confidence = 0.6  # off via a clear signal
-
-    # ── learn the other-loads baseline (only while NOT heating) ───────────
-    new_baseline = baseline_w
-    if has_nb and not heating:
-        nb = float(nonbackup_total_w)
-        new_baseline = nb if baseline_w is None else (
-            baseline_w + BASELINE_EMA_ALPHA * (nb - baseline_w)
-        )
+        confidence = 0.7
 
     return HeatingEstimate(
         heating=heating,
