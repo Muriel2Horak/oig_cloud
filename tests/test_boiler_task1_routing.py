@@ -282,7 +282,6 @@ TASK1_TARGET_FILES = [
     "custom_components/oig_cloud/config/steps.py",
     "custom_components/oig_cloud/services/boiler.py",
     "custom_components/oig_cloud/services/__init__.py",
-    "custom_components/oig_cloud/www/js/core/api.js",
     "custom_components/oig_cloud/www_v2/src/data/boiler-data.ts",
     "custom_components/oig_cloud/www_v2/src/ui/app.ts",
     "custom_components/oig_cloud/www_v2/src/data/entity-store.ts",

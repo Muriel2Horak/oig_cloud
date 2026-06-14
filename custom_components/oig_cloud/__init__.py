@@ -239,33 +239,21 @@ async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
 
 
 async def _register_static_paths(hass: HomeAssistant) -> None:
-    """Registrace statických cest pro HA 2024.5+."""
+    """Registrace statické cesty pro V2 dashboard (HA 2024.5+).
+
+    V1 dashboard (``/oig_cloud_static`` → ``www/``) byl odstraněn; panel
+    načítá výhradně V2 z ``www_v2/dist``.
+    """
     from homeassistant.components.http import StaticPathConfig
 
-    # V1 static path
-    v1_path = "/oig_cloud_static"
-    v1_dir = hass.config.path("custom_components/oig_cloud/www")
-
-    # V2 static path - keep same path name, just ensure it points to dist/
     v2_path = "/oig_cloud_static_v2"
     v2_dir = hass.config.path("custom_components/oig_cloud/www_v2/dist")
 
-    _LOGGER.info("Registering static paths:")
-    _LOGGER.info("  V1: %s -> %s", v1_path, v1_dir)
-    _LOGGER.info("  V2: %s -> %s", v2_path, v2_dir)
-
-    paths = [StaticPathConfig(v1_path, v1_dir, cache_headers=False)]
-
-    # Add V2 if dist directory exists
-    import os
-    if os.path.isdir(v2_dir):
-        paths.append(StaticPathConfig(v2_path, v2_dir, cache_headers=False))
-        _LOGGER.info("  V2 dist found, registering")
-    else:
-        _LOGGER.warning("  V2 dist not found: %s", v2_dir)
-
-    await hass.http.async_register_static_paths(paths)
-    _LOGGER.info("✅ Static paths registered successfully")
+    _LOGGER.info("Registering static path: %s -> %s", v2_path, v2_dir)
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(v2_path, v2_dir, cache_headers=False)]
+    )
+    _LOGGER.info("✅ Static path registered successfully")
 
 
 def _resolve_inverter_sn(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
