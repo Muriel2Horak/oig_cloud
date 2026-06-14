@@ -40,6 +40,7 @@ export {
 
 export { OigBoilerDrawMap, pickProfile, drawWindows } from './boiler-draw-map';
 export { OigBoilerPlan, buildPlanAgenda } from './boiler-plan';
+export { OigBoilerSocChart, buildSocSeries } from './boiler-soc-chart';
 export { OigBoilerV2Svg } from './boiler-svg';
 export { OigBoilerV2Shell } from './boiler-shell';
 export { OigBoilerMetricPanel } from './boiler-metric-panel';

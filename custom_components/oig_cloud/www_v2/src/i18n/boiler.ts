@@ -173,6 +173,16 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.plan.src_grid': 'Síť (ELE)',
     'boiler.plan.src_battery': 'Baterie',
 
+    'boiler.soc.heading': 'Připravená voda, nabíjení & odběry — 24 h',
+    'boiler.soc.empty': 'Plán zatím není k dispozici',
+    'boiler.soc.charging': 'nabíjení',
+    'boiler.soc.draw': 'odběr',
+    'boiler.soc.now': 'TEĎ',
+    'boiler.soc.legend_soc': 'SoC: voda ≥40 °C (L)',
+    'boiler.soc.legend_draw': 'Odběr',
+    'boiler.soc.legend_overflow': 'Přetok (forecast)',
+    'boiler.soc.legend_temp': 'Teplota °C',
+
     'boiler.plan_strip.heading': 'Plán ohřevu 24 h',
     'boiler.plan_strip.meta': 'zdroje + odběry + teplota + cirkulace',
     'boiler.plan_strip.empty': 'Plán ohřevu zatím není k dispozici.',
@@ -410,6 +420,16 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.plan.src_fve': 'Overflow / PV',
     'boiler.plan.src_grid': 'Grid (ELE)',
     'boiler.plan.src_battery': 'Battery',
+
+    'boiler.soc.heading': 'Ready water, charging & draws — 24 h',
+    'boiler.soc.empty': 'No plan available yet',
+    'boiler.soc.charging': 'charging',
+    'boiler.soc.draw': 'draw',
+    'boiler.soc.now': 'NOW',
+    'boiler.soc.legend_soc': 'SoC: water ≥40 °C (L)',
+    'boiler.soc.legend_draw': 'Draw',
+    'boiler.soc.legend_overflow': 'Overflow (forecast)',
+    'boiler.soc.legend_temp': 'Temperature °C',
 
     'boiler.plan_strip.heading': 'Heating plan 24 h',
     'boiler.plan_strip.meta': 'sources + demands + temperature + circulation',
