@@ -410,20 +410,21 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
     expect(all).toContain('Průvodce nastavením bojleru');
   });
 
-  it('boiler tab template contains oig-boiler-v2-shell when v2 data available', () => {
+  it('boiler tab template contains the redesigned model + draw-map when v2 data available', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).toContain('oig-boiler-v2-shell');
+    expect(all).toContain('oig-boiler-model');
+    expect(all).toContain('oig-boiler-draw-map');
   });
 
-  it('boiler tab template contains oig-boiler-metric-panel when v2 data available', () => {
+  it('boiler tab template contains the SoC chart and plan sections', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).toContain('oig-boiler-metric-panel');
+    expect(all).toContain('oig-boiler-soc-chart');
+    expect(all).toContain('oig-boiler-plan');
   });
 
-  it('boiler tab template contains panelType="comfort" and panelType="source"', () => {
+  it('boiler tab template contains the slim strip', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).toContain('panelType="comfort"');
-    expect(all).toContain('panelType="source"');
+    expect(all).toContain('boiler-slim');
   });
 
   it('boiler tab template does NOT contain oig-boiler-timeline-chart (removed in Task 3)', () => {
@@ -467,9 +468,9 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
     expect(all).not.toContain('data-testid="boiler-advanced-row"');
   });
 
-  it('config_profile_unavailable alone does not block shell render', () => {
+  it('config_profile_unavailable alone does not block model render', () => {
     const all = getAppTemplateAll(makeAppWithConfigProfileUnavailable());
-    expect(all).toContain('oig-boiler-v2-shell');
+    expect(all).toContain('oig-boiler-model');
     expect(all).not.toContain('reason="degraded"');
   });
 
