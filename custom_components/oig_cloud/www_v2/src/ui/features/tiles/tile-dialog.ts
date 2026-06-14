@@ -1,7 +1,7 @@
-import { LitElement, html, css, unsafeCSS } from 'lit';
+import { LitElement, html, css, unsafeCSS, type TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
-import { getIconEmoji } from '@/utils/format';
+import { renderIcon } from '@/utils/render-icon';
 import { getEntityStore } from '@/data/entity-store';
 import type { TileConfig, TileSupportEntities } from '@/data/tiles-data';
 import type { HassState } from '@/data/state-watcher';
@@ -209,6 +209,7 @@ export class OigTileDialog extends LitElement {
       align-items: center;
     }
 
+    .oig-mdi { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; display: inline-block; }
     .icon-preview {
       width: 46px;
       height: 46px;
@@ -503,10 +504,8 @@ export class OigTileDialog extends LitElement {
       .slice(0, 20);
   }
 
-  private getDisplayIcon(icon: string): string {
-    if (!icon) return getIconEmoji('');
-    if (icon.startsWith('mdi:')) return getIconEmoji(icon);
-    return icon;
+  private getDisplayIcon(icon: string): TemplateResult | string {
+    return renderIcon(icon || 'mdi:gauge');
   }
 
   private getColorForEntity(entityId: string): string {

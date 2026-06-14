@@ -1,7 +1,7 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
-import { getIconEmoji } from '@/utils/format';
+import { renderIcon } from '@/utils/render-icon';
 
 const u = unsafeCSS;
 
@@ -237,6 +237,7 @@ export class OigIconPicker extends LitElement {
       line-height: 1;
       color: ${u(CSS_VARS.textPrimary)};
     }
+    .oig-mdi { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; display: inline-block; }
 
     .icon-name {
       width: 100%;
@@ -325,7 +326,7 @@ export class OigIconPicker extends LitElement {
                 <div class="icon-grid">
                   ${icons.map(icon => html`
                     <button class="icon-item" type="button" @click=${() => this.onIconClick(icon)}>
-                      <span class="icon-emoji">${getIconEmoji(icon)}</span>
+                      <span class="icon-emoji">${renderIcon(`mdi:${icon}`)}</span>
                       <span class="icon-name">${icon}</span>
                     </button>
                   `)}

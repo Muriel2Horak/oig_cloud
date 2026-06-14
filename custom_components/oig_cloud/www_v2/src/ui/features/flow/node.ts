@@ -203,7 +203,8 @@ export class OigFlowNode extends LitElement {
       border-radius: 12px;
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
-      padding: 10px 12px;
+      /* extra bottom padding so the (now larger) bottom pill clears the last row */
+      padding: 10px 12px 16px;
       box-shadow: 0 2px 12px rgba(0,0,0,0.15);
       transition: transform 0.2s, box-shadow 0.2s;
       overflow: visible;
@@ -363,16 +364,16 @@ export class OigFlowNode extends LitElement {
     /* Gauge detail pill + popover (tap-friendly; sits on the bottom edge) */
     .ss-pill {
       position: absolute;
-      bottom: -9px;
+      bottom: -11px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 4;
-      font-size: 10px;
+      font-size: 15px;
       font-weight: 800;
       background: #131f33;
       border: 1px solid rgba(255,255,255,0.25);
-      border-radius: 9px;
-      padding: 2px 9px;
+      border-radius: 11px;
+      padding: 3px 13px;
       cursor: pointer;
       box-shadow: 0 2px 6px rgba(0,0,0,0.4);
     }
@@ -380,7 +381,7 @@ export class OigFlowNode extends LitElement {
     .node-house .ss-pill {
       bottom: auto;
       top: -13px;
-      font-size: 14px;
+      font-size: 15px;
       padding: 3px 13px;
       border-radius: 11px;
     }
@@ -390,7 +391,7 @@ export class OigFlowNode extends LitElement {
     .node-solar .ss-pill {
       bottom: auto;
       top: -13px;
-      font-size: 14px;
+      font-size: 15px;
       padding: 3px 13px;
       border-radius: 11px;
     }

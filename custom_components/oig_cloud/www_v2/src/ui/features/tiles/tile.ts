@@ -1,7 +1,7 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
-import { getIconEmoji } from '@/utils/format';
+import { renderIcon } from '@/utils/render-icon';
 import type { ResolvedTile } from './types';
 import { haClient } from '@/data/ha-client';
 import { executeTileAction } from '@/data/tiles-data';
@@ -133,6 +133,7 @@ export class OigTile extends LitElement {
       width: 24px;
       text-align: center;
     }
+    .oig-mdi { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; display: inline-block; }
 
     .tile-label {
       flex: 1;
@@ -307,7 +308,7 @@ export class OigTile extends LitElement {
 
     const color = cfg.color || '';
     const rawIcon = cfg.icon || (isButton ? '⚡' : '📊');
-    const icon = rawIcon.startsWith('mdi:') ? getIconEmoji(rawIcon) : rawIcon;
+    const icon = renderIcon(rawIcon);
 
     const topRightEntityId = cfg.support_entities?.top_right;
     const bottomRightEntityId = cfg.support_entities?.bottom_right;
