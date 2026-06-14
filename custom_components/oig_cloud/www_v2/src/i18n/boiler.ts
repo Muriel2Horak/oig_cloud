@@ -183,6 +183,12 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.soc.legend_overflow': 'Přetok (forecast)',
     'boiler.soc.legend_temp': 'Teplota °C',
 
+    'boiler.model.top': 'nahoře',
+    'boiler.model.bottom': 'dole',
+    'boiler.model.element': 'patrona',
+    'boiler.model.today': 'dnes',
+    'boiler.model.trend': 'Trend',
+
     'boiler.plan_strip.heading': 'Plán ohřevu 24 h',
     'boiler.plan_strip.meta': 'zdroje + odběry + teplota + cirkulace',
     'boiler.plan_strip.empty': 'Plán ohřevu zatím není k dispozici.',
@@ -430,6 +436,12 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.soc.legend_draw': 'Draw',
     'boiler.soc.legend_overflow': 'Overflow (forecast)',
     'boiler.soc.legend_temp': 'Temperature °C',
+
+    'boiler.model.top': 'top',
+    'boiler.model.bottom': 'bottom',
+    'boiler.model.element': 'element',
+    'boiler.model.today': 'today',
+    'boiler.model.trend': 'Trend',
 
     'boiler.plan_strip.heading': 'Heating plan 24 h',
     'boiler.plan_strip.meta': 'sources + demands + temperature + circulation',
