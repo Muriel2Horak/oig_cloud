@@ -1311,6 +1311,10 @@ class BoilerRuntime:
         # Keys: 'fve', 'grid', 'alternative'; values: cumulative kWh since midnight.
         # Reset when local date changes; re-seeded on restart from box day counter.
         self._daily_source_kwh: dict[str, float] = {"fve": 0.0, "grid": 0.0, "alternative": 0.0}
+        # Parallel per-source COST accumulator (Kč since midnight). grid is
+        # integrated as energy × the all-in spot price at that interval; fve is
+        # free (0); gas/alt cost is computed at the DTO from the meter × config.
+        self._daily_source_cost_czk: dict[str, float] = {"fve": 0.0, "grid": 0.0}
         self._daily_source_date: Optional[Any] = None  # date object of last accumulation day
         self._daily_source_last_update_at: Optional[datetime] = None
         self._daily_source_reseeded: bool = False  # guard: reseed runs at most once per day
@@ -1522,6 +1526,7 @@ class BoilerRuntime:
         # Midnight reset
         if self._daily_source_date is not None and local_date != self._daily_source_date:
             self._daily_source_kwh = {"fve": 0.0, "grid": 0.0, "alternative": 0.0}
+            self._daily_source_cost_czk = {"fve": 0.0, "grid": 0.0}
             self._daily_source_reseeded = False  # allow reseed on new day
         self._daily_source_date = local_date
 
@@ -1559,8 +1564,39 @@ class BoilerRuntime:
         source = getattr(activity, "source", None)
         if state in ("charging_fve", "charging_overflow") or source in ("fve", "overflow"):
             self._daily_source_kwh["fve"] = self._daily_source_kwh.get("fve", 0.0) + energy_kwh
+            # Solar/overflow is free — no cost added.
         else:
             self._daily_source_kwh["grid"] = self._daily_source_kwh.get("grid", 0.0) + energy_kwh
+            price = self._read_current_grid_price_czk()
+            if price is not None:
+                self._daily_source_cost_czk["grid"] = (
+                    self._daily_source_cost_czk.get("grid", 0.0) + energy_kwh * price
+                )
+
+    def _read_current_grid_price_czk(self) -> Optional[float]:
+        """Current all-in grid price (Kč/kWh) for the active 15-min interval.
+
+        Reads ``sensor.oig_{box}_spot_price_current_15min`` — the same all-in
+        (spot+distribution+VAT) price the planner uses. None when unavailable.
+        """
+        box_id = getattr(self, "box_id", None)
+        if not box_id or box_id == "unknown":
+            return None
+        state = _state_for_entity(self.hass, f"sensor.oig_{box_id}_spot_price_current_15min")
+        if state is None:
+            return None
+        raw = str(getattr(state, "state", "") or "").strip().lower()
+        if raw in _UNAVAILABLE_TEMPERATURE_STATES:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
+    def get_daily_source_cost_czk(self) -> dict[str, float]:
+        """Return a snapshot of today's per-source cost accumulators (Kč)."""
+        return dict(self._daily_source_cost_czk)
 
     def get_daily_source_kwh(self) -> dict[str, float]:
         """Return a snapshot of today's per-source energy accumulators."""

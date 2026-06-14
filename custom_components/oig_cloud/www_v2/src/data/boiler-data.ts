@@ -392,6 +392,10 @@ interface BoilerCanonicalAPI {
     battery_kwh: number;
     unattributed_kwh?: number;
     source_invalid: boolean;
+    cost_czk?: number;
+    grid_cost_czk?: number;
+    alt_cost_czk?: number;
+    savings_vs_alt_czk?: number | null;
   } | null;
 }
 
@@ -1062,6 +1066,10 @@ export function mapCanonicalToV2(canonical: BoilerCanonicalAPI | null, configPro
     batteryKwh: typeof rawET.battery_kwh === 'number' ? rawET.battery_kwh : 0,
     unattributedKwh: typeof rawET.unattributed_kwh === 'number' ? rawET.unattributed_kwh : 0,
     sourceInvalid: rawET.source_invalid === true,
+    costCzk: typeof rawET.cost_czk === 'number' ? rawET.cost_czk : null,
+    gridCostCzk: typeof rawET.grid_cost_czk === 'number' ? rawET.grid_cost_czk : null,
+    altCostCzk: typeof rawET.alt_cost_czk === 'number' ? rawET.alt_cost_czk : null,
+    savingsVsAltCzk: typeof rawET.savings_vs_alt_czk === 'number' ? rawET.savings_vs_alt_czk : null,
   } : null;
 
   return {

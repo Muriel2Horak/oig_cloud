@@ -160,6 +160,12 @@ export interface EnergyToday {
   /** Electric kWh whose source could not be determined (e.g. pre-restart gap). */
   unattributedKwh: number;
   sourceInvalid: boolean;
+  /** Real today cost (Kč): grid×all-in spot + metered gas×config. null/absent until computed. */
+  costCzk?: number | null;
+  gridCostCzk?: number | null;
+  altCostCzk?: number | null;
+  /** Savings vs heating the same electric energy on the alt source (gas). null if no alt price. */
+  savingsVsAltCzk?: number | null;
 }
 
 export interface BoilerV2Data {

@@ -215,8 +215,11 @@ export class OigBoilerMetricPanel extends LitElement {
     const activity = data?.activity ?? null;
     const planSlots = data?.planSlots ?? [];
 
-    // Row 1: Cena dnes — from plan_summary.estimated_cost_czk
-    const costCzk: number | null = planSummary?.estimatedCostCzk ?? null;
+    // Row 1: Cena dnes — REAL today cost (grid×all-in spot + metered gas×config),
+    // not the planner's estimated FUTURE cost. Falls back to the plan estimate
+    // only if the real accumulator value isn't present.
+    const costCzk: number | null =
+      energy?.costCzk ?? planSummary?.estimatedCostCzk ?? null;
 
     // Row 2: Energie dnes — energy_today.total_kwh
     const totalKwh: number | null = energy?.totalKwh ?? null;
@@ -240,11 +243,10 @@ export class OigBoilerMetricPanel extends LitElement {
     const batteryKwh: number | null = energy?.batteryKwh ?? null;
     const showBattery = batteryKwh != null && batteryKwh > 0;
 
-    // Row 7: Ušetřeno vs. plyn — savings (cost_if_all_alt − estimated_cost_czk), only when cost_if_all_alt > 0
-    const costIfAllAlt = planSummary?.costIfAllAlt ?? null;
-    const savings = (costIfAllAlt != null && costIfAllAlt > 0 && costCzk != null)
-      ? costIfAllAlt - costCzk
-      : null;
+    // Row 7: Ušetřeno vs. plyn — REAL savings vs heating the same electric
+    // energy on the alt source (gas), from the energy accumulator. Null when no
+    // alt price is configured; only shown when positive.
+    const savings: number | null = energy?.savingsVsAltCzk ?? null;
     const savingsLabel = (savings != null && savings >= 0)
       ? `${savings.toFixed(1).replace('.', ',')} Kč`
       : null;

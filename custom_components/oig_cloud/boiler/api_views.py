@@ -13,6 +13,7 @@ from homeassistant.util import dt as dt_util
 from ..const import DOMAIN, KEY_BOILER_RUNTIMES
 from ..const import (
     BOILER_ENERGY_CONSTANT_KWH_L_C,
+    CONF_BOILER_ALT_COST_KWH,
     CONF_BOILER_ALT_SOURCE_TYPE,
     CONF_BOILER_CIRCULATION_ENABLED,
     CONF_BOILER_COLD_INLET_TEMP_C,
@@ -520,6 +521,27 @@ def _read_energy_tracking(
         # of being silently dumped into a source bucket.
         unattributed_kwh = max(0.0, total_energy - fve_kwh - grid_kwh)
 
+    # Cost (Kč): grid is integrated at the all-in spot price (runtime cost
+    # accumulator); FVE/overflow is free; alt = metered gas/heat × configured
+    # Kč/kWh. Savings = what the same electric energy would have cost on the alt
+    # source minus what it actually cost (grid only; FVE is free).
+    grid_cost = 0.0
+    if runtime is not None:
+        try:
+            grid_cost = float(runtime.get_daily_source_cost_czk().get("grid", 0.0) or 0.0)
+        except Exception:
+            grid_cost = 0.0
+    try:
+        alt_price = float(config.get(CONF_BOILER_ALT_COST_KWH, 0.0) or 0.0)
+    except (TypeError, ValueError):
+        alt_price = 0.0
+    alt_cost = round((alt_kwh or 0.0) * alt_price, 2) if alt_price > 0 else 0.0
+    cost_czk = round(grid_cost + alt_cost, 2)
+    electric_kwh = fve_kwh + grid_kwh + unattributed_kwh
+    savings_vs_alt = (
+        round(electric_kwh * alt_price - grid_cost, 2) if alt_price > 0 else None
+    )
+
     result: dict[str, Any] = {
         "current_source": current_source,
         "total_kwh": round(total_energy, 3),
@@ -528,6 +550,10 @@ def _read_energy_tracking(
         "alt_kwh": round(alt_kwh, 3),
         "unattributed_kwh": round(unattributed_kwh, 3),
         "source_estimated": source_estimated or unattributed_kwh > 0.01,
+        "cost_czk": cost_czk,
+        "grid_cost_czk": round(grid_cost, 2),
+        "alt_cost_czk": alt_cost,
+        "savings_vs_alt_czk": savings_vs_alt,
     }
     return result
 
@@ -871,6 +897,12 @@ def _assemble_canonical_dto(
         "battery_kwh": 0.0,  # TODO: attribute from Home 5 source_segments when available
         "unattributed_kwh": energy_tracking.get("unattributed_kwh", 0.0),
         "source_invalid": bool(energy_tracking.get("source_invalid", False)),
+        # Real today cost (Kč) — grid integrated at the all-in spot price + metered
+        # gas × config; replaces the planner's estimated FUTURE cost on the tile.
+        "cost_czk": energy_tracking.get("cost_czk", 0.0),
+        "grid_cost_czk": energy_tracking.get("grid_cost_czk", 0.0),
+        "alt_cost_czk": energy_tracking.get("alt_cost_czk", 0.0),
+        "savings_vs_alt_czk": energy_tracking.get("savings_vs_alt_czk"),
     }
 
     # F4: plan_summary — cost benchmarks + deadline from plan_result + config.
