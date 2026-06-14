@@ -2736,12 +2736,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       .flow-grid {
         grid-template-columns: 1fr 1.15fr 1fr !important;
         grid-template-rows: auto auto auto !important;
-        width: 820px;
-        max-width: 820px;
+        width: 870px;
+        max-width: 870px;
         gap: 8px;
         padding: 6px;
         margin: 0 auto;
-        zoom: 0.45;
+        zoom: 0.42;
       }
       .node-solar    { grid-column: 1; grid-row: 1; justify-self: center; }
       .node-house    { grid-column: 3; grid-row: 1; justify-self: center; }
@@ -2749,12 +2749,16 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
       .node-grid     { grid-column: 1; grid-row: 3; justify-self: center; }
       .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
 
-      /* Wider tiles than desktop so long lines (Solár plán, fáze) don't spill. */
+      /* Wider tiles than desktop so iOS's wider font doesn't spill (Solár plán,
+         fáze). Extra bottom padding gives the bottom pill (SoC%/°C/bilance)
+         room so it doesn't overlap the last row (tiles are content-height here,
+         no min-height slack like the desktop has). */
       .node {
-        width: 244px;
-        min-width: 244px;
-        max-width: 244px;
+        width: 260px;
+        min-width: 260px;
+        max-width: 260px;
         min-height: 0;
+        padding-bottom: 20px;
       }
     }
 
@@ -2775,11 +2779,12 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
 
     /* ---- Extra small (<380px) — zoom the full pentagon down a touch more ---- */
     @media (max-width: 380px) {
-      .flow-grid { zoom: 0.42; }
+      .flow-grid { zoom: 0.40; }
       .node {
-        width: 244px;
-        min-width: 244px;
-        max-width: 244px;
+        width: 260px;
+        min-width: 260px;
+        max-width: 260px;
+        padding-bottom: 20px;
       }
       .node-icon { font-size: 18px; }
       .node-value { font-size: 16px; }
