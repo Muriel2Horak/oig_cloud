@@ -103,11 +103,12 @@ class DemandWindow:
 @dataclass
 class MatchMeta:
     """Describes which profile level was used for the demand map."""
-    category: str            # original requested category
+    category: str            # original requested category (what we plan FOR)
     level: str               # "exact" | "day_type" | "global" | "bootstrap"
     days_used: int
-    label: str               # human-readable (English only; FE adds i18n)
+    label: str               # human-readable for `category` (English; FE adds i18n)
     fallback_used: bool
+    source_category: str = ""  # category the data was actually BORROWED from (fallback)
 
 
 @dataclass
@@ -141,6 +142,7 @@ class DemandMap:
                 "days_used": self.meta.days_used,
                 "label": self.meta.label,
                 "fallback_used": self.meta.fallback_used,
+                "source_category": self.meta.source_category,
             },
             "confidence": round(self.confidence, 2),
         }
@@ -566,8 +568,12 @@ class BoilerDemandProfiler:
                     category=category,
                     level=level,
                     days_used=days_used,
-                    label=_category_label(cat_key, days_used),
+                    # Label describes what we PLAN FOR (requested category) so it
+                    # never contradicts `category`; the borrowed profile is in
+                    # source_category + fallback_used.
+                    label=_category_label(category, days_used),
                     fallback_used=level != "exact",
+                    source_category=cat_key,
                 )
                 return slots, meta
 
@@ -587,6 +593,7 @@ class BoilerDemandProfiler:
                 days_used=days_used,
                 label=_category_label(category, days_used),
                 fallback_used=False,
+                source_category=category,
             )
             return slots, meta
 
@@ -598,6 +605,7 @@ class BoilerDemandProfiler:
             days_used=0,
             label="no history (bootstrap)",
             fallback_used=True,
+            source_category="",
         )
         return empty_slots, meta
 
