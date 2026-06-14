@@ -328,14 +328,19 @@ export class OigApp extends LitElement {
       padding-top: 8px;
     }
 
-    /* ---- Flow tab layout: canvas | ovládání ---- */
+    /* ---- Flow tab layout: dlaždice | canvas | systém ---- */
     .flow-layout {
       display: grid;
-      grid-template-columns: 1fr 320px;
-      grid-template-areas: 'canvas control';
+      grid-template-columns: 212px 1fr 300px;
+      grid-template-areas: 'tiles canvas control';
       gap: 12px;
       width: 100%;
       align-items: start;
+    }
+
+    .flow-tiles-stack {
+      grid-area: tiles;
+      min-width: 0;
     }
 
     .flow-center {
@@ -359,10 +364,11 @@ export class OigApp extends LitElement {
     .control-stack__head {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 8px;
-      padding: 14px 18px 12px;
+      padding: 13px 16px 11px;
       border-bottom: 1px solid ${u(CSS_VARS.divider)};
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
@@ -370,26 +376,7 @@ export class OigApp extends LitElement {
     }
 
     .control-stack__block {
-      padding: 14px 18px;
-    }
-
-    .control-stack__sep {
-      height: 1px;
-      background: ${u(CSS_VARS.divider)};
-      margin: 0 18px;
-    }
-
-    .control-stack__label {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 12px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-      color: ${u(CSS_VARS.textSecondary)};
+      padding: 12px 14px;
     }
 
     .control-stack__add {
@@ -508,20 +495,21 @@ export class OigApp extends LitElement {
     }
 
     /* ---- Responsive ---- */
-    /* Tablet 768–1200: canvas + unified Ovládání, mírně užší */
+    /* Tablet 768–1200: užší dlaždice + systém kolem pentagonu */
     @media (max-width: 1200px) {
       .flow-layout {
-        grid-template-columns: 1fr 280px;
+        grid-template-columns: 168px 1fr 248px;
         gap: 8px;
       }
     }
 
-    /* Mobile <768: Single column — canvas nahoře, Ovládání pod ním */
+    /* Mobile <768: Single column — pentagon, dlaždice (hned vidět), systém */
     @media (max-width: 768px) {
       .flow-layout {
         grid-template-columns: 1fr;
         grid-template-areas:
           'canvas'
+          'tiles'
           'control';
         gap: 8px;
       }
@@ -533,8 +521,8 @@ export class OigApp extends LitElement {
       }
     }
 
-    /* Landscape kiosk (Google Nest Hub ~768×543): toky + Ovládání vedle sebe,
-       sekce scrolluje uvnitř. */
+    /* Landscape kiosk (Google Nest Hub ~768×543): pentagon + Systém OIG vedle
+       sebe, dlaždice skryté (sekundární), panel scrolluje uvnitř. */
     @media (orientation: landscape) and (max-height: 600px) {
       main { padding: 6px 10px; }
       .flow-layout {
@@ -543,6 +531,7 @@ export class OigApp extends LitElement {
         gap: 8px;
         align-items: start;
       }
+      .flow-tiles-stack { display: none; }
       .flow-center { grid-area: canvas; }
       .flow-control {
         grid-area: control;
@@ -1200,6 +1189,29 @@ export class OigApp extends LitElement {
             <!-- ===== FLOW TAB ===== -->
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
               <div class="flow-layout">
+                <!-- Dlaždice: levý sloupec (sjednocený styl Ovládání) -->
+                <div class="flow-tiles-stack">
+                  <div class="control-stack">
+                    <div class="control-stack__head">
+                      <span>🔌 Moje dlaždice</span>
+                      <button class="control-stack__add" type="button"
+                        title="Přidat dlaždici" @click=${this.onAddTile}>+</button>
+                    </div>
+                    <div class="control-stack__block">
+                      ${this.tilesLeft.length + this.tilesRight.length > 0 ? html`
+                        <oig-tiles-container
+                          .tiles=${[...this.tilesLeft, ...this.tilesRight]}
+                          .editMode=${this.editMode}
+                          @edit-tile=${this.onEditTile}
+                          @delete-tile=${this.onDeleteTile}
+                        ></oig-tiles-container>
+                      ` : html`
+                        <div class="control-stack__tiles-empty">Zatím žádné dlaždice — přidej tlačítkem +</div>
+                      `}
+                    </div>
+                  </div>
+                </div>
+
                 <!-- Canvas: střed -->
                 <div class="flow-center">
                   <oig-flow-canvas
@@ -1211,36 +1223,12 @@ export class OigApp extends LitElement {
                   ></oig-flow-canvas>
                 </div>
 
-                <!-- Sjednocené Ovládání: Systém OIG + Moje dlaždice -->
+                <!-- Systém OIG: pravý sloupec (stejný styl) -->
                 <div class="flow-control">
                   <div class="control-stack">
-                    <div class="control-stack__head">🛡️ Ovládání</div>
-
-                    <!-- Blok 1: systémové přepínače (shield + confirm + fronta) -->
+                    <div class="control-stack__head">🛡️ Systém OIG</div>
                     <div class="control-stack__block">
-                      <div class="control-stack__label">Systém OIG</div>
                       <oig-control-panel embedded .boxHasHome56=${this.boxHasHome56}></oig-control-panel>
-                    </div>
-
-                    <div class="control-stack__sep"></div>
-
-                    <!-- Blok 2: uživatelské dlaždice -->
-                    <div class="control-stack__block">
-                      <div class="control-stack__label">
-                        <span>Moje dlaždice</span>
-                        <button class="control-stack__add" type="button"
-                          title="Přidat dlaždici" @click=${this.onAddTile}>+</button>
-                      </div>
-                      ${this.tilesLeft.length + this.tilesRight.length > 0 ? html`
-                        <oig-tiles-container
-                          .tiles=${[...this.tilesLeft, ...this.tilesRight]}
-                          .editMode=${this.editMode}
-                          @edit-tile=${this.onEditTile}
-                          @delete-tile=${this.onDeleteTile}
-                        ></oig-tiles-container>
-                      ` : html`
-                        <div class="control-stack__tiles-empty">Zatím žádné dlaždice — přidej tlačítkem +</div>
-                      `}
                     </div>
                   </div>
                 </div>

@@ -20,7 +20,7 @@ export class OigTile extends LitElement {
     :host {
       display: flex;
       flex-direction: column;
-      padding: 10px 12px;
+      padding: 7px 9px;
       background: ${u(CSS_VARS.cardBg)};
       border-radius: 10px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
@@ -94,12 +94,12 @@ export class OigTile extends LitElement {
     :host([tiletype="button"]) .tile-icon {
       background: color-mix(in srgb, var(--tile-color, ${u(CSS_VARS.accent)}) 18%, transparent);
       border-radius: 50%;
-      width: 28px;
-      height: 28px;
+      width: 22px;
+      height: 22px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
+      font-size: 13px;
     }
 
     :host([tiletype="button"]) .tile-label {
@@ -121,16 +121,16 @@ export class OigTile extends LitElement {
     .tile-top {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       min-width: 0;
-      margin-bottom: 3px;
+      margin-bottom: 2px;
     }
 
     .tile-icon {
-      font-size: 20px;
+      font-size: 15px;
       line-height: 1;
       flex-shrink: 0;
-      width: 24px;
+      width: 18px;
       text-align: center;
     }
     .oig-mdi { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; display: inline-block; }
@@ -158,7 +158,7 @@ export class OigTile extends LitElement {
     }
 
     .support-value {
-      font-size: 11px;
+      font-size: 9px;
       font-weight: 500;
       color: ${u(CSS_VARS.textSecondary)};
       white-space: nowrap;
@@ -185,7 +185,7 @@ export class OigTile extends LitElement {
     }
 
     .tile-value {
-      font-size: 20px;
+      font-size: 15px;
       font-weight: 700;
       color: ${u(CSS_VARS.textPrimary)};
       line-height: 1.1;
@@ -196,7 +196,7 @@ export class OigTile extends LitElement {
     }
 
     .tile-unit {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 400;
       color: ${u(CSS_VARS.textSecondary)};
       white-space: nowrap;
@@ -369,7 +369,7 @@ export class OigTilesContainer extends LitElement {
   static styles = css`
     :host {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
       gap: 6px;
       min-width: 0;
     }
