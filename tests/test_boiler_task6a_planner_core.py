@@ -916,6 +916,50 @@ def test_f3a_multi_target_two_windows_both_met():
     assert PlannerReasonCode.DEMAND_TARGET_MISSED not in result.reason_codes
 
 
+def test_f3a_sequential_draws_each_get_their_own_heat():
+    """A later draw must NOT inherit heat already consumed by an earlier draw.
+
+    Two equal back-to-back draws (each = exactly one heat slot). The earlier
+    draw consumes its prepared heat, so the later draw needs its OWN heat slot
+    between the two targets. The old cumulative-credit bug heated only once.
+    """
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    from custom_components.oig_cloud.boiler.planner_contract import DemandTarget
+
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    # 4 kW heater → 1.0 kWh per 15-min slot. Tank already near target so the
+    # safety-net adds (almost) nothing → isolates the demand-target allocation.
+    topo = _f3a_topology(tank_volume_l=200.0, heater_power_kw=4.0, target_temp_c=60.0)
+
+    morning = DemandTarget(start=now + timedelta(hours=2), required_kwh=1.0, label="morning")
+    midday = DemandTarget(start=now + timedelta(hours=5), required_kwh=1.0, label="midday")
+
+    prices = _make_prices(now, flat_price=3.0)
+    inp = PlannerInput(
+        entry_id="test",
+        box_id="box",
+        profile=_profile(),
+        spot_prices=prices,
+        overflow_windows=[],
+        deadline_time="11:00",
+        topology=topo,
+        current_top_temp_c=59.5,
+        temperature_updated_at=now,
+        demand_targets=[morning, midday],
+    )
+
+    result = plan_comfort_core(inp, now=now)
+
+    heated = [s for s in result.slots if s.action == "heat"]
+    before_morning = [s for s in heated if s.end <= morning.start]
+    between = [s for s in heated if morning.start <= s.end <= midday.start]
+    # Each draw gets its own preparation: ≥1 slot before morning AND ≥1 between
+    # morning and midday (the fix; the old bug left `between` empty).
+    assert len(before_morning) >= 1, "morning draw must be prepared"
+    assert len(between) >= 1, "midday draw must get its OWN heat after the morning draw"
+    assert result.demands_met == [True, True]
+
+
 def test_f3a_infeasible_demand_target_emits_reason_code():
     """When a demand target cannot be met (no slots available), DEMAND_TARGET_MISSED is set."""
     from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core

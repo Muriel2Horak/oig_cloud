@@ -486,7 +486,13 @@ def _allocate_multi_target(
     allocated: dict[datetime, _SlotAllocation] = {}
     demands_met: list[bool] = []
     demand_labels: list[str] = []
-    allocated_kwh: float = 0.0
+    # total_allocated_kwh = cumulative HEAT scheduled (drives the safety-net).
+    # carried_kwh = net energy still in the tank for the NEXT target = prior heat
+    # MINUS the draws of earlier targets. Crediting prior HEAT (the old bug)
+    # ignored intervening draws, so a later draw inherited heat that an earlier
+    # draw had already consumed → sequential draws were under-prepared.
+    total_allocated_kwh: float = 0.0
+    carried_kwh: float = 0.0
     all_targets_met = True
 
     # R3: shared mutable battery budget reference across all allocation passes.
@@ -499,14 +505,17 @@ def _allocate_multi_target(
             s for s in slots
             if s.end <= target.start and s.start not in allocated
         ]
-        remaining_kwh = max(0.0, target.required_kwh - allocated_kwh)
+        # Credit only energy that SURVIVES earlier draws (carried), not all the
+        # earlier heat.
+        remaining_kwh = max(0.0, target.required_kwh - carried_kwh)
         required_slots_i = _required_heat_slots(remaining_kwh, heat_kwh)
 
         if required_slots_i <= 0:
-            # Already satisfied by earlier allocations.
+            # Already covered by carried energy; this target's draw still
+            # consumes from it.
             demands_met.append(True)
             demand_labels.append(target.label)
-            allocated_kwh += 0.0  # no new heat needed
+            carried_kwh = max(0.0, carried_kwh - target.required_kwh)
             continue
 
         feasible_i = required_slots_i <= len(available)
@@ -526,6 +535,7 @@ def _allocate_multi_target(
             _append_reason(reasons, PlannerReasonCode.DEMAND_TARGET_MISSED)
 
         demand_labels.append(target.label)
+        heated_this_target = 0.0
         for slot in selected:
             if slot.start not in allocated:
                 bkwh = battery_budget_ref[0] if battery_budget_ref is not None else 0.0
@@ -533,14 +543,17 @@ def _allocate_multi_target(
                 if battery_budget_ref is not None:
                     battery_budget_ref[0] = max(0.0, battery_budget_ref[0] - alloc.battery_kwh)
                 allocated[slot.start] = alloc
-                allocated_kwh += heat_kwh
+                total_allocated_kwh += heat_kwh
+                heated_this_target += heat_kwh
+        # After heating for this target and its draw, update the carried energy.
+        carried_kwh = max(0.0, carried_kwh + heated_this_target - target.required_kwh)
 
     # Safety-net pass: allocate remaining slots between last demand target
     # (or now) and the deadline to ensure the topology target_temp is met.
     remaining_deadline_slots = [
         s for s in deadline_slots if s.start not in allocated
     ]
-    safety_kwh = max(0.0, required_kwh - allocated_kwh)
+    safety_kwh = max(0.0, required_kwh - total_allocated_kwh)
     safety_slots_needed = _required_heat_slots(safety_kwh, heat_kwh)
     safety_feasible = safety_slots_needed <= len(remaining_deadline_slots)
 
