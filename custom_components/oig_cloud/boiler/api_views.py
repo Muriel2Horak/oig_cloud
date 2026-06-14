@@ -882,6 +882,13 @@ def _assemble_canonical_dto(
     # R1/R8: alt_source_type — string label for FE ("gas"|"heat_pump"|"fireplace"|"other").
     alt_source_type: str = config.get(CONF_BOILER_ALT_SOURCE_TYPE, DEFAULT_BOILER_ALT_SOURCE_TYPE) or DEFAULT_BOILER_ALT_SOURCE_TYPE
 
+    # Real heating state from the live activity classifier (driven by the power
+    # estimator), NOT the retained last-known source — the latter stays "fve"
+    # at standby and falsely reads "heating".
+    _activity_now = getattr(runtime, "current_activity", None)
+    _activity_state = getattr(_activity_now, "state", None) if _activity_now is not None else None
+    is_heating_now = isinstance(_activity_state, str) and _activity_state.startswith("charging_")
+
     return {
         "entry_id": entry_id,
         "box_id": box_id,
@@ -890,7 +897,7 @@ def _assemble_canonical_dto(
             "temperatures": temperatures,
             "energy_state": energy_state,
             "energy_tracking": energy_tracking,
-            "heating": energy_tracking.get("current_source") in ("fve", "alternative"),
+            "heating": is_heating_now,
             "recommended_source": selected_source,
             "last_update": now.isoformat(),
         },
