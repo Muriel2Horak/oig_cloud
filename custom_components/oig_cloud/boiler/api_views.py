@@ -46,6 +46,8 @@ from ..const import (
     DEFAULT_BOILER_TEMP_SENSOR_POSITION,
     DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO,
 )
+from .const import BOILER_READY_TEMP_C
+from .classifier import compute_ready_fraction
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -564,7 +566,10 @@ def _read_energy_tracking(
 
 
 def _assemble_plan_slots(
-    plan: Any, target_temp_c: float = DEFAULT_BOILER_TARGET_TEMP_C
+    plan: Any,
+    target_temp_c: float = DEFAULT_BOILER_TARGET_TEMP_C,
+    volume_l: float = 200.0,
+    cold_inlet_c: float = DEFAULT_BOILER_COLD_INLET_TEMP_C,
 ) -> list[dict[str, Any]]:
     slots: list[dict[str, Any]] = []
     if not plan or not hasattr(plan, "slots"):
@@ -584,6 +589,18 @@ def _assemble_plan_slots(
         ):
             predicted_top_temp_c = raw_predicted
             comfort_satisfied = raw_predicted >= target_temp_c
+
+        # SoC curve: predicted ready (>=40 degC) litres from the forecast top
+        # temperature (top-only conservative model — the plan predicts top only).
+        ready_liters = None
+        if predicted_top_temp_c is not None:
+            ready_fraction = compute_ready_fraction(
+                predicted_top_temp_c,
+                None,
+                ready_temp_c=BOILER_READY_TEMP_C,
+                cold_inlet_c=cold_inlet_c,
+            )
+            ready_liters = round(ready_fraction * volume_l, 1)
 
         slot_data: dict[str, Any] = {
             "start": (
@@ -609,6 +626,7 @@ def _assemble_plan_slots(
             "battery_kwh": round(getattr(slot, "battery_kwh", 0.0), 3),
             "estimated_cost_czk": round(getattr(slot, "estimated_cost_czk", 0.0), 2),
             "predicted_top_temp_c": predicted_top_temp_c,
+            "ready_liters": ready_liters,
             "comfort_satisfied": comfort_satisfied,
             "pv_share": round(getattr(slot, "pv_share", 0.0), 3),
             # R9: purpose field — "comfort" (default) or "legionella"
@@ -967,7 +985,14 @@ def _assemble_canonical_dto(
         },
         "selected_source": selected_source,
         "actuated_source": actuated_source,
-        "plan_slots": _assemble_plan_slots(plan, target_temp_c=target_temp_c),
+        "plan_slots": _assemble_plan_slots(
+            plan,
+            target_temp_c=target_temp_c,
+            volume_l=float(config.get(CONF_BOILER_VOLUME_L, 200.0)),
+            cold_inlet_c=float(
+                config.get(CONF_BOILER_COLD_INLET_TEMP_C, DEFAULT_BOILER_COLD_INLET_TEMP_C)
+            ),
+        ),
         "reason_codes": reason_codes,
         "freshness": freshness,
         "degraded_flags": {
