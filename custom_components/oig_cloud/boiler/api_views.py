@@ -537,9 +537,14 @@ def _read_energy_tracking(
         alt_price = 0.0
     alt_cost = round((alt_kwh or 0.0) * alt_price, 2) if alt_price > 0 else 0.0
     cost_czk = round(grid_cost + alt_cost, 2)
-    electric_kwh = fve_kwh + grid_kwh + unattributed_kwh
+    # Savings only over ATTRIBUTED electric energy (fve+grid) where the real cost
+    # is known — never the unattributed (post-restart) gap, which would otherwise
+    # be counted as "free" and inflate the savings.
+    attributed_electric_kwh = fve_kwh + grid_kwh
     savings_vs_alt = (
-        round(electric_kwh * alt_price - grid_cost, 2) if alt_price > 0 else None
+        round(attributed_electric_kwh * alt_price - grid_cost, 2)
+        if alt_price > 0
+        else None
     )
 
     result: dict[str, Any] = {
