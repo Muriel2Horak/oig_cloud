@@ -124,6 +124,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 cold_inlet_temp_c=_cold_inlet_temp_c,
                 power_entity=_power_entity,
                 command_entity=_command_entity,
+                box_id=self.box_id if self.box_id and self.box_id != "unknown" else None,
             )
         else:
             self._demand_profiler = None

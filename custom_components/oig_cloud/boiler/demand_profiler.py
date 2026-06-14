@@ -18,7 +18,7 @@ import logging
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 _LOGGER = logging.getLogger(__name__)
@@ -440,6 +440,88 @@ def build_category_slots(
 
 
 # ---------------------------------------------------------------------------
+# Persistence: merge / prune / (de)serialize category slots
+# ---------------------------------------------------------------------------
+# CategorySlots survive across restarts and beyond the recorder purge window
+# (HA defaults to 10 days, far short of the 90-day profile horizon). Each cycle
+# the freshly recomputed days (from whatever the recorder still holds) are
+# merged over the persisted store and days older than the horizon are pruned.
+
+
+def merge_category_slots(base: CategorySlots, fresh: CategorySlots) -> CategorySlots:
+    """Merge ``fresh`` over ``base``, overwriting per (category, day).
+
+    A day's draws are recomputed in full from the recorder each cycle, so a
+    fresh day replaces the persisted one outright (no double counting).
+    """
+    merged: CategorySlots = {
+        cat: {day: dict(slots) for day, slots in days.items()}
+        for cat, days in base.items()
+    }
+    for cat, days in fresh.items():
+        cat_data = merged.setdefault(cat, {})
+        for day, slots in days.items():
+            cat_data[day] = dict(slots)
+    return merged
+
+
+def prune_category_slots(
+    slots: CategorySlots, keep_days: int, today: date
+) -> CategorySlots:
+    """Drop day entries older than ``keep_days`` (by local date) and empty cats."""
+    cutoff = today - timedelta(days=keep_days)
+    pruned: CategorySlots = {}
+    for cat, days in slots.items():
+        kept: dict[str, dict[int, float]] = {}
+        for day_str, day_slots in days.items():
+            try:
+                day_date = datetime.strptime(day_str, "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                continue
+            if day_date >= cutoff:
+                kept[day_str] = day_slots
+        if kept:
+            pruned[cat] = kept
+    return pruned
+
+
+def serialize_category_slots(slots: CategorySlots) -> dict:
+    """Convert to a JSON-safe dict (int slot keys → str)."""
+    return {
+        cat: {
+            day: {str(slot_idx): round(kwh, 5) for slot_idx, kwh in day_slots.items()}
+            for day, day_slots in days.items()
+        }
+        for cat, days in slots.items()
+    }
+
+
+def deserialize_category_slots(data: Any) -> CategorySlots:
+    """Inverse of serialize_category_slots; tolerant of malformed input."""
+    result: CategorySlots = {}
+    if not isinstance(data, dict):
+        return result
+    for cat, days in data.items():
+        if not isinstance(days, dict):
+            continue
+        cat_data: dict[str, dict[int, float]] = {}
+        for day, day_slots in days.items():
+            if not isinstance(day_slots, dict):
+                continue
+            slot_map: dict[int, float] = {}
+            for slot_idx, kwh in day_slots.items():
+                try:
+                    slot_map[int(slot_idx)] = float(kwh)
+                except (ValueError, TypeError):
+                    continue
+            if slot_map:
+                cat_data[day] = slot_map
+        if cat_data:
+            result[cat] = cat_data
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Percentile computation
 # ---------------------------------------------------------------------------
 
@@ -586,6 +668,18 @@ class BoilerDemandProfiler:
             len(draws),
             len(self._category_slots),
         )
+
+    def get_category_slots(self) -> CategorySlots:
+        """Return the current per-category per-day slot samples (for persistence)."""
+        return self._category_slots
+
+    def set_category_slots(self, slots: CategorySlots) -> None:
+        """Replace the slot samples (used when restoring/merging persisted data)."""
+        self._category_slots = slots
+
+    def set_cold_inlet_temp_c(self, value: float) -> None:
+        """Update the cold-inlet temperature used for the liters conversion."""
+        self.cold_inlet_temp_c = value
 
     def get_demand_map(self, category: str) -> DemandMap:
         """Return DemandMap for the given category using the fallback chain.
@@ -756,6 +850,7 @@ class BoilerDemandProfilerAsync:
         draw_threshold_c_per_min: float = DRAW_RATE_THRESHOLD_C_PER_MIN,
         power_entity: Optional[str] = None,
         command_entity: Optional[str] = None,
+        box_id: Optional[str] = None,
     ) -> None:
         self.hass = hass
         self.temp_sensor_entity = temp_sensor_entity
@@ -767,12 +862,32 @@ class BoilerDemandProfilerAsync:
         self.power_entity = power_entity
         self.command_entity = command_entity
         self.lookback_days = lookback_days
+        self.box_id = box_id
+        self._configured_cold_inlet_c = cold_inlet_temp_c
         self._profiler = BoilerDemandProfiler(
             volume_l=volume_l,
             target_temp_c=target_temp_c,
             cold_inlet_temp_c=cold_inlet_temp_c,
             draw_threshold_c_per_min=draw_threshold_c_per_min,
         )
+        # Lazy-initialised persistent store of CategorySlots (survives recorder
+        # purge + restarts). None until first async_update on a real hass.
+        self._store: Any = None
+        self._store_loaded: bool = False
+
+    def _ensure_store(self) -> Any:
+        """Lazily create the persistent Store keyed by box_id."""
+        if self._store is None and self.box_id:
+            try:
+                from homeassistant.helpers.storage import Store
+                self._store = Store(
+                    self.hass,
+                    version=1,
+                    key=f"oig_cloud.boiler_demand_{self.box_id}",
+                )
+            except Exception as err:  # pragma: no cover - defensive
+                _LOGGER.debug("DemandProfiler: store unavailable: %s", err)
+        return self._store
 
     async def async_update(self) -> None:
         """Fetch history from recorder and update demand profiles."""
@@ -893,6 +1008,7 @@ class BoilerDemandProfilerAsync:
             # Build history list
             temp_list = temp_states.get(self.temp_sensor_entity, [])
             history: list[dict] = []
+            min_temp: Optional[float] = None
             for state in temp_list:
                 try:
                     temp = float(state.state)
@@ -908,18 +1024,77 @@ class BoilerDemandProfilerAsync:
                         if bp is not None:
                             record["power_w"] = bp
                     history.append(record)
+                    if min_temp is None or temp < min_temp:
+                        min_temp = temp
                 except (ValueError, AttributeError):
                     continue
 
-            _LOGGER.debug(
-                "DemandProfiler: fetched %d temperature records for %s",
-                len(history),
-                self.temp_sensor_entity,
+            # D2: estimate cold-inlet from the coldest temperature actually
+            # observed (the tank approaches inlet temp after a full draw),
+            # clamped to a sane range; fall back to the configured constant.
+            self._profiler.set_cold_inlet_temp_c(
+                self._estimate_cold_inlet_c(min_temp)
             )
-            self._profiler.update(history)
+
+            # Detect draws from the recorder window and aggregate into per-day
+            # slots. These are the *fresh* days; merge them over the persisted
+            # store so coverage survives the recorder purge (HA default 10 days).
+            fresh = build_category_slots(
+                detect_draws(
+                    history,
+                    volume_l=self._profiler.volume_l,
+                    target_temp_c=self._profiler.target_temp_c,
+                    cold_inlet_temp_c=self._profiler.cold_inlet_temp_c,
+                    threshold_c_per_min=self._profiler.draw_threshold_c_per_min,
+                )
+            )
+
+            persisted = await self._async_load_persisted()
+            merged = merge_category_slots(persisted, fresh)
+            merged = prune_category_slots(merged, self.lookback_days, end_time.date())
+            self._profiler.set_category_slots(merged)
+            await self._async_save_persisted(merged)
+
+            _LOGGER.debug(
+                "DemandProfiler: %d temp records, %d fresh categories, "
+                "%d total categories after merge (cold_inlet=%.1f)",
+                len(history),
+                len(fresh),
+                len(merged),
+                self._profiler.cold_inlet_temp_c,
+            )
 
         except Exception as err:
             _LOGGER.error("DemandProfiler async_update failed: %s", err, exc_info=True)
+
+    def _estimate_cold_inlet_c(self, min_observed_temp: Optional[float]) -> float:
+        """Cold-inlet estimate from the coldest observed temp, clamped 5..20 degC."""
+        if min_observed_temp is None:
+            return self._configured_cold_inlet_c
+        return max(5.0, min(20.0, min_observed_temp))
+
+    async def _async_load_persisted(self) -> CategorySlots:
+        """Load persisted CategorySlots once, then keep the in-memory copy."""
+        store = self._ensure_store()
+        if store is None or self._store_loaded:
+            return self._profiler.get_category_slots()
+        try:
+            data = await store.async_load()
+            self._store_loaded = True
+            return deserialize_category_slots(data)
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.debug("DemandProfiler: load failed: %s", err)
+            self._store_loaded = True
+            return {}
+
+    async def _async_save_persisted(self, slots: CategorySlots) -> None:
+        store = self._ensure_store()
+        if store is None:
+            return
+        try:
+            await store.async_save(serialize_category_slots(slots))
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.debug("DemandProfiler: save failed: %s", err)
 
     def get_demand_map(self, category: str) -> DemandMap:
         """Return demand map for the given category."""

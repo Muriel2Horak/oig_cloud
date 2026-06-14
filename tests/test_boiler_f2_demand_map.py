@@ -35,12 +35,17 @@ from custom_components.oig_cloud.boiler.demand_profiler import (
     MatchMeta,
     build_category_slots,
     detect_draws,
+    merge_category_slots,
+    prune_category_slots,
+    serialize_category_slots,
+    deserialize_category_slots,
     _cluster_windows,
     _distribute_draw_to_slots,
     _get_day_category,
     _slot_index,
     _percentile,
 )
+from datetime import date as _date
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +320,93 @@ class TestDetectDrawsDuringHeating:
         assert _record_power_w({"power_w": 0.0}) == 0.0
         assert _record_power_w({}) is None
         assert _record_power_w({"power_w": None}) is None
+
+
+class TestCategorySlotPersistence:
+    """F3d: merge / prune / (de)serialize CategorySlots across the recorder purge."""
+
+    def test_merge_adds_new_days(self):
+        base = {"workday_summer": {"2026-06-01": {28: 1.0}}}
+        fresh = {"workday_summer": {"2026-06-02": {30: 0.5}}}
+        merged = merge_category_slots(base, fresh)
+        assert merged["workday_summer"]["2026-06-01"][28] == 1.0
+        assert merged["workday_summer"]["2026-06-02"][30] == 0.5
+
+    def test_merge_overwrites_same_day(self):
+        """A recomputed day replaces the persisted one (no double counting)."""
+        base = {"workday_summer": {"2026-06-01": {28: 1.0}}}
+        fresh = {"workday_summer": {"2026-06-01": {28: 2.5}}}
+        merged = merge_category_slots(base, fresh)
+        assert merged["workday_summer"]["2026-06-01"][28] == 2.5
+
+    def test_merge_does_not_mutate_inputs(self):
+        base = {"c": {"2026-06-01": {1: 1.0}}}
+        fresh = {"c": {"2026-06-02": {2: 2.0}}}
+        merge_category_slots(base, fresh)
+        assert "2026-06-02" not in base["c"]
+
+    def test_prune_drops_old_days(self):
+        slots = {
+            "workday_summer": {
+                "2026-03-01": {28: 1.0},   # > 90 days before cutoff
+                "2026-06-01": {28: 1.0},   # recent
+            }
+        }
+        pruned = prune_category_slots(slots, keep_days=90, today=_date(2026, 6, 9))
+        assert "2026-03-01" not in pruned["workday_summer"]
+        assert "2026-06-01" in pruned["workday_summer"]
+
+    def test_prune_drops_empty_categories(self):
+        slots = {"workday_summer": {"2026-01-01": {28: 1.0}}}
+        pruned = prune_category_slots(slots, keep_days=90, today=_date(2026, 6, 9))
+        assert pruned == {}
+
+    def test_serialize_roundtrip(self):
+        slots = {"workday_summer": {"2026-06-01": {28: 1.234567, 30: 0.5}}}
+        restored = deserialize_category_slots(serialize_category_slots(slots))
+        assert set(restored["workday_summer"]["2026-06-01"].keys()) == {28, 30}
+        assert abs(restored["workday_summer"]["2026-06-01"][28] - 1.234567) < 1e-4
+        # Slot keys must be ints after the roundtrip (JSON would make them str)
+        assert all(
+            isinstance(k, int)
+            for k in restored["workday_summer"]["2026-06-01"].keys()
+        )
+
+    def test_deserialize_tolerates_garbage(self):
+        assert deserialize_category_slots(None) == {}
+        assert deserialize_category_slots("nope") == {}
+        assert deserialize_category_slots({"c": {"d": {"x": "y"}}}) == {}
+
+    def test_profiler_set_get_category_slots(self):
+        p = BoilerDemandProfiler(volume_l=200, target_temp_c=60, cold_inlet_temp_c=10)
+        slots = {"workday_summer": {"2026-06-01": {28: 1.0}}}
+        p.set_category_slots(slots)
+        assert p.get_category_slots() == slots
+
+    def test_profiler_set_cold_inlet(self):
+        p = BoilerDemandProfiler(volume_l=200, target_temp_c=60, cold_inlet_temp_c=10)
+        p.set_cold_inlet_temp_c(14.5)
+        assert p.cold_inlet_temp_c == 14.5
+
+    def test_cold_inlet_estimate(self):
+        from custom_components.oig_cloud.boiler.demand_profiler import (
+            BoilerDemandProfilerAsync,
+        )
+        a = BoilerDemandProfilerAsync(
+            hass=None,
+            temp_sensor_entity="sensor.top",
+            heating_entity=None,
+            volume_l=200,
+            target_temp_c=60,
+            cold_inlet_temp_c=10,
+        )
+        # No observation → configured constant
+        assert a._estimate_cold_inlet_c(None) == 10.0
+        # Observed coldest within range → use it
+        assert a._estimate_cold_inlet_c(13.0) == 13.0
+        # Clamp out-of-range observations
+        assert a._estimate_cold_inlet_c(2.0) == 5.0
+        assert a._estimate_cold_inlet_c(40.0) == 20.0
 
 
 # ---------------------------------------------------------------------------
