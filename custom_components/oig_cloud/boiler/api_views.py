@@ -708,6 +708,26 @@ def _read_demand_map_dto(runtime: Any, config: dict[str, Any]) -> Optional[dict[
         return None
 
 
+def _read_draw_map_dto(runtime: Any) -> Optional[dict[str, Any]]:
+    """Read the draw-map DTO (weekly heatmap + P90 day profiles) for the UI.
+
+    Returns None when no demand profiler exists or there is no history yet.
+    Backward compatible: absent key = no draw map (older FE ignores it).
+    """
+    try:
+        coordinator = getattr(runtime, "coordinator", None) if runtime else None
+        demand_profiler = getattr(coordinator, "_demand_profiler", None)
+        if demand_profiler is None:
+            return None
+        dto = demand_profiler.get_draw_map_dto()
+        if not dto.get("weekly"):
+            return None
+        return dto
+    except Exception as err:
+        _LOGGER.debug("Could not read draw map: %s", err, exc_info=True)
+        return None
+
+
 def _assemble_canonical_dto(
     hass: HomeAssistant, entry_id: str, box_id: str
 ) -> dict[str, Any] | web.Response:
@@ -881,6 +901,7 @@ def _assemble_canonical_dto(
 
     # Demand map (F2): read from coordinator's demand profiler if available
     demand_map_dto: dict | None = _read_demand_map_dto(runtime, config)
+    draw_map_dto: dict | None = _read_draw_map_dto(runtime)
 
     # R9: legionella status DTO (null when disabled or runtime absent)
     legionella_dto: dict | None = _build_legionella_dto(runtime, config, plan_result)
@@ -964,6 +985,7 @@ def _assemble_canonical_dto(
         "activity": activity_data,
         "aura": aura_data,
         "demand_map": demand_map_dto,
+        "draw_map": draw_map_dto,
         "legionella": legionella_dto,
         "circulation_runs": circulation_runs_dto,
         "home5": home5_dto,

@@ -404,6 +404,61 @@ class TestCategorySlotPersistence:
         p.set_cold_inlet_temp_c(14.5)
         assert p.cold_inlet_temp_c == 14.5
 
+
+class TestDrawMapDto:
+    """Draw-map DTO for the UI: weekly heatmap + P90 day-type profiles."""
+
+    def _profiler_with_days(self):
+        p = BoilerDemandProfiler(volume_l=200, target_temp_c=60, cold_inlet_temp_c=10)
+        # two workday days with morning draws, one weekend day
+        p.set_category_slots({
+            "workday_summer": {
+                "2026-06-10": {28: 0.7, 76: 0.5},
+                "2026-06-11": {28: 1.1, 77: 0.4},
+            },
+            "weekend_summer": {
+                "2026-06-13": {36: 0.9},
+            },
+        })
+        return p
+
+    def test_dto_shape(self):
+        dto = self._profiler_with_days().get_draw_map_dto()
+        assert dto["slot_duration_min"] == SLOT_DURATION_MIN
+        assert isinstance(dto["weekly"], list)
+        assert isinstance(dto["profiles"], dict)
+
+    def test_weekly_sorted_by_date_with_totals(self):
+        dto = self._profiler_with_days().get_draw_map_dto()
+        dates = [d["date"] for d in dto["weekly"]]
+        assert dates == sorted(dates)
+        assert len(dto["weekly"]) == 3
+        for d in dto["weekly"]:
+            assert len(d["slots_liters"]) == SLOTS_PER_DAY
+            assert d["total_liters"] >= 0
+            assert d["day_type"] in ("workday", "weekend")
+
+    def test_liters_conversion_positive(self):
+        dto = self._profiler_with_days().get_draw_map_dto()
+        wd = next(d for d in dto["weekly"] if d["date"] == "2026-06-11")
+        # slot 28 had 1.1 kWh → liters = 1.1/(c*50) ≈ 18.9 L
+        assert wd["slots_liters"][28] > 15.0
+
+    def test_profiles_p90_per_category(self):
+        dto = self._profiler_with_days().get_draw_map_dto()
+        assert "workday_summer" in dto["profiles"]
+        prof = dto["profiles"]["workday_summer"]
+        assert prof["days"] == 2
+        assert len(prof["slots_liters_p90"]) == SLOTS_PER_DAY
+        # slot 28 P90 across {0.7,1.1} kWh → near 1.1 → >15 L
+        assert prof["slots_liters_p90"][28] > 15.0
+
+    def test_empty_profiler(self):
+        p = BoilerDemandProfiler(volume_l=200, target_temp_c=60, cold_inlet_temp_c=10)
+        dto = p.get_draw_map_dto()
+        assert dto["weekly"] == []
+        assert dto["profiles"] == {}
+
     def test_cold_inlet_estimate(self):
         from custom_components.oig_cloud.boiler.demand_profiler import (
             BoilerDemandProfilerAsync,

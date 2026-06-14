@@ -692,6 +692,64 @@ class BoilerDemandProfiler:
         """Update the cold-inlet temperature used for the liters conversion."""
         self.cold_inlet_temp_c = value
 
+    def get_draw_map_dto(self) -> dict[str, Any]:
+        """Build the draw-map DTO for the UI (weekly heatmap + P90 day profile).
+
+        Returns:
+            {
+              "slot_duration_min": 15,
+              "weekly": [ {date, category, day_type, slots_liters[96], total_liters}, ... ],
+              "profiles": { "<category>": {slots_liters_p90: [96], days: int} },
+            }
+        All volumes are litres of >=40 degC water (kWh / (c * delta_T)).
+        """
+        delta_t = self.target_temp_c - self.cold_inlet_temp_c
+        if delta_t <= 0.0:
+            delta_t = 30.0
+        kwh_to_l = 1.0 / (ENERGY_CONSTANT_KWH_L_K * delta_t)
+
+        def _slots_to_liters(slots: dict[int, float]) -> list[float]:
+            arr = [0.0] * SLOTS_PER_DAY
+            for s, kwh in slots.items():
+                if 0 <= int(s) < SLOTS_PER_DAY:
+                    arr[int(s)] = round(kwh * kwh_to_l, 1)
+            return arr
+
+        weekly: list[dict[str, Any]] = []
+        by_category: dict[str, list[list[float]]] = {}
+        for category, day_map in self._category_slots.items():
+            day_type = category.split("_")[0]
+            for day_str, slots in day_map.items():
+                liters = _slots_to_liters(slots)
+                weekly.append({
+                    "date": day_str,
+                    "category": category,
+                    "day_type": day_type,
+                    "slots_liters": liters,
+                    "total_liters": round(sum(liters), 0),
+                })
+                # raw kWh arrays for percentile (convert at the end)
+                kwh_arr = [0.0] * SLOTS_PER_DAY
+                for s, kwh in slots.items():
+                    if 0 <= int(s) < SLOTS_PER_DAY:
+                        kwh_arr[int(s)] = kwh
+                by_category.setdefault(category, []).append(kwh_arr)
+        weekly.sort(key=lambda d: d["date"])
+
+        profiles: dict[str, Any] = {}
+        for category, arrs in by_category.items():
+            p90 = [
+                round(_percentile([a[s] for a in arrs], 90) * kwh_to_l, 1)
+                for s in range(SLOTS_PER_DAY)
+            ]
+            profiles[category] = {"slots_liters_p90": p90, "days": len(arrs)}
+
+        return {
+            "slot_duration_min": SLOT_DURATION_MIN,
+            "weekly": weekly,
+            "profiles": profiles,
+        }
+
     def get_demand_map(self, category: str) -> DemandMap:
         """Return DemandMap for the given category using the fallback chain.
 
@@ -1115,3 +1173,7 @@ class BoilerDemandProfilerAsync:
     def get_demand_map(self, category: str) -> DemandMap:
         """Return demand map for the given category."""
         return self._profiler.get_demand_map(category)
+
+    def get_draw_map_dto(self) -> dict[str, Any]:
+        """Weekly heatmap + P90 day-type profiles for the UI draw map."""
+        return self._profiler.get_draw_map_dto()
