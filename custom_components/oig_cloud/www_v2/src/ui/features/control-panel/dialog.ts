@@ -25,19 +25,21 @@ export class OigBatteryChargeDialog extends LitElement {
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(0, 0, 0, 0.62);
       align-items: center;
       justify-content: center;
       z-index: 1000;
     }
 
     .dialog {
-      background: ${u(CSS_VARS.cardBg)};
+      /* SOLID surface (cardBg is translucent in dark mode → see-through dialog) */
+      background: ${u(CSS_VARS.cardBgSolid)};
+      border: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: 16px;
       padding: 24px;
       min-width: 320px;
       max-width: 90vw;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
     }
 
     .dialog-title {
