@@ -27,6 +27,8 @@ class DummySensor:
         self._config_entry = DummyConfigEntry(options)
         self._auto_switch_handles = []
         self._auto_switch_retry_unsub = None
+        self._auto_switch_watchdog_unsub = None
+        self._auto_switch_watchdog_interval = timedelta(seconds=30)
         self._hass = object()
         self._box_id = "123"
 
@@ -148,6 +150,15 @@ def test_get_planned_mode_for_time():
             sensor, base + timedelta(minutes=16), timeline
         )
         == "Home UPS"
+    )
+    # Interval-edge: when 'now' precedes the timeline's first entry (current
+    # partial interval dropped), fall back to the earliest mode so the watchdog
+    # still enforces it instead of returning None.
+    assert (
+        auto_switch.get_planned_mode_for_time(
+            sensor, base - timedelta(minutes=1), timeline
+        )
+        == "Home 1"
     )
 
 

@@ -222,13 +222,17 @@ def start_auto_switch_watchdog(sensor: Any) -> None:
     async def _tick(now: datetime) -> None:
         await auto_switch_watchdog_tick(sensor, now)
 
-    sensor._auto_switch_watchdog_unsub = (
-        _async_track_time_interval(  # pylint: disable=protected-access
-            sensor._hass,  # pylint: disable=protected-access
-            _tick,
-            sensor._auto_switch_watchdog_interval,  # pylint: disable=protected-access
+    try:
+        sensor._auto_switch_watchdog_unsub = (
+            _async_track_time_interval(  # pylint: disable=protected-access
+                sensor._hass,  # pylint: disable=protected-access
+                _tick,
+                sensor._auto_switch_watchdog_interval,  # pylint: disable=protected-access
+            )
         )
-    )
+    except Exception as err:  # pragma: no cover - timer infra unavailable
+        _LOGGER.debug("[AutoModeSwitch] Watchdog start failed: %s", err)
+        return
     _LOGGER.debug(
         "[AutoModeSwitch] Watchdog started (interval=%ss)",
         int(
@@ -309,6 +313,7 @@ def get_planned_mode_for_time(
     """Return planned mode for the interval covering reference_time."""
     planned_mode: Optional[str] = None
 
+    first_mode: Optional[str] = None
     for interval in timeline:
         timestamp = interval.get("time") or interval.get("timestamp")
         mode_label = normalize_service_mode(
@@ -321,13 +326,19 @@ def get_planned_mode_for_time(
         if not start_dt:
             continue
 
+        if first_mode is None:
+            first_mode = mode_label
+
         if start_dt <= reference_time:
             planned_mode = mode_label
             continue
 
         break
 
-    return planned_mode
+    # At an interval edge the timeline's first entry can be a minute in the
+    # future (current partial interval dropped); fall back to the earliest known
+    # mode so the watchdog still enforces it instead of giving up (None).
+    return planned_mode if planned_mode is not None else first_mode
 
 
 def schedule_auto_switch_retry(sensor: Any, delay_seconds: float) -> None:
@@ -617,6 +628,12 @@ async def update_auto_switch_schedule(sensor: Any) -> None:
     if not _auto_switch_is_ready(sensor):
         stop_auto_switch_watchdog(sensor)
         return
+
+    # Defense-in-depth: the watchdog re-asserts the planned mode every 30 s, so
+    # the box can never stay diverged from the plan even if the scheduling logic
+    # below early-returns (no timeline, startup delay, …). Idempotent — a no-op
+    # when already running.
+    start_auto_switch_watchdog(sensor)
 
     now = dt_util.now()
     last_mode_change = _get_last_mode_change_time(sensor)
