@@ -1378,6 +1378,14 @@ class BoilerRuntime:
             entity_ids,
             getattr(self.coordinator, "_oig_current_cbb_entity", None),
         )
+        # Non-backup live power — the primary signal for the heating estimator.
+        # Without it the activity would freeze whenever temps + cbb are static
+        # (cbb is constant in manual mode while the thermostat does the cutting).
+        box_id = getattr(self, "box_id", None)
+        if box_id and box_id != "unknown":
+            self._add_activity_entity_id(
+                entity_ids, f"sensor.oig_{box_id}_actual_acinb_wtotal"
+            )
         return entity_ids
 
     def _add_activity_entity_id(self, entity_ids: set[str], entity_id: Any) -> None:
@@ -1746,7 +1754,7 @@ class BoilerRuntime:
         minus the learned other-loads baseline. Not configurable (standard OIG
         naming); None when absent/unavailable.
         """
-        box_id = getattr(self.coordinator, "box_id", None)
+        box_id = getattr(self, "box_id", None)
         if not box_id or box_id == "unknown":
             return None
         entity_id = f"sensor.oig_{box_id}_actual_acinb_wtotal"

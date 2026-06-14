@@ -596,6 +596,7 @@ def test_runtime_activity_listener_filters_and_updates_cache(monkeypatch):
         "sensor.power_kw",
         "sensor.manual_mode",
         "sensor.current_cbb",
+        "sensor.oig_123_actual_acinb_wtotal",
     }
     assert runtime._activity_entity_ids == expected_entities
     assert [record.event_type for record in hass.bus.listeners] == ["state_changed"]
