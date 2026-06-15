@@ -1194,6 +1194,8 @@ export class OigApp extends LitElement {
           .bottomTempC=${v2.status?.temperatureBottom ?? null}
           .readyLiters=${readyLiters}
           .readyFraction=${fillFrac}
+          .volumeL=${volume}
+          .coldInletTempC=${cfg?.coldInletTempC ?? 16}
           .heatMode=${heatMode}
           .electricSource=${electricSource}
           .altSourceType=${v2.altSourceType ?? 'gas'}

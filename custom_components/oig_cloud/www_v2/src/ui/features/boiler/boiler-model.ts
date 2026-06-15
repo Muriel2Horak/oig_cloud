@@ -24,6 +24,45 @@ function fmt1(v: number | null | undefined): string {
   return v == null ? '—' : v.toLocaleString('cs-CZ', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
+// Usable-water defaults (litres of ~38 °C mixed water).
+export const USE_TEMP_C = 38;
+export const SHOWER_L = 50;
+export const BATH_L = 140;
+
+/**
+ * Litres of usable ~useTemp °C water the tank can deliver, mixing stored hot
+ * water down with cold inlet. Linear stratification bottom→top; each layer above
+ * useTemp contributes (T − cold)/(useTemp − cold) litres of mixed water.
+ */
+export function usableLiters(
+  top: number | null,
+  bottom: number | null | undefined,
+  cold: number,
+  volume: number,
+  useTemp: number = USE_TEMP_C,
+): number | null {
+  if (top == null || volume <= 0) return null;
+  const b = bottom == null ? top : bottom;
+  const denom = useTemp - cold;
+  if (denom <= 0) return null;
+  const N = 40;
+  let liters = 0;
+  for (let i = 0; i < N; i++) {
+    const h = (i + 0.5) / N;          // 0 = bottom, 1 = top
+    const tLayer = b + h * (top - b);
+    if (tLayer >= useTemp) liters += (volume / N) * (tLayer - cold) / denom;
+  }
+  return liters;
+}
+
+/** Czech plural for "sprcha". */
+function showerWord(n: number, lang: Lang): string {
+  if (lang === 'en') return n === 1 ? 'shower' : 'showers';
+  if (n === 1) return 'sprcha';
+  if (n >= 2 && n <= 4) return 'sprchy';
+  return 'sprch';
+}
+
 @customElement('oig-boiler-model')
 export class OigBoilerModel extends LitElement {
   @property({ type: Number }) topTempC: number | null = null;
@@ -31,6 +70,9 @@ export class OigBoilerModel extends LitElement {
   @property({ type: Number }) readyLiters: number | null = null;
   /** 0..1 fraction of the tank that is ≥40 °C (drives the ready line). */
   @property({ type: Number }) readyFraction: number | null = null;
+  /** Tank volume (L) + cold-inlet temp (°C) — for usable-water (38 °C) maths. */
+  @property({ type: Number }) volumeL: number | null = null;
+  @property({ type: Number }) coldInletTempC: number | null = null;
   /** 'ele' (electric element), 'alt' (alternative source), or 'idle'. */
   @property({ type: String }) heatMode: 'ele' | 'alt' | 'idle' = 'idle';
   /** Electric charge source for the badge: 'fve' | 'grid' | 'battery'. */
@@ -48,6 +90,12 @@ export class OigBoilerModel extends LitElement {
     :host { display: block; }
     .wrap { width: 100%; }
     svg { display: block; width: 100%; height: auto; filter: drop-shadow(0 14px 22px rgba(0,0,0,.4)); }
+    .ready-readout { display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+      gap: 8px; margin-top: 6px; font-size: 13px; font-weight: 650; color: ${u(CSS_VARS.textPrimary)}; }
+    .ready-readout .rr-main { color: #7fd0f5; }
+    .ready-readout .rr-sep { color: ${u(CSS_VARS.textSecondary)}; opacity: .5; }
+    .ready-readout .rr-eq.ok { color: #5ec98a; }
+    .ready-readout .rr-eq.no { color: ${u(CSS_VARS.textSecondary)}; }
     .kpi-row { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
     .kpi { flex: 1; min-width: 80px; text-align: center; padding: 7px 6px; border-radius: 10px;
       background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
@@ -117,6 +165,22 @@ export class OigBoilerModel extends LitElement {
     const trend = this.trendCPerMin;
     const trendStr = trend != null && Math.abs(trend) >= 0.05
       ? `${trend > 0 ? '↑' : '↓'} ${fmt1(Math.abs(trend))} °C/min` : '';
+
+    // A/B: usable ~38 °C water + shower/bath equivalents.
+    const usable = usableLiters(
+      this.topTempC,
+      this.bottomTempC,
+      this.coldInletTempC ?? 16,
+      this.volumeL ?? 200,
+    );
+    const showers = usable != null ? Math.floor(usable / SHOWER_L) : 0;
+    const bathOk = usable != null && usable >= BATH_L;
+    const showerText = showers >= 1
+      ? `🚿 ${showers} ${showerWord(showers, lang)}`
+      : (lang === 'en' ? '🚿 not even a shower' : '🚿 ani sprcha');
+    const bathText = bathOk
+      ? (lang === 'en' ? '🛁 bath ✓' : '🛁 vana ✓')
+      : (lang === 'en' ? '🛁 no bath' : '🛁 na vanu nestačí');
 
     return html`
       <div class=${classMap(cls)}>
@@ -195,7 +259,7 @@ export class OigBoilerModel extends LitElement {
             <ellipse class="water-gloss" cx="188" cy="150" rx="11" ry="78" fill="#fff" opacity=".5" filter="url(#bmsoft)"/>
           </g>
           <line x1="166" y1="${lineY}" x2="254" y2="${lineY}" stroke="#fff" stroke-dasharray="4 4" stroke-width="1.6" opacity=".9"/>
-          <text x="210" y="${lineY - 5}" fill="#fff" font-size="10" text-anchor="middle" font-weight="600">${this.readyLiters != null ? Math.round(this.readyLiters) : '—'} L ≥ 40 °C</text>
+          <text x="170" y="${lineY - 5}" fill="#dbe6ef" font-size="8.5" text-anchor="start" opacity=".85">${t('boiler.model.ready_line', lang)}</text>
 
           <ellipse cx="210" cy="60" rx="48" ry="13" fill="url(#bmcap)" stroke="rgba(255,255,255,.18)"/>
           <ellipse cx="210" cy="57" rx="30" ry="6" fill="#fff" opacity=".18"/>
@@ -225,6 +289,14 @@ export class OigBoilerModel extends LitElement {
           ${this.heatMode === 'alt' ? html`
             <g class="charge-in active"><circle cx="210" cy="40" r="13" fill="#e64a19"/><text x="210" y="45" font-size="13" text-anchor="middle">${altIcon}</text></g>` : nothing}
         </svg>
+
+        <div class="ready-readout" data-testid="boiler-ready-readout">
+          <span class="rr-main">💧 ~${usable != null ? Math.round(usable) : '—'} ${t('boiler.model.usable', lang)}</span>
+          <span class="rr-sep">·</span>
+          <span class="rr-eq">${showerText}</span>
+          <span class="rr-sep">·</span>
+          <span class="rr-eq ${bathOk ? 'ok' : 'no'}">${bathText}</span>
+        </div>
 
         <div class="kpi-row">
           <div class="kpi">${t('boiler.model.element', lang)}<b>${fmt1(this.elementKwhToday)} kWh</b></div>

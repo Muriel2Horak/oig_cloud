@@ -1,20 +1,44 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import '@/ui/features/boiler/boiler-model';
 import type { OigBoilerModel } from '@/ui/features/boiler/boiler-model';
+import { usableLiters } from '@/ui/features/boiler/boiler-model';
+
+describe('usableLiters (38 °C mixed)', () => {
+  it('is larger than the bare ≥40 °C volume (mixing with cold extends it)', () => {
+    // top 48, bottom 16, cold 16, 200 L → top ~31% is ≥38 °C, mixed down gives ~77 L
+    const u = usableLiters(48, 16, 16, 200)!;
+    expect(u).toBeGreaterThan(60);
+    expect(u).toBeLessThan(100);
+  });
+  it('returns 0 when the whole tank is below the usable temp', () => {
+    expect(usableLiters(35, 16, 16, 200)).toBe(0);
+  });
+  it('a fully hot tank yields well over the nominal volume', () => {
+    // uniform 60 °C: each litre mixes to >1 L of 38 °C water
+    expect(usableLiters(60, 60, 16, 200)!).toBeGreaterThan(200);
+  });
+  it('returns null without a top temperature', () => {
+    expect(usableLiters(null, 16, 16, 200)).toBeNull();
+  });
+});
 
 describe('OigBoilerModel render', () => {
   let el: OigBoilerModel;
   beforeEach(() => { el = document.createElement('oig-boiler-model') as OigBoilerModel; document.body.appendChild(el); });
 
-  it('renders the tank svg with temps and ready litres', async () => {
+  it('renders the tank svg with temps and the usable-water readout', async () => {
     el.topTempC = 47; el.bottomTempC = 33; el.readyLiters = 83; el.readyFraction = 0.42;
+    el.volumeL = 200; el.coldInletTempC = 16;
     el.elementKwhToday = 1.6; el.altKwhToday = 5.4; el.altSourceType = 'gas';
     await el.updateComplete;
     const html = el.shadowRoot!.innerHTML;
     expect(html).toContain('<svg');
     expect(html).toContain('47');
     expect(html).toContain('33');
-    expect(html).toContain('83 L');
+    // usable-water readout with shower/bath equivalents
+    expect(html).toMatch(/vlažné|usable/i);
+    expect(html).toMatch(/sprcha|sprch|shower/i);
+    expect(html).toMatch(/vana|bath/i);
   });
 
   it('applies electric heating mode class + element glow when heatMode=ele', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { OigBoilerDrawMap, pickProfile, drawWindows } from '@/ui/features/boiler/boiler-draw-map';
+import { OigBoilerDrawMap, pickProfile, drawWindows, drawTypeSymbol } from '@/ui/features/boiler/boiler-draw-map';
 import type { DrawMapData } from '@/ui/features/boiler/types';
 
 const z = (): number[] => new Array(96).fill(0);
@@ -37,6 +37,16 @@ describe('drawWindows', () => {
 
   it('ignores sub-threshold noise', () => {
     expect(drawWindows(withSlots([[10, 0.1]]))).toHaveLength(0);
+  });
+});
+
+describe('drawTypeSymbol', () => {
+  it('classifies by volume: bath / shower / small', () => {
+    expect(drawTypeSymbol(130)).toBe('🛁');
+    expect(drawTypeSymbol(100)).toBe('🛁');
+    expect(drawTypeSymbol(55)).toBe('🚿');
+    expect(drawTypeSymbol(30)).toBe('🚿');
+    expect(drawTypeSymbol(10)).toBe('🚰');
   });
 });
 

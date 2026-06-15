@@ -57,6 +57,13 @@ export function drawWindows(prof: number[]): Array<{ s: number; pk: number; sum:
   return wins;
 }
 
+/** Classify a draw window by its volume → bath / shower / small symbol. */
+export function drawTypeSymbol(liters: number): string {
+  if (liters >= 100) return '🛁';
+  if (liters >= 30) return '🚿';
+  return '🚰';
+}
+
 function slotLabel(slot: number): string {
   const h = Math.floor(slot / 4), m = (slot % 4) * 15;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
@@ -152,7 +159,7 @@ export class OigBoilerDrawMap extends LitElement {
       if (prof[i] > 0.05) s += `<rect x="${(x(i) + 0.4).toFixed(1)}" y="${y(prof[i]).toFixed(1)}" width="${(bw - 0.8).toFixed(1)}" height="${(padT + plotH - y(prof[i])).toFixed(1)}" fill="#38bdf8" opacity=".85" rx="1"/>`;
     }
     for (const w of drawWindows(prof)) {
-      if (w.sum >= 5) s += `<text x="${x(w.pk) + bw / 2}" y="${Math.max(12, y(prof[w.pk]) - 6).toFixed(1)}" fill="#9bdcff" font-size="11" font-weight="700" text-anchor="middle">${Math.round(w.sum)} L</text>`;
+      if (w.sum >= 5) s += `<text x="${x(w.pk) + bw / 2}" y="${Math.max(12, y(prof[w.pk]) - 6).toFixed(1)}" fill="#9bdcff" font-size="11" font-weight="700" text-anchor="middle">${drawTypeSymbol(w.sum)} ${Math.round(w.sum)} L</text>`;
     }
     s += `<text x="${padL - 4}" y="${padT + 8}" fill="#6b7785" font-size="8" text-anchor="end">L</text>`;
     s += '</svg>';
@@ -172,7 +179,6 @@ export class OigBoilerDrawMap extends LitElement {
     const prof = pickProfile(this.data.profiles, this.dayType, this.month);
     const profArr = prof?.slotsLitersP90 ?? [];
     const wins = drawWindows(profArr).filter(w => w.sum >= 5).sort((a, b) => b.sum - a.sum);
-    const emo = (slot: number) => Math.floor(slot / 4) < 11 ? '🌅' : Math.floor(slot / 4) < 16 ? '☀️' : '🌆';
 
     return html`
       <div class="card" data-testid="boiler-draw-map">
@@ -197,7 +203,7 @@ export class OigBoilerDrawMap extends LitElement {
         ${wins.length ? html`
           <div class="chips">
             <span class="lbl">${t('boiler.draw_map.biggest', lang)}</span>
-            ${wins.slice(0, 4).map(w => html`<span class="chip">${emo(w.pk)} ${slotLabel(w.s)} · <b>${Math.round(w.sum)} L</b></span>`)}
+            ${wins.slice(0, 4).map(w => html`<span class="chip">${drawTypeSymbol(w.sum)} ${slotLabel(w.s)} · <b>${Math.round(w.sum)} L</b></span>`)}
           </div>` : nothing}
       </div>
     `;

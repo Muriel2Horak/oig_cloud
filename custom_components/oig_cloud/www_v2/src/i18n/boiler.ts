@@ -188,6 +188,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.model.element': 'patrona',
     'boiler.model.today': 'dnes',
     'boiler.model.trend': 'Trend',
+    'boiler.model.ready_line': 'hranice ≥ 40 °C',
+    'boiler.model.usable': 'L vlažné (≈38 °C)',
 
     'boiler.plan_strip.heading': 'Plán ohřevu 24 h',
     'boiler.plan_strip.meta': 'zdroje + odběry + teplota + cirkulace',
@@ -442,6 +444,8 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.model.element': 'element',
     'boiler.model.today': 'today',
     'boiler.model.trend': 'Trend',
+    'boiler.model.ready_line': '≥ 40 °C line',
+    'boiler.model.usable': 'L usable (≈38 °C)',
 
     'boiler.plan_strip.heading': 'Heating plan 24 h',
     'boiler.plan_strip.meta': 'sources + demands + temperature + circulation',
