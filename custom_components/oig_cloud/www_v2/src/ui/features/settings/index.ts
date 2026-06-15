@@ -118,6 +118,10 @@ export const BOILER_FIELDS_ALL: FieldDef[] = [
   // Teplota a čas
   { key: 'boiler_target_temp_c', label: 'Cílová teplota (°C)', type: 'number', min: 40, max: 85, step: 1, hint: 'Požadovaná teplota vody před deadline' },
   { key: 'boiler_deadline_time', label: 'Deadline (HH:MM)', type: 'text', hint: 'Čas, do kdy musí být voda nahřátá (formát HH:MM, např. 07:00)' },
+  // Tepelná arbitráž (fáze B)
+  { key: 'boiler_thermal_arbitrage_enabled', label: '💰 Tepelná arbitráž', type: 'bool', hint: 'Přetápět levným proudem (spot pod cenou alt. zdroje) a podržet; rezerva na přetok FVE' },
+  { key: 'boiler_max_temp_c', label: 'Strop arbitráže (°C)', type: 'number', min: 40, max: 85, step: 1, hint: 'Kam až smí arbitráž dotopit nad cílovou teplotu' },
+  { key: 'boiler_alt_power_kw', label: 'Výkon alt. zdroje (kW)', type: 'number', min: 0, max: 50, step: 0.5, hint: 'Tepelný výkon alt. zdroje do nádrže; 0 = neznámý' },
   // Alternativní zdroj
   { key: 'boiler_has_alternative_heating', label: 'Alternativní zdroj tepla', type: 'bool', hint: 'Bojler má jiný zdroj ohřevu (plyn, TČ, krb…)' },
   { key: 'boiler_alt_source_type', label: 'Typ alternativního zdroje', type: 'select', options: [['gas', 'Plyn'], ['heat_pump', 'Tepelné čerpadlo'], ['fireplace', 'Krb'], ['other', 'Jiný']] },
@@ -753,6 +757,9 @@ export class OigSettings extends LitElement {
               ${this.renderField(section, altCostField)}
               ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_sensor')!)}
               ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_daily')!)}
+              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_power_kw')!)}
+              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_thermal_arbitrage_enabled')!)}
+              ${this.current(section, 'boiler_thermal_arbitrage_enabled') ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_max_temp_c')!) : nothing}
             ` : nothing}
             ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'box_has_home56')!)}
             <div class="note" style="margin-top:6px;margin-bottom:2px">

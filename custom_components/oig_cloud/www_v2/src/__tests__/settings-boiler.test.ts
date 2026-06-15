@@ -46,6 +46,9 @@ const EXPECTED_BOILER_KEYS = [
   'boiler_battery_cycle_cost_czk_kwh',
   'boiler_target_temp_c',
   'boiler_deadline_time',
+  'boiler_thermal_arbitrage_enabled',
+  'boiler_max_temp_c',
+  'boiler_alt_power_kw',
   'boiler_circulation_enabled',
   'boiler_circulation_lead_minutes',
   'boiler_circulation_run_minutes',
@@ -73,6 +76,9 @@ function makeConfig(boilerOverrides: Partial<BoilerConfig> = {}): ModuleConfig {
     boiler_battery_cycle_cost_czk_kwh: 0.5,
     boiler_target_temp_c: 60,
     boiler_deadline_time: '07:00',
+    boiler_thermal_arbitrage_enabled: false,
+    boiler_max_temp_c: 65,
+    boiler_alt_power_kw: 0,
     boiler_circulation_enabled: false,
     boiler_circulation_lead_minutes: 15,
     boiler_circulation_run_minutes: 10,
@@ -159,7 +165,7 @@ describe('BOILER_FIELDS_ALL', () => {
   }
 
   it('has exactly the expected number of fields', () => {
-    // EXPECTED_BOILER_KEYS.length = 22
+    // EXPECTED_BOILER_KEYS.length = 25
     expect(fieldKeys.length).toBe(EXPECTED_BOILER_KEYS.length);
   });
 

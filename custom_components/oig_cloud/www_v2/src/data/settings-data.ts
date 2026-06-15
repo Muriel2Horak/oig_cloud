@@ -73,6 +73,10 @@ export interface BoilerConfig {
   // Teplota a čas
   boiler_target_temp_c: number | null;
   boiler_deadline_time: string;
+  // Tepelná arbitráž (fáze B)
+  boiler_thermal_arbitrage_enabled: boolean;
+  boiler_max_temp_c: number | null;
+  boiler_alt_power_kw: number | null;
   // Cirkulace
   boiler_circulation_enabled: boolean;
   boiler_circulation_lead_minutes: number | null;

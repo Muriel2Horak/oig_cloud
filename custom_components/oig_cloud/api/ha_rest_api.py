@@ -1131,6 +1131,10 @@ _MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         },
         # F5: configurable battery cycle cost for Home 5 arbitrage
         "boiler_battery_cycle_cost_czk_kwh": {"type": float, "rng": (0.0, 5.0), "default": 0.50},
+        # Phase B: thermal arbitrage (over-heat on cheap grid below alt cost)
+        "boiler_thermal_arbitrage_enabled": {"type": bool},
+        "boiler_max_temp_c": {"type": float, "rng": (40.0, 85.0), "default": 65.0},
+        "boiler_alt_power_kw": {"type": float, "rng": (0.0, 50.0), "default": 0.0},
         # R3/R7: Home 5/6 capability + boiler opt-in
         "box_has_home56": {"type": bool},
         "boiler_home5_maneuver_enabled": {"type": bool},
