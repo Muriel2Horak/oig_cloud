@@ -156,10 +156,6 @@ export class OigBoilerModel extends LitElement {
       'circ-shown': this.circulationEnabled,
       'circ-on': this.circulationEnabled && this.circulationActive,
     };
-    // ready line: boundary of ≥40 °C water; fraction from bottom → y from top
-    const frac = this.readyFraction != null ? Math.max(0, Math.min(1, this.readyFraction)) : 0.4;
-    const waterTop = 64, waterH = 172;
-    const lineY = waterTop + (1 - frac) * waterH;
     const altLabel = altTypeLabel(this.altSourceType, lang);
     const altIcon = ALT_ICON[altType];
     const trend = this.trendCPerMin;
@@ -258,8 +254,6 @@ export class OigBoilerModel extends LitElement {
             <rect x="166" y="64" width="88" height="172" fill="url(#bmround)"/>
             <ellipse class="water-gloss" cx="188" cy="150" rx="11" ry="78" fill="#fff" opacity=".5" filter="url(#bmsoft)"/>
           </g>
-          <line x1="166" y1="${lineY}" x2="254" y2="${lineY}" stroke="#fff" stroke-dasharray="4 4" stroke-width="1.6" opacity=".9"/>
-          <text x="170" y="${lineY - 5}" fill="#dbe6ef" font-size="8.5" text-anchor="start" opacity=".85">${t('boiler.model.ready_line', lang)}</text>
 
           <ellipse cx="210" cy="60" rx="48" ry="13" fill="url(#bmcap)" stroke="rgba(255,255,255,.18)"/>
           <ellipse cx="210" cy="57" rx="30" ry="6" fill="#fff" opacity=".18"/>

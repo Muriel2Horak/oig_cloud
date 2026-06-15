@@ -5601,7 +5601,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
  * @license
  * Copyright 2018 Google LLC
  * SPDX-License-Identifier: BSD-3-Clause
- */const Of=Tl(class extends Vl{constructor(e){var t;if(super(e),e.type!==Hl.ATTRIBUTE||e.name!=="class"||((t=e.strings)==null?void 0:t.length)>2)throw Error("`classMap()` can only be used in the `class` attribute and must be the only part in the attribute.")}render(e){return" "+Object.keys(e).filter(t=>e[t]).join(" ")+" "}update(e,[t]){var r,a;if(this.st===void 0){this.st=new Set,e.strings!==void 0&&(this.nt=new Set(e.strings.join(" ").split(/\s/).filter(n=>n!=="")));for(const n in t)t[n]&&!((r=this.nt)!=null&&r.has(n))&&this.st.add(n);return this.render(t)}const i=e.element.classList;for(const n of this.st)n in t||(i.remove(n),this.st.delete(n));for(const n in t){const o=!!t[n];o===this.st.has(n)||(a=this.nt)!=null&&a.has(n)||(o?(i.add(n),this.st.add(n)):(i.remove(n),this.st.delete(n)))}return Vs}});var Ff=Object.defineProperty,If=Object.getOwnPropertyDescriptor,Fe=(e,t,i,r)=>{for(var a=r>1?void 0:r?If(t,i):t,n=e.length-1,o;n>=0;n--)(o=e[n])&&(a=(r?o(t,i,a):o(a))||a);return r&&a&&Ff(t,i,a),a};const dr=X,vs={gas:"🔥",heat_pump:"♨️",fireplace:"🪵",other:"⚙️"};function yi(e){return e==null?"—":e.toLocaleString("cs-CZ",{minimumFractionDigits:1,maximumFractionDigits:1})}const Bf=38,Nf=50,jf=140;function Rf(e,t,i,r,a=Bf){if(e==null||r<=0)return null;const n=t??e,o=a-i;if(o<=0)return null;const l=40;let d=0;for(let p=0;p<l;p++){const u=(p+.5)/l,h=n+u*(e-n);h>=a&&(d+=r/l*(h-i)/o)}return d}function Wf(e,t){return t==="en"?e===1?"shower":"showers":e===1?"sprcha":e>=2&&e<=4?"sprchy":"sprch"}let Pe=class extends D{constructor(){super(...arguments),this.topTempC=null,this.bottomTempC=null,this.readyLiters=null,this.readyFraction=null,this.volumeL=null,this.coldInletTempC=null,this.heatMode="idle",this.electricSource="grid",this.altSourceType="gas",this.elementKwhToday=null,this.altKwhToday=null,this.altPowerKw=null,this.circulationEnabled=!1,this.circulationActive=!1,this.trendCPerMin=null,this.lang="cs"}render(){const e=this.lang,t=this.altSourceType&&vs[this.altSourceType]?this.altSourceType:"gas",i={wrap:!0,[`mode-${this.heatMode}`]:!0,[`alt-${t}`]:!0,"circ-shown":this.circulationEnabled,"circ-on":this.circulationEnabled&&this.circulationActive},o=64+(1-(this.readyFraction!=null?Math.max(0,Math.min(1,this.readyFraction)):.4))*172,l=Di(this.altSourceType,e),d=vs[t],p=this.trendCPerMin,u=p!=null&&Math.abs(p)>=.05?`${p>0?"↑":"↓"} ${yi(Math.abs(p))} °C/min`:"",h=Rf(this.topTempC,this.bottomTempC,this.coldInletTempC??16,this.volumeL??200),b=h!=null?Math.floor(h/Nf):0,y=h!=null&&h>=jf,m=b>=1?`🚿 ${b} ${Wf(b,e)}`:e==="en"?"🚿 not even a shower":"🚿 ani sprcha",f=y?e==="en"?"🛁 bath ✓":"🛁 vana ✓":e==="en"?"🛁 no bath":"🛁 na vanu nestačí";return c`
+ */const Of=Tl(class extends Vl{constructor(e){var t;if(super(e),e.type!==Hl.ATTRIBUTE||e.name!=="class"||((t=e.strings)==null?void 0:t.length)>2)throw Error("`classMap()` can only be used in the `class` attribute and must be the only part in the attribute.")}render(e){return" "+Object.keys(e).filter(t=>e[t]).join(" ")+" "}update(e,[t]){var r,a;if(this.st===void 0){this.st=new Set,e.strings!==void 0&&(this.nt=new Set(e.strings.join(" ").split(/\s/).filter(n=>n!=="")));for(const n in t)t[n]&&!((r=this.nt)!=null&&r.has(n))&&this.st.add(n);return this.render(t)}const i=e.element.classList;for(const n of this.st)n in t||(i.remove(n),this.st.delete(n));for(const n in t){const o=!!t[n];o===this.st.has(n)||(a=this.nt)!=null&&a.has(n)||(o?(i.add(n),this.st.add(n)):(i.remove(n),this.st.delete(n)))}return Vs}});var Ff=Object.defineProperty,If=Object.getOwnPropertyDescriptor,Fe=(e,t,i,r)=>{for(var a=r>1?void 0:r?If(t,i):t,n=e.length-1,o;n>=0;n--)(o=e[n])&&(a=(r?o(t,i,a):o(a))||a);return r&&a&&Ff(t,i,a),a};const dr=X,vs={gas:"🔥",heat_pump:"♨️",fireplace:"🪵",other:"⚙️"};function yi(e){return e==null?"—":e.toLocaleString("cs-CZ",{minimumFractionDigits:1,maximumFractionDigits:1})}const Bf=38,Nf=50,jf=140;function Rf(e,t,i,r,a=Bf){if(e==null||r<=0)return null;const n=t??e,o=a-i;if(o<=0)return null;const l=40;let d=0;for(let p=0;p<l;p++){const u=(p+.5)/l,h=n+u*(e-n);h>=a&&(d+=r/l*(h-i)/o)}return d}function Wf(e,t){return t==="en"?e===1?"shower":"showers":e===1?"sprcha":e>=2&&e<=4?"sprchy":"sprch"}let Pe=class extends D{constructor(){super(...arguments),this.topTempC=null,this.bottomTempC=null,this.readyLiters=null,this.readyFraction=null,this.volumeL=null,this.coldInletTempC=null,this.heatMode="idle",this.electricSource="grid",this.altSourceType="gas",this.elementKwhToday=null,this.altKwhToday=null,this.altPowerKw=null,this.circulationEnabled=!1,this.circulationActive=!1,this.trendCPerMin=null,this.lang="cs"}render(){const e=this.lang,t=this.altSourceType&&vs[this.altSourceType]?this.altSourceType:"gas",i={wrap:!0,[`mode-${this.heatMode}`]:!0,[`alt-${t}`]:!0,"circ-shown":this.circulationEnabled,"circ-on":this.circulationEnabled&&this.circulationActive},r=Di(this.altSourceType,e),a=vs[t],n=this.trendCPerMin,o=n!=null&&Math.abs(n)>=.05?`${n>0?"↑":"↓"} ${yi(Math.abs(n))} °C/min`:"",l=Rf(this.topTempC,this.bottomTempC,this.coldInletTempC??16,this.volumeL??200),d=l!=null?Math.floor(l/Nf):0,p=l!=null&&l>=jf,u=d>=1?`🚿 ${d} ${Wf(d,e)}`:e==="en"?"🚿 not even a shower":"🚿 ani sprcha",h=p?e==="en"?"🛁 bath ✓":"🛁 vana ✓":e==="en"?"🛁 no bath":"🛁 na vanu nestačí";return c`
       <div class=${Of(i)}>
         <svg viewBox="0 0 430 290" preserveAspectRatio="xMidYMid meet">
           <defs>
@@ -5659,7 +5659,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
               <text x="100" y="206" font-size="22" text-anchor="middle">⚙️</text>
             </g>
           </g>
-          <text x="100" y="244" font-size="10" text-anchor="middle" font-weight="700" fill="#fff">${l}</text>
+          <text x="100" y="244" font-size="10" text-anchor="middle" font-weight="700" fill="#fff">${r}</text>
           <text x="100" y="256" fill="#cdd8e3" font-size="9" text-anchor="middle">${this.altPowerKw!=null?`${yi(this.altPowerKw)} kW · `:""}${v("boiler.model.today",e)} ${yi(this.altKwhToday)} kWh</text>
 
           <!-- distribution + circulation (right) -->
@@ -5677,8 +5677,6 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
             <rect x="166" y="64" width="88" height="172" fill="url(#bmround)"/>
             <ellipse class="water-gloss" cx="188" cy="150" rx="11" ry="78" fill="#fff" opacity=".5" filter="url(#bmsoft)"/>
           </g>
-          <line x1="166" y1="${o}" x2="254" y2="${o}" stroke="#fff" stroke-dasharray="4 4" stroke-width="1.6" opacity=".9"/>
-          <text x="170" y="${o-5}" fill="#dbe6ef" font-size="8.5" text-anchor="start" opacity=".85">${v("boiler.model.ready_line",e)}</text>
 
           <ellipse cx="210" cy="60" rx="48" ry="13" fill="url(#bmcap)" stroke="rgba(255,255,255,.18)"/>
           <ellipse cx="210" cy="57" rx="30" ry="6" fill="#fff" opacity=".18"/>
@@ -5706,21 +5704,21 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
               <text x="210" y="45" font-size="13" text-anchor="middle">${this.electricSource==="fve"?"☀️":this.electricSource==="battery"?"🔋":"🔌"}</text>
             </g>`:_}
           ${this.heatMode==="alt"?c`
-            <g class="charge-in active"><circle cx="210" cy="40" r="13" fill="#e64a19"/><text x="210" y="45" font-size="13" text-anchor="middle">${d}</text></g>`:_}
+            <g class="charge-in active"><circle cx="210" cy="40" r="13" fill="#e64a19"/><text x="210" y="45" font-size="13" text-anchor="middle">${a}</text></g>`:_}
         </svg>
 
         <div class="ready-readout" data-testid="boiler-ready-readout">
-          <span class="rr-main">💧 ~${h!=null?Math.round(h):"—"} ${v("boiler.model.usable",e)}</span>
+          <span class="rr-main">💧 ~${l!=null?Math.round(l):"—"} ${v("boiler.model.usable",e)}</span>
           <span class="rr-sep">·</span>
-          <span class="rr-eq">${m}</span>
+          <span class="rr-eq">${u}</span>
           <span class="rr-sep">·</span>
-          <span class="rr-eq ${y?"ok":"no"}">${f}</span>
+          <span class="rr-eq ${p?"ok":"no"}">${h}</span>
         </div>
 
         <div class="kpi-row">
           <div class="kpi">${v("boiler.model.element",e)}<b>${yi(this.elementKwhToday)} kWh</b></div>
-          <div class="kpi">${l}<b>${yi(this.altKwhToday)} kWh</b></div>
-          <div class="kpi">${v("boiler.model.trend",e)}<b>${u||"—"}</b></div>
+          <div class="kpi">${r}<b>${yi(this.altKwhToday)} kWh</b></div>
+          <div class="kpi">${v("boiler.model.trend",e)}<b>${o||"—"}</b></div>
         </div>
       </div>
     `}};Pe.styles=z`
