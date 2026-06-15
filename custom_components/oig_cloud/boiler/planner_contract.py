@@ -67,6 +67,8 @@ class PlannerReasonCode(str, Enum):
     LEGIONELLA_ALREADY_SATISFIED = "legionella_already_satisfied"
     # R3: Home 5 maneuver (battery-discharge boiler heating)
     SOURCE_SELECTED_BATTERY = "source_selected_battery"
+    # Phase B: thermal arbitrage (over-heat on cheap grid below alt cost)
+    ARBITRAGE_SCHEDULED = "arbitrage_scheduled"
 
 
 @dataclass

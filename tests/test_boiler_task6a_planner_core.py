@@ -1256,3 +1256,61 @@ def test_f3a_plan_result_has_cost_benchmarks():
     assert result.cost_if_all_grid == pytest.approx(heat_kwh_total * 4.0, rel=1e-3)
     # cost_if_all_alt: heat_kwh * 2.0 per slot.
     assert result.cost_if_all_alt == pytest.approx(heat_kwh_total * 2.0, rel=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Phase B: thermal arbitrage (opt-in over-heat in cheap slots)
+# ---------------------------------------------------------------------------
+
+def _arb_input(now, *, enabled, alt_cost, prices, overflow=None, top=48.0):
+    from custom_components.oig_cloud.boiler.planner_contract import (
+        AlternativeSourceCapability,
+    )
+    topo = _f3a_topology(heater_power_kw=4.0, target_temp_c=50.0)
+    return PlannerInput(
+        entry_id="t", box_id="b", profile=_profile(), spot_prices=prices,
+        overflow_windows=overflow or [], deadline_time="06:00", topology=topo,
+        current_top_temp_c=top, temperature_updated_at=now,
+        alt_source_capability=AlternativeSourceCapability.BENCHMARK_ONLY,
+        alt_cost_kwh=alt_cost, thermal_arbitrage_enabled=enabled,
+    )
+
+
+def test_arbitrage_off_means_no_extra_heat():
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    prices = _make_prices(now, flat_price=1.0)  # cheap everywhere
+    off = plan_comfort_core(_arb_input(now, enabled=False, alt_cost=3.0, prices=prices), now=now)
+    on = plan_comfort_core(_arb_input(now, enabled=True, alt_cost=3.0, prices=prices), now=now)
+    n_off = sum(1 for s in off.slots if s.action == "heat")
+    n_on = sum(1 for s in on.slots if s.action == "heat")
+    # Arbitrage ON heats strictly more slots (fills toward max_temp in cheap slots).
+    assert n_on > n_off
+    assert PlannerReasonCode.ARBITRAGE_SCHEDULED in on.reason_codes
+
+
+def test_arbitrage_skipped_when_spot_above_alt_cost():
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    prices = _make_prices(now, flat_price=5.0)  # all above alt cost 3.0
+    off = plan_comfort_core(_arb_input(now, enabled=False, alt_cost=3.0, prices=prices), now=now)
+    on = plan_comfort_core(_arb_input(now, enabled=True, alt_cost=3.0, prices=prices), now=now)
+    n_off = sum(1 for s in off.slots if s.action == "heat")
+    n_on = sum(1 for s in on.slots if s.action == "heat")
+    # No cheap slots → arbitrage adds nothing.
+    assert n_on == n_off
+
+
+def test_arbitrage_reserves_for_overflow():
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    prices = _make_prices(now, flat_price=1.0)
+    no_ovf = plan_comfort_core(_arb_input(now, enabled=True, alt_cost=3.0, prices=prices), now=now)
+    # Big overflow window (free FVE) → leave headroom, fewer arbitrage slots.
+    ovf = [(now + timedelta(hours=6), now + timedelta(hours=14), 4.0)]
+    with_ovf = plan_comfort_core(
+        _arb_input(now, enabled=True, alt_cost=3.0, prices=prices, overflow=ovf), now=now
+    )
+    n_no = sum(1 for s in no_ovf.slots if s.action == "heat")
+    n_ovf = sum(1 for s in with_ovf.slots if s.action == "heat")
+    assert n_ovf <= n_no

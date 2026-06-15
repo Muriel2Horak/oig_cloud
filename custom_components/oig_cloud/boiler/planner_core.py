@@ -202,6 +202,20 @@ def plan_comfort_core(
             reasons=reasons,
         )
 
+    # Phase B: opportunistic thermal arbitrage on top of comfort + legionella.
+    heat_allocations = _allocate_arbitrage(
+        slots=slots,
+        comfort_allocated=heat_allocations,
+        planner_input=planner_input,
+        topology=topology,
+        top_temp=top_temp,
+        bottom_temp=bottom_temp,
+        degraded_top_only=degraded_top_only,
+        required_kwh=required_kwh,
+        heat_kwh=heat_kwh,
+        reasons=reasons,
+    )
+
     planned_slots, temperature_at_deadline = _predict_slots(
         slots,
         heat_allocations,
@@ -1068,6 +1082,101 @@ def _allocate_legionella(
 
     _append_reason(reasons, PlannerReasonCode.LEGIONELLA_SCHEDULED)
     return combined, legionella_starts
+
+
+def _energy_to_max_temp(
+    topology: BoilerThermalTopology,
+    top_temp: float,
+    bottom_temp: Optional[float],
+    degraded_top_only: bool,
+) -> float:
+    """Energy (kWh) to bring the tank from its current state up to max_temp_c.
+
+    Mirrors _required_energy_kwh but targets the arbitrage ceiling instead of
+    the comfort target. Used to bound how much extra heat arbitrage may store.
+    """
+    max_temp = getattr(topology, "max_temp_c", topology.target_temp_c)
+    if topology.temperature_topology != TemperatureTopology.TOP_BOTTOM or degraded_top_only:
+        return calculate_energy_to_heat(topology.tank_volume_l, top_temp, max_temp)
+    layer_volume = topology.tank_volume_l * 0.5
+    bottom = top_temp if bottom_temp is None else float(bottom_temp)
+    return (
+        calculate_energy_to_heat(layer_volume, top_temp, max_temp)
+        + calculate_energy_to_heat(layer_volume, bottom, max_temp)
+    )
+
+
+def _allocate_arbitrage(
+    *,
+    slots: list[PlanSlotAction],
+    comfort_allocated: dict[datetime, _SlotAllocation],
+    planner_input: PlannerInput,
+    topology: BoilerThermalTopology,
+    top_temp: float,
+    bottom_temp: Optional[float],
+    degraded_top_only: bool,
+    required_kwh: float,
+    heat_kwh: float,
+    reasons: list[PlannerReasonCode],
+) -> dict[datetime, _SlotAllocation]:
+    """Phase B: opportunistically over-heat in cheap slots (spot < alt cost).
+
+    Additive pass AFTER comfort + legionella. NEVER part of required_kwh, so it
+    can never force expensive heating to meet a deadline — it only fills cheap,
+    unused slots up to the max_temp ceiling, while reserving headroom for
+    forecast FVE overflow (free) so that free solar is never crowded out.
+    "Hold" emerges naturally next cycle: a hot tank needs ~0 comfort heat until
+    standing losses pull it back down.
+    """
+    if not getattr(planner_input, "thermal_arbitrage_enabled", False):
+        return dict(comfort_allocated)
+    if planner_input.alt_source_capability == AlternativeSourceCapability.DISABLED:
+        return dict(comfort_allocated)
+    alt_cost = float(planner_input.alt_cost_kwh or 0.0)
+    if alt_cost <= 0.0 or heat_kwh <= 0.0:
+        return dict(comfort_allocated)
+
+    # Extra energy available between the comfort target and the max-temp ceiling.
+    headroom_kwh = max(
+        0.0,
+        _energy_to_max_temp(topology, top_temp, bottom_temp, degraded_top_only) - required_kwh,
+    )
+    if headroom_kwh <= 0.0:
+        return dict(comfort_allocated)
+
+    # Cheap, unused slots: spot strictly below the alternative-source cost.
+    cheap: list[tuple[float, PlanSlotAction]] = []
+    for s in slots:
+        if s.start in comfort_allocated:
+            continue
+        sp = _spot_price_for_slot(s.start, planner_input.spot_prices)
+        if sp is not None and sp < alt_cost:
+            cheap.append((sp, s))
+    if not cheap:
+        return dict(comfort_allocated)
+
+    cheap_capacity = len(cheap) * heat_kwh
+    # Reserve headroom for forecast FVE overflow (free) so it is never wasted.
+    overflow_reserve = sum(
+        _pv_surplus_for_slot(s, planner_input.overflow_windows, heat_kwh) for s in slots
+    )
+    arbitrage_kwh = max(0.0, min(headroom_kwh, cheap_capacity) - overflow_reserve)
+    if arbitrage_kwh <= 0.0:
+        return dict(comfort_allocated)
+
+    slots_needed = _required_heat_slots(arbitrage_kwh, heat_kwh)
+    cheap.sort(key=lambda pair: (pair[0], pair[1].start))
+    combined = dict(comfort_allocated)
+    scheduled = 0
+    for _sp, slot in cheap:
+        if scheduled >= slots_needed:
+            break
+        # No battery for arbitrage (budget 0) — store cheap grid/PV, not cycles.
+        combined[slot.start] = _slot_allocation(slot, planner_input, heat_kwh, 0.0)
+        scheduled += 1
+    if scheduled > 0:
+        _append_reason(reasons, PlannerReasonCode.ARBITRAGE_SCHEDULED)
+    return combined
 
 
 def _predict_slots(

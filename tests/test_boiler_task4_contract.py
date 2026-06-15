@@ -104,6 +104,8 @@ CANONICAL_REASON_CODES = frozenset({
     "legionella_already_satisfied",
     # R3: Home 5 maneuver (battery-discharge boiler heating)
     "source_selected_battery",
+    # Phase B: thermal arbitrage
+    "arbitrage_scheduled",
 })
 
 
@@ -115,9 +117,9 @@ class TestPlannerReasonCode:
             f"Extra: {enum_values - CANONICAL_REASON_CODES}"
         )
 
-    def test_count_is_exactly_34(self):
-        # R9 added LEGIONELLA_ALREADY_SATISFIED → 34 codes total
-        assert len(PlannerReasonCode) == 34
+    def test_count_is_exactly_35(self):
+        # R9 added LEGIONELLA_ALREADY_SATISFIED → 34; Phase B ARBITRAGE_SCHEDULED → 35
+        assert len(PlannerReasonCode) == 35
 
     def test_from_string_valid(self):
         for code in CANONICAL_REASON_CODES:
