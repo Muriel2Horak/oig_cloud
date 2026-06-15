@@ -31,6 +31,10 @@ from ..const import (
     CONF_BOX_HAS_HOME56,
     CONF_BOILER_STRATIFICATION_MODE,
     CONF_BOILER_TARGET_TEMP_C,
+    CONF_BOILER_MAX_TEMP_C,
+    DEFAULT_BOILER_MAX_TEMP_C,
+    CONF_BOILER_THERMAL_ARBITRAGE_ENABLED,
+    CONF_BOILER_ALT_POWER_KW,
     CONF_BOILER_HEATER_POWER_KW_ENTITY,
     CONF_BOILER_HEATER_SWITCH_ENTITY,
     CONF_BOILER_TEMP_SENSOR_BOTTOM,
@@ -883,6 +887,11 @@ def _build_planner_topology(config: dict[str, Any]) -> BoilerThermalTopology:
         # _combination_score to completely overwhelm real price differences.
         # A calibrated value must be ≤ 0.0003 kWh/(l·°C·h).
         standing_loss_coefficient=0.0,
+        # Phase B: arbitrage over-heat ceiling (clamped to be ≥ target).
+        max_temp_c=max(
+            _float_config(config, CONF_BOILER_MAX_TEMP_C, DEFAULT_BOILER_MAX_TEMP_C),
+            _float_config(config, CONF_BOILER_TARGET_TEMP_C, DEFAULT_BOILER_TARGET_TEMP_C),
+        ),
     )
 
 
@@ -2346,6 +2355,10 @@ class BoilerRuntime:
             legionella_obligation=legionella_obligation,
             home5_available=home5_available,
             battery_cycle_cost_czk_kwh=battery_cycle_cost,
+            thermal_arbitrage_enabled=bool(
+                config.get(CONF_BOILER_THERMAL_ARBITRAGE_ENABLED, False)
+            ),
+            alt_power_kw=_float_config(config, CONF_BOILER_ALT_POWER_KW, 0.0),
         )
 
         is_fresh, stale_reasons = validate_freshness(planner_input, now=now)

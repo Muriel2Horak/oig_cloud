@@ -125,6 +125,14 @@ DEFAULT_BOILER_BATTERY_CYCLE_COST = 0.50
 # Task B: current power entity resolves automatically; alt energy meter defaults to daily-reset
 DEFAULT_BOILER_CURRENT_POWER_ENTITY = ""  # empty = auto-resolve from box_id
 DEFAULT_BOILER_ALT_ENERGY_DAILY = True  # daily-reset counter (resets at midnight)
+# Phase B: thermal arbitrage — over-heat on cheap grid (spot < alt cost) and hold
+# to displace pricier alternative heating, while reserving headroom for FVE overflow.
+CONF_BOILER_THERMAL_ARBITRAGE_ENABLED = "boiler_thermal_arbitrage_enabled"  # opt-in
+DEFAULT_BOILER_THERMAL_ARBITRAGE_ENABLED = False
+CONF_BOILER_MAX_TEMP_C = "boiler_max_temp_c"  # arbitrage over-heat ceiling
+DEFAULT_BOILER_MAX_TEMP_C = 65.0
+CONF_BOILER_ALT_POWER_KW = "boiler_alt_power_kw"  # alt thermal power into tank (lead-time)
+DEFAULT_BOILER_ALT_POWER_KW = 0.0  # 0 = unknown → alt not actively pre-scheduled
 
 KEY_BOILER_RUNTIMES = "boiler_runtimes"
 ATTR_CONFIG_ENTRY_ID = "entry_id"

@@ -61,6 +61,9 @@ class BoilerThermalTopology:
     # physically wrong.  Callers that have calibration data may pass a value
     # ≤ 0.0003 kWh/(l·°C·h).
     standing_loss_coefficient: float = 0.0
+    # Phase B: arbitrage over-heat ceiling (>= target_temp_c). The planner may
+    # heat above target_temp_c up to here when cheap, never beyond.
+    max_temp_c: float = 65.0
 
     def __post_init__(self):
         if isinstance(self.stratification_mode, str):

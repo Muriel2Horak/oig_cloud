@@ -177,6 +177,11 @@ class PlannerInput:
     # F5: configurable battery cycle cost for Home 5 arbitrage (Kč/kWh).
     # Falls back to BATTERY_CYCLE_COST_CZK_PER_KWH const when not set.
     battery_cycle_cost_czk_kwh: Optional[float] = None
+    # Phase B: thermal arbitrage (opt-in). When enabled the planner may over-heat
+    # above the comfort target (up to topology.max_temp_c) in slots where spot is
+    # below alt_cost_kwh, reserving headroom for forecast FVE overflow.
+    thermal_arbitrage_enabled: bool = False
+    alt_power_kw: float = 0.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.entry_id, str) or not self.entry_id:
