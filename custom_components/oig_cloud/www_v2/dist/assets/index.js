@@ -11366,7 +11366,8 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     /* ── Redesigned boiler tab (2026-06): model+map, slim strip, SoC, plan ── */
     .boiler-model-row {
       display: grid;
-      grid-template-columns: minmax(280px, 360px) 1fr;
+      /* Model is the hero (large); the draw map is the smaller side panel. */
+      grid-template-columns: 1fr minmax(300px, 380px);
       gap: 14px;
       margin-bottom: 14px;
       align-items: start;
