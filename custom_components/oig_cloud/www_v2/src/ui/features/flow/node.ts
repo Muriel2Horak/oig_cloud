@@ -2395,25 +2395,15 @@ export class OigFlowNode extends LitElement {
     // below it). Autonomy = how long that lasts if the grid failed NOW, with
     // current FVE offsetting the backed-up load.
     const usableAboveFloorKwh = Math.max(0, (d.batterySoC - d.batteryFloorPct) / 100) * d.batteryInstalledKwh;
-    const netDrawKw = Math.max(0, (d.housePower - d.solarPower) / 1000);
-    let autonomyText: string;
-    if (usableAboveFloorKwh <= 0.05) {
-      autonomyText = '0 h';
-    } else if (netDrawKw <= 0.05) {
-      autonomyText = '∞'; // FVE covers the load — battery not draining
-    } else {
-      const h = usableAboveFloorKwh / netDrawKw;
-      if (h >= 24) {
-        autonomyText = '> 24 h';
-      } else if (h >= 10) {
-        autonomyText = `${Math.round(h)} h`; // minutes are false precision at 10h+
-      } else if (h >= 1) {
-        const hh = Math.floor(h);
-        autonomyText = `${hh} h ${Math.round((h - hh) * 60)} min`;
-      } else {
-        autonomyText = `${Math.max(1, Math.round(h * 60))} min`;
-      }
-    }
+    // Simple, intuitive hero metric: charging → time to full, discharging →
+    // time to empty (from the box's own estimate), otherwise idle.
+    const autonomyLabel = charging ? 'do plna' : discharging ? 'do vybití' : 'stav';
+    const autonomyText = (charging || discharging) ? (timeStr || '…') : 'klid';
+    const autonomyTitle = charging
+      ? 'Za jak dlouho se baterie nabije'
+      : discharging
+        ? 'Za jak dlouho se baterie vybije při aktuálním odběru'
+        : 'Baterie se právě nenabíjí ani nevybíjí (FVE pokrývá spotřebu)';
 
     // Charge source split (FVE vs grid)
     const chgSplitTotal = d.batteryChargeSolar + d.batteryChargeGrid;
@@ -2480,9 +2470,9 @@ export class OigFlowNode extends LitElement {
         <!-- SoC: backup autonomy (hero) + usable kWh above floor + bar -->
         <div class="bt-soc">
           <div class="bt-soctop">
-            <div class="bt-aut" title="Kdyby teď vypadla síť: použitelné kWh nad podlahou / (zálohová spotřeba − FVE)">
+            <div class="bt-aut" title="${autonomyTitle}">
               ${svg`<svg class="bt-aut-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"><use href="#bt-clock"/></svg>`}
-              <div><div class="bt-aut-lbl">vydrží</div><div class="bt-aut-v ${usableAboveFloorKwh <= 0.05 ? 'bt-dis' : ''}">${autonomyText}</div></div>
+              <div><div class="bt-aut-lbl">${autonomyLabel}</div><div class="bt-aut-v ${!charging && !discharging ? 'bt-dis' : ''}">${autonomyText}</div></div>
             </div>
             <button class="bt-use" @click=${openEntity('usable_battery_capacity')}>
               <span class="bt-use-lbl">využitelných</span>
