@@ -28,6 +28,19 @@ from homeassistant.helpers.http import KEY_HASS, HomeAssistantView
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _admin_or_403(request: web.Request) -> web.Response | None:
+    """Return a 403 response unless the caller is an authenticated admin.
+
+    Plan mutation (create/activate/deactivate) drives the inverter working mode
+    and grid cost, so it must be admin-gated like planner_settings/module_config.
+    """
+    user = request.get("hass_user")
+    if not user or not getattr(user, "is_admin", False):
+        return web.json_response({"error": "Admin only"}, status=403)
+    return None
+
+
 PLANNING_SYSTEM_NOT_INITIALIZED = "Planning system not initialized"
 
 # API routes base
@@ -211,6 +224,9 @@ class OIGCloudCreateManualPlanView(HomeAssistantView):
         Returns:
             JSON with created plan
         """
+        resp = _admin_or_403(request)
+        if resp is not None:
+            return resp
         hass: HomeAssistant = request.app[KEY_HASS]
 
         try:
@@ -272,6 +288,9 @@ class OIGCloudActivatePlanView(HomeAssistantView):
         Returns:
             JSON with activated plan
         """
+        resp = _admin_or_403(request)
+        if resp is not None:
+            return resp
         hass: HomeAssistant = request.app[KEY_HASS]
 
         try:
@@ -313,6 +332,9 @@ class OIGCloudDeactivatePlanView(HomeAssistantView):
         Returns:
             JSON with deactivated plan
         """
+        resp = _admin_or_403(request)
+        if resp is not None:
+            return resp
         hass: HomeAssistant = request.app[KEY_HASS]
 
         try:

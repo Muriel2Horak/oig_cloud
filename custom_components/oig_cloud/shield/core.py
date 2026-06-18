@@ -393,10 +393,14 @@ class ServiceShield:
                 raise
         self.check_task = None
 
-        # Cleanup mode tracker
+        # Cleanup mode tracker (guarded so a tracker error can't skip the
+        # state-listener unsub below → no listener leak on unload/reload).
         if self.mode_tracker:
-            await self.mode_tracker.cleanup()
-            self._logger.info("[OIG Shield] Mode tracker cleaned up")
+            try:
+                await self.mode_tracker.async_cleanup()
+                self._logger.info("[OIG Shield] Mode tracker cleaned up")
+            except Exception as err:  # pragma: no cover - defensive
+                self._logger.warning("[OIG Shield] Mode tracker cleanup failed: %s", err)
 
         # Zrušíme state listener
         if self._state_listener_unsub:

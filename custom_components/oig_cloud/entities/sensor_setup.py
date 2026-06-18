@@ -43,7 +43,7 @@ def _extract_digits(text: Any) -> Optional[str]:
         return None
     import re
 
-    m = re.search(r"(\\d{6,})", text)
+    m = re.search(r"(\d{6,})", text)
     return m.group(1) if m else None
 
 

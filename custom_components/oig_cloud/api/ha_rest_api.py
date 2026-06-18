@@ -1220,8 +1220,10 @@ class OIGCloudModuleConfigView(HomeAssistantView):
 
     async def post(self, request: web.Request, box_id: str) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
+        # Fail CLOSED: module_config is the most sensitive write surface
+        # (API keys, GPS, entities, planner/boiler params + reload).
         user = request.get("hass_user") or request.app.get("hass_user")
-        if user is not None and not user.is_admin:
+        if not user or not user.is_admin:
             return web.json_response({"error": "Admin only"}, status=403)
 
         entry = _find_entry_for_box(hass, box_id)
