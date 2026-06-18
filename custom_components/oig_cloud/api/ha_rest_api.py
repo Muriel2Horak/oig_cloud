@@ -1069,7 +1069,7 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
 # ============================================================================
 
 # Whitelist of options writable from the dashboard, with validation.
-# type: bool | float | int | str; rng: (min, max); enum: allowed values.
+# Field spec keys — "type": bool|float|int|str; "rng": (min, max); "enum": allowed values.
 _MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
     "modules": {
         "enable_solar_forecast": {"type": bool},

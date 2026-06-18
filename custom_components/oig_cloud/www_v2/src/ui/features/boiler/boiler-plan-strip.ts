@@ -170,7 +170,7 @@ export function deadlineFraction(planStartIso: string, deadlineTime: string): nu
   const t0 = planMidnightMs(planStartIso);
   const d = new Date(t0);
   d.setHours(hh, mm, 0, 0);
-  let tDeadline = d.getTime();
+  const tDeadline = d.getTime();
   // If the deadline is before midnight (shouldn't happen for valid HH:MM but
   // guard anyway), treat as same-day.  If it falls past the 24h window, clamp.
   const span = 24 * 3600 * 1000;

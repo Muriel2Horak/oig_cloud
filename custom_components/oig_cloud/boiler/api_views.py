@@ -23,7 +23,6 @@ from ..const import (
     CONF_BOILER_HOME5_MANEUVER_ENABLED,
     CONF_BOX_HAS_HOME56,
     CONF_BOILER_LEGIONELLA_INTERVAL_DAYS,
-    CONF_BOILER_LEGIONELLA_TARGET_TEMP_C,
     CONF_BOILER_PLAN_SLOT_MINUTES,
     CONF_BOILER_STRATIFICATION_MODE,
     CONF_BOILER_TARGET_TEMP_C,
@@ -39,7 +38,6 @@ from ..const import (
     DEFAULT_BOILER_HOME5_MANEUVER_ENABLED,
     DEFAULT_BOX_HAS_HOME56,
     DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS,
-    DEFAULT_BOILER_LEGIONELLA_TARGET_TEMP_C,
     DEFAULT_BOILER_PLAN_SLOT_MINUTES,
     DEFAULT_BOILER_STRATIFICATION_MODE,
     DEFAULT_BOILER_TARGET_TEMP_C,
@@ -396,7 +394,6 @@ def _read_alt_energy_cumulative_delta(runtime: Any, current_kwh: float) -> float
 
     Degrades gracefully when runtime is None or lacks the attribute.
     """
-    import datetime as _dt
     today = dt_util.now().date()
     baseline_attr = "_alt_energy_cumul_baseline"
     baseline: Optional[dict] = getattr(runtime, baseline_attr, None)

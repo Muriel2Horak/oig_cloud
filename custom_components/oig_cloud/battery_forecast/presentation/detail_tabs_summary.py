@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-_LOGGER = logging.getLogger(__name__)
-
 from ..utils_common import safe_nested_get
 from .detail_tabs_baseline import compute_do_nothing_baseline
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def default_metrics_summary() -> Dict[str, Dict[str, Any]]:

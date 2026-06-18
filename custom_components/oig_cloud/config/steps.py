@@ -17,7 +17,6 @@ from ..const import (
     DEFAULT_BOILER_PLAN_SLOT_MINUTES,
     DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
     DEFAULT_CHARGE_RATE_KW,
-    DEFAULT_HW_MIN_PERCENT,
     DEFAULT_NAME,
     DEFAULT_PLANNING_MIN_PERCENT,
     DOMAIN,
@@ -3403,7 +3402,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         return self.async_show_menu(step_id="init", menu_options=menu)
 
     async def _enter_section(self, section: str, first_step: str) -> ConfigFlowResult:
-        self._section = section
+        self._section: Optional[str] = section
         self._step_history = ["init"]
         return await getattr(self, f"async_step_{first_step}")()
 
