@@ -1132,6 +1132,11 @@ def _allocate_arbitrage(
         return dict(comfort_allocated)
     if planner_input.alt_source_capability == AlternativeSourceCapability.DISABLED:
         return dict(comfort_allocated)
+    # Arbitrage is the ONLY pass that BUYS extra grid energy (pre-heating to
+    # max_temp), so trusting stale spot prices is the costliest failure. Mirror
+    # the freshness guard used by the source-selection path (_alternative_is_cheaper).
+    if PlannerReasonCode.INPUT_STALE_PRICE in planner_input.reason_codes:
+        return dict(comfort_allocated)
     alt_cost = float(planner_input.alt_cost_kwh or 0.0)
     if alt_cost <= 0.0 or heat_kwh <= 0.0:
         return dict(comfort_allocated)
@@ -1164,7 +1169,11 @@ def _allocate_arbitrage(
     if arbitrage_kwh <= 0.0:
         return dict(comfort_allocated)
 
-    slots_needed = _required_heat_slots(arbitrage_kwh, heat_kwh)
+    # FLOOR (not ceil) the arbitrage slots so opportunistic pre-heat never
+    # overshoots the max_temp ceiling by a whole extra slot.
+    slots_needed = int(arbitrage_kwh / heat_kwh) if heat_kwh > 0 else 0
+    if slots_needed <= 0:
+        return dict(comfort_allocated)
     cheap.sort(key=lambda pair: (pair[0], pair[1].start))
     combined = dict(comfort_allocated)
     scheduled = 0

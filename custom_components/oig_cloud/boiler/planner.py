@@ -30,6 +30,8 @@ def plan_result_to_boiler_plan(
 ) -> BoilerPlan:
     """Adapt comfort-core PlanResult into legacy runtime/actuator BoilerPlan."""
     effective_profile = profile or (planner_input.profile if planner_input else None)
+    _topology = getattr(planner_input, "topology", None) if planner_input else None
+    _target_temp = getattr(_topology, "target_temp_c", None)
     slots = [
         BoilerSlot(
             start=slot.start,
@@ -50,7 +52,13 @@ def plan_result_to_boiler_plan(
                 if slot.predicted_top_temp_c is not None and slot.predicted_top_temp_c > 0.0
                 else None
             ),
-            comfort_satisfied=None,
+            comfort_satisfied=(
+                (slot.predicted_top_temp_c >= _target_temp)
+                if (slot.predicted_top_temp_c is not None
+                    and slot.predicted_top_temp_c > 0.0
+                    and _target_temp is not None)
+                else None
+            ),
             pv_share=(
                 (slot.pv_kwh or 0.0) / slot.heating_kwh
                 if slot.heating_kwh > 0

@@ -1314,3 +1314,29 @@ def test_arbitrage_reserves_for_overflow():
     n_no = sum(1 for s in no_ovf.slots if s.action == "heat")
     n_ovf = sum(1 for s in with_ovf.slots if s.action == "heat")
     assert n_ovf <= n_no
+
+
+def test_arbitrage_skipped_when_prices_stale():
+    """H1: arbitrage must NOT buy extra grid on stale spot prices."""
+    from custom_components.oig_cloud.boiler.planner_core import plan_comfort_core
+    from custom_components.oig_cloud.boiler.planner_contract import (
+        AlternativeSourceCapability, PlannerReasonCode,
+    )
+    now = datetime(2026, 6, 11, 4, 0, tzinfo=timezone.utc)
+    prices = _make_prices(now, flat_price=1.0)  # cheap everywhere
+    topo = _f3a_topology(heater_power_kw=4.0, target_temp_c=50.0)
+    base = dict(
+        entry_id="t", box_id="b", profile=_profile(), spot_prices=prices,
+        overflow_windows=[], deadline_time="06:00", topology=topo,
+        current_top_temp_c=48.0, temperature_updated_at=now,
+        alt_source_capability=AlternativeSourceCapability.BENCHMARK_ONLY,
+        alt_cost_kwh=3.0, thermal_arbitrage_enabled=True,
+    )
+    fresh = plan_comfort_core(PlannerInput(**base), now=now)
+    stale = plan_comfort_core(
+        PlannerInput(**base, reason_codes=[PlannerReasonCode.INPUT_STALE_PRICE]), now=now
+    )
+    n_fresh = sum(1 for s in fresh.slots if s.action == "heat")
+    n_stale = sum(1 for s in stale.slots if s.action == "heat")
+    assert n_stale < n_fresh
+    assert PlannerReasonCode.ARBITRAGE_SCHEDULED not in stale.reason_codes
