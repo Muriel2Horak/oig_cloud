@@ -290,7 +290,7 @@ TASK1_TARGET_FILES = [
 
 def test_no_hardcoded_2206237016_in_task1_target_files():
     """Verify no hardcoded 2206237016 remains in Task 1 target production files."""
-    root = "/repos/oig-cloud"
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     found = []
     for rel_path in TASK1_TARGET_FILES:
         full_path = os.path.join(root, rel_path)
@@ -310,7 +310,7 @@ def test_no_hardcoded_2206237016_in_task1_target_files():
 
 def test_services_yaml_boiler_entries_have_canonical_fields():
     """Boiler service entries in services.yaml must document entry_id and box_id."""
-    root = "/repos/oig-cloud"
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     services_yaml_path = os.path.join(root, "custom_components/oig_cloud/services.yaml")
 
     with open(services_yaml_path, "r", encoding="utf-8") as f:
@@ -430,7 +430,7 @@ def test_boiler_resolver_rejects_ambiguous_missing_identity_without_first_entry_
 
 def test_boiler_service_translations_cover_identity_fields_and_validation_errors():
     """EN/CS translations must cover boiler service identity fields and service errors."""
-    root = "/repos/oig-cloud"
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     required_exception_keys = {
         "boiler_entry_not_found",
         "boiler_entry_wrong_domain",
@@ -591,7 +591,7 @@ EXTRA_FRONTEND_FILES = [
 
 def test_no_hardcoded_2206237016_in_extra_frontend_files():
     """Additional V2 frontend files must not hardcode 2206237016 as fallback."""
-    root = "/repos/oig-cloud"
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     found = []
     for rel_path in EXTRA_FRONTEND_FILES:
         full_path = os.path.join(root, rel_path)
@@ -611,7 +611,7 @@ def test_no_hardcoded_2206237016_in_extra_frontend_files():
 
 def test_services_yaml_set_boiler_mode_has_canonical_fields():
     """set_boiler_mode in services.yaml should document canonical entry_id + box_id."""
-    root = "/repos/oig-cloud"
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     services_yaml_path = os.path.join(root, "custom_components/oig_cloud/services.yaml")
 
     with open(services_yaml_path, "r", encoding="utf-8") as f:
