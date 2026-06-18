@@ -21,6 +21,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+_ADMIN_USER = SimpleNamespace(is_admin=True)
+
 from custom_components.oig_cloud.const import (
     CONF_BOILER_ALT_ENERGY_DAILY,
     CONF_BOILER_CURRENT_POWER_ENTITY,
@@ -620,7 +622,9 @@ async def test_module_config_boiler_section_post_valid():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return None  # user is None → admin check skipped
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
 
         async def json(self):
             return payload_data
@@ -656,7 +660,9 @@ async def test_module_config_boiler_section_post_out_of_range():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return None
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
 
         async def json(self):
             return payload_data
@@ -688,7 +694,9 @@ async def test_module_config_boiler_section_post_invalid_bool():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return None
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
 
         async def json(self):
             return payload_data

@@ -23,6 +23,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+_ADMIN_USER = SimpleNamespace(is_admin=True)
+
 from custom_components.oig_cloud.const import (
     CONF_BOILER_ALT_SOURCE_TYPE,
     CONF_BOILER_BATTERY_CYCLE_COST,
@@ -354,7 +356,9 @@ async def test_module_config_boiler_post_alt_source_type_valid():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return None
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
 
         async def json(self):
             return {
@@ -389,7 +393,9 @@ async def test_module_config_boiler_post_alt_source_type_invalid_enum():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return None
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
 
         async def json(self):
             return {
@@ -415,7 +421,9 @@ async def test_module_config_boiler_post_battery_cycle_cost_out_of_range():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return None
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
 
         async def json(self):
             return {
@@ -447,7 +455,9 @@ async def test_module_config_boiler_post_circulation_fields():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return None
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
 
         async def json(self):
             return {
@@ -486,7 +496,9 @@ async def test_module_config_boiler_post_legionella_fields():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return None
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
 
         async def json(self):
             return {
@@ -515,7 +527,9 @@ async def test_module_config_boiler_post_legionella_interval_out_of_range():
         app = {"hass": hass}
 
         def get(self, key, default=None):
-            return None
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
 
         async def json(self):
             return {

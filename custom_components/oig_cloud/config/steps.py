@@ -1015,23 +1015,29 @@ Kliknutím na "Odeslat" spustíte průvodce.
                         return entity_parts[i + 1]
             return None
 
-        primary_box_id = _extract_box_id(top_sensor) if top_sensor else None
-
-        cross_box_entries = []
-        if bottom_sensor and _extract_box_id(bottom_sensor) != primary_box_id:
-            cross_box_entries.append("boiler_temp_sensor_bottom")
-        heater = user_input.get("boiler_heater_switch_entity", "")
-        if heater and _extract_box_id(heater) != primary_box_id:
-            cross_box_entries.append("boiler_heater_switch_entity")
-        alt_heater = user_input.get("boiler_alt_heater_switch_entity", "")
-        if alt_heater and _extract_box_id(alt_heater) != primary_box_id:
-            cross_box_entries.append("boiler_alt_heater_switch_entity")
-        circ = user_input.get("boiler_circulation_pump_switch_entity", "")
-        if circ and _extract_box_id(circ) != primary_box_id:
-            cross_box_entries.append("boiler_circulation_pump_switch_entity")
-
-        if cross_box_entries:
-            errors[cross_box_entries[0]] = "cross_box_sharing"
+        # Cross-box rejection compares only entities that resolve to a REAL OIG
+        # box id. Boiler temperature probes are commonly third-party (ESPHome,
+        # e.g. sensor.bojler_top) → _extract_box_id returns None; such entities
+        # must NOT participate in the comparison, otherwise a valid single-box
+        # setup with a non-OIG sensor is wrongly rejected as cross_box_sharing.
+        candidates = [
+            ("boiler_temp_sensor_top", top_sensor),
+            ("boiler_temp_sensor_bottom", bottom_sensor),
+            ("boiler_heater_switch_entity", user_input.get("boiler_heater_switch_entity", "")),
+            ("boiler_alt_heater_switch_entity", user_input.get("boiler_alt_heater_switch_entity", "")),
+            ("boiler_circulation_pump_switch_entity", user_input.get("boiler_circulation_pump_switch_entity", "")),
+        ]
+        resolved = [(field, _extract_box_id(val)) for field, val in candidates if val]
+        resolved = [(field, bid) for field, bid in resolved if bid is not None]
+        distinct_ids = {bid for _field, bid in resolved}
+        if len(distinct_ids) > 1:
+            # Genuine multi-box mix: reference = most common box id, flag the odd ones.
+            from collections import Counter
+            reference = Counter(bid for _f, bid in resolved).most_common(1)[0][0]
+            for field, bid in resolved:
+                if bid != reference:
+                    errors[field] = "cross_box_sharing"
+                    break
 
         return errors
 
@@ -1258,7 +1264,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
     def _get_next_step(self, current_step: str) -> str:
         """Determine next step based on enabled modules."""
         section = getattr(self, "_section", None)
-        if section and current_step == self._SECTION_LAST_STEP.get(section):
+        # M13: in the "modules" section, enabling a previously-off module must
+        # route through that module's config before summary; if nothing new was
+        # enabled, jump straight to summary as before.
+        if section == "modules" and current_step == "wizard_modules":
+            if not self._newly_enabled_modules():
+                return "wizard_summary"
+            # fall through to the chain — _should_skip_step keeps only the
+            # newly-enabled modules' config steps.
+        elif section and current_step == self._SECTION_LAST_STEP.get(section):
             return "wizard_summary"
 
         all_steps = [
@@ -1299,6 +1313,16 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return "wizard_summary"
 
     def _should_skip_step(self, step: str) -> bool:
+        # M13: when editing only the "modules" section, walk the config of
+        # NEWLY-enabled modules only — skip everything else (intervals, already-
+        # enabled modules) so the user isn't dragged through the whole wizard.
+        if getattr(self, "_section", None) == "modules":
+            mod = self._STEP_MODULE.get(step)
+            if mod is None:
+                return True  # non-module step (e.g. intervals) — skip in this section
+            if mod not in self._newly_enabled_modules():
+                return True  # already-enabled or disabled module — skip
+            # newly enabled → fall through to the per-module skip rules below
         if step == "wizard_solar":
             return not self._wizard_data.get("enable_solar_forecast")
         if step == "wizard_battery":
@@ -3401,9 +3425,44 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         menu.append("section_all")
         return self.async_show_menu(step_id="init", menu_options=menu)
 
+    # Maps each per-module wizard step to the enable flag that gates it.
+    _STEP_MODULE = {
+        "wizard_solar": "enable_solar_forecast",
+        "wizard_battery": "enable_battery_prediction",
+        "wizard_pricing_import": "enable_pricing",
+        "wizard_pricing_export": "enable_pricing",
+        "wizard_pricing_distribution": "enable_pricing",
+        "wizard_boiler_simple_1": "enable_boiler",
+        "wizard_boiler_simple_2": "enable_boiler",
+        "wizard_boiler_simple_3": "enable_boiler",
+        "wizard_boiler_simple_4": "enable_boiler",
+        "wizard_boiler_simple_5": "enable_boiler",
+        "wizard_boiler_simple_6": "enable_boiler",
+        "wizard_boiler_simple_7": "enable_boiler",
+        "wizard_boiler_simple_8": "enable_boiler",
+        "wizard_boiler": "enable_boiler",
+    }
+    _MODULE_FLAGS = ("enable_solar_forecast", "enable_battery_prediction", "enable_pricing", "enable_boiler")
+
+    def _newly_enabled_modules(self) -> set:
+        """Module flags that are ON now but were OFF when the section was entered."""
+        baseline = getattr(self, "_modules_enabled_at_entry", None)
+        if baseline is None:
+            return set()
+        return {
+            flag for flag in self._MODULE_FLAGS
+            if self._wizard_data.get(flag) and flag not in baseline
+        }
+
     async def _enter_section(self, section: str, first_step: str) -> ConfigFlowResult:
         self._section: Optional[str] = section
         self._step_history = ["init"]
+        # M13: snapshot which modules were enabled on entry so that enabling a new
+        # one in the "modules" section routes into ITS config instead of silently
+        # saving defaults.
+        self._modules_enabled_at_entry = {
+            flag for flag in self._MODULE_FLAGS if self._wizard_data.get(flag)
+        }
         return await getattr(self, f"async_step_{first_step}")()
 
     async def async_step_section_modules(
