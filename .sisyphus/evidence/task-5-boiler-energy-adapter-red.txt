@@ -1,0 +1,69 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: aiohttp-1.0.5, socket-0.7.0, picked-0.5.0, requests-mock-1.12.1, homeassistant-custom-component-0.13.205, cov-6.0.0, sugar-1.0.0, xdist-3.6.1, github-actions-annotate-failures-0.2.0, asyncio-0.24.0, timeout-2.3.1, anyio-4.12.1, pytest_freezer-0.4.8, unordered-0.6.1, syrupy-4.8.0, respx-0.21.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+collected 9 items
+
+tests/test_boiler_task5_energy_adapter.py FFFFFFFFF                      [100%]
+
+=================================== FAILURES ===================================
+__________ test_runtime_calls_single_energy_input_adapter_output_once __________
+tests/test_boiler_task5_energy_adapter.py:132: in test_runtime_calls_single_energy_input_adapter_output_once
+    from custom_components.oig_cloud.boiler.runtime import BoilerEnergyInput
+E   ImportError: cannot import name 'BoilerEnergyInput' from 'custom_components.oig_cloud.boiler.runtime' (/repos/oig-cloud/custom_components/oig_cloud/boiler/runtime.py)
+____________ test_runtime_skips_adapter_when_existing_plan_is_valid ____________
+tests/test_boiler_task5_energy_adapter.py:155: in test_runtime_skips_adapter_when_existing_plan_is_valid
+    from custom_components.oig_cloud.boiler.runtime import BoilerEnergyInput
+E   ImportError: cannot import name 'BoilerEnergyInput' from 'custom_components.oig_cloud.boiler.runtime' (/repos/oig-cloud/custom_components/oig_cloud/boiler/runtime.py)
+_______________ test_runtime_appends_validate_freshness_reasons ________________
+tests/test_boiler_task5_energy_adapter.py:176: in test_runtime_appends_validate_freshness_reasons
+    from custom_components.oig_cloud.boiler.runtime import BoilerEnergyInput
+E   ImportError: cannot import name 'BoilerEnergyInput' from 'custom_components.oig_cloud.boiler.runtime' (/repos/oig-cloud/custom_components/oig_cloud/boiler/runtime.py)
+_________ test_runtime_bootstrap_profile_adds_missing_recorder_reason __________
+tests/test_boiler_task5_energy_adapter.py:193: in test_runtime_bootstrap_profile_adds_missing_recorder_reason
+    from custom_components.oig_cloud.boiler.runtime import BoilerEnergyInput
+E   ImportError: cannot import name 'BoilerEnergyInput' from 'custom_components.oig_cloud.boiler.runtime' (/repos/oig-cloud/custom_components/oig_cloud/boiler/runtime.py)
+__________ test_runtime_adapter_exception_converts_to_fallback_input ___________
+tests/test_boiler_task5_energy_adapter.py:222: in test_runtime_adapter_exception_converts_to_fallback_input
+    plan = await runtime.async_create_plan(force=True)
+custom_components/oig_cloud/boiler/runtime.py:424: in async_create_plan
+    spot_prices = await self.energy_adapter.get_spot_prices()
+E   AttributeError: 'ExplodingAdapter' object has no attribute 'get_spot_prices'
+__________ test_adapter_missing_price_and_pv_returns_degraded_reasons __________
+tests/test_boiler_task5_energy_adapter.py:238: in test_adapter_missing_price_and_pv_returns_degraded_reasons
+    adapter = _CoordinatorEnergyInputAdapter(
+E   TypeError: _CoordinatorEnergyInputAdapter.__init__() got an unexpected keyword argument 'entry_id'
+_________ test_adapter_absent_battery_forecast_returns_non_pv_fallback _________
+tests/test_boiler_task5_energy_adapter.py:268: in test_adapter_absent_battery_forecast_returns_non_pv_fallback
+    adapter = _CoordinatorEnergyInputAdapter(
+E   TypeError: _CoordinatorEnergyInputAdapter.__init__() got an unexpected keyword argument 'entry_id'
+_____________ test_adapter_uses_entry_scoped_battery_forecast_only _____________
+tests/test_boiler_task5_energy_adapter.py:321: in test_adapter_uses_entry_scoped_battery_forecast_only
+    adapter = _CoordinatorEnergyInputAdapter(
+E   TypeError: _CoordinatorEnergyInputAdapter.__init__() got an unexpected keyword argument 'entry_id'
+__________ test_runtime_source_has_no_global_battery_forecast_lookup ___________
+tests/test_boiler_task5_energy_adapter.py:341: in test_runtime_source_has_no_global_battery_forecast_lookup
+    assert "battery_forecast_coordinator" not in source
+E   assert 'battery_for..._coordinator' not in '"""Runtime ...         )\n'
+E     
+E     'battery_forecast_coordinator' is contained here:
+E                "battery_forecast_coordinator"
+E               )
+E               if not battery_coordinator:
+E                   return []
+E               battery_data = battery_coordinator.data...
+E     
+E     ...Full output truncated (432 lines hidden), use '-vv' to show
+=========================== short test summary info ============================
+FAILED tests/test_boiler_task5_energy_adapter.py::test_runtime_calls_single_energy_input_adapter_output_once
+FAILED tests/test_boiler_task5_energy_adapter.py::test_runtime_skips_adapter_when_existing_plan_is_valid
+FAILED tests/test_boiler_task5_energy_adapter.py::test_runtime_appends_validate_freshness_reasons
+FAILED tests/test_boiler_task5_energy_adapter.py::test_runtime_bootstrap_profile_adds_missing_recorder_reason
+FAILED tests/test_boiler_task5_energy_adapter.py::test_runtime_adapter_exception_converts_to_fallback_input
+FAILED tests/test_boiler_task5_energy_adapter.py::test_adapter_missing_price_and_pv_returns_degraded_reasons
+FAILED tests/test_boiler_task5_energy_adapter.py::test_adapter_absent_battery_forecast_returns_non_pv_fallback
+FAILED tests/test_boiler_task5_energy_adapter.py::test_adapter_uses_entry_scoped_battery_forecast_only
+FAILED tests/test_boiler_task5_energy_adapter.py::test_runtime_source_has_no_global_battery_forecast_lookup
+============================== 9 failed in 0.48s ===============================

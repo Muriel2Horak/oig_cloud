@@ -30,7 +30,7 @@ import {
 } from '@/ui/features/pricing/types';
 
 const params = new URLSearchParams(window.location.search);
-const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
+const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '';
 
 function getSensorId(sensor: string): string {
   return `sensor.oig_${INVERTER_SN}_${sensor}`;
@@ -242,6 +242,8 @@ function extractSolarForecast(hass: any, labels: Date[]): SolarForecastData | nu
 
   const attrs = solarEntity.attributes;
   const todayTotal = attrs.today_total_kwh || 0;
+  const tomorrowTotal = attrs.tomorrow_total_kwh || 0;
+  const stale = attrs.forecast_stale === true;
 
   const todayS1 = attrs.today_hourly_string1_kw || {};
   const tomorrowS1 = attrs.tomorrow_hourly_string1_kw || {};
@@ -285,6 +287,8 @@ function extractSolarForecast(hass: any, labels: Date[]): SolarForecastData | nu
     string1,
     string2,
     todayTotal,
+    tomorrowTotal,
+    stale,
     hasString1: string1.some(v => v > 0),
     hasString2: string2.some(v => v > 0),
   };
@@ -498,16 +502,15 @@ export async function loadPricingData(hass: any, plan = 'hybrid'): Promise<Prici
     const states = hass?.states || {};
     const currentSpotPrice = parseNumber(states[getSensorId('spot_price_current_15min')]);
     const currentExportPrice = parseNumber(states[getSensorId('export_price_current_15min')]);
-    const avgSpotPrice = prices.length > 0
-      ? prices.reduce((s, p) => s + p.price, 0) / prices.length
-      : 0;
 
     // 10. Planned consumption + what-if
     const plannedConsumption = extractPlannedConsumption(hass);
     const whatIf = extractWhatIf(hass);
 
-    // 11. Solar total
+    // 11. Solar totals + staleness
     const solarForecastTotal = solar?.todayTotal || 0;
+    const solarForecastTomorrow = solar?.tomorrowTotal || 0;
+    const solarForecastStale = solar?.stale || false;
 
     const result: PricingData = {
       timeline,
@@ -525,10 +528,11 @@ export async function loadPricingData(hass: any, plan = 'hybrid'): Promise<Prici
       initialZoomEnd,
       currentSpotPrice,
       currentExportPrice,
-      avgSpotPrice,
       plannedConsumption,
       whatIf,
       solarForecastTotal,
+      solarForecastTomorrow,
+      solarForecastStale,
     };
 
     const elapsed = (performance.now() - perfStart).toFixed(0);

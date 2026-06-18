@@ -1,0 +1,41 @@
+=== task-13-boiler-docs-alignment.txt ===
+Generated: 2026-04-26 (Task 13 verification-fix round 2)
+
+PASS  CONFIGURATION.md — simple 5-step description
+PASS  CONFIGURATION.md — expert mode mentioned
+PASS  CONFIGURATION.md — boiler_setup_complete flag
+PASS  CONFIGURATION.md — 5 screens with Comfort+Deadline
+PASS  CONFIGURATION.md — top thermometer required
+PASS  CONFIGURATION.md — bottom thermometer optional
+PASS  CONFIGURATION.md — no old single-advanced-wizard wording
+PASS  PLANNER.md — boiler section header
+PASS  PLANNER.md — comfort-first planning described
+PASS  PLANNER.md — source selection (Vybraný zdroj)
+PASS  PLANNER.md — alternative source economics
+PASS  PLANNER.md — degraded/freshness states
+PASS  PLANNER.md — TTL-based override (not permanent deactivate)
+PASS  PLANNER.md — override is secondary to automatic planning
+PASS  PLANNER.md — no permanent deactivate claim
+PASS  PLANNER.md — reason codes mentioned
+PASS  PLANNER.md — comfort status/states
+PASS  SERVICES.md — set_boiler_mode marked legacy
+PASS  SERVICES.md — V2 primary path stated
+PASS  SERVICES.md — V1 read-only noted
+PASS  SERVICES.md — Boiler plán section marked legacy
+PASS  SERVICES.md — no overclaim that V2 exposes plan/apply/cancel as UI actions
+PASS  SERVICES.md — plan_boiler_heating not claimed as V2 UI action
+PASS  SERVICES.md — apply_boiler_plan not claimed as V2 UI action
+PASS  SERVICES.md — cancel_boiler_plan not claimed as V2 UI action
+PASS  SERVICES.md — no claim that V1 is editable
+PASS  ENTITIES.md — V2 dashboard primary note
+PASS  ENTITIES.md — legacy V1 entities noted
+PASS  ENTITIES.md — CBB/Manual still documented (legacy)
+PASS  FAQ.md — CBB set_boiler_mode marked legacy
+PASS  FAQ.md — shield.add_call legacy note
+PASS  TROUBLESHOOTING.md — set_boiler_mode modes documented
+PASS  TROUBLESHOOTING.md — legacy note on boiler mode
+PASS  AUTOMATIONS.md — boiler automations marked legacy
+PASS  AUTOMATIONS.md — CBB/Manual examples still present but caveated
+
+Result: 35/35 PASS
+Files modified: CONFIGURATION.md, PLANNER.md, SERVICES.md, ENTITIES.md, FAQ.md, TROUBLESHOOTING.md, AUTOMATIONS.md

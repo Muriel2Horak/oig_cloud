@@ -274,7 +274,13 @@ def test_state_and_attributes_branches(monkeypatch):
 
     sensor = _make_sensor({"enable_solar_forecast": True}, sensor_type="solar_forecast")
     sensor.hass = _make_hass()
-    sensor.coordinator.solar_forecast_data = {"total_today_kwh": 2.0}
+    from datetime import datetime as _dt
+
+    _today_iso = _dt.now().date().isoformat()
+    sensor.coordinator.solar_forecast_data = {
+        "total_today_kwh": 2.0,
+        "total_daily": {_today_iso: 2.0},
+    }
     assert sensor.state == 2.0
 
     sensor._last_forecast_data = {"total_hourly": None}

@@ -1,5 +1,7 @@
 """Profilovací engine - učení z historických dat."""
 
+from __future__ import annotations
+
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -12,6 +14,11 @@ from homeassistant.util import dt as dt_util
 
 from .const import MIN_CONFIDENCE, PROFILE_CATEGORIES, SEASON_MAP
 from .models import BoilerProfile
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import BootstrapProfile, BoilerThermalTopology
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -117,7 +124,9 @@ class BoilerProfiler:
         result = []
         for state in states:
             try:
-                timestamp = state.last_updated
+                # M2: recorder timestamps are UTC; bucket by local time so the
+                # hour/weekday/season profiles match the user's actual schedule.
+                timestamp = dt_util.as_local(state.last_updated)
                 value_wh = float(state.state)
                 result.append({"timestamp": timestamp, "value_wh": value_wh})
             except (ValueError, AttributeError):
@@ -178,6 +187,242 @@ class BoilerProfiler:
     def get_all_profiles(self) -> dict[str, BoilerProfile]:
         """Vrátí všechny profily."""
         return self._profiles
+
+    def generate_bootstrap_profile(
+        self,
+        topology: "BoilerThermalTopology",
+    ) -> "BootstrapProfile":
+        """Generate a deterministic bootstrap profile when no history exists.
+
+        Args:
+            topology: Validated thermal topology.
+
+        Returns:
+            BootstrapProfile with degraded reason set.
+        """
+        from .models import BoilerProfile, BootstrapProfile
+
+        profile = BoilerProfile(
+            category="bootstrap",
+            hourly_avg={h: 0.5 for h in range(24)},
+            confidence={h: 0.3 for h in range(24)},
+            sample_count={h: 1 for h in range(24)},
+            last_updated=dt_util.now(),
+        )
+        return BootstrapProfile(
+            profile=profile,
+            confidence=0.3,
+            degraded_reason="bootstrap_profile",
+        )
+
+    async def predict_draw_deadline(
+        self,
+        temp_sensor_entity: str,
+        heating_entity: str,
+        query_budget_seconds: float = 2.0,
+    ) -> tuple[Optional[datetime], str]:
+        """Predict next hot-water draw deadline from temperature history.
+
+        Query window: last 14 days.
+        Requires: ≥7 usable days, ≥90% sample coverage per day.
+        Draw event: ≥3°C drop within 60 minutes while heating is off.
+        Budget: 2-second query timeout.
+
+        Args:
+            temp_sensor_entity: Entity ID of temperature sensor.
+            heating_entity: Entity ID of heating switch.
+            query_budget_seconds: Max query time.
+
+        Returns:
+            (deadline_datetime, reason_code)
+            deadline is None when history is insufficient.
+        """
+        now = dt_util.now()
+        end_time = now
+        start_time = now - timedelta(days=14)
+
+        try:
+            history = await self._fetch_temperature_history(
+                temp_sensor_entity,
+                heating_entity,
+                start_time,
+                end_time,
+                timeout=query_budget_seconds,
+            )
+        except Exception as exc:
+            _LOGGER.debug("Draw deadline query timed out or failed: %s", exc)
+            return None, "bootstrap_profile"
+
+        usable_days = self._count_usable_days(history)
+        if usable_days < 7:
+            return None, "bootstrap_profile"
+
+        draw_events = self._detect_draw_events(history)
+        if not draw_events:
+            return None, "history_profile_low_confidence"
+
+        avg_draw_time = self._compute_average_draw_time(draw_events)
+        if avg_draw_time is None:
+            return None, "history_profile_low_confidence"
+
+        deadline = now.replace(
+            hour=avg_draw_time.hour,
+            minute=avg_draw_time.minute,
+            second=0,
+            microsecond=0,
+        )
+        if deadline < now:
+            deadline += timedelta(days=1)
+
+        return deadline, "history_profile_low_confidence"
+
+    async def _fetch_temperature_history(
+        self,
+        temp_sensor_entity: str,
+        heating_entity: str,
+        start_time: datetime,
+        end_time: datetime,
+        timeout: float = 2.0,
+    ) -> list[dict]:
+        """Fetch temperature and heating state from recorder."""
+        import asyncio
+
+        instance = get_instance(self.hass)
+        if instance is None:
+            return []
+
+        try:
+            temp_states = await asyncio.wait_for(
+                self.hass.async_add_executor_job(
+                    state_changes_during_period,
+                    self.hass,
+                    start_time,
+                    end_time,
+                    temp_sensor_entity,
+                ),
+                timeout=timeout,
+            )
+            heating_states = await asyncio.wait_for(
+                self.hass.async_add_executor_job(
+                    state_changes_during_period,
+                    self.hass,
+                    start_time,
+                    end_time,
+                    heating_entity,
+                ),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            return []
+
+        temp_list = temp_states.get(temp_sensor_entity, [])
+        heating_list = heating_states.get(heating_entity, [])
+
+        # M2: bucket by local time. Both sides use local isoformat keys so the
+        # heating/temperature join stays consistent.
+        heating_by_time = {}
+        for state in heating_list:
+            try:
+                heating_by_time[dt_util.as_local(state.last_updated).isoformat()] = (
+                    state.state.lower() in ("on", "true", "1", "zapnuto")
+                )
+            except (ValueError, AttributeError):
+                continue
+
+        result = []
+        for state in temp_list:
+            try:
+                temp = float(state.state)
+                ts = dt_util.as_local(state.last_updated)
+                heating = heating_by_time.get(ts.isoformat(), False)
+                result.append(
+                    {
+                        "timestamp": ts,
+                        "temp": temp,
+                        "heating": "on" if heating else "off",
+                    }
+                )
+            except (ValueError, AttributeError):
+                continue
+
+        return result
+
+    # Expected samples per day for 15-minute recorder interval (96/day).
+    _SAMPLES_PER_DAY = 96
+    _MIN_COVERAGE_FRACTION = 0.9
+
+    def _count_usable_days(self, history: list[dict]) -> int:
+        """Count days with ≥90% sample coverage.
+
+        Assumes 15-minute recorder history = 96 samples/day.
+        90% coverage = 86.4 → rounded up to 87 samples minimum.
+        """
+        from collections import defaultdict
+
+        daily_counts: dict[str, int] = defaultdict(int)
+        for entry in history:
+            day_key = entry["timestamp"].strftime("%Y-%m-%d")
+            daily_counts[day_key] += 1
+
+        min_samples = int(
+            self._SAMPLES_PER_DAY * self._MIN_COVERAGE_FRACTION + 0.9999
+        )
+        usable = 0
+        for count in daily_counts.values():
+            if count >= min_samples:
+                usable += 1
+        return usable
+
+    def _detect_draw_events(self, history: list[dict]) -> list[dict]:
+        """Detect draw events: ≥3°C drop within 60 min while heating off."""
+        events = []
+        history.sort(key=lambda x: x["timestamp"])
+
+        for i in range(len(history)):
+            entry = history[i]
+            if entry["heating"] != "off":
+                continue
+            for j in range(i + 1, len(history)):
+                next_entry = history[j]
+                time_diff = (
+                    next_entry["timestamp"] - entry["timestamp"]
+                ).total_seconds()
+                if time_diff > 3600:
+                    break
+                if next_entry["heating"] != "off":
+                    break
+                drop = entry["temp"] - next_entry["temp"]
+                if drop >= 3.0:
+                    events.append(
+                        {
+                            "start": entry["timestamp"],
+                            "end": next_entry["timestamp"],
+                            "drop_c": drop,
+                        }
+                    )
+                    break
+
+        return events
+
+    def _compute_average_draw_time(
+        self, draw_events: list[dict]
+    ) -> Optional[datetime]:
+        """Compute average time-of-day from draw events."""
+        if not draw_events:
+            return None
+
+        total_minutes = 0
+        for event in draw_events:
+            dt = event["start"]
+            total_minutes += dt.hour * 60 + dt.minute
+
+        avg_minutes = total_minutes / len(draw_events)
+        hour = int(avg_minutes // 60) % 24
+        minute = int(avg_minutes % 60)
+
+        return dt_util.now().replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
 
 
 def _group_history_by_day(history_data: list[dict]) -> dict[str, list[dict]]:

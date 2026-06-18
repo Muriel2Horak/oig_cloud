@@ -267,12 +267,18 @@ async def test_patch_existing_actual(monkeypatch):
     existing = [
         {"time": "2025-01-01T00:00:00", "net_cost": None},
         {"time": "bad", "net_cost": None},
+        # has net_cost but no backup_net_cost -> re-patched (backfill)
         {"time": "2025-01-01T00:15:00", "net_cost": 1.0},
+        # fully populated -> untouched
+        {"time": "2025-01-01T00:30:00", "net_cost": 1.0, "backup_net_cost": 0.8},
     ]
-    patched = await history_module._patch_existing_actual(sensor, existing)
+    patched, changed = await history_module._patch_existing_actual(sensor, existing)
+    assert changed is True
     assert patched[0]["net_cost"] == 1.2
     assert patched[1]["time"] == "bad"
-    assert patched[2]["net_cost"] == 1.0
+    assert patched[2]["net_cost"] == 1.2
+    assert patched[3]["net_cost"] == 1.0
+    assert patched[3]["backup_net_cost"] == 0.8
 
 
 @pytest.mark.asyncio
@@ -496,6 +502,7 @@ async def test_build_historical_modes_lookup_no_hass():
 @pytest.mark.asyncio
 async def test_update_actual_from_history_no_plan(monkeypatch):
     sensor = DummySensor(DummyHass())
+
     async def fake_load(*_args, **_kwargs):
         return None
 
@@ -514,7 +521,7 @@ async def test_update_actual_from_history_updates(monkeypatch):
         return {"intervals": []}
 
     async def fake_patch(*_args, **_kwargs):
-        return []
+        return [], False
 
     async def fake_build(*_args, **_kwargs):
         return [{"time": now.isoformat()}]
@@ -538,7 +545,7 @@ async def test_update_actual_from_history_existing_state(monkeypatch):
         return {"intervals": []}
 
     async def fake_patch(*_args, **_kwargs):
-        return []
+        return [], False
 
     async def fake_build(*_args, **_kwargs):
         return []
@@ -550,3 +557,31 @@ async def test_update_actual_from_history_existing_state(monkeypatch):
     sensor._daily_plan_state = {"date": now.strftime("%Y-%m-%d"), "actual": [{"time": "t"}]}
 
     await history_module.update_actual_from_history(sensor)
+
+
+@pytest.mark.asyncio
+async def test_update_actual_persists_patch_without_new_intervals(monkeypatch):
+    """M6: a patch to existing actuals is persisted even with no new intervals."""
+    sensor = DummySensor(DummyHass())
+    now = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+
+    async def fake_load(*_args, **_kwargs):
+        return {"intervals": []}
+
+    async def fake_patch(*_args, **_kwargs):
+        # Existing interval got backfilled cost data; no new intervals appended.
+        return [{"time": "t", "net_cost": 9.9}], True
+
+    async def fake_build(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(history_module.dt_util, "now", lambda: now)
+    monkeypatch.setattr(history_module, "_patch_existing_actual", fake_patch)
+    monkeypatch.setattr(history_module, "_build_new_actual_intervals", fake_build)
+    sensor._load_plan_from_storage = fake_load
+    sensor._daily_plan_state = {"date": today, "actual": [{"time": "t"}]}
+
+    await history_module.update_actual_from_history(sensor)
+
+    assert sensor._daily_plan_state["actual"] == [{"time": "t", "net_cost": 9.9}]

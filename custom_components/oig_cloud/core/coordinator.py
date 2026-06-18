@@ -73,6 +73,14 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         # Spot price cache shared between scheduler/fallback and coordinator updates
         self._spot_prices_cache: Optional[Dict[str, Any]] = None
 
+        # Lifecycle: cancellable timers/listeners so unload/reload doesn't leak
+        # them (review H4). Must be set before _setup_pricing_ote(), which
+        # schedules the hourly fallback + spot-price updates that read these.
+        # _shutting_down stops the hourly timer re-arming.
+        self._unsubs: list = []
+        self._hourly_timer: Optional[asyncio.TimerHandle] = None
+        self._shutting_down: bool = False
+
         # NOVÉ: OTE API inicializace - OPRAVA logiky
         pricing_enabled = self.config_entry and self.config_entry.options.get(
             "enable_pricing", False
@@ -358,13 +366,16 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         async def spot_price_callback(now: datetime) -> None:
             await self._update_spot_prices()
 
-        async_track_point_in_time(self.hass, spot_price_callback, next_update)
+        self._unsubs.append(
+            async_track_point_in_time(self.hass, spot_price_callback, next_update)
+        )
 
     def _schedule_hourly_fallback(self) -> None:
         """Naplánuje hodinové fallback stahování OTE dat."""
-
-        # Spustit každou hodinu
-        self.hass.loop.call_later(
+        if self._shutting_down:
+            return
+        # Spustit každou hodinu (handle uchován kvůli zrušení při unload/shutdown)
+        self._hourly_timer = self.hass.loop.call_later(
             3600,  # 1 hodina
             lambda: self.hass.async_create_task(self._hourly_fallback_check()),
         )
@@ -635,7 +646,13 @@ class OigCloudCoordinator(DataUpdateCoordinator):
     def _configure_notification_manager(
         self, use_cloud: bool, cloud_notifications_enabled: bool
     ) -> None:
-        if use_cloud and cloud_notifications_enabled:
+        # NOTE: `use_cloud` is the TELEMETRY source, not whether the cloud API is
+        # reachable. Cloud notifications come from the cloud API (`self.api`),
+        # which is available even in local-telemetry mode (it's already used for
+        # config-node fill and extended stats). Gating the manager on `use_cloud`
+        # meant local-telemetry users got NO notifications at all — so we gate
+        # only on the feature flag.
+        if cloud_notifications_enabled:
             if (
                 not hasattr(self, "notification_manager")
                 or self.notification_manager is None
@@ -718,17 +735,20 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Last extended update: %s", self._last_extended_update)
         _LOGGER.debug("Extended interval: %ss", self.extended_interval)
 
-        if use_cloud and extended_enabled and should_update_extended:
-            await self._refresh_extended_stats(cloud_notifications_enabled)
-            return
-
-        if not extended_enabled:
+        # `use_cloud` (telemetry source) is intentionally NOT a gate: both
+        # extended stats and cloud notifications come from the cloud API, which
+        # is reachable even when telemetry is served locally. Extended stats run
+        # when the feature is enabled; notifications refresh independently
+        # (throttled internally), so local-telemetry users still get both.
+        _ = use_cloud
+        if extended_enabled and should_update_extended:
+            await self._refresh_extended_stats()
+        elif not extended_enabled:
             _LOGGER.debug("Extended sensors disabled in configuration")
-            await self._maybe_refresh_notifications_standalone(
-                cloud_notifications_enabled
-            )
 
-    async def _refresh_extended_stats(self, cloud_notifications_enabled: bool) -> None:
+        await self._maybe_refresh_notifications_standalone(cloud_notifications_enabled)
+
+    async def _refresh_extended_stats(self) -> None:
         _LOGGER.info("Fetching extended stats (FVE, LOAD, BATT, GRID)")
         try:
             today_from, today_to = self._today_range()
@@ -755,10 +775,6 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             }
             self._last_extended_update = dt_util.now()
             _LOGGER.debug("Extended stats updated successfully")
-
-            await self._maybe_refresh_notifications_with_extended(
-                cloud_notifications_enabled
-            )
 
         except Exception as e:
             _LOGGER.warning(f"Failed to fetch extended stats: {e}")
@@ -992,12 +1008,13 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("🔋 Battery forecast returned no timeline data")
                 return
 
+            timeline_data = getattr(temp_sensor, "_timeline_data", None) or []
             self.battery_forecast_data = forecast_payload
             self._battery_forecast_last_update = now
             self._battery_forecast_last_inputs_hash = inputs_hash
             _LOGGER.debug(
                 "🔋 Battery forecast data updated in coordinator: %s points",
-                len(temp_sensor._timeline_data or []),
+                len(timeline_data),
             )
 
         except Exception as e:
@@ -1008,6 +1025,22 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             self.battery_forecast_data = None
 
     async def async_shutdown(self) -> None:
+        # Stop the self-re-arming hourly timer + any scheduled point-in-time
+        # callbacks so they don't fire against a dead coordinator after unload.
+        self._shutting_down = True
+        if self._hourly_timer is not None:
+            try:
+                self._hourly_timer.cancel()
+            except Exception:  # pragma: no cover - defensive
+                pass
+            self._hourly_timer = None
+        for unsub in self._unsubs:
+            try:
+                unsub()
+            except Exception:  # pragma: no cover - defensive
+                pass
+        self._unsubs = []
+
         if self._spot_retry_task and not self._spot_retry_task.done():
             self._spot_retry_task.cancel()
             try:
@@ -1073,20 +1106,19 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         )
 
     def _build_forecast_payload(self, sensor: Any) -> Optional[Dict[str, Any]]:
-        if not sensor._timeline_data:
+        timeline_data = getattr(sensor, "_timeline_data", None)
+        if not timeline_data:
             return None
+        last_update = getattr(sensor, "_last_update", None)
         return {
-            "timeline_data": sensor._timeline_data,
+            "timeline_data": timeline_data,
             "calculation_time": (
-                sensor._last_update.isoformat() if sensor._last_update else None
+                last_update.isoformat() if last_update else None
             ),
             "data_source": "simplified_calculation",
-            "current_battery_kwh": (
-                sensor._timeline_data[0].get("battery_capacity_kwh", 0)
-                if sensor._timeline_data
-                else 0
-            ),
-            "mode_recommendations": sensor._mode_recommendations or [],
+            # timeline_data is guaranteed non-empty here (early return above).
+            "current_battery_kwh": timeline_data[0].get("battery_capacity_kwh", 0),
+            "mode_recommendations": getattr(sensor, "_mode_recommendations", None) or [],
         }
 
     def _create_simple_battery_forecast(self) -> Dict[str, Any]:

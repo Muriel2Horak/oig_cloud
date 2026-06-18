@@ -1,0 +1,371 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0 -- /repos/oig-cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: aiohttp-1.0.5, socket-0.7.0, picked-0.5.0, requests-mock-1.12.1, homeassistant-custom-component-0.13.205, cov-6.0.0, sugar-1.0.0, xdist-3.6.1, github-actions-annotate-failures-0.2.0, asyncio-0.24.0, timeout-2.3.1, anyio-4.12.1, pytest_freezer-0.4.8, unordered-0.6.1, syrupy-4.8.0, respx-0.21.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+collecting ... collected 27 items
+
+tests/test_config_flow_boiler_setup.py::test_boiler_mode_select_defaults_to_simple FAILED [  3%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_1_box_id_and_volume FAILED [  7%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_2_top_thermometer_and_optional_second FAILED [ 11%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_2_without_second_thermometer FAILED [ 14%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_3_primary_heating_and_effective_power FAILED [ 18%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_3_recovery_rate_validation FAILED [ 22%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_4_alternative_source_disabled FAILED [ 25%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_4_alternative_source_controllable_requires_entity FAILED [ 29%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_4_alternative_source_benchmark_only FAILED [ 33%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_5_comfort_profile FAILED [ 37%]
+tests/test_config_flow_boiler_setup.py::test_boiler_simple_full_path_creates_entry FAILED [ 40%]
+tests/test_config_flow_boiler_setup.py::test_boiler_expert_path_reaches_old_step FAILED [ 44%]
+tests/test_config_flow_boiler_setup.py::test_alternative_source_mode_disabled FAILED [ 48%]
+tests/test_config_flow_boiler_setup.py::test_alternative_source_mode_benchmark_only FAILED [ 51%]
+tests/test_config_flow_boiler_setup.py::test_alternative_source_mode_controllable_with_entity FAILED [ 55%]
+tests/test_config_flow_boiler_setup.py::test_options_flow_reentry_preserves_existing_config PASSED [ 59%]
+tests/test_config_flow_boiler_setup.py::test_multi_box_isolation_in_options FAILED [ 62%]
+tests/test_config_flow_boiler_setup.py::test_incomplete_setup_does_not_enable_boiler FAILED [ 66%]
+tests/test_config_flow_boiler_setup.py::test_complete_setup_enables_boiler FAILED [ 70%]
+tests/test_config_flow_boiler_setup.py::test_effective_power_w_validation_too_low FAILED [ 74%]
+tests/test_config_flow_boiler_setup.py::test_effective_power_w_validation_too_high FAILED [ 77%]
+tests/test_config_flow_boiler_setup.py::test_recovery_rate_c_per_hour_validation_too_low FAILED [ 81%]
+tests/test_config_flow_boiler_setup.py::test_options_flow_enqueues_config_update_command FAILED [ 85%]
+tests/test_config_flow_boiler_setup.py::test_legacy_boiler_step_still_works FAILED [ 88%]
+tests/test_config_flow_boiler_setup.py::test_total_steps_with_boiler_simple_path FAILED [ 92%]
+tests/test_config_flow_boiler_setup.py::test_step_sequence_with_boiler_simple_path FAILED [ 96%]
+tests/test_config_flow_boiler_setup.py::test_step_sequence_with_boiler_expert_path FAILED [100%]
+
+=================================== FAILURES ===================================
+__________________ test_boiler_mode_select_defaults_to_simple __________________
+tests/test_config_flow_boiler_setup.py:45: in test_boiler_mode_select_defaults_to_simple
+    result = await flow.async_step_wizard_boiler_mode_select({})
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+____________________ test_boiler_simple_1_box_id_and_volume ____________________
+tests/test_config_flow_boiler_setup.py:56: in test_boiler_simple_1_box_id_and_volume
+    result = await flow.async_step_wizard_boiler_simple_1(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_1'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+___________ test_boiler_simple_2_top_thermometer_and_optional_second ___________
+tests/test_config_flow_boiler_setup.py:71: in test_boiler_simple_2_top_thermometer_and_optional_second
+    result = await flow.async_step_wizard_boiler_simple_2(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_2'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_______________ test_boiler_simple_2_without_second_thermometer ________________
+tests/test_config_flow_boiler_setup.py:91: in test_boiler_simple_2_without_second_thermometer
+    result = await flow.async_step_wizard_boiler_simple_2(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_2'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+___________ test_boiler_simple_3_primary_heating_and_effective_power ___________
+tests/test_config_flow_boiler_setup.py:108: in test_boiler_simple_3_primary_heating_and_effective_power
+    result = await flow.async_step_wizard_boiler_simple_3(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+________________ test_boiler_simple_3_recovery_rate_validation _________________
+tests/test_config_flow_boiler_setup.py:128: in test_boiler_simple_3_recovery_rate_validation
+    result = await flow.async_step_wizard_boiler_simple_3(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_______________ test_boiler_simple_4_alternative_source_disabled _______________
+tests/test_config_flow_boiler_setup.py:145: in test_boiler_simple_4_alternative_source_disabled
+    result = await flow.async_step_wizard_boiler_simple_4(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_4'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_____ test_boiler_simple_4_alternative_source_controllable_requires_entity _____
+tests/test_config_flow_boiler_setup.py:159: in test_boiler_simple_4_alternative_source_controllable_requires_entity
+    result = await flow.async_step_wizard_boiler_simple_4(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_4'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+____________ test_boiler_simple_4_alternative_source_benchmark_only ____________
+tests/test_config_flow_boiler_setup.py:176: in test_boiler_simple_4_alternative_source_benchmark_only
+    result = await flow.async_step_wizard_boiler_simple_4(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_4'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_____________________ test_boiler_simple_5_comfort_profile _____________________
+tests/test_config_flow_boiler_setup.py:192: in test_boiler_simple_5_comfort_profile
+    result = await flow.async_step_wizard_boiler_simple_5(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_5'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+__________________ test_boiler_simple_full_path_creates_entry __________________
+tests/test_config_flow_boiler_setup.py:214: in test_boiler_simple_full_path_creates_entry
+    await flow.async_step_wizard_boiler_mode_select({})
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+___________________ test_boiler_expert_path_reaches_old_step ___________________
+tests/test_config_flow_boiler_setup.py:258: in test_boiler_expert_path_reaches_old_step
+    result = await flow.async_step_wizard_boiler_mode_select(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+____________________ test_alternative_source_mode_disabled _____________________
+tests/test_config_flow_boiler_setup.py:272: in test_alternative_source_mode_disabled
+    await flow.async_step_wizard_boiler_mode_select({})
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_________________ test_alternative_source_mode_benchmark_only __________________
+tests/test_config_flow_boiler_setup.py:297: in test_alternative_source_mode_benchmark_only
+    await flow.async_step_wizard_boiler_mode_select({})
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+____________ test_alternative_source_mode_controllable_with_entity _____________
+tests/test_config_flow_boiler_setup.py:323: in test_alternative_source_mode_controllable_with_entity
+    await flow.async_step_wizard_boiler_mode_select({})
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_____________________ test_multi_box_isolation_in_options ______________________
+tests/test_config_flow_boiler_setup.py:391: in test_multi_box_isolation_in_options
+    assert options["boiler_box_id"] == "box_a"
+E   KeyError: 'boiler_box_id'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_________________ test_incomplete_setup_does_not_enable_boiler _________________
+tests/test_config_flow_boiler_setup.py:412: in test_incomplete_setup_does_not_enable_boiler
+    assert options["enable_boiler"] is False
+E   assert True is False
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+______________________ test_complete_setup_enables_boiler ______________________
+tests/test_config_flow_boiler_setup.py:429: in test_complete_setup_enables_boiler
+    assert options["boiler_setup_complete"] is True
+E   KeyError: 'boiler_setup_complete'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+__________________ test_effective_power_w_validation_too_low ___________________
+tests/test_config_flow_boiler_setup.py:437: in test_effective_power_w_validation_too_low
+    result = await flow.async_step_wizard_boiler_simple_3(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+__________________ test_effective_power_w_validation_too_high __________________
+tests/test_config_flow_boiler_setup.py:453: in test_effective_power_w_validation_too_high
+    result = await flow.async_step_wizard_boiler_simple_3(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_______________ test_recovery_rate_c_per_hour_validation_too_low _______________
+tests/test_config_flow_boiler_setup.py:469: in test_recovery_rate_c_per_hour_validation_too_low
+    result = await flow.async_step_wizard_boiler_simple_3(
+E   AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_______________ test_options_flow_enqueues_config_update_command _______________
+.venv/lib/python3.12/site-packages/_pytest/monkeypatch.py:90: in annotated_getattr
+    obj = getattr(obj, name)
+E   AttributeError: module 'custom_components.oig_cloud.config.steps' has no attribute 'get_boiler_runtime'
+
+The above exception was the direct cause of the following exception:
+tests/test_config_flow_boiler_setup.py:520: in test_options_flow_enqueues_config_update_command
+    monkeypatch.setattr(
+.venv/lib/python3.12/site-packages/_pytest/monkeypatch.py:104: in derive_importpath
+    annotated_getattr(target, attr, ann=module)
+.venv/lib/python3.12/site-packages/_pytest/monkeypatch.py:92: in annotated_getattr
+    raise AttributeError(
+E   AttributeError: 'module' object at custom_components.oig_cloud.config.steps has no attribute 'get_boiler_runtime'
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_____________________ test_legacy_boiler_step_still_works ______________________
+tests/test_config_flow_boiler_setup.py:568: in test_legacy_boiler_step_still_works
+    assert result["step_id"] == "wizard_summary"
+E   AssertionError: assert 'wizard_boiler' == 'wizard_summary'
+E     
+E     - wizard_summary
+E     + wizard_boiler
+---------------------------- Captured stderr setup -----------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG:asyncio:Using selector: EpollSelector
+---------------------------- Captured log teardown -----------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+___________________ test_total_steps_with_boiler_simple_path ___________________
+tests/test_config_flow_boiler_setup.py:576: in test_total_steps_with_boiler_simple_path
+    assert total == 11
+E   assert 6 == 11
+__________________ test_step_sequence_with_boiler_simple_path __________________
+tests/test_config_flow_boiler_setup.py:584: in test_step_sequence_with_boiler_simple_path
+    assert "wizard_boiler_mode_select" in steps
+E   AssertionError: assert 'wizard_boiler_mode_select' in ['wizard_welcome', 'wizard_credentials', 'wizard_modules', 'wizard_intervals', 'wizard_boiler', 'wizard_summary']
+__________________ test_step_sequence_with_boiler_expert_path __________________
+tests/test_config_flow_boiler_setup.py:595: in test_step_sequence_with_boiler_expert_path
+    assert "wizard_boiler_mode_select" in steps
+E   AssertionError: assert 'wizard_boiler_mode_select' in ['wizard_welcome', 'wizard_credentials', 'wizard_modules', 'wizard_intervals', 'wizard_boiler', 'wizard_summary']
+=========================== short test summary info ============================
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_mode_select_defaults_to_simple - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_1_box_id_and_volume - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_1'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_2_top_thermometer_and_optional_second - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_2'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_2_without_second_thermometer - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_2'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_3_primary_heating_and_effective_power - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_3_recovery_rate_validation - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_4_alternative_source_disabled - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_4'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_4_alternative_source_controllable_requires_entity - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_4'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_4_alternative_source_benchmark_only - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_4'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_5_comfort_profile - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_5'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_simple_full_path_creates_entry - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+FAILED tests/test_config_flow_boiler_setup.py::test_boiler_expert_path_reaches_old_step - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+FAILED tests/test_config_flow_boiler_setup.py::test_alternative_source_mode_disabled - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+FAILED tests/test_config_flow_boiler_setup.py::test_alternative_source_mode_benchmark_only - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+FAILED tests/test_config_flow_boiler_setup.py::test_alternative_source_mode_controllable_with_entity - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_mode_select'
+FAILED tests/test_config_flow_boiler_setup.py::test_multi_box_isolation_in_options - KeyError: 'boiler_box_id'
+FAILED tests/test_config_flow_boiler_setup.py::test_incomplete_setup_does_not_enable_boiler - assert True is False
+FAILED tests/test_config_flow_boiler_setup.py::test_complete_setup_enables_boiler - KeyError: 'boiler_setup_complete'
+FAILED tests/test_config_flow_boiler_setup.py::test_effective_power_w_validation_too_low - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_effective_power_w_validation_too_high - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_recovery_rate_c_per_hour_validation_too_low - AttributeError: 'DummyWizard' object has no attribute 'async_step_wizard_boiler_simple_3'. Did you mean: 'async_step_wizard_boiler'?
+FAILED tests/test_config_flow_boiler_setup.py::test_options_flow_enqueues_config_update_command - AttributeError: 'module' object at custom_components.oig_cloud.config.steps has no attribute 'get_boiler_runtime'
+FAILED tests/test_config_flow_boiler_setup.py::test_legacy_boiler_step_still_works - AssertionError: assert 'wizard_boiler' == 'wizard_summary'
+  
+  - wizard_summary
+  + wizard_boiler
+FAILED tests/test_config_flow_boiler_setup.py::test_total_steps_with_boiler_simple_path - assert 6 == 11
+FAILED tests/test_config_flow_boiler_setup.py::test_step_sequence_with_boiler_simple_path - AssertionError: assert 'wizard_boiler_mode_select' in ['wizard_welcome', 'wizard_credentials', 'wizard_modules', 'wizard_intervals', 'wizard_boiler', 'wizard_summary']
+FAILED tests/test_config_flow_boiler_setup.py::test_step_sequence_with_boiler_expert_path - AssertionError: assert 'wizard_boiler_mode_select' in ['wizard_welcome', 'wizard_credentials', 'wizard_modules', 'wizard_intervals', 'wizard_boiler', 'wizard_summary']
+========================= 26 failed, 1 passed in 0.72s =========================

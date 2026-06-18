@@ -1,0 +1,21 @@
+Task 2 Boiler Boundary Verification - Clean Run
+================================================
+Date: 2026-04-25
+
+Command: ./.venv/bin/python -m pytest tests/test_boiler_task1_routing.py tests/test_boiler_task2_boundary.py tests/test_boiler_module.py tests/test_boiler_services.py tests/test_boiler_coordinator_more.py tests/test_boiler_services_extra_coverage.py tests/test_coverage_block_more4.py tests/test_coverage_block_more3.py tests/test_init_setup_entry.py
+Result: 180 passed, 0 failures, 0 warnings from Task 2 code
+
+Full suite: ./.venv/bin/python -m pytest
+Result: 3657 passed, 32 warnings (all pre-existing/unrelated), 0 failures
+
+Key fixes in this session:
+1. Removed _update_plan, _get_spot_prices, _get_overflow_windows from BoilerCoordinator
+2. Coordinator _async_update_data now delegates plan creation via get_boiler_runtime() -> runtime.async_create_plan()
+3. _CoordinatorEnergyInputAdapter reads spot prices and overflow windows directly from config/hass/planner
+4. Fixed bare except Exception: pass in destroy_boiler_runtime with explicit _LOGGER.warning
+5. Strengthened boundary tests with explicit source-scan for forbidden coordinator methods
+6. Fixed unawaited coroutine warning in test_async_update_data_success (asyncio.sleep(0) in lambda for sync track_energy_sources mock)
+7. api_views.py: restored to pre-Task-2 state (zero git diff)
+8. Fixed full-suite regressions:
+   - test_boiler_api_views (test_coverage_block_more3.py): api_views.py had been modified with runtime imports; restored via git checkout
+   - test_async_setup_entry_runtime_flags (test_init_setup_entry.py): DummyBoilerCoordinator didn't accept entry_id kwarg; added entry_id="" default

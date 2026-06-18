@@ -1,6 +1,7 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
+import { renderIcon } from '@/utils/render-icon';
 
 export interface Tab {
   id: string;
@@ -50,7 +51,10 @@ export class OigTabs extends LitElement {
 
     .tab-icon {
       font-size: 16px;
+      display: inline-flex;
     }
+
+    .oig-mdi { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; display: inline-block; }
 
     @media (max-width: 768px) {
       :host {
@@ -66,6 +70,11 @@ export class OigTabs extends LitElement {
       .tab-icon {
         display: none;
       }
+    }
+
+    /* Landscape kiosk (Google Nest Hub): nižší lišta tabů */
+    @media (orientation: landscape) and (max-height: 600px) {
+      .tab { padding: 5px 14px; font-size: 13px; }
     }
   `;
 
@@ -90,7 +99,7 @@ export class OigTabs extends LitElement {
           class="tab ${this.isActive(tab.id) ? 'active' : ''}"
           @click=${() => this.onTabClick(tab.id)}
         >
-          ${tab.icon ? html`<span class="tab-icon">${tab.icon}</span>` : null}
+          ${tab.icon ? html`<span class="tab-icon">${renderIcon(tab.icon)}</span>` : null}
           <span>${tab.label}</span>
         </button>
       `)}

@@ -1,7 +1,11 @@
-import { LitElement, html, css, unsafeCSS } from 'lit';
+import { LitElement, html, css, unsafeCSS, type TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
-import { getIconEmoji } from '@/utils/format';
+import { renderIcon } from '@/utils/render-icon';
+import { MDI_ICON_PATHS } from '@/utils/mdi-icons';
+
+const ALL_ICON_NAMES = Object.keys(MDI_ICON_PATHS);
+const PRESET_COLORS = ['#42a5f5', '#43a047', '#ffa726', '#ef5350', '#ab47bc', '#26c6da', '#8d6e63', '#ec407a'];
 import { getEntityStore } from '@/data/entity-store';
 import type { TileConfig, TileSupportEntities } from '@/data/tiles-data';
 import type { HassState } from '@/data/state-watcher';
@@ -42,7 +46,7 @@ export class OigTileDialog extends LitElement {
   @state() private supportSearch2 = '';
   @state() private showSupportList1 = false;
   @state() private showSupportList2 = false;
-  @state() private iconPickerOpen = false;
+  @state() private iconSearch = '';
 
   static styles = css`
     :host {
@@ -69,9 +73,9 @@ export class OigTileDialog extends LitElement {
     }
 
     .dialog {
-      width: min(520px, 100%);
-      max-height: 85vh;
-      background: ${u(CSS_VARS.cardBg)};
+      width: min(460px, 100%);
+      max-height: 88vh;
+      background: ${u(CSS_VARS.cardBgSolid)};
       border: 1px solid ${u(CSS_VARS.divider)};
       border-radius: 16px;
       box-shadow: ${u(CSS_VARS.cardShadow)};
@@ -158,6 +162,50 @@ export class OigTileDialog extends LitElement {
       gap: 14px;
     }
 
+    /* ── type segment ── */
+    .seg { display: flex; gap: 8px; }
+    .seg button {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 9px; border-radius: 10px; border: 1px solid ${u(CSS_VARS.divider)};
+      background: rgba(0,0,0,.18); color: ${u(CSS_VARS.textSecondary)};
+      font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit;
+    }
+    .seg button.on { border-color: ${u(CSS_VARS.accent)}; background: color-mix(in srgb, ${u(CSS_VARS.accent)} 16%, transparent); color: ${u(CSS_VARS.textPrimary)}; }
+    .seg .oig-mdi { width: 16px; height: 16px; }
+
+    /* ── live preview ── */
+    .pvwrap { display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,.22); border: 1px dashed ${u(CSS_VARS.divider)}; border-radius: 12px; padding: 12px; }
+    .pvlbl { font-size: 8px; font-weight: 800; opacity: .45; text-transform: uppercase; letter-spacing: .5px; writing-mode: vertical-rl; transform: rotate(180deg); }
+    .ptile { flex: 1; background: linear-gradient(160deg, #222a40, #1a2034); border-left: 3px solid var(--pc, ${u(CSS_VARS.accent)}); border-radius: 10px; padding: 9px 11px; display: flex; align-items: center; gap: 9px; }
+    .ptile .pi { width: 30px; height: 30px; border-radius: 8px; background: color-mix(in srgb, var(--pc, ${u(CSS_VARS.accent)}) 22%, transparent); display: grid; place-items: center; color: var(--pc, ${u(CSS_VARS.accent)}); font-size: 18px; }
+    .ptile .pi .oig-mdi { width: 18px; height: 18px; }
+    .ptile .pm { flex: 1; min-width: 0; }
+    .ptile .pn { font-size: 12px; font-weight: 700; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ptile .pv { font-size: 17px; font-weight: 800; }
+    .ptile .pv small { font-size: 11px; opacity: .6; }
+
+    /* ── section ── */
+    .sec { display: flex; flex-direction: column; gap: 8px; }
+    .sect { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; opacity: .6; text-transform: uppercase; letter-spacing: .4px; }
+    .sect .n { width: 17px; height: 17px; border-radius: 50%; background: ${u(CSS_VARS.accent)}; color: #06121f; display: grid; place-items: center; font-size: 10px; }
+    .sect .opt { opacity: .7; font-weight: 600; text-transform: none; letter-spacing: 0; }
+
+    /* ── inline icon grid ── */
+    .igrid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; max-height: 132px; overflow: auto; background: rgba(0,0,0,.18); border: 1px solid ${u(CSS_VARS.divider)}; border-radius: 9px; padding: 7px; }
+    .ig { aspect-ratio: 1; display: grid; place-items: center; border-radius: 7px; cursor: pointer; border: 1px solid transparent; background: none; color: ${u(CSS_VARS.textPrimary)}; }
+    .ig:hover { background: rgba(255,255,255,.06); }
+    .ig.sel { border-color: ${u(CSS_VARS.accent)}; background: color-mix(in srgb, ${u(CSS_VARS.accent)} 16%, transparent); }
+    .ig .oig-mdi { width: 18px; height: 18px; }
+    .igrid-empty { grid-column: 1 / -1; text-align: center; font-size: 11px; opacity: .5; padding: 10px; }
+
+    /* ── color swatches ── */
+    .sw { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+    .sc { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; padding: 0; }
+    .sc.sel { border-color: #fff; }
+    .sw input[type="color"] { width: 28px; height: 28px; border: none; background: none; cursor: pointer; padding: 0; }
+
+    .oig-mdi { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; display: inline-block; }
+
     .form-group {
       display: flex;
       flex-direction: column;
@@ -209,6 +257,7 @@ export class OigTileDialog extends LitElement {
       align-items: center;
     }
 
+    .oig-mdi { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; display: inline-block; }
     .icon-preview {
       width: 46px;
       height: 46px;
@@ -441,7 +490,7 @@ export class OigTileDialog extends LitElement {
     this.supportSearch2 = '';
     this.showSupportList1 = false;
     this.showSupportList2 = false;
-    this.iconPickerOpen = false;
+    this.iconSearch = '';
   }
 
   private handleClose(): void {
@@ -503,10 +552,8 @@ export class OigTileDialog extends LitElement {
       .slice(0, 20);
   }
 
-  private getDisplayIcon(icon: string): string {
-    if (!icon) return getIconEmoji('');
-    if (icon.startsWith('mdi:')) return getIconEmoji(icon);
-    return icon;
+  private getDisplayIcon(icon: string): TemplateResult | string {
+    return renderIcon(icon || 'mdi:gauge');
   }
 
   private getColorForEntity(entityId: string): string {
@@ -630,11 +677,6 @@ export class OigTileDialog extends LitElement {
     this.handleClose();
   }
 
-  private onIconSelected(event: CustomEvent<{ icon: string }>): void {
-    this.icon = event.detail?.icon || '';
-    this.iconPickerOpen = false;
-  }
-
   private renderEntityList(domains: string[], searchText: string, selectedId: string, handler: (id: string) => void) {
     const items = this.getEntityItems(domains, searchText);
 
@@ -680,236 +722,91 @@ export class OigTileDialog extends LitElement {
     `;
   }
 
-  private renderEntityTab() {
+  // ── helpers for the unified form ──
+  private get isButtonType(): boolean { return this.currentTab === 'button'; }
+  private get selectedId(): string { return this.isButtonType ? this.selectedButtonEntityId : this.selectedEntityId; }
+  private get entityDomains(): string[] {
+    return this.isButtonType ? ['switch.', 'light.', 'fan.', 'input_boolean.'] : ['sensor.', 'binary_sensor.'];
+  }
+  private get entitySearch(): string { return this.isButtonType ? this.buttonSearchText : this.entitySearchText; }
+  private setEntitySearch(v: string): void {
+    if (this.isButtonType) this.buttonSearchText = v; else this.entitySearchText = v;
+  }
+  private selectEntity(id: string): void {
+    if (this.isButtonType) this.handleButtonEntitySelect(id); else this.handleEntitySelect(id);
+  }
+
+  private renderPreview() {
+    const id = this.selectedId;
+    const st = id ? this.getEntities()[id] : null;
+    const name = this.label || (st ? this.getAttributeValue(st, 'friendly_name') : '') || id || 'Nová dlaždice';
+    const value = st ? String(st.state) : '—';
+    const unit = st ? this.getAttributeValue(st, 'unit_of_measurement') : '';
+    const iconRaw = this.icon || (this.isButtonType ? '⚡' : '📊');
     return html`
-      <div class="form-group">
-        <label>Vyberte hlavní entitu:</label>
-        <input
-          class="input"
-          type="text"
-          placeholder="🔍 Hledat entitu..."
-          .value=${this.entitySearchText}
-          @input=${(event: Event) => {
-            this.entitySearchText = (event.target as HTMLInputElement).value;
-          }}
-        />
-      </div>
-
-      <div class="entity-list">
-        ${this.renderEntityList(['sensor.', 'binary_sensor.'], this.entitySearchText, this.selectedEntityId, (id) => this.handleEntitySelect(id))}
-      </div>
-
-      <div class="form-group">
-        <label>Vlastní popisek (volitelné):</label>
-        <input
-          class="input"
-          type="text"
-          placeholder="Např. Lednice v garáži"
-          .value=${this.label}
-          @input=${(event: Event) => {
-            this.label = (event.target as HTMLInputElement).value;
-          }}
-        />
-      </div>
-
-      <div class="row">
-        <div class="form-group">
-          <label>Ikona (volitelné):</label>
-          <div class="icon-input">
-            <button class="icon-preview" type="button" @click=${() => { this.iconPickerOpen = true; }}>
-              ${this.getDisplayIcon(this.icon || '')}
-            </button>
-            <input
-              class="input icon-field"
-              type="text"
-              .value=${this.icon}
-              readonly
-              placeholder="Klikni na ikonu..."
-            />
-            <button class="icon-btn" type="button" @click=${() => { this.iconPickerOpen = true; }}>📋</button>
+      <div class="pvwrap">
+        <span class="pvlbl">náhled</span>
+        <div class="ptile" style="--pc:${this.color}">
+          <div class="pi">${renderIcon(iconRaw)}</div>
+          <div class="pm">
+            <div class="pn">${name}</div>
+            <div class="pv">${value}${unit ? html` <small>${unit}</small>` : ''}</div>
           </div>
         </div>
-
-        <div class="form-group">
-          <label>Barva:</label>
-          <input
-            class="color-input"
-            type="color"
-            .value=${this.color}
-            @input=${(event: Event) => {
-              this.color = (event.target as HTMLInputElement).value;
-            }}
-          />
-        </div>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="form-group support-field">
-        <label>🔹 Podpůrná entita 1 (pravý horní roh, volitelné):</label>
-        <input
-          class="input"
-          type="text"
-          placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
-          .value=${this.getSupportInputValue(this.supportSearch1, this.supportEntity1)}
-          @input=${(event: Event) => {
-            this.handleSupportInput(1, (event.target as HTMLInputElement).value);
-          }}
-          @focus=${() => { if (this.supportSearch1.trim()) this.showSupportList1 = true; }}
-          @blur=${() => { this.showSupportList1 = false; }}
-        />
-        ${this.showSupportList1 ? html`
-          <div class="support-list">
-            ${this.renderSupportList(this.supportSearch1, 1)}
-          </div>
-        ` : null}
-      </div>
-
-      <div class="form-group support-field">
-        <label>🔹 Podpůrná entita 2 (pravý dolní roh, volitelné):</label>
-        <input
-          class="input"
-          type="text"
-          placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
-          .value=${this.getSupportInputValue(this.supportSearch2, this.supportEntity2)}
-          @input=${(event: Event) => {
-            this.handleSupportInput(2, (event.target as HTMLInputElement).value);
-          }}
-          @focus=${() => { if (this.supportSearch2.trim()) this.showSupportList2 = true; }}
-          @blur=${() => { this.showSupportList2 = false; }}
-        />
-        ${this.showSupportList2 ? html`
-          <div class="support-list">
-            ${this.renderSupportList(this.supportSearch2, 2)}
-          </div>
-        ` : null}
       </div>
     `;
   }
 
-  private renderButtonTab() {
+  private renderIconGrid() {
+    const q = this.iconSearch.trim().toLowerCase();
+    const list = q ? ALL_ICON_NAMES.filter(n => n.includes(q)) : ALL_ICON_NAMES;
     return html`
-      <div class="form-group">
-        <label>Akce:</label>
-        <select
-          .value=${this.action}
-          @change=${(event: Event) => {
-            this.action = (event.target as HTMLSelectElement).value as ActionType;
-          }}
-        >
-          <option value="toggle">Přepnout (Toggle)</option>
-          <option value="turn_on">Zapnout</option>
-          <option value="turn_off">Vypnout</option>
-        </select>
+      <input
+        class="input"
+        type="text"
+        placeholder="🔍 Hledat ikonu..."
+        .value=${this.iconSearch}
+        @input=${(e: Event) => { this.iconSearch = (e.target as HTMLInputElement).value; }}
+      />
+      <div class="igrid">
+        ${list.length === 0
+          ? html`<div class="igrid-empty">Nic nenalezeno</div>`
+          : list.map(n => html`
+            <button
+              class="ig ${this.icon === `mdi:${n}` ? 'sel' : ''}"
+              type="button"
+              title=${n}
+              @click=${() => { this.icon = `mdi:${n}`; }}
+            >${renderIcon(`mdi:${n}`)}</button>
+          `)}
       </div>
+    `;
+  }
 
-      <div class="form-group">
-        <label>Vyberte entitu pro tlačítko:</label>
+  private renderColorSwatches() {
+    return html`
+      <div class="sw">
+        ${PRESET_COLORS.map(c => html`
+          <button
+            class="sc ${this.color.toLowerCase() === c ? 'sel' : ''}"
+            type="button"
+            style="background:${c}"
+            title=${c}
+            @click=${() => { this.color = c; }}
+          ></button>
+        `)}
         <input
-          class="input"
-          type="text"
-          placeholder="🔍 Hledat entitu..."
-          .value=${this.buttonSearchText}
-          @input=${(event: Event) => {
-            this.buttonSearchText = (event.target as HTMLInputElement).value;
-          }}
+          type="color"
+          .value=${this.color}
+          @input=${(e: Event) => { this.color = (e.target as HTMLInputElement).value; }}
         />
-      </div>
-
-      <div class="entity-list">
-        ${this.renderEntityList(['switch.', 'light.', 'fan.', 'input_boolean.'], this.buttonSearchText, this.selectedButtonEntityId, (id) => this.handleButtonEntitySelect(id))}
-      </div>
-
-      <div class="form-group">
-        <label>Popisek:</label>
-        <input
-          class="input"
-          type="text"
-          placeholder="Světlo obývák"
-          .value=${this.label}
-          @input=${(event: Event) => {
-            this.label = (event.target as HTMLInputElement).value;
-          }}
-        />
-      </div>
-
-      <div class="row">
-        <div class="form-group">
-          <label>Ikona:</label>
-          <div class="icon-input">
-            <button class="icon-preview" type="button" @click=${() => { this.iconPickerOpen = true; }}>
-              ${this.getDisplayIcon(this.icon || '')}
-            </button>
-            <input
-              class="input icon-field"
-              type="text"
-              .value=${this.icon}
-              readonly
-              placeholder="Klikni na ikonu..."
-            />
-            <button class="icon-btn" type="button" @click=${() => { this.iconPickerOpen = true; }}>📋</button>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label>Barva:</label>
-          <input
-            class="color-input"
-            type="color"
-            .value=${this.color}
-            @input=${(event: Event) => {
-              this.color = (event.target as HTMLInputElement).value;
-            }}
-          />
-        </div>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="form-group support-field">
-        <label>🔹 Podpůrná entita 1 (pravý horní roh, volitelné):</label>
-        <input
-          class="input"
-          type="text"
-          placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
-          .value=${this.getSupportInputValue(this.supportSearch1, this.supportEntity1)}
-          @input=${(event: Event) => {
-            this.handleSupportInput(1, (event.target as HTMLInputElement).value);
-          }}
-          @focus=${() => { if (this.supportSearch1.trim()) this.showSupportList1 = true; }}
-          @blur=${() => { this.showSupportList1 = false; }}
-        />
-        ${this.showSupportList1 ? html`
-          <div class="support-list">
-            ${this.renderSupportList(this.supportSearch1, 1)}
-          </div>
-        ` : null}
-      </div>
-
-      <div class="form-group support-field">
-        <label>🔹 Podpůrná entita 2 (pravý dolní roh, volitelné):</label>
-        <input
-          class="input"
-          type="text"
-          placeholder="🔍 Hledat entitu nebo ponechat prázdné..."
-          .value=${this.getSupportInputValue(this.supportSearch2, this.supportEntity2)}
-          @input=${(event: Event) => {
-            this.handleSupportInput(2, (event.target as HTMLInputElement).value);
-          }}
-          @focus=${() => { if (this.supportSearch2.trim()) this.showSupportList2 = true; }}
-          @blur=${() => { this.showSupportList2 = false; }}
-        />
-        ${this.showSupportList2 ? html`
-          <div class="support-list">
-            ${this.renderSupportList(this.supportSearch2, 2)}
-          </div>
-        ` : null}
       </div>
     `;
   }
 
   render() {
     if (!this.isOpen) return null;
+    const editing = this.tileIndex >= 0 || !!this.existingConfig;
 
     return html`
       <div class="overlay" @click=${(event: Event) => {
@@ -917,44 +814,109 @@ export class OigTileDialog extends LitElement {
       }}>
         <div class="dialog" @click=${(event: Event) => event.stopPropagation()}>
           <div class="header">
-            <div class="title">Konfigurace dlaždice</div>
+            <div class="title">${editing ? 'Upravit dlaždici' : 'Nová dlaždice'}</div>
             <button class="close-btn" type="button" @click=${this.handleClose} aria-label="Zavřít">×</button>
           </div>
 
-          <div class="tabs">
-            <button
-              class="tab-btn ${this.currentTab === 'entity' ? 'active' : ''}"
-              type="button"
-              @click=${() => { this.currentTab = 'entity'; }}
-            >📊 Entity</button>
-            <button
-              class="tab-btn ${this.currentTab === 'button' ? 'active' : ''}"
-              type="button"
-              @click=${() => { this.currentTab = 'button'; if (this.color === '#03A9F4') this.color = '#FFC107'; }}
-            >🔘 Tlačítko</button>
-          </div>
-
           <div class="content">
-            <div class="tab-content ${this.currentTab === 'entity' ? 'active' : ''}">
-              ${this.renderEntityTab()}
+            <div class="seg">
+              <button class="${!this.isButtonType ? 'on' : ''}" type="button"
+                @click=${() => { this.currentTab = 'entity'; }}>
+                ${renderIcon('mdi:chart-box')} Senzor
+              </button>
+              <button class="${this.isButtonType ? 'on' : ''}" type="button"
+                @click=${() => { this.currentTab = 'button'; if (this.color === '#03A9F4') this.color = '#FFC107'; }}>
+                ${renderIcon('mdi:flash')} Tlačítko
+              </button>
             </div>
-            <div class="tab-content ${this.currentTab === 'button' ? 'active' : ''}">
-              ${this.renderButtonTab()}
+
+            ${this.renderPreview()}
+
+            <div class="sec">
+              <div class="sect"><span class="n">1</span> Entita</div>
+              ${this.isButtonType ? html`
+                <select
+                  .value=${this.action}
+                  @change=${(e: Event) => { this.action = (e.target as HTMLSelectElement).value as ActionType; }}
+                >
+                  <option value="toggle">Akce: Přepnout (Toggle)</option>
+                  <option value="turn_on">Akce: Zapnout</option>
+                  <option value="turn_off">Akce: Vypnout</option>
+                </select>
+              ` : null}
+              <input
+                class="input"
+                type="text"
+                placeholder="🔍 Hledat entitu..."
+                .value=${this.entitySearch}
+                @input=${(e: Event) => { this.setEntitySearch((e.target as HTMLInputElement).value); }}
+              />
+              <div class="entity-list">
+                ${this.renderEntityList(this.entityDomains, this.entitySearch, this.selectedId, (id) => this.selectEntity(id))}
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="sect"><span class="n">2</span> Vzhled</div>
+              <div class="form-group">
+                <label>Popisek (volitelné)</label>
+                <input
+                  class="input"
+                  type="text"
+                  placeholder="Např. Lednice v garáži"
+                  .value=${this.label}
+                  @input=${(e: Event) => { this.label = (e.target as HTMLInputElement).value; }}
+                />
+              </div>
+              <div class="form-group">
+                <label>Ikona</label>
+                ${this.renderIconGrid()}
+              </div>
+              <div class="form-group">
+                <label>Barva</label>
+                ${this.renderColorSwatches()}
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="sect"><span class="n">3</span> Doplňky <span class="opt">(2 hodnoty v rozích, volitelné)</span></div>
+              <div class="row">
+                <div class="form-group support-field">
+                  <label>↗ Pravý horní</label>
+                  <input
+                    class="input"
+                    type="text"
+                    placeholder="🔍 entita..."
+                    .value=${this.getSupportInputValue(this.supportSearch1, this.supportEntity1)}
+                    @input=${(e: Event) => { this.handleSupportInput(1, (e.target as HTMLInputElement).value); }}
+                    @focus=${() => { if (this.supportSearch1.trim()) this.showSupportList1 = true; }}
+                    @blur=${() => { this.showSupportList1 = false; }}
+                  />
+                  ${this.showSupportList1 ? html`<div class="support-list">${this.renderSupportList(this.supportSearch1, 1)}</div>` : null}
+                </div>
+                <div class="form-group support-field">
+                  <label>↘ Pravý dolní</label>
+                  <input
+                    class="input"
+                    type="text"
+                    placeholder="🔍 entita..."
+                    .value=${this.getSupportInputValue(this.supportSearch2, this.supportEntity2)}
+                    @input=${(e: Event) => { this.handleSupportInput(2, (e.target as HTMLInputElement).value); }}
+                    @focus=${() => { if (this.supportSearch2.trim()) this.showSupportList2 = true; }}
+                    @blur=${() => { this.showSupportList2 = false; }}
+                  />
+                  ${this.showSupportList2 ? html`<div class="support-list">${this.renderSupportList(this.supportSearch2, 2)}</div>` : null}
+                </div>
+              </div>
             </div>
           </div>
 
           <div class="footer">
             <button class="btn btn-secondary" type="button" @click=${this.handleClose}>Zrušit</button>
-            <button class="btn btn-primary" type="button" @click=${this.handleSave}>Uložit</button>
+            <button class="btn btn-primary" type="button" @click=${this.handleSave}>${editing ? 'Uložit změny' : 'Uložit dlaždici'}</button>
           </div>
         </div>
       </div>
-
-      <oig-icon-picker
-        ?open=${this.iconPickerOpen}
-        @icon-selected=${this.onIconSelected}
-        @close=${() => { this.iconPickerOpen = false; }}
-      ></oig-icon-picker>
     `;
   }
 }

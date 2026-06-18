@@ -161,6 +161,12 @@ def _format_group_times(group: Dict[str, Any]) -> None:
         try:
             end_dt = datetime.fromisoformat(group["end_time"])
             end_dt = end_dt + timedelta(minutes=15)
-            group["end_time"] = end_dt.strftime("%H:%M")
+            label = end_dt.strftime("%H:%M")
+            # A block whose last interval is 23:45 ends at next-day midnight.
+            # strftime renders that as "00:00", which reads as "start == end"
+            # for a full-day block — show "24:00" so the range is legible.
+            if label == "00:00":
+                label = "24:00"
+            group["end_time"] = label
         except Exception:  # nosec B110
             pass

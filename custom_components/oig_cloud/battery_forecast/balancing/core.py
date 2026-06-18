@@ -739,7 +739,8 @@ class BalancingManager:
         """
         await asyncio.sleep(0)
         _LOGGER.debug("_check_natural_balancing: Getting HYBRID timeline...")
-        timeline = self._get_hybrid_timeline()
+        raw_timeline = self._get_hybrid_timeline()
+        timeline: list[dict[str, Any]] = raw_timeline if isinstance(raw_timeline, list) else []
         if not timeline:
             _LOGGER.warning(
                 "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
@@ -1428,7 +1429,8 @@ class BalancingManager:
             return {}
 
         # Get active timeline from forecast sensor (_timeline_data attribute)
-        timeline = getattr(self._forecast_sensor, "_timeline_data", None)
+        raw_timeline = getattr(self._forecast_sensor, "_timeline_data", None)
+        timeline: list[dict[str, Any]] = raw_timeline if isinstance(raw_timeline, list) else []
         if not timeline:
             _LOGGER.warning(
                 "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "

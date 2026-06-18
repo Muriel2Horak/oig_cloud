@@ -239,33 +239,21 @@ async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
 
 
 async def _register_static_paths(hass: HomeAssistant) -> None:
-    """Registrace statických cest pro HA 2024.5+."""
+    """Registrace statické cesty pro V2 dashboard (HA 2024.5+).
+
+    V1 dashboard (``/oig_cloud_static`` → ``www/``) byl odstraněn; panel
+    načítá výhradně V2 z ``www_v2/dist``.
+    """
     from homeassistant.components.http import StaticPathConfig
 
-    # V1 static path
-    v1_path = "/oig_cloud_static"
-    v1_dir = hass.config.path("custom_components/oig_cloud/www")
-
-    # V2 static path - keep same path name, just ensure it points to dist/
     v2_path = "/oig_cloud_static_v2"
     v2_dir = hass.config.path("custom_components/oig_cloud/www_v2/dist")
 
-    _LOGGER.info("Registering static paths:")
-    _LOGGER.info("  V1: %s -> %s", v1_path, v1_dir)
-    _LOGGER.info("  V2: %s -> %s", v2_path, v2_dir)
-
-    paths = [StaticPathConfig(v1_path, v1_dir, cache_headers=False)]
-
-    # Add V2 if dist directory exists
-    import os
-    if os.path.isdir(v2_dir):
-        paths.append(StaticPathConfig(v2_path, v2_dir, cache_headers=False))
-        _LOGGER.info("  V2 dist found, registering")
-    else:
-        _LOGGER.warning("  V2 dist not found: %s", v2_dir)
-
-    await hass.http.async_register_static_paths(paths)
-    _LOGGER.info("✅ Static paths registered successfully")
+    _LOGGER.info("Registering static path: %s -> %s", v2_path, v2_dir)
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(v2_path, v2_dir, cache_headers=False)]
+    )
+    _LOGGER.info("✅ Static path registered successfully")
 
 
 def _resolve_inverter_sn(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
@@ -366,8 +354,8 @@ def _build_dashboard_url(
     entry_id: str, inverter_sn: str, version: str, cache_bust: int
 ) -> str:
     return (
-        "/oig_cloud_static/dashboard.html"
-        f"?entry_id={entry_id}&inverter_sn={inverter_sn}&v={version}&t={cache_bust}"
+        "/oig_cloud_static_v2/index.html"
+        f"?v={version}&t={cache_bust}&sn={inverter_sn}&entry_id={entry_id}"
     )
 
 
@@ -496,18 +484,10 @@ async def _setup_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
 
         _LOGGER.info("Dashboard URL: %s", dashboard_url)
 
-        # Prevent reload errors ("Overwriting panel ...") by removing any existing panel first.
-        _remove_existing_panel(hass, panel_id)
-        _register_frontend_panel(hass, panel_id, panel_title, dashboard_url)
-
-        # Register V2 panel (parallel run)
         v2_panel_id = f"{panel_id}_v2"
-        v2_panel_title = f"{panel_title} V2 (BETA)"
-        # Use same path as before but with cache busting params
-        v2_dashboard_url = f"/oig_cloud_static_v2/index.html?v={version}&t={cache_bust}&sn={inverter_sn}&entry_id={entry.entry_id}"
+        _remove_existing_panel(hass, panel_id)
         _remove_existing_panel(hass, v2_panel_id)
-        _register_frontend_panel(hass, v2_panel_id, v2_panel_title, v2_dashboard_url)
-        _LOGGER.info("V2 Panel URL: %s", v2_dashboard_url)
+        _register_frontend_panel(hass, panel_id, panel_title, dashboard_url)
 
         _log_dashboard_entities(hass, entry, inverter_sn)
 
@@ -544,6 +524,7 @@ async def _remove_frontend_panel(hass: HomeAssistant, entry: ConfigEntry) -> Non
                     _LOGGER.debug(
                         "Panel removal handled (panel may not exist): %s", remove_err
                     )
+            _remove_existing_panel(hass, f"{panel_id}_v2")
         else:
             _LOGGER.debug("async_remove_panel not available")
 
@@ -1267,6 +1248,21 @@ def _init_ote_api(entry: ConfigEntry) -> Any | None:
         return None
 
 
+async def _run_boiler_migration(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    try:
+        from .boiler.migration import async_migrate_boiler_entry
+
+        result = await async_migrate_boiler_entry(hass, entry)
+        if result.repair_required:
+            _LOGGER.warning(
+                "Boiler migration disabled automation for %s/%s; repair required",
+                result.entry_id,
+                result.box_id,
+            )
+    except Exception as err:
+        _LOGGER.warning("Boiler migration check failed: %s", err, exc_info=True)
+
+
 async def _init_boiler_coordinator(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> Any | None:
@@ -1282,7 +1278,7 @@ async def _init_boiler_coordinator(
         box_id = entry.options.get("box_id")
         if isinstance(box_id, str) and box_id.isdigit():
             boiler_config["box_id"] = box_id
-        coordinator = BoilerCoordinator(hass, boiler_config)
+        coordinator = BoilerCoordinator(hass, boiler_config, entry_id=entry.entry_id)
 
         if getattr(hass, "loop", None) is None:
             await coordinator.async_config_entry_first_refresh()
@@ -1294,6 +1290,47 @@ async def _init_boiler_coordinator(
     except Exception as err:
         _LOGGER.error("Failed to initialize Boiler coordinator: %s", err)
         return None
+
+
+async def _init_boiler_runtime(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> Any | None:
+    if not entry.options.get("enable_boiler", False):
+        return None
+
+    try:
+        from .boiler.runtime import create_boiler_runtime
+
+        boiler_coordinator = hass.data[DOMAIN][entry.entry_id].get("boiler_coordinator")
+        if not boiler_coordinator:
+            return None
+
+        box_id = entry.options.get("box_id")
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            box_id = getattr(boiler_coordinator, "box_id", None)
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            return None
+
+        runtime = create_boiler_runtime(hass, boiler_coordinator, entry.entry_id, box_id)
+        _LOGGER.info("Boiler runtime created for entry %s box %s", entry.entry_id, box_id)
+        return runtime
+    except Exception as err:
+        _LOGGER.error("Failed to initialize Boiler runtime: %s", err)
+        return None
+
+
+async def _teardown_boiler_runtime(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    try:
+        from .boiler.runtime import destroy_boiler_runtime
+
+        box_id = entry.options.get("box_id")
+        if isinstance(box_id, str) and box_id.isdigit():
+            destroy_boiler_runtime(hass, entry.entry_id, box_id)
+            _LOGGER.debug("Boiler runtime destroyed for entry %s box %s", entry.entry_id, box_id)
+    except Exception as err:
+        _LOGGER.debug("Boiler runtime teardown failed: %s", err)
 
 
 async def _init_balancing_manager(
@@ -1518,6 +1555,7 @@ async def async_setup_entry(
     init_data_source_state(hass, entry)
     _maybe_persist_box_id_from_proxy_or_local(hass, entry)
     _migrate_legacy_credentials_from_options(hass, entry)
+    await _run_boiler_migration(hass, entry)
 
     service_shield = await _start_service_shield(hass, entry)
 
@@ -1562,6 +1600,9 @@ async def async_setup_entry(
 
         ote_api = _init_ote_api(entry)
         boiler_coordinator = await _init_boiler_coordinator(hass, entry)
+        hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})["boiler_coordinator"] = boiler_coordinator
+        boiler_runtime = await _init_boiler_runtime(hass, entry)
+        _ = boiler_runtime
 
         # NOVÉ: Podmíněné nastavení dashboard podle konfigurace
         dashboard_enabled = entry.options.get(
@@ -1606,9 +1647,7 @@ async def async_setup_entry(
         # Děláme jen bezpečný úklid prázdných zařízení s neplatným box_id (např. spot_prices/unknown).
 
         # Vždy registrovat sensor + switch platform
-        await hass.config_entries.async_forward_entry_setups(
-            entry, ["sensor", "switch"]
-        )
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
         # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
         # that can be left behind after unique_id/device_id stabilization.
@@ -1840,12 +1879,24 @@ async def async_unload_entry(
             except Exception as err:
                 _LOGGER.debug("DataSourceController stop failed: %s", err)
 
+        await _teardown_boiler_runtime(hass, entry)
+
         boiler_coordinator = entry_data.get("boiler_coordinator")
         if boiler_coordinator and hasattr(boiler_coordinator, "async_shutdown"):
             try:
                 await boiler_coordinator.async_shutdown()
             except Exception as err:
                 _LOGGER.debug("BoilerCoordinator shutdown failed: %s", err)
+
+        # H4: the MAIN coordinator owns self-re-arming timers (hourly OTE
+        # fallback + point-in-time spot updates) — shut it down too, otherwise
+        # those callbacks fire against a dead coordinator and accumulate.
+        main_coordinator = entry_data.get("coordinator")
+        if main_coordinator and hasattr(main_coordinator, "async_shutdown"):
+            try:
+                await main_coordinator.async_shutdown()
+            except Exception as err:
+                _LOGGER.debug("Coordinator shutdown failed: %s", err)
 
         from .shared.emitter import async_shutdown_entry_telemetry
 
@@ -1866,7 +1917,9 @@ async def async_unload_entry(
             _LOGGER.debug("Closing session manager")
             await session_manager.close()
 
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor"])
+    # M17: unload BOTH forwarded platforms (setup forwards sensor + switch);
+    # unloading only sensor leaked switch entities on every reload.
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok

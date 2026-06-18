@@ -2,7 +2,8 @@
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, List, Optional
+from contextlib import nullcontext
+from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, List, Optional, cast
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
@@ -13,14 +14,30 @@ from homeassistant.core import (
     SupportsResponse,
     callback,
 )
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import VolSchemaType
-from opentelemetry import trace
+
+try:
+    from opentelemetry import trace
+except ImportError:
+    class _NoOpTracer:
+        def start_as_current_span(self, *_args: Any, **_kwargs: Any) -> Any:
+            return nullcontext()
+
+    class _NoOpTrace:
+        @staticmethod
+        def get_tracer(*_args: Any, **_kwargs: Any) -> _NoOpTracer:
+            return _NoOpTracer()
+
+    trace = _NoOpTrace()
 
 from ..const import DOMAIN
 from ..core.box_mode_composite import build_app_value
 from ..lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi
+
+ATTR_CONFIG_ENTRY_ID = "entry_id"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -166,6 +183,8 @@ SET_GRID_DELIVERY_SCHEMA = vol.Schema(
 )
 SET_BOILER_MODE_SCHEMA = vol.Schema(
     {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Optional("box_id"): cv.string,
         vol.Optional("device_id"): cv.string,
         vol.Required("mode"): vol.In(BOILER_MODE_ALL_KEYS),
         vol.Required("acknowledgement"): vol.In([True]),
@@ -267,6 +286,200 @@ def _resolve_box_id_from_service(
     return box_id
 
 
+def _resolve_boiler_box_id_from_service(
+    hass: HomeAssistant,
+    service_data: Dict[str, Any],
+    service_name: str,
+) -> str:
+    """Strict boiler box resolver: canonical identity OR explicit device_id only.
+
+    Raises ServiceValidationError deterministically. Never falls back to first entry/box.
+    """
+    call_entry_id = service_data.get(ATTR_CONFIG_ENTRY_ID)
+    call_box_id = service_data.get("box_id")
+    if call_entry_id and call_box_id:
+        return _resolve_canonical_boiler_identity(
+            hass, call_entry_id, call_box_id, service_name
+        )
+
+    device_id: Optional[str] = service_data.get("device_id")
+    if device_id:
+        box_id = _resolve_box_id_from_device_strict(hass, device_id)
+        if box_id:
+            return box_id
+        raise ServiceValidationError(
+            f"Device {device_id} not found or does not own a boiler box",
+            translation_domain=DOMAIN,
+            translation_key="boiler_device_not_found",
+            translation_placeholders={"device_id": device_id},
+        )
+
+    return _resolve_single_loaded_boiler_box_id(hass, service_name)
+
+
+def _raise_boiler_missing_identity(service_name: str) -> None:
+    raise ServiceValidationError(
+        f"Service {service_name} requires canonical entry_id + box_id or explicit device_id",
+        translation_domain=DOMAIN,
+        translation_key="boiler_missing_identity",
+        translation_placeholders={"service": service_name},
+    )
+
+
+def _loaded_oig_entries(hass: HomeAssistant) -> list[ConfigEntry]:
+    from homeassistant.config_entries import ConfigEntryState
+
+    manager = getattr(hass, "config_entries", None)
+    async_entries = getattr(manager, "async_entries", None)
+    if not callable(async_entries):
+        return []
+    try:
+        entries = cast(Iterable[ConfigEntry], async_entries(DOMAIN))
+    except TypeError:
+        entries = cast(Iterable[ConfigEntry], async_entries())
+    return [
+        entry
+        for entry in entries
+        if getattr(entry, "domain", None) == DOMAIN
+        and getattr(entry, "state", None) is ConfigEntryState.LOADED
+    ]
+
+
+def _add_candidate_box_id(candidates: set[str], value: Any) -> None:
+    if isinstance(value, int):
+        candidates.add(str(value))
+    elif isinstance(value, str) and value.isdigit():
+        candidates.add(value)
+
+
+def _candidate_box_ids_for_entry(hass: HomeAssistant, entry: ConfigEntry) -> set[str]:
+    candidates: set[str] = set()
+    for source in (getattr(entry, "options", {}), getattr(entry, "data", {})):
+        if not isinstance(source, dict):
+            continue
+        _add_candidate_box_id(candidates, source.get("box_id"))
+        _add_candidate_box_id(candidates, source.get("inverter_sn"))
+
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if not isinstance(entry_data, dict):
+        return candidates
+
+    coordinator = entry_data.get("coordinator")
+    _add_candidate_box_id(candidates, getattr(coordinator, "box_id", None))
+    coordinator_data = getattr(coordinator, "data", None)
+    if isinstance(coordinator_data, dict):
+        for box_id in coordinator_data:
+            _add_candidate_box_id(candidates, box_id)
+    return candidates
+
+
+def _resolve_single_loaded_boiler_box_id(
+    hass: HomeAssistant, service_name: str
+) -> str:
+    """Resolve omitted boiler identity only when one loaded OIG box is unambiguous."""
+    candidates: list[tuple[str, str]] = []
+    for entry in _loaded_oig_entries(hass):
+        for box_id in sorted(_candidate_box_ids_for_entry(hass, entry)):
+            candidates.append((entry.entry_id, box_id))
+
+    if len(candidates) != 1:
+        _raise_boiler_missing_identity(service_name)
+
+    entry_id, box_id = candidates[0]
+    return _resolve_canonical_boiler_identity(hass, entry_id, box_id, service_name)
+
+
+def _resolve_box_id_from_device_strict(
+    hass: HomeAssistant, device_id: str
+) -> Optional[str]:
+    """Resolve box_id from device registry without any fallback.
+
+    Returns box_id if the device exists and has a valid DOMAIN identifier.
+    Returns None otherwise.
+    """
+    device_registry = dr.async_get(hass)
+    device = device_registry.async_get(device_id)
+    if not device:
+        return None
+    return _extract_box_id_from_device(device, device_id)
+
+
+def _validate_box_ownership(hass: HomeAssistant, entry_id: str, box_id: str) -> bool:
+    """Validate that box_id belongs to the given config entry.
+
+    Checks entry options/data first, then coordinator.data keys.
+    Returns True if valid, False otherwise. No fallback.
+    """
+    domain_data = hass.data.get(DOMAIN, {})
+    entry_data = domain_data.get(entry_id)
+    if not isinstance(entry_data, dict):
+        return False
+
+    entry = getattr(
+        entry_data.get("coordinator"), "config_entry", None
+    ) or hass.config_entries.async_get_entry(entry_id)
+    if entry:
+        configured = (
+            entry.options.get("box_id")
+            or entry.data.get("box_id")
+            or entry.data.get("inverter_sn")
+        )
+        if isinstance(configured, str) and configured == box_id:
+            return True
+
+    coordinator = entry_data.get("coordinator")
+    data = getattr(coordinator, "data", None)
+    if isinstance(data, dict) and box_id in data:
+        return True
+
+    return False
+
+
+def _resolve_canonical_boiler_identity(
+    hass: HomeAssistant,
+    entry_id: str,
+    box_id: str,
+    service_name: str,
+) -> str:
+    """Canonical resolver: validates entry_id + box_id pair deterministically.
+
+    Raises ServiceValidationError on missing entry, mismatched domain,
+    not-loaded entry, or box_id not owned by entry.
+    """
+    from homeassistant.config_entries import ConfigEntryState
+
+    config_entry = hass.config_entries.async_get_entry(entry_id)
+    if not config_entry:
+        raise ServiceValidationError(
+            f"Config entry {entry_id} not found for {service_name}",
+            translation_domain=DOMAIN,
+            translation_key="boiler_entry_not_found",
+            translation_placeholders={"entry_id": entry_id, "service": service_name},
+        )
+    if config_entry.domain != DOMAIN:
+        raise ServiceValidationError(
+            f"Config entry {entry_id} does not belong to {DOMAIN}",
+            translation_domain=DOMAIN,
+            translation_key="boiler_entry_wrong_domain",
+            translation_placeholders={"entry_id": entry_id, "domain": DOMAIN},
+        )
+    if config_entry.state is not ConfigEntryState.LOADED:
+        raise ServiceValidationError(
+            f"Config entry {entry_id} is not loaded",
+            translation_domain=DOMAIN,
+            translation_key="boiler_entry_not_loaded",
+            translation_placeholders={"entry_id": entry_id},
+        )
+    if not _validate_box_ownership(hass, entry_id, box_id):
+        raise ServiceValidationError(
+            f"Box {box_id} is not owned by entry {entry_id}",
+            translation_domain=DOMAIN,
+            translation_key="boiler_box_not_owned",
+            translation_placeholders={"box_id": box_id, "entry_id": entry_id},
+        )
+    return box_id
+
+
 def _validate_grid_delivery_inputs(grid_mode: Optional[str], limit: Optional[int]) -> None:
     if (grid_mode is None and limit is None) or (
         grid_mode is not None and limit is not None
@@ -325,9 +538,9 @@ def get_box_id_from_device(
     # Extrahuj box_id z device identifiers
     # Identifiers mají formát: {(DOMAIN, identifier_value), ...}
     # identifier_value může být:
-    #   - "2206237016" (hlavní zařízení)
-    #   - "2206237016_shield" (shield)
-    #   - "2206237016_analytics" (analytics)
+    #   - "<box_id>" (hlavní zařízení)
+    #   - "<box_id>_shield" (shield)
+    #   - "<box_id>_analytics" (analytics)
     if device_box_id := _extract_box_id_from_device(device, device_id):
         return device_box_id
 
@@ -549,9 +762,9 @@ async def _action_set_boiler_mode(
     log_prefix: str,
 ) -> None:
     client = _get_entry_client(hass, entry)
-    box_id = _resolve_box_id_from_service(hass, entry, service_data, "set_boiler_mode")
-    if not box_id:
-        return
+    box_id = _resolve_boiler_box_id_from_service(
+        hass, service_data, "set_boiler_mode"
+    )
 
     mode: Optional[str] = service_data.get("mode")
     mode_value: Optional[int] = BOILER_MODE.get(mode) if mode else None
@@ -1127,6 +1340,9 @@ async def async_unload_services(hass: HomeAssistant) -> None:
         "set_grid_delivery",
         "set_boiler_mode",
         "set_formating_mode",
+        "plan_boiler_heating",
+        "apply_boiler_plan",
+        "cancel_boiler_plan",
     ]
 
     for service in services_to_remove:

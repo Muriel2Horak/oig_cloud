@@ -77,7 +77,7 @@ Chart.register(
 function buildSpotPriceDataset(data: PricingData): ChartDataset<'line'> {
   const spotPriceData = data.timeline.map(p => p.spot_price_czk ?? 0);
   return {
-    label: '\u{1F4CA} Spotová cena nákupu',
+    label: '\u{1F4CA} Spot',
     data: spotPriceData,
     borderColor: '#2196F3',
     backgroundColor: 'rgba(33, 150, 243, 0.15)',
@@ -98,7 +98,7 @@ function buildSpotPriceDataset(data: PricingData): ChartDataset<'line'> {
 
 function buildExportPriceDataset(data: PricingData): ChartDataset<'line'> {
   return {
-    label: '\u{1F4B0} Výkupní cena',
+    label: '\u{1F4B0} Výkup',
     data: data.timeline.map(p => p.export_price_czk ?? 0),
     borderColor: '#4CAF50',
     backgroundColor: 'rgba(76, 187, 106, 0.15)',
@@ -129,7 +129,7 @@ function buildSolarDatasets(data: PricingData): ChartDataset<'line'>[] {
     const sData = hasString1 ? string1 : string2;
     const colors = hasString1 ? solarColors.string1 : solarColors.string2;
     return [{
-      label: '\u2600\uFE0F Solární předpověď',
+      label: '\u2600\uFE0F FVE předpověď',
       data: sData,
       borderColor: colors.border,
       backgroundColor: colors.bg,
@@ -197,7 +197,7 @@ function buildBatteryDatasets(data: PricingData): ChartDataset<'line'>[] {
   // Consumption (planned)
   if (consumption.some(v => v != null && v > 0)) {
     datasets.push({
-      label: '\u{1F3E0} Spotřeba (plán)',
+      label: '\u{1F3E0} Spotřeba',
       data: consumption as number[],
       borderColor: 'rgba(255, 112, 67, 0.7)',
       backgroundColor: 'rgba(255, 112, 67, 0.12)',
@@ -217,7 +217,7 @@ function buildBatteryDatasets(data: PricingData): ChartDataset<'line'>[] {
   // Grid charge → battery
   if (gridCharge.some(v => v != null && v > 0)) {
     datasets.push({
-      label: '\u26A1 Do baterie ze sítě',
+      label: '\u26A1 Síť \u2192 baterie',
       data: gridCharge as number[],
       backgroundColor: batteryColors.grid.bg,
       borderColor: batteryColors.grid.border,
@@ -236,7 +236,7 @@ function buildBatteryDatasets(data: PricingData): ChartDataset<'line'>[] {
   // Solar charge → battery
   if (solarCharge.some(v => v != null && v > 0)) {
     datasets.push({
-      label: '\u2600\uFE0F Do baterie ze soláru',
+      label: '\u2600\uFE0F FVE \u2192 baterie',
       data: solarCharge as number[],
       backgroundColor: batteryColors.solar.bg,
       borderColor: batteryColors.solar.border,
@@ -254,7 +254,7 @@ function buildBatteryDatasets(data: PricingData): ChartDataset<'line'>[] {
 
   // Baseline (remaining capacity)
   datasets.push({
-    label: '\u{1F50B} Zbývající kapacita',
+    label: '\u{1F50B} Kapacita',
     data: baseline as number[],
     backgroundColor: batteryColors.baseline.bg,
     borderColor: batteryColors.baseline.border,
@@ -272,7 +272,7 @@ function buildBatteryDatasets(data: PricingData): ChartDataset<'line'>[] {
   // Net grid
   if (gridNet.some(v => v !== null)) {
     datasets.push({
-      label: '\u{1F4E1} Netto odběr ze sítě',
+      label: '\u{1F4E1} Netto síť',
       data: gridNet as number[],
       borderColor: '#00BCD4',
       backgroundColor: 'transparent',
@@ -359,10 +359,17 @@ function updateChartDetailLevel(chart: Chart, datalabelMode: DatalabelMode): voi
   }
 
   // Adaptive Y-axes
+  const isNarrowViewport = window.innerWidth < 520;
   const yAxes = ['y-price', 'y-solar', 'y-power'];
   for (const axisId of yAxes) {
     const axis = (chart.options as any).scales?.[axisId];
     if (!axis) continue;
+
+    // Phones: the capacity axis stays hidden regardless of zoom level.
+    if (axisId === 'y-solar' && isNarrowViewport) {
+      axis.display = false;
+      continue;
+    }
 
     if (detailLevel === 'overview') {
       if (axis.title) axis.title.display = false;
@@ -405,7 +412,7 @@ function updateChartDetailLevel(chart: Chart, datalabelMode: DatalabelMode): voi
         xOpts.ticks.maxTicksLimit = 16;
         if (xOpts.ticks.font) xOpts.ticks.font.size = 10;
       }
-      if (xOpts.time) xOpts.time.displayFormats.hour = 'dd.MM HH:mm';
+      if (xOpts.time) xOpts.time.displayFormats.hour = isNarrowViewport ? 'HH:mm' : 'dd.MM HH:mm';
     }
   }
 
@@ -711,6 +718,9 @@ export class OigPricingChart extends LitElement {
     const datasets = buildAllDatasets(data);
     const modeIconOptions = null; // mode blocks now shown in Timeline tile
 
+    // Phones: the two left axes + 8-series legend ate ~40 % of the width.
+    const isNarrow = window.innerWidth < 520;
+
     const chartOptions: any = {
       responsive: true,
       maintainAspectRatio: false,
@@ -720,12 +730,12 @@ export class OigPricingChart extends LitElement {
         legend: {
           labels: {
             color: '#ffffff',
-            font: { size: 11, weight: '500' },
-            padding: 10,
+            font: { size: isNarrow ? 10 : 11, weight: '500' },
+            padding: isNarrow ? 6 : 10,
             usePointStyle: true,
             pointStyle: 'circle',
-            boxWidth: 12,
-            boxHeight: 12,
+            boxWidth: isNarrow ? 8 : 12,
+            boxHeight: isNarrow ? 8 : 12,
           },
           position: 'top',
         },
@@ -811,15 +821,15 @@ export class OigPricingChart extends LitElement {
           type: 'timeseries',
           time: {
             unit: 'hour',
-            displayFormats: { hour: 'dd.MM HH:mm' },
+            displayFormats: { hour: isNarrow ? 'HH:mm' : 'dd.MM HH:mm' },
             tooltipFormat: 'dd.MM.yyyy HH:mm',
           },
           ticks: {
             color: this.getTextColor(),
-            maxRotation: 45,
-            minRotation: 45,
-            font: { size: 11 },
-            maxTicksLimit: 20,
+            maxRotation: isNarrow ? 0 : 45,
+            minRotation: isNarrow ? 0 : 45,
+            font: { size: isNarrow ? 10 : 11 },
+            maxTicksLimit: isNarrow ? 6 : 20,
           },
           grid: { color: this.getGridColor(), lineWidth: 1 },
         },
@@ -833,7 +843,7 @@ export class OigPricingChart extends LitElement {
           },
           grid: { color: 'rgba(33, 150, 243, 0.15)', lineWidth: 1 },
           title: {
-            display: true,
+            display: !isNarrow,
             text: '\u{1F4B0} Cena (Kč/kWh)',
             color: '#2196F3',
             font: { size: 13, weight: 'bold' },
@@ -843,6 +853,7 @@ export class OigPricingChart extends LitElement {
           type: 'linear',
           position: 'left',
           stacked: true,
+          display: !isNarrow,
           ticks: {
             color: '#78909C',
             font: { size: 11, weight: '500' },
@@ -874,7 +885,7 @@ export class OigPricingChart extends LitElement {
           },
           grid: { display: false },
           title: {
-            display: true,
+            display: !isNarrow,
             text: '\u2600\uFE0F Výkon (kW)',
             color: '#FFA726',
             font: { size: 13, weight: 'bold' },

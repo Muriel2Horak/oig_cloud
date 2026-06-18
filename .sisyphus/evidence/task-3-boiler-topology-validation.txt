@@ -1,0 +1,65 @@
+=== Topology Validation Tests ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0 -- /repos/oig-cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: aiohttp-1.0.5, socket-0.7.0, picked-0.5.0, requests-mock-1.12.1, homeassistant-custom-component-0.13.205, cov-6.0.0, sugar-1.0.0, xdist-3.6.1, github-actions-annotate-failures-0.2.0, asyncio-0.24.0, timeout-2.3.1, anyio-4.12.1, pytest_freezer-0.4.8, unordered-0.6.1, syrupy-4.8.0, respx-0.21.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+timeout: 60.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 45 items / 35 deselected / 10 selected
+
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_top_only_supported PASSED [ 10%]
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_top_bottom_supported PASSED [ 20%]
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_bottom_only_rejected PASSED [ 30%]
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_duplicate_sensor_rejected PASSED [ 40%]
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_three_plus_thermometers_rejected PASSED [ 50%]
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_cross_box_sharing_rejected PASSED [ 60%]
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_invalid_stratification_rejected PASSED [ 70%]
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_cross_box_actuator_rejected PASSED [ 80%]
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_cross_box_alt_heater_rejected PASSED [ 90%]
+tests/test_boiler_task3_topology.py::test_validate_boiler_topology_cross_box_circulation_rejected PASSED [100%]
+
+====================== 10 passed, 35 deselected in 0.24s =======================
+
+=== Full Regression ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: aiohttp-1.0.5, socket-0.7.0, picked-0.5.0, requests-mock-1.12.1, homeassistant-custom-component-0.13.205, cov-6.0.0, sugar-1.0.0, xdist-3.6.1, github-actions-annotate-failures-0.2.0, asyncio-0.24.0, timeout-2.3.1, anyio-4.12.1, pytest_freezer-0.4.8, unordered-0.6.1, syrupy-4.8.0, respx-0.21.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+timeout: 60.0s
+timeout method: signal
+timeout func_only: False
+collected 235 items
+
+tests/test_boiler_api_views_helper_branches.py ....                      [  1%]
+tests/test_boiler_circulation.py .....                                   [  3%]
+tests/test_boiler_coordinator_more.py .................                  [ 11%]
+tests/test_boiler_module.py ........................                     [ 21%]
+tests/test_boiler_precedence.py ..                                       [ 22%]
+tests/test_boiler_sensors_more.py ..........                             [ 26%]
+tests/test_boiler_services.py ...................                        [ 34%]
+tests/test_boiler_services_extra_coverage.py .........                   [ 38%]
+tests/test_boiler_switch_edge_cases.py ......                            [ 40%]
+tests/test_boiler_switch_wrapper.py ...                                  [ 42%]
+tests/test_boiler_task1_routing.py .......................               [ 51%]
+tests/test_boiler_task2_boundary.py ............................         [ 63%]
+tests/test_boiler_task3_topology.py .................................... [ 79%]
+.........                                                                [ 82%]
+tests/test_init_setup_entry.py ........................................  [100%]
+
+============================= 235 passed in 2.25s ==============================
+
+=== flake8 ===
+clean
+
+=== LSP Diagnostics ===
+models.py: clean
+profiler.py: clean
+thermal.py: clean
+config/steps.py: clean
+test_boiler_task3_topology.py: clean

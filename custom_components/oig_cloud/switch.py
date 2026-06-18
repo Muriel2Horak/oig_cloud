@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .boiler.runtime import get_boiler_runtime
 from .const import (
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
@@ -79,6 +80,7 @@ async def async_setup_entry(
                 name=definition.name,
                 entity_suffix=definition.entity_suffix,
                 target_entity_id=target_entity,
+                entry_id=entry.entry_id,
             )
         )
 
@@ -103,9 +105,13 @@ class BoilerWrapperSwitch(SwitchEntity):
         name: str,
         entity_suffix: str,
         target_entity_id: str,
+        entry_id: str,
     ) -> None:
         self.hass = hass
         self._target_entity_id = target_entity_id
+        self._entry_id = entry_id
+        self._box_id = box_id
+        self._entity_suffix = entity_suffix
         self._attr_name = name
         self._attr_unique_id = f"oig_cloud_{box_id}_boiler_{entity_suffix}"
         self.entity_id = f"switch.oig_{box_id}_{entity_suffix}"
@@ -118,31 +124,55 @@ class BoilerWrapperSwitch(SwitchEntity):
         )
 
     @property
-    def available(self) -> bool:
+    def available(self) -> bool:  # type: ignore[override]
         return self.hass.states.get(self._target_entity_id) is not None
 
     @property
-    def is_on(self) -> Optional[bool]:
+    def is_on(self) -> Optional[bool]:  # type: ignore[override]
         state = self.hass.states.get(self._target_entity_id)
         if state is None:
             return None
         return state.state == STATE_ON
 
     async def async_turn_on(self, **_kwargs: Any) -> None:
-        await self.hass.services.async_call(
-            "switch",
-            "turn_on",
-            {"entity_id": self._target_entity_id},
-            blocking=False,
+        runtime = get_boiler_runtime(self.hass, self._entry_id, self._box_id)
+        if runtime is not None and hasattr(runtime, "actuator"):
+            is_heater = self._entity_suffix in ("bojler_top", "bojler_alt")
+            await runtime.actuator.async_turn_on_entity(self._target_entity_id, is_heater=is_heater)
+            return
+        _LOGGER.error(
+            "Boiler runtime unavailable for switch %s; "
+            "actuation skipped. Ensure boiler module is enabled and configured.",
+            self.entity_id,
         )
 
     async def async_turn_off(self, **_kwargs: Any) -> None:
-        await self.hass.services.async_call(
-            "switch",
-            "turn_off",
-            {"entity_id": self._target_entity_id},
-            blocking=False,
+        runtime = get_boiler_runtime(self.hass, self._entry_id, self._box_id)
+        if runtime is not None and hasattr(runtime, "actuator"):
+            is_heater = self._entity_suffix in ("bojler_top", "bojler_alt")
+            await runtime.actuator.async_turn_off_entity(self._target_entity_id, is_heater=is_heater)
+            return
+        _LOGGER.error(
+            "Boiler runtime unavailable for switch %s; "
+            "actuation skipped. Ensure boiler module is enabled and configured.",
+            self.entity_id,
         )
+
+
+def _resolve_box_id_from_switch(hass: HomeAssistant, entry_id: str) -> Optional[str]:
+    entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+    if not isinstance(entry_data, dict):
+        return None
+    coordinator = entry_data.get("boiler_coordinator")
+    if coordinator is not None:
+        box_id = getattr(coordinator, "box_id", None)
+        if isinstance(box_id, str) and box_id.isdigit():
+            return box_id
+    config = entry_data.get("config", {})
+    box_id = config.get("box_id")
+    if isinstance(box_id, str) and box_id.isdigit():
+        return box_id
+    return None
 
 
 def _resolve_box_id(hass: HomeAssistant, entry: ConfigEntry) -> Optional[str]:

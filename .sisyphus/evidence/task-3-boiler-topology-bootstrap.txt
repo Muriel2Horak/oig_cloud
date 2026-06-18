@@ -1,0 +1,18 @@
+=== Bootstrap Profile Tests ===
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0 -- /repos/oig-cloud/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: aiohttp-1.0.5, socket-0.7.0, picked-0.5.0, requests-mock-1.12.1, homeassistant-custom-component-0.13.205, cov-6.0.0, sugar-1.0.0, xdist-3.6.1, github-actions-annotate-failures-0.2.0, asyncio-0.24.0, timeout-2.3.1, anyio-4.12.1, pytest_freezer-0.4.8, unordered-0.6.1, syrupy-4.8.0, respx-0.21.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+timeout: 60.0s
+timeout method: signal
+timeout func_only: False
+collecting ... collected 45 items / 42 deselected / 3 selected
+
+tests/test_boiler_task3_topology.py::test_bootstrap_profile_dataclass PASSED [ 33%]
+tests/test_boiler_task3_topology.py::test_profiler_generate_bootstrap_profile_returns_degraded PASSED [ 66%]
+tests/test_boiler_task3_topology.py::test_profiler_bootstrap_profile_has_hourly_slots PASSED [100%]
+
+======================= 3 passed, 42 deselected in 0.23s =======================

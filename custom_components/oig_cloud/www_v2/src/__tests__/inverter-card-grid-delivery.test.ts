@@ -3,6 +3,12 @@ import { OigFlowNode } from '@/ui/features/flow/node';
 import { EMPTY_FLOW_DATA, FlowData } from '@/ui/features/flow/types';
 import type { GridDeliveryStateModel } from '@/data/grid-delivery-model';
 
+/**
+ * Inverter tile (redesigned, .iv-* namespace): grid delivery is shown as a
+ * status-strip pill (`.iv-sp` with `.iv-spl` label "Dodávka" + `.iv-spv` value):
+ *   off → "Vyp", on → "Zap", limited → the limit (kW), unknown → "—".
+ * Pending changes still render as `.pending-overlay` elements at the node level.
+ */
 describe('inverter card grid delivery rendering', () => {
   let el: OigFlowNode;
 
@@ -22,154 +28,75 @@ describe('inverter card grid delivery rendering', () => {
     await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
   }
 
-  it('shows "Nastavený limit" when live mode is off and a configured limit exists', async () => {
-    const data: FlowData = {
-      ...EMPTY_FLOW_DATA,
-      inverterGridMode: 'off',
-      inverterGridLimit: 3500,
-    };
-    const gridDeliveryState: GridDeliveryStateModel = {
-      currentLiveDelivery: 'off',
-      currentLiveLimit: 3500,
-      pendingDeliveryTarget: null,
-      pendingLimitTarget: null,
-      isTransitioning: false,
-      isUnavailable: false,
-    };
-    await updateElement(data, gridDeliveryState);
-
-    const shadow = el.shadowRoot!;
-    const inverterNode = shadow.querySelector('.node-inverter');
-    expect(inverterNode).not.toBeNull();
-
-    const indicators = inverterNode!.querySelectorAll('.battery-indicators');
-    expect(indicators.length).toBeGreaterThanOrEqual(2);
-    const gridDeliveryButton = indicators[1]!.querySelector('.indicator');
-    expect(gridDeliveryButton).not.toBeNull();
-    expect(gridDeliveryButton!.textContent).toContain('Vypnuto');
-    expect(gridDeliveryButton!.textContent).not.toContain('Aktivní limit');
-
-    const detailSection = inverterNode!.querySelector('.detail-section');
-    expect(detailSection).not.toBeNull();
-    const limitLabel = detailSection!.querySelector('.detail-label');
-    expect(limitLabel).not.toBeNull();
-    expect(limitLabel!.textContent).toBe('Nastavený limit');
-
-    const limitButton = detailSection!.querySelector('.detail-row button.clickable');
-    expect(limitButton).not.toBeNull();
-    expect(limitButton!.textContent).toContain('3500W');
-    expect(limitButton!.classList.contains('limit-active')).toBe(false);
-  });
-
-  it('shows "Aktivní limit" and the limit value when live mode is limited', async () => {
-    const data: FlowData = {
-      ...EMPTY_FLOW_DATA,
-      inverterGridMode: 'limited',
-      inverterGridLimit: 4200,
-    };
-    const gridDeliveryState: GridDeliveryStateModel = {
-      currentLiveDelivery: 'limited',
-      currentLiveLimit: 4200,
-      pendingDeliveryTarget: null,
-      pendingLimitTarget: null,
-      isTransitioning: false,
-      isUnavailable: false,
-    };
-    await updateElement(data, gridDeliveryState);
-
-    const shadow = el.shadowRoot!;
-    const inverterNode = shadow.querySelector('.node-inverter');
-    expect(inverterNode).not.toBeNull();
-
-    const indicators = inverterNode!.querySelectorAll('.battery-indicators');
-    const gridDeliveryButton = indicators[1]!.querySelector('.indicator');
-    expect(gridDeliveryButton).not.toBeNull();
-    expect(gridDeliveryButton!.textContent).toContain('Omezeno 4200W');
-
-    const detailSection = inverterNode!.querySelector('.detail-section');
-    expect(detailSection).not.toBeNull();
-    const limitLabel = detailSection!.querySelector('.detail-label');
-    expect(limitLabel).not.toBeNull();
-    expect(limitLabel!.textContent).toBe('Aktivní limit');
-
-    const limitButton = detailSection!.querySelector('.detail-row button.clickable');
-    expect(limitButton).not.toBeNull();
-    expect(limitButton!.textContent).toContain('4200W');
-    expect(limitButton!.classList.contains('limit-active')).toBe(true);
-  });
-
-  it('renders pending overlays distinctly without replacing current live mode text', async () => {
-    const data: FlowData = {
-      ...EMPTY_FLOW_DATA,
-      inverterGridMode: 'off',
-      inverterGridLimit: 3500,
-    };
-    const gridDeliveryState: GridDeliveryStateModel = {
-      currentLiveDelivery: 'off',
-      currentLiveLimit: 3500,
-      pendingDeliveryTarget: 'limited',
-      pendingLimitTarget: 2000,
-      isTransitioning: false,
-      isUnavailable: false,
-    };
-    await updateElement(data, gridDeliveryState);
-
-    const shadow = el.shadowRoot!;
-    const inverterNode = shadow.querySelector('.node-inverter');
-    expect(inverterNode).not.toBeNull();
-
-    const indicators = inverterNode!.querySelectorAll('.battery-indicators');
-    const gridDeliveryButton = indicators[1]!.querySelector('.indicator');
-    expect(gridDeliveryButton!.textContent).toContain('Vypnuto');
-
-    const pendingOverlays = inverterNode!.querySelectorAll('.pending-overlay');
-    expect(pendingOverlays.length).toBeGreaterThanOrEqual(1);
-    const modeOverlay = Array.from(pendingOverlays).find(el =>
-      el.textContent!.includes('Ve frontě: Omezeno'),
+  function deliveryPill(shadow: ShadowRoot): Element | undefined {
+    const node = shadow.querySelector('.node-inverter');
+    expect(node).not.toBeNull();
+    return Array.from(node!.querySelectorAll('.iv-sp')).find(p =>
+      p.querySelector('.iv-spl')?.textContent?.includes('Dodávka'),
     );
-    expect(modeOverlay).not.toBeUndefined();
+  }
 
-    const detailSection = inverterNode!.querySelector('.detail-section');
-    expect(detailSection).not.toBeNull();
-    const limitOverlay = detailSection!.querySelector('.pending-overlay');
-    expect(limitOverlay).not.toBeNull();
-    expect(limitOverlay!.textContent).toContain('Ve frontě: limit 2000W');
+  function deliveryValue(shadow: ShadowRoot): string {
+    return deliveryPill(shadow)?.querySelector('.iv-spv')?.textContent?.trim() ?? '';
+  }
 
-    const limitLabel = detailSection!.querySelector('.detail-label');
-    expect(limitLabel!.textContent).toBe('Nastavený limit');
-    const limitButton = detailSection!.querySelector('.detail-row button.clickable');
-    expect(limitButton!.textContent).toContain('3500W');
+  it('shows "Vyp" when delivery is off', async () => {
+    const data: FlowData = { ...EMPTY_FLOW_DATA, inverterGridMode: 'off', inverterGridLimit: 3500 };
+    const gridDeliveryState: GridDeliveryStateModel = {
+      currentLiveDelivery: 'off', currentLiveLimit: 3500,
+      pendingDeliveryTarget: null, pendingLimitTarget: null,
+      isTransitioning: false, isUnavailable: false,
+    };
+    await updateElement(data, gridDeliveryState);
+    const shadow = el.shadowRoot!;
+    expect(deliveryPill(shadow)).not.toBeUndefined();
+    expect(deliveryValue(shadow)).toContain('Vyp');
+  });
+
+  it('shows the limit (kW) when delivery is limited', async () => {
+    const data: FlowData = { ...EMPTY_FLOW_DATA, inverterGridMode: 'limited', inverterGridLimit: 4200 };
+    const gridDeliveryState: GridDeliveryStateModel = {
+      currentLiveDelivery: 'limited', currentLiveLimit: 4200,
+      pendingDeliveryTarget: null, pendingLimitTarget: null,
+      isTransitioning: false, isUnavailable: false,
+    };
+    await updateElement(data, gridDeliveryState);
+    const shadow = el.shadowRoot!;
+    // fmtKwGrid(4200) → "4,2 kW"
+    expect(deliveryValue(shadow)).toContain('4,2');
+    expect(deliveryValue(shadow)).toContain('kW');
+  });
+
+  it('renders pending overlays without replacing the current pill value', async () => {
+    const data: FlowData = { ...EMPTY_FLOW_DATA, inverterGridMode: 'off', inverterGridLimit: 3500 };
+    const gridDeliveryState: GridDeliveryStateModel = {
+      currentLiveDelivery: 'off', currentLiveLimit: 3500,
+      pendingDeliveryTarget: 'limited', pendingLimitTarget: 2000,
+      isTransitioning: false, isUnavailable: false,
+    };
+    await updateElement(data, gridDeliveryState);
+    const shadow = el.shadowRoot!;
+    const inverterNode = shadow.querySelector('.node-inverter')!;
+
+    // current pill still shows the live state
+    expect(deliveryValue(shadow)).toContain('Vyp');
+
+    const pendingOverlays = inverterNode.querySelectorAll('.pending-overlay');
+    expect(pendingOverlays.length).toBeGreaterThanOrEqual(2);
+    expect(Array.from(pendingOverlays).some(o => o.textContent!.includes('Ve frontě: Omezeno'))).toBe(true);
+    expect(Array.from(pendingOverlays).some(o => o.textContent!.includes('Ve frontě: limit 2000W'))).toBe(true);
   });
 
   it('renders unknown/unavailable state correctly', async () => {
-    const data: FlowData = {
-      ...EMPTY_FLOW_DATA,
-      inverterGridMode: 'unknown',
-      inverterGridLimit: 0,
-    };
+    const data: FlowData = { ...EMPTY_FLOW_DATA, inverterGridMode: 'unknown', inverterGridLimit: 0 };
     const gridDeliveryState: GridDeliveryStateModel = {
-      currentLiveDelivery: 'unknown',
-      currentLiveLimit: null,
-      pendingDeliveryTarget: null,
-      pendingLimitTarget: null,
-      isTransitioning: false,
-      isUnavailable: true,
+      currentLiveDelivery: 'unknown', currentLiveLimit: null,
+      pendingDeliveryTarget: null, pendingLimitTarget: null,
+      isTransitioning: false, isUnavailable: true,
     };
     await updateElement(data, gridDeliveryState);
-
     const shadow = el.shadowRoot!;
-    const inverterNode = shadow.querySelector('.node-inverter');
-    expect(inverterNode).not.toBeNull();
-
-    const indicators = inverterNode!.querySelectorAll('.battery-indicators');
-    const gridDeliveryButton = indicators[1]!.querySelector('.indicator');
-    expect(gridDeliveryButton).not.toBeNull();
-    expect(gridDeliveryButton!.textContent).toContain('?');
-    expect(gridDeliveryButton!.classList.contains('current-state-unknown')).toBe(true);
-
-    const detailSection = inverterNode!.querySelector('.detail-section');
-    expect(detailSection).not.toBeNull();
-    const detailRow = detailSection!.querySelector('.detail-row');
-    expect(detailRow).toBeNull();
+    expect(deliveryPill(shadow)).not.toBeUndefined();
+    expect(deliveryValue(shadow)).toContain('—');
   });
 });

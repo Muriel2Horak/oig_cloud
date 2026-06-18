@@ -142,9 +142,10 @@ class OigCloudDataSensor(_DataSensorBase):
         # Data sensors therefore never subscribe to `sensor.oig_local_*` directly.
 
     async def async_will_remove_from_hass(self) -> None:
-        if self._local_state_unsub:
+        local_state_unsub = self._local_state_unsub
+        if local_state_unsub is not None:
             try:
-                self._local_state_unsub()
+                local_state_unsub()
             except Exception as err:
                 _LOGGER.debug(
                     "[%s] Failed to unsubscribe local state listener: %s",
@@ -152,9 +153,10 @@ class OigCloudDataSensor(_DataSensorBase):
                     err,
                 )
             self._local_state_unsub = None
-        if self._data_source_unsub:
+        data_source_unsub = self._data_source_unsub
+        if data_source_unsub is not None:
             try:
-                self._data_source_unsub()
+                data_source_unsub()
             except Exception as err:
                 _LOGGER.debug(
                     "[%s] Failed to unsubscribe data source listener: %s",

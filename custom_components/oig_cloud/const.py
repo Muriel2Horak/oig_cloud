@@ -40,10 +40,38 @@ CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY = "boiler_circulation_pump_switch_ent
 CONF_BOILER_HAS_ALTERNATIVE_HEATING = "boiler_has_alternative_heating"
 CONF_BOILER_ALT_COST_KWH = "boiler_alt_cost_kwh"
 CONF_BOILER_ALT_ENERGY_SENSOR = "boiler_alt_energy_sensor"  # NEW: Měřič alternativy
+# Task B: direct CBB→boiler power entity (auto-resolves to sensor.oig_{box_id}_boiler_current_cbb_w)
+CONF_BOILER_CURRENT_POWER_ENTITY = "boiler_current_power_entity"
+# Task B: daily-reset semantics for the alt energy meter (True = counter resets at midnight)
+CONF_BOILER_ALT_ENERGY_DAILY = "boiler_alt_energy_daily"
 CONF_BOILER_SPOT_PRICE_SENSOR = "boiler_spot_price_sensor"
 CONF_BOILER_DEADLINE_TIME = "boiler_deadline_time"
 CONF_BOILER_PLANNING_HORIZON_HOURS = "boiler_planning_horizon_hours"
 CONF_BOILER_PLAN_SLOT_MINUTES = "boiler_plan_slot_minutes"
+
+CONF_BOILER_SETUP_MODE = "boiler_setup_mode"
+CONF_BOILER_BOX_ID = "boiler_box_id"
+CONF_BOILER_EFFECTIVE_POWER_W = "boiler_effective_power_w"
+CONF_BOILER_RECOVERY_RATE_C_PER_HOUR = "boiler_recovery_rate_c_per_hour"
+CONF_BOILER_ENABLE_SECOND_THERMOMETER = "boiler_enable_second_thermometer"
+CONF_BOILER_ALT_SOURCE_MODE = "boiler_alt_source_mode"
+CONF_BOILER_COMFORT_PROFILE_MODE = "boiler_comfort_profile_mode"
+CONF_BOILER_SETUP_COMPLETE = "boiler_setup_complete"
+CONF_BOILER_MODULE_SELECTED = "boiler_module_selected"
+# R9: Anti-legionella obligation (default ON with 7-day interval, 60 °C target)
+CONF_BOILER_LEGIONELLA_INTERVAL_DAYS = "boiler_legionella_interval_days"  # 0 = disabled
+CONF_BOILER_LEGIONELLA_TARGET_TEMP_C = "boiler_legionella_target_temp_c"
+# R5: Circulation pre-peak independent scheduling (default OFF)
+CONF_BOILER_CIRCULATION_ENABLED = "boiler_circulation_enabled"  # False = disabled
+CONF_BOILER_CIRCULATION_LEAD_MINUTES = "boiler_circulation_lead_minutes"
+CONF_BOILER_CIRCULATION_RUN_MINUTES = "boiler_circulation_run_minutes"
+CONF_BOILER_CIRCULATION_MAX_RUNS_PER_DAY = "boiler_circulation_max_runs_per_day"
+CONF_BOILER_CIRCULATION_MIN_GAP_MINUTES = "boiler_circulation_min_gap_minutes"
+# R3/R7: Home 5 maneuver (battery-discharge boiler heating)
+# Box-level capability flag — also gates control-panel buttons (F5).
+CONF_BOX_HAS_HOME56 = "box_has_home56"  # default False
+# Boiler-planner opt-in — requires CONF_BOX_HAS_HOME56 AND this flag.
+CONF_BOILER_HOME5_MANEUVER_ENABLED = "boiler_home5_maneuver_enabled"  # default False
 
 # Auto Module constants
 CONF_ENABLE_AUTO = "enable_auto"
@@ -74,10 +102,43 @@ DEFAULT_BOILER_TEMP_SENSOR_POSITION = (
 )
 DEFAULT_BOILER_STRATIFICATION_MODE = "two_zone"  # Changed from simple_avg
 DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO = 0.5
-DEFAULT_BOILER_HEATER_POWER_KW_ENTITY = "sensor.oig_2206237016_boiler_install_power"
 DEFAULT_BOILER_DEADLINE_TIME = "20:00"
 DEFAULT_BOILER_PLANNING_HORIZON_HOURS = 36
 DEFAULT_BOILER_PLAN_SLOT_MINUTES = 15  # Changed from 30 to 15min intervals
+DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS = 0   # 0 = disabled (opt-in via config flow)
+DEFAULT_BOILER_LEGIONELLA_TARGET_TEMP_C = 60.0
+# R5: Circulation scheduling defaults
+DEFAULT_BOILER_CIRCULATION_ENABLED = False
+DEFAULT_BOILER_CIRCULATION_LEAD_MINUTES = 15
+DEFAULT_BOILER_CIRCULATION_RUN_MINUTES = 10
+DEFAULT_BOILER_CIRCULATION_MAX_RUNS_PER_DAY = 3
+DEFAULT_BOILER_CIRCULATION_MIN_GAP_MINUTES = 120
+# R3/R7: Home 5 maneuver defaults
+DEFAULT_BOX_HAS_HOME56 = False
+DEFAULT_BOILER_HOME5_MANEUVER_ENABLED = False
+# R1/R8: Alt source type (drives labels/hints only, NOT COP math — cost entered directly)
+CONF_BOILER_ALT_SOURCE_TYPE = "boiler_alt_source_type"  # gas|heat_pump|fireplace|other
+DEFAULT_BOILER_ALT_SOURCE_TYPE = "gas"
+# F5: Configurable battery cycle cost for Home 5 arbitrage (replaces hardcoded const)
+CONF_BOILER_BATTERY_CYCLE_COST = "boiler_battery_cycle_cost_czk_kwh"
+DEFAULT_BOILER_BATTERY_CYCLE_COST = 0.50
+# Task B: current power entity resolves automatically; alt energy meter defaults to daily-reset
+DEFAULT_BOILER_CURRENT_POWER_ENTITY = ""  # empty = auto-resolve from box_id
+DEFAULT_BOILER_ALT_ENERGY_DAILY = True  # daily-reset counter (resets at midnight)
+# Phase B: thermal arbitrage — over-heat on cheap grid (spot < alt cost) and hold
+# to displace pricier alternative heating, while reserving headroom for FVE overflow.
+CONF_BOILER_THERMAL_ARBITRAGE_ENABLED = "boiler_thermal_arbitrage_enabled"  # opt-in
+DEFAULT_BOILER_THERMAL_ARBITRAGE_ENABLED = False
+CONF_BOILER_MAX_TEMP_C = "boiler_max_temp_c"  # arbitrage over-heat ceiling
+DEFAULT_BOILER_MAX_TEMP_C = 65.0
+CONF_BOILER_ALT_POWER_KW = "boiler_alt_power_kw"  # alt thermal power into tank (lead-time)
+DEFAULT_BOILER_ALT_POWER_KW = 0.0  # 0 = unknown → alt not actively pre-scheduled
+
+KEY_BOILER_RUNTIMES = "boiler_runtimes"
+ATTR_CONFIG_ENTRY_ID = "entry_id"
+STORAGE_KEY_BOILER_SCHEDULE = "boiler_schedule"
+UNKNOWN_BOX_ID = "unknown"
+DEFAULT_BOILER_HEATER_POWER_ENTITY_ID_PATTERN = "sensor.oig_{box_id}_boiler_install_power"
 
 # Energetic constant for water heating (kWh per liter per °C)
 BOILER_ENERGY_CONSTANT_KWH_L_C = 0.001163  # ≈ 4.186 kJ/kg/°C / 3600

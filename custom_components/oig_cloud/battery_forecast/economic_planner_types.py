@@ -3,7 +3,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, TypedDict
 
-from .types import INTERVAL_MINUTES
+from .types import (
+    DEFAULT_CHARGE_EFFICIENCY,
+    DEFAULT_EFFICIENCY,
+    INTERVAL_MINUTES,
+)
+
+# Default daily-price percentile above which a baseline grid import is
+# considered "expensive" and worth displacing with pre-charging. Configurable
+# per the LOCKED design (F1); full wiring from config_entry.options happens in
+# a later phase (F2).
+DEFAULT_EXPENSIVE_PERCENTILE: float = 0.70
+
+# Default round-trip efficiency used by the economic (η-)gate. This mirrors the
+# global simulation constants: storing then re-extracting energy incurs both the
+# charge and discharge losses.
+DEFAULT_ROUND_TRIP_EFFICIENCY: float = DEFAULT_EFFICIENCY * DEFAULT_CHARGE_EFFICIENCY
 
 
 class IntervalData(TypedDict):
@@ -29,6 +44,16 @@ class PlannerInputs:
     prices: List[float]
     solar_forecast: List[float]
     load_forecast: List[float]
+    # Daily-price percentile threshold P for the EXPENSIVE_IMPORT classifier.
+    # Safe default per LOCKED design; wired from options in a later phase.
+    expensive_percentile: float = DEFAULT_EXPENSIVE_PERCENTILE
+    # Round-trip efficiency η for the economic gate (cheap/η < expensive).
+    round_trip_efficiency: float = DEFAULT_ROUND_TRIP_EFFICIENCY
+    # Optional per-interval day index (0=today, 1=tomorrow, ...). When set, the
+    # EXPENSIVE_IMPORT percentile threshold is computed per day instead of over
+    # the whole horizon, so a cheap day and an expensive day are judged
+    # independently. Falls back to a whole-horizon percentile when None.
+    interval_days: Optional[List[int]] = None
 
     @property
     def planning_min_kwh(self) -> float:
@@ -71,6 +96,12 @@ class PlannerInputs:
         if any(load < 0 for load in self.load_forecast):
             raise ValueError("Load forecast cannot be negative")
 
+        if not (0.0 < self.expensive_percentile <= 1.0):
+            raise ValueError("Expensive percentile must be in (0, 1]")
+
+        if not (0.0 < self.round_trip_efficiency <= 1.0):
+            raise ValueError("Round-trip efficiency must be in (0, 1]")
+
 
 @dataclass
 class SimulatedState:
@@ -96,6 +127,9 @@ class CriticalMoment:
     intervals_needed: int
     must_start_charging: int
     soc_kwh: Optional[float] = None
+    # For EXPENSIVE_IMPORT moments: the all-in price at the expensive interval,
+    # used by the economic η-gate during displacement. None for PLANNING_MIN.
+    price_czk: Optional[float] = None
 
 
 @dataclass

@@ -153,20 +153,24 @@ def test_schemas_defined():
     result_legacy = schema(data_legacy)
     assert result_legacy["mode"] == "Zapnuto / On"
 
-    # Test SET_BOILER_MODE_SCHEMA with canonical values
+    # Test SET_BOILER_MODE_SCHEMA with canonical identity
     schema = services.SET_BOILER_MODE_SCHEMA
     data = {
-        "device_id": "456",
+        "entry_id": "entry1",
+        "box_id": "456",
         "mode": "manual",
         "acknowledgement": True
     }
     result = schema(data)
+    assert result["entry_id"] == "entry1"
+    assert result["box_id"] == "456"
     assert result["mode"] == "manual"
     assert result["acknowledgement"] is True
 
     # Test SET_BOILER_MODE_SCHEMA with legacy labels (backward compatibility)
     data_legacy = {
-        "device_id": "456",
+        "entry_id": "entry1",
+        "box_id": "456",
         "mode": "Manual",
         "acknowledgement": True
     }
@@ -234,7 +238,8 @@ def test_schema_validation_invalid_values():
     # Invalid canonical mode for SET_BOILER_MODE_SCHEMA
     with pytest.raises(vol.Invalid):
         services.SET_BOILER_MODE_SCHEMA({
-            "device_id": "456",
+            "entry_id": "entry1",
+            "box_id": "456",
             "mode": "invalid_mode",
             "acknowledgement": True
         })

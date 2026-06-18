@@ -442,12 +442,17 @@ async def test_async_added_to_hass_uses_cached_data(monkeypatch):
 
 
 def test_state_uses_coordinator_and_availability(monkeypatch):
+    from datetime import datetime as _dt
+
+    today_iso = _dt.now().date().isoformat()
+    shared = {"total_today_kwh": 4.2, "total_daily": {today_iso: 4.2}}
+
     sensor = _make_sensor_type({"enable_solar_forecast": False}, "solar_forecast")
-    sensor.coordinator.solar_forecast_data = {"total_today_kwh": 4.2}
+    sensor.coordinator.solar_forecast_data = dict(shared)
     assert sensor.state is None
 
     sensor = _make_sensor_type({"enable_solar_forecast": True}, "solar_forecast")
-    sensor.coordinator.solar_forecast_data = {"total_today_kwh": 4.2}
+    sensor.coordinator.solar_forecast_data = dict(shared)
     assert sensor.state == 4.2
 
 
@@ -473,11 +478,16 @@ def test_state_and_attributes_all_sensors(monkeypatch):
 
     monkeypatch.setattr(sensor_module, "datetime", FixedDatetime)
 
+    today_date = fixed_now.date().isoformat()
+    tomorrow_date = (fixed_now + timedelta(days=1)).date().isoformat()
     data = {
         "response_time": "2025-01-01T09:00:00",
         "total_today_kwh": 5.5,
         "string1_today_kwh": 3.0,
         "string2_today_kwh": 2.5,
+        "total_daily": {today_date: 5.5, tomorrow_date: 6.6},
+        "string1_daily": {today_date: 3.0, tomorrow_date: 4.0},
+        "string2_daily": {today_date: 2.5, tomorrow_date: 2.6},
         "total_hourly": {today_key: 1000, tomorrow_key: 2000},
         "string1_hourly": {today_key: 600, tomorrow_key: 900},
         "string2_hourly": {today_key: 400, tomorrow_key: 1100},

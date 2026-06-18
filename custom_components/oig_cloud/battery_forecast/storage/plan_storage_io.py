@@ -2,14 +2,32 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
+from homeassistant.components.persistent_notification import (
+    async_create as async_create_notification,
+)
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 STORAGE_HELPER_NOT_INITIALIZED = "Storage Helper not initialized"
+
+
+def get_plans_store_lock(sensor: Any) -> asyncio.Lock:
+    """Return a per-sensor lock guarding read-modify-write on the plans Store.
+
+    M7: every load->mutate->save sequence on ``sensor._plans_store`` shares this
+    single lock so concurrent writers (save/archive/aggregate/backfill) cannot
+    clobber each other's updates. Created lazily on first use.
+    """
+    lock = getattr(sensor, "_plans_store_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        sensor._plans_store_lock = lock
+    return lock
 
 
 async def load_plan_from_storage(
@@ -71,11 +89,12 @@ async def save_plan_to_storage(
         return False
 
     try:
-        data = await sensor._plans_store.async_load() or {}
-        _ensure_storage_sections(data)
-        plan = _build_plan_payload(intervals, metadata)
-        data["detailed"][date_str] = plan
-        await sensor._plans_store.async_save(data)
+        async with get_plans_store_lock(sensor):
+            data = await sensor._plans_store.async_load() or {}
+            _ensure_storage_sections(data)
+            plan = _build_plan_payload(intervals, metadata)
+            data["detailed"][date_str] = plan
+            await sensor._plans_store.async_save(data)
 
         _LOGGER.info(
             "Saved plan to Storage: date=%s, intervals=%s, baseline=%s",
@@ -96,7 +115,10 @@ async def save_plan_to_storage(
         _schedule_retry_save(sensor, date_str)
 
         if sensor._hass:
-            sensor._hass.components.persistent_notification.create(
+            # M5: use the non-blocking async_create callback instead of the
+            # deprecated hass.components.persistent_notification.create proxy.
+            async_create_notification(
+                sensor._hass,
                 (
                     f"Battery plan storage failed for {date_str}. "
                     "Data is cached in memory only (will be lost on restart). "

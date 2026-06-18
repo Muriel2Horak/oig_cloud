@@ -292,12 +292,55 @@ async def test_calculate_recent_consumption_ratio_variants(monkeypatch):
     )
 
 
+def test_apply_solar_correction():
+    H = module.AdaptiveConsumptionHelper
+    # Sunnier than forecast: ratio capped at 1.5 and damped (0.7) → 1.35x.
+    up = [1.0, 1.0, 1.0, 1.0]
+    H.apply_solar_correction_to_forecast(up, 1.7, hours=1)
+    assert up[0] == pytest.approx(1.35)
+
+    # Extreme over-actual still capped at 1.5 → 1.35x (no runaway upward boost).
+    up2 = [1.0, 1.0, 1.0, 1.0]
+    H.apply_solar_correction_to_forecast(up2, 5.0, hours=1)
+    assert up2[0] == pytest.approx(1.35)
+
+    # Cloudier than forecast: downward is undamped, floored at 0.5x.
+    down = [1.0, 1.0, 1.0, 1.0]
+    H.apply_solar_correction_to_forecast(down, 0.3, hours=1)
+    assert down[0] == pytest.approx(0.5)
+
+    # A mild down-correction within the floor passes straight through.
+    mild = [1.0, 1.0, 1.0, 1.0]
+    H.apply_solar_correction_to_forecast(mild, 0.7, hours=1)
+    assert mild[0] == pytest.approx(0.7)
+
+    # Empty list is a no-op.
+    empty: list[float] = []
+    H.apply_solar_correction_to_forecast(empty, 1.5, hours=1)
+    assert empty == []
+
+
 def test_apply_consumption_boost_and_similarity():
+    # Down-correction is damped to a 0.7 floor (max -30%): ratio 0.5 -> 0.7.
     forecast = [1.0, 1.0, 1.0, 1.0]
     module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
         forecast, 0.5, hours=1
     )
-    assert forecast[0] == 0.5
+    assert forecast[0] == 0.7
+
+    # A mild under-consumption within the floor scales straight through.
+    mild = [1.0, 1.0, 1.0, 1.0]
+    module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
+        mild, 0.8, hours=1
+    )
+    assert mild[0] == pytest.approx(0.8)
+
+    # Over-consumption is capped at 3.0x.
+    up = [1.0, 1.0, 1.0, 1.0]
+    module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
+        up, 5.0, hours=1
+    )
+    assert up[0] == pytest.approx(3.0)
 
     empty = []
     module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(

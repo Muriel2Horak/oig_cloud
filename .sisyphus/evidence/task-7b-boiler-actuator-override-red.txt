@@ -1,0 +1,277 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.4.2, pluggy-1.6.0 -- /usr/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 26 items
+
+tests/test_boiler_task7b_manual_override.py::TestOverrideCreation::test_create_override_requires_canonical_reason_code FAILED [  3%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideCreation::test_create_override_rejects_non_canonical_reason FAILED [  7%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideCreation::test_default_ttl_is_2_hours FAILED [ 11%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideCreation::test_create_override_custom_ttl FAILED [ 15%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_minimum_15_minutes FAILED [ 19%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_maximum_24_hours FAILED [ 23%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_below_minimum_rejected FAILED [ 26%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_above_maximum_rejected FAILED [ 30%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_must_be_15_minute_increment FAILED [ 34%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_15_minute_increment_accepted FAILED [ 38%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideCollision::test_override_active_blocks_automatic_plan_command FAILED [ 42%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideCollision::test_safety_command_allowed_during_override FAILED [ 46%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideCollision::test_override_state_exposes_reason FAILED [ 50%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideExpiry::test_override_expires_after_ttl FAILED [ 53%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideExpiry::test_expired_override_clears_state FAILED [ 57%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideExpiry::test_after_expiry_automatic_plan_accepted_again FAILED [ 61%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideRestartRestore::test_valid_override_survives_restart FAILED [ 65%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideRestartRestore::test_expired_override_cleared_on_restore FAILED [ 69%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_reconciles_desired_vs_actual FAILED [ 73%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_respects_rate_limit FAILED [ 76%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_respects_plan_version FAILED [ 80%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_noop_when_no_persisted_intent FAILED [ 84%]
+tests/test_boiler_task7b_manual_override.py::TestOverridePersistence::test_override_saved_to_store_on_create FAILED [ 88%]
+tests/test_boiler_task7b_manual_override.py::TestOverridePersistence::test_override_cleared_from_store_on_explicit_clear FAILED [ 92%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideSerializerInteractions::test_override_does_not_break_queue_bounds FAILED [ 96%]
+tests/test_boiler_task7b_manual_override.py::TestOverrideSerializerInteractions::test_multiple_override_create_updates_ttl FAILED [100%]
+
+=================================== FAILURES ===================================
+___ TestOverrideCreation.test_create_override_requires_canonical_reason_code ___
+tests/test_boiler_task7b_manual_override.py:75: in test_create_override_requires_canonical_reason_code
+    ok, reason = await ser.create_override(
+                       ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+____ TestOverrideCreation.test_create_override_rejects_non_canonical_reason ____
+tests/test_boiler_task7b_manual_override.py:87: in test_create_override_rejects_non_canonical_reason
+    ok, reason = await ser.create_override(
+                       ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_______________ TestOverrideCreation.test_default_ttl_is_2_hours _______________
+tests/test_boiler_task7b_manual_override.py:98: in test_default_ttl_is_2_hours
+    await ser.create_override(reason_code=PlannerReasonCode.OVERRIDE_ACTIVE.value)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_____________ TestOverrideCreation.test_create_override_custom_ttl _____________
+tests/test_boiler_task7b_manual_override.py:106: in test_create_override_custom_ttl
+    await ser.create_override(
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+____________ TestOverrideTTLValidation.test_ttl_minimum_15_minutes _____________
+tests/test_boiler_task7b_manual_override.py:123: in test_ttl_minimum_15_minutes
+    ok, _ = await ser.create_override(
+                  ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_____________ TestOverrideTTLValidation.test_ttl_maximum_24_hours ______________
+tests/test_boiler_task7b_manual_override.py:133: in test_ttl_maximum_24_hours
+    ok, _ = await ser.create_override(
+                  ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+__________ TestOverrideTTLValidation.test_ttl_below_minimum_rejected ___________
+tests/test_boiler_task7b_manual_override.py:143: in test_ttl_below_minimum_rejected
+    ok, reason = await ser.create_override(
+                       ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+__________ TestOverrideTTLValidation.test_ttl_above_maximum_rejected ___________
+tests/test_boiler_task7b_manual_override.py:154: in test_ttl_above_maximum_rejected
+    ok, reason = await ser.create_override(
+                       ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+________ TestOverrideTTLValidation.test_ttl_must_be_15_minute_increment ________
+tests/test_boiler_task7b_manual_override.py:165: in test_ttl_must_be_15_minute_increment
+    ok, reason = await ser.create_override(
+                       ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_______ TestOverrideTTLValidation.test_ttl_15_minute_increment_accepted ________
+tests/test_boiler_task7b_manual_override.py:176: in test_ttl_15_minute_increment_accepted
+    ok, _ = await ser.create_override(
+                  ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+___ TestOverrideCollision.test_override_active_blocks_automatic_plan_command ___
+tests/test_boiler_task7b_manual_override.py:193: in test_override_active_blocks_automatic_plan_command
+    await ser.create_override(reason_code=PlannerReasonCode.OVERRIDE_ACTIVE.value)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+______ TestOverrideCollision.test_safety_command_allowed_during_override _______
+tests/test_boiler_task7b_manual_override.py:204: in test_safety_command_allowed_during_override
+    await ser.create_override(reason_code=PlannerReasonCode.OVERRIDE_ACTIVE.value)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+___________ TestOverrideCollision.test_override_state_exposes_reason ___________
+tests/test_boiler_task7b_manual_override.py:214: in test_override_state_exposes_reason
+    await ser.create_override(reason_code=PlannerReasonCode.OVERRIDE_ACTIVE.value)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+______________ TestOverrideExpiry.test_override_expires_after_ttl ______________
+tests/test_boiler_task7b_manual_override.py:228: in test_override_expires_after_ttl
+    await ser.create_override(
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+____________ TestOverrideExpiry.test_expired_override_clears_state _____________
+tests/test_boiler_task7b_manual_override.py:242: in test_expired_override_clears_state
+    await ser.create_override(
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+______ TestOverrideExpiry.test_after_expiry_automatic_plan_accepted_again ______
+tests/test_boiler_task7b_manual_override.py:255: in test_after_expiry_automatic_plan_accepted_again
+    await ser.create_override(
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_______ TestOverrideRestartRestore.test_valid_override_survives_restart ________
+tests/test_boiler_task7b_manual_override.py:290: in test_valid_override_survives_restart
+    assert ser.override_state is not None
+           ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'override_state'. Did you mean: '_persist_state'?
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_____ TestOverrideRestartRestore.test_expired_override_cleared_on_restore ______
+tests/test_boiler_task7b_manual_override.py:310: in test_expired_override_cleared_on_restore
+    assert ser.override_state is None
+           ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'override_state'. Did you mean: '_persist_state'?
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+______ TestCrashRecovery.test_crash_recovery_reconciles_desired_vs_actual ______
+tests/test_boiler_task7b_manual_override.py:333: in test_crash_recovery_reconciles_desired_vs_actual
+    recovered = await ser.recover_from_crash()
+                      ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'recover_from_crash'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+__________ TestCrashRecovery.test_crash_recovery_respects_rate_limit ___________
+tests/test_boiler_task7b_manual_override.py:352: in test_crash_recovery_respects_rate_limit
+    recovered = await ser.recover_from_crash()
+                      ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'recover_from_crash'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_________ TestCrashRecovery.test_crash_recovery_respects_plan_version __________
+tests/test_boiler_task7b_manual_override.py:368: in test_crash_recovery_respects_plan_version
+    recovered = await ser.recover_from_crash()
+                      ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'recover_from_crash'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_____ TestCrashRecovery.test_crash_recovery_noop_when_no_persisted_intent ______
+tests/test_boiler_task7b_manual_override.py:376: in test_crash_recovery_noop_when_no_persisted_intent
+    recovered = await ser.recover_from_crash()
+                      ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'recover_from_crash'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+________ TestOverridePersistence.test_override_saved_to_store_on_create ________
+tests/test_boiler_task7b_manual_override.py:390: in test_override_saved_to_store_on_create
+    await ser.create_override(reason_code=PlannerReasonCode.OVERRIDE_ACTIVE.value)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+__ TestOverridePersistence.test_override_cleared_from_store_on_explicit_clear __
+tests/test_boiler_task7b_manual_override.py:399: in test_override_cleared_from_store_on_explicit_clear
+    await ser.create_override(reason_code=PlannerReasonCode.OVERRIDE_ACTIVE.value)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_ TestOverrideSerializerInteractions.test_override_does_not_break_queue_bounds _
+tests/test_boiler_task7b_manual_override.py:417: in test_override_does_not_break_queue_bounds
+    await ser.create_override(reason_code=PlannerReasonCode.OVERRIDE_ACTIVE.value)
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+_ TestOverrideSerializerInteractions.test_multiple_override_create_updates_ttl _
+tests/test_boiler_task7b_manual_override.py:428: in test_multiple_override_create_updates_ttl
+    await ser.create_override(
+          ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+------------------------------ Captured log call -------------------------------
+WARNING  custom_components.oig_cloud.boiler.actuator:actuator.py:169 Boiler serializer store load failed for e1/b1: 'types.SimpleNamespace' object has no attribute 'config'
+=============================== warnings summary ===============================
+../../usr/lib/python3.12/site-packages/josepy/util.py:28
+  /usr/lib/python3.12/site-packages/josepy/util.py:28: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def __init__(self, wrapped: Union[crypto.X509, crypto.X509Req]) -> None:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:280
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:280: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_all_names(loaded_cert_or_req: Union[crypto.X509, crypto.X509Req]
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:291
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:291: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_san(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:318
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:318: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_san_ip(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:338
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:338: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_extract_san_list_raw(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:372
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:372: DeprecationWarning: X509Extension support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    extensions: Optional[List[crypto.X509Extension]] = None,
+
+../../usr/lib/python3.12/site-packages/homeassistant/components/http/__init__.py:310
+  /usr/lib/python3.12/site-packages/homeassistant/components/http/__init__.py:310: DeprecationWarning: Inheritance class HomeAssistantApplication from web.Application is discouraged
+    class HomeAssistantApplication(web.Application):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideCreation::test_create_override_requires_canonical_reason_code - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideCreation::test_create_override_rejects_non_canonical_reason - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideCreation::test_default_ttl_is_2_hours - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideCreation::test_create_override_custom_ttl - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_minimum_15_minutes - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_maximum_24_hours - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_below_minimum_rejected - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_above_maximum_rejected - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_must_be_15_minute_increment - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideTTLValidation::test_ttl_15_minute_increment_accepted - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideCollision::test_override_active_blocks_automatic_plan_command - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideCollision::test_safety_command_allowed_during_override - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideCollision::test_override_state_exposes_reason - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideExpiry::test_override_expires_after_ttl - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideExpiry::test_expired_override_clears_state - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideExpiry::test_after_expiry_automatic_plan_accepted_again - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideRestartRestore::test_valid_override_survives_restart - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'override_state'. Did you mean: '_persist_state'?
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideRestartRestore::test_expired_override_cleared_on_restore - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'override_state'. Did you mean: '_persist_state'?
+FAILED tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_reconciles_desired_vs_actual - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'recover_from_crash'
+FAILED tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_respects_rate_limit - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'recover_from_crash'
+FAILED tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_respects_plan_version - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'recover_from_crash'
+FAILED tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_noop_when_no_persisted_intent - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'recover_from_crash'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverridePersistence::test_override_saved_to_store_on_create - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverridePersistence::test_override_cleared_from_store_on_explicit_clear - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideSerializerInteractions::test_override_does_not_break_queue_bounds - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+FAILED tests/test_boiler_task7b_manual_override.py::TestOverrideSerializerInteractions::test_multiple_override_create_updates_ttl - AttributeError: 'BoilerActuatorSerializer' object has no attribute 'create_override'
+======================== 26 failed, 7 warnings in 1.56s ========================

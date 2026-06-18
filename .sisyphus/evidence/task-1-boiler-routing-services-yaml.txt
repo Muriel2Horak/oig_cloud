@@ -1,0 +1,17 @@
+=== Task 1 Services.yaml Evidence ===
+Date: 2026-04-25T16:57:57Z
+
+--- pytest tests/test_boiler_task1_routing.py -k services_yaml ---
+============================= test session starts ==============================
+collecting ... collected 19 items / 17 deselected / 2 selected
+
+tests/test_boiler_task1_routing.py::test_services_yaml_boiler_entries_have_canonical_fields PASSED [ 50%]
+tests/test_boiler_task1_routing.py::test_services_yaml_set_boiler_mode_has_canonical_fields PASSED [100%]
+
+======================= 2 passed, 17 deselected in 0.34s =======================
+
+--- services.yaml boiler entries ---
+plan_boiler_heating: fields=['entry_id', 'box_id', 'force', 'deadline']
+apply_boiler_plan: fields=['entry_id', 'box_id']
+cancel_boiler_plan: fields=['entry_id', 'box_id']
+set_boiler_mode: fields=['entry_id', 'box_id', 'device_id', 'mode', 'acknowledgement']

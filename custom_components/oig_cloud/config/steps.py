@@ -14,11 +14,30 @@ from ..const import (
     CONF_PASSWORD,
     CONF_PLANNING_MIN_PERCENT,
     CONF_USERNAME,
+    DEFAULT_BOILER_PLAN_SLOT_MINUTES,
+    DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
     DEFAULT_CHARGE_RATE_KW,
-    DEFAULT_HW_MIN_PERCENT,
     DEFAULT_NAME,
     DEFAULT_PLANNING_MIN_PERCENT,
     DOMAIN,
+)
+from .boiler_steps import (
+    get_boiler_simple_1_schema,
+    get_boiler_simple_2_schema,
+    get_boiler_simple_3_schema,
+    get_boiler_simple_4_schema,
+    get_boiler_simple_5_schema,
+    get_boiler_simple_6_schema,
+    get_boiler_simple_7_schema,
+    get_boiler_simple_8_schema,
+    validate_boiler_simple_1,
+    validate_boiler_simple_2,
+    validate_boiler_simple_3,
+    validate_boiler_simple_4,
+    validate_boiler_simple_5,
+    validate_boiler_simple_6,
+    validate_boiler_simple_7,
+    validate_boiler_simple_8,
 )
 from ..core.data_source import PROXY_BOX_ID_ENTITY_ID, PROXY_LAST_DATA_ENTITY_ID
 from .schema import (
@@ -41,6 +60,10 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _LOGGER = logging.getLogger(__name__)
 
+_BOILER_PLANNING_HORIZON_MIN_HOURS = 12
+_BOILER_PLANNING_HORIZON_MAX_HOURS = 48
+_BOILER_ALT_SOURCE_MODES = frozenset({"disabled", "benchmark_only", "controllable"})
+
 
 class WizardMixin:
     """Mixin třída obsahující všechny wizard kroky.
@@ -51,6 +74,12 @@ class WizardMixin:
 
     if TYPE_CHECKING:  # pragma: no cover
         hass: HomeAssistant
+        # Provided by OigCloudOptionsFlowHandler; declared here so the shared
+        # modules-section routing helpers type-check. They are only reached when
+        # _section == "modules", which only the options flow ever sets (M13).
+        _STEP_MODULE: dict
+
+        def _newly_enabled_modules(self) -> set: ...
 
     # Methods below are provided by ConfigFlow/OptionsFlow parent classes
     async_show_form: Any
@@ -411,7 +440,13 @@ class WizardMixin:
             CONF_CHARGE_RATE_KW,
             wizard_data.get("home_charge_rate", DEFAULT_CHARGE_RATE_KW),
         )
+        expensive_pct = wizard_data.get("expensive_percentile_pct")
+        if expensive_pct is None:
+            expensive_fraction = float(wizard_data.get("expensive_percentile", 0.70))
+        else:
+            expensive_fraction = float(expensive_pct) / 100.0
         return {
+            "expensive_percentile": round(expensive_fraction, 2),
             "min_capacity_percent": wizard_data.get("min_capacity_percent", 20.0),
             "target_capacity_percent": wizard_data.get("target_capacity_percent", 80.0),
             "home_charge_rate": charge_rate_kw,
@@ -437,9 +472,33 @@ class WizardMixin:
         }
 
     @staticmethod
+    def _clamp_boiler_planning_horizon_hours(value: Any) -> int:
+        try:
+            horizon = int(value)
+        except (TypeError, ValueError):
+            horizon = DEFAULT_BOILER_PLANNING_HORIZON_HOURS
+        return max(
+            _BOILER_PLANNING_HORIZON_MIN_HOURS,
+            min(_BOILER_PLANNING_HORIZON_MAX_HOURS, horizon),
+        )
+
+    @staticmethod
     def _build_boiler_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        enable_boiler = wizard_data.get("enable_boiler", False)
+        if wizard_data.get("boiler_module_selected") and not wizard_data.get(
+            "boiler_setup_complete"
+        ):
+            enable_boiler = False
+
+        alt_source_mode = wizard_data.get("boiler_alt_source_mode", "disabled")
+        if alt_source_mode not in _BOILER_ALT_SOURCE_MODES:
+            alt_source_mode = "disabled"
+
         return {
-            "enable_boiler": wizard_data.get("enable_boiler", False),
+            "enable_boiler": enable_boiler,
+            "boiler_setup_complete": wizard_data.get("boiler_setup_complete", False),
+            "boiler_setup_mode": wizard_data.get("boiler_setup_mode", "simple"),
+            "boiler_box_id": wizard_data.get("boiler_box_id", ""),
             "boiler_volume_l": wizard_data.get("boiler_volume_l", 120),
             "boiler_target_temp_c": wizard_data.get("boiler_target_temp_c", 60.0),
             "boiler_cold_inlet_temp_c": wizard_data.get(
@@ -448,6 +507,9 @@ class WizardMixin:
             "boiler_temp_sensor_top": wizard_data.get("boiler_temp_sensor_top", ""),
             "boiler_temp_sensor_bottom": wizard_data.get(
                 "boiler_temp_sensor_bottom", ""
+            ),
+            "boiler_enable_second_thermometer": wizard_data.get(
+                "boiler_enable_second_thermometer", False
             ),
             "boiler_temp_sensor_position": wizard_data.get(
                 "boiler_temp_sensor_position", "top"
@@ -460,10 +522,16 @@ class WizardMixin:
             ),
             "boiler_heater_power_kw_entity": wizard_data.get(
                 "boiler_heater_power_kw_entity",
-                "sensor.oig_2206237016_boiler_install_power",
+                "",
             ),
             "boiler_heater_switch_entity": wizard_data.get(
                 "boiler_heater_switch_entity", ""
+            ),
+            "boiler_effective_power_w": wizard_data.get(
+                "boiler_effective_power_w", 2000
+            ),
+            "boiler_recovery_rate_c_per_hour": wizard_data.get(
+                "boiler_recovery_rate_c_per_hour", 5.0
             ),
             "boiler_alt_heater_switch_entity": wizard_data.get(
                 "boiler_alt_heater_switch_entity", ""
@@ -474,14 +542,61 @@ class WizardMixin:
             "boiler_has_alternative_heating": wizard_data.get(
                 "boiler_has_alternative_heating", False
             ),
+            "boiler_alt_source_mode": alt_source_mode,
             "boiler_alt_cost_kwh": wizard_data.get("boiler_alt_cost_kwh", 0.0),
             "boiler_alt_energy_sensor": wizard_data.get("boiler_alt_energy_sensor", ""),
             "boiler_spot_price_sensor": wizard_data.get("boiler_spot_price_sensor", ""),
             "boiler_deadline_time": wizard_data.get("boiler_deadline_time", "20:00"),
-            "boiler_planning_horizon_hours": wizard_data.get(
-                "boiler_planning_horizon_hours", 36
+            "boiler_comfort_profile_mode": wizard_data.get(
+                "boiler_comfort_profile_mode", "history_driven"
             ),
-            "boiler_plan_slot_minutes": wizard_data.get("boiler_plan_slot_minutes", 30),
+            "boiler_planning_horizon_hours": (
+                WizardMixin._clamp_boiler_planning_horizon_hours(
+                    wizard_data.get(
+                        "boiler_planning_horizon_hours",
+                        DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
+                    )
+                )
+            ),
+            "boiler_plan_slot_minutes": DEFAULT_BOILER_PLAN_SLOT_MINUTES,
+            # F5 new keys (steps 6–8)
+            "boiler_alt_source_type": wizard_data.get(
+                "boiler_alt_source_type", "gas"
+            ),
+            "boiler_battery_cycle_cost_czk_kwh": wizard_data.get(
+                "boiler_battery_cycle_cost_czk_kwh", 0.50
+            ),
+            "box_has_home56": wizard_data.get("box_has_home56", False),
+            "boiler_home5_maneuver_enabled": wizard_data.get(
+                "boiler_home5_maneuver_enabled", False
+            ),
+            "boiler_circulation_enabled": wizard_data.get(
+                "boiler_circulation_enabled", False
+            ),
+            "boiler_circulation_lead_minutes": wizard_data.get(
+                "boiler_circulation_lead_minutes", 15
+            ),
+            "boiler_circulation_run_minutes": wizard_data.get(
+                "boiler_circulation_run_minutes", 10
+            ),
+            "boiler_circulation_max_runs_per_day": wizard_data.get(
+                "boiler_circulation_max_runs_per_day", 3
+            ),
+            "boiler_circulation_min_gap_minutes": wizard_data.get(
+                "boiler_circulation_min_gap_minutes", 120
+            ),
+            "boiler_legionella_interval_days": wizard_data.get(
+                "boiler_legionella_interval_days", 0
+            ),
+            "boiler_legionella_target_temp_c": wizard_data.get(
+                "boiler_legionella_target_temp_c", 60.0
+            ),
+            "boiler_current_power_entity": wizard_data.get(
+                "boiler_current_power_entity", ""
+            ),
+            "boiler_alt_energy_daily": wizard_data.get(
+                "boiler_alt_energy_daily", True
+            ),
         }
 
     @staticmethod
@@ -804,15 +919,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 return self._show_modules_form(user_input, errors)
 
             self._wizard_data.update(user_input)
+            if user_input.get("enable_boiler"):
+                self._wizard_data["boiler_module_selected"] = True
             self._step_history.append("wizard_modules")
-
-            # Debug log
-            _LOGGER.info(
-                f"🔧 Wizard modules: Updated data with {len(user_input)} fields"
-            )
-            _LOGGER.debug(
-                f"🔧 Wizard modules: Current _wizard_data keys: {list(self._wizard_data.keys())}"
-            )
 
             next_step = self._get_next_step("wizard_modules")
             return await getattr(self, f"async_step_{next_step}")()
@@ -844,6 +953,97 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if missing:
                 errors["enable_dashboard"] = "dashboard_requires_all"
                 self._wizard_data["_missing_for_dashboard"] = missing
+
+        return errors
+
+    @staticmethod
+    def _validate_boiler_topology(user_input: Dict[str, Any]) -> Dict[str, str]:
+        """Validate boiler temperature sensor topology and cross-box bindings.
+
+        Enforces the supported topology matrix:
+        - top-only: supported
+        - top+bottom: supported
+        - bottom-only: rejected
+        - duplicate sensor: rejected
+        - 3+ thermometers: unsupported
+        - cross-box entity sharing: rejected
+        """
+        from ..boiler import models as _boiler_models
+        StratificationMode = _boiler_models.StratificationMode
+
+        errors: Dict[str, str] = {}
+
+        # Validate stratification mode
+        strat_mode = user_input.get("boiler_stratification_mode", "")
+        try:
+            StratificationMode(strat_mode)
+        except ValueError:
+            errors["boiler_stratification_mode"] = "invalid_stratification_mode"
+            return errors
+
+        top_sensor = user_input.get("boiler_temp_sensor_top", "")
+        bottom_sensor = user_input.get("boiler_temp_sensor_bottom", "")
+
+        # Count thermometers
+        sensors = [s for s in [top_sensor, bottom_sensor] if s]
+        middle_sensor = user_input.get("boiler_temp_sensor_middle", "")
+        if middle_sensor:
+            sensors.append(middle_sensor)
+
+        if len(sensors) >= 3:
+            errors["base"] = "too_many_thermometers"
+            return errors
+
+        # Check duplicate sensors
+        if top_sensor and bottom_sensor and top_sensor == bottom_sensor:
+            errors["boiler_temp_sensor_bottom"] = "duplicate_sensor"
+            return errors
+
+        # Determine topology and validate
+        if top_sensor and bottom_sensor:
+            pass  # TOP_BOTTOM topology
+        elif top_sensor and not bottom_sensor:
+            pass  # TOP_ONLY topology
+        elif not top_sensor and bottom_sensor:
+            errors["boiler_temp_sensor_bottom"] = "bottom_only"
+            return errors
+        else:
+            errors["base"] = "no_temperature_sensors"
+            return errors
+
+        # Cross-box sharing rejection
+        def _extract_box_id(entity_id: str):
+            parts = entity_id.split(".")
+            if len(parts) == 2:
+                entity_parts = parts[1].split("_")
+                for i, part in enumerate(entity_parts):
+                    if part == "oig" and i + 1 < len(entity_parts):
+                        return entity_parts[i + 1]
+            return None
+
+        # Cross-box rejection compares only entities that resolve to a REAL OIG
+        # box id. Boiler temperature probes are commonly third-party (ESPHome,
+        # e.g. sensor.bojler_top) → _extract_box_id returns None; such entities
+        # must NOT participate in the comparison, otherwise a valid single-box
+        # setup with a non-OIG sensor is wrongly rejected as cross_box_sharing.
+        candidates = [
+            ("boiler_temp_sensor_top", top_sensor),
+            ("boiler_temp_sensor_bottom", bottom_sensor),
+            ("boiler_heater_switch_entity", user_input.get("boiler_heater_switch_entity", "")),
+            ("boiler_alt_heater_switch_entity", user_input.get("boiler_alt_heater_switch_entity", "")),
+            ("boiler_circulation_pump_switch_entity", user_input.get("boiler_circulation_pump_switch_entity", "")),
+        ]
+        resolved = [(field, _extract_box_id(val)) for field, val in candidates if val]
+        resolved = [(field, bid) for field, bid in resolved if bid is not None]
+        distinct_ids = {bid for _field, bid in resolved}
+        if len(distinct_ids) > 1:
+            # Genuine multi-box mix: reference = most common box id, flag the odd ones.
+            from collections import Counter
+            reference = Counter(bid for _f, bid in resolved).most_common(1)[0][0]
+            for field, bid in resolved:
+                if bid != reference:
+                    errors[field] = "cross_box_sharing"
+                    break
 
         return errors
 
@@ -930,25 +1130,22 @@ Kliknutím na "Odeslat" spustíte průvodce.
 
     def _get_total_steps(self) -> int:
         """Calculate total number of steps based on enabled modules."""
-        # Detekce, zda běžíme v Options Flow
         is_options_flow = "wizard_welcome_reconfigure" in self._step_history
 
-        # Základní kroky:
-        # Config Flow: welcome, credentials, modules, intervals = 4
-        # Options Flow: welcome_reconfigure, modules, intervals = 3
         total = 3 if is_options_flow else 4
 
-        # Volitelné kroky podle zapnutých modulů:
         if self._wizard_data.get("enable_solar_forecast", False):
-            total += 1  # wizard_solar
+            total += 1
         if self._wizard_data.get("enable_battery_prediction", False):
-            total += 1  # wizard_battery
+            total += 1
         if self._wizard_data.get("enable_pricing", False):
-            total += 3  # wizard_pricing (3 kroky: import, export, distribution)
+            total += 3
         if self._wizard_data.get("enable_boiler", False):
-            total += 1  # wizard_boiler
+            if self._wizard_data.get("boiler_setup_mode") == "expert":
+                total += 1
+            else:
+                total += 8
 
-        # Summary krok (vždy na konci):
         total += 1
 
         return total
@@ -1013,7 +1210,21 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 ]
             )
         if self._wizard_data.get("enable_boiler", False):
-            steps.append("wizard_boiler")
+            if self._wizard_data.get("boiler_setup_mode") == "expert":
+                steps.append("wizard_boiler")
+            else:
+                steps.extend(
+                    [
+                        "wizard_boiler_simple_1",
+                        "wizard_boiler_simple_2",
+                        "wizard_boiler_simple_3",
+                        "wizard_boiler_simple_4",
+                        "wizard_boiler_simple_5",
+                        "wizard_boiler_simple_6",
+                        "wizard_boiler_simple_7",
+                        "wizard_boiler_simple_8",
+                    ]
+                )
 
         steps.append("wizard_summary")
         return steps
@@ -1045,8 +1256,31 @@ Kliknutím na "Odeslat" spustíte průvodce.
         placeholders.update(kwargs)
         return placeholders
 
+    # Last step of each options-flow section; after it we jump straight to
+    # the summary (save) instead of walking the whole wizard.
+    _SECTION_LAST_STEP = {
+        "modules": "wizard_modules",
+        "intervals": "wizard_intervals",
+        "solar": "wizard_solar",
+        "battery": "wizard_battery",
+        "pricing": "wizard_pricing_distribution",
+        # boiler chains already end right before the summary
+    }
+
     def _get_next_step(self, current_step: str) -> str:
         """Determine next step based on enabled modules."""
+        section = getattr(self, "_section", None)
+        # M13: in the "modules" section, enabling a previously-off module must
+        # route through that module's config before summary; if nothing new was
+        # enabled, jump straight to summary as before.
+        if section == "modules" and current_step == "wizard_modules":
+            if not self._newly_enabled_modules():
+                return "wizard_summary"
+            # fall through to the chain — _should_skip_step keeps only the
+            # newly-enabled modules' config steps.
+        elif section and current_step == self._SECTION_LAST_STEP.get(section):
+            return "wizard_summary"
+
         all_steps = [
             "wizard_welcome",
             "wizard_credentials",
@@ -1057,6 +1291,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_pricing_import",
             "wizard_pricing_export",
             "wizard_pricing_distribution",
+            "wizard_boiler_simple_1",
+            "wizard_boiler_simple_2",
+            "wizard_boiler_simple_3",
+            "wizard_boiler_simple_4",
+            "wizard_boiler_simple_5",
+            "wizard_boiler_simple_6",
+            "wizard_boiler_simple_7",
+            "wizard_boiler_simple_8",
             "wizard_boiler",
             "wizard_summary",
         ]
@@ -1077,6 +1319,16 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return "wizard_summary"
 
     def _should_skip_step(self, step: str) -> bool:
+        # M13: when editing only the "modules" section, walk the config of
+        # NEWLY-enabled modules only — skip everything else (intervals, already-
+        # enabled modules) so the user isn't dragged through the whole wizard.
+        if getattr(self, "_section", None) == "modules":
+            mod = self._STEP_MODULE.get(step)
+            if mod is None:
+                return True  # non-module step (e.g. intervals) — skip in this section
+            if mod not in self._newly_enabled_modules():
+                return True  # already-enabled or disabled module — skip
+            # newly enabled → fall through to the per-module skip rules below
         if step == "wizard_solar":
             return not self._wizard_data.get("enable_solar_forecast")
         if step == "wizard_battery":
@@ -1087,8 +1339,19 @@ Kliknutím na "Odeslat" spustíte průvodce.
             "wizard_pricing_distribution",
         }:
             return not self._wizard_data.get("enable_pricing")
+        if step in {
+            "wizard_boiler_simple_1",
+            "wizard_boiler_simple_2",
+            "wizard_boiler_simple_3",
+            "wizard_boiler_simple_4",
+            "wizard_boiler_simple_5",
+            "wizard_boiler_simple_6",
+            "wizard_boiler_simple_7",
+            "wizard_boiler_simple_8",
+        }:
+            return not self._wizard_data.get("enable_boiler") or self._wizard_data.get("boiler_setup_mode") == "expert"
         if step == "wizard_boiler":
-            return not self._wizard_data.get("enable_boiler")
+            return not self._wizard_data.get("enable_boiler") or self._wizard_data.get("boiler_setup_mode") != "expert"
         return False
 
     async def async_step_wizard_intervals(
@@ -1526,37 +1789,20 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return vol.Schema(schema_fields)
 
     def _validate_battery_config(self, user_input: Dict[str, Any]) -> Dict[str, str]:
-        """Validate battery configuration inputs."""
-        errors = {}
-
-        # Validace min < target
-        min_cap = user_input.get("min_capacity_percent", 20.0)
-        target_cap = user_input.get("target_capacity_percent", 80.0)
-        if min_cap >= target_cap:
-            errors["min_capacity_percent"] = "min_must_be_less_than_target"
-
-        planning_min = user_input.get(CONF_PLANNING_MIN_PERCENT, DEFAULT_PLANNING_MIN_PERCENT)
-        if planning_min < DEFAULT_HW_MIN_PERCENT:
-            errors[CONF_PLANNING_MIN_PERCENT] = "planning_min_below_hw"
-
-        # Validace max price
-        max_price = user_input.get("max_ups_price_czk", 10.0)
-        if max_price < 1.0 or max_price > 50.0:
-            errors["max_ups_price_czk"] = "invalid_price"
+        """Validate battery configuration inputs (slimmed form)."""
+        errors: Dict[str, str] = {}
 
         charge_rate_kw = user_input.get(CONF_CHARGE_RATE_KW, DEFAULT_CHARGE_RATE_KW)
         if charge_rate_kw < 0.5 or charge_rate_kw > 10.0:
             errors[CONF_CHARGE_RATE_KW] = "invalid_charge_rate_kw"
 
-        # Validace hysteresis
-        hysteresis = user_input.get("price_hysteresis_czk", 0.01)
-        if hysteresis < 0.0 or hysteresis > 5.0:
-            errors["price_hysteresis_czk"] = "invalid_hysteresis"
-
-        # Validace hw_min_hold
-        hw_min_hold = user_input.get("hw_min_hold_hours", 6.0)
-        if hw_min_hold < 1.0 or hw_min_hold > 24.0:
-            errors["hw_min_hold_hours"] = "invalid_hours"
+        pct = user_input.get("expensive_percentile_pct", 70)
+        try:
+            pct = float(pct)
+        except (TypeError, ValueError):
+            pct = 70.0
+        if pct < 50 or pct > 95:
+            errors["expensive_percentile_pct"] = "invalid_percentile"
 
         return errors
 
@@ -1596,7 +1842,14 @@ Kliknutím na "Odeslat" spustíte průvodce.
     def _get_battery_schema(
         self, defaults: Optional[Dict[str, Any]] = None
     ) -> vol.Schema:
-        """Get schema for battery prediction step."""
+        """Schema for the battery planner step.
+
+        Slimmed to the parameters the live planner actually reads. Legacy
+        fields (min/target capacity, planning-min guard, max UPS price,
+        hysteresis, hw-min hold) were dead after the 2026-06 planner redesign
+        (hard 20% HW floor + dynamic target + cost-gated displacement) and
+        only confused users; their option keys keep defaults for back-compat.
+        """
         if defaults is None:
             defaults = self._wizard_data if self._wizard_data else {}
 
@@ -1605,35 +1858,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 CONF_AUTO_MODE_SWITCH,
                 default=defaults.get(CONF_AUTO_MODE_SWITCH, False),
             ): bool,
-            vol.Optional(
-                "min_capacity_percent",
-                default=defaults.get("min_capacity_percent", 20.0),
-            ): vol.All(vol.Coerce(float), vol.Range(min=5.0, max=95.0)),
-            vol.Optional(
-                CONF_PLANNING_MIN_PERCENT,
-                default=defaults.get(
-                    CONF_PLANNING_MIN_PERCENT,
-                    defaults.get("min_capacity_percent", DEFAULT_PLANNING_MIN_PERCENT),
-                ),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=DEFAULT_HW_MIN_PERCENT,
-                    max=100,
-                    step=1,
-                    mode=selector.NumberSelectorMode.SLIDER,
-                )
-            ),
-            vol.Optional(
-                "disable_planning_min_guard",
-                default=defaults.get("disable_planning_min_guard", False),
-            ): selector.BooleanSelector(),
-            vol.Optional(
-                "target_capacity_percent",
-                default=defaults.get("target_capacity_percent", 80.0),
-            ): vol.All(vol.Coerce(float), vol.Range(min=10.0, max=100.0)),
-            vol.Optional(
-                "home_charge_rate", default=defaults.get("home_charge_rate", 2.8)
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10.0)),
             vol.Optional(
                 CONF_CHARGE_RATE_KW,
                 default=defaults.get(
@@ -1648,20 +1872,16 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     mode=selector.NumberSelectorMode.BOX,
                 )
             ),
-            # SAFETY LIMIT (applies to planner)
+            # Displacement threshold: imports priced above this per-day
+            # percentile are candidates for cheap pre-charging.
             vol.Optional(
-                "max_ups_price_czk", default=defaults.get("max_ups_price_czk", 10.0)
-            ): vol.All(vol.Coerce(float), vol.Range(min=1.0, max=50.0)),
-            vol.Optional(
-                "price_hysteresis_czk",
-                default=defaults.get("price_hysteresis_czk", 0.01),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
-            vol.Optional(
-                "hw_min_hold_hours",
-                default=defaults.get("hw_min_hold_hours", 6.0),
+                "expensive_percentile_pct",
+                default=int(
+                    round(float(defaults.get("expensive_percentile", 0.70)) * 100)
+                ),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, max=24, step=1, mode=selector.NumberSelectorMode.BOX
+                    min=50, max=95, step=5, mode=selector.NumberSelectorMode.SLIDER
                 )
             ),
             # BATTERY BALANCING PARAMETERS
@@ -2163,10 +2383,9 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
             CONF_BOILER_COLD_INLET_TEMP_C,
             CONF_BOILER_DEADLINE_TIME,
-            CONF_BOILER_HAS_ALTERNATIVE_HEATING,
+            CONF_BOILER_ALT_SOURCE_MODE,
             CONF_BOILER_HEATER_POWER_KW_ENTITY,
             CONF_BOILER_HEATER_SWITCH_ENTITY,
-            CONF_BOILER_PLAN_SLOT_MINUTES,
             CONF_BOILER_PLANNING_HORIZON_HOURS,
             CONF_BOILER_SPOT_PRICE_SENSOR,
             CONF_BOILER_STRATIFICATION_MODE,
@@ -2178,8 +2397,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_VOLUME_L,
             DEFAULT_BOILER_COLD_INLET_TEMP_C,
             DEFAULT_BOILER_DEADLINE_TIME,
-            DEFAULT_BOILER_HEATER_POWER_KW_ENTITY,
-            DEFAULT_BOILER_PLAN_SLOT_MINUTES,
             DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
             DEFAULT_BOILER_STRATIFICATION_MODE,
             DEFAULT_BOILER_TARGET_TEMP_C,
@@ -2192,7 +2409,217 @@ Kliknutím na "Odeslat" spustíte průvodce.
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_boiler")
 
+            errors = self._validate_boiler_topology(user_input)
+            if errors:
+                defaults = self._wizard_data if self._wizard_data else {}
+                return self.async_show_form(
+                    step_id="wizard_boiler",
+                    data_schema=vol.Schema(
+                        {
+                            vol.Required(
+                                CONF_BOILER_VOLUME_L,
+                                default=defaults.get(CONF_BOILER_VOLUME_L, 120),
+                            ): selector.NumberSelector(
+                                selector.NumberSelectorConfig(
+                                    min=10, max=500, step=1, mode=selector.NumberSelectorMode.BOX
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_TARGET_TEMP_C,
+                                default=defaults.get(
+                                    CONF_BOILER_TARGET_TEMP_C, DEFAULT_BOILER_TARGET_TEMP_C
+                                ),
+                            ): selector.NumberSelector(
+                                selector.NumberSelectorConfig(
+                                    min=30, max=90, step=1, mode=selector.NumberSelectorMode.BOX
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_COLD_INLET_TEMP_C,
+                                default=defaults.get(
+                                    CONF_BOILER_COLD_INLET_TEMP_C,
+                                    DEFAULT_BOILER_COLD_INLET_TEMP_C,
+                                ),
+                            ): selector.NumberSelector(
+                                selector.NumberSelectorConfig(
+                                    min=0, max=30, step=1, mode=selector.NumberSelectorMode.BOX
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_TEMP_SENSOR_TOP,
+                                default=defaults.get(CONF_BOILER_TEMP_SENSOR_TOP, ""),
+                            ): selector.EntitySelector(
+                                selector.EntitySelectorConfig(
+                                    domain="sensor", device_class="temperature"
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_TEMP_SENSOR_BOTTOM,
+                                default=defaults.get(CONF_BOILER_TEMP_SENSOR_BOTTOM, ""),
+                            ): selector.EntitySelector(
+                                selector.EntitySelectorConfig(
+                                    domain="sensor", device_class="temperature"
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_TEMP_SENSOR_POSITION,
+                                default=defaults.get(
+                                    CONF_BOILER_TEMP_SENSOR_POSITION,
+                                    DEFAULT_BOILER_TEMP_SENSOR_POSITION,
+                                ),
+                            ): selector.SelectSelector(
+                                selector.SelectSelectorConfig(
+                                    options=[
+                                        selector.SelectOptionDict(
+                                            value="top", label="Přímo nahoře (100%)"
+                                        ),
+                                        selector.SelectOptionDict(
+                                            value="upper_quarter",
+                                            label="Horní čtvrtina (75%)",
+                                        ),
+                                        selector.SelectOptionDict(
+                                            value="middle", label="Polovina (50%)"
+                                        ),
+                                        selector.SelectOptionDict(
+                                            value="lower_quarter",
+                                            label="Dolní čtvrtina (25%)",
+                                        ),
+                                    ],
+                                    mode=selector.SelectSelectorMode.DROPDOWN,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_STRATIFICATION_MODE,
+                                default=defaults.get(
+                                    CONF_BOILER_STRATIFICATION_MODE,
+                                    DEFAULT_BOILER_STRATIFICATION_MODE,
+                                ),
+                            ): selector.SelectSelector(
+                                selector.SelectSelectorConfig(
+                                    options=["simple_avg", "two_zone"],
+                                    mode=selector.SelectSelectorMode.DROPDOWN,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
+                                default=defaults.get(
+                                    CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
+                                    DEFAULT_BOILER_TWO_ZONE_SPLIT_RATIO,
+                                ),
+                            ): selector.NumberSelector(
+                                selector.NumberSelectorConfig(
+                                    min=0.1,
+                                    max=0.9,
+                                    step=0.1,
+                                    mode=selector.NumberSelectorMode.BOX,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_HEATER_POWER_KW_ENTITY,
+                                default=defaults.get(
+                                    CONF_BOILER_HEATER_POWER_KW_ENTITY,
+                                    "",
+                                ),
+                            ): selector.EntitySelector(
+                                selector.EntitySelectorConfig(domain="sensor")
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_HEATER_SWITCH_ENTITY,
+                                default=defaults.get(CONF_BOILER_HEATER_SWITCH_ENTITY, ""),
+                            ): selector.EntitySelector(
+                                selector.EntitySelectorConfig(domain="switch")
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+                                default=defaults.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY, ""),
+                            ): selector.EntitySelector(
+                                selector.EntitySelectorConfig(domain="switch")
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
+                                default=defaults.get(
+                                    CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY, ""
+                                ),
+                            ): selector.EntitySelector(
+                                selector.EntitySelectorConfig(domain="switch")
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_ALT_SOURCE_MODE,
+                                default=defaults.get(
+                                    CONF_BOILER_ALT_SOURCE_MODE, "disabled"
+                                ),
+                            ): selector.SelectSelector(
+                                selector.SelectSelectorConfig(
+                                    options=[
+                                        selector.SelectOptionDict(
+                                            value="disabled", label="Disabled"
+                                        ),
+                                        selector.SelectOptionDict(
+                                            value="benchmark_only", label="Benchmark only"
+                                        ),
+                                        selector.SelectOptionDict(
+                                            value="controllable", label="Controllable"
+                                        ),
+                                    ],
+                                    mode=selector.SelectSelectorMode.DROPDOWN,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_ALT_COST_KWH,
+                                default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
+                            ): selector.NumberSelector(
+                                selector.NumberSelectorConfig(
+                                    min=0,
+                                    max=50,
+                                    step=0.1,
+                                    mode=selector.NumberSelectorMode.BOX,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_ALT_ENERGY_SENSOR,
+                                default=defaults.get(CONF_BOILER_ALT_ENERGY_SENSOR, ""),
+                            ): selector.EntitySelector(
+                                selector.EntitySelectorConfig(
+                                    domain="sensor", device_class="energy"
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_SPOT_PRICE_SENSOR,
+                                default=defaults.get(CONF_BOILER_SPOT_PRICE_SENSOR, ""),
+                            ): selector.EntitySelector(
+                                selector.EntitySelectorConfig(domain="sensor")
+                            ),
+                            vol.Optional(
+                                CONF_BOILER_DEADLINE_TIME,
+                                default=defaults.get(
+                                    CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
+                                ),
+                            ): selector.TimeSelector(),
+                            vol.Optional(
+                                CONF_BOILER_PLANNING_HORIZON_HOURS,
+                                default=self._clamp_boiler_planning_horizon_hours(
+                                    defaults.get(
+                                        CONF_BOILER_PLANNING_HORIZON_HOURS,
+                                        DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
+                                    )
+                                ),
+                            ): selector.NumberSelector(
+                                selector.NumberSelectorConfig(
+                                    min=_BOILER_PLANNING_HORIZON_MIN_HOURS,
+                                    max=_BOILER_PLANNING_HORIZON_MAX_HOURS,
+                                    step=1,
+                                    mode=selector.NumberSelectorMode.BOX,
+                                )
+                            ),
+                            vol.Optional("go_back", default=False): selector.BooleanSelector(),
+                        }
+                    ),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders("wizard_boiler"),
+                )
+
             self._wizard_data.update(user_input)
+            self._wizard_data["boiler_setup_complete"] = True
             self._step_history.append("wizard_boiler")
 
             next_step = self._get_next_step("wizard_boiler")
@@ -2314,7 +2741,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
                         CONF_BOILER_HEATER_POWER_KW_ENTITY,
                         default=defaults.get(
                             CONF_BOILER_HEATER_POWER_KW_ENTITY,
-                            DEFAULT_BOILER_HEATER_POWER_KW_ENTITY,
+                            "",
                         ),
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="sensor")
@@ -2341,11 +2768,26 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ),
                     # Alternativa
                     vol.Optional(
-                        CONF_BOILER_HAS_ALTERNATIVE_HEATING,
+                        CONF_BOILER_ALT_SOURCE_MODE,
                         default=defaults.get(
-                            CONF_BOILER_HAS_ALTERNATIVE_HEATING, False
+                            CONF_BOILER_ALT_SOURCE_MODE, "disabled"
                         ),
-                    ): selector.BooleanSelector(),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(
+                                    value="disabled", label="Disabled"
+                                ),
+                                selector.SelectOptionDict(
+                                    value="benchmark_only", label="Benchmark only"
+                                ),
+                                selector.SelectOptionDict(
+                                    value="controllable", label="Controllable"
+                                ),
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                     vol.Optional(
                         CONF_BOILER_ALT_COST_KWH,
                         default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
@@ -2382,26 +2824,17 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     # Number inputy místo sliderů
                     vol.Optional(
                         CONF_BOILER_PLANNING_HORIZON_HOURS,
-                        default=defaults.get(
-                            CONF_BOILER_PLANNING_HORIZON_HOURS,
-                            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
+                        default=self._clamp_boiler_planning_horizon_hours(
+                            defaults.get(
+                                CONF_BOILER_PLANNING_HORIZON_HOURS,
+                                DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
+                            )
                         ),
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
-                            min=12, max=72, step=1, mode=selector.NumberSelectorMode.BOX
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_BOILER_PLAN_SLOT_MINUTES,
-                        default=defaults.get(
-                            CONF_BOILER_PLAN_SLOT_MINUTES,
-                            DEFAULT_BOILER_PLAN_SLOT_MINUTES,
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=15,
-                            max=120,
-                            step=15,
+                            min=_BOILER_PLANNING_HORIZON_MIN_HOURS,
+                            max=_BOILER_PLANNING_HORIZON_MAX_HOURS,
+                            step=1,
                             mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
@@ -2409,6 +2842,240 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 }
             ),
             description_placeholders=self._get_step_placeholders("wizard_boiler"),
+        )
+
+    async def async_step_wizard_boiler_simple_1(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_1")
+            errors = validate_boiler_simple_1(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_1",
+                    data_schema=get_boiler_simple_1_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_1"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            if "boiler_setup_mode" not in self._wizard_data:
+                self._wizard_data["boiler_setup_mode"] = "simple"
+            self._step_history.append("wizard_boiler_simple_1")
+            if self._wizard_data.get("boiler_setup_mode") == "expert":
+                return await self.async_step_wizard_boiler()
+            return await self.async_step_wizard_boiler_simple_2()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_1",
+            data_schema=get_boiler_simple_1_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_1"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_2(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_2")
+            errors = validate_boiler_simple_2(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_2",
+                    data_schema=get_boiler_simple_2_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_2"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            if not user_input.get("boiler_enable_second_thermometer", False):
+                self._wizard_data["boiler_temp_sensor_bottom"] = ""
+            self._step_history.append("wizard_boiler_simple_2")
+            return await self.async_step_wizard_boiler_simple_3()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_2",
+            data_schema=get_boiler_simple_2_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_2"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_3(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_3")
+            errors = validate_boiler_simple_3(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_3",
+                    data_schema=get_boiler_simple_3_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_3"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_boiler_simple_3")
+            return await self.async_step_wizard_boiler_simple_4()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_3",
+            data_schema=get_boiler_simple_3_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_3"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_4(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_4")
+            errors = validate_boiler_simple_4(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_4",
+                    data_schema=get_boiler_simple_4_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_4"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_boiler_simple_4")
+            return await self.async_step_wizard_boiler_simple_5()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_4",
+            data_schema=get_boiler_simple_4_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_4"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_5(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_5")
+            errors = validate_boiler_simple_5(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_5",
+                    data_schema=get_boiler_simple_5_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_5"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_boiler_simple_5")
+            return await self.async_step_wizard_boiler_simple_6()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_5",
+            data_schema=get_boiler_simple_5_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_5"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_6(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Krok 6 — Zdroje ohřevu (alternativní zdroj + Home 5)."""
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_6")
+            errors = validate_boiler_simple_6(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_6",
+                    data_schema=get_boiler_simple_6_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_6"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_boiler_simple_6")
+            return await self.async_step_wizard_boiler_simple_7()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_6",
+            data_schema=get_boiler_simple_6_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_6"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_7(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Krok 7 — Komfort + hygiena (cirkulace + legionella)."""
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_7")
+            errors = validate_boiler_simple_7(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_7",
+                    data_schema=get_boiler_simple_7_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_7"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            self._step_history.append("wizard_boiler_simple_7")
+            return await self.async_step_wizard_boiler_simple_8()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_7",
+            data_schema=get_boiler_simple_7_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_7"
+            ),
+        )
+
+    async def async_step_wizard_boiler_simple_8(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Krok 8 — Pokročilé (měřiče výkonu a alternativní energie)."""
+        if user_input is not None:
+            if user_input.get("go_back", False):
+                return await self._handle_back_button("wizard_boiler_simple_8")
+            errors = validate_boiler_simple_8(user_input)
+            if errors:
+                return self.async_show_form(
+                    step_id="wizard_boiler_simple_8",
+                    data_schema=get_boiler_simple_8_schema(user_input),
+                    errors=errors,
+                    description_placeholders=self._get_step_placeholders(
+                        "wizard_boiler_simple_8"
+                    ),
+                )
+            self._wizard_data.update(user_input)
+            self._wizard_data["boiler_setup_complete"] = True
+            self._step_history.append("wizard_boiler_simple_8")
+            return await self.async_step_wizard_summary()
+
+        return self.async_show_form(
+            step_id="wizard_boiler_simple_8",
+            data_schema=get_boiler_simple_8_schema(self._wizard_data),
+            description_placeholders=self._get_step_placeholders(
+                "wizard_boiler_simple_8"
+            ),
         )
 
     async def async_step_wizard_summary(
@@ -2574,7 +3241,7 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
 
             # Test OTE API
             try:
-                from .api.ote_api import OteApi
+                from ..api.ote_api import OteApi
 
                 ote_api = OteApi()
                 test_data = await ote_api.get_spot_prices()
@@ -2745,7 +3412,104 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
-        """Entry point for options flow - redirect to wizard welcome."""
+        """Entry point: section menu — jump straight to what you want to change.
+
+        Previously this re-ran the WHOLE wizard (up to ~12 steps) even for a
+        single value change. Each section now ends at the summary (save).
+        """
+        menu = ["section_modules", "section_intervals"]
+        if self._wizard_data.get("enable_solar_forecast"):
+            menu.append("section_solar")
+        if self._wizard_data.get("enable_battery_prediction"):
+            menu.append("section_battery")
+        if self._wizard_data.get("enable_pricing"):
+            menu.append("section_pricing")
+        if self._wizard_data.get("enable_boiler") or self._wizard_data.get(
+            "boiler_setup_complete"
+        ):
+            menu.append("section_boiler")
+        menu.append("section_all")
+        return self.async_show_menu(step_id="init", menu_options=menu)
+
+    # Maps each per-module wizard step to the enable flag that gates it.
+    _STEP_MODULE = {
+        "wizard_solar": "enable_solar_forecast",
+        "wizard_battery": "enable_battery_prediction",
+        "wizard_pricing_import": "enable_pricing",
+        "wizard_pricing_export": "enable_pricing",
+        "wizard_pricing_distribution": "enable_pricing",
+        "wizard_boiler_simple_1": "enable_boiler",
+        "wizard_boiler_simple_2": "enable_boiler",
+        "wizard_boiler_simple_3": "enable_boiler",
+        "wizard_boiler_simple_4": "enable_boiler",
+        "wizard_boiler_simple_5": "enable_boiler",
+        "wizard_boiler_simple_6": "enable_boiler",
+        "wizard_boiler_simple_7": "enable_boiler",
+        "wizard_boiler_simple_8": "enable_boiler",
+        "wizard_boiler": "enable_boiler",
+    }
+    _MODULE_FLAGS = ("enable_solar_forecast", "enable_battery_prediction", "enable_pricing", "enable_boiler")
+
+    def _newly_enabled_modules(self) -> set:
+        """Module flags that are ON now but were OFF when the section was entered."""
+        baseline = getattr(self, "_modules_enabled_at_entry", None)
+        if baseline is None:
+            return set()
+        return {
+            flag for flag in self._MODULE_FLAGS
+            if self._wizard_data.get(flag) and flag not in baseline
+        }
+
+    async def _enter_section(self, section: str, first_step: str) -> ConfigFlowResult:
+        self._section: Optional[str] = section
+        self._step_history = ["init"]
+        # M13: snapshot which modules were enabled on entry so that enabling a new
+        # one in the "modules" section routes into ITS config instead of silently
+        # saving defaults.
+        self._modules_enabled_at_entry = {
+            flag for flag in self._MODULE_FLAGS if self._wizard_data.get(flag)
+        }
+        return await getattr(self, f"async_step_{first_step}")()
+
+    async def async_step_section_modules(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("modules", "wizard_modules")
+
+    async def async_step_section_intervals(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("intervals", "wizard_intervals")
+
+    async def async_step_section_solar(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("solar", "wizard_solar")
+
+    async def async_step_section_battery(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("battery", "wizard_battery")
+
+    async def async_step_section_pricing(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        return await self._enter_section("pricing", "wizard_pricing_import")
+
+    async def async_step_section_boiler(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        first = (
+            "wizard_boiler"
+            if self._wizard_data.get("boiler_setup_mode") == "expert"
+            else "wizard_boiler_simple_1"
+        )
+        return await self._enter_section("boiler", first)
+
+    async def async_step_section_all(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        self._section = None
         return await self.async_step_wizard_welcome_reconfigure()
 
     async def async_step_wizard_welcome_reconfigure(
@@ -2797,6 +3561,43 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                     entry, options=new_options
                 )
                 _LOGGER.warning("🔍 async_update_entry completed")
+
+                try:
+                    from ..boiler.runtime import get_boiler_runtime
+                    from ..boiler.actuator import (
+                        ActuatorCommand,
+                        ActuatorCommandPriority,
+                        ActuatorCommandType,
+                        SourceIntent,
+                    )
+
+                    box_id = new_options.get("boiler_box_id", "")
+                    if new_options.get("enable_boiler") and box_id:
+                        runtime = get_boiler_runtime(
+                            self.hass, entry.entry_id, box_id
+                        )
+                        if runtime is not None and runtime._serializer is not None:
+                            latest_cv = getattr(
+                                runtime._serializer, "_latest_config_version", 0
+                            )
+                            cmd = ActuatorCommand(
+                                entry_id=entry.entry_id,
+                                box_id=box_id,
+                                command_type=ActuatorCommandType("config_update"),
+                                plan_version=0,
+                                config_version=latest_cv + 1,
+                                priority=ActuatorCommandPriority.CONFIG,
+                                source_intent=SourceIntent.NONE,
+                                payload={"new_options": new_options},
+                            )
+                            await runtime._serializer.enqueue(cmd)
+                            _LOGGER.debug(
+                                "Enqueued CONFIG_UPDATE for %s/%s", entry.entry_id, box_id
+                            )
+                except Exception as exc:
+                    _LOGGER.debug(
+                        "Config update enqueue failed (non-critical): %s", exc
+                    )
 
                 # Automaticky reloadnout integraci pro aplikování změn
                 _LOGGER.warning("🔍 About to reload integration")

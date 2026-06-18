@@ -11,6 +11,7 @@ from custom_components.oig_cloud.const import (
     CONF_ENABLE_BOILER,
     DOMAIN,
 )
+from custom_components.oig_cloud.boiler.runtime import KEY_BOILER_RUNTIMES
 
 
 class DummyServices:
@@ -29,6 +30,23 @@ class DummyStates:
         return self._states.get(entity_id)
 
 
+class DummyActuator:
+    def __init__(self):
+        self.turn_on_calls = []
+        self.turn_off_calls = []
+
+    async def async_turn_on_entity(self, entity_id, is_heater=False):
+        self.turn_on_calls.append((entity_id, is_heater))
+
+    async def async_turn_off_entity(self, entity_id, is_heater=False):
+        self.turn_off_calls.append((entity_id, is_heater))
+
+
+class DummyRuntime:
+    def __init__(self):
+        self.actuator = DummyActuator()
+
+
 class DummyHass:
     def __init__(self, states=None):
         self.states = DummyStates(states)
@@ -40,7 +58,7 @@ class DummyHass:
 @pytest.mark.asyncio
 async def test_boiler_switch_setup_skips_without_targets():
     hass = DummyHass()
-    entry = SimpleNamespace(options={CONF_ENABLE_BOILER: True}, data={}, title="OIG 123")
+    entry = SimpleNamespace(options={CONF_ENABLE_BOILER: True}, data={}, title="OIG 123", entry_id="entry1")
     added = []
 
     def _add(entities):
@@ -62,6 +80,7 @@ async def test_boiler_switch_wrapper_turns_on_and_off():
         },
         data={},
         title="OIG 123",
+        entry_id="entry1",
     )
     added = []
 
@@ -76,11 +95,23 @@ async def test_boiler_switch_wrapper_turns_on_and_off():
     assert wrapper.unique_id == "oig_cloud_123_boiler_bojler_top"
     assert wrapper._attr_has_entity_name is False
 
+    # Without runtime, turn_on/turn_off log error and do not call services directly
     await wrapper.async_turn_on()
     await wrapper.async_turn_off()
+    assert len(hass.services.calls) == 0
 
-    assert hass.services.calls[0][1] == "turn_on"
-    assert hass.services.calls[1][1] == "turn_off"
+    # With runtime, delegates to actuator
+    runtime = DummyRuntime()
+    hass.data[DOMAIN]["entry1"] = {
+        KEY_BOILER_RUNTIMES: {"123": runtime},
+        "config": {"box_id": "123"},
+    }
+
+    await wrapper.async_turn_on()
+    assert runtime.actuator.turn_on_calls == [(target_entity, True)]
+
+    await wrapper.async_turn_off()
+    assert runtime.actuator.turn_off_calls == [(target_entity, True)]
 
 
 @pytest.mark.asyncio
@@ -95,6 +126,7 @@ async def test_boiler_switch_wrapper_circulation_optional():
         },
         data={},
         title="OIG 777",
+        entry_id="entry2",
     )
     added = []
 

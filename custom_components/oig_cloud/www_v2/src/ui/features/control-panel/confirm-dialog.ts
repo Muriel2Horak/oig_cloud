@@ -44,7 +44,7 @@ export class OigConfirmDialog extends LitElement {
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(0, 0, 0, 0.62);
       align-items: center;
       justify-content: center;
       z-index: 1000;
@@ -57,14 +57,17 @@ export class OigConfirmDialog extends LitElement {
     }
 
     .dialog {
-      background: ${u(CSS_VARS.cardBg)};
+      /* SOLID surface — cardBg is translucent in dark mode (6% white) which made
+         the dialog almost see-through and the text illegible. */
+      background: ${u(CSS_VARS.cardBgSolid)};
+      border: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: 16px;
       padding: 0;
       min-width: 340px;
       max-width: 90vw;
       max-height: 90vh;
       overflow-y: auto;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
       animation: scaleIn 0.15s ease-out;
     }
 

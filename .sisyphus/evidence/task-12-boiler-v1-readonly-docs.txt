@@ -1,0 +1,24 @@
+=== Task 12: V1 Boiler Read-Only — Docs Evidence ===
+Generated: Sun Apr 26 03:07:01 UTC 2026
+
+--- DASHBOARD.md: V1 is described as read-only ---
+354:### 3. 🌡️ Režim bojleru (V1 — Pouze pro čtení)
+360:│ 📖 Pouze pro čtení                      │
+361:│ Ovládání: Dashboard V2                  │
+365:> ⚠️ **V1 záložka bojleru je pouze pro čtení.**
+367:> výhradně v **Dashboard V2**. V1 zobrazuje aktuální stav bojleru, ale zápis je zablokován.
+374:**Pro ovládání bojleru použijte Dashboard V2.**
+  PASS: docs updated
+
+--- DASHBOARD.md: no boiler write button instructions ---
+ASSERT: no CBB/Manuální button instructions without V1 caveat
+  PASS: old boiler button instructions removed from DASHBOARD.md
+
+--- FAQ.md: boiler control points to V2 ---
+320:3. **Bojler** — zobrazení aktuálního stavu (pouze pro čtení; ovládání je v **Dashboard V2**)
+323:> **Dashboard V2**. V1 control panel zobrazuje aktuální režim bojleru, ale zápis je zablokován.
+  PASS: FAQ updated
+
+--- FAQ.md: no implication V1 has equal boiler edit authority ---
+ASSERT: old 'Boiler mode - CBB/Manual' without V1/V2 distinction removed
+  PASS: old boiler mode entry removed or updated

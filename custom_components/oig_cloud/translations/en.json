@@ -102,7 +102,8 @@
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
           "price_hysteresis_czk": "Price hysteresis (CZK/kWh)",
           "hw_min_hold_hours": "Max hours at HW minimum",
-          "target_capacity_percent": "Target battery capacity (%)"
+          "target_capacity_percent": "Target battery capacity (%)",
+          "expensive_percentile_pct": "Expensive-hours threshold (percentile, %)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "When enabled the integration calls the set_box_mode service automatically according to the computed schedule (same as Config Flow).",
@@ -119,7 +120,8 @@
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
           "price_hysteresis_czk": "Minimum price delta for hold vs. wait decisions",
           "hw_min_hold_hours": "Maximum time to stay at hardware minimum before forcing recharge",
-          "target_capacity_percent": "Optimal capacity to charge to"
+          "target_capacity_percent": "Optimal capacity to charge to",
+          "expensive_percentile_pct": "Imports above this per-day price percentile are candidates for cheap battery pre-charging. Default 70%."
         },
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently optimizes home battery charging according to spot electricity prices and solar production forecast. Automatically charges during cheapest hours.\n\n🔧 **What is needed:**\n• ☀️ Solar forecast (must be enabled)\n• ⚡ Extended sensors (must be enabled)\n• 📈 Spot electricity prices\n\n⚠️ **Experimental feature** - may require fine-tuning of parameters\n\n⚠️ **This module is required for:**\n• 📊 Dashboard (web interface)",
         "title": "🔋 Battery Prediction Configuration"
@@ -128,13 +130,12 @@
         "data": {
           "boiler_alt_cost_kwh": "Alternative heating cost (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Alternative heat source switch - optional",
+          "boiler_alt_source_mode": "Alternative source mode",
           "boiler_circulation_pump_switch_entity": "Circulation pump switch - optional",
           "boiler_cold_inlet_temp_c": "Cold water inlet temperature (°C)",
           "boiler_deadline_time": "Deadline (time to have heated by)",
-          "boiler_has_alternative_heating": "Does boiler have alternative heat source?",
           "boiler_heater_power_kw_entity": "Heating element power sensor (kW)",
           "boiler_heater_switch_entity": "Heating element switch",
-          "boiler_plan_slot_minutes": "Time slot duration (minutes)",
           "boiler_planning_horizon_hours": "Planning horizon (hours)",
           "boiler_spot_price_sensor": "Spot price sensor",
           "boiler_stratification_mode": "Stratification mode",
@@ -147,13 +148,12 @@
         "data_description": {
           "boiler_alt_cost_kwh": "Cost per kWh from alternative source (e.g., 1.5 CZK/kWh for boiler). Electric heating will be used only when spot price is cheaper.",
           "boiler_alt_heater_switch_entity": "Entity ID of switch for alternative source (e.g., boiler, heat pump). Leave empty if you don't have one.",
+          "boiler_alt_source_mode": "Choose Disabled, Benchmark only, or Controllable. Controllable requires one switch-style entity; unsupported actuator models should stay Benchmark only.",
           "boiler_circulation_pump_switch_entity": "Entity ID of switch for circulation pump. Leave empty if you do not control circulation via a switch.",
           "boiler_cold_inlet_temp_c": "Temperature of incoming cold water from mains (typically 10-15°C)",
-          "boiler_deadline_time": "Time by which you want boiler heated (format HH:MM, e.g., 20:00). Planning will always find cheapest slots BEFORE this time.",
-          "boiler_has_alternative_heating": "Check if you have alternative heating method (boiler, HP) and want to use it when electricity is expensive",
+          "boiler_deadline_time": "Time by which you want boiler heated (format HH:MM, e.g., 20:00). Planning targets comfort by this time while considering source costs and availability.",
           "boiler_heater_power_kw_entity": "Entity ID of sensor with current power (e.g., sensor.boiler_power). If you don't have one, create a helper with constant value (e.g., 2.0 for 2kW)",
           "boiler_heater_switch_entity": "Entity ID of switch for turning on main heating element (e.g., switch.boiler_heater). This will be controlled by the integration.",
-          "boiler_plan_slot_minutes": "Size of time blocks for planning (15-60 minutes). Smaller = more precise, larger = simpler. Recommended 60 minutes.",
           "boiler_planning_horizon_hours": "How far ahead to plan (typically 24-48 hours). More = better optimization but longer calculation.",
           "boiler_spot_price_sensor": "Entity ID of spot price sensor (e.g., sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = average temperature | two_zone = stratified model (more accurate, needs 2 sensors)",
@@ -163,7 +163,7 @@
           "boiler_volume_l": "Total volume of hot water tank (e.g., 120 liters)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         },
-        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently plans boiler heating based on spot electricity prices. Selects the cheapest time slots for heating water before your deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heating element power\n\n💡 **How it works:**\n1. Calculates how much energy you need to heat the water\n2. Finds the cheapest time slots before deadline (e.g., 20:00)\n3. Creates a plan of when to turn on the boiler\n4. Controls a switch for turning heating on/off\n\n⚠️ **Note:** This module only controls WHEN to heat. Physical switching of the boiler must be handled by automation or smart switch.",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nAutomatically plans comfortable boiler heating based on your preferences, current water temperature, and available energy sources. Considers spot prices, alternative source economics, and your comfort deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heating element power\n\n💡 **How it works:**\n1. Reads current boiler temperature (top and bottom if available)\n2. Calculates energy needed to reach target temperature by deadline\n3. Selects optimal heating slots considering price and alternative source economics\n4. Controls the heating switch automatically to maintain comfort\n\n⚠️ **Note:** This module plans WHEN and WHETHER to heat. Physical boiler switching is handled automatically by the integration.",
         "title": "🔥 Boiler Configuration"
       },
       "wizard_credentials": {
@@ -577,7 +577,8 @@
           "max_ups_price_czk": "Maximum UPS charging price (CZK/kWh)",
           "min_capacity_percent": "Minimum battery capacity (%)",
           "disable_planning_min_guard": "Disable planning minimum guard",
-          "target_capacity_percent": "Target battery capacity (%)"
+          "target_capacity_percent": "Target battery capacity (%)",
+          "expensive_percentile_pct": "Expensive-hours threshold (percentile, %)"
         },
         "data_description": {
           "balancing_economic_threshold": "On days 5-7 after last balance, use this price threshold (typically 2.5 CZK/kWh)",
@@ -590,7 +591,8 @@
           "max_ups_price_czk": "Hard safety limit: never charge from grid if price is higher than this value",
           "min_capacity_percent": "If capacity drops below this value, charging starts",
           "disable_planning_min_guard": "Allows the planner to go below the planning minimum (more aggressive optimization)",
-          "target_capacity_percent": "Optimal capacity to charge to"
+          "target_capacity_percent": "Optimal capacity to charge to",
+          "expensive_percentile_pct": "Imports above this per-day price percentile are candidates for cheap battery pre-charging. Default 70%."
         },
         "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently optimizes home battery charging according to spot electricity prices and solar production forecast. Automatically charges during cheapest hours.\n\n🔧 **What is needed:**\n• ☀️ Solar forecast (must be enabled)\n• ⚡ Extended sensors (must be enabled)\n• 📈 Spot electricity prices\n\n⚠️ **Experimental feature** - may require fine-tuning of parameters\n\n⚠️ **This module is required for:**\n• 📊 Dashboard (web interface)",
         "title": "🔋 Battery Prediction Configuration"
@@ -599,12 +601,11 @@
         "data": {
           "boiler_alt_cost_kwh": "Alternative heating cost (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Alternative heater switch - optional",
+          "boiler_alt_source_mode": "Alternative source mode",
           "boiler_cold_inlet_temp_c": "Cold water temperature (°C)",
           "boiler_deadline_time": "Deadline (time to have heated by)",
-          "boiler_has_alternative_heating": "Does boiler have alternative heat source?",
           "boiler_heater_power_kw_entity": "Heater power sensor (kW)",
           "boiler_heater_switch_entity": "Heater switch",
-          "boiler_plan_slot_minutes": "Time slot length (minutes)",
           "boiler_planning_horizon_hours": "Planning horizon (hours)",
           "boiler_spot_price_sensor": "Spot price sensor",
           "boiler_stratification_mode": "Stratification mode",
@@ -617,12 +618,11 @@
         "data_description": {
           "boiler_alt_cost_kwh": "How much 1 kWh from alternative source costs (e.g., 1.5 CZK/kWh for boiler). Electric heating will be used only when spot price is cheaper.",
           "boiler_alt_heater_switch_entity": "Entity ID of switch for alternative source (e.g., boiler, heat pump). Leave empty if you don't have one.",
+          "boiler_alt_source_mode": "Choose Disabled, Benchmark only, or Controllable. Controllable requires one switch-style entity; unsupported actuator models should stay Benchmark only.",
           "boiler_cold_inlet_temp_c": "Cold water inlet temperature from mains (typically 10-15°C)",
-          "boiler_deadline_time": "By when you want boiler heated (format HH:MM, e.g., 20:00). Planning always finds cheapest slots BEFORE this time.",
-          "boiler_has_alternative_heating": "Check if you have alternative heating method (boiler, HP) and want to use it when electricity is expensive",
+          "boiler_deadline_time": "By when you want boiler heated (format HH:MM, e.g., 20:00). Planning targets comfort by this time while considering source costs and availability.",
           "boiler_heater_power_kw_entity": "Entity ID of sensor with current power (e.g., sensor.boiler_power). If you don't have one, create a helper with constant value (e.g., 2.0 for 2kW)",
           "boiler_heater_switch_entity": "Entity ID of switch to turn on main heating element (e.g., switch.boiler_heater). This will be controlled by the integration.",
-          "boiler_plan_slot_minutes": "Size of time blocks for planning (15-60 minutes). Smaller = more precise, larger = simpler. Recommended 60 minutes.",
           "boiler_planning_horizon_hours": "How far ahead to plan (typically 24-48 hours). More = better optimization but longer calculation.",
           "boiler_spot_price_sensor": "Entity ID of spot price sensor (e.g., sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = temperature average | two_zone = stratified model (more accurate, needs 2 sensors)",
@@ -632,8 +632,70 @@
           "boiler_volume_l": "Total volume of hot water tank (e.g., 120 liters)",
           "go_back": "Check this box and press 'Submit' - you will go back one step"
         },
-        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nIntelligently plans water heater heating based on spot electricity prices. Selects the cheapest time slots to heat water before your set deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heater power\n\n💡 **How it works:**\n1. Calculates how much energy you need to heat the water\n2. Finds the cheapest time slots before deadline (e.g., 20:00)\n3. Creates a plan when to turn on the boiler\n4. Controls the switch for turning heating on/off\n\n⚠️ **Note:** This module only controls WHEN to heat. Physical boiler switching must be handled via automation or smart switch.",
+        "description": "{step}\n{progress}\n\n📖 **What this module does:**\nAutomatically plans comfortable boiler heating based on your preferences, current water temperature, and available energy sources. Considers spot prices, alternative source economics, and your comfort deadline.\n\n🔧 **What is needed:**\n• 💰 Spot prices (must be enabled)\n• 🌡️ Boiler temperature sensors (top and optionally bottom)\n• ⚡ Heater power\n\n💡 **How it works:**\n1. Reads current boiler temperature (top and bottom if available)\n2. Calculates energy needed to reach target temperature by deadline\n3. Selects optimal heating slots considering price and alternative source economics\n4. Controls the heating switch automatically to maintain comfort\n\n⚠️ **Note:** This module plans WHEN and WHETHER to heat. Physical boiler switching is handled automatically by the integration.",
         "title": "🔥 Boiler Configuration"
+      },
+      "wizard_boiler_simple_6": {
+        "data": {
+          "boiler_has_alternative_heating": "Alternative heat source (gas, heat pump, fireplace…)",
+          "boiler_alt_source_type": "Type of alternative source",
+          "boiler_alt_cost_kwh": "Heat cost (CZK/kWh)",
+          "box_has_home56": "Box has Home 5/6",
+          "boiler_home5_maneuver_enabled": "🔋→🔥 Heating from battery",
+          "boiler_battery_cycle_cost_czk_kwh": "Battery cycle cost (CZK/kWh)",
+          "go_back": "⬅️ I want to go back (check + click Submit)"
+        },
+        "data_description": {
+          "boiler_has_alternative_heating": "Enable if the boiler can be heated by another source (gas boiler, heat pump, fireplace…)",
+          "boiler_alt_source_type": "Used only for labels; does not affect calculations. Gas: include boiler efficiency in the price.",
+          "boiler_alt_cost_kwh": "Cost per kWh of heat from the alternative source (e.g. 1.5 CZK/kWh for gas incl. efficiency). Electric heating is used only when cheaper.",
+          "box_has_home56": "Enables Home 5/6 (OIG CBB) toggles on the dashboard and allows battery-to-boiler heating",
+          "boiler_home5_maneuver_enabled": "Planner may use battery (Home 5) to heat the boiler when cheaper than the grid. Requires Home 5/6.",
+          "boiler_battery_cycle_cost_czk_kwh": "Battery degradation cost per kWh (recommended 0.40–0.60 CZK/kWh). Planner compares this with spot price.",
+          "go_back": "Check this box and press 'Submit' - you will go back one step"
+        },
+        "description": "{step}\n{progress}\n\n🔥 **Krok 6 — Heat sources**\n\nConfigure the alternative heat source and the Home 5 battery maneuver.",
+        "title": "🔥 Boiler — Heat Sources"
+      },
+      "wizard_boiler_simple_7": {
+        "data": {
+          "boiler_circulation_enabled": "Hot water circulation",
+          "boiler_circulation_lead_minutes": "Circulation lead time (min)",
+          "boiler_circulation_run_minutes": "Circulation run duration (min)",
+          "boiler_circulation_max_runs_per_day": "Max runs per day",
+          "boiler_circulation_min_gap_minutes": "Min gap between runs (min)",
+          "boiler_legionella_interval_days": "Anti-legionella interval (days)",
+          "boiler_legionella_target_temp_c": "Disinfection temperature (°C)",
+          "go_back": "⬅️ I want to go back (check + click Submit)"
+        },
+        "data_description": {
+          "boiler_circulation_enabled": "Turn on the DHW circulation pump automatically at set times",
+          "boiler_circulation_lead_minutes": "How many minutes before use to start the pump (0–120)",
+          "boiler_circulation_run_minutes": "How long each pump run lasts (1–60 min)",
+          "boiler_circulation_max_runs_per_day": "Maximum number of pump starts per day (1–20)",
+          "boiler_circulation_min_gap_minutes": "Minimum pause between two pump runs (10–480 min)",
+          "boiler_legionella_interval_days": "Heat to disinfection temperature every N days (0 = disabled; recommended 7–14)",
+          "boiler_legionella_target_temp_c": "Minimum temperature for reliable legionella kill (min 60 °C)",
+          "go_back": "Check this box and press 'Submit' - you will go back one step"
+        },
+        "description": "{step}\n{progress}\n\n🚿 **Krok 7 — Comfort & hygiene**\n\nConfigure DHW circulation scheduling and anti-legionella protection.",
+        "title": "🚿 Boiler — Comfort & Hygiene"
+      },
+      "wizard_boiler_simple_8": {
+        "data": {
+          "boiler_current_power_entity": "Boiler power sensor",
+          "boiler_alt_energy_sensor": "Alternative energy sensor",
+          "boiler_alt_energy_daily": "Daily energy increment",
+          "go_back": "⬅️ I want to go back (check + click Submit)"
+        },
+        "data_description": {
+          "boiler_current_power_entity": "Entity ID of a power sensor (W) — optional; improves planner accuracy",
+          "boiler_alt_energy_sensor": "Entity ID of an energy sensor (kWh) for the alternative source — optional",
+          "boiler_alt_energy_daily": "Enable if the sensor reports daily increment rather than cumulative total",
+          "go_back": "Check this box and press 'Submit' - you will go back one step"
+        },
+        "description": "{step}\n{progress}\n\n⚙️ **Krok 8 — Advanced**\n\nOptional power and energy sensors for more accurate planning.",
+        "title": "⚙️ Boiler — Advanced"
       },
       "wizard_extended": {
         "data": {
@@ -834,6 +896,19 @@
       "wizard_welcome_reconfigure": {
         "description": "🔧 **OIG Cloud Configuration Change**\n\nThis wizard will guide you through updating your integration configuration.\n\n**What you can change:**\n• 📦 Enable/disable modules and features\n• ⏱️ Adjust data update intervals\n• ☀️ Change solar forecast settings\n• 🔋 Adjust battery prediction parameters\n• 💰 Change pricing settings\n• ⚡ Adjust extended sensors\n\n**Note:** Login credentials cannot be changed here - you must delete and re-add the integration.\n\nClick \"Submit\" to continue with the setup.",
         "title": "🔧 OIG Cloud Configuration Change"
+      },
+      "init": {
+        "title": "OIG Cloud Settings",
+        "description": "Pick the section you want to change. Saving a section applies immediately.",
+        "menu_options": {
+          "section_modules": "🧩 Modules (enable/disable)",
+          "section_intervals": "⏱️ Connection & intervals",
+          "section_solar": "☀️ Solar forecast",
+          "section_battery": "🔋 Battery & planner",
+          "section_pricing": "💰 Energy pricing",
+          "section_boiler": "🔥 Boiler",
+          "section_all": "🧙 Full wizard"
+        }
       }
     }
   },
@@ -875,21 +950,69 @@
       }
     }
   },
+  "exceptions": {
+    "boiler_box_not_owned": {
+      "message": "Boiler box {box_id} is not owned by config entry {entry_id}."
+    },
+    "boiler_device_not_found": {
+      "message": "Device {device_id} was not found or does not own a boiler box."
+    },
+    "boiler_entry_not_found": {
+      "message": "Config entry {entry_id} was not found for {service}."
+    },
+    "boiler_entry_not_loaded": {
+      "message": "Config entry {entry_id} is not loaded."
+    },
+    "boiler_entry_wrong_domain": {
+      "message": "Config entry {entry_id} does not belong to {domain}."
+    },
+    "boiler_missing_identity": {
+      "message": "Service {service} requires entry_id + box_id, a legacy device_id, or exactly one unambiguous loaded boiler box."
+    }
+  },
   "services": {
     "apply_boiler_plan": {
       "description": "Applies the planned boiler heating. Creates automations for turning on the heating element at planned times.",
+      "fields": {
+        "box_id": {
+          "description": "Box ID of the target boiler box.",
+          "name": "Box ID"
+        },
+        "entry_id": {
+          "description": "Config entry ID that owns the target boiler box.",
+          "name": "Config entry ID"
+        }
+      },
       "name": "Apply heating plan"
     },
     "cancel_boiler_plan": {
       "description": "Cancels the active boiler heating plan and removes planned automations.",
+      "fields": {
+        "box_id": {
+          "description": "Box ID of the target boiler box.",
+          "name": "Box ID"
+        },
+        "entry_id": {
+          "description": "Config entry ID that owns the target boiler box.",
+          "name": "Config entry ID"
+        }
+      },
       "name": "Cancel heating plan"
     },
     "plan_boiler_heating": {
-      "description": "Creates an optimal boiler heating plan based on spot prices. Finds the cheapest time slots before the deadline.",
+      "description": "Creates a comfort-first boiler heating plan from current water temperature, deadline, spot prices, and configured source economics.",
       "fields": {
+        "box_id": {
+          "description": "Box ID of the target boiler box.",
+          "name": "Box ID"
+        },
         "deadline": {
           "description": "Override the default deadline time (format HH:MM, e.g., 20:00)",
           "name": "Override deadline"
+        },
+        "entry_id": {
+          "description": "Config entry ID that owns the target boiler box.",
+          "name": "Config entry ID"
         },
         "force": {
           "description": "Forces plan recalculation even if a valid plan already exists",
@@ -905,9 +1028,13 @@
           "description": "I acknowledge the risks associated with manual boiler mode and accept full responsibility.",
           "name": "Acknowledgement"
         },
-        "device_id": {
-          "description": "Select the Battery Box device when controlling a specific installation.",
-          "name": "Device"
+        "box_id": {
+          "description": "Box ID of the target boiler box.",
+          "name": "Box ID"
+        },
+        "entry_id": {
+          "description": "Config entry ID that owns the target boiler box.",
+          "name": "Config entry ID"
         },
         "mode": {
           "description": "Select between CBB (automatic) or Manual operation.",

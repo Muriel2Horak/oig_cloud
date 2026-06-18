@@ -56,3 +56,25 @@ BATTERY_SOC_OVERFLOW_THRESHOLD: Final[float] = 100.0  # %
 # Planning
 DEFAULT_HYSTERESIS_TEMP: Final[float] = 5.0  # °C
 MIN_SLOT_DURATION: Final[int] = 15  # minut
+
+# Klasifikátor aktivity bojleru (Task A — power-first truth)
+# Minimální výkon CBB→bojler pro detekci elektrického ohřevu (W).
+# Pod touto hodnotou se topení považuje za vypnuté i kdyby bylo čidlo „on".
+BOILER_POWER_ON_THRESHOLD_W: Final[float] = 100.0
+
+# Teplota, při níž považujeme vodu v bojleru za „použitelnou" (°C).
+# Slouží pro výpočet fill_level_pct (compute_ready_fraction).
+BOILER_READY_TEMP_C: Final[float] = 40.0
+
+# Minimální trend teploty naznačující alternativní ohřev (°C/min).
+# Pokud topí plyn/tepelné čerpadlo a není k dispozici přímé měření,
+# pozitivní trend ≥ tohoto prahu naznačuje ohřev z alternativy.
+ALT_TREND_THRESHOLD_C_PER_MIN: Final[float] = 0.08
+
+# R3: Home 5 maneuver — nominal battery wear cost per kWh cycled through
+# the boiler.  0.50 CZK/kWh is a conservative estimate until calibration data
+# is available (typical Li-ion wear is ~0.10–0.50 CZK/kWh depending on cycle
+# count warranty and current replacement price).  This cost makes battery
+# cheaper than expensive day-ahead grid (>0.50 CZK/kWh) but more expensive
+# than cheap night grid or PV overflow (~0 CZK/kWh).
+BATTERY_CYCLE_COST_CZK_PER_KWH: Final[float] = 0.50

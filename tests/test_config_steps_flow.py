@@ -30,7 +30,8 @@ def test_total_steps_with_modules_and_summary():
         "enable_pricing": True,
         "enable_boiler": True,
     }
-    assert flow._get_total_steps() == 11
+    # Base 4 + solar 1 + battery 1 + pricing 3 + boiler 8 + summary 1 = 18
+    assert flow._get_total_steps() == 18
 
 
 def test_total_steps_options_flow_reconfigure():
@@ -53,8 +54,13 @@ def test_current_step_number_pricing_flow():
     assert flow._get_current_step_number("wizard_pricing_import") == 7
     assert flow._get_current_step_number("wizard_pricing_export") == 8
     assert flow._get_current_step_number("wizard_pricing_distribution") == 9
-    assert flow._get_current_step_number("wizard_boiler") == 10
-    assert flow._get_current_step_number("wizard_summary") == 11
+    assert flow._get_current_step_number("wizard_boiler_simple_1") == 10
+    assert flow._get_current_step_number("wizard_boiler_simple_5") == 14
+    # New steps 6, 7, 8 are at positions 15, 16, 17
+    assert flow._get_current_step_number("wizard_boiler_simple_6") == 15
+    assert flow._get_current_step_number("wizard_boiler_simple_7") == 16
+    assert flow._get_current_step_number("wizard_boiler_simple_8") == 17
+    assert flow._get_current_step_number("wizard_summary") == 18
 
 
 def test_step_placeholders_progress_bar():

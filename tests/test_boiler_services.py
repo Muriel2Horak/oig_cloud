@@ -7,11 +7,15 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.oig_cloud.services import boiler as module
+from custom_components.oig_cloud.boiler import actuator as actuator_mod
 
 
 class DummyServices:
     def __init__(self):
         self.calls = []
+
+    def has_service(self, *args) -> bool:
+        return False
 
     async def async_call(self, domain, service, data, blocking=False):
         self.calls.append((domain, service, data, blocking))
@@ -57,6 +61,11 @@ def _make_slot(start, end, consumption, source):
     )
 
 
+def _make_runtime(hass, coordinator, entry_id="entry1", box_id="123"):
+    from custom_components.oig_cloud.boiler.runtime import _create_runtime_for_coordinator
+    return _create_runtime_for_coordinator(hass, coordinator, entry_id, box_id)
+
+
 def test_build_heating_windows_merges_and_routes():
     now = datetime(2025, 1, 1, 8, 0, tzinfo=timezone.utc)
     slots = [
@@ -84,8 +93,8 @@ async def test_schedule_switch_window_paths(monkeypatch):
     async def _off(_hass, entity_id):
         calls.append(("off", entity_id))
 
-    monkeypatch.setattr(module, "_async_switch_on", _on)
-    monkeypatch.setattr(module, "_async_switch_off", _off)
+    monkeypatch.setattr(actuator_mod, "_async_switch_on", _on)
+    monkeypatch.setattr(actuator_mod, "_async_switch_off", _off)
 
     tracked = []
 
@@ -93,10 +102,10 @@ async def test_schedule_switch_window_paths(monkeypatch):
         tracked.append(when)
         return lambda: None
 
-    monkeypatch.setattr(module, "async_track_point_in_time", _track)
+    monkeypatch.setattr(actuator_mod, "async_track_point_in_time", _track)
 
     hass = DummyHass()
-    assert module._schedule_switch_window(
+    assert actuator_mod._schedule_switch_window(
         hass,
         "switch.x",
         {"start": now - timedelta(hours=2), "end": now - timedelta(hours=1)},
@@ -163,20 +172,21 @@ async def test_apply_and_cancel_boiler_plan(monkeypatch):
 
     scheduled = []
 
-    def _schedule(_hass, entity_id, window):
+    def _schedule(_hass, entity_id, window, _on_cb=None, _off_cb=None):
         scheduled.append((entity_id, window))
         return [lambda: None]
 
-    monkeypatch.setattr(module, "_schedule_switch_window", _schedule)
-    monkeypatch.setattr(module, "Store", DummyStore)
+    monkeypatch.setattr(actuator_mod, "_schedule_switch_window", _schedule)
+    monkeypatch.setattr(actuator_mod, "Store", DummyStore)
 
-    await module._apply_boiler_plan(hass, coordinator, "entry1")
+    runtime = _make_runtime(hass, coordinator)
+    await module._apply_boiler_plan(hass, runtime, "entry1")
     assert scheduled
     assert module.DOMAIN in hass.data
 
-    await module._cancel_boiler_plan(hass, coordinator, "entry1", clear_plan=True)
+    await module._cancel_boiler_plan(hass, runtime, "entry1", clear_plan=True)
     assert hass.services.calls
-    assert coordinator._current_plan is None
+    assert runtime.get_current_plan() is None
 
 
 @pytest.mark.asyncio
@@ -209,16 +219,20 @@ async def test_create_boiler_plan_skips_and_creates(monkeypatch):
         config={},
     )
 
+    hass = DummyHass()
+    runtime = _make_runtime(hass, coordinator)
     await module._create_boiler_plan(
-        coordinator, "entry1", force=False, deadline_override=None
+        hass, runtime, "entry1", force=False, deadline_override=None
     )
     assert planner_calls == []
 
     coordinator._current_plan = None
     await module._create_boiler_plan(
-        coordinator, "entry1", force=True, deadline_override=None
+        hass, runtime, "entry1", force=True, deadline_override=None
     )
-    assert planner_calls
+    assert planner_calls == []
+    assert runtime.last_plan_result is not None
+    assert runtime.get_current_plan() is not None
 
 
 @pytest.mark.asyncio
@@ -235,27 +249,30 @@ async def test_restore_boiler_schedule(monkeypatch):
     store = DummyStore(hass, 1, "key")
     future = now + timedelta(hours=1)
     store._data = {
-        "entry1": {
-            "created_at": now.isoformat(),
-            "entities": ["switch.x"],
-            "windows": [
-                {
-                    "entity_id": "switch.x",
-                    "start": now.isoformat(),
-                    "end": future.isoformat(),
-                }
-            ],
+        "schema_version": 2,
+        "entries": {
+            "entry1": {
+                "created_at": now.isoformat(),
+                "entities": ["switch.x"],
+                "windows": [
+                    {
+                        "entity_id": "switch.x",
+                        "start": now.isoformat(),
+                        "end": future.isoformat(),
+                    }
+                ],
+            }
         }
     }
-    monkeypatch.setattr(module, "Store", lambda *_a, **_k: store)
+    monkeypatch.setattr(actuator_mod, "Store", lambda *_a, **_k: store)
 
     scheduled = []
 
-    def _schedule(_hass, entity_id, window):
+    def _schedule(_hass, entity_id, window, _on_cb=None, _off_cb=None):
         scheduled.append((entity_id, window))
         return [lambda: None]
 
-    monkeypatch.setattr(module, "_schedule_switch_window", _schedule)
+    monkeypatch.setattr(actuator_mod, "_schedule_switch_window", _schedule)
 
     await module._restore_boiler_schedule(hass, "entry1")
     assert scheduled
@@ -293,14 +310,15 @@ async def test_apply_boiler_plan_missing_configs(monkeypatch):
 
     scheduled = []
 
-    def _schedule(_hass, entity_id, window):
+    def _schedule(_hass, entity_id, window, _on_cb=None, _off_cb=None):
         scheduled.append((entity_id, window))
         return [lambda: None]
 
     monkeypatch.setattr(module, "_schedule_switch_window", _schedule)
-    monkeypatch.setattr(module, "Store", DummyStore)
+    monkeypatch.setattr(actuator_mod, "Store", DummyStore)
 
-    await module._apply_boiler_plan(hass, coordinator, "entry1")
+    runtime = _make_runtime(hass, coordinator)
+    await module._apply_boiler_plan(hass, runtime, "entry1")
     assert scheduled == []
 
 
@@ -324,14 +342,15 @@ async def test_apply_boiler_plan_missing_wrapper_switches(monkeypatch):
 
     scheduled = []
 
-    def _schedule(_hass, entity_id, window):
+    def _schedule(_hass, entity_id, window, _on_cb=None, _off_cb=None):
         scheduled.append((entity_id, window))
         return [lambda: None]
 
     monkeypatch.setattr(module, "_schedule_switch_window", _schedule)
-    monkeypatch.setattr(module, "Store", DummyStore)
+    monkeypatch.setattr(actuator_mod, "Store", DummyStore)
 
-    await module._apply_boiler_plan(hass, coordinator, "entry1")
+    runtime = _make_runtime(hass, coordinator)
+    await module._apply_boiler_plan(hass, runtime, "entry1")
     assert scheduled == []
 
 
@@ -347,10 +366,12 @@ async def test_create_boiler_plan_no_profile(monkeypatch):
         _update_profile=_update_profile,
     )
 
+    hass = DummyHass()
+    runtime = _make_runtime(hass, coordinator)
     await module._create_boiler_plan(
-        coordinator, "entry1", force=False, deadline_override=None
+        hass, runtime, "entry1", force=False, deadline_override=None
     )
-    assert coordinator._current_plan is None
+    assert runtime.get_current_plan() is None
 
 
 @pytest.mark.asyncio
@@ -372,6 +393,7 @@ async def test_setup_boiler_services_skips_if_registered(monkeypatch):
     hass.services.has_service = lambda *_a: True
 
     scheduled = []
+
     def _schedule(_hass, entity_id, window):
         scheduled.append((entity_id, window))
         return [lambda: None]
@@ -412,14 +434,16 @@ async def test_apply_boiler_plan_logs_error_alt_missing(monkeypatch):
     )
 
     scheduled = []
-    def _schedule(_hass, entity_id, window):
+
+    def _schedule(_hass, entity_id, window, _on_cb=None, _off_cb=None):
         scheduled.append((entity_id, window))
         return [lambda: None]
 
     monkeypatch.setattr(module, "_schedule_switch_window", _schedule)
-    monkeypatch.setattr(module, "Store", DummyStore)
+    monkeypatch.setattr(actuator_mod, "Store", DummyStore)
 
-    await module._apply_boiler_plan(hass, coordinator, "entry1")
+    runtime = _make_runtime(hass, coordinator)
+    await module._apply_boiler_plan(hass, runtime, "entry1")
     assert scheduled == []
 
 
@@ -448,24 +472,17 @@ async def test_apply_boiler_plan_logs_error_pump_missing(monkeypatch):
     )
 
     scheduled = []
-    def _schedule(_hass, entity_id, window):
+
+    def _schedule(_hass, entity_id, window, _on_cb=None, _off_cb=None):
         scheduled.append((entity_id, window))
         return [lambda: None]
 
     monkeypatch.setattr(module, "_schedule_switch_window", _schedule)
-    monkeypatch.setattr(module, "Store", DummyStore)
+    monkeypatch.setattr(actuator_mod, "Store", DummyStore)
 
-    await module._apply_boiler_plan(hass, coordinator, "entry1")
+    runtime = _make_runtime(hass, coordinator)
+    await module._apply_boiler_plan(hass, runtime, "entry1")
     assert scheduled == []
-
-
-def test_build_circulation_windows_empty_hourly_avg():
-    profile = SimpleNamespace(hourly_avg=None)
-    assert module._build_circulation_windows(profile) == []
-
-
-def test_pick_peak_hours_empty_dict():
-    assert module._pick_peak_hours({}) == []
 
 
 def test_merge_window_first():
@@ -490,7 +507,7 @@ async def test_restore_boiler_schedule_no_data(monkeypatch):
     hass = DummyHass()
     store = DummyStore(hass, 1, "key")
     store._data = {}
-    monkeypatch.setattr(module, "Store", lambda *_a, **_k: store)
+    monkeypatch.setattr(actuator_mod, "Store", lambda *_a, **_k: store)
     await module._restore_boiler_schedule(hass, "entry1")
     assert module.DOMAIN not in hass.data
 
@@ -520,10 +537,11 @@ async def test_restore_boiler_schedule_exception_handling(monkeypatch):
             ],
         }
     }
-    monkeypatch.setattr(module, "Store", lambda *_a, **_k: store)
+    monkeypatch.setattr(actuator_mod, "Store", lambda *_a, **_k: store)
 
     scheduled = []
-    def _schedule(_hass, entity_id, window):
+
+    def _schedule(_hass, entity_id, window, _on_cb=None, _off_cb=None):
         scheduled.append((entity_id, window))
         return [lambda: None]
 

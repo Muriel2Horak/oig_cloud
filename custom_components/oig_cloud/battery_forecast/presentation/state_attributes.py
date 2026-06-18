@@ -73,6 +73,14 @@ def calculate_data_hash(timeline_data: List[Dict[str, Any]]) -> str:
 
 
 def _get_current_battery_kwh(sensor: Any) -> float:
+    # Real measured current SoC (kWh) — not the first planned interval, which
+    # over-reports while charging / under-reports while discharging.
+    try:
+        cap = sensor._get_current_battery_capacity()
+    except Exception:
+        cap = None
+    if cap is not None:
+        return round(float(cap), 2)
     if not sensor._timeline_data:
         return 0
     first = sensor._timeline_data[0]

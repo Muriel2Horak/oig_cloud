@@ -91,6 +91,14 @@ def _get_expected_sensor_types(hass: HomeAssistant, entry: ConfigEntry) -> set[s
             expected.add(sensor_type)
             continue
 
+        # Grid cost sensors — require BOTH pricing AND battery_prediction
+        if category == "grid_cost_computed" and (
+            entry.options.get("enable_pricing", False)
+            and entry.options.get("enable_battery_prediction", False)
+        ):
+            expected.add(sensor_type)
+            continue
+
         option_key = category_to_option_key.get(str(category))
         if option_key and entry.options.get(option_key, False):
             expected.add(sensor_type)
@@ -1387,6 +1395,46 @@ def _create_chmu_sensors(
     return []
 
 
+def _create_grid_cost_sensors(
+    coordinator: Any,
+    entry: ConfigEntry,
+) -> List[Any]:
+    """Create per-phase grid cost/earnings computed sensors.
+
+    GATED: only created when BOTH enable_pricing AND enable_battery_prediction
+    are enabled in the config entry options.  The sensors use the shared energy
+    cache from OigCloudComputedSensor (same storage file, same restore path).
+    """
+    pricing_on = entry.options.get("enable_pricing", False)
+    prediction_on = entry.options.get("enable_battery_prediction", False)
+    if not pricing_on or not prediction_on:
+        _LOGGER.info(
+            "Grid cost sensors skipped (enable_pricing=%s, enable_battery_prediction=%s)",
+            pricing_on,
+            prediction_on,
+        )
+        return []
+
+    sensors: List[Any] = []
+    try:
+        from .entities.computed_sensor import OigCloudComputedSensor
+        from .sensors.SENSOR_TYPES_GRID_COST import SENSOR_TYPES_GRID_COST
+
+        for sensor_type in SENSOR_TYPES_GRID_COST:
+            try:
+                sensor = OigCloudComputedSensor(coordinator, sensor_type)
+                sensors.append(sensor)
+                _LOGGER.debug("Created grid cost sensor: %s", sensor_type)
+            except Exception as e:
+                _LOGGER.error("Error creating grid cost sensor %s: %s", sensor_type, e)
+    except Exception as e:
+        _LOGGER.error("Error initialising grid cost sensors: %s", e, exc_info=True)
+
+    if sensors:
+        _LOGGER.info("Registering %d grid cost sensors", len(sensors))
+    return sensors
+
+
 def _create_boiler_sensors(hass: HomeAssistant, entry: ConfigEntry) -> List[Any]:
     boiler_enabled = entry.options.get("enable_boiler", False)
     _LOGGER.info(f"Boiler module enabled: {boiler_enabled}")
@@ -1407,9 +1455,15 @@ def _create_boiler_sensors(hass: HomeAssistant, entry: ConfigEntry) -> List[Any]
 
         _LOGGER.info("🔥 Creating boiler sensors")
 
+        from .boiler.runtime import get_boiler_runtime
         from .boiler.sensors import get_boiler_sensors
 
-        boiler_sensors = get_boiler_sensors(boiler_coordinator)
+        box_id = entry.options.get("box_id")
+        if not (isinstance(box_id, str) and box_id.isdigit()):
+            box_id = getattr(boiler_coordinator, "box_id", None)
+        runtime = get_boiler_runtime(hass, entry.entry_id, box_id) if box_id else None
+
+        boiler_sensors = get_boiler_sensors(boiler_coordinator, runtime=runtime)
 
         if boiler_sensors:
             _LOGGER.info(f"Registering {len(boiler_sensors)} boiler sensors")
@@ -1627,6 +1681,19 @@ async def async_setup_entry(  # noqa: C901
     # ================================================================
     deferred_factories.append(
         lambda: _create_pricing_sensors(coordinator, entry, analytics_device_info)
+    )
+    await asyncio.sleep(0)
+
+    # ================================================================
+    # SECTION 9b: GRID COST / EARNINGS SENSORS (kategorie: "grid_cost_computed")
+    # ================================================================
+    # Per-phase grid cost and earnings — gated on enable_pricing AND
+    # enable_battery_prediction both being True.
+    # Device: analytics_device_info (Analytics & Predictions {box_id})
+    # Třída: OigCloudComputedSensor (shared energy cache)
+    # ================================================================
+    deferred_factories.append(
+        lambda: _create_grid_cost_sensors(coordinator, entry)
     )
     await asyncio.sleep(0)
 

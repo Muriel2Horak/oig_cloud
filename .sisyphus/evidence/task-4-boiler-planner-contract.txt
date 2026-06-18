@@ -1,0 +1,40 @@
+Task 4 Evidence: Boiler Planner Contract (Post-Fix)
+=====================================================
+Date: 2026-04-25
+Fix: Verification rejection — added missing canonical identity fields, strengthened deadline validation, made ALLOWED_FIELDS a class constant.
+
+Module: custom_components/oig_cloud/boiler/planner_contract.py
+
+Symbols exported:
+- AlternativeSourceCapability (enum)
+- PlannerReasonCode (enum, 29 canonical codes)
+- BoilerBatterySignals (dataclass)
+- PlannerInput (dataclass)
+- validate_freshness (function)
+- resolve_alt_source_capability (function)
+
+PlannerInput fields (canonical contract):
+- entry_id: str (required, non-empty)
+- box_id: str (required, non-empty)
+- profile: BoilerProfile (required)
+- spot_prices: dict[datetime, float] (required)
+- overflow_windows: list[tuple[datetime, datetime]] (required)
+- deadline_time: str (default "06:00", validated as HH:MM)
+- topology: Optional[BoilerThermalTopology]
+- alt_source_capability: AlternativeSourceCapability
+- alt_cost_kwh: float
+- pv_forecast: float
+- pv_confidence: float
+- battery_signals: Optional[BoilerBatterySignals]
+
+RED test run (before fixes):
+- 23 failed (entry_id/box_id missing, deadline weak, ALLOWED_FIELDS instance field)
+
+GREEN test run (after fixes):
+- pytest tests/test_boiler_task4_contract.py → 52 passed, 0 failed
+
+Regression (Task 1-4):
+- pytest tests/test_boiler*.py + related → 328 passed, 0 failed
+
+flake8: clean on all modified files
+LSP diagnostics: clean on planner_contract.py, planner.py, runtime.py

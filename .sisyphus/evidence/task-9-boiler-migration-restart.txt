@@ -1,0 +1,7 @@
+Task 9 staged migration restart evidence
+
+Command: pytest tests/test_boiler_task9_migration_repair.py -q
+Result: 8 passed, 7 warnings in 1.27s.
+
+Scenario covered: test_restart_during_staged_migration_resumes_disabled_repair_state.
+Observed contract: startup sees migration_in_progress, resumes to disabled + repair state, cancels future callbacks, preserves physical output state, and rewrites legacy schedule storage as schema_version=2 empty entries.

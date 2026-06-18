@@ -246,7 +246,7 @@ class OigCloudShieldSensor(_ShieldBase):
                     )
                     or ""
                 )
-                m = re.search(r"(\\d{6,})", title)
+                m = re.search(r"(\d{6,})", title)
                 if m:
                     box_id = m.group(1)
             except Exception:

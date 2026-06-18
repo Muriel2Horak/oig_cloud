@@ -1,0 +1,36 @@
+Task 4 Evidence: Battery-Derived Signal Boundary
+=================================================
+Date: 2026-04-25
+
+Class: BoilerBatterySignals
+
+Allowed fields (exact set):
+- overflow_windows: list[tuple[datetime, datetime]]
+
+Class constant:
+- ALLOWED_FIELDS: ClassVar[frozenset[str]] = frozenset({"overflow_windows"})
+- Not overridable per instance; defined at class level
+
+Forbidden battery planner internals (rejected/ignored by contract):
+- soc, capacity_kwh, hw_min_percent
+- current_soc_kwh, max_capacity_kwh, hw_min_kwh
+- planning_min_percent, charge_rate_kw
+- prices, solar_forecast, load_forecast, intervals
+
+Sanitization function:
+- BoilerBatterySignals.from_raw(raw: dict) → extracts only allowed fields
+- Raises TypeError if raw is not a dict
+- All forbidden keys are silently dropped
+
+Tests:
+- test_allowed_fields_exact PASSED
+- test_from_raw_extracts_only_allowed PASSED
+- test_from_raw_empty_dict PASSED
+- test_from_raw_rejects_non_dict PASSED
+- test_from_raw_ignores_forbidden_battery_internals PASSED
+- test_explicit_constructor_accepts_only_overflow_windows PASSED
+- test_allowed_fields_is_class_constant PASSED
+
+Runtime integration:
+- BoilerRuntime.async_create_plan wraps overflow_windows into BoilerBatterySignals
+- Raw battery forecast internals are never passed to PlannerInput

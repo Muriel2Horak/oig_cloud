@@ -300,8 +300,16 @@ async function fetchCostComparison(inverterSn: string): Promise<CostComparisonDa
 
     const actualSpent = Math.round((today.actual_cost_so_far ?? today.actual_total_cost ?? 0) * 100) / 100;
     const futurePlanCost = today.future_plan_cost ?? 0;
-    const planTotalCost = today.plan_total_cost ?? (actualSpent + futurePlanCost);
-    const tomorrowCost = hybridData.tomorrow?.plan_total_cost ?? null;
+    // "Total today" = what we already spent + what the plan still expects
+    // (backend blended_total_cost). The raw plan_total_cost mixes the
+    // idealized stored past-plan (~0 import) with the live future plan and
+    // used to render a nonsense "Plán celkem" == "Zbývající plán".
+    const planTotalCost = today.blended_total_cost ?? (actualSpent + futurePlanCost);
+    // Before OTE publishes tomorrow's prices (~14:00) the tomorrow plan cost
+    // is a meaningless 0 — report null so the UI shows "—" instead of 0.00.
+    const tomorrowRaw = hybridData.tomorrow?.plan_total_cost ?? null;
+    const tomorrowHasPlan = !!hybridData.tomorrow?.mode_distribution;
+    const tomorrowCost = tomorrowRaw === 0 && !tomorrowHasPlan ? null : tomorrowRaw;
 
     // Yesterday analysis from timeline
     let yesterdayPlannedCost: number | null = null;

@@ -1,6 +1,8 @@
 import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
+import { renderIcon } from '@/utils/render-icon';
+import { weatherConditionIcon } from '@/data/weather-data';
 
 const u = unsafeCSS;
 
@@ -9,9 +11,12 @@ export class OigHeader extends LitElement {
   @property({ type: String }) title = 'Energetické Toky';
   @property({ type: String }) time = '';
   @property({ type: Boolean }) showStatus = false;
+  /** Count of active ČHMÚ warnings (drives the warning chip). */
   @property({ type: Number }) alertCount = 0;
-  @property({ type: Boolean }) leftPanelCollapsed = false;
-  @property({ type: Boolean }) rightPanelCollapsed = false;
+  /** Live weather (from weather.* entity); when unavailable, badge shows warnings only. */
+  @property({ type: Boolean }) weatherAvailable = false;
+  @property({ type: String }) weatherCondition = '';
+  @property({ type: Number }) weatherTemp: number | null = null;
 
   static styles = css`
     :host {
@@ -33,15 +38,8 @@ export class OigHeader extends LitElement {
       margin: 0;
     }
 
-    .title-icon { font-size: 20px; }
-
-    .version {
-      font-size: 11px;
-      color: ${u(CSS_VARS.textSecondary)};
-      background: ${u(CSS_VARS.bgSecondary)};
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
+    .title-icon { font-size: 20px; color: ${u(CSS_VARS.accent)}; display: inline-flex; }
+    .oig-mdi { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; display: inline-block; }
 
     .time {
       font-size: 13px;
@@ -51,41 +49,52 @@ export class OigHeader extends LitElement {
 
     .spacer { flex: 1; }
 
-    .status-badge {
+    /* ── Weather badge (current conditions + optional warning chip) ── */
+    .weather-badge {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
+      gap: 7px;
+      padding: 4px 10px 4px 8px;
       border-radius: 16px;
-      font-size: 12px;
-      font-weight: 500;
+      font-size: 13px;
+      font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s;
+      border: 1px solid ${u(CSS_VARS.divider)};
+      background: ${u(CSS_VARS.bgSecondary)};
+      color: ${u(CSS_VARS.textPrimary)};
+      transition: background 0.2s, border-color 0.2s;
     }
+    .weather-badge:hover { background: ${u(CSS_VARS.divider)}; }
+    .weather-badge.has-warn { border-color: ${u(CSS_VARS.warning)}; }
 
-    .status-badge.warning {
+    .wb-icon { font-size: 18px; display: inline-flex; color: ${u(CSS_VARS.accent)}; }
+    .wb-temp { font-variant-numeric: tabular-nums; }
+
+    .wb-warn {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      margin-left: 2px;
+      padding: 1px 7px 1px 5px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
       background: ${u(CSS_VARS.warning)};
       color: #fff;
     }
+    .wb-warn .oig-mdi { font-size: 12px; }
 
-    .status-badge.error {
-      background: ${u(CSS_VARS.error)};
-      color: #fff;
+    /* Fallback OK/warning pill when no weather entity is configured */
+    .status-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 16px;
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      transition: background 0.2s; color: #fff;
     }
-
-    .status-badge.ok {
-      background: ${u(CSS_VARS.success)};
-      color: #fff;
-    }
-
+    .status-badge.warning { background: ${u(CSS_VARS.warning)}; }
+    .status-badge.ok { background: ${u(CSS_VARS.success)}; }
     .status-badge:hover { opacity: 0.9; }
-
-    .status-count {
-      background: rgba(255,255,255,0.3);
-      padding: 1px 6px;
-      border-radius: 10px;
-      font-size: 11px;
-    }
+    .status-count { background: rgba(255,255,255,0.3); padding: 1px 6px; border-radius: 10px; font-size: 11px; }
 
     .actions { display: flex; gap: 8px; }
 
@@ -101,6 +110,7 @@ export class OigHeader extends LitElement {
       justify-content: center;
       color: ${u(CSS_VARS.textSecondary)};
       transition: all 0.2s;
+      font-size: 18px;
     }
 
     .action-btn:hover {
@@ -126,48 +136,42 @@ export class OigHeader extends LitElement {
     this.dispatchEvent(new CustomEvent('reset-click', { bubbles: true }));
   }
 
-  private onToggleLeftPanel(): void {
-    this.dispatchEvent(new CustomEvent('toggle-left-panel', { bubbles: true }));
-  }
-
-  private onToggleRightPanel(): void {
-    this.dispatchEvent(new CustomEvent('toggle-right-panel', { bubbles: true }));
-  }
-
   render() {
     const statusClass = this.alertCount > 0 ? 'warning' : 'ok';
 
     return html`
       <h1 class="title">
-        <span class="title-icon">⚡</span>
+        <span class="title-icon">${renderIcon('mdi:lightning-bolt')}</span>
         ${this.title}
-        <span class="version">V2</span>
         ${this.time ? html`<span class="time">${this.time}</span>` : null}
       </h1>
-      
+
       <div class="spacer"></div>
-      
-      ${this.showStatus ? html`
-        <div class="status-badge ${statusClass}" @click=${this.onStatusClick}>
-          ${this.alertCount > 0 ? html`
-            <span class="status-count">${this.alertCount}</span>
-          ` : null}
-          <span>${this.alertCount > 0 ? 'Výstrahy' : 'OK'}</span>
-        </div>
-      ` : null}
-      
+
+      ${this.showStatus ? (
+        this.weatherAvailable ? html`
+          <button class="weather-badge ${this.alertCount > 0 ? 'has-warn' : ''}"
+            @click=${this.onStatusClick} title="Počasí a výstrahy">
+            <span class="wb-icon">${renderIcon(weatherConditionIcon(this.weatherCondition))}</span>
+            <span class="wb-temp">${this.weatherTemp != null ? `${Math.round(this.weatherTemp)} °C` : '—'}</span>
+            ${this.alertCount > 0 ? html`
+              <span class="wb-warn">${renderIcon('mdi:alert-circle')} ${this.alertCount}</span>
+            ` : null}
+          </button>
+        ` : html`
+          <div class="status-badge ${statusClass}" @click=${this.onStatusClick}>
+            ${this.alertCount > 0 ? html`<span class="status-count">${this.alertCount}</span>` : null}
+            <span>${this.alertCount > 0 ? 'Výstrahy' : 'OK'}</span>
+          </div>
+        `
+      ) : null}
+
        <div class="actions">
-         <button class="action-btn ${this.leftPanelCollapsed ? 'active' : ''}" @click=${this.onToggleLeftPanel} title="Přepnout levý panel">
-           ◀️
+         <button class="action-btn" @click=${this.onEditClick} title="Upravit rozložení dlaždic">
+           ${renderIcon('mdi:pencil')}
          </button>
-         <button class="action-btn ${this.rightPanelCollapsed ? 'active' : ''}" @click=${this.onToggleRightPanel} title="Přepnout pravý panel">
-           ▶️
-         </button>
-         <button class="action-btn" @click=${this.onEditClick} title="Upravit layout">
-           ✏️
-         </button>
-         <button class="action-btn" @click=${this.onResetClick} title="Reset layout">
-           ↺
+         <button class="action-btn" @click=${this.onResetClick} title="Obnovit rozložení">
+           ${renderIcon('mdi:refresh')}
          </button>
        </div>
     `;

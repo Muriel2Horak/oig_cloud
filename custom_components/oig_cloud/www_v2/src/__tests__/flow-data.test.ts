@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseBalancingState, buildGridChargingPlan, extractFlowData, getGridExportDisplay } from '@/data/flow-data';
 
+const TEST_SN = '2206237016';
+
 describe('Flow data extraction helpers', () => {
   it('maps balancing states to V1-compatible indicators', () => {
     expect(parseBalancingState('charging')).toBe('charging');
@@ -60,22 +62,67 @@ describe('Flow data extraction helpers', () => {
       'sensor.oig_2206237016_actual_aco_p': { state: '790' },
       'sensor.oig_2206237016_actual_aci_wtotal': { state: '29' },
       'sensor.oig_2206237016_batt_bat_c': { state: '64' },
-    });
+    }, TEST_SN);
 
     expect(data.housePower).toBe(790);
     expect(data.gridPower).toBe(29);
     expect(data.batterySoC).toBe(64);
   });
+
+  it('reads solar forecast today/tomorrow from the same daily-kWh source', () => {
+    const data = extractFlowData({
+      [`sensor.oig_${TEST_SN}_solar_forecast`]: {
+        state: '10.6',
+        attributes: {
+          today_total_kwh: 10.6,
+          tomorrow_total_kwh: 12.3,
+          // Summed-hourly values differ and must NOT be preferred over *_total_kwh
+          today_total_sum_kw: 9.1,
+          tomorrow_total_sum_kw: 0.0,
+        },
+      },
+    }, TEST_SN);
+
+    expect(data.solarForecastToday).toBe(10.6);
+    expect(data.solarForecastTomorrow).toBe(12.3);
+    expect(data.solarForecastStale).toBe(false);
+  });
+
+  it('treats a legitimate zero forecast as a value, not a missing attribute', () => {
+    const data = extractFlowData({
+      [`sensor.oig_${TEST_SN}_solar_forecast`]: {
+        state: '0',
+        attributes: { today_total_kwh: 0, tomorrow_total_kwh: 0, today_total_sum_kw: 5 },
+      },
+    }, TEST_SN);
+
+    // 0 from today_total_kwh must win — no fallthrough to today_total_sum_kw (5)
+    expect(data.solarForecastToday).toBe(0);
+    expect(data.solarForecastTomorrow).toBe(0);
+  });
+
+  it('falls back to summed-hourly kW when daily kWh is absent and flags staleness', () => {
+    const data = extractFlowData({
+      [`sensor.oig_${TEST_SN}_solar_forecast`]: {
+        state: '8.0',
+        attributes: { today_total_sum_kw: 8.0, tomorrow_total_sum_kw: 7.0, forecast_stale: true },
+      },
+    }, TEST_SN);
+
+    expect(data.solarForecastToday).toBe(8.0);
+    expect(data.solarForecastTomorrow).toBe(7.0);
+    expect(data.solarForecastStale).toBe(true);
+  });
 });
 
 describe('Grid delivery derivation from canonical model', () => {
-  const BASE_SENSOR = 'sensor.oig_2206237016_';
+  const BASE_SENSOR = `sensor.oig_${TEST_SN}_`;
 
   it('derives grid delivery OFF from raw sensor value', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Vypnuto' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('off');
     expect(data.inverterGridLimit).toBe(0);
@@ -85,7 +132,7 @@ describe('Grid delivery derivation from canonical model', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Zapnuto' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '10000' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('on');
     expect(data.inverterGridLimit).toBe(10000);
@@ -95,7 +142,7 @@ describe('Grid delivery derivation from canonical model', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Omezeno' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '5400' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('limited');
     expect(data.inverterGridLimit).toBe(5400);
@@ -105,7 +152,7 @@ describe('Grid delivery derivation from canonical model', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'unavailable' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('unknown');
   });
@@ -114,7 +161,7 @@ describe('Grid delivery derivation from canonical model', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'unknown' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('unknown');
   });
@@ -123,7 +170,7 @@ describe('Grid delivery derivation from canonical model', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid']: { state: '' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('unknown');
   });
@@ -132,7 +179,7 @@ describe('Grid delivery derivation from canonical model', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Probíhá změna' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '5400' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('unknown');
   });
@@ -141,7 +188,7 @@ describe('Grid delivery derivation from canonical model', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'unavailable' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '5400' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('unknown');
     expect(data.inverterGridLimit).toBe(0);
@@ -149,13 +196,13 @@ describe('Grid delivery derivation from canonical model', () => {
 });
 
 describe('Suffix-safe grid delivery resolution', () => {
-  const BASE_SENSOR = 'sensor.oig_2206237016_';
+  const BASE_SENSOR = `sensor.oig_${TEST_SN}_`;
 
   it('uses exact match when sensor exists', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid']: { state: 'Zapnuto' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '10000' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('on');
     expect(data.inverterGridLimit).toBe(10000);
@@ -165,7 +212,7 @@ describe('Suffix-safe grid delivery resolution', () => {
     const data = extractFlowData({
       [BASE_SENSOR + 'invertor_prms_to_grid_2']: { state: 'Omezeno' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid_2']: { state: '3000' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('limited');
     expect(data.inverterGridLimit).toBe(3000);
@@ -177,7 +224,7 @@ describe('Suffix-safe grid delivery resolution', () => {
       [BASE_SENSOR + 'invertor_prms_to_grid_3']: { state: 'Vypnuto' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid_2']: { state: '8000' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid_3']: { state: '5000' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('on');
     expect(data.inverterGridLimit).toBe(8000);
@@ -189,7 +236,7 @@ describe('Suffix-safe grid delivery resolution', () => {
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid']: { state: '0' },
       [BASE_SENSOR + 'invertor_prms_to_grid_5']: { state: 'Zapnuto' },
       [BASE_SENSOR + 'invertor_prm1_p_max_feed_grid_5']: { state: '10000' },
-    });
+    }, TEST_SN);
 
     expect(data.inverterGridMode).toBe('off');
     expect(data.inverterGridLimit).toBe(0);

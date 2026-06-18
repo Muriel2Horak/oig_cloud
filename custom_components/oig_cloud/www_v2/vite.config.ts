@@ -1,10 +1,27 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
+// Unique per build — appended as ?v= to the entry asset refs in index.html so
+// the mobile app / browser webview can't serve a stale cached index.js after a
+// deploy (filenames are intentionally NOT content-hashed; see output config).
+const BUILD_ID = Date.now().toString(36);
+
 export default defineConfig({
   root: '.',
   base: '/oig_cloud_static_v2/',
-  
+
+  plugins: [
+    {
+      name: 'oig-cache-bust',
+      transformIndexHtml(html: string) {
+        return html.replace(
+          /(\/oig_cloud_static_v2\/assets\/[\w.-]+\.(?:js|css))/g,
+          `$1?v=${BUILD_ID}`,
+        );
+      },
+    },
+  ],
+
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src')

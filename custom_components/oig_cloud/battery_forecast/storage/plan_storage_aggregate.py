@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 from homeassistant.util import dt as dt_util
 
-from .plan_storage_io import load_plan_from_storage
+from .plan_storage_io import get_plans_store_lock, load_plan_from_storage
 from ..utils_common import safe_nested_get
 
 DATE_FMT = "%Y-%m-%d"
@@ -74,35 +74,41 @@ async def aggregate_daily(sensor: Any, date_str: str) -> bool:
             }
         }
 
-        data = await sensor._plans_store.async_load() or {}
-        if "daily" not in data:
-            data["daily"] = {}
+        # M7: hold the store lock across the whole load->mutate->save sequence.
+        async with get_plans_store_lock(sensor):
+            data = await sensor._plans_store.async_load() or {}
+            if "daily" not in data:
+                data["daily"] = {}
 
-        data["daily"][date_str] = daily_aggregate
-        await sensor._plans_store.async_save(data)
-
-        _LOGGER.info(
-            "Daily aggregate saved for %s: cost=%.2f CZK, solar=%.2f kWh, consumption=%.2f kWh",
-            date_str,
-            total_cost,
-            total_solar,
-            total_consumption,
-        )
-
-        cutoff_date = (
-            datetime.strptime(date_str, DATE_FMT).date() - timedelta(days=7)
-        ).strftime(DATE_FMT)
-
-        detailed = data.get("detailed", {})
-        dates_to_delete = [d for d in detailed.keys() if d < cutoff_date]
-
-        if dates_to_delete:
-            for old_date in dates_to_delete:
-                del data["detailed"][old_date]
-                _LOGGER.debug("Deleted detailed plan for %s (>7 days old)", old_date)
-
+            data["daily"][date_str] = daily_aggregate
             await sensor._plans_store.async_save(data)
-            _LOGGER.info("Cleaned up %s old detailed plans", len(dates_to_delete))
+
+            _LOGGER.info(
+                "Daily aggregate saved for %s: cost=%.2f CZK, solar=%.2f kWh, consumption=%.2f kWh",
+                date_str,
+                total_cost,
+                total_solar,
+                total_consumption,
+            )
+
+            cutoff_date = (
+                datetime.strptime(date_str, DATE_FMT).date() - timedelta(days=7)
+            ).strftime(DATE_FMT)
+
+            detailed = data.get("detailed", {})
+            dates_to_delete = [d for d in detailed.keys() if d < cutoff_date]
+
+            if dates_to_delete:
+                for old_date in dates_to_delete:
+                    del data["detailed"][old_date]
+                    _LOGGER.debug(
+                        "Deleted detailed plan for %s (>7 days old)", old_date
+                    )
+
+                await sensor._plans_store.async_save(data)
+                _LOGGER.info(
+                    "Cleaned up %s old detailed plans", len(dates_to_delete)
+                )
 
         return True
 
@@ -136,43 +142,45 @@ async def aggregate_weekly(
     )
 
     try:
-        data = await sensor._plans_store.async_load() or {}
-        daily_plans = data.get("daily", {})
+        # M7: hold the store lock across the whole load->mutate->save sequence.
+        async with get_plans_store_lock(sensor):
+            data = await sensor._plans_store.async_load() or {}
+            daily_plans = data.get("daily", {})
 
-        week_days = _collect_week_days(daily_plans, start_date, end_date)
+            week_days = _collect_week_days(daily_plans, start_date, end_date)
 
-        if not week_days:
-            _LOGGER.warning(
-                "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
-                + "No daily plans found for %s, skipping aggregation",
-                week_str,
+            if not week_days:
+                _LOGGER.warning(
+                    "[OIG_CLOUD_WARNING][component=planner][corr=na][run=na] "
+                    + "No daily plans found for %s, skipping aggregation",
+                    week_str,
+                )
+                return False
+
+            totals = _sum_weekly_totals(week_days)
+            weekly_aggregate = _build_weekly_aggregate(
+                start_date, end_date, week_days, totals
             )
-            return False
 
-        totals = _sum_weekly_totals(week_days)
-        weekly_aggregate = _build_weekly_aggregate(
-            start_date, end_date, week_days, totals
-        )
+            if "weekly" not in data:
+                data["weekly"] = {}
 
-        if "weekly" not in data:
-            data["weekly"] = {}
-
-        data["weekly"][week_str] = weekly_aggregate
-        await sensor._plans_store.async_save(data)
-
-        _LOGGER.info(
-            "Weekly aggregate saved for %s: cost=%.2f CZK, solar=%.2f kWh, %s days",
-            week_str,
-            totals["total_cost"],
-            totals["total_solar"],
-            len(week_days),
-        )
-
-        daily_to_delete = _cleanup_old_daily(data, end_date)
-        weekly_to_delete = _cleanup_old_weekly(data)
-
-        if daily_to_delete or weekly_to_delete:
+            data["weekly"][week_str] = weekly_aggregate
             await sensor._plans_store.async_save(data)
+
+            _LOGGER.info(
+                "Weekly aggregate saved for %s: cost=%.2f CZK, solar=%.2f kWh, %s days",
+                week_str,
+                totals["total_cost"],
+                totals["total_solar"],
+                len(week_days),
+            )
+
+            daily_to_delete = _cleanup_old_daily(data, end_date)
+            weekly_to_delete = _cleanup_old_weekly(data)
+
+            if daily_to_delete or weekly_to_delete:
+                await sensor._plans_store.async_save(data)
 
         return True
 
@@ -300,44 +308,46 @@ async def backfill_daily_archive_from_storage(sensor: Any) -> None:
         return
 
     try:
-        storage_data = await sensor._plans_store.async_load() or {}
-        detailed_plans = storage_data.get("detailed", {})
+        # M7: hold the store lock across the whole load->mutate->save sequence.
+        async with get_plans_store_lock(sensor):
+            storage_data = await sensor._plans_store.async_load() or {}
+            detailed_plans = storage_data.get("detailed", {})
 
-        if not detailed_plans:
-            _LOGGER.info("No detailed plans in storage - nothing to backfill")
-            return
+            if not detailed_plans:
+                _LOGGER.info("No detailed plans in storage - nothing to backfill")
+                return
 
-        now = dt_util.now()
-        backfilled_count = 0
-        for days_ago in range(1, 8):
-            date_str = (now.date() - timedelta(days=days_ago)).strftime(DATE_FMT)
+            now = dt_util.now()
+            backfilled_count = 0
+            for days_ago in range(1, 8):
+                date_str = (now.date() - timedelta(days=days_ago)).strftime(DATE_FMT)
 
-            if date_str in sensor._daily_plans_archive:
-                continue
+                if date_str in sensor._daily_plans_archive:
+                    continue
 
-            if date_str in detailed_plans:
-                plan_data = detailed_plans[date_str]
-                intervals = plan_data.get("intervals", [])
-                sensor._daily_plans_archive[date_str] = {
-                    "date": date_str,
-                    "plan": intervals,
-                    "actual": intervals,
-                    "created_at": plan_data.get("created_at"),
-                }
-                backfilled_count += 1
-                _LOGGER.debug(
-                    "Backfilled archive for %s from storage (%s intervals)",
-                    date_str,
-                    len(intervals),
-                )
+                if date_str in detailed_plans:
+                    plan_data = detailed_plans[date_str]
+                    intervals = plan_data.get("intervals", [])
+                    sensor._daily_plans_archive[date_str] = {
+                        "date": date_str,
+                        "plan": intervals,
+                        "actual": intervals,
+                        "created_at": plan_data.get("created_at"),
+                    }
+                    backfilled_count += 1
+                    _LOGGER.debug(
+                        "Backfilled archive for %s from storage (%s intervals)",
+                        date_str,
+                        len(intervals),
+                    )
 
-        if backfilled_count > 0:
-            _LOGGER.info("Backfilled %s days into archive", backfilled_count)
-            storage_data["daily_archive"] = sensor._daily_plans_archive
-            await sensor._plans_store.async_save(storage_data)
-            _LOGGER.info("Saved backfilled archive to storage")
-        else:
-            _LOGGER.debug("No days needed backfilling")
+            if backfilled_count > 0:
+                _LOGGER.info("Backfilled %s days into archive", backfilled_count)
+                storage_data["daily_archive"] = sensor._daily_plans_archive
+                await sensor._plans_store.async_save(storage_data)
+                _LOGGER.info("Saved backfilled archive to storage")
+            else:
+                _LOGGER.debug("No days needed backfilling")
 
     except Exception as err:
         _LOGGER.error(

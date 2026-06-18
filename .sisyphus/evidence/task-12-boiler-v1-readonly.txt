@@ -1,0 +1,29 @@
+=== Task 12 (fix): V1 Boiler Read-Only Evidence ===
+Generated: Sun Apr 26 03:13:34 UTC 2026
+
+--- 1. boiler.js: no bare showNotification in guards ---
+ASSERT: no bare showNotification(... in plan/apply/cancel guard bodies
+  PASS: no bare showNotification in guards
+
+ASSERT: all three guards use globalThis.DashboardUtils?.showNotification
+  Count: 3
+  PASS: exactly 3 globalThis.DashboardUtils?.showNotification calls
+
+--- 2. boiler.js: no service calls in guards ---
+  PASS: no callService in planBoilerHeating
+  PASS: no callService in applyBoilerPlan
+  PASS: no callService in cancelBoilerPlan
+
+--- 3. DASHBOARD.md: no uncaveated Intelligent/Manual boiler mode list ---
+  PASS: old uncaveated CBB line removed
+  PASS: old uncaveated Manuální line removed
+  PASS: V2/read-only caveat present
+237:### 5. 🌡️ Boiler (volitelné, pouze stav)
+239:Pokud máte připojený bojler, flow diagram zobrazuje aktuální stav (pouze pro čtení):
+255:> v **Dashboard V2**. V1 zobrazuje stav, ale žádné write operace nejsou dostupné.
+
+--- 4. Existing Task 12 assertions still pass ---
+  PASS: planBoilerHeating onclick absent from boiler-tab.html
+  PASS: setBoilerMode onclick absent from dashboard.html
+  PASS: set_boiler_mode callService absent from shield.js
+  PASS: legacy service names absent from boiler.js

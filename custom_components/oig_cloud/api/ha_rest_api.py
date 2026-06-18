@@ -1064,6 +1064,228 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
         )
 
 
+# ============================================================================
+# Module config (dashboard settings wizards)
+# ============================================================================
+
+# Whitelist of options writable from the dashboard, with validation.
+# Field spec keys — "type": bool|float|int|str; "rng": (min, max); "enum": allowed values.
+_MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
+    "modules": {
+        "enable_solar_forecast": {"type": bool},
+        "enable_battery_prediction": {"type": bool},
+        "enable_pricing": {"type": bool},
+        "enable_boiler": {"type": bool},
+        "enable_statistics": {"type": bool},
+        "enable_extended_sensors": {"type": bool},
+        "enable_chmu_warnings": {"type": bool},
+    },
+    "battery": {
+        "auto_mode_switch_enabled": {"type": bool},
+        "charge_rate_kw": {"type": float, "rng": (0.5, 10.0)},
+        "expensive_percentile": {"type": float, "rng": (0.5, 0.95)},
+        "balancing_enabled": {"type": bool},
+        "balancing_interval_days": {"type": int, "rng": (3, 30)},
+        "balancing_hold_hours": {"type": int, "rng": (1, 12)},
+        "balancing_opportunistic_threshold": {"type": float, "rng": (0.5, 5.0)},
+        "balancing_economic_threshold": {"type": float, "rng": (0.5, 10.0)},
+        "cheap_window_percentile": {"type": int, "rng": (5, 80)},
+    },
+    "solar": {
+        "solar_forecast_provider": {"type": str, "enum": ("forecast_solar", "solcast")},
+        "solar_forecast_mode": {
+            "type": str,
+            "enum": ("hourly", "every_4h", "daily_optimized"),
+        },
+        "solar_forecast_api_key": {"type": str},
+        "solcast_api_key": {"type": str},
+        "solcast_site_id": {"type": str},
+        "solar_forecast_latitude": {"type": float, "rng": (-90.0, 90.0)},
+        "solar_forecast_longitude": {"type": float, "rng": (-180.0, 180.0)},
+        "solar_forecast_string1_enabled": {"type": bool},
+        "solar_forecast_string1_declination": {"type": int, "rng": (0, 90)},
+        "solar_forecast_string1_azimuth": {"type": int, "rng": (-180, 180)},
+        "solar_forecast_string1_kwp": {"type": float, "rng": (0.1, 50.0)},
+        "solar_forecast_string2_enabled": {"type": bool},
+        "solar_forecast_string2_declination": {"type": int, "rng": (0, 90)},
+        "solar_forecast_string2_azimuth": {"type": int, "rng": (-180, 180)},
+        "solar_forecast_string2_kwp": {"type": float, "rng": (0.1, 50.0)},
+    },
+    # Task B + F5: boiler section — all configurable boiler parameters
+    "boiler": {
+        "boiler_volume_l": {"type": float, "rng": (30.0, 1000.0)},
+        "boiler_temp_sensor_top": {"type": str},
+        "boiler_temp_sensor_bottom": {"type": str},
+        "boiler_enable_second_thermometer": {"type": bool},
+        "boiler_current_power_entity": {"type": str},
+        "boiler_alt_energy_sensor": {"type": str},
+        "boiler_alt_energy_daily": {"type": bool},
+        "boiler_alt_cost_kwh": {"type": float, "rng": (0.0, 20.0)},
+        "boiler_has_alternative_heating": {"type": bool},
+        "boiler_target_temp_c": {"type": float, "rng": (40.0, 85.0)},
+        "boiler_deadline_time": {"type": str},
+        # R1/R8: alt source type (gas|heat_pump|fireplace|other)
+        "boiler_alt_source_type": {
+            "type": str,
+            "enum": ("gas", "heat_pump", "fireplace", "other"),
+        },
+        # F5: configurable battery cycle cost for Home 5 arbitrage
+        "boiler_battery_cycle_cost_czk_kwh": {"type": float, "rng": (0.0, 5.0), "default": 0.50},
+        # Phase B: thermal arbitrage (over-heat on cheap grid below alt cost)
+        "boiler_thermal_arbitrage_enabled": {"type": bool},
+        "boiler_max_temp_c": {"type": float, "rng": (40.0, 85.0), "default": 65.0},
+        "boiler_alt_power_kw": {"type": float, "rng": (0.0, 50.0), "default": 0.0},
+        # R3/R7: Home 5/6 capability + boiler opt-in
+        "box_has_home56": {"type": bool},
+        "boiler_home5_maneuver_enabled": {"type": bool},
+        # R5: circulation scheduling
+        "boiler_circulation_enabled": {"type": bool},
+        "boiler_circulation_lead_minutes": {"type": int, "rng": (0, 120)},
+        "boiler_circulation_run_minutes": {"type": int, "rng": (1, 60)},
+        "boiler_circulation_max_runs_per_day": {"type": int, "rng": (1, 20)},
+        "boiler_circulation_min_gap_minutes": {"type": int, "rng": (10, 480)},
+        # R9: anti-legionella
+        "boiler_legionella_interval_days": {"type": int, "rng": (0, 30)},
+        "boiler_legionella_target_temp_c": {"type": float, "rng": (60.0, 75.0)},
+    },
+}
+
+# Mirrors kept in sync for legacy readers.
+_MODULE_CONFIG_MIRRORS = {"charge_rate_kw": "home_charge_rate"}
+
+_SECRET_FIELDS = {"solar_forecast_api_key", "solcast_api_key"}
+
+
+def _coerce_module_value(spec: dict[str, Any], value: Any) -> Any:
+    """Validate + coerce one field; raises ValueError on bad input."""
+    typ = spec["type"]
+    if typ is bool:
+        if not isinstance(value, bool):
+            raise ValueError("expected boolean")
+        return value
+    if typ in (int, float):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("expected number")
+        value = typ(value)
+        rng = spec.get("rng")
+        if rng and not (rng[0] <= value <= rng[1]):
+            raise ValueError(f"out of range {rng[0]}..{rng[1]}")
+        return value
+    if typ is str:
+        if not isinstance(value, str):
+            raise ValueError("expected string")
+        enum = spec.get("enum")
+        if enum and value not in enum:
+            raise ValueError(f"expected one of {enum}")
+        return value[:200]
+    raise ValueError("unsupported type")
+
+
+class OIGCloudModuleConfigView(HomeAssistantView):
+    """Read/update per-module options from the dashboard settings UI.
+
+    GET  -> current values of all whitelisted fields, grouped by section
+            (secrets masked to a boolean *_set flag).
+    POST -> {"section": "battery", "values": {...}} — validates against the
+            whitelist and updates the config entry (admin only); the entry's
+            update listener applies/reloads as needed.
+    """
+
+    url = f"{API_BASE}/{{box_id}}/module_config"
+    name = "api:oig_cloud:module_config"
+    requires_auth = True
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        opts = dict(entry.options)
+        out: dict[str, Any] = {}
+        for section, fields in _MODULE_CONFIG_FIELDS.items():
+            sec: dict[str, Any] = {}
+            for key, spec in fields.items():
+                if key in _SECRET_FIELDS:
+                    sec[f"{key}_set"] = bool(opts.get(key))
+                    continue
+                default: Any = spec.get("default", (
+                    False if spec["type"] is bool else (
+                        "" if spec["type"] is str else None
+                    )
+                ))
+                sec[key] = opts.get(key, default)
+            out[section] = sec
+        return web.json_response(out)
+
+    async def post(self, request: web.Request, box_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        # Fail CLOSED: module_config is the most sensitive write surface
+        # (API keys, GPS, entities, planner/boiler params + reload).
+        user = request.get("hass_user") or request.app.get("hass_user")
+        if not user or not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+
+        section = payload.get("section") if isinstance(payload, dict) else None
+        values = payload.get("values") if isinstance(payload, dict) else None
+        fields = _MODULE_CONFIG_FIELDS.get(section or "")
+        if not fields or not isinstance(values, dict):
+            return web.json_response(
+                {"error": "Expected {section, values} with a known section"},
+                status=400,
+            )
+
+        updates: dict[str, Any] = {}
+        errors: dict[str, str] = {}
+        for key, value in values.items():
+            spec = fields.get(key)
+            if spec is None:
+                errors[key] = "unknown field"
+                continue
+            # Empty secret = keep current value
+            if key in _SECRET_FIELDS and value == "":
+                continue
+            try:
+                updates[key] = _coerce_module_value(spec, value)
+            except ValueError as err:
+                errors[key] = str(err)
+
+        if errors:
+            return web.json_response({"error": "validation", "fields": errors}, status=400)
+        if not updates:
+            return web.json_response({"updated": False})
+
+        new_options = dict(entry.options)
+        new_options.update(updates)
+        for src, dst in _MODULE_CONFIG_MIRRORS.items():
+            if src in updates:
+                new_options[dst] = updates[src]
+
+        # Boiler runtime snapshots its config at entry setup (unlike battery,
+        # which reads options each cycle) — request a full entry reload so the
+        # new sensors/volume take effect immediately.
+        if section == "boiler":
+            new_options["_needs_reload"] = True
+
+        hass.config_entries.async_update_entry(entry, options=new_options)
+        _LOGGER.info(
+            "Module config updated for %s (%s): %s",
+            box_id,
+            section,
+            {k: ("***" if k in _SECRET_FIELDS else v) for k, v in updates.items()},
+        )
+        return web.json_response({"updated": True, "keys": sorted(updates)})
+
+
 class OIGCloudDashboardModulesView(HomeAssistantView):
     """API endpoint to read enabled dashboard modules for an entry."""
 
@@ -1102,6 +1324,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudDetailTabsView())
     hass.http.register_view(OIGCloudPlannerSettingsView())
     hass.http.register_view(OIGCloudDashboardModulesView())
+    hass.http.register_view(OIGCloudModuleConfigView())
     hass.http.register_view(OIGCloudSpotPricesView())
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())

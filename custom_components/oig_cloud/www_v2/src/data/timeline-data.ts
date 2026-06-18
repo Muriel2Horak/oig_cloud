@@ -68,6 +68,10 @@ export interface DaySummary {
   actualTotalCost?: number;
   planTotalCost?: number;
   vsPlanPct?: number;
+  /** Fair záloha-only do-nothing comparison (excludes car + battery grid-charge) */
+  backupBaselineCost?: number;
+  backupActualCost?: number;
+  backupSavings?: number;
   eodPrediction?: {
     predictedTotal: number;
     predictedSavings: number;
@@ -179,6 +183,9 @@ function transformSummary(raw: any): DaySummary {
     actualTotalCost: raw?.actual_total_cost,
     planTotalCost: raw?.plan_total_cost,
     vsPlanPct: raw?.vs_plan_pct,
+    backupBaselineCost: raw?.backup_baseline_cost,
+    backupActualCost: raw?.backup_actual_cost,
+    backupSavings: raw?.backup_savings,
     eodPrediction: raw?.eod_prediction ? {
       predictedTotal: raw.eod_prediction.predicted_total ?? 0,
       predictedSavings: raw.eod_prediction.predicted_savings ?? 0,

@@ -1,0 +1,19 @@
+Task 6b evidence: runtime replan triggers and cooldown
+
+RED:
+.venv/bin/python -m pytest tests/test_boiler_task6b_multi_source.py -q
+Result: 7 failed. Runtime tests failed because BoilerRuntime had no async_request_replan trigger orchestrator or PlanResult handoff seam.
+
+GREEN / verification:
+.venv/bin/python -m pytest tests/test_boiler_task6a_planner_core.py tests/test_boiler_task6b_multi_source.py -q
+Result: 18 passed.
+
+Broad boiler regression:
+.venv/bin/python -m pytest tests/test_boiler_task1_routing.py tests/test_boiler_task2_boundary.py tests/test_boiler_task3_topology.py tests/test_boiler_task4_contract.py tests/test_boiler_task5_energy_adapter.py tests/test_boiler_task6a_planner_core.py tests/test_boiler_task6b_multi_source.py tests/test_boiler_precedence.py tests/test_boiler_services.py -q
+Result: 196 passed.
+
+Covered by:
+- test_runtime_replan_accepts_required_triggers_and_hands_off_plan_result
+- test_runtime_replan_coalesces_inside_cooldown_and_forced_bypasses
+
+Observed: slot_boundary, price_update, pv_update, >=0.5 C temperature_update, override_expiry, and restart_restore are accepted; same-box updates inside 60 seconds coalesce with replan_coalesced; override_expiry bypasses cooldown and emits override_expired.

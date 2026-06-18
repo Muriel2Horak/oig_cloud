@@ -1,0 +1,7 @@
+Task 9 entity registry cleanup/stability evidence
+
+Command: pytest tests/test_boiler_task9_migration_repair.py -q
+Result: 8 passed, 7 warnings in 1.27s.
+
+Scenario covered: test_entity_registry_cleanup_preserves_survivors_and_removes_obsolete.
+Observed contract: surviving canonical boiler sensor/switch unique IDs are preserved; obsolete legacy schedule-window entity is removed; other-box boiler entities are untouched.

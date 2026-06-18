@@ -50,10 +50,17 @@ class DummyPlanningSystem:
 
 
 class DummyRequest:
-    def __init__(self, hass, query=None, json_data=None):
+    def __init__(self, hass, query=None, json_data=None, admin=True):
         self.app = {KEY_HASS: hass}
         self.query = query or {}
         self._json_data = json_data or {}
+        # Plan-mutation endpoints require an admin user (review M12).
+        self._user = SimpleNamespace(is_admin=admin) if admin is not None else None
+
+    def get(self, key, default=None):
+        if key == "hass_user":
+            return self._user
+        return default
 
     async def json(self):
         return self._json_data
@@ -292,3 +299,13 @@ def test_setup_planning_api_views():
     hass = SimpleNamespace(http=DummyHTTP())
     planning_api.setup_planning_api_views(hass)
     assert len(hass.http.views) == 6
+
+
+@pytest.mark.asyncio
+async def test_create_plan_requires_admin():
+    """M12: plan-mutation endpoints reject non-admin callers."""
+    system = DummyPlanningSystem()
+    hass = SimpleNamespace(data={"oig_cloud": {"planning_system": system}})
+    request = DummyRequest(hass=hass, json_data={"target_soc_percent": 100, "target_time": "2026-01-01T10:00:00"}, admin=False)
+    response = await planning_api.OIGCloudCreateManualPlanView().post(request, "box")
+    assert response.status == 403

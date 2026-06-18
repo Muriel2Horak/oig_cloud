@@ -267,7 +267,7 @@ async def test_register_static_paths(monkeypatch, tmp_path):
 
     await init_module._register_static_paths(hass)
     assert hass.http.registered
-    assert hass.http.registered[0].url_path == "/oig_cloud_static"
+    assert hass.http.registered[0].url_path == "/oig_cloud_static_v2"
 
 
 @pytest.mark.asyncio

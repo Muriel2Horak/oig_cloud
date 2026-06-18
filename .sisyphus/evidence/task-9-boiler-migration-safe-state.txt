@@ -1,0 +1,7 @@
+Task 9 destructive migration safe-state evidence
+
+Command: pytest tests/test_boiler_task9_migration_repair.py -q
+Result: 8 passed, 7 warnings in 1.27s.
+
+Scenario covered: test_forced_disable_cancels_future_actions_without_switching_outputs.
+Observed contract: in-memory future callbacks are cancelled, persisted schedule is cleared, no switch service calls are emitted, and the existing top heater state remains on.

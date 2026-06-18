@@ -486,11 +486,17 @@ class AdaptiveConsumptionHelper:
     def apply_consumption_boost_to_forecast(
         load_forecast: List[float], ratio: float, hours: int = 3
     ) -> None:
-        """Navýší krátkodobý load forecast podle zjištěné odchylky."""
+        """Upraví krátkodobý load forecast podle zjištěné odchylky reality.
+
+        Symetricky: navýší při nadspotřebě (ratio > 1, cap 3.0×) i sníží při
+        podspotřebě (ratio < 1, podlaha 0.7× = max −30 %), aby nadpredikující
+        profil nevynucoval zbytečné nabíjení. Podstřelit spotřebu je rizikovější
+        než nadstřelit, proto je pokles tlumený podlahou.
+        """
         if not load_forecast:
             return
 
-        capped_ratio = min(ratio, 3.0)
+        capped_ratio = max(0.7, min(ratio, 3.0))
         intervals = min(
             len(load_forecast),
             max(4, int(math.ceil(hours * 4 * min(capped_ratio, 2.5)))),
@@ -499,13 +505,52 @@ class AdaptiveConsumptionHelper:
         for idx in range(intervals):
             load_forecast[idx] = round(load_forecast[idx] * capped_ratio, 4)
 
+        direction = "Boosted" if capped_ratio >= 1.0 else "Reduced"
         _LOGGER.info(
-            "[LoadForecast] Boosted first %d intervals by %.0f%% due to high "
-            "consumption drift (ratio %.2fx, capped %.2fx)",
+            "[LoadForecast] %s first %d intervals by %.0f%% due to consumption "
+            "drift (ratio %.2fx, capped %.2fx)",
+            direction,
             intervals,
             (capped_ratio - 1) * 100,
             ratio,
             capped_ratio,
+        )
+
+    @staticmethod
+    def apply_solar_correction_to_forecast(
+        solar_kwh_list: List[float], ratio: float, hours: int = 3
+    ) -> None:
+        """Krátkodobá korekce solárního forecastu podle reality (same-day).
+
+        Zrcadlo consumption boostu, ale s OPAČNÝM rizikovým profilem: nadhodnotit
+        výrobu je nebezpečnější (vede k podnabití → prolomení podlahy → box začne
+        nekontrolovaně balancovat), proto je nahoru korekce přísně omezená
+        (cap 1.5×) a tlumená, zatímco dolů (zataženo víc než forecast → bezpečné
+        ochranné dobíjení) je volnější (podlaha 0.5×). Aplikuje se jen na nejbližší
+        intervaly, protože „teď je jasno" predikuje další ~hodiny, ne celý den.
+        """
+        if not solar_kwh_list:
+            return
+
+        capped_ratio = max(0.5, min(ratio, 1.5))
+        # Tlumení odchylky (zvlášť nahoru je opatrné — clouds risk).
+        damp = 0.7 if capped_ratio >= 1.0 else 1.0
+        effective = 1.0 + (capped_ratio - 1.0) * damp
+
+        intervals = min(len(solar_kwh_list), max(4, hours * 4))
+        for idx in range(intervals):
+            solar_kwh_list[idx] = round(solar_kwh_list[idx] * effective, 4)
+
+        direction = "Boosted" if effective >= 1.0 else "Reduced"
+        _LOGGER.info(
+            "[SolarForecast] %s first %d intervals by %.0f%% due to solar drift "
+            "(ratio %.2fx → capped %.2fx, effective %.2fx)",
+            direction,
+            intervals,
+            (effective - 1) * 100,
+            ratio,
+            capped_ratio,
+            effective,
         )
 
     @staticmethod

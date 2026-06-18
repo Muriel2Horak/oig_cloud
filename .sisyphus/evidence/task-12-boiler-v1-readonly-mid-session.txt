@@ -1,0 +1,64 @@
+=== Task 12: V1 Boiler Read-Only — Mid-Session Stale Page Evidence ===
+Generated: Sun Apr 26 03:07:15 UTC 2026
+
+This file proves that mid-session stale V1 pages cannot emit boiler service calls.
+
+--- Mechanism 1: setBoilerMode in shield.js is a no-op guard ---
+Even if old DOM with btn-boiler-cbb/btn-boiler-manual is in memory, clicking
+those buttons would call setBoilerMode() which now only logs a warning and
+shows a notification — no callService to oig_cloud.set_boiler_mode is executed.
+
+async function setBoilerMode(mode) {
+    console.warn('[V1 Boiler] setBoilerMode blocked — V1 boiler write controls are read-only. Use Dashboard V2 to control the boiler.');
+    globalThis.DashboardUtils?.showNotification(
+        'Ovládání bojleru',
+        'Změna režimu bojleru je dostupná pouze v Dashboard V2. Tato V1 záložka je pouze pro čtení.',
+        'info'
+    );
+}
+
+
+--- Mechanism 2: planBoilerHeating / applyBoilerPlan / cancelBoilerPlan are no-op guards ---
+Even if old DOM with btn-plan-boiler / btn-apply-boiler / btn-cancel-boiler is in
+memory, clicking those buttons would call these guards — no hass.callService emitted.
+
+async function planBoilerHeating() {
+    console.warn('[V1 Boiler] planBoilerHeating blocked — V1 boiler write controls are read-only. Use Dashboard V2.');
+    showNotification('Plánování bojleru je dostupné pouze v Dashboard V2. Tato V1 záložka je pouze pro čtení.', 'info');
+}
+
+async function applyBoilerPlan() {
+    console.warn('[V1 Boiler] applyBoilerPlan blocked — V1 boiler write controls are read-only. Use Dashboard V2.');
+    showNotification('Aplikace plánu bojleru je dostupná pouze v Dashboard V2. Tato V1 záložka je pouze pro čtení.', 'info');
+}
+
+async function cancelBoilerPlan() {
+    console.warn('[V1 Boiler] cancelBoilerPlan blocked — V1 boiler write controls are read-only. Use Dashboard V2.');
+    showNotification('Zrušení plánu bojleru je dostupné pouze v Dashboard V2. Tato V1 záložka je pouze pro čtení.', 'info');
+}
+
+
+--- Mechanism 3: V1 boiler buttons removed from DOM on fresh load ---
+On fresh page load, dashboard.html no longer renders setBoilerMode onclick buttons.
+boiler-tab.html no longer renders plan/apply/cancel buttons.
+
+dashboard.html boiler-control-section content:
+                    <div class="control-section" id="boiler-control-section">
+                        <h4>Režim bojleru</h4>
+                        <div style="border-left: 2px solid var(--warning-color, #ff9800); padding: 6px 10px; font-size: 12px; line-height: 1.4; background: rgba(255,152,0,0.07); border-radius: 3px;">
+                            📖 <strong>Pouze pro čtení.</strong><br>
+                            Ovládání bojleru je dostupné v <strong>Dashboard V2</strong>.
+                        </div>
+                        <div style="margin-top: 6px; font-size: 12px; color: var(--secondary-text-color, #888);">
+                            Aktuální režim: <span id="boiler-mode-status">--</span>
+                        </div>
+                    </div>
+
+
+boiler-tab.html write actions section (formerly Boiler Actions):
+  PASS: no write action buttons in boiler-tab.html
+
+--- Summary: 3 defense layers ---
+  1. Fresh DOM: write buttons absent from rendered HTML
+  2. Stale DOM: JS functions are no-op guards, no service calls emitted
+  3. Visual: read-only notices shown in both boiler-tab.html and dashboard.html

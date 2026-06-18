@@ -328,3 +328,45 @@ async def test_load_notifications_handles_error(monkeypatch):
     manager = notif_module.OigNotificationManager(SimpleNamespace(), api=SimpleNamespace(), base_url="x")
     loaded = await manager._load_notifications_from_storage()
     assert loaded == []
+
+
+def _bypass_notif(message: str, ts: datetime):
+    return notif_module.OigNotification(
+        id=message,
+        type="warning",
+        message=message,
+        timestamp=ts,
+    )
+
+
+def test_bypass_status_latest_event_by_timestamp_wins():
+    """Newer 'vypnut' must override an older 'zapnut' regardless of list order.
+
+    Regression: the old position-based scan kept an older ON event winning, so
+    bypass only cleared at midnight when the notification window rolled.
+    """
+    older_on = _bypass_notif(
+        "Automatický bypass - zapnut", datetime(2025, 1, 1, 8, 0)
+    )
+    newer_off = _bypass_notif(
+        "Automatický bypass - vypnut", datetime(2025, 1, 1, 10, 0)
+    )
+
+    # Both orderings must resolve to OFF (newer event wins by time).
+    assert notif_module.bypass_status_from_notifications([older_on, newer_off]) is False
+    assert notif_module.bypass_status_from_notifications([newer_off, older_on]) is False
+
+    # And the reverse: a newer ON over an older OFF resolves to ON.
+    older_off = _bypass_notif(
+        "Automatický bypass - vypnut", datetime(2025, 1, 1, 8, 0)
+    )
+    newer_on = _bypass_notif(
+        "Automatický bypass - zapnut", datetime(2025, 1, 1, 10, 0)
+    )
+    assert notif_module.bypass_status_from_notifications([older_off, newer_on]) is True
+
+
+def test_bypass_status_none_when_no_bypass_events():
+    plain = _bypass_notif("Běžná zpráva bez klíčového slova", datetime(2025, 1, 1, 9, 0))
+    assert notif_module.bypass_status_from_notifications([plain]) is None
+    assert notif_module.bypass_status_from_notifications([]) is None

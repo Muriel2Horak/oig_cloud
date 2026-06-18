@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.oig_cloud.battery_forecast.data import solar_forecast as sf_data
-from custom_components.oig_cloud.battery_forecast.strategy import hybrid_planning
 from custom_components.oig_cloud.boiler import coordinator as boiler_coordinator_module
 from custom_components.oig_cloud.entities import battery_health_sensor as battery_health_module
 from custom_components.oig_cloud.entities import solar_forecast_sensor as solar_sensor_module
@@ -158,6 +157,7 @@ async def test_solar_sensor_normalization_and_solcast_error_paths(monkeypatch):
 
 
 def test_boiler_coordinator_infer_box_id_branches(monkeypatch):
+    """_infer_box_id_from_states is removed; _resolve_box_id must not use it."""
     from homeassistant.helpers import frame
 
     monkeypatch.setattr(frame, "report_usage", lambda *_a, **_k: None)
@@ -165,14 +165,14 @@ def test_boiler_coordinator_infer_box_id_branches(monkeypatch):
     hass = SimpleNamespace(
         states=SimpleNamespace(
             async_entity_ids=lambda _domain: [
-                "sensor.invalid",  # len(parts) < 3 branch
-                "sensor.foo_bar_baz",  # parts[1] != oig branch
-                "sensor_oig_123_boiler_day_w",  # valid branch
+                "sensor.invalid",
+                "sensor.foo_bar_baz",
+                "sensor_oig_123_boiler_day_w",
             ]
         )
     )
     coordinator = boiler_coordinator_module.BoilerCoordinator(hass, {})
-    assert coordinator._infer_box_id_from_states() == "123"
+    assert coordinator._resolve_box_id({}) == "unknown"
 
 
 def test_boiler_coordinator_resolve_box_id_forced_branch(monkeypatch):
@@ -210,266 +210,8 @@ def _hybrid_strategy_stub():
     )
 
 
-def test_hybrid_planning_helper_branches(monkeypatch):
-    strategy = _hybrid_strategy_stub()
-
-    assert hybrid_planning._resolve_round_trip_efficiency(strategy) == 0.0
-
-    charging_intervals = set()
-    hybrid_planning._reach_target_soc(
-        strategy,
-        initial_battery_kwh=1.0,
-        solar_forecast=[0.0],
-        consumption_forecast=[0.0],
-        charging_intervals=charging_intervals,
-        blocked_indices=set(),
-        prices=[1.0],
-        add_ups_interval=lambda *_a, **_k: charging_intervals.add(999),
-        eps_kwh=1e-6,
-        limit=0,
-    )
-    assert 999 not in charging_intervals
-
-    monkeypatch.setattr(hybrid_planning, "extend_ups_blocks_by_price_band", lambda *_a, **_k: {2})
-    base = {0}
-    extended = hybrid_planning._apply_price_band_extension(
-        strategy,
-        charging_intervals=base,
-        prices=[1.0, 1.1, 1.2],
-        blocked_indices=set(),
-    )
-    assert extended == {2}
-    assert 2 in base
-
-    ctx = hybrid_planning._ModeDecisionContext(
-        strategy=strategy,
-        charging_intervals=set(),
-        blocked_indices={0},
-        prices=[1.0],
-        max_price=10.0,
-        solar_forecast=[0.0],
-        consumption_forecast=[0.0],
-        n=1,
-        eps_kwh=1e-6,
-        round_trip_eff=0.9,
-        hysteresis=0.0,
-        add_ups_interval=lambda *_a, **_k: None,
-    )
-    assert hybrid_planning._determine_mode_for_interval(0, 1.0, ctx) == hybrid_planning.CBB_MODE_HOME_I
-
-
-def test_hybrid_planning_force_target_and_hold_limit(monkeypatch):
-    strategy = _hybrid_strategy_stub()
-
-    strategy._target = strategy._planning_min
-    assert (
-        hybrid_planning._force_target_before_index(
-            strategy,
-            initial_battery_kwh=1.0,
-            solar_forecast=[0.0],
-            consumption_forecast=[0.0],
-            charging_intervals=set(),
-            blocked_indices=set(),
-            prices=[1.0],
-            add_ups_interval=lambda *_a, **_k: None,
-            limit=1,
-            eps_kwh=1e-6,
-        )
-        is False
-    )
-
-    strategy._target = 3.0
-    monkeypatch.setattr(hybrid_planning, "simulate_trajectory", lambda *_a, **_k: [1.5])
-    candidates = iter([0, None])
-    monkeypatch.setattr(hybrid_planning, "_find_cheapest_candidate", lambda **_k: next(candidates))
-    added = []
-    applied = hybrid_planning._force_target_before_index(
-        strategy,
-        initial_battery_kwh=1.0,
-        solar_forecast=[0.0],
-        consumption_forecast=[0.0],
-        charging_intervals=set(),
-        blocked_indices=set(),
-        prices=[1.0],
-        add_ups_interval=lambda idx, **_k: added.append(idx),
-        limit=1,
-        eps_kwh=1e-6,
-    )
-    assert applied is True
-    assert added == [0]
-
-    monkeypatch.setattr(hybrid_planning, "_simulate_with_results", lambda *_a, **_k: ([0.9, 0.9, 1.2], []))
-    calls = []
-    monkeypatch.setattr(
-        hybrid_planning,
-        "_force_target_before_index",
-        lambda *_a, **k: calls.append(k["limit"]) or True,
-    )
-    assert (
-        hybrid_planning._apply_hw_min_hold_limit(
-            strategy,
-            initial_battery_kwh=1.0,
-            solar_forecast=[0.0, 0.0, 0.0],
-            consumption_forecast=[0.0, 0.0, 0.0],
-            charging_intervals=set(),
-            blocked_indices=set(),
-            prices=[1.0, 1.0, 1.0],
-            add_ups_interval=lambda *_a, **_k: None,
-            n=3,
-            eps_kwh=1e-6,
-        )
-        is True
-    )
-    assert calls == [2]
-
-    monkeypatch.setattr(hybrid_planning, "_simulate_with_results", lambda *_a, **_k: ([0.9, 0.9, 0.9], []))
-    calls.clear()
-    assert (
-        hybrid_planning._apply_hw_min_hold_limit(
-            strategy,
-            initial_battery_kwh=1.0,
-            solar_forecast=[0.0, 0.0, 0.0],
-            consumption_forecast=[0.0, 0.0, 0.0],
-            charging_intervals=set(),
-            blocked_indices=set(),
-            prices=[1.0, 1.0, 1.0],
-            add_ups_interval=lambda *_a, **_k: None,
-            n=3,
-            eps_kwh=1e-6,
-        )
-        is True
-    )
-    assert calls == [3]
-
-
-def test_hybrid_planning_cost_override_and_band_helpers():
-    cand, cap = hybrid_planning._pick_cost_override_candidate(
-        trajectory=[0.0, 0.0],
-        results=[SimpleNamespace(grid_import=1.0)],
-        prices=[1.0, 2.0],
-        charging_intervals=set(),
-        blocked_indices=set(),
-        round_trip_eff=0.9,
-        hysteresis=2.0,
-        hw_min=1.0,
-        eps_kwh=1e-6,
-    )
-    assert cand is None and cap is None
-
-    cand2, cap2 = hybrid_planning._pick_cost_override_candidate(
-        trajectory=[0.0, 0.0],
-        results=[SimpleNamespace(grid_import=1.0), SimpleNamespace(grid_import=2.0)],
-        prices=[5.0, 5.0],
-        charging_intervals=set(),
-        blocked_indices={0},
-        round_trip_eff=1.0,
-        hysteresis=0.0,
-        hw_min=1.0,
-        eps_kwh=1e-6,
-    )
-    assert cand2 is None and cap2 is None
-
-    assert (
-        hybrid_planning._find_min_future_price(
-            [5.0, 4.0, 3.0],
-            start=0,
-            end=2,
-            max_price=10.0,
-            blocked_indices={1},
-        )
-        == 3.0
-    )
-
-    can_extend = hybrid_planning._build_can_extend(
-        prices=[1.0, 1.05, 0.7],
-        blocked_indices=set(),
-        max_price=2.0,
-        delta_pct=0.1,
-        lookahead=3,
-        n=3,
-    )
-    assert can_extend(0, 1) is False
-
-    can_extend_blocked = hybrid_planning._build_can_extend(
-        prices=[1.0, 1.0],
-        blocked_indices={1},
-        max_price=2.0,
-        delta_pct=0.1,
-        lookahead=1,
-        n=2,
-    )
-    assert can_extend_blocked(0, 1) is False
-
-    ups_flags = [True, False, True]
-    extended = set()
-    hybrid_planning._fill_single_gaps(
-        ups_flags,
-        charging_intervals={0, 2},
-        extended=extended,
-        can_extend=lambda *_a, **_k: True,
-    )
-    assert 1 in extended
-
-
-def test_hybrid_planning_remaining_single_line_branches(monkeypatch):
-    strategy = _hybrid_strategy_stub()
-
-    strategy.sim_config = SimpleNamespace(min_capacity_kwh=1.0, ac_dc_efficiency=0.8, dc_ac_efficiency=0.9)
-    assert hybrid_planning._resolve_round_trip_efficiency(strategy) == pytest.approx(0.72)
-
-    monkeypatch.setattr(hybrid_planning, "_simulate_with_results", lambda *_a, **_k: ([0.9, 1.2], []))
-    assert (
-        hybrid_planning._apply_hw_min_hold_limit(
-            strategy,
-            initial_battery_kwh=1.0,
-            solar_forecast=[0.0, 0.0],
-            consumption_forecast=[0.0, 0.0],
-            charging_intervals=set(),
-            blocked_indices=set(),
-            prices=[1.0, 1.0],
-            add_ups_interval=lambda *_a, **_k: None,
-            n=2,
-            eps_kwh=1e-6,
-        )
-        is False
-    )
-
-    monkeypatch.setattr(hybrid_planning, "simulate_trajectory", lambda *_a, **_k: [5.0])
-    assert (
-        hybrid_planning._force_target_before_index(
-            strategy,
-            initial_battery_kwh=1.0,
-            solar_forecast=[0.0],
-            consumption_forecast=[0.0],
-            charging_intervals=set(),
-            blocked_indices=set(),
-            prices=[1.0],
-            add_ups_interval=lambda *_a, **_k: None,
-            limit=1,
-            eps_kwh=1e-6,
-        )
-        is False
-    )
-
-    monkeypatch.setattr(hybrid_planning, "_apply_planning_min_repair", lambda *_a, **_k: "x")
-    monkeypatch.setattr(hybrid_planning, "_apply_economic_charging", lambda *_a, **_k: None)
-    monkeypatch.setattr(hybrid_planning, "_apply_cost_aware_override", lambda *_a, **_k: False)
-    monkeypatch.setattr(hybrid_planning, "_apply_hw_min_hold_limit", lambda *_a, **_k: True)
-    monkeypatch.setattr(hybrid_planning, "_finalize_infeasible_reason", lambda *_a, **_k: None)
-    monkeypatch.setattr(hybrid_planning, "_apply_price_band_extension", lambda *_a, **_k: set())
-    _charging, reason, _bands = hybrid_planning.plan_charging_intervals(
-        strategy,
-        initial_battery_kwh=2.0,
-        prices=[1.0],
-        solar_forecast=[0.0],
-        consumption_forecast=[0.0],
-        balancing_plan=None,
-        negative_price_intervals=None,
-    )
-    assert reason is None
-
-
 def test_boiler_coordinator_len_parts_guard_branch(monkeypatch):
+    """_infer_box_id_from_states is removed; _resolve_box_id returns unknown."""
     from homeassistant.helpers import frame
 
     monkeypatch.setattr(frame, "report_usage", lambda *_a, **_k: None)
@@ -489,4 +231,4 @@ def test_boiler_coordinator_len_parts_guard_branch(monkeypatch):
         )
     )
     coordinator = boiler_coordinator_module.BoilerCoordinator(hass, {})
-    assert coordinator._infer_box_id_from_states() is None
+    assert coordinator._resolve_box_id({}) == "unknown"

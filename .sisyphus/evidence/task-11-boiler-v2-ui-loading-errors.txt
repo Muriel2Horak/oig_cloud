@@ -1,0 +1,15 @@
+TASK 11 — Loading & Error States
+==================================
+Date: 2026-04-26
+
+Loading state:
+- boilerLoading=true → spinner overlay shown (existing behavior preserved)
+- boilerV2Data?.status null → OigBoilerUnavailableState reason="loading"
+
+Error state:
+- mapCanonicalToV2(null) → loadError set, identity.available=false
+- OigBoilerOverridePanel with identity.available=false → input/button disabled, "Nedostupné" notice shown
+
+TTL constraints enforced in template (literal values in static strings for testability):
+- min="15", max="1440", step="15"
+- Default TTL: OVERRIDE_TTL_DEFAULT_MINUTES=120 (exported from boiler-data.ts)

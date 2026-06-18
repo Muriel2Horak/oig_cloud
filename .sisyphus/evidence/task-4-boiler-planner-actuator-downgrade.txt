@@ -1,0 +1,33 @@
+Task 4 Evidence: Unsupported Actuator Downgrade
+================================================
+Date: 2026-04-25
+
+Function: resolve_alt_source_capability(has_alternative, actuator_model, supported_models)
+
+Downgrade rules:
+- has_alternative=False → DISABLED
+- has_alternative=True, actuator_model=None → BENCHMARK_ONLY
+- has_alternative=True, actuator_model not in supported_models → BENCHMARK_ONLY
+- has_alternative=True, actuator_model in supported_models → CONTROLLABLE
+- supported_models=None (default) → treated as empty set → BENCHMARK_ONLY
+
+Deterministic behavior:
+- Unsupported models NEVER exposed as CONTROLLABLE
+- Default state for unknown/unconfigured actuators is BENCHMARK_ONLY
+
+Tests:
+- test_no_alternative_returns_disabled PASSED
+- test_no_model_returns_benchmark_only PASSED
+- test_unsupported_model_returns_benchmark_only PASSED
+- test_supported_model_returns_controllable PASSED
+- test_empty_supported_models_downgrades_everything PASSED
+- test_default_supported_models_downgrades PASSED
+
+Runtime integration:
+- BoilerRuntime.async_create_plan calls resolve_alt_source_capability()
+- Currently passes actuator_model=None and supported_models=set()
+- This downgrades all alternative sources to BENCHMARK_ONLY until Task 5+ defines supported model registry
+
+Identity propagation:
+- BoilerRuntime.async_create_plan populates PlannerInput(entry_id=self.entry_id, box_id=self.box_id, ...)
+- Canonical identity from Task 1 is now propagated into planner inputs by contract

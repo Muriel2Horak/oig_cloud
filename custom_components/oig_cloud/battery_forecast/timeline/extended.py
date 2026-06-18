@@ -167,6 +167,9 @@ async def _build_historical_actual_data(
             "grid_import_kwh": historical_metrics.get("grid_import", 0),
             "grid_export_kwh": historical_metrics.get("grid_export", 0),
             "net_cost": historical_metrics.get("net_cost", 0),
+            "backup_net_cost": historical_metrics.get("backup_net_cost"),
+            "backup_grid_import_kwh": historical_metrics.get("backup_grid_import_kwh"),
+            "nonbackup_kwh": historical_metrics.get("nonbackup_kwh"),
             "savings": 0,
         }
     return {
@@ -509,6 +512,9 @@ async def _build_actual_data(
             "grid_import_kwh": historical_metrics.get("grid_import", 0),
             "grid_export_kwh": historical_metrics.get("grid_export", 0),
             "net_cost": historical_metrics.get("net_cost", 0),
+            "backup_net_cost": historical_metrics.get("backup_net_cost"),
+            "backup_grid_import_kwh": historical_metrics.get("backup_grid_import_kwh"),
+            "nonbackup_kwh": historical_metrics.get("nonbackup_kwh"),
             "savings": 0,
         }
     return {

@@ -490,7 +490,7 @@ mode: "Home 1"  # Ne "eco" nebo "ECO"
 mode: "On"   # Ne "on" nebo "ON"
 
 # set_boiler_mode
-mode: "CBB"  # Ne "cbb" nebo "Cbb"
+mode: "CBB"  # Ne "cbb" nebo "Cbb" — legacy služba; pro ovládání použijte Dashboard V2
 ```
 
 **Povolené hodnoty:**
@@ -503,7 +503,7 @@ set_grid_delivery:
   mode: ["On", "Off", "Limited"]
 
 set_boiler_mode:
-  mode: ["CBB", "Manual"]
+  mode: ["CBB", "Manual"]  # legacy — primární rozhraní je Dashboard V2
 ```
 
 ### ❌ Služba selže s "API error"

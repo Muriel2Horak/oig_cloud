@@ -17,8 +17,10 @@ Date: 2025-11-02
 
 from __future__ import annotations
 
+import importlib
 import logging
 from datetime import datetime
+from typing import Any
 
 from aiohttp import web
 from homeassistant.core import HomeAssistant
@@ -26,10 +28,29 @@ from homeassistant.helpers.http import KEY_HASS, HomeAssistantView
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _admin_or_403(request: web.Request) -> web.Response | None:
+    """Return a 403 response unless the caller is an authenticated admin.
+
+    Plan mutation (create/activate/deactivate) drives the inverter working mode
+    and grid cost, so it must be admin-gated like planner_settings/module_config.
+    """
+    user = request.get("hass_user")
+    if not user or not getattr(user, "is_admin", False):
+        return web.json_response({"error": "Admin only"}, status=403)
+    return None
+
+
 PLANNING_SYSTEM_NOT_INITIALIZED = "Planning system not initialized"
 
 # API routes base
 API_BASE = "/api/oig_cloud"
+
+
+def _load_plan_filter_enums() -> tuple[Any, Any]:
+    package_root = (__package__ or "custom_components.oig_cloud.api").rsplit(".", 1)[0]
+    plan_manager = importlib.import_module(f"{package_root}.planning.plan_manager")
+    return plan_manager.PlanType, plan_manager.PlanStatus
 
 
 class OIGCloudActivePlanView(HomeAssistantView):
@@ -105,7 +126,7 @@ class OIGCloudPlanListView(HomeAssistantView):
                 )
 
             # List plans
-            from ..planning.plan_manager import PlanStatus, PlanType
+            PlanType, PlanStatus = _load_plan_filter_enums()
 
             plan_type_enum = None
             if plan_type:
@@ -203,6 +224,9 @@ class OIGCloudCreateManualPlanView(HomeAssistantView):
         Returns:
             JSON with created plan
         """
+        resp = _admin_or_403(request)
+        if resp is not None:
+            return resp
         hass: HomeAssistant = request.app[KEY_HASS]
 
         try:
@@ -264,6 +288,9 @@ class OIGCloudActivatePlanView(HomeAssistantView):
         Returns:
             JSON with activated plan
         """
+        resp = _admin_or_403(request)
+        if resp is not None:
+            return resp
         hass: HomeAssistant = request.app[KEY_HASS]
 
         try:
@@ -305,6 +332,9 @@ class OIGCloudDeactivatePlanView(HomeAssistantView):
         Returns:
             JSON with deactivated plan
         """
+        resp = _admin_or_403(request)
+        if resp is not None:
+            return resp
         hass: HomeAssistant = request.app[KEY_HASS]
 
         try:

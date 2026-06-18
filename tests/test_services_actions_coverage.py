@@ -186,11 +186,20 @@ async def test_async_unload_services_removes_registered():
             "set_grid_delivery",
             "set_boiler_mode",
             "set_formating_mode",
+            "plan_boiler_heating",
+            "apply_boiler_plan",
+            "cancel_boiler_plan",
         }
     )
     hass = SimpleNamespace(services=services)
     await module.async_unload_services(hass)
-    assert len(services.removed) == 6
+    assert len(services.removed) == 9
+    removed_names = {name for _domain, name in services.removed}
+    assert {
+        "plan_boiler_heating",
+        "apply_boiler_plan",
+        "cancel_boiler_plan",
+    } <= removed_names
 
 
 def test_box_id_helpers_exception_branches():
@@ -242,11 +251,15 @@ async def test_update_solar_forecast_no_primary_and_manual_failed(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_action_functions_return_when_no_box_id(monkeypatch):
+    from homeassistant.exceptions import ServiceValidationError
+
     hass, entry, api = _make_hass()
     monkeypatch.setattr(module, "_resolve_box_id_from_service", lambda *_a, **_k: None)
 
     await module._action_set_box_mode(hass, entry, {"mode": "home_1"}, "")
-    await module._action_set_boiler_mode(hass, entry, {"mode": "cbb"}, "")
+    # Boiler mode now uses strict resolver and raises ServiceValidationError when identity is missing
+    with pytest.raises(ServiceValidationError):
+        await module._action_set_boiler_mode(hass, entry, {"mode": "cbb"}, "")
     await module._action_set_grid_delivery(
         hass,
         entry,

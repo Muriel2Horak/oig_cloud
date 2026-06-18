@@ -23,6 +23,7 @@ export interface FlowData {
   solarToday: number;      // Wh
   solarForecastToday: number;
   solarForecastTomorrow: number;
+  solarForecastStale: boolean;
 
   // Battery
   batterySoC: number;
@@ -34,6 +35,15 @@ export interface FlowData {
   batteryDischargeTotal: number;
   batteryChargeSolar: number;
   batteryChargeGrid: number;
+  batteryChargeMonth: number;   // Wh this month
+  batteryDischargeMonth: number;
+  batteryFloorPct: number;      // % floor (batt_bat_min, force-charge trigger)
+  batteryUsableKwh: number;     // kWh currently available
+  batteryInstalledKwh: number;  // kWh installed capacity
+  batteryMissingKwh: number;    // kWh to full
+  batterySoH: number;           // % state of health
+  batteryEfficiency: number;    // % round-trip (month)
+  batteryForecastKwh: number;   // kWh predicted capacity
   isGridCharging: boolean;
   timeToEmpty: string;
   timeToFull: string;
@@ -56,6 +66,11 @@ export interface FlowData {
   spotPrice: number;
   exportPrice: number;
   currentTariff: string;
+  // Grid cost sensors (present only when both pricing + battery-prediction modules enabled)
+  gridImportCostToday: number | null;
+  gridImportCostMonth: number | null;
+  gridExportEarningsToday: number | null;
+  gridExportEarningsMonth: number | null;
 
   // House
   housePower: number;
@@ -63,6 +78,18 @@ export interface FlowData {
   houseL1: number;
   houseL2: number;
   houseL3: number;
+  nonbackupPower: number;
+  nonbackupTodayWh: number;
+  nonbackupL1: number;
+  nonbackupL2: number;
+  nonbackupL3: number;
+  zalohaPlannedRemainingKwh: number;
+
+  // Daily self-sufficiency (aura data)
+  selfSufficiencyTodayPct: number;   // 0-100
+  srcFveTodayKwh: number;            // kWh served by FVE (yellow arc)
+  srcBatteryTodayKwh: number;        // kWh served by battery (green arc)
+  srcGridTodayKwh: number;           // kWh served by grid (red arc)
 
   // Inverter
   inverterMode: string;
@@ -82,6 +109,7 @@ export interface FlowData {
 
   // Planner
   plannerAutoMode: boolean | null;
+  plannerRecommendedMode: string;
 
   // Meta
   lastUpdate: string;
@@ -235,9 +263,12 @@ export const DEFAULT_CONNECTIONS: FlowConnection[] = [
 
 export const EMPTY_FLOW_DATA: FlowData = {
   solarPower: 0, solarP1: 0, solarP2: 0, solarV1: 0, solarV2: 0, solarI1: 0, solarI2: 0,
-  solarPercent: 0, solarToday: 0, solarForecastToday: 0, solarForecastTomorrow: 0,
+  solarPercent: 0, solarToday: 0, solarForecastToday: 0, solarForecastTomorrow: 0, solarForecastStale: false,
   batterySoC: 0, batteryPower: 0, batteryVoltage: 0, batteryCurrent: 0, batteryTemp: 0,
   batteryChargeTotal: 0, batteryDischargeTotal: 0, batteryChargeSolar: 0, batteryChargeGrid: 0,
+  batteryChargeMonth: 0, batteryDischargeMonth: 0,
+  batteryFloorPct: 0, batteryUsableKwh: 0, batteryInstalledKwh: 0, batteryMissingKwh: 0,
+  batterySoH: 0, batteryEfficiency: 0, batteryForecastKwh: 0,
   isGridCharging: false, timeToEmpty: '', timeToFull: '',
   balancingState: 'standby', balancingTimeRemaining: '',
   gridChargingPlan: {
@@ -253,10 +284,16 @@ export const EMPTY_FLOW_DATA: FlowData = {
   gridPower: 0, gridVoltage: 0, gridFrequency: 0, gridImportToday: 0, gridExportToday: 0,
   gridL1V: 0, gridL2V: 0, gridL3V: 0, gridL1P: 0, gridL2P: 0, gridL3P: 0,
   spotPrice: 0, exportPrice: 0, currentTariff: '',
+  gridImportCostToday: null, gridImportCostMonth: null,
+  gridExportEarningsToday: null, gridExportEarningsMonth: null,
   housePower: 0, houseTodayWh: 0, houseL1: 0, houseL2: 0, houseL3: 0,
+  nonbackupPower: 0, nonbackupTodayWh: 0, nonbackupL1: 0, nonbackupL2: 0, nonbackupL3: 0,
+  zalohaPlannedRemainingKwh: 0,
+  selfSufficiencyTodayPct: 0, srcFveTodayKwh: 0, srcBatteryTodayKwh: 0, srcGridTodayKwh: 0,
   inverterMode: '', inverterGridMode: 'unknown' as FlowGridDelivery, inverterGridLimit: 0, inverterTemp: 0,
   bypassStatus: 'off', notificationsUnread: 0, notificationsError: 0,
   boilerIsUse: false, boilerPower: 0, boilerDayEnergy: 0, boilerManualMode: '', boilerInstallPower: 3000,
   plannerAutoMode: null,
+  plannerRecommendedMode: '',
   lastUpdate: '',
 };

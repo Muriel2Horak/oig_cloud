@@ -47,6 +47,19 @@ def test_get_state_uses_capacity_when_soc_missing():
     assert sensor_runtime.get_state(sensor) == 0
 
 
+def test_get_state_prefers_real_current_capacity_over_timeline():
+    # When the live SoC capacity is available it MUST win over the first
+    # planned interval (which lags ~15 min and over-reports while charging).
+    sensor = DummySensor()
+    sensor._timeline_data = [{"battery_soc": 4.78}]  # end of first interval
+    sensor._get_current_battery_capacity = lambda: 3.84  # real now (25 %)
+    assert sensor_runtime.get_state(sensor) == 3.84
+
+    # Falls back to the timeline only when live SoC is unavailable.
+    sensor._get_current_battery_capacity = lambda: None
+    assert sensor_runtime.get_state(sensor) == 4.78
+
+
 def test_is_available_uses_parent_property(monkeypatch):
     sensor = DummySensor()
 

@@ -90,6 +90,8 @@ export interface SolarForecastData {
   string1: number[];
   string2: number[];
   todayTotal: number;
+  tomorrowTotal: number;
+  stale: boolean;
   hasString1: boolean;
   hasString2: boolean;
 }
@@ -193,13 +195,14 @@ export interface PricingData {
   /** Current sensor prices */
   currentSpotPrice: number;
   currentExportPrice: number;
-  avgSpotPrice: number;
   /** Planned consumption stats */
   plannedConsumption: PlannedConsumption | null;
   /** What-if analysis */
   whatIf: WhatIfAnalysis | null;
-  /** Solar forecast total */
+  /** Solar forecast totals + staleness */
   solarForecastTotal: number;
+  solarForecastTomorrow: number;
+  solarForecastStale: boolean;
 }
 
 export const EMPTY_PRICING_DATA: PricingData = {
@@ -218,10 +221,11 @@ export const EMPTY_PRICING_DATA: PricingData = {
   initialZoomEnd: null,
   currentSpotPrice: 0,
   currentExportPrice: 0,
-  avgSpotPrice: 0,
   plannedConsumption: null,
   whatIf: null,
   solarForecastTotal: 0,
+  solarForecastTomorrow: 0,
+  solarForecastStale: false,
 };
 
 // Keep backward compat for stat cards

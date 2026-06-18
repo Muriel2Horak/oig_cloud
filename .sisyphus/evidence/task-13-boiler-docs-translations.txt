@@ -1,0 +1,30 @@
+=== task-13-boiler-docs-translations.txt ===
+Generated: 2026-04-26 (Task 13 final boiler polish)
+
+PASS  en.json wizard_boiler description mentions comfort/deadline
+PASS  en.json wizard_boiler description mentions current temperature
+PASS  en.json wizard_boiler description mentions source economics
+PASS  en.json wizard_boiler NOT cheapest-only wording
+PASS  cs.json wizard_boiler description mentions comfort/deadline
+PASS  cs.json wizard_boiler description mentions current temperature
+PASS  cs.json wizard_boiler description mentions source economics
+PASS  cs.json wizard_boiler NOT cheapest-only wording
+PASS  options/wizard_boiler description mentions comfort/deadline
+PASS  options/wizard_boiler cs mentions komfort/deadline
+PASS  set_boiler_mode service in EN preserves mode: cbb/manual
+PASS  set_boiler_mode service in CS preserves mode: cbb/manual
+
+EN config step wizard_boiler description:
+Automatically plans comfortable boiler heating based on your preferences,
+current water temperature, and available energy sources. Considers spot prices,
+alternative source economics, and your comfort deadline.
+
+CS config step wizard_boiler description:
+Automaticky plánuje komfortní ohřev bojleru na základě vašich preferencí,
+aktuální teploty vody a dostupných zdrojů energie. Zohledňuje spotové ceny,
+ekonomiku alternativního zdroje a váš komfortní deadline.
+
+JSON parse: en.json VALID, cs.json VALID
+Key parity: EN and CS wizard_boiler keys match (data, data_description, description, title)
+
+Files modified: translations/en.json, translations/cs.json

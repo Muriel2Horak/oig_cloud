@@ -3,24 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint:js": "eslint --no-error-on-unmatched-pattern \"custom_components/oig_cloud/www/js/**/*.js\"",
-    "lint:css": "stylelint --allow-empty-input \"custom_components/oig_cloud/www/**/*.css\"",
-    "lint:html": "htmlhint \"custom_components/oig_cloud/www/**/*.html\"",
-    "lint": "npm run lint:js && npm run lint:css && npm run lint:html",
-    "test": "npm run lint",
-    "test:fe:unit": "vitest run",
-    "test:fe:unit:coverage": "vitest run --coverage",
-    "test:fe:e2e": "scripts/run_fe_e2e.sh",
-    "fe:mock:up": "scripts/fe_mock_up.sh",
-    "fe:mock:down": "scripts/fe_mock_down.sh"
-  },
-  "vitest": {
-    "test": {
-      "environment": "jsdom",
-      "include": [
-        "tests/fe/unit/**/*.test.js"
-      ]
-    }
+    "test": "echo \"V1 dashboard retired. Frontend now lives in custom_components/oig_cloud/www_v2 (self-linted, type-checked and built in build-frontend.yml). Nothing to lint at repo root.\" && exit 0"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

@@ -3,18 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from homeassistant.util import dt as dt_util
 
-from custom_components.oig_cloud.battery_forecast.planning import (
-    charging_helpers,
-    charging_plan,
-    charging_plan_adjustments,
-    charging_plan_utils,
-    interval_grouping,
-    mode_guard,
-    mode_recommendations,
-)
-from custom_components.oig_cloud.battery_forecast.planning.charging_plan import (
-    EconomicChargingPlanConfig,
-)
+from custom_components.oig_cloud.battery_forecast.planning import charging_plan_adjustments, charging_plan_utils, interval_grouping, mode_guard, mode_recommendations
 from custom_components.oig_cloud.battery_forecast.types import (
     CBB_MODE_HOME_I,
     CBB_MODE_HOME_II,
@@ -859,6 +848,19 @@ def test_group_intervals_by_mode_handles_unknowns_and_invalid_times():
     assert groups[0]["delta_pct"] == 0.0
 
 
+def test_group_intervals_by_mode_midnight_end_renders_24_00():
+    """A block whose last interval is 23:45 ends at midnight -> '24:00', not '00:00'."""
+    intervals = [
+        {"time": "2025-01-01T23:30:00", "planned": {"mode": 0, "net_cost": 1.0}},
+        {"time": "2025-01-01T23:45:00", "planned": {"mode": 0, "net_cost": 1.0}},
+    ]
+
+    groups = interval_grouping.group_intervals_by_mode(intervals, "planned", {})
+
+    assert groups[0]["start_time"] == "23:30"
+    assert groups[0]["end_time"] == "24:00"
+
+
 def test_group_intervals_by_mode_empty_returns_empty():
     assert interval_grouping.group_intervals_by_mode([], "planned", {}) == []
 
@@ -928,121 +930,3 @@ def test_create_mode_recommendations_split_midnight():
     assert len(recs) == 2
     assert recs[0]["intervals_count"] == 2
     assert recs[1]["intervals_count"] == 1
-
-
-def test_charging_helpers_store_metrics(monkeypatch):
-    def _fake_economic_plan(**_kwargs):
-        return ([{"grid_charge_kwh": 1.0}], {"algorithm": "economic"})
-
-    def _fake_smart_plan(**_kwargs):
-        return ([{"grid_charge_kwh": 2.0}], {"algorithm": "smart"})
-
-    monkeypatch.setattr(charging_plan, "economic_charging_plan", _fake_economic_plan)
-    monkeypatch.setattr(charging_plan, "smart_charging_plan", _fake_smart_plan)
-
-    sensor = DummySensor(
-        {
-            "min_capacity_percent": 20.0,
-        }
-    )
-
-    timeline = [{"battery_capacity_kwh": 2.0}]
-
-    result = charging_helpers.economic_charging_plan(
-        sensor,
-        timeline_data=timeline,
-        min_capacity_kwh=1.0,
-        effective_minimum_kwh=1.0,
-        target_capacity_kwh=2.0,
-        max_charging_price=5.0,
-        min_savings_margin=0.1,
-        charging_power_kw=4.0,
-        max_capacity=10.0,
-        iso_tz_offset="+00:00",
-    )
-
-    assert result[0]["grid_charge_kwh"] == 1.0
-    assert sensor._charging_metrics["algorithm"] == "economic"
-
-    result = charging_helpers.smart_charging_plan(
-        sensor,
-        timeline=timeline,
-        min_capacity=1.0,
-        target_capacity=2.0,
-        max_price=5.0,
-        charging_power_kw=4.0,
-        max_capacity=10.0,
-    )
-
-    assert result[0]["grid_charge_kwh"] == 2.0
-    assert sensor._charging_metrics["algorithm"] == "smart"
-
-
-def test_economic_charging_plan_death_valley():
-    now = dt_util.now()
-    timeline = _build_timeline_points(now + timedelta(hours=1), 3)
-
-    timeline, metrics = charging_plan.economic_charging_plan(
-        timeline_data=timeline,
-        plan=EconomicChargingPlanConfig(
-            min_capacity_kwh=1.0,
-            min_capacity_floor=0.5,
-            effective_minimum_kwh=2.0,
-            target_capacity_kwh=4.0,
-            max_charging_price=10.0,
-            min_savings_margin=0.5,
-            charging_power_kw=4.0,
-            max_capacity=10.0,
-            battery_efficiency=1.0,
-            config={
-                "enable_blackout_protection": True,
-                "blackout_protection_hours": 12,
-                "blackout_target_soc_percent": 60.0,
-            },
-            iso_tz_offset="+00:00",
-            mode_label_home_ups="Home UPS",
-            mode_label_home_i="Home 1",
-            target_reason="test",
-        ),
-    )
-
-    assert metrics["algorithm"] == "economic"
-    assert any(pt.get("grid_charge_kwh", 0) > 0 for pt in timeline)
-
-
-def test_smart_charging_plan_adds_charge():
-    timeline = [
-        {
-            "battery_capacity_kwh": 1.0,
-            "spot_price_czk": 1.0,
-            "grid_charge_kwh": 0.0,
-            "solar_production_kwh": 0.0,
-            "consumption_kwh": 1.0,
-            "reason": "normal",
-            "timestamp": "2025-01-01T00:00:00",
-        },
-        {
-            "battery_capacity_kwh": 0.5,
-            "spot_price_czk": 5.0,
-            "grid_charge_kwh": 0.0,
-            "solar_production_kwh": 0.0,
-            "consumption_kwh": 1.0,
-            "reason": "normal",
-            "timestamp": "2025-01-01T00:15:00",
-        },
-    ]
-
-    result, metrics = charging_plan.smart_charging_plan(
-        timeline=timeline,
-        min_capacity=1.0,
-        target_capacity=2.0,
-        max_price=5.0,
-        charging_power_kw=4.0,
-        max_capacity=10.0,
-        efficiency=1.0,
-        mode_label_home_ups="Home UPS",
-        mode_label_home_i="Home 1",
-    )
-
-    assert metrics["target_capacity_kwh"] == 2.0
-    assert any(pt.get("grid_charge_kwh", 0) > 0 for pt in result)

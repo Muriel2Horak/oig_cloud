@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.3.4, pluggy-1.6.0
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: aiohttp-1.0.5, socket-0.7.0, picked-0.5.0, requests-mock-1.12.1, homeassistant-custom-component-0.13.205, cov-6.0.0, sugar-1.0.0, xdist-3.6.1, github-actions-annotate-failures-0.2.0, asyncio-0.24.0, timeout-2.3.1, anyio-4.12.1, pytest_freezer-0.4.8, unordered-0.6.1, syrupy-4.8.0, respx-0.21.1
+asyncio: mode=Mode.AUTO, default_loop_scope=function
+collected 296 items
+
+tests/test_boiler_api_views_helper_branches.py ....                      [  1%]
+tests/test_boiler_circulation.py .....                                   [  3%]
+tests/test_boiler_coordinator_more.py .................                  [  8%]
+tests/test_boiler_module.py ........................                     [ 16%]
+tests/test_boiler_precedence.py ..                                       [ 17%]
+tests/test_boiler_sensors_more.py ..........                             [ 20%]
+tests/test_boiler_services.py ...................                        [ 27%]
+tests/test_boiler_services_extra_coverage.py .........                   [ 30%]
+tests/test_boiler_switch_edge_cases.py ......                            [ 32%]
+tests/test_boiler_switch_wrapper.py ...                                  [ 33%]
+tests/test_boiler_task1_routing.py .......................               [ 41%]
+tests/test_boiler_task2_boundary.py ............................         [ 50%]
+tests/test_boiler_task3_topology.py .................................... [ 62%]
+.........                                                                [ 65%]
+tests/test_boiler_task4_contract.py .................................... [ 78%]
+................                                                         [ 83%]
+tests/test_boiler_task5_energy_adapter.py .........                      [ 86%]
+tests/test_init_setup_entry.py ........................................  [100%]
+
+============================= 296 passed in 2.66s ==============================

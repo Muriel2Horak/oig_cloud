@@ -54,6 +54,10 @@ def _build_history_entity_ids(box_id: str) -> list[str]:
         f"sensor.oig_{box_id}_box_prms_mode",
         f"sensor.oig_{box_id}_spot_price_current_15min",
         f"sensor.oig_{box_id}_export_price_current_15min",
+        # For záloha-only cost attribution: subtract non-backup (car/off-backup)
+        # and grid-charging of the battery (incl. balancing) from total import.
+        f"sensor.oig_{box_id}_computed_nonbackup_consumption_today",
+        f"sensor.oig_{box_id}_computed_batt_charge_grid_energy_today",
     ]
 
 
@@ -149,6 +153,13 @@ def _build_actual_interval_entry(
         "grid_import_kwh": round(actual_data.get("grid_import", 0), 4),
         "grid_export_kwh": round(actual_data.get("grid_export", 0), 4),
         "net_cost": round(actual_data.get("net_cost", 0), 2),
+        # Záloha-only attribution (total import minus non-backup + battery
+        # grid-charge) — needed by the fair do-nothing savings comparison.
+        "nonbackup_kwh": round(actual_data.get("nonbackup_kwh", 0) or 0, 3),
+        "backup_grid_import_kwh": round(
+            actual_data.get("backup_grid_import_kwh", 0) or 0, 3
+        ),
+        "backup_net_cost": actual_data.get("backup_net_cost"),
         "spot_price": round(actual_data.get("spot_price", 0), 2),
         "export_price": round(actual_data.get("export_price", 0), 2),
         "mode": actual_data.get("mode", 0),
@@ -158,10 +169,20 @@ def _build_actual_interval_entry(
 
 async def _patch_existing_actual(
     sensor: Any, existing_actual: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+) -> tuple[List[Dict[str, Any]], bool]:
+    """Backfill missing cost fields on existing actual intervals.
+
+    Returns the (possibly patched) list and a flag indicating whether any
+    interval was actually changed (M6: callers must persist on a patch even
+    when no brand-new intervals were appended).
+    """
     patched_existing: List[Dict[str, Any]] = []
+    changed = False
     for interval in existing_actual:
-        if interval.get("net_cost") is not None:
+        if (
+            interval.get("net_cost") is not None
+            and interval.get("backup_net_cost") is not None
+        ):
             patched_existing.append(interval)
             continue
         start_dt = _parse_interval_start(interval.get("time"))
@@ -176,11 +197,19 @@ async def _patch_existing_actual(
             interval = {
                 **interval,
                 "net_cost": round(historical_patch.get("net_cost", 0), 2),
+                "backup_net_cost": historical_patch.get("backup_net_cost"),
+                "backup_grid_import_kwh": round(
+                    historical_patch.get("backup_grid_import_kwh", 0) or 0, 3
+                ),
+                "nonbackup_kwh": round(
+                    historical_patch.get("nonbackup_kwh", 0) or 0, 3
+                ),
                 "spot_price": round(historical_patch.get("spot_price", 0), 2),
                 "export_price": round(historical_patch.get("export_price", 0), 2),
             }
+            changed = True
         patched_existing.append(interval)
-    return patched_existing
+    return patched_existing, changed
 
 
 async def _build_new_actual_intervals(
@@ -352,6 +381,25 @@ async def fetch_interval_from_history(  # noqa: C901
         export_revenue = grid_export_kwh * export_price
         net_cost = import_cost - export_revenue
 
+        # Záloha-only attribution: the planner/battery only controls the
+        # backed-up load. Strip the non-backup draw (car etc.) and the
+        # battery's grid-charging (incl. forced balancing) from the import so
+        # the savings comparison reflects only what the control influences.
+        nonbackup_kwh = _calc_delta_kwh(
+            _states(f"sensor.oig_{box_id}_computed_nonbackup_consumption_today"),
+            start_time,
+            end_time,
+        )
+        batt_grid_charge_kwh = _calc_delta_kwh(
+            _states(f"sensor.oig_{box_id}_computed_batt_charge_grid_energy_today"),
+            start_time,
+            end_time,
+        )
+        backup_grid_import_kwh = max(
+            0.0, grid_import_kwh - nonbackup_kwh - batt_grid_charge_kwh
+        )
+        backup_net_cost = backup_grid_import_kwh * spot_price - export_revenue
+
         mode = (
             map_mode_name_to_id(str(mode_raw))
             if mode_raw is not None
@@ -372,6 +420,9 @@ async def fetch_interval_from_history(  # noqa: C901
             "spot_price": round(spot_price, 2),
             "export_price": round(export_price, 2),
             "net_cost": round(net_cost, 2),
+            "nonbackup_kwh": round(nonbackup_kwh, 3),
+            "backup_grid_import_kwh": round(backup_grid_import_kwh, 3),
+            "backup_net_cost": round(backup_net_cost, 2),
         }
 
         if log_rl:
@@ -429,7 +480,9 @@ async def update_actual_from_history(sensor: Any) -> None:
 
     _LOGGER.info("📊 Updating actual values from history for %s...", today_str)
 
-    existing_actual = await _patch_existing_actual(sensor, existing_actual)
+    existing_actual, patched_changed = await _patch_existing_actual(
+        sensor, existing_actual
+    )
     plan_data["actual"] = existing_actual
 
     existing_times: Set[str] = {
@@ -456,7 +509,9 @@ async def update_actual_from_history(sensor: Any) -> None:
     else:
         _LOGGER.debug("No new actual intervals to add")
 
-    if new_intervals:
+    # M6: persist when new intervals were added OR existing intervals were
+    # patched with backfilled cost data — otherwise the patches are lost.
+    if new_intervals or patched_changed:
         sensor._daily_plan_state = plan_data  # pylint: disable=protected-access
     else:
         _LOGGER.debug("No changes, skipping storage update")

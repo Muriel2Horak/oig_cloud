@@ -386,7 +386,7 @@ def test_shield_sensor_unique_id_device_info_available(monkeypatch):
 
 def test_shield_sensor_resolve_box_id_from_title(monkeypatch):
     coordinator = SimpleNamespace(
-        forced_box_id="unknown", config_entry=SimpleNamespace(title="Box \\dddddd")
+        forced_box_id="unknown", config_entry=SimpleNamespace(title="Box 123456")
     )
     monkeypatch.setattr(
         "custom_components.oig_cloud.entities.base_sensor.resolve_box_id",
@@ -394,7 +394,8 @@ def test_shield_sensor_resolve_box_id_from_title(monkeypatch):
     )
     sensor = OigCloudShieldSensor(coordinator, "service_shield_status")
     sensor.hass = DummyHass(DummyShield())
-    assert "dddddd" in sensor.unique_id
+    # Fixed regex extracts the real 6+ digit serial from the title.
+    assert "123456" in sensor.unique_id
 
 
 def test_shield_sensor_resolve_box_id_regex_error(monkeypatch):

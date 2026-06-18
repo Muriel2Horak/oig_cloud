@@ -210,9 +210,11 @@ def test_extra_state_attributes_string1_and_string2():
     sensor = _make_sensor({"enable_solar_forecast": True}, sensor_type="solar_forecast_string1")
     now = datetime.now().replace(minute=0, second=0, microsecond=0)
     hour_key = now.isoformat()
+    today_date = now.date().isoformat()
     sensor._last_forecast_data = {
         "response_time": now.isoformat(),
         "string1_today_kwh": 2.5,
+        "string1_daily": {today_date: 2.5},
         "string1_hourly": {hour_key: 500},
     }
     attrs = sensor.extra_state_attributes
@@ -223,6 +225,7 @@ def test_extra_state_attributes_string1_and_string2():
     sensor._last_forecast_data = {
         "response_time": now.isoformat(),
         "string2_today_kwh": 3.0,
+        "string2_daily": {today_date: 3.0},
         "string2_hourly": {hour_key: 1000, "bad": 200},
     }
     attrs = sensor.extra_state_attributes

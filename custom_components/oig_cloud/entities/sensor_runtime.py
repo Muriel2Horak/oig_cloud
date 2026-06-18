@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+import inspect
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import EntityCategory
@@ -16,6 +17,10 @@ if TYPE_CHECKING:  # pragma: no cover
     from homeassistant.core import HomeAssistant
 
 
+def _invoke_no_arg(method: Callable[[], Any]) -> Any:
+    return method()
+
+
 class _EntityBase:
     """Stub for parent class to satisfy super().async_update() call."""
 
@@ -24,11 +29,11 @@ class _EntityBase:
         # Use super() to ensure cooperative multiple inheritance works
         # when this class is mixed with concrete implementations
         parent = super()
-        method = getattr(parent, "async_update", None)
-        if method is None:
+        raw_method = getattr(parent, "async_update", None)
+        if not callable(raw_method):
             return
-        result = method()
-        if result is not None:
+        result = _invoke_no_arg(raw_method)
+        if inspect.isawaitable(result):
             await result
 
 
@@ -112,7 +117,12 @@ class OigCloudSensorRuntimeMixin(_EntityBase):
                 via_device=(DOMAIN, self._box_id),
             )
 
-        if sensor_category in ["statistics", "solar_forecast", "pricing"]:
+        if sensor_category in [
+            "statistics",
+            "solar_forecast",
+            "pricing",
+            "grid_cost_computed",
+        ]:
             return DeviceInfo(
                 identifiers={(DOMAIN, f"{self._box_id}_analytics")},
                 name=f"Analytics & Predictions {self._box_id}",

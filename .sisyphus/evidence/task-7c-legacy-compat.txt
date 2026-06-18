@@ -1,0 +1,36 @@
+Task 7c Evidence: Legacy Compatibility
+=======================================
+
+Date: 2026-04-25
+
+1. OLD SERVICE PATH COMPATIBILITY
+---------------------------------
+- services/boiler.py retains backward-compatible imports from actuator.py
+  (BoilerSchedule, _build_heating_windows, etc.) with # noqa: F401.
+- No direct switch service calls in services/boiler.py.
+- Service handlers resolve runtime and delegate to runtime.actuator.
+- Grep proof: no hass.services.async_call("switch" ...) in services/boiler.py.
+
+2. OLD CIRCULATION WINDOW INPUTS
+---------------------------------
+- _build_circulation_windows remains as a backward-compat helper in actuator.py
+  but is NOT called by async_apply_plan.
+- build_circulation_windows removed from circulation.py.
+- Verified by test: test_legacy_circulation_windows_do_not_duplicate
+
+3. NO DUPLICATE COMMANDS
+------------------------
+- Switch platform delegates through actuator; no duplicate service calls.
+- Actuator tracks active heaters to avoid duplicate pump on/off.
+- Verified by tests: test_switch_platform_no_duplicate_service_calls,
+  test_services_boiler_no_direct_switch_calls
+
+4. TEST RESULTS
+---------------
+- Task 7c legacy compat tests: 4 passed, 0 failed
+- Task 7a+7b+7c combined: 93 passed, 0 failed
+- Broad boiler regression (task 1-7c): 287 passed, 0 failed
+
+Files Modified:
+- custom_components/oig_cloud/services/boiler.py
+- tests/test_boiler_services.py (updated monkeypatch signatures for new _schedule_switch_window)

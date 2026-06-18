@@ -1,0 +1,51 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-8.4.2, pluggy-1.6.0 -- /usr/bin/python
+cachedir: .pytest_cache
+rootdir: /repos/oig-cloud
+configfile: pytest.ini
+plugins: anyio-4.13.0, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 36 items / 26 deselected / 10 selected
+
+tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_reconciles_desired_vs_actual PASSED [ 10%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_respects_rate_limit PASSED [ 20%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_respects_plan_version PASSED [ 30%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecovery::test_crash_recovery_noop_when_no_persisted_intent PASSED [ 40%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecoveryFromPersistedStore::test_recover_from_crash_reads_desired_source_from_store PASSED [ 50%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecoveryFromPersistedStore::test_recover_from_crash_respects_plan_version_from_store PASSED [ 60%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecoveryFromPersistedStore::test_recover_from_crash_respects_rate_limit_from_store PASSED [ 70%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecoveryFromPersistedStore::test_recover_from_crash_noop_when_store_lacks_desired_intent PASSED [ 80%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecoveryFromPersistedStore::test_crash_recovery_persists_desired_state_after_execute PASSED [ 90%]
+tests/test_boiler_task7b_manual_override.py::TestCrashRecoveryFromPersistedStore::test_fresh_serializer_restores_desired_state_from_store PASSED [100%]
+
+=============================== warnings summary ===============================
+../../usr/lib/python3.12/site-packages/josepy/util.py:28
+  /usr/lib/python3.12/site-packages/josepy/util.py:28: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def __init__(self, wrapped: Union[crypto.X509, crypto.X509Req]) -> None:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:280
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:280: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_all_names(loaded_cert_or_req: Union[crypto.X509, crypto.X509Req]
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:291
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:291: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_san(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:318
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:318: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_cert_or_req_san_ip(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:338
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:338: DeprecationWarning: CSR support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    def _pyopenssl_extract_san_list_raw(cert_or_req: Union[crypto.X509, crypto.X509Req]) -> List[str]:
+
+../../usr/lib/python3.12/site-packages/acme/crypto_util.py:372
+  /usr/lib/python3.12/site-packages/acme/crypto_util.py:372: DeprecationWarning: X509Extension support in pyOpenSSL is deprecated. You should use the APIs in cryptography.
+    extensions: Optional[List[crypto.X509Extension]] = None,
+
+../../usr/lib/python3.12/site-packages/homeassistant/components/http/__init__.py:310
+  /usr/lib/python3.12/site-packages/homeassistant/components/http/__init__.py:310: DeprecationWarning: Inheritance class HomeAssistantApplication from web.Application is discouraged
+    class HomeAssistantApplication(web.Application):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================ 10 passed, 26 deselected, 7 warnings in 1.34s =================

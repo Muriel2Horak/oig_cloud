@@ -1,5 +1,4 @@
 [MASTER]
-pylint-version=3.0.0
 
 [MESSAGES CONTROL]
 disable=
@@ -34,9 +33,6 @@ indent-string='    '
 
 [BASIC]
 good-names=i,j,k,ex,Run,_
-
-[IMPORTS]
-prefer-relative-imports=True
 
 [CLASSES]
 defining-attr-methods=__init__,__new__

@@ -1,0 +1,33 @@
+Task 7c Evidence: Switch Platform Delegation
+=============================================
+
+Date: 2026-04-25
+
+1. SWITCH DELEGATION
+--------------------
+- BoilerWrapperSwitch.async_turn_on() looks up runtime via get_boiler_runtime()
+  and delegates to runtime.actuator.async_turn_on_entity().
+- BoilerWrapperSwitch.async_turn_off() delegates to
+  runtime.actuator.async_turn_off_entity().
+- is_heater flag passed based on entity_suffix (bojler_top / bojler_alt).
+- Fallback direct service call only logs warning when runtime unavailable.
+
+2. UNIQUE ID STABILITY
+----------------------
+- Unique ID format unchanged: oig_cloud_{box_id}_boiler_{entity_suffix}
+- Verified by test: test_switch_unique_id_stable
+
+3. NO DUPLICATE ACTUATION
+-------------------------
+- Grep proof: no hass.services.async_call("switch" ...) in switch.py
+  wrapper switch methods (delegation path only).
+- Verified by test: test_switch_platform_no_duplicate_service_calls
+
+4. TEST RESULTS
+---------------
+- Task 7c switch tests: 4 passed, 0 failed
+- Task 7a+7b+7c combined: 93 passed, 0 failed
+- Broad boiler regression (task 1-7c): 287 passed, 0 failed
+
+Files Modified:
+- custom_components/oig_cloud/switch.py

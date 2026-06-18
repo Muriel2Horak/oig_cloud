@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
 from ..utils_common import safe_nested_get
+from .detail_tabs_baseline import compute_do_nothing_baseline
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def default_metrics_summary() -> Dict[str, Dict[str, Any]]:
@@ -135,7 +139,6 @@ def calculate_tab_summary(
     sensor: Any, mode_blocks: List[Dict[str, Any]], intervals: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Calculate summary for a tab."""
-    _ = sensor
     if not mode_blocks:
         return _default_tab_summary()
 
@@ -150,7 +153,40 @@ def calculate_tab_summary(
         intervals=intervals,
     )
     _attach_completed_planned_summary(summary, completed_blocks, planned_blocks)
+    _attach_backup_savings(summary, sensor, intervals)
     return summary
+
+
+def _attach_backup_savings(
+    summary: Dict[str, Any], sensor: Any, intervals: List[Dict[str, Any]]
+) -> None:
+    """Attach the fair záloha-only do-nothing comparison, when computable."""
+    try:
+        baseline = compute_do_nothing_baseline(sensor, intervals)
+    except Exception:  # pragma: no cover - defensive
+        _LOGGER.exception("[backup_savings] compute_do_nothing_baseline failed")
+        baseline = None
+    if not baseline:
+        _LOGGER.debug(
+            "[backup_savings] no baseline (intervals=%s)", len(intervals or [])
+        )
+        return
+    summary["backup_baseline_cost"] = baseline["baseline_cost"]
+    summary["backup_actual_cost"] = baseline["actual_cost"]
+    summary["backup_savings"] = baseline["savings"]
+    summary["backup_battery_value_delta"] = baseline.get("battery_value_delta")
+
+    # The cost metric's "plan" used to come from the idealized stored plan
+    # (projected ~0 grid import) which made every actual look bad. Replace it
+    # with the honest pair: do-nothing baseline vs záloha-only actual cost.
+    metrics = summary.get("metrics")
+    if isinstance(metrics, dict) and baseline.get("actual_cost") is not None:
+        metrics["cost"] = {
+            "plan": round(baseline["baseline_cost"], 2),
+            "actual": round(baseline["actual_cost"], 2),
+            "unit": "Kč",
+            "has_actual": True,
+        }
 
 
 def _default_tab_summary() -> Dict[str, Any]:

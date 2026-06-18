@@ -21,12 +21,15 @@ import { LitElement, html, css, unsafeCSS, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import {
-  BoilerState, BoilerPlan, BoilerEnergyBreakdown, BoilerPredictedUsage,
-  BoilerConfig, BoilerHeatmapRow, BoilerProfilingData,
-  BoilerProfile, BoilerHourData,
-  CATEGORY_LABELS,
+  BoilerProfile, BoilerState, BoilerHourData, BoilerPlan,
+  BoilerEnergyBreakdown, BoilerPredictedUsage, BoilerConfig,
+  BoilerHeatmapRow, BoilerProfilingData, CATEGORY_LABELS,
+  BoilerV2Status, BoilerV2PlanSlot, BoilerV2Explanation,
+  BoilerV2Identity, DemandMapData,
 } from './types';
 import { planBoilerHeating, applyBoilerPlan, cancelBoilerPlan } from '@/data/boiler-data';
+import { t, sourceLabel, reasonLabel, type Lang } from '@/i18n/boiler';
+import { formatTempC, formatKwh, formatCzk, formatPercent, formatTimeRange, formatDataAge } from '@/ui/features/boiler/format';
 
 const u = unsafeCSS;
 
@@ -1211,7 +1214,288 @@ export class OigBoilerConfigSection extends LitElement {
 }
 
 // ============================================================================
-// 12. LEGACY WRAPPERS (keep old tag names working for backwards compat)
+// 12. DEMAND MAP (Mapa odběrů) — F2
+// ============================================================================
+
+/** Convert slot index (0-95) to HH:MM display string */
+function slotToHhmm(slotIndex: number, slotDurationMin: number): string {
+  const totalMin = slotIndex * slotDurationMin;
+  const h = Math.floor(totalMin / 60) % 24;
+  const m = totalMin % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Emoji for window label */
+function windowEmoji(label: string): string {
+  switch (label) {
+    case 'morning': return '🌅';
+    case 'afternoon': return '☀️';
+    case 'evening': return '🌆';
+    case 'night': return '🌙';
+    default: return '💧';
+  }
+}
+
+@customElement('oig-boiler-demand-map')
+export class OigBoilerDemandMap extends LitElement {
+  @property({ attribute: false }) data: DemandMapData | null = null;
+  @property({ type: String }) lang: Lang = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+
+    .card {
+      ${cardBase};
+      padding: 16px;
+    }
+
+    .heading {
+      ${sectionTitle};
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Empty / collecting state */
+    .empty-state {
+      text-align: center;
+      padding: 24px 0;
+      color: ${u(CSS_VARS.textSecondary)};
+      font-size: 13px;
+    }
+
+    /* Heatmap: 48 columns (2 slots aggregated per column) */
+    .heatmap-wrap {
+      overflow-x: auto;
+    }
+
+    /* Mockup .heat: row of equal-height rounded cells, red intensity ramp */
+    .heatmap {
+      display: grid;
+      grid-template-columns: repeat(48, 1fr);
+      gap: 1.5px;
+      height: 30px;
+      min-width: 280px;
+      margin-bottom: 5px;
+    }
+
+    .heatmap-col {
+      display: flex;
+      height: 100%;
+    }
+
+    .heatmap-bar {
+      width: 100%;
+      height: 100%;
+      border-radius: 2px;
+      transition: opacity 0.15s;
+    }
+
+    .heatmap-bar:hover { opacity: 0.75; }
+
+    /* Mockup .hl: five labels spread across the strip */
+    .hour-axis {
+      display: flex;
+      justify-content: space-between;
+      min-width: 280px;
+      margin-bottom: 8px;
+    }
+
+    .hour-label {
+      font-size: 9px;
+      color: ${u(CSS_VARS.textSecondary)};
+      opacity: 0.7;
+    }
+
+    /* Readiness chips */
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(33,150,243,0.12);
+      color: ${u(CSS_VARS.textPrimary)};
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .chip-time {
+      font-weight: 700;
+      color: ${u(CSS_VARS.accent)};
+    }
+
+    /* Meta line — now inline in heading */
+    .meta-inline {
+      font-size: 10.5px;
+      opacity: 0.55;
+      font-weight: 400;
+      margin-left: auto;
+    }
+
+    /* Legacy meta block (kept for backwards compat if still used elsewhere) */
+    .meta {
+      font-size: 11px;
+      color: ${u(CSS_VARS.textSecondary)};
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .confidence-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(76,175,80,0.15);
+      color: #2e7d32;
+    }
+
+    .confidence-badge.low {
+      background: rgba(255,152,0,0.18);
+      color: #b75d00;
+    }
+
+    .plan-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(76,175,80,0.15);
+      color: #2e7d32;
+    }
+
+    .plan-badge.learning {
+      background: rgba(255,152,0,0.18);
+      color: #b75d00;
+    }
+
+    .fallback-notice {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 6px;
+      font-size: 10px;
+      background: rgba(255,152,0,0.12);
+      color: #b75d00;
+    }
+  `;
+
+  render() {
+    const lang = this.lang;
+    const heading = t('boiler.demand_map.heading', lang);
+
+    if (!this.data) {
+      return html`
+        <div class="card" data-testid="boiler-demand-map">
+          <div class="heading">💧 ${heading}</div>
+          <div class="empty-state">${t('boiler.demand_map.empty', lang)}</div>
+        </div>
+      `;
+    }
+
+    const dm = this.data;
+    const slotDur = dm.slotDurationMin || 15;
+
+    // Aggregate 96 slots → 48 columns (pair of slots per column)
+    const numCols = 48;
+    const slotsPerCol = Math.ceil(dm.slotsP80.length / numCols);
+    const colsP80: number[] = [];
+    const colsP50: number[] = [];
+    for (let c = 0; c < numCols; c++) {
+      let sumP80 = 0;
+      let sumP50 = 0;
+      for (let s = 0; s < slotsPerCol; s++) {
+        const idx = c * slotsPerCol + s;
+        sumP80 += dm.slotsP80[idx] ?? 0;
+        sumP50 += dm.slotsP50[idx] ?? 0;
+      }
+      colsP80.push(sumP80);
+      colsP50.push(sumP50);
+    }
+
+    const maxVal = Math.max(...colsP80, 0.001);
+
+    // Mockup color ramp: red-orange intensity, faint grey baseline for ~zero.
+    const colColor = (val: number) => {
+      const v = Math.min(1, val / maxVal);
+      if (v < 0.08) return 'rgba(255,255,255,.05)';
+      const r = Math.round(120 + 135 * v);
+      const g = Math.round(60 + 50 * (1 - v));
+      return `rgba(${r}, ${g}, 60, ${(0.12 + 0.85 * v).toFixed(2)})`;
+    };
+
+    const metaStr = (t('boiler.demand_map.meta', lang) as string)
+      .replace('{n}', String(dm.profile.daysUsed))
+      .replace('{cat}', CATEGORY_LABELS[dm.profile.category] || dm.profile.label);
+    const confidenceStr = `${t('boiler.demand_map.confidence', lang)} ${Math.round(dm.confidence * 100)} %`;
+    const planBadge = dm.drivesPlan
+      ? html`<span class="plan-badge" data-testid="demand-plan-badge" title="${t('boiler.demand_map.confidence', lang)} ≥ ${Math.round(dm.minConfidence * 100)} %">${t('boiler.demand_map.drives_plan', lang)}</span>`
+      : html`<span class="plan-badge learning" data-testid="demand-plan-badge" title="${t('boiler.demand_map.confidence', lang)} &lt; ${Math.round(dm.minConfidence * 100)} %">${t('boiler.demand_map.learning', lang)}</span>`;
+
+    return html`
+      <div class="card" data-testid="boiler-demand-map">
+        <div class="heading">
+          💧 ${heading}
+          ${planBadge}
+          <span class="meta-inline">${metaStr} · ${confidenceStr}${dm.profile.fallbackUsed ? html` · <span class="fallback-notice">${t('boiler.demand_map.fallback_notice', lang)}</span>` : nothing}</span>
+        </div>
+
+        <div class="heatmap-wrap">
+          <div class="heatmap">
+            ${colsP80.map((val, ci) => {
+              const tipTime = slotToHhmm(ci * slotsPerCol, slotDur);
+              const tipKwh = val.toFixed(2);
+              return html`
+                <div class="heatmap-col" title="${tipTime}: ${tipKwh} kWh">
+                  <div class="heatmap-bar" style="background:${colColor(val)};"></div>
+                </div>
+              `;
+            })}
+          </div>
+
+          <div class="hour-axis">
+            ${['00:00', '06:00', '12:00', '18:00', '24:00'].map(
+              lbl => html`<span class="hour-label">${lbl}</span>`,
+            )}
+          </div>
+        </div>
+
+        ${dm.windows.length > 0 ? html`
+          <div class="chips">
+            ${dm.windows.slice(0, 3).map(w => {
+              const timeStr = slotToHhmm(w.slotIndex, slotDur);
+              const emoji = windowEmoji(w.label);
+              const litersRounded = Math.round(w.liters);
+              const kwhFmt = w.p80Kwh.toFixed(1);
+              return html`
+                <span class="chip">
+                  ${emoji}
+                  <span class="chip-time">${timeStr}</span>
+                  &ge; <b>${litersRounded} L</b> (${kwhFmt} kWh)
+                </span>
+              `;
+            })}
+          </div>
+        ` : nothing}
+      </div>
+    `;
+  }
+}
+
+// ============================================================================
+// 13. LEGACY WRAPPERS (keep old tag names working for backwards compat)
 // ============================================================================
 
 @customElement('oig-boiler-state')
@@ -1279,7 +1563,7 @@ export class OigBoilerState extends LitElement {
 
     return html`
       <div class="temp-display">
-        <div class="current-temp">${this.state.currentTemp}°C</div>
+        <div class="current-temp">${this.state.currentTemp != null ? `${this.state.currentTemp}°C` : '--'}</div>
         <div class="target-temp">Cil: ${this.state.targetTemp}°C</div>
       </div>
 
@@ -1327,6 +1611,297 @@ export class OigBoilerProfiles extends LitElement {
   }
 }
 
+@customElement('oig-boiler-status-panel')
+// TODO: legacy cleanup after boiler redesign consumers are removed
+export class OigBoilerStatusPanel extends LitElement {
+  @property({ attribute: false }) data: BoilerV2Status | null = null;
+  @property({ type: String }) lang: Lang = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .panel { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .heading { font-size: 1.05rem; font-weight: 600; color: var(--primary-text-color, #222); }
+    .pill { padding: 2px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; }
+    .pill.heating { background: rgba(255,152,0,0.15); color: #b75d00; }
+    .pill.idle { background: rgba(76,175,80,0.15); color: #2e7d32; }
+    .pill.unknown { background: rgba(120,120,120,0.15); color: #555; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .field { display: flex; flex-direction: column; gap: 2px; }
+    .field label { font-size: 0.75rem; color: var(--secondary-text-color, #666); text-transform: uppercase; letter-spacing: 0.04em; }
+    .field span { font-size: 1.05rem; color: var(--primary-text-color, #111); font-variant-numeric: tabular-nums; }
+    .comfort { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+    .comfort.ok { color: #2e7d32; }
+    .comfort.bad { color: #c62828; }
+    .comfort.unknown { color: #777; }
+    .degraded-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .degraded-tag { padding: 2px 8px; border-radius: 6px; background: rgba(244,67,54,0.12); color: #b71c1c; font-size: 0.8rem; }
+    .degraded-banner { padding: 6px 10px; border-radius: 8px; background: rgba(244,67,54,0.15); color: #b71c1c; font-weight: 600; font-size: 0.85rem; }
+  `;
+
+  render() {
+    const d = this.data;
+    const lang = this.lang;
+    const stateKey = (d?.currentState ?? 'unknown') as 'heating' | 'idle' | 'unknown';
+    const stateLabel = t(`boiler.status.${stateKey}` as any, lang);
+    const comfortLabel = d?.comfortSatisfied === true
+      ? t('boiler.status.comfort_satisfied', lang)
+      : d?.comfortSatisfied === false
+        ? t('boiler.status.comfort_unsatisfied', lang)
+        : t('boiler.status.comfort_unknown', lang);
+    const comfortClass = d?.comfortSatisfied === true ? 'ok' : d?.comfortSatisfied === false ? 'bad' : 'unknown';
+    const flags = d?.degradedFlags ?? [];
+
+    return html`
+      <div data-testid="boiler-status-panel" class="panel">
+        <div class="row">
+          <div class="heading">${t('boiler.status.heading', lang)}</div>
+          <span data-testid="boiler-status-current-state" class="pill ${stateKey}">${stateLabel}</span>
+        </div>
+        <div class="degraded-banner" ?hidden=${!d?.degraded}>${t('boiler.status.degraded', lang)}</div>
+        <div class="grid">
+          <div class="field"><label>${t('boiler.status.temp_top', lang)}</label><span>${formatTempC(d?.temperatureTop ?? null)}</span></div>
+          <div class="field"><label>${t('boiler.status.temp_bottom', lang)}</label><span>${formatTempC(d?.temperatureBottom ?? null)}</span></div>
+          <div class="field"><label>${t('boiler.status.selected_source', lang)}</label><span data-testid="boiler-status-selected-source">${sourceLabel(d?.selectedSource ?? null, lang)}</span></div>
+          <div class="field"><label>${t('boiler.status.actuated_source', lang)}</label><span data-testid="boiler-status-actuated-source">${sourceLabel(d?.actuatedSource ?? null, lang)}</span></div>
+          <div class="field"><label>${t('boiler.status.energy_needed', lang)}</label><span>${formatKwh(d?.energyNeededKwh ?? null)}</span></div>
+          <div class="field"><label>${t('boiler.status.last_update', lang)}</label><span>${d?.lastUpdate ?? '—'}</span></div>
+        </div>
+        <div data-testid="boiler-status-comfort" class="comfort ${comfortClass}">${comfortLabel}</div>
+        ${flags.length
+          ? html`<div data-testid="boiler-status-degraded-flags" class="degraded-list">${flags.map((f) => html`<span class="degraded-tag">${reasonLabel(f, lang)}</span>`)}</div>`
+          : ''}
+      </div>
+    `;
+  }
+}
+
+@customElement('oig-boiler-plan-timeline')
+// TODO: legacy cleanup after boiler redesign consumers are removed
+export class OigBoilerPlanTimeline extends LitElement {
+  @property({ attribute: false }) slots: BoilerV2PlanSlot[] = [];
+  @property({ type: String }) lang: 'cs' | 'en' = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .wrap { padding: 16px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .heading { font-size: 1.05rem; font-weight: 600; margin-bottom: 12px; }
+    .empty { color: var(--secondary-text-color, #666); padding: 24px 0; text-align: center; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--divider-color, #eee); font-size: 0.9rem; }
+    th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--secondary-text-color, #666); font-weight: 600; }
+    .src { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }
+    .src.fve { background: rgba(76,175,80,0.15); color: #2e7d32; }
+    .src.grid { background: rgba(255,152,0,0.15); color: #b75d00; }
+    .src.alternative { background: rgba(33,150,243,0.15); color: #0d47a1; }
+    .src.other { background: rgba(120,120,120,0.15); color: #555; }
+    .badge { padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; }
+    .badge.ok { background: rgba(76,175,80,0.15); color: #2e7d32; }
+    .badge.bad { background: rgba(244,67,54,0.15); color: #b71c1c; }
+  `;
+
+  private srcClass(s: string | null): string {
+    if (!s) return 'other';
+    return ['fve', 'grid', 'alternative', 'overflow', 'discharge'].includes(s) ? s : 'other';
+  }
+
+  render() {
+    const lang = this.lang;
+    if (!this.slots || this.slots.length === 0) {
+      return html`<div data-testid="boiler-plan-timeline" class="wrap"><div class="heading">${t('boiler.timeline.heading', lang)}</div><div class="empty">${t('boiler.timeline.empty', lang)}</div></div>`;
+    }
+    return html`
+      <div data-testid="boiler-plan-timeline" class="wrap">
+        <div class="heading">${t('boiler.timeline.heading', lang)}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>${t('boiler.timeline.col_time', lang)}</th>
+              <th>${t('boiler.timeline.col_source', lang)}</th>
+              <th>${t('boiler.timeline.col_temp', lang)}</th>
+              <th>${t('boiler.timeline.col_kwh', lang)}</th>
+              <th>${t('boiler.timeline.col_cost', lang)}</th>
+              <th>${t('boiler.timeline.col_pv', lang)}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${this.slots.map((s) => {
+              const comfortBadge = s.comfortSatisfied === true
+                ? html`<span class="badge ok">${t('boiler.timeline.comfort_ok', lang)}</span>`
+                : s.comfortSatisfied === false
+                  ? html`<span class="badge bad">${t('boiler.timeline.comfort_gap', lang)}</span>`
+                  : '';
+              return html`
+                <tr>
+                  <td>${formatTimeRange(s.start, s.end)}</td>
+                  <td><span class="src ${this.srcClass(s.recommendedSource)}">${sourceLabel(s.recommendedSource, lang)}</span></td>
+                  <td>${formatTempC(s.expectedTempTopC ?? null)} ${comfortBadge}</td>
+                  <td>${formatKwh(s.consumptionKwh)}</td>
+                  <td>${formatCzk(s.estimatedCostCzk ?? null)}</td>
+                  <td>${formatPercent(s.pvShare ?? null)}</td>
+                </tr>
+              `;
+            })}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+}
+
+const FRESHNESS_REASONS = new Set([
+  'input_stale_price',
+  'input_stale_pv',
+  'input_stale_temperature',
+  'input_missing_recorder',
+  'input_adapter_error',
+]);
+
+@customElement('oig-boiler-source-explanation')
+// TODO: legacy cleanup after boiler redesign consumers are removed
+export class OigBoilerSourceExplanation extends LitElement {
+  @property({ attribute: false }) explanation: BoilerV2Explanation | null = null;
+  @property({ type: String }) lang: 'cs' | 'en' = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .wrap { padding: 16px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: grid; gap: 12px; }
+    .heading { font-size: 1.05rem; font-weight: 600; }
+    .section { display: flex; flex-direction: column; gap: 6px; }
+    .section h4 { margin: 0; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--secondary-text-color, #666); font-weight: 600; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { padding: 2px 8px; border-radius: 6px; font-size: 0.8rem; background: rgba(33,150,243,0.12); color: #0d47a1; }
+    .chip.fresh { background: rgba(76,175,80,0.15); color: #2e7d32; }
+    .chip.stale { background: rgba(255,152,0,0.18); color: #b75d00; }
+    .chip.degraded { background: rgba(244,67,54,0.15); color: #b71c1c; }
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+    .meta { display: flex; flex-direction: column; }
+    .meta label { font-size: 0.72rem; text-transform: uppercase; color: var(--secondary-text-color, #666); }
+    .meta span { font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+    .empty { color: var(--secondary-text-color, #666); }
+  `;
+
+  render() {
+    const e = this.explanation;
+    const lang = this.lang;
+    if (!e) {
+      return html`<div data-testid="boiler-source-explanation" class="wrap"><div class="heading">${t('boiler.explanation.heading', lang)}</div><div class="empty">${t('boiler.explanation.empty', lang)}</div></div>`;
+    }
+    const reasonCodes = e.reasonCodes ?? [];
+    const freshnessFromReasons = reasonCodes.filter((c) => FRESHNESS_REASONS.has(c));
+    const otherReasons = reasonCodes.filter((c) => !FRESHNESS_REASONS.has(c));
+    const degraded = e.degradedReasons ?? [];
+
+    return html`
+      <div data-testid="boiler-source-explanation" class="wrap">
+        <div class="heading">${t('boiler.explanation.heading', lang)}</div>
+
+        <div class="section" data-testid="boiler-explanation-freshness">
+          <h4>${t('boiler.explanation.freshness_heading', lang)}</h4>
+          ${freshnessFromReasons.length === 0
+            ? html`<div class="chips"><span class="chip fresh">${t('boiler.explanation.freshness_fresh', lang)}</span></div>`
+            : html`<div class="chips">${freshnessFromReasons.map((c) => html`<span class="chip stale">${reasonLabel(c, lang)}</span>`)}</div>`}
+        </div>
+
+        <div class="section" data-testid="boiler-explanation-degraded">
+          <h4>${t('boiler.explanation.degraded_heading', lang)}</h4>
+          ${degraded.length === 0
+            ? html`<div class="empty">—</div>`
+            : html`<div class="chips">${degraded.map((c) => html`<span class="chip degraded">${reasonLabel(c, lang)}</span>`)}</div>`}
+        </div>
+
+        ${otherReasons.length
+          ? html`<div class="section" data-testid="boiler-explanation-reasons"><h4>Reason codes</h4><div class="chips">${otherReasons.map((c) => html`<span class="chip">${reasonLabel(c, lang)}</span>`)}</div></div>`
+          : ''}
+
+        <div class="meta-grid" data-testid="boiler-explanation-meta">
+          ${e.planCreatedAt ? html`<div class="meta"><label>${t('boiler.explanation.plan_created', lang)}</label><span>${e.planCreatedAt}</span></div>` : ''}
+          ${e.planValidUntil ? html`<div class="meta"><label>${t('boiler.explanation.plan_valid_until', lang)}</label><span>${e.planValidUntil}</span></div>` : ''}
+          ${e.dataAgeSecs != null ? html`<div class="meta"><label>${t('boiler.explanation.data_age', lang)}</label><span>${formatDataAge(e.dataAgeSecs)}</span></div>` : ''}
+          ${e.unsatisfiedComfortGapC != null ? html`<div class="meta"><label>${t('boiler.explanation.unsatisfied_gap', lang)}</label><span>${e.unsatisfiedComfortGapC} °C</span></div>` : ''}
+          ${e.temperatureAtDeadlineC != null ? html`<div class="meta"><label>${t('boiler.explanation.temp_at_deadline', lang)}</label><span>${formatTempC(e.temperatureAtDeadlineC)}</span></div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+}
+
+@customElement('oig-boiler-override-panel')
+export class OigBoilerOverridePanel extends LitElement {
+  @property({ attribute: false }) identity: BoilerV2Identity = { entryId: null, boxId: null, available: false };
+  @property({ attribute: false }) currentOverride: { active: boolean; ttlMinutes: number; reason: string; capabilityAvailable: boolean } | null = null;
+  @property({ type: String }) lang: 'cs' | 'en' = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .wrap { padding: 16px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: grid; gap: 10px; opacity: 0.95; }
+    .heading { font-size: 1rem; font-weight: 600; }
+    .subtitle { font-size: 0.85rem; color: var(--secondary-text-color, #666); }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+    input, textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--divider-color, #ccc); border-radius: 6px; background: var(--secondary-background-color, #fafafa); color: var(--primary-text-color); }
+    button { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--divider-color, #ccc); background: var(--primary-color, #1976d2); color: #fff; font-weight: 600; cursor: pointer; }
+    button[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .notice { padding: 6px 10px; border-radius: 6px; background: rgba(244,67,54,0.12); color: #b71c1c; font-size: 0.85rem; }
+    .active-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(255,152,0,0.2); color: #b75d00; font-weight: 600; font-size: 0.85rem; width: max-content; }
+  `;
+
+  render() {
+    const lang = this.lang;
+    const identityOk = this.identity.available;
+    const capabilityOk = this.currentOverride?.capabilityAvailable ?? false;
+    const canSubmit = identityOk && capabilityOk;
+    const active = this.currentOverride?.active === true;
+    return html`
+      <div data-testid="boiler-override-panel" class="wrap">
+        <div class="heading">${t('boiler.override.heading', lang)}</div>
+        <div class="subtitle">${t('boiler.override.subtitle', lang)}</div>
+        ${active ? html`<span class="active-badge">${t('boiler.override.active', lang)}</span>` : ''}
+        <div class="notice" ?hidden=${identityOk}>${t('boiler.override.identity_unavailable', lang)}</div>
+        <div class="notice capability-notice" ?hidden=${!identityOk || capabilityOk}>${t('boiler.override.capability_unavailable', lang)}</div>
+        <label>
+          ${t('boiler.override.ttl_label', lang)}
+          <input data-testid="override-ttl-input" type="number" min="15" max="1440" step="15" value="120" ?disabled=${!canSubmit} />
+        </label>
+        <label>
+          ${t('boiler.override.reason_label', lang)}
+          <textarea data-testid="override-reason-input" required ?disabled=${!canSubmit}></textarea>
+        </label>
+        <button data-testid="override-submit-btn" ?disabled=${!canSubmit}>${t('boiler.override.submit', lang)}</button>
+      </div>
+    `;
+  }
+}
+
+@customElement('oig-boiler-unavailable-state')
+export class OigBoilerUnavailableState extends LitElement {
+  @property({ type: String }) reason: 'loading' | 'error' | 'degraded' | 'unavailable' = 'unavailable';
+  @property({ type: String }) message: string = '';
+  @property({ type: String }) lang: 'cs' | 'en' = 'cs';
+
+  static styles = css`
+    :host { display: block; }
+    .wrap { padding: 24px; border-radius: 12px; background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+    .icon { font-size: 1.6rem; }
+    .headline { font-size: 1rem; font-weight: 600; }
+    .message { color: var(--secondary-text-color, #666); font-size: 0.9rem; }
+  `;
+
+  render() {
+    const lang = this.lang;
+    const icon = this.reason === 'loading' ? '⏳' : this.reason === 'error' ? '⚠️' : this.reason === 'degraded' ? '🟠' : 'ℹ️';
+    return html`
+      <div data-testid="boiler-unavailable-state" class="wrap">
+        <span class="icon">${icon}</span>
+        <div class="headline loading-notice" ?hidden=${this.reason !== 'loading'}>${t('boiler.unavailable.loading', lang)}</div>
+        <div class="headline error-notice" ?hidden=${this.reason !== 'error'}>${t('boiler.unavailable.error', lang)}</div>
+        <div class="headline degraded-notice" ?hidden=${this.reason !== 'degraded'}>${t('boiler.unavailable.degraded', lang)}</div>
+        <div class="headline unavailable-notice" ?hidden=${this.reason !== 'unavailable'}>${t('boiler.unavailable.unavailable', lang)}</div>
+        ${this.message ? html`<div class="message">${this.message}</div>` : ''}
+      </div>
+    `;
+  }
+}
+
 // ============================================================================
 // TAG NAME DECLARATIONS
 // ============================================================================
@@ -1347,5 +1922,11 @@ declare global {
     'oig-boiler-state': OigBoilerState;
     'oig-boiler-heatmap': OigBoilerHeatmap;
     'oig-boiler-profiles': OigBoilerProfiles;
+    'oig-boiler-status-panel': OigBoilerStatusPanel;
+    'oig-boiler-plan-timeline': OigBoilerPlanTimeline;
+    'oig-boiler-source-explanation': OigBoilerSourceExplanation;
+    'oig-boiler-override-panel': OigBoilerOverridePanel;
+    'oig-boiler-unavailable-state': OigBoilerUnavailableState;
+    'oig-boiler-demand-map': OigBoilerDemandMap;
   }
 }

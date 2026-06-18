@@ -2,16 +2,134 @@
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import BATTERY_SOC_OVERFLOW_THRESHOLD
-from .models import BoilerPlan, BoilerProfile, BoilerSlot, EnergySource
+from .models import (
+    BoilerPlan,
+    BoilerProfile,
+    BoilerSlot,
+    BoilerThermalTopology,
+    EnergySource,
+)
+from .planner_contract import AlternativeSourceCapability, PlannerInput
+from .planner_core import PlanResult, plan_comfort_core
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def plan_result_to_boiler_plan(
+    result: PlanResult,
+    *,
+    planner_input: Optional[PlannerInput] = None,
+    profile: Optional[BoilerProfile] = None,
+) -> BoilerPlan:
+    """Adapt comfort-core PlanResult into legacy runtime/actuator BoilerPlan."""
+    effective_profile = profile or (planner_input.profile if planner_input else None)
+    _topology = getattr(planner_input, "topology", None) if planner_input else None
+    _target_temp = getattr(_topology, "target_temp_c", None)
+    slots = [
+        BoilerSlot(
+            start=slot.start,
+            end=slot.end,
+            avg_consumption_kwh=max(0.0, slot.heating_kwh),
+            confidence=_slot_confidence(slot.start, effective_profile),
+            recommended_source=_slot_source(slot.source, result),
+            spot_price_kwh=_spot_price_for_slot(slot.start, planner_input),
+            alt_price_kwh=_alt_price_for_slot(planner_input),
+            overflow_available=(slot.pv_kwh or 0.0) > 0.0,
+            heating_kwh=slot.heating_kwh,
+            pv_kwh=slot.pv_kwh if slot.pv_kwh is not None else 0.0,
+            grid_kwh=slot.grid_kwh if slot.grid_kwh is not None else 0.0,
+            alt_kwh=slot.alt_kwh if slot.alt_kwh is not None else 0.0,
+            estimated_cost_czk=slot.estimated_cost_czk,
+            predicted_top_temp_c=(
+                slot.predicted_top_temp_c
+                if slot.predicted_top_temp_c is not None and slot.predicted_top_temp_c > 0.0
+                else None
+            ),
+            comfort_satisfied=(
+                (slot.predicted_top_temp_c >= _target_temp)
+                if (slot.predicted_top_temp_c is not None
+                    and slot.predicted_top_temp_c > 0.0
+                    and _target_temp is not None)
+                else None
+            ),
+            pv_share=(
+                (slot.pv_kwh or 0.0) / slot.heating_kwh
+                if slot.heating_kwh > 0
+                else 0.0
+            ),
+            # R3/R9: propagate battery_kwh and purpose so canonical DTO can expose them
+            battery_kwh=slot.battery_kwh if getattr(slot, "battery_kwh", None) is not None else 0.0,
+            purpose=getattr(slot, "purpose", "comfort"),
+        )
+        for slot in result.slots
+    ]
+    return BoilerPlan(
+        created_at=result.created_at,
+        valid_until=result.valid_until,
+        slots=slots,
+        total_consumption_kwh=sum(slot.avg_consumption_kwh for slot in slots),
+        estimated_cost_czk=result.estimated_cost_czk,
+        fve_kwh=result.pv_kwh,
+        grid_kwh=result.grid_kwh,
+        alt_kwh=result.alt_kwh,
+    )
+
+
+def _slot_confidence(start: datetime, profile: Optional[BoilerProfile]) -> float:
+    if profile is None:
+        return 1.0
+    try:
+        _consumption, confidence = profile.get_consumption(start.hour)
+        return confidence
+    except Exception:
+        return 0.0
+
+
+def _slot_source(
+    source: Optional[EnergySource],
+    result: PlanResult,
+) -> EnergySource:
+    candidate = (
+        source
+        or result.actuated_source
+        or result.selected_source
+        or EnergySource.GRID
+    )
+    if isinstance(candidate, EnergySource):
+        return candidate
+    try:
+        return EnergySource(str(candidate))
+    except ValueError:
+        return EnergySource.GRID
+
+
+def _spot_price_for_slot(
+    start: datetime,
+    planner_input: Optional[PlannerInput],
+) -> Optional[float]:
+    if planner_input is None:
+        return None
+    if start in planner_input.spot_prices:
+        return planner_input.spot_prices[start]
+    hour_start = start.replace(minute=0, second=0, microsecond=0)
+    return planner_input.spot_prices.get(hour_start)
+
+
+def _alt_price_for_slot(planner_input: Optional[PlannerInput]) -> Optional[float]:
+    if planner_input is None:
+        return None
+    if planner_input.alt_source_capability == AlternativeSourceCapability.DISABLED:
+        return None
+    if planner_input.alt_cost_kwh <= 0:
+        return None
+    return planner_input.alt_cost_kwh
 
 
 class BoilerPlanner:
@@ -37,13 +155,31 @@ class BoilerPlanner:
         self.slot_minutes = slot_minutes
         self.alt_cost_kwh = alt_cost_kwh
         self.has_alternative = has_alternative
+        self.last_core_result: Optional[PlanResult] = None
+
+    async def async_create_plan_result(
+        self,
+        planner_input: PlannerInput,
+        *,
+        now: Optional[datetime] = None,
+        previous_plan: Optional[PlanResult] = None,
+    ) -> PlanResult:
+        """Create the Task 6a explicit comfort-core planner result."""
+        await asyncio.sleep(0)
+        self.last_core_result = plan_comfort_core(
+            planner_input,
+            now=now,
+            previous_plan=previous_plan,
+        )
+        return self.last_core_result
 
     async def async_create_plan(
         self,
-        profile: BoilerProfile,
-        spot_prices: dict[datetime, float],
-        overflow_windows: list[tuple[datetime, datetime]],
+        profile: Optional[BoilerProfile] = None,
+        spot_prices: Optional[dict[datetime, float]] = None,
+        overflow_windows: Optional[list[tuple[datetime, datetime]]] = None,
         deadline_time: str = "06:00",
+        planner_input: Optional[PlannerInput] = None,
     ) -> BoilerPlan:
         """
         Vytvoří plán na 24 hodin s optimalizací nákladů.
@@ -53,74 +189,73 @@ class BoilerPlanner:
             spot_prices: Spotové ceny {datetime: Kč/kWh}
             overflow_windows: FVE overflow okna [(start, end), ...]
             deadline_time: Čas do kdy má být ohřev hotový (HH:MM)
+            planner_input: Canonical planner input DTO (Task 4 contract)
 
         Returns:
             BoilerPlan s doporučenými zdroji
         """
         await asyncio.sleep(0)
-        _ = deadline_time
-        now = dt_util.now()
-        plan_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        plan_end = plan_start + timedelta(days=1)
+        if planner_input is None:
+            planner_input = self._legacy_planner_input(
+                profile=profile,
+                spot_prices=spot_prices,
+                overflow_windows=overflow_windows,
+                deadline_time=deadline_time,
+            )
 
-        plan = BoilerPlan(
-            created_at=now,
-            valid_until=plan_end,
-            slots=[],
+        self.last_core_result = plan_comfort_core(planner_input)
+        plan = plan_result_to_boiler_plan(
+            self.last_core_result,
+            planner_input=planner_input,
         )
 
-        # Generovat sloty po 15 minutách
-        current_time = plan_start
-        while current_time < plan_end:
-            slot_end = current_time + timedelta(minutes=self.slot_minutes)
-
-            # Průměrná spotřeba za hodinu z profilu
-            hour = current_time.hour
-            hourly_consumption, confidence = profile.get_consumption(hour)
-
-            # Přepočítat na 15min slot
-            slot_consumption = hourly_consumption * (self.slot_minutes / 60.0)
-
-            # Kontrola FVE overflow
-            overflow_available = self._is_in_overflow_window(
-                current_time, slot_end, overflow_windows
-            )
-
-            # Spotová cena (interpolace pokud chybí)
-            spot_price = self._get_spot_price(current_time, spot_prices)
-
-            # Doporučený zdroj (priorita: FVE → Grid → Alt)
-            recommended_source = self._recommend_source(
-                overflow_available=overflow_available,
-                spot_price=spot_price,
-                alt_price=self.alt_cost_kwh,
-            )
-
-            slot = BoilerSlot(
-                start=current_time,
-                end=slot_end,
-                avg_consumption_kwh=slot_consumption,
-                confidence=confidence,
-                recommended_source=recommended_source,
-                spot_price_kwh=spot_price,
-                alt_price_kwh=self.alt_cost_kwh if self.has_alternative else None,
-                overflow_available=overflow_available,
-            )
-
-            plan.slots.append(slot)
-            current_time = slot_end
-
-        # Vypočítat agregované hodnoty
-        self._calculate_plan_totals(plan)
-
         _LOGGER.info(
-            "Plán vytvořen: %s slotů, %.2f kWh celkem, %.2f Kč odhadovaná cena",
+            "Comfort-core plán vytvořen: %s slotů, %.2f kWh celkem, %.2f Kč odhadovaná cena",
             len(plan.slots),
             plan.total_consumption_kwh,
             plan.estimated_cost_czk,
         )
 
         return plan
+
+    def _legacy_planner_input(
+        self,
+        *,
+        profile: Optional[BoilerProfile],
+        spot_prices: Optional[dict[datetime, float]],
+        overflow_windows: Optional[list[tuple[datetime, datetime]]],
+        deadline_time: str,
+    ) -> PlannerInput:
+        """Build a minimal comfort-core DTO for legacy direct planner callers."""
+        if profile is None:
+            raise ValueError("profile is required")
+        return PlannerInput(
+            entry_id="legacy_boiler_planner",
+            box_id="legacy_boiler",
+            profile=profile,
+            spot_prices=spot_prices or {},
+            overflow_windows=overflow_windows or [],
+            deadline_time=deadline_time,
+            topology=BoilerThermalTopology(
+                stratification_mode="two_zone",
+                thermometer_placements=["top"],
+                temperature_topology="top_only",
+                tank_volume_l=100.0,
+                target_temp_c=50.0,
+                cold_inlet_temp_c=10.0,
+                heater_power_kw=max(0.1, 60.0 / max(1, self.slot_minutes)),
+                standing_loss_coefficient=0.0,
+            ),
+            current_top_temp_c=45.0,
+            current_bottom_temp_c=None,
+            temperature_updated_at=dt_util.now(),
+            alt_source_capability=(
+                AlternativeSourceCapability.CONTROLLABLE
+                if self.has_alternative
+                else AlternativeSourceCapability.DISABLED
+            ),
+            alt_cost_kwh=self.alt_cost_kwh,
+        )
 
     def _is_in_overflow_window(
         self,
@@ -279,6 +414,12 @@ class BoilerPlanner:
                 alt_kwh += consumption
                 if slot.alt_price_kwh is not None:
                     total_cost += consumption * slot.alt_price_kwh
+            elif slot.recommended_source == EnergySource.BATTERY:
+                # R3: Battery-sourced slots discharge the home battery.
+                # Cost is already accounted for in planner_core via BATTERY_CYCLE_COST.
+                # For the legacy totals, count battery under alt_kwh (non-grid) so that
+                # fve_kwh + grid_kwh + alt_kwh == total_consumption_kwh.
+                alt_kwh += consumption
 
         plan.total_consumption_kwh = total_consumption
         plan.estimated_cost_czk = total_cost

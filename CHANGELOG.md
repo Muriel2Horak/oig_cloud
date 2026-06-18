@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.36] - 2026-06-18
+
+Large feature release: a from-scratch Boiler V2 dashboard and planner, a redesigned
+Flow dashboard, a per-module Settings tab, planner improvements, plus a full
+code-review pass fixing every confirmed high- and medium-severity finding.
+
+### Added
+- **Boiler V2 dashboard** — animated 3D tank model (heating element, alternative source, circulation flow), a weekly draw-map (P90 heatmap + day profiles), a combined plan/SoC chart, and a human-friendly water readout (usable ~38 °C litres + shower/bath equivalents with draw-type symbols). The tank is modelled as a "battery": ready hot water as state-of-charge.
+- **Boiler planner V3** — demand-driven multi-window targets with spot-price arbitrage, Home 5 maneuver, pre-peak circulation, anti-legionella, and an opt-in **thermal arbitrage** mode that over-heats in cheap slots up to a configurable max temperature while reserving FVE-overflow headroom.
+- **Boiler configuration** — full setup in the Home Assistant config/options wizard *and* in the dashboard's ⚙️ Nastavení tab, bridged over REST.
+- **Flow dashboard redesign** — edge-gauge nodes (battery SoC perimeter, home self-sufficiency, grid, solar, inverter), per-phase colouring per ČSN, a záloha/nezáloha consumption split, and financial balance shown in the node aura.
+- **Non-backup (nezáloha) sensors** — per-phase and total grid load plus today/month/year consumption energy.
+- **Settings tab** — per-module wizards over REST, with a sectioned options menu and trustworthy persistence; real weather forecast in the header with a combined weather modal.
+
+### Changed
+- The boiler tank now renders as always-full with a thermal-stratification gradient driven by the **live** top/bottom temperatures, and the "ready" waterline follows the computed ready-fraction (was a fixed gradient).
+- Dashboard V2 is now the default panel; the legacy V1 dashboard and its dead infrastructure were removed.
+- Battery planner: displacement-based dynamic reserve, per-day expensive-price percentile, consistent AC round-trip efficiency, same-day solar reality-correction, and floor-defense that protects only the 20 % hardware minimum.
+
+### Fixed
+- **Lifecycle/leaks** — the main coordinator now cancels its spot-price/hourly timers on shutdown and both coordinators shut down on unload; battery-forecast sensor time-change/dispatcher listeners and the Flow canvas ResizeObserver are now torn down; both `sensor` and `switch` platforms are unloaded.
+- **Storage/data integrity** — all read-modify-write sequences on the plans Store are serialized behind a lock; the profiler buckets by local time; a failed/empty forecast retries on the next tick; backfilled actual-interval costs are persisted; the deprecated blocking persistent-notification call was replaced with the async API.
+- **Boiler actuator serializer** is now actually started in production, so override/config state is restored and the consumer loop runs.
+- **Security** — `module_config` and plan-mutation REST endpoints are admin-guarded fail-closed; the box-id extraction regex was fixed.
+- **Config flow** — cross-box validation no longer false-flags non-OIG temperature sensors; the modules section routes newly-enabled modules through their config before the summary.
+- **Boiler** — phantom "during-heating" draws are suppressed (require a real top-temp fall), honest per-source cost/savings accounting, and the auto-switch watchdog can no longer leave the box stuck off-plan.
+
 ## [2.3.35] - 2026-04-22
 
 ### Changed

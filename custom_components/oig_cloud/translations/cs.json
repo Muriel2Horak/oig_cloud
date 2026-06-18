@@ -102,7 +102,8 @@
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "price_hysteresis_czk": "Hystereze ceny (CZK/kWh)",
           "hw_min_hold_hours": "Max. hodin na HW minimu",
-          "target_capacity_percent": "Cílová kapacita baterie (%)"
+          "target_capacity_percent": "Cílová kapacita baterie (%)",
+          "expensive_percentile_pct": "Práh drahých hodin (percentil, %)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat službu změny režimu (set_box_mode) automaticky podle vypočteného plánu. Stejné nastavení jako v průvodci.",
@@ -119,7 +120,8 @@
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
           "price_hysteresis_czk": "Minimální cenový rozdíl pro rozhodnutí držet vs. čekat",
           "hw_min_hold_hours": "Maximální doba na HW minimu před nuceným dobitím",
-          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
+          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
+          "expensive_percentile_pct": "Importy dražší než tento denní percentil se plánovač snaží pokrýt levným přednabitím baterie. Výchozí 70 %."
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "title": "🔋 Konfigurace predikce baterie"
@@ -128,13 +130,12 @@
         "data": {
           "boiler_alt_cost_kwh": "Cena alternativního ohřevu (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Přepínač alternativního zdroje - volitelný",
+          "boiler_alt_source_mode": "Režim alternativního zdroje",
           "boiler_circulation_pump_switch_entity": "Přepínač cirkulačního čerpadla - volitelný",
           "boiler_cold_inlet_temp_c": "Teplota studené vody (°C)",
           "boiler_deadline_time": "Deadline (čas do kdy mít ohřáto)",
-          "boiler_has_alternative_heating": "Má bojler alternativní zdroj tepla?",
           "boiler_heater_power_kw_entity": "Senzor výkonu topného tělesa (kW)",
           "boiler_heater_switch_entity": "Přepínač topného tělesa",
-          "boiler_plan_slot_minutes": "Délka časového slotu (minuty)",
           "boiler_planning_horizon_hours": "Plánovací horizont (hodiny)",
           "boiler_spot_price_sensor": "Senzor spotové ceny",
           "boiler_stratification_mode": "Režim stratifikace",
@@ -147,13 +148,12 @@
         "data_description": {
           "boiler_alt_cost_kwh": "Kolik vás stojí 1 kWh z alternativního zdroje (např. 1.5 CZK/kWh pro kotel). Elektrický ohřev se použije jen když je spotová cena levnější.",
           "boiler_alt_heater_switch_entity": "Entity ID přepínače pro alternativní zdroj (např. kotel, tepelné čerpadlo). Nechte prázdné, pokud nemáte.",
+          "boiler_alt_source_mode": "Vyberte vypnuto, pouze benchmarking, nebo ovladatelný zdroj. Ovladatelný zdroj vyžaduje jeden switch; nepodporované akční členy ponechte v režimu pouze benchmarking.",
           "boiler_circulation_pump_switch_entity": "Entity ID přepínače pro cirkulační čerpadlo. Nechte prázdné, pokud cirkulaci neřídíte přes switch.",
           "boiler_cold_inlet_temp_c": "Teplota přítoku studené vody z vodovodu (typicky 10-15°C)",
-          "boiler_deadline_time": "Do kdy chcete mít bojler ohřátý (formát HH:MM, např. 20:00). Plánování vždy najde nejlevnější sloty PŘED tímto časem.",
-          "boiler_has_alternative_heating": "Zaškrtněte, pokud máte alternativní způsob ohřevu (kotel, TČ) a chcete ho využívat když je elektřina drahá",
+          "boiler_deadline_time": "Do kdy chcete mít bojler ohřátý (formát HH:MM, např. 20:00). Plánování cílí komfort k tomuto času a zohledňuje náklady i dostupnost zdrojů.",
           "boiler_heater_power_kw_entity": "Entity ID senzoru s aktuálním výkonem (např. sensor.boiler_power). Pokud nemáte, vytvořte helper s konstantní hodnotou (např. 2.0 pro 2kW)",
           "boiler_heater_switch_entity": "Entity ID přepínače pro zapnutí hlavního topného tělesa (např. switch.boiler_heater). Toto bude integrace zapínat/vypínat.",
-          "boiler_plan_slot_minutes": "Velikost časových bloků pro plánování (15-60 minut). Menší = přesnější, větší = jednodušší. Doporučeno 60 minut.",
           "boiler_planning_horizon_hours": "Jak daleko dopředu plánovat (typicky 24-48 hodin). Čím více, tím lepší optimalizace, ale delší výpočet.",
           "boiler_spot_price_sensor": "Entity ID senzoru se spotovou cenou (např. sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = průměr teplot | two_zone = stratifikovaný model (přesnější, potřebuje 2 senzory)",
@@ -163,7 +163,7 @@
           "boiler_volume_l": "Celkový objem zásobníku teplé vody (např. 120 litrů)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         },
-        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně plánuje oh řev bojleru podle spotových cen elektřiny. Vybírá nejlevnější časové sloty pro ohřev vody před vámi nastaveným deadlinem.\n\n🔧 **Co je potřeba:**\n• 💰 Spotové ceny (musí být zapnuté)\n• 🌡️ Teplotní senzory bojleru (horní a volitelně dolní)\n• ⚡ Výkon topného tělesa\n\n💡 **Jak to funguje:**\n1. Vypočítá kolik energie potřebujete pro dohřátí vody\n2. Najde nejlevnější časové sloty před deadlinem (např. 20:00)\n3. Vytvoří plán kdy zapnout bojler\n4. Ovládá přepínač (switch) pro zapnutí/vypnutí ohřevu\n\n⚠️ **Poznámka:** Tento modul pouze řídí KDY ohřívat. Fyzické zapínání bojleru musíte zajistit pomocí automatizace nebo chytrého vypínače.",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nAutomaticky plánuje komfortní ohřev bojleru na základě vašich preferencí, aktuální teploty vody a dostupných zdrojů energie. Zohledňuje spotové ceny, ekonomiku alternativního zdroje a váš komfortní deadline.\n\n🔧 **Co je potřeba:**\n• 💰 Spotové ceny (musí být zapnuté)\n• 🌡️ Teplotní senzory bojleru (horní a volitelně dolní)\n• ⚡ Výkon topného tělesa\n\n💡 **Jak to funguje:**\n1. Načte aktuální teplotu bojleru (shora i zdola, pokud je k dispozici)\n2. Vypočítá energii potřebnou k dosažení cílové teploty do deadlinu\n3. Vybere optimální časové sloty s ohledem na cenu a ekonomiku alternativního zdroje\n4. Automaticky ovládá spínací prvek pro udržení komfortu\n\n⚠️ **Poznámka:** Tento modul plánuje KDY a ZDA vůbec topit. Fyzické spínání bojleru zajišťuje automaticky integrace.",
         "title": "🔥 Konfigurace bojleru"
       },
       "wizard_credentials": {
@@ -453,7 +453,8 @@
           "max_ups_price_czk": "Maximální cena pro nabíjení UPS (CZK/kWh)",
           "min_capacity_percent": "Minimální kapacita baterie (%)",
           "disable_planning_min_guard": "Vypnout ochranu plánovacího minima",
-          "target_capacity_percent": "Cílová kapacita baterie (%)"
+          "target_capacity_percent": "Cílová kapacita baterie (%)",
+          "expensive_percentile_pct": "Práh drahých hodin (percentil, %)"
         },
         "data_description": {
           "auto_mode_switch_enabled": "Pokud je zapnuto, integrace bude volat službu změny režimu (set_box_mode) automaticky podle vypočteného plánu.",
@@ -468,7 +469,8 @@
           "min_capacity_percent": "Pokud kapacita klesne pod tuto hodnotu, zahájí se nabíjení",
           "disable_planning_min_guard": "Povolí plánovači jít níž než plánovací minimum (agresivnější optimalizace)",
           "max_ups_price_czk": "Tvrdý bezpečnostní limit: ze sítě se nikdy nenabíjí, pokud je cena vyšší",
-          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí"
+          "target_capacity_percent": "Optimální kapacita, na kterou se nabíjí",
+          "expensive_percentile_pct": "Importy dražší než tento denní percentil se plánovač snaží pokrýt levným přednabitím baterie. Výchozí 70 %."
         },
         "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně optimalizuje nabíjení domácí baterie podle spotových cen elektřiny a předpovědi solární výroby. Automaticky se nabíjí v nejlevnějších hodinách.\n\n🔧 **Co je potřeba:**\n• ☀️ Solární předpověď (musí být zapnutá)\n• ⚡ Rozšířené senzory (musí být zapnuté)\n• 📈 Spotové ceny elektřiny\n\n⚠️ **Experimentální funkce** - může vyžadovat jemné doladění parametrů\n\n⚠️ **Tento modul je vyžadován pro:**\n• 📊 Dashboard (webové rozhraní)",
         "title": "🔋 Konfigurace predikce baterie"
@@ -477,12 +479,11 @@
         "data": {
           "boiler_alt_cost_kwh": "Cena alternativního ohřevu (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Přepínač alternativního zdroje - volitelný",
+          "boiler_alt_source_mode": "Režim alternativního zdroje",
           "boiler_cold_inlet_temp_c": "Teplota studené vody (°C)",
           "boiler_deadline_time": "Deadline (čas do kdy mít ohřáto)",
-          "boiler_has_alternative_heating": "Má bojler alternativní zdroj tepla?",
           "boiler_heater_power_kw_entity": "Senzor výkonu topného tělesa (kW)",
           "boiler_heater_switch_entity": "Přepínač topného tělesa",
-          "boiler_plan_slot_minutes": "Délka časového slotu (minuty)",
           "boiler_planning_horizon_hours": "Plánovací horizont (hodiny)",
           "boiler_spot_price_sensor": "Senzor spotové ceny",
           "boiler_stratification_mode": "Režim stratifikace",
@@ -495,12 +496,11 @@
         "data_description": {
           "boiler_alt_cost_kwh": "Kolik vás stojí 1 kWh z alternativního zdroje (např. 1.5 CZK/kWh pro kotel). Elektrický ohřev se použije jen když je spotová cena levnější.",
           "boiler_alt_heater_switch_entity": "Entity ID přepínače pro alternativní zdroj (např. kotel, tepelné čerpadlo). Nechte prázdné, pokud nemáte.",
+          "boiler_alt_source_mode": "Vyberte vypnuto, pouze benchmarking, nebo ovladatelný zdroj. Ovladatelný zdroj vyžaduje jeden switch; nepodporované akční členy ponechte v režimu pouze benchmarking.",
           "boiler_cold_inlet_temp_c": "Teplota přítoku studené vody z vodovodu (typicky 10-15°C)",
-          "boiler_deadline_time": "Do kdy chcete mít bojler ohřátý (formát HH:MM, např. 20:00). Plánování vždy najde nejlevnější sloty PŘED tímto časem.",
-          "boiler_has_alternative_heating": "Zaškrtněte, pokud máte alternativní způsob ohřevu (kotel, TČ) a chcete ho využívat když je elektřina drahá",
+          "boiler_deadline_time": "Do kdy chcete mít bojler ohřátý (formát HH:MM, např. 20:00). Plánování cílí komfort k tomuto času a zohledňuje náklady i dostupnost zdrojů.",
           "boiler_heater_power_kw_entity": "Entity ID senzoru s aktuálním výkonem (např. sensor.boiler_power). Pokud nemáte, vytvořte helper s konstantní hodnotou (např. 2.0 pro 2kW)",
           "boiler_heater_switch_entity": "Entity ID přepínače pro zapnutí hlavního topného tělesa (např. switch.boiler_heater). Toto bude integrace zapínat/vypínat.",
-          "boiler_plan_slot_minutes": "Velikost časových bloků pro plánování (15-60 minut). Menší = přesnější, větší = jednodušší. Doporučeno 60 minut.",
           "boiler_planning_horizon_hours": "Jak daleko dopředu plánovat (typicky 24-48 hodin). Čím více, tím lepší optimalizace, ale delší výpočet.",
           "boiler_spot_price_sensor": "Entity ID senzoru se spotovou cenou (např. sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = průměr teplot | two_zone = stratifikovaný model (přesnější, potřebuje 2 senzory)",
@@ -510,8 +510,70 @@
           "boiler_volume_l": "Celkový objem zásobníku teplé vody (např. 120 litrů)",
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         },
-        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nInteligentně plánuje ohřev bojleru podle spotových cen elektřiny. Vybírá nejlevnější časové sloty pro ohřev vody před vámi nastaveným deadlinem.\n\n🔧 **Co je potřeba:**\n• 💰 Spotové ceny (musí být zapnuté)\n• 🌡️ Teplotní senzory bojleru (horní a volitelně dolní)\n• ⚡ Výkon topného tělesa\n\n💡 **Jak to funguje:**\n1. Vypočítá kolik energie potřebujete pro dohřátí vody\n2. Najde nejlevnější časové sloty před deadlinem (např. 20:00)\n3. Vytvoří plán kdy zapnout bojler\n4. Ovládá přepínač (switch) pro zapnutí/vypnutí ohřevu\n\n⚠️ **Poznámka:** Tento modul pouze řídí KDY ohřívat. Fyzické zapínání bojleru musíte zajistit pomocí automatizace nebo chytrého vypínače.",
+        "description": "{step}\n{progress}\n\n📖 **Co tento modul dělá:**\nAutomaticky plánuje komfortní ohřev bojleru na základě vašich preferencí, aktuální teploty vody a dostupných zdrojů energie. Zohledňuje spotové ceny, ekonomiku alternativního zdroje a váš komfortní deadline.\n\n🔧 **Co je potřeba:**\n• 💰 Spotové ceny (musí být zapnuté)\n• 🌡️ Teplotní senzory bojleru (horní a volitelně dolní)\n• ⚡ Výkon topného tělesa\n\n💡 **Jak to funguje:**\n1. Načte aktuální teplotu bojleru (shora i zdola, pokud je k dispozici)\n2. Vypočítá energii potřebnou k dosažení cílové teploty do deadlinu\n3. Vybere optimální časové sloty s ohledem na cenu a ekonomiku alternativního zdroje\n4. Automaticky ovládá spínací prvek pro udržení komfortu\n\n⚠️ **Poznámka:** Tento modul plánuje KDY a ZDA vůbec topit. Fyzické spínání bojleru zajišťuje automaticky integrace.",
         "title": "🔥 Konfigurace bojleru"
+      },
+      "wizard_boiler_simple_6": {
+        "data": {
+          "boiler_has_alternative_heating": "Alternativní zdroj tepla (plyn, TČ, krb…)",
+          "boiler_alt_source_type": "Typ alternativního zdroje",
+          "boiler_alt_cost_kwh": "Cena tepla (Kč/kWh)",
+          "box_has_home56": "Box má Home 5/6",
+          "boiler_home5_maneuver_enabled": "🔋→🔥 Ohřev z baterie",
+          "boiler_battery_cycle_cost_czk_kwh": "Cena cyklu baterie (Kč/kWh)",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "boiler_has_alternative_heating": "Zapni, pokud může bojler ohřát i jiný zdroj (plynový kotel, tepelné čerpadlo, krb…)",
+          "boiler_alt_source_type": "Použito pouze pro štítky; nemá vliv na výpočty. Plyn: do ceny zahrň účinnost kotle.",
+          "boiler_alt_cost_kwh": "Cena tepla z alternativního zdroje v Kč/kWh (např. 1,5 Kč/kWh pro plyn vč. účinnosti). Elektrický ohřev se použije jen když je levnější.",
+          "box_has_home56": "Aktivuje Home 5/6 (OIG CBB) přepínače na dashboardu a umožňuje ohřev baterie→bojler",
+          "boiler_home5_maneuver_enabled": "Plánovač může použít baterii (Home 5) k ohřevu, pokud je levnější než síť. Vyžaduje Home 5/6.",
+          "boiler_battery_cycle_cost_czk_kwh": "Cena degradace baterie za kWh (doporučeno 0,40–0,60 Kč/kWh). Plánovač ji porovná se spotovou cenou.",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        },
+        "description": "{step}\n{progress}\n\n🔥 **Krok 6 — Zdroje tepla**\n\nNastav alternativní zdroj ohřevu a manévr Home 5 (ohřev z baterie).",
+        "title": "🔥 Bojler — Zdroje tepla"
+      },
+      "wizard_boiler_simple_7": {
+        "data": {
+          "boiler_circulation_enabled": "Cirkulace teplé vody",
+          "boiler_circulation_lead_minutes": "Předstih cirkulace (min)",
+          "boiler_circulation_run_minutes": "Délka běhu cirkulace (min)",
+          "boiler_circulation_max_runs_per_day": "Max. počet běhů/den",
+          "boiler_circulation_min_gap_minutes": "Min. pauza mezi běhy (min)",
+          "boiler_legionella_interval_days": "Interval ochrany (dny)",
+          "boiler_legionella_target_temp_c": "Teplota dezinfekce (°C)",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "boiler_circulation_enabled": "Automaticky spouštět cirkulační čerpadlo TUV v naplánovaných časech",
+          "boiler_circulation_lead_minutes": "Kolik minut před odběrem pustit čerpadlo (0–120)",
+          "boiler_circulation_run_minutes": "Jak dlouho trvá jeden běh čerpadla (1–60 min)",
+          "boiler_circulation_max_runs_per_day": "Maximální počet startů čerpadla za den (1–20)",
+          "boiler_circulation_min_gap_minutes": "Minimální pauza mezi dvěma běhy čerpadla (10–480 min)",
+          "boiler_legionella_interval_days": "Ohřej na dezinfekční teplotu každých N dní (0 = vypnuto; doporučeno 7–14)",
+          "boiler_legionella_target_temp_c": "Minimální teplota pro spolehlivé usmrcení legionelly (min 60 °C)",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        },
+        "description": "{step}\n{progress}\n\n🚿 **Krok 7 — Komfort a hygiena**\n\nNastav plánování cirkulace TUV a ochranu proti legionelle.",
+        "title": "🚿 Bojler — Komfort a hygiena"
+      },
+      "wizard_boiler_simple_8": {
+        "data": {
+          "boiler_current_power_entity": "Senzor příkonu bojleru",
+          "boiler_alt_energy_sensor": "Senzor energie alt. zdroje",
+          "boiler_alt_energy_daily": "Denní přírůstek energie",
+          "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
+        },
+        "data_description": {
+          "boiler_current_power_entity": "Entity ID senzoru výkonu (W) — volitelné; zpřesňuje plánovač",
+          "boiler_alt_energy_sensor": "Entity ID senzoru energie (kWh) alternativního zdroje — volitelné",
+          "boiler_alt_energy_daily": "Zapni, pokud senzor měří denní přírůstek (ne celkový součet)",
+          "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
+        },
+        "description": "{step}\n{progress}\n\n⚙️ **Krok 8 — Pokročilé**\n\nVolitelné senzory výkonu a energie pro přesnější plánování.",
+        "title": "⚙️ Bojler — Pokročilé"
       },
       "wizard_extended": {
         "data": {
@@ -712,6 +774,19 @@
       "wizard_welcome_reconfigure": {
         "description": "🔧 **Změna nastavení OIG Cloud**\n\nTento průvodce vás provede úpravou konfigurace integrace.\n\n**Co můžete změnit:**\n• 📦 Zapnout/vypnout moduly a funkce\n• ⏱️ Upravit intervaly načítání dat\n• ☀️ Změnit nastavení solární předpovědi\n• 🔋 Upravit parametry predikce baterie\n• 💰 Změnit cenové nastavení\n• ⚡ Upravit rozšířené senzory\n\n**Poznámka:** Přihlašovací údaje nelze měnit zde - musíte smazat a znovu přidat integraci.\n\nKliknutím na \"Odeslat\" pokračujte v nastavení.",
         "title": "🔧 Změna nastavení OIG Cloud"
+      },
+      "init": {
+        "title": "Nastavení OIG Cloud",
+        "description": "Vyberte sekci, kterou chcete upravit. Po uložení sekce se změny rovnou aplikují.",
+        "menu_options": {
+          "section_modules": "🧩 Moduly (zapnout/vypnout)",
+          "section_intervals": "⏱️ Připojení a intervaly",
+          "section_solar": "☀️ Solární předpověď",
+          "section_battery": "🔋 Baterie a plánovač",
+          "section_pricing": "💰 Ceny energie",
+          "section_boiler": "🔥 Bojler",
+          "section_all": "🧙 Celý průvodce znovu"
+        }
       }
     }
   },
@@ -753,21 +828,69 @@
       }
     }
   },
+  "exceptions": {
+    "boiler_box_not_owned": {
+      "message": "Bojler box {box_id} nepatří konfigurační položce {entry_id}."
+    },
+    "boiler_device_not_found": {
+      "message": "Zařízení {device_id} nebylo nalezeno nebo nevlastní bojler box."
+    },
+    "boiler_entry_not_found": {
+      "message": "Konfigurační položka {entry_id} nebyla pro službu {service} nalezena."
+    },
+    "boiler_entry_not_loaded": {
+      "message": "Konfigurační položka {entry_id} není načtená."
+    },
+    "boiler_entry_wrong_domain": {
+      "message": "Konfigurační položka {entry_id} nepatří doméně {domain}."
+    },
+    "boiler_missing_identity": {
+      "message": "Služba {service} vyžaduje entry_id + box_id, legacy device_id, nebo právě jeden jednoznačný načtený bojler box."
+    }
+  },
   "services": {
     "apply_boiler_plan": {
       "description": "Aplikuje naplánovaný ohřev bojleru. Vytvoří automatizace pro zapínání topného tělesa v naplánovaných časech.",
+      "fields": {
+        "box_id": {
+          "description": "Box ID cílového bojler boxu.",
+          "name": "Box ID"
+        },
+        "entry_id": {
+          "description": "ID konfigurační položky vlastnící cílový bojler box.",
+          "name": "ID konfigurační položky"
+        }
+      },
       "name": "Aplikovat plán ohřevu"
     },
     "cancel_boiler_plan": {
       "description": "Zruší aktivní plán ohřevu bojleru a odstraní naplánované automatizace.",
+      "fields": {
+        "box_id": {
+          "description": "Box ID cílového bojler boxu.",
+          "name": "Box ID"
+        },
+        "entry_id": {
+          "description": "ID konfigurační položky vlastnící cílový bojler box.",
+          "name": "ID konfigurační položky"
+        }
+      },
       "name": "Zrušit plán ohřevu"
     },
     "plan_boiler_heating": {
-      "description": "Vytvoří plán optimálního ohřevu bojleru na základě spotových cen. Najde nejlevnější časové sloty před deadlinem.",
+      "description": "Vytvoří komfortní plán ohřevu bojleru z aktuální teploty vody, deadlinu, spotových cen a nastavené ekonomiky zdrojů.",
       "fields": {
+        "box_id": {
+          "description": "Box ID cílového bojler boxu.",
+          "name": "Box ID"
+        },
         "deadline": {
           "description": "Přepsání defaultního deadline času (formát HH:MM, např. 20:00)",
           "name": "Přepsat deadline"
+        },
+        "entry_id": {
+          "description": "ID konfigurační položky vlastnící cílový bojler box.",
+          "name": "ID konfigurační položky"
         },
         "force": {
           "description": "Vynutí přepočet plánu i když už existuje platný plán",
@@ -783,9 +906,13 @@
           "description": "Potvrzuji rizika manuálního režimu bojleru a přebírám plnou odpovědnost.",
           "name": "Potvrzení"
         },
-        "device_id": {
-          "description": "Vyberte Battery Box zařízení, pokud chcete ovládat konkrétní instalaci.",
-          "name": "Zařízení"
+        "box_id": {
+          "description": "Box ID cílového bojler boxu.",
+          "name": "Box ID"
+        },
+        "entry_id": {
+          "description": "ID konfigurační položky vlastnící cílový bojler box.",
+          "name": "ID konfigurační položky"
         },
         "mode": {
           "description": "Vyberte mezi CBB (automaticky) a Manual.",

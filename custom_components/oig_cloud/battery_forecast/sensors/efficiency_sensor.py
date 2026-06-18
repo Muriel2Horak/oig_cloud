@@ -102,11 +102,17 @@ class OigCloudBatteryEfficiencySensor(_EfficiencyEntityBase):
 
         self._restore_from_state()
 
-        async_track_time_change(
-            self.hass, self._scheduled_snapshot, hour=23, minute=55, second=0
+        # Store the unsub handles so the time-change listeners are torn down
+        # when the entity is removed (M9: previously leaked on reload/unload).
+        self.async_on_remove(
+            async_track_time_change(
+                self.hass, self._scheduled_snapshot, hour=23, minute=55, second=0
+            )
         )
-        async_track_time_change(
-            self.hass, self._scheduled_finalize, hour=0, minute=10, second=0
+        self.async_on_remove(
+            async_track_time_change(
+                self.hass, self._scheduled_finalize, hour=0, minute=10, second=0
+            )
         )
 
         now_local = dt_util.as_local(dt_util.utcnow())

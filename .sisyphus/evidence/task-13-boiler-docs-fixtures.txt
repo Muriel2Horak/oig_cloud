@@ -1,0 +1,35 @@
+=== task-13-boiler-docs-fixtures.txt ===
+Generated: 2026-04-26 (Task 13 final boiler polish)
+
+Source files read (all PASS):
+  docs/user/CONFIGURATION.md
+  docs/user/DASHBOARD.md
+  docs/user/PLANNER.md
+  docs/user/SERVICES.md
+  docs/user/ENTITIES.md
+  docs/user/FAQ.md
+  docs/user/TROUBLESHOOTING.md
+  docs/user/AUTOMATIONS.md
+  custom_components/oig_cloud/translations/en.json
+  custom_components/oig_cloud/translations/cs.json
+  custom_components/oig_cloud/config/boiler_steps.py
+
+Simple setup flow (boiler_steps.py) — 5 screens:
+  Screen 1: boiler_box_id, boiler_volume_l, boiler_setup_mode (simple/expert)
+  Screen 2: boiler_temp_sensor_top (required), boiler_enable_second_thermometer, boiler_temp_sensor_bottom (conditional)
+  Screen 3: boiler_heater_switch_entity, boiler_heating_capacity_mode, boiler_effective_power_w, boiler_recovery_rate_c_per_hour, boiler_circulation_pump_switch_entity
+  Screen 4: boiler_alt_source_mode, boiler_alt_cost_kwh, boiler_alt_heater_switch_entity
+  Screen 5: boiler_comfort_profile_mode, boiler_target_temp_c, boiler_deadline_time
+
+Canonical boiler DTO (from api_views.py):
+  current_state, comfort_status, selected_source, actuated_source,
+  plan_slots, reason_codes, freshness, degraded_flags, manual_override
+
+JSON parse validation:
+  PASS  translations/en.json — valid JSON
+  PASS  translations/cs.json — valid JSON
+
+Translation parity:
+  PASS  EN and CS wizard_boiler keys match exactly
+
+All evidence files created.

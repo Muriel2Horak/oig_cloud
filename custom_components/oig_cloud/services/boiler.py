@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers.event import async_track_point_in_time
-from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from ..const import (
+from ..const import (  # noqa: F401
+    ATTR_CONFIG_ENTRY_ID,
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
     CONF_BOILER_DEADLINE_TIME,
@@ -24,77 +21,98 @@ from ..const import (
     SERVICE_CANCEL_BOILER_PLAN,
     SERVICE_PLAN_BOILER_HEATING,
 )
-from ..boiler.models import EnergySource
+from ..boiler.models import EnergySource  # noqa: F401
+from ..boiler.runtime import get_boiler_runtime
+from ..boiler.migration import boiler_restore_blocked
+
+from ..boiler.actuator import (  # noqa: F401
+    BoilerSchedule,
+    _build_heating_windows,
+    _clear_persisted_schedule,
+    _entity_exists,
+    _merge_window,
+    _persist_schedule,
+    _pop_schedule,
+    _resolve_wrapper_entity,
+    _restore_boiler_schedule,
+    _schedule_switch_window,
+    _store_schedule,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 _BOILER_WRAPPER_SWITCH_ERROR = "Boiler wrapper switch not available: %s"
 
-
-async def _get_boiler_profile(coordinator: Any, entry_id: str) -> Optional[Any]:
-    """Get or create boiler profile for planning."""
-    profile = getattr(coordinator, "_current_profile", None)
-    if not profile:
-        await coordinator._update_profile()
-        profile = getattr(coordinator, "_current_profile", None)
-        if not profile:
-            _LOGGER.warning("Boiler profile not available for %s", entry_id)
-    return profile
-
-
-async def _get_planning_inputs(coordinator: Any) -> tuple:
-    """Get all required inputs for boiler planning."""
-    profile = await _get_boiler_profile(coordinator, "")
-    if not profile:
-        return None, None, None
-
-    spot_prices = await coordinator._get_spot_prices()
-    overflow_windows = await coordinator._get_overflow_windows()
-    return profile, spot_prices, overflow_windows
-
-
-def _resolve_deadline(coordinator: Any, deadline_override: Optional[str]) -> str:
-    """Resolve planning deadline from override or config."""
-    config = getattr(coordinator, "config", {}) or {}
-    return deadline_override or config.get(
-        CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
-    )
-
-
-@dataclass
-class BoilerSchedule:
-    cancel_callbacks: list[Callable[[], None]]
-    entities: set[str]
-    created_at: datetime
-    windows: dict[str, list[dict[str, datetime]]]
-
-
-# Storage constants
 STORAGE_VERSION = 1
 STORAGE_KEY = "boiler_schedule"
 
-# Service schemas
+
 PLAN_SCHEMA = vol.Schema(
     {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+        vol.Required("box_id"): str,
         vol.Optional("force", default=False): bool,
         vol.Optional("deadline"): str,
     }
 )
-APPLY_SCHEMA = vol.Schema({})
-CANCEL_SCHEMA = vol.Schema({})
+APPLY_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+        vol.Required("box_id"): str,
+    }
+)
+CANCEL_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): str,
+        vol.Required("box_id"): str,
+    }
+)
+
+
+def _get_boiler_coordinator(hass: HomeAssistant, entry_id: str) -> Any | None:
+    entry_data = hass.data.get(DOMAIN, {}).get(entry_id)
+    if isinstance(entry_data, dict):
+        return entry_data.get("boiler_coordinator")
+    return None
+
+
+def _get_boiler_runtime(hass: HomeAssistant, entry_id: str, box_id: str) -> Any | None:
+    runtime = get_boiler_runtime(hass, entry_id, box_id)
+    if runtime is not None:
+        return runtime
+    coordinator = _get_boiler_coordinator(hass, entry_id)
+    if coordinator is None:
+        return None
+    from ..boiler.runtime import _create_runtime_for_coordinator
+
+    return _create_runtime_for_coordinator(hass, coordinator, entry_id, box_id)
 
 
 def setup_boiler_services(
     hass: HomeAssistant, entry_id: str, boiler_coordinator: Any
 ) -> None:
-    """Register boiler plan services (once)."""
     _ = boiler_coordinator
     if hass.services.has_service(DOMAIN, SERVICE_PLAN_BOILER_HEATING):
         return
 
-    hass.async_create_task(_restore_boiler_schedule(hass, entry_id))
+    if not boiler_restore_blocked(hass, entry_id):
+        hass.async_create_task(_restore_boiler_schedule(hass, entry_id))
 
     async def handle_plan_boiler(call: ServiceCall) -> None:
+        call_entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
+        call_box_id = call.data["box_id"]
+
+        from ..services import _resolve_canonical_boiler_identity
+
+        _resolve_canonical_boiler_identity(
+            hass, call_entry_id, call_box_id, SERVICE_PLAN_BOILER_HEATING
+        )
+
+        runtime = _get_boiler_runtime(hass, call_entry_id, call_box_id)
+        if not runtime:
+            _LOGGER.error("No boiler runtime for entry %s", call_entry_id)
+            return
+
         force = bool(call.data.get("force", False))
         deadline = call.data.get("deadline")
         if deadline and not _is_valid_time(deadline):
@@ -102,17 +120,46 @@ def setup_boiler_services(
             return
 
         await _create_boiler_plan(
-            boiler_coordinator,
-            entry_id,
+            hass,
+            runtime,
+            call_entry_id,
             force=force,
             deadline_override=deadline,
         )
 
     async def handle_apply_boiler(call: ServiceCall) -> None:
-        await _apply_boiler_plan(hass, boiler_coordinator, entry_id)
+        call_entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
+        call_box_id = call.data["box_id"]
+
+        from ..services import _resolve_canonical_boiler_identity
+
+        _resolve_canonical_boiler_identity(
+            hass, call_entry_id, call_box_id, SERVICE_APPLY_BOILER_PLAN
+        )
+
+        runtime = _get_boiler_runtime(hass, call_entry_id, call_box_id)
+        if not runtime:
+            _LOGGER.error("No boiler runtime for entry %s", call_entry_id)
+            return
+
+        await _apply_boiler_plan(hass, runtime, call_entry_id)
 
     async def handle_cancel_boiler(call: ServiceCall) -> None:
-        await _cancel_boiler_plan(hass, boiler_coordinator, entry_id, clear_plan=False)
+        call_entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
+        call_box_id = call.data["box_id"]
+
+        from ..services import _resolve_canonical_boiler_identity
+
+        _resolve_canonical_boiler_identity(
+            hass, call_entry_id, call_box_id, SERVICE_CANCEL_BOILER_PLAN
+        )
+
+        runtime = _get_boiler_runtime(hass, call_entry_id, call_box_id)
+        if not runtime:
+            _LOGGER.error("No boiler runtime for entry %s", call_entry_id)
+            return
+
+        await _cancel_boiler_plan(hass, runtime, call_entry_id, clear_plan=False)
 
     hass.services.async_register(
         DOMAIN, SERVICE_PLAN_BOILER_HEATING, handle_plan_boiler, schema=PLAN_SCHEMA
@@ -128,201 +175,33 @@ def setup_boiler_services(
 
 
 async def _create_boiler_plan(
-    coordinator: Any,
+    hass: HomeAssistant,
+    runtime: Any,
     entry_id: str,
     *,
     force: bool,
     deadline_override: Optional[str],
 ) -> None:
     now = dt_util.now()
-    plan = getattr(coordinator, "_current_plan", None)
+    plan = runtime.get_current_plan()
     if plan and not force and getattr(plan, "valid_until", now) > now:
         _LOGGER.debug("Boiler plan still valid for %s, skipping", entry_id)
         return
-
-    profile = await _get_boiler_profile(coordinator, entry_id)
-    if not profile:
-        return
-
-    _, spot_prices, overflow_windows = await _get_planning_inputs(coordinator)
-    deadline = _resolve_deadline(coordinator, deadline_override)
-
-    coordinator._current_plan = await coordinator.planner.async_create_plan(
-        profile=profile,
-        spot_prices=spot_prices,
-        overflow_windows=overflow_windows,
-        deadline_time=deadline,
-    )
-
-    await coordinator.async_request_refresh()
+    await runtime.async_create_plan(force=force, deadline_override=deadline_override)
+    await runtime.async_request_refresh()
     _LOGGER.info("Boiler plan created for %s", entry_id)
 
 
 async def _apply_boiler_plan(
-    hass: HomeAssistant, coordinator: Any, entry_id: str
+    hass: HomeAssistant, runtime: Any, entry_id: str
 ) -> None:
-    await _cancel_boiler_plan(hass, coordinator, entry_id, clear_plan=False)
-
-    plan = getattr(coordinator, "_current_plan", None)
-    if not plan or not getattr(plan, "slots", None):
-        _LOGGER.warning("No boiler plan to apply for %s", entry_id)
-        return
-
-    config = getattr(coordinator, "config", {}) or {}
-    box_id = _resolve_box_id(coordinator, config)
-    main_switch = _resolve_wrapper_entity(box_id, "bojler_top")
-    alt_switch = _resolve_wrapper_entity(box_id, "bojler_alt")
-    pump_switch = _resolve_wrapper_entity(box_id, "bojler_cirkulace")
-
-    has_main_config = bool(config.get(CONF_BOILER_HEATER_SWITCH_ENTITY))
-    has_alt_config = bool(config.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY))
-    has_pump_config = bool(config.get(CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY))
-
-    if not has_main_config:
-        _LOGGER.error("Missing boiler heater switch configuration for %s", entry_id)
-        return
-
-    if not _entity_exists(hass, main_switch):
-        _LOGGER.error(_BOILER_WRAPPER_SWITCH_ERROR, main_switch)
-        return
-
-    if has_alt_config and not _entity_exists(hass, alt_switch):
-        _LOGGER.error(_BOILER_WRAPPER_SWITCH_ERROR, alt_switch)
-        return
-
-    if has_pump_config and not _entity_exists(hass, pump_switch):
-        _LOGGER.error(_BOILER_WRAPPER_SWITCH_ERROR, pump_switch)
-        return
-
-    windows = _build_heating_windows(plan.slots, has_alt_config)
-    schedule = BoilerSchedule(
-        cancel_callbacks=[],
-        entities=set(),
-        created_at=dt_util.now(),
-        windows={},
-    )
-    schedule_windows = schedule.windows
-
-    for window in windows.get("main", []):
-        schedule.cancel_callbacks.extend(
-            _schedule_switch_window(hass, main_switch, window)
-        )
-        schedule.entities.add(main_switch)
-        schedule_windows.setdefault(main_switch, []).append(window)
-
-    if has_alt_config:
-        for window in windows.get("alt", []):
-            schedule.cancel_callbacks.extend(
-                _schedule_switch_window(hass, alt_switch, window)
-            )
-            schedule.entities.add(alt_switch)
-            schedule_windows.setdefault(alt_switch, []).append(window)
-
-    pump_windows: list[dict[str, datetime]] = []
-    if has_pump_config:
-        pump_windows = _build_circulation_windows(
-            getattr(coordinator, "_current_profile", None)
-        )
-        for window in pump_windows:
-            schedule.cancel_callbacks.extend(
-                _schedule_switch_window(hass, pump_switch, window)
-            )
-            schedule.entities.add(pump_switch)
-            schedule_windows.setdefault(pump_switch, []).append(window)
-
-    _store_schedule(hass, entry_id, schedule)
-    await _persist_schedule(hass, entry_id, schedule)
-    _LOGGER.info(
-        "Boiler plan applied for %s (windows: main=%s, alt=%s, pump=%s)",
-        entry_id,
-        len(windows.get("main", [])),
-        len(windows.get("alt", [])),
-        len(pump_windows),
-    )
+    await runtime.async_apply_plan(entry_id)
 
 
 async def _cancel_boiler_plan(
-    hass: HomeAssistant, coordinator: Any, entry_id: str, *, clear_plan: bool = False
+    hass: HomeAssistant, runtime: Any, entry_id: str, *, clear_plan: bool = False
 ) -> None:
-    schedule = _pop_schedule(hass, entry_id)
-    if schedule:
-        for cancel in schedule.cancel_callbacks:
-            cancel()
-        for entity_id in schedule.entities:
-            await _async_switch_off(hass, entity_id)
-
-    await _clear_persisted_schedule(hass, entry_id)
-
-    if clear_plan:
-        coordinator._current_plan = None
-        _LOGGER.info("Boiler plan cleared for %s", entry_id)
-
-
-def _build_heating_windows(
-    slots: list[Any], has_alt_config: bool
-) -> dict[str, list[dict[str, datetime]]]:
-    main_windows: list[dict[str, datetime]] = []
-    alt_windows: list[dict[str, datetime]] = []
-
-    for slot in slots:
-        consumption = getattr(slot, "avg_consumption_kwh", 0.0)
-        if consumption <= 0:
-            continue
-        source = getattr(slot, "recommended_source", EnergySource.GRID)
-        source_value = source.value if isinstance(source, EnergySource) else str(source)
-
-        target = (
-            "alt"
-            if source_value == EnergySource.ALTERNATIVE.value and has_alt_config
-            else "main"
-        )
-        windows = alt_windows if target == "alt" else main_windows
-        _merge_window(windows, slot.start, slot.end)
-
-    return {"main": main_windows, "alt": alt_windows}
-
-
-def _build_circulation_windows(profile: Any) -> list[dict[str, datetime]]:
-    if not profile or not getattr(profile, "hourly_avg", None):
-        return []
-
-    hourly_avg = profile.hourly_avg
-    peak_hours = _pick_peak_hours(hourly_avg)
-    if not peak_hours:
-        return []
-
-    lead_minutes = 20
-    windows = []
-    now = dt_util.now()
-    base = now.replace(minute=0, second=0, microsecond=0)
-
-    for hour in peak_hours:
-        end = base.replace(hour=hour)
-        if end <= now:
-            end += timedelta(days=1)
-        start = end - timedelta(minutes=lead_minutes)
-        windows.append({"start": start, "end": end})
-
-    return windows
-
-
-def _pick_peak_hours(hourly_avg: dict[int, float]) -> list[int]:
-    ranked = sorted(hourly_avg.items(), key=lambda item: item[1], reverse=True)
-    top = [hour for hour, value in ranked if value > 0][:3]
-    return sorted(top)
-
-
-def _merge_window(windows: list[dict[str, datetime]], start: datetime, end: datetime) -> None:
-    if not windows:
-        windows.append({"start": start, "end": end})
-        return
-
-    last = windows[-1]
-    if start <= last["end"]:
-        if end > last["end"]:
-            last["end"] = end
-    else:
-        windows.append({"start": start, "end": end})
+    await runtime.async_cancel_plan(entry_id, clear_plan)
 
 
 def _resolve_box_id(coordinator: Any, config: dict[str, Any]) -> str:
@@ -332,145 +211,12 @@ def _resolve_box_id(coordinator: Any, config: dict[str, Any]) -> str:
     fallback = config.get("box_id")
     if isinstance(fallback, str) and fallback.isdigit():
         return fallback
-    return "unknown"
-
-
-def _resolve_wrapper_entity(box_id: str, suffix: str) -> str:
-    return f"switch.oig_{box_id}_{suffix}"
-
-
-def _entity_exists(hass: HomeAssistant, entity_id: str) -> bool:
-    return hass.states.get(entity_id) is not None
-
-
-def _schedule_switch_window(
-    hass: HomeAssistant, entity_id: Optional[str], window: dict[str, datetime]
-) -> list[Callable[[], None]]:
-    if not entity_id:
-        return []
-
-    start = window["start"]
-    end = window["end"]
-    now = dt_util.now()
-    cancel_callbacks = []
-
-    async def _turn_on(_: datetime) -> None:
-        await _async_switch_on(hass, entity_id)
-
-    async def _turn_off(_: datetime) -> None:
-        await _async_switch_off(hass, entity_id)
-
-    if end <= now:
-        return []
-    if start <= now < end:
-        hass.async_create_task(_async_switch_on(hass, entity_id))
-        cancel_callbacks.append(async_track_point_in_time(hass, _turn_off, end))
-        return cancel_callbacks
-
-    cancel_callbacks.append(async_track_point_in_time(hass, _turn_on, start))
-    cancel_callbacks.append(async_track_point_in_time(hass, _turn_off, end))
-    return cancel_callbacks
-
-
-async def _async_switch_on(hass: HomeAssistant, entity_id: str) -> None:
-    await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": entity_id}, blocking=False
-    )
-
-
-async def _async_switch_off(hass: HomeAssistant, entity_id: str) -> None:
-    await hass.services.async_call(
-        "switch", "turn_off", {"entity_id": entity_id}, blocking=False
-    )
-
-
-def _store_schedule(hass: HomeAssistant, entry_id: str, schedule: BoilerSchedule) -> None:
-    schedules = hass.data.setdefault(DOMAIN, {}).setdefault("boiler_schedules", {})
-    schedules[entry_id] = schedule
-
-
-def _pop_schedule(hass: HomeAssistant, entry_id: str) -> Optional[BoilerSchedule]:
-    schedules = hass.data.setdefault(DOMAIN, {}).setdefault("boiler_schedules", {})
-    return schedules.pop(entry_id, None)
-
-
-async def _persist_schedule(
-    hass: HomeAssistant, entry_id: str, schedule: BoilerSchedule
-) -> None:
-    store: Store[dict[str, dict[str, Any]]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    existing: dict[str, dict[str, Any]] = await store.async_load() or {}
-    serialized: dict[str, Any] = {
-        "created_at": schedule.created_at.isoformat(),
-        "entities": sorted(schedule.entities),
-        "windows": [],
-    }
-
-    windows_by_entity = schedule.windows or {}
-    for entity_id in schedule.entities:
-        for window in windows_by_entity.get(entity_id, []):
-            serialized["windows"].append(
-                {
-                    "entity_id": entity_id,
-                    "start": window["start"].isoformat(),
-                    "end": window["end"].isoformat(),
-                }
-            )
-
-    existing[entry_id] = serialized
-    await store.async_save(existing)
-
-
-async def _clear_persisted_schedule(hass: HomeAssistant, entry_id: str) -> None:
-    store: Store[dict[str, dict[str, Any]]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    existing: dict[str, dict[str, Any]] = await store.async_load() or {}
-    if entry_id in existing:
-        existing.pop(entry_id, None)
-        await store.async_save(existing)
-
-
-async def _restore_boiler_schedule(hass: HomeAssistant, entry_id: str) -> None:
-    store: Store[dict[str, dict[str, Any]]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-    existing: dict[str, dict[str, Any]] = await store.async_load() or {}
-    data = existing.get(entry_id)
-    if not data:
-        return
-
-    now = dt_util.now()
-    schedule = BoilerSchedule(
-        cancel_callbacks=[],
-        entities=set(),
-        created_at=now,
-        windows={},
-    )
-
-    schedule_windows = schedule.windows
-
-    for window in data.get("windows", []):
-        try:
-            entity_id = window.get("entity_id")
-            start = dt_util.parse_datetime(window.get("start"))
-            end = dt_util.parse_datetime(window.get("end"))
-            if not entity_id or not start or not end:
-                continue
-            if end <= now:
-                continue
-            schedule.entities.add(entity_id)
-            schedule_windows.setdefault(entity_id, []).append(
-                {"start": start, "end": end}
-            )
-            schedule.cancel_callbacks.extend(
-                _schedule_switch_window(hass, entity_id, {"start": start, "end": end})
-            )
-        except Exception:
-            continue
-
-    if schedule.entities:
-        _store_schedule(hass, entry_id, schedule)
+    raise ValueError("box_id could not be resolved from coordinator or config")
 
 
 def _is_valid_time(value: str) -> bool:
     return dt_util.parse_time(value) is not None
 
 
-def _ensure_schedule_windows(schedule: BoilerSchedule) -> dict[str, list[dict[str, datetime]]]:
+def _ensure_schedule_windows(schedule: BoilerSchedule) -> dict[str, list[dict[str, Any]]]:
     return schedule.windows

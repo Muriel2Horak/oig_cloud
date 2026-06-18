@@ -25,10 +25,10 @@ import {
 import { ShieldServiceType } from '@/ui/features/control-panel/types';
 
 const params = new URLSearchParams(window.location.search);
-const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '2206237016';
+const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '';
 
-export function getSensorId(sensor: string): string {
-  return `sensor.oig_${INVERTER_SN}_${sensor}`;
+export function getSensorId(sensor: string, inverterSn: string = INVERTER_SN): string {
+  return `sensor.oig_${inverterSn}_${sensor}`;
 }
 
 interface HassState {
@@ -39,8 +39,8 @@ interface HassState {
 
 type HassStates = Record<string, HassState>;
 
-function findSensorIdSuffix(states: HassStates, baseSensorName: string): string | null {
-  const prefix = getSensorId(baseSensorName);
+function findSensorIdSuffix(states: HassStates, baseSensorName: string, inverterSn: string = INVERTER_SN): string | null {
+  const prefix = getSensorId(baseSensorName, inverterSn);
   if (prefix in states) return prefix;
 
   const withSuffix = Object.keys(states)
@@ -201,12 +201,115 @@ export function buildGridChargingPlan(gridCharging: HassState | null): GridCharg
   };
 }
 
+// ============================================================================
+// Daily self-sufficiency computation
+// ============================================================================
+
+export interface DailySelfSufficiencyInputs {
+  /** FVE production today, Wh (dc_in_fv_ad) */
+  fveTodayWh: number;
+  /** Battery discharge to load today, Wh (computed_batt_discharge_energy_today).
+   *  Treated as green regardless of how the battery was charged — user decision. */
+  battDischargeTodayWh: number;
+  /** FVE → battery charge today, Wh (computed_batt_charge_fve_energy_today) */
+  battChargeFveTodayWh: number;
+  /** Grid → battery charge today, Wh (computed_batt_charge_grid_energy_today).
+   *  Not used in the load equation but kept for future display. */
+  battChargeGridTodayWh: number;
+  /** Záloha consumption today, Wh (ac_out_en_day) */
+  zalohaConsumptionWh: number;
+  /** Nezáloha (non-backup) consumption today, Wh (computed_nonbackup_consumption_today) */
+  nezalohaConsumptionWh: number;
+  /** Grid export today, Wh (ac_in_ac_pd).
+   *  Used to estimate how much FVE went to the grid rather than to load.
+   *  NOTE: ac_in_ac_pd measures total grid export (FVE surplus fed back).
+   *  We assume all grid export originates from FVE (battery-to-grid is rare /
+   *  not configured in this system). If no export counter is available this
+   *  field should be 0 — the helper will clamp fve_to_load using total_load. */
+  gridExportTodayWh: number;
+}
+
+export interface DailySelfSufficiencyResult {
+  /** Combined self-sufficiency share (FVE + battery), 0-100 */
+  pct: number;
+  /** kWh served by FVE */
+  fveKwh: number;
+  /** kWh served by battery discharge */
+  batteryKwh: number;
+  /** kWh served by grid */
+  gridKwh: number;
+  /** Fraction of total load served by FVE (0-1), for aura arc sizing */
+  arcFve: number;
+  /** Fraction of total load served by battery (0-1), for aura arc sizing */
+  arcBattery: number;
+  /** Fraction of total load served by grid (0-1), for aura arc sizing */
+  arcGrid: number;
+}
+
+/**
+ * Compute daily self-sufficiency (energy-based, not instantaneous).
+ *
+ * Derivation:
+ *   total_load_today = záloha + nezáloha
+ *   battery_to_load  = battDischargeTodayWh  (green, regardless of charge source)
+ *   fve_to_load      = max(0, fveTodayWh − battChargeFveTodayWh − gridExportTodayWh)
+ *                      then clamped: fve_to_load ≤ max(0, total_load − battery_to_load)
+ *                      (approximation: ac_in_ac_pd is used as FVE-export proxy)
+ *   grid_to_load     = max(0, total_load − fve_to_load − battery_to_load)
+ *
+ * All inputs default to 0 when missing/null/NaN (defensive).
+ */
+export function computeDailySelfSufficiency(
+  inputs: DailySelfSufficiencyInputs,
+): DailySelfSufficiencyResult {
+  const safe = (v: number) => (Number.isFinite(v) && v >= 0 ? v : 0);
+
+  const fveProduced      = safe(inputs.fveTodayWh);
+  const battDischarge    = safe(inputs.battDischargeTodayWh);
+  const battChargeFve    = safe(inputs.battChargeFveTodayWh);
+  const gridExport       = safe(inputs.gridExportTodayWh);
+  const zaloha           = safe(inputs.zalohaConsumptionWh);
+  const nezaloha         = safe(inputs.nezalohaConsumptionWh);
+
+  const totalLoad = zaloha + nezaloha;
+
+  if (totalLoad <= 0) {
+    return { pct: 0, fveKwh: 0, batteryKwh: 0, gridKwh: 0, arcFve: 0, arcBattery: 0, arcGrid: 0 };
+  }
+
+  // Battery contribution to load (kWh, converted to same unit as load)
+  const batteryToLoad = Math.min(battDischarge, totalLoad);
+
+  // FVE contribution to load: FVE produced minus what went to battery charge and to grid export.
+  // Then clamped so that fve_to_load + battery_to_load ≤ total_load.
+  const fveUnclamped = Math.max(0, fveProduced - battChargeFve - gridExport);
+  const fveToLoad    = Math.min(fveUnclamped, Math.max(0, totalLoad - batteryToLoad));
+
+  // Grid covers the remainder.
+  const gridToLoad = Math.max(0, totalLoad - fveToLoad - batteryToLoad);
+
+  const selfSuf = ((fveToLoad + batteryToLoad) / totalLoad) * 100;
+
+  // Convert Wh → kWh for display.
+  const toKwh = (wh: number) => wh / 1000;
+
+  return {
+    pct: Math.min(100, Math.max(0, selfSuf)),
+    fveKwh:     toKwh(fveToLoad),
+    batteryKwh: toKwh(batteryToLoad),
+    gridKwh:    toKwh(gridToLoad),
+    arcFve:     fveToLoad    / totalLoad,
+    arcBattery: batteryToLoad / totalLoad,
+    arcGrid:    gridToLoad   / totalLoad,
+  };
+}
+
 /**
  * Extract ALL flow data from hass.states — covers both loadData() and loadNodeDetails() from V1
  */
-export function extractFlowData(hass: any): FlowData {
+export function extractFlowData(hass: any, inverterSn: string = INVERTER_SN): FlowData {
   const states = hass?.states || hass || {};
-  const get = (sensor: string): HassState | null => states[getSensorId(sensor)] || null;
+  const get = (sensor: string): HassState | null => states[getSensorId(sensor, inverterSn)] || null;
 
   // Solar — main
   const solarP1 = parseNumber(get('actual_fv_p1'));
@@ -217,16 +320,22 @@ export function extractFlowData(hass: any): FlowData {
   const solarI1 = parseNumber(get('extended_fve_current_1'));
   const solarI2 = parseNumber(get('extended_fve_current_2'));
   const solarForecast = get('solar_forecast');
-  const forecastToday = solarForecast?.attributes?.today_total_kwh
-    ? parseFloat(solarForecast.attributes.today_total_kwh) || 0
-    : (solarForecast?.attributes?.today_total_sum_kw
-      ? parseFloat(solarForecast.attributes.today_total_sum_kw) || 0
-      : parseNumber(solarForecast));
-  const forecastTomorrow = solarForecast?.attributes?.tomorrow_total_sum_kw
-    ? parseFloat(solarForecast.attributes.tomorrow_total_sum_kw) || 0
-    : (solarForecast?.attributes?.total_tomorrow_kwh
-      ? parseFloat(solarForecast.attributes.total_tomorrow_kwh) || 0
-      : 0);
+  // Read a forecast attribute as a finite number, treating missing/empty as null
+  // (so a legitimate 0 is not confused with "no value").
+  const fcAttr = (name: string): number | null => {
+    const v = solarForecast?.attributes?.[name];
+    if (v === undefined || v === null || v === '') return null;
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  // Today and tomorrow must use the SAME source to be comparable. Prefer the
+  // date-relative daily kWh from the API (*_total_kwh); fall back to the summed
+  // hourly kW (*_sum_kw) only if the daily value is unavailable.
+  const forecastToday =
+    fcAttr('today_total_kwh') ?? fcAttr('today_total_sum_kw') ?? parseNumber(solarForecast);
+  const forecastTomorrow =
+    fcAttr('tomorrow_total_kwh') ?? fcAttr('tomorrow_total_sum_kw') ?? 0;
+  const forecastStale = solarForecast?.attributes?.forecast_stale === true;
 
   // Battery — main
   const batterySoC = parseNumber(get('batt_bat_c'));
@@ -239,6 +348,16 @@ export function extractFlowData(hass: any): FlowData {
   const batteryDischargeTotal = parseNumber(get('computed_batt_discharge_energy_today'));
   const batteryChargeSolar = parseNumber(get('computed_batt_charge_fve_energy_today'));
   const batteryChargeGrid = parseNumber(get('computed_batt_charge_grid_energy_today'));
+  const batteryChargeMonth = parseNumber(get('computed_batt_charge_energy_month'));
+  const batteryDischargeMonth = parseNumber(get('computed_batt_discharge_energy_month'));
+  // Battery — capacity / health (cloud integration)
+  const batteryFloorPct = parseNumber(get('batt_bat_min'));                     // % floor (force-charge trigger)
+  const batteryUsableKwh = parseNumber(get('usable_battery_capacity'));         // kWh currently available
+  const batteryInstalledKwh = parseNumber(get('installed_battery_capacity_kwh')) / 1000; // sensor is in Wh
+  const batteryMissingKwh = parseNumber(get('missing_battery_kwh'));            // kWh to full
+  const batterySoH = parseNumber(get('battery_health'));                        // % state of health
+  const batteryEfficiency = parseNumber(get('battery_efficiency'));             // % round-trip (month)
+  const batteryForecastKwh = parseNumber(get('battery_forecast'));              // kWh predicted capacity
   const gridCharging = get('grid_charging_planned');
   const isGridCharging = parseBool(gridCharging);
   const timeToEmpty = parseString(get('time_to_empty'));
@@ -264,6 +383,16 @@ export function extractFlowData(hass: any): FlowData {
   const spotPrice = parseNumber(get('spot_price_current_15min'));
   const exportPrice = parseNumber(get('export_price_current_15min'));
   const currentTariff = parseString(get('current_tariff'));
+  // Grid cost sensors (null when modules disabled / sensor absent)
+  const parseNullable = (s: HassState | null): number | null => {
+    if (!s || !s.state || s.state === 'unknown' || s.state === 'unavailable') return null;
+    const v = parseFloat(s.state);
+    return isNaN(v) ? null : v;
+  };
+  const gridImportCostToday = parseNullable(get('computed_grid_import_cost_today'));
+  const gridImportCostMonth = parseNullable(get('computed_grid_import_cost_month'));
+  const gridExportEarningsToday = parseNullable(get('computed_grid_export_earnings_today'));
+  const gridExportEarningsMonth = parseNullable(get('computed_grid_export_earnings_month'));
 
   // House — main
   const housePower = parseNumber(get('actual_aco_p'));
@@ -272,13 +401,24 @@ export function extractFlowData(hass: any): FlowData {
   const houseL1 = parseNumber(get('ac_out_aco_pr'));
   const houseL2 = parseNumber(get('ac_out_aco_ps'));
   const houseL3 = parseNumber(get('ac_out_aco_pt'));
+  // Non-backup (nezáloha) — load not behind the inverter (e.g. car)
+  const nonbackupPower = parseNumber(get('actual_acinb_wtotal'));
+  const nonbackupTodayWh = parseNumber(get('computed_nonbackup_consumption_today'));
+  const nonbackupL1 = parseNumber(get('actual_acinb_wr'));
+  const nonbackupL2 = parseNumber(get('actual_acinb_ws'));
+  const nonbackupL3 = parseNumber(get('actual_acinb_wt'));
+  // Záloha consumption forecast: today already consumed + planner's remaining
+  // planned záloha load (planned_consumption_today is the REMAINING amount).
+  const batteryForecast = get('battery_forecast');
+  const zalohaPlannedRemainingKwh =
+    Number(batteryForecast?.attributes?.planned_consumption_today) || 0;
 
   // Inverter
   const inverterMode = parseString(get('box_prms_mode'));
 
   // Grid delivery — use canonical model with suffix-safe resolution
-  const gridModeSensorId = findSensorIdSuffix(states, 'invertor_prms_to_grid') || getSensorId('invertor_prms_to_grid');
-  const gridLimitSensorId = findSensorIdSuffix(states, 'invertor_prm1_p_max_feed_grid') || getSensorId('invertor_prm1_p_max_feed_grid');
+  const gridModeSensorId = findSensorIdSuffix(states, 'invertor_prms_to_grid', inverterSn) || getSensorId('invertor_prms_to_grid', inverterSn);
+  const gridLimitSensorId = findSensorIdSuffix(states, 'invertor_prm1_p_max_feed_grid', inverterSn) || getSensorId('invertor_prm1_p_max_feed_grid', inverterSn);
   const gridModeRawState = states[gridModeSensorId];
   const gridLimitRawState = states[gridLimitSensorId];
 
@@ -316,23 +456,49 @@ export function extractFlowData(hass: any): FlowData {
   const realDataUpdate = get('real_data_update');
   const lastUpdate = parseString(realDataUpdate);
 
+  // Daily self-sufficiency — energy-based aura data
+  const solarTodayWh = parseNumber(get('dc_in_fv_ad'));
+  const dailySS = computeDailySelfSufficiency({
+    fveTodayWh:           solarTodayWh,
+    battDischargeTodayWh: batteryDischargeTotal,
+    battChargeFveTodayWh: batteryChargeSolar,
+    battChargeGridTodayWh: batteryChargeGrid,
+    zalohaConsumptionWh:  houseTodayWh,
+    nezalohaConsumptionWh: nonbackupTodayWh,
+    // ac_in_ac_pd = grid export today (FVE surplus fed back to grid)
+    gridExportTodayWh:    gridExportToday,
+  });
+
   return {
     solarPower: solarP1 + solarP2,
     solarP1, solarP2, solarV1, solarV2, solarI1, solarI2,
     solarPercent: parseNumber(get('dc_in_fv_proc')),
-    solarToday: parseNumber(get('dc_in_fv_ad')),
+    solarToday: solarTodayWh,
     solarForecastToday: forecastToday,
     solarForecastTomorrow: forecastTomorrow,
+    solarForecastStale: forecastStale,
 
     batterySoC, batteryPower, batteryVoltage, batteryCurrent, batteryTemp,
     batteryChargeTotal, batteryDischargeTotal, batteryChargeSolar, batteryChargeGrid,
+    batteryChargeMonth, batteryDischargeMonth,
+    batteryFloorPct, batteryUsableKwh, batteryInstalledKwh, batteryMissingKwh,
+    batterySoH, batteryEfficiency, batteryForecastKwh,
     isGridCharging, timeToEmpty, timeToFull, balancingState, balancingTimeRemaining, gridChargingPlan,
 
     gridPower, gridVoltage, gridFrequency, gridImportToday, gridExportToday,
     gridL1V, gridL2V, gridL3V, gridL1P, gridL2P, gridL3P,
     spotPrice, exportPrice, currentTariff,
+    gridImportCostToday, gridImportCostMonth,
+    gridExportEarningsToday, gridExportEarningsMonth,
 
     housePower, houseTodayWh, houseL1, houseL2, houseL3,
+    nonbackupPower, nonbackupTodayWh, nonbackupL1, nonbackupL2, nonbackupL3,
+    zalohaPlannedRemainingKwh,
+
+    selfSufficiencyTodayPct: dailySS.pct,
+    srcFveTodayKwh:          dailySS.fveKwh,
+    srcBatteryTodayKwh:      dailySS.batteryKwh,
+    srcGridTodayKwh:         dailySS.gridKwh,
 
     inverterMode, inverterGridMode, inverterGridLimit, inverterTemp,
     bypassStatus, notificationsUnread, notificationsError,
@@ -340,6 +506,7 @@ export function extractFlowData(hass: any): FlowData {
     boilerIsUse, boilerPower, boilerDayEnergy, boilerManualMode, boilerInstallPower,
 
     plannerAutoMode: null, // Loaded async via PlannerState
+    plannerRecommendedMode: parseString(get('planner_recommended_mode')),
     lastUpdate,
   };
 }
