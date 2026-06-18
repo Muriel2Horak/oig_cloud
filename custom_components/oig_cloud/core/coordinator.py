@@ -1116,11 +1116,8 @@ class OigCloudCoordinator(DataUpdateCoordinator):
                 last_update.isoformat() if last_update else None
             ),
             "data_source": "simplified_calculation",
-            "current_battery_kwh": (
-                timeline_data[0].get("battery_capacity_kwh", 0)
-                if timeline_data
-                else 0
-            ),
+            # timeline_data is guaranteed non-empty here (early return above).
+            "current_battery_kwh": timeline_data[0].get("battery_capacity_kwh", 0),
             "mode_recommendations": getattr(sensor, "_mode_recommendations", None) or [],
         }
 

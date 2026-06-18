@@ -1,5 +1,13 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+// Write artifacts into a private per-run temp dir (0700) instead of a shared
+// world-writable location, so other users can't tamper with them.
+const OUT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'boiler-v2-smoke-'));
+const SHOT_PATH = path.join(OUT_DIR, 'boiler-v2-smoke.png');
+const LOG_PATH = path.join(OUT_DIR, 'boiler-v2-smoke.log');
 
 const HA = process.env.HA_HOST;
 const TOKEN = process.env.HA_TOKEN;
@@ -74,11 +82,11 @@ const result = await page.evaluate(() => {
   };
 });
 console.log('Smoke result:', JSON.stringify(result, null, 2));
-await page.screenshot({ path: '/tmp/boiler-v2-smoke.png', fullPage: true });
-fs.writeFileSync('/tmp/boiler-v2-smoke.log', logs.join('\n'));
+await page.screenshot({ path: SHOT_PATH, fullPage: true });
+fs.writeFileSync(LOG_PATH, logs.join('\n'));
 await browser.close();
 
 const requiredCore = ['statusOrUnavailable','timeline','explanation','override'];
 const missing = requiredCore.filter(k => !result?.selectors?.[k]);
 if (missing.length) { console.error('Missing selectors:', missing.join(', ')); process.exit(1); }
-console.log('Smoke OK. Screenshot: /tmp/boiler-v2-smoke.png');
+console.log(`Smoke OK. Screenshot: ${SHOT_PATH}`);

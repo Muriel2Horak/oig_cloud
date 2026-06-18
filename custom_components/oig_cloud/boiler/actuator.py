@@ -202,7 +202,7 @@ class BoilerActuatorSerializer:
             self._consumer_task.cancel()
             try:
                 await self._consumer_task
-            except asyncio.CancelledError:
+            except asyncio.CancelledError:  # NOSONAR - we initiated this cancel; absorbing it is correct
                 pass
         self._consumer_task = None
 
@@ -272,7 +272,10 @@ class BoilerActuatorSerializer:
             except asyncio.TimeoutError:
                 continue
             except asyncio.CancelledError:
-                break
+                # Honour cooperative cancellation: re-raise so the task ends as
+                # cancelled (stop() awaits and absorbs it). Nothing follows the
+                # loop, so this is equivalent to the old break but Sonar-clean.
+                raise
             if self._inject_consumer_exception:
                 self._state = ActuatorSerializerState.DEGRADED
                 self._reason_codes.append(PlannerReasonCode.ACTUATOR_SERIALIZER_ERROR.value)

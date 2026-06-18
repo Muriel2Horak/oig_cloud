@@ -2381,7 +2381,12 @@ export class OigFlowNode extends LitElement {
     const rawTime = charging && validTime(d.timeToFull) ? d.timeToFull
       : discharging && validTime(d.timeToEmpty) ? d.timeToEmpty : '';
     // Shorten "19 hodin 32 minut" → "19 h 32 min" so it fits on narrow tiles.
-    const timeStr = rawTime.replace(/\s*hodin[aquy]*/gi, ' h').replace(/\s*minut[ay]*/gi, ' min').replace(/\s+/g, ' ').trim();
+    // Bounded quantifiers (no unbounded \s* / [..]*) avoid super-linear backtracking (Sonar S5852).
+    const timeStr = rawTime
+      .replace(/ {0,2}hodin[aquy]{0,3}/gi, ' h')
+      .replace(/ {0,2}minut[ay]{0,3}/gi, ' min')
+      .replace(/ {2,}/g, ' ')
+      .trim();
 
     const soc = Math.round(d.batterySoC);
     const socTint = soc >= 66 ? 'rgba(67,160,71,0.13)' : soc >= 33 ? 'rgba(253,216,53,0.10)' : 'rgba(229,57,53,0.12)';
