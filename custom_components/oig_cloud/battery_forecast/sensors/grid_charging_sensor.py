@@ -80,6 +80,7 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
         self._last_offset_end = None
         self._cached_ups_blocks_internal: List[Dict[str, Any]] = []
         self._log_rl_last: Dict[str, float] = {}
+        self._ups_load_inflight = False
 
     @property
     def _cached_ups_blocks(self) -> List[Dict[str, Any]]:
@@ -119,21 +120,30 @@ class OigCloudGridChargingPlanSensor(SensorEntity, CoordinatorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from coordinator."""
-        if self.hass:
+        # Skip spawning a new load while one is still running (M10): coordinator
+        # updates can arrive faster than the storage read completes, otherwise
+        # stacking redundant tasks.
+        if self.hass and not self._ups_load_inflight:
             self.hass.async_create_task(self._load_ups_blocks())
         super()._handle_coordinator_update()
 
     async def _load_ups_blocks(self) -> None:
         """Load UPS blocks from precomputed storage (async)."""
-        plan_key = self._get_active_plan_key()
-        self._cached_ups_blocks = await self._get_home_ups_blocks_from_detail_tabs(
-            plan=plan_key
-        )
-        _LOGGER.debug(
-            "[GridChargingPlan] Loaded %s UPS blocks into cache",
-            len(self._cached_ups_blocks),
-        )
-        self.async_write_ha_state()
+        if self._ups_load_inflight:
+            return
+        self._ups_load_inflight = True
+        try:
+            plan_key = self._get_active_plan_key()
+            self._cached_ups_blocks = await self._get_home_ups_blocks_from_detail_tabs(
+                plan=plan_key
+            )
+            _LOGGER.debug(
+                "[GridChargingPlan] Loaded %s UPS blocks into cache",
+                len(self._cached_ups_blocks),
+            )
+            self.async_write_ha_state()
+        finally:
+            self._ups_load_inflight = False
 
     async def _get_home_ups_blocks_from_detail_tabs(
         self, plan: str = "hybrid"

@@ -91,6 +91,11 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         self._spot_retry_task: Optional[asyncio.Task] = None
         self._max_spot_retries: int = 20  # 20 * 15min = 5 hodin retry
         self._hourly_fallback_active: bool = False  # NOVÉ: flag pro hodinový fallback
+        # Lifecycle: cancellable timers/listeners so unload/reload doesn't leak
+        # them (review H4). _shutting_down stops the hourly timer re-arming.
+        self._unsubs: list = []
+        self._hourly_timer = None
+        self._shutting_down: bool = False
 
         # NOVÉ: ČHMÚ API inicializace
         self._setup_chmu_warnings()
@@ -358,13 +363,16 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         async def spot_price_callback(now: datetime) -> None:
             await self._update_spot_prices()
 
-        async_track_point_in_time(self.hass, spot_price_callback, next_update)
+        self._unsubs.append(
+            async_track_point_in_time(self.hass, spot_price_callback, next_update)
+        )
 
     def _schedule_hourly_fallback(self) -> None:
         """Naplánuje hodinové fallback stahování OTE dat."""
-
-        # Spustit každou hodinu
-        self.hass.loop.call_later(
+        if self._shutting_down:
+            return
+        # Spustit každou hodinu (handle uchován kvůli zrušení při unload/shutdown)
+        self._hourly_timer = self.hass.loop.call_later(
             3600,  # 1 hodina
             lambda: self.hass.async_create_task(self._hourly_fallback_check()),
         )
@@ -1014,6 +1022,22 @@ class OigCloudCoordinator(DataUpdateCoordinator):
             self.battery_forecast_data = None
 
     async def async_shutdown(self) -> None:
+        # Stop the self-re-arming hourly timer + any scheduled point-in-time
+        # callbacks so they don't fire against a dead coordinator after unload.
+        self._shutting_down = True
+        if self._hourly_timer is not None:
+            try:
+                self._hourly_timer.cancel()
+            except Exception:  # pragma: no cover - defensive
+                pass
+            self._hourly_timer = None
+        for unsub in self._unsubs:
+            try:
+                unsub()
+            except Exception:  # pragma: no cover - defensive
+                pass
+        self._unsubs = []
+
         if self._spot_retry_task and not self._spot_retry_task.done():
             self._spot_retry_task.cancel()
             try:

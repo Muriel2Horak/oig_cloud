@@ -1647,9 +1647,7 @@ async def async_setup_entry(
         # Děláme jen bezpečný úklid prázdných zařízení s neplatným box_id (např. spot_prices/unknown).
 
         # Vždy registrovat sensor + switch platform
-        await hass.config_entries.async_forward_entry_setups(
-            entry, ["sensor", "switch"]
-        )
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
         # Targeted cleanup for stale/invalid devices (e.g., 'spot_prices', 'unknown')
         # that can be left behind after unique_id/device_id stabilization.
@@ -1890,6 +1888,16 @@ async def async_unload_entry(
             except Exception as err:
                 _LOGGER.debug("BoilerCoordinator shutdown failed: %s", err)
 
+        # H4: the MAIN coordinator owns self-re-arming timers (hourly OTE
+        # fallback + point-in-time spot updates) — shut it down too, otherwise
+        # those callbacks fire against a dead coordinator and accumulate.
+        main_coordinator = entry_data.get("coordinator")
+        if main_coordinator and hasattr(main_coordinator, "async_shutdown"):
+            try:
+                await main_coordinator.async_shutdown()
+            except Exception as err:
+                _LOGGER.debug("Coordinator shutdown failed: %s", err)
+
         from .shared.emitter import async_shutdown_entry_telemetry
 
         try:
@@ -1909,7 +1917,9 @@ async def async_unload_entry(
             _LOGGER.debug("Closing session manager")
             await session_manager.close()
 
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor"])
+    # M17: unload BOTH forwarded platforms (setup forwards sensor + switch);
+    # unloading only sensor leaked switch entities on every reload.
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok

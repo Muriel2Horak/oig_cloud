@@ -495,10 +495,18 @@ class DataSourceController:
                 )
             )
 
-        # Local telemetry events (5s updates) – just poke coordinator listeners
-        self._unsubs.append(
-            self.hass.bus.async_listen("state_changed", self._on_any_state_change)
-        )
+        # Local telemetry events (5s updates) – just poke coordinator listeners.
+        # M14: only register the global state_changed listener when local
+        # telemetry can actually be consumed. In cloud-only mode the handler
+        # returns immediately, so subscribing to every entity's state change is
+        # pure overhead. An options change to the data-source mode reloads the
+        # entry, which restarts this controller and re-evaluates the gate.
+        if get_configured_mode(self.entry) != DATA_SOURCE_CLOUD_ONLY:
+            self._unsubs.append(
+                self.hass.bus.async_listen(
+                    "state_changed", self._on_any_state_change
+                )
+            )
 
         _LOGGER.info(
             "DataSourceController started: mode=%s stale=%smin",

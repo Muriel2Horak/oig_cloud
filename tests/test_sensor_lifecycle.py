@@ -66,6 +66,12 @@ class DummySensor:
         self._backfill_called = False
         self._aggregate_daily_called = None
         self._aggregate_weekly_called = None
+        self._on_remove_callbacks = []
+
+    def async_on_remove(self, unsub):
+        # Mirror HA Entity.async_on_remove: store teardown callbacks (M8).
+        self._on_remove_callbacks.append(unsub)
+        return unsub
 
     def _calculate_data_hash(self, payload):
         return f"hash:{len(payload)}"

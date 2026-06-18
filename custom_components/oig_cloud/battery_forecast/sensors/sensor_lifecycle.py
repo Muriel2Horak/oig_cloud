@@ -180,11 +180,14 @@ def _schedule_forecast_refresh(sensor) -> None:
             _LOGGER.error("[OIG_CLOUD_ERROR][component=planner][corr=na][run=na] " + "Forecast refresh failed: %s", err, exc_info=True)
 
     for minute in [0, 15, 30, 45]:
-        async_track_time_change(
-            sensor.hass,
-            _forecast_refresh_job,
-            minute=minute,
-            second=30,
+        # M8: store the unsub so the listener is removed on entity teardown.
+        sensor.async_on_remove(
+            async_track_time_change(
+                sensor.hass,
+                _forecast_refresh_job,
+                minute=minute,
+                second=30,
+            )
         )
     _LOGGER.info(" Scheduled forecast refresh every 15 minutes")
 
@@ -203,7 +206,10 @@ def _subscribe_profiles(sensor) -> None:
 
     signal_name = f"oig_cloud_{sensor._box_id}_profiles_updated"
     _LOGGER.debug(" Subscribing to signal: %s", signal_name)
-    async_dispatcher_connect(sensor.hass, signal_name, _on_profiles_updated)
+    # M8: store the unsub so the dispatcher connection is removed on teardown.
+    sensor.async_on_remove(
+        async_dispatcher_connect(sensor.hass, signal_name, _on_profiles_updated)
+    )
 
 
 def _schedule_initial_refresh(sensor) -> None:
@@ -250,12 +256,17 @@ def _schedule_aggregations(sensor) -> None:
         _LOGGER.info(" Weekly aggregation job triggered for %s", week_str)
         await sensor._aggregate_weekly(week_str, start_date, end_date)
 
-    async_track_time_change(
-        sensor.hass, _daily_aggregation_job, hour=0, minute=5, second=0
+    # M8: store the unsubs so the aggregation listeners are removed on teardown.
+    sensor.async_on_remove(
+        async_track_time_change(
+            sensor.hass, _daily_aggregation_job, hour=0, minute=5, second=0
+        )
     )
     _LOGGER.debug(" Scheduled daily aggregation at 00:05")
 
-    async_track_time_change(
-        sensor.hass, _weekly_aggregation_job, hour=23, minute=55, second=0
+    sensor.async_on_remove(
+        async_track_time_change(
+            sensor.hass, _weekly_aggregation_job, hour=23, minute=55, second=0
+        )
     )
     _LOGGER.debug(" Scheduled weekly aggregation at Sunday 23:55")
