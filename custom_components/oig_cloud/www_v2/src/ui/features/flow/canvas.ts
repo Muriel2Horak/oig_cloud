@@ -48,6 +48,7 @@ export class OigFlowCanvas extends LitElement {
   @query('.connections-layer') private svgEl!: SVGSVGElement;
 
   private animationId: number | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   private lastSpawnTime: Record<string, number> = {};
   private particleCount = 0;
   private readonly MAX_PARTICLES = 50;
@@ -134,6 +135,9 @@ export class OigFlowCanvas extends LitElement {
     super.disconnectedCallback();
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.removeEventListener('layout-changed', this.onLayoutChanged);
+    // M19: tear down the ResizeObserver so it doesn't leak across reconnects.
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.stopAnimation();
   }
 
@@ -154,9 +158,11 @@ export class OigFlowCanvas extends LitElement {
   protected firstUpdated(): void {
     this.updateLines();
     this.updateAnimationState();
-    // Recalculate connection positions on resize
-    const ro = new ResizeObserver(() => this.drawConnectionsDeferred());
-    ro.observe(this);
+    // Recalculate connection positions on resize. Stored so it can be
+    // disconnected in disconnectedCallback (M19).
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = new ResizeObserver(() => this.drawConnectionsDeferred());
+    this.resizeObserver.observe(this);
   }
 
   /** Draw SVG connections after a frame so DOM positions are accurate */

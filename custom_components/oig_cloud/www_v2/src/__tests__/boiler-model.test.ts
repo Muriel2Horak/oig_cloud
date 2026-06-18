@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import '@/ui/features/boiler/boiler-model';
 import type { OigBoilerModel } from '@/ui/features/boiler/boiler-model';
-import { usableLiters } from '@/ui/features/boiler/boiler-model';
+import { usableLiters, tempColor } from '@/ui/features/boiler/boiler-model';
 
 describe('usableLiters (38 °C mixed)', () => {
   it('is larger than the bare ≥40 °C volume (mixing with cold extends it)', () => {
@@ -22,6 +22,22 @@ describe('usableLiters (38 °C mixed)', () => {
   });
 });
 
+describe('tempColor (M18)', () => {
+  it('maps cold water to blue and hot water to red', () => {
+    expect(tempColor(10).toLowerCase()).toBe('#1565c0');
+    expect(tempColor(70).toLowerCase()).toBe('#e53935');
+  });
+  it('interpolates between anchors for mid temps', () => {
+    const c = tempColor(36); // between cyan (30) and yellow (42)
+    expect(c).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(c.toLowerCase()).not.toBe('#1565c0');
+    expect(c.toLowerCase()).not.toBe('#e53935');
+  });
+  it('returns a neutral grey when temperature is unknown', () => {
+    expect(tempColor(null).toLowerCase()).toBe('#3b4654');
+  });
+});
+
 describe('OigBoilerModel render', () => {
   let el: OigBoilerModel;
   beforeEach(() => { el = document.createElement('oig-boiler-model') as OigBoilerModel; document.body.appendChild(el); });
@@ -39,6 +55,33 @@ describe('OigBoilerModel render', () => {
     expect(html).toMatch(/vlažné|usable/i);
     expect(html).toMatch(/sprcha|sprch|shower/i);
     expect(html).toMatch(/vana|bath/i);
+  });
+
+  it('drives the water gradient from the real top/bottom temps (M18)', async () => {
+    el.topTempC = 70; el.bottomTempC = 10; el.readyFraction = 0.5;
+    await el.updateComplete;
+    const html = el.shadowRoot!.innerHTML.toLowerCase();
+    // bottom stop = cold blue (≤16), top stop = hot red (≥62)
+    expect(html).toContain('#1565c0');
+    expect(html).toContain('#e53935');
+  });
+
+  it('shows a ready waterline + cooler reservoir when readyFraction < 1 (M18)', async () => {
+    el.topTempC = 50; el.bottomTempC = 20; el.readyFraction = 0.4;
+    await el.updateComplete;
+    // cold reservoir rect uses the dim fill; waterline is the bottom boundary
+    const rects = Array.from(el.shadowRoot!.querySelectorAll('rect'));
+    const cold = rects.find((r) => r.getAttribute('fill') === '#0a0e13');
+    expect(cold).toBeTruthy();
+    // ready band is the top 40% → waterline at y = 64 + 0.4*172 = 132.8
+    expect(Number(cold!.getAttribute('y'))).toBeCloseTo(132.8, 1);
+  });
+
+  it('renders a full tank with no waterline when readyFraction is null', async () => {
+    el.topTempC = 50; el.bottomTempC = 40; el.readyFraction = null;
+    await el.updateComplete;
+    const rects = Array.from(el.shadowRoot!.querySelectorAll('rect'));
+    expect(rects.find((r) => r.getAttribute('fill') === '#0a0e13')).toBeFalsy();
   });
 
   it('applies electric heating mode class + element glow when heatMode=ele', async () => {

@@ -9,7 +9,7 @@
 // (draw + circulation return), driven by live state. Reference: mockup-v8.
 // ============================================================================
 
-import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
+import { LitElement, html, svg, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { CSS_VARS } from '@/ui/theme';
@@ -53,6 +53,44 @@ export function usableLiters(
     if (tLayer >= useTemp) liters += (volume / N) * (tLayer - cold) / denom;
   }
   return liters;
+}
+
+// Temperature → water colour anchors (°C). Interpolated for the tank gradient
+// so the rendered water reflects the real stratification instead of a fixed
+// rainbow (M18).
+const TEMP_COLOR_STOPS: Array<[number, [number, number, number]]> = [
+  [16, [21, 101, 192]],   // #1565c0 cold blue
+  [30, [0, 172, 193]],    // #00acc1 cyan
+  [42, [255, 213, 79]],   // #ffd54f yellow
+  [52, [255, 122, 61]],   // #ff7a3d orange
+  [62, [229, 57, 53]],    // #e53935 hot red
+];
+
+function rgbHex(c: [number, number, number]): string {
+  const h = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+  return `#${h(c[0])}${h(c[1])}${h(c[2])}`;
+}
+
+/** Map a water temperature (°C) to a hex colour. Null → neutral grey. */
+export function tempColor(tempC: number | null | undefined): string {
+  if (tempC == null) return '#3b4654';
+  const stops = TEMP_COLOR_STOPS;
+  if (tempC <= stops[0][0]) return rgbHex(stops[0][1]);
+  const last = stops[stops.length - 1];
+  if (tempC >= last[0]) return rgbHex(last[1]);
+  for (let i = 1; i < stops.length; i++) {
+    const [t1, c1] = stops[i];
+    if (tempC <= t1) {
+      const [t0, c0] = stops[i - 1];
+      const k = (tempC - t0) / (t1 - t0);
+      return rgbHex([
+        Math.round(c0[0] + (c1[0] - c0[0]) * k),
+        Math.round(c0[1] + (c1[1] - c0[1]) * k),
+        Math.round(c0[2] + (c1[2] - c0[2]) * k),
+      ]);
+    }
+  }
+  return rgbHex(last[1]);
 }
 
 /** Czech plural for "sprcha". */
@@ -178,13 +216,33 @@ export class OigBoilerModel extends LitElement {
       ? (lang === 'en' ? '🛁 bath ✓' : '🛁 vana ✓')
       : (lang === 'en' ? '🛁 no bath' : '🛁 na vanu nestačí');
 
+    // M18: drive the water colour from the real top/bottom temps and the
+    // "ready" waterline from readyFraction (battery-SoC analogy). Inner tank:
+    // x=166, y=64, w=88, h=172 (bottom edge y=236).
+    const botCol = tempColor(this.bottomTempC ?? this.topTempC);
+    const topCol = tempColor(this.topTempC ?? this.bottomTempC);
+    const midTemp = this.topTempC != null && this.bottomTempC != null
+      ? (this.topTempC + this.bottomTempC) / 2
+      : (this.topTempC ?? this.bottomTempC ?? null);
+    const midCol = tempColor(midTemp);
+    const INNER_TOP = 64;
+    const INNER_H = 172;
+    const frac = this.readyFraction != null
+      ? Math.max(0, Math.min(1, this.readyFraction))
+      : 1;
+    const readyH = frac * INNER_H;          // hot/ready band height (top of tank)
+    const waterlineY = INNER_TOP + readyH;  // boundary between ready and cooler
+    const coldHeight = INNER_H - readyH;    // cooler reservoir below the line
+    const showWaterline = this.readyFraction != null && frac > 0 && frac < 1;
+
     return html`
       <div class=${classMap(cls)}>
         <svg viewBox="0 0 430 290" preserveAspectRatio="xMidYMid meet">
           <defs>
             <linearGradient id="bmwater" x1="0" y1="1" x2="0" y2="0">
-              <stop offset="0" stop-color="#1565c0"/><stop offset=".26" stop-color="#00acc1"/>
-              <stop offset=".54" stop-color="#ffd54f"/><stop offset=".8" stop-color="#ff7a3d"/><stop offset="1" stop-color="#e53935"/>
+              <stop offset="0" stop-color=${botCol}/>
+              <stop offset=".5" stop-color=${midCol}/>
+              <stop offset="1" stop-color=${topCol}/>
             </linearGradient>
             <linearGradient id="bmround" x1="0" y1="0" x2="1" y2="0">
               <stop offset="0" stop-color="#000" stop-opacity=".55"/><stop offset=".22" stop-color="#000" stop-opacity=".12"/>
@@ -252,6 +310,9 @@ export class OigBoilerModel extends LitElement {
           <g clip-path="url(#bmclip)">
             <rect x="166" y="64" width="88" height="172" fill="url(#bmwater)"/>
             <rect x="166" y="64" width="88" height="172" fill="url(#bmround)"/>
+            <!-- M18: cooler (not-yet-ready) reservoir below the ready waterline -->
+            ${coldHeight > 0.5 ? svg`<rect x="166" y=${waterlineY} width="88" height=${coldHeight} fill="#0a0e13" opacity=".4"/>` : ''}
+            ${showWaterline ? svg`<rect x="166" y=${waterlineY - 1} width="88" height="2" fill="#fff" opacity=".5"/>` : ''}
             <ellipse class="water-gloss" cx="188" cy="150" rx="11" ry="78" fill="#fff" opacity=".5" filter="url(#bmsoft)"/>
           </g>
 
