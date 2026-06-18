@@ -74,6 +74,12 @@ class WizardMixin:
 
     if TYPE_CHECKING:  # pragma: no cover
         hass: HomeAssistant
+        # Provided by OigCloudOptionsFlowHandler; declared here so the shared
+        # modules-section routing helpers type-check. They are only reached when
+        # _section == "modules", which only the options flow ever sets (M13).
+        _STEP_MODULE: dict
+
+        def _newly_enabled_modules(self) -> set: ...
 
     # Methods below are provided by ConfigFlow/OptionsFlow parent classes
     async_show_form: Any

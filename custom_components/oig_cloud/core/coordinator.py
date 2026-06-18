@@ -78,7 +78,7 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         # schedules the hourly fallback + spot-price updates that read these.
         # _shutting_down stops the hourly timer re-arming.
         self._unsubs: list = []
-        self._hourly_timer = None
+        self._hourly_timer: Optional[asyncio.TimerHandle] = None
         self._shutting_down: bool = False
 
         # NOVÉ: OTE API inicializace - OPRAVA logiky
