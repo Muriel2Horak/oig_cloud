@@ -169,8 +169,15 @@ def _build_actual_interval_entry(
 
 async def _patch_existing_actual(
     sensor: Any, existing_actual: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+) -> tuple[List[Dict[str, Any]], bool]:
+    """Backfill missing cost fields on existing actual intervals.
+
+    Returns the (possibly patched) list and a flag indicating whether any
+    interval was actually changed (M6: callers must persist on a patch even
+    when no brand-new intervals were appended).
+    """
     patched_existing: List[Dict[str, Any]] = []
+    changed = False
     for interval in existing_actual:
         if (
             interval.get("net_cost") is not None
@@ -200,8 +207,9 @@ async def _patch_existing_actual(
                 "spot_price": round(historical_patch.get("spot_price", 0), 2),
                 "export_price": round(historical_patch.get("export_price", 0), 2),
             }
+            changed = True
         patched_existing.append(interval)
-    return patched_existing
+    return patched_existing, changed
 
 
 async def _build_new_actual_intervals(
@@ -472,7 +480,9 @@ async def update_actual_from_history(sensor: Any) -> None:
 
     _LOGGER.info("📊 Updating actual values from history for %s...", today_str)
 
-    existing_actual = await _patch_existing_actual(sensor, existing_actual)
+    existing_actual, patched_changed = await _patch_existing_actual(
+        sensor, existing_actual
+    )
     plan_data["actual"] = existing_actual
 
     existing_times: Set[str] = {
@@ -499,7 +509,9 @@ async def update_actual_from_history(sensor: Any) -> None:
     else:
         _LOGGER.debug("No new actual intervals to add")
 
-    if new_intervals:
+    # M6: persist when new intervals were added OR existing intervals were
+    # patched with backfilled cost data — otherwise the patches are lost.
+    if new_intervals or patched_changed:
         sensor._daily_plan_state = plan_data  # pylint: disable=protected-access
     else:
         _LOGGER.debug("No changes, skipping storage update")

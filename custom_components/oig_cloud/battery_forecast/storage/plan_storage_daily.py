@@ -9,7 +9,7 @@ from typing import Any, Optional
 from homeassistant.util import dt as dt_util
 
 from .plan_storage_baseline import create_baseline_plan
-from .plan_storage_io import plan_exists_in_storage
+from .plan_storage_io import get_plans_store_lock, plan_exists_in_storage
 
 DATE_FMT = "%Y-%m-%d"
 
@@ -63,9 +63,10 @@ async def _archive_daily_plan(sensor: Any, now: datetime) -> None:
 
     if sensor._plans_store:
         try:
-            storage_data = await sensor._plans_store.async_load() or {}
-            storage_data["daily_archive"] = sensor._daily_plans_archive
-            await sensor._plans_store.async_save(storage_data)
+            async with get_plans_store_lock(sensor):
+                storage_data = await sensor._plans_store.async_load() or {}
+                storage_data["daily_archive"] = sensor._daily_plans_archive
+                await sensor._plans_store.async_save(storage_data)
             _LOGGER.info(
                 "Saved daily plans archive to storage (%s days)",
                 len(sensor._daily_plans_archive),

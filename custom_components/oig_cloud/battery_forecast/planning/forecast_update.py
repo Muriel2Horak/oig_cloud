@@ -1492,7 +1492,6 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             load_forecast,
         ) = prepared
         used_adaptive_profiles = _has_usable_adaptive_profiles(adaptive_profiles)
-        mark_bucket_done = True
 
         # ONE PLANNER: single planning pipeline.
 
@@ -1517,6 +1516,10 @@ async def async_update(sensor: Any) -> None:  # noqa: C901
             run_id=planner_run_id,
             correlation_id=planner_run_id,
         )
+        # M4: only mark the bucket complete once the planner actually produced a
+        # timeline. A failed/empty run leaves the bucket open so the next tick
+        # retries instead of silently skipping until the next 15-min boundary.
+        mark_bucket_done = bool(timeline)
         await _emit_planner_summary_event(
             sensor,
             bucket_start=bucket_start,

@@ -124,7 +124,9 @@ class BoilerProfiler:
         result = []
         for state in states:
             try:
-                timestamp = state.last_updated
+                # M2: recorder timestamps are UTC; bucket by local time so the
+                # hour/weekday/season profiles match the user's actual schedule.
+                timestamp = dt_util.as_local(state.last_updated)
                 value_wh = float(state.state)
                 result.append({"timestamp": timestamp, "value_wh": value_wh})
             except (ValueError, AttributeError):
@@ -316,10 +318,12 @@ class BoilerProfiler:
         temp_list = temp_states.get(temp_sensor_entity, [])
         heating_list = heating_states.get(heating_entity, [])
 
+        # M2: bucket by local time. Both sides use local isoformat keys so the
+        # heating/temperature join stays consistent.
         heating_by_time = {}
         for state in heating_list:
             try:
-                heating_by_time[state.last_updated.isoformat()] = (
+                heating_by_time[dt_util.as_local(state.last_updated).isoformat()] = (
                     state.state.lower() in ("on", "true", "1", "zapnuto")
                 )
             except (ValueError, AttributeError):
@@ -329,7 +333,7 @@ class BoilerProfiler:
         for state in temp_list:
             try:
                 temp = float(state.state)
-                ts = state.last_updated
+                ts = dt_util.as_local(state.last_updated)
                 heating = heating_by_time.get(ts.isoformat(), False)
                 result.append(
                     {
