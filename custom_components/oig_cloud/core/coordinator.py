@@ -73,6 +73,14 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         # Spot price cache shared between scheduler/fallback and coordinator updates
         self._spot_prices_cache: Optional[Dict[str, Any]] = None
 
+        # Lifecycle: cancellable timers/listeners so unload/reload doesn't leak
+        # them (review H4). Must be set before _setup_pricing_ote(), which
+        # schedules the hourly fallback + spot-price updates that read these.
+        # _shutting_down stops the hourly timer re-arming.
+        self._unsubs: list = []
+        self._hourly_timer = None
+        self._shutting_down: bool = False
+
         # NOVÉ: OTE API inicializace - OPRAVA logiky
         pricing_enabled = self.config_entry and self.config_entry.options.get(
             "enable_pricing", False
@@ -91,11 +99,6 @@ class OigCloudCoordinator(DataUpdateCoordinator):
         self._spot_retry_task: Optional[asyncio.Task] = None
         self._max_spot_retries: int = 20  # 20 * 15min = 5 hodin retry
         self._hourly_fallback_active: bool = False  # NOVÉ: flag pro hodinový fallback
-        # Lifecycle: cancellable timers/listeners so unload/reload doesn't leak
-        # them (review H4). _shutting_down stops the hourly timer re-arming.
-        self._unsubs: list = []
-        self._hourly_timer = None
-        self._shutting_down: bool = False
 
         # NOVÉ: ČHMÚ API inicializace
         self._setup_chmu_warnings()
