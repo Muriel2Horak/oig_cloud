@@ -2443,6 +2443,17 @@ class BoilerRuntime:
         self.plan_result_handoff.append(result)
         if self._serializer is None:
             return
+        # H2: enqueue() raises if the serializer is not RUNNING/DEGRADED (e.g.
+        # still starting up or already stopped during teardown). The handoff list
+        # above is the durable record, so just skip enqueue rather than letting a
+        # transient state abort the whole replan.
+        from .actuator import ActuatorSerializerState
+
+        if self._serializer.state not in (
+            ActuatorSerializerState.RUNNING,
+            ActuatorSerializerState.DEGRADED,
+        ):
+            return
         from .actuator import ActuatorCommand, ActuatorCommandPriority, ActuatorCommandType, SourceIntent
 
         source = result.selected_source
@@ -2825,6 +2836,12 @@ def create_boiler_runtime(
     runtimes = entry_data.setdefault(KEY_BOILER_RUNTIMES, {})
     runtimes[box_id] = runtime
 
+    # H2: actually start the actuator serializer so its consumer loop runs and
+    # persisted override/config state is restored. start() is idempotent and
+    # destroy_boiler_runtime() stops it on teardown.
+    if hasattr(hass, "async_create_task"):
+        hass.async_create_task(serializer.start())
+
     return runtime
 
 
@@ -2847,7 +2864,7 @@ def _create_runtime_for_coordinator(
     actuator = BoilerActuator(hass)
     serializer = BoilerActuatorSerializer(hass=hass, entry_id=entry_id, box_id=box_id)
 
-    return BoilerRuntime(
+    runtime = BoilerRuntime(
         hass=hass,
         read_model=read_model,
         planner=planner,
@@ -2858,6 +2875,12 @@ def _create_runtime_for_coordinator(
         entry_id=entry_id,
         serializer=serializer,
     )
+
+    # H2: start the serializer for the lazily-created (service-call) runtime too.
+    if hasattr(hass, "async_create_task"):
+        hass.async_create_task(serializer.start())
+
+    return runtime
 
 
 def get_boiler_runtime(
