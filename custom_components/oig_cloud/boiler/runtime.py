@@ -1332,6 +1332,7 @@ class BoilerRuntime:
         # morning unattributed — the counter appears to "start counting now").
         self._daily_source_store: Optional[Any] = None
         self._daily_source_loaded: bool = False
+        self._daily_source_loaded_from_store: bool = False
         self._daily_source_last_save_at: Optional[datetime] = None
         self._setup_activity_state_listeners()
 
@@ -1666,10 +1667,37 @@ class BoilerRuntime:
                     }
                     self._daily_source_date = dt_util.now().date()
                     self._daily_source_reseeded = True
+                    self._daily_source_loaded_from_store = True
         except Exception:  # pragma: no cover - defensive
             pass
         finally:
             self._daily_source_loaded = True
+
+    def seed_daily_source_from_state(self, source: str, kwh: float) -> None:
+        """RestoreEntity fallback: seed a per-source bucket from a sensor's last
+        HA state when the Store had no snapshot for today.
+
+        Mirrors the battery computed sensors (Store primary + RestoreEntity
+        fallback). The Store is authoritative: if it already restored today's
+        data, this is a no-op. Otherwise the restored sensor value seeds the
+        accumulator so the daily counter survives a restart even without a Store.
+        """
+        if self._daily_source_loaded_from_store:
+            return
+        if source not in ("fve", "grid", "alternative"):
+            return
+        try:
+            value = float(kwh)
+        except (TypeError, ValueError):
+            return
+        if value <= 0.0:
+            return
+        # Only seed if we don't already have a larger value (avoid clobbering a
+        # fresher in-memory accumulation that started after restart).
+        if value > self._daily_source_kwh.get(source, 0.0):
+            self._daily_source_kwh[source] = value
+        self._daily_source_date = dt_util.now().date()
+        self._daily_source_reseeded = True
 
     def _schedule_daily_source_save(self) -> None:
         """Persist the daily accumulators (throttled to at most once per minute)."""

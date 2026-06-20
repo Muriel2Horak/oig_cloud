@@ -15,7 +15,9 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from ..const import (
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
@@ -225,6 +227,40 @@ class BoilerEnergyNeededSensor(BoilerSensorBase):
         return energy_state.get("energy_needed_kwh")
 
 
+class _DailySourceRestoreMixin(RestoreEntity):
+    """RestoreEntity fallback for the per-source daily energy sensors.
+
+    Mirrors the battery computed sensors: the runtime's Store is the primary
+    persistence; on startup, if the Store had no snapshot for today, the sensor's
+    last HA state (from the recorder) seeds the runtime accumulator so the daily
+    counter survives a restart. Only today's value is restored (the counter
+    resets at midnight).
+    """
+
+    _daily_source_key: str = ""
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        runtime = getattr(self, "_runtime", None)
+        seed = getattr(runtime, "seed_daily_source_from_state", None)
+        if runtime is None or not self._daily_source_key or not callable(seed):
+            return
+        last = await self.async_get_last_state()
+        if not last or last.state in (None, "", "unknown", "unavailable"):
+            return
+        last_changed = last.last_changed or last.last_updated
+        try:
+            if (
+                last_changed is not None
+                and dt_util.as_local(last_changed).date() != dt_util.now().date()
+            ):
+                return  # stale day — let the midnight reset apply
+            value = float(last.state)
+        except (TypeError, ValueError):
+            return
+        seed(self._daily_source_key, value)
+
+
 class BoilerTotalEnergySensor(BoilerSensorBase):
     """Celková energie dnes."""
 
@@ -244,13 +280,14 @@ class BoilerTotalEnergySensor(BoilerSensorBase):
         return tracking.get("total_kwh")
 
 
-class BoilerFVEEnergySensor(BoilerSensorBase):
+class BoilerFVEEnergySensor(_DailySourceRestoreMixin, BoilerSensorBase):
     """Energie z FVE dnes."""
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:solar-power"
+    _daily_source_key = "fve"
 
     def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
         """Inicializace."""
@@ -263,13 +300,14 @@ class BoilerFVEEnergySensor(BoilerSensorBase):
         return tracking.get("fve_kwh")
 
 
-class BoilerGridEnergySensor(BoilerSensorBase):
+class BoilerGridEnergySensor(_DailySourceRestoreMixin, BoilerSensorBase):
     """Energie ze sítě dnes."""
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:transmission-tower"
+    _daily_source_key = "grid"
 
     def __init__(self, coordinator: BoilerCoordinator, runtime: Any | None = None) -> None:
         """Inicializace."""

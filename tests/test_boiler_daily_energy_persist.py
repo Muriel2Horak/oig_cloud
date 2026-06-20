@@ -88,6 +88,42 @@ async def test_load_handles_no_data():
     assert stub._daily_source_kwh == {"fve": 0.0, "grid": 0.0, "alternative": 0.0}
 
 
+def _seed_stub(loaded_from_store=False, current=None):
+    return SimpleNamespace(
+        _daily_source_loaded_from_store=loaded_from_store,
+        _daily_source_kwh=current or {"fve": 0.0, "grid": 0.0, "alternative": 0.0},
+        _daily_source_date=None,
+        _daily_source_reseeded=False,
+    )
+
+
+def test_seed_from_state_applies_when_store_empty():
+    stub = _seed_stub(loaded_from_store=False)
+    BoilerRuntime.seed_daily_source_from_state(stub, "grid", 4.2)
+    assert stub._daily_source_kwh["grid"] == 4.2
+    assert stub._daily_source_reseeded is True
+
+
+def test_seed_from_state_skipped_when_store_authoritative():
+    stub = _seed_stub(loaded_from_store=True)
+    BoilerRuntime.seed_daily_source_from_state(stub, "grid", 4.2)
+    assert stub._daily_source_kwh["grid"] == 0.0  # Store wins
+
+
+def test_seed_from_state_never_clobbers_fresher_value():
+    stub = _seed_stub(current={"fve": 6.0, "grid": 0.0, "alternative": 0.0})
+    BoilerRuntime.seed_daily_source_from_state(stub, "fve", 2.0)
+    assert stub._daily_source_kwh["fve"] == 6.0  # kept the larger in-memory value
+
+
+def test_seed_from_state_ignores_bad_input():
+    stub = _seed_stub()
+    BoilerRuntime.seed_daily_source_from_state(stub, "grid", float("nan"))
+    BoilerRuntime.seed_daily_source_from_state(stub, "bogus", 5.0)
+    BoilerRuntime.seed_daily_source_from_state(stub, "grid", -1.0)
+    assert stub._daily_source_kwh["grid"] == 0.0
+
+
 @pytest.mark.asyncio
 async def test_save_persists_and_throttles():
     store = _FakeStore()
