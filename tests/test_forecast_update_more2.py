@@ -147,6 +147,9 @@ async def test_async_update_adaptive_profiles_and_filters(monkeypatch):
         def calculate_consumption_summary(self, _profiles):
             return {"ok": True}
 
+        async def calculate_observed_consumption_ratio(self, *_args, **_kwargs):
+            return None
+
         def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
             self.boost_called = True
 
@@ -236,6 +239,9 @@ async def test_async_update_skips_write_without_hass(monkeypatch):
         def calculate_consumption_summary(self, _profiles):
             return {}
 
+        async def calculate_observed_consumption_ratio(self, *_args, **_kwargs):
+            return None
+
         def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
             return None
 
@@ -314,6 +320,9 @@ async def test_async_update_warns_on_empty_spot_prices(monkeypatch):
 
         def calculate_consumption_summary(self, _profiles):
             return {}
+
+        async def calculate_observed_consumption_ratio(self, *_args, **_kwargs):
+            return None
 
         def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
             return None
@@ -415,6 +424,9 @@ async def test_async_update_tomorrow_profile_and_padding(monkeypatch):
         def calculate_consumption_summary(self, _profiles):
             return {}
 
+        async def calculate_observed_consumption_ratio(self, *_args, **_kwargs):
+            return None
+
         def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
             return None
 
@@ -506,6 +518,9 @@ async def test_async_update_load_forecast_exception_and_solar_error(monkeypatch)
 
         def calculate_consumption_summary(self, _profiles):
             return {}
+
+        async def calculate_observed_consumption_ratio(self, *_args, **_kwargs):
+            return None
 
         def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
             return None
@@ -682,6 +697,9 @@ async def test_async_update_truncates_horizon(monkeypatch):
         def calculate_consumption_summary(self, _profiles):
             return {}
 
+        async def calculate_observed_consumption_ratio(self, *_args, **_kwargs):
+            return None
+
         def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
             return None
 
@@ -767,6 +785,9 @@ async def test_async_update_planner_failure(monkeypatch):
 
         def calculate_consumption_summary(self, _profiles):
             return {}
+
+        async def calculate_observed_consumption_ratio(self, *_args, **_kwargs):
+            return None
 
         def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
             return None

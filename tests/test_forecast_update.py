@@ -439,6 +439,9 @@ async def test_async_update_happy_path(monkeypatch):
         def calculate_consumption_summary(self, _profiles):
             return {}
 
+        async def calculate_observed_consumption_ratio(self, *_args, **_kwargs):
+            return None
+
         def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
             return None
 
@@ -552,6 +555,9 @@ async def test_async_update_planner_options(monkeypatch, disable_guard, expected
 
         def calculate_consumption_summary(self, _profiles):
             return {}
+
+        async def calculate_observed_consumption_ratio(self, *_args, **_kwargs):
+            return None
 
         def apply_consumption_boost_to_forecast(self, *_args, **_kwargs):
             return None

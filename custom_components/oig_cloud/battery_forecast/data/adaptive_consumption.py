@@ -482,6 +482,48 @@ class AdaptiveConsumptionHelper:
         )
         return ratio
 
+    async def calculate_observed_consumption_ratio(
+        self, load_forecast: List[float], hours: int = 3
+    ) -> Optional[float]:
+        """Profile-independent reality check: today's real consumption rate vs
+        the near-term forecast rate.
+
+        Used as a fallback (and floor) for the profile-based ratio: when no
+        learned daily profile exists, or the profile under-predicts, this still
+        lets a genuinely hot day boost the forecast instead of the planner
+        silently trusting an underestimate and planning zero grid import.
+        """
+        if not load_forecast:
+            return None
+
+        actual_hourly = await self.get_today_hourly_consumption()
+        if not actual_hourly:
+            return None
+
+        lookback = min(hours, len(actual_hourly))
+        if lookback <= 0:
+            return None
+        actual_rate = sum(actual_hourly[-lookback:]) / lookback  # kWh/h
+
+        # load_forecast is per-15-min interval (kWh); 4 intervals == 1 hour.
+        fc_intervals = min(len(load_forecast), hours * 4)
+        if fc_intervals <= 0:
+            return None
+        forecast_rate = sum(load_forecast[:fc_intervals]) / (fc_intervals / 4.0)
+        if forecast_rate <= 0:
+            return None
+
+        ratio = actual_rate / forecast_rate
+        _LOGGER.debug(
+            "[LoadForecast] Observed consumption ratio (last %dh): actual=%.2f "
+            "kWh/h, forecast=%.2f kWh/h → %.2fx",
+            lookback,
+            actual_rate,
+            forecast_rate,
+            ratio,
+        )
+        return ratio
+
     @staticmethod
     def apply_consumption_boost_to_forecast(
         load_forecast: List[float], ratio: float, hours: int = 3

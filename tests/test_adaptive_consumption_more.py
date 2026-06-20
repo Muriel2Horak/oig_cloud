@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 
 import pytest
 
@@ -290,6 +289,56 @@ async def test_calculate_recent_consumption_ratio_variants(monkeypatch):
         )
         is None
     )
+
+
+@pytest.mark.asyncio
+async def test_calculate_observed_consumption_ratio(monkeypatch):
+    """Profile-independent reality ratio: today's real rate vs forecast rate."""
+    helper = module.AdaptiveConsumptionHelper(DummyHass({}), "123")
+
+    # No forecast / no actuals → None.
+    assert await helper.calculate_observed_consumption_ratio([]) is None
+
+    async def _no_actuals():
+        return []
+
+    helper.get_today_hourly_consumption = _no_actuals
+    assert await helper.calculate_observed_consumption_ratio([0.5, 0.5]) is None
+
+    # Reality runs hot: last 3h actual ~2 kWh/h, forecast ~1 kWh/h → ~2x.
+    async def _hot():
+        return [1.0, 1.5, 2.0, 2.0, 2.0]  # kWh/h, last 3 → 2.0 avg
+
+    helper.get_today_hourly_consumption = _hot
+    # 12 intervals (3h) of 0.25 kWh = 1.0 kWh/h forecast.
+    load = [0.25] * 16
+    ratio = await helper.calculate_observed_consumption_ratio(load)
+    assert ratio is not None
+    assert 1.9 < ratio < 2.1
+
+    # Zero forecast → None (no division).
+    assert await helper.calculate_observed_consumption_ratio([0.0, 0.0, 0.0, 0.0]) is None
+
+
+@pytest.mark.asyncio
+async def test_consumption_boost_uses_observed_when_no_profile(monkeypatch):
+    """The fix: with no learned profile, a real overrun still boosts the forecast
+    (previously the boost silently bailed and the planner under-charged)."""
+    from custom_components.oig_cloud.battery_forecast.planning import (
+        forecast_update as fu,
+    )
+    helper = module.AdaptiveConsumptionHelper(DummyHass({}), "123")
+
+    async def _hot():
+        return [3.0, 3.0, 3.0]  # 3 kWh/h actual
+
+    helper.get_today_hourly_consumption = _hot
+    load = [0.25] * 16  # 1 kWh/h forecast → observed ratio ~3x
+
+    await fu._maybe_apply_consumption_boost(helper, None, load)
+
+    # First intervals scaled up (capped 3x) — no longer left at the underestimate.
+    assert load[0] > 0.25
 
 
 def test_apply_solar_correction():

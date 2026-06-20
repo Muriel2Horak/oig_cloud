@@ -513,16 +513,32 @@ async def _maybe_apply_consumption_boost(
     adaptive_profiles: dict[str, Any] | None,
     load_forecast: list[float],
 ) -> None:
-    if not adaptive_profiles:
-        return
-    recent_ratio = await adaptive_helper.calculate_recent_consumption_ratio(
-        adaptive_profiles
+    # Profile-based reality ratio (needs a learned daily profile)…
+    profile_ratio = None
+    if adaptive_profiles:
+        profile_ratio = await adaptive_helper.calculate_recent_consumption_ratio(
+            adaptive_profiles
+        )
+    # …and a profile-independent observed ratio (today's real consumption rate
+    # vs the near-term forecast). The observed signal is the safety net: without
+    # it, a missing or optimistic profile silently suppressed the boost, so the
+    # planner kept planning zero grid import and never pre-charged for the
+    # evening (the box would coast to empty on a hot day — see field reports).
+    observed_ratio = await adaptive_helper.calculate_observed_consumption_ratio(
+        load_forecast
     )
-    # Symmetric short-term correction around a 0.9–1.1 dead band: scale the
-    # near-term load forecast UP when reality runs hotter than the profile, and
-    # DOWN (damped/floored in apply_consumption_boost_to_forecast) when it runs
-    # cooler — so a profile that over-predicts no longer forces over-charging.
-    if recent_ratio and (recent_ratio > 1.1 or recent_ratio < 0.9):
+
+    # Use the STRONGER upward signal: under-predicting consumption is the costly
+    # failure (no pre-charge → expensive evening import), so we never let a
+    # benign profile ratio mask a real overrun. The down-correction (cooler than
+    # predicted → avoid over-charging) still applies when only the profile ratio
+    # is available.
+    candidates = [r for r in (profile_ratio, observed_ratio) if r]
+    if not candidates:
+        return
+    recent_ratio = max(candidates)
+
+    if recent_ratio > 1.1 or recent_ratio < 0.9:
         adaptive_helper.apply_consumption_boost_to_forecast(load_forecast, recent_ratio)
 
 
