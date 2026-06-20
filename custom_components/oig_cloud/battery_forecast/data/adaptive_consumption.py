@@ -530,15 +530,20 @@ class AdaptiveConsumptionHelper:
     ) -> None:
         """Upraví krátkodobý load forecast podle zjištěné odchylky reality.
 
-        Symetricky: navýší při nadspotřebě (ratio > 1, cap 3.0×) i sníží při
+        Symetricky: navýší při nadspotřebě (ratio > 1, cap 1.5×) i sníží při
         podspotřebě (ratio < 1, podlaha 0.7× = max −30 %), aby nadpredikující
-        profil nevynucoval zbytečné nabíjení. Podstřelit spotřebu je rizikovější
-        než nadstřelit, proto je pokles tlumený podlahou.
+        profil nevynucoval zbytečné nabíjení.
+
+        Cap nahoře je 1.5× (dříve 3.0×): přechodná spotřební špička (např. právě
+        dobíjené auto) se nesmí promítnout jako trvalá 3× zátěž na další hodiny —
+        to vyrobilo falešný „pád na podlahu" a plánovač pak zbytečně dobíjel
+        baterku ze sítě i při ~92 % SoC za drahý proud. Reálný trvalý přebytek
+        (typicky ~1.4×) projde beze změny; jen extrémní špička se ořízne.
         """
         if not load_forecast:
             return
 
-        capped_ratio = max(0.7, min(ratio, 3.0))
+        capped_ratio = max(0.7, min(ratio, 1.5))
         intervals = min(
             len(load_forecast),
             max(4, int(math.ceil(hours * 4 * min(capped_ratio, 2.5)))),

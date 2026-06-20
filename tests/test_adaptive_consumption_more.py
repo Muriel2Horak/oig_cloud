@@ -384,12 +384,21 @@ def test_apply_consumption_boost_and_similarity():
     )
     assert mild[0] == pytest.approx(0.8)
 
-    # Over-consumption is capped at 3.0x.
+    # Over-consumption is capped at 1.5x (a transient spike must not project as a
+    # sustained multiple and trigger false floor-breach over-charging).
     up = [1.0, 1.0, 1.0, 1.0]
     module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
         up, 5.0, hours=1
     )
-    assert up[0] == pytest.approx(3.0)
+    assert up[0] == pytest.approx(1.5)
+
+    # A real, sustained overrun (~1.4x) still passes through uncapped — this is
+    # what prevents the morning under-charge the fix originally targeted.
+    real = [1.0, 1.0, 1.0, 1.0]
+    module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
+        real, 1.4, hours=1
+    )
+    assert real[0] == pytest.approx(1.4)
 
     empty = []
     module.AdaptiveConsumptionHelper.apply_consumption_boost_to_forecast(
