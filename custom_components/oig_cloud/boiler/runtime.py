@@ -1327,6 +1327,12 @@ class BoilerRuntime:
         self._daily_source_date: Optional[Any] = None  # date object of last accumulation day
         self._daily_source_last_update_at: Optional[datetime] = None
         self._daily_source_reseeded: bool = False  # guard: reseed runs at most once per day
+        # Persistence so the daily attribution survives an HA restart/deploy
+        # (otherwise a mid-day restart zeroes the day and the reseed leaves the
+        # morning unattributed — the counter appears to "start counting now").
+        self._daily_source_store: Optional[Any] = None
+        self._daily_source_loaded: bool = False
+        self._daily_source_last_save_at: Optional[datetime] = None
         self._setup_activity_state_listeners()
 
     @property
@@ -1582,6 +1588,9 @@ class BoilerRuntime:
                     self._daily_source_cost_czk.get("grid", 0.0) + energy_kwh * price
                 )
 
+        # Persist (throttled) so the day's attribution survives a restart.
+        self._schedule_daily_source_save()
+
     def _read_current_grid_price_czk(self) -> Optional[float]:
         """Current all-in grid price (Kč/kWh) for the active 15-min interval.
 
@@ -1610,6 +1619,82 @@ class BoilerRuntime:
     def get_daily_source_kwh(self) -> dict[str, float]:
         """Return a snapshot of today's per-source energy accumulators."""
         return dict(self._daily_source_kwh)
+
+    def _ensure_daily_source_store(self) -> Optional[Any]:
+        if self._daily_source_store is None and self.hass is not None:
+            try:
+                from homeassistant.helpers.storage import Store
+
+                key = f"oig_cloud.boiler_energy_{self.entry_id}_{self.box_id}"
+                self._daily_source_store = Store(self.hass, 1, key)
+            except Exception:  # pragma: no cover - defensive
+                self._daily_source_store = None
+        return self._daily_source_store
+
+    async def async_load_daily_source(self) -> None:
+        """Restore today's per-source energy accumulators after a restart.
+
+        Only restores when the stored snapshot is for the current local day; a
+        stale (previous-day) snapshot is ignored so midnight reset still applies.
+        Marks the accumulators as reseeded so the restart re-seed does not also
+        guess a split on top of the restored values.
+        """
+        if self._daily_source_loaded:
+            return
+        store = self._ensure_daily_source_store()
+        if store is None:
+            self._daily_source_loaded = True
+            return
+        try:
+            data = await store.async_load()
+        except Exception:  # pragma: no cover - defensive
+            data = None
+        try:
+            if data:
+                today = dt_util.now().date().isoformat()
+                if data.get("date") == today:
+                    kwh = data.get("kwh") or {}
+                    cost = data.get("cost_czk") or {}
+                    self._daily_source_kwh = {
+                        "fve": float(kwh.get("fve", 0.0)),
+                        "grid": float(kwh.get("grid", 0.0)),
+                        "alternative": float(kwh.get("alternative", 0.0)),
+                    }
+                    self._daily_source_cost_czk = {
+                        "fve": float(cost.get("fve", 0.0)),
+                        "grid": float(cost.get("grid", 0.0)),
+                    }
+                    self._daily_source_date = dt_util.now().date()
+                    self._daily_source_reseeded = True
+        except Exception:  # pragma: no cover - defensive
+            pass
+        finally:
+            self._daily_source_loaded = True
+
+    def _schedule_daily_source_save(self) -> None:
+        """Persist the daily accumulators (throttled to at most once per minute)."""
+        store = self._ensure_daily_source_store()
+        if store is None:
+            return
+        now = dt_util.now()
+        last = self._daily_source_last_save_at
+        if last is not None and (now - last).total_seconds() < 60.0:
+            return
+        self._daily_source_last_save_at = now
+        payload = {
+            "date": (
+                self._daily_source_date.isoformat()
+                if self._daily_source_date
+                else now.date().isoformat()
+            ),
+            "kwh": dict(self._daily_source_kwh),
+            "cost_czk": dict(self._daily_source_cost_czk),
+        }
+        try:
+            if hasattr(self.hass, "async_create_task"):
+                self.hass.async_create_task(store.async_save(payload))
+        except Exception:  # pragma: no cover - defensive
+            pass
 
     def reseed_daily_source_kwh(self, total_kwh: float) -> None:
         """Re-seed the fve+grid buckets once after HA restart.
@@ -1650,6 +1735,7 @@ class BoilerRuntime:
             self._daily_source_kwh["grid"] = self._daily_source_kwh.get("grid", 0.0) + gap
         # standby / charging_alt / unknown: leave gap unattributed (honest)
         self._daily_source_reseeded = True
+        self._schedule_daily_source_save()
 
     def _read_temperature_for_key(self, key: str) -> Optional[float]:
         config = getattr(self.coordinator, "config", {}) or {}
@@ -2841,6 +2927,9 @@ def create_boiler_runtime(
     # destroy_boiler_runtime() stops it on teardown.
     if hasattr(hass, "async_create_task"):
         hass.async_create_task(serializer.start())
+        # Restore today's per-source energy attribution so a restart/deploy does
+        # not zero the day's counter (it would otherwise "start counting now").
+        hass.async_create_task(runtime.async_load_daily_source())
 
     return runtime
 
@@ -2879,6 +2968,7 @@ def _create_runtime_for_coordinator(
     # H2: start the serializer for the lazily-created (service-call) runtime too.
     if hasattr(hass, "async_create_task"):
         hass.async_create_task(serializer.start())
+        hass.async_create_task(runtime.async_load_daily_source())
 
     return runtime
 

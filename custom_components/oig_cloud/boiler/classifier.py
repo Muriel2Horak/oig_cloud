@@ -355,25 +355,44 @@ def _normalize_heater_states(active_heaters: dict[str, str]) -> dict[str, str]:
     return result
 
 
+def _tank_temp(reading: BoilerReading) -> float | None:
+    """Whole-tank representative temperature for trend.
+
+    Uses the mean of the top and bottom zones when both are available, else the
+    top alone. A shower/bath draws hot water from the top and refills cold from
+    the bottom, so the BOTTOM zone falls first while the top stays hot — a
+    top-only trend is blind to it (reads ~0). Averaging makes the trend reflect
+    the real change in stored heat, so draws register as a negative trend and
+    the calorimetric heating estimate uses the whole tank (more correct).
+    """
+    if reading.top_temp_c is None:
+        return None
+    if reading.bottom_temp_c is None:
+        return reading.top_temp_c
+    return (reading.top_temp_c + reading.bottom_temp_c) / 2.0
+
+
 def _compute_trend(
     prev: BoilerReading | None,
     curr: BoilerReading,
 ) -> float | None:
-    """Compute temperature trend in °C/min.
+    """Compute temperature trend in °C/min from the whole-tank temperature.
 
     Returns ``None`` when data is insufficient or out-of-order.
     Returns ``0.0`` inside the deadband.
     """
     if prev is None:
         return None
-    if prev.top_temp_c is None or curr.top_temp_c is None:
+    prev_temp = _tank_temp(prev)
+    curr_temp = _tank_temp(curr)
+    if prev_temp is None or curr_temp is None:
         return None
 
     elapsed_seconds = (curr.timestamp - prev.timestamp).total_seconds()
     if elapsed_seconds <= 0:
         return None
 
-    delta = curr.top_temp_c - prev.top_temp_c
+    delta = curr_temp - prev_temp
     if abs(delta) < _DEADBAND_C:
         return 0.0
 

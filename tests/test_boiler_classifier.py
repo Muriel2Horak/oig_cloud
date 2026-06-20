@@ -142,6 +142,30 @@ class TestActivityStates:
         assert dto.state == "discharging"
         assert dto.source == "grid"
 
+    def test_bath_draw_detected_via_bottom_zone(self):
+        """A bath/shower: top stays hot, bottom crashes (cold inlet). The
+        whole-tank trend must go negative so the draw registers as discharging
+        — a top-only trend would read ~0 and miss it."""
+        classifier = BoilerActivityClassifier()
+        prev = _reading(
+            timestamp=FIXED_NOW - timedelta(minutes=5),
+            top_temp_c=74.0,
+            bottom_temp_c=70.0,
+        )
+        curr = _reading(
+            timestamp=FIXED_NOW,
+            top_temp_c=74.0,      # top unchanged → top-only trend would be 0
+            bottom_temp_c=27.0,   # cold inlet from the draw
+            source_key="grid",
+        )
+        snapshot = _snapshot(active_heaters={"switch.heater": "off"})
+
+        dto = classifier.classify(prev, curr, snapshot)
+
+        assert dto.temperature_trend_c_per_min is not None
+        assert dto.temperature_trend_c_per_min < 0
+        assert dto.state == "discharging"
+
     def test_unknown_when_top_temp_none(self):
         classifier = BoilerActivityClassifier()
         curr = _reading(top_temp_c=None, source_key="fve")

@@ -97,6 +97,10 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # F2: Demand-map profiler — wired up so _read_demand_map_dto can find it
         _temp_sensor = config.get("boiler_temp_sensor_top")
+        # Bottom zone too: a shower/bath refills cold from the bottom, so the
+        # bottom zone falls first while the top stays hot. Detecting draws on the
+        # tank average (top+bottom) catches those; top-only missed them.
+        _temp_sensor_bottom = config.get("boiler_temp_sensor_bottom")
         _heating_entity = config.get("boiler_heater_switch_entity")
         _volume_l = float(config.get("boiler_volume_l") or 200.0)
         _target_temp_c = float(config.get("boiler_target_temp_c") or 60.0)
@@ -118,6 +122,7 @@ class BoilerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._demand_profiler: Optional[BoilerDemandProfilerAsync] = BoilerDemandProfilerAsync(
                 hass=hass,
                 temp_sensor_entity=_temp_sensor,
+                temp_sensor_bottom_entity=_temp_sensor_bottom,
                 heating_entity=_heating_entity,
                 volume_l=_volume_l,
                 target_temp_c=_target_temp_c,

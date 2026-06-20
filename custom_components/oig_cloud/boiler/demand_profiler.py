@@ -920,9 +920,14 @@ class BoilerDemandProfilerAsync:
         power_entity: Optional[str] = None,
         command_entity: Optional[str] = None,
         box_id: Optional[str] = None,
+        temp_sensor_bottom_entity: Optional[str] = None,
     ) -> None:
         self.hass = hass
         self.temp_sensor_entity = temp_sensor_entity
+        # Optional bottom-zone sensor: draws (shower/bath) refill cold from the
+        # bottom, so it falls first while the top stays hot. When present, draws
+        # are detected on the tank average (top+bottom) instead of top alone.
+        self.temp_sensor_bottom_entity = temp_sensor_bottom_entity
         self.heating_entity = heating_entity
         # power_entity = live non-backup circuit power [W]; command_entity = the
         # commanded heater power (cbb_w, 0/install_power). Together they yield a
@@ -1079,14 +1084,34 @@ class BoilerDemandProfilerAsync:
 
             have_power = bool(power_ts)
 
+            # Bottom-zone series for tank-average draw detection. A shower/bath
+            # refills cold water from the bottom, so the bottom zone falls first
+            # while the top stays hot — detecting draws on the top alone misses
+            # them. When a bottom sensor is configured we feed detect_draws the
+            # tank average (top+bottom)/2 instead.
+            bottom_ts, bottom_vals = await _fetch_numeric_series(
+                self.temp_sensor_bottom_entity
+            )
+            have_bottom = bool(bottom_ts)
+
             # Build history list
             temp_list = temp_states.get(self.temp_sensor_entity, [])
             history: list[dict] = []
             min_temp: Optional[float] = None
             for state in temp_list:
                 try:
-                    temp = float(state.state)
+                    top_temp = float(state.state)
                     ts = state.last_updated
+                    # Tank-average temperature (draw-sensitive); falls back to
+                    # the top when no bottom sensor / no bottom sample yet.
+                    bottom_temp = (
+                        _value_at(ts, bottom_ts, bottom_vals) if have_bottom else None
+                    )
+                    temp = (
+                        (top_temp + bottom_temp) / 2.0
+                        if bottom_temp is not None
+                        else top_temp
+                    )
                     heating_on = _is_heating_on_at(ts)
                     record: dict = {
                         "timestamp": ts,
@@ -1098,8 +1123,11 @@ class BoilerDemandProfilerAsync:
                         if bp is not None:
                             record["power_w"] = bp
                     history.append(record)
-                    if min_temp is None or temp < min_temp:
-                        min_temp = temp
+                    # Cold-inlet proxy: coldest observed *bottom* temp (the inlet
+                    # hits the bottom), falling back to the average when no bottom.
+                    inlet_candidate = bottom_temp if bottom_temp is not None else temp
+                    if min_temp is None or inlet_candidate < min_temp:
+                        min_temp = inlet_candidate
                 except (ValueError, AttributeError):
                     continue
 
