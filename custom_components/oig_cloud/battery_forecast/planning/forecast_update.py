@@ -913,6 +913,14 @@ def _run_planner(
             hw_min_percent, _resolve_proxy_bat_min_pct(sensor)
         )
 
+        # Comfort SoC target: keep a buffer well above the hard floor so the BOX
+        # never force-charges to ~80% at any price when the battery dwells near
+        # bat_min. Maintained ONLY from cheap windows (never expensive grid);
+        # configurable %, default 50. 0 disables it.
+        comfort_pct = float(opts.get("battery_comfort_soc_percent", 50.0))
+        comfort_pct = max(0.0, min(95.0, comfort_pct))
+        comfort_soc_kwh = max_capacity * (comfort_pct / 100.0)
+
         # Per-interval day index (0=today, 1=tomorrow, …) from price timestamps,
         # so the expensive-price percentile is computed per day, not blended
         # across a cheap day + an expensive day.
@@ -933,6 +941,7 @@ def _run_planner(
             # (DEFAULT_ROUND_TRIP_EFFICIENCY), matching _simulate_interval — see
             # the directional_efficiency note above.
             interval_days=interval_days,
+            comfort_soc_kwh=comfort_soc_kwh,
         )
 
         result = plan_battery_schedule(planner_inputs)

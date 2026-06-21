@@ -21,6 +21,11 @@ _PRICE_EPS_CZK = 1e-9
 # for round-trip losses, so pre-charging is rejected unless cheap/η < expensive
 # actually pays off — no pointless charging on flat-price days.
 _COST_IMPROVEMENT_EPS_CZK = 1e-4
+# Comfort top-up charges ONLY in windows at or below this price percentile of the
+# planning horizon ("the cheapest windows"). Above it the battery is allowed to
+# keep descending toward the hard floor — comfort is never bought with expensive
+# grid (that would re-create the over-charge problem). 0.30 = cheapest ~third.
+_COMFORT_CHEAP_PERCENTILE = 0.30
 
 
 def _simulate_interval(
@@ -316,6 +321,69 @@ def _global_greedy_charge_intervals(inputs: PlannerInputs) -> List[int]:
     return sorted(ups_intervals)
 
 
+def _comfort_charge_intervals(
+    modes: List[int],
+    inputs: PlannerInputs,
+    comfort_kwh: float,
+    cheap_threshold: float,
+) -> List[int]:
+    """Opportunistically top up toward the comfort SoC using ONLY cheap windows.
+
+    Runs on top of the floor-defense + displacement modes. For each interval
+    where the projected SoC would dip below ``comfort_kwh``, it places HOME_UPS in
+    the cheapest earlier window whose price is at/below ``cheap_threshold`` and
+    that has headroom. It NEVER charges from an expensive window: if no cheap
+    window is available the battery is allowed to keep descending toward the hard
+    floor (which the greedy defends at any price). This keeps a buffer above the
+    BOX bat_min trigger cheaply, so the box never force-charges to ~80%.
+    """
+    n = len(inputs.intervals)
+    if n == 0 or inputs.charge_rate_per_interval <= 0.0 or comfort_kwh <= 0.0:
+        return []
+
+    target = min(comfort_kwh, inputs.max_capacity_kwh)
+    min_useful_charge_kwh = inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY * 0.1
+    added: List[int] = []
+
+    for _ in range(2 * n):
+        states = _simulate_with_modes(modes, inputs)
+        # Earliest interval whose projected SoC dips below the comfort target.
+        moment_idx: int | None = None
+        for i, state in enumerate(states):
+            if state.soc_kwh < target - _SOLAR_HEADROOM_EPS_KWH:
+                moment_idx = i
+                break
+        if moment_idx is None:
+            break
+
+        soc_traj = _compute_soc_trajectory(modes, inputs)
+        # Cheapest CHEAP window up to AND INCLUDING the dip interval (charging at
+        # the dip itself lifts its end-of-interval SoC), so a battery that already
+        # starts below comfort can still top up from the earliest cheap window.
+        candidates = sorted(
+            range(0, min(moment_idx + 1, n)), key=lambda idx: inputs.prices[idx]
+        )
+        picked: int | None = None
+        for candidate_idx in candidates:
+            if modes[candidate_idx] == CBBMode.HOME_UPS.value:
+                continue
+            if inputs.prices[candidate_idx] > cheap_threshold + _PRICE_EPS_CZK:
+                continue  # not cheap → don't force; let the battery descend
+            headroom = inputs.max_capacity_kwh - soc_traj[candidate_idx]
+            if min(inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY, max(0.0, headroom)) < min_useful_charge_kwh:
+                continue
+            picked = candidate_idx
+            break
+
+        if picked is None:
+            break  # no cheap window available — descend and wait
+
+        modes[picked] = CBBMode.HOME_UPS.value
+        added.append(picked)
+
+    return sorted(added)
+
+
 def _pick_displacement_candidate(
     *,
     moment: CriticalMoment,
@@ -557,7 +625,28 @@ def plan_battery_schedule(inputs: PlannerInputs) -> PlannerResult:
         # runs on top of the floor-defense modes and re-simulates internally.
         displacement_intervals = _displace_expensive_imports(modes, inputs)
 
-        ups_intervals = sorted(set(floor_intervals) | set(displacement_intervals))
+        # Step 4 (COMFORT buffer): keep the battery above a comfort SoC using ONLY
+        # cheap windows, so it never dwells near the BOX bat_min trigger (which
+        # would make the box force-charge to ~80% at any price). Cheap-only, so it
+        # cannot re-create expensive over-charging; if no cheap window exists the
+        # battery descends and only the hard floor (Step 3) is defended at any price.
+        comfort_kwh = max(0.0, getattr(inputs, "comfort_soc_kwh", 0.0) or 0.0)
+        comfort_intervals: List[int] = []
+        if comfort_kwh > inputs.planning_min_kwh and inputs.prices:
+            prices_nonneg = [max(0.0, p) for p in inputs.prices]
+            cheap_threshold = _percentile_threshold(prices_nonneg, _COMFORT_CHEAP_PERCENTILE)
+            mean_price = sum(prices_nonneg) / len(prices_nonneg)
+            # Only top up for comfort when a genuinely cheap tier exists (spread).
+            # On a flat/all-expensive day there is no cheap window → descend and
+            # wait (the hard floor still protects against the box takeover).
+            if cheap_threshold < mean_price - _PRICE_EPS_CZK:
+                comfort_intervals = _comfort_charge_intervals(
+                    modes, inputs, comfort_kwh, cheap_threshold
+                )
+
+        ups_intervals = sorted(
+            set(floor_intervals) | set(displacement_intervals) | set(comfort_intervals)
+        )
 
         states = _simulate_with_modes(modes, inputs)
 

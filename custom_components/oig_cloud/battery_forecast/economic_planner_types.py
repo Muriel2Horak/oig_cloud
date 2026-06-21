@@ -54,6 +54,12 @@ class PlannerInputs:
     # the whole horizon, so a cheap day and an expensive day are judged
     # independently. Falls back to a whole-horizon percentile when None.
     interval_days: Optional[List[int]] = None
+    # Comfort SoC target (kWh, 0 = disabled). The planner opportunistically tops
+    # up toward this level using ONLY cheap windows (never expensive grid), so the
+    # battery keeps a buffer well above the hard floor and the BOX never
+    # force-charges to ~80% at any price. Distinct from the hard floor, which is
+    # still defended at any price as the last resort.
+    comfort_soc_kwh: float = 0.0
 
     @property
     def planning_min_kwh(self) -> float:

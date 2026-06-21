@@ -73,6 +73,7 @@ const BATTERY_FIELDS: FieldDef[] = [
   { key: 'auto_mode_switch_enabled', label: 'Automatické přepínání režimů', type: 'bool', hint: 'Plánovač sám přepíná Home 1 / Home UPS podle plánu' },
   { key: 'charge_rate_kw', label: 'Nabíjecí výkon ze sítě (kW)', type: 'number', min: 0.5, max: 10, step: 0.1, hint: 'Kolik kW box bere při nabíjení ze sítě (UPS)' },
   { key: 'expensive_percentile', label: 'Práh drahých hodin (%)', type: 'number', min: 50, max: 95, step: 5, scale: 100, hint: 'Importy nad tímto denním percentilem cen se plánovač snaží pokrýt levným přednabitím. Výchozí 70 %.' },
+  { key: 'battery_comfort_soc_percent', label: 'Komfortní rezerva baterie (%)', type: 'number', min: 0, max: 95, step: 5, hint: 'Baterku drží nad touto úrovní, ale jen dobíjením v nejlevnějších oknech — aby ji box sám nenatáhl na 80 % za jakoukoli cenu. 0 = vypnuto. Výchozí 50 %.' },
   { key: 'balancing_enabled', label: 'Balancování článků', type: 'bool', hint: 'Pravidelné nabití na 100 % kvůli vyrovnání článků' },
   { key: 'balancing_interval_days', label: 'Interval balancování (dny)', type: 'number', min: 3, max: 30, step: 1 },
   { key: 'balancing_hold_hours', label: 'Držení 100 % (hodiny)', type: 'number', min: 1, max: 12, step: 1 },

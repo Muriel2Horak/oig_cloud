@@ -1084,6 +1084,7 @@ _MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "auto_mode_switch_enabled": {"type": bool},
         "charge_rate_kw": {"type": float, "rng": (0.5, 10.0)},
         "expensive_percentile": {"type": float, "rng": (0.5, 0.95)},
+        "battery_comfort_soc_percent": {"type": float, "rng": (0.0, 95.0)},
         "balancing_enabled": {"type": bool},
         "balancing_interval_days": {"type": int, "rng": (3, 30)},
         "balancing_hold_hours": {"type": int, "rng": (1, 12)},

@@ -449,6 +449,11 @@ class WizardMixin:
             "expensive_percentile": round(expensive_fraction, 2),
             "min_capacity_percent": wizard_data.get("min_capacity_percent", 20.0),
             "target_capacity_percent": wizard_data.get("target_capacity_percent", 80.0),
+            # Comfort SoC buffer kept above the hard floor via cheap windows only,
+            # so the box never force-charges to ~80% at any price (0 disables).
+            "battery_comfort_soc_percent": wizard_data.get(
+                "battery_comfort_soc_percent", 50.0
+            ),
             "home_charge_rate": charge_rate_kw,
             CONF_PLANNING_MIN_PERCENT: planning_min_percent,
             CONF_CHARGE_RATE_KW: charge_rate_kw,

@@ -39,6 +39,7 @@ def _build_inputs(
     planning_min_percent: float = 20.0,
     expensive_percentile: float = 0.70,
     round_trip_efficiency: float = 0.85,
+    comfort_soc_kwh: float = 0.0,
 ) -> PlannerInputs:
     n = len(prices)
     intervals: List[IntervalData] = [{"index": i} for i in range(n)]
@@ -54,6 +55,7 @@ def _build_inputs(
         load_forecast=load_forecast,
         expensive_percentile=expensive_percentile,
         round_trip_efficiency=round_trip_efficiency,
+        comfort_soc_kwh=comfort_soc_kwh,
     )
 
 
@@ -177,7 +179,6 @@ def test_all_cheap_day_no_economic_charging() -> None:
         solar_forecast=solar,
         load_forecast=load,
     )
-    baseline = simulate_home_i_detailed(inputs)
     # No expensive imports flagged on a flat price day where the percentile
     # threshold equals the flat price but battery covers the load.
     result = plan_battery_schedule(inputs)
@@ -405,3 +406,52 @@ def test_no_charge_when_displacement_does_not_lower_cost() -> None:
         f"no cost-reducing arbitrage exists, must not grid-charge; got UPS at "
         f"{_ups_indices(result)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Comfort buffer (two-tier floor): keep SoC above a comfort target using ONLY
+# cheap windows, so the box never force-charges to ~80% at any price.
+# ---------------------------------------------------------------------------
+
+
+def test_comfort_tops_up_in_cheap_windows_only():
+    # 4 cheap (1.0) then 4 expensive (5.0). Battery starts at ~49% and would
+    # sit below the 78% comfort target → comfort should charge cheap windows.
+    inputs = _build_inputs(
+        current_soc_kwh=5.0,
+        prices=[1.0, 1.0, 1.0, 1.0, 5.0, 5.0, 5.0, 5.0],
+        solar_forecast=[0.0] * 8,
+        load_forecast=[0.1] * 8,
+        comfort_soc_kwh=8.0,
+    )
+    result = plan_battery_schedule(inputs)
+    ups = _ups_indices(result)
+    assert ups, "comfort should have charged at least one cheap window"
+    # Every charge must be in a cheap (1.0) window — never the 5.0 windows.
+    assert all(inputs.prices[i] == 1.0 for i in ups), ups
+
+
+def test_comfort_waits_when_no_cheap_window():
+    # All-expensive flat day: no cheap tier → comfort must NOT charge (descend
+    # and wait). Battery stays above the hard floor so the greedy doesn't fire.
+    inputs = _build_inputs(
+        current_soc_kwh=6.0,
+        prices=[5.0] * 8,
+        solar_forecast=[0.0] * 8,
+        load_forecast=[0.1] * 8,
+        comfort_soc_kwh=8.0,
+    )
+    result = plan_battery_schedule(inputs)
+    assert _count_ups(result) == 0, "no cheap window → comfort must not force expensive grid"
+
+
+def test_comfort_disabled_changes_nothing():
+    # comfort_soc_kwh=0 → behaviour identical to before (no comfort charging).
+    kwargs = dict(
+        current_soc_kwh=5.0,
+        prices=[1.0, 1.0, 1.0, 1.0, 5.0, 5.0, 5.0, 5.0],
+        solar_forecast=[0.0] * 8,
+        load_forecast=[0.1] * 8,
+    )
+    off = plan_battery_schedule(_build_inputs(**kwargs, comfort_soc_kwh=0.0))
+    assert _count_ups(off) == 0
