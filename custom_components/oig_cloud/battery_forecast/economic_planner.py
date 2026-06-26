@@ -363,12 +363,37 @@ def _comfort_charge_intervals(
         candidates = sorted(
             range(0, min(moment_idx + 1, n)), key=lambda idx: inputs.prices[idx]
         )
+        # PV-first: if upcoming solar will lift the SoC back to the comfort target
+        # on its own, this dip is transient — don't grid-charge for it (comfort is
+        # a soft "descend & wait" target, the hard floor still protects). Avoids
+        # buying grid for a morning dip that the day's solar refills anyway.
+        deficit_kwh = target - states[moment_idx].soc_kwh
+        future_solar_kwh = _estimate_future_storable_surplus_kwh(
+            inputs, start_idx=moment_idx, end_idx=n
+        )
+        if future_solar_kwh >= deficit_kwh - _SOLAR_HEADROOM_EPS_KWH:
+            break
+
         picked: int | None = None
         for candidate_idx in candidates:
             if modes[candidate_idx] == CBBMode.HOME_UPS.value:
                 continue
             if inputs.prices[candidate_idx] > cheap_threshold + _PRICE_EPS_CZK:
                 continue  # not cheap → don't force; let the battery descend
+            # PV-first: never add grid in an interval where solar already produces
+            # a net surplus — the battery is charging from the sun there for free.
+            solar_c = (
+                max(0.0, inputs.solar_forecast[candidate_idx])
+                if candidate_idx < len(inputs.solar_forecast)
+                else 0.0
+            )
+            load_c = (
+                max(0.0, inputs.load_forecast[candidate_idx])
+                if candidate_idx < len(inputs.load_forecast)
+                else 0.0
+            )
+            if solar_c > load_c + _SOLAR_HEADROOM_EPS_KWH:
+                continue
             headroom = inputs.max_capacity_kwh - soc_traj[candidate_idx]
             if min(inputs.charge_rate_per_interval * DEFAULT_CHARGE_EFFICIENCY, max(0.0, headroom)) < min_useful_charge_kwh:
                 continue

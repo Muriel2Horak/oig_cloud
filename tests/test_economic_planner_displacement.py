@@ -455,3 +455,17 @@ def test_comfort_disabled_changes_nothing():
     )
     off = plan_battery_schedule(_build_inputs(**kwargs, comfort_soc_kwh=0.0))
     assert _count_ups(off) == 0
+
+
+def test_comfort_skips_grid_when_solar_recovers():
+    # Battery below comfort but abundant solar will refill it → comfort must NOT
+    # grid-charge (PV-first). This is the "charging at peak FVE" bug fix.
+    inputs = _build_inputs(
+        current_soc_kwh=4.0,
+        prices=[1.0] * 8,            # all cheap (would otherwise tempt charging)
+        solar_forecast=[2.0] * 8,    # strong surplus over load
+        load_forecast=[0.5] * 8,
+        comfort_soc_kwh=8.0,
+    )
+    result = plan_battery_schedule(inputs)
+    assert _count_ups(result) == 0, f"solar covers comfort → no grid, got {_ups_indices(result)}"
