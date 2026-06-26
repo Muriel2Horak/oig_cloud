@@ -13,12 +13,19 @@ from custom_components.oig_cloud.entities.battery_balancing_sensor import (
 
 def _stub(enabled: bool):
     stub = SimpleNamespace(
-        _config_entry=SimpleNamespace(options={"balancing_enabled": enabled}),
+        _config_entry=SimpleNamespace(
+            entry_id="x", options={"balancing_enabled": enabled}
+        ),
+        _hass=None,  # helper falls back to _config_entry.options
         _status="unknown",
         _days_since_last=99,
     )
     stub._get_balancing_manager = lambda: None
     stub._refresh_entity_state = lambda: None  # tested separately; no-op here
+    # Bind the real helper so we exercise its fallback path.
+    stub._balancing_enabled = lambda: OigCloudBatteryBalancingSensor._balancing_enabled(
+        stub
+    )
     return stub
 
 

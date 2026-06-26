@@ -125,6 +125,25 @@ class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
             "cost_savings_czk": getattr(self, "_cost_savings", None),
         }
 
+    def _balancing_enabled(self) -> bool:
+        """Read balancing_enabled from the LIVE config entry.
+
+        The reference captured at construction (self._config_entry) can hold a
+        stale/empty options dict after the user edits settings, so fetch the
+        canonical entry from hass.config_entries each time.
+        """
+        options = self._config_entry.options
+        try:
+            if self._hass is not None:
+                live = self._hass.config_entries.async_get_entry(
+                    self._config_entry.entry_id
+                )
+                if live is not None:
+                    options = live.options
+        except Exception:  # pragma: no cover - defensive
+            pass
+        return bool(options.get("balancing_enabled", True))
+
     def _get_balancing_manager(self) -> Optional[Any]:
         """Get BalancingManager from hass.data."""
         if not self._hass:
@@ -147,7 +166,7 @@ class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
             # never created), or it hasn't started yet. Show "disabled" explicitly
             # so the days-since-last counter isn't a misleading "99" — the box
             # balances its own cells when it reaches full anyway.
-            enabled = bool(self._config_entry.options.get("balancing_enabled", True))
+            enabled = self._balancing_enabled()
             if not enabled:
                 self._status = "disabled"
                 self._days_since_last = None
@@ -252,7 +271,7 @@ class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
         return charging_intervals
 
     def _resolve_status(self, active_plan: Any) -> str:
-        enabled = bool(self._config_entry.options.get("balancing_enabled", True))
+        enabled = self._balancing_enabled()
         if not enabled:
             return "disabled"
         if active_plan:
