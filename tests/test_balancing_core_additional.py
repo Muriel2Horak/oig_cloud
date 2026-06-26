@@ -930,3 +930,15 @@ def test_get_active_plan_and_sensor_states():
     mgr._active_plan = plan
     assert mgr.get_active_plan() == plan
     assert mgr.get_sensor_state() == "opportunistic"
+
+
+def test_is_holding_soc_counts_daily_full_charge():
+    # The box's daily solar charge often peaks at 98–100%, not a flat 99%+.
+    # 97% must count as "holding" so routine full charges register as balancing
+    # and the manager doesn't force a redundant grid charge (planner interference).
+    assert module.BalancingManager._is_holding_soc(100.0) is True
+    assert module.BalancingManager._is_holding_soc(98.0) is True
+    assert module.BalancingManager._is_holding_soc(97.0) is True
+    assert module.BalancingManager._is_holding_soc(96.0) is False
+    assert module.BalancingManager._is_holding_soc(0) is False
+    assert module.BalancingManager._is_holding_soc(None) is False

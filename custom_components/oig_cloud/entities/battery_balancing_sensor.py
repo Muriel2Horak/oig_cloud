@@ -83,7 +83,7 @@ class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
 
         # Cached state
         self._last_balancing: Optional[datetime] = None
-        self._days_since_last: int = 99
+        self._days_since_last: Optional[int] = 99
         self._status: str = "unknown"
         self._current_state: str = "standby"
         self._planned_window: Optional[Dict[str, Any]] = None
@@ -143,8 +143,16 @@ class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
         """Update sensor state from BalancingManager."""
         manager = self._get_balancing_manager()
         if not manager:
-            # Keep last known state (RestoreEntity) if available.
-            self._status = self._status or "unknown"
+            # No manager: either balancing is disabled in config (the manager is
+            # never created), or it hasn't started yet. Show "disabled" explicitly
+            # so the days-since-last counter isn't a misleading "99" — the box
+            # balances its own cells when it reaches full anyway.
+            enabled = bool(self._config_entry.options.get("balancing_enabled", True))
+            if not enabled:
+                self._status = "disabled"
+                self._days_since_last = None
+            else:
+                self._status = self._status or "unknown"
             return
 
         # Pull canonical state/attrs from manager API (avoids poking private fields).
@@ -253,6 +261,8 @@ class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
                 return "critical"
             if prio == "high":
                 return "due_soon"
+            return "ok"
+        if self._days_since_last is None:
             return "ok"
         if self._days_since_last >= self._cycle_days:
             return "overdue"

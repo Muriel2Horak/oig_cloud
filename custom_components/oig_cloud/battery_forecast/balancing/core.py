@@ -621,9 +621,16 @@ class BalancingManager:
             "latest_completion_time": None,
         }
 
+    # Count a near-full hold as balancing: the box's BMS balances cells at high
+    # SoC, and a daily solar charge often peaks at 98–100% rather than a flat
+    # 99%+. Using 97% means routine daily full charges register as balancing, so
+    # the manager doesn't think it's overdue and force a redundant grid charge
+    # (which would fight the economic planner). Was 99.0.
+    _HOLDING_SOC_THRESHOLD = 97.0
+
     @staticmethod
     def _is_holding_soc(soc: Any) -> bool:
-        return bool(soc and soc >= 99.0)
+        return bool(soc and soc >= BalancingManager._HOLDING_SOC_THRESHOLD)
 
     @staticmethod
     def _extend_holding_window(state: Dict[str, Any], stat_time: datetime) -> None:
