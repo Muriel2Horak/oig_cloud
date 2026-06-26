@@ -153,6 +153,7 @@ class OigCloudBatteryBalancingSensor(_BatteryBalancingBase):
                 self._days_since_last = None
             else:
                 self._status = self._status or "unknown"
+            self._refresh_entity_state()
             return
 
         # Pull canonical state/attrs from manager API (avoids poking private fields).

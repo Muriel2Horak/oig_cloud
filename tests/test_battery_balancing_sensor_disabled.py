@@ -18,6 +18,7 @@ def _stub(enabled: bool):
         _days_since_last=99,
     )
     stub._get_balancing_manager = lambda: None
+    stub._refresh_entity_state = lambda: None  # tested separately; no-op here
     return stub
 
 
