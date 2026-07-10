@@ -65,15 +65,14 @@ premium po prvním úspěšném ověření. Za provozu: `oig_ai_status` senzor +
 Core výpočty (planner/senzory) na AI NIKDY nezávisí. Kompletní výsledky: scratchpad
 nim_all_results.json (test 2026-07-09).
 
-**P2 — Uložení AI klíče do HA storage (ne options).**
-Návrh: NVIDIA klíč v `.storage/oig_cloud.ai_<entry>` — přežije full-replace options bug, neexportuje
-se v diagnostice, neredaktuje se do logů.
-STATUS: PROPOSED
+**P2 — Uložení AI klíče do HA storage (ne options). — APPROVED (Martin 2026-07-10)**
+NVIDIA klíč v `.storage/oig_cloud.ai_<entry>` — přežije full-replace options bug, není
+v diagnostickém exportu, do logů jen otisk (`nvapi-…xxxx`), REST vrací pouze `key_set: true/false`.
 
-**P3 — Solár krok: postup dál jen po úspěšném testu.**
-Návrh: krok solár končí tlačítkem „Otestovat" = reálné stažení předpovědi + graf zítřka; bez toho
-nejde pokračovat. U Solcastu návod (odkazy, screenshoty) kde vzít API key + site ID.
-STATUS: PROPOSED
+**P3 — Solár krok: postup dál jen po úspěšném testu. — APPROVED (Martin 2026-07-10)**
+Krok solár končí tlačítkem „Otestovat" = reálné stažení předpovědi + graf zítřka; bez úspěchu
+nejde pokračovat. Chybové stavy srozumitelně (špatný klíč / site ID / server). U Solcastu
+krok-za-krokem návod s odkazy; GPS předvyplněná z HA.
 
 **P4 — Ceníky distribuce: dataset + souřadnicová extrakce + LLM interpretace + cross-check.**
 EMPIRICKY OVĚŘENO (2026-07-09/10, EG.D brožura 2026, 9 stran, 10 D-sazeb):
@@ -87,42 +86,56 @@ strukturované řádky, (3) LLM jen interpretuje/normalizuje (JSON schéma), (4)
 shoda = předvyplnit ✅, neshoda = pole „zkontroluj ručně" ⚠️, (5) uživatel VŽDY potvrzuje.
 Plus (a) kurátorovaný dataset per distributor+sazba v remote_config jako deterministická vrstva 0;
 AI fetch = aktualizace/ověření datasetu a neznámé sazby.
-STATUS: PROPOSED (pipeline ověřená, čeká na formální schválení)
+STATUS: APPROVED (Martin 2026-07-10)
 
-**P5 — Jediný registr polí v BE, FE se generuje.**
-Návrh: definice všech konfiguračních polí (typ, rozsah, default, sekce, popisek) jednou v Pythonu;
-REST whitelist, FE formuláře wizardu/Nastavení a validace se z něj odvozují. Oprava full-replace→merge.
-STATUS: PROPOSED
+**P5 — Jediný registr polí v BE, FE se generuje. — APPROVED (Martin 2026-07-10)**
+Definice všech konfiguračních polí (typ, rozsah, default, sekce, český popisek/hint) JEDNOU
+v Pythonu; FE si definice tahá z API (wizard i Nastavení se vykreslují z registru), REST validace
+i options flow čtou tentýž registr. Ukládání VŽDY merge, nikdy full-replace — konec tichého mazání
+hodnot nastavených v dashboardu.
 
-**P6 — Výmaz mrtvých klíčů a stubů.**
-Návrh: smazat 10 mrtvých klíčů (`notifications_scan_interval`, `tariff_weekend_same_as_weekday`,
+**P6 — Výmaz mrtvých klíčů a stubů. — APPROVED (Martin 2026-07-10)**
+Smazat: 10 mrtvých klíčů (`notifications_scan_interval`, `tariff_weekend_same_as_weekday`,
 `planning_min_percent`, `disable_planning_min_guard`, `price_hysteresis_czk`, `hw_min_hold_hours`,
 `boiler_comfort_profile_mode`, `boiler_planning_horizon_hours`, `boiler_recovery_rate_c_per_hour`,
-`boiler_alt_source_mode`), stub `import_yaml`, stub `enable_auto`, fantomové definice v config/schema.py,
-legacy battery klíče (`min_capacity_percent`, `target_capacity_percent`, `max_ups_price_czk`,
-`charge_rate_kw` alias). Migrace: tichý drop při prvním uložení.
-STATUS: PROPOSED
+`boiler_alt_source_mode`), stub `import_yaml`, stub `enable_auto`, fantomové definice
+v config/schema.py, legacy battery klíče (`min_capacity_percent`, `target_capacity_percent`,
+`max_ups_price_czk`, `charge_rate_kw` alias), mrtvé dataclasses v battery_forecast/config.py.
+Migrace: tichý drop při prvním uložení; nic funkčního se nemění.
 
-**P7 — Okamžitá oprava BUG defaultů (nečeká na redesign).**
-Návrh: hned teď (hotfix) odstranit autorovy hodnoty: GPS 50.1219800/13.9373742
-(solar_forecast_sensor.py:640, validation.py:66), geometrii střechy (declination 10/azimuth 138/5.4 kWp,
+**P7 — Oprava BUG defaultů (autorovy hodnoty) — SOUČÁST JEDNOHO RELEASE. — APPROVED (Martin 2026-07-10)**
+Odstranit autorovy hodnoty: GPS 50.1219800/13.9373742 (solar_forecast_sensor.py:640,
+validation.py:66), geometrii střechy (declination 10/azimuth 138/5.4 kWp,
 solar_forecast_sensor.py:548-575), kapacitu 15.36 kWh (plan_storage_baseline.py:280),
-hardcoded 1.5 Kč/2.8 kW (scenario_analysis.py:645), nezapojený cold_inlet (classifier.py:52).
+hardcoded 1.5 Kč/2.8 kW (scenario_analysis.py:645), zapojit cold_inlet option (classifier.py:52),
+kapacitu baterie číst z reálných dat boxu kde to jde.
 Chybějící config → senzor `unavailable` + logované varování, ŽÁDNÝ tichý fallback.
-STATUS: PROPOSED
+Martin: NEvydávat jako samostatný hotfix — celý redesign jde ven JAKO JEDEN RELEASE.
 
-**P8 — Vynesení hardcoded parametrů (EXPOSE list).**
-Návrh co zpřístupnit v konfiguraci (pokročilá sekce): hw podlaha (0.20), komfortní cheap percentil
-(0.30), účinnosti (0.882/0.95 — nebo napojit na měřený senzor), MODE_GUARD_MINUTES (60),
-bojler: teplota „hotové vody" (40 °C), hystereze (5 °C), ztrátový koeficient (0.02), geometrie nádrže,
-MIN_ELEMENT_W (1500). Zbytek heuristik → remote_config (tuning sekce), ne uživatelská volba.
-STATUS: PROPOSED
+**P8 — ŽÁDNÝ hardcoded parametr. Priorita: senzor → konfigurace → remote_config. — APPROVED (Martin 2026-07-10)**
+Martinovo pravidlo (závazné, „hrozný nešvar a pořád to tam někdo hardcoduje"):
+1. **Senzor/box first** — co box reálně hlásí, se čte ze senzorů (kapacita baterie, bat_min/limit
+   z cloudu — `tbl_batt_prms_*`, měřená účinnost, instalovaný výkon patrony…). Kód NIKDY nesmí
+   mít vlastní číslo tam, kde existuje živé číslo z boxu.
+2. **Uživatelská konfigurace** (registr P5, sekce Pokročilé) — co je preference/instalace
+   (komfortní percentil, mode guard, teplota „hotové vody", hystereze, geometrie nádrže…).
+3. **remote_config** — ladicí heuristiky, které vlastníme my (drift dead-bandy, boost cap,
+   holding threshold, cooldowny, clampy, session TTL…), měnitelné bez release.
+Hardcoded konstanta v kódu = bug. Duplikáty zkonsolidovat (hw_min ×3, MODE_GUARD ×2,
+COMMAND_ON_W ×3, cycle cost ×2). Do CLAUDE.md přidat trvalé pravidlo pro budoucí vývoj.
 
-**P9 — Fázování dodávky.**
-Návrh: F1 = P7 hotfix + AI runtime + gate + wizard solár/ceny + P5 registr + P6 úklid + D11 banner.
-F2 = battery/bojler wizard + chat asistent + P8 pokročilá sekce.
-F3+ = AI predikce/ovládání boxu (mimo tento design).
-STATUS: PROPOSED
+**P9 — Rozsah: VŠECHNY 3 fáze; každá fáze má vlastní spec. — APPROVED (Martin 2026-07-10)**
+Martin: děláme všechny 3 fáze (ne jen F1). Fáze 1 jde ven jako JEDEN release (viz P7).
+- **F1** (spec = tento board + design doc): AI runtime (discovery, fallback chain, remote_config,
+  oig_ai_status) + premium gate + wizard ①AI ②Solár ③Ceny + P5 registr/merge + P6 úklid +
+  P7 defaulty + P8 de-hardcode + zeštíhlený config flow + banner pro stávající.
+  Battery/plánovač ve F1: rozumné defaulty + stávající karta (bez wizardu).
+- **F2** (SPEC CHYBÍ → samostatný design/brainstorm): wizard battery/bojler, „Poradit se" chat,
+  pokročilá sekce z P8.
+- **F3** (SPEC CHYBÍ → samostatný design/brainstorm, zásadní bezpečnostní otázky): AI zapojená
+  do predikce, chování a OVLÁDÁNÍ boxu (guardrails, co smí AI přepnout, audit trail).
+Pořadí specifikací: F1 design doc hned; F2/F3 brainstorm následně (mohou vznikat souběžně
+s implementací F1).
 
 ---
 
