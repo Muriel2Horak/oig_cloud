@@ -139,11 +139,35 @@ s implementací F1).
 
 ---
 
-## OPEN (vyžadují průzkum před návrhem)
+## OPEN — VŠE UZAVŘENO (průzkumy 2026-07-10)
 
-**O1 — Které HA verze podporují `ai_task` a jak přesně detekovat + zavolat `generate_data` se schématem.**
-**O2 — NVIDIA NIM free tier: přesné limity (kreditů/RPM), registrace bez kreditky?, ToS pro tento use-case.**
-**O3 — Formát ceníků ČEZ Distribuce / PRE / EG.D (PDF vs web) a stabilita URL pro fetch.**
+**O1 — `ai_task`: CLOSED.** Od HA 2025.7, strukturovaný výstup od **2025.8** (= naše minimální verze
+pro ai_task cestu; starší HA → NVIDIA). Detekce: `hass.services.has_service("ai_task","generate_data")`
++ entity s feature GENERATE_DATA. Volání: helper `ai_task.async_generate_data(hass, task_name=…,
+entity_id=None → použije uživatelovu preferovanou AI, instructions=…, structure=vol.Schema(HA selectory))`.
+POZOR: structure = HA selectory, ne JSON schema → úlohy budou mít JEDEN interní popis a DVA převodníky
+(selector pro ai_task, JSON schema pro NIM). Model neschopný schématu → HomeAssistantError, žádný
+vnitřní fallback → přesně tam nastupuje náš chain (ai_task fail → NIM). Provideři: openai, google,
+ollama, anthropic, open_router, cloud (Nabu Casa).
+
+**O2 — NVIDIA free tier: CLOSED (s výhradou ToS).** Registrace zdarma, bez kreditky, e-mail ověření,
+~3–5 min (flow pro wizard zdokumentován). Kreditní systém ZRUŠEN (potvrzeno NVIDIA staff 09/2025) →
+jen rate limit ~40 RPM per model, 429 při překročení, bez časové expirace. Klíče `nvapi-`, pojmenované,
+rotovatelné, bez expirace (volitelná). Deprecation modelů bez záruky ohlášení (GLM-5 ~6 dní, kimi 410)
+→ potvrzuje P1 chain + remote_config. ⚠️ ToS: free tier je „trial/evaluation, ne produkce" — trvalé
+užití v integraci je šedá zóna (vymáhání = jen rate limit); §3.3 NVIDIA smí deidentifikovaně používat
+vstupy ke zlepšování modelů; zákaz osobních údajů v promptech. DŮSLEDKY (závazné pro F1): (a) wizard
+zobrazí disclosure, (b) prompty posílají VÝHRADNĚ anonymní čísla (žádné jméno/adresa/box ID/souřadnice),
+(c) ai_task (vlastní LLM uživatele) je preferovaná cesta, NVIDIA fallback.
+
+**O3 — Ceníky distribuce: CLOSED (zjednodušení P4!).** ČEZ Distribuce ani PRE vlastní tarifní ceník
+NEvydávají — oba odkazují na ERÚ cenový výměr (14/2025 pro rok 2026, věstník 18/2025), který obsahuje
+VŠECHNY D-sazby se sloupci ČEZ|EG.D|PRE v jednom dokumentu. Navíc ERÚ publikuje STROJOVĚ ČITELNÝ XLSX
+(ceny-nn26-1.xlsx, ověřen). → Dataset vrstva 0 se plní z JEDNOHO úředního zdroje ročně (XLSX; discovery
+přes eru.gov.cz/cenova-rozhodnuti, URL nejsou blind-templatable). PDF pipeline (P4) zůstává pro EG.D
+brožuru, ověření a budoucí odchylky. Prosinec: výměr 15/2025 jen vynuloval POZE (státní rozpočet),
+distribuce beze změn. Ověřené URL + vzorky uloženy (scratchpad: cez_dist_2026.pdf, pre_dist_2026.pdf,
+ceny-nn26.xlsx).
 
 ---
 
