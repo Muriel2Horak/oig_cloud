@@ -51,12 +51,19 @@ mu jede; dostane banner „Projdi konfigurací pro validaci s AI". Gate platí j
 
 ## PROPOSED (projednává se bod po bodu)
 
-**P1 — Chování při výpadku NVIDIA/AI.**
-Návrh: (a) gate je jednorázový — při onboardingu s ležícím NIM se klíč uloží, ověření jde do retry
-fronty, premium se odemkne po prvním úspěšném ověření; (b) za provozu AI degraduje viditelně
-(senzor `oig_ai_status`: ready/offline/no_credits, badge v UI, cache výsledků, exponenciální retry);
-(c) core výpočty (planner, senzory) na AI NIKDY nezávisí — AI je asistenční vrstva.
-STATUS: PROPOSED
+**P1 — Chování při výpadku NVIDIA/AI: fallback chain přes CELÝ ověřený žebříček. — APPROVED (Martin 2026-07-09/10)**
+Živý test všech 83 chat modelů NIM katalogu (Martinův klíč, úloha: český ceník → JSON):
+**32 OK / 51 mrtvých (61 % katalogu!)** — pády jsou per-model a trvalé (Kimi 404/410 ve všech
+9 variantách názvů, qwen 100% timeout, deepseek-flash bliká 503↔OK). Martin: NVIDIA jako celek
+neleží, padají modely → fallback chain, a do fallbacku jde CELÝ žebříček funkčních.
+Řazení: flagship tier napřed (glm-5.2 → mistral-large-3-675b → minimax-m3 → nemotron-3-super-120b
+→ mistral-medium-3.5 → gpt-oss-120b), pak zbylých 26 dle latence. kimi-k2.6 v registru
+`enabled:false` (zapnout až ho NVIDIA nasadí — bez release).
+Algoritmus: chyba/timeout(30s)/nevalidní JSON → další; poslední funkční model cache (TTL 1h);
+periodická re-sonda (deepseek-flash case). Onboarding s ležícím NIM: klíč uložit, retry fronta,
+premium po prvním úspěšném ověření. Za provozu: `oig_ai_status` senzor + badge, cache, backoff.
+Core výpočty (planner/senzory) na AI NIKDY nezávisí. Kompletní výsledky: scratchpad
+nim_all_results.json (test 2026-07-09).
 
 **P2 — Uložení AI klíče do HA storage (ne options).**
 Návrh: NVIDIA klíč v `.storage/oig_cloud.ai_<entry>` — přežije full-replace options bug, neexportuje
@@ -68,11 +75,19 @@ Návrh: krok solár končí tlačítkem „Otestovat" = reálné stažení před
 nejde pokračovat. U Solcastu návod (odkazy, screenshoty) kde vzít API key + site ID.
 STATUS: PROPOSED
 
-**P4 — Ceníky distribuce: dvouvrstvě (dataset + AI ověření).**
-Návrh: (a) kurátorovaný dataset VT/NT/poplatků per distributor+sazba v remote_config (deterministické,
-roční údržba); (b) AI fetch+extract jako ověřovací/aktualizační cesta a pro neznámé sazby.
-AI výstup vždy jen předvyplní → člověk potvrdí. Nikdy slepé uložení.
-STATUS: PROPOSED
+**P4 — Ceníky distribuce: dataset + souřadnicová extrakce + LLM interpretace + cross-check.**
+EMPIRICKY OVĚŘENO (2026-07-09/10, EG.D brožura 2026, 9 stran, 10 D-sazeb):
+- LLM na SUROVÉM textu PDF selhává u tabulek: pypdf rozsype sloupce → GLM 6/10, Mistral 8/10
+  (VT hodnoty D25d/D26d/D27d/D35d zpřeházené — z textu mapování určit NEŠLO).
+- Křížová kontrola 2 modelů chytá přesně chybná pole: 4 neshody = přesně 4 chyby; kde shoda (6), tam pravda.
+- Pipeline se souřadnicovou extrakcí (pdfplumber, čísla → nejbližší hlavička dle x): **oba modely 10/10**,
+  robustní i vůči šumu ve vstupu (duplicitní částečné tabulky modely správně ignorovaly).
+Finální pipeline „Načíst ceník": (1) backend stáhne PDF, (2) pdfplumber souřadnicová extrakce →
+strukturované řádky, (3) LLM jen interpretuje/normalizuje (JSON schéma), (4) 2 modely křížem:
+shoda = předvyplnit ✅, neshoda = pole „zkontroluj ručně" ⚠️, (5) uživatel VŽDY potvrzuje.
+Plus (a) kurátorovaný dataset per distributor+sazba v remote_config jako deterministická vrstva 0;
+AI fetch = aktualizace/ověření datasetu a neznámé sazby.
+STATUS: PROPOSED (pipeline ověřená, čeká na formální schválení)
 
 **P5 — Jediný registr polí v BE, FE se generuje.**
 Návrh: definice všech konfiguračních polí (typ, rozsah, default, sekce, popisek) jednou v Pythonu;

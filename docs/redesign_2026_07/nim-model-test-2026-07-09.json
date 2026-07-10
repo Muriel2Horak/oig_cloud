@@ -1,0 +1,500 @@
+[
+ {
+  "model": "01-ai/yi-large",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "abacusai/dracarys-llama-3.1-70b-instruct",
+  "status": "OK",
+  "latency_s": 3.1,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "ai21labs/jamba-1.5-large-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "bigcode/starcoder2-15b",
+  "status": "FAIL",
+  "latency_s": 0.1,
+  "note": "404"
+ },
+ {
+  "model": "bytedance/seed-oss-36b-instruct",
+  "status": "FAIL",
+  "latency_s": 60.2,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "databricks/dbrx-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "deepseek-ai/deepseek-coder-6.7b-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "deepseek-ai/deepseek-v4-flash",
+  "status": "OK",
+  "latency_s": 18.3,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "deepseek-ai/deepseek-v4-pro",
+  "status": "OK",
+  "latency_s": 12.2,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "google/codegemma-1.1-7b",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "google/codegemma-7b",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "google/gemma-2-2b-it",
+  "status": "FAIL",
+  "latency_s": 0.1,
+  "note": "422"
+ },
+ {
+  "model": "google/gemma-2b",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "google/gemma-3-12b-it",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "google/gemma-3-4b-it",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "google/gemma-3n-e2b-it",
+  "status": "FAIL",
+  "latency_s": 60.2,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "google/gemma-3n-e4b-it",
+  "status": "FAIL",
+  "latency_s": 60.2,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "google/gemma-4-31b-it",
+  "status": "OK",
+  "latency_s": 3.2,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "google/recurrentgemma-2b",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "ibm/granite-3.0-3b-a800m-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "ibm/granite-3.0-8b-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "ibm/granite-34b-code-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "ibm/granite-8b-code-instruct",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "meta/codellama-70b",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "meta/llama-3.1-70b-instruct",
+  "status": "OK",
+  "latency_s": 19.8,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "meta/llama-3.1-8b-instruct",
+  "status": "OK",
+  "latency_s": 1.0,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "meta/llama-3.2-1b-instruct",
+  "status": "FAIL",
+  "latency_s": 60.2,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "meta/llama-3.2-3b-instruct",
+  "status": "FAIL",
+  "latency_s": 60.1,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "meta/llama-3.3-70b-instruct",
+  "status": "OK",
+  "latency_s": 33.8,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "meta/llama-4-maverick-17b-128e-instruct",
+  "status": "FAIL",
+  "latency_s": 60.2,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "meta/llama2-70b",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "microsoft/phi-3.5-moe-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "microsoft/phi-4-mini-instruct",
+  "status": "OK",
+  "latency_s": 0.9,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "microsoft/phi-4-multimodal-instruct",
+  "status": "FAIL",
+  "latency_s": 60.1,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "minimaxai/minimax-m2.7",
+  "status": "OK",
+  "latency_s": 13.9,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "minimaxai/minimax-m3",
+  "status": "OK",
+  "latency_s": 0.9,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "mistralai/codestral-22b-instruct-v0.1",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "mistralai/ministral-14b-instruct-2512",
+  "status": "OK",
+  "latency_s": 0.9,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "mistralai/mistral-7b-instruct-v0.3",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "mistralai/mistral-large",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "mistralai/mistral-large-2-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "mistralai/mistral-large-3-675b-instruct-2512",
+  "status": "OK",
+  "latency_s": 0.9,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "mistralai/mistral-medium-3.5-128b",
+  "status": "OK",
+  "latency_s": 1.4,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "mistralai/mistral-nemotron",
+  "status": "OK",
+  "latency_s": 1.5,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "mistralai/mistral-small-4-119b-2603",
+  "status": "OK",
+  "latency_s": 1.0,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "mistralai/mixtral-8x22b-v0.1",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "mistralai/mixtral-8x7b-instruct-v0.1",
+  "status": "OK",
+  "latency_s": 4.0,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "moonshotai/kimi-k2.6",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "nv-mistralai/mistral-nemo-12b-instruct",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "nvidia/cosmos-reason2-8b",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "nvidia/llama-3.1-nemotron-51b-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "nvidia/llama-3.1-nemotron-70b-instruct",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+  "status": "FAIL",
+  "latency_s": 60.2,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+  "status": "OK",
+  "latency_s": 2.0,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+  "status": "OK",
+  "latency_s": 19.7,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "nvidia/llama3-chatqa-1.5-70b",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "nvidia/mistral-nemo-minitron-8b-8k-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ },
+ {
+  "model": "nvidia/nemotron-3-nano-30b-a3b",
+  "status": "OK",
+  "latency_s": 2.9,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+  "status": "OK",
+  "latency_s": 1.7,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "status": "OK",
+  "latency_s": 2.3,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "status": "OK",
+  "latency_s": 29.8,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "nvidia/nemotron-4-340b-instruct",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "nvidia/nemotron-mini-4b-instruct",
+  "status": "OK",
+  "latency_s": 1.5,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "nvidia/nemotron-nano-12b-v2-vl",
+  "status": "OK",
+  "latency_s": 2.7,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "nvidia/nemotron-nano-3-30b-a3b",
+  "status": "FAIL",
+  "latency_s": 0.4,
+  "note": "404"
+ },
+ {
+  "model": "nvidia/nvidia-nemotron-nano-9b-v2",
+  "status": "OK",
+  "latency_s": 28.4,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "openai/gpt-oss-120b",
+  "status": "OK",
+  "latency_s": 9.7,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "openai/gpt-oss-20b",
+  "status": "OK",
+  "latency_s": 5.3,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "qwen/qwen3-next-80b-a3b-instruct",
+  "status": "FAIL",
+  "latency_s": 60.2,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "qwen/qwen3.5-122b-a10b",
+  "status": "FAIL",
+  "latency_s": 60.1,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "qwen/qwen3.5-397b-a17b",
+  "status": "FAIL",
+  "latency_s": 60.2,
+  "note": "The read operation timed out"
+ },
+ {
+  "model": "sarvamai/sarvam-m",
+  "status": "OK",
+  "latency_s": 12.8,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "stepfun-ai/step-3.5-flash",
+  "status": "OK",
+  "latency_s": 3.1,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "stepfun-ai/step-3.7-flash",
+  "status": "OK",
+  "latency_s": 4.0,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "stockmark/stockmark-2-100b-instruct",
+  "status": "OK",
+  "latency_s": 2.6,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "upstage/solar-10.7b-instruct",
+  "status": "BADJSON",
+  "latency_s": 19.6,
+  "note": "To extract the required data from the given text a"
+ },
+ {
+  "model": "writer/palmyra-creative-122b",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "writer/palmyra-fin-70b-32k",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "writer/palmyra-med-70b",
+  "status": "FAIL",
+  "latency_s": 0.4,
+  "note": "404"
+ },
+ {
+  "model": "writer/palmyra-med-70b-32k",
+  "status": "FAIL",
+  "latency_s": 0.2,
+  "note": "404"
+ },
+ {
+  "model": "z-ai/glm-5.2",
+  "status": "OK",
+  "latency_s": 1.8,
+  "note": "{\"vt_czk_kwh\": 1.89, \"nt_czk_kwh\": 0.32, \"stala_platba_czk_m"
+ },
+ {
+  "model": "zyphra/zamba2-7b-instruct",
+  "status": "FAIL",
+  "latency_s": 0.3,
+  "note": "404"
+ }
+]
