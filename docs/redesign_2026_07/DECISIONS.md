@@ -139,6 +139,20 @@ s implementací F1).
 
 ---
 
+**P10 — Strategie AI providerů (upřesňuje D4/O2). — APPROVED (Martin 2026-07-10)**
+Srovnání free tierů (agent 2026-07-10, citace v transkriptu): Groq = jediný SMLUVNĚ netrénuje na
+vstupech + permanentní free tier bez karty (30 RPM, 1–14k req/den); OpenRouter = ToS čisté, ale
+:free modely většinou trénují (opt-out je vyřadí) a 50 req/den bez $10 top-upu; OpenCode Zen =
+VYŘAZEN (platební údaje předem, free jen beta, trénuje, vágní ToS); NVIDIA = největší katalog
+(náš otestovaný chain 32 modelů), ale trial-only ToS + deidentifikovaný trénink.
+Rozhodnutí:
+1. ai_task (vlastní LLM uživatele v HA, vč. OpenRouter/Ollama) = první volba.
+2. Guided free klíč: **default Groq**, NVIDIA jako druhá volba (větší výběr modelů).
+3. Jeden OpenAI-kompatibilní klient; base_url + fallback chain PER PROVIDER v remote_configu
+   (groq: llama-3.3-70b-versatile → qwen3-32b → llama-3.1-8b-instant; nvidia: chain z P1).
+4. Disclosure ve wizardu per provider (NVIDIA trial+trénink / OpenRouter :free trénink / Groq čisté).
+Prompty VŽDY jen anonymní čísla (viz O2) — platí pro všechny providery.
+
 ## OPEN — VŠE UZAVŘENO (průzkumy 2026-07-10)
 
 **O1 — `ai_task`: CLOSED.** Od HA 2025.7, strukturovaný výstup od **2025.8** (= naše minimální verze
