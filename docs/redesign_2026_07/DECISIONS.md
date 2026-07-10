@@ -153,6 +153,34 @@ Rozhodnutí:
 4. Disclosure ve wizardu per provider (NVIDIA trial+trénink / OpenRouter :free trénink / Groq čisté).
 Prompty VŽDY jen anonymní čísla (viz O2) — platí pro všechny providery.
 
+**K1 — Gate zmírněn po adversarial kritice (upřesňuje D5/D10). — APPROVED (Martin 2026-07-10, „pokračuj" na variantu A)**
+Dva nezávislí kritici (codex gpt-5.5: RETHINK 7C/28M/2m; claude-second opus: 3C/9M/6m — reporty
+v docs/redesign_2026_07/critique/) se shodli: tvrdý AI gate = lockout past (výpadek/denní limit
+třetí strany zamkne NOVÉHO uživatele před deterministickým solárem/cenami; offline instalace bez
+cesty navždy). Rozhodnutí: kroky ② Solár a ③ Ceny jsou průchozí i s AI `unverified` (klíč uložen,
+ověřování běží na pozadí) → dashboard se odemkne po dokončení ②+③; **VŠECHNY AI funkce (ceníky
+ověření, validace, budoucí predikce/ovládání) zůstávají tvrdě zamčené do ověření AI** + trvalý
+banner „AI čeká na ověření". D5 (AI povinná pro AI funkce) tím zůstává v platnosti; mění se jen to,
+že výpadek třetí strany nezamyká celý panel.
+
+**K2 — Zapracované nálezy kritiky (technické, bez debaty). — 2026-07-10**
+(a) remote_config: podpis/commit-pin + TVRDÉ bezpečnostní meze v kódu (bundled [min,max] clampy —
+bezpečnostní hranice jsou výjimka z P8 a zůstávají lokální); hodnota mimo rozsah → bundled fallback
++ log. Hostovat na kanonickém repu, ne osobní fork; pin na tag/commit, ne main.
+(b) C1 kontradikce: GPS/lokace VYŘAZENA z AI `validate_config` (jen poměrové kontroly);
+anonymity test = outgoing prompt nesmí obsahovat SKUTEČNÉ hodnoty instalace (GPS/box_id/e-mail),
+ne statický denylist.
+(c) Závislosti: pdfplumber/XLSX parsing NEJDE do HA runtime — PDF extrakce = maintainer-side skript;
+runtime čte jen dataset z remote_configu. manifest.json + hacs.json dostanou minimální verzi HA.
+(d) P6 KOREKCE: battery_forecast/config.py NENÍ mrtvý (SimulatorConfig živě používá physics vrstva);
+15.36 je v 5 souborech, GPS ve 2 → před mazáním re-audit, kapacita sensor-first všude.
+(e) Migrace (P7×D11 rozpor vyřešen): při upgradu se dosavadní EFEKTIVNÍ hodnoty (i ty z defaultů)
+pre-seednou do options → chování se nemění; repair výzva „potvrď GPS/geometrii" BEZ závislosti na AI.
+(f) Jeden sdílený merge helper (REST+options flow+migrace) PŘED mazáním polí; registr nese i18n
+KLÍČE (ne label_cs — en.json existuje); onboarding stav verzovaný (schema_version+timestamp+provider);
+ceníkový dataset: warning při year < current; retry fronta = definovaný stavový automat s capem;
+celkový time-budget na ověření chainu + progress UI.
+
 ## OPEN — VŠE UZAVŘENO (průzkumy 2026-07-10)
 
 **O1 — `ai_task`: CLOSED.** Od HA 2025.7, strukturovaný výstup od **2025.8** (= naše minimální verze

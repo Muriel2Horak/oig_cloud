@@ -47,10 +47,12 @@ custom_components/oig_cloud/
 `entity_id=None` → preferovaná entita uživatele), 2) OpenAI-kompatibilní klient s klíčem
 uživatele — provider **Groq (default)** nebo **NVIDIA** (volba ve wizardu).
 
-**Úlohy (`tasks.py`):** každá úloha = `{name, instructions_cs, fields}` s JEDNÍM interním popisem
-polí; převodníky `to_ha_selectors()` (ai_task) a `to_json_schema()` (OpenAI-compat). F1 úlohy:
-`extract_pricelist` (interpretace strukturovaných řádků ceníku), `validate_config`
-(sanity-check konfigurace: „sedí GPS s časovou zónou? kWp vs kapacita?").
+**Úlohy (`tasks.py`):** každá úloha = `{name, instructions (i18n klíč), fields}` s JEDNÍM interním
+popisem polí; převodníky `to_ha_selectors()` (ai_task) a `to_json_schema()` (OpenAI-compat) —
+interní schéma je STRIKTNÍ podmnožina vyjádřitelná v obou (prototyp převodu na reálném pricelist
+schématu = úkol č. 1 implementace; nevyjádřitelné → zploštit / key-backend-only). F1 úlohy:
+`extract_pricelist` (interpretace strukturovaných řádků ceníku), `validate_config` (sanity-check
+POUZE poměrových/číselných vztahů: kWp vs kapacita, sklon/azimut rozsahy — **ŽÁDNÁ lokace, K2b**).
 
 **Fallback chain:** per provider v remote_configu. Volání: model N → HTTP chyba / timeout 30 s /
 nevalidní JSON dle schématu → model N+1. Poslední funkční model se cachuje (TTL 1 h). 429 → backoff,
@@ -89,31 +91,45 @@ GitHub raw: `https://raw.githubusercontent.com/Muriel2Horak/oig_cloud/main/remot
   }
 }
 ```
-Loader: fetch při startu + 1×/24 h; cache do `.storage`; při nedostupnosti bundled kopie z release.
-Dataset ceníků se generuje ročně z ERÚ XLSX (`ceny-nn26*.xlsx`) skriptem v repu (O3).
+Loader (K2a): fetch při startu + 1×/24 h; cache do `.storage`; při nedostupnosti bundled kopie
+z release. **Integrita:** hostováno na kanonickém repu integrace, pin na tag/commit (ne `main`),
+podpis (detached signature ověřovaný proti klíči v kódu). **Bezpečnostní meze:** každá `tuning`
+hodnota se v kódu clampuje proti bundled `[min,max]` rozsahu (bezpečnostní hranice jsou lokální —
+výjimka z P8); hodnota mimo rozsah → bundled default + warning log. Remote hodnota nikdy nesmí
+snížit bezpečnostní floor pod bundled minimum. Dataset ceníků se generuje ročně z ERÚ XLSX
+maintainer-side skriptem (O3, K2c — XLSX/PDF parsing NENÍ v HA runtime); `pricelists.year <
+aktuální rok` → viditelný warning v UI a u předvyplnění.
 
 ## 5. Onboarding gate + wizard (D5, D9, D10, P3, P4)
 
-**Gate:** `enable_dashboard=true` a `onboarding.complete=false` (Store
-`.storage/oig_cloud.onboarding_<entry>`) → panel renderuje POUZE onboarding UI. Stav kroků
-`{ai: done|pending, solar: …, pricing: …}` přes `GET/POST /api/oig_cloud/<box>/onboarding`.
+**Gate (K1 — zmírněný):** `enable_dashboard=true` a `onboarding.complete=false` (Store
+`.storage/oig_cloud.onboarding_<entry>`, VERZOVANÝ: `{schema_version, steps: {ai, solar, pricing},
+timestamps, provider, pricing_year}`) → panel renderuje POUZE onboarding UI. **Dashboard se odemkne
+dokončením ② + ③ (deterministické kroky).** AI funkce (ověření ceníku, validace, budoucí predikce)
+zůstávají tvrdě zamčené, dokud krok ① není `verified` — trvalý banner „AI čeká na ověření".
+Stav přes `GET/POST /api/oig_cloud/<box>/onboarding`.
 
-**Krok ① AI (povinný, D5):**
+**Krok ① AI (povinný pro AI funkce, D5+K1):**
 - detekce ai_task → „Našli jsme tvou AI v HA — použít?" [Použít] / [Radši vlastní klíč]
 - bez ai_task: volba Groq (doporučeno) / NVIDIA, krokový návod s odkazy (console.groq.com /
-  build.nvidia.com → účet → API key → vlož), disclosure, [Ověřit klíč] → uloží + ověří.
-- NIM/Groq zrovna leží → klíč uložen, `unverified`, retry fronta; krok se dokončí po prvním
-  úspěšném ověření (P1). Dál se pustí až po ověření (gate hlídá výsledek).
+  build.nvidia.com → účet → API key → vlož), disclosure (hard consent, per provider), [Ověřit klíč].
+- Provider zrovna leží / denní limit → klíč uložen, `unverified`, retry = stavový automat
+  (persistentní, capped pokusy, manuální retry tlačítko, žádný nekonečný background spam);
+  uživatel POKRAČUJE na ② — nezamyká se.
+- Ověření chainu má celkový time-budget (např. 90 s) + progress UI (ne 32×30 s timeoutů).
 
 **Krok ② Solár (P3):** provider → klíče/site ID s návodem → GPS (z HA, mapa) → stringy
 (kWp/sklon/azimut s obrázkem) → [Otestovat] = reálné stažení předpovědi → graf zítřka → teprve
 pak [Pokračovat]. Chyby lidsky (špatný klíč / site ID / server).
 
-**Krok ③ Ceny (P4, O3):** distributor (ČEZ/PRE/EG.D) + sazba → předvyplnění z `pricelists`
-datasetu (vrstva 0) → volitelně [Ověřit proti aktuálnímu ceníku] = PDF fetch → pdfplumber
-souřadnicová extrakce → AI interpretace → 2 modely křížem (shoda ✅ předvyplnit / neshoda ⚠️
-ručně) → uživatel potvrdí. Pak obchodník: spot/fix model importu+exportu s náhledem výsledné
-ceny dneška (graf). Bez potvrzení cen se nejde dál.
+**Krok ③ Ceny (P4, O3, K2c):** distributor (ČEZ/PRE/EG.D) + sazba → předvyplnění z `pricelists`
+datasetu (vrstva 0, s rokem platnosti) → uživatel potvrdí. [Ověřit proti aktuálnímu ceníku]
+(vyžaduje ověřenou AI): posílá se dataset + STRUKTUROVANÉ řádky předextrahované maintainer-side
+(v remote_configu), AI interpretace → 2 modely křížem (shoda ✅ / neshoda ⚠️ ručně). PDF/pdfplumber
+extrakce běží POUZE maintainer-side při generování datasetu — HA runtime PDF neparsuje (závislosti,
+CPU, event-loop). Pak obchodník: spot/fix model importu+exportu s náhledem výsledné ceny dneška
+(graf). Bez potvrzení cen se nejde dál. POZN. (kritika M5): pokud ai_task selectory neunesou
+vnořené schéma úlohy, úloha se zploští, nebo je key-backend-only (explicitně zdokumentovat).
 
 **Dokončení:** `complete=true` → dashboard se odemkne. Wizard lze kdykoli znovu spustit
 z Nastavení (per krok).
@@ -136,14 +152,20 @@ enable_extended_sensors, enable_statistics, enable_chmu_warnings, checkbox
 `enable_dashboard` („Premium dashboard — vyžaduje AI"). Vše ostatní z kroků/menu MIZÍ
 (wizard_solar/battery/pricing/boiler kroky, section_* menu položky kromě basic).
 
-**Maže se (P6):** 10 mrtvých klíčů, `import_yaml`, `enable_auto`, schema.py fantomy, legacy
-battery klíče, mrtvé dataclasses (battery_forecast/config.py). Migrace: při async_setup_entry
-se mrtvé klíče odfiltrují (jednorázově, log info).
+**Maže se (P6, KOREKCE K2d):** 10 mrtvých klíčů, `import_yaml`, `enable_auto`, schema.py fantomy,
+legacy battery klíče. POZOR: `battery_forecast/config.py` NENÍ mrtvý — `SimulatorConfig` živě
+používá physics vrstva → NEmazat, místo toho kapacitu napojit sensor-first (P8). `15.36` je
+v 5 souborech (config.py, interval_simulator ×2, balancing/executor, plan_storage_baseline),
+GPS ve 2 — před mazáním povinný re-audit výskytů. Migrace: při async_setup_entry se mrtvé klíče
+odfiltrují; **záloha odfiltrovaných klíčů do storage po 1 release cyklus** (downgrade cesta).
 
-**Autorovy defaulty pryč (P7):** solar_forecast_sensor.py:548–575+640, validation.py:66,
-plan_storage_baseline.py:280, scenario_analysis.py:645 (číst threshold_cheap/home_charge_rate
-z options), classifier.py:52 (zapojit CONF_BOILER_COLD_INLET_TEMP_C). Chybějící config →
-`unavailable` + warning log, žádný fallback.
+**Autorovy defaulty pryč (P7 + K2e migrace):** solar_forecast_sensor.py:548–575+640,
+validation.py:66, plan_storage_baseline.py:280, scenario_analysis.py:645 (číst
+threshold_cheap/home_charge_rate z options), classifier.py:52 (zapojit
+CONF_BOILER_COLD_INLET_TEMP_C) + všech 5 výskytů 15.36 (K2d). NOVÁ instalace: chybějící config →
+`unavailable` + warning, žádný fallback. UPGRADE (řeší P7×D11 rozpor): dosavadní EFEKTIVNÍ hodnoty
+(včetně těch z defaultů) se JEDNORÁZOVĚ pre-seednou do options → chování se nezmění; současně
+repair výzva „potvrď GPS/geometrii — mohou být převzaté z výchozích hodnot" BEZ závislosti na AI.
 
 **De-hardcode (P8):** senzor-first (kapacita z boxu, bat_min z `tbl_batt_prms_*`, účinnost
 z měřeného senzoru) → registr (preference) → remote_config tuning (heuristiky). Konsolidace
@@ -172,15 +194,21 @@ Uživatel bez dashboardu: žádná změna chování (senzory jedou dál).
 
 ## 10. Testy (gate na release)
 
-- **ai/**: unit — chain fallback (mock HTTP: 404/410/429/timeout/bad-JSON), key_store round-trip,
-  převodníky schémat (selector/JSON), prompt-anonymita (žádný zakázaný token v promptu).
-- **remote_config**: cache/expiry/bundled fallback/schema_version mismatch.
+- **ai/**: unit — chain fallback (mock HTTP: 404/410/429/timeout/bad-JSON), celkový time-budget,
+  key_store round-trip, převodníky schémat (selector/JSON round-trip na REÁLNÉM pricelist schématu),
+  **prompt-anonymita: outgoing prompt nesmí obsahovat skutečné hodnoty instalace ze syntetické
+  fixture (GPS/box_id/e-mail/entity_id) — ne statický denylist (K2b)**.
+- **remote_config**: cache/expiry/bundled fallback/schema_version mismatch + **adversarial:
+  podpis invalid → reject; hodnoty mimo [min,max] → clamp na bundled; stale pricelist year →
+  warning; „všechny modely disabled" → bundled chain (K2a)**.
 - **registry**: každé pole má label_cs+section+typ; REST merge nezničí cizí klíče (regres na
   full-replace bug!); options flow konzistence.
 - **onboarding**: stavový automat kroků; gate render; grandfathering stávajících entry.
 - **cenik pipeline**: golden test na EG.D 2026 PDF (10/10 sazeb) + ERÚ XLSX parser.
-- **úklid**: mrtvé klíče se odfiltrují; žádný výskyt autorových hodnot v kódu (grep gate v CI:
-  `50.1219800|13.9373742|15\.36|azimuth.*138` mimo testy).
+- **úklid**: mrtvé klíče se odfiltrují (+ záloha pro downgrade); autorovy hodnoty: CI grep gate
+  PLUS sémantický test „žádné povinné pole nemá produkční fallback" (grep sám nestačí — K2);
+  upgrade fixture testy: staré entry (částečný config / config závislý na defaultech) → po migraci
+  se chování nemění a repair items existují.
 - FE: vitest na generované formuláře + wizard kroky; Playwright smoke onboarding flow.
 - Plný stávající gate (flake8/mypy/bandit/pytest/tsc/eslint/vitest/build) zůstává.
 
