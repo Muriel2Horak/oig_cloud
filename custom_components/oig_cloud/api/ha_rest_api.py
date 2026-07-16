@@ -39,6 +39,8 @@ from homeassistant.helpers.http import HomeAssistantView
 from homeassistant.util import dt as dt_util
 
 from ..const import CONF_AUTO_MODE_SWITCH, DOMAIN
+from ..config_merge import merge_entry_options
+from ..config_registry import FIELD_REGISTRY, coerce_value, fields_for_section
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1069,6 +1071,7 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
 # ============================================================================
 
 # Whitelist of options writable from the dashboard, with validation.
+# LEGACY — superseded by config_registry; removed in Plan 4
 # Field spec keys — "type": bool|float|int|str; "rng": (min, max); "enum": allowed values.
 _MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
     "modules": {
@@ -1152,11 +1155,15 @@ _MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 # Mirrors kept in sync for legacy readers.
+# LEGACY — superseded by config_registry; removed in Plan 4
 _MODULE_CONFIG_MIRRORS = {"charge_rate_kw": "home_charge_rate"}
 
+# LEGACY — superseded by config_registry; removed in Plan 4
 _SECRET_FIELDS = {"solar_forecast_api_key", "solcast_api_key"}
 
 
+# LEGACY — superseded by config_registry; removed in Plan 4
+# Validate + coerce one field; raises ValueError on bad input.
 def _coerce_module_value(spec: dict[str, Any], value: Any) -> Any:
     """Validate + coerce one field; raises ValueError on bad input."""
     typ = spec["type"]
@@ -1204,18 +1211,13 @@ class OIGCloudModuleConfigView(HomeAssistantView):
 
         opts = dict(entry.options)
         out: dict[str, Any] = {}
-        for section, fields in _MODULE_CONFIG_FIELDS.items():
+        for section in ("modules", "battery", "solar", "boiler"):
             sec: dict[str, Any] = {}
-            for key, spec in fields.items():
-                if key in _SECRET_FIELDS:
+            for key, field in fields_for_section(section).items():
+                if field.secret:
                     sec[f"{key}_set"] = bool(opts.get(key))
                     continue
-                default: Any = spec.get("default", (
-                    False if spec["type"] is bool else (
-                        "" if spec["type"] is str else None
-                    )
-                ))
-                sec[key] = opts.get(key, default)
+                sec[key] = opts.get(key, field.default)
             out[section] = sec
         return web.json_response(out)
 
@@ -1238,8 +1240,8 @@ class OIGCloudModuleConfigView(HomeAssistantView):
 
         section = payload.get("section") if isinstance(payload, dict) else None
         values = payload.get("values") if isinstance(payload, dict) else None
-        fields = _MODULE_CONFIG_FIELDS.get(section or "")
-        if not fields or not isinstance(values, dict):
+        section_fields = fields_for_section(section or "")
+        if not section_fields or not isinstance(values, dict):
             return web.json_response(
                 {"error": "Expected {section, values} with a known section"},
                 status=400,
@@ -1248,15 +1250,15 @@ class OIGCloudModuleConfigView(HomeAssistantView):
         updates: dict[str, Any] = {}
         errors: dict[str, str] = {}
         for key, value in values.items():
-            spec = fields.get(key)
-            if spec is None:
+            field = section_fields.get(key)
+            if field is None:
                 errors[key] = "unknown field"
                 continue
             # Empty secret = keep current value
-            if key in _SECRET_FIELDS and value == "":
+            if field.secret and value == "":
                 continue
             try:
-                updates[key] = _coerce_module_value(spec, value)
+                updates[key] = coerce_value(field, value)
             except ValueError as err:
                 errors[key] = str(err)
 
@@ -1265,26 +1267,14 @@ class OIGCloudModuleConfigView(HomeAssistantView):
         if not updates:
             return web.json_response({"updated": False})
 
-        new_options = dict(entry.options)
-        new_options.update(updates)
-        for src, dst in _MODULE_CONFIG_MIRRORS.items():
-            if src in updates:
-                new_options[dst] = updates[src]
-
-        # Boiler runtime snapshots its config at entry setup (unlike battery,
-        # which reads options each cycle) — request a full entry reload so the
-        # new sensors/volume take effect immediately.
-        if section == "boiler":
-            new_options["_needs_reload"] = True
-
-        hass.config_entries.async_update_entry(entry, options=new_options)
+        wrote = merge_entry_options(hass, entry, updates)
         _LOGGER.info(
             "Module config updated for %s (%s): %s",
             box_id,
             section,
-            {k: ("***" if k in _SECRET_FIELDS else v) for k, v in updates.items()},
+            {k: ("***" if FIELD_REGISTRY[k].secret else v) for k, v in updates.items()},
         )
-        return web.json_response({"updated": True, "keys": sorted(updates)})
+        return web.json_response({"updated": wrote, "keys": sorted(updates)})
 
 
 class OIGCloudDashboardModulesView(HomeAssistantView):

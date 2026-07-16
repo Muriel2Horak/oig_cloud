@@ -523,7 +523,7 @@ git commit -m "feat(config): shared merge_entry_options helper — never full-re
 - Modify: `custom_components/oig_cloud/api/ha_rest_api.py` — the `module_config` view (`get` ~line 1199, `post` ~line 1222; `_MODULE_CONFIG_FIELDS`, `_coerce_module_value`, `_SECRET_FIELDS`, `_MODULE_CONFIG_MIRRORS`)
 - Test: existing `tests/test_ha_rest_api_views.py` (module_config tests must keep passing) + append new regression test
 
-- [ ] **Step 1: Add failing regression test** (in `tests/test_ha_rest_api_views.py`, mirror the style of the existing module_config POST test there — reuse its fixtures/mocks):
+- [x] **Step 1: Add failing regression test** (in `tests/test_ha_rest_api_views.py`, mirror the style of the existing module_config POST test there — reuse its fixtures/mocks):
 
 ```python
 async def test_module_config_post_uses_shared_merge(hass_client_fixture_as_in_file):
@@ -534,9 +534,9 @@ async def test_module_config_post_uses_shared_merge(hass_client_fixture_as_in_fi
 
 Write it concretely against the file's existing test helpers (open the file first; copy the arrange/act pattern of `test_module_config_post_*`).
 
-- [ ] **Step 2: Run — verify it fails** (POST path doesn't use the helper yet; mirror works but write path differs — assert via monkeypatching `config_merge.merge_entry_options` and checking it was called).
+- [x] **Step 2: Run — verify it fails** (POST path doesn't use the helper yet; mirror works but write path differs — assert via monkeypatching `config_merge.merge_entry_options` and checking it was called).
 
-- [ ] **Step 3: Rewire the view.**
+- [x] **Step 3: Rewire the view.**
   - `get()`: replace iteration over `_MODULE_CONFIG_FIELDS` with `config_registry.fields_for_section(section)`; keep the `*_set` masking for `secret` fields (`sec[f"{key}_set"] = bool(opts.get(key))`).
   - `post()`: validate via `coerce_value(FIELD_REGISTRY[key], value)` (unknown key → same "unknown field" error), keep empty-secret-keeps-current rule, then REPLACE the manual `new_options = dict(entry.options); new_options.update(...)` + mirror + `_needs_reload` block with:
 
@@ -550,12 +550,12 @@ from ..config_registry import FIELD_REGISTRY, coerce_value, fields_for_section
 
   - Keep `_MODULE_CONFIG_FIELDS`/`_MODULE_CONFIG_MIRRORS`/`_coerce_module_value` in place for now but mark with `# LEGACY — superseded by config_registry; removed in Plan 4` (the parity test from Task 3 still imports it).
 
-- [ ] **Step 4: Run REST tests**
+- [x] **Step 4: Run REST tests** *(actual: regression test lives in `tests/test_boiler_f5_config_settings.py` — the plan's `test_ha_rest_api_views.py` has no module_config tests; acceptance ran all four files: 93 passed)*
 
 Run: `.venv/bin/python -m pytest -q tests/test_ha_rest_api_views.py tests/test_ha_rest_api_more.py tests/test_ha_rest_api_helpers.py`
 Expected: PASS (98+ tests, incl. the new regression).
 
-- [ ] **Step 5: Lint + mypy on the file, commit**
+- [x] **Step 5: Lint + mypy on the file, commit**
 
 ```bash
 git add -u && git commit -m "refactor(rest): module_config GET/POST driven by field registry + shared merge"

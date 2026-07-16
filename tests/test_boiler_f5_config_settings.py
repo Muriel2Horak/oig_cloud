@@ -543,6 +543,54 @@ async def test_module_config_boiler_post_legionella_interval_out_of_range():
     assert "boiler_legionella_interval_days" in data.get("fields", {})
 
 
+@pytest.mark.asyncio
+async def test_module_config_post_uses_shared_merge(monkeypatch):
+    """POST battery update must go through merge_entry_options (K2f)."""
+    from custom_components.oig_cloud import config_merge
+    from custom_components.oig_cloud.api import ha_rest_api
+
+    hass, entry = _make_hass_with_entry(
+        "mergebox",
+        {
+            "box_id": "2206237016",  # dashboard-only orphan
+            "home_charge_rate": 2.8,
+            "charge_rate_kw": 2.8,
+        },
+    )
+    captured_calls: list[Any] = []
+
+    real_merge = config_merge.merge_entry_options
+
+    def _mock_merge(hass_arg, entry_arg, updates):
+        captured_calls.append((entry_arg, updates))
+        return real_merge(hass_arg, entry_arg, updates)
+
+    monkeypatch.setattr(ha_rest_api, "merge_entry_options", _mock_merge, raising=False)
+
+    view = ha_rest_api.OIGCloudModuleConfigView()
+
+    class _Req:
+        app = {"hass": hass}
+
+        def get(self, key, default=None):
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
+
+        async def json(self):
+            return {
+                "section": "battery",
+                "values": {"charge_rate_kw": 3.5},
+            }
+
+    response = await view.post(_Req(), "mergebox")
+    assert response.status == 200
+    assert captured_calls, "POST did not route through merge_entry_options"
+    assert entry.options["box_id"] == "2206237016"  # orphan preserved
+    assert entry.options["charge_rate_kw"] == pytest.approx(3.5)
+    assert entry.options["home_charge_rate"] == pytest.approx(3.5)  # mirror follows
+
+
 # ---------------------------------------------------------------------------
 # 8. canonical DTO includes alt_source_type
 # ---------------------------------------------------------------------------
