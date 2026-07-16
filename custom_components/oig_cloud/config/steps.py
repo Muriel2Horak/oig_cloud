@@ -8,6 +8,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
+from ..config_merge import merge_entry_options
 from ..const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
@@ -3549,7 +3550,9 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
                 return await self._handle_back_button("wizard_summary")
 
             # Aktualizovat existující entry se všemi daty (stejně jako v ConfigFlow)
-            new_options = self._build_options_payload(self._wizard_data)
+            payload = self._build_options_payload(self._wizard_data)
+            new_options = dict(entry.options)
+            new_options.update(payload)
 
             # Přidat debug log
             _LOGGER.warning(
@@ -3562,9 +3565,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             try:
                 # Aktualizovat entry
                 _LOGGER.warning("🔍 About to call async_update_entry")
-                self.hass.config_entries.async_update_entry(
-                    entry, options=new_options
-                )
+                merge_entry_options(self.hass, entry, payload)
                 _LOGGER.warning("🔍 async_update_entry completed")
 
                 try:

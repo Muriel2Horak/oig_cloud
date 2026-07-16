@@ -347,3 +347,73 @@ async def test_options_flow_section_jumps_to_summary():
     flow._section = None
     # without a section, battery continues into pricing as before
     assert flow._get_next_step("wizard_battery") == "wizard_pricing_import"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_preserves_dashboard_only_keys():
+    """K2f: options-flow save must merge, not replace, so dashboard-only keys survive."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            "home_charge_rate": 2.8,
+            "boiler_thermal_arbitrage_enabled": True,
+            "box_id": "X",
+            "startup_grace_seconds": 15,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._wizard_data = {"home_charge_rate": 3.3}
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["home_charge_rate"] == 3.3
+    assert options["boiler_thermal_arbitrage_enabled"] is True
+    assert options["box_id"] == "X"
+    assert options["startup_grace_seconds"] == 15
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_boiler_enqueue_still_works(monkeypatch):
+    """The boiler CONFIG_UPDATE enqueue block below the write must still see new_options."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"enable_statistics": True},
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._wizard_data = {
+        "enable_boiler": True,
+        "boiler_box_id": "123",
+    }
+
+    enqueued = []
+
+    class FakeSerializer:
+        async def enqueue(self, cmd):
+            enqueued.append(cmd)
+
+    class FakeRuntime:
+        def __init__(self):
+            self._serializer = FakeSerializer()
+
+    def _fake_get_runtime(hass, entry_id, box_id):
+        if entry_id == "entry1" and box_id == "123":
+            return FakeRuntime()
+        return None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.boiler.runtime.get_boiler_runtime",
+        _fake_get_runtime,
+    )
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    assert len(enqueued) == 1

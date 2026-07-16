@@ -609,7 +609,7 @@ git add -u && git commit -m "feat(rest): /config_registry endpoint — FE render
 - Modify: `custom_components/oig_cloud/config/steps.py` — options-flow `wizard_summary` write at lines ~3552–3568 (`new_options = self._build_options_payload(...)` → `async_update_entry(entry, options=new_options)`); ALSO the second write site at line ~3332 (initial-flow variant stays as-is — it CREATES options; only the OPTIONS-flow update switches to merge)
 - Test: `tests/` — find the existing options-flow summary test (grep `wizard_summary` in tests/) and append a regression
 
-- [ ] **Step 1: Failing regression test** (place next to existing options-flow tests; reuse their MockConfigEntry harness):
+- [x] **Step 1: Failing regression test** (place next to existing options-flow tests; reuse their MockConfigEntry harness):
 
 ```python
 async def test_options_flow_save_preserves_dashboard_only_keys(hass):
@@ -623,9 +623,9 @@ async def test_options_flow_save_preserves_dashboard_only_keys(hass):
     # wizard value is updated.
 ```
 
-- [ ] **Step 2: Run — verify FAIL** (orphans erased by full replace).
+- [x] **Step 2: Run — verify FAIL** (orphans erased by full replace).
 
-- [ ] **Step 3: Switch the write to merge.** In the options-flow branch of `wizard_summary`:
+- [x] **Step 3: Switch the write to merge.** In the options-flow branch of `wizard_summary`:
 
 ```python
 from ..config_merge import merge_entry_options
@@ -637,11 +637,11 @@ from ..config_merge import merge_entry_options
 (Replace the direct `async_update_entry(entry, options=new_options)` call. Keep the
 surrounding boiler CONFIG_UPDATE enqueue + reload logic untouched.)
 
-- [ ] **Step 4: Run the options-flow test module + the new regression — PASS.**
+- [x] **Step 4: Run the options-flow test module + the new regression — PASS.**
 
 Run: `.venv/bin/python -m pytest -q tests/ -k "options or wizard or steps"`
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add -u && git commit -m "fix(options-flow): merge instead of full-replace — dashboard-set values survive HA saves (K2f)"
