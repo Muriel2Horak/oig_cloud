@@ -148,6 +148,24 @@ def test_coerce_value_rejects_non_finite_numbers():
                 coerce_value(field, raw)
 
 
+def test_coerce_value_rejects_oversized_int_with_range_error():
+    """An arbitrarily large finite JSON integer must not raise OverflowError.
+
+    It should fail the existing range check with ValueError so the REST view
+    returns 400 instead of 500.
+    """
+    field = FIELD_REGISTRY["balancing_interval_days"]
+    with pytest.raises(ValueError, match="above maximum"):
+        coerce_value(field, 10**400)
+
+
+def test_coerce_value_int_field_accepts_equivalent_float():
+    """An int field given a whole-number float must coerce like before."""
+    field = FIELD_REGISTRY["balancing_interval_days"]
+    assert coerce_value(field, 3.0) == 3
+    assert isinstance(coerce_value(field, 3.0), int)
+
+
 def test_coerce_value_rejects_non_string_for_str():
     with pytest.raises(ValueError):
         coerce_value(FIELD_REGISTRY["boiler_temp_sensor_top"], 123)

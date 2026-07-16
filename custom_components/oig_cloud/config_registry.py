@@ -49,10 +49,9 @@ def coerce_value(f: Field, raw: Any) -> Any:
     if f.type in (int, float):
         if isinstance(raw, bool) or not isinstance(raw, (int, float)):
             raise ValueError(f"{f.key}: expected {f.type.__name__}")
-        num = float(raw)
-        if not math.isfinite(num):
+        if isinstance(raw, float) and not math.isfinite(raw):
             raise ValueError(f"{f.key}: expected finite number")
-        value = f.type(num)
+        value = f.type(raw)
         if f.min is not None and value < f.min:
             raise ValueError(f"{f.key}: below minimum {f.min}")
         if f.max is not None and value > f.max:

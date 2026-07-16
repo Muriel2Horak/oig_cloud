@@ -489,6 +489,25 @@ async def test_module_config_post_rejects_non_finite_numbers(section, key, raw):
 
 
 @pytest.mark.asyncio
+async def test_module_config_post_rejects_oversized_finite_integer():
+    """POST must return 400 for a huge finite int, never 500, and not persist."""
+    hass, entry = _make_hass_for_module_config(
+        "bigbox", {"balancing_interval_days": 7}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass, {"section": "battery", "values": {"balancing_interval_days": 10**400}}
+    )
+
+    response = await view.post(request, "bigbox")
+
+    assert response.status == 400
+    payload = json.loads(response.text)
+    assert "balancing_interval_days" in payload.get("fields", {})
+    assert entry.options.get("balancing_interval_days") == 7  # unchanged
+
+
+@pytest.mark.asyncio
 async def test_module_config_post_accepts_finite_update():
     hass, entry = _make_hass_for_module_config("okbox", {"charge_rate_kw": 2.8})
     view = api_module.OIGCloudModuleConfigView()

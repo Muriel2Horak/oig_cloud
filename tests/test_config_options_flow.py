@@ -68,16 +68,19 @@ async def test_options_flow_summary_updates_entry():
     entry = SimpleNamespace(
         entry_id="entry1",
         data={CONF_USERNAME: "demo"},
-        options={"enable_statistics": True},
+        options={"enable_statistics": True, "standard_scan_interval": 30},
     )
     flow = DummyOptionsFlow(entry)
     flow.hass = DummyHass()
+    flow._wizard_data["standard_scan_interval"] = 45
 
     result = await flow.async_step_wizard_summary({})
 
     assert result["type"] == "abort"
     assert result["reason"] == "reconfigure_successful"
     assert flow.hass.config_entries.updated
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["standard_scan_interval"] == 45
     assert flow.hass.config_entries.reloaded == ["entry1"]
 
 
@@ -127,10 +130,11 @@ async def test_options_flow_summary_exception(monkeypatch):
     entry = SimpleNamespace(
         entry_id="entry1",
         data={CONF_USERNAME: "demo"},
-        options={"enable_statistics": True},
+        options={"enable_statistics": True, "standard_scan_interval": 30},
     )
     flow = DummyOptionsFlow(entry)
     flow.hass = DummyHass()
+    flow._wizard_data["standard_scan_interval"] = 45
 
     def _raise(*_a, **_k):
         raise RuntimeError("boom")
@@ -188,7 +192,7 @@ async def test_options_flow_summary_maps_selected_fields():
         "enable_extended_sensors": True,
         "enable_dashboard": True,
         "data_source_mode": "hybrid",
-        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_provider": "solcast",
         "solar_forecast_mode": "hourly",
         "solar_forecast_string2_enabled": True,
         "min_capacity_percent": 25.0,
@@ -208,7 +212,7 @@ async def test_options_flow_summary_maps_selected_fields():
     assert result["type"] == "abort"
     options = flow.hass.config_entries.updated[0][1]
     assert options["data_source_mode"] == "local_only"
-    assert options["solar_forecast_provider"] == "forecast_solar"
+    assert options["solar_forecast_provider"] == "solcast"
     assert options["solar_forecast_mode"] == "hourly"
     assert options["solar_forecast_string2_enabled"] is True
     assert options["min_capacity_percent"] == 25.0
@@ -232,18 +236,15 @@ async def test_options_flow_summary_boiler_defaults():
     flow.hass = DummyHass()
     flow._wizard_data = {
         "enable_boiler": True,
-        "boiler_volume_l": 120,
+        "boiler_volume_l": 150,
     }
 
     result = await flow.async_step_wizard_summary({})
 
     assert result["type"] == "abort"
     options = flow.hass.config_entries.updated[0][1]
-    assert options["boiler_volume_l"] == 120
-    assert options["boiler_target_temp_c"] == 60.0
-    assert options["boiler_temp_sensor_position"] == "top"
-    assert options["boiler_alt_energy_sensor"] == ""
-    assert options["boiler_deadline_time"] == "20:00"
+    assert options["enable_boiler"] is True
+    assert options["boiler_volume_l"] == 150
 
 
 @pytest.mark.asyncio
@@ -258,25 +259,27 @@ async def test_options_flow_summary_solar_battery_defaults():
     flow._wizard_data = {
         "enable_solar_forecast": True,
         "enable_battery_prediction": True,
+        "solar_forecast_provider": "solcast",
+        "solar_forecast_mode": "hourly",
+        "min_capacity_percent": 25.0,
+        "target_capacity_percent": 75.0,
+        "home_charge_rate": 3.5,
+        "balancing_interval_days": 9,
+        "balancing_hold_hours": 4,
     }
 
     result = await flow.async_step_wizard_summary({})
 
     assert result["type"] == "abort"
     options = flow.hass.config_entries.updated[0][1]
-    assert options["solar_forecast_provider"] == "forecast_solar"
-    assert options["solar_forecast_mode"] == "daily_optimized"
-    assert options["solar_forecast_api_key"] == ""
-    assert options["solcast_api_key"] == ""
-    assert options["solar_forecast_string1_enabled"] is True
-    assert options["solar_forecast_string2_enabled"] is False
-    assert options["min_capacity_percent"] == 20.0
-    assert options["target_capacity_percent"] == 80.0
-    assert options["home_charge_rate"] == 2.8
-    assert options["max_ups_price_czk"] == 10.0
-    assert options["balancing_enabled"] is True
-    assert options["balancing_interval_days"] == 7
-    assert options["balancing_hold_hours"] == 3
+    assert options["solar_forecast_provider"] == "solcast"
+    assert options["solar_forecast_mode"] == "hourly"
+    assert options["min_capacity_percent"] == 25.0
+    assert options["target_capacity_percent"] == 75.0
+    assert options["home_charge_rate"] == 3.5
+    assert options["charge_rate_kw"] == 3.5
+    assert options["balancing_interval_days"] == 9
+    assert options["balancing_hold_hours"] == 4
 
 
 @pytest.mark.asyncio
@@ -405,9 +408,111 @@ async def test_options_flow_save_preserves_concurrent_rest_change():
 
     assert result["type"] == "abort"
     assert result["reason"] == "reconfigure_successful"
+    # Empty delta means merge_entry_options did not overwrite the REST values.
+    assert not flow.hass.config_entries.updated
+    assert entry.options["charge_rate_kw"] == 5.0
+    assert entry.options["home_charge_rate"] == 5.0
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_preserves_concurrent_rest_change_legacy_mirror_only():
+    """Regression: only the legacy mirror present at open must not lose REST value.
+
+    Flow opens with home_charge_rate=2.8 and no charge_rate_kw. While the form
+    is open the dashboard REST endpoint updates both aliases to 5.0. Saving an
+    unrelated section must leave the 5.0 values intact.
+    """
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"home_charge_rate": 2.8, "enable_battery_prediction": True},
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    # Simulate concurrent dashboard REST write after the flow opened.
+    entry.options["charge_rate_kw"] = 5.0
+    entry.options["home_charge_rate"] = 5.0
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    # Empty delta => merge_entry_options did not overwrite the REST values.
+    assert not flow.hass.config_entries.updated
+    assert entry.options["charge_rate_kw"] == 5.0
+    assert entry.options["home_charge_rate"] == 5.0
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_preserves_rest_value_for_absent_field():
+    """Regression: a field absent at open must not be overwritten by defaults.
+
+    standard_scan_interval is missing when the flow opens. A REST write sets it
+    to 60 while the form is open. Saving an unrelated section must leave 60 in
+    place.
+    """
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"enable_statistics": True},
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    # Simulate concurrent REST write of a previously absent field.
+    entry.options["standard_scan_interval"] = 60
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    assert not flow.hass.config_entries.updated
+    assert entry.options["standard_scan_interval"] == 60
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_still_writes_genuine_user_change():
+    """A value the user actually edited in the form must still be saved."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"standard_scan_interval": 30},
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._wizard_data["standard_scan_interval"] = 45
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    assert flow.hass.config_entries.updated
     options = flow.hass.config_entries.updated[0][1]
-    assert options["charge_rate_kw"] == 5.0
-    assert options["home_charge_rate"] == 5.0
+    assert options["standard_scan_interval"] == 45
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_aborts_when_opening_snapshot_unreadable():
+    """If the opening options snapshot cannot be read, save must not degrade."""
+
+    class UnreadableEntry:
+        entry_id = "entry1"
+        data = {CONF_USERNAME: "demo"}
+
+        @property
+        def options(self):
+            raise RuntimeError("storage unreachable")
+
+    flow = DummyOptionsFlow(UnreadableEntry())
+    flow.hass = DummyHass()
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_summary"
+    assert result["errors"]["base"] == "options_read_failed"
+    assert not flow.hass.config_entries.updated
 
 
 @pytest.mark.asyncio
@@ -425,8 +530,8 @@ async def test_options_flow_save_non_boiler_does_not_set_needs_reload():
 
     assert result["type"] == "abort"
     assert result["reason"] == "reconfigure_successful"
-    options = flow.hass.config_entries.updated[0][1]
-    assert "_needs_reload" not in options
+    assert not flow.hass.config_entries.updated
+    assert "_needs_reload" not in entry.options
     assert flow.hass.config_entries.reloaded == ["entry1"]
 
 

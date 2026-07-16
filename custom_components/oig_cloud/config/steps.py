@@ -9,6 +9,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from ..config_merge import merge_entry_options
+from ..config_registry import FIELD_REGISTRY
 from ..const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
@@ -3378,12 +3379,14 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         self._config_entry_cache = config_entry
 
         # Předvyplnit wizard_data z existující konfigurace – robustně proti chybějícím/poškozeným datům
+        self._options_read_ok = True
         try:
             backend_options = dict(config_entry.options)
         except Exception:  # pragma: no cover - defensivní logika
             _LOGGER.exception(
-                "OptionsFlow init: failed to read existing options, using empty defaults"
+                "OptionsFlow init: failed to read existing options"
             )
+            self._options_read_ok = False
             backend_options = {}
 
         # Immutable snapshot of options at the moment the flow opened. Used at
@@ -3405,6 +3408,13 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             "telemetry_mqtt_prefix",
         ):
             self._wizard_data.pop(legacy_telemetry_key, None)
+
+        # Snapshot of the payload that would be produced from the seeded wizard
+        # data at the moment the flow opened. A key truly absent from the
+        # opening snapshot is included in the save delta only when the user
+        # changed it away from this seeded default; otherwise a later REST or
+        # dashboard write to that key survives an unrelated Options Flow save.
+        self._default_options_payload = self._build_options_payload(self._wizard_data)
 
         # Přidat přihlašovací údaje z data (bez hesla)
         self._wizard_data[CONF_USERNAME] = config_entry.data.get(CONF_USERNAME)
@@ -3553,6 +3563,22 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             if user_input.get("go_back", False):
                 return await self._handle_back_button("wizard_summary")
 
+            # If the opening snapshot could not be read we cannot compute a safe
+            # delta; abort the save and ask the user to reopen the flow rather
+            # than degrading to a full-payload overwrite.
+            if not self._options_read_ok:
+                return self.async_show_form(
+                    step_id="wizard_summary",
+                    data_schema=vol.Schema({}),
+                    errors={"base": "options_read_failed"},
+                    description_placeholders={
+                        "step": "Rekonfigurace - Souhrn změn",
+                        "progress": "▓▓▓▓▓",
+                        "summary": "Nepodařilo se načíst stávající nastavení. "
+                        "Zavřete tento dialog a otevřete nastavení znovu.",
+                    },
+                )
+
             # Aktualizovat existující entry se všemi daty (stejně jako v ConfigFlow)
             payload = self._build_options_payload(self._wizard_data)
             new_options = dict(entry.options)
@@ -3560,12 +3586,32 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
 
             # Merge only what actually changed since the flow opened, so a
             # concurrent dashboard/REST write made while this form was open
-            # is not overwritten by a stale full snapshot.
-            delta = {
-                k: v
-                for k, v in payload.items()
-                if k not in self._options_at_open or self._options_at_open.get(k) != v
-            }
+            # is not overwritten by a stale full snapshot. Mirror pairs are
+            # treated as one logical field: the opening value of k resolves
+            # through its alias m when k itself is absent.
+            mirror_map: Dict[str, str] = {}
+            for field in FIELD_REGISTRY.values():
+                if field.mirror:
+                    mirror_map[field.key] = field.mirror
+                    mirror_map[field.mirror] = field.key
+
+            def _resolve_opening(key: str):
+                """Return (value, found) for key using its mirror alias."""
+                if key in self._options_at_open:
+                    return self._options_at_open[key], True
+                alias = mirror_map.get(key)
+                if alias and alias in self._options_at_open:
+                    return self._options_at_open[alias], True
+                return None, False
+
+            delta: Dict[str, Any] = {}
+            for key, value in payload.items():
+                opening, has_opening = _resolve_opening(key)
+                if has_opening:
+                    if opening != value:
+                        delta[key] = value
+                elif value != self._default_options_payload.get(key):
+                    delta[key] = value
 
             # Přidat debug log
             _LOGGER.warning(
