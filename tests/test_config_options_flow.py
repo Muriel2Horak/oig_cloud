@@ -378,6 +378,59 @@ async def test_options_flow_save_preserves_dashboard_only_keys():
 
 
 @pytest.mark.asyncio
+async def test_options_flow_save_preserves_concurrent_rest_change():
+    """Regression: an open options flow must not overwrite a later REST write.
+
+    Flow opens with charge_rate_kw/home_charge_rate = 2.8. While the form is
+    open the dashboard REST endpoint updates the same keys to 5.0. Saving an
+    unrelated section through the options flow must leave the 5.0 values intact.
+    """
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            "charge_rate_kw": 2.8,
+            "home_charge_rate": 2.8,
+            "enable_battery_prediction": True,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    # Simulate concurrent dashboard REST write after the flow opened.
+    entry.options["charge_rate_kw"] = 5.0
+    entry.options["home_charge_rate"] = 5.0
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["charge_rate_kw"] == 5.0
+    assert options["home_charge_rate"] == 5.0
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_non_boiler_does_not_set_needs_reload():
+    """Saving an unrelated section must not flag _needs_reload or double reload."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"enable_statistics": True},
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    options = flow.hass.config_entries.updated[0][1]
+    assert "_needs_reload" not in options
+    assert flow.hass.config_entries.reloaded == ["entry1"]
+
+
+@pytest.mark.asyncio
 async def test_options_flow_save_boiler_enqueue_still_works(monkeypatch):
     """The boiler CONFIG_UPDATE enqueue block below the write must still see new_options."""
     entry = SimpleNamespace(

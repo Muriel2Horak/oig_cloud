@@ -9,6 +9,8 @@ import pytest
 from custom_components.oig_cloud.api import ha_rest_api as api_module
 from custom_components.oig_cloud.const import CONF_AUTO_MODE_SWITCH, DOMAIN
 
+_ADMIN_USER = SimpleNamespace(is_admin=True)
+
 
 class DummyRequest:
     def __init__(self, hass, query=None):
@@ -433,6 +435,71 @@ async def test_dashboard_modules_view_missing():
 
     response = await view.get(DummyRequest(hass), "missing")
     assert response.status == 404
+
+
+def _module_config_request(hass, payload):
+    class _Req:
+        app = {"hass": hass}
+
+        def get(self, key, default=None):
+            if key == "hass_user":
+                return _ADMIN_USER
+            return default
+
+        async def json(self):
+            return payload
+
+    return _Req()
+
+
+def _make_hass_for_module_config(box_id: str, options: dict):
+    entry = DummyEntry(entry_id=f"eid_{box_id}", options=dict(options))
+    coordinator = SimpleNamespace(data={box_id: {}})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": coordinator}}
+    return hass, entry
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "section,key,raw",
+    [
+        ("battery", "charge_rate_kw", float("nan")),
+        ("battery", "charge_rate_kw", float("inf")),
+        ("battery", "charge_rate_kw", float("-inf")),
+        ("battery", "balancing_interval_days", float("nan")),
+        ("battery", "balancing_interval_days", float("inf")),
+        ("battery", "balancing_interval_days", float("-inf")),
+    ],
+)
+async def test_module_config_post_rejects_non_finite_numbers(section, key, raw):
+    """POST must return 400 for NaN/Infinity, never 500 or persist."""
+    hass, entry = _make_hass_for_module_config("nanbox", {"charge_rate_kw": 2.8})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass, {"section": section, "values": {key: raw}}
+    )
+
+    response = await view.post(request, "nanbox")
+
+    assert response.status == 400
+    payload = json.loads(response.text)
+    assert key in payload.get("fields", {})
+    assert entry.options.get("charge_rate_kw") == 2.8  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_accepts_finite_update():
+    hass, entry = _make_hass_for_module_config("okbox", {"charge_rate_kw": 2.8})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass, {"section": "battery", "values": {"charge_rate_kw": 3.5}}
+    )
+
+    response = await view.post(request, "okbox")
+
+    assert response.status == 200
+    assert entry.options["charge_rate_kw"] == 3.5
 
 
 def test_setup_api_endpoints_registers_views():

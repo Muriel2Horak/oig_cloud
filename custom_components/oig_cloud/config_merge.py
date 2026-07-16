@@ -15,11 +15,14 @@ from .config_registry import FIELD_REGISTRY
 _LOGGER = logging.getLogger(__name__)
 
 
-def merge_entry_options(hass: Any, entry: Any, updates: Dict[str, Any]) -> bool:
+def merge_entry_options(
+    hass: Any, entry: Any, updates: Dict[str, Any], suppress_reload: bool = False
+) -> bool:
     """Merge `updates` into entry.options. Returns True if a write happened."""
     if not updates:
         return False
-    new_options: Dict[str, Any] = dict(entry.options)
+    current_options: Dict[str, Any] = dict(entry.options)
+    new_options: Dict[str, Any] = dict(current_options)
     new_options.update(updates)
     needs_reload = False
     for key, value in updates.items():
@@ -28,8 +31,9 @@ def merge_entry_options(hass: Any, entry: Any, updates: Dict[str, Any]) -> bool:
             continue
         if field.mirror:
             new_options[field.mirror] = value
-        if field.reload_on_change:
-            needs_reload = True
+        if not suppress_reload and field.reload_on_change:
+            if value != current_options.get(key):
+                needs_reload = True
     if needs_reload:
         new_options["_needs_reload"] = True
     hass.config_entries.async_update_entry(entry, options=new_options)

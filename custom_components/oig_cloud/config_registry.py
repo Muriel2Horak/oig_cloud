@@ -7,6 +7,7 @@ field lists.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
@@ -48,7 +49,10 @@ def coerce_value(f: Field, raw: Any) -> Any:
     if f.type in (int, float):
         if isinstance(raw, bool) or not isinstance(raw, (int, float)):
             raise ValueError(f"{f.key}: expected {f.type.__name__}")
-        value = f.type(raw)
+        num = float(raw)
+        if not math.isfinite(num):
+            raise ValueError(f"{f.key}: expected finite number")
+        value = f.type(num)
         if f.min is not None and value < f.min:
             raise ValueError(f"{f.key}: below minimum {f.min}")
         if f.max is not None and value > f.max:

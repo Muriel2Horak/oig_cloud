@@ -48,6 +48,33 @@ def test_merge_reload_flag():
     assert new["_needs_reload"] is True  # boiler field => reload requested
 
 
+def test_merge_reload_flag_only_on_actual_change():
+    """Unchanged reload-marked value must not request reload."""
+    hass = _hass()
+    entry = _entry({"boiler_target_temp_c": 55.0})
+    merge_entry_options(hass, entry, {"boiler_target_temp_c": 55.0})
+    new = hass.config_entries.async_update_entry.call_args.kwargs["options"]
+    assert "_needs_reload" not in new
+
+
+def test_merge_reload_flag_set_when_changed():
+    """Changed reload-marked value must request reload."""
+    hass = _hass()
+    entry = _entry({"boiler_target_temp_c": 55.0})
+    merge_entry_options(hass, entry, {"boiler_target_temp_c": 60.0})
+    new = hass.config_entries.async_update_entry.call_args.kwargs["options"]
+    assert new["_needs_reload"] is True
+
+
+def test_merge_suppress_reload_never_sets_flag():
+    """suppress_reload=True must block _needs_reload even for changes."""
+    hass = _hass()
+    entry = _entry({"boiler_target_temp_c": 55.0})
+    merge_entry_options(hass, entry, {"boiler_target_temp_c": 60.0}, suppress_reload=True)
+    new = hass.config_entries.async_update_entry.call_args.kwargs["options"]
+    assert "_needs_reload" not in new
+
+
 def test_merge_no_updates_is_noop():
     hass = _hass()
     entry = _entry({"a": 1})

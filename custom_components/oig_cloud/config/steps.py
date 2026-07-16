@@ -3386,6 +3386,10 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             )
             backend_options = {}
 
+        # Immutable snapshot of options at the moment the flow opened. Used at
+        # save to compute a delta so concurrent REST/dashboard writes survive.
+        self._options_at_open = dict(backend_options)
+
         frontend_pricing = {}
         try:
             frontend_pricing = self._map_backend_to_frontend(backend_options)
@@ -3554,6 +3558,15 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             new_options = dict(entry.options)
             new_options.update(payload)
 
+            # Merge only what actually changed since the flow opened, so a
+            # concurrent dashboard/REST write made while this form was open
+            # is not overwritten by a stale full snapshot.
+            delta = {
+                k: v
+                for k, v in payload.items()
+                if k not in self._options_at_open or self._options_at_open.get(k) != v
+            }
+
             # Přidat debug log
             _LOGGER.warning(
                 f"🔧 OptionsFlow wizard_summary: Updating config entry with {len(new_options)} options"
@@ -3565,7 +3578,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             try:
                 # Aktualizovat entry
                 _LOGGER.warning("🔍 About to call async_update_entry")
-                merge_entry_options(self.hass, entry, payload)
+                merge_entry_options(self.hass, entry, delta, suppress_reload=True)
                 _LOGGER.warning("🔍 async_update_entry completed")
 
                 try:

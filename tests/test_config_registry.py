@@ -139,6 +139,15 @@ def test_coerce_value_rejects_bool_as_number():
         coerce_value(FIELD_REGISTRY["charge_rate_kw"], True)
 
 
+def test_coerce_value_rejects_non_finite_numbers():
+    """NaN and Infinity must be rejected for both float and int fields."""
+    for key in ("charge_rate_kw", "balancing_interval_days"):
+        field = FIELD_REGISTRY[key]
+        for raw in (float("nan"), float("inf"), float("-inf")):
+            with pytest.raises(ValueError, match="expected finite number"):
+                coerce_value(field, raw)
+
+
 def test_coerce_value_rejects_non_string_for_str():
     with pytest.raises(ValueError):
         coerce_value(FIELD_REGISTRY["boiler_temp_sensor_top"], 123)
