@@ -651,7 +651,7 @@ git add -u && git commit -m "fix(options-flow): merge instead of full-replace â€
 
 ### Task 8: Full gate + integration sanity
 
-- [ ] **Step 1: Run the full backend gate**
+- [x] **Step 1: Run the full backend gate**
 
 Run:
 ```bash
@@ -661,7 +661,7 @@ Run:
 ```
 Expected: all green (full suite ~4200 tests).
 
-- [ ] **Step 2: Commit any straggler fixes; final commit**
+- [x] **Step 2: Commit any straggler fixes; final commit**
 
 ```bash
 git add -u && git commit -m "test(registry): full gate green for Plan 1 (registry + merge)"
