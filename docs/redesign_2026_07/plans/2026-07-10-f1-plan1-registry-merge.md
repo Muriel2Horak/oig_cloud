@@ -399,7 +399,7 @@ git add -u && git commit -m "feat(registry): port solar + boiler sections (parit
 - Create: `custom_components/oig_cloud/config_merge.py`
 - Test: `tests/test_config_merge.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_config_merge.py
@@ -460,9 +460,9 @@ def test_merge_no_updates_is_noop():
     hass.config_entries.async_update_entry.assert_not_called()
 ```
 
-- [ ] **Step 2: Run — verify FAIL** (`ModuleNotFoundError: config_merge`)
+- [x] **Step 2: Run — verify FAIL** (`ModuleNotFoundError: config_merge`)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # custom_components/oig_cloud/config_merge.py
@@ -504,11 +504,11 @@ def merge_entry_options(hass: Any, entry: Any, updates: Dict[str, Any]) -> bool:
     return True
 ```
 
-- [ ] **Step 4: Run tests — PASS**
+- [x] **Step 4: Run tests — PASS**
 
 Run: `.venv/bin/python -m pytest -q tests/test_config_merge.py tests/test_config_registry.py`
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add custom_components/oig_cloud/config_merge.py tests/test_config_merge.py

@@ -10,9 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
-_TRUE = {"true", "1", "on", "yes"}
-_FALSE = {"false", "0", "off", "no"}
-
 
 @dataclass(frozen=True)
 class Field:
@@ -39,29 +36,28 @@ class Field:
 
 
 def coerce_value(f: Field, raw: Any) -> Any:
-    """Coerce+validate a raw (possibly string) value against a Field."""
+    """Validate + coerce a raw value against a Field.
+
+    Fail-closed: input-kind parity with the legacy REST
+    ``_coerce_module_value`` (never looser — F1 plan-1 correction).
+    """
     if f.type is bool:
-        if isinstance(raw, bool):
-            return raw
-        if isinstance(raw, str):
-            low = raw.strip().lower()
-            if low in _TRUE:
-                return True
-            if low in _FALSE:
-                return False
-        raise ValueError(f"{f.key}: expected boolean")
+        if not isinstance(raw, bool):
+            raise ValueError(f"{f.key}: expected boolean")
+        return raw
     if f.type in (int, float):
-        try:
-            value = f.type(float(raw))
-        except (TypeError, ValueError) as err:
-            raise ValueError(f"{f.key}: expected {f.type.__name__}") from err
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            raise ValueError(f"{f.key}: expected {f.type.__name__}")
+        value = f.type(raw)
         if f.min is not None and value < f.min:
             raise ValueError(f"{f.key}: below minimum {f.min}")
         if f.max is not None and value > f.max:
             raise ValueError(f"{f.key}: above maximum {f.max}")
         return value
     # str
-    value = "" if raw is None else str(raw)
+    if not isinstance(raw, str):
+        raise ValueError(f"{f.key}: expected string")
+    value = raw[:200]
     if f.enum is not None and value not in f.enum:
         raise ValueError(f"{f.key}: must be one of {f.enum}")
     return value

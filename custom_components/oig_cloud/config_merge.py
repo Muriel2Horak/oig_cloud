@@ -1,0 +1,37 @@
+# custom_components/oig_cloud/config_merge.py
+"""The ONLY sanctioned way to write config-entry options (F1 K2f).
+
+Merges updates into the existing options dict — NEVER replaces it — so values
+written by other surfaces (dashboard REST, migrations, runtime flags) survive
+every save. Applies registry mirrors and per-field reload flags.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict
+
+from .config_registry import FIELD_REGISTRY
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def merge_entry_options(hass: Any, entry: Any, updates: Dict[str, Any]) -> bool:
+    """Merge `updates` into entry.options. Returns True if a write happened."""
+    if not updates:
+        return False
+    new_options: Dict[str, Any] = dict(entry.options)
+    new_options.update(updates)
+    needs_reload = False
+    for key, value in updates.items():
+        field = FIELD_REGISTRY.get(key)
+        if field is None:
+            continue
+        if field.mirror:
+            new_options[field.mirror] = value
+        if field.reload_on_change:
+            needs_reload = True
+    if needs_reload:
+        new_options["_needs_reload"] = True
+    hass.config_entries.async_update_entry(entry, options=new_options)
+    _LOGGER.debug("merge_entry_options: merged %s keys", len(updates))
+    return True

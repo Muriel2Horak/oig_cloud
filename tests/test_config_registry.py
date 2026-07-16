@@ -24,19 +24,24 @@ def test_field_defaults_are_sane():
 def test_coerce_bool():
     f = Field(key="b", section="modules", type=bool, default=False)
     assert coerce_value(f, True) is True
-    assert coerce_value(f, "true") is True
-    assert coerce_value(f, "off") is False
+    assert coerce_value(f, False) is False
+    # fail-closed parity with legacy REST validation: strings are rejected
+    with pytest.raises(ValueError):
+        coerce_value(f, "true")
     with pytest.raises(ValueError):
         coerce_value(f, "banana")
 
 
 def test_coerce_float_bounds():
     f = Field(key="r", section="battery", type=float, default=2.8, min=0.5, max=10.0)
-    assert coerce_value(f, "3.5") == 3.5
+    assert coerce_value(f, 3.5) == 3.5
+    assert coerce_value(f, 3) == 3.0  # int accepted for float field, like legacy
     with pytest.raises(ValueError):
         coerce_value(f, 0.1)   # below min
     with pytest.raises(ValueError):
         coerce_value(f, 11)    # above max
+    with pytest.raises(ValueError):
+        coerce_value(f, "3.5")  # fail-closed: numeric strings rejected, like legacy
 
 
 def test_coerce_enum():
@@ -124,3 +129,31 @@ def test_registry_covers_legacy_whitelist():
     for section, fields in _MODULE_CONFIG_FIELDS.items():
         for key in fields:
             assert key in FIELD_REGISTRY, f"missing {section}.{key} in registry"
+
+
+# --- Part B: fail-closed coercion parity with legacy _coerce_module_value ----------
+
+
+def test_coerce_value_rejects_bool_as_number():
+    with pytest.raises(ValueError):
+        coerce_value(FIELD_REGISTRY["charge_rate_kw"], True)
+
+
+def test_coerce_value_rejects_non_string_for_str():
+    with pytest.raises(ValueError):
+        coerce_value(FIELD_REGISTRY["boiler_temp_sensor_top"], 123)
+
+
+def test_coerce_value_rejects_none():
+    with pytest.raises(ValueError):
+        coerce_value(FIELD_REGISTRY["boiler_temp_sensor_top"], None)
+    with pytest.raises(ValueError):
+        coerce_value(FIELD_REGISTRY["charge_rate_kw"], None)
+    with pytest.raises(ValueError):
+        coerce_value(FIELD_REGISTRY["enable_solar_forecast"], None)
+
+
+def test_coerce_value_truncates_long_string_to_200():
+    value = coerce_value(FIELD_REGISTRY["boiler_temp_sensor_top"], "x" * 201)
+    assert isinstance(value, str)
+    assert len(value) == 200
