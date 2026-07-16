@@ -40,7 +40,7 @@ from homeassistant.util import dt as dt_util
 
 from ..const import CONF_AUTO_MODE_SWITCH, DOMAIN
 from ..config_merge import merge_entry_options
-from ..config_registry import FIELD_REGISTRY, coerce_value, fields_for_section
+from ..config_registry import FIELD_REGISTRY, coerce_value, fields_for_section, registry_as_api_dict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1277,6 +1277,24 @@ class OIGCloudModuleConfigView(HomeAssistantView):
         return web.json_response({"updated": wrote, "keys": sorted(updates)})
 
 
+class OIGCloudConfigRegistryView(HomeAssistantView):
+    """Read-only endpoint exposing the canonical config field registry."""
+
+    url = f"{API_BASE}/{{box_id}}/config_registry"
+    name = "api:oig_cloud:config_registry"
+    requires_auth = True
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        fields = registry_as_api_dict()
+        sections = sorted({spec["section"] for spec in fields.values()})
+        return web.json_response({"fields": fields, "sections": sections})
+
+
 class OIGCloudDashboardModulesView(HomeAssistantView):
     """API endpoint to read enabled dashboard modules for an entry."""
 
@@ -1316,6 +1334,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudPlannerSettingsView())
     hass.http.register_view(OIGCloudDashboardModulesView())
     hass.http.register_view(OIGCloudModuleConfigView())
+    hass.http.register_view(OIGCloudConfigRegistryView())
     hass.http.register_view(OIGCloudSpotPricesView())
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())

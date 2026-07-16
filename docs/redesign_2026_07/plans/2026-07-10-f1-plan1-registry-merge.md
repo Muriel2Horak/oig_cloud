@@ -569,11 +569,11 @@ git add -u && git commit -m "refactor(rest): module_config GET/POST driven by fi
 - Modify: `custom_components/oig_cloud/api/ha_rest_api.py` (new view class + registration — find where existing views are registered, grep `async_register_view|app.router.add`)
 - Test: `tests/test_ha_rest_api_views.py` (append)
 
-- [ ] **Step 1: Failing test** — GET returns `{fields: {...}, sections: [...]}`, contains `charge_rate_kw` with `min/max/label/section`, secret fields have `secret: true` and NO `default`, requires auth like the sibling views.
+- [x] **Step 1: Failing test** — GET returns `{fields: {...}, sections: [...]}`, contains `charge_rate_kw` with `min/max/label/section`, secret fields have `secret: true` and NO `default`, requires auth like the sibling views.
 
-- [ ] **Step 2: Run — 404/AttributeError expected.**
+- [x] **Step 2: Run — 404/AttributeError expected.**
 
-- [ ] **Step 3: Implement view** (mirror the shape of the `module_config` view class in the same file):
+- [x] **Step 3: Implement view** (mirror the shape of the `module_config` view class in the same file):
 
 ```python
 class OIGCloudConfigRegistryView(HomeAssistantView):
@@ -593,9 +593,9 @@ class OIGCloudConfigRegistryView(HomeAssistantView):
 
 Register it alongside the other views (same place `module_config` view is registered).
 
-- [ ] **Step 4: Run tests — PASS.**
+- [x] **Step 4: Run tests — PASS.**
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add -u && git commit -m "feat(rest): /config_registry endpoint — FE renders forms from BE registry (P5)"

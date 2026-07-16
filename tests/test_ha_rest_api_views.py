@@ -847,3 +847,44 @@ def test_setup_api_endpoints_registers_views():
 
     assert "OIGCloudBatteryTimelineView" in registered
     assert "OIGCloudDetailTabsView" in registered
+
+
+@pytest.mark.asyncio
+async def test_config_registry_view_ok():
+    entry = DummyEntry(entry_id="entry1")
+    coordinator = SimpleNamespace(data={"123": {}})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": coordinator}}
+
+    view = api_module.OIGCloudConfigRegistryView()
+    response = await view.get(DummyRequest(hass), "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert "fields" in payload
+    assert "sections" in payload
+
+    charge_rate = payload["fields"]["charge_rate_kw"]
+    assert charge_rate["section"] == "battery"
+    assert charge_rate["min"] == 0.5
+    assert charge_rate["max"] == 10.0
+    assert charge_rate["label"] == "field.charge_rate_kw.label"
+
+    solar_key = payload["fields"]["solar_forecast_api_key"]
+    assert solar_key["secret"] is True
+    assert "default" not in solar_key
+
+    assert "battery" in payload["sections"]
+
+
+@pytest.mark.asyncio
+async def test_config_registry_view_missing_box():
+    hass = DummyHass(config_entries=DummyConfigEntries([]))
+    view = api_module.OIGCloudConfigRegistryView()
+    response = await view.get(DummyRequest(hass), "missing")
+
+    assert response.status == 404
+
+
+def test_config_registry_view_requires_auth():
+    assert api_module.OIGCloudConfigRegistryView.requires_auth is True
