@@ -324,7 +324,7 @@ git add -u && git commit -m "feat(registry): port modules + battery sections fro
 - Reference: `_MODULE_CONFIG_FIELDS` sections `solar` (line ~1094) and `boiler` in `api/ha_rest_api.py`; `_SECRET_FIELDS` set (grep for it — contains `solar_forecast_api_key`, `solcast_api_key`)
 - Test: `tests/test_config_registry.py` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_solar_and_boiler_sections_ported():
@@ -340,9 +340,9 @@ def test_solar_and_boiler_sections_ported():
     assert boiler["boiler_volume_l"].reload_on_change is True
 ```
 
-- [ ] **Step 2: Run — verify FAIL** (KeyError `solar_forecast_provider`)
+- [x] **Step 2: Run — verify FAIL** (KeyError `solar_forecast_provider`)
 
-- [ ] **Step 3: Append definitions.** Port EVERY key from `_MODULE_CONFIG_FIELDS["solar"]` and `_MODULE_CONFIG_FIELDS["boiler"]` 1:1 (same types/ranges/enums — open the file and transcribe; do not invent). Mark `solar_forecast_api_key`, `solcast_api_key` with `secret=True`. Mark ALL boiler fields `reload_on_change=True` (the existing POST handler reloads the entry for the whole boiler section — preserve that behavior per-field).
+- [x] **Step 3: Append definitions.** Port EVERY key from `_MODULE_CONFIG_FIELDS["solar"]` and `_MODULE_CONFIG_FIELDS["boiler"]` 1:1 (same types/ranges/enums — open the file and transcribe; do not invent). Mark `solar_forecast_api_key`, `solcast_api_key` with `secret=True`. Mark ALL boiler fields `reload_on_change=True` (the existing POST handler reloads the entry for the whole boiler section — preserve that behavior per-field).
 
 ```python
 # --- section: solar ---------------------------------------------------------
@@ -373,7 +373,7 @@ _register(
 # boiler_max_temp_c, boiler_alt_power_kw, circulation and legionella fields, …)
 ```
 
-- [ ] **Step 4: Run test file — PASS.** Add a parity guard test so nothing was missed:
+- [x] **Step 4: Run test file — PASS.** Add a parity guard test so nothing was missed:
 
 ```python
 def test_registry_covers_legacy_whitelist():
@@ -385,7 +385,7 @@ def test_registry_covers_legacy_whitelist():
 
 Run: PASS (fix any missing keys it reports).
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add -u && git commit -m "feat(registry): port solar + boiler sections (parity-guarded against legacy whitelist)"

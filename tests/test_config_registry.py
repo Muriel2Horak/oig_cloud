@@ -82,7 +82,7 @@ def test_modules_and_battery_sections_ported():
     assert battery["battery_comfort_soc_percent"].min == 0.0 and battery["battery_comfort_soc_percent"].max == 95.0
 
 
-def test_get_parity_defaults_modules_battery():
+def test_get_parity_defaults_all_sections():
     """Registry defaults must equal what legacy GET returns for empty options.
 
     The legacy view computes: spec.get("default",
@@ -91,7 +91,7 @@ def test_get_parity_defaults_modules_battery():
     """
     from custom_components.oig_cloud.api.ha_rest_api import _MODULE_CONFIG_FIELDS
 
-    for section in ("modules", "battery"):
+    for section in ("modules", "battery", "solar", "boiler"):
         reg = fields_for_section(section)
         legacy = _MODULE_CONFIG_FIELDS[section]
         assert set(reg) == set(legacy), f"{section}: key set differs from legacy whitelist"
@@ -104,3 +104,23 @@ def test_get_parity_defaults_modules_battery():
                 f"{key}: registry default {reg[key].default!r} != legacy GET {legacy_default!r}"
             )
             assert reg[key].type is spec["type"], f"{key}: type mismatch"
+
+
+def test_solar_and_boiler_sections_ported():
+    solar = fields_for_section("solar")
+    boiler = fields_for_section("boiler")
+    assert solar["solar_forecast_provider"].enum == ("forecast_solar", "solcast")
+    assert solar["solar_forecast_api_key"].secret is True
+    assert solar["solcast_api_key"].secret is True
+    assert solar["solar_forecast_latitude"].min == -90.0
+    assert solar["solar_forecast_string1_azimuth"].min == -180
+    # boiler: parity spot-checks (full parity asserted by the guard test below)
+    assert "boiler_target_temp_c" in boiler
+    assert boiler["boiler_volume_l"].reload_on_change is True
+
+
+def test_registry_covers_legacy_whitelist():
+    from custom_components.oig_cloud.api.ha_rest_api import _MODULE_CONFIG_FIELDS
+    for section, fields in _MODULE_CONFIG_FIELDS.items():
+        for key in fields:
+            assert key in FIELD_REGISTRY, f"missing {section}.{key} in registry"
