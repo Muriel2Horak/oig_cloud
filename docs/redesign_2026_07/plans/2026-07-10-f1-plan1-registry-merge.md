@@ -250,7 +250,7 @@ git commit -m "feat(registry): Field dataclass, coercion and registry core (F1 P
 - Reference (read-only, source of truth being ported): `custom_components/oig_cloud/api/ha_rest_api.py` — `_MODULE_CONFIG_FIELDS` dict around line 1070–1093 and `_MODULE_CONFIG_MIRRORS` (`{"charge_rate_kw": "home_charge_rate"}`)
 - Test: `tests/test_config_registry.py` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_modules_and_battery_sections_ported():
@@ -270,9 +270,9 @@ def test_modules_and_battery_sections_ported():
     assert battery["battery_comfort_soc_percent"].min == 0.0 and battery["battery_comfort_soc_percent"].max == 95.0
 ```
 
-- [ ] **Step 2: Run test — verify FAIL** (`assert set(modules) == ...` with empty set)
+- [x] **Step 2: Run test — verify FAIL** (`assert set(modules) == ...` with empty set)
 
-- [ ] **Step 3: Append field definitions**
+- [x] **Step 3: Append field definitions**
 
 ```python
 # --- section: modules -------------------------------------------------------
@@ -307,9 +307,9 @@ _register(
 
 Note: positional args order is `key, section, type` (matches the dataclass); everything else keyword.
 
-- [ ] **Step 4: Run the whole registry test file — PASS.** Also remove the `skipif` markers added in Task 1 (registry is non-empty now) and re-run: PASS.
+- [x] **Step 4: Run the whole registry test file — PASS.** Also remove the `skipif` markers added in Task 1 (registry is non-empty now) and re-run: PASS.
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 ```bash
 git add -u && git commit -m "feat(registry): port modules + battery sections from _MODULE_CONFIG_FIELDS"

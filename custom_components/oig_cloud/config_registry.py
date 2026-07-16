@@ -106,3 +106,33 @@ def registry_as_api_dict() -> Dict[str, Dict[str, Any]]:
             spec["reload_on_change"] = True
         out[key] = spec
     return out
+
+
+# --- section: modules -------------------------------------------------------
+_register(
+    Field("enable_solar_forecast", "modules", bool, default=False),
+    Field("enable_battery_prediction", "modules", bool, default=False),
+    Field("enable_pricing", "modules", bool, default=False),
+    Field("enable_boiler", "modules", bool, default=False),
+    Field("enable_statistics", "modules", bool, default=False),
+    Field("enable_extended_sensors", "modules", bool, default=False),
+    Field("enable_chmu_warnings", "modules", bool, default=False),
+)
+
+# --- section: battery -------------------------------------------------------
+_register(
+    Field("auto_mode_switch_enabled", "battery", bool, default=False),
+    Field("charge_rate_kw", "battery", float, default=None, min=0.5, max=10.0,
+          step=0.1, mirror="home_charge_rate"),
+    Field("expensive_percentile", "battery", float, default=None, min=0.5, max=0.95),
+    Field("battery_comfort_soc_percent", "battery", float, default=None, min=0.0,
+          max=95.0, step=5.0),
+    Field("balancing_enabled", "battery", bool, default=False),
+    Field("balancing_interval_days", "battery", int, default=None, min=3, max=30),
+    Field("balancing_hold_hours", "battery", int, default=None, min=1, max=12),
+    Field("balancing_opportunistic_threshold", "battery", float, default=None,
+          min=0.5, max=5.0),
+    Field("balancing_economic_threshold", "battery", float, default=None,
+          min=0.5, max=10.0),
+    Field("cheap_window_percentile", "battery", int, default=None, min=5, max=80),
+)
