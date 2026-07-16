@@ -23,7 +23,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 - Create: `custom_components/oig_cloud/config_registry.py`
 - Test: `tests/test_config_registry.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_config_registry.py
@@ -94,12 +94,12 @@ def test_api_dict_never_leaks_secret_defaults():
         assert "label" in spec and "section" in spec and "type" in spec
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd /repos/oig-cloud && .venv/bin/python -m pytest -q tests/test_config_registry.py`
 Expected: FAIL with `ModuleNotFoundError: ... config_registry`
 
-- [ ] **Step 3: Implement `config_registry.py` (core only — fields land in Tasks 2–3)**
+- [x] **Step 3: Implement `config_registry.py` (core only — fields land in Tasks 2–3)**
 
 ```python
 # custom_components/oig_cloud/config_registry.py
@@ -213,7 +213,7 @@ def registry_as_api_dict() -> Dict[str, Dict[str, Any]]:
     return out
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `.venv/bin/python -m pytest -q tests/test_config_registry.py`
 Expected: `test_registry_keys_match_field_keys` and `test_fields_for_section_filters` FAIL
@@ -232,7 +232,7 @@ def test_fields_for_section_filters(): ...
 
 Run again — Expected: PASS (2 skipped).
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
 
 Run: `.venv/bin/flake8 --max-line-length=120 custom_components/oig_cloud/config_registry.py tests/test_config_registry.py && .venv/bin/mypy --ignore-missing-imports --explicit-package-bases custom_components/oig_cloud/config_registry.py`
 
