@@ -9,6 +9,29 @@ Generated from:
 
 Commit basis for DONE items: `b64876712`
 
+## Scope changes 2026-07-17
+
+Authority: `SCOPE-REVISION.md` (repo root) — decided with Martin 2026-07-17, FINAL. This section
+supersedes any earlier remote-management wording in the rows below. Summary of the reclassification:
+
+- **DROPPED — remote fetch / remote tuning / hard gate.** The runtime `remote_config/loader.py` fetch,
+  signature, MITM, cache, rollback and expiry machinery (and its tests) is removed; remote tuning of
+  battery/boiler heuristics is removed (heuristics stay LOCAL in code); the K1 hard dashboard gate is
+  removed — onboarding becomes a SOFT, voluntary wizard + banner. (SCOPE-REVISION #1, #4, #6.)
+- **MOVED to a bundled per-release dataset.** `pricelists` (ČEZ/EG.D/PRE from ERÚ) and the `ai_models`
+  list (with fallback order) ship as bundled files in each release — NO runtime fetch, no signature/
+  cache/expiry machinery. (SCOPE-REVISION #2, #3, #4.)
+- **KEPT — AI runtime (Plan 3), optional.** AI stays as OIG's OWN backend (`AITaskEntity` feature
+  `GENERATE_DATA` + `OpenAiCompatBackend` calling Groq/NVIDIA directly with the user's key; NO HACS-plugin
+  dependency), an OPTIONAL onboarding helper (extract_pricelist, validate_config) — NOT a dashboard run
+  condition. Provider is a CO-EQUAL choice (Groq / NVIDIA / the user's own HA ai_task). (SCOPE-REVISION #5, #8, #9.)
+- **Closes critique CRITICAL #1** — the remote_config fetch/tuning live-control-plane machinery is gone.
+- **CRITICAL #2** (GET `module_config` exposes config to non-admin HA users) → a small standalone admin-gate
+  fix, tracked under Plan 4 below.
+
+Pre-existing DONE (plan1) and PLANNED (plan2) rows are preserved; only the remote_config / tuning / AI /
+gate rows are reclassified to match.
+
 ## Status map — by F1-DESIGN section
 
 ### Section 1 — Scope, goals and constraints
@@ -19,19 +42,37 @@ Commit basis for DONE items: `b64876712`
   `custom_components/oig_cloud/config/steps.py:3429-3437`.
 - PLANNED (plan2): finalize scope-complete field coverage and split basic/common fields per plan2 requirements.
   Refer to plan2 tasks 1 and 2 in `2026-07-16-f1-plan2-basic-fields-registry.md`.
+- TODO-PLAN4 (CRITICAL #2 fix — approved 2026-07-17, SCOPE-REVISION consequence): `OIGCloudModuleConfigView.get`
+  currently requires only authentication, not `hass_user.is_admin` (unlike POST) — so any authenticated HA
+  account can read non-secret solar lat/long and site ID. Add the admin-gate (or redact GPS for non-admins).
+  Target: `custom_components/oig_cloud/api/ha_rest_api.py:1202-1222` (GET) to match the POST admin check at
+  `:1224-1230`. Standalone — independent of the bundled-dataset work.
 
 ### Section 2 — AI runtime
-- F3: AI runtime is not implemented in Plan-1/Plan-2 artifacts and appears outside the current F1 execution slice.
-  No implementation references were found in required checked-in files; no files to touch are assigned in Plan-3/4.
+- KEPT — Plan 3 (reclassified 2026-07-17, SCOPE-REVISION #5,#8,#9): AI stays as an OPTIONAL onboarding helper
+  (extract_pricelist = pricelist verification across 2 models; validate_config = numeric-relationship checks,
+  NO location), NOT a dashboard run condition. Implemented as OIG's OWN backend — `AITaskEntity` (feature
+  `GENERATE_DATA`, `_async_generate_data(...) -> GenDataTaskResult`) + `OpenAiCompatBackend` calling
+  Groq/NVIDIA directly with the user's key. NO HACS-plugin dependency. Provider is a CO-EQUAL choice
+  (Groq / NVIDIA / the user's own HA ai_task), not "Groq recommended". Prompts are anonymized.
+- Note: AI actively driving battery/boiler RUNTIME decisions (feedback loops) stays deferred to F3 — only the
+  onboarding helper is in Plan 3. See the F2/F3 carve-out below.
 
-### Section 3 — remote_config
-- F3: remote-config delivery pipeline is not present in Plan-1/Plan-2 code (directory `custom_components/oig_cloud/remote_config` is absent from checked tree).
-- TODO-PLAN4: if this requirement remains in F1, migration/backward-compat cleanup and adapter hooks should land in
-  `custom_components/oig_cloud/api/ha_rest_api.py` and `custom_components/oig_cloud/config/steps.py`.
+### Section 3 — remote_config (reclassified 2026-07-17, SCOPE-REVISION #1,#2,#3,#4)
+- DROPPED: the runtime `remote_config/loader.py` fetch / signature / MITM / cache / rollback / expiry machinery
+  and its tests. There is NO runtime fetch; the §9 "GitHub unavailable" line is removed. This closes critique
+  CRITICAL #1 (remote_config as an undefined live control plane).
+- DROPPED: remote tuning of battery/boiler heuristics. Heuristics stay LOCAL in code — no remote input
+  influences them (SCOPE-REVISION #1).
+- TODO — Plan 4: ship a BUNDLED per-release dataset instead — pricelists (ČEZ/EG.D/PRE from ERÚ) and the
+  ai_models list (with fallback order) as files in each release. No fetch, no signature/cache/expiry machinery
+  (SCOPE-REVISION #2,#3,#4). The old TODO-PLAN4 adapter-hook wording for a runtime fetch is superseded.
 
 ### Section 4 — Onboarding / wizard entry points
 - DONE (plan1): not implemented in plan1 backend work (Plan-1 is registry/merge only).
-- TODO-PLAN3: implement onboarding surfaces and wizard routing in
+- TODO-PLAN3 (SOFT wizard — reclassified 2026-07-17, SCOPE-REVISION #6): onboarding is a VOLUNTARY guided
+  flow launchable from Settings + a banner for incomplete setup. The K1 HARD dashboard gate is DROPPED — no
+  hard lock, not even for fresh installs. Implement onboarding surfaces and wizard routing in
   `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/*` and any router/module registrations under `custom_components/oig_cloud/www_v2/src/ui/*`.
 - TODO-PLAN3: Provider-key UX wiring for solar forecast key input:
   `custom_components/oig_cloud/www_v2/src/ui/features/settings/index.ts:83-97` (provider select remains flat),
@@ -87,7 +128,9 @@ Commit basis for DONE items: `b64876712`
 - D8: TODO-PLAN4 — remove legacy-only branches after migration; no final cleanup exists yet.
 - D9: TODO-PLAN4 — final migration/compatibility decisions require plan4 deprecation sweep.
 - D10: TODO-PLAN4 — hardening/cleanup of compatibility defaults not yet completed.
-- D11: F3 — any active AI/runtime coupling from this decision is deferred to later feature track.
+- D11: KEPT — Plan 3 (reclassified 2026-07-17, SCOPE-REVISION #5,#8,#9): AI is an OPTIONAL onboarding helper
+  via OIG's OWN backend (`AITaskEntity` + `OpenAiCompatBackend`, Groq/NVIDIA direct, no HACS plugin), NOT a
+  dashboard run condition. Runtime AI decisioning still defers to F3.
 
 ### P1–P10
 - P1: DONE (plan1) — registry + merge baseline.
@@ -108,21 +151,27 @@ Commit basis for DONE items: `b64876712`
 - K2d: TODO-PLAN4 — secret/hidden field handling simplification in `custom_components/oig_cloud/api/ha_rest_api.py:1157-1172,1220-1279`.
 - K2e: TODO-PLAN4 — remove migration-only branches once compatibility window closes.
 - K2f: PLANNED (plan2) — fallback keys and regression checks are addressed by plan2 task 3+5.
-- K2g: F3 — no active AI-driven decisioning context in F1 core implementation.
+- K2g: KEPT — Plan 3 (reclassified 2026-07-17): the onboarding AI helper (extract_pricelist/validate_config)
+  is in Plan 3 as OIG's own optional backend; runtime AI-driven decisioning still defers to F3.
 
-## 3-vs-4 split rationale
+## 3-vs-4 split rationale (revised 2026-07-17, SCOPE-REVISION)
 
-Plan 3 boundary: all user-facing config-flow behavior and provider wiring.
+Plan 3 boundary: all user-facing config-flow behavior and provider/AI wiring.
 - OWNERSHIP PLAN 3:
-  - settings rendering driven from registry metadata, including provider-conditional visibility/validation,
-  - onboarding/wizard entry points (F1 onboarding requirement),
-  - immediate UX corrections (provider key field visibility and select popover readability),
+  - SOFT onboarding wizard — voluntary guided flow + banner, NO hard K1 gate (SCOPE-REVISION #6),
+  - registry-driven settings forms incl. provider-conditional visibility/validation,
+  - OIG's OWN AI backend (`AITaskEntity` + `OpenAiCompatBackend`, Groq/NVIDIA direct, no HACS plugin) as an
+    OPTIONAL helper; provider CO-EQUAL (Groq / NVIDIA / user's HA ai_task); direct registration links +
+    numbered key steps (Groq `gsk_`, NVIDIA `nvapi-`) in onboarding step ① (SCOPE-REVISION #5,#7,#8,#9),
+  - the two UX fixes: provider→key conditional visibility/validation, and select-dropdown transparency,
   - any frontend wiring required to expose plan-2 registry data in V2.
 
-Plan 4 boundary: migration safety and runtime cleanup.
+Plan 4 boundary: migration safety, runtime cleanup, and the bundled dataset.
 - OWNERSHIP PLAN 4:
-  - dead-key deletion and compatibility cleanup,
-  - alias/legacy key migration behavior and guard rails,
+  - dead-key deletion / compatibility cleanup (heuristics stay LOCAL — no remote tuning, SCOPE-REVISION #1),
+  - transactional, recoverable migration/downgrade protocol,
+  - BUNDLED per-release dataset (pricelists + ai_models list, no fetch — SCOPE-REVISION #2,#3,#4),
+  - the small GET `module_config` admin-gate fix (critique CRITICAL #2),
   - API/flow hardening after all Plan 2/3 consumers are in place.
 
 This split keeps already-accepted plan2 work intact and avoids mixing short-cycle UX wiring with long-tail compatibility debt.
@@ -135,7 +184,10 @@ This split keeps already-accepted plan2 work intact and avoids mixing short-cycl
   - How is partially-completed flow state stored and resumed across sessions?
   - What are the privacy/compliance guarantees for user-entered advice inputs/outputs?
 
-- F3 (AI actively wired): not in current F1 scope. F3 should define model invocation, prompt policy, and runtime decision feedback loops once F2 flow exists.
+- F3 (AI actively wired): not in current F1 scope. Note (2026-07-17): the onboarding AI HELPER
+  (extract_pricelist, validate_config) moved to Plan 3 as OIG's own optional backend; what STAYS deferred to
+  F3 is AI actively driving battery/boiler RUNTIME decisions and the feedback loops around it. F3 should
+  define model invocation, prompt policy, and runtime decision feedback loops once F2 flow exists.
   Open questions for F3 design:
   - Which model/provider contract is canonical and where is the service boundary?
   - How are AI suggestions versioned against registry schema versions?
