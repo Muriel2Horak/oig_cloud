@@ -149,3 +149,43 @@ async def test_ai_key_never_lands_in_entry_options(ai_env, monkeypatch):
 
     assert _SECRET not in str(ai_env.entry.options)
     assert "gsk_" not in str(ai_env.entry.options)
+
+
+class _MappingRequest:
+    """A request shaped like a REAL Home Assistant request: the authenticated
+    user lives on the request MAPPING (request["hass_user"]) as HA's auth
+    middleware sets it — NOT on request.app. request.app is the Application and
+    carries only "hass". This is the shape the DummyRequest harness did not
+    exercise, which is why the admin gate reading request.app alone regressed.
+    """
+
+    def __init__(self, hass, user):
+        self._state = {"hass_user": user, "hass": hass}
+        self.app = {"hass": hass}
+        self.query = {}
+
+    def get(self, key, default=None):
+        return self._state.get(key, default)
+
+    def __getitem__(self, key):
+        return self._state[key]
+
+    async def json(self):
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_ai_state_admits_a_real_ha_admin_from_the_request_mapping(ai_env):
+    """Regression: a real admin whose user is on request['hass_user'] (not
+    request.app) must be ADMITTED, not 403'd. Mirrors module_config POST."""
+    admin = SimpleNamespace(is_admin=True)
+    resp = await ai_env.view.get(_MappingRequest(ai_env.hass, admin), "box1")
+    assert resp.status == 200
+    assert "provider" in json.loads(resp.text)
+
+
+@pytest.mark.asyncio
+async def test_ai_state_still_rejects_a_real_ha_non_admin_from_the_mapping(ai_env):
+    resp = await ai_env.view.get(
+        _MappingRequest(ai_env.hass, SimpleNamespace(is_admin=False)), "box1")
+    assert resp.status == 403

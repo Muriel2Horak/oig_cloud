@@ -1335,9 +1335,13 @@ class OIGCloudAiView(HomeAssistantView):
         # Real web.Request exposes `request.get(key)` (mapping-style); the test
         # harness's DummyRequest does not. `request.app["hass_user"]` is the
         # canonical Home Assistant convention, populated by the auth middleware
-        # (see OIGCloudPlannerSettingsView.post), and is the source of truth
-        # here — no need to fall back to the request-level shortcut.
-        user = request.app.get("hass_user") if hasattr(request, "app") else None
+        # HA's auth middleware puts the authenticated user on the REQUEST mapping
+        # (request["hass_user"]); request.app is the Application and does NOT carry
+        # it in production. Read the request first (real HA), fall back to app only
+        # for the test harness's DummyRequest. Mirrors module_config POST (:1235).
+        user = request.get("hass_user") if hasattr(request, "get") else None
+        if user is None and hasattr(request, "app"):
+            user = request.app.get("hass_user")
         if not user or not user.is_admin:
             return web.json_response({"error": "Admin only"}, status=403)
         return None
@@ -1438,9 +1442,11 @@ class OIGCloudOnboardingView(HomeAssistantView):
     requires_auth = True
 
     def _require_admin(self, request: web.Request) -> Optional[web.Response]:
-        # Same fail-closed gate as OIGCloudAiView (:1333-1342): request.app["hass_user"]
-        # is the canonical HA convention populated by the auth middleware.
-        user = request.app.get("hass_user") if hasattr(request, "app") else None
+        # Same fail-closed gate as OIGCloudAiView: read request["hass_user"] (real HA),
+        # fall back to request.app only for the DummyRequest test harness (:1235 pattern).
+        user = request.get("hass_user") if hasattr(request, "get") else None
+        if user is None and hasattr(request, "app"):
+            user = request.app.get("hass_user")
         if not user or not user.is_admin:
             return web.json_response({"error": "Admin only"}, status=403)
         return None
