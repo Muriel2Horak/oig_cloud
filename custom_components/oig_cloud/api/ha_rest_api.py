@@ -34,6 +34,7 @@ from typing import Any, Dict, Optional
 from aiohttp import web
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.http import HomeAssistantView
 from homeassistant.util import dt as dt_util
@@ -42,6 +43,8 @@ from ..const import CONF_AUTO_MODE_SWITCH, DOMAIN
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, coerce_value, fields_for_section, registry_as_api_dict
 from ..config.solar_rules import normalize_azimuth, validate_solar_effective
+from ..ai.backends import PROVIDERS, OpenAiCompatBackend
+from ..ai.key_store import AiKeyStore, redact_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1314,6 +1317,108 @@ class OIGCloudConfigRegistryView(HomeAssistantView):
         return web.json_response({"fields": fields, "sections": sections})
 
 
+class OIGCloudAiView(HomeAssistantView):
+    """Admin-only REST surface for the per-entry AI provider key (F1-DESIGN §3, P2).
+
+    GET  -> {"provider", "key_set", "verified"} only — never the key, never its prefix.
+    POST -> {"provider", "api_key"} — cheap LOCAL prefix check first (SCOPE-REVISION #7),
+            then store via AiKeyStore, then a live probe via OpenAiCompatBackend.
+    Both surfaces fail closed (403 for non-admin) — mirrors module_config POST (:1228-1230).
+    """
+
+    url = f"{API_BASE}/{{box_id}}/ai"
+    name = "api:oig_cloud:ai"
+    requires_auth = True
+
+    def _require_admin(self, request: web.Request) -> Optional[web.Response]:
+        # Real web.Request exposes `request.get(key)` (mapping-style); the test
+        # harness's DummyRequest does not. `request.app["hass_user"]` is the
+        # canonical Home Assistant convention, populated by the auth middleware
+        # (see OIGCloudPlannerSettingsView.post), and is the source of truth
+        # here — no need to fall back to the request-level shortcut.
+        user = request.app.get("hass_user") if hasattr(request, "app") else None
+        if not user or not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+        return None
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        denied = self._require_admin(request)
+        if denied is not None:
+            return denied
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+        state = await AiKeyStore(hass, entry.entry_id).async_api_state()
+        return web.json_response(state)
+
+    async def post(self, request: web.Request, box_id: str) -> web.Response:
+        denied = self._require_admin(request)
+        if denied is not None:
+            return denied
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"error": "Invalid payload"}, status=400)
+
+        provider = payload.get("provider")
+        api_key = payload.get("api_key")
+        if not isinstance(provider, str) or provider not in PROVIDERS:
+            return web.json_response({"error": "unknown provider"}, status=400)
+        if not isinstance(api_key, str) or not api_key:
+            return web.json_response({"error": "api_key required"}, status=400)
+
+        # Cheap LOCAL prefix check FIRST — never call the provider with garbage.
+        expected_prefix = PROVIDERS[provider]["key_prefix"]
+        if not api_key.startswith(expected_prefix):
+            return web.json_response(
+                {"error": (
+                    f"key for '{provider}' must start with the expected provider prefix "
+                    f"(wrong prefix for {provider})"
+                )},
+                status=400,
+            )
+
+        store = AiKeyStore(hass, entry.entry_id)
+        await store.async_set_key(provider, api_key)
+
+        # Real Home Assistant always exposes a `bus` and a client session; a
+        # partial hass (e.g. test harness, future sub-instance) shouldn't make
+        # the verify path crash before the probe runs. Production uses the real
+        # session; tests monkeypatch async_verify_key so a stub is fine.
+        try:
+            session = aiohttp_client.async_get_clientsession(hass)
+        except (AttributeError, Exception):                  # noqa: BLE001
+            session = None
+        backend = OpenAiCompatBackend(
+            session=session,
+            base_url=PROVIDERS[provider]["base_url"],
+            api_key=api_key,
+            model="verify-only",
+        )
+        try:
+            ok = await backend.async_verify_key()
+        except Exception as err:                              # noqa: BLE001
+            _LOGGER.warning(
+                "AI key verify probe failed for %s (%s): %s",
+                box_id, provider, redact_key(api_key),
+            )
+            return web.json_response(
+                {"error": "verify failed", "detail": str(err), **await store.async_api_state()},
+                status=502,
+            )
+        if ok:
+            await store.async_mark_verified(dt_util.utcnow().isoformat())
+        return web.json_response(await store.async_api_state())
+
+
 class OIGCloudDashboardModulesView(HomeAssistantView):
     """API endpoint to read enabled dashboard modules for an entry."""
 
@@ -1358,6 +1463,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())
     hass.http.register_view(OIGCloudBalancingDecisionsView())
+    hass.http.register_view(OIGCloudAiView())
 
     _LOGGER.info(
         "✅ OIG Cloud REST API endpoints registered:\n"
@@ -1369,5 +1475,6 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/spot_prices/<box_id>/intervals\n"
         f"  - {API_BASE}/analytics/<box_id>/hourly\n"
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"
-        f"  - {API_BASE}/balancing_decisions/<box_id>"
+        f"  - {API_BASE}/balancing_decisions/<box_id>\n"
+        f"  - {API_BASE}/<box_id>/ai (admin only)"
     )
