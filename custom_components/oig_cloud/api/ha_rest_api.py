@@ -45,6 +45,7 @@ from ..config_registry import FIELD_REGISTRY, coerce_value, fields_for_section, 
 from ..config.solar_rules import normalize_azimuth, validate_solar_effective
 from ..ai.backends import PROVIDERS, OpenAiCompatBackend
 from ..ai.key_store import AiKeyStore, redact_key
+from ..onboarding import ONBOARDING_STEPS, OnboardingState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1419,6 +1420,74 @@ class OIGCloudAiView(HomeAssistantView):
         return web.json_response(await store.async_api_state())
 
 
+class OIGCloudOnboardingView(HomeAssistantView):
+    """Admin-only REST surface for the soft onboarding guide (Plan 3 Task 11).
+
+    SCOPE-REVISION #6: onboarding is a SOFT guide — there is NO ``locked`` concept and
+    nothing here may imply one. A user sees a banner, never a wall.
+
+    GET  -> the versioned onboarding state (steps/timestamps/provider). Never a key,
+            never a gate concept.
+    POST -> {"step": "ai|solar|pricing"} marks a step done (independent, no ordering);
+            {"provider": "<name>"} records the chosen AI provider. Both optional.
+            Fails closed (403 for non-admin) — mirrors OIGCloudAiView._require_admin.
+    """
+
+    url = f"{API_BASE}/{{box_id}}/onboarding"
+    name = "api:oig_cloud:onboarding"
+    requires_auth = True
+
+    def _require_admin(self, request: web.Request) -> Optional[web.Response]:
+        # Same fail-closed gate as OIGCloudAiView (:1333-1342): request.app["hass_user"]
+        # is the canonical HA convention populated by the auth middleware.
+        user = request.app.get("hass_user") if hasattr(request, "app") else None
+        if not user or not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+        return None
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        denied = self._require_admin(request)
+        if denied is not None:
+            return denied
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+        state = await OnboardingState(hass, entry.entry_id).async_get()
+        return web.json_response(state)
+
+    async def post(self, request: web.Request, box_id: str) -> web.Response:
+        denied = self._require_admin(request)
+        if denied is not None:
+            return denied
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"error": "Invalid payload"}, status=400)
+
+        ob = OnboardingState(hass, entry.entry_id)
+        step = payload.get("step")
+        provider = payload.get("provider")
+        if step is not None:
+            if not isinstance(step, str) or step not in ONBOARDING_STEPS:
+                return web.json_response({"error": "unknown step"}, status=400)
+            await ob.async_complete_step(step)
+        if provider is not None:
+            if not isinstance(provider, str) or not provider.strip():
+                return web.json_response(
+                    {"error": "provider must be a non-empty string"}, status=400
+                )
+            await ob.async_set_provider(provider.strip())
+        return web.json_response(await ob.async_get())
+
+
 class OIGCloudDashboardModulesView(HomeAssistantView):
     """API endpoint to read enabled dashboard modules for an entry."""
 
@@ -1464,6 +1533,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudConsumptionProfilesView())
     hass.http.register_view(OIGCloudBalancingDecisionsView())
     hass.http.register_view(OIGCloudAiView())
+    hass.http.register_view(OIGCloudOnboardingView())
 
     _LOGGER.info(
         "✅ OIG Cloud REST API endpoints registered:\n"
@@ -1476,5 +1546,6 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/analytics/<box_id>/hourly\n"
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"
         f"  - {API_BASE}/balancing_decisions/<box_id>\n"
-        f"  - {API_BASE}/<box_id>/ai (admin only)"
+        f"  - {API_BASE}/<box_id>/ai (admin only)\n"
+        f"  - {API_BASE}/<box_id>/onboarding (admin only)"
     )
