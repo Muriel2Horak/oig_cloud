@@ -159,6 +159,26 @@ def test_coerce_value_rejects_oversized_int_with_range_error():
         coerce_value(field, 10**400)
 
 
+def test_coerce_value_rejects_oversized_int_on_float_field():
+    """float(10**400) raises OverflowError; it must surface as a range ValueError.
+
+    The raw integer is compared against the bounds, so the caller gets the same
+    above/below-range message as any other out-of-range number — never a 500.
+    """
+    field = FIELD_REGISTRY["charge_rate_kw"]
+    with pytest.raises(ValueError, match="above maximum"):
+        coerce_value(field, 10**400)
+    with pytest.raises(ValueError, match="below minimum"):
+        coerce_value(field, -(10**400))
+
+
+def test_coerce_value_oversized_int_on_unbounded_float_field():
+    """An unbounded float field still converts overflow into ValueError."""
+    field = Field("unbounded_test", "battery", float)
+    with pytest.raises(ValueError, match="out of range"):
+        coerce_value(field, 10**400)
+
+
 def test_coerce_value_int_field_accepts_equivalent_float():
     """An int field given a whole-number float must coerce like before."""
     field = FIELD_REGISTRY["balancing_interval_days"]

@@ -508,6 +508,32 @@ async def test_module_config_post_rejects_oversized_finite_integer():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw,expected_message",
+    [
+        (10**400, "above maximum"),
+        (-(10**400), "below minimum"),
+    ],
+)
+async def test_module_config_post_rejects_oversized_integer_for_float_field(
+    raw, expected_message
+):
+    """A huge int on a FLOAT field overflows float(); it must be a 400, not a 500."""
+    hass, entry = _make_hass_for_module_config("floatbox", {"charge_rate_kw": 2.8})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass, {"section": "battery", "values": {"charge_rate_kw": raw}}
+    )
+
+    response = await view.post(request, "floatbox")
+
+    assert response.status == 400
+    payload = json.loads(response.text)
+    assert expected_message in payload["fields"]["charge_rate_kw"]
+    assert entry.options.get("charge_rate_kw") == 2.8  # unchanged
+
+
+@pytest.mark.asyncio
 async def test_module_config_post_accepts_finite_update():
     hass, entry = _make_hass_for_module_config("okbox", {"charge_rate_kw": 2.8})
     view = api_module.OIGCloudModuleConfigView()

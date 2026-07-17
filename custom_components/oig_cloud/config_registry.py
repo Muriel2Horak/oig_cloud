@@ -51,7 +51,17 @@ def coerce_value(f: Field, raw: Any) -> Any:
             raise ValueError(f"{f.key}: expected {f.type.__name__}")
         if isinstance(raw, float) and not math.isfinite(raw):
             raise ValueError(f"{f.key}: expected finite number")
-        value = f.type(raw)
+        try:
+            value = f.type(raw)
+        except OverflowError as err:
+            # A JSON integer of arbitrary size (e.g. 10**400) cannot become a
+            # float. Range-check the RAW integer instead, so the caller gets the
+            # normal above/below-range message rather than a 500.
+            if f.min is not None and raw < f.min:
+                raise ValueError(f"{f.key}: below minimum {f.min}") from err
+            if f.max is not None and raw > f.max:
+                raise ValueError(f"{f.key}: above maximum {f.max}") from err
+            raise ValueError(f"{f.key}: number out of range") from err
         if f.min is not None and value < f.min:
             raise ValueError(f"{f.key}: below minimum {f.min}")
         if f.max is not None and value > f.max:

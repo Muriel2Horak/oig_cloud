@@ -438,6 +438,15 @@ class WizardMixin:
             CONF_PLANNING_MIN_PERCENT,
             wizard_data.get("min_capacity_percent", DEFAULT_PLANNING_MIN_PERCENT),
         )
+        # charge_rate_kw / home_charge_rate are ONE logical field (registry mirror
+        # pair). If both aliases are present and DISAGREE, the registered canonical
+        # key wins: it is the key the REST API and the registry validate and write,
+        # so it is the authoritative one. The legacy alias is not read as a
+        # separate value here, which is what lets the Options Flow resolve a single
+        # logical baseline; a later save self-heals the pair, because the delta
+        # carries only charge_rate_kw and merge_entry_options mirrors it back onto
+        # home_charge_rate. Falling back to the legacy alias only when the
+        # canonical key is absent keeps legacy-only entries working.
         charge_rate_kw = wizard_data.get(
             CONF_CHARGE_RATE_KW,
             wizard_data.get("home_charge_rate", DEFAULT_CHARGE_RATE_KW),
@@ -3389,10 +3398,6 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             self._options_read_ok = False
             backend_options = {}
 
-        # Immutable snapshot of options at the moment the flow opened. Used at
-        # save to compute a delta so concurrent REST/dashboard writes survive.
-        self._options_at_open = dict(backend_options)
-
         frontend_pricing = {}
         try:
             frontend_pricing = self._map_backend_to_frontend(backend_options)
@@ -3409,12 +3414,19 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         ):
             self._wizard_data.pop(legacy_telemetry_key, None)
 
-        # Snapshot of the payload that would be produced from the seeded wizard
-        # data at the moment the flow opened. A key truly absent from the
-        # opening snapshot is included in the save delta only when the user
-        # changed it away from this seeded default; otherwise a later REST or
-        # dashboard write to that key survives an unrelated Options Flow save.
-        self._default_options_payload = self._build_options_payload(self._wizard_data)
+        # The payload the serializer would produce from the wizard data as seeded
+        # at open. The save delta is this payload diffed against the one built
+        # from the wizard data as it stands at save, so it contains EXACTLY the
+        # fields the user submitted a new value for during this flow session.
+        #
+        # Diffing payload-against-payload (rather than payload-against-raw-stored-
+        # options) is what makes the delta submitted-fields-only: the serializer's
+        # normalization — e.g. the expensive_percentile rounding in
+        # _build_battery_options — is applied identically to both sides, so it
+        # cancels out and can never be mistaken for a user edit. An untouched
+        # field is therefore always absent from the delta, and a concurrent REST
+        # or dashboard write to it survives this flow's save untouched.
+        self._options_payload_at_open = self._build_options_payload(self._wizard_data)
 
         # Přidat přihlašovací údaje z data (bez hesla)
         self._wizard_data[CONF_USERNAME] = config_entry.data.get(CONF_USERNAME)
@@ -3584,34 +3596,29 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             new_options = dict(entry.options)
             new_options.update(payload)
 
-            # Merge only what actually changed since the flow opened, so a
-            # concurrent dashboard/REST write made while this form was open
-            # is not overwritten by a stale full snapshot. Mirror pairs are
-            # treated as one logical field: the opening value of k resolves
-            # through its alias m when k itself is absent.
-            mirror_map: Dict[str, str] = {}
+            # Submitted-fields-only delta: exactly those keys whose serialized
+            # value differs from the one this flow would have written at open.
+            # Both sides come from the same serializer, so only a value the user
+            # actually submitted can make a key differ; everything the user did
+            # not touch is absent, and a concurrent REST/dashboard write to it
+            # survives. A save with no user edits yields an EMPTY delta and
+            # therefore no merge write at all.
+            delta: Dict[str, Any] = {
+                key: value
+                for key, value in payload.items()
+                if value != self._options_payload_at_open.get(key)
+            }
+
+            # A mirror pair (charge_rate_kw / home_charge_rate) is ONE logical
+            # field. The serializer writes the same value to both aliases, so a
+            # real edit surfaces both keys here; emit only the registered
+            # canonical key and let merge_entry_options mirror it, so the legacy
+            # alias never travels through the delta on its own.
             for field in FIELD_REGISTRY.values():
-                if field.mirror:
-                    mirror_map[field.key] = field.mirror
-                    mirror_map[field.mirror] = field.key
-
-            def _resolve_opening(key: str):
-                """Return (value, found) for key using its mirror alias."""
-                if key in self._options_at_open:
-                    return self._options_at_open[key], True
-                alias = mirror_map.get(key)
-                if alias and alias in self._options_at_open:
-                    return self._options_at_open[alias], True
-                return None, False
-
-            delta: Dict[str, Any] = {}
-            for key, value in payload.items():
-                opening, has_opening = _resolve_opening(key)
-                if has_opening:
-                    if opening != value:
-                        delta[key] = value
-                elif value != self._default_options_payload.get(key):
-                    delta[key] = value
+                if field.mirror and field.mirror in delta:
+                    if field.key not in delta and field.key in payload:
+                        delta[field.key] = payload[field.key]
+                    del delta[field.mirror]
 
             # Přidat debug log
             _LOGGER.warning(

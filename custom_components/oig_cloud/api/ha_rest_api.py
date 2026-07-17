@@ -1259,7 +1259,9 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                 continue
             try:
                 updates[key] = coerce_value(field, value)
-            except ValueError as err:
+            except (ValueError, OverflowError) as err:
+                # OverflowError is defensive: coerce_value maps it to ValueError,
+                # but a numeric edge case must never escape as a 500.
                 errors[key] = str(err)
 
         if errors:
