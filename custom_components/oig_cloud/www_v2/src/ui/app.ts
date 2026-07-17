@@ -45,6 +45,7 @@ import '@/ui/features/tiles';
 import '@/ui/features/tiles/icon-picker';
 import '@/ui/features/tiles/tile-dialog';
 import '@/ui/features/onboarding/banner';
+import '@/ui/features/onboarding';  // registers oig-onboarding-wizard + oig-onboarding-step-ai
 
 const u = unsafeCSS;
 
@@ -123,6 +124,12 @@ export class OigApp extends LitElement {
   @state() private editingTileIndex = -1;
   @state() private editingTileSide: 'left' | 'right' = 'left';
   @state() private editingTileConfig: TileConfig | null = null;
+
+  // Onboarding wizard (Plan 3.5 item 4) — opened by `launch-onboarding`
+  // CustomEvents from the banner (app.ts:1325) or Settings launcher
+  // (features/settings/index.ts:498). Soft (#6): the dashboard keeps
+  // rendering behind the modal — no lock, no gate.
+  @state() private onboardingWizardOpen = false;
 
 
   private entityStore: EntityStore | null = null;
@@ -966,11 +973,17 @@ export class OigApp extends LitElement {
   }
 
   private onLaunchOnboarding(e: Event): void {
+    // Plan 3.5 item 4: the previous stub merely re-dispatched the event upward
+    // (no production consumer). Open the wizard shell; the dashboard keeps
+    // rendering behind it (#6 — soft, no lock).
     e.stopPropagation();
-    this.dispatchEvent(new CustomEvent('launch-onboarding', {
-      bubbles: true,
-      composed: true,
-    }));
+    this.onboardingWizardOpen = true;
+  }
+
+  private onWizardClose(): void {
+    this.onboardingWizardOpen = false;
+    // Refresh banner visibility — the user may have completed/skipped steps.
+    void this.loadOnboarding();
   }
 
   private onGridChargingOpen(): void {
@@ -1454,6 +1467,15 @@ export class OigApp extends LitElement {
         <oig-grid-charging-dialog
           .data=${this.flowData.gridChargingPlan}
         ></oig-grid-charging-dialog>
+
+        <!-- Plan 3.5 item 4: wizard mounted as a real production consumer of
+             the launch-onboarding event. Drawn as an overlay; the dashboard
+             stays interactive behind it (#6 — soft guide). -->
+        <oig-onboarding-wizard
+          ?open=${this.onboardingWizardOpen}
+          .inverterSn=${INVERTER_SN}
+          @close=${this.onWizardClose}
+        ></oig-onboarding-wizard>
       </oig-theme-provider>
     `;
   }
