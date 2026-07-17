@@ -15,7 +15,7 @@ are skip-guarded.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 from homeassistant.components.ai_task import (
     AITaskEntity,
@@ -49,9 +49,23 @@ class OigAiTaskEntity(AITaskEntity):
             # NOT established by this plan.
             data = await self._async_delegate_to_host_ai_task(task)
         else:
+            # K2b/O2 (binding): task.instructions is free text the user typed
+            # into HA's AI Task UI and MUST NEVER be forwarded as prompt
+            # content — it can embed GPS, box_id, e-mail, entity_id, anything.
+            # The backend builds outgoing content itself from an allow-listed
+            # install mapping; see ai/backends.py:async_generate_data.
             data = await self._backend.async_generate_data(
-                task.instructions, task.structure)
+                "ai_task_generate_data", self._anonymous_install(), task.structure)
         return GenDataTaskResult(conversation_id=chat_log.conversation_id, data=data)
+
+    def _anonymous_install(self) -> Mapping[str, Any]:
+        """Allow-listed install snapshot for the outgoing prompt (K2b/O2).
+
+        `self._install` is a seam for the entity's construction to populate
+        with real installation numbers; until that wiring lands, this is
+        empty, which is safe — an empty prompt, never a leaky one.
+        """
+        return getattr(self, "_install", None) or {}
 
     async def _async_delegate_to_host_ai_task(self, task: GenDataTask) -> Any:
         """Delegate a GenDataTask to the host HA's own AI Task entity.

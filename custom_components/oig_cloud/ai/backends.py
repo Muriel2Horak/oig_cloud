@@ -93,10 +93,21 @@ class OpenAiCompatBackend:
         ) as resp:
             return resp.status == 200
 
-    async def async_generate_data(self, instructions: str, schema: Dict[str, Any]) -> Any:
+    async def async_generate_data(
+        self, task: str, install: Mapping[str, Any], schema: Dict[str, Any]
+    ) -> Any:
+        """The OUTGOING boundary (K2b/O2, binding).
+
+        Takes an install MAPPING, not free text — there is no parameter through
+        which raw instruction text can flow into the request body. The content
+        is built here, from the allow-list, at the point bytes leave the
+        process, so a caller that forgets to anonymize cannot leak: there is
+        nothing to forget.
+        """
+        content = build_anonymous_prompt(task, install)
         payload = {
             "model": self._model,
-            "messages": [{"role": "user", "content": instructions}],
+            "messages": [{"role": "user", "content": content}],
             "response_format": {"type": "json_object"},
             "temperature": 0,
         }

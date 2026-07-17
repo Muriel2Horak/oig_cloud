@@ -67,7 +67,8 @@ def test_key_prefixes_match_scope_revision_7():
 async def test_generate_data_sends_key_as_bearer_and_returns_parsed_json():
     resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
     session = _Session(resp)
-    out = await _backend(session).async_generate_data("instructions", {"type": "object"})
+    out = await _backend(session).async_generate_data(
+        "test_task", {"capacity_kwh": 15.36}, {"type": "object"})
     assert out == {"ok": True}
     _, _, kw = session.calls[0]
     assert kw["headers"]["Authorization"] == "Bearer gsk_secret0000000000"
@@ -77,13 +78,15 @@ async def test_generate_data_sends_key_as_bearer_and_returns_parsed_json():
 async def test_invalid_json_from_model_raises_not_returns_garbage():
     resp = _Resp(200, {"choices": [{"message": {"content": "I am not JSON"}}]})
     with pytest.raises(ValueError):
-        await _backend(_Session(resp)).async_generate_data("i", {"type": "object"})
+        await _backend(_Session(resp)).async_generate_data(
+            "t", {"capacity_kwh": 1}, {"type": "object"})
 
 
 @pytest.mark.asyncio
 async def test_http_error_is_surfaced_as_a_soft_failure():
     with pytest.raises(RuntimeError):
-        await _backend(_Session(_Resp(401, {}))).async_generate_data("i", {"type": "object"})
+        await _backend(_Session(_Resp(401, {}))).async_generate_data(
+            "t", {"capacity_kwh": 1}, {"type": "object"})
 
 
 @pytest.mark.asyncio
@@ -155,13 +158,16 @@ def test_anonymous_prompt_keeps_the_numbers_and_drops_the_identity():
 async def test_no_pii_reaches_the_wire():
     """Assert on the REAL request body — F1-DESIGN §10 / codex 'anonymity' finding.
 
+    Drives the LIVE generate path with a raw, unfiltered install mapping (the
+    shape ai_task.py's OIG-backend branch would hand over) — NOT a
+    pre-anonymized prompt — so this proves the boundary itself enforces the
+    allow-list, not merely that build_anonymous_prompt works in isolation.
     Structural, not a PII spot-check: every key on the wire is allow-listed.
     """
     resp = _Resp(200, {"choices": [{"message": {"content": "{}"}}]})
     session = _Session(resp)
     leaky = dict(_INSTALL, phone="+420777123456", customer_id="CUST-99")
-    prompt = build_anonymous_prompt("validate_config", leaky)
-    await _backend(session).async_generate_data(prompt, {"type": "object"})
+    await _backend(session).async_generate_data("validate_config", leaky, {"type": "object"})
     _, _, kw = session.calls[0]
     body = json.dumps(kw["json"])
 
