@@ -204,3 +204,54 @@ def test_coerce_value_truncates_long_string_to_200():
     value = coerce_value(FIELD_REGISTRY["boiler_temp_sensor_top"], "x" * 201)
     assert isinstance(value, str)
     assert len(value) == 200
+
+
+# --- section: basic ---------------------------------------------------------
+
+
+def test_basic_section_has_six_fields():
+    basic = fields_for_section("basic")
+    assert set(basic) == {
+        "standard_scan_interval",
+        "extended_scan_interval",
+        "data_source_mode",
+        "local_proxy_stale_minutes",
+        "local_event_debounce_ms",
+        "enable_dashboard",
+    }
+
+
+def test_basic_field_metadata_matches_flow():
+    basic = fields_for_section("basic")
+    assert basic["standard_scan_interval"] == Field(
+        "standard_scan_interval", "basic", int, default=30, min=30, max=300, step=1,
+        scope="basic",
+    )
+    assert basic["extended_scan_interval"] == Field(
+        "extended_scan_interval", "basic", int, default=300, min=300, max=3600, step=1,
+        scope="basic",
+    )
+    # OQ-6 resolution: enum is 3-value, including legacy "hybrid". The UI
+    # never offers "hybrid" — that is the flow's job (steps._sanitize_data_source_mode).
+    assert basic["data_source_mode"] == Field(
+        "data_source_mode", "basic", str, default="cloud_only",
+        enum=("cloud_only", "local_only", "hybrid"), scope="basic",
+    )
+    assert basic["local_proxy_stale_minutes"] == Field(
+        "local_proxy_stale_minutes", "basic", int, default=10, min=1, max=120, step=1,
+        scope="basic",
+    )
+    assert basic["local_event_debounce_ms"] == Field(
+        "local_event_debounce_ms", "basic", int, default=300, min=0, max=5000, step=1,
+        scope="basic",
+    )
+    assert basic["enable_dashboard"] == Field(
+        "enable_dashboard", "basic", bool, default=False, scope="basic",
+    )
+
+
+def test_basic_fields_scope_is_basic():
+    for field in fields_for_section("basic").values():
+        assert field.scope == "basic"
+        assert field.secret is False
+        assert field.mirror is None

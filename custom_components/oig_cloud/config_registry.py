@@ -217,3 +217,24 @@ _register(
     Field("boiler_legionella_target_temp_c", "boiler", float, default=None,
           min=60.0, max=75.0, reload_on_change=True),
 )
+
+
+# --- section: basic ---------------------------------------------------------
+# OQ-6 resolution (PLAN2-RESOLUTIONS.md): enum is 3-value, including legacy
+# "hybrid". The UI never offers "hybrid" — _sanitize_data_source_mode in the
+# flow (steps.py) keeps the wizard options on ("cloud_only", "local_only").
+# Including "hybrid" in the enum keeps the REST GET→POST round-trip honest
+# for any legacy entry that still stores "hybrid".
+_register(
+    Field("standard_scan_interval", "basic", int, default=30, min=30, max=300,
+          step=1, scope="basic"),
+    Field("extended_scan_interval", "basic", int, default=300, min=300, max=3600,
+          step=1, scope="basic"),
+    Field("data_source_mode", "basic", str, default="cloud_only",
+          enum=("cloud_only", "local_only", "hybrid"), scope="basic"),
+    Field("local_proxy_stale_minutes", "basic", int, default=10, min=1, max=120,
+          step=1, scope="basic"),
+    Field("local_event_debounce_ms", "basic", int, default=300, min=0, max=5000,
+          step=1, scope="basic"),
+    Field("enable_dashboard", "basic", bool, default=False, scope="basic"),
+)
