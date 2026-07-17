@@ -299,7 +299,7 @@ export class OigSettings extends LitElement {
       gap: 4px;
     }
 
-    input[type='number'], input[type='text'], select {
+    input[type='number'], input[type='text'], input[type='password'], select {
       background: ${u(CSS_VARS.bgSecondary)};
       color: ${u(CSS_VARS.textPrimary)};
       border: 1px solid ${u(CSS_VARS.divider)};
@@ -308,8 +308,12 @@ export class OigSettings extends LitElement {
       font-size: 12.5px;
       max-width: 120px;
     }
-    input[type='text'] { max-width: 170px; }
+    input[type='text'], input[type='password'] { max-width: 170px; }
     input.dirty, select.dirty { border-color: ${u(CSS_VARS.accent)}; }
+    select option {
+      background: ${u(CSS_VARS.bgSecondary)};
+      color: ${u(CSS_VARS.textPrimary)};
+    }
 
     /* toggle */
     .switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
@@ -670,14 +674,14 @@ export class OigSettings extends LitElement {
     }
 
     // Plain text (secret or non-entity)
-    const isSecret = f.key.endsWith('api_key');
+    const isSecret = f.secret ?? f.key.endsWith('api_key');
     const secretSet = isSecret && !!this.current(section, `${f.key}_set`);
     const val = isSecret ? '' : String(raw ?? '');
     return html`
       <div class="row">
         ${this.renderLabel(f)}
         <div class="row-control">
-          <input type="text" class=${dirty ? 'dirty' : ''} .value=${val}
+          <input type=${isSecret ? 'password' : 'text'} class=${dirty ? 'dirty' : ''} .value=${val}
             placeholder=${isSecret ? (secretSet ? '••••• (nastaveno)' : 'nenastaveno') : (f.optional ? 'nevyplněno' : '')}
             @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLInputElement).value)} />
         </div>
