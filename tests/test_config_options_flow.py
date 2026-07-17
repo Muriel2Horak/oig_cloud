@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.oig_cloud.config.steps import OigCloudOptionsFlowHandler
+from custom_components.oig_cloud.config_registry import fields_for_section
 from custom_components.oig_cloud.const import CONF_USERNAME
 
 
@@ -23,6 +24,9 @@ class DummyConfigEntries:
 class DummyHass:
     def __init__(self):
         self.config_entries = DummyConfigEntries()
+        # No OIG Local proxy entities present -> _proxy_ready() returns False,
+        # matching the DummyWizard convention in tests/test_config_steps_more4.py.
+        self.states = SimpleNamespace(get=lambda _eid: None)
 
 
 class DummyOptionsFlow(OigCloudOptionsFlowHandler):
@@ -787,3 +791,91 @@ async def test_options_flow_save_boiler_enqueue_still_works(monkeypatch):
     assert result["type"] == "abort"
     assert result["reason"] == "reconfigure_successful"
     assert len(enqueued) == 1
+
+
+# --- Plan 2 Task 3: intervals step derives defaults/bounds from the registry ---
+# Schema-marker convention note: voluptuous Optional markers expose the field
+# name via ``marker.schema`` (not ``.key``, which is None) and wrap the default
+# in a callable, so ``.default()`` is called. This matches the reader convention
+# used across tests/ (e.g. test_config_steps_more4.py, test_mqtt_config.py).
+
+
+@pytest.mark.asyncio
+async def test_intervals_step_uses_registry_defaults():
+    """Wizard interval defaults must come from FIELD_REGISTRY, not hard-coded literals."""
+    entry = SimpleNamespace(
+        entry_id="entry1", data={CONF_USERNAME: "demo"}, options={}
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "intervals"
+    flow._step_history = ["init"]
+
+    result = await flow.async_step_wizard_intervals()
+    schema = result["data_schema"].schema
+    keys = {marker.schema: marker for marker in schema}
+
+    basic = fields_for_section("basic")
+    assert keys["standard_scan_interval"].default() == basic["standard_scan_interval"].default
+    assert keys["extended_scan_interval"].default() == basic["extended_scan_interval"].default
+    assert keys["local_proxy_stale_minutes"].default() == basic["local_proxy_stale_minutes"].default
+    assert keys["local_event_debounce_ms"].default() == basic["local_event_debounce_ms"].default
+
+
+@pytest.mark.asyncio
+async def test_intervals_validation_uses_registry_bounds():
+    """Out-of-registry-bounds values must still be rejected after de-hardcoding."""
+    entry = SimpleNamespace(
+        entry_id="entry1", data={CONF_USERNAME: "demo"}, options={}
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "intervals"
+    flow._step_history = ["init"]
+    flow._wizard_data["data_source_mode"] = "cloud_only"
+
+    result = await flow.async_step_wizard_intervals({
+        "standard_scan_interval": 5,      # below registry min 30
+        "extended_scan_interval": 200,    # below registry min 300
+        "local_proxy_stale_minutes": 0,   # below registry min 1
+        "local_event_debounce_ms": 6000,  # above registry max 5000
+        "data_source_mode": "cloud_only",
+        "go_back": False,
+    })
+    assert result["errors"]["standard_scan_interval"] == "interval_too_short"
+    assert result["errors"]["extended_scan_interval"] == "extended_interval_too_short"
+    assert result["errors"]["local_proxy_stale_minutes"] == "interval_too_short"
+    assert result["errors"]["local_event_debounce_ms"] == "interval_too_long"
+
+
+@pytest.mark.asyncio
+async def test_intervals_error_path_repopulates_user_values():
+    """REGRESSION (key-dialect trap): after a validation error the form must re-render the
+    user's typed values, NOT registry defaults. Guards the alias/field-name bridge."""
+    entry = SimpleNamespace(
+        entry_id="entry1", data={CONF_USERNAME: "demo"}, options={}
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "intervals"
+    flow._step_history = ["init"]
+    flow._wizard_data["data_source_mode"] = "cloud_only"
+
+    # extended_scan_interval is invalid; the other three are valid and must survive.
+    result = await flow.async_step_wizard_intervals({
+        "standard_scan_interval": 120,
+        "extended_scan_interval": 200,    # below registry min 300 -> error
+        "local_proxy_stale_minutes": 45,
+        "local_event_debounce_ms": 900,
+        "data_source_mode": "local_only",
+        "go_back": False,
+    })
+
+    assert result["errors"]["extended_scan_interval"] == "extended_interval_too_short"
+    keys = {marker.schema: marker for marker in result["data_schema"].schema}
+    assert keys["standard_scan_interval"].default() == 120
+    assert keys["local_proxy_stale_minutes"].default() == 45
+    assert keys["local_event_debounce_ms"].default() == 900
+    assert keys["data_source_mode"].default() == "local_only"
+    # the rejected value is echoed back so the user can correct it, not silently reset
+    assert keys["extended_scan_interval"].default() == 200

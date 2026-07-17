@@ -9,7 +9,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from ..config_merge import merge_entry_options
-from ..config_registry import FIELD_REGISTRY
+from ..config_registry import FIELD_REGISTRY, fields_for_section
 from ..const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
@@ -1393,54 +1393,53 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return self._show_intervals_form()
 
     def _collect_interval_values(self, user_input: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "standard": user_input.get("standard_scan_interval", 30),
-            "extended": user_input.get("extended_scan_interval", 300),
-            "data_source_mode": self._sanitize_data_source_mode(
-                user_input.get(
-                    "data_source_mode",
-                    self._wizard_data.get("data_source_mode", "cloud_only"),
-                )
-            ),
-            "proxy_stale": user_input.get(
+        """Collect the intervals step's values, keyed by registry field name.
+
+        Returns field-name keys (not short aliases) so the value dict speaks the
+        same dialect as the form, the registry and ``_wizard_data``. This lets the
+        error path re-render the user's typed values instead of registry defaults.
+        """
+        basic = fields_for_section("basic")
+        values = {
+            key: user_input.get(key, self._wizard_data.get(key, basic[key].default))
+            for key in (
+                "standard_scan_interval",
+                "extended_scan_interval",
                 "local_proxy_stale_minutes",
-                self._wizard_data.get("local_proxy_stale_minutes", 10),
-            ),
-            "debounce_ms": user_input.get(
                 "local_event_debounce_ms",
-                self._wizard_data.get("local_event_debounce_ms", 300),
-            ),
+            )
         }
+        values["data_source_mode"] = self._sanitize_data_source_mode(
+            user_input.get(
+                "data_source_mode",
+                self._wizard_data.get(
+                    "data_source_mode", basic["data_source_mode"].default
+                ),
+            )
+        )
+        return values
 
     def _validate_interval_values(self, values: Dict[str, Any]) -> Dict[str, str]:
         errors: Dict[str, str] = {}
-        standard = values["standard"]
-        extended = values["extended"]
-        proxy_stale = values["proxy_stale"]
-        debounce_ms = values["debounce_ms"]
-        data_source_mode = values["data_source_mode"]
+        basic = fields_for_section("basic")
 
-        if standard < 30:
-            errors["standard_scan_interval"] = "interval_too_short"
-        elif standard > 300:
-            errors["standard_scan_interval"] = "interval_too_long"
+        # (field, error-key-below, error-key-above) — the i18n dialect is preserved
+        # verbatim: extended_scan_interval keeps its own extended_interval_* pair
+        # while the other three share interval_too_short/interval_too_long (OQ-7).
+        checks = (
+            ("standard_scan_interval", "interval_too_short", "interval_too_long"),
+            ("extended_scan_interval", "extended_interval_too_short", "extended_interval_too_long"),
+            ("local_proxy_stale_minutes", "interval_too_short", "interval_too_long"),
+            ("local_event_debounce_ms", "interval_too_short", "interval_too_long"),
+        )
+        for key, too_low, too_high in checks:
+            field = basic[key]
+            if field.min is not None and values[key] < field.min:
+                errors[key] = too_low
+            elif field.max is not None and values[key] > field.max:
+                errors[key] = too_high
 
-        if extended < 300:
-            errors["extended_scan_interval"] = "extended_interval_too_short"
-        elif extended > 3600:
-            errors["extended_scan_interval"] = "extended_interval_too_long"
-
-        if proxy_stale < 1:
-            errors["local_proxy_stale_minutes"] = "interval_too_short"
-        elif proxy_stale > 120:
-            errors["local_proxy_stale_minutes"] = "interval_too_long"
-
-        if debounce_ms < 0:
-            errors["local_event_debounce_ms"] = "interval_too_short"
-        elif debounce_ms > 5000:
-            errors["local_event_debounce_ms"] = "interval_too_long"
-
-        if data_source_mode == "local_only" and not self._proxy_ready():
+        if values["data_source_mode"] == "local_only" and not self._proxy_ready():
             errors["data_source_mode"] = "local_proxy_missing"
 
         return errors
@@ -1461,81 +1460,85 @@ Kliknutím na "Odeslat" spustíte průvodce.
             and proxy_box.state.isdigit()
         )
 
+    @staticmethod
+    def _get_intervals_schema(defaults: Dict[str, Any]) -> vol.Schema:
+        """Build the wizard_intervals schema from the basic FIELD_REGISTRY.
+
+        Field types are kept (``int`` for the numeric fields, a SelectSelector for
+        ``data_source_mode``) so the UI is unchanged — only the defaults and the enum
+        options are sourced from the registry. ``defaults`` is field-name-keyed (see
+        the key-dialect trap): its values win, falling back to the registry default.
+        """
+        basic = fields_for_section("basic")
+
+        data_mode = basic["data_source_mode"]
+        current_mode = WizardMixin._sanitize_data_source_mode(
+            defaults.get("data_source_mode", data_mode.default)
+        )
+        # zip against exactly two labels so the UI never offers legacy "hybrid",
+        # even though the registered enum carries it for REST round-tripping (OQ-6).
+        assert data_mode.enum is not None  # data_source_mode always registers an enum
+        mode_options = [
+            selector.SelectOptionDict(value=value, label=label)
+            for value, label in zip(
+                data_mode.enum,
+                (
+                    "☁️ Cloud only",
+                    "🏠 Local only (fallback na cloud při výpadku)",
+                ),
+            )
+        ]
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    "standard_scan_interval",
+                    default=defaults.get(
+                        "standard_scan_interval",
+                        basic["standard_scan_interval"].default,
+                    ),
+                ): int,
+                vol.Optional(
+                    "extended_scan_interval",
+                    default=defaults.get(
+                        "extended_scan_interval",
+                        basic["extended_scan_interval"].default,
+                    ),
+                ): int,
+                vol.Optional(
+                    "data_source_mode", default=current_mode
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=mode_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    "local_proxy_stale_minutes",
+                    default=defaults.get(
+                        "local_proxy_stale_minutes",
+                        basic["local_proxy_stale_minutes"].default,
+                    ),
+                ): int,
+                vol.Optional(
+                    "local_event_debounce_ms",
+                    default=defaults.get(
+                        "local_event_debounce_ms",
+                        basic["local_event_debounce_ms"].default,
+                    ),
+                ): int,
+                vol.Optional("go_back", default=False): bool,
+            }
+        )
+
     def _show_intervals_form(
         self,
         values: Optional[Dict[str, Any]] = None,
         errors: Optional[Dict[str, str]] = None,
     ) -> ConfigFlowResult:
-        if values is None:
-            data_source_mode = self._sanitize_data_source_mode(
-                self._wizard_data.get("data_source_mode", "cloud_only")
-            )
-            data_schema = vol.Schema(
-                {
-                    vol.Optional("standard_scan_interval", default=30): int,
-                    vol.Optional("extended_scan_interval", default=300): int,
-                    vol.Optional(
-                        "data_source_mode", default=data_source_mode
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(
-                                    value="cloud_only", label="☁️ Cloud only"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="local_only",
-                                    label="🏠 Local only (fallback na cloud při výpadku)",
-                                ),
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Optional(
-                        "local_proxy_stale_minutes",
-                        default=self._wizard_data.get("local_proxy_stale_minutes", 10),
-                    ): int,
-                    vol.Optional(
-                        "local_event_debounce_ms",
-                        default=self._wizard_data.get("local_event_debounce_ms", 300),
-                    ): int,
-                    vol.Optional("go_back", default=False): bool,
-                }
-            )
-        else:
-            data_schema = vol.Schema(
-                {
-                    vol.Optional("standard_scan_interval", default=values["standard"]): int,
-                    vol.Optional("extended_scan_interval", default=values["extended"]): int,
-                    vol.Optional(
-                        "data_source_mode", default=values["data_source_mode"]
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(
-                                    value="cloud_only", label="☁️ Cloud only"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="local_only",
-                                    label="🏠 Local only (fallback na cloud při výpadku)",
-                                ),
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Optional(
-                        "local_proxy_stale_minutes",
-                        default=values["proxy_stale"],
-                    ): int,
-                    vol.Optional(
-                        "local_event_debounce_ms",
-                        default=values["debounce_ms"],
-                    ): int,
-                    vol.Optional("go_back", default=False): bool,
-                }
-            )
         return self.async_show_form(
             step_id="wizard_intervals",
-            data_schema=data_schema,
+            data_schema=self._get_intervals_schema(values or self._wizard_data or {}),
             errors=errors,
             description_placeholders=self._get_step_placeholders("wizard_intervals"),
         )
