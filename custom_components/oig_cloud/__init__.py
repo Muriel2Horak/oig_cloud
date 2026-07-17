@@ -62,6 +62,8 @@ except Exception as err:
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
+if hasattr(Platform, "AI_TASK"):  # HA >= 2025.8; AI is optional (SCOPE-REVISION #5)
+    PLATFORMS.append(Platform.AI_TASK)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
