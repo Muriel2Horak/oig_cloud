@@ -29,6 +29,15 @@ class Field:
     label: str = ""                    # i18n key (K2f: keys, not _cs strings)
     hint: str = ""                     # i18n key
 
+    # --- F1 Plan 3: render + visibility contract (UX-AUDIT U1/U2/U7/U9) -------
+    # (field_key, allowed_values) — field is rendered/validated only when the
+    # referenced field's current value is in allowed_values.
+    show_if: Optional[Tuple[str, Tuple[Any, ...]]] = None
+    widget: Optional[str] = None        # override the type-derived control
+    scale: Optional[float] = None       # display multiplier (fraction stored, % shown)
+    optional: bool = False              # may be left blank
+    entity_domain: Optional[str] = None  # render an entity picker for this domain
+
     def __post_init__(self) -> None:
         if not self.label:
             object.__setattr__(self, "label", f"field.{self.key}.label")
@@ -113,6 +122,14 @@ def registry_as_api_dict() -> Dict[str, Dict[str, Any]]:
             spec["enum"] = list(f.enum)
         if f.reload_on_change:
             spec["reload_on_change"] = True
+        if f.show_if is not None:
+            target, allowed = f.show_if
+            spec["show_if"] = {"field": target, "in": list(allowed)}
+        for attr in ("widget", "scale", "entity_domain"):
+            if getattr(f, attr) is not None:
+                spec[attr] = getattr(f, attr)
+        if f.optional:
+            spec["optional"] = True
         out[key] = spec
     return out
 
@@ -137,7 +154,8 @@ _register(
     Field("auto_mode_switch_enabled", "battery", bool, default=False),
     Field("charge_rate_kw", "battery", float, default=None, min=0.5, max=10.0,
           step=0.1, mirror="home_charge_rate"),
-    Field("expensive_percentile", "battery", float, default=None, min=0.5, max=0.95),
+    Field("expensive_percentile", "battery", float, default=None, min=0.5, max=0.95,
+          scale=100),
     Field("battery_comfort_soc_percent", "battery", float, default=None, min=0.0,
           max=95.0, step=5.0),
     Field("balancing_enabled", "battery", bool, default=False),
@@ -152,27 +170,35 @@ _register(
 
 # --- section: solar ---------------------------------------------------------
 _register(
-    Field("solar_forecast_provider", "solar", str, default="",
+    Field("solar_forecast_provider", "solar", str, default="forecast_solar",
           enum=("forecast_solar", "solcast")),
-    Field("solar_forecast_mode", "solar", str, default="",
-          enum=("hourly", "every_4h", "daily_optimized")),
-    Field("solar_forecast_api_key", "solar", str, default="", secret=True),
-    Field("solcast_api_key", "solar", str, default="", secret=True),
-    Field("solcast_site_id", "solar", str, default=""),
+    Field("solar_forecast_mode", "solar", str, default="daily_optimized",
+          enum=("hourly", "every_4h", "daily_optimized"),
+          show_if=("solar_forecast_provider", ("forecast_solar",))),
+    Field("solar_forecast_api_key", "solar", str, default="", secret=True, optional=True,
+          show_if=("solar_forecast_provider", ("forecast_solar",))),
+    Field("solcast_api_key", "solar", str, default="", secret=True,
+          show_if=("solar_forecast_provider", ("solcast",))),
+    Field("solcast_site_id", "solar", str, default="",
+          show_if=("solar_forecast_provider", ("solcast",))),
     Field("solar_forecast_latitude", "solar", float, default=None, min=-90.0, max=90.0,
           step=0.0001),
     Field("solar_forecast_longitude", "solar", float, default=None, min=-180.0, max=180.0,
           step=0.0001),
     Field("solar_forecast_string1_enabled", "solar", bool, default=False),
     Field("solar_forecast_string1_kwp", "solar", float, default=None, min=0.1, max=50.0,
-          step=0.1),
-    Field("solar_forecast_string1_declination", "solar", int, default=None, min=0, max=90),
-    Field("solar_forecast_string1_azimuth", "solar", int, default=None, min=-180, max=180),
+          step=0.1, show_if=("solar_forecast_string1_enabled", (True,))),
+    Field("solar_forecast_string1_declination", "solar", int, default=None, min=0, max=90,
+          show_if=("solar_forecast_string1_enabled", (True,))),
+    Field("solar_forecast_string1_azimuth", "solar", int, default=None, min=-180, max=180,
+          show_if=("solar_forecast_string1_enabled", (True,))),
     Field("solar_forecast_string2_enabled", "solar", bool, default=False),
     Field("solar_forecast_string2_kwp", "solar", float, default=None, min=0.1, max=50.0,
-          step=0.1),
-    Field("solar_forecast_string2_declination", "solar", int, default=None, min=0, max=90),
-    Field("solar_forecast_string2_azimuth", "solar", int, default=None, min=-180, max=180),
+          step=0.1, show_if=("solar_forecast_string2_enabled", (True,))),
+    Field("solar_forecast_string2_declination", "solar", int, default=None, min=0, max=90,
+          show_if=("solar_forecast_string2_enabled", (True,))),
+    Field("solar_forecast_string2_azimuth", "solar", int, default=None, min=-180, max=180,
+          show_if=("solar_forecast_string2_enabled", (True,))),
 )
 
 # --- section: boiler --------------------------------------------------------
@@ -180,12 +206,16 @@ _register(
 _register(
     Field("boiler_volume_l", "boiler", float, default=None, min=30.0, max=1000.0,
           reload_on_change=True),
-    Field("boiler_temp_sensor_top", "boiler", str, default="", reload_on_change=True),
-    Field("boiler_temp_sensor_bottom", "boiler", str, default="", reload_on_change=True),
+    Field("boiler_temp_sensor_top", "boiler", str, default="", reload_on_change=True,
+          entity_domain="sensor"),
+    Field("boiler_temp_sensor_bottom", "boiler", str, default="", reload_on_change=True,
+          entity_domain="sensor", optional=True),
     Field("boiler_enable_second_thermometer", "boiler", bool, default=False,
           reload_on_change=True),
-    Field("boiler_current_power_entity", "boiler", str, default="", reload_on_change=True),
-    Field("boiler_alt_energy_sensor", "boiler", str, default="", reload_on_change=True),
+    Field("boiler_current_power_entity", "boiler", str, default="", reload_on_change=True,
+          entity_domain="sensor", optional=True),
+    Field("boiler_alt_energy_sensor", "boiler", str, default="", reload_on_change=True,
+          entity_domain="sensor", optional=True),
     Field("boiler_alt_energy_daily", "boiler", bool, default=False, reload_on_change=True),
     Field("boiler_alt_cost_kwh", "boiler", float, default=None, min=0.0, max=20.0,
           reload_on_change=True),
@@ -194,7 +224,7 @@ _register(
     Field("boiler_target_temp_c", "boiler", float, default=None, min=40.0, max=85.0,
           reload_on_change=True),
     Field("boiler_deadline_time", "boiler", str, default="", reload_on_change=True),
-    Field("boiler_alt_source_type", "boiler", str, default="",
+    Field("boiler_alt_source_type", "boiler", str, default="gas",
           enum=("gas", "heat_pump", "fireplace", "other"), reload_on_change=True),
     Field("boiler_battery_cycle_cost_czk_kwh", "boiler", float, default=0.50,
           min=0.0, max=5.0, reload_on_change=True),

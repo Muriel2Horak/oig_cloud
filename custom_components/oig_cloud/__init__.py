@@ -39,6 +39,7 @@ from .core.data_source import (
     get_data_source_state,
     init_data_source_state,
 )
+from .config.promote_defaults import promote_blank_enum_defaults
 from .shared.logging import resolve_no_telemetry
 
 
@@ -1545,6 +1546,7 @@ async def async_setup_entry(
     _ensure_planner_option_defaults(hass, entry)
     _ensure_data_source_option_defaults(hass, entry)
     _migrate_enable_spot_prices_option(hass, entry)
+    promote_blank_enum_defaults(hass, entry)
 
     # POZN: Automatická migrace entity/device registry při startu je riziková (může mazat/rozbíjet entity).
     # Pokud je potřeba cleanup/migrace, dělejme ji explicitně (script / servis), ne automaticky v setupu.

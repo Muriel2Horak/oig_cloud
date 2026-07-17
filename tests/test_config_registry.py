@@ -93,14 +93,26 @@ def test_get_parity_defaults_all_sections():
     The legacy view computes: spec.get("default",
         False if bool else ("" if str else None)).
     When GET is rewired to the registry, output for an unset field must not change.
+
+    F1 Plan 3 Task 1 exception: solar_forecast_provider, solar_forecast_mode and
+    boiler_alt_source_type intentionally diverge from the legacy "" default — that
+    default is rejected by their own coerce_value (config_registry.py:74-75), so
+    parity with it would mean re-introducing the 400-on-untouched-form regression
+    this task fixes. See test_provider_default_round_trips_through_coerce below.
     """
     from custom_components.oig_cloud.api.ha_rest_api import _MODULE_CONFIG_FIELDS
+
+    task1_redefaulted_keys = {
+        "solar_forecast_provider", "solar_forecast_mode", "boiler_alt_source_type",
+    }
 
     for section in ("modules", "battery", "solar", "boiler"):
         reg = fields_for_section(section)
         legacy = _MODULE_CONFIG_FIELDS[section]
         assert set(reg) == set(legacy), f"{section}: key set differs from legacy whitelist"
         for key, spec in legacy.items():
+            if key in task1_redefaulted_keys:
+                continue
             legacy_default = spec.get(
                 "default",
                 False if spec["type"] is bool else ("" if spec["type"] is str else None),
@@ -255,3 +267,81 @@ def test_basic_fields_scope_is_basic():
         assert field.scope == "basic"
         assert field.secret is False
         assert field.mirror is None
+
+
+# --- F1 Plan 3 Task 1: show_if / render metadata / enum-default fixes -------
+
+
+def test_field_show_if_defaults_to_none():
+    f = Field(key="x", section="solar", type=str, default="")
+    assert f.show_if is None
+    assert f.widget is None
+    assert f.scale is None
+    assert f.optional is False
+    assert f.entity_domain is None
+
+
+def test_solar_secrets_are_provider_conditional():
+    """U1/U2: which key is required is a property of the registry, not the FE."""
+    reg = FIELD_REGISTRY
+    assert reg["solcast_api_key"].show_if == ("solar_forecast_provider", ("solcast",))
+    assert reg["solcast_site_id"].show_if == ("solar_forecast_provider", ("solcast",))
+    assert reg["solar_forecast_api_key"].show_if == (
+        "solar_forecast_provider", ("forecast_solar",))
+    assert reg["solar_forecast_mode"].show_if == (
+        "solar_forecast_provider", ("forecast_solar",))
+
+
+def test_string2_geometry_is_gated_on_string2_enabled():
+    """U7: geometry fields hide when their string is off."""
+    for key in ("solar_forecast_string2_kwp", "solar_forecast_string2_declination",
+                "solar_forecast_string2_azimuth"):
+        assert FIELD_REGISTRY[key].show_if == ("solar_forecast_string2_enabled", (True,))
+
+
+def test_show_if_targets_are_real_registry_keys():
+    """A typo in show_if must not silently hide a field forever."""
+    for key, f in FIELD_REGISTRY.items():
+        if f.show_if is None:
+            continue
+        target, allowed = f.show_if
+        assert target in FIELD_REGISTRY, f"{key}.show_if points at unknown {target}"
+        assert allowed, f"{key}.show_if has an empty allowed set"
+        tf = FIELD_REGISTRY[target]
+        for value in allowed:
+            # allowed values must be legal for the TARGET field's own type
+            assert isinstance(value, tf.type), f"{key}.show_if: {value!r} not a {tf.type.__name__}"
+
+
+@pytest.mark.parametrize("key", [
+    "solar_forecast_provider",
+    "solar_forecast_mode",
+    "boiler_alt_source_type",   # the THIRD instance — same bug, different section
+])
+def test_provider_default_round_trips_through_coerce(key):
+    """REGRESSION (verified live 2026-07-17): these registry defaults ('') are
+    rejected by their own coerce_value (config_registry.py:74-75), so GET ->
+    POST of an untouched form 400s."""
+    f = FIELD_REGISTRY[key]
+    assert coerce_value(f, f.default) == f.default
+
+
+def test_no_enum_field_defaults_outside_its_own_enum():
+    """The general rule behind the three instances above — a fourth must not
+    slip in unnoticed. An enum field's default must be legal, or blank-and-
+    optional if 'unset' is genuinely a state (e.g. ai_provider, Task 8)."""
+    for key, f in FIELD_REGISTRY.items():
+        if f.enum is None:
+            continue
+        if f.default in ("", None) and f.optional:
+            continue   # deliberately unset — Task 8's ai_provider
+        assert f.default in f.enum, f"{key}: default {f.default!r} not in {f.enum}"
+
+
+def test_api_dict_emits_show_if_and_widget_metadata():
+    api = registry_as_api_dict()
+    assert api["solcast_api_key"]["show_if"] == {
+        "field": "solar_forecast_provider", "in": ["solcast"]}
+    assert api["expensive_percentile"]["scale"] == 100
+    assert api["boiler_temp_sensor_top"]["entity_domain"] == "sensor"
+    assert api["boiler_temp_sensor_bottom"]["optional"] is True
