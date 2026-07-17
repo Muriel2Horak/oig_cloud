@@ -1000,3 +1000,120 @@ async def test_config_registry_view_missing_box():
 
 def test_config_registry_view_requires_auth():
     assert api_module.OIGCloudConfigRegistryView.requires_auth is True
+
+
+# --- Plan 2 Task 2: basic section is exposed by module_config GET/POST -----
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_includes_basic_section():
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(hass, {})
+    response = await view.get(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert "basic" in payload
+    basic = payload["basic"]
+    assert basic["standard_scan_interval"] == 30
+    assert basic["extended_scan_interval"] == 300
+    assert basic["data_source_mode"] == "cloud_only"
+    assert basic["local_proxy_stale_minutes"] == 10
+    assert basic["local_event_debounce_ms"] == 300
+    assert basic["enable_dashboard"] is False
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_basic_section_accepts_update():
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass,
+        {
+            "section": "basic",
+            "values": {"standard_scan_interval": 60, "enable_dashboard": True},
+        },
+    )
+    response = await view.post(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["updated"] is True
+    assert "standard_scan_interval" in payload["keys"]
+    assert entry.options["standard_scan_interval"] == 60
+    assert entry.options["enable_dashboard"] is True
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_basic_rejects_unknown_field():
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass,
+        {"section": "basic", "values": {"phantom_key": 1}},
+    )
+    response = await view.post(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 400
+    assert payload["error"] == "validation"
+    assert payload["fields"]["phantom_key"] == "unknown field"
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_basic_rejects_out_of_bounds():
+    """Registry bounds must be enforced on the REST path too, and nothing persisted."""
+    hass, entry = _make_hass_for_module_config(
+        "basicbox", {"standard_scan_interval": 30}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(
+        hass,
+        {
+            "section": "basic",
+            "values": {"standard_scan_interval": 5},  # below registry min 30
+        },
+    )
+    response = await view.post(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 400
+    assert "standard_scan_interval" in payload["fields"]
+    assert entry.options["standard_scan_interval"] == 30  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_basic_defaults_when_unset():
+    """An entry with no basic keys must GET the registry defaults, not omit the keys."""
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(hass, {})
+    response = await view.get(request, "basicbox")
+    payload = json.loads(response.text)
+
+    assert payload["basic"]["data_source_mode"] == "cloud_only"
+
+
+@pytest.mark.asyncio
+async def test_module_config_hybrid_data_source_mode_round_trips():
+    """OQ-6: a legacy stored 'hybrid' must GET back as 'hybrid' and POST back WITHOUT a 400."""
+    hass, entry = _make_hass_for_module_config(
+        "basicbox", {"data_source_mode": "hybrid"}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+    get_resp = await view.get(_module_config_request(hass, {}), "basicbox")
+    get_payload = json.loads(get_resp.text)
+    assert get_payload["basic"]["data_source_mode"] == "hybrid"
+    post_resp = await view.post(
+        _module_config_request(
+            hass,
+            {
+                "section": "basic",
+                "values": {"data_source_mode": get_payload["basic"]["data_source_mode"]},
+            },
+        ),
+        "basicbox",
+    )
+    assert post_resp.status == 200
+    assert entry.options["data_source_mode"] == "hybrid"

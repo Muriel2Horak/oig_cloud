@@ -1211,7 +1211,7 @@ class OIGCloudModuleConfigView(HomeAssistantView):
 
         opts = dict(entry.options)
         out: dict[str, Any] = {}
-        for section in ("modules", "battery", "solar", "boiler"):
+        for section in ("basic", "modules", "battery", "solar", "boiler"):
             sec: dict[str, Any] = {}
             for key, field in fields_for_section(section).items():
                 if field.secret:
