@@ -10,6 +10,7 @@ from homeassistant.helpers import selector
 
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
+from .solar_rules import normalize_azimuth, validate_solar_effective
 from ..const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
@@ -1618,22 +1619,10 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return False
 
     def _validate_solar_provider(self, user_input: Dict[str, Any]) -> Dict[str, str]:
-        errors: Dict[str, str] = {}
-        provider = user_input.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
-        api_key = user_input.get(CONF_SOLAR_FORECAST_API_KEY, "").strip()
-        mode = user_input.get("solar_forecast_mode", "daily_optimized")
-
-        if provider == "forecast_solar":
-            if mode in ["every_4h", "hourly"] and not api_key:
-                errors["solar_forecast_mode"] = "api_key_required_for_frequent_updates"
-        else:
-            solcast_api_key = user_input.get(CONF_SOLCAST_API_KEY, "").strip()
-            solcast_site_id = user_input.get(CONF_SOLCAST_SITE_ID, "").strip()
-            if not solcast_api_key:
-                errors[CONF_SOLCAST_API_KEY] = "solcast_api_key_required"
-            if not solcast_site_id:
-                errors[CONF_SOLCAST_SITE_ID] = "solcast_site_id_required"
-        return errors
+        # provider/mode/key AND no_strings_enabled now come from the single
+        # shared rule set, so this surface can never drift from the REST POST
+        # (U3). See config/solar_rules.py.
+        return validate_solar_effective(user_input)
 
     def _validate_solar_coordinates(self, user_input: Dict[str, Any]) -> Dict[str, str]:
         errors: Dict[str, str] = {}
@@ -1649,16 +1638,13 @@ Kliknutím na "Odeslat" spustíte průvodce.
         return errors
 
     def _validate_solar_strings(self, user_input: Dict[str, Any]) -> Dict[str, str]:
+        # no_strings_enabled now comes from validate_solar_effective (via
+        # _validate_solar_provider, called first at :1570). Only per-string
+        # geometry stays here.
         errors: Dict[str, str] = {}
-        string1_enabled = user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED, False)
-        string2_enabled = user_input.get("solar_forecast_string2_enabled", False)
-
-        if not string1_enabled and not string2_enabled:
-            errors["base"] = "no_strings_enabled"
-
-        if string1_enabled:
+        if user_input.get(CONF_SOLAR_FORECAST_STRING1_ENABLED):
             errors.update(self._validate_solar_string1(user_input))
-        if string2_enabled:
+        if user_input.get("solar_forecast_string2_enabled"):
             errors.update(self._validate_solar_string2(user_input))
         return errors
 
@@ -1667,14 +1653,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
         try:
             kwp1 = float(user_input.get(CONF_SOLAR_FORECAST_STRING1_KWP, 5.0))
             decl1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_DECLINATION, 35))
-            azim1 = int(user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0))
+            azim1 = normalize_azimuth(user_input.get(CONF_SOLAR_FORECAST_STRING1_AZIMUTH, 0))
+            # Persist the normalised, signed azimuth so it matches the registry
+            # bounds (-180..180) that REST and the schema enforce (U6).
+            user_input[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = azim1
 
             if not (0 < kwp1 <= 15):
                 errors[CONF_SOLAR_FORECAST_STRING1_KWP] = "invalid_kwp"
             if not (0 <= decl1 <= 90):
                 errors[CONF_SOLAR_FORECAST_STRING1_DECLINATION] = "invalid_declination"
-            if not (0 <= azim1 <= 360):
-                errors[CONF_SOLAR_FORECAST_STRING1_AZIMUTH] = "invalid_azimuth"
         except (ValueError, TypeError):
             errors["base"] = "invalid_string1_params"
         return errors
@@ -1684,14 +1671,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
         try:
             kwp2 = float(user_input.get("solar_forecast_string2_kwp", 5.0))
             decl2 = int(user_input.get("solar_forecast_string2_declination", 35))
-            azim2 = int(user_input.get("solar_forecast_string2_azimuth", 180))
+            azim2 = normalize_azimuth(user_input.get("solar_forecast_string2_azimuth", 180))
+            # Persist the normalised, signed azimuth so it matches the registry
+            # bounds (-180..180) that REST and the schema enforce (U6).
+            user_input["solar_forecast_string2_azimuth"] = azim2
 
             if not (0 < kwp2 <= 15):
                 errors["solar_forecast_string2_kwp"] = "invalid_kwp"
             if not (0 <= decl2 <= 90):
                 errors["solar_forecast_string2_declination"] = "invalid_declination"
-            if not (0 <= azim2 <= 360):
-                errors["solar_forecast_string2_azimuth"] = "invalid_azimuth"
         except (ValueError, TypeError):
             errors["base"] = "invalid_string2_params"
         return errors

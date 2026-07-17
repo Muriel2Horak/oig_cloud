@@ -41,6 +41,7 @@ from homeassistant.util import dt as dt_util
 from ..const import CONF_AUTO_MODE_SWITCH, DOMAIN
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, coerce_value, fields_for_section, registry_as_api_dict
+from ..config.solar_rules import normalize_azimuth, validate_solar_effective
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1259,12 +1260,26 @@ class OIGCloudModuleConfigView(HomeAssistantView):
             # Empty secret = keep current value
             if field.secret and value == "":
                 continue
+            if key in ("solar_forecast_string1_azimuth", "solar_forecast_string2_azimuth"):
+                try:
+                    value = normalize_azimuth(value)
+                except (TypeError, ValueError):
+                    errors[key] = "invalid_azimuth"
+                    continue
             try:
                 updates[key] = coerce_value(field, value)
             except (ValueError, OverflowError) as err:
                 # OverflowError is defensive: coerce_value maps it to ValueError,
                 # but a numeric edge case must never escape as a 500.
                 errors[key] = str(err)
+
+        # Cross-field solar rules: shared with the options flow (U3/U6). The
+        # validator must see the EFFECTIVE config — stored options merged with
+        # the incoming updates — otherwise "blank secret = keep current" above
+        # makes a half-finished provider switch look valid.
+        if section == "solar" and not errors:
+            effective = {**dict(entry.options), **updates}
+            errors.update(validate_solar_effective(effective))
 
         if errors:
             return web.json_response({"error": "validation", "fields": errors}, status=400)

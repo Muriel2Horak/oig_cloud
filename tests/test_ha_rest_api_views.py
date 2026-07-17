@@ -1130,3 +1130,98 @@ async def test_module_config_get_unset_extended_sensors_and_statistics_default_t
 
     assert payload["modules"]["enable_extended_sensors"] is True
     assert payload["modules"]["enable_statistics"] is True
+
+
+def _solar_entry(**options):
+    base = {
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_api_key": "fs-key",
+        "solar_forecast_string1_enabled": True,
+    }
+    base.update(options)
+    return DummyEntry("e1", options=base)
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_rejects_incomplete_provider_switch(monkeypatch):
+    """U3: switching to Solcast with blank credentials must NOT save."""
+    entry = _solar_entry()
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    view = api_module.OIGCloudModuleConfigView()
+    req = _module_config_request(hass, {
+        "section": "solar", "values": {"solar_forecast_provider": "solcast"}})
+
+    resp = await view.post(req, "box1")
+
+    assert resp.status == 400
+    body = json.loads(resp.text)
+    assert body["error"] == "validation"
+    assert "solcast_api_key" in body["fields"]
+    assert entry.options["solar_forecast_provider"] == "forecast_solar"  # not written
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_rejects_disabling_every_string(monkeypatch):
+    """M1: no_strings_enabled must bind REST too — it used to be flow-only
+    (steps.py:1643), so this POST silently saved a panel-less solar config."""
+    entry = _solar_entry()
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    view = api_module.OIGCloudModuleConfigView()
+    req = _module_config_request(hass, {"section": "solar", "values": {
+        "solar_forecast_string1_enabled": False,
+        "solar_forecast_string2_enabled": False}})
+
+    resp = await view.post(req, "box1")
+
+    assert resp.status == 400
+    assert json.loads(resp.text)["fields"]["base"] == "no_strings_enabled"
+    assert entry.options["solar_forecast_string1_enabled"] is True  # not written
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_normalises_a_legacy_unsigned_azimuth(monkeypatch):
+    """M2: the registry pins azimuth to -180..180 (config_registry.py:166) but the
+    flow's normalisation (steps.py:1662) never ran on the REST path — a stored
+    legacy 270 used to 400 on the next save."""
+    entry = _solar_entry()
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    view = api_module.OIGCloudModuleConfigView()
+    req = _module_config_request(hass, {
+        "section": "solar", "values": {"solar_forecast_string1_azimuth": 270}})
+
+    resp = await view.post(req, "box1")
+
+    assert resp.status == 200
+    assert entry.options["solar_forecast_string1_azimuth"] == -90
+
+
+@pytest.mark.asyncio
+async def test_rest_and_flow_reject_the_same_panel_less_config(monkeypatch):
+    """The claim this task exists to make true: ONE rule set, two surfaces.
+    Same input, same verdict — asserted, not asserted-about."""
+    from custom_components.oig_cloud.config.solar_rules import validate_solar_effective
+
+    panel_less = {
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_mode": "daily_optimized",
+        "solar_forecast_api_key": "fs-key",
+        "solar_forecast_string1_enabled": False,
+        "solar_forecast_string2_enabled": False,
+    }
+    # flow surface (the shared validator IS the flow's rule after Step 4)
+    assert validate_solar_effective(panel_less) == {"base": "no_strings_enabled"}
+
+    # REST surface, same input
+    entry = DummyEntry("e1", options=dict(panel_less))
+    hass = DummyHass(DummyConfigEntries([entry]))
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
+    view = api_module.OIGCloudModuleConfigView()
+    req = _module_config_request(hass, {
+        "section": "solar", "values": {"solar_forecast_string1_enabled": False}})
+
+    resp = await view.post(req, "box1")
+    assert resp.status == 400
+    assert json.loads(resp.text)["fields"]["base"] == "no_strings_enabled"
