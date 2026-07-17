@@ -15,7 +15,7 @@ are skip-guarded.
 """
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from homeassistant.components.ai_task import (
     AITaskEntity,
@@ -26,6 +26,22 @@ from homeassistant.components.ai_task import (
 from homeassistant.components.conversation import (  # type: ignore[attr-defined]
     ChatLog,  # exists on HA >= 2025.8 (this module's target); absent on the
 )             # 2025.1.4 dev harness, where the module is never imported anyway
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .ai.backends import PROVIDERS, OpenAiCompatBackend
+from .ai.key_store import AiKeyStore
+
+# Head of each provider's fallback chain (F1-DESIGN §4 "ai_models": groq[0],
+# nvidia[0]). The real, ORDERED chain + per-model failover is the remote_config
+# loader (D6/P1/K2a), a deliberately deferred item; until it lands the entity is
+# constructed with the chain HEAD as its model. PROVIDERS (ai/backends.py) carries
+# only {base_url, key_prefix} and MUST NOT gain a model field here (out of scope +
+# would change the OUTGOING backend contract), so the default lives in this THIN
+# adapter. RESIDUAL: swap this for the remote_config chain when that lands.
+DEFAULT_MODELS: dict[str, str] = {
+    "groq": "llama-3.3-70b-versatile",
+    "nvidia": "z-ai/glm-5.2",
+}
 
 
 class OigAiTaskEntity(AITaskEntity):
@@ -38,6 +54,28 @@ class OigAiTaskEntity(AITaskEntity):
     """
 
     _attr_supported_features = AITaskEntityFeature.GENERATE_DATA
+
+    def __init__(
+        self,
+        provider: str,
+        backend: Optional[OpenAiCompatBackend],
+        install: Optional[Mapping[str, Any]],
+        entry_id: str,
+    ) -> None:
+        """Wire the entity to its chosen provider (item 2).
+
+        `backend` is None on the delegation path (provider='ai_task') — that
+        branch never touches the OIG OpenAI-compatible backend. `install` is the
+        allow-listed anonymous snapshot fed to the OUTGOING boundary; an empty
+        mapping is SAFE (the boundary drops everything not allow-listed), never
+        leaky. Do NOT put identifying fields here.
+        """
+        super().__init__()
+        self._provider = provider
+        self._backend = backend
+        self._install: Mapping[str, Any] = install or {}
+        self._attr_unique_id = f"{entry_id}_ai_task"
+        self._attr_name = "OIG AI Task"
 
     async def _async_generate_data(
         self, task: GenDataTask, chat_log: ChatLog
@@ -98,3 +136,51 @@ class OigAiTaskEntity(AITaskEntity):
             blocking=True,
             return_response=True,
         )
+
+
+async def async_setup_entry(hass, entry, async_add_entities) -> None:
+    """Instantiate the AI Task entity from the stored provider/key (item 2).
+
+    THIN adapter: no network at setup time. AI is OPTIONAL (SCOPE-REVISION #5) —
+    every "not configured / cannot call" path adds NO entity and returns without
+    raising, so a box without AI simply has no AI Task entity.
+    """
+    store = AiKeyStore(hass, entry.entry_id)
+    provider = await store.async_get_provider()
+    if not provider:
+        # AI not configured — optional feature, add nothing.
+        return
+
+    if provider == "ai_task":
+        # Delegation path: use the AI the user already runs in their own HA.
+        # The OIG backend is deliberately NOT constructed on this branch.
+        async_add_entities(
+            [OigAiTaskEntity(
+                provider="ai_task", backend=None, install={},
+                entry_id=entry.entry_id)]
+        )
+        return
+
+    if provider in PROVIDERS:
+        key = await store.async_get_key()
+        if not key:
+            # Provider chosen but no key — cannot call the backend, add nothing.
+            return
+        backend = OpenAiCompatBackend(
+            session=async_get_clientsession(hass),
+            base_url=PROVIDERS[provider]["base_url"],
+            api_key=key,
+            model=DEFAULT_MODELS[provider],
+        )
+        # `install` is the allow-listed anonymous snapshot. No readily-available
+        # allow-listed source is wired here yet, and {} is SAFE at the OUTGOING
+        # boundary — never invent fields, never pass identifying ones.
+        async_add_entities(
+            [OigAiTaskEntity(
+                provider=provider, backend=backend, install={},
+                entry_id=entry.entry_id)]
+        )
+        return
+
+    # Unknown provider string — add nothing (defensive; config flow constrains this).
+    return
