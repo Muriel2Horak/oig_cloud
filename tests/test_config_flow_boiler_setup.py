@@ -600,6 +600,9 @@ async def test_options_flow_enqueues_config_update_command(monkeypatch):
         )
     )
     flow._wizard_data = dict(existing_options)
+    # Real edit: CONFIG_UPDATE is enqueued only when the merge actually writes
+    # (an empty delta must not enqueue — see test_config_options_flow.py).
+    flow._wizard_data["boiler_volume_l"] = 250
 
     result = await flow.async_step_wizard_summary({})
     assert result["type"] == "abort"

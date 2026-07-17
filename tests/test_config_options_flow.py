@@ -651,6 +651,103 @@ async def test_options_flow_save_non_boiler_does_not_set_needs_reload():
 
 
 @pytest.mark.asyncio
+async def test_options_flow_save_boiler_empty_delta_does_not_enqueue_config_update(monkeypatch):
+    """Empty boiler save must not enqueue CONFIG_UPDATE and must keep REST value."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            "enable_boiler": True,
+            "boiler_box_id": "123",
+            "boiler_target_temp_c": 60.0,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    # Simulate concurrent REST/dashboard write that changes boiler_target_temp_c.
+    entry.options["boiler_target_temp_c"] = 70.0
+
+    enqueued = []
+
+    class FakeSerializer:
+        async def enqueue(self, cmd):
+            enqueued.append(cmd)
+
+    class FakeRuntime:
+        def __init__(self):
+            self._serializer = FakeSerializer()
+
+    def _fake_get_runtime(hass, entry_id, box_id):
+        if entry_id == "entry1" and box_id == "123":
+            return FakeRuntime()
+        return None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.boiler.runtime.get_boiler_runtime",
+        _fake_get_runtime,
+    )
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    assert not flow.hass.config_entries.updated
+    assert not enqueued
+    assert entry.options["boiler_target_temp_c"] == 70.0
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_boiler_enqueue_uses_post_merge_options(monkeypatch):
+    """Real boiler edit should enqueue a CONFIG_UPDATE payload with merged live options."""
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            "enable_boiler": True,
+            "boiler_box_id": "123",
+            "boiler_target_temp_c": 60.0,
+            "boiler_volume_l": 150,
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    # Simulate concurrent REST/dashboard write in an untouched field.
+    entry.options["boiler_target_temp_c"] = 70.0
+    flow._wizard_data["boiler_volume_l"] = 180
+
+    enqueued = []
+
+    class FakeSerializer:
+        async def enqueue(self, cmd):
+            enqueued.append(cmd)
+
+    class FakeRuntime:
+        def __init__(self):
+            self._serializer = FakeSerializer()
+
+    def _fake_get_runtime(hass, entry_id, box_id):
+        if entry_id == "entry1" and box_id == "123":
+            return FakeRuntime()
+        return None
+
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.boiler.runtime.get_boiler_runtime",
+        _fake_get_runtime,
+    )
+
+    result = await flow.async_step_wizard_summary({})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    assert len(enqueued) == 1
+    payload = enqueued[0].payload["new_options"]
+    assert payload["boiler_target_temp_c"] == 70.0
+    assert payload["boiler_volume_l"] == 180
+
+
+@pytest.mark.asyncio
 async def test_options_flow_save_boiler_enqueue_still_works(monkeypatch):
     """The boiler CONFIG_UPDATE enqueue block below the write must still see new_options."""
     entry = SimpleNamespace(

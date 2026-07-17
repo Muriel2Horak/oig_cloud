@@ -3631,45 +3631,55 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             try:
                 # Aktualizovat entry
                 _LOGGER.warning("🔍 About to call async_update_entry")
-                merge_entry_options(self.hass, entry, delta, suppress_reload=True)
+                did_write = merge_entry_options(
+                    self.hass, entry, delta, suppress_reload=True
+                )
                 _LOGGER.warning("🔍 async_update_entry completed")
 
-                try:
-                    from ..boiler.runtime import get_boiler_runtime
-                    from ..boiler.actuator import (
-                        ActuatorCommand,
-                        ActuatorCommandPriority,
-                        ActuatorCommandType,
-                        SourceIntent,
-                    )
+                if did_write:
+                    # Use post-merge entry options for the boiler command payload,
+                    # preserving concurrent REST updates for untouched fields.
+                    merged_options = dict(entry.options)
+                    merged_options.update(delta)
 
-                    box_id = new_options.get("boiler_box_id", "")
-                    if new_options.get("enable_boiler") and box_id:
-                        runtime = get_boiler_runtime(
-                            self.hass, entry.entry_id, box_id
+                    try:
+                        from ..boiler.runtime import get_boiler_runtime
+                        from ..boiler.actuator import (
+                            ActuatorCommand,
+                            ActuatorCommandPriority,
+                            ActuatorCommandType,
+                            SourceIntent,
                         )
-                        if runtime is not None and runtime._serializer is not None:
-                            latest_cv = getattr(
-                                runtime._serializer, "_latest_config_version", 0
+
+                        box_id = merged_options.get("boiler_box_id", "")
+                        if merged_options.get("enable_boiler") and box_id:
+                            runtime = get_boiler_runtime(
+                                self.hass, entry.entry_id, box_id
                             )
-                            cmd = ActuatorCommand(
-                                entry_id=entry.entry_id,
-                                box_id=box_id,
-                                command_type=ActuatorCommandType("config_update"),
-                                plan_version=0,
-                                config_version=latest_cv + 1,
-                                priority=ActuatorCommandPriority.CONFIG,
-                                source_intent=SourceIntent.NONE,
-                                payload={"new_options": new_options},
-                            )
-                            await runtime._serializer.enqueue(cmd)
-                            _LOGGER.debug(
-                                "Enqueued CONFIG_UPDATE for %s/%s", entry.entry_id, box_id
-                            )
-                except Exception as exc:
-                    _LOGGER.debug(
-                        "Config update enqueue failed (non-critical): %s", exc
-                    )
+                            if runtime is not None and runtime._serializer is not None:
+                                latest_cv = getattr(
+                                    runtime._serializer, "_latest_config_version", 0
+                                )
+                                cmd = ActuatorCommand(
+                                    entry_id=entry.entry_id,
+                                    box_id=box_id,
+                                    command_type=ActuatorCommandType("config_update"),
+                                    plan_version=0,
+                                    config_version=latest_cv + 1,
+                                    priority=ActuatorCommandPriority.CONFIG,
+                                    source_intent=SourceIntent.NONE,
+                                    payload={"new_options": merged_options},
+                                )
+                                await runtime._serializer.enqueue(cmd)
+                                _LOGGER.debug(
+                                    "Enqueued CONFIG_UPDATE for %s/%s",
+                                    entry.entry_id,
+                                    box_id,
+                                )
+                    except Exception as exc:
+                        _LOGGER.debug(
+                            "Config update enqueue failed (non-critical): %s", exc
+                        )
 
                 # Automaticky reloadnout integraci pro aplikování změn
                 _LOGGER.warning("🔍 About to reload integration")
