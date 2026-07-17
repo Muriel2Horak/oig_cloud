@@ -897,6 +897,22 @@
         "description": "🔧 **OIG Cloud Configuration Change**\n\nThis wizard will guide you through updating your integration configuration.\n\n**What you can change:**\n• 📦 Enable/disable modules and features\n• ⏱️ Adjust data update intervals\n• ☀️ Change solar forecast settings\n• 🔋 Adjust battery prediction parameters\n• 💰 Change pricing settings\n• ⚡ Adjust extended sensors\n\n**Note:** Login credentials cannot be changed here - you must delete and re-add the integration.\n\nClick \"Submit\" to continue with the setup.",
         "title": "🔧 OIG Cloud Configuration Change"
       },
+      "ai": {
+        "title": "🤖 Optional AI helper",
+        "description": "AI is optional and the dashboard works without it. Groq, NVIDIA, and your own HA AI Task are co-equal choices.\n\n**Groq:** 1. Register at https://console.groq.com. 2. Open https://console.groq.com/keys. 3. Choose Create API Key and copy the key immediately.\n\n**NVIDIA:** 1. Register at https://build.nvidia.com. 2. Open https://build.nvidia.com/settings/api-keys. 3. Choose Generate API Key and copy the key.\n\nThe key is stored privately in .storage and never in options.",
+        "data": {
+          "ai_provider": "AI provider",
+          "ai_base_url": "API base URL",
+          "ai_model": "Model",
+          "ai_api_key": "API key"
+        },
+        "data_description": {
+          "ai_provider": "Optional; no provider is preselected or preferred.",
+          "ai_base_url": "Optional custom OpenAI-compatible URL.",
+          "ai_model": "Optional model identifier.",
+          "ai_api_key": "Leave blank to keep a previously stored key."
+        }
+      },
       "init": {
         "title": "OIG Cloud Settings",
         "description": "Pick the section you want to change. Saving a section applies immediately.",
@@ -907,6 +923,7 @@
           "section_battery": "🔋 Battery & planner",
           "section_pricing": "💰 Energy pricing",
           "section_boiler": "🔥 Boiler",
+          "section_ai": "🤖 AI helper (optional)",
           "section_all": "🧙 Full wizard"
         }
       }

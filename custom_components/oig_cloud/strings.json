@@ -543,6 +543,36 @@
         "data_description": {
           "go_back": "Zaškrtněte toto políčko a stiskněte tlačítko 'Odeslat' - vrátíte se o krok zpět"
         }
+      },
+      "ai": {
+        "title": "🤖 Volitelný AI pomocník",
+        "description": "AI je volitelná a dashboard funguje i bez ní. Groq, NVIDIA a vlastní HA AI Task jsou rovnocenné volby.\n\n**Groq:** 1. Zaregistrujte se na https://console.groq.com. 2. Otevřete https://console.groq.com/keys. 3. Zvolte Create API Key a klíč ihned zkopírujte.\n\n**NVIDIA:** 1. Zaregistrujte se na https://build.nvidia.com. 2. Otevřete https://build.nvidia.com/settings/api-keys. 3. Zvolte Generate API Key a klíč zkopírujte.\n\nKlíč se ukládá soukromě do .storage a nikdy do options.",
+        "data": {
+          "ai_provider": "Poskytovatel AI",
+          "ai_base_url": "Base URL API",
+          "ai_model": "Model",
+          "ai_api_key": "API klíč"
+        },
+        "data_description": {
+          "ai_provider": "Volitelné; žádný poskytovatel není předvybrán ani zvýhodněn.",
+          "ai_base_url": "Volitelná vlastní OpenAI-compatible URL.",
+          "ai_model": "Volitelný identifikátor modelu.",
+          "ai_api_key": "Prázdné pole zachová dříve uložený klíč."
+        }
+      },
+      "init": {
+        "title": "Nastavení OIG Cloud",
+        "description": "Vyberte sekci, kterou chcete upravit. Po uložení sekce se změny rovnou aplikují.",
+        "menu_options": {
+          "section_modules": "🧩 Moduly (zapnout/vypnout)",
+          "section_intervals": "⏱️ Připojení a intervaly",
+          "section_solar": "☀️ Solární předpověď",
+          "section_battery": "🔋 Baterie a plánovač",
+          "section_pricing": "💰 Ceny energie",
+          "section_boiler": "🔥 Bojler",
+          "section_ai": "🤖 AI pomocník (volitelný)",
+          "section_all": "🧙 Celý průvodce znovu"
+        }
       }
     },
     "abort": {

@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 @dataclass(frozen=True)
 class Field:
     key: str
-    section: str                       # basic|modules|battery|solar|boiler
+    section: str                       # basic|modules|battery|solar|boiler|ai
     type: type                         # bool|int|float|str
     default: Any = None
     min: Optional[float] = None
@@ -250,6 +250,18 @@ _register(
           reload_on_change=True),
     Field("boiler_legionella_target_temp_c", "boiler", float, default=None,
           min=60.0, max=75.0, reload_on_change=True),
+)
+
+
+# --- section: ai ------------------------------------------------------------
+# SCOPE-REVISION #8: co-equal choice, NO hard default, NO "recommended".
+# SCOPE-REVISION #9: OIG supplies its own backend; base_url is user-overridable.
+# The API KEY IS DELIBERATELY ABSENT — it belongs to AiKeyStore (.storage), P2.
+_register(
+    Field("ai_provider", "ai", str, default="", optional=True,
+          enum=("ai_task", "groq", "nvidia")),
+    Field("ai_base_url", "ai", str, default="", optional=True),
+    Field("ai_model", "ai", str, default="", optional=True),
 )
 
 

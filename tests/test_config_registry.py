@@ -54,7 +54,7 @@ def test_coerce_enum():
 def test_registry_keys_match_field_keys():
     for key, field in FIELD_REGISTRY.items():
         assert key == field.key
-        assert field.section in ("modules", "battery", "solar", "boiler", "basic")
+        assert field.section in ("modules", "battery", "solar", "boiler", "basic", "ai")
 
 
 def test_fields_for_section_filters():

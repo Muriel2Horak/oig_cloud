@@ -8,6 +8,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
+from ..ai.key_store import AiKeyStore
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
 from .solar_rules import normalize_azimuth, validate_solar_effective
@@ -3472,6 +3473,7 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             "boiler_setup_complete"
         ):
             menu.append("section_boiler")
+        menu.append("section_ai")
         menu.append("section_all")
         return self.async_show_menu(step_id="init", menu_options=menu)
 
@@ -3534,6 +3536,85 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> ConfigFlowResult:
         return await self._enter_section("battery", "wizard_battery")
+
+    async def async_step_section_ai(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Open the optional AI provider configuration."""
+        return await self.async_step_ai(user_input)
+
+    def _get_ai_schema(self, defaults: Dict[str, Any]) -> vol.Schema:
+        """Build the optional AI form from the registry fields."""
+        ai = fields_for_section("ai")
+        provider = ai["ai_provider"]
+        assert provider.enum is not None
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    "ai_provider", default=defaults.get("ai_provider", provider.default)
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="", label="—"),
+                            selector.SelectOptionDict(value="ai_task", label="HA AI Task"),
+                            selector.SelectOptionDict(value="groq", label="Groq"),
+                            selector.SelectOptionDict(value="nvidia", label="NVIDIA"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    "ai_base_url", default=defaults.get("ai_base_url", "")
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.URL)
+                ),
+                vol.Optional(
+                    "ai_model", default=defaults.get("ai_model", "")
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+                ),
+                vol.Optional("ai_api_key", default=""): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                        autocomplete="off",
+                    )
+                ),
+            }
+        )
+
+    async def async_step_ai(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Configure optional AI settings and route the key to private storage."""
+        entry: Optional[config_entries.ConfigEntry] = getattr(
+            self, "_config_entry_cache", None
+        )
+        if entry is None:
+            return self.async_abort(reason="no_entry")
+
+        current = dict(entry.options)
+        if user_input is not None:
+            values = dict(user_input)
+            api_key = values.pop("ai_api_key", "")
+            ai_fields = fields_for_section("ai")
+            updates = {
+                key: values.get(key, field.default)
+                for key, field in ai_fields.items()
+            }
+
+            if api_key:
+                await AiKeyStore(self.hass, entry.entry_id).async_set_key(
+                    updates["ai_provider"], api_key
+                )
+
+            current.update(updates)
+            self.hass.config_entries.async_update_entry(entry, options=current)
+
+        return self.async_show_form(
+            step_id="ai",
+            data_schema=self._get_ai_schema(current),
+        )
 
     async def async_step_section_pricing(
         self, user_input: Optional[Dict[str, Any]] = None
