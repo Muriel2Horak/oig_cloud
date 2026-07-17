@@ -1,108 +1,87 @@
-# F1 Plan 3 — GATE STATUS
+# F1 Plan 3 + Plan 3.5 — GATE STATUS
 
-**Verdict: HUMAN-NEEDED** (gate is green; a scope decision is required before deploy — see §Decision)
-**Branch:** `codex/f1-plan3-impl`  **Tip:** `6b687786c`  **Date:** 2026-07-17
-**Do NOT deploy to HA. No merge to main. No PR.** (per brief)
+**Verdict: DEPLOY** (Plan 3 components landed AND wired end-to-end; full gate green; prompt-anonymity
+enforced at the outgoing boundary; security review CLEAN — one residual is live-box-only, see §6)
+**Branch:** `codex/f1-plan3-impl`  **Tip:** `69808ded2` (== `origin/codex/f1-plan3-impl`, pushed)
+**Date:** 2026-07-17
+**Do NOT deploy from this session.** This verdict authorizes Martin to deploy to the live box; the
+integrator here does not push to HA, does not merge to main, opens no PR.
 
 ---
 
-## 1. What landed — all Plan 3 tasks committed
+## 1. What Plan 3.5 wired — the five end-to-end gaps, all closed
 
-| Task | What | Model | Score | Commit |
+The pre-3.5 gate (tip `6b687786c`) was green but HUMAN-NEEDED: the AI backend + onboarding were
+unit-tested **scaffolding, not wired**. Martin decided (2026-07-17): wire it all end-to-end before
+deploy. All five wiring items are now committed on top of `20ab3f27a`:
+
+| # | Wiring item | Model | Commit | Verified |
 |---|---|---|---|---|
-| T8 | Config-flow AI step (provider/base_url/model co-equal, key→.storage) | minimax | PARTIAL¹ | `355305316` |
-| T9 | OigAiTaskEntity (guarded) + hacs.json min-HA — **harness bump DEFERRED** | zai | PARTIAL² | `31a0a489d` |
-| T10 | Admin-gated `/ai` REST (state + verify_key), key never echoed | minimax | GREEN | `e4b7e3295` |
-| T11 | Onboarding versioned state + admin-gated REST (soft, no gate) | zai | GREEN | `14ffe2f81` |
-| T12 | Onboarding wizard shell + step ① AI (verbatim guides) | minimax | PARTIAL³ | `8345a7180` |
-| T13 | Onboarding steps ② solar + ③ pricing (registry-driven) | zai | GREEN | `cded22ffc` |
-| T14 | Soft banner + Settings launcher (dashboard always renders) | minimax | GREEN⁴ | `99d5a0a6c` |
-| — | **Review fix:** admin gate reads `request['hass_user']` not `request.app` | (integrator) | — | `6b687786c` |
+| 1 | **Prompt-anonymity OUTGOING boundary** (safety gate) — allow-list at the emitting boundary; raw-text `instructions` param removed from the backend signature | claude | `ec1432d83` | test asserts serialized POST body carries **no** GPS/box_id/email/entity_id; allow-listed `15.36` survives |
+| 2+3 | **AITaskEntity `async_setup_entry`** (real `Platform.AI_TASK` forward) + **pinned host-AI delegation payload** | opus | `69808ded2` | mock-tested in current venv (`sys.modules` shim fakes only the HA base class; routing/gating/backend-construction is real production code) |
+| 4 | **Onboarding wizard mounted** as a real production consumer — `<oig-onboarding-wizard>` rendered/routed, replacing the stub `launch-onboarding` re-dispatch | minimax | `4ebe1ab6e` | vitest + tsc |
+| 5 | **Grandfathering populated** — `is_grandfathered` sets the persisted `grandfathered` flag; per-step `skipped` status wired end-to-end | opus | `ca21d8767` | real flow tested; skip persists across a second `Store` instance |
 
-¹ 1-line integrator fix to a fenced section-tuple test. ² Harness bump deferred (see §3). ³ 2 tsc integrator fixes.
-⁴ zai's first attempt ABANDONed (rate-limited mid-run); re-dispatched to minimax, clean.
+All four workers delivered clean (`rc=0 cause=delivered`); the integrator (this session) reviewed each
+frozen bundle, ran the gate, and is the only committer. Workers committed nothing.
 
-## 2. Gate — GREEN
+## 2. Gate — GREEN (base `20ab3f27a` → change `69808ded2`)
 
-- **Backend:** `flake8 --max-line-length=120` (whole tree) clean · `mypy` (ai, onboarding, config_registry,
-  solar_rules, ha_rest_api) clean · **pytest `4335 passed, 28 skipped, 0 failed`**.
-- **Frontend (www_v2):** `typecheck` clean · `lint` 0 errors (369 pre-existing `no-explicit-any` warnings) ·
-  `test:unit` **58 files / 1455 tests passed** · `build` OK.
-- **Base-vs-change failing set:** base `b0ebf983b` (turn start) = `4309 passed, 0 failed` → change = `4335 passed,
-  0 failed`. Failing set ∅ → ∅ (+26 new tests). Harness unchanged (T9 bump deferred), so no harness-induced noise.
+- **Backend pytest:** `4354 passed, 28 skipped, 0 failed` (baseline `4335 passed, 28 skipped, 0 failed`
+  → **+19 new tests, failing set ∅ → ∅**).
+- **flake8** `--max-line-length=120` (whole `custom_components/oig_cloud` tree): clean.
+- **mypy** (changed source: `ai/backends.py`, `ai_task.py`, `api/ha_rest_api.py`, `onboarding/state.py`):
+  **no new failures.** Residual errors are all pre-existing/environmental — `paho.mqtt` + `opentelemetry`
+  missing stubs (unrelated files), the `homeassistant.components.ai_task` import (HA 2025.1.4 harness has
+  no `ai_task`, expected), and one `_backend` union-attr that exists **identically at base**
+  (`ai_task.py` base line 52 == change line 95 — same call, not introduced by 3.5).
+- **Frontend (`custom_components/oig_cloud/www_v2`):** `tsc --noEmit` clean · `vitest` **60 files /
+  1465 tests passed** (baseline 1455 → +10) · `eslint` **0 errors** (377 pre-existing `no-explicit-any`
+  warnings).
 
-## 3. AI-key security (verified — review PASS + fixed this turn)
+## 3. Prompt-anonymity (SCOPE-REVISION #5) — enforced at the boundary, verified
 
-Provider key lives ONLY in `.storage` (`AiKeyStore`), never in `entry.options`, never a registry field
-(`steps.py async_step_ai` pops `ai_api_key`; `OIGCloudAiView.post` writes via store) · never logged in clear
-(`redact_key`) · `GET /ai` returns only `{provider,key_set,verified}` · POST prefix-checks locally before any
-network call · `/ai` + `/onboarding` **admin-gated & fail-closed** (was broken → **fixed in `6b687786c`**).
+The safety gate is a genuine **allow-list at the emitting boundary**, not a denylist. `async_generate_data`
+(`ai/backends.py`) no longer accepts a raw-text `instructions` parameter — there is structurally no channel
+for free text. Outgoing content is built inside the boundary by `build_anonymous_prompt` (keeps only
+`PROMPT_ALLOWED_FIELDS`, drops everything else). The sole caller (`ai_task.py:95`) passes a literal install
+label + an allow-listed install mapping + `task.structure` (schema); `task.instructions` appears only in a
+comment. **Proof one-liner:** `tests/test_ai_anonymity.py` drives the live generate path with a
+GPS/box_id/email/entity_id fixture and asserts on `json.dumps(kw["json"])` (the real serialized POST body)
+that every PII literal is absent while the allow-listed `15.36` survives.
 
-## 4. Verified review findings NOT fixed (why the verdict is HUMAN-NEEDED)
+## 4. AI-key + admin gates — CLEAN (unchanged by 3.5, re-verified)
 
-The review (`review-critique/REVIEW.md`, minimax, security-tagged) found — and I verified — that the AI feature
-and onboarding wizard are **built and unit-tested but not wired end-to-end**. The green tests exercise the
-components with dummy harnesses that mask the integration gaps:
+Key lives only in the private `Store` (`key_store.py`); logs emit only `redact_key` fingerprints; REST
+returns only `{provider,key_set,verified}`; the key flows solely into the `Authorization: Bearer` header,
+never the prompt/body/response. `OIGCloudAiView` + `OIGCloudOnboardingView` call `_require_admin` as the
+first line of `get`/`post` (reads real `request["hass_user"]`, fail-closed 403); the new skip/grandfathered
+paths sit behind that same gate.
 
-1. **AI entity never instantiated.** `ai_task.py` defines `OigAiTaskEntity` but there is no platform
-   `async_setup_entry`; `_provider`/`_backend` are never set. Tied to the **deliberately deferred** T9 harness
-   bump (the box venv `/repos/oig-cloud/.venv` is SHARED — bumping HA there is box-wide; and a 7-minor HA jump
-   risks the 261-file suite). The live AI path cannot run on the current test HA (2025.1.4, no `ai_task`) anyway.
-2. **Host-AI delegation payload UNVERIFIED.** `_async_delegate_to_host_ai_task` is a best-effort guess (flagged
-   as such in-code) — the real `ai_task` service API can't be read without an `ai_task`-capable HA.
-3. **Prompt anonymity not enforced at the outgoing boundary.** `build_anonymous_prompt` (allow-list, T7) exists
-   but the entity would pass raw `task.instructions` to the backend. **MUST be fixed before any AI call is
-   enabled** — otherwise the "prompty anonymní" guarantee (SCOPE-REVISION #5) is not held in production.
-4. **Onboarding wizard not mounted.** The banner CTA and Settings launcher dispatch a stub `launch-onboarding`
-   event; nothing mounts the wizard. `STEP_SOLAR`/`STEP_PRICING` have no production consumer. (T12–14 were
-   scoped as unit-tested components, not E2E wiring.)
-5. **Grandfathering not populated.** `is_grandfathered` is tested but never called to set a `grandfathered`
-   flag on the persisted state, so the banner's no-banner-for-existing-users branch can't trigger; per-step
-   `skipped` status isn't wired end-to-end either.
+## 5. Security review — CLEAN, rework=none
 
-None of these is a failing test or a hard dashboard gate (the dashboard always renders — T14 verified). They are
-completeness/wiring gaps.
+`review-plan-3-5-security-wiring-reality-10bc89` (opus, security-tagged, reviewed the frozen bundle of
+`20ab3f27a..69808ded2`, anonymity-boundary focus) returned:
+`{"grounded":true,"in_scope":true,"honest":true,"complete":true,"rework":"none"}`.
+Verdict text: *"No anonymity leak, no key exposure, no admin hole. Diff is mergeable as it stands."*
+The wiring is confirmed **real, not a dummy-harness mask**: `Platform.AI_TASK` is a true platform entry
+point, the wizard is genuinely mounted, skip genuinely persists.
 
-## 5. Providers avoided / notes
+## 6. What still needs live-box validation (deploy-verify, not a gate blocker)
 
-- **codex/spark** — sub-quota exhausted; killed the first T9 dispatch (rc1, "usage limit for Codex-Spark").
-  `fleet-pick` is blind to spark's sub-quota and routed there anyway; I pinned providers explicitly after.
-- **kimi** (<15%), **zai** after ~19:00 (hit 5-hour rate limit mid-T14 → that attempt ABANDONed, redispatched).
-- Workers: minimax (T8,T10,T12,T14,review) + zai (T9,T11,T13). Integrator: claude-second (near its limit).
+The shared test venv is HA 2025.1.4, which has **no `ai_task` module** and MUST NOT be bumped (box-wide
+risk) — so the wiring is mock-tested here and the **real `ai_task` platform path is validated on Martin's
+live box (HA 2026.7.2) at deploy-verify.** Two honest, non-security residuals from the review to check on
+the live box:
+1. `install={}` is passed unconditionally today, so prompts currently carry **no** installation numbers — a
+   documented functionality seam. Empty ≠ leaky: safe, not a security gap.
+2. Actual `Platform.AI_TASK` registration + the `_async_delegate_to_host_ai_task` call shape can only be
+   confirmed against an `ai_task`-capable HA. Pinned to the documented `ai_task.generate_data` contract with
+   a mock; confirm on the live box.
 
----
+## 7. Providers / notes
 
-## Decision for Martin (per CLAUDE.md format)
-
-**1. Kontext.** Plan 3 T8–T14 are all committed and the full gate is green (BE 4335 pass / FE 1455 pass / build
-OK), and a real production bug the tests missed (admin gate 403-ing real admins on `/ai` + `/onboarding`) was
-found by review and fixed (`6b687786c`). But the review (verified) shows the two headline features — OIG's own AI
-backend and the soft onboarding wizard — are unit-tested components that are **not wired end-to-end**: the
-`AITaskEntity` is never instantiated (T9 harness bump deferred — shared venv), the wizard launcher is a stub, and
-grandfathering + prompt-anonymity aren't enforced at their boundaries (§4).
-
-**2. What must be decided, and why it isn't mine.** Whether Plan 3 ships now as a *foundation increment*
-(components landed; wiring is a follow-up / Plan 4) or must be *wired end-to-end before deploy*. This is a
-product/scope call: the plan itself deferred the harness bump and lists these as adjacent work, and neither code
-nor spec settles whether "Plan 3 done" means "components landed" or "feature live." The shared-venv constraint
-also means the harness bump genuinely needs an isolated environment I should not create on this box unilaterally.
-
-**3. Dopady.**
-- **Ship as increment (recommended):** T1–T5 (registry-driven forms, conditional visibility, solar validator,
-  readable dropdowns, masked secrets) are genuinely live and tested — real user value now. AI + onboarding land
-  as inert, tested scaffolding. Risk: a banner + launcher + AI config step that don't yet *do* anything visible;
-  **must gate/hide the un-wired UI and must land the prompt-anonymity boundary fix before enabling any AI call.**
-- **Wire end-to-end first:** needs an isolated `ai_task`-capable HA venv (T9 bump), entity `async_setup_entry`,
-  wizard mounting/routing, grandfathering population, anonymity moved into the backend boundary. Review rates the
-  rework **substantial**; the harness bump risks the suite and needs a dedicated environment.
-
-**4. Recommendation.** **Do not deploy yet.** Land this branch as a reviewed green foundation increment, but
-(a) hide/flag the onboarding banner+launcher and the AI config step until a follow-up wires them, and (b) require
-the prompt-anonymity boundary fix before any AI path is enabled. Open a focused follow-up (Plan 3.5 or fold into
-Plan 4) for: T9 harness bump in an isolated venv + entity `async_setup_entry`, wizard mounting, grandfathering,
-and the anonymity boundary. I did not do these here because they exceed "verify the gate" — they are the
-scope decision above plus work needing an environment I shouldn't provision unilaterally, and my integrator quota
-(claude-second) was nearly exhausted.
-
-**Next fresh launch:** the branch is idempotent — `git log 6b13ac4fc..HEAD` shows T1–T14 + the review fix all
-committed and pushed. A continuation would start from Martin's decision above, not by re-doing any task.
+- Plan 3.5 workers: claude (item 1), opus (items 2+3, item 5), minimax (item 4), opus (security review).
+  All delivered `rc=0`. Integrator: this session (claude, orchestrator role).
+- Isolated venv was **not** created and `/repos/oig-cloud/.venv` was **not** bumped — per the brief's
+  box-wide-risk fence; the live path is validated at deploy-verify instead.
