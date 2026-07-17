@@ -1117,3 +1117,16 @@ async def test_module_config_hybrid_data_source_mode_round_trips():
     )
     assert post_resp.status == 200
     assert entry.options["data_source_mode"] == "hybrid"
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_unset_extended_sensors_and_statistics_default_true():
+    """OQ-5: a legacy entry that never stored enable_extended_sensors or
+    enable_statistics must GET both as True (registry default), matching the flow."""
+    hass, entry = _make_hass_for_module_config("basicbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    response = await view.get(_module_config_request(hass, {}), "basicbox")
+    payload = json.loads(response.text)
+
+    assert payload["modules"]["enable_extended_sensors"] is True
+    assert payload["modules"]["enable_statistics"] is True

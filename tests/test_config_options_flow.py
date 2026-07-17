@@ -881,6 +881,29 @@ async def test_intervals_error_path_repopulates_user_values():
     assert keys["extended_scan_interval"].default() == 200
 
 
+@pytest.mark.asyncio
+async def test_intervals_schema_data_source_mode_excludes_hybrid():
+    """OQ-6: the registered enum carries 'hybrid' for REST round-tripping, but the
+    wizard/options UI must never offer it as a choice."""
+    entry = SimpleNamespace(
+        entry_id="entry1", data={CONF_USERNAME: "demo"}, options={}
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "intervals"
+    flow._step_history = ["init"]
+
+    result = await flow.async_step_wizard_intervals()
+    schema = result["data_schema"].schema
+    keys = {marker.schema: marker for marker in schema}
+    data_source_mode_selector = schema[keys["data_source_mode"]]
+    option_values = {
+        option["value"] for option in data_source_mode_selector.config["options"]
+    }
+    assert option_values == {"cloud_only", "local_only"}
+    assert "hybrid" not in option_values
+
+
 # --- Plan 2 Tasks 4-6 -------------------------------------------------------
 #
 # EMPTY_BASE_EXPECTED / FULL_BASE_EXPECTED are the parity contracts for
@@ -953,13 +976,14 @@ def test_build_base_options_uses_registry_defaults():
     """If registry defaults change, output must follow — guards against hard-coded literals returning."""
     basic = fields_for_section("basic")
     field = basic["standard_scan_interval"]
+    original = field.default
     # Temporarily patch the registry default
     object.__setattr__(field, "default", 99)
     try:
         payload = WizardMixin._build_base_options({})
         assert payload["standard_scan_interval"] == 99
     finally:
-        object.__setattr__(field, "default", 30)
+        object.__setattr__(field, "default", original)
 
 
 # --- Task 5: _build_options_payload base parity guard ----------------------
