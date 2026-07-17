@@ -123,8 +123,12 @@ _register(
     Field("enable_battery_prediction", "modules", bool, default=False),
     Field("enable_pricing", "modules", bool, default=False),
     Field("enable_boiler", "modules", bool, default=False),
-    Field("enable_statistics", "modules", bool, default=False),
-    Field("enable_extended_sensors", "modules", bool, default=False),
+    # OQ-5 resolution (PLAN2-RESOLUTIONS.md): defaults follow the flow and the
+    # live box (both True). Flipping these lets _build_base_options derive the
+    # values from the registry without changing emitted behaviour — an entry
+    # that never stored these keys still reads True on GET.
+    Field("enable_statistics", "modules", bool, default=True),
+    Field("enable_extended_sensors", "modules", bool, default=True),
     Field("enable_chmu_warnings", "modules", bool, default=False),
 )
 

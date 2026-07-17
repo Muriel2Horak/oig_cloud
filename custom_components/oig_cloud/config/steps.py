@@ -365,26 +365,37 @@ class WizardMixin:
 
     @staticmethod
     def _build_base_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "standard_scan_interval": wizard_data.get("standard_scan_interval", 30),
-            "extended_scan_interval": wizard_data.get("extended_scan_interval", 300),
-            "data_source_mode": WizardMixin._sanitize_data_source_mode(
-                wizard_data.get("data_source_mode", "cloud_only")
-            ),
-            "local_proxy_stale_minutes": wizard_data.get(
-                "local_proxy_stale_minutes", 10
-            ),
-            "local_event_debounce_ms": wizard_data.get("local_event_debounce_ms", 300),
-            "enable_statistics": wizard_data.get("enable_statistics", True),
-            "enable_solar_forecast": wizard_data.get("enable_solar_forecast", False),
-            "enable_battery_prediction": wizard_data.get(
-                "enable_battery_prediction", False
-            ),
-            "enable_pricing": wizard_data.get("enable_pricing", False),
-            "enable_extended_sensors": wizard_data.get("enable_extended_sensors", True),
-            "enable_chmu_warnings": wizard_data.get("enable_chmu_warnings", False),
-            "enable_dashboard": wizard_data.get("enable_dashboard", False),
-        }
+        """Build basic options from FIELD_REGISTRY.
+
+        All defaults are read from the registry — never hard-coded here — so a
+        change to a field's default in `config_registry.py` flows through to
+        emitted payloads, GET responses, and the options UI in lockstep.
+
+        `enable_boiler` is a registered `modules` field that this helper
+        deliberately does NOT emit: a save that wrote it would change the
+        payload shape. Boiler is handled by `_build_boiler_options`.
+        """
+        basic = fields_for_section("basic")
+        modules = fields_for_section("modules")
+
+        options: Dict[str, Any] = {}
+        for key, field in basic.items():
+            value = wizard_data.get(key, field.default)
+            if key == "data_source_mode":
+                value = WizardMixin._sanitize_data_source_mode(value)
+            options[key] = value
+
+        for key in (
+            "enable_solar_forecast",
+            "enable_battery_prediction",
+            "enable_pricing",
+            "enable_chmu_warnings",
+            "enable_statistics",
+            "enable_extended_sensors",
+        ):
+            options[key] = wizard_data.get(key, modules[key].default)
+
+        return options
 
     @staticmethod
     def _build_solar_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -3400,6 +3411,16 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             )
             self._options_read_ok = False
             backend_options = {}
+
+        # Pre-seed basic keys into the snapshot so that registry defaults are not
+        # treated as user deltas for keys that predate the registry. Without this,
+        # a save after a concurrent REST write that introduced a basic key would
+        # overwrite the new value with the registry default. (Plan 2 Task 6 — only
+        # the basic section is protected here; battery/min_capacity mirror pairs
+        # remain for Plan 3/4.)
+        basic_fields = fields_for_section("basic")
+        for key, field in basic_fields.items():
+            backend_options.setdefault(key, field.default)
 
         frontend_pricing = {}
         try:

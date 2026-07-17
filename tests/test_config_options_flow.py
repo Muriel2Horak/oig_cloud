@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from custom_components.oig_cloud.config.steps import OigCloudOptionsFlowHandler
+from custom_components.oig_cloud.config.steps import OigCloudOptionsFlowHandler, WizardMixin
 from custom_components.oig_cloud.config_registry import fields_for_section
 from custom_components.oig_cloud.const import CONF_USERNAME
 
@@ -879,3 +879,151 @@ async def test_intervals_error_path_repopulates_user_values():
     assert keys["data_source_mode"].default() == "local_only"
     # the rejected value is echoed back so the user can correct it, not silently reset
     assert keys["extended_scan_interval"].default() == 200
+
+
+# --- Plan 2 Tasks 4-6 -------------------------------------------------------
+#
+# EMPTY_BASE_EXPECTED / FULL_BASE_EXPECTED are the parity contracts for
+# _build_base_options and _build_options_payload. Registry defaults drive the
+# values, so the constants MUST stay aligned with the FIELD_REGISTRY entries
+# in config_registry.py (see OQ-5 resolution: enable_statistics /
+# enable_extended_sensors are True).
+
+
+EMPTY_BASE_EXPECTED = {
+    "standard_scan_interval": 30,
+    "extended_scan_interval": 300,
+    "data_source_mode": "cloud_only",
+    "local_proxy_stale_minutes": 10,
+    "local_event_debounce_ms": 300,
+    "enable_statistics": True,
+    "enable_solar_forecast": False,
+    "enable_battery_prediction": False,
+    "enable_pricing": False,
+    "enable_extended_sensors": True,
+    "enable_chmu_warnings": False,
+    "enable_dashboard": False,
+}
+
+FULL_BASE_EXPECTED = {
+    **EMPTY_BASE_EXPECTED,
+    "standard_scan_interval": 45,
+    "extended_scan_interval": 600,
+    "data_source_mode": "local_only",
+    "local_proxy_stale_minutes": 5,
+    "local_event_debounce_ms": 100,
+    "enable_statistics": False,
+    "enable_solar_forecast": True,
+    "enable_battery_prediction": True,
+    "enable_pricing": True,
+    "enable_extended_sensors": False,
+    "enable_chmu_warnings": True,
+    "enable_dashboard": True,
+}
+
+
+def test_build_base_options_empty_parity():
+    assert WizardMixin._build_base_options({}) == EMPTY_BASE_EXPECTED
+
+
+def test_build_base_options_full_parity():
+    assert WizardMixin._build_base_options({
+        "standard_scan_interval": 45,
+        "extended_scan_interval": 600,
+        "data_source_mode": "local_only",
+        "local_proxy_stale_minutes": 5,
+        "local_event_debounce_ms": 100,
+        "enable_statistics": False,
+        "enable_solar_forecast": True,
+        "enable_battery_prediction": True,
+        "enable_pricing": True,
+        "enable_extended_sensors": False,
+        "enable_chmu_warnings": True,
+        "enable_dashboard": True,
+    }) == FULL_BASE_EXPECTED
+
+
+def test_build_base_options_hybrid_maps_to_local_only():
+    """Legacy stored 'hybrid' must not be emitted in the payload."""
+    payload = WizardMixin._build_base_options({"data_source_mode": "hybrid"})
+    assert payload["data_source_mode"] == "local_only"
+
+
+def test_build_base_options_uses_registry_defaults():
+    """If registry defaults change, output must follow — guards against hard-coded literals returning."""
+    basic = fields_for_section("basic")
+    field = basic["standard_scan_interval"]
+    # Temporarily patch the registry default
+    object.__setattr__(field, "default", 99)
+    try:
+        payload = WizardMixin._build_base_options({})
+        assert payload["standard_scan_interval"] == 99
+    finally:
+        object.__setattr__(field, "default", 30)
+
+
+# --- Task 5: _build_options_payload base parity guard ----------------------
+
+
+def test_build_options_payload_base_parity():
+    """_build_options_payload must include the same base keys as before."""
+    entry = SimpleNamespace(entry_id="entry1", data={CONF_USERNAME: "demo"}, options={})
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    payload = flow._build_options_payload({})
+    for key in EMPTY_BASE_EXPECTED:
+        assert payload[key] == EMPTY_BASE_EXPECTED[key]
+
+
+# --- Task 6: mirror-exclusion + sparse-write regression --------------------
+
+
+def test_build_base_options_excludes_battery_mirror_keys():
+    """Basic payload must never emit battery/solar/pricing keys — those belong to other builders."""
+    payload = WizardMixin._build_base_options({})
+    assert "charge_rate_kw" not in payload
+    assert "home_charge_rate" not in payload
+    assert "min_capacity_percent" not in payload
+    assert "planning_min_percent" not in payload
+    assert "spot_pricing_model" not in payload
+    assert "boiler_volume_l" not in payload
+
+
+@pytest.mark.asyncio
+async def test_options_flow_save_does_not_restore_stale_basic_defaults():
+    """REGRESSION for the sparse-mirror bug class applied to basic fields.
+
+    If a basic key is absent from entry.options at flow open but was set by a
+    concurrent REST write, saving an unrelated options section must not
+    overwrite it with a registry default.
+    """
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={"standard_scan_interval": 30},  # no extended_scan_interval
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    # Simulate a concurrent REST write adding the missing key
+    entry.options = {
+        **entry.options,
+        "extended_scan_interval": 900,
+    }
+
+    flow._wizard_data["standard_scan_interval"] = 60
+    flow._wizard_data["data_source_mode"] = "cloud_only"
+    flow._wizard_data["local_proxy_stale_minutes"] = 10
+    flow._wizard_data["local_event_debounce_ms"] = 300
+    flow._wizard_data["enable_dashboard"] = False
+
+    # Only standard_scan_interval changed; extended_scan_interval is absent
+    # from entry.options at open but is conceptually present via registry default.
+    # It must NOT be treated as a user delta.
+    result = await flow.async_step_wizard_summary({})
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["standard_scan_interval"] == 60
+    assert options["extended_scan_interval"] == 900

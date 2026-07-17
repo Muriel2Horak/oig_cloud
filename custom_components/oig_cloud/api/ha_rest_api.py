@@ -1079,8 +1079,10 @@ _MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "enable_battery_prediction": {"type": bool},
         "enable_pricing": {"type": bool},
         "enable_boiler": {"type": bool},
-        "enable_statistics": {"type": bool},
-        "enable_extended_sensors": {"type": bool},
+        # OQ-5 (PLAN2-RESOLUTIONS.md): default True so an entry that never
+        # stored these reads True on GET — parity with the registry defaults.
+        "enable_statistics": {"type": bool, "default": True},
+        "enable_extended_sensors": {"type": bool, "default": True},
         "enable_chmu_warnings": {"type": bool},
     },
     "battery": {
