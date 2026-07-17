@@ -46,6 +46,10 @@ export interface FieldDef {
   optional?: boolean;
   /** Entity picker metadata — if present, renders entity picker instead of text input */
   entity?: { domain: string };
+  /** Registry-driven conditional visibility (UX-AUDIT U1). */
+  showIf?: { field: string; in: unknown[] };
+  /** Registry `secret` flag — replaces the endsWith('api_key') sniff at :627. */
+  secret?: boolean;
 }
 
 /**
