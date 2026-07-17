@@ -24,6 +24,13 @@ import {
   SettingsSection,
 } from '@/data/settings-data';
 import {
+  loadFieldRegistry,
+  fieldsFromRegistry,
+  isVisible,
+  FieldRegistry,
+} from '@/data/registry-data';
+import { oigLog } from '@/core/logger';
+import {
   buildEntityCatalog,
   EntityEntry,
 } from '@/ui/components/entity-picker';
@@ -217,6 +224,8 @@ export class OigSettings extends LitElement {
   @property({ attribute: false }) hassStates: Record<string, any> | null = null;
 
   @state() private config: ModuleConfig | null = null;
+  /** Registry snapshot from GET /config_registry — null while loading or on 404. */
+  @state() private registry: FieldRegistry | null = null;
   @state() private loading = true;
   /** Pending (edited, unsaved) values per section. */
   @state() private pending: Record<string, Record<string, unknown>> = {};
@@ -466,9 +475,42 @@ export class OigSettings extends LitElement {
 
   private async refresh(): Promise<void> {
     this.loading = true;
-    this.config = await loadModuleConfig();
+    // Load config + registry in parallel — both endpoints may 404 in the same
+    // reload window after a save on a RELOAD_SECTIONS (see
+    // settings-data.ts:waitForModuleConfigAfterReload).
+    const [config, registry] = await Promise.all([
+      loadModuleConfig(),
+      loadFieldRegistry(),
+    ]);
+    if (registry === null && this.registry === null) {
+      // First observed null — log once. Plan 4 drops the fallback and this
+      // warning fires permanently for backends that don't expose the registry.
+      oigLog.warn('[Settings] /config_registry unavailable — using static field fallback');
+    } else if (registry === null && this.registry !== null) {
+      // Was loaded, now missing — typical reload window. Don't spam.
+      oigLog.warn('[Settings] /config_registry returned null — falling back to static fields for this render');
+    }
+    this.registry = registry;
+    this.config = config;
     this.pending = {};
     this.loading = false;
+  }
+
+  /**
+   * Resolve the field list for a section.
+   *
+   * Registry drives when present; falls back to the static lists (kept until
+   * Plan 4 deletes them) when the backend returns null — old integration or
+   * 404 during the post-save reload window.
+   */
+  private fieldsFor(section: SettingsSection): FieldDef[] {
+    if (this.registry) {
+      return fieldsFromRegistry(this.registry, section);
+    }
+    if (section === 'modules') return MODULE_FIELDS;
+    if (section === 'battery') return BATTERY_FIELDS;
+    if (section === 'solar') return SOLAR_FIELDS;
+    return BOILER_FIELDS_ALL;  // renderBoilerCard picks fields manually; this is a safety net.
   }
 
   private current(section: SettingsSection, key: string): unknown {
@@ -645,11 +687,15 @@ export class OigSettings extends LitElement {
   private renderCard(section: SettingsSection, title: string, sub: string, fields: FieldDef[]) {
     const toast = this.toast?.section === section ? this.toast : null;
     const dirty = this.isDirty(section);
+    // U1: showIf filtering. `current()` prefers pending over saved, so the
+    // reveal happens on the *pending* provider value the instant the select
+    // changes — matches the UX-AUDIT U1 fix.
+    const visible = fields.filter((f) => isVisible(f, (k) => this.current(section, k)));
     return html`
       <div class="card">
         <h2>${title}</h2>
         <div class="sub">${sub}</div>
-        ${fields.map((f) => this.renderField(section, f))}
+        ${visible.map((f) => this.renderField(section, f))}
         <div class="actions">
           <button class="save" ?disabled=${!dirty || this.saving === section}
             @click=${() => this.save(section)}>
@@ -832,9 +878,9 @@ export class OigSettings extends LitElement {
 
     return html`
       <div class="grid">
-        ${this.renderCard('modules', '🧩 Moduly', 'Zapnutí modulu přidá senzory a záložky; konfigurace níže.', MODULE_FIELDS)}
-        ${this.renderCard('battery', '🔋 Baterie a plánovač', 'Parametry ekonomického plánovače a balancování.', BATTERY_FIELDS)}
-        ${this.renderCard('solar', '☀️ Solární předpověď', 'Poskytovatel a geometrie stringů.', SOLAR_FIELDS)}
+        ${this.renderCard('modules', '🧩 Moduly', 'Zapnutí modulu přidá senzory a záložky; konfigurace níže.', this.fieldsFor('modules'))}
+        ${this.renderCard('battery', '🔋 Baterie a plánovač', 'Parametry ekonomického plánovače a balancování.', this.fieldsFor('battery'))}
+        ${this.renderCard('solar', '☀️ Solární předpověď', 'Poskytovatel a geometrie stringů.', this.fieldsFor('solar'))}
         ${this.renderBoilerCard()}
       </div>
     `;
