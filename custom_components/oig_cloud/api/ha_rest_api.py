@@ -1430,10 +1430,12 @@ class OIGCloudOnboardingView(HomeAssistantView):
     SCOPE-REVISION #6: onboarding is a SOFT guide — there is NO ``locked`` concept and
     nothing here may imply one. A user sees a banner, never a wall.
 
-    GET  -> the versioned onboarding state (steps/timestamps/provider). Never a key,
-            never a gate concept.
+    GET  -> the versioned onboarding state (steps/timestamps/provider +
+            ``grandfathered``, derived from the entry's solar options). Never a
+            key, never a gate concept.
     POST -> {"step": "ai|solar|pricing"} marks a step done (independent, no ordering);
-            {"provider": "<name>"} records the chosen AI provider. Both optional.
+            add {"action": "skip"} (or "status") to record a skip instead;
+            {"provider": "<name>"} records the chosen AI provider. All optional.
             Fails closed (403 for non-admin) — mirrors OIGCloudAiView._require_admin.
     """
 
@@ -1459,7 +1461,9 @@ class OIGCloudOnboardingView(HomeAssistantView):
         entry = _find_entry_for_box(hass, box_id)
         if not entry:
             return web.json_response({"error": "Box not found"}, status=404)
-        state = await OnboardingState(hass, entry.entry_id).async_get()
+        # Pass the entry's options so ``grandfathered`` is REAL (derived from the
+        # already-chosen solar provider + keys), never hard-coded (#6 / D11).
+        state = await OnboardingState(hass, entry.entry_id, entry.options).async_get()
         return web.json_response(state)
 
     async def post(self, request: web.Request, box_id: str) -> web.Response:
@@ -1478,13 +1482,21 @@ class OIGCloudOnboardingView(HomeAssistantView):
         if not isinstance(payload, dict):
             return web.json_response({"error": "Invalid payload"}, status=400)
 
-        ob = OnboardingState(hass, entry.entry_id)
+        ob = OnboardingState(hass, entry.entry_id, entry.options)
         step = payload.get("step")
         provider = payload.get("provider")
+        # Action routes a skip vs a completion. Accept "action" or "status" for
+        # FE flexibility; anything that is not an explicit skip completes the step
+        # (soft guide — no lock; #5/#6). "complete_step" (the FE's complete verb)
+        # and the default both mean done.
+        action = payload.get("action") or payload.get("status")
         if step is not None:
             if not isinstance(step, str) or step not in ONBOARDING_STEPS:
                 return web.json_response({"error": "unknown step"}, status=400)
-            await ob.async_complete_step(step)
+            if isinstance(action, str) and action.strip().lower() in ("skip", "skipped"):
+                await ob.async_skip_step(step)
+            else:
+                await ob.async_complete_step(step)
         if provider is not None:
             if not isinstance(provider, str) or not provider.strip():
                 return web.json_response(

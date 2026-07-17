@@ -63,6 +63,56 @@ async def test_steps_are_independent_no_ordering_enforced(store):
     assert state["steps"]["ai"] == "pending"
 
 
+@pytest.mark.asyncio
+async def test_skipping_a_step_stamps_it_skipped(store):
+    """#5: every step is skippable — a skip persists status 'skipped' + a timestamp."""
+    await store.async_skip_step("pricing")
+    state = await store.async_get()
+    assert state["steps"]["pricing"] == "skipped"
+    assert state["timestamps"]["pricing"]
+
+
+@pytest.mark.asyncio
+async def test_skip_unknown_step_raises(store):
+    with pytest.raises(ValueError):
+        await store.async_skip_step("nope")
+
+
+@pytest.mark.asyncio
+async def test_skip_and_complete_are_independent(store):
+    await store.async_skip_step("ai")
+    await store.async_complete_step("solar")
+    state = await store.async_get()
+    assert state["steps"]["ai"] == "skipped"
+    assert state["steps"]["solar"] == "done"
+    assert state["steps"]["pricing"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_async_get_carries_grandfathered_false_without_solar_options(store):
+    """No solar provider/keys → not grandfathered (the fixture passes no options)."""
+    state = await store.async_get()
+    assert state["grandfathered"] is False
+
+
+@pytest.mark.asyncio
+async def test_async_get_carries_grandfathered_true_from_options(monkeypatch):
+    """Solar provider + keys in the entry options → grandfathered True in the state."""
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.onboarding.state.Store", _MemStore)
+    ob = OnboardingState(
+        SimpleNamespace(),
+        "entry2",
+        {"solar_forecast_provider": "solcast",
+         "solcast_api_key": "k", "solcast_site_id": "s"},
+    )
+    state = await ob.async_get()
+    assert state["grandfathered"] is True
+    # Still a soft guide — no lock/gate concept leaks in alongside the flag.
+    for banned in ("locked", "gate", "dashboard_locked", "complete_required"):
+        assert banned not in state
+
+
 def test_configured_entry_is_grandfathered_not_gated():
     """D11 as narrowed by #6: an existing user sees a banner, never a wall."""
     assert is_grandfathered({"solar_forecast_provider": "solcast",

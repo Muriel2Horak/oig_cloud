@@ -32,6 +32,7 @@ import { STEP_SOLAR } from './step-solar';
 import { STEP_PRICING } from './step-pricing';
 import {
   loadOnboardingState,
+  skipOnboardingStep,
   verifyAiKey,
   type OnboardingState,
   type OnboardingStepId,
@@ -52,6 +53,7 @@ export {
 export {
   loadOnboardingState,
   completeOnboardingStep,
+  skipOnboardingStep,
   verifyAiKey,
   isOnboardingDone,
   isAiStepResolved,
@@ -423,8 +425,24 @@ export class OigOnboardingWizard extends LitElement {
     this.currentStep = WIZARD_STEPS[i - 1];
   }
 
-  /** Přeskočit — advances to the next step. Always permitted (#5: every step skippable). */
-  private skip(): void {
+  /**
+   * Přeskočit — persist a skip for the current step, then advance. Always
+   * permitted (#5: every step skippable). The persist is best-effort: a network
+   * failure must never trap the user (soft guide — #6), so we advance regardless
+   * and let the dashboard refresh reconcile state on close.
+   */
+  private async skip(): Promise<void> {
+    if (this.inverterSn) {
+      try {
+        await skipOnboardingStep(this.inverterSn, this.currentStep);
+        this.dispatchEvent(new CustomEvent('onboarding-changed', {
+          bubbles: true,
+          composed: true,
+        }));
+      } catch {
+        // Soft guide: a failed skip must not wall the user — advance anyway.
+      }
+    }
     this.goNext();
   }
 

@@ -44,6 +44,13 @@ export interface OnboardingState {
   steps: Record<OnboardingStepId, OnboardingStepStatus>;
   timestamps: Partial<Record<OnboardingStepId, string>>;
   provider: string | null;
+  /**
+   * True when the entry was already configured (solar provider + keys) before
+   * onboarding existed — such a user is shown NO banner (SCOPE-REVISION #6 /
+   * D11: banner-not-wall, and a grandfathered entry gets neither). Derived
+   * server-side from the config-entry options.
+   */
+  grandfathered: boolean;
 }
 
 /**
@@ -72,6 +79,7 @@ export const EMPTY_ONBOARDING_STATE: OnboardingState = {
   steps: { ai: 'pending', solar: 'pending', pricing: 'pending' },
   timestamps: {},
   provider: null,
+  grandfathered: false,
 };
 
 // ============================================================================
@@ -102,6 +110,24 @@ export async function completeOnboardingStep(
   return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
     method: 'POST',
     body: JSON.stringify({ action: 'complete_step', step }),
+  });
+}
+
+/**
+ * Mark a step skipped (#5: every step is skippable — a skip is a user choice,
+ * not a lock). Posts `{action: 'skip', step}`; the backend routes it to
+ * `async_skip_step` and persists status `'skipped'`. Throws on unknown step id.
+ */
+export async function skipOnboardingStep(
+  inverterSn: string,
+  step: OnboardingStepId,
+): Promise<OnboardingState | null> {
+  if (!ONBOARDING_STEPS.includes(step)) {
+    throw new Error(`unknown onboarding step: ${step}`);
+  }
+  return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'skip', step }),
   });
 }
 

@@ -62,10 +62,16 @@ def is_grandfathered(options: Optional[Mapping[str, Any]]) -> bool:
 class OnboardingState:
     """Versioned soft-guide onboarding state over the private Store."""
 
-    def __init__(self, hass: Any, entry_id: str) -> None:
+    def __init__(
+        self, hass: Any, entry_id: str, options: Optional[Mapping[str, Any]] = None
+    ) -> None:
         self._store: Store = Store(
             hass, SCHEMA_VERSION, f"oig_cloud.onboarding_{entry_id}", private=True
         )
+        # The config-entry options are the source of truth for ``grandfathered``
+        # (#6 / D11): a user who already chose a solar provider + keys is shown a
+        # banner, never a wall. None → not grandfathered (is_grandfathered guards).
+        self._options: Optional[Mapping[str, Any]] = options
         self._data: Optional[Dict[str, Any]] = None
 
     async def _async_data(self) -> Dict[str, Any]:
@@ -77,6 +83,11 @@ class OnboardingState:
                 self._data = loaded
             else:
                 self._data = _fresh_state()
+            # ``grandfathered`` is DERIVED from the live config-entry options and
+            # recomputed on every load so it can never go stale (a user who later
+            # removes their solar keys stops being grandfathered). It is not a
+            # lock/gate — only whether to suppress the soft banner (#6).
+            self._data["grandfathered"] = is_grandfathered(self._options)
         return self._data
 
     async def async_get(self) -> Dict[str, Any]:
@@ -92,6 +103,21 @@ class OnboardingState:
         data["timestamps"][step] = dt_util.utcnow().isoformat()
         await self._store.async_save(data)
         _LOGGER.debug("Onboarding step '%s' completed for entry", step)
+        return data
+
+    async def async_skip_step(self, step: str) -> Dict[str, Any]:
+        """Mark ``step`` skipped and stamp its timestamp (#5: every step skippable).
+
+        Mirrors ``async_complete_step`` but records status ``"skipped"`` — a skip
+        is a terminal, user-chosen outcome, not a lock. Steps stay independent.
+        """
+        if step not in ONBOARDING_STEPS:
+            raise ValueError(f"unknown onboarding step: {step!r}")
+        data = await self._async_data()
+        data["steps"][step] = "skipped"
+        data["timestamps"][step] = dt_util.utcnow().isoformat()
+        await self._store.async_save(data)
+        _LOGGER.debug("Onboarding step '%s' skipped for entry", step)
         return data
 
     async def async_set_provider(self, provider: str) -> Dict[str, Any]:
