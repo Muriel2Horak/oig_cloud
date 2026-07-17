@@ -26,6 +26,7 @@ import {
 import { oigLog } from '@/core/logger';
 import { throttle, withRetry } from '@/utils/format';
 import { shieldController } from '@/data/shield-controller';
+import { loadOnboardingState } from '@/ui/features/onboarding/onboarding-data';
 
 import '@/ui/components/header';
 import '@/ui/components/theme-provider';
@@ -43,6 +44,7 @@ import '@/ui/features/timeline';
 import '@/ui/features/tiles';
 import '@/ui/features/tiles/icon-picker';
 import '@/ui/features/tiles/tile-dialog';
+import '@/ui/features/onboarding/banner';
 
 const u = unsafeCSS;
 
@@ -61,6 +63,7 @@ const DEFAULT_TABS: Tab[] = [
 @customElement('oig-app')
 export class OigApp extends LitElement {
   @property({ type: Object }) hass: any = null;
+  @property({ attribute: false }) onboarding: any = null;
   @state() private loading = true;
   @state() private error: string | null = null;
   @state() private activeTab = 'flow';
@@ -662,6 +665,7 @@ export class OigApp extends LitElement {
       this.loadBoilerDataAsync();
       this.loadAnalyticsAsync();
       this.loadTilesAsync();
+      void this.loadOnboarding();
       // R7: load box_has_home56 from module_config (best-effort, no throw)
       this.loadBoxHasHome56();
 
@@ -872,6 +876,14 @@ export class OigApp extends LitElement {
     }
   }
 
+  private async loadOnboarding(): Promise<void> {
+    try {
+      this.onboarding = await loadOnboardingState(INVERTER_SN);
+    } catch {
+      this.onboarding = null;
+    }
+  }
+
   /** R7: load box_has_home56 from module_config boiler section (best-effort). */
   private async loadBoxHasHome56(): Promise<void> {
     try {
@@ -951,6 +963,14 @@ export class OigApp extends LitElement {
 
   private onTabChange(e: CustomEvent): void {
     this.activeTab = e.detail.tabId;
+  }
+
+  private onLaunchOnboarding(e: Event): void {
+    e.stopPropagation();
+    this.dispatchEvent(new CustomEvent('launch-onboarding', {
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   private onGridChargingOpen(): void {
@@ -1275,6 +1295,9 @@ export class OigApp extends LitElement {
     }
 
     const chmuAlertCount = this.chmuData.effectiveSeverity > 0 ? this.chmuData.warningsCount : 0;
+    const showOnboardingBanner = this.onboarding
+      && !this.onboarding.grandfathered
+      && Object.values(this.onboarding.steps).some((step) => step !== 'done');
 
     return html`
       <oig-theme-provider>
@@ -1299,6 +1322,12 @@ export class OigApp extends LitElement {
         ></oig-tabs>
 
         <main>
+          ${showOnboardingBanner ? html`
+            <oig-onboarding-banner
+              role="status"
+              @launch-onboarding=${this.onLaunchOnboarding}
+            ></oig-onboarding-banner>
+          ` : nothing}
           <oig-grid .editable=${this.editMode}>
             <!-- ===== FLOW TAB ===== -->
             <div class="tab-content ${this.activeTab === 'flow' ? 'active' : ''}">
@@ -1395,7 +1424,12 @@ export class OigApp extends LitElement {
 
              <!-- ===== SETTINGS TAB ===== -->
              <div class="tab-content ${this.activeTab === 'settings' ? 'active' : ''}">
-               ${this.activeTab === 'settings' ? html`<oig-settings .hassStates=${this.hass?.states ?? null}></oig-settings>` : nothing}
+               ${this.activeTab === 'settings' ? html`
+                 <oig-settings
+                   .hassStates=${this.hass?.states ?? null}
+                   @launch-onboarding=${this.onLaunchOnboarding}
+                 ></oig-settings>
+               ` : nothing}
              </div>
           </oig-grid>
         </main>

@@ -239,6 +239,37 @@ export class OigSettings extends LitElement {
   static styles = css`
     :host { display: block; }
 
+    .onboarding-launcher {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      padding: 12px 16px;
+      border: 1px solid ${u(CSS_VARS.divider)};
+      border-radius: 12px;
+      background: ${u(CSS_VARS.cardBg)};
+      color: ${u(CSS_VARS.textPrimary)};
+      box-shadow: ${u(CSS_VARS.cardShadow)};
+    }
+
+    .onboarding-launcher span {
+      font-size: 12.5px;
+      color: ${u(CSS_VARS.textSecondary)};
+    }
+
+    .onboarding-launcher button {
+      flex-shrink: 0;
+      border: none;
+      border-radius: 8px;
+      padding: 7px 12px;
+      background: ${u(CSS_VARS.accent)};
+      color: #fff;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -462,6 +493,13 @@ export class OigSettings extends LitElement {
     }
     button.discard:hover { border-color: ${u(CSS_VARS.textSecondary)}; }
   `;
+
+  private launchOnboarding(): void {
+    this.dispatchEvent(new CustomEvent('launch-onboarding', {
+      bubbles: true,
+      composed: true,
+    }));
+  }
 
   connectedCallback(): void {
     super.connectedCallback();
@@ -875,12 +913,24 @@ export class OigSettings extends LitElement {
   }
 
   render() {
-    if (this.loading) return html`<div class="loading">Načítání nastavení…</div>`;
+    const launcher = html`
+      <div class="onboarding-launcher">
+        <span>Průvodce lze kdykoli znovu otevřít a upravit jednotlivé kroky.</span>
+        <button
+          type="button"
+          data-testid="launch-onboarding"
+          @click=${this.launchOnboarding}
+        >Spustit průvodce nastavením</button>
+      </div>
+    `;
+
+    if (this.loading) return html`${launcher}<div class="loading">Načítání nastavení…</div>`;
     if (!this.config) {
-      return html`<div class="loading">Nastavení se nepodařilo načíst (vyžaduje administrátorský účet).</div>`;
+      return html`${launcher}<div class="loading">Nastavení se nepodařilo načíst (vyžaduje administrátorský účet).</div>`;
     }
 
     return html`
+      ${launcher}
       <div class="grid">
         ${this.renderCard('modules', '🧩 Moduly', 'Zapnutí modulu přidá senzory a záložky; konfigurace níže.', this.fieldsFor('modules'))}
         ${this.renderCard('battery', '🔋 Baterie a plánovač', 'Parametry ekonomického plánovače a balancování.', this.fieldsFor('battery'))}
