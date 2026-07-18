@@ -313,3 +313,81 @@ stay in the original, in quotes (enforced by `brief-lint`).
 
 ### R7 rejected findings
 - **No findings rejected in this round.**
+
+## R8 — Round-3 closeout (2026-07-18)
+
+### R8.1 — Replace reversed Step-2/Step-3 falsifiers (replaces R7.7/R7.8; closes R7-AS-NEW-1, AS-13, AS-14, AKEY-R7-001)
+- **Supersession statement:** `R8.1` replaces both falsifiers in `R7.7` and `R7.8` with positive remount assertions.
+- **Binding requirement (R7.7):** on remount, Step-2 persistence MUST include non-secret solar fields from `fieldsFromRegistry(registry, 'solar')` (`solar_forecast_provider`, `solar_forecast_mode`, `solar_forecast_latitude`, `solar_forecast_longitude`, active-string keys, and `solcast_*` conditional fields where applicable). Secret fields MUST NOT be returned or prefilled in UI.
+- **Binding requirement (secret remount behavior):** remount may expose only `*_set` booleans for credential fields and blank password controls with a `"configured"` placeholder; raw secret text must not be rendered.
+- **Binding requirement (R7.8):** on remount, Step-3 persistence MUST include `fieldsFromRegistry(registry, 'pricing')` outputs (distributor, tariff, confirmed-price family) and remain visible in rendered controls.
+- **Binding requirement:** after successful Step-2 and Step-3 save, `/api/oig_cloud/{box}/onboarding` payload must include required status/timestamps + non-secret payload fields and must exclude raw `solar_forecast_api_key` and `solcast_api_key`.
+- **Observable user outcome:** a user can save Step-2/Step-3 values in production onboarding, reopen through the live launch action, and continue with pre-filled non-secret values present.
+- **Falsifier (seeded, must fail on stub implementation):**
+  - seed `solar_forecast_api_key="fs_secret_123456789"`, `solcast_api_key="sc_secret_123456789"`, plus non-secret Step-2 values, save Step-2, remount via launch path, and assert the secret strings are absent from DOM, `entry.options`, `/onboarding` request/response, and saved draft state; seeded non-secret values are present.
+  - seed pricing fields plus distributor + tariff, save Step-3, remount via launch path, and assert seeded pricing values are present; missing values fail the clause.
+  - assert the first occurrence of any secret value in rendered `<oig-onboarding-wizard>` content triggers a failure.
+- **Binding point:** `custom_components/oig_cloud/www_v2/src/ui/app.ts` (`<oig-app>` route mount), `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/index.ts` (`<oig-onboarding-wizard>`, `[data-testid="wizard-steps"]`, `button[data-step="solar"]`, `button[data-step="pricing"]`, `[data-testid="wizard-content"]`), `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/onboarding-data.ts` (`/onboarding` GET/POST).
+
+### R8.2 — Production onboarding launch is mandatory (closes CRITICAL 2, AS-7, AS-21, AS-5)
+- **Binding requirement:** AK-1 through AK-4 must be tested only through `oig-app` production mount + real launch event, not via isolated fixture.
+- **Binding requirement:** launch entry points are: `<oig-onboarding-banner>` in `oig-app` or `<oig-settings>` button `[data-testid="launch-onboarding"]`, and route assertion must require `<oig-onboarding-wizard>` with `open` transition in the same production DOM.
+- **Observable user outcome:** replacing launch implementation with a static settings-link/empty screen leaves the clause failing because `<oig-onboarding-wizard>` is not mounted and Step-2/Step-3 controls are not reachable via wizard nav.
+- **Falsification:** assert `<oig-onboarding-banner>` is absent only for grandfathered users; for pending state users, dispatching `launch-onboarding` must open `<oig-onboarding-wizard>` and expose wizard step nav + `[data-testid="wizard-content"]`.
+- **Binding point:** `custom_components/oig_cloud/www_v2/src/ui/app.ts` (mount route), `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/index.ts` (wizard shell), `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/banner.ts` (banner trigger path).
+
+### R8.3 — Warning surface and route selector are explicitly production-only
+- **Binding requirement:** AK-4 and AS-5 assertions must reference production selectors in `oig-app`: `oig-onboarding-banner`, `oig-tabs` presence, and open dashboard content under `<main>`.
+- **Observable user outcome:** a test cannot claim warning coverage without validating visibility and recovery action on a real dashboard route (or explicit grandfathered exception).
+- **Falsification:** if warning coverage is asserted only from mock component paths or settings-only cards, clause fails.
+- **Binding point:** `custom_components/oig_cloud/www_v2/src/ui/app.ts` + `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/banner.ts`.
+
+### R8.4 — Brief-lint command/path is explicit (closes AS-22 via SHIPPED-CODE)
+- **Route:** routed to `spec-critique/SHIPPED-CODE-DEFECTS.md` for implementation (no runnable entry point exists in this round).
+- **Owner:** `operator / merge-guard maintainer`.
+- **Binding requirement:** CI/verification command and path are required in one place and must fail if the brief language rule is violated.
+- **Fallback action:** this round records `AS-22` as SHIPPED-CODE with a hard requirement to add a runnable lint step and CI call.
+
+### R8.5 — Task-5 warning follow-up ownership closes AS-11
+- **Binding requirement:** `Task-5 warning coverage` has explicit owner, follow-up plan, acceptance-test name, and production surface.
+- **Required fields to bind:**
+  - Owner: `Round-3 implementation lead`
+  - Task: `Task-5 warning coverage`
+  - Follow-up plan: add/repair warning recovery-path production test and link to AK-5
+  - Acceptance test name: `onboarding-warning-recovery.spec.ts`
+- **Observable user outcome:** task has owner and acceptance name in docs before merge; missing values fail clause.
+- **Binding point:** `docs/redesign_2026_07/IMPLEMENTATION-BRIEF-EN.md` §7 (R7 mapping) and `SCOPE-REVISION.md` lines naming this task.
+
+### R8.6 — Stale rule precedence and deterministic clock injection (closes AS-15)
+- **Binding requirement:** `R4` "newest snapshot older than one year" text is superseded for onboarding warning by `R7.6` + `snapshot.valid_from.year < current_year`.
+- **Binding requirement:** tests must inject clock via explicit override path (timezone-aware now provider) and assert determinism for 2026 vs 2025 snapshots.
+- **Observable user outcome:** one-year boundary behavior is stable regardless of locale offset, and no contradictory year checks remain.
+- **Falsification:** with fixed clock `2026-06-15T00:00:00Z`, fixture with `valid_from=2026-01-01` must hide stale warning and fixture `2025-12-01` must show it.
+- **Binding point:** `SCOPE-REVISION.md:R7.6`, `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/index.ts` warning/step rendering path.
+
+### R8.7 — Exact credential store names and teardown semantics (closes AKEY-R7-002)
+- **Binding requirement:** solar AI and solar credential stores MUST be exact:
+  - `oig_cloud.ai_<entry_id>` for AI store
+  - `oig_cloud.solar_<entry_id>` for solar store
+  and both MUST be created with `private=True`.
+- **Binding requirement:** clear, provider-switch, and entry removal MUST delete both stores; neither store may collide with `oig_cloud.migration_backup_<entry_id>`.
+- **Observable user outcome:** stale credentials cannot be recovered from backup/collision paths after clear/switch/remove.
+- **Falsification:** monkeypatch store construction for both stores, seed keys in each, call clear/provider-switch/remove, then assert exact private store keys are deleted and migration backup key-space has no secret.
+- **Binding point:** backend Store construction paths in `custom_components/oig_cloud/ai/key_store.py`, `custom_components/oig_cloud/config/steps.py`, `custom_components/oig_cloud/onboarding/state.py`.
+
+### R8.8 — `solcast_site_id` classification is fixed (closes AKEY-R7-003)
+- **Binding requirement:** `solcast_site_id` is classified as sensitive account/site identifier.
+- **Binding requirement:** it follows the same secrecy lifecycle as solar secret fields (`private=True` storage, redact in `/solar_test` user-facing payloads, exclusion from AI prompt collector, diagnostics, logs, and raw request URLs).
+- **Observable user outcome:** no user-facing UI text, prompt collector payload, diagnostics artifact, or network URL includes raw `solcast_site_id`.
+- **Falsification:** seed `solcast_site_id="site_leak_12345"` and fail `/solar_test`; assert absence in all non-secrecy-excepted channels and storage states outside allowed private store.
+- **Binding point:** `custom_components/oig_cloud/config_registry.py` (FIELD_REGISTRY), `custom_components/oig_cloud/config/steps.py`, `custom_components/oig_cloud/api/ha_rest_api.py`, `custom_components/oig_cloud/ai/backends.py`.
+
+### R8.9 — Step-2 failure is non-blocking and cite-correct (closes AKEY-R7-004, R7-AS-NEW-3)
+- **Binding requirement:** `PLAN-3.6-SPEC.md` AK-2 citation is to `SCOPE-REVISION.md: R7.3` and `SCOPE-REVISION.md: R7.12`.
+- **Binding requirement:** on classified `/solar_test` failure in Step-2, wizard must keep `[data-testid="wizard-next"]` and `[data-testid="wizard-skip"]` enabled and render visible error; user may continue to Step-3.
+- **Observable user outcome:** soft guide behavior remains unblocked, with visible forecast failure context and preserved progress.
+- **Falsification:** force classified Step-2 failure; clause fails if wizard blocks completion path, hides error, or prevents advancing to Step-3.
+- **Binding point:** `docs/redesign_2026_07/PLAN-3.6-SPEC.md`, `docs/redesign_2026_07/IMPLEMENTATION-BRIEF-EN.md`, `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/index.ts` (`[data-testid="wizard-next"]`, `[data-testid="wizard-skip"]`).
+
+### R8.10 — Rejected findings in this round
+- **No findings rejected.**

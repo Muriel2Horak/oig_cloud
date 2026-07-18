@@ -43,3 +43,10 @@
   - Location: `custom_components/oig_cloud/ai_task.py:108-138`
   - What is wrong: delegation branch is marked UNVERIFIED and can change wire contract silently under HA runtime upgrade.
   - Fix needed: add runtime verification matrix per HA version and pin tested behavior; block unknown branch usage until verified.
+
+- AS-22 (brief-lint entry point missing)
+  - Severity: **MAJOR**
+  - Owner: **operator / merge-guard maintainer**
+  - Location: `docs/redesign_2026_07/SCOPE-REVISION.md: R6.10` (currently `SCOPE-REVISION` references a runnable brief-lint without an executable entry)
+  - What is wrong: the required brief-lint check has no runnable command/path before merge and no concrete CI gate.
+  - Fix needed: define and implement a runnable command (for example `npm --prefix docs/redesign_2026_07 run brief-lint`) and add CI failure on lint rule violations.
