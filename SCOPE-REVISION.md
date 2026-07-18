@@ -59,3 +59,26 @@ rozsahu patří i fallback chain (P1, bundled seznam modelů) a senzor oig_ai_st
 
 **Výsledná sekvence F1:** Plán 4 → Plán 3.6 (wizard celý) → nový plán D8 (AI úlohy).
 Chat \"Poradit se\" zůstává F2 (nikdy nebyl v F1), aktivní řízení F3.
+
+**R2-OPRAVA (2026-07-18, Martin) — ceny NEJSOU z AI.** Původní znění R2 přebíralo formulaci D8
+\"Načíst ceník\" z brainstormu 2026-07-09, tedy PŘED tím, než ji **O3 (2026-07-10) zrušilo**:
+ERÚ publikuje strojově čitelný XLSX se všemi D-sazbami → dataset vrstva 0 se generuje
+**maintainer-side jednou ročně** (DECISIONS.md O3 \"zjednodušení P4!\"). F1-DESIGN krok 3 to
+potvrzuje: distributor + sazba → předvyplnění z pricelists datasetu → uživatel potvrdí, a
+[Ověřit proti aktuálnímu ceníku] je **samostatné volitelné AI tlačítko**, ne zdroj cen.
+
+Důsledky:
+- **Krok 3 Ceny nemá ŽÁDNOU závislost na AI.** Kritická cesta: bundled dataset → sekce pricing
+  v registru → REST → předvyplnění formuláře → potvrzení uživatelem.
+- **Nový AI plán je MIMO kritickou cestu** a zmenšuje se na: validate_config, VOLITELNÉ ověření
+  ceníku křížem, fallback chain (P1, bundled ai_models), senzor oig_ai_status.
+- \"Načíst ceník\" jako AI úloha se **NEIMPLEMENTUJE** — nahrazeno O3.
+
+**R3 — Plán 4 se rozšiřuje o FE kontrakt datasetu.** Task 6 dnes dodává jen serverovou stranu
+(bundled soubory + Python reader). Doplnit, jinak zůstane krok 3 zablokovaný i po Plánu 4:
+1. sekce pricing v config_registry.py (distributor jako enum z datasetu, sazba, potvrzovaná
+   cenová pole),
+2. REST GET /api/oig_cloud/BOX/pricelists — distributoři, sazby, ceny + rok platnosti
+   (kvůli varování u zastaralého datasetu),
+3. render/klientské důkazy dle VERIFICATION-STANDARD (endpoint vrací použitelná data, sekce
+   v registru existuje) — ne jen kontraktový test readeru.
