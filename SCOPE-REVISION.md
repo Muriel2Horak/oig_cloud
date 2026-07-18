@@ -82,3 +82,44 @@ Důsledky:
    (kvůli varování u zastaralého datasetu),
 3. render/klientské důkazy dle VERIFICATION-STANDARD (endpoint vrací použitelná data, sekce
    v registru existuje) — ne jen kontraktový test readeru.
+
+**R4 — Architektura cenového datasetu (rozhodnuto 2026-07-18 po 2 průzkumech).**
+
+*Zdroj:* **ERÚ cenový výměr**, ne ČEZ. Ověřeno: ČEZ sice publikuje ceny pro všechna 3 distribuční
+území a shodují se s ERÚ na haléř, ALE (a) podmínky užití cez.cz/cezdistribuce.cz **výslovně
+zakazují automatizované vytěžování**, (b) je to jen přetisk ERÚ, (c) reaguje na dodatky se
+zpožděním ~2 dny a URL schéma je mezi roky nestabilní. ČEZ = pouze ruční křížová kontrola.
+
+*Dva výměry, ne jeden:* 14/2025 (distribuce NN, sazby D01d–D61d) + 13/2025 (systémové služby,
+POZE, OTE/ERÚ). **Dodatky visí na 13/2025** (13 → 15/2025 → 1/2026, tam je vynulování POZE od
+1.1.2026); na 14/2025 nesahá nic. Sledovat jen 14/2025 = ceny o ~15 % mimo.
+
+*Distribuce k uživateli:* **JSON přibalený v release, ŽÁDNÉ stahování za běhu.** HACS distribuci
+řeší. Ruší se dřívější úvaha o runtime fetchi z našeho GitHubu.
+
+*Platnost místo dodatkových řetězů:* JSON obsahuje pole období, každé s \`platí_od\` a KOMPLETNÍ
+sadou hodnot — build skript **rozpustí dodatky do hotových snímků**. Aplikace vezme poslední
+snímek, kde \`platí_od <= dnes\`. Umožňuje **vydat verzi v předstihu** (ERÚ vydá v listopadu →
+release v prosinci → integrace přepne sama 1.1.). Aplikace neskládá dodatky.
+
+*Zastarání:* je-li nejnovější snímek starší než rok, integrace to uživateli oznámí (\"ceník je
+z roku X, zkontroluj aktualizaci\"). Bez sítě to líp nejde a je to přijatelné — ceny jsou pro
+plánovač orientační a uživatel je v průvodci potvrzuje.
+
+*Nástroj:* \`scripts/build_pricelists.py\` v tomto repu — **maintainer-side, NE runtime**. Jeho
+závislosti (openpyxl) nesmí skončit v manifestu integrace. Vlastní requirements pro build.
+Použitelný i cizími vývojáři: čisté CLI, popsaný formát JSON, poznámka o původu dat.
+
+*ŽÁDNÉ LLM v pipeline.* XLSX je strojově čitelná mřížka → openpyxl, deterministicky, testovatelně,
+zdarma v CI. Dřívější zjištění \"na ceníky je potřeba LLM křížem\" platilo pro **PDF** (pypdf
+rozhází sloupce) — my PDF neparsujeme. AI je tím mimo kritickou cestu úplně.
+
+*Požadavky na skript:* hledat podle textu (názvy listů/sloupců), NIKDY natvrdo pozice řádků —
+formát se mezi roky mění (2024/2025 .xls, 2026 .xlsx, jiné názvy a pořadí listů). Při driftu
+**spadnout nahlas**, nikdy nevydat data potichu. Kontrolní testy: známé hodnoty, přítomnost všech
+DSO a sazeb, alarm při skoku > 30 %. Zapsat původ (URL, datum, hash).
+
+*Dvě pasti do implementace (z průzkumu):* (1) **DPH** — v ceníku je tučně hodnota S DPH, v závorce
+BEZ DPH; záměna = 21% chyba. (2) **POZE** u domácností je **Kč/A/měsíc**, ne Kč/MWh (495 Kč/MWh je
+zákonný strop, ne řádek sazby). Navíc: 12,87 Kč/měsíc nesíťová infrastruktura NENÍ \"4 Kč ERÚ +
+zbytek OTE\" — je to 1,61 + 1,38 operátor trhu, 5,88 Elektroenergetické datové centrum, 4,00 ERÚ.
