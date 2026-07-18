@@ -155,3 +155,16 @@
 - `spec-critique/R2-PERF-perf.md` warns about migration IO and endpoint timeout handling and does not close implementation-time guardrail details; confirm whether explicit perf budgets belong in this plan’s acceptance list.
 - `spec-critique/R2-AIKEYS-aikeys.md` contains remaining CRITICAL follow-up points; confirm if this brief should include mandatory remediation checkpoints in next plan scope or keep them in D8 only.
 - `spec-critique/R2-ANTISTUB-codex.md` notes anti-stub pressure around migration/build guarantees; confirm whether a dedicated empty-fixture test file and checksum assertion are required in Plan 4 CI or can remain in a dedicated follow-up test stage.
+
+## 7. R7 — Round-2 closure alignment
+
+- **R7.3 (AKEY-R6-001)**: `/solar_test` outputs and diagnostics must be classified-only and secret-safe (`SCOPE-REVISION.md: R7.3`).
+- **R7.4 (anti-stub critical/AS-4)**: production dashboard DOM assertion is required, with `[data-testid=dashboard-primary]` and no onboarding blocker in pending state; no banner on grandfathered state (`SCOPE-REVISION.md: R7.4`).
+- **R7.5 (AS-10)**: build requirements and lock policy are explicit at `scripts/requirements-build.txt` and `scripts/requirements-build.txt.lock`; lock hash validation is required in pipeline (`SCOPE-REVISION.md: R7.5`).
+- **R7.6 (AS-15)**: stale warning uses the single dataset rule `snapshot.valid_from.year < current_year` (`PLAN-3.6-SPEC.md: AK-3`, `SCOPE-REVISION.md: R7.6`).
+- **R7.7 / R7.8 (AS-13, AS-14)**: Step-2 and Step-3 values are persisted and reloaded before completion; `fieldsFromRegistry('solar')` and `fieldsFromRegistry('pricing')` keys are saved and remounted (`SCOPE-REVISION.md: R7.7`, `R7.8`).
+- **R7.9 (AS-11)**: Task-5 warning coverage has owner+follow-up acceptance test in scope/plan (`SCOPE-REVISION.md: R7.9`).
+- **R7.10 (M-2)**: non-admin refusal path for `/pricelists` is required with explicit matrix test (`SCOPE-REVISION.md: R7.10`).
+- **R7.11 (AKEY-R6-004)**: cross-provider fallback requires explicit consent; `docs/redesign_2026_07/F1-DESIGN.md` fallback text is overridden by this rule (`SCOPE-REVISION.md: R7.11`).
+- **R7.12 (AKEY-R6-003)**: replacement solar key is written only after successful `/solar_test` verification (`SCOPE-REVISION.md: R7.12`).
+- **R7.1 / R7.2 (R6-SEC-1, R6-SEC-2)**: secret-only persistence in private stores and fail-closed migration write paths are mandatory (`SCOPE-REVISION.md: R7.1`, `R7.2`).

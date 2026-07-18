@@ -41,14 +41,23 @@ nedostupný server).
 - Netýká se dashboardu: neúspěch **negatuje** nic (P6 SCOPE-REVISION — měkký průvodce).
 - **Render aserce:** tlačítko existuje; po mocku úspěšné odpovědi je v DOM prvek s výsledkem;
   po mocku chyby je v DOM čitelná chybová hláška.
-- **Contract:** `[Otestovat]` MUST call `POST /api/oig_cloud/{box}/solar_test` from the rendered wizard step, with current form values in the request body; UI result/error text must reflect the classified response from that endpoint. (R6.5)
-- **Falsification:** if the handler sends any endpoint other than `POST /api/oig_cloud/{box}/solar_test` or sends a request body that is not the current step values, the acceptance test fails.
+- **Contract:** `[Otestovat]` MUST call `POST /api/oig_cloud/{box}/solar_test` from the rendered wizard step with a provider-specific request body that contains exactly these keys:
+  - `provider`
+  - selected provider credential or site id
+  - `latitude`
+  - `longitude`
+  - active string values used by the selected model (`solar_panel_power_kwp`, `solar_panel_tilt`, `solar_panel_azimuth`)
+
+  Unknown keys (`entity_id`, `box_id`, `base_url`, etc.) must be rejected before outbound calls (`additionalProperties=false`).
+- **Contract binding:** UI-to-endpoint, classified error code shape, and verification-before-replace rules in `SCOPE-REVISION.md: R7.3` and `SCOPE-REVISION.md: R7.11`.
+- **Falsification:** if the handler sends any endpoint other than `POST /api/oig_cloud/{box}/solar_test`, sends unknown fields, forwards raw body, or sends a replacement key without successful `/solar_test`, the acceptance test fails.
 
 ### AK-3 — Krok ③ Ceny je skutečný formulář
 Uživatel vybere **distributora** a **sazbu**; formulář se **předvyplní z přibaleného datasetu**
 (ERÚ, s uvedeným rokem platnosti) a uživatel hodnoty **potvrdí**.
 - Dataset je bundled (SCOPE-REVISION #2) — žádný runtime fetch.
-- Je-li rok datasetu < aktuální rok, uživatel vidí **varování**.
+- Je-li vybraný přiložený snapshot starší než aktuální rok (`snapshot.valid_from.year < current_year`), uživatel vidí **varování**.
+  Tato podmínka je jediná pro varování.
 - **Render aserce:** vykreslený krok ③ má select distributora i sazby a ≥ 1 předvyplněnou cenu;
   při starším roce je v DOM varovný prvek.
 
@@ -63,6 +72,13 @@ Po dokončení (nebo přeskočení) kroku se stav **zapíše** a **přežije rel
 ### AK-5 — Nic z toho nezamyká dashboard
 Dashboard se renderuje vždy, i s nedokončeným průvodcem; grandfathered uživatel nevidí banner.
 (Regrese na SCOPE-REVISION #6 — už platí, jen to nesmí 3.6 rozbít.)
+
+- **Render aserce:** mount produkční routy dashboardu.
+  - U pending onboarding se musí renderovat `[data-testid=dashboard-primary]` i hlavní navigace.
+  - Žádný onboarding blocker v podobě banneru nebo overlay nesmí být aktivní.
+  - `grandfathered` stav nesmí mít onboarding banner v DOM.
+- **Contract binding:** this is bound to `SCOPE-REVISION.md: R7.4`.
+- **Falsification:** empty shell render, fake dashboard-only mount, or unexpected onboarding block fails test.
 
 ---
 

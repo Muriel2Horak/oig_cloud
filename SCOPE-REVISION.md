@@ -234,3 +234,82 @@ stay in the original, in quotes (enforced by `brief-lint`).
 **R6.12 — Planner field metadata is deterministic and render-efficient.**
 - `fieldsFromRegistry` rendering in step 2/3 must remain stable per render path; repeated renders cannot mutate fields; no repeated recomputation without stable keys.
 - Falsification test: toggle unrelated inputs in step 3 and assert distributor/tariff select/rendered price DOM is stable and memoization is not violated by field identity churn.
+
+## R7 — Round-2 closure of remaining hard findings (2026-07-18)
+
+### R7.1 — Close R6-SEC-1: private-only solar credential persistence and provider-switch safety
+- **Binding requirement:** All registry fields with `secret=True` (`solar_forecast_api_key`, `solcast_api_key`, and any `FIELD_REGISTRY` secret alias) MUST be persisted only in per-entry `Store(..., private=True)`. `entry.options` MUST hold only non-secret metadata and `*_set` booleans.
+- Provider switch without replacement key MUST either fail with explicit user-action state or clear the inactive provider secret.
+- Integration removal MUST clear every per-entry credential store copy **and** the migration backup copy for secret fields.
+- **Observable user outcome:** after switching provider without replacement secret, and after integration removal, no secret keys are visible in `entry.options`, and no active forecast call uses an inactive secret.
+- **Falsifier (seeded):** create entry with `solar_forecast_api_key=leak-me`, switch provider to solcast without replacement key, then remove integration; assert `entry.options`, migration backup JSON, and diagnostic logs contain no `leak-me`; active forecast status remains valid or is explicitly non-admin.
+
+### R7.2 — Close R6-SEC-2: fail-closed secret writes in migration and diagnostics paths
+- **Binding requirement:** migration-secret inventory is derived from `FIELD_REGISTRY` entries with `secret=True` plus legacy aliases, not only `_SECRET_FIELDS`. Before every backup, journal, audit, and diagnostics write, the implementation serializes payload and fails closed if any secret key or secret value is present.
+- **Binding requirement:** every `config_migration` store construction is `Store(..., private=True)`.
+- **Observable user outcome:** migration failures cannot leak secret text into backup/journal/audit payloads or logs.
+- **Falsifier (seeded):** force a transform failure whose serialized exception includes `leak-me`; assert migration backup + journal + audit + diagnostics have no `solar_forecast_api_key`, `solcast_api_key`, or `leak-me`.
+
+### R7.3 — Close AKEY-R6-001: `/solar_test` secrecy is classified-only
+- **Binding requirement:** Logs, REST payloads, diagnostics, and DOM-visible errors for `/solar_test` MUST carry only classified error codes and redacted provider names. They MUST NOT carry any solar credential, key prefix, provider request URL, `Authorization` header, request body, or raw upstream exception string.
+- **Binding requirement:** this applies to both Forecast.Solar and Solcast paths.
+- **Observable user outcome:** failing `/solar_test` displays user-level code and hides full secret/URL/error details while still surfacing actionable reason.
+- **Falsifier (seeded):** inject failing Forecast.Solar and Solcast responses with `solar_forecast_api_key="fs_secret_123456789"` and `solcast_api_key="sc_secret_123456789"` plus verbose exception text; assert logs, REST body, diagnostics, and DOM contain none of the secret text, full URL, or raw exception.
+
+### R7.4 — Close R6 anti-stub CRITICAL in section-2: production dashboard must be proven in production DOM
+- **Binding requirement (AK-5):** production dashboard render requires both primary dashboard content and navigation presence in DOM; `grandfathered` view MUST NOT show onboarding blocker.
+- **Binding requirement (AK-5):** pending onboarding must not block core dashboard rendering.
+- **Observable user outcome:** the dashboard test mount shows `[data-testid=dashboard-primary]` and normal nav, with no onboarding blocker for grandfathered user state.
+- **Falsifier (seeded):** mounting the production dashboard with pending onboarding while replacing content with an empty shell or showing unexpected onboarding blocker fails the route-level assertion.
+
+### R7.5 — Close AS-10: explicit build environment and lock policy for pricing dataset
+- **Binding requirement:** `scripts/build_pricelists.py` uses the explicit build requirement files `scripts/requirements-build.txt` and `scripts/requirements-build.txt.lock`, and build execution uses pinned hashes from the lock file.
+- **Binding requirement:** build bootstrap command is explicit (`python -m pip install --require-hashes -r scripts/requirements-build.txt`) and must be documented alongside failure rule when locks diverge.
+- **Observable user outcome:** release-maintainer pipeline fails if hashes/files in lock contract are not satisfied before build output is generated.
+- **Falsifier (seeded):** remove one locked hash or pin entry and assert build verification fails before runtime validation.
+
+### R7.6 — Close AS-15: unify stale-warning snapshot rule
+- **Binding requirement:** one rule only: select the newest bundled snapshot by `valid_from <= now`, and show warning iff `snapshot.valid_from.year < current_year`.
+- **Binding requirement:** this exact rule is referenced once in `R6`-scope and `PLAN-3.6-SPEC.md:AK-3`, and only this rule drives stale behavior.
+- **Observable user outcome:** opening wizard with snapshot year `2026` in 2026 shows no stale warning; opening with `2025` snapshot in 2026 shows the warning consistently in UI and API.
+- **Falsifier (seeded):** fixture with latest snapshot year `current_year` must not render stale warning; fixture with previous-year snapshot must always render it.
+
+### R7.7 — Close AS-13: save and reload Solar step state before completion
+- **Binding requirement:** before `complete_step` or `finish`, Step-2 save request MUST include and persist all solar form keys from `fieldsFromRegistry(registry,'solar')` (provider, credential field, site-id, latitude, longitude, and active-string kWp/tilt/azimuth fields).
+- **Binding requirement:** Step-2 values MUST be restored from persisted config on remount before wizard completion.
+- **Observable user outcome:** user can set solar form fields, leave the step, remount wizard, and continue with pre-filled Step-2 values.
+- **Falsifier (seeded):** set solar `latitude` and `solar_forecast_api_key`, close wizard, remount, and assert both values are absent.
+
+### R7.8 — Close AS-14: save and reload pricing fields before completion
+- **Binding requirement:** before `complete_step` or `finish`, Step-3 save request MUST include and persist all pricing keys from `fieldsFromRegistry(registry,'pricing')` (distributor, tariff, confirmed price fields).
+- **Binding requirement:** Step-3 form values MUST be restored from persisted config on remount before completion.
+- **Observable user outcome:** chosen distributor/tariff and prefilled price remain visible after close/remount before finish.
+- **Falsifier (seeded):** select a distributor/tariff and prefill at least one confirmed price, then remount without finish and assert persisted values are missing.
+
+### R7.9 — Close AS-11: bind Task-5 warning follow-up ownership and acceptance
+- **Binding requirement:** `Task-5 warning coverage` has explicit owner and follow-up plan, with named task, owner, and acceptance test for warning coverage and recovery action.
+- **Binding requirement:** deferred coverage is explicit in this scope branch and cannot be silently closed in the current round.
+- **Observable user outcome:** a concrete acceptance test name exists for Task-5 warning coverage with owner before completion.
+- **Falsifier:** if Task-5 warning coverage is unowned or has no acceptance test, scope review fails.
+
+### R7.10 — Close M-2: decide and test `/pricelists` auth with non-admin refusal
+- **Binding requirement:** `/pricelists` is admin-only for `GET` (or explicitly documented public route), and endpoint auth matrix is explicit.
+- **Binding requirement:** implementer test for authenticated non-admin refusal on `/module_config`, `/config_registry`, `/pricelists`, and `/solar_test`, with unsupported-method assertions and non-admin response consistency.
+- **Observable user outcome:** non-admin user cannot access priced data and receives uniform refusal behavior.
+- **Falsifier (seeded):** fuzz GET calls for four routes as non-admin and assert no success path exists.
+
+### R7.11 — Close AKEY-R6-004: explicit cross-provider fallback consent
+- **Binding requirement:** fallback is within user-selected provider by default. `ai_task` ↔ backend fallback and Groq ↔ NVIDIA cross-provider fallback require an explicit stored consent flag and user-visible disclosure.
+- **Binding requirement:** `docs/redesign_2026_07/F1-DESIGN.md:57-59` fallback behavior is overridden and superseded by this explicit boundary.
+- **Observable user outcome:** provider failure without consent returns classified fallback refusal and sends no prompt to other provider backends.
+- **Falsifier (seeded):** set provider to `ai_task` and force failure plus missing consent; assert no outbound call to Groq/NVIDIA and a refusal code is surfaced.
+
+### R7.12 — Close AKEY-R6-003: replacement solar key is verified before activation
+- **Binding requirement:** a newly submitted solar key must pass `/solar_test` successfully before becoming active.
+- **Binding requirement:** failed or skipped verification leaves previous active credential untouched.
+- **Binding requirement:** provider switches requiring different credential material fail unless replacement credential is present and verified in flow.
+- **Observable user outcome:** replacing active key with invalid candidate preserves previous forecast status, and user receives explicit action-required state.
+- **Falsifier (seeded):** with known-good active key, submit bad replacement and assert old active key remains; `/onboarding` and forecast status do not change.
+
+### R7 rejected findings
+- **No findings rejected in this round.**
