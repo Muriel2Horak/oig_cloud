@@ -20,7 +20,7 @@
 - If behavior differs from mock data or contract, DOM evidence is authoritative and controls whether implementation passes.
 - Any file-level test gate that can pass with no rendered control is not accepted.
 
-## 3. Binding scope R1 through R6
+## 3. Binding scope R1 through R9
 
 ### R1 — Plan ordering
 - Decides: ordering is fixed as Plan 4 first, then Plan 3.6, then D8.
@@ -72,7 +72,7 @@
 - Source trace: `SCOPE-REVISION.md` `R6.4`.
 
 ### R6.5 — `POST /solar_test` contract
-- Decides: step 3 validation is via explicit API call with bounded retries, clear errors, and rate-limit/backoff semantics.
+- Decides: step 2 validation is via explicit API call with bounded retries, clear errors, and rate-limit/backoff semantics.
 - Obliges implementer: integrate and test this endpoint flow against DOM-visible error states and next-step blocking/unblocking rules.
 - Source trace: `SCOPE-REVISION.md` `R6.5`.
 
@@ -162,9 +162,45 @@
 - **R7.4 (anti-stub critical/AS-4)**: production dashboard DOM assertion is required, with `[data-testid=dashboard-primary]` and no onboarding blocker in pending state; no banner on grandfathered state (`SCOPE-REVISION.md: R7.4`).
 - **R7.5 (AS-10)**: build requirements and lock policy are explicit at `scripts/requirements-build.txt` and `scripts/requirements-build.txt.lock`; lock hash validation is required in pipeline (`SCOPE-REVISION.md: R7.5`).
 - **R7.6 (AS-15)**: stale warning uses the single dataset rule `snapshot.valid_from.year < current_year` (`PLAN-3.6-SPEC.md: AK-3`, `SCOPE-REVISION.md: R7.6`).
-- **R7.7 / R7.8 (AS-13, AS-14)**: Step-2 and Step-3 values are persisted and reloaded before completion; `fieldsFromRegistry('solar')` and `fieldsFromRegistry('pricing')` keys are saved and remounted (`SCOPE-REVISION.md: R7.7`, `R7.8`).
+- **R7.7 / R7.8 (AS-13, AS-14)**: Step-2 and Step-3 values are persisted and reloaded before completion; `fieldsFromRegistry('solar')` and `fieldsFromRegistry('pricing')` keys are saved and remounted (`SCOPE-REVISION.md: R7.7`, `R7.8`), polarity now overridden by `SCOPE-REVISION.md: R8.1`.
+- **R8.1 (AS-13, AS-14, AKEY-R7-001)**: non-secret remount values are required to be present; secret values are forbidden in UI, entries, responses, and draft state (`SCOPE-REVISION.md: R8.1`).
+- **R8.9 (AKEY-R7-004, R7-AS-NEW-3)**: `/solar_test` belongs to Step-2; classified Step-2 failure does not block `wizard-next`/`wizard-skip`, and the same section should still display a visible warning (`SCOPE-REVISION.md: R8.9`).
 - **R7.9 (AS-11)**: Task-5 warning coverage has owner+follow-up acceptance test in scope/plan (`SCOPE-REVISION.md: R7.9`).
 - **R7.10 (M-2)**: non-admin refusal path for `/pricelists` is required with explicit matrix test (`SCOPE-REVISION.md: R7.10`).
 - **R7.11 (AKEY-R6-004)**: cross-provider fallback requires explicit consent; `docs/redesign_2026_07/F1-DESIGN.md` fallback text is overridden by this rule (`SCOPE-REVISION.md: R7.11`).
 - **R7.12 (AKEY-R6-003)**: replacement solar key is written only after successful `/solar_test` verification (`SCOPE-REVISION.md: R7.12`).
 - **R7.1 / R7.2 (R6-SEC-1, R6-SEC-2)**: secret-only persistence in private stores and fail-closed migration write paths are mandatory (`SCOPE-REVISION.md: R7.1`, `R7.2`).
+
+## 8. R9 — Round-4 closeout rules
+
+### R9.1 — Closed `/api/oig_cloud/**` auth matrix
+- Source trace: `SCOPE-REVISION.md: R9.1`.
+- Rule: the endpoint auth matrix is closed. Any new `/api/oig_cloud/**` endpoint must be added to the matrix with allowed methods, admin outcome, non-admin refusal outcome, unsupported-method outcome, and its own non-admin refusal test before it ships.
+- Matrix:
+
+| Route | Allowed method(s) | Admin outcome | Authenticated non-admin outcome |
+|---|---|---|---|
+| `/api/oig_cloud/{box}/module_config` | `GET` | Return admin-visible module config. | `403`; no module payload; same refusal shape for existing and missing boxes. |
+| `/api/oig_cloud/{box}/config_registry` | `GET` | Return registry metadata needed for controls. | `403`; no registry payload; same refusal shape for existing and missing boxes. |
+| `/api/oig_cloud/{box}/pricelists` | `GET` | Return bundled distributor, tariff, price, unit, validity, and stale-warning data. | `403`; no priced data; same refusal shape for existing and missing boxes. |
+| `/api/oig_cloud/{box}/solar_test` | `POST` | Run bounded provider check; return forecast data or classified error. | `403` before accepting request values or making any outbound provider call. |
+| `/api/oig_cloud/{box}/onboarding` | `GET`, `POST` | `GET` returns non-secret setup state; `POST` accepts non-secret draft/status updates. | `403` before returning or accepting step status, timestamps, GPS, provider, pricing, `solcast_site_id`, or `*_set` fields. |
+
+- Unsupported methods: every method outside the allowed method set returns `405`; no route data, state mutation, body acceptance, or outbound provider call is allowed.
+- `/onboarding` negative test: seed latitude, longitude, provider, pricing values, `*_set` booleans, `solar_forecast_api_key="fs_secret_123456789"`, `solcast_api_key="sc_secret_123456789"`, and `solcast_site_id="site_leak_12345"`. As authenticated non-admin, call `GET` and `POST`; assert `403`, no leaked fields, no draft mutation, and identical refusal for an existing and missing box.
+- `/onboarding` positive test: as admin, `GET` returns step status, timestamps, provider enum, non-secret solar fields, pricing fields, and credential `*_set` booleans needed for remount. The same seeded sentinels must be absent from REST, DOM, logs, diagnostics, and saved draft state.
+- `/pricelists` rule: the box-scoped route has no public-route exception. A future public pricelist route must be boxless, contain no entry identifier, and have its own matrix row and tests.
+
+### R9.2 — Numeric performance budgets
+- `/solar_test` outbound timeout: `10 s` server-side hard cap using Home Assistant shared aiohttp session. Check: sleeping provider stub returns classified `timeout`; wizard next/skip remain enabled; no raw exception leaks.
+- `/solar_test` shared rate limit: `<= 1 outbound call per (entry_id, provider, sane-prefix-of-body) per 30 s sliding window`, shared by manual `[Otestovat]` and verify-before-replace. Check: replacement verify followed by manual click within `5 s` calls upstream once and returns classified `rate_limited` for the second call.
+- Wizard fetch budget: one production open or remount may issue at most `1` `GET` per endpoint for `/module_config`, `/config_registry`, `/onboarding`, and `/pricelists`. Check: route intercept counts requests through the real `oig-app` launch path and fails on duplicate banner/settings launch fetches.
+- Already-complete migration/setup budget: `<= 50 ms` on CI and no full rewrite. Check: completed marker reload measures setup with `time.monotonic()` and asserts no avoidable `Store.async_save()`.
+- Step render budget: Step 2 and Step 3 field rendering `<= 16 ms` p95 per component render; `fieldsFromRegistry(...)` called at most once per section per render path. Check: component fixture measures `performance.now()`, counts calls, and asserts DOM controls keep stable keys after unrelated input changes.
+- Transform executability: `TER-1`. Registered migration transforms are sync CPU-only and `<= 5 ms`, or async/executor-backed and awaited outside the event-loop hot path. Check: blocking-I/O or awaitable-returning sync transform fixtures fail unless routed through the async/executor path.
+
+### R9.3 — Minor disposition
+- `PERF-NEW-R8-B`: launch/remount/dashboard DOM falsifier suite budget is `<= 30 s` p95 over the last 50 PRs; each R8.1 remount test is `<= 10 s` wall time, including retry budget.
+- `PERF-NEW-R8-C`: credential clear/provider-switch/remove deletes `oig_cloud.ai_<entry_id>` and `oig_cloud.solar_<entry_id>` in `<= 200 ms` aggregate averaged across 5 CI runs, with both private store files gone and no migration-backup collision.
+- `PERF-NEW-R8-D`: deterministic clock override is an explicit function parameter or test-helper export, not a production global. Check: `rg -n "WINDOW|DEBUG_CLOCK|TEST_CLOCK" custom_components/oig_cloud/` returns 0 for production code and snapshot-selection p99 is `< 5 us` over 10,000 calls.
+- `R8-AS-NEW-1`: rejected for this R9 slice because the requested table edit is in `spec-critique/R6-CLASSIFICATION.md`, outside the allowed file list. Binding routing already exists in `SCOPE-REVISION.md: R8.4`; update the classification table only when that file is editable.

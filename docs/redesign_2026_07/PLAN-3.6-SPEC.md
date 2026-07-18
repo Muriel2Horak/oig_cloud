@@ -38,7 +38,7 @@ zvoleného poskytovatele, zeměpisná šířka/délka, a pro každý aktivní st
 V kroku ② je tlačítko **[Otestovat]**. Po stisku se zavolá skutečná předpověď a uživatel uvidí
 buď **graf/číslo výroby na zítřek**, nebo **lidsky formulovanou chybu** (špatný klíč / site ID /
 nedostupný server).
-- Netýká se dashboardu: neúspěch **negatuje** nic (P6 SCOPE-REVISION — měkký průvodce).
+- Netýká se dashboardu: krok ② může selhat, ale nesmí zablokovat průchod průvodcem (P6 SCOPE-REVISION — měkký průvodce).
 - **Render aserce:** tlačítko existuje; po mocku úspěšné odpovědi je v DOM prvek s výsledkem;
   po mocku chyby je v DOM čitelná chybová hláška.
 - **Contract:** `[Otestovat]` MUST call `POST /api/oig_cloud/{box}/solar_test` from the rendered wizard step with a provider-specific request body that contains exactly these keys:
@@ -49,7 +49,7 @@ nedostupný server).
   - active string values used by the selected model (`solar_panel_power_kwp`, `solar_panel_tilt`, `solar_panel_azimuth`)
 
   Unknown keys (`entity_id`, `box_id`, `base_url`, etc.) must be rejected before outbound calls (`additionalProperties=false`).
-- **Contract binding:** UI-to-endpoint, classified error code shape, and verification-before-replace rules in `SCOPE-REVISION.md: R7.3` and `SCOPE-REVISION.md: R7.11`.
+- **Contract binding:** UI-to-endpoint, classified error code shape, and verification-before-replace rules in `SCOPE-REVISION.md: R7.3` and `SCOPE-REVISION.md: R7.12`.
 - **Falsification:** if the handler sends any endpoint other than `POST /api/oig_cloud/{box}/solar_test`, sends unknown fields, forwards raw body, or sends a replacement key without successful `/solar_test`, the acceptance test fails.
 
 ### AK-3 — Krok ③ Ceny je skutečný formulář
@@ -112,9 +112,18 @@ v záložce Ceny zůstává, kde je — průvodce ho needituje, jen nastaví tar
 ## Otevřené otázky pro člověka
 - **OQ-A:** Má „Dokončit" u grandfathered uživatele něco měnit, když banner stejně nevidí?
   (Návrh: ano, aby se stav nerozcházel s realitou.)
-- **OQ-B:** Má krok ② [Otestovat] blokovat „Další" při neúspěchu? (Návrh: **ne** — měkký průvodce,
-  jen varovat.)
+- **OQ-B:** Krok ② **[Otestovat]** je Step-2 validace; neblokuje průvodce ani `Další`/`Skip` v klasifikované chybě, jen zobrazí viditelnou chybu.
 
 ### R6 clarifications
 - AK-2 and AK-5 are now bound to `SCOPE-REVISION.md: R6.5` and `SCOPE-REVISION.md: R6.6`.
 - Step 3 and dataset checks are now bound to `SCOPE-REVISION.md: R6.3` and `SCOPE-REVISION.md: R6.4`.
+
+### R9 closeout bindings
+- Endpoint auth is a closed matrix under `SCOPE-REVISION.md: R9.1`. `/api/oig_cloud/{box}/onboarding` `GET` and `POST`, `/module_config` `GET`, `/config_registry` `GET`, `/pricelists` `GET`, and `/solar_test` `POST` are admin-only box-scoped routes.
+- `/onboarding` non-admin tests must assert `403` before any step status, timestamp, GPS, provider, pricing, `solcast_site_id`, or `*_set` field is returned or accepted; existing and missing boxes must produce the same refusal shape; unsupported methods return `405`.
+- Positive counterpart: admin `GET /onboarding` returns only non-secret setup state needed to remount Step 2 and Step 3. Seed `fs_secret_123456789`, `sc_secret_123456789`, and `site_leak_12345`; assert all sentinels are absent while non-secret values render in DOM.
+- `/pricelists` `GET` has no public-route exception on the box-scoped route. A future public pricelist route must be boxless, contain no entry identifier, and have its own explicit auth matrix row.
+- `/solar_test` has a `10 s` server-side outbound timeout and a shared token bucket of `<= 1 outbound call per (entry_id, provider, sane-prefix-of-body) per 30 s` across manual `[Otestovat]` and verify-before-replace.
+- One production wizard open or remount may issue at most `1` `GET` per endpoint for `/module_config`, `/config_registry`, `/onboarding`, and `/pricelists`. Duplicate launch entry points must not double-fetch.
+- Step 2 and Step 3 registry rendering must finish in `<= 16 ms` p95 per component render and call `fieldsFromRegistry(...)` at most once per section per render path.
+- Migration transforms follow `TER-1`: sync transforms are CPU-only and `<= 5 ms`, or they are async/executor-backed and awaited outside the event-loop hot path.
