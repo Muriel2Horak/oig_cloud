@@ -123,3 +123,53 @@ DSO a sazeb, alarm při skoku > 30 %. Zapsat původ (URL, datum, hash).
 BEZ DPH; záměna = 21% chyba. (2) **POZE** u domácností je **Kč/A/měsíc**, ne Kč/MWh (495 Kč/MWh je
 zákonný strop, ne řádek sazby). Navíc: 12,87 Kč/měsíc nesíťová infrastruktura NENÍ \"4 Kč ERÚ +
 zbytek OTE\" — je to 1,61 + 1,38 operátor trhu, 5,88 Elektroenergetické datové centrum, 4,00 ERÚ.
+
+---
+
+## R5 — Binding acceptance criteria added after pre-production review (2026-07-18)
+
+Two independent critics found that Plan 4 as written would ship **another stub**: Task 6's test
+passes on `{"year": 2026, "distributors": {"cez": {}, "egd": {}, "pre": {}}}` — empty dicts, no
+tariff, no price. Three acceptance blocks would pass against the current stub. These criteria are
+**binding on the implementation of Plan 4 Task 6 and Plan 3.6** and override any weaker wording in
+the plan documents.
+
+**R5.1 — Build script `scripts/build_pricelists.py` (maintainer-side, NOT a runtime dependency).**
+Given versioned XLSX fixtures from the regulator "ERÚ", the script MUST emit the documented JSON
+schema containing complete `valid_from` snapshots with every DSO and every tariff, plus
+`source_url`, `fetched_at` and a SHA-256 per source file. It MUST exit non-zero and write NO JSON
+when: a required sheet or column is missing or renamed, the schema does not match, tariff coverage
+is incomplete, or any price moves more than 30 % against the previous snapshot without an explicit
+override flag. Fixture-anchored assertions are required: a bold cell maps to `price_incl_vat`, a
+parenthesised cell to `price_excl_vat`; "POZE" is stored with unit "Kč/A/měsíc", never "Kč/MWh".
+Sheets and columns MUST be located by text match, never by fixed row or column offsets. Build
+dependencies (openpyxl) MUST NOT appear in the integration manifest.
+
+**R5.2 — Task 6 also delivers the frontend contract (this is R3, which the plan omits).**
+(1) a `pricing` section in `config_registry.py` whose distributor enum derives from the bundled
+dataset, plus tariff selector and confirmed-price fields; (2) an authenticated
+`GET /api/oig_cloud/{box}/pricelists` returning distributors, tariffs, prices and the validity
+year; (3) a **client render test** that fetches that endpoint and asserts non-empty distributor and
+tariff selects, at least one prefilled price, and the stale-year warning element. A Python-side
+reader test alone does NOT satisfy Task 6.
+
+**R5.3 — Wizard step 2 solar test needs a real endpoint, named here.** No browser-callable forecast
+path exists today. Plan 3.6 MUST specify and deliver an admin-authenticated
+`POST /api/oig_cloud/{box}/solar_test` that validates the values currently shown in the form,
+triggers a real forecast fetch, and returns tomorrow's kWh or a classified user-facing error. The
+test MUST assert that clicking the test button invokes that endpoint with the current wizard
+values — a mocked result alone is insufficient.
+
+**R5.4 — Completion persistence must be proven through the UI, not by test code.** The test MUST
+render the real wizard, fill the steps, click the finish control, and assert the UI itself issued
+`complete_step`; it MUST fail if completion is posted directly by the test. After remount, the
+persisted done/skipped state must be visible.
+
+**R5.5 — Missing-configuration warnings must be visible, not log-only.** Plan 4 Task 4's acceptance
+MUST mount the affected surface with missing GPS/capacity and assert a visible warning with a
+recovery action alongside the `unavailable` state. A log line does not satisfy it.
+
+**R5.6 — English for delegated artifacts.** `VERIFICATION-STANDARD.md` and this scope document are
+authored in Czech for the operator. Implementer agents have zero conversation history, so each
+implementation brief MUST carry an English restatement of the rules it depends on; national terms
+stay in the original, in quotes (enforced by `brief-lint`).
