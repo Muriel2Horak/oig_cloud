@@ -189,3 +189,36 @@ async def test_ai_state_still_rejects_a_real_ha_non_admin_from_the_mapping(ai_en
     resp = await ai_env.view.get(
         _MappingRequest(ai_env.hass, SimpleNamespace(is_admin=False)), "box1")
     assert resp.status == 403
+
+
+@pytest.mark.asyncio
+async def test_ai_post_verification_failure_does_not_overwrite_a_verified_key(ai_env, monkeypatch):
+    """R11.3: POST /ai writes the key before the verify result is known today,
+    so a provider outage destroys a working key. A failed verification (here:
+    the probe raises, e.g. a provider outage) must leave the previously stored,
+    verified key untouched."""
+    async def _ok(self):
+        return True
+
+    monkeypatch.setattr(api_module.OpenAiCompatBackend, "async_verify_key", _ok)
+    await ai_env.view.post(
+        admin_req_with(ai_env, {"provider": "groq", "api_key": _SECRET}), "box1")
+
+    pre_state = json.loads((await ai_env.view.get(admin_req(ai_env), "box1")).text)
+    assert pre_state["key_set"] is True and pre_state["verified"] is True
+
+    async def _fail(self):
+        raise RuntimeError("provider unreachable")
+
+    monkeypatch.setattr(api_module.OpenAiCompatBackend, "async_verify_key", _fail)
+    new_key = "gsk_ANewCandidateKeyThatWillFailToVerify00"
+    resp = await ai_env.view.post(
+        admin_req_with(ai_env, {"provider": "groq", "api_key": new_key}), "box1")
+
+    assert resp.status == 502
+
+    post_state = json.loads((await ai_env.view.get(admin_req(ai_env), "box1")).text)
+    assert post_state["key_set"] is True and post_state["verified"] is True
+
+    store = api_module.AiKeyStore(ai_env.hass, ai_env.entry.entry_id)
+    assert await store.async_get_key() == _SECRET

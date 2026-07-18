@@ -1211,6 +1211,13 @@ class OIGCloudModuleConfigView(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request: web.Request, box_id: str) -> web.Response:
+        # Fail CLOSED: same sensitive surface as POST (:1235-1237) — home GPS
+        # coordinates and the Solcast site id are not for every authenticated
+        # household account.
+        user = request.get("hass_user") or request.app.get("hass_user")
+        if not user or not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+
         hass: HomeAssistant = request.app["hass"]
         entry = _find_entry_for_box(hass, box_id)
         if not entry:
@@ -1323,7 +1330,9 @@ class OIGCloudAiView(HomeAssistantView):
 
     GET  -> {"provider", "key_set", "verified"} only — never the key, never its prefix.
     POST -> {"provider", "api_key"} — cheap LOCAL prefix check first (SCOPE-REVISION #7),
-            then store via AiKeyStore, then a live probe via OpenAiCompatBackend.
+            then a live probe via OpenAiCompatBackend, and ONLY on verification success
+            is the candidate promoted to AiKeyStore (R11.3) — a provider outage must
+            leave a previously stored, verified key intact.
     Both surfaces fail closed (403 for non-admin) — mirrors module_config POST (:1228-1230).
     """
 
@@ -1392,7 +1401,6 @@ class OIGCloudAiView(HomeAssistantView):
             )
 
         store = AiKeyStore(hass, entry.entry_id)
-        await store.async_set_key(provider, api_key)
 
         # Real Home Assistant always exposes a `bus` and a client session; a
         # partial hass (e.g. test harness, future sub-instance) shouldn't make
@@ -1408,6 +1416,9 @@ class OIGCloudAiView(HomeAssistantView):
             api_key=api_key,
             model="verify-only",
         )
+        # R11.3: verify the CANDIDATE key before it ever touches the store — a
+        # provider outage (or a bad candidate) must not overwrite a previously
+        # stored, verified key.
         try:
             ok = await backend.async_verify_key()
         except Exception as err:                              # noqa: BLE001
@@ -1419,8 +1430,14 @@ class OIGCloudAiView(HomeAssistantView):
                 {"error": "verify failed", "detail": str(err), **await store.async_api_state()},
                 status=502,
             )
-        if ok:
-            await store.async_mark_verified(dt_util.utcnow().isoformat())
+        if not ok:
+            return web.json_response(
+                {"error": "verify failed", **await store.async_api_state()},
+                status=502,
+            )
+
+        await store.async_set_key(provider, api_key)
+        await store.async_mark_verified(dt_util.utcnow().isoformat())
         return web.json_response(await store.async_api_state())
 
 

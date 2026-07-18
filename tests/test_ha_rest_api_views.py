@@ -1225,3 +1225,35 @@ async def test_rest_and_flow_reject_the_same_panel_less_config(monkeypatch):
     resp = await view.post(req, "box1")
     assert resp.status == 400
     assert json.loads(resp.text)["fields"]["base"] == "no_strings_enabled"
+
+
+# --- R11.1: GET module_config must fail closed for non-admin (SEC-2, CRITICAL) ---
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_requires_admin_and_hides_solar_location():
+    """Today ANY authenticated household account can read the box config,
+    including home GPS coordinates and the Solcast site id. Mirrors the
+    POST admin gate at :1235-1237."""
+    hass, entry = _make_hass_for_module_config("secretbox", {
+        "solar_forecast_latitude": 50.087,
+        "solar_forecast_longitude": 14.421,
+        "solcast_site_id": "site_leak_12345",
+    })
+    view = api_module.OIGCloudModuleConfigView()
+
+    class _NonAdminReq:
+        app = {"hass": hass}
+
+        def get(self, key, default=None):
+            if key == "hass_user":
+                return SimpleNamespace(is_admin=False)
+            return default
+
+    response = await view.get(_NonAdminReq(), "secretbox")
+    body_text = response.text
+
+    assert response.status == 403
+    assert "solar_forecast_latitude" not in body_text
+    assert "solar_forecast_longitude" not in body_text
+    assert "site_leak_12345" not in body_text
