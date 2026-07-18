@@ -20,7 +20,7 @@
 - If behavior differs from mock data or contract, DOM evidence is authoritative and controls whether implementation passes.
 - Any file-level test gate that can pass with no rendered control is not accepted.
 
-## 3. Binding scope R1 through R9
+## 3. Binding scope R1 through R10
 
 ### R1 — Plan ordering
 - Decides: ordering is fixed as Plan 4 first, then Plan 3.6, then D8.
@@ -105,6 +105,7 @@
 - Decides: bounded startup and restore must be deterministic with measured cache behavior.
 - Obliges implementer: implement bounded restore windows, cache invalidation strategy, and verify behavior with explicit timing/size assertions.
 - Source trace: `SCOPE-REVISION.md` `R6.11`.
+- Binding override: this rule is overridden by `SCOPE-REVISION.md: R10.2`.
 
 ### R6.12 — Render metadata stability
 - Decides: `fieldsFromRegistry` memoization and rendered metadata must be stable across rerenders.
@@ -193,14 +194,40 @@
 
 ### R9.2 — Numeric performance budgets
 - `/solar_test` outbound timeout: `10 s` server-side hard cap using Home Assistant shared aiohttp session. Check: sleeping provider stub returns classified `timeout`; wizard next/skip remain enabled; no raw exception leaks.
-- `/solar_test` shared rate limit: the provider-consumption and concurrency bucket key is exactly normalized `(entry_id, provider)`; request-body hashes may be used only for response deduplication and MUST NOT create independent rate or concurrency buckets. Permit at most one provider call in flight per `(entry_id, provider)`, at most four provider calls in flight across the integration, and at most one outbound call per `(entry_id, provider)` per `30 s`. Reject excess work as `rate_limited` before calling the shared aiohttp session.
-- Wizard bootstrap: each GET to `/module_config`, `/config_registry`, `/onboarding`, and `/pricelists` must settle or be aborted within `3 s`; shared bootstrap deadline is `5 s`. On deadline, abort pending requests, render classified retry in affected step, and keep close/skip/dashboard navigation usable. Production launch must render the wizard shell within `100 ms` p95 and either interactive fields or classified retry state within `5 s`.
+- `/solar_test` shared rate limit: the provider-consumption and concurrency bucket key is exactly normalized `(entry_id, provider)`; request-body hashes may be used only for response deduplication and MUST NOT create independent rate or concurrency buckets. Permit at most one provider call in flight per `(entry_id, provider)`, at most four provider calls in flight across the integration, and at most one outbound call per `(entry_id, provider)` per `30 s`. Reject excess work as `rate_limited` before calling the shared aiohttp session. (overridden by `SCOPE-REVISION.md: R10.3`)
+- Wizard bootstrap: each GET to `/module_config`, `/config_registry`, `/onboarding`, and `/pricelists` must settle or be aborted within `3 s`; shared bootstrap deadline is `5 s`. On deadline, abort pending requests, render classified retry in affected step, and keep close/skip/dashboard navigation usable. Production launch must render the wizard shell within `100 ms` p95 and either interactive fields or classified retry state within `5 s`. (overridden by `SCOPE-REVISION.md: R10.2`)
 - Already-complete migration/setup budget: `<= 50 ms` on CI and no full rewrite. Check: completed marker reload measures setup with `time.monotonic()` and asserts no avoidable `Store.async_save()`.
 - Step render budget: Step 2 and Step 3 field rendering `<= 16 ms` p95 per component render; `fieldsFromRegistry(...)` called at most once per section per render path. Check: component fixture measures `performance.now()`, counts calls, and asserts DOM controls keep stable keys after unrelated input changes.
-- Transform executability: `TER-1`. An async transform MUST call only natively non-blocking async/HA APIs and MUST NOT call synchronous file, network, subprocess, sleep, crypto, or HA-state APIs on the event-loop thread. Every blocking callable MUST be passed directly to `hass.async_add_executor_job`; wrapping blocking code in `async def` and awaiting it does not satisfy this rule. Check: fixtures patch `open`, `Path.read_text/read_bytes`, `requests`, `subprocess`, `time.sleep`, and sync crypto entry points and assert execution is off the HA event-loop thread.
+- Transform executability: `TER-1` (overridden by `SCOPE-REVISION.md: R10.1`). An async transform MUST call only natively non-blocking async/HA APIs and MUST NOT call synchronous file, network, subprocess, sleep, crypto, or HA-state APIs on the event-loop thread. Every blocking callable MUST be passed directly to `hass.async_add_executor_job`; wrapping blocking code in `async def` and awaiting it does not satisfy this rule. Check: fixtures patch `open`, `Path.read_text/read_bytes`, `requests`, `subprocess`, `time.sleep`, and sync crypto entry points and assert execution is off the HA event-loop thread.
 
 ### R9.3 — Minor disposition
 - `PERF-NEW-R9-D`: CI writes one non-retry duration artifact per PR for the combined falsifier suite, retains the latest 50 successful PR artifacts, and computes nearest-rank p95 through `scripts/check_onboarding_perf_history.py`. Merge gate fails when p95 exceeds `30 s`; until 50 artifacts exist, every observed run is `<= 30 s`.
 - `PERF-NEW-R8-C`: credential clear/provider-switch/remove deletes `oig_cloud.ai_<entry_id>` and `oig_cloud.solar_<entry_id>` in `<= 200 ms` aggregate averaged across 5 CI runs, with both private store files gone and no migration-backup collision.
 - `PERF-NEW-R8-D`: deterministic clock override is an explicit function parameter or test-helper export, not a production global. Check: `rg -n "WINDOW|DEBUG_CLOCK|TEST_CLOCK" custom_components/oig_cloud/` returns 0 for production code and snapshot-selection p99 is `< 5 us` over 10,000 calls.
 - `R8-AS-NEW-1`: rejected for this R9 slice because the requested table edit is in `spec-critique/R6-CLASSIFICATION.md`, outside the allowed file list. Binding routing already exists in `SCOPE-REVISION.md: R8.4`; update the classification table only when that file is editable.
+
+## 9. R10 — Round-5 closeout (performance)
+
+### R10.1 — PERF-NEW-R9-A (CRITICAL)
+- Source trace: `SCOPE-REVISION.md: R10.1`.
+- Binding requirement: async transform blocking work must run through `hass.async_add_executor_job`; event-loop thread cannot execute sync file/network/subprocess/sleep/crypto/HA-state calls.
+- Observable outcome: no blocking callable runs on HA event-loop; blocking paths are executor-routed, and transform failure modes remain classified not crashy.
+- Falsification: patch `open`, `Path.read_text/read_bytes`, `requests`, `subprocess`, `time.sleep`, and sync crypto entry points in transform fixtures and fail when called without executor routing.
+
+### R10.2 — PERF-NEW-R9-B (CRITICAL)
+- Source trace: `SCOPE-REVISION.md: R10.2`.
+- Binding requirement: wizard bootstrap must use `AbortController`; each GET (`/module_config`, `/config_registry`, `/onboarding`, `/pricelists`) settles or aborts in `3 s`; shared bootstrap deadline is `5 s`; production launch `100 ms` p95 shell render; classified retry in affected step by `5 s`; render remains skippable.
+- Observable outcome: classify-only errors do not block `wizard-next`, `wizard-skip`, close, or dashboard; navigation remains usable while retry controls are visible.
+- Falsification: stall bootstrap endpoints and assert abort at `3 s`/`5 s`, deadline-terminated request closure, classified retry state, and no secret leakage.
+
+### R10.3 — PERF-NEW-R9-C (MAJOR)
+- Source trace: `SCOPE-REVISION.md: R10.3`.
+- Binding requirement: bucket key is exactly normalized `(entry_id, provider)`; one in-flight call per pair, up to `4` across integration, and one outbound per pair per `30 s`; body hashes are response-dedup only.
+- Observable outcome: repeated same-pair calls across duplicate request bodies stay within one bucket and do not create extra outbound provider calls.
+- Falsification: drive burst and retry flows and assert no more than one outbound call per pair within `30 s` even when request body differs.
+
+### R10.4 — PERF-NEW-R9-D (MINOR)
+- Source trace: `SCOPE-REVISION.md: R10.4`.
+- Binding requirement: merge gate is artifact-backed, uses nearest-rank p95 from `scripts/check_onboarding_perf_history.py`, and evaluates at `30 s` with `50` sample history.
+- Observable outcome: CI keeps last `50` successful PR artifacts and blocks merge when nearest-rank p95 exceeds `30 s` until history reaches `50` with all runs `<= 30 s`.
+- Falsification: run gate with a `35 s` sample in latest artifact set and assert merge rejection persists on that evaluation.
