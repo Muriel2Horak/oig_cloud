@@ -454,3 +454,58 @@ stay in the original, in quotes (enforced by `brief-lint`).
 - **Binding requirement:** add to `R9.3`: “CI writes one non-retry duration artifact per PR for the combined falsifier suite, retains the latest 50 successful PR artifacts, and computes nearest-rank p95 through `scripts/check_onboarding_perf_history.py`. The merge gate fails when p95 exceeds `30 s`. Until 50 artifacts exist, every observed run MUST be `<= 30 s`. Retry time is added to the same PR duration and never replaces the first-attempt duration.”
 - **Observable outcome:** merge gating uses a deterministic artifact-backed 50-sample `p95` stream with explicit retention and no hidden retry-skipping behavior.
 - **Falsification:** Remove all historical timing artifacts and run the stated wrapper once. The gate must fail closed or apply an explicit bootstrap rule; it must not report a 50-PR p95 from one sample.
+
+---
+
+## R11 — Shipped-code defects assigned to Plan 4 (2026-07-18)
+
+The R6–R10 hardening loop produced `spec-critique/SHIPPED-CODE-DEFECTS.md`: seven defects in code
+**already deployed to the operator's live box**. They are not spec problems and were correctly kept
+out of the spec loop. They are now **assigned to Plan 4**, which ships first — they must not wait for
+the later AI plan, because they affect a running installation today.
+
+Each acceptance criterion below must **fail against the current code**. A test that passes on today's
+tree proves nothing.
+
+**R11.1 — `GET module_config` admin gate (SEC-2, CRITICAL).** Already Plan 4 Task 1; keep it, and
+extend acceptance: a non-admin authenticated request MUST receive 403 and MUST NOT receive
+`solar_forecast_latitude` / `solar_forecast_longitude` / site identifiers in any response body.
+Regression test asserts both the status code and the absence of those keys.
+Location: `custom_components/oig_cloud/api/ha_rest_api.py:1213-1229`.
+
+**R11.2 — `AiKeyStore` must support deletion (AIK-1, MAJOR).** Add `async_clear()` and call it from
+the integration-removal lifecycle. Acceptance: after removing the config entry, the store file for
+that entry no longer exists; a test asserts the file is gone, not merely that the API returns
+`key_set: false`. Location: `ai/key_store.py:43-67`, `__init__.py:1932`.
+
+**R11.3 — Never replace a valid key with unverified material (AIK-3, MAJOR).** `POST /ai` currently
+writes the key before the verification result is known, so a provider outage can overwrite a working
+key. Acceptance: with a stored verified key, a POST carrying a new key whose verification FAILS must
+leave the previously stored key intact and still marked verified; the candidate is only promoted on
+success. Location: `api/ha_rest_api.py:1394-1424`.
+
+**R11.4 — Provider change must not leave stale key state (AIK-2, MAJOR).** Changing `ai_provider`
+without supplying a new key, or submitting a blank key, must not leave a key belonging to the
+previous provider. Acceptance: a test switches provider with no new key and asserts the stored state
+is cleared, not silently mismatched. Location: `config/steps.py:3599-3612`.
+
+**R11.5 — `task` must be a constrained enum, not free text (AIK-5, MAJOR).** The prompt anonymity
+boundary allow-lists structured `install` data, but `task` is concatenated as raw text and bypasses
+it. Acceptance: the backend accepts only known task identifiers; an unknown or free-text task is
+rejected before any outbound call, and a test asserts a crafted `task` string containing an address
+or coordinates never reaches the serialized request body.
+Location: `ai/backends.py:60-72`.
+
+**R11.6 — Classified errors, not raw exceptions (AIK-4, MINOR).** `POST /ai` returns
+`detail: str(err)`. Acceptance: the response carries a classified error code; the raw exception text
+appears only in the log. Location: `api/ha_rest_api.py:1411-1420`.
+
+**Ordering.** R11.1 and R11.3 are the two the operator is exposed to right now (home coordinates
+readable by any authenticated household account; a provider outage can destroy a working key) — they
+lead Plan 4. The rest follow in the same plan.
+
+**Still open for the operator (not resolved here):** the loop also produced ~13 PARTIALLY-CLOSED
+performance items with vague wording ("clarify asymptotic behaviour", "add limits for parallel
+queries"). The original performance review found the plan sound with six concrete minor items. These
+vague entries are loop artefacts, not findings, and should be pruned to those with a measurable
+criterion before implementation starts. Flagged, not actioned.
