@@ -41,6 +41,8 @@ nedostupný server).
 - Netýká se dashboardu: neúspěch **negatuje** nic (P6 SCOPE-REVISION — měkký průvodce).
 - **Render aserce:** tlačítko existuje; po mocku úspěšné odpovědi je v DOM prvek s výsledkem;
   po mocku chyby je v DOM čitelná chybová hláška.
+- **Contract:** `[Otestovat]` MUST call `POST /api/oig_cloud/{box}/solar_test` from the rendered wizard step, with current form values in the request body; UI result/error text must reflect the classified response from that endpoint. (R6.5)
+- **Falsification:** if the handler sends any endpoint other than `POST /api/oig_cloud/{box}/solar_test` or sends a request body that is not the current step values, the acceptance test fails.
 
 ### AK-3 — Krok ③ Ceny je skutečný formulář
 Uživatel vybere **distributora** a **sazbu**; formulář se **předvyplní z přibaleného datasetu**
@@ -55,7 +57,8 @@ Po dokončení (nebo přeskočení) kroku se stav **zapíše** a **přežije rel
 - `GET /onboarding` po dokončení kroku ① vrátí `steps.ai != "pending"`, vyplněný `timestamps.ai`
   a `provider` odpovídající `/ai`.
 - „Dokončit" nastaví zbývající kroky na `done`/`skipped`; opětovné otevření průvodce ukáže tento stav.
-- **Render aserce + API aserce:** po simulovaném dokončení kroku je stav v REST odpovědi změněn.
+- **Render aserce + API aserce + remount check:** po simulovaném dokončení kroku je stav v REST odpovědi změněn a po remountu komponenty je stav stále viditelný v DOM.
+- **Falsification:** if completion is set directly by test code (without wizard actions) and not by UI click flow, the acceptance test fails. (R6.6)
 
 ### AK-5 — Nic z toho nezamyká dashboard
 Dashboard se renderuje vždy, i s nedokončeným průvodcem; grandfathered uživatel nevidí banner.
@@ -95,3 +98,7 @@ v záložce Ceny zůstává, kde je — průvodce ho needituje, jen nastaví tar
   (Návrh: ano, aby se stav nerozcházel s realitou.)
 - **OQ-B:** Má krok ② [Otestovat] blokovat „Další" při neúspěchu? (Návrh: **ne** — měkký průvodce,
   jen varovat.)
+
+### R6 clarifications
+- AK-2 and AK-5 are now bound to `SCOPE-REVISION.md: R6.5` and `SCOPE-REVISION.md: R6.6`.
+- Step 3 and dataset checks are now bound to `SCOPE-REVISION.md: R6.3` and `SCOPE-REVISION.md: R6.4`.

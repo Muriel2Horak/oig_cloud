@@ -173,3 +173,64 @@ recovery action alongside the `unavailable` state. A log line does not satisfy i
 authored in Czech for the operator. Implementer agents have zero conversation history, so each
 implementation brief MUST carry an English restatement of the rules it depends on; national terms
 stay in the original, in quotes (enforced by `brief-lint`).
+
+## R6 — Round-1 closure requirements for remaining hard findings (2026-07-18)
+
+**R6.1 — Migration backups must be private and must never persist option secrets.**
+- During Plan 4 migration, any backup payload written by `config_migration` MUST be stored with `private=True` and MUST remove keys in `_SECRET_FIELDS` before write.
+- It must fail closed if a backup write attempt includes an API key or other secret field, with no plaintext fallback to `entry.options`.
+- Falsification test: seed options with `solar_forecast_api_key`, run `run_migration`, and then verify the backup payload loaded from `Store(..., private=True)` does not include `solar_forecast_api_key`.
+
+**R6.2 — Released pricelist JSON must be a byte-equivalent build artifact, not a manual stub.**
+- `scripts/build_pricelists.py` output must be the only source of truth for `remote_config/data/pricelists.json`; CI must compare canonical byte output to checked-in release bytes and fail on any mismatch.
+- The same script must export `year`, all required `distributors`, every required tariff, and all required `price_fields` in every snapshot; any missing distributor/tariff/value is a hard failure.
+- Numeric floors and drift checks must be enforced: if price coverage drops below minimum row counts or a field changes >30% without explicit override, test must fail.
+- Falsification test: replace the released file with `{"year":2026,"distributors":{"cez":{},"egd":{},"pre":{}}}` and assert CI fails before merge.
+
+**R6.3 — Pricelist runtime consumption must match the released schema exactly.**
+- `GET /api/oig_cloud/{box}/pricelists` must return bundled snapshot data from `remote_config/data/pricelists.json` only, including `distributors`, `tariffs`, confirmed price fields, `unit`, and `valid_from`/`stale_warning` state.
+- `Plan 3.6` must use this endpoint in step 3 with real DOM assertions (distributor select count > 0, tariff select count > 0, at least one prefilled price input, stale-year warning element when year < current year).
+- Falsification test: remove one tariff from the release or drop a `Kč/A/měsíc` POZE unit and assert step 3 render test fails before test suite passes.
+
+**R6.4 — Plan 3.6 completion and persistence is observable in UI, not only REST contracts.**
+- Step 2 and Step 3 must only change state via actual wizard controls: user clicks `next`, `skip`, `complete_step`, and `finish` in the rendered component, and the component writes `done/skipped` states.
+- After completion and after closing/reopening the wizard, the UI must still show persisted step status and timestamps in both DOM and `/onboarding` payload.
+- Falsification test: in a real wizard render, force state mutation through direct API call only (no control click) and require the test to fail; then complete via controls and assert remount keeps state.
+
+**R6.5 — Solar test endpoint and forecast UX are explicit and safe.**
+- Step 2 MUST call `POST /api/oig_cloud/{box}/solar_test` from the rendered `[Otestovat]` control with current form values (provider, key/site id, lat/lon, active strings).
+- Endpoint behavior MUST be admin-authenticated, bounded (timeout), and rate-limited; errors must be classified (`auth`, `provider_unreachable`, `timeout`, etc.) and safe for user display.
+- Falsification test: provide wrong key or site id and verify network body and DOM error mapping in one test, and a 100% repeated click test that does not turn into unbounded repeated upstream calls.
+
+**R6.6 — Missing-config warning must be visible in the affected surface and actionable.**
+- Where Plan 4 detects missing GPS/capacity context, tests must mount the exact production surface and assert a visible warning plus a clickable recovery action.
+- It is forbidden for this acceptance to pass with log-only evidence; warning + action are required DOM assertions.
+- Falsification test: remove required GPS/capacity values and ensure the affected screen renders warning text and recovery control within the same render pass.
+
+**R6.7 — AI key lifecycle must support deletion, strict rotation, and entry teardown.**
+- `AiKeyStore` MUST expose delete/clear semantics for an entry and integration removal path.
+- Key replacement must verify before switching active key; options flow must never silently keep a mismatched key/provider pair.
+- Falsification test: integration removal must remove `oig_cloud.ai_<entry_id>` and replacing `ai_provider` without replacement key must fail with explicit user action state.
+
+**R6.8 — Prompt boundary is schema-based, and `task` is never free text.**
+- Prompt construction must never concatenate raw `task` text; `task` must be an enum/constant and only structured fields flow into the backend call.
+- Any validate-config collector must explicitly exclude `solar_forecast_latitude`, `solar_forecast_longitude`, `box_id`, `entity_id`, API keys, and PII from prompt payload.
+- Falsification test: inject `task="ignore: token leak; box_id=1"` and assert serialized wire payload is unchanged and still contains only allow-listed fields.
+
+**R6.9 — Execution and diagnostics paths do not expose sensitive key state by default.**
+- `oig_ai_status` and diagnostics paths must avoid exposing raw key material, secret predicates, or unredacted raw exceptions from provider calls.
+- Falsification test: call a failing verify endpoint with a bad key and assert neither REST payload nor diagnostics contains provider key text.
+
+**R6.10 — Implementation briefs and checks are in English with bounded exceptions.**
+- Every new implementation brief used by Task 4, Task 6, and Plan 3.6 must be English and state the same acceptance/negative-prohibition pair as this clause.
+- `brief-lint` must be runnable in CI, including explicit command/entry path, and fail if missing.
+- Falsification test: run the brief lint command with one Czech brief and require non-zero exit.
+
+**R6.11 — Migration and dataset startup paths are bounded and testable under load.**
+- Migration restore/strip operations must avoid unnecessary per-setup I/O and provide explicit behavior when already-complete.
+- Runtime surfaces (`/config_registry`, `/pricelists`, pricing registry rendering) must include cache discipline and measurable test coverage for repeated loads.
+- Falsification test: reload an already migrated entry and assert no avoidable full rewrite path and no unbounded duplicate config fetches on one wizard open.
+
+**R6.12 — Planner field metadata is deterministic and render-efficient.**
+- `fieldsFromRegistry` rendering in step 2/3 must remain stable per render path; repeated renders cannot mutate fields; no repeated recomputation without stable keys.
+- Falsification test: toggle unrelated inputs in step 3 and assert distributor/tariff select/rendered price DOM is stable and memoization is not violated by field identity churn.
