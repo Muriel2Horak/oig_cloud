@@ -299,6 +299,8 @@ async def test_module_config_boiler_get_returns_new_keys():
         app = {"hass": hass}
 
         def get(self, key, default=None):
+            if key == "hass_user":
+                return _ADMIN_USER
             return default
 
     response = await view.get(_Req(), "f5box")
@@ -327,6 +329,8 @@ async def test_module_config_boiler_get_defaults_when_missing():
         app = {"hass": hass}
 
         def get(self, key, default=None):
+            if key == "hass_user":
+                return _ADMIN_USER
             return default
 
     response = await view.get(_Req(), "f5box2")
