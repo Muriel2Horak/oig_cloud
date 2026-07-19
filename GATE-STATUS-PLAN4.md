@@ -1,5 +1,8 @@
 # GATE-STATUS: DEPLOY — tip 7615f3714
 
+> Poslední změřený commit je `7615f3714`. Commity nad ním (`839ea41f1` a tento) mění pouze
+> `GATE-STATUS-PLAN4.md` — žádný produkční ani testovací kód, takže měření platí i pro branch tip.
+
 ## Verdikt
 
 - Doporučuji deploy z pohledu gate.
