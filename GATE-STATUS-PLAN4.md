@@ -1,7 +1,10 @@
-# GATE-STATUS: DEPLOY — tip 7615f3714
+# GATE-STATUS: DEPLOY — tip d005f5295
 
-> Poslední změřený commit je `7615f3714`. Commity nad ním (`839ea41f1` a tento) mění pouze
-> `GATE-STATUS-PLAN4.md` — žádný produkční ani testovací kód, takže měření platí i pro branch tip.
+> Poslední změřený commit je `7615f3714` pro backend/frontend (commity `839ea41f1`, `5f8b2238f`
+> mění pouze `GATE-STATUS-PLAN4.md`). Nový commit `d005f5295` přidává runtime guard v
+> `custom_components/oig_cloud/ai_task.py` a jeden guard-test v `tests/test_ai_task_wiring.py`,
+> který měří mypy stav z rc 1 na rc 0 (viz sekce `## Lint a types`). Backend fail-set zůstává
+> prázdný, +1 test, 4417 passed.
 
 ## Verdikt
 
@@ -9,10 +12,10 @@
 - Oba blokery z `08894182a` jsou vyřešené a změřené v tomto commitu.
 - Bloker 1 (2 backend failure na `5e314fe25`): zastaralý test problém, ne produkční regres. R11.1 přidal admin gate pro `GET module_config`; dva testy stavěly request bez admin usera a gated view proto odpověděl 403. Test-only oprava v `b2e6f1aba` dodala admin usera do `_Req` stubu a v tomto commitu přibyla dvě nové guard-testy proti regresi gate (non-admin 403, no-user 403). Produkční kód v `ha_rest_api.py` nebyl změněn.
 - Bloker 2 (frontend gate "not reproduced green"): prostředí, ne regres. Předchozí gate hledala `/repos/wt-p4-gate/www_v2`, která neexistuje; skutečný balík je `custom_components/oig_cloud/www_v2`. Po `npm ci` v tomto worktree prošly `npm run test:unit` (61 files, 1466 tests passed) i `npx tsc --noEmit` (rc 0). Původní commit evidence `485dfc910` tedy stojí.
-- Backend fail-set diff: tip `5e314fe25` měl 2 failures, patched tip `b2e6f1aba` 0 failures; baseline `86ebc68ae` 0 failures. Po tomto commitu: `4416 passed, 28 skipped, 0 failed` (přibyly 2 guard-testy proti `b2e6f1aba`).
+- Backend fail-set diff: tip `5e314fe25` měl 2 failures, patched tip `b2e6f1aba` 0 failures; baseline `86ebc68ae` 0 failures. Po commitu `d005f5295`: `4417 passed, 28 skipped, 0 failed` (přibyly 2 R11.1 guard-testy proti `b2e6f1aba` + 1 R11.7 None-deref guard-test).
 - Frontend fail-set diff: po `npm ci` obě prostředí zelená. Žádný change-only frontend fail.
 - Lint: `flake8 --max-line-length=120` rc 0 na obou, nové findings 0.
-- Types: `mypy --ignore-missing-imports --explicit-package-bases custom_components/oig_cloud` rc 1 s pre-existing `ai_task.py:95 [union-attr]`; žádné nové findings.
+- Types: `mypy --ignore-missing-imports --explicit-package-bases custom_components/oig_cloud` rc 0 na tipu `d005f5295` — pre-existing `ai_task.py:95 [union-attr]` je vyřešen runtime guardem s lokální vazbou; 181 files, 0 errors. Žádné nové findings.
 - Deploy na HA nebyl proveden. HA server nebyl kontaktován.
 
 ## Per-task evidence
@@ -39,27 +42,28 @@
 | Fix round 1: 4 review defects | `review-plan-4-fix-round-1-4-review-defe-1bb030`/gpt-5.5; transplant `review-transplant-plan-4-fix-round-1-2-e22cd9`/codex; verify `plan-independent-base-vs-change-verif-edcc5c`/codex | `5e314fe` | ano | secret stripping migration backup, admin gate on config_registry, `MigrationError` surfaced, AI verify error classified; 4 nové testy fail na unchanged tree | score: rework=none, grounded, in_scope, honest, complete |
 | Fix round 2: Repairs issue mount | `plan-4-fix-round-2-mount-config-4d4c87`/codex; transplant `review-transplant-plan-4-fix-round-1-2-e22cd9`/codex; verify `plan-independent-base-vs-change-verif-edcc5c`/codex | `5e314fe` | ano | `config_migration_failed` issue mounted on Repairs surface, cs/en translations and `strings.json`; commit uvádí pre-change FAIL at `tests/test_init_extra.py:348` | score: rework=none, grounded, in_scope, honest, complete |
 | Gate-fix commit (tento): stale-test oprava + R11.1 guard-testy | tento slice (codex/minimax, kódx pro `b2e6f1aba`, tento gate pro guard-testy a status) | `b2e6f1aba`+tento | čeká na push | `b2e6f1aba` dodal admin usera do dvou `_Req` stubů; tento commit přidává dvě guard-testy (`non_admin_returns_403_no_payload`, `no_user_returns_403_no_payload`), které selžou na pre-change `86ebc68ae` a projdou po R11.1 gate. Fail-set diff patched-tip vs base: prázdný. | gate měření provedeno; nové guard-testy 35 passed v souboru, 4416 passed v celé suite |
+| R11.7: None-deref guard na `OigAiTaskEntity._async_generate_data` (mypy union-attr) | tento slice (codex/minimax, codex pro guard a test) | `d005f5295` | ano, v branch tipu | runtime guard v `ai_task.py`: bind `backend = self._backend`, raise `RuntimeError("AI backend not configured")` na None — classified soft-failure ve stylu `ai/backends.py` HTTP cesty. Pre-change FAIL doložen: `tests/test_ai_task_wiring.py::test_missing_backend_on_openai_compat_provider_raises_classified_error` na `5f8b2238f` (pre-change guard) selže s `AttributeError: 'NoneType' object has no attribute 'async_generate_data'` na `ai_task.py:95`. Po guardu: mypy rc 0, 0 errors v 181 files; pytest 4417 passed (4416+1); flake8 rc 0. | run rc=0; gate verdict: mypy absolutně zelený poprvé |
 
 ## Baseline vs final suite
 
 - Baseline command: `/repos/wt-p4-gate-base`, commit `86ebc68ae`, `./.venv/bin/pytest -q 2>&1 | tail -20`.
 - Baseline result: `4354 passed, 28 skipped, 44 warnings in 67.99s`.
 - Baseline failing set: prázdný.
-- Tip command: `/repos/wt-p4-gate2` (HEAD po tomto commitu), `./.venv/bin/pytest -q 2>&1 | tail -20`.
-- Tip result: `4416 passed, 28 skipped, 44 warnings in 62.00s`.
+- Tip command: `/repos/wt-p4-gate2` (HEAD po commitu `d005f5295`), `./.venv/bin/pytest -q 2>&1 | tail -20`.
+- Tip result: `4417 passed, 28 skipped, 44 warnings in 69.06s`.
 - Tip failing set: prázdný.
-- Failing-set diff (tip minus baseline): prázdný. Žádné nové failure na tipu; +62 testů přidáno (61 guard/rest nových testů z R11.x a fix rounds, +2 R11.1 guard-testy tímto commitem).
+- Failing-set diff (tip minus baseline): prázdný. Žádné nové failure na tipu; +63 testů přidáno (61 guard/rest nových testů z R11.x a fix rounds, +2 R11.1 guard-testy commitu gate-fix, +1 R11.7 None-deref guard-test).
 - Mezistav `b2e6f1aba`: `4414 passed, 28 skipped`; fail-set diff rovněž prázdný.
 
 ## Lint a types
 
 - `flake8 --max-line-length=120` (s `.flake8` exclude pro `tests/`), baseline: rc 0, no output.
-- `flake8 --max-line-length=120`, tip: rc 0, no output.
+- `flake8 --max-line-length=120`, tip `d005f5295`: rc 0, no output.
 - New flake8 findings: 0. (Soubor `tests/test_boiler_f5_config_settings.py` má 6 pre-existing F401/E402 nálezů, které `.flake8` exclude kryje; diff nezvětšuje počet.)
 - `mypy --ignore-missing-imports --explicit-package-bases custom_components/oig_cloud`, baseline: rc 1, chyba `custom_components/oig_cloud/ai_task.py:95 [union-attr]`, checked 179 files.
-- `mypy --ignore-missing-imports --explicit-package-bases custom_components/oig_cloud`, tip: rc 1, stejná chyba `custom_components/oig_cloud/ai_task.py:95 [union-attr]`, checked 181 files.
+- `mypy --ignore-missing-imports --explicit-package-bases custom_components/oig_cloud`, tip `d005f5295`: **rc 0**, `Success: no issues found in 181 source files`. Pre-existing `ai_task.py:95 [union-attr]` je vyřešen runtime guardem s lokální vazbou `backend = self._backend` a explicitním `if backend is None: raise RuntimeError(...)` — classified soft-failure ve stylu `ai/backends.py` HTTP cesty.
 - New mypy findings: 0.
-- Absolutní mypy stav není zelený, ale není nový proti baseline.
+- **Mypy absolutně zelený poprvé v této řadě commitů.**
 
 ## Frontend
 
@@ -85,6 +89,7 @@ Pro úkoly s chybějícím samostatným pre-change FAIL důkazem v commit messag
 | R11.6 raw-exception half | `tests/test_ai_rest.py::test_ai_post_verify_exception_returns_classified_code_not_raw_detail` | FAIL: `KeyError: 'code'` (pre-change negeneroval klasifikovanou obálku) | pre-change FAIL prokázán |
 | R11.1 (gate guard, tento commit) | `tests/test_boiler_f5_config_settings.py::test_module_config_boiler_get_non_admin_returns_403_no_payload` | FAIL: `assert 200 == 403` (pre-change nemá admin gate) | pre-change FAIL prokázán |
 | R11.1 (gate guard, tento commit) | `tests/test_boiler_f5_config_settings.py::test_module_config_boiler_get_no_user_returns_403_no_payload` | FAIL: `assert 200 == 403` (pre-change nemá admin gate) | pre-change FAIL prokázán |
+| R11.7 (None-deref guard, `d005f5295`) | `tests/test_ai_task_wiring.py::test_missing_backend_on_openai_compat_provider_raises_classified_error` | FAIL: `AttributeError: 'NoneType' object has no attribute 'async_generate_data'` na `ai_task.py:95` (pre-change guard) | pre-change FAIL prokázán |
 
 ## Providers avoided
 
@@ -96,4 +101,4 @@ Pro úkoly s chybějícím samostatným pre-change FAIL důkazem v commit messag
 - Boiler config behavior: ověřeno, fail-set diff prázdný; R11.1 gate aktivní (viz dvě nové guard-testy).
 - Frontend: ověřeno jako zelené po `npm ci` v `custom_components/oig_cloud/www_v2`; pre-change FAIL Task 6c dodatečně potvrzen.
 - Task 9, Task 10: stále bez dedikovaného test artefaktu v commit range; roli full-gate base-vs-change plní tento slice. Operátor by měl vědět, že Task 9 acceptance zůstává neauditovaná.
-- Mypy absolutně není zelený; chyba je inherited v `ai_task.py:95`, ale stále existuje.
+- Mypy: **commit `d005f5295` mění stav z rc 1 na rc 0** — `ai_task.py:95 [union-attr]` je vyřešen runtime guardem. Poprvé v této řadě měření je mypy absolutně zelený.
