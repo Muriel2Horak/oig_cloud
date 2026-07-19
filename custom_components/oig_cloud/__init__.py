@@ -6,13 +6,14 @@ import asyncio
 import hashlib
 import logging
 import re
+import voluptuous as vol
 from typing import Any, Dict
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
 from .lib.oig_cloud_client.api.oig_cloud_api import OigCloudApi, OigCloudAuthError
@@ -39,6 +40,7 @@ from .core.data_source import (
     get_data_source_state,
     init_data_source_state,
 )
+from .config_migration import register_transform, restore_last_backup, run_migration
 from .config.promote_defaults import promote_blank_enum_defaults
 from .shared.logging import resolve_no_telemetry
 
@@ -69,6 +71,8 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 # OPRAVA: Definujeme všechny možné box modes pro konzistenci
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
+_MIGRATION_RESTORE_SCHEMA = vol.Schema({vol.Required("entry_id"): cv.string})
+_MIGRATION_RESTORE_SERVICE = "restore_migration_backup"
 
 
 def _read_manifest_file(path: str) -> str:
@@ -131,6 +135,31 @@ def _infer_box_id_from_local_entities(hass: HomeAssistant) -> str | None:
     except Exception as err:
         _LOGGER.debug("Failed to infer local box_id: %s", err, exc_info=True)
         return None
+
+
+def _legacy_planner_migration_transform(
+    options: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Return planner migration updates plus keys removed from legacy migration."""
+    migrated = dict(options)
+    _migrate_legacy_planner_options(migrated)
+    removed: list[str] = _purge_obsolete_planner_options(migrated)
+    if "max_price_conf" in options and "max_price_conf" not in migrated:
+        removed.append("max_price_conf")
+
+    for key, default in _get_planner_defaults().items():
+        if migrated.get(key) is None:
+            migrated[key] = default
+
+    updates = {
+        key: value
+        for key, value in migrated.items()
+        if options.get(key) != value
+    }
+    return updates, removed
+
+
+register_transform(_legacy_planner_migration_transform)
 
 
 def _get_planner_defaults() -> dict[str, Any]:
@@ -200,22 +229,52 @@ def _apply_planner_defaults(entry: ConfigEntry, options: dict[str, Any], default
     return updated, missing_keys
 
 
-def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry) -> None:
+def _register_migration_restore_service(hass: HomeAssistant) -> None:
+    """Register migration restore service once."""
+    services = getattr(hass, "services", None)
+    if services is None:
+        return
+    if services.has_service(DOMAIN, _MIGRATION_RESTORE_SERVICE):
+        return
+
+    async def _handle_restore_migration_backup(call: ServiceCall) -> None:
+        if not call.context.user_id:
+            raise HomeAssistantError("Admin restore requires authenticated user")
+
+        user = await hass.auth.async_get_user(call.context.user_id)
+        if not user or not user.is_admin:
+            raise HomeAssistantError("Admin restore requires admin account")
+
+        entry = hass.config_entries.async_get_entry(call.data["entry_id"])
+        if entry is None:
+            raise HomeAssistantError("Config entry not found")
+
+        if not await restore_last_backup(hass, entry):
+            raise HomeAssistantError("No migration backup available to restore")
+
+    services.async_register(
+        DOMAIN,
+        _MIGRATION_RESTORE_SERVICE,
+        _handle_restore_migration_backup,
+        schema=_MIGRATION_RESTORE_SCHEMA,
+    )
+
+
+def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry):
     """Ensure planner-related options exist on legacy config entries."""
-    defaults = _get_planner_defaults()
-    options = dict(entry.options)
-
-    _migrate_legacy_planner_options(options)
-    removed = _purge_obsolete_planner_options(options)
-    updated, missing_keys = _apply_planner_defaults(entry, options, defaults)
-
-    if updated or removed:
-        _LOGGER.info(
-            "🔧 Injecting missing planner options for entry %s: %s",
-            entry.entry_id,
-            ", ".join(missing_keys) if missing_keys else "none",
-        )
-        hass.config_entries.async_update_entry(entry, options=options)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        options = dict(entry.options)
+        updates, removed = _legacy_planner_migration_transform(options)
+        if updates or removed:
+            migrated = dict(entry.options)
+            migrated.update(updates)
+            for key in removed:
+                migrated.pop(key, None)
+            hass.config_entries.async_update_entry(entry, options=migrated)
+        return None
+    return run_migration(hass, entry)
 
 
 async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
@@ -1545,7 +1604,7 @@ async def async_setup_entry(
     _LOGGER.debug("Config options keys: %s", list(entry.options.keys()))
 
     # Inject defaults for new planner/autonomy options so legacy setups keep working
-    _ensure_planner_option_defaults(hass, entry)
+    await _ensure_planner_option_defaults(hass, entry)
     _ensure_data_source_option_defaults(hass, entry)
     _migrate_enable_spot_prices_option(hass, entry)
     promote_blank_enum_defaults(hass, entry)
@@ -1764,6 +1823,7 @@ async def _register_entry_services(
     # Setup základních služeb (pouze jednou pro celou integraci)
     if len([k for k in hass.data[DOMAIN].keys() if k != "shield"]) == 1:
         await async_setup_services(hass)
+        _register_migration_restore_service(hass)
 
     # Setup entry-specific služeb s shield ochranou
     await async_setup_entry_services_with_shield(hass, entry, service_shield)

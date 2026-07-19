@@ -41,7 +41,14 @@ from homeassistant.util import dt as dt_util
 
 from ..const import CONF_AUTO_MODE_SWITCH, DOMAIN
 from ..config_merge import merge_entry_options
-from ..config_registry import FIELD_REGISTRY, coerce_value, fields_for_section, registry_as_api_dict
+from ..config_registry import (
+    _load_released_pricelists,
+    _pick_latest_snapshot,
+    FIELD_REGISTRY,
+    coerce_value,
+    fields_for_section,
+    registry_as_api_dict,
+)
 from ..config.solar_rules import normalize_azimuth, validate_solar_effective
 from ..ai.backends import PROVIDERS, OpenAiCompatBackend
 from ..ai.key_store import AiKeyStore, redact_key
@@ -1325,6 +1332,98 @@ class OIGCloudConfigRegistryView(HomeAssistantView):
         return web.json_response({"fields": fields, "sections": sections})
 
 
+class OIGCloudPricelistsView(HomeAssistantView):
+    """Read-only endpoint exposing released pricelist rates for onboarding."""
+
+    url = f"{API_BASE}/{{box_id}}/pricelists"
+    name = "api:oig_cloud:pricelists"
+    requires_auth = True
+
+    def _require_admin(self, request: web.Request) -> Optional[web.Response]:
+        user = request.get("hass_user") if hasattr(request, "get") else None
+        if user is None and hasattr(request, "app"):
+            user = request.app.get("hass_user")
+        if not user or not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+        return None
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        denied = self._require_admin(request)
+        if denied is not None:
+            return denied
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        try:
+            payload = _load_released_pricelists()
+            snapshot = _pick_latest_snapshot(payload)
+            snapshot_distributors = snapshot.get("distributors", payload["distributors"])
+            if not isinstance(snapshot_distributors, dict):
+                raise RuntimeError("pricing snapshot distributors must be a dict")
+            distributors = {
+                str(distributor): dict(rates) if isinstance(rates, dict) else {}
+                for distributor, rates in snapshot_distributors.items()
+            }
+            tariff_set: set[str] = set()
+            for rates in distributors.values():
+                if isinstance(rates, dict):
+                    tariff_set.update(rates.keys())
+            tariffs = tuple(sorted(str(tariff) for tariff in tariff_set))
+
+            options = getattr(entry, "options", {})
+            selected_distributor = options.get(
+                "confirmed_distribution_distributor", ""
+            ) or FIELD_REGISTRY["confirmed_distribution_distributor"].default
+            selected_tariff = options.get("confirmed_distribution_tariff", "") or FIELD_REGISTRY["confirmed_distribution_tariff"].default
+
+            if selected_distributor not in distributors:
+                selected_distributor = sorted(distributors.keys())[0] if distributors else ""
+            selected_rates = distributors.get(selected_distributor, {}) if selected_distributor else {}
+            if selected_tariff not in selected_rates:
+                selected_tariff = tuple(sorted(selected_rates.keys()))[0] if selected_rates else ""
+
+            selected_rate = selected_rates.get(selected_tariff, {}) if selected_tariff else {}
+            if not isinstance(selected_rate, dict):
+                selected_rate = {}
+
+            source_year = payload.get("year")
+            try:
+                year = int(source_year) if source_year is not None else None
+            except (TypeError, ValueError):
+                year = None
+            valid_from = snapshot.get("valid_from")
+            stale_warning = False
+            if year is not None:
+                stale_warning = year < dt_util.utcnow().year
+
+            return web.json_response(
+                {
+                    "distributors": distributors,
+                    "tariffs": list(tariffs),
+                    "selected_distributor": selected_distributor,
+                    "selected_tariff": selected_tariff,
+                    "confirmed_distribution_price_incl_vat": float(
+                        selected_rate.get("price_incl_vat", FIELD_REGISTRY["confirmed_distribution_price_incl_vat"].default)
+                    ),
+                    "confirmed_distribution_price_excl_vat": float(
+                        selected_rate.get("price_excl_vat", FIELD_REGISTRY["confirmed_distribution_price_excl_vat"].default)
+                    ),
+                    "confirmed_distribution_unit": str(
+                        selected_rate.get("unit", FIELD_REGISTRY["confirmed_distribution_unit"].default or "Kc/A/mesic")
+                    ),
+                    "year": year,
+                    "valid_from": valid_from,
+                    "stale_warning": stale_warning,
+                }
+            )
+
+        except (OSError, RuntimeError) as err:
+            _LOGGER.error("Failed to serve pricelists for %s: %s", box_id, err)
+            return web.json_response({"error": "Pricelist data unavailable"}, status=503)
+
+
 class OIGCloudAiView(HomeAssistantView):
     """Admin-only REST surface for the per-entry AI provider key (F1-DESIGN §3, P2).
 
@@ -1563,6 +1662,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudDashboardModulesView())
     hass.http.register_view(OIGCloudModuleConfigView())
     hass.http.register_view(OIGCloudConfigRegistryView())
+    hass.http.register_view(OIGCloudPricelistsView())
     hass.http.register_view(OIGCloudSpotPricesView())
     hass.http.register_view(OIGCloudAnalyticsView())
     hass.http.register_view(OIGCloudConsumptionProfilesView())
@@ -1582,5 +1682,6 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"
         f"  - {API_BASE}/balancing_decisions/<box_id>\n"
         f"  - {API_BASE}/<box_id>/ai (admin only)\n"
+        f"  - {API_BASE}/<box_id>/pricelists (admin only)\n"
         f"  - {API_BASE}/<box_id>/onboarding (admin only)"
     )

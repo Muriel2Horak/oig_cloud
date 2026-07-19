@@ -38,6 +38,26 @@ import {
   type OnboardingStepId,
   type AiVerifyResult,
 } from './onboarding-data';
+import { haClient } from '@/data/ha-client';
+
+interface PricingRate {
+  price_incl_vat: number;
+  price_excl_vat: number;
+  unit: string;
+}
+
+interface PricelistsResponse {
+  distributors: Record<string, Record<string, PricingRate>>;
+  tariffs: string[];
+  selected_distributor: string;
+  selected_tariff: string;
+  confirmed_distribution_price_incl_vat: number;
+  confirmed_distribution_price_excl_vat: number;
+  confirmed_distribution_unit: string;
+  stale_warning: boolean;
+  valid_from: string | null;
+  year: number | null;
+}
 
 // ----------------------------------------------------------------------------
 // Re-exports for tests / other tabs
@@ -281,6 +301,9 @@ export class OigOnboardingWizard extends LitElement {
 
   /** Internal step routing — single source of truth is `WIZARD_STEPS`. */
   @state() private currentStep: OnboardingStepId = 'ai';
+  @state() private pricing: PricelistsResponse | null = null;
+  @state() private pricingLoading = false;
+  @state() private pricingLoadFailed = false;
 
   static styles = css`
     :host {
@@ -451,6 +474,44 @@ export class OigOnboardingWizard extends LitElement {
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   }
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    if (this.open && this.inverterSn) {
+      void this.refreshPricing();
+    }
+  }
+
+  protected updated(changedProperties: Map<string, unknown>): void {
+    super.updated(changedProperties);
+    if (
+      (changedProperties.has('open') || changedProperties.has('inverterSn')) &&
+      this.open &&
+      this.inverterSn &&
+      !this.pricing &&
+      !this.pricingLoading
+    ) {
+      void this.refreshPricing();
+    }
+  }
+
+  private async refreshPricing(): Promise<void> {
+    if (!this.inverterSn || this.pricingLoading) {
+      return;
+    }
+    this.pricingLoading = true;
+    this.pricingLoadFailed = false;
+    try {
+      this.pricing = await haClient.fetchOIGAPI<PricelistsResponse>(
+        `/${this.inverterSn}/pricelists`,
+      );
+    } catch {
+      this.pricing = null;
+      this.pricingLoadFailed = true;
+    } finally {
+      this.pricingLoading = false;
+    }
+  }
+
   private jumpTo(step: OnboardingStepId): void {
     this.currentStep = step;
   }
@@ -485,6 +546,91 @@ export class OigOnboardingWizard extends LitElement {
               Průvodce záměrně nezobrazuje formulář znovu — konfigurace se
               provede jednou, a to v Nastavení.
             </p>
+          </div>
+        </section>
+      `;
+    }
+
+    if (this.currentStep === 'pricing') {
+      const distributorCount = Object.keys(this.pricing?.distributors || {}).length;
+      if (
+        !this.pricing ||
+        this.pricingLoadFailed ||
+        distributorCount === 0 ||
+        this.pricing.tariffs.length === 0
+      ) {
+        return html`
+          <section class="step step-pricing" data-step="pricing">
+            <h3>③ Ceny</h3>
+            <div class="step-card">
+              <p data-testid="pricing-data-missing">
+                Ceny nejsou dostupné.
+              </p>
+            </div>
+          </section>
+        `;
+      }
+
+      const distributors = Object.entries(this.pricing.distributors);
+      const selectedDistributor = this.pricing.selected_distributor ||
+        (distributors.length > 0 ? distributors[0][0] : '');
+      const selectedTariff = this.pricing.selected_tariff ||
+        (selectedDistributor && Object.keys(this.pricing.distributors[selectedDistributor] || {}).length > 0
+          ? (Object.keys(this.pricing.distributors[selectedDistributor] as Record<string, PricingRate>)[0] || '')
+          : '');
+      const selectedTariffRates = selectedDistributor
+        ? this.pricing.distributors[selectedDistributor]?.[selectedTariff]
+        : null;
+      const priceIncl = selectedTariffRates?.price_incl_vat ??
+        this.pricing.confirmed_distribution_price_incl_vat;
+      const priceExcl = selectedTariffRates?.price_excl_vat ??
+        this.pricing.confirmed_distribution_price_excl_vat;
+
+      return html`
+        <section class="step step-pricing" data-step="pricing">
+          <h3>③ Ceny</h3>
+          <div class="step-card">
+            <label>
+              Distributor
+              <select data-testid="pricing-distributor-select">
+                ${Object.keys(this.pricing.distributors).map((item) => html`
+                  <option value=${item} ?selected=${item === selectedDistributor}>
+                    ${item}
+                  </option>
+                `)}
+              </select>
+            </label>
+            <label>
+              Tariffa
+              <select data-testid="pricing-tariff-select">
+                ${Object.keys(this.pricing.distributors[selectedDistributor] || {}).map((item) => html`
+                  <option value=${item} ?selected=${item === selectedTariff}>
+                    ${item}
+                  </option>
+                `)}
+              </select>
+            </label>
+            <div>
+              <label>
+                Cena s DPH
+                <input
+                  data-testid="pricing-price-incl"
+                  value=${String(priceIncl)}
+                  readonly
+                />
+              </label>
+              <label>
+                Cena bez DPH
+                <input
+                  data-testid="pricing-price-excl"
+                  value=${String(priceExcl)}
+                  readonly
+                />
+              </label>
+            </div>
+            ${this.pricing.stale_warning
+              ? html`<p data-testid="pricing-stale-warning">Ceny jsou z předchozího roku.</p>`
+              : nothing}
           </div>
         </section>
       `;

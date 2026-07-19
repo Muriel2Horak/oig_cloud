@@ -8,7 +8,9 @@ field lists.
 from __future__ import annotations
 
 import math
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 
@@ -84,6 +86,99 @@ def coerce_value(f: Field, raw: Any) -> Any:
         raise ValueError(f"{f.key}: must be one of {f.enum}")
     return value
 
+
+# --- pricing source data ------------------------------------------------------
+_PRICELISTS_JSON_PATH = (
+    Path(__file__).resolve().parent / "remote_config" / "data" / "pricelists.json"
+)
+
+
+def _load_released_pricelists() -> Dict[str, Any]:
+    try:
+        with _PRICELISTS_JSON_PATH.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except OSError as err:
+        raise RuntimeError("pricing release file missing") from err
+    if not isinstance(payload, dict) or "distributors" not in payload:
+        raise RuntimeError("pricing release file has invalid shape")
+    return payload
+
+
+def _pick_latest_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
+    snapshots = payload.get("valid_from_snapshots")
+    if not snapshots:
+        return payload
+    try:
+        ordered = sorted(
+            snapshots,
+            key=lambda item: str(item.get("valid_from", "")),
+        )
+    except Exception as err:
+        raise RuntimeError("pricing snapshot sorting failed") from err
+    return ordered[-1]
+
+
+def _derive_pricing_enums() -> tuple[
+    Tuple[str, ...],
+    Tuple[str, ...],
+    str,
+    str,
+    str,
+    float,
+    float,
+]:
+    payload = _load_released_pricelists()
+    distributors_block = payload.get("distributors", {})
+    if not isinstance(distributors_block, dict):
+        raise RuntimeError("pricing release distributors must be a dict")
+
+    dist_keys = tuple(sorted({str(k) for k in distributors_block.keys()}))
+    tariff_keys = sorted(
+        {
+            str(tariff)
+            for item in distributors_block.values()
+            if isinstance(item, dict)
+            for tariff in item.keys()
+        }
+    )
+
+    default_dist = dist_keys[0] if dist_keys else ""
+    default_tariff = tuple(tariff_keys)[0] if tariff_keys else ""
+
+    snapshot = _pick_latest_snapshot(payload)
+    snapshot_distributors = snapshot.get("distributors", payload["distributors"])
+    fallback = next((rates for rates in snapshot_distributors.values() if isinstance(rates, dict)), {})
+    if isinstance(fallback, dict):
+        fallback_rate = fallback.get(default_tariff, {}) if default_tariff else {}
+    else:
+        fallback_rate = {}
+
+    default_price_incl = float(
+        fallback_rate.get("price_incl_vat", 0.0)
+    ) if isinstance(fallback_rate, dict) else 0.0
+    default_price_excl = float(
+        fallback_rate.get("price_excl_vat", 0.0)
+    ) if isinstance(fallback_rate, dict) else 0.0
+    default_unit = (
+        str(fallback_rate.get("unit", "Kc/A/mesic"))
+        if isinstance(fallback_rate, dict)
+        else "Kc/A/mesic"
+    )
+
+    return (
+        dist_keys,
+        tuple(tariff_keys),
+        default_dist,
+        str(default_tariff),
+        default_unit,
+        default_price_incl,
+        default_price_excl,
+    )
+
+
+_PRICE_DISTRIBUTORS, _PRICE_TARIFFS, _PRICE_DEFAULT_DISTRIBUTOR, _PRICE_DEFAULT_TARIFF, _PRICE_DEFAULT_UNIT, _PRICE_DEFAULT_INCL, _PRICE_DEFAULT_EXCL = (
+    _derive_pricing_enums()
+)
 
 # Populated by _register() below; Tasks 2-3 add the actual fields.
 FIELD_REGISTRY: Dict[str, Field] = {}
@@ -262,6 +357,49 @@ _register(
           enum=("ai_task", "groq", "nvidia")),
     Field("ai_base_url", "ai", str, default="", optional=True),
     Field("ai_model", "ai", str, default="", optional=True),
+)
+
+
+# --- section: pricing --------------------------------------------------------
+# R5.2: distributor enum must be derived from released dataset, not a hardcoded
+# list. The confirmed price fields are populated from the same data so the client
+# can prefill the wizard without duplicate parser logic.
+_register(
+    Field(
+        "confirmed_distribution_distributor",
+        "pricing",
+        str,
+        default=_PRICE_DEFAULT_DISTRIBUTOR,
+        enum=_PRICE_DISTRIBUTORS,
+    ),
+    Field(
+        "confirmed_distribution_tariff",
+        "pricing",
+        str,
+        default=_PRICE_DEFAULT_TARIFF,
+        enum=_PRICE_TARIFFS,
+    ),
+    Field(
+        "confirmed_distribution_price_incl_vat",
+        "pricing",
+        float,
+        default=_PRICE_DEFAULT_INCL,
+        min=0.0,
+    ),
+    Field(
+        "confirmed_distribution_price_excl_vat",
+        "pricing",
+        float,
+        default=_PRICE_DEFAULT_EXCL,
+        min=0.0,
+    ),
+    Field(
+        "confirmed_distribution_unit",
+        "pricing",
+        str,
+        default=_PRICE_DEFAULT_UNIT,
+        optional=True,
+    ),
 )
 
 

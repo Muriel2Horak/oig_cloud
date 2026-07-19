@@ -54,7 +54,7 @@ def test_coerce_enum():
 def test_registry_keys_match_field_keys():
     for key, field in FIELD_REGISTRY.items():
         assert key == field.key
-        assert field.section in ("modules", "battery", "solar", "boiler", "basic", "ai")
+        assert field.section in ("modules", "battery", "solar", "boiler", "basic", "ai", "pricing")
 
 
 def test_fields_for_section_filters():
@@ -231,6 +231,20 @@ def test_basic_section_has_six_fields():
         "local_event_debounce_ms",
         "enable_dashboard",
     }
+
+
+def test_pricing_section_has_distributor_selector_and_confirmed_price_fields():
+    pricing = fields_for_section("pricing")
+    assert set(pricing) == {
+        "confirmed_distribution_distributor",
+        "confirmed_distribution_tariff",
+        "confirmed_distribution_price_incl_vat",
+        "confirmed_distribution_price_excl_vat",
+        "confirmed_distribution_unit",
+    }
+    assert pricing["confirmed_distribution_distributor"].section == "pricing"
+    assert pricing["confirmed_distribution_distributor"].enum
+    assert pricing["confirmed_distribution_tariff"].enum
 
 
 def test_basic_field_metadata_matches_flow():

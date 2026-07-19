@@ -1,0 +1,128 @@
+{
+  "distributors": {
+    "cez": {
+      "NT": {
+        "price_excl_vat": 7.1,
+        "price_incl_vat": 9.2,
+        "unit": "Kc/A/mesic"
+      },
+      "POZE": {
+        "price_excl_vat": 1.6,
+        "price_incl_vat": 2.1,
+        "unit": "Kc/A/mesic"
+      },
+      "VT": {
+        "price_excl_vat": 9.5,
+        "price_incl_vat": 12.4,
+        "unit": "Kc/A/mesic"
+      }
+    },
+    "egd": {
+      "NT": {
+        "price_excl_vat": 6.4,
+        "price_incl_vat": 8.7,
+        "unit": "Kc/A/mesic"
+      },
+      "POZE": {
+        "price_excl_vat": 1.8,
+        "price_incl_vat": 2.3,
+        "unit": "Kc/A/mesic"
+      },
+      "VT": {
+        "price_excl_vat": 10.0,
+        "price_incl_vat": 13.1,
+        "unit": "Kc/A/mesic"
+      }
+    },
+    "pre": {
+      "NT": {
+        "price_excl_vat": 6.6,
+        "price_incl_vat": 8.9,
+        "unit": "Kc/A/mesic"
+      },
+      "POZE": {
+        "price_excl_vat": 1.5,
+        "price_incl_vat": 2.0,
+        "unit": "Kc/A/mesic"
+      },
+      "VT": {
+        "price_excl_vat": 8.5,
+        "price_incl_vat": 11.4,
+        "unit": "Kc/A/mesic"
+      }
+    }
+  },
+  "generated_at": "2026-07-19T05:14:23+00:00",
+  "schema_version": 1,
+  "sources": {
+    "complete.xlsx": {
+      "fetched_at": "2026-07-19T04:57:53+00:00",
+      "sha256": "df4cb3096eec1209663bdaaceef6e578e052986ced00f3a1f9e9b3075bbd2350",
+      "source_url": "file:///repos/wt-p4-t6bc/tests/fixtures/pricelists/complete.xlsx"
+    }
+  },
+  "valid_from_snapshots": [
+    {
+      "distributors": {
+        "cez": {
+          "NT": {
+            "price_excl_vat": 7.1,
+            "price_incl_vat": 9.2,
+            "unit": "Kc/A/mesic"
+          },
+          "POZE": {
+            "price_excl_vat": 1.6,
+            "price_incl_vat": 2.1,
+            "unit": "Kc/A/mesic"
+          },
+          "VT": {
+            "price_excl_vat": 9.5,
+            "price_incl_vat": 12.4,
+            "unit": "Kc/A/mesic"
+          }
+        },
+        "egd": {
+          "NT": {
+            "price_excl_vat": 6.4,
+            "price_incl_vat": 8.7,
+            "unit": "Kc/A/mesic"
+          },
+          "POZE": {
+            "price_excl_vat": 1.8,
+            "price_incl_vat": 2.3,
+            "unit": "Kc/A/mesic"
+          },
+          "VT": {
+            "price_excl_vat": 10.0,
+            "price_incl_vat": 13.1,
+            "unit": "Kc/A/mesic"
+          }
+        },
+        "pre": {
+          "NT": {
+            "price_excl_vat": 6.6,
+            "price_incl_vat": 8.9,
+            "unit": "Kc/A/mesic"
+          },
+          "POZE": {
+            "price_excl_vat": 1.5,
+            "price_incl_vat": 2.0,
+            "unit": "Kc/A/mesic"
+          },
+          "VT": {
+            "price_excl_vat": 8.5,
+            "price_incl_vat": 11.4,
+            "unit": "Kc/A/mesic"
+          }
+        }
+      },
+      "sources": {
+        "cez": "complete.xlsx",
+        "egd": "complete.xlsx",
+        "pre": "complete.xlsx"
+      },
+      "valid_from": "2026-01-01"
+    }
+  ],
+  "year": 2026
+}

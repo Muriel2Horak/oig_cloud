@@ -959,6 +959,50 @@ def test_setup_api_endpoints_registers_views():
 
     assert "OIGCloudBatteryTimelineView" in registered
     assert "OIGCloudDetailTabsView" in registered
+    assert "OIGCloudPricelistsView" in registered
+
+
+@pytest.mark.asyncio
+async def test_pricelists_view_requires_admin():
+    hass = DummyHass(config_entries=DummyConfigEntries([
+        DummyEntry(entry_id="e1")
+    ]))
+    hass.data[DOMAIN] = {"e1": {"coordinator": SimpleNamespace(data={"box1": {}})}}
+    view = api_module.OIGCloudPricelistsView()
+
+    class _NonAdminReq:
+        app = {"hass": hass}
+
+        def get(self, key, default=None):
+            if key == "hass_user":
+                return SimpleNamespace(is_admin=False)
+            return default
+
+    existing_box = await view.get(_NonAdminReq(), "box1")
+    missing_box = await view.get(_NonAdminReq(), "missing")
+    existing_text = existing_box.text
+
+    assert existing_box.status == 403
+    assert missing_box.status == 403
+    assert existing_text == missing_box.text
+
+
+@pytest.mark.asyncio
+async def test_pricelists_view_returns_dataset_for_admin():
+    hass = DummyHass(config_entries=DummyConfigEntries([DummyEntry(entry_id="e2")]))
+    hass.data[DOMAIN] = {"e2": {"coordinator": SimpleNamespace(data={"box2": {}})}}
+    view = api_module.OIGCloudPricelistsView()
+
+    response = await view.get(DummyRequest(hass), "box2")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["distributors"]
+    assert payload["tariffs"]
+    assert payload["selected_distributor"] in payload["distributors"]
+    assert payload["selected_tariff"] in payload["tariffs"]
+    assert "stale_warning" in payload
+    assert "valid_from" in payload
 
 
 @pytest.mark.asyncio
@@ -1000,6 +1044,10 @@ async def test_config_registry_view_missing_box():
 
 def test_config_registry_view_requires_auth():
     assert api_module.OIGCloudConfigRegistryView.requires_auth is True
+
+
+def test_pricelists_view_requires_auth():
+    assert api_module.OIGCloudPricelistsView.requires_auth is True
 
 
 # --- Plan 2 Task 2: basic section is exposed by module_config GET/POST -----
