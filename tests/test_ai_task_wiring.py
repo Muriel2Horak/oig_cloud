@@ -204,3 +204,27 @@ async def test_delegation_payload_matches_ai_task_generate_data_contract(monkeyp
     assert call["return_response"] is True
     assert call["data"] == {"task": task}
     assert "entity_id" not in call["data"]  # HA resolves the preferred entity
+
+
+# --- guard: backend=None on the OIG-provider branch must fail closed -------
+
+@pytest.mark.asyncio
+async def test_missing_backend_on_openai_compat_provider_raises_classified_error():
+    """Guard: backend=None on a NON-delegation provider must NOT None-deref.
+
+    async_setup_entry is the only place that normally constructs this entity,
+    and it gates on a present key — so backend=None never reaches here in
+    production. But that guarantee is held at a distance (another function,
+    another call site). Pre-change this raises AttributeError on the
+    None.async_generate_data call; the guard turns it into a classified
+    RuntimeError the UI can render. See the commit message for the recorded
+    pre-change FAIL evidence.
+    """
+    ent = ai_task.OigAiTaskEntity(
+        provider="groq", backend=None, install={}, entry_id="entry1")
+    task = ai_task.GenDataTask(
+        structure={"type": "object"}, instructions="validate")
+    chat_log = ai_task.GenDataTaskResult(conversation_id="conv-1")
+
+    with pytest.raises(RuntimeError, match="AI backend not configured"):
+        await ent._async_generate_data(task, chat_log)

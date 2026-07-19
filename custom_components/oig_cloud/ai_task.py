@@ -87,12 +87,23 @@ class OigAiTaskEntity(AITaskEntity):
             # NOT established by this plan.
             data = await self._async_delegate_to_host_ai_task(task)
         else:
+            # The OIG backend is OPTIONAL on the entity — backend=None is the
+            # delegation path's marker. async_setup_entry never constructs an
+            # entity without a backend for the non-delegation providers, but
+            # that is a guarantee held at a distance: a direct call here must
+            # still fail closed, not None-dereference. Local binding narrows
+            # the union for mypy AND gives the runtime check a real home.
+            backend = self._backend
+            if backend is None:
+                # Classified soft-failure (matches ai/backends.py HTTP path) —
+                # brief, no raw data; the UI surfaces this as a usable error.
+                raise RuntimeError("AI backend not configured for this entity")
             # K2b/O2 (binding): task.instructions is free text the user typed
             # into HA's AI Task UI and MUST NEVER be forwarded as prompt
             # content — it can embed GPS, box_id, e-mail, entity_id, anything.
             # The backend builds outgoing content itself from an allow-listed
             # install mapping; see ai/backends.py:async_generate_data.
-            data = await self._backend.async_generate_data(
+            data = await backend.async_generate_data(
                 "ai_task_generate_data", self._anonymous_install(), task.structure)
         return GenDataTaskResult(conversation_id=chat_log.conversation_id, data=data)
 
