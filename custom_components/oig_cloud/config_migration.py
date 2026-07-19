@@ -19,6 +19,7 @@ restore) keep returning False and do NOT raise.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -29,6 +30,17 @@ from .config_merge import merge_entry_options
 TRANSFORM = Callable[[dict[str, Any]], tuple[dict[str, Any], list[str]] | dict[str, Any]]
 
 MIGRATION_VERSION = 1
+_REDACTED = "[redacted]"
+_LEGACY_SECRET_ALIASES = frozenset(
+    {
+        "ai_api_key",
+        "api_key",
+        "forecast_solar_api_key",
+        "password",
+        "solar_api_key",
+        "solcast_key",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +263,87 @@ def _append_journal(backup: dict[str, Any], event: str, **extra: Any) -> None:
     backup["journal"] = journal
 
 
+def _secret_field_keys() -> frozenset[str]:
+    from .config_registry import FIELD_REGISTRY
+
+    secret_keys: set[str] = set(_LEGACY_SECRET_ALIASES)
+    for key, field in FIELD_REGISTRY.items():
+        if not getattr(field, "secret", False):
+            continue
+        secret_keys.add(key)
+        mirror = getattr(field, "mirror", None)
+        if mirror:
+            secret_keys.add(str(mirror))
+    return frozenset(secret_keys)
+
+
+def _secret_values(payload: Any, secret_keys: frozenset[str]) -> frozenset[str]:
+    values: set[str] = set()
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if str(key) in secret_keys and isinstance(value, str) and value:
+                values.add(value)
+            values.update(_secret_values(value, secret_keys))
+    elif isinstance(payload, list):
+        for item in payload:
+            values.update(_secret_values(item, secret_keys))
+    return frozenset(values)
+
+
+def _redact_text(value: str, needles: frozenset[str]) -> str:
+    redacted = value
+    for needle in sorted((item for item in needles if item), key=len, reverse=True):
+        redacted = redacted.replace(needle, _REDACTED)
+    return redacted
+
+
+def _sanitize_backup_payload(
+    payload: Any,
+    secret_keys: frozenset[str],
+    secret_values: frozenset[str],
+) -> Any:
+    needles = frozenset(set(secret_keys) | set(secret_values))
+    if isinstance(payload, dict):
+        return {
+            key: _sanitize_backup_payload(value, secret_keys, secret_values)
+            for key, value in payload.items()
+            if str(key) not in secret_keys
+        }
+    if isinstance(payload, list):
+        return [
+            _sanitize_backup_payload(item, secret_keys, secret_values)
+            for item in payload
+        ]
+    if isinstance(payload, str):
+        return _redact_text(payload, needles)
+    return payload
+
+
+def _assert_no_backup_secret(
+    payload: dict[str, Any],
+    secret_keys: frozenset[str],
+    secret_values: frozenset[str],
+) -> None:
+    serialized = json.dumps(payload, sort_keys=True, default=str)
+    leaked_key = next((key for key in secret_keys if key and key in serialized), None)
+    leaked_value = next(
+        (value for value in secret_values if value and value in serialized),
+        None,
+    )
+    if leaked_key or leaked_value:
+        raise ValueError("migration backup contains secret material")
+
+
+def _sanitize_backup_for_save(payload: dict[str, Any]) -> dict[str, Any]:
+    secret_keys = _secret_field_keys()
+    secret_values = _secret_values(payload, secret_keys)
+    sanitized = _sanitize_backup_payload(payload, secret_keys, secret_values)
+    if not isinstance(sanitized, dict):
+        raise ValueError("migration backup payload must be a dict")
+    _assert_no_backup_secret(sanitized, secret_keys, secret_values)
+    return sanitized
+
+
 def _normalize_snapshot(options: Any) -> dict[str, Any]:
     if isinstance(options, dict):
         return dict(options)
@@ -268,6 +361,7 @@ async def _load_backup(hass, entry_id: str) -> dict[str, Any]:
 
 
 async def _save_backup(hass, entry_id: str, payload: dict[str, Any]) -> None:
+    payload = _sanitize_backup_for_save(payload)
     store = _backup_store(hass, entry_id)
     await store.async_save(payload)
 

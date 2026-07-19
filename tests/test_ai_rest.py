@@ -61,6 +61,11 @@ def ai_env(monkeypatch):
     monkeypatch.setattr(api_module, "_find_entry_for_box", lambda h, b: entry)
     monkeypatch.setattr(
         "custom_components.oig_cloud.ai.key_store.Store", _MemStore)
+    monkeypatch.setattr(
+        api_module.aiohttp_client,
+        "async_get_clientsession",
+        lambda _hass: None,
+    )
     return SimpleNamespace(
         view=api_module.OIGCloudAiView(), hass=hass, entry=entry)
 
@@ -249,3 +254,21 @@ async def test_ai_post_verify_exception_returns_classified_code_not_raw_detail(
     assert "detail" not in body
     assert raw_error not in resp.text
     assert raw_error in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_ai_post_verify_false_returns_classified_code(ai_env, monkeypatch):
+    async def _fail(self):
+        return False
+
+    monkeypatch.setattr(api_module.OpenAiCompatBackend, "async_verify_key", _fail)
+
+    resp = await ai_env.view.post(
+        admin_req_with(ai_env, {"provider": "groq", "api_key": _SECRET}),
+        "box1",
+    )
+
+    body = json.loads(resp.text)
+    assert resp.status == 502
+    assert body["code"] == "ai_verify_failed"
+    assert "detail" not in body

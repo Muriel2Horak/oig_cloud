@@ -1134,5 +1134,11 @@
       },
       "name": "Set Grid Delivery Mode"
     }
+  },
+  "issues": {
+    "config_migration_failed": {
+      "title": "OIG Cloud configuration migration failed",
+      "description": "Configuration migration for entry {entry_id} failed ({code}). The integration will retry when it is set up again."
+    }
   }
 }

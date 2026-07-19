@@ -1042,6 +1042,32 @@ async def test_config_registry_view_missing_box():
     assert response.status == 404
 
 
+@pytest.mark.asyncio
+async def test_config_registry_view_requires_admin_for_existing_and_missing_box():
+    entry = DummyEntry(entry_id="entry1")
+    coordinator = SimpleNamespace(data={"123": {}})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": coordinator}}
+    view = api_module.OIGCloudConfigRegistryView()
+
+    class _NonAdminReq:
+        app = {"hass": hass}
+
+        def get(self, key, default=None):
+            if key == "hass_user":
+                return SimpleNamespace(is_admin=False)
+            return default
+
+    existing_box = await view.get(_NonAdminReq(), "123")
+    missing_box = await view.get(_NonAdminReq(), "missing")
+
+    assert existing_box.status == 403
+    assert missing_box.status == 403
+    assert existing_box.text == missing_box.text
+    assert "fields" not in existing_box.text
+    assert "sections" not in existing_box.text
+
+
 def test_config_registry_view_requires_auth():
     assert api_module.OIGCloudConfigRegistryView.requires_auth is True
 

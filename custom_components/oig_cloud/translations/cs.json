@@ -1012,5 +1012,11 @@
       },
       "name": "Nastavit přetoky do sítě"
     }
+  },
+  "issues": {
+    "config_migration_failed": {
+      "title": "Migrace konfigurace OIG Cloud selhala",
+      "description": "Migrace konfigurace pro záznam {entry_id} selhala ({code}). Integrace se o ni znovu pokusí při dalším nastavení."
+    }
   }
 }

@@ -83,11 +83,71 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 ALL_BOX_MODES = ["Home 1", "Home 2", "Home 3", "Home UPS", "Home 5", "Home 6"]
 _MIGRATION_RESTORE_SCHEMA = vol.Schema({vol.Required("entry_id"): cv.string})
 _MIGRATION_RESTORE_SERVICE = "restore_migration_backup"
+_MIGRATION_FAILURES_KEY = "migration_failures"
 
 
 def _read_manifest_file(path: str) -> str:
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
+
+
+def _migration_failure_issue_id(entry_id: str) -> str:
+    return f"config_migration_failed_{entry_id}"
+
+
+def _record_migration_failure_status(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    err: Any,
+) -> None:
+    entry_id = str(getattr(entry, "entry_id", "") or getattr(err, "entry_id", ""))
+    issue_id = _migration_failure_issue_id(entry_id)
+    status: dict[str, Any] = {
+        "code": getattr(err, "code", "migration_error"),
+        "entry_id": entry_id,
+        "issue_id": issue_id,
+    }
+    cause = getattr(err, "__cause__", None)
+    if cause is not None:
+        status["cause_type"] = type(cause).__name__
+    hass.data.setdefault(DOMAIN, {}).setdefault(_MIGRATION_FAILURES_KEY, {})[
+        entry_id
+    ] = status
+    try:
+        from homeassistant.helpers import issue_registry as ir
+        from homeassistant.helpers.issue_registry import IssueSeverity
+
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=True,
+            severity=IssueSeverity.WARNING,
+            translation_key="config_migration_failed",
+            translation_placeholders={"entry_id": entry_id, "code": status["code"]},
+        )
+    except Exception as exc:
+        _LOGGER.debug(
+            "HA repair issue registry unavailable for config migration: %s",
+            exc,
+        )
+
+
+def _clear_migration_failure_status(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    entry_id = str(getattr(entry, "entry_id", ""))
+    issue_id = _migration_failure_issue_id(entry_id)
+    failures = hass.data.get(DOMAIN, {}).get(_MIGRATION_FAILURES_KEY)
+    if isinstance(failures, dict):
+        failures.pop(entry_id, None)
+    try:
+        from homeassistant.helpers import issue_registry as ir
+
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+    except Exception as exc:
+        _LOGGER.debug(
+            "HA repair issue registry unavailable while clearing config migration: %s",
+            exc,
+        )
 
 
 async def _setup_telemetry(hass: HomeAssistant, email_hash: str) -> None:
@@ -304,6 +364,7 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry):
         try:
             migrated = await run_migration(hass, entry)
             stripped = await strip_dead_keys(hass, entry)
+            _clear_migration_failure_status(hass, entry)
             return bool(migrated or stripped)
         except MigrationError as err:
             _LOGGER.error(
@@ -313,7 +374,10 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry):
                 err.entry_id,
                 type(err.__cause__).__name__ if err.__cause__ else "none",
             )
-            return False
+            _record_migration_failure_status(hass, entry, err)
+            raise ConfigEntryNotReady(
+                f"OIG Cloud config migration failed: {err.code}"
+            ) from err
 
     return _run_planner_migration()
 

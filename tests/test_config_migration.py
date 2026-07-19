@@ -154,6 +154,30 @@ async def test_migration_records_snapshot_private_store_and_marker(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_migration_backup_strips_registry_secret_fields(monkeypatch):
+    stores = _StoreFactory()
+    monkeypatch.setattr(config_migration, "Store", stores)
+    monkeypatch.setattr(config_migration, "_TRANSFORMS", [_transform_with_defaults])
+
+    hass = _DummyHass()
+    entry = _Entry(
+        options={
+            "min_capacity_percent": 25.0,
+            "solar_forecast_api_key": "leak-me",
+        }
+    )
+
+    migrated = await run_migration(hass, entry)
+    backup = stores.backup("entry-1")
+
+    assert migrated is True
+    assert backup is not None
+    serialized = str(backup)
+    assert "solar_forecast_api_key" not in serialized
+    assert "leak-me" not in serialized
+
+
+@pytest.mark.asyncio
 async def test_already_migrated_entry_touches_no_storage(monkeypatch):
     store = Mock(return_value=_UnexpectedStoreAccess())
     save_backup = AsyncMock()

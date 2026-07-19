@@ -1201,7 +1201,18 @@ class OIGCloudConfigRegistryView(HomeAssistantView):
     name = "api:oig_cloud:config_registry"
     requires_auth = True
 
+    def _require_admin(self, request: web.Request) -> Optional[web.Response]:
+        user = request.get("hass_user") if hasattr(request, "get") else None
+        if user is None and hasattr(request, "app"):
+            user = request.app.get("hass_user")
+        if not user or not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+        return None
+
     async def get(self, request: web.Request, box_id: str) -> web.Response:
+        denied = self._require_admin(request)
+        if denied is not None:
+            return denied
         hass: HomeAssistant = request.app["hass"]
         entry = _find_entry_for_box(hass, box_id)
         if not entry:
@@ -1407,12 +1418,20 @@ class OIGCloudAiView(HomeAssistantView):
                 exc_info=True,
             )
             return web.json_response(
-                {"error": "verify failed", "code": "ai_verify_failed", **await store.async_api_state()},
+                {
+                    "error": "verify failed",
+                    "code": "ai_verify_failed",
+                    **await store.async_api_state(),
+                },
                 status=502,
             )
         if not ok:
             return web.json_response(
-                {"error": "verify failed", **await store.async_api_state()},
+                {
+                    "error": "verify failed",
+                    "code": "ai_verify_failed",
+                    **await store.async_api_state(),
+                },
                 status=502,
             )
 

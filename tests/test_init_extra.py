@@ -329,6 +329,88 @@ async def test_async_setup(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_async_setup_entry_migration_error_surfaces_visible_status(monkeypatch):
+    migration_module = importlib.import_module(f"{TEST_PACKAGE}.oig_cloud.config_migration")
+    from homeassistant.helpers import issue_registry as ir
+
+    issue_calls = []
+
+    def _create_issue(_hass, domain, issue_id, **kwargs):
+        issue_calls.append((domain, issue_id, kwargs))
+
+    async def _fail_migration(_hass, _entry):
+        raise migration_module.MigrationTransformError(
+            "synthetic migration failure",
+            entry_id="entry1",
+        )
+
+    def _should_not_continue(_entry):
+        raise AssertionError("setup continued after migration failure")
+
+    async def _noop_async(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(init_module, "run_migration", _fail_migration)
+    monkeypatch.setattr(
+        init_module,
+        "_ensure_data_source_option_defaults",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_migrate_enable_spot_prices_option",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(init_module, "promote_blank_enum_defaults", lambda *_a, **_k: None)
+    monkeypatch.setattr(init_module, "_init_entry_storage", lambda *_a, **_k: None)
+    monkeypatch.setattr(init_module, "init_data_source_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        init_module,
+        "_maybe_persist_box_id_from_proxy_or_local",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(
+        init_module,
+        "_migrate_legacy_credentials_from_options",
+        lambda *_a, **_k: None,
+    )
+    monkeypatch.setattr(ir, "async_create_issue", _create_issue)
+    monkeypatch.setattr(init_module, "_run_boiler_migration", _noop_async)
+    monkeypatch.setattr(init_module, "_start_service_shield", _noop_async)
+    monkeypatch.setattr(init_module, "_load_entry_auth_config", _should_not_continue)
+
+    hass = DummyHass()
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        title="OIG 123",
+        data={},
+        options={"min_capacity_percent": 25.0},
+    )
+
+    with pytest.raises(init_module.ConfigEntryNotReady, match="transform_failed"):
+        await init_module.async_setup_entry(hass, entry)
+
+    visible = hass.data[DOMAIN]["migration_failures"][entry.entry_id]
+    assert visible["code"] == "transform_failed"
+    assert visible["entry_id"] == entry.entry_id
+    assert issue_calls == [
+        (
+            DOMAIN,
+            "config_migration_failed_entry1",
+            {
+                "is_fixable": True,
+                "severity": ir.IssueSeverity.WARNING,
+                "translation_key": "config_migration_failed",
+                "translation_placeholders": {
+                    "entry_id": entry.entry_id,
+                    "code": "transform_failed",
+                },
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_cleanup_unused_devices(monkeypatch):
     devices = [
         DummyDevice("dev1", "OIG Cloud Home"),
