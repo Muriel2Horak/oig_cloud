@@ -26,24 +26,10 @@ To znamená, že v této iteraci byla dosažena shoda, že se návrhy v SPEC moh
 - `spec-critique/R10-ANTISTUB-round5.md:PARTIALLY-CLOSED` — část antistub nálezů zůstává `PARTIALLY-CLOSED` a čeká na doplnění konkrétních uzavírek jednotlivých větví.
 
 ### PERFORMANCE
-- `SCOPE-REVISION.md:F-1.1` — PARTIALLY-CLOSED: požaduje explicitní potvrzení přidané meze `Kč/A/měsíc` bez vazby na variabilní sazby.
-- `SCOPE-REVISION.md:F-1.2` — PARTIALLY-CLOSED: nutné rozlišit asymptotické chování u hromadného načítání.
-- `SCOPE-REVISION.md:F-1.3` — PARTIALLY-CLOSED: doplnit limity pro paralelní dotazy.
-- `SCOPE-REVISION.md:F-2.1` — PARTIALLY-CLOSED: chybí jasný fallback pro přetečení fronty požadavků.
-- `SCOPE-REVISION.md:F-2.2` — PARTIALLY-CLOSED: je potřeba upřesnit limit zátěže u burst scénářů.
-- `SCOPE-REVISION.md:F-2.6` — PARTIALLY-CLOSED: nutný explicitní cap při opakovaných opakováních dotazů.
-- `SCOPE-REVISION.md:F-2.7` — PARTIALLY-CLOSED: není jednoznačně doloženo, jak se chovají mezery po timeoutech.
-- `SCOPE-REVISION.md:F-3.1` — PARTIALLY-CLOSED: nedochází k explicitnímu měření nákladovosti při škálování.
-- `SCOPE-REVISION.md:F-3.2` — PARTIALLY-CLOSED: chybí testované krytí degradace výkonu.
-- `SCOPE-REVISION.md:F-5.2` — PARTIALLY-CLOSED: slabé odůvodnění pro rychlosti při přepínání provideru.
-- `SCOPE-REVISION.md:F-5.3` — PARTIALLY-CLOSED: nedefinován stop-loss pro dlouhotrvající požadavky.
-- `SCOPE-REVISION.md:PERF-NEW-2` — PARTIALLY-CLOSED: stále čeká na jednoznačnou metodu měření a threshold.
 - `spec-critique/R10-PERF-round5.md:PERF-NEW-6` — MINOR/OPEN: odklizení `lazy import` je jen částečně upřesněno.
 - `spec-critique/R10-PERF-round5.md:PERF-NEW-R10-A` — MINOR: je potřeba dokončit životní cyklus `AbortController` a vyčištění dashboardového toku.
 
 ### SECURITY
-- `spec-critique/R10-SECURITY-round5.md:M-4` — PARTIALLY-CLOSED: čeká detailní úprava logiky kontrol pro tento případ.
-- `spec-critique/R10-SECURITY-round5.md:m-4` — PARTIALLY-CLOSED: drobný bezpečnostní gap zůstává v připojovacím toku.
 
 ## Vady v nasazeném kódu
 Tento seznam je přímým převodem SHIPPED-CODE bucketu a nesmí být chápán jako opravené položky.
@@ -68,3 +54,10 @@ Všechny položky výše **nebyly** v tomto loopu opravovány, byly vědomě odd
 ## Doporučení
 1. Nejprve implementovat po krocích otevřené R10 zbytky `AIKEYS`, `ANTISTUB` a `PERF` v uvedených clausech (`SCOPE-REVISION.md:R10.3`, `spec-critique/R10-ANTISTUB-round5.md`, `SCOPE-REVISION.md:F-*`, `spec-critique/R10-PERF-round5.md`) a potvrdit průchod všech ohnisek bez CRITICAL.  
 2. Až poté naplánovat samostatný sprint pro SHIPPED-CODE bucket (`spec-critique/SHIPPED-CODE-DEFECTS.md`), protože tyto nálezy nemají vazbu na návrh SPEC v této pětikolové smyčce a vyžadují operativní GO operátora.
+
+> **Pruned 2026-07-19.** The per-item PARTIALLY-CLOSED restatements previously listed here were
+> garbled paraphrases of their sources and were mistaken for the findings themselves. Removed.
+> Authoritative sources: performance items live in `spec-critique/R2-PERF-perf.md` (concrete, with
+> `file:line`); the two security items are `spec-critique/R10-SECURITY-round5.md` rows M-4 and m-4.
+> Items needing binding action are promoted to `SCOPE-REVISION.md` section R12. Nothing was deleted
+> at the source.

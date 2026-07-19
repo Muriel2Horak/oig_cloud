@@ -504,8 +504,38 @@ appears only in the log. Location: `api/ha_rest_api.py:1411-1420`.
 readable by any authenticated household account; a provider outage can destroy a working key) — they
 lead Plan 4. The rest follow in the same plan.
 
-**Still open for the operator (not resolved here):** the loop also produced ~13 PARTIALLY-CLOSED
-performance items with vague wording ("clarify asymptotic behaviour", "add limits for parallel
-queries"). The original performance review found the plan sound with six concrete minor items. These
-vague entries are loop artefacts, not findings, and should be pruned to those with a measurable
-criterion before implementation starts. Flagged, not actioned.
+**Correction (2026-07-19).** An earlier draft of this section claimed the loop produced "~13 vague
+PARTIALLY-CLOSED performance items" that were loop artefacts and should be pruned. That claim was
+wrong and is withdrawn. On inspection there are **19** PARTIALLY-CLOSED entries, **two of them are
+security, not performance**, and the vagueness lives in the `spec-critique/LOOP-STATUS.md`
+restatements, NOT in the findings. The underlying entries in `spec-critique/R2-PERF-perf.md` are
+concrete and carry `file:line` evidence. Pruning them would have discarded one MAJOR. Resolution:
+the vague restatements were removed from `LOOP-STATUS.md`, which now points at the originals;
+`R2-PERF-perf.md` is unchanged; and the items that need binding action are promoted below.
+
+## R12 — items promoted out of the PARTIALLY-CLOSED backlog (2026-07-19)
+
+**R12.1 — `POST /solar_test` needs a server-side timeout (F-2.3, MAJOR).** Source
+`spec-critique/R2-PERF-perf.md:F-2.3`. The endpoint does not exist yet — it is authored in Plan 3.6 —
+so this is a requirement on code about to be written, not a retrofit. Without an explicit
+server-side timeout the handler inherits the existing forecast path's 30 s and can hang that long.
+**Assigned to Plan 3.6**, recorded in `docs/redesign_2026_07/PLAN-3.6-SPEC.md`.
+
+**R12.2 — Migration backup store needs locking (M-4, MAJOR).** Source
+`spec-critique/R10-SECURITY-round5.md:M-4`. Verified 2026-07-19 against the delivered Task 2
+(`485dfc910`): the store IS per-entry (`config_migration.py:198` `_backup_store(hass, entry_id)`), so
+the shared-store collision half of M-4 is closed by construction. The concurrency half is NOT:
+migrate, `restore_last_backup()` and the dead-key strip path all read/write the same per-entry store
+with no lock. Two concurrent option flows can interleave. **Assigned to Plan 4** if it is still open
+at the gate; otherwise to the follow-up.
+
+**R12.3 — Restore needs a confirm parameter and a durable audit field (m-4, MINOR).** Source
+`spec-critique/R10-SECURITY-round5.md:m-4`, originally `spec-critique/R2-SECURITY-sec.md:90-92`.
+Verified 2026-07-19: `restore_last_backup(hass, entry)` (`config_migration.py:451`) is admin-gated
+and secret-safe, but takes no explicit confirm argument and writes no durable audit record of who
+restored what and when. A destructive, admin-triggered rollback of a user's whole options payload
+must be both deliberate and traceable. **Assigned to Plan 4** if still open at the gate.
+
+**Not promoted, deliberately:** F-1.1, F-1.2, F-1.4, F-1.5, F-2.1, F-2.2, F-2.5, F-2.6, F-2.7, F-3.1,
+F-3.2 remain MINOR observations in `R2-PERF-perf.md`. They are real and evidenced, they simply do not
+justify scope now. They are not deleted.

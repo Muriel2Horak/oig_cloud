@@ -52,6 +52,15 @@ nedostupný server).
 - **Contract binding:** UI-to-endpoint, classified error code shape, and verification-before-replace rules in `SCOPE-REVISION.md: R7.3` and `SCOPE-REVISION.md: R7.12`.
 - **Falsification:** if the handler sends any endpoint other than `POST /api/oig_cloud/{box}/solar_test`, sends unknown fields, forwards raw body, or sends a replacement key without successful `/solar_test`, the acceptance test fails.
 
+### AK-2b — [Otestovat] nesmí viset (R12.1, ex F-2.3)
+
+`POST /solar_test` musí mít **vlastní server-side timeout**, kratší než 30 s, které dnes dědí
+existující forecast cesta (`solar_forecast_sensor.py:539`). Po jeho vypršení handler vrací
+klasifikovanou chybu, ne raw výjimku, a **neblokuje event loop**.
+- Zdroj: `spec-critique/R2-PERF-perf.md:F-2.3` (MAJOR), promováno v `SCOPE-REVISION.md:R12.1`.
+- **Render aserce:** po mocku timeoutu je v DOM čitelná chybová hláška do stanoveného limitu;
+  test musí PADAT proti implementaci bez timeoutu.
+
 ### AK-3 — Krok ③ Ceny je skutečný formulář
 Uživatel vybere **distributora** a **sazbu**; formulář se **předvyplní z přibaleného datasetu**
 (ERÚ, s uvedeným rokem platnosti) a uživatel hodnoty **potvrdí**.
