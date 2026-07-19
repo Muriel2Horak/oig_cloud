@@ -37,9 +37,12 @@ class SimulatorConfig:
     These are typically derived from hardware specs or sensor readings.
     """
 
-    # Battery capacity bounds
-    max_capacity_kwh: float = 15.36
-    min_capacity_kwh: float = 3.07  # HW minimum (~20% SoC)
+    # Battery capacity bounds — Plan 4 Task 4 / P7: no implicit author installation value.
+    # When the user's effective capacity is unknown, the dataclass is constructed with
+    # ``max_capacity_kwh=None``; downstream callers MUST treat ``None`` as
+    # ``unavailable`` and surface a visible warning (R5.5), not a silent fallback.
+    max_capacity_kwh: float | None = None
+    min_capacity_kwh: float | None = None  # HW minimum (~20% SoC)
 
     # Charging parameters
     charge_rate_kw: float = 2.8
@@ -64,8 +67,10 @@ class SimulatorConfig:
         return self.charge_rate_kw * self.interval_hours
 
     @property
-    def usable_capacity_kwh(self) -> float:
+    def usable_capacity_kwh(self) -> float | None:
         """Usable capacity above HW minimum."""
+        if self.max_capacity_kwh is None or self.min_capacity_kwh is None:
+            return None
         return self.max_capacity_kwh - self.min_capacity_kwh
 
 

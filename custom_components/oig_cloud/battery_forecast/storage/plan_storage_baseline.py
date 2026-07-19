@@ -261,7 +261,9 @@ def _build_interval_from_history(
 
 
 def _build_default_interval(
-    interval_time_str: str, hybrid_timeline: List[Dict[str, Any]]
+    interval_time_str: str,
+    hybrid_timeline: List[Dict[str, Any]],
+    max_capacity_kwh: float | None = None,
 ) -> Dict[str, Any]:
     first_soc = 50.0
     first_mode = 0
@@ -272,12 +274,21 @@ def _build_default_interval(
         first_mode = first_hi.get("mode", 0)
         first_mode_name = first_hi.get("mode_name", MODE_HOME_I)
 
+    # Plan 4 Task 4 / P7: no implicit author capacity. When the caller does not pass
+    # a real value (sensor-first read), ``battery_kwh`` is left ``None`` so the
+    # downstream consumer can render an ``unavailable`` state with a visible
+    # warning (R5.5) instead of silently using the author's hardcoded value.
+    if max_capacity_kwh is None:
+        battery_kwh: float | None = None
+    else:
+        battery_kwh = round((first_soc / 100.0) * max_capacity_kwh, 2)
+
     return {
         "time": interval_time_str,
         "solar_kwh": 0.0,
         "consumption_kwh": 0.065,
         "battery_soc": round(first_soc, 2),
-        "battery_kwh": round((first_soc / 100.0) * 15.36, 2),
+        "battery_kwh": battery_kwh,
         "grid_import_kwh": 0.065,
         "grid_export_kwh": 0.0,
         "mode": first_mode,

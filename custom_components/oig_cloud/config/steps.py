@@ -482,12 +482,7 @@ class WizardMixin:
             CONF_PLANNING_MIN_PERCENT: planning_min_percent,
             CONF_CHARGE_RATE_KW: charge_rate_kw,
             CONF_AUTO_MODE_SWITCH: wizard_data.get(CONF_AUTO_MODE_SWITCH, False),
-            "disable_planning_min_guard": wizard_data.get(
-                "disable_planning_min_guard", False
-            ),
             "max_ups_price_czk": wizard_data.get("max_ups_price_czk", 10.0),
-            "price_hysteresis_czk": wizard_data.get("price_hysteresis_czk", 0.01),
-            "hw_min_hold_hours": wizard_data.get("hw_min_hold_hours", 6.0),
             "balancing_enabled": wizard_data.get("balancing_enabled", True),
             "balancing_interval_days": wizard_data.get("balancing_interval_days", 7),
             "balancing_hold_hours": wizard_data.get("balancing_hold_hours", 3),
@@ -3289,7 +3284,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                     "standard_scan_interval": 30,
                     "extended_scan_interval": 300,
                     "enable_cloud_notifications": True,
-                    "notifications_scan_interval": 300,
                     "data_source_mode": "cloud_only",
                     "local_proxy_stale_minutes": 10,
                     "local_event_debounce_ms": 300,
@@ -3597,16 +3591,20 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         if user_input is not None:
             values = dict(user_input)
             api_key = values.pop("ai_api_key", "")
+            api_key = api_key.strip() if isinstance(api_key, str) else ""
             ai_fields = fields_for_section("ai")
             updates = {
                 key: values.get(key, field.default)
                 for key, field in ai_fields.items()
             }
+            current_provider = current.get("ai_provider", "")
+            selected_provider = updates["ai_provider"]
+            store = AiKeyStore(self.hass, entry.entry_id)
 
             if api_key:
-                await AiKeyStore(self.hass, entry.entry_id).async_set_key(
-                    updates["ai_provider"], api_key
-                )
+                await store.async_set_key(selected_provider, api_key)
+            elif current_provider and selected_provider != current_provider:
+                await store.async_clear()
 
             current.update(updates)
             self.hass.config_entries.async_update_entry(entry, options=current)

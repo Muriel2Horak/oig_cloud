@@ -469,3 +469,63 @@ async def test_planner_settings_entry_missing():
     view = api_module.OIGCloudPlannerSettingsView()
     response = await view.post(DummyRequest(hass), "missing")
     assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_module_config_no_legacy_helpers_in_runtime_path(monkeypatch):
+    """module_config uses the registry and canonical merge path exclusively."""
+    for name in (
+        "_coerce_module_value",
+        "_MODULE_CONFIG_FIELDS",
+        "_MODULE_CONFIG_MIRRORS",
+        "_SECRET_FIELDS",
+    ):
+        assert not hasattr(api_module, name), f"legacy helper {name} still present"
+
+    entry = SimpleNamespace(entry_id="e1", options={})
+    coordinator = SimpleNamespace(data={"123": {}})
+    hass = DummyHass(config_entries=DummyConfigEntries([entry]))
+    hass.data[DOMAIN] = {entry.entry_id: {"coordinator": coordinator}}
+    view = api_module.OIGCloudModuleConfigView()
+
+    class AdminRequest(DummyRequest):
+        def get(self, key, default=None):
+            return self.app.get(key, default)
+
+    fields_seen = []
+    real_fields_for_section = api_module.fields_for_section
+
+    def record_fields(section):
+        fields_seen.append(section)
+        return real_fields_for_section(section)
+
+    monkeypatch.setattr(api_module, "fields_for_section", record_fields)
+    get_response = await view.get(AdminRequest(hass), "123")
+    assert get_response.status == 200
+    assert fields_seen == ["basic", "modules", "battery", "solar", "boiler"]
+
+    coerce_seen = []
+    merge_seen = []
+    real_coerce_value = api_module.coerce_value
+    real_merge_entry_options = api_module.merge_entry_options
+
+    def record_coerce(field, value):
+        coerce_seen.append(field.key)
+        return real_coerce_value(field, value)
+
+    def record_merge(hass_arg, entry_arg, updates):
+        merge_seen.append((entry_arg.entry_id, updates))
+        return real_merge_entry_options(hass_arg, entry_arg, updates)
+
+    monkeypatch.setattr(api_module, "coerce_value", record_coerce)
+    monkeypatch.setattr(api_module, "merge_entry_options", record_merge)
+
+    class JsonRequest(AdminRequest):
+        async def json(self):
+            return {"section": "battery", "values": {"charge_rate_kw": 2.0}}
+
+    post_response = await view.post(JsonRequest(hass), "123")
+    assert post_response.status == 200
+    assert coerce_seen == ["charge_rate_kw"]
+    assert merge_seen == [("e1", {"charge_rate_kw": 2.0})]
+    assert entry.options["home_charge_rate"] == 2.0

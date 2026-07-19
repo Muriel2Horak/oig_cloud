@@ -46,6 +46,15 @@ class AiKeyStore:
         await self._store.async_save(data)
         _LOGGER.debug("AI key stored for provider %s (%s)", provider, redact_key(api_key))
 
+    async def async_clear(self) -> None:
+        """Delete the per-entry private AI key store."""
+        try:
+            await self._store.async_remove()
+        except FileNotFoundError:
+            pass
+        self._data = {}
+        _LOGGER.debug("AI key store cleared")
+
     async def async_get_key(self) -> Optional[str]:
         return (await self._async_data()).get("api_key")
 

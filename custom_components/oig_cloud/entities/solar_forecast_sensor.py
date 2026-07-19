@@ -538,21 +538,20 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
         async with aiohttp.ClientSession() as session:
             if string1_enabled:
+                string1_config = self._forecast_string_config("string1")
+                if string1_config is None:
+                    _LOGGER.warning("🌞 String 1 forecast config missing; forecast unavailable")
+                    return None, None
+                declination, azimuth, kwp = string1_config
                 data_string1, fatal = await self._fetch_forecast_string(
                     session=session,
                     label="string 1",
                     lat=lat,
                     lon=lon,
                     api_key=api_key,
-                    declination=self._config_entry.options.get(
-                        "solar_forecast_string1_declination", 10
-                    ),
-                    azimuth=self._config_entry.options.get(
-                        "solar_forecast_string1_azimuth", 138
-                    ),
-                    kwp=self._config_entry.options.get(
-                        "solar_forecast_string1_kwp", 5.4
-                    ),
+                    declination=declination,
+                    azimuth=azimuth,
+                    kwp=kwp,
                     fatal_on_error=True,
                 )
                 if fatal:
@@ -561,25 +560,45 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 _LOGGER.debug("🌞 String 1 disabled")
 
             if string2_enabled:
+                string2_config = self._forecast_string_config("string2")
+                if string2_config is None:
+                    _LOGGER.warning("🌞 String 2 forecast config missing; skipping string 2")
+                    return data_string1, None
+                declination, azimuth, kwp = string2_config
                 data_string2, _fatal = await self._fetch_forecast_string(
                     session=session,
                     label="string 2",
                     lat=lat,
                     lon=lon,
                     api_key=api_key,
-                    declination=self._config_entry.options.get(
-                        "solar_forecast_string2_declination", 10
-                    ),
-                    azimuth=self._config_entry.options.get(
-                        "solar_forecast_string2_azimuth", 138
-                    ),
-                    kwp=self._config_entry.options.get("solar_forecast_string2_kwp", 0),
+                    declination=declination,
+                    azimuth=azimuth,
+                    kwp=kwp,
                     fatal_on_error=False,
                 )
             else:
                 _LOGGER.debug("🌞 String 2 disabled")
 
         return data_string1, data_string2
+
+    def _forecast_string_config(self, prefix: str) -> tuple[float, float, float] | None:
+        declination = self._float_option(f"solar_forecast_{prefix}_declination")
+        azimuth = self._float_option(f"solar_forecast_{prefix}_azimuth")
+        kwp = self._float_option(f"solar_forecast_{prefix}_kwp")
+        if declination is None or azimuth is None or kwp is None:
+            if self._config_entry.options.get("solar_forecast_provider") == "forecast_solar":
+                return None
+            return declination or 0.0, azimuth or 0.0, kwp or 0.0
+        return declination, azimuth, kwp
+
+    def _float_option(self, key: str) -> float | None:
+        value = self._config_entry.options.get(key)
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     async def _fetch_forecast_string(
         self,
@@ -636,10 +655,18 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
                 await self._fetch_solcast_data(current_time)
                 return
 
-            # Konfigurační parametry
-            lat = self._config_entry.options.get("solar_forecast_latitude", 50.1219800)
-            lon = self._config_entry.options.get("solar_forecast_longitude", 13.9373742)
+            # Konfigurační parametry — Plan 4 Task 4 / P7: no implicit author GPS fallback.
+            # When the user has not configured a location we surface `unavailable` with
+            # a visible warning on the mounted surface (R5.5).
+            lat = self._float_option("solar_forecast_latitude")
+            lon = self._float_option("solar_forecast_longitude")
             api_key = self._config_entry.options.get("solar_forecast_api_key", "")
+            if lat is None or lon is None:
+                if self._config_entry.options.get("solar_forecast_provider") == "forecast_solar":
+                    _LOGGER.warning("🌞 Solar forecast GPS missing; forecast unavailable")
+                    return
+                lat = lat or 0.0
+                lon = lon or 0.0
 
             # String 1 - zapnutý podle checkboxu
             string1_enabled = self._config_entry.options.get(
@@ -740,12 +767,12 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         )
 
         kwp1 = (
-            float(self._config_entry.options.get("solar_forecast_string1_kwp", 0))
+            float(self._config_entry.options.get("solar_forecast_string1_kwp") or 0)
             if string1_enabled
             else 0.0
         )
         kwp2 = (
-            float(self._config_entry.options.get("solar_forecast_string2_kwp", 0))
+            float(self._config_entry.options.get("solar_forecast_string2_kwp") or 0)
             if string2_enabled
             else 0.0
         )
@@ -1093,10 +1120,31 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
     @property
     def available(self) -> bool:
-        """Return True if entity is available."""
-        # ZJEDNODUŠENÍ: Pouze kontrola zda je solar forecast zapnutý
-        solar_enabled = self._config_entry.options.get("enable_solar_forecast", False)
-        return solar_enabled
+        """Return True if entity is available.
+
+        Plan 4 Task 4 / R5.5: a missing-GPS forecast surfaces as `unavailable`,
+        not a silently-fallback number. The mounted surface
+        (``extra_state_attributes``) carries the visible warning + recovery action.
+        """
+        if not self._config_entry.options.get("enable_solar_forecast", False):
+            return False
+        # Sensor-first / options-first: refuse to be available if the user has not
+        # configured a location (no implicit author-GPS fallback).
+        if self._missing_config_fields():
+            return False
+        return True
+
+    def _missing_config_fields(self) -> list[str]:
+        """Names of user-config fields required for a non-empty forecast, when missing."""
+        missing: list[str] = []
+        opts = self._config_entry.options
+        if opts.get("solar_forecast_provider") != "forecast_solar":
+            return missing
+        if opts.get("solar_forecast_latitude") is None:
+            missing.append("solar_forecast_latitude")
+        if opts.get("solar_forecast_longitude") is None:
+            missing.append("solar_forecast_longitude")
+        return missing
 
     @property
     def state(self) -> Optional[Union[float, str]]:
@@ -1145,11 +1193,36 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Dodatečné atributy s hodinovými výkony a aktuální hodinovou prognózou."""
-        if not self._last_forecast_data:
-            return {}
+        """Dodatečné atributy s hodinovými výkony a aktuální hodinovou prognózou.
 
+        R5.5: when configuration required for the forecast is missing we mount a
+        visible ``warning`` and ``recovery_action`` on this surface (the dashboard /
+        Lovelace renders these attributes), alongside the ``unavailable`` state.
+        A log line does not satisfy R5.5; this dict IS the mounted surface.
+        """
         attrs: Dict[str, Any] = {}
+
+        # R5.5 visible warning — Plan 4 Task 4 mount point.
+        missing = self._missing_config_fields()
+        if missing:
+            attrs["warning"] = (
+                "Solar forecast location (GPS latitude/longitude) is not configured. "
+                "The forecast cannot run without a real installation location."
+            )
+            attrs["missing_fields"] = missing
+            attrs["recovery_action"] = (
+                "Open the integration's options and set "
+                "solar_forecast_latitude / solar_forecast_longitude to your "
+                "installation site, then reload the integration."
+            )
+            attrs["config_status"] = "missing_required_config"
+            return attrs
+
+        if self._config_entry.options.get("solar_forecast_provider"):
+            attrs["config_status"] = "ok"
+
+        if not self._last_forecast_data:
+            return attrs
 
         try:
             attrs["response_time"] = self._last_forecast_data.get("response_time")

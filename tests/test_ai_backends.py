@@ -68,7 +68,7 @@ async def test_generate_data_sends_key_as_bearer_and_returns_parsed_json():
     resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
     session = _Session(resp)
     out = await _backend(session).async_generate_data(
-        "test_task", {"capacity_kwh": 15.36}, {"type": "object"})
+        "validate_config", {"capacity_kwh": 15.36}, {"type": "object"})
     assert out == {"ok": True}
     _, _, kw = session.calls[0]
     assert kw["headers"]["Authorization"] == "Bearer gsk_secret0000000000"
@@ -79,14 +79,14 @@ async def test_invalid_json_from_model_raises_not_returns_garbage():
     resp = _Resp(200, {"choices": [{"message": {"content": "I am not JSON"}}]})
     with pytest.raises(ValueError):
         await _backend(_Session(resp)).async_generate_data(
-            "t", {"capacity_kwh": 1}, {"type": "object"})
+            "validate_config", {"capacity_kwh": 1}, {"type": "object"})
 
 
 @pytest.mark.asyncio
 async def test_http_error_is_surfaced_as_a_soft_failure():
     with pytest.raises(RuntimeError):
         await _backend(_Session(_Resp(401, {}))).async_generate_data(
-            "t", {"capacity_kwh": 1}, {"type": "object"})
+            "validate_config", {"capacity_kwh": 1}, {"type": "object"})
 
 
 @pytest.mark.asyncio
@@ -95,6 +95,19 @@ async def test_verify_key_probes_models_endpoint():
     assert await _backend(session).async_verify_key() is True
     method, url, _ = session.calls[0]
     assert method == "GET" and url.endswith("/models")
+
+
+@pytest.mark.asyncio
+async def test_generate_data_rejects_free_text_task_before_serializing_request_body():
+    resp = _Resp(200, {"choices": [{"message": {"content": "{}"}}]})
+    session = _Session(resp)
+    leaky_task = "validate install at 50.1219800, 13.9373742, Main Street 42"
+
+    with pytest.raises(ValueError, match="unknown AI task"):
+        await _backend(session).async_generate_data(
+            leaky_task, {"capacity_kwh": 15.36}, {"type": "object"})
+
+    assert session.calls == []
 
 
 # --- K2b: anonymity is an ALLOW-LIST, asserted against the OUTGOING BODY ------

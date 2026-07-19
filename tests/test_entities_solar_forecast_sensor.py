@@ -186,8 +186,6 @@ async def test_periodic_update_daily_optimized_triggers(monkeypatch):
     sensor._last_api_call = 0
     sensor._min_api_interval = 0
 
-    async_fetch = pytest.raises  # placeholder
-
     async def _fetch():
         sensor._called = True
 
@@ -451,9 +449,34 @@ def test_state_uses_coordinator_and_availability(monkeypatch):
     sensor.coordinator.solar_forecast_data = dict(shared)
     assert sensor.state is None
 
-    sensor = _make_sensor_type({"enable_solar_forecast": True}, "solar_forecast")
+    # Plan 4 Task 4 / P7: GPS is now required (no implicit author fallback).
+    sensor = _make_sensor_type(
+        {
+            "enable_solar_forecast": True,
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
+        },
+        "solar_forecast",
+    )
     sensor.coordinator.solar_forecast_data = dict(shared)
     assert sensor.state == 4.2
+
+
+def test_solcast_availability_does_not_require_gps():
+    sensor = _make_sensor_type(
+        {
+            "enable_solar_forecast": True,
+            "solar_forecast_provider": "solcast",
+            "solcast_api_key": "key",
+            "solcast_site_id": "site-123",
+            "solar_forecast_string1_enabled": True,
+            "solar_forecast_string1_kwp": 1.0,
+        },
+        "solar_forecast",
+    )
+
+    assert sensor.available is True
+    assert "warning" not in sensor.extra_state_attributes
 
 
 def test_state_and_attributes_all_sensors(monkeypatch):
@@ -493,7 +516,14 @@ def test_state_and_attributes_all_sensors(monkeypatch):
         "string2_hourly": {today_key: 400, tomorrow_key: 1100},
     }
 
-    sensor = _make_sensor_type({"enable_solar_forecast": True}, "solar_forecast")
+    sensor = _make_sensor_type(
+        {
+            "enable_solar_forecast": True,
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
+        },
+        "solar_forecast",
+    )
     sensor._last_forecast_data = data
     assert sensor.state == 5.5
     attrs = sensor.extra_state_attributes
@@ -502,14 +532,28 @@ def test_state_and_attributes_all_sensors(monkeypatch):
     assert attrs["today_total_sum_kw"] == 1.0
     assert attrs["tomorrow_total_sum_kw"] == 2.0
 
-    sensor = _make_sensor_type({"enable_solar_forecast": True}, "solar_forecast_string1")
+    sensor = _make_sensor_type(
+        {
+            "enable_solar_forecast": True,
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
+        },
+        "solar_forecast_string1",
+    )
     sensor._last_forecast_data = data
     assert sensor.state == 3.0
     attrs = sensor.extra_state_attributes
     assert attrs["today_kwh"] == 3.0
     assert attrs["today_sum_kw"] == 0.6
 
-    sensor = _make_sensor_type({"enable_solar_forecast": True}, "solar_forecast_string2")
+    sensor = _make_sensor_type(
+        {
+            "enable_solar_forecast": True,
+            "solar_forecast_latitude": 50.0,
+            "solar_forecast_longitude": 14.0,
+        },
+        "solar_forecast_string2",
+    )
     sensor._last_forecast_data = data
     assert sensor.state == 2.5
     attrs = sensor.extra_state_attributes

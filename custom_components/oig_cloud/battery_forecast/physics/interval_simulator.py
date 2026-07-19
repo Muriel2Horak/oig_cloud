@@ -70,7 +70,7 @@ class IntervalSimulator:
     - Efficient: No logging or side effects
 
     Example:
-        config = SimulatorConfig(max_capacity_kwh=15.36, min_capacity_kwh=3.07)
+        config = SimulatorConfig(max_capacity_kwh=None, min_capacity_kwh=None)
         simulator = IntervalSimulator(config)
 
         result = simulator.simulate(
@@ -118,8 +118,13 @@ class IntervalSimulator:
         Returns:
             IntervalResult with all energy flows
         """
+        if self._max is None or self._min is None:
+            raise ValueError("Battery capacity is unavailable")
+        max_capacity = self._max
+        min_capacity = self._min
+
         # Clamp inputs to valid range
-        battery_start = max(0, min(battery_start, self._max))
+        battery_start = max(0, min(battery_start, max_capacity))
         solar_kwh = max(0, solar_kwh)
         load_kwh = max(0, load_kwh)
 
@@ -133,8 +138,8 @@ class IntervalSimulator:
             solar_kwh=solar_kwh,
             load_kwh=load_kwh,
             battery_soc_kwh=battery_start,
-            capacity_kwh=self._max,
-            hw_min_capacity_kwh=self._min,
+            capacity_kwh=max_capacity,
+            hw_min_capacity_kwh=min_capacity,
             charge_efficiency=charge_efficiency,
             discharge_efficiency=discharge_efficiency,
             home_charge_rate_kwh_15min=self._max_charge,
@@ -191,8 +196,8 @@ class IntervalSimulator:
 
 
 def create_simulator(
-    max_capacity: float = 15.36,
-    min_capacity: float = 3.07,
+    max_capacity: float | None = None,
+    min_capacity: float | None = None,
     **kwargs: Any,
 ) -> IntervalSimulator:
     """Create an IntervalSimulator with given parameters.

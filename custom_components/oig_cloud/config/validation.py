@@ -63,14 +63,24 @@ async def validate_input(hass: Any, data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def validate_solar_forecast_api_key(
-    api_key: str, lat: float = 50.1219800, lon: float = 13.9373742
+    api_key: str,
+    lat: float | None = None,
+    lon: float | None = None,
 ) -> bool:
-    """Validate Solar Forecast API key by making a test request."""
+    """Validate Solar Forecast API key by making a test request.
+
+    Per Plan 4 Task 4 / P7: the author's hardcoded GPS is no longer an implicit
+    fallback. Runtime forecasting must use lat/lon from user configuration; this
+    key-status probe may use neutral coordinates when location is not available.
+    """
     if not api_key or not api_key.strip():
         return True
 
+    request_lat = 0.0 if lat is None else lat
+    request_lon = 0.0 if lon is None else lon
+
     test_url = (
-        f"https://api.forecast.solar/{api_key.strip()}/estimate/{lat}/{lon}/35/0/1"
+        f"https://api.forecast.solar/{api_key.strip()}/estimate/{request_lat}/{request_lon}/35/0/1"
     )
 
     _LOGGER.debug("🔑 Validating Solar Forecast API key: %s...", test_url[:50])

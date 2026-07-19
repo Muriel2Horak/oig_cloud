@@ -250,6 +250,13 @@ async def test_completed_migration_is_idempotent(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_failed_transform_restores_original_options_and_keeps_backup_state(monkeypatch):
+    """Task 7: a transform crash now surfaces as `MigrationTransformError`
+    (classified `.code = "transform_failed"`) — not a silent `return False`.
+    The pre-migration snapshot is preserved and the entry's options stay
+    untouched (recoverable state).
+    """
+    from custom_components.oig_cloud.config_migration import MigrationTransformError
+
     stores = _StoreFactory()
     monkeypatch.setattr(config_migration, "Store", stores)
 
@@ -262,19 +269,30 @@ async def test_failed_transform_restores_original_options_and_keeps_backup_state
     original = {"min_capacity_percent": 25.0}
     entry = _Entry(options=dict(original))
 
-    migrated = await run_migration(hass, entry)
-    backup = stores.backup("entry-1")
+    with pytest.raises(MigrationTransformError) as exc_info:
+        await run_migration(hass, entry)
 
-    assert migrated is False
+    assert exc_info.value.code == "transform_failed"
+    backup = stores.backup("entry-1")
     assert entry.options == original
     assert "_migration" not in entry.options
     assert backup is not None
     assert backup["complete"] is False
     assert backup["snapshot"] == original
+    journal = backup["journal"]
+    failed_event = next((e for e in journal if e.get("event") == "failed"), None)
+    assert failed_event is not None
+    assert failed_event.get("code") == "transform_failed"
 
 
 @pytest.mark.asyncio
 async def test_failed_final_backup_save_rolls_back_options_and_propagates(monkeypatch):
+    """Task 7: a commit-time backup write failure surfaces as classified
+    `MigrationBackupError` (was: generic `RuntimeError`). The entry's options
+    are rolled back to the pre-migration snapshot before the error is raised.
+    """
+    from custom_components.oig_cloud.config_migration import MigrationBackupError
+
     stores = _StoreFactory(_FailingFinalSaveStore)
     monkeypatch.setattr(config_migration, "Store", stores)
     monkeypatch.setattr(config_migration, "_TRANSFORMS", [_transform_with_defaults])
@@ -287,8 +305,11 @@ async def test_failed_final_backup_save_rolls_back_options_and_propagates(monkey
     }
     entry = _Entry(options=dict(original))
 
-    with pytest.raises(RuntimeError, match="commit backup write failed"):
+    with pytest.raises(MigrationBackupError) as exc_info:
         await run_migration(hass, entry)
+
+    assert exc_info.value.code == "backup_failed"
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
 
     backup = stores.backup("entry-1")
 
@@ -320,7 +341,12 @@ async def test_restore_round_trips_and_clears_migration_marker(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_restore_with_corrupt_backup_is_safe_false(monkeypatch):
+async def test_restore_with_corrupt_backup_raises_classified_error(monkeypatch):
+    """Task 7: corrupt backup store must surface as `MigrationBackupError`,
+    classified `.code = "backup_failed"`. Entry's options are NOT touched.
+    """
+    from custom_components.oig_cloud.config_migration import MigrationBackupError
+
     class _CorruptStoreFactory:
         def __call__(self, *_args: Any, **_kwargs: Any) -> _CorruptStore:
             return _CorruptStore()
@@ -330,7 +356,8 @@ async def test_restore_with_corrupt_backup_is_safe_false(monkeypatch):
     hass = _DummyHass()
     entry = _Entry(options={"min_capacity_percent": 25.0})
 
-    restored = await config_migration.restore_last_backup(hass, entry)
+    with pytest.raises(MigrationBackupError) as exc_info:
+        await config_migration.restore_last_backup(hass, entry)
 
-    assert restored is False
+    assert exc_info.value.code == "backup_failed"
     assert entry.options == {"min_capacity_percent": 25.0}

@@ -20,6 +20,15 @@ from ..types import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Plan 4 Task 4 / P7: the author's scenario thresholds were bare inline literals at
+# the UPS opportunistic-charge call site. They are owned LOCAL tuning (Step 3 P8
+# "REMOTE kandidáti stay LOCAL"), but the literals must not be embedded at the
+# call site — name them so they can be audited and overridden by integration
+# configuration in a follow-up task.
+UPS_OPPORTUNISTIC_PRICE_CZK_KWH = 1.5  # below this price, opportunistic grid charge fires
+UPS_OPPORTUNISTIC_CHARGE_RATE_KW = 2.8  # charge rate when opportunistic mode fires
+UPS_OPPORTUNISTIC_INTERVAL_HOURS = 0.25  # 15-minute interval = 4.0; rate*hours -> per-interval kWh
+
 
 def _iter_interval_inputs(
     sensor: Any,
@@ -642,8 +651,11 @@ def _simulate_home_ups(
     max_capacity: float,
     efficiency: float,
 ) -> tuple[float, float]:
-    if price < 1.5:
-        charge_amount = min(2.8 / 4.0, max_capacity - battery)
+    if price < UPS_OPPORTUNISTIC_PRICE_CZK_KWH:
+        charge_amount = min(
+            UPS_OPPORTUNISTIC_CHARGE_RATE_KW * UPS_OPPORTUNISTIC_INTERVAL_HOURS,
+            max_capacity - battery,
+        )
         if charge_amount > 0:
             total_cost += charge_amount * price
             battery += charge_amount * efficiency

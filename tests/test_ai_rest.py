@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -222,3 +223,29 @@ async def test_ai_post_verification_failure_does_not_overwrite_a_verified_key(ai
 
     store = api_module.AiKeyStore(ai_env.hass, ai_env.entry.entry_id)
     assert await store.async_get_key() == _SECRET
+
+
+@pytest.mark.asyncio
+async def test_ai_post_verify_exception_returns_classified_code_not_raw_detail(
+    ai_env, monkeypatch, caplog
+):
+    """R11.6: API responses get a safe code; raw exception text stays in logs."""
+    raw_error = "provider timeout for 50.1219800, 13.9373742, Main Street 42"
+
+    async def _fail(self):
+        raise RuntimeError(raw_error)
+
+    monkeypatch.setattr(api_module.OpenAiCompatBackend, "async_verify_key", _fail)
+
+    with caplog.at_level(logging.WARNING, logger=api_module.__name__):
+        resp = await ai_env.view.post(
+            admin_req_with(ai_env, {"provider": "groq", "api_key": _SECRET}),
+            "box1",
+        )
+
+    body = json.loads(resp.text)
+    assert resp.status == 502
+    assert body["code"] == "ai_verify_failed"
+    assert "detail" not in body
+    assert raw_error not in resp.text
+    assert raw_error in caplog.text

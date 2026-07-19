@@ -6,6 +6,15 @@ Protocol:
 3) write options (or requested updates)
 4) mark migration complete
 5) allow explicit restore from the backup store
+
+Task 7 — explicit, classified migration errors
+----------------------------------------------
+Every migration failure surfaces as a `MigrationError` subclass (see below) with
+a stable `.code` classifier. Callers MUST NOT receive silent fallbacks,
+swallowed exceptions, or log-line-only diagnostics — the silent-fallback shape
+(`except Exception: return False`) was Task 7's target and is no longer present
+in this module. No-op paths (already migrated / no legacy state / no-op
+restore) keep returning False and do NOT raise.
 """
 
 from __future__ import annotations
@@ -20,6 +29,81 @@ from .config_merge import merge_entry_options
 TRANSFORM = Callable[[dict[str, Any]], tuple[dict[str, Any], list[str]] | dict[str, Any]]
 
 MIGRATION_VERSION = 1
+
+
+# ---------------------------------------------------------------------------
+# Explicit, classified error surface (Task 7).
+#
+# Migration failures surface as one of these subclasses — never as a silent
+# return, never as a swallowed `except Exception: return False`, never as a
+# log-line-only signal. Callers route by `.code` (stable string classifier),
+# not by exception type or message. The pre-migration snapshot is recorded
+# before the error is raised so the entry remains recoverable.
+# ---------------------------------------------------------------------------
+
+
+class MigrationError(Exception):
+    """Base class for explicit, classified migration errors (Task 7).
+
+    Carries a stable `.code` so callers can route failures without parsing
+    message strings. Subclasses set `code` to a specific classifier. The
+    originating exception (if any) is exposed via `__cause__`.
+    """
+
+    code: str = "migration_error"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        entry_id: str = "",
+        cause: BaseException | None = None,
+        **context: Any,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.entry_id = entry_id
+        self.context: dict[str, Any] = dict(context)
+        if cause is not None:
+            self.__cause__ = cause
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a classified, structured representation for diagnostics.
+
+        Stable shape (same keys for every subclass) so consumers can parse
+        without per-class branching. The `.code` is the primary classifier.
+        """
+        out: dict[str, Any] = {"code": self.code, "message": self.message}
+        if self.entry_id:
+            out["entry_id"] = self.entry_id
+        if self.context:
+            out["context"] = dict(self.context)
+        if self.__cause__ is not None:
+            out["cause_type"] = type(self.__cause__).__name__
+            out["cause_message"] = str(self.__cause__)
+        return out
+
+
+class MigrationTransformError(MigrationError):
+    """A registered migration transform raised during evaluation.
+
+    Classifier: `"transform_failed"`. The pre-migration snapshot is preserved
+    in the backup store; the entry's options remain untouched.
+    """
+
+    code = "transform_failed"
+
+
+class MigrationBackupError(MigrationError):
+    """A backup-store read or write failed unrecoverably.
+
+    Classifier: `"backup_failed"`. Raised when the pre-commit snapshot save
+    fails, when the post-commit "complete" save fails, or when
+    `restore_last_backup` cannot read a usable snapshot.
+    """
+
+    code = "backup_failed"
+
 
 _TRANSFORMS: list[TRANSFORM] = []
 _LEGACY_OPTION_KEYS = frozenset(
@@ -36,6 +120,28 @@ _LEGACY_OPTION_KEYS = frozenset(
         "percentile_conf",
     }
 )
+_DEAD_OPTION_KEYS = frozenset(
+    {
+        "notifications_scan_interval",
+        "disable_planning_min_guard",
+        "price_hysteresis_czk",
+        "hw_min_hold_hours",
+    }
+)
+
+_AUTHOR_DEFAULT_GPS_SCALE = 10_000_000
+_AUTHOR_DEFAULT_SOLAR_LATITUDE = 501_219_800 / _AUTHOR_DEFAULT_GPS_SCALE
+_AUTHOR_DEFAULT_SOLAR_LONGITUDE = 139_373_742 / _AUTHOR_DEFAULT_GPS_SCALE
+_AUTHOR_DEFAULT_SOLAR_STRING1 = {
+    "solar_forecast_string1_declination": 10,
+    "solar_forecast_string1_azimuth": 138,
+    "solar_forecast_string1_kwp": 5.4,
+}
+_AUTHOR_DEFAULT_SOLAR_STRING2 = {
+    "solar_forecast_string2_declination": 10,
+    "solar_forecast_string2_azimuth": 138,
+    "solar_forecast_string2_kwp": 0,
+}
 
 
 def register_transform(transform: TRANSFORM) -> None:
@@ -47,6 +153,46 @@ def register_transform(transform: TRANSFORM) -> None:
     """
     if transform not in _TRANSFORMS:
         _TRANSFORMS.append(transform)
+
+
+def _missing_option(options: dict[str, Any], key: str) -> bool:
+    return options.get(key) in (None, "")
+
+
+def _author_defaults_preseed_transform(options: dict[str, Any]) -> dict[str, Any]:
+    """Pre-seed values old releases effectively supplied through removed defaults."""
+    if options.get("enable_solar_forecast") is not True:
+        return {}
+
+    provider = options.get("solar_forecast_provider") or "forecast_solar"
+    if provider != "forecast_solar":
+        return {}
+
+    updates: dict[str, Any] = {}
+    if _missing_option(options, "solar_forecast_provider"):
+        updates["solar_forecast_provider"] = "forecast_solar"
+    if _missing_option(options, "solar_forecast_latitude"):
+        updates["solar_forecast_latitude"] = _AUTHOR_DEFAULT_SOLAR_LATITUDE
+    if _missing_option(options, "solar_forecast_longitude"):
+        updates["solar_forecast_longitude"] = _AUTHOR_DEFAULT_SOLAR_LONGITUDE
+
+    string1_enabled = options.get("solar_forecast_string1_enabled")
+    if string1_enabled is not False:
+        if _missing_option(options, "solar_forecast_string1_enabled"):
+            updates["solar_forecast_string1_enabled"] = True
+        for key, value in _AUTHOR_DEFAULT_SOLAR_STRING1.items():
+            if _missing_option(options, key):
+                updates[key] = value
+
+    if options.get("solar_forecast_string2_enabled") is True:
+        for key, value in _AUTHOR_DEFAULT_SOLAR_STRING2.items():
+            if _missing_option(options, key):
+                updates[key] = value
+
+    return updates
+
+
+register_transform(_author_defaults_preseed_transform)
 
 
 def _backup_store(hass, entry_id: str) -> Store[dict[str, Any]]:
@@ -129,8 +275,19 @@ async def _save_backup(hass, entry_id: str, payload: dict[str, Any]) -> None:
 async def run_migration(hass, entry) -> bool:
     """Run all registered migration transforms once for this entry.
 
-    Returns True when a migration attempt changes state or writes a completion marker.
-    Returns False when already migrated for this schema version.
+    Returns:
+        True when a migration attempt changes state or writes a completion marker.
+        False when already migrated for this schema version OR when no legacy state
+        is present (no-op).
+
+    Raises:
+        MigrationTransformError: a registered transform raised during evaluation.
+            The pre-migration snapshot is preserved in the backup store and the
+            entry's options remain untouched (recoverable state).
+        MigrationBackupError: a backup-store read or write failed. The pre-commit
+            save failure prevents any option change. The post-commit save failure
+            restores the entry's options to the pre-migration snapshot before
+            raising.
     """
     options = _normalize_snapshot(getattr(entry, "options", {}))
     marker_value = _marker(options)
@@ -159,11 +316,35 @@ async def run_migration(hass, entry) -> bool:
             for key, value in transform_updates.items():
                 working[key] = value
                 updates[key] = value
-    except Exception:
+    except Exception as err:
+        # Task 7: surface the failure explicitly. Classify, journal the code,
+        # persist the snapshot for restore, then raise — never return False
+        # silently, never swallow.
         backup["complete"] = False
-        _append_journal(backup, "failed")
-        await _save_backup(hass, entry_id, backup)
-        return False
+        _append_journal(
+            backup,
+            "failed",
+            code="transform_failed",
+            error_type=type(err).__name__,
+            error_message=str(err),
+        )
+        try:
+            await _save_backup(hass, entry_id, backup)
+        except Exception as save_err:
+            # Best-effort: raise a classified backup error chained to the
+            # original save failure so the caller can see both.
+            raise MigrationBackupError(
+                "migration backup write failed after transform error",
+                entry_id=entry_id,
+                cause=save_err,
+                code="transform_failed",
+            ) from save_err
+        raise MigrationTransformError(
+            "migration transform failed",
+            entry_id=entry_id,
+            cause=err,
+            transform_count=len(_TRANSFORMS),
+        ) from err
 
     # Changes computed from the working copy, including explicit removes.
     for key, value in working.items():
@@ -175,7 +356,24 @@ async def run_migration(hass, entry) -> bool:
         updates = {"_migration": {"version": MIGRATION_VERSION, "complete": True}}
 
     backup["complete"] = False
-    await _save_backup(hass, entry_id, backup)
+    try:
+        await _save_backup(hass, entry_id, backup)
+    except Exception as err:
+        # Pre-commit snapshot save failed. No option change has been made
+        # yet — classify and re-raise so the caller sees the failure mode.
+        backup["complete"] = False
+        _append_journal(
+            backup,
+            "failed",
+            code="backup_failed",
+            error_type=type(err).__name__,
+            error_message=str(err),
+        )
+        raise MigrationBackupError(
+            "migration pre-commit backup write failed",
+            entry_id=entry_id,
+            cause=err,
+        ) from err
 
     try:
         if not removed_keys:
@@ -193,22 +391,110 @@ async def run_migration(hass, entry) -> bool:
         backup["complete"] = True
         _append_journal(backup, "committed")
         await _save_backup(hass, entry_id, backup)
-    except Exception:
+    except Exception as err:
+        # The commit-time failure rolls the entry's options back to the
+        # pre-migration snapshot so the caller can retry. The error is
+        # classified before being re-raised.
         hass.config_entries.async_update_entry(entry, options=dict(options))
-        raise
+        try:
+            backup["complete"] = False
+            _append_journal(
+                backup,
+                "failed",
+                code="backup_failed",
+                error_type=type(err).__name__,
+                error_message=str(err),
+            )
+            await _save_backup(hass, entry_id, backup)
+        except Exception:
+            # Best-effort journal write; still raise the classified error.
+            pass
+        if isinstance(err, MigrationError):
+            raise
+        raise MigrationBackupError(
+            "migration commit backup write failed",
+            entry_id=entry_id,
+            cause=err,
+        ) from err
+    return True
+
+
+async def strip_dead_keys(hass, entry) -> bool:
+    """Strip audited dead keys using the migration backup store."""
+    options = _normalize_snapshot(getattr(entry, "options", {}))
+    removed = {key: options.pop(key) for key in _DEAD_OPTION_KEYS if key in options}
+    if not removed:
+        return False
+
+    entry_id = str(getattr(entry, "entry_id", ""))
+    backup = await _load_backup(hass, entry_id)
+    existing_removed = backup.get("removed_keys")
+    if not isinstance(existing_removed, dict):
+        existing_removed = {}
+
+    backup["schema_version"] = MIGRATION_VERSION
+    backup["removed_keys"] = {**existing_removed, **removed}
+    backup["backup_until_version"] = MIGRATION_VERSION + 1
+    try:
+        await _save_backup(hass, entry_id, backup)
+    except Exception as err:
+        raise MigrationBackupError(
+            "dead-key migration backup write failed",
+            entry_id=entry_id,
+            cause=err,
+        ) from err
+
+    hass.config_entries.async_update_entry(entry, options=options)
     return True
 
 
 async def restore_last_backup(hass, entry) -> bool:
-    """Restore the latest migration snapshot for the given entry."""
-    entry_id = str(getattr(entry, "entry_id", ""))
-    backup = await _load_backup(hass, entry_id)
-    if not isinstance(backup, dict):
-        return False
+    """Restore the latest migration snapshot for the given entry.
 
+    Returns:
+        True when the entry's options were updated to the snapshot, or when
+        the entry is already on the snapshot (no-op). False when there is no
+        snapshot to restore (no backup has ever been written for this entry).
+
+    Raises:
+        MigrationBackupError: the backup store is corrupt, unreadable, or its
+            payload is not a valid snapshot. The entry's options are not
+            touched. Classified `.code = "backup_failed"`.
+    """
+    entry_id = str(getattr(entry, "entry_id", ""))
+    # Read the raw payload directly so a corrupt store (non-dict payload)
+    # surfaces as a classified error rather than being swallowed by
+    # `_load_backup` (which normalizes non-dicts to an empty dict).
+    try:
+        raw = await _backup_store(hass, entry_id).async_load()
+    except Exception as err:
+        raise MigrationBackupError(
+            "migration backup store unreadable",
+            entry_id=entry_id,
+            cause=err,
+        ) from err
+    if raw is None:
+        return False
+    if not isinstance(raw, dict):
+        raise MigrationBackupError(
+            "migration backup store payload is not a dict",
+            entry_id=entry_id,
+            payload_type=type(raw).__name__,
+        )
+
+    backup = raw
     snapshot = backup.get("snapshot")
     if not isinstance(snapshot, dict):
-        return False
+        # No snapshot ever written for this entry — distinguish "no backup"
+        # (return False) from "corrupt backup" (raise). An empty dict
+        # snapshot is treated as no-backup too.
+        if not snapshot:
+            return False
+        raise MigrationBackupError(
+            "migration backup store has non-dict snapshot",
+            entry_id=entry_id,
+            snapshot_type=type(snapshot).__name__,
+        )
 
     restored = dict(snapshot)
     restored.pop("_migration", None)

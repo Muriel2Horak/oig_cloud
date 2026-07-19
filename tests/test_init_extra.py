@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import importlib.util
+import os
 import sys
 import types
 from pathlib import Path
@@ -488,6 +489,46 @@ async def test_async_remove_config_entry_device_exception(monkeypatch):
     )
 
     assert allowed is False
+
+
+@pytest.mark.asyncio
+async def test_async_remove_entry_deletes_ai_key_store_file(monkeypatch, tmp_path):
+    entry = SimpleNamespace(entry_id="entry1")
+    hass = DummyHass()
+    hass.data[DOMAIN][entry.entry_id] = {}
+    hass.config = SimpleNamespace(
+        path=lambda *parts: str(tmp_path.joinpath(*parts))
+    )
+    key_store_module = importlib.import_module(
+        f"{TEST_PACKAGE}.oig_cloud.ai.key_store"
+    )
+
+    class FileStore:
+        def __init__(self, hass_arg, _version, key, **_kwargs):
+            self.path = hass_arg.config.path(".storage", key)
+            self.saved = None
+
+        async def async_load(self):
+            return self.saved
+
+        async def async_save(self, data):
+            self.saved = data
+            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+            Path(self.path).write_text("stored", encoding="utf-8")
+
+        async def async_remove(self):
+            os.unlink(self.path)
+
+    monkeypatch.setattr(key_store_module, "Store", FileStore)
+
+    store = key_store_module.AiKeyStore(hass, entry.entry_id)
+    await store.async_set_key("groq", "gsk_ThisIsARealLookingSecretKey0123456789")
+    store_path = Path(store._store.path)
+    assert store_path.exists()
+
+    await init_module.async_remove_entry(hass, entry)
+
+    assert not store_path.exists()
 
 
 @pytest.mark.asyncio

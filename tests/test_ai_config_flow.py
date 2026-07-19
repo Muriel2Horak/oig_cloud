@@ -45,10 +45,14 @@ class _SpyKeyStore:
     def __init__(self, hass, entry_id):
         self.entry_id = entry_id
         self.calls = []
+        self.clears = 0
         _SpyKeyStore.instances.append(self)
 
     async def async_set_key(self, provider, api_key):
         self.calls.append((provider, api_key))
+
+    async def async_clear(self):
+        self.clears += 1
 
 
 @pytest.fixture
@@ -135,13 +139,38 @@ async def test_ai_step_with_no_key_is_a_valid_submission(spy_key_store):
 
 
 @pytest.mark.asyncio
+async def test_ai_step_clears_stored_key_when_provider_changes_without_new_key(spy_key_store):
+    """R11.4: a blank key on provider switch must clear the previous provider key."""
+    _, hass, flow = _flow({"ai_provider": "groq", "charge_rate_kw": 2.8})
+
+    await flow.async_step_ai(
+        {
+            "ai_provider": "nvidia",
+            "ai_base_url": "",
+            "ai_model": "",
+            "ai_api_key": "",
+        }
+    )
+
+    store = spy_key_store.instances[-1]
+    assert store.calls == []
+    assert store.clears == 1
+    _, kwargs = hass.config_entries.async_update_entry.call_args
+    assert kwargs["options"]["ai_provider"] == "nvidia"
+    assert "ai_api_key" not in kwargs["options"]
+
+
+@pytest.mark.asyncio
 async def test_module_config_get_does_not_expose_ai_section(monkeypatch):
     """AI state has a dedicated endpoint; module_config must not grow this surface."""
     from custom_components.oig_cloud.api import ha_rest_api as api_module
 
     entry = SimpleNamespace(entry_id="e1", options={"ai_provider": "groq"})
     hass = SimpleNamespace()
-    request = SimpleNamespace(app={"hass": hass})
+    request = SimpleNamespace(
+        app={"hass": hass, "hass_user": SimpleNamespace(is_admin=True)}
+    )
+    request.get = lambda _key, default=None: default
     monkeypatch.setattr(api_module, "_find_entry_for_box", lambda _hass, _box: entry)
 
     response = await api_module.OIGCloudModuleConfigView().get(request, "box1")

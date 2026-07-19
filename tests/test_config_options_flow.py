@@ -222,7 +222,7 @@ async def test_options_flow_summary_maps_selected_fields():
     assert options["min_capacity_percent"] == 25.0
     assert options["target_capacity_percent"] == 75.0
     assert options["max_ups_price_czk"] == 9.5
-    assert options["disable_planning_min_guard"] is True
+    assert "disable_planning_min_guard" not in options
     assert options["spot_pricing_model"] == "fixed"
     assert options["spot_fixed_fee_mwh"] == 550.0
     assert options["export_pricing_model"] == "fixed_prices"

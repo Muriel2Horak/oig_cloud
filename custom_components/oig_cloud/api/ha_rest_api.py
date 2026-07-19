@@ -51,7 +51,7 @@ from ..config_registry import (
 )
 from ..config.solar_rules import normalize_azimuth, validate_solar_effective
 from ..ai.backends import PROVIDERS, OpenAiCompatBackend
-from ..ai.key_store import AiKeyStore, redact_key
+from ..ai.key_store import AiKeyStore
 from ..onboarding import ONBOARDING_STEPS, OnboardingState
 
 _LOGGER = logging.getLogger(__name__)
@@ -1082,134 +1082,14 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
 # Module config (dashboard settings wizards)
 # ============================================================================
 
-# Whitelist of options writable from the dashboard, with validation.
-# LEGACY — superseded by config_registry; removed in Plan 4
-# Field spec keys — "type": bool|float|int|str; "rng": (min, max); "enum": allowed values.
-_MODULE_CONFIG_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
-    "modules": {
-        "enable_solar_forecast": {"type": bool},
-        "enable_battery_prediction": {"type": bool},
-        "enable_pricing": {"type": bool},
-        "enable_boiler": {"type": bool},
-        # OQ-5 (PLAN2-RESOLUTIONS.md): default True so an entry that never
-        # stored these reads True on GET — parity with the registry defaults.
-        "enable_statistics": {"type": bool, "default": True},
-        "enable_extended_sensors": {"type": bool, "default": True},
-        "enable_chmu_warnings": {"type": bool},
-    },
-    "battery": {
-        "auto_mode_switch_enabled": {"type": bool},
-        "charge_rate_kw": {"type": float, "rng": (0.5, 10.0)},
-        "expensive_percentile": {"type": float, "rng": (0.5, 0.95)},
-        "battery_comfort_soc_percent": {"type": float, "rng": (0.0, 95.0)},
-        "balancing_enabled": {"type": bool},
-        "balancing_interval_days": {"type": int, "rng": (3, 30)},
-        "balancing_hold_hours": {"type": int, "rng": (1, 12)},
-        "balancing_opportunistic_threshold": {"type": float, "rng": (0.5, 5.0)},
-        "balancing_economic_threshold": {"type": float, "rng": (0.5, 10.0)},
-        "cheap_window_percentile": {"type": int, "rng": (5, 80)},
-    },
-    "solar": {
-        "solar_forecast_provider": {"type": str, "enum": ("forecast_solar", "solcast")},
-        "solar_forecast_mode": {
-            "type": str,
-            "enum": ("hourly", "every_4h", "daily_optimized"),
-        },
-        "solar_forecast_api_key": {"type": str},
-        "solcast_api_key": {"type": str},
-        "solcast_site_id": {"type": str},
-        "solar_forecast_latitude": {"type": float, "rng": (-90.0, 90.0)},
-        "solar_forecast_longitude": {"type": float, "rng": (-180.0, 180.0)},
-        "solar_forecast_string1_enabled": {"type": bool},
-        "solar_forecast_string1_declination": {"type": int, "rng": (0, 90)},
-        "solar_forecast_string1_azimuth": {"type": int, "rng": (-180, 180)},
-        "solar_forecast_string1_kwp": {"type": float, "rng": (0.1, 50.0)},
-        "solar_forecast_string2_enabled": {"type": bool},
-        "solar_forecast_string2_declination": {"type": int, "rng": (0, 90)},
-        "solar_forecast_string2_azimuth": {"type": int, "rng": (-180, 180)},
-        "solar_forecast_string2_kwp": {"type": float, "rng": (0.1, 50.0)},
-    },
-    # Task B + F5: boiler section — all configurable boiler parameters
-    "boiler": {
-        "boiler_volume_l": {"type": float, "rng": (30.0, 1000.0)},
-        "boiler_temp_sensor_top": {"type": str},
-        "boiler_temp_sensor_bottom": {"type": str},
-        "boiler_enable_second_thermometer": {"type": bool},
-        "boiler_current_power_entity": {"type": str},
-        "boiler_alt_energy_sensor": {"type": str},
-        "boiler_alt_energy_daily": {"type": bool},
-        "boiler_alt_cost_kwh": {"type": float, "rng": (0.0, 20.0)},
-        "boiler_has_alternative_heating": {"type": bool},
-        "boiler_target_temp_c": {"type": float, "rng": (40.0, 85.0)},
-        "boiler_deadline_time": {"type": str},
-        # R1/R8: alt source type (gas|heat_pump|fireplace|other)
-        "boiler_alt_source_type": {
-            "type": str,
-            "enum": ("gas", "heat_pump", "fireplace", "other"),
-        },
-        # F5: configurable battery cycle cost for Home 5 arbitrage
-        "boiler_battery_cycle_cost_czk_kwh": {"type": float, "rng": (0.0, 5.0), "default": 0.50},
-        # Phase B: thermal arbitrage (over-heat on cheap grid below alt cost)
-        "boiler_thermal_arbitrage_enabled": {"type": bool},
-        "boiler_max_temp_c": {"type": float, "rng": (40.0, 85.0), "default": 65.0},
-        "boiler_alt_power_kw": {"type": float, "rng": (0.0, 50.0), "default": 0.0},
-        # R3/R7: Home 5/6 capability + boiler opt-in
-        "box_has_home56": {"type": bool},
-        "boiler_home5_maneuver_enabled": {"type": bool},
-        # R5: circulation scheduling
-        "boiler_circulation_enabled": {"type": bool},
-        "boiler_circulation_lead_minutes": {"type": int, "rng": (0, 120)},
-        "boiler_circulation_run_minutes": {"type": int, "rng": (1, 60)},
-        "boiler_circulation_max_runs_per_day": {"type": int, "rng": (1, 20)},
-        "boiler_circulation_min_gap_minutes": {"type": int, "rng": (10, 480)},
-        # R9: anti-legionella
-        "boiler_legionella_interval_days": {"type": int, "rng": (0, 30)},
-        "boiler_legionella_target_temp_c": {"type": float, "rng": (60.0, 75.0)},
-    },
-}
-
-# Mirrors kept in sync for legacy readers.
-# LEGACY — superseded by config_registry; removed in Plan 4
-_MODULE_CONFIG_MIRRORS = {"charge_rate_kw": "home_charge_rate"}
-
-# LEGACY — superseded by config_registry; removed in Plan 4
-_SECRET_FIELDS = {"solar_forecast_api_key", "solcast_api_key"}
-
-
-# LEGACY — superseded by config_registry; removed in Plan 4
-# Validate + coerce one field; raises ValueError on bad input.
-def _coerce_module_value(spec: dict[str, Any], value: Any) -> Any:
-    """Validate + coerce one field; raises ValueError on bad input."""
-    typ = spec["type"]
-    if typ is bool:
-        if not isinstance(value, bool):
-            raise ValueError("expected boolean")
-        return value
-    if typ in (int, float):
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError("expected number")
-        value = typ(value)
-        rng = spec.get("rng")
-        if rng and not (rng[0] <= value <= rng[1]):
-            raise ValueError(f"out of range {rng[0]}..{rng[1]}")
-        return value
-    if typ is str:
-        if not isinstance(value, str):
-            raise ValueError("expected string")
-        enum = spec.get("enum")
-        if enum and value not in enum:
-            raise ValueError(f"expected one of {enum}")
-        return value[:200]
-    raise ValueError("unsupported type")
-
 
 class OIGCloudModuleConfigView(HomeAssistantView):
     """Read/update per-module options from the dashboard settings UI.
 
-    GET  -> current values of all whitelisted fields, grouped by section
+    GET  -> current values of all registry fields, grouped by section
             (secrets masked to a boolean *_set flag).
     POST -> {"section": "battery", "values": {...}} — validates against the
-            whitelist and updates the config entry (admin only); the entry's
+            registry and updates the config entry (admin only); the entry's
             update listener applies/reloads as needed.
     """
 
@@ -1523,10 +1403,11 @@ class OIGCloudAiView(HomeAssistantView):
         except Exception as err:                              # noqa: BLE001
             _LOGGER.warning(
                 "AI key verify probe failed for %s (%s): %s",
-                box_id, provider, redact_key(api_key),
+                box_id, provider, err,
+                exc_info=True,
             )
             return web.json_response(
-                {"error": "verify failed", "detail": str(err), **await store.async_api_state()},
+                {"error": "verify failed", "code": "ai_verify_failed", **await store.async_api_state()},
                 status=502,
             )
         if not ok:

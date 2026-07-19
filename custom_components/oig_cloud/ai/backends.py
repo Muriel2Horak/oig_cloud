@@ -56,6 +56,17 @@ PROMPT_ALLOWED_FIELDS = frozenset({
     "cheap_window_percentile", "expensive_percentile", "charge_rate_kw",
 })
 
+ALLOWED_TASKS = frozenset({
+    "ai_task_generate_data",
+    "validate_config",
+})
+
+
+def _validated_task(task: str) -> str:
+    if not isinstance(task, str) or task not in ALLOWED_TASKS:
+        raise ValueError("unknown AI task")
+    return task
+
 
 def build_anonymous_prompt(task: str, install: Mapping[str, Any]) -> str:
     """Render a task prompt from allow-listed anonymous numbers only.
@@ -63,6 +74,7 @@ def build_anonymous_prompt(task: str, install: Mapping[str, Any]) -> str:
     Anything not in PROMPT_ALLOWED_FIELDS is DROPPED — silently and by default.
     Adding a field to a prompt is therefore a deliberate, reviewable act.
     """
+    task = _validated_task(task)
     safe = {k: v for k, v in install.items() if k in PROMPT_ALLOWED_FIELDS}
     dropped = sorted(set(install) - set(safe))
     if dropped:

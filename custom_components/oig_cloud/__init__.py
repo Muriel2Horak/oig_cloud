@@ -40,7 +40,17 @@ from .core.data_source import (
     get_data_source_state,
     init_data_source_state,
 )
-from .config_migration import register_transform, restore_last_backup, run_migration
+from .config_migration import (
+    register_transform,
+    restore_last_backup,
+    run_migration,
+    strip_dead_keys,
+)
+from .config_deprecation import (
+    ALIAS_COMPAT_CURRENT_VERSION,
+    LegacyOptionsMigrationRequired,
+    deprecation_status,
+)
 from .config.promote_defaults import promote_blank_enum_defaults
 from .shared.logging import resolve_no_telemetry
 
@@ -169,18 +179,28 @@ def _get_planner_defaults() -> dict[str, Any]:
         "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
         CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
         "target_capacity_percent": 80.0,
-        "disable_planning_min_guard": False,
         "max_ups_price_czk": 10.0,
-        "price_hysteresis_czk": 0.01,
-        "hw_min_hold_hours": 6.0,
         "home_charge_rate": DEFAULT_CHARGE_RATE_KW,
         CONF_CHARGE_RATE_KW: DEFAULT_CHARGE_RATE_KW,
         "cheap_window_percentile": 30,
     }
 
 
-def _migrate_legacy_planner_options(options: dict[str, Any]) -> None:
+def _migrate_legacy_planner_options(
+    options: dict[str, Any],
+    current_version: int = ALIAS_COMPAT_CURRENT_VERSION,
+) -> None:
     """Migrate legacy planner options to new format."""
+    status = deprecation_status(options=options, current_version=current_version)
+    if not status.accepted:
+        raise LegacyOptionsMigrationRequired(status)
+    for warning in status.warnings:
+        _LOGGER.warning(
+            "deprecated planner option %s remains accepted until migration version %s",
+            warning["key"],
+            warning["compat_until_version"],
+        )
+
     if options.get(CONF_PLANNING_MIN_PERCENT) is None:
         legacy_min = options.get("min_capacity_percent")
         options[CONF_PLANNING_MIN_PERCENT] = (
@@ -274,7 +294,28 @@ def _ensure_planner_option_defaults(hass: HomeAssistant, entry: ConfigEntry):
                 migrated.pop(key, None)
             hass.config_entries.async_update_entry(entry, options=migrated)
         return None
-    return run_migration(hass, entry)
+
+    async def _run_planner_migration() -> bool:
+        # Task 7: migration helpers surface failures as classified
+        # `MigrationError` subclasses instead of silent fallbacks. Log the
+        # classified info so entry setup keeps a recoverable state.
+        from .config_migration import MigrationError  # local import: avoid cycle
+
+        try:
+            migrated = await run_migration(hass, entry)
+            stripped = await strip_dead_keys(hass, entry)
+            return bool(migrated or stripped)
+        except MigrationError as err:
+            _LOGGER.error(
+                "config migration failed for %s: code=%s entry_id=%s cause=%s",
+                entry.entry_id,
+                err.code,
+                err.entry_id,
+                type(err.__cause__).__name__ if err.__cause__ else "none",
+            )
+            return False
+
+    return _run_planner_migration()
 
 
 async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
@@ -1987,6 +2028,15 @@ async def async_unload_entry(
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
+
+
+async def async_remove_entry(
+    hass: HomeAssistant, entry: config_entries.ConfigEntry
+) -> None:
+    """Remove private per-entry stores when the config entry is deleted."""
+    from .ai.key_store import AiKeyStore
+
+    await AiKeyStore(hass, entry.entry_id).async_clear()
 
 
 async def async_remove_config_entry_device(

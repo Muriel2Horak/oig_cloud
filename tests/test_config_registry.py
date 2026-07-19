@@ -73,7 +73,7 @@ def test_api_dict_never_leaks_secret_defaults():
 def test_modules_and_battery_sections_ported():
     modules = fields_for_section("modules")
     battery = fields_for_section("battery")
-    # parity with the legacy _MODULE_CONFIG_FIELDS whitelist
+    # Canonical registry owns the module and battery field definitions.
     assert set(modules) == {
         "enable_solar_forecast", "enable_battery_prediction", "enable_pricing",
         "enable_boiler", "enable_statistics", "enable_extended_sensors",
@@ -87,40 +87,15 @@ def test_modules_and_battery_sections_ported():
     assert battery["battery_comfort_soc_percent"].min == 0.0 and battery["battery_comfort_soc_percent"].max == 95.0
 
 
-def test_get_parity_defaults_all_sections():
-    """Registry defaults must equal what legacy GET returns for empty options.
-
-    The legacy view computes: spec.get("default",
-        False if bool else ("" if str else None)).
-    When GET is rewired to the registry, output for an unset field must not change.
-
-    F1 Plan 3 Task 1 exception: solar_forecast_provider, solar_forecast_mode and
-    boiler_alt_source_type intentionally diverge from the legacy "" default — that
-    default is rejected by their own coerce_value (config_registry.py:74-75), so
-    parity with it would mean re-introducing the 400-on-untouched-form regression
-    this task fixes. See test_provider_default_round_trips_through_coerce below.
-    """
-    from custom_components.oig_cloud.api.ha_rest_api import _MODULE_CONFIG_FIELDS
-
-    task1_redefaulted_keys = {
-        "solar_forecast_provider", "solar_forecast_mode", "boiler_alt_source_type",
-    }
-
+def test_registry_defaults_round_trip_for_all_sections():
+    """Every configured default is accepted by its canonical field definition."""
     for section in ("modules", "battery", "solar", "boiler"):
-        reg = fields_for_section(section)
-        legacy = _MODULE_CONFIG_FIELDS[section]
-        assert set(reg) == set(legacy), f"{section}: key set differs from legacy whitelist"
-        for key, spec in legacy.items():
-            if key in task1_redefaulted_keys:
+        fields = fields_for_section(section)
+        assert fields
+        for field in fields.values():
+            if field.default is None:
                 continue
-            legacy_default = spec.get(
-                "default",
-                False if spec["type"] is bool else ("" if spec["type"] is str else None),
-            )
-            assert reg[key].default == legacy_default, (
-                f"{key}: registry default {reg[key].default!r} != legacy GET {legacy_default!r}"
-            )
-            assert reg[key].type is spec["type"], f"{key}: type mismatch"
+            assert coerce_value(field, field.default) == field.default
 
 
 def test_solar_and_boiler_sections_ported():
@@ -131,20 +106,11 @@ def test_solar_and_boiler_sections_ported():
     assert solar["solcast_api_key"].secret is True
     assert solar["solar_forecast_latitude"].min == -90.0
     assert solar["solar_forecast_string1_azimuth"].min == -180
-    # boiler: parity spot-checks (full parity asserted by the guard test below)
     assert "boiler_target_temp_c" in boiler
     assert boiler["boiler_volume_l"].reload_on_change is True
 
 
-def test_registry_covers_legacy_whitelist():
-    from custom_components.oig_cloud.api.ha_rest_api import _MODULE_CONFIG_FIELDS
-    for section, fields in _MODULE_CONFIG_FIELDS.items():
-        for key in fields:
-            assert key in FIELD_REGISTRY, f"missing {section}.{key} in registry"
-
-
-# --- Part B: fail-closed coercion parity with legacy _coerce_module_value ----------
-
+# --- Part B: fail-closed coercion --------------------------------------------
 
 def test_coerce_value_rejects_bool_as_number():
     with pytest.raises(ValueError):

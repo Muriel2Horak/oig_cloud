@@ -279,7 +279,7 @@ async def test_wizard_summary_full_option_mapping():
     assert options["target_capacity_percent"] == 75.0
     assert options["home_charge_rate"] == 3.1
     assert options[CONF_AUTO_MODE_SWITCH] is True
-    assert options["disable_planning_min_guard"] is True
+    assert "disable_planning_min_guard" not in options
     assert options["max_ups_price_czk"] == 9.5
     assert options["balancing_interval_days"] == 5
     assert options["cheap_window_percentile"] == 25
@@ -319,7 +319,7 @@ async def test_wizard_summary_defaults_for_optional_sections():
     assert options["target_capacity_percent"] == 80.0
     assert options["home_charge_rate"] == 2.8
     assert options["max_ups_price_czk"] == 10.0
-    assert options["disable_planning_min_guard"] is False
+    assert "disable_planning_min_guard" not in options
     assert options["enable_boiler"] is False
     assert options["enable_auto"] is False
 
