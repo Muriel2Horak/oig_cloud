@@ -343,6 +343,85 @@ async def test_module_config_boiler_get_defaults_when_missing():
 
 
 @pytest.mark.asyncio
+async def test_module_config_boiler_get_non_admin_returns_403_no_payload():
+    """R11.1 guard: a NON-admin request to GET module_config must fail closed with 403
+    and a body that leaks no boiler payload.
+
+    The b2e6f1aba test fix added an admin user to the existing two tests so the
+    admin gate would let them through. This test pins the OTHER side: a plain
+    authenticated (non-admin) request must still be refused, and the response
+    envelope must not echo any boiler option. A regression that weakened the
+    gate — e.g. fell back to any authenticated user, or rendered the 403 body
+    from the same dict the admin path uses — would silently expose the
+    sensitive surface (alt_source_type, GPS, Solcast site id) to every
+    household account on the HA instance.
+    """
+    from custom_components.oig_cloud.api.ha_rest_api import OIGCloudModuleConfigView
+
+    hass, _ = _make_hass_with_entry(
+        "f5box_nonadmin",
+        {
+            "boiler_alt_source_type": "heat_pump",
+            "boiler_battery_cycle_cost_czk_kwh": 0.40,
+        },
+    )
+    view = OIGCloudModuleConfigView()
+
+    class _Req:
+        # Plain authenticated user, NOT admin.
+        app = {"hass": hass, "hass_user": SimpleNamespace(is_admin=False)}
+
+        def get(self, key, default=None):
+            return default
+
+    response = await view.get(_Req(), "f5box_nonadmin")
+    assert response.status == 403
+    body = json.loads(response.text)
+    # No boiler payload leaks in either the body or the error envelope.
+    assert "boiler" not in body
+    assert "boiler_alt_source_type" not in body
+    assert "boiler_battery_cycle_cost_czk_kwh" not in body
+    assert "box_has_home56" not in body
+    # Fail-closed response shape is preserved.
+    assert "error" in body
+
+
+@pytest.mark.asyncio
+async def test_module_config_boiler_get_no_user_returns_403_no_payload():
+    """Belt-and-braces companion to the non-admin test: a request with NO hass_user
+    at all must also fail closed with 403 and no boiler payload.
+
+    The original stale-test pattern (no hass_user in app, get() returns default)
+    would have produced a 200 in the pre-R11.1 view. This test ensures that even
+    if some routing layer drops hass_user entirely, the gate still refuses. A
+    regression here would be the exact pre-R11.1 bug coming back through a
+    routing change.
+    """
+    from custom_components.oig_cloud.api.ha_rest_api import OIGCloudModuleConfigView
+
+    hass, _ = _make_hass_with_entry(
+        "f5box_nouser",
+        {
+            "boiler_alt_source_type": "fireplace",
+            "boiler_battery_cycle_cost_czk_kwh": 0.30,
+        },
+    )
+    view = OIGCloudModuleConfigView()
+
+    class _Req:
+        app = {"hass": hass}  # no hass_user key at all
+
+        def get(self, key, default=None):
+            return default
+
+    response = await view.get(_Req(), "f5box_nouser")
+    assert response.status == 403
+    body = json.loads(response.text)
+    assert "boiler" not in body
+    assert "boiler_alt_source_type" not in body
+
+
+@pytest.mark.asyncio
 async def test_module_config_boiler_post_alt_source_type_valid():
     """POST boiler section accepts valid alt_source_type enum."""
     from custom_components.oig_cloud.api.ha_rest_api import OIGCloudModuleConfigView
