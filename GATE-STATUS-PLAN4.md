@@ -4,7 +4,8 @@
 > mění pouze `GATE-STATUS-PLAN4.md`). Nový commit `d005f5295` přidává runtime guard v
 > `custom_components/oig_cloud/ai_task.py` a jeden guard-test v `tests/test_ai_task_wiring.py`,
 > který měří mypy stav z rc 1 na rc 0 (viz sekce `## Lint a types`). Backend fail-set zůstává
-> prázdný, +1 test, 4417 passed.
+> prázdný, +1 test, 4417 passed. Commit `f835edcb3` nad ním mění pouze tento soubor
+> (`GATE-STATUS-PLAN4.md`) — měření z `d005f5295` proto platí i pro branch tip.
 
 ## Verdikt
 
