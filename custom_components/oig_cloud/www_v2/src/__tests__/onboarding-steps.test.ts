@@ -151,33 +151,42 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
 
-    let content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
     // With default provider = forecast_solar, forecast_solar credential visible, solcast hidden
-    let selects = content.querySelectorAll('select');
-    expect(selects.length).toBeGreaterThanOrEqual(1);
+    expect(content.querySelectorAll('select').length).toBeGreaterThanOrEqual(1);
+    expect(content.textContent).toContain('forecast.solar API klíč');
+    expect(content.textContent).not.toContain('Solcast API klíč');
+    expect(content.textContent).not.toContain('Solcast site ID');
 
-    // Change provider to solcast via the select
+    // Drive the REAL select — set .value and dispatch a real 'change' event,
+    // exactly as a user would, so an onChange-wiring regression fails this test.
     const providerSelect = content.querySelector('select') as HTMLSelectElement;
     expect(providerSelect).toBeTruthy();
-    // The visible fields are rendered directly via renderFieldPresenter; we need to
-    // simulate a provider change. STEP_SOLAR.visibleFields tells us the expected set.
-    const forecastFields = STEP_SOLAR.visibleFields(
-      SOLAR_REGISTRY_FIXTURE,
-      { solar_forecast_provider: 'forecast_solar' } as Record<string, unknown>,
-    );
-    const forecastKeys = forecastFields.map((f) => f.key);
-    expect(forecastKeys).toContain('solar_forecast_api_key');
-    expect(forecastKeys).not.toContain('solcast_api_key');
-    expect(forecastKeys).not.toContain('solcast_site_id');
+    providerSelect.value = 'solcast';
+    providerSelect.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await (wizard as any).updateComplete;
 
-    const solcastFields = STEP_SOLAR.visibleFields(
+    const updatedContent = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    const controls = updatedContent.querySelectorAll('select, input');
+    // Mirror the wizard's own draft-seeding (registry defaults for provider,
+    // mode, string1/2 enabled) so the expected set matches what a real
+    // provider-only field change leaves the OTHER draft keys as.
+    const seededDraft: Record<string, unknown> = {};
+    for (const f of STEP_SOLAR.fields(SOLAR_REGISTRY_FIXTURE)) {
+      const spec = SOLAR_REGISTRY_FIXTURE.fields[f.key];
+      if (spec?.default !== undefined) seededDraft[f.key] = spec.default;
+    }
+    const visible = STEP_SOLAR.visibleFields(
       SOLAR_REGISTRY_FIXTURE,
-      { solar_forecast_provider: 'solcast' } as Record<string, unknown>,
+      { ...seededDraft, solar_forecast_provider: 'solcast' },
     );
-    const solcastKeys = solcastFields.map((f) => f.key);
-    expect(solcastKeys).toContain('solcast_api_key');
-    expect(solcastKeys).toContain('solcast_site_id');
-    expect(solcastKeys).not.toContain('solar_forecast_api_key');
+    expect(controls.length).toBe(visible.length);
+
+    // solcast fields present, forecast_solar-only fields gone.
+    expect(updatedContent.textContent).toContain('Solcast API klíč');
+    expect(updatedContent.textContent).toContain('Solcast site ID');
+    expect(updatedContent.textContent).not.toContain('forecast.solar API klíč');
+    expect(updatedContent.textContent).not.toContain('Frekvence aktualizace');
   });
 
   it('zero solar fields renders visible "not available" state', async () => {
@@ -263,12 +272,36 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
     const numberInputs = content.querySelectorAll('input[type="number"]');
     // latitude and longitude are always visible, but kwp/declination/azimuth
     // depend on string*_enabled=true — both are false here.
-    const stringFields = Array.from(numberInputs).filter((inp) => {
-      // lat/lon values are around 49.5/14.0; kwp values are > 0.1
-      return true; // just count how many number inputs exist
-    });
     // Only lat and lon number inputs should be visible
     expect(numberInputs.length).toBeLessThanOrEqual(2);
+  });
+
+  it('loads the field registry exactly once across AI→Solar→Pricing navigation', async () => {
+    const wizard = await fixture<HTMLElement>(html`<oig-onboarding-wizard
+      .inverterSn=${'SN123'}
+      ?open=${true}
+    ></oig-onboarding-wizard>`);
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    const nextBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+
+    // AI → Solar
+    nextBtn.click();
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    // Solar → Pricing
+    nextBtn.click();
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    expect(loadFieldRegistryMock).toHaveBeenCalledTimes(1);
   });
 });
 
