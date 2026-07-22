@@ -52,6 +52,7 @@ from ..config_registry import (
 from ..config.solar_rules import normalize_azimuth, validate_solar_effective
 from ..ai.backends import PROVIDERS, OpenAiCompatBackend
 from ..ai.key_store import AiKeyStore
+from ..forecast.candidate_test import run_solar_candidate_test
 from ..onboarding import ONBOARDING_STEPS, OnboardingState
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,6 +60,25 @@ _LOGGER = logging.getLogger(__name__)
 # API routes base
 API_BASE = "/api/oig_cloud"
 SENSOR_COMPONENT_NOT_FOUND = "Sensor component not found"
+_SOLAR_TEST_ALLOWED_KEYS = frozenset(
+    {
+        "provider",
+        "solar_forecast_api_key",
+        "solcast_api_key",
+        "solcast_site_id",
+        "solar_forecast_latitude",
+        "solar_forecast_longitude",
+        "solar_forecast_string1_enabled",
+        "solar_forecast_string1_kwp",
+        "solar_forecast_string1_declination",
+        "solar_forecast_string1_azimuth",
+        "solar_forecast_string2_enabled",
+        "solar_forecast_string2_kwp",
+        "solar_forecast_string2_declination",
+        "solar_forecast_string2_azimuth",
+    }
+)
+_SOLAR_TEST_PROVIDERS = frozenset({"forecast_solar", "solcast"})
 
 
 def _transform_timeline_for_api(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1440,6 +1460,199 @@ class OIGCloudAiView(HomeAssistantView):
         return web.json_response(await store.async_api_state())
 
 
+class OIGCloudSolarTestView(HomeAssistantView):
+    """Admin-only REST surface for side-effect-free solar provider probes."""
+
+    url = f"{API_BASE}/{{box_id}}/solar_test"
+    name = "api:oig_cloud:solar_test"
+    requires_auth = True
+
+    def _require_admin(self, request: web.Request) -> Optional[web.Response]:
+        # Real web.Request exposes `request.get(key)` (mapping-style); the test
+        # harness's DummyRequest does not. `request.app["hass_user"]` is the
+        # canonical Home Assistant convention, populated by the auth middleware
+        # HA's auth middleware puts the authenticated user on the REQUEST mapping
+        # (request["hass_user"]); request.app is the Application and does NOT carry
+        # it in production. Read the request first (real HA), fall back to app only
+        # for the test harness's DummyRequest. Mirrors module_config POST (:1235).
+        user = request.get("hass_user") if hasattr(request, "get") else None
+        if user is None and hasattr(request, "app"):
+            user = request.app.get("hass_user")
+        if not user or not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+        return None
+
+    async def post(self, request: web.Request, box_id: str) -> web.Response:
+        denied = self._require_admin(request)
+        if denied is not None:
+            return denied
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"error": "Invalid payload"}, status=400)
+
+        parsed, error_response = self._parse_payload(payload)
+        if error_response is not None:
+            return error_response
+
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        try:
+            session = aiohttp_client.async_get_clientsession(hass)
+        except Exception:  # noqa: BLE001
+            _LOGGER.warning("Solar candidate test failed for %s: provider_unreachable", box_id)
+            return web.json_response(
+                {"ok": False, "code": "provider_unreachable"},
+                status=502,
+            )
+
+        # TODO(Task 5): mount (entry_id, provider) rate-limit here.
+        result = await run_solar_candidate_test(
+            session,
+            parsed["provider"],
+            parsed["credentials"],
+            parsed["gps"],
+            parsed["strings"],
+        )
+        if "code" in result:
+            return web.json_response(
+                result,
+                status=504 if result["code"] == "timeout" else 502,
+            )
+        return web.json_response(result)
+
+    def _parse_payload(
+        self, payload: Dict[str, Any]
+    ) -> tuple[Optional[Dict[str, Any]], Optional[web.Response]]:
+        unknown = sorted(set(payload) - _SOLAR_TEST_ALLOWED_KEYS)
+        if unknown:
+            return None, web.json_response(
+                {"error": "unknown field", "fields": unknown},
+                status=400,
+            )
+
+        provider = payload.get("provider")
+        if not isinstance(provider, str) or provider not in _SOLAR_TEST_PROVIDERS:
+            return None, web.json_response({"error": "unknown provider"}, status=400)
+
+        gps, gps_error = self._parse_gps(payload)
+        if gps_error is not None:
+            return None, gps_error
+
+        strings: list[Dict[str, float]] = []
+        for idx in (1, 2):
+            parsed_string, string_error = self._parse_string(payload, idx)
+            if string_error is not None:
+                return None, string_error
+            if parsed_string is not None:
+                strings.append(parsed_string)
+
+        credentials, credential_error = self._parse_credentials(payload, provider)
+        if credential_error is not None:
+            return None, credential_error
+
+        return {
+            "provider": provider,
+            "credentials": credentials,
+            "gps": gps,
+            "strings": strings,
+        }, None
+
+    def _parse_gps(
+        self, payload: Dict[str, Any]
+    ) -> tuple[Optional[Dict[str, float]], Optional[web.Response]]:
+        lat, lat_error = self._required_number(payload, "solar_forecast_latitude")
+        if lat_error is not None:
+            return None, lat_error
+        lon, lon_error = self._required_number(payload, "solar_forecast_longitude")
+        if lon_error is not None:
+            return None, lon_error
+        return {"latitude": lat, "longitude": lon}, None
+
+    def _parse_string(
+        self, payload: Dict[str, Any], idx: int
+    ) -> tuple[Optional[Dict[str, float]], Optional[web.Response]]:
+        enabled_key = f"solar_forecast_string{idx}_enabled"
+        enabled = payload.get(enabled_key, False)
+        if not isinstance(enabled, bool):
+            return None, web.json_response(
+                {"error": f"{enabled_key} must be boolean"},
+                status=400,
+            )
+
+        field_keys = [
+            f"solar_forecast_string{idx}_kwp",
+            f"solar_forecast_string{idx}_declination",
+            f"solar_forecast_string{idx}_azimuth",
+        ]
+        if not enabled:
+            present = [key for key in field_keys if key in payload]
+            if present:
+                return None, web.json_response(
+                    {"error": "inactive string fields must be omitted", "fields": present},
+                    status=400,
+                )
+            return None, None
+
+        kwp, kwp_error = self._required_number(payload, field_keys[0])
+        if kwp_error is not None:
+            return None, kwp_error
+        declination, declination_error = self._required_number(payload, field_keys[1])
+        if declination_error is not None:
+            return None, declination_error
+        azimuth, azimuth_error = self._required_number(payload, field_keys[2])
+        if azimuth_error is not None:
+            return None, azimuth_error
+        return {
+            "kwp": kwp,
+            "declination": declination,
+            "azimuth": azimuth,
+        }, None
+
+    def _parse_credentials(
+        self, payload: Dict[str, Any], provider: str
+    ) -> tuple[Optional[Dict[str, str]], Optional[web.Response]]:
+        if provider == "forecast_solar":
+            key = payload.get("solar_forecast_api_key")
+            if not isinstance(key, str) or not key.strip():
+                return None, web.json_response(
+                    {"error": "solar_forecast_api_key required"},
+                    status=400,
+                )
+            return {"solar_forecast_api_key": key.strip()}, None
+
+        api_key = payload.get("solcast_api_key")
+        site_id = payload.get("solcast_site_id")
+        if not isinstance(api_key, str) or not api_key.strip():
+            return None, web.json_response(
+                {"error": "solcast_api_key required"},
+                status=400,
+            )
+        if not isinstance(site_id, str) or not site_id.strip():
+            return None, web.json_response(
+                {"error": "solcast_site_id required"},
+                status=400,
+            )
+        return {"solcast_api_key": api_key.strip(), "solcast_site_id": site_id.strip()}, None
+
+    def _required_number(
+        self, payload: Dict[str, Any], key: str
+    ) -> tuple[Optional[float], Optional[web.Response]]:
+        value = payload.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None, web.json_response(
+                {"error": f"{key} must be numeric"},
+                status=400,
+            )
+        return float(value), None
+
+
 class OIGCloudOnboardingView(HomeAssistantView):
     """Admin-only REST surface for the soft onboarding guide (Plan 3 Task 11).
 
@@ -1568,6 +1781,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudConsumptionProfilesView())
     hass.http.register_view(OIGCloudBalancingDecisionsView())
     hass.http.register_view(OIGCloudAiView())
+    hass.http.register_view(OIGCloudSolarTestView())
     hass.http.register_view(OIGCloudOnboardingView())
 
     _LOGGER.info(
@@ -1582,6 +1796,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"
         f"  - {API_BASE}/balancing_decisions/<box_id>\n"
         f"  - {API_BASE}/<box_id>/ai (admin only)\n"
+        f"  - {API_BASE}/<box_id>/solar_test (admin only)\n"
         f"  - {API_BASE}/<box_id>/pricelists (admin only)\n"
         f"  - {API_BASE}/<box_id>/onboarding (admin only)"
     )
