@@ -28,12 +28,10 @@ import {
   keyPrefixFor,
   validateKeyShape,
 } from './step-ai';
+import type { FieldRegistry } from '@/data/registry-data';
+import { loadFieldRegistry } from '@/data/registry-data';
 import { STEP_SOLAR } from './step-solar';
 import { STEP_PRICING } from './step-pricing';
-// Task 1 (F1 Plan 3.6): shared field renderer/presenter. Re-exported (same
-// convention as the other helpers below) so Task 2/7 can render fields —
-// this task only wires the primitive in and includes fieldStyles in the
-// wizard's static styles; it does not render any fields itself yet.
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 export { renderFieldPresenter, fieldStyles };
 import {
@@ -311,6 +309,11 @@ export class OigOnboardingWizard extends LitElement {
   @state() private pricingLoading = false;
   @state() private pricingLoadFailed = false;
 
+  /** Solar step: registry cached per open (never re-fetched for step navigation). */
+  private _registry: FieldRegistry | null = null;
+  private _registryLoaded = false;
+  @state() private solarDraft: Record<string, unknown> = {};
+
   static styles = css`
     ${fieldStyles}
 
@@ -482,10 +485,28 @@ export class OigOnboardingWizard extends LitElement {
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   }
 
+  private async loadSolarRegistry(): Promise<void> {
+    if (this._registryLoaded) return;
+    this._registryLoaded = true;
+    this._registry = await loadFieldRegistry();
+    this.solarDraft = {};
+    // seed default values from the registry
+    if (this._registry) {
+      for (const f of STEP_SOLAR.fields(this._registry)) {
+        const spec = this._registry.fields[f.key];
+        if (spec?.default !== undefined) {
+          (this.solarDraft as Record<string, unknown>)[f.key] = spec.default;
+        }
+      }
+      this.requestUpdate();
+    }
+  }
+
   connectedCallback(): void {
     super.connectedCallback();
     if (this.open && this.inverterSn) {
       void this.refreshPricing();
+      void this.loadSolarRegistry();
     }
   }
 
@@ -494,11 +515,12 @@ export class OigOnboardingWizard extends LitElement {
     if (
       (changedProperties.has('open') || changedProperties.has('inverterSn')) &&
       this.open &&
-      this.inverterSn &&
-      !this.pricing &&
-      !this.pricingLoading
+      this.inverterSn
     ) {
-      void this.refreshPricing();
+      if (!this.pricing && !this.pricingLoading) {
+        void this.refreshPricing();
+      }
+      void this.loadSolarRegistry();
     }
   }
 
@@ -540,20 +562,43 @@ export class OigOnboardingWizard extends LitElement {
     }
 
     if (this.currentStep === 'solar') {
-      // P5: no second field list — solar fields live in the registry, rendered
-      // by the Settings tab. The wizard is a guide to the right place.
+      if (!this._registry || STEP_SOLAR.fields(this._registry).length === 0) {
+        return html`
+          <section class="step step-solar" data-step="solar">
+            <h3>② Solar</h3>
+            <div class="step-card">
+              <p data-testid="solar-not-available">
+                Solární pole nejsou k dispozici.
+              </p>
+            </div>
+          </section>
+        `;
+      }
+
+      const visible = STEP_SOLAR.visibleFields(this._registry, this.solarDraft);
+      const allStringsHidden = !this.solarDraft['solar_forecast_string1_enabled'] &&
+        !this.solarDraft['solar_forecast_string2_enabled'];
+
       return html`
         <section class="step step-solar" data-step="solar">
           <h3>② Solar</h3>
           <div class="step-card">
-            <p>
-              Solar settings (registr poskytovatele forecastu, API klíč, režim)
-              najdete v <strong>Nastavení</strong>.
-            </p>
-            <p>
-              Průvodce záměrně nezobrazuje formulář znovu — konfigurace se
-              provede jednou, a to v Nastavení.
-            </p>
+            ${allStringsHidden
+              ? html`<p data-testid="solar-all-hidden" class="hint">
+                  Povolte alespoň jeden string pro zobrazení polí výkonu a orientace.
+                </p>`
+              : nothing}
+            ${visible.map((f) =>
+              renderFieldPresenter(f, {
+                value: this.solarDraft[f.key],
+                dirty: false,
+                secretSet: false,
+                onChange: (v: unknown) => {
+                  this.solarDraft = { ...this.solarDraft, [f.key]: v };
+                },
+                entityCatalog: [],
+              }),
+            )}
           </div>
         </section>
       `;

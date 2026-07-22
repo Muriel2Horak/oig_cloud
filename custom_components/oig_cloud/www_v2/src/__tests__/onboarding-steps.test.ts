@@ -1,24 +1,43 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html, render } from 'lit';
 import { fieldsFromRegistry } from '@/data/registry-data';
+import type { FieldRegistry } from '@/data/registry-data';
 import { STEP_SOLAR } from '@/ui/features/onboarding/step-solar';
 import { STEP_PRICING } from '@/ui/features/onboarding/step-pricing';
 import { REGISTRY_FIXTURE } from './fixtures/registry-fixture';
+import {
+  SOLAR_REGISTRY_FIXTURE,
+  DEFAULT_SOLAR_DRAFT,
+  EMPTY_SOLAR_REGISTRY,
+} from './fixtures/solar-registry-fixture';
 
-// ---- paired-host regression (Task 1) — mocks only the network edges, NOT
-// registry-data (the other tests in this file need the real fieldsFromRegistry
-// against REGISTRY_FIXTURE) ----
+const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string], Promise<unknown>>());
+const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[], Promise<FieldRegistry | null>>());
+const loadModuleConfigMock = vi.hoisted(() => vi.fn().mockResolvedValue({
+  modules: {}, battery: {}, solar: {}, boiler: {},
+}));
+
 vi.mock('@/data/ha-client', () => ({
   haClient: {
-    fetchOIGAPI: vi.fn().mockResolvedValue(null),
+    fetchOIGAPI,
+    getHass: vi.fn(async () => ({ auth: { data: { access_token: 'token' } } })),
+    getHassSync: vi.fn(() => null),
+    refreshHass: vi.fn().mockResolvedValue(null),
   },
 }));
 vi.mock('@/data/settings-data', async () => {
   const actual = await vi.importActual<typeof import('@/data/settings-data')>('@/data/settings-data');
   return {
     ...actual,
-    loadModuleConfig: vi.fn().mockResolvedValue({ modules: {}, battery: {}, solar: {}, boiler: {} }),
+    loadModuleConfig: loadModuleConfigMock,
+  };
+});
+vi.mock('@/data/registry-data', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/data/registry-data')>();
+  return {
+    ...actual,
+    loadFieldRegistry: loadFieldRegistryMock,
   };
 });
 
@@ -42,6 +61,247 @@ describe('step ② solar (P3, as narrowed by SCOPE-REVISION #6)', () => {
   it('[Otestovat] gates only the STEP, never the dashboard (#6)', () => {
     expect(STEP_SOLAR.blocksDashboard).toBe(false);
     expect(STEP_SOLAR.skippable).toBe(true);
+  });
+});
+
+// ============================================================================
+// F1 Plan 3.6 Task 2 — Solar step registry-driven render RED tests
+// ============================================================================
+describe('solar step render (F1 Plan 3.6 Task 2)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockClear();
+    loadFieldRegistryMock.mockClear();
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path.includes('/onboarding')) {
+        return Promise.resolve({
+          steps: { ai: 'pending', solar: 'pending', pricing: 'pending' },
+          timestamps: {},
+          grandfathered: false,
+        });
+      }
+      if (path.includes('/pricelists')) {
+        return Promise.resolve({
+          distributors: {},
+          tariffs: [],
+          selected_distributor: '', selected_tariff: '',
+          confirmed_distribution_price_incl_vat: 0,
+          confirmed_distribution_price_excl_vat: 0,
+          confirmed_distribution_unit: '',
+          stale_warning: false, valid_from: null, year: null,
+        });
+      }
+      return Promise.resolve(null);
+    });
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  it('renders ≥6 interactive solar controls via the shared presenter on step-2', async () => {
+    const wizard = await fixture<HTMLElement>(html`<oig-onboarding-wizard
+      .inverterSn=${'SN123'}
+      ?open=${true}
+    ></oig-onboarding-wizard>`);
+    await (wizard as any).updateComplete;
+    // wait for loadFieldRegistry to resolve
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    // Navigate to solar step
+    const nextBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+    nextBtn.click();
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    expect(content).toBeTruthy();
+
+    const interactive = content.querySelectorAll('input, select');
+    expect(interactive.length).toBeGreaterThanOrEqual(6);
+
+    // Every interactive control lives inside a shared-presenter .row
+    const rows = content.querySelectorAll('.row');
+    const visible = STEP_SOLAR.visibleFields(
+      SOLAR_REGISTRY_FIXTURE,
+      DEFAULT_SOLAR_DRAFT as Record<string, unknown>,
+    );
+    expect(rows.length).toBe(visible.length);
+  });
+
+  it('provider switch shows/hides credential fields via isVisible (same predicate as Settings)', async () => {
+    const wizard = await fixture<HTMLElement>(html`<oig-onboarding-wizard
+      .inverterSn=${'SN123'}
+      ?open=${true}
+    ></oig-onboarding-wizard>`);
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    // Navigate to solar
+    const nextBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+    nextBtn.click();
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    // With default provider = forecast_solar, forecast_solar credential visible, solcast hidden
+    expect(content.querySelectorAll('select').length).toBeGreaterThanOrEqual(1);
+    expect(content.textContent).toContain('forecast.solar API klíč');
+    expect(content.textContent).not.toContain('Solcast API klíč');
+    expect(content.textContent).not.toContain('Solcast site ID');
+
+    // Drive the REAL select — set .value and dispatch a real 'change' event,
+    // exactly as a user would, so an onChange-wiring regression fails this test.
+    const providerSelect = content.querySelector('select') as HTMLSelectElement;
+    expect(providerSelect).toBeTruthy();
+    providerSelect.value = 'solcast';
+    providerSelect.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await (wizard as any).updateComplete;
+
+    const updatedContent = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    const controls = updatedContent.querySelectorAll('select, input');
+    // Mirror the wizard's own draft-seeding (registry defaults for provider,
+    // mode, string1/2 enabled) so the expected set matches what a real
+    // provider-only field change leaves the OTHER draft keys as.
+    const seededDraft: Record<string, unknown> = {};
+    for (const f of STEP_SOLAR.fields(SOLAR_REGISTRY_FIXTURE)) {
+      const spec = SOLAR_REGISTRY_FIXTURE.fields[f.key];
+      if (spec?.default !== undefined) seededDraft[f.key] = spec.default;
+    }
+    const visible = STEP_SOLAR.visibleFields(
+      SOLAR_REGISTRY_FIXTURE,
+      { ...seededDraft, solar_forecast_provider: 'solcast' },
+    );
+    expect(controls.length).toBe(visible.length);
+
+    // solcast fields present, forecast_solar-only fields gone.
+    expect(updatedContent.textContent).toContain('Solcast API klíč');
+    expect(updatedContent.textContent).toContain('Solcast site ID');
+    expect(updatedContent.textContent).not.toContain('forecast.solar API klíč');
+    expect(updatedContent.textContent).not.toContain('Frekvence aktualizace');
+  });
+
+  it('zero solar fields renders visible "not available" state', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(EMPTY_SOLAR_REGISTRY);
+
+    const wizard = await fixture<HTMLElement>(html`<oig-onboarding-wizard
+      .inverterSn=${'SN123'}
+      ?open=${true}
+    ></oig-onboarding-wizard>`);
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    const nextBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+    nextBtn.click();
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    expect(content.textContent).toBeTruthy();
+
+    // Must NOT be empty — explicit "not available" text expected
+    expect(content.textContent!.trim().length).toBeGreaterThan(0);
+
+    // No .row controls should render
+    const rows = content.querySelectorAll('.row');
+    expect(rows.length).toBe(0);
+  });
+
+  it('all-hidden (both strings disabled): kwp/declination/azimuth absent and visible "enable" hint', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce({
+      ...SOLAR_REGISTRY_FIXTURE,
+      fields: {
+        ...SOLAR_REGISTRY_FIXTURE.fields,
+        solar_forecast_string1_enabled: {
+          ...SOLAR_REGISTRY_FIXTURE.fields.solar_forecast_string1_enabled,
+          default: false,
+        },
+      },
+    });
+
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path.includes('/onboarding')) {
+        return Promise.resolve({
+          steps: { ai: 'pending', solar: 'pending', pricing: 'pending' },
+          timestamps: {},
+          grandfathered: false,
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    const wizard = await fixture<HTMLElement>(html`<oig-onboarding-wizard
+      .inverterSn=${'SN123'}
+      ?open=${true}
+    ></oig-onboarding-wizard>`);
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    const nextBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+    nextBtn.click();
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    expect(content.textContent).toBeTruthy();
+
+    // All-hidden state shows a visible "enable a string" hint
+    const hint = content.querySelector('[data-testid="solar-all-hidden"]');
+    expect(hint).toBeTruthy();
+    expect(hint!.textContent!.toLowerCase()).toContain('string');
+
+    // No kwp/declination/azimuth inputs: only provider select + optional
+    // credential + lat/lon + two bool toggles = 6 interactive controls max.
+    // kwp/declination/azimuth number inputs must be absent.
+    const numberInputs = content.querySelectorAll('input[type="number"]');
+    // latitude and longitude are always visible, but kwp/declination/azimuth
+    // depend on string*_enabled=true — both are false here.
+    // Only lat and lon number inputs should be visible
+    expect(numberInputs.length).toBeLessThanOrEqual(2);
+  });
+
+  it('loads the field registry exactly once across AI→Solar→Pricing navigation', async () => {
+    const wizard = await fixture<HTMLElement>(html`<oig-onboarding-wizard
+      .inverterSn=${'SN123'}
+      ?open=${true}
+    ></oig-onboarding-wizard>`);
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    const nextBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+
+    // AI → Solar
+    nextBtn.click();
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    // Solar → Pricing
+    nextBtn.click();
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    expect(loadFieldRegistryMock).toHaveBeenCalledTimes(1);
   });
 });
 
