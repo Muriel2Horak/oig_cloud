@@ -30,6 +30,12 @@ import {
 } from './step-ai';
 import { STEP_SOLAR } from './step-solar';
 import { STEP_PRICING } from './step-pricing';
+// Task 1 (F1 Plan 3.6): shared field renderer/presenter. Re-exported (same
+// convention as the other helpers below) so Task 2/7 can render fields —
+// this task only wires the primitive in and includes fieldStyles in the
+// wizard's static styles; it does not render any fields itself yet.
+import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
+export { renderFieldPresenter, fieldStyles };
 import {
   loadOnboardingState,
   skipOnboardingStep,
@@ -306,6 +312,8 @@ export class OigOnboardingWizard extends LitElement {
   @state() private pricingLoadFailed = false;
 
   static styles = css`
+    ${fieldStyles}
+
     :host {
       display: contents;
     }

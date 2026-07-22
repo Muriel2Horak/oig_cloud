@@ -1,0 +1,187 @@
+/**
+ * OIG Cloud V2 — shared field renderer/presenter (F1 Plan 3.6, Task 1).
+ *
+ * Extracted from `settings/index.ts` `renderField`/`renderFieldDisableable`
+ * (:643-780 pre-extraction). `renderFieldPresenter` is PURE — no closures
+ * over any component `this` — so both `oig-settings` and
+ * `oig-onboarding-wizard` can call it with an explicit context object.
+ */
+
+import { html, css, unsafeCSS, nothing } from 'lit';
+import type { TemplateResult } from 'lit';
+import { CSS_VARS } from '@/ui/theme';
+import type { EntityEntry } from '@/ui/components/entity-picker';
+import '@/ui/components/entity-picker';
+import type { FieldDef } from '@/ui/features/settings';
+
+const u = unsafeCSS;
+
+export interface FieldPresenterContext {
+  value: unknown;
+  dirty: boolean;
+  secretSet: boolean;
+  onChange: (v: unknown) => void;
+  entityCatalog: EntityEntry[];
+}
+
+/** Render label text with optional "(volitelné)" suffix and hint below. */
+function renderLabel(f: FieldDef): TemplateResult {
+  return html`
+    <span class="lab">
+      ${f.label}${f.optional ? html`<span class="optional-badge"> (volitelné)</span>` : nothing}
+      ${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}
+    </span>`;
+}
+
+export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): TemplateResult {
+  const { value: raw, dirty, secretSet, onChange, entityCatalog } = ctx;
+
+  if (f.type === 'bool') {
+    const checked = !!raw;
+    return html`
+      <div class="row">
+        ${renderLabel(f)}
+        <div class="row-control">
+          <label class="switch">
+            <input type="checkbox" .checked=${checked}
+              @change=${(e: Event) => onChange((e.target as HTMLInputElement).checked)} />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>`;
+  }
+
+  if (f.type === 'select') {
+    const val = String(raw ?? '');
+    return html`
+      <div class="row">
+        ${renderLabel(f)}
+        <div class="row-control">
+          <select class=${dirty ? 'dirty' : ''}
+            @change=${(e: Event) => onChange((e.target as HTMLSelectElement).value)}>
+            ${(f.options ?? []).map(([v, l]) => html`<option value=${v} ?selected=${v === val}>${l}</option>`)}
+          </select>
+        </div>
+      </div>`;
+  }
+
+  if (f.type === 'number') {
+    const scale = f.scale ?? 1;
+    const shown = raw == null || raw === '' ? '' : String(Math.round((Number(raw) * scale + Number.EPSILON) * 10000) / 10000);
+    return html`
+      <div class="row">
+        ${renderLabel(f)}
+        <div class="row-control">
+          <input type="number" class=${dirty ? 'dirty' : ''} .value=${shown}
+            min=${f.min ?? nothing} max=${f.max ?? nothing} step=${f.step ?? nothing}
+            @change=${(e: Event) => {
+              const v = (e.target as HTMLInputElement).value;
+              if (v === '') return;
+              onChange(Number(v) / scale);
+            }} />
+        </div>
+      </div>`;
+  }
+
+  // text — may be entity field or plain text / secret
+  if (f.entity) {
+    const currentVal = String(raw ?? '');
+    return html`
+      <div class="row">
+        ${renderLabel(f)}
+        <div class="row-control">
+          <oig-entity-picker
+            .value=${currentVal}
+            .domain=${f.entity.domain}
+            .optional=${!!f.optional}
+            .dirty=${dirty}
+            .entities=${entityCatalog}
+            @entity-change=${(e: CustomEvent) => onChange(e.detail.value)}
+          ></oig-entity-picker>
+        </div>
+      </div>`;
+  }
+
+  // Plain text (secret or non-entity)
+  const isSecret = f.secret ?? f.key.endsWith('api_key');
+  const val = isSecret ? '' : String(raw ?? '');
+  return html`
+    <div class="row">
+      ${renderLabel(f)}
+      <div class="row-control">
+        <input type=${isSecret ? 'password' : 'text'} class=${dirty ? 'dirty' : ''} .value=${val}
+          placeholder=${isSecret ? (secretSet ? '••••• (nastaveno)' : 'nenastaveno') : (f.optional ? 'nevyplněno' : '')}
+          @change=${(e: Event) => onChange((e.target as HTMLInputElement).value)} />
+      </div>
+    </div>`;
+}
+
+/**
+ * Shared row/label/control/input CSS — extracted from `settings/index.ts`
+ * (:301-361 pre-extraction). Included in both `oig-settings` and
+ * `oig-onboarding-wizard` `static styles`.
+ */
+export const fieldStyles = css`
+  /* ---- Rows ---- */
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px dashed ${u(CSS_VARS.divider)};
+  }
+  .row:last-of-type { border-bottom: none; }
+
+  .lab {
+    font-size: 12.5px;
+    color: ${u(CSS_VARS.textPrimary)};
+    flex: 1;
+    min-width: 0;
+  }
+
+  .hint {
+    display: block;
+    font-size: 10.5px;
+    color: ${u(CSS_VARS.textSecondary)};
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+
+  .row-control {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  input[type='number'], input[type='text'], input[type='password'], select {
+    background: ${u(CSS_VARS.bgSecondary)};
+    color: ${u(CSS_VARS.textPrimary)};
+    border: 1px solid ${u(CSS_VARS.divider)};
+    border-radius: 7px;
+    padding: 5px 8px;
+    font-size: 12.5px;
+    max-width: 120px;
+  }
+  input[type='text'], input[type='password'] { max-width: 170px; }
+  input.dirty, select.dirty { border-color: ${u(CSS_VARS.accent)}; }
+  select option {
+    background: ${u(CSS_VARS.bgSecondary)};
+    color: ${u(CSS_VARS.textPrimary)};
+  }
+
+  /* toggle */
+  .switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; cursor: pointer; border-radius: 11px;
+    background: rgba(255,255,255,0.15); transition: 0.2s;
+  }
+  .slider:before {
+    content: ''; position: absolute; width: 16px; height: 16px;
+    left: 3px; top: 3px; border-radius: 50%; background: #fff; transition: 0.2s;
+  }
+  .switch input:checked + .slider { background: ${u(CSS_VARS.accent)}; }
+  .switch input:checked + .slider:before { transform: translateX(18px); }
+`;
