@@ -340,8 +340,9 @@ async def test_wizard_summary_defaults_for_solar_and_battery():
     options = result["options"]
     assert options["solar_forecast_provider"] == "forecast_solar"
     assert options["solar_forecast_mode"] == "daily_optimized"
-    assert options["solar_forecast_api_key"] == ""
-    assert options["solcast_api_key"] == ""
+    assert "solar_forecast_api_key" not in options
+    assert "solcast_api_key" not in options
+    assert "solcast_site_id" not in options
     assert options["solar_forecast_latitude"] == 50.0
     assert options["solar_forecast_longitude"] == 14.0
     assert options["solar_forecast_string1_enabled"] is True

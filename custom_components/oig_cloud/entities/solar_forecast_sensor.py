@@ -14,6 +14,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ..config.solar_key_store import SolarKeyStore
 from .base_sensor import OigCloudSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -600,6 +601,34 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
         except (TypeError, ValueError):
             return None
 
+    async def _active_solar_credentials(self, provider: str) -> Dict[str, str]:
+        entry_id = getattr(self._config_entry, "entry_id", None)
+        if entry_id:
+            try:
+                active = await SolarKeyStore(
+                    self.hass, entry_id
+                ).async_get_active(provider)
+            except AttributeError:
+                if hasattr(self.hass, "data") and hasattr(
+                    getattr(self.hass, "config", None), "config_dir"
+                ):
+                    raise
+                active = None
+            if active:
+                return active
+
+        fields = (
+            ("solar_forecast_api_key",)
+            if provider == "forecast_solar"
+            else ("solcast_api_key", "solcast_site_id")
+        )
+        return {
+            key: str(value).strip()
+            for key in fields
+            if isinstance((value := self._config_entry.options.get(key)), str)
+            and value.strip()
+        }
+
     async def _fetch_forecast_string(
         self,
         *,
@@ -660,7 +689,8 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
             # a visible warning on the mounted surface (R5.5).
             lat = self._float_option("solar_forecast_latitude")
             lon = self._float_option("solar_forecast_longitude")
-            api_key = self._config_entry.options.get("solar_forecast_api_key", "")
+            active_credentials = await self._active_solar_credentials("forecast_solar")
+            api_key = (active_credentials or {}).get("solar_forecast_api_key", "")
             if lat is None or lon is None:
                 if self._config_entry.options.get("solar_forecast_provider") == "forecast_solar":
                     _LOGGER.warning("🌞 Solar forecast GPS missing; forecast unavailable")
@@ -749,8 +779,9 @@ class OigCloudSolarForecastSensor(_SolarForecastBase):
 
     async def _fetch_solcast_data(self, current_time: float) -> None:
         """Fetch forecast data from Solcast API and map to unified structure."""
-        api_key = self._config_entry.options.get("solcast_api_key", "").strip()
-        site_id = self._config_entry.options.get("solcast_site_id", "").strip()
+        active_credentials = await self._active_solar_credentials("solcast")
+        api_key = (active_credentials or {}).get("solcast_api_key", "").strip()
+        site_id = (active_credentials or {}).get("solcast_site_id", "").strip()
 
         if not api_key:
             _LOGGER.error("🌞 Solcast API key missing")

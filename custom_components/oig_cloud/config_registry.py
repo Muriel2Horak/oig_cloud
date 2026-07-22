@@ -274,7 +274,7 @@ _register(
           show_if=("solar_forecast_provider", ("forecast_solar",))),
     Field("solcast_api_key", "solar", str, default="", secret=True,
           show_if=("solar_forecast_provider", ("solcast",))),
-    Field("solcast_site_id", "solar", str, default="",
+    Field("solcast_site_id", "solar", str, default="", secret=True,
           show_if=("solar_forecast_provider", ("solcast",))),
     Field("solar_forecast_latitude", "solar", float, default=None, min=-90.0, max=90.0,
           step=0.0001),
