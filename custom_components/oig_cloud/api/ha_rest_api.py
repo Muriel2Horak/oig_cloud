@@ -127,6 +127,20 @@ def _find_entry_for_box(hass: HomeAssistant, box_id: str) -> Optional[ConfigEntr
     return None
 
 
+def _solar_key_store_or_none(
+    hass: HomeAssistant, entry_id: str
+) -> Optional[SolarKeyStore]:
+    """Return a solar key store when HA storage is available."""
+    try:
+        return SolarKeyStore(hass, entry_id)
+    except AttributeError:
+        if not hasattr(hass, "data") or not hasattr(
+            getattr(hass, "config", None), "config_dir"
+        ):
+            return None
+        raise
+
+
 async def _load_precomputed_timeline(
     hass: HomeAssistant, box_id: str
 ) -> Optional[Dict[str, Any]]:
@@ -1133,9 +1147,12 @@ class OIGCloudModuleConfigView(HomeAssistantView):
 
         opts = dict(entry.options)
         out: dict[str, Any] = {}
-        solar_private_state = await SolarKeyStore(
-            hass, entry.entry_id
-        ).async_private_field_state()
+        solar_store = _solar_key_store_or_none(hass, entry.entry_id)
+        solar_private_state = (
+            await solar_store.async_private_field_state()
+            if solar_store is not None
+            else {}
+        )
         for section in ("basic", "modules", "battery", "solar", "boiler"):
             sec: dict[str, Any] = {}
             for key, field in fields_for_section(section).items():
@@ -1208,16 +1225,23 @@ class OIGCloudModuleConfigView(HomeAssistantView):
         # validator must see the EFFECTIVE config — stored options merged with
         # the incoming updates — otherwise "blank secret = keep current" above
         # makes a half-finished provider switch look valid.
+        solar_store: Optional[SolarKeyStore] = (
+            _solar_key_store_or_none(hass, entry.entry_id)
+            if section == "solar"
+            else None
+        )
+        effective_provider: Optional[str] = None
         if section == "solar" and not errors:
-            store = SolarKeyStore(hass, entry.entry_id)
             effective_provider = str(
                 updates.get(
                     "solar_forecast_provider",
                     entry.options.get("solar_forecast_provider", "forecast_solar"),
                 )
             )
-            private_effective = await store.async_credentials_for_validation(
-                effective_provider
+            private_effective = (
+                await solar_store.async_credentials_for_validation(effective_provider)
+                if solar_store is not None
+                else {}
             )
             provider_private_fields = (
                 ("solar_forecast_api_key",)
@@ -1236,18 +1260,26 @@ class OIGCloudModuleConfigView(HomeAssistantView):
 
         if errors:
             return web.json_response({"error": "validation", "fields": errors}, status=400)
+        if section == "solar" and private_updates and solar_store is None:
+            return web.json_response(
+                {"error": "Solar credential storage unavailable"},
+                status=500,
+            )
         if not updates and not private_updates:
             return web.json_response({"updated": False})
 
         previous_provider = entry.options.get("solar_forecast_provider", "forecast_solar")
         wrote = merge_entry_options(hass, entry, updates)
+        if section == "solar":
+            if (
+                solar_store is not None
+                and isinstance(effective_provider, str)
+                and effective_provider != previous_provider
+            ):
+                await solar_store.async_clear_inactive(effective_provider)
         if section == "solar" and private_updates:
-            store = SolarKeyStore(hass, entry.entry_id)
-            provider = updates.get("solar_forecast_provider")
-            if isinstance(provider, str) and provider != previous_provider:
-                await store.async_clear_inactive(provider)
             if "solar_forecast_api_key" in private_updates:
-                await store.async_set_candidate(
+                await solar_store.async_set_candidate(
                     "forecast_solar",
                     {"solar_forecast_api_key": private_updates["solar_forecast_api_key"]},
                 )
@@ -1257,7 +1289,7 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                 if key in private_updates
             }
             if solcast_updates:
-                await store.async_set_candidate("solcast", solcast_updates)
+                await solar_store.async_set_candidate("solcast", solcast_updates)
             wrote = True
         _LOGGER.info(
             "Module config updated for %s (%s): %s",
@@ -1584,11 +1616,12 @@ class OIGCloudSolarTestView(HomeAssistantView):
                 result,
                 status=504 if result["code"] == "timeout" else 502,
             )
-        store = SolarKeyStore(hass, entry.entry_id)
-        await store.async_set_candidate(parsed["provider"], parsed["credentials"])
-        await store.async_promote_candidate(
-            parsed["provider"], dt_util.utcnow().isoformat()
-        )
+        store = _solar_key_store_or_none(hass, entry.entry_id)
+        if store is not None:
+            await store.async_set_candidate(parsed["provider"], parsed["credentials"])
+            await store.async_promote_candidate(
+                parsed["provider"], dt_util.utcnow().isoformat()
+            )
         return web.json_response(result)
 
     def _parse_payload(

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 from custom_components.oig_cloud.config.steps import OigCloudOptionsFlowHandler, WizardMixin
+from custom_components.oig_cloud.config import solar_key_store as solar_key_store_module
 from custom_components.oig_cloud.config_registry import fields_for_section
 from custom_components.oig_cloud.const import CONF_USERNAME
 
@@ -29,6 +31,22 @@ class DummyHass:
         self.states = SimpleNamespace(get=lambda _eid: None)
 
 
+class _MemStore:
+    bucket: dict[str, Any] = {}
+
+    def __init__(self, _hass: Any, _version: int, key: str, **_kwargs: Any) -> None:
+        self.key = key
+
+    async def async_load(self) -> Any:
+        return _MemStore.bucket.get(self.key)
+
+    async def async_save(self, data: Any) -> None:
+        _MemStore.bucket[self.key] = data
+
+    async def async_remove(self) -> None:
+        _MemStore.bucket.pop(self.key, None)
+
+
 class DummyOptionsFlow(OigCloudOptionsFlowHandler):
     def async_show_form(self, **kwargs):
         return {"type": "form", **kwargs}
@@ -38,6 +56,30 @@ class DummyOptionsFlow(OigCloudOptionsFlowHandler):
 
     async def async_step_wizard_modules(self, user_input=None):
         return {"type": "modules"}
+
+
+@pytest.fixture
+def mem_solar_store(monkeypatch):
+    _MemStore.bucket = {}
+    monkeypatch.setattr(solar_key_store_module, "Store", _MemStore)
+    return _MemStore
+
+
+def _solar_values(**overrides):
+    values = {
+        "enable_solar_forecast": True,
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_mode": "daily_optimized",
+        "solar_forecast_latitude": 50.12,
+        "solar_forecast_longitude": 13.94,
+        "solar_forecast_string1_enabled": True,
+        "solar_forecast_string1_kwp": 5.5,
+        "solar_forecast_string1_declination": 35,
+        "solar_forecast_string1_azimuth": 0,
+        "solar_forecast_string2_enabled": False,
+    }
+    values.update(overrides)
+    return values
 
 
 @pytest.mark.asyncio
@@ -284,6 +326,44 @@ async def test_options_flow_summary_solar_battery_defaults():
     assert options["charge_rate_kw"] == 3.5
     assert options["balancing_interval_days"] == 9
     assert options["balancing_hold_hours"] == 4
+
+
+@pytest.mark.asyncio
+async def test_options_flow_solar_provider_switch_without_key_clears_inactive_store(
+    mem_solar_store,
+):
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options=_solar_values(solar_forecast_provider="solcast"),
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+    flow._section = "solar"
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    await store.async_set_candidate(
+        "solcast",
+        {
+            "solcast_api_key": "sc_secret_123456789",
+            "solcast_site_id": "site-123",
+        },
+    )
+    await store.async_promote_candidate("solcast", "2026-07-22T00:00:00+00:00")
+
+    result = await flow.async_step_wizard_solar(_solar_values())
+    assert result["type"] == "form"
+    assert result["step_id"] == "wizard_summary"
+
+    result = await flow.async_step_wizard_summary({})
+    assert result["type"] == "abort"
+    reloaded = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    assert await reloaded.async_get_active("solcast") is None
+    assert await reloaded.async_get_candidate("solcast") is None
+    options = flow.hass.config_entries.updated[0][1]
+    assert options["solar_forecast_provider"] == "forecast_solar"
+    assert "solcast_api_key" not in options
+    assert "solcast_site_id" not in options
+    assert "sc_secret_123456789" not in str(options)
 
 
 @pytest.mark.asyncio

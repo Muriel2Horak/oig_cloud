@@ -4,10 +4,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.oig_cloud.config import solar_key_store as solar_key_store_module
 from custom_components.oig_cloud.config.steps import OigCloudOptionsFlowHandler
 from custom_components.oig_cloud.config_registry import FIELD_REGISTRY, fields_for_section
 
@@ -55,6 +57,22 @@ class _SpyKeyStore:
         self.clears += 1
 
 
+class _MemStore:
+    bucket: dict[str, Any] = {}
+
+    def __init__(self, _hass: Any, _version: int, key: str, **_kwargs: Any) -> None:
+        self.key = key
+
+    async def async_load(self) -> Any:
+        return _MemStore.bucket.get(self.key)
+
+    async def async_save(self, data: Any) -> None:
+        _MemStore.bucket[self.key] = data
+
+    async def async_remove(self) -> None:
+        _MemStore.bucket.pop(self.key, None)
+
+
 @pytest.fixture
 def spy_key_store(monkeypatch):
     _SpyKeyStore.instances = []
@@ -62,6 +80,13 @@ def spy_key_store(monkeypatch):
         "custom_components.oig_cloud.config.steps.AiKeyStore", _SpyKeyStore
     )
     return _SpyKeyStore
+
+
+@pytest.fixture
+def mem_solar_store(monkeypatch):
+    _MemStore.bucket = {}
+    monkeypatch.setattr(solar_key_store_module, "Store", _MemStore)
+    return _MemStore
 
 
 def _flow(options=None):
@@ -158,6 +183,44 @@ async def test_ai_step_clears_stored_key_when_provider_changes_without_new_key(s
     _, kwargs = hass.config_entries.async_update_entry.call_args
     assert kwargs["options"]["ai_provider"] == "nvidia"
     assert "ai_api_key" not in kwargs["options"]
+
+
+@pytest.mark.asyncio
+async def test_ai_step_provider_switch_without_key_leaves_solar_store_untouched(
+    spy_key_store,
+    mem_solar_store,
+):
+    entry, _, flow = _flow(
+        {
+            "ai_provider": "groq",
+            "solar_forecast_provider": "solcast",
+            "charge_rate_kw": 2.8,
+        }
+    )
+    store = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    await store.async_set_candidate(
+        "solcast",
+        {
+            "solcast_api_key": "sc_secret_123456789",
+            "solcast_site_id": "site-123",
+        },
+    )
+    await store.async_promote_candidate("solcast", "2026-07-22T00:00:00+00:00")
+
+    await flow.async_step_ai(
+        {
+            "ai_provider": "nvidia",
+            "ai_base_url": "",
+            "ai_model": "",
+            "ai_api_key": "",
+        }
+    )
+
+    reloaded = solar_key_store_module.SolarKeyStore(flow.hass, entry.entry_id)
+    assert await reloaded.async_get_active("solcast") == {
+        "solcast_api_key": "sc_secret_123456789",
+        "solcast_site_id": "site-123",
+    }
 
 
 @pytest.mark.asyncio

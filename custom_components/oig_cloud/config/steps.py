@@ -3596,13 +3596,11 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             current_provider = current.get("ai_provider", "")
             selected_provider = updates["ai_provider"]
             store = AiKeyStore(self.hass, entry.entry_id)
-            solar_store = SolarKeyStore(self.hass, entry.entry_id)
 
             if api_key:
                 await store.async_set_key(selected_provider, api_key)
             elif current_provider and selected_provider != current_provider:
                 await store.async_clear()
-                await solar_store.async_clear()
 
             current.update(updates)
             self.hass.config_entries.async_update_entry(entry, options=current)
@@ -3726,13 +3724,15 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             try:
                 # Aktualizovat entry
                 _LOGGER.warning("🔍 About to call async_update_entry")
-                if self._section == "solar" and solar_private_updates:
+                if getattr(self, "_section", None) == "solar" and (
+                    solar_private_updates or CONF_SOLAR_FORECAST_PROVIDER in delta
+                ):
                     solar_store = SolarKeyStore(self.hass, entry.entry_id)
                     provider = payload.get(
                         CONF_SOLAR_FORECAST_PROVIDER,
                         entry.options.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"),
                     )
-                    if delta.get(CONF_SOLAR_FORECAST_PROVIDER):
+                    if CONF_SOLAR_FORECAST_PROVIDER in delta:
                         await solar_store.async_clear_inactive(str(provider))
                     if CONF_SOLAR_FORECAST_API_KEY in solar_private_updates:
                         await solar_store.async_set_candidate(

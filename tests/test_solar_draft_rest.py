@@ -172,6 +172,48 @@ def test_solar_module_config_keeps_private_credentials_out_of_rest_and_options()
     asyncio.run(_run())
 
 
+def test_solar_module_config_provider_switch_without_key_clears_inactive_store() -> None:
+    async def _run() -> None:
+        entry = DummyEntry(
+            options=_solar_draft_values(solar_forecast_provider="solcast")
+        )
+        hass = DummyHass(entry)
+        store = api_module.SolarKeyStore(hass, entry.entry_id)
+        await store.async_set_candidate(
+            "solcast",
+            {
+                "solcast_api_key": "sc_secret_123456789",
+                "solcast_site_id": "site_secret_123456789",
+            },
+        )
+        await store.async_promote_candidate("solcast", "2026-07-22T00:00:00+00:00")
+        view = api_module.OIGCloudModuleConfigView()
+
+        response = await view.post(
+            DummyJsonRequest(
+                hass,
+                {
+                    "section": "solar",
+                    "values": {"solar_forecast_provider": "forecast_solar"},
+                },
+            ),
+            "box1",
+        )
+
+        assert response.status == 200
+        assert entry.options["solar_forecast_provider"] == "forecast_solar"
+        reloaded = api_module.SolarKeyStore(hass, entry.entry_id)
+        assert await reloaded.async_get_active("solcast") is None
+        assert await reloaded.async_get_candidate("solcast") is None
+        combined_options = json.dumps(entry.options, sort_keys=True)
+        assert "solcast_api_key" not in entry.options
+        assert "solcast_site_id" not in entry.options
+        assert "sc_secret_123456789" not in combined_options
+        assert "site_secret_123456789" not in combined_options
+
+    asyncio.run(_run())
+
+
 def test_bad_solar_test_candidate_preserves_previous_active_key_and_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
