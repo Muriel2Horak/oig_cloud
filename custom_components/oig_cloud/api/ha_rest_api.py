@@ -54,6 +54,7 @@ from ..config.solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
 from ..ai.backends import PROVIDERS, OpenAiCompatBackend
 from ..ai.key_store import AiKeyStore
 from ..forecast.candidate_test import run_solar_candidate_test
+from ..forecast.solar_test_limiter import get_solar_test_limiter
 from ..onboarding import ONBOARDING_STEPS, OnboardingState
 
 _LOGGER = logging.getLogger(__name__)
@@ -1594,23 +1595,37 @@ class OIGCloudSolarTestView(HomeAssistantView):
         if not entry:
             return web.json_response({"error": "Box not found"}, status=404)
 
-        try:
-            session = aiohttp_client.async_get_clientsession(hass)
-        except Exception:  # noqa: BLE001
-            _LOGGER.warning("Solar candidate test failed for %s: provider_unreachable", box_id)
+        limiter = get_solar_test_limiter(hass)
+        limiter.prune(
+            (candidate.entry_id for candidate in hass.config_entries.async_entries(DOMAIN)),
+            _SOLAR_TEST_PROVIDERS,
+        )
+        lease = await limiter.acquire(entry.entry_id, parsed["provider"])
+        if lease is None:
             return web.json_response(
-                {"ok": False, "code": "provider_unreachable"},
-                status=502,
+                {"ok": False, "code": "rate_limited"},
+                status=429,
             )
 
-        # TODO(Task 5): mount (entry_id, provider) rate-limit here.
-        result = await run_solar_candidate_test(
-            session,
-            parsed["provider"],
-            parsed["credentials"],
-            parsed["gps"],
-            parsed["strings"],
-        )
+        try:
+            try:
+                session = aiohttp_client.async_get_clientsession(hass)
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning("Solar candidate test failed for %s: provider_unreachable", box_id)
+                return web.json_response(
+                    {"ok": False, "code": "provider_unreachable"},
+                    status=502,
+                )
+
+            result = await run_solar_candidate_test(
+                session,
+                parsed["provider"],
+                parsed["credentials"],
+                parsed["gps"],
+                parsed["strings"],
+            )
+        finally:
+            lease.release()
         if "code" in result:
             return web.json_response(
                 result,
