@@ -22,6 +22,8 @@ export interface FieldPresenterContext {
   secretSet: boolean;
   onChange: (v: unknown) => void;
   entityCatalog: EntityEntry[];
+  /** Bool fields only: force-unchecked, greyed out, non-interactive. */
+  disabled?: boolean;
 }
 
 /** Render label text with optional "(volitelné)" suffix and hint below. */
@@ -34,16 +36,16 @@ function renderLabel(f: FieldDef): TemplateResult {
 }
 
 export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): TemplateResult {
-  const { value: raw, dirty, secretSet, onChange, entityCatalog } = ctx;
+  const { value: raw, dirty, secretSet, onChange, entityCatalog, disabled } = ctx;
 
   if (f.type === 'bool') {
-    const checked = !!raw;
+    const checked = !disabled && !!raw;
     return html`
-      <div class="row">
+      <div class="row" style=${disabled ? 'opacity:0.45;pointer-events:none' : ''}>
         ${renderLabel(f)}
         <div class="row-control">
           <label class="switch">
-            <input type="checkbox" .checked=${checked}
+            <input type="checkbox" .checked=${checked} ?disabled=${!!disabled}
               @change=${(e: Event) => onChange((e.target as HTMLInputElement).checked)} />
             <span class="slider"></span>
           </label>
@@ -146,6 +148,13 @@ export const fieldStyles = css`
     color: ${u(CSS_VARS.textSecondary)};
     margin-top: 3px;
     line-height: 1.4;
+  }
+
+  .optional-badge {
+    font-size: 10px;
+    color: ${u(CSS_VARS.textSecondary)};
+    font-style: italic;
+    margin-left: 2px;
   }
 
   .row-control {

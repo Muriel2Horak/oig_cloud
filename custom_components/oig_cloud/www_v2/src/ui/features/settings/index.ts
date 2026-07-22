@@ -339,14 +339,6 @@ export class OigSettings extends LitElement {
     }
     .group-label:first-of-type { border-top: none; margin-top: 0; }
 
-    /* ---- Optional badge ---- */
-    .optional-badge {
-      font-size: 10px;
-      color: ${u(CSS_VARS.textSecondary)};
-      font-style: italic;
-      margin-left: 2px;
-    }
-
     /* ---- Collapsible boiler sub-sections ---- */
     .bsec {
       border-top: 1px solid ${u(CSS_VARS.divider)};
@@ -571,17 +563,8 @@ export class OigSettings extends LitElement {
   // RENDER HELPERS
   // ==========================================================================
 
-  /** Render label text with optional "(volitelné)" suffix and hint below. */
-  private renderLabel(f: FieldDef) {
-    return html`
-      <span class="lab">
-        ${f.label}${f.optional ? html`<span class="optional-badge"> (volitelné)</span>` : nothing}
-        ${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}
-      </span>`;
-  }
-
   /** Thin wrapper over the shared presenter — secret masking + bool handling unchanged. */
-  private renderField(section: SettingsSection, f: FieldDef) {
+  private renderField(section: SettingsSection, f: FieldDef, disabled = false) {
     const dirty = !!(this.pending[section] && f.key in this.pending[section]);
     const isSecret = f.secret ?? f.key.endsWith('api_key');
     const secretSet = isSecret && !!this.current(section, `${f.key}_set`);
@@ -591,6 +574,7 @@ export class OigSettings extends LitElement {
       secretSet,
       onChange: (v) => this.setPending(section, f.key, v),
       entityCatalog: this.entityCatalog,
+      disabled,
     });
   }
 
@@ -621,19 +605,7 @@ export class OigSettings extends LitElement {
    */
   private renderFieldDisableable(section: SettingsSection, f: FieldDef, disabled: boolean) {
     if (f.type !== 'bool') return this.renderField(section, f);
-    const raw = this.current(section, f.key);
-    const checked = !disabled && !!raw;
-    return html`
-      <div class="row" style=${disabled ? 'opacity:0.45;pointer-events:none' : ''}>
-        ${this.renderLabel(f)}
-        <div class="row-control">
-          <label class="switch">
-            <input type="checkbox" .checked=${checked} ?disabled=${disabled}
-              @change=${(e: Event) => this.setPending(section, f.key, (e.target as HTMLInputElement).checked)} />
-            <span class="slider"></span>
-          </label>
-        </div>
-      </div>`;
+    return this.renderField(section, f, disabled);
   }
 
   /**

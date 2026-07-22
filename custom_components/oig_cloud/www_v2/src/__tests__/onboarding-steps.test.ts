@@ -22,9 +22,10 @@ vi.mock('@/data/settings-data', async () => {
   };
 });
 
-import { renderFieldPresenter } from '@/ui/features/field-renderer';
+import { renderFieldPresenter, type FieldPresenterContext } from '@/ui/features/field-renderer';
 import type { FieldDef } from '@/ui/features/settings';
 import '@/ui/features/settings';
+import '@/ui/features/onboarding';
 
 describe('step ② solar (P3, as narrowed by SCOPE-REVISION #6)', () => {
   it('renders solar fields from the registry, not a local list', () => {
@@ -98,5 +99,71 @@ describe('paired-host regression (Task 1 — shared field renderer)', () => {
     expect(liveRow.querySelector('.row-control')!.tagName).toBe(bareRow.querySelector('.row-control')!.tagName);
     expect(liveRow.querySelector('input[type="checkbox"]')).toBeTruthy();
     expect(bareRow.querySelector('input[type="checkbox"]')).toBeTruthy();
+  });
+
+  it('renders the SAME FieldDef structurally identically in <oig-settings> and <oig-onboarding-wizard>, incl. masked-secret parity', async () => {
+    const settings = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-settings></oig-settings>`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settings.updateComplete;
+
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard></oig-onboarding-wizard>`,
+    );
+    await wizard.updateComplete;
+
+    // Fails if the wizard host stops adopting the shared field CSS — e.g. someone
+    // drops `${fieldStyles}` from its static styles, or the `@/ui/features/field-renderer`
+    // import wiring breaks. jsdom has no adoptedStyleSheets support, so Lit falls
+    // back to a single <style> tag per shadow root — assert the shared rules are in it.
+    const wizardStyleText = wizard.shadowRoot!.querySelector('style')?.textContent ?? '';
+    expect(wizardStyleText).toContain('.row-control');
+    expect(wizardStyleText).toContain('.optional-badge');
+
+    function renderInto(host: HTMLElement, f: FieldDef, ctx: FieldPresenterContext): HTMLElement {
+      const container = document.createElement('div');
+      host.shadowRoot!.appendChild(container);
+      render(renderFieldPresenter(f, ctx), container);
+      return container;
+    }
+
+    // Same FieldDef, same ctx, only the host shadow root differs.
+    const boolField: FieldDef = { key: 'enable_boiler', label: 'Bojler', type: 'bool', hint: 'Inteligentní ohřev vody' };
+    const boolCtx: FieldPresenterContext = {
+      value: true, dirty: false, secretSet: false, onChange: () => undefined, entityCatalog: [],
+    };
+    const settingsBoolRow = renderInto(settings, boolField, boolCtx).querySelector('.row') as HTMLElement;
+    const wizardBoolRow = renderInto(wizard, boolField, boolCtx).querySelector('.row') as HTMLElement;
+    expect(settingsBoolRow).toBeTruthy();
+    expect(wizardBoolRow).toBeTruthy();
+    expect(settingsBoolRow.tagName).toBe(wizardBoolRow.tagName);
+    expect([...settingsBoolRow.classList]).toEqual([...wizardBoolRow.classList]);
+    expect(settingsBoolRow.innerHTML).toBe(wizardBoolRow.innerHTML);
+
+    // A SECRET field — masked value must be identical across both hosts.
+    const secretField: FieldDef = {
+      key: 'solcast_api_key', label: 'Solcast API klíč', type: 'text', secret: true, optional: true,
+    };
+    const secretCtx: FieldPresenterContext = {
+      value: 'super-secret-value', dirty: false, secretSet: true, onChange: () => undefined, entityCatalog: [],
+    };
+    const settingsSecret = renderInto(settings, secretField, secretCtx);
+    const wizardSecret = renderInto(wizard, secretField, secretCtx);
+
+    const settingsInput = settingsSecret.querySelector('input[type="password"]') as HTMLInputElement;
+    const wizardInput = wizardSecret.querySelector('input[type="password"]') as HTMLInputElement;
+    expect(settingsInput).toBeTruthy();
+    expect(wizardInput).toBeTruthy();
+    expect(settingsInput.value).toBe('');
+    expect(wizardInput.value).toBe('');
+    expect(settingsInput.value).not.toContain('super-secret-value');
+    expect(wizardInput.value).not.toContain('super-secret-value');
+    expect(settingsInput.getAttribute('placeholder')).toBe(wizardInput.getAttribute('placeholder'));
+    expect(settingsInput.getAttribute('placeholder')).toMatch(/nastaveno/);
+
+    // .optional-badge (P2 — moved into shared fieldStyles) renders identically too.
+    expect(settingsSecret.querySelector('.optional-badge')?.textContent)
+      .toBe(wizardSecret.querySelector('.optional-badge')?.textContent);
   });
 });
