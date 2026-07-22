@@ -249,6 +249,12 @@ def _solcast_payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _payload_without(payload: dict[str, Any], *keys: str) -> dict[str, Any]:
+    for key in keys:
+        payload.pop(key, None)
+    return payload
+
+
 def test_solar_test_non_admin_fails_before_outbound(monkeypatch: pytest.MonkeyPatch) -> None:
     hass, _ = _hass()
     calls: list[Any] = []
@@ -279,6 +285,47 @@ def test_solar_test_non_admin_fails_before_outbound(monkeypatch: pytest.MonkeyPa
     ],
 )
 def test_solar_test_rejects_unknown_provider_or_extra_key_before_outbound(
+    payload: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hass, _ = _hass()
+    calls: list[Any] = []
+
+    async def _stub(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        calls.append((args, kwargs))
+        return {"tomorrow_total_kwh": 1.0, "forecast_covers_tomorrow": True}
+
+    monkeypatch.setattr(api_module, "run_solar_candidate_test", _stub, raising=False)
+
+    response = asyncio.run(_solar_view().post(DummyJsonRequest(hass, payload), "box1"))
+
+    assert response.status == 400
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _payload_without(_forecast_payload(), "solar_forecast_latitude"),
+        _payload_without(_forecast_payload(), "solar_forecast_longitude"),
+        _payload_without(_forecast_payload(), "solar_forecast_api_key"),
+        _payload_without(_solcast_payload(), "solcast_api_key"),
+        _payload_without(_solcast_payload(), "solcast_site_id"),
+        _forecast_payload(solcast_api_key="sc_unexpected_secret"),
+        _forecast_payload(solcast_site_id="site-unexpected"),
+        _solcast_payload(solar_forecast_api_key="fs_unexpected_secret"),
+    ],
+    ids=[
+        "missing-latitude",
+        "missing-longitude",
+        "missing-forecast-solar-key",
+        "missing-solcast-key",
+        "missing-solcast-site",
+        "forecast-solar-solcast-key",
+        "forecast-solar-solcast-site",
+        "solcast-forecast-solar-key",
+    ],
+)
+def test_solar_test_rejects_missing_or_unexpected_credentials_before_outbound(
     payload: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     hass, _ = _hass()

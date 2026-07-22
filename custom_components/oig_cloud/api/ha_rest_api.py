@@ -1619,6 +1619,14 @@ class OIGCloudSolarTestView(HomeAssistantView):
         self, payload: Dict[str, Any], provider: str
     ) -> tuple[Optional[Dict[str, str]], Optional[web.Response]]:
         if provider == "forecast_solar":
+            unexpected = sorted(
+                key for key in ("solcast_api_key", "solcast_site_id") if key in payload
+            )
+            if unexpected:
+                return None, web.json_response(
+                    {"error": "unexpected credential field", "fields": unexpected},
+                    status=400,
+                )
             key = payload.get("solar_forecast_api_key")
             if not isinstance(key, str) or not key.strip():
                 return None, web.json_response(
@@ -1626,6 +1634,15 @@ class OIGCloudSolarTestView(HomeAssistantView):
                     status=400,
                 )
             return {"solar_forecast_api_key": key.strip()}, None
+
+        if "solar_forecast_api_key" in payload:
+            return None, web.json_response(
+                {
+                    "error": "unexpected credential field",
+                    "fields": ["solar_forecast_api_key"],
+                },
+                status=400,
+            )
 
         api_key = payload.get("solcast_api_key")
         site_id = payload.get("solcast_site_id")
