@@ -11,6 +11,7 @@ from homeassistant.helpers import selector
 from ..ai.key_store import AiKeyStore
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
+from .solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
 from .solar_rules import normalize_azimuth, validate_solar_effective
 from ..const import (
     CONF_AUTO_MODE_SWITCH,
@@ -408,11 +409,6 @@ class WizardMixin:
             "solar_forecast_mode": wizard_data.get(
                 "solar_forecast_mode", "daily_optimized"
             ),
-            CONF_SOLAR_FORECAST_API_KEY: wizard_data.get(
-                CONF_SOLAR_FORECAST_API_KEY, ""
-            ),
-            CONF_SOLCAST_API_KEY: wizard_data.get(CONF_SOLCAST_API_KEY, ""),
-            CONF_SOLCAST_SITE_ID: wizard_data.get(CONF_SOLCAST_SITE_ID, ""),
             CONF_SOLAR_FORECAST_LATITUDE: wizard_data.get(
                 CONF_SOLAR_FORECAST_LATITUDE, 50.0
             ),
@@ -3600,11 +3596,13 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             current_provider = current.get("ai_provider", "")
             selected_provider = updates["ai_provider"]
             store = AiKeyStore(self.hass, entry.entry_id)
+            solar_store = SolarKeyStore(self.hass, entry.entry_id)
 
             if api_key:
                 await store.async_set_key(selected_provider, api_key)
             elif current_provider and selected_provider != current_provider:
                 await store.async_clear()
+                await solar_store.async_clear()
 
             current.update(updates)
             self.hass.config_entries.async_update_entry(entry, options=current)
@@ -3686,6 +3684,12 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             payload = self._build_options_payload(self._wizard_data)
             new_options = dict(entry.options)
             new_options.update(payload)
+            solar_private_updates = {
+                key: self._wizard_data.get(key)
+                for key in SOLAR_PRIVATE_FIELDS
+                if isinstance(self._wizard_data.get(key), str)
+                and self._wizard_data.get(key).strip()
+            }
 
             # Submitted-fields-only delta: exactly those keys whose serialized
             # value differs from the one this flow would have written at open.
@@ -3722,6 +3726,30 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             try:
                 # Aktualizovat entry
                 _LOGGER.warning("🔍 About to call async_update_entry")
+                if self._section == "solar" and solar_private_updates:
+                    solar_store = SolarKeyStore(self.hass, entry.entry_id)
+                    provider = payload.get(
+                        CONF_SOLAR_FORECAST_PROVIDER,
+                        entry.options.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"),
+                    )
+                    if delta.get(CONF_SOLAR_FORECAST_PROVIDER):
+                        await solar_store.async_clear_inactive(str(provider))
+                    if CONF_SOLAR_FORECAST_API_KEY in solar_private_updates:
+                        await solar_store.async_set_candidate(
+                            "forecast_solar",
+                            {
+                                CONF_SOLAR_FORECAST_API_KEY: solar_private_updates[
+                                    CONF_SOLAR_FORECAST_API_KEY
+                                ]
+                            },
+                        )
+                    solcast_updates = {
+                        key: solar_private_updates[key]
+                        for key in (CONF_SOLCAST_API_KEY, CONF_SOLCAST_SITE_ID)
+                        if key in solar_private_updates
+                    }
+                    if solcast_updates:
+                        await solar_store.async_set_candidate("solcast", solcast_updates)
                 did_write = merge_entry_options(
                     self.hass, entry, delta, suppress_reload=True
                 )

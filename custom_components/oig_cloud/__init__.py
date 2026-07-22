@@ -2099,8 +2099,10 @@ async def async_remove_entry(
 ) -> None:
     """Remove private per-entry stores when the config entry is deleted."""
     from .ai.key_store import AiKeyStore
+    from .config.solar_key_store import SolarKeyStore
 
     await AiKeyStore(hass, entry.entry_id).async_clear()
+    await SolarKeyStore(hass, entry.entry_id).async_clear()
 
 
 async def async_remove_config_entry_device(

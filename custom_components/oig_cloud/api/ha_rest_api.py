@@ -50,6 +50,7 @@ from ..config_registry import (
     registry_as_api_dict,
 )
 from ..config.solar_rules import normalize_azimuth, validate_solar_effective
+from ..config.solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
 from ..ai.backends import PROVIDERS, OpenAiCompatBackend
 from ..ai.key_store import AiKeyStore
 from ..forecast.candidate_test import run_solar_candidate_test
@@ -1132,9 +1133,15 @@ class OIGCloudModuleConfigView(HomeAssistantView):
 
         opts = dict(entry.options)
         out: dict[str, Any] = {}
+        solar_private_state = await SolarKeyStore(
+            hass, entry.entry_id
+        ).async_private_field_state()
         for section in ("basic", "modules", "battery", "solar", "boiler"):
             sec: dict[str, Any] = {}
             for key, field in fields_for_section(section).items():
+                if section == "solar" and key in SOLAR_PRIVATE_FIELDS:
+                    sec[f"{key}_set"] = solar_private_state.get(f"{key}_set", False)
+                    continue
                 if field.secret:
                     sec[f"{key}_set"] = bool(opts.get(key))
                     continue
@@ -1169,6 +1176,7 @@ class OIGCloudModuleConfigView(HomeAssistantView):
             )
 
         updates: dict[str, Any] = {}
+        private_updates: dict[str, Any] = {}
         errors: dict[str, str] = {}
         for key, value in values.items():
             field = section_fields.get(key)
@@ -1185,33 +1193,84 @@ class OIGCloudModuleConfigView(HomeAssistantView):
                     errors[key] = "invalid_azimuth"
                     continue
             try:
-                updates[key] = coerce_value(field, value)
+                coerced = coerce_value(field, value)
             except (ValueError, OverflowError) as err:
                 # OverflowError is defensive: coerce_value maps it to ValueError,
                 # but a numeric edge case must never escape as a 500.
                 errors[key] = str(err)
+                continue
+            if section == "solar" and key in SOLAR_PRIVATE_FIELDS:
+                private_updates[key] = coerced
+            else:
+                updates[key] = coerced
 
         # Cross-field solar rules: shared with the options flow (U3/U6). The
         # validator must see the EFFECTIVE config — stored options merged with
         # the incoming updates — otherwise "blank secret = keep current" above
         # makes a half-finished provider switch look valid.
         if section == "solar" and not errors:
-            effective = {**dict(entry.options), **updates}
+            store = SolarKeyStore(hass, entry.entry_id)
+            effective_provider = str(
+                updates.get(
+                    "solar_forecast_provider",
+                    entry.options.get("solar_forecast_provider", "forecast_solar"),
+                )
+            )
+            private_effective = await store.async_credentials_for_validation(
+                effective_provider
+            )
+            provider_private_fields = (
+                ("solar_forecast_api_key",)
+                if effective_provider == "forecast_solar"
+                else ("solcast_api_key", "solcast_site_id")
+            )
+            private_effective.update(
+                {
+                    key: value
+                    for key, value in private_updates.items()
+                    if key in provider_private_fields
+                }
+            )
+            effective = {**dict(entry.options), **private_effective, **updates}
             errors.update(validate_solar_effective(effective))
 
         if errors:
             return web.json_response({"error": "validation", "fields": errors}, status=400)
-        if not updates:
+        if not updates and not private_updates:
             return web.json_response({"updated": False})
 
+        previous_provider = entry.options.get("solar_forecast_provider", "forecast_solar")
         wrote = merge_entry_options(hass, entry, updates)
+        if section == "solar" and private_updates:
+            store = SolarKeyStore(hass, entry.entry_id)
+            provider = updates.get("solar_forecast_provider")
+            if isinstance(provider, str) and provider != previous_provider:
+                await store.async_clear_inactive(provider)
+            if "solar_forecast_api_key" in private_updates:
+                await store.async_set_candidate(
+                    "forecast_solar",
+                    {"solar_forecast_api_key": private_updates["solar_forecast_api_key"]},
+                )
+            solcast_updates = {
+                key: private_updates[key]
+                for key in ("solcast_api_key", "solcast_site_id")
+                if key in private_updates
+            }
+            if solcast_updates:
+                await store.async_set_candidate("solcast", solcast_updates)
+            wrote = True
         _LOGGER.info(
             "Module config updated for %s (%s): %s",
             box_id,
             section,
-            {k: ("***" if FIELD_REGISTRY[k].secret else v) for k, v in updates.items()},
+            {
+                k: ("***" if FIELD_REGISTRY[k].secret or k in SOLAR_PRIVATE_FIELDS else v)
+                for k, v in {**updates, **private_updates}.items()
+            },
         )
-        return web.json_response({"updated": wrote, "keys": sorted(updates)})
+        return web.json_response(
+            {"updated": wrote, "keys": sorted({**updates, **private_updates})}
+        )
 
 
 class OIGCloudConfigRegistryView(HomeAssistantView):
@@ -1525,6 +1584,11 @@ class OIGCloudSolarTestView(HomeAssistantView):
                 result,
                 status=504 if result["code"] == "timeout" else 502,
             )
+        store = SolarKeyStore(hass, entry.entry_id)
+        await store.async_set_candidate(parsed["provider"], parsed["credentials"])
+        await store.async_promote_candidate(
+            parsed["provider"], dt_util.utcnow().isoformat()
+        )
         return web.json_response(result)
 
     def _parse_payload(
