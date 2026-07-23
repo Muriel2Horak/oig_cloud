@@ -46,6 +46,7 @@ import {
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
 import { saveModuleConfig } from '@/data/settings-data';
+import { t } from '@/i18n/onboarding';
 
 const PRICING_CONFIRM_KEYS = [
   'confirmed_distribution_distributor',
@@ -350,14 +351,14 @@ const SOLAR_TEST_ALLOWED_WIRE_KEYS: ReadonlySet<string> = new Set([
   'solar_forecast_string2_azimuth',
 ]);
 
-/** Readable Czech message per classified `/solar_test` error code. */
+/** Readable message per classified `/solar_test` error code, i18n-routed. */
 const SOLAR_TEST_ERROR_MESSAGES: Readonly<Record<string, string>> = {
-  timeout: 'Test vypršel — zkuste to znovu.',
-  auth: 'Neplatný přístupový klíč.',
-  provider_unreachable: 'Poskytovatel je nedostupný.',
-  rate_limited: 'Příliš mnoho pokusů — zkuste to za chvíli.',
-  invalid_response: 'Neočekávaná odpověď poskytovatele.',
-  aborted: 'Test byl přerušen.',
+  timeout: t('onboarding.solar_test.error.timeout'),
+  auth: t('onboarding.solar_test.error.auth'),
+  provider_unreachable: t('onboarding.solar_test.error.provider_unreachable'),
+  rate_limited: t('onboarding.solar_test.error.rate_limited'),
+  invalid_response: t('onboarding.solar_test.error.invalid_response'),
+  aborted: t('onboarding.solar_test.error.aborted'),
 };
 
 /**
@@ -642,12 +643,12 @@ export class OigOnboardingWizard extends LitElement {
 
   private finishErrorMessage(code: string, error?: string): string {
     if (code === 'finish_in_progress') {
-      return 'Dokončení už probíhá.';
+      return t('onboarding.finish.error.in_progress');
     }
     if (code === 'finish_save_failed') {
-      return 'Dokončení se nepodařilo uložit.';
+      return t('onboarding.finish.error.save_failed');
     }
-    return error || 'Dokončení se nepodařilo.';
+    return error || t('onboarding.finish.error.generic');
   }
 
   private async sendFinishRequest(): Promise<void> {
@@ -932,7 +933,7 @@ export class OigOnboardingWizard extends LitElement {
     } else {
       this.solarTestError = {
         code: result.code,
-        message: SOLAR_TEST_ERROR_MESSAGES[result.code] ?? result.error ?? 'Test selhal.',
+        message: SOLAR_TEST_ERROR_MESSAGES[result.code] ?? result.error ?? t('onboarding.solar_test.error.generic'),
       };
       this.solarTestMatchesDraft = false;
     }
@@ -1014,7 +1015,7 @@ export class OigOnboardingWizard extends LitElement {
     const result = await saveModuleConfig('pricing', values);
     this.pricingSaving = false;
     if (!result.ok) {
-      this.pricingSaveError = 'Uložení se nezdařilo.';
+      this.pricingSaveError = t('onboarding.pricing.save_error');
     }
   }
 
@@ -1045,12 +1046,12 @@ export class OigOnboardingWizard extends LitElement {
           <section class="step step-solar" data-step="solar">
             <h3>② Solar</h3>
             <div class="step-card">
-              <p data-testid="solar-bootstrap-retry">Načtení dat selhalo.</p>
+              <p data-testid="solar-bootstrap-retry">${t('onboarding.bootstrap.load_failed')}</p>
               <button
                 type="button"
                 data-testid="solar-bootstrap-retry-button"
                 @click=${() => this.retrySolarBootstrap()}
-              >Zkusit znovu</button>
+              >${t('onboarding.bootstrap.retry_button')}</button>
             </div>
           </section>
         `;
@@ -1119,12 +1120,12 @@ export class OigOnboardingWizard extends LitElement {
           <section class="step step-pricing" data-step="pricing">
             <h3>③ Ceny</h3>
             <div class="step-card">
-              <p data-testid="pricing-bootstrap-retry">Načtení dat selhalo.</p>
+              <p data-testid="pricing-bootstrap-retry">${t('onboarding.bootstrap.load_failed')}</p>
               <button
                 type="button"
                 data-testid="pricing-bootstrap-retry-button"
                 @click=${() => this.retryPricingBootstrap()}
-              >Zkusit znovu</button>
+              >${t('onboarding.bootstrap.retry_button')}</button>
             </div>
           </section>
         `;
@@ -1184,7 +1185,7 @@ export class OigOnboardingWizard extends LitElement {
               ? html`<p data-testid="pricing-save-error">${this.pricingSaveError}</p>`
               : nothing}
             ${this.pricing.stale_warning
-              ? html`<p data-testid="pricing-stale-warning">Ceny jsou z předchozího roku.</p>`
+              ? html`<p data-testid="pricing-stale-warning">${t('onboarding.pricing.stale_warning')}</p>`
               : nothing}
           </div>
         </section>
@@ -1267,12 +1268,12 @@ export class OigOnboardingWizard extends LitElement {
           ${this.bootstrapRetry.onboardingState
             ? html`
                 <div class="finish-status">
-                  <p data-testid="onboarding-state-retry">Stav průvodce se nepodařilo načíst.</p>
+                  <p data-testid="onboarding-state-retry">${t('onboarding.bootstrap.state_load_failed')}</p>
                   <button
                     type="button"
                     data-testid="onboarding-state-retry-button"
                     @click=${() => this.retryOnboardingStateBootstrap()}
-                  >Zkusit znovu</button>
+                  >${t('onboarding.bootstrap.retry_button')}</button>
                 </div>
               `
             : nothing}
@@ -1290,7 +1291,7 @@ export class OigOnboardingWizard extends LitElement {
                     data-testid="wizard-finish-retry"
                     ?disabled=${this.finishing}
                     @click=${() => void this.finish()}
-                  >Zkusit znovu</button>
+                  >${t('onboarding.bootstrap.retry_button')}</button>
                 </div>
               `
             : nothing}
