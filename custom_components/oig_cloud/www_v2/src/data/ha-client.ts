@@ -50,6 +50,28 @@ export interface HassEntity {
   last_updated: string;
 }
 
+/**
+ * Classified error code surfaced by `fetchOIGAPITyped`. `aborted` and
+ * `provider_unreachable` are client-classified (no HTTP response reached);
+ * the rest come verbatim from the server's `{error, code}` body.
+ */
+export type OigApiErrorCode = 'aborted' | 'provider_unreachable' | string;
+
+export interface OigApiSuccess<T> {
+  ok: true;
+  status: number;
+  data: T;
+}
+
+export interface OigApiFailure {
+  ok: false;
+  status: number;
+  code: OigApiErrorCode;
+  error?: string;
+}
+
+export type OigApiResult<T> = OigApiSuccess<T> | OigApiFailure;
+
 // ============================================================================
 // HA CLIENT
 // ============================================================================
@@ -240,6 +262,67 @@ export class HaClient {
       oigLog.error(`OIG API fetch error for ${endpoint}`, e as Error);
       return null;
     }
+  }
+
+  /**
+   * Typed sibling of `fetchOIGAPI` — surfaces the parsed JSON body + status
+   * on a non-2xx response instead of swallowing it to `null`, and
+   * distinguishes a caller-initiated abort (`code: 'aborted'`) from a
+   * generic network failure (`code: 'provider_unreachable'`). Bypasses the
+   * retry-on-failure path deliberately: callers of this path (e.g. the
+   * side-effect-free `/solar_test` probe) drive their own abort/timeout.
+   */
+  async fetchOIGAPITyped<T = any>(
+    endpoint: string,
+    options: RequestInit = {},
+  ): Promise<OigApiResult<T>> {
+    const url = `/api/oig_cloud${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
+    const hass = await this.getHass();
+    if (!hass) {
+      return { ok: false, status: 0, code: 'provider_unreachable', error: 'Cannot get HASS context' };
+    }
+    const token = hass.auth?.data?.access_token;
+    if (!token) {
+      return { ok: false, status: 0, code: 'auth', error: 'No access token available' };
+    }
+
+    const headers = new Headers(options.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(url, { ...options, headers });
+    } catch (e) {
+      const err = e as Error;
+      if (err.name === 'AbortError') {
+        return { ok: false, status: 0, code: 'aborted', error: err.message };
+      }
+      oigLog.error(`OIG API typed fetch error for ${endpoint}`, err);
+      return { ok: false, status: 0, code: 'provider_unreachable', error: err.message };
+    }
+
+    let body: unknown = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+
+    if (!response.ok) {
+      const parsed = (body ?? {}) as { code?: string; error?: string };
+      return {
+        ok: false,
+        status: response.status,
+        code: parsed.code ?? 'provider_unreachable',
+        error: parsed.error ?? response.statusText,
+      };
+    }
+
+    return { ok: true, status: response.status, data: body as T };
   }
 
   // --------------------------------------------------------------------------

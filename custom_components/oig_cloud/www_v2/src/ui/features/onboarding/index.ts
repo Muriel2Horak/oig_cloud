@@ -278,6 +278,51 @@ const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
 };
 
 /**
+ * `POST /{sn}/solar_test` result shape — mirrors
+ * `run_solar_candidate_test`'s success dict (`forecast/candidate_test.py`).
+ */
+interface SolarTestResult {
+  tomorrow_total_kwh: number;
+  forecast_covers_tomorrow: boolean;
+}
+
+/**
+ * Q1 wire schema (plan §Task 6): registry key names verbatim, with ONE fixed
+ * rename — `solar_forecast_provider` → `provider` — plus one exclusion:
+ * `solar_forecast_mode` is registry-visible but not part of the schema the
+ * backend (`_SOLAR_TEST_ALLOWED_KEYS`, `ha_rest_api.py`) accepts.
+ */
+const SOLAR_TEST_WIRE_RENAME: Readonly<Record<string, string>> = {
+  solar_forecast_provider: 'provider',
+};
+const SOLAR_TEST_ALLOWED_WIRE_KEYS: ReadonlySet<string> = new Set([
+  'provider',
+  'solar_forecast_api_key',
+  'solcast_api_key',
+  'solcast_site_id',
+  'solar_forecast_latitude',
+  'solar_forecast_longitude',
+  'solar_forecast_string1_enabled',
+  'solar_forecast_string1_kwp',
+  'solar_forecast_string1_declination',
+  'solar_forecast_string1_azimuth',
+  'solar_forecast_string2_enabled',
+  'solar_forecast_string2_kwp',
+  'solar_forecast_string2_declination',
+  'solar_forecast_string2_azimuth',
+]);
+
+/** Readable Czech message per classified `/solar_test` error code. */
+const SOLAR_TEST_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  timeout: 'Test vypršel — zkuste to znovu.',
+  auth: 'Neplatný přístupový klíč.',
+  provider_unreachable: 'Poskytovatel je nedostupný.',
+  rate_limited: 'Příliš mnoho pokusů — zkuste to za chvíli.',
+  invalid_response: 'Neočekávaná odpověď poskytovatele.',
+  aborted: 'Test byl přerušen.',
+};
+
+/**
  * Wizard shell — opens in response to a `launch-onboarding` CustomEvent and
  * routes the three independent onboarding steps in order. Closing returns
  * the user to the dashboard (the dashboard is NEVER replaced — SCOPE #6).
@@ -313,6 +358,19 @@ export class OigOnboardingWizard extends LitElement {
   private _registry: FieldRegistry | null = null;
   private _registryLoaded = false;
   @state() private solarDraft: Record<string, unknown> = {};
+
+  /** [Otestovat] — Task 6. */
+  @state() private solarTestLoading = false;
+  @state() private solarTestResult: SolarTestResult | null = null;
+  @state() private solarTestError: { code: string; message: string } | null = null;
+  /**
+   * True only right after a successful test for the values currently in the
+   * draft (Q2) — Task 8's `goNext` reads this to decide whether the solar
+   * step may complete. Cleared on any solar field edit (a stale success must
+   * not silently count as done for edited values). Not private: Task 8 reads
+   * it from outside this class's own methods.
+   */
+  @state() solarTestMatchesDraft = false;
 
   static styles = css`
     ${fieldStyles}
@@ -510,6 +568,44 @@ export class OigOnboardingWizard extends LitElement {
     }
   }
 
+  /** Q1: registry values → the exact `/solar_test` wire body, no extra keys. */
+  private buildSolarTestBody(): Record<string, unknown> {
+    const body: Record<string, unknown> = {};
+    if (!this._registry) return body;
+    const visible = STEP_SOLAR.visibleFields(this._registry, this.solarDraft);
+    for (const f of visible) {
+      const wireKey = SOLAR_TEST_WIRE_RENAME[f.key] ?? f.key;
+      if (!SOLAR_TEST_ALLOWED_WIRE_KEYS.has(wireKey)) continue;
+      body[wireKey] = this.solarDraft[f.key];
+    }
+    return body;
+  }
+
+  /** [Otestovat] — side-effect-free probe of the unsaved draft values (Task 6). */
+  private async runSolarTest(): Promise<void> {
+    if (!this.inverterSn || this.solarTestLoading) return;
+    this.solarTestLoading = true;
+    this.solarTestResult = null;
+    this.solarTestError = null;
+
+    const result = await haClient.fetchOIGAPITyped<SolarTestResult>(
+      `/${this.inverterSn}/solar_test`,
+      { method: 'POST', body: JSON.stringify(this.buildSolarTestBody()) },
+    );
+
+    this.solarTestLoading = false;
+    if (result.ok) {
+      this.solarTestResult = result.data;
+      this.solarTestMatchesDraft = true;
+    } else {
+      this.solarTestError = {
+        code: result.code,
+        message: SOLAR_TEST_ERROR_MESSAGES[result.code] ?? result.error ?? 'Test selhal.',
+      };
+      this.solarTestMatchesDraft = false;
+    }
+  }
+
   protected updated(changedProperties: Map<string, unknown>): void {
     super.updated(changedProperties);
     if (
@@ -595,10 +691,26 @@ export class OigOnboardingWizard extends LitElement {
                 secretSet: false,
                 onChange: (v: unknown) => {
                   this.solarDraft = { ...this.solarDraft, [f.key]: v };
+                  this.solarTestMatchesDraft = false;
                 },
                 entityCatalog: [],
               }),
             )}
+            <button
+              type="button"
+              data-testid="solar-test"
+              ?disabled=${this.solarTestLoading}
+              @click=${() => void this.runSolarTest()}
+            >${this.solarTestLoading ? 'Testuji…' : 'Otestovat'}</button>
+            ${this.solarTestResult
+              ? html`<p data-testid="solar-test-success">
+                  Odhad na zítra: ${this.solarTestResult.tomorrow_total_kwh} kWh
+                  ${this.solarTestResult.forecast_covers_tomorrow ? nothing : html` (neúplná předpověď)`}
+                </p>`
+              : nothing}
+            ${this.solarTestError
+              ? html`<p data-testid="solar-test-error">${this.solarTestError.message}</p>`
+              : nothing}
           </div>
         </section>
       `;

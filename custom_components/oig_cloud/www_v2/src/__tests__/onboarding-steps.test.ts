@@ -13,6 +13,7 @@ import {
 } from './fixtures/solar-registry-fixture';
 
 const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string], Promise<unknown>>());
+const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
 const loadFieldRegistryMock = vi.hoisted(() => vi.fn<[], Promise<FieldRegistry | null>>());
 const loadModuleConfigMock = vi.hoisted(() => vi.fn().mockResolvedValue({
   modules: {}, battery: {}, solar: {}, boiler: {},
@@ -21,6 +22,7 @@ const loadModuleConfigMock = vi.hoisted(() => vi.fn().mockResolvedValue({
 vi.mock('@/data/ha-client', () => ({
   haClient: {
     fetchOIGAPI,
+    fetchOIGAPITyped,
     getHass: vi.fn(async () => ({ auth: { data: { access_token: 'token' } } })),
     getHassSync: vi.fn(() => null),
     refreshHass: vi.fn().mockResolvedValue(null),
@@ -302,6 +304,191 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
     await (wizard as any).updateComplete;
 
     expect(loadFieldRegistryMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ============================================================================
+// F1 Plan 3.6 Task 6 — [Otestovat] button + typed classified-error client RED tests
+// ============================================================================
+describe('solar step [Otestovat] button (F1 Plan 3.6 Task 6)', () => {
+  const SOLAR_TEST_ALLOWED_WIRE_KEYS = new Set([
+    'provider',
+    'solar_forecast_api_key',
+    'solcast_api_key',
+    'solcast_site_id',
+    'solar_forecast_latitude',
+    'solar_forecast_longitude',
+    'solar_forecast_string1_enabled',
+    'solar_forecast_string1_kwp',
+    'solar_forecast_string1_declination',
+    'solar_forecast_string1_azimuth',
+    'solar_forecast_string2_enabled',
+    'solar_forecast_string2_kwp',
+    'solar_forecast_string2_declination',
+    'solar_forecast_string2_azimuth',
+  ]);
+
+  beforeEach(() => {
+    fetchOIGAPI.mockClear();
+    fetchOIGAPITyped.mockClear();
+    loadFieldRegistryMock.mockClear();
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path.includes('/onboarding')) {
+        return Promise.resolve({
+          steps: { ai: 'pending', solar: 'pending', pricing: 'pending' },
+          timestamps: {},
+          grandfathered: false,
+        });
+      }
+      if (path.includes('/pricelists')) {
+        return Promise.resolve({
+          distributors: {}, tariffs: [],
+          selected_distributor: '', selected_tariff: '',
+          confirmed_distribution_price_incl_vat: 0,
+          confirmed_distribution_price_excl_vat: 0,
+          confirmed_distribution_unit: '',
+          stale_warning: false, valid_from: null, year: null,
+        });
+      }
+      return Promise.resolve(null);
+    });
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  async function openWizardOnSolarStep(): Promise<HTMLElement & Record<string, any>> {
+    const wizard = await fixture<HTMLElement>(html`<oig-onboarding-wizard
+      .inverterSn=${'SN123'}
+      ?open=${true}
+    ></oig-onboarding-wizard>`);
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    const nextBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+    nextBtn.click();
+    await (wizard as any).updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await (wizard as any).updateComplete;
+
+    return wizard as HTMLElement & Record<string, any>;
+  }
+
+  it('[data-testid="solar-test"] exists on step-2', async () => {
+    const wizard = await openWizardOnSolarStep();
+    const btn = wizard.shadowRoot!.querySelector('[data-testid="solar-test"]');
+    expect(btn).toBeTruthy();
+  });
+
+  it('click posts the Q1 wire-schema body to /{sn}/solar_test — no extra keys', async () => {
+    fetchOIGAPITyped.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { tomorrow_total_kwh: 7.5, forecast_covers_tomorrow: true },
+    });
+
+    const wizard = await openWizardOnSolarStep();
+    const btn = wizard.shadowRoot!.querySelector('[data-testid="solar-test"]') as HTMLButtonElement;
+    btn.click();
+    await wizard.updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await wizard.updateComplete;
+
+    expect(fetchOIGAPITyped).toHaveBeenCalledTimes(1);
+    const [path, options] = fetchOIGAPITyped.mock.calls[0];
+    expect(path).toBe('/SN123/solar_test');
+    expect(options.method).toBe('POST');
+
+    const body = JSON.parse(options.body as string);
+    // Registry key renamed to the Q1 top-level "provider" — never sent as
+    // "solar_forecast_provider" (backend rejects unknown fields).
+    expect(body.provider).toBe('forecast_solar');
+    expect(body).not.toHaveProperty('solar_forecast_provider');
+    // solar_forecast_mode is registry-visible but NOT part of the Q1 schema.
+    expect(body).not.toHaveProperty('solar_forecast_mode');
+    for (const key of Object.keys(body)) {
+      expect(SOLAR_TEST_ALLOWED_WIRE_KEYS.has(key)).toBe(true);
+    }
+  });
+
+  it('success shows tomorrow_total_kwh and sets solarTestMatchesDraft', async () => {
+    fetchOIGAPITyped.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { tomorrow_total_kwh: 9.42, forecast_covers_tomorrow: true },
+    });
+
+    const wizard = await openWizardOnSolarStep();
+    const btn = wizard.shadowRoot!.querySelector('[data-testid="solar-test"]') as HTMLButtonElement;
+    btn.click();
+    await wizard.updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await wizard.updateComplete;
+
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    expect(content.textContent).toContain('9.42');
+    expect((wizard as any).solarTestMatchesDraft).toBe(true);
+  });
+
+  it.each([
+    ['timeout', 504],
+    ['auth', 401],
+    ['provider_unreachable', 502],
+    ['rate_limited', 429],
+  ])('classified error %s: readable message, wizard-next stays enabled and actually navigates', async (code, status) => {
+    fetchOIGAPITyped.mockResolvedValueOnce({ ok: false, status, code, error: 'boom' });
+
+    const wizard = await openWizardOnSolarStep();
+    const btn = wizard.shadowRoot!.querySelector('[data-testid="solar-test"]') as HTMLButtonElement;
+    btn.click();
+    await wizard.updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await wizard.updateComplete;
+
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    const errorEl = content.querySelector('[data-testid="solar-test-error"]');
+    expect(errorEl).toBeTruthy();
+    expect(errorEl!.textContent!.trim().length).toBeGreaterThan(0);
+
+    const nextBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement;
+    const skipBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-skip"]') as HTMLButtonElement;
+    expect(nextBtn.disabled).toBe(false);
+    expect(skipBtn.disabled).toBe(false);
+
+    // OQ-B: navigation is never blocked by a failed test — actually click it.
+    nextBtn.click();
+    await wizard.updateComplete;
+
+    const newContent = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    expect(newContent.querySelector('[data-step="pricing"]')).toBeTruthy();
+  });
+
+  it('editing a solar field after a successful test clears solarTestMatchesDraft', async () => {
+    fetchOIGAPITyped.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { tomorrow_total_kwh: 3.1, forecast_covers_tomorrow: true },
+    });
+
+    const wizard = await openWizardOnSolarStep();
+    const btn = wizard.shadowRoot!.querySelector('[data-testid="solar-test"]') as HTMLButtonElement;
+    btn.click();
+    await wizard.updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await wizard.updateComplete;
+
+    expect((wizard as any).solarTestMatchesDraft).toBe(true);
+
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    const latInput = content.querySelector('input[type="number"]') as HTMLInputElement;
+    expect(latInput).toBeTruthy();
+    latInput.value = '50.1';
+    latInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await wizard.updateComplete;
+
+    expect((wizard as any).solarTestMatchesDraft).toBe(false);
   });
 });
 
