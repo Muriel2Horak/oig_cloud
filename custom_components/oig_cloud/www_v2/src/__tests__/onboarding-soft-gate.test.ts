@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
+import type { FieldRegistry } from '@/data/registry-data';
+import { SOLAR_REGISTRY_FIXTURE } from './fixtures/solar-registry-fixture';
+
+const loadFieldRegistryMock = vi.hoisted(() =>
+  vi.fn<[signal?: AbortSignal], Promise<FieldRegistry | null>>().mockResolvedValue(null),
+);
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {
@@ -8,6 +14,7 @@ vi.mock('@/data/ha-client', () => ({
     getHassSync: vi.fn().mockReturnValue(null),
     refreshHass: vi.fn().mockResolvedValue(null),
     fetchOIGAPI: vi.fn().mockResolvedValue(null),
+    fetchOIGAPITyped: vi.fn().mockResolvedValue({ ok: true, status: 200, data: null }),
   },
 }));
 
@@ -37,15 +44,20 @@ vi.mock('@/data/settings-data', () => ({
   waitForModuleConfigAfterReload: vi.fn(),
 }));
 
-vi.mock('@/data/registry-data', () => ({
-  loadFieldRegistry: vi.fn().mockResolvedValue(null),
-  fieldsFromRegistry: vi.fn().mockReturnValue([]),
-  isVisible: vi.fn().mockReturnValue(true),
-}));
+vi.mock('@/data/registry-data', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/data/registry-data')>();
+  return {
+    ...actual,
+    loadFieldRegistry: loadFieldRegistryMock,
+  };
+});
 
 vi.mock('@/ui/components/header', () => ({}));
 vi.mock('@/ui/components/theme-provider', () => ({}));
-vi.mock('@/ui/layout/tabs', () => ({}));
+// Task 11 (F1 Plan 3.6): deliberately NOT mocked — the real interaction proof
+// below clicks the actual <oig-tabs> buttons, which requires the real
+// component (a mocked-out module leaves the tag unregistered, with no
+// shadow DOM to click into).
 vi.mock('@/ui/layout/grid', () => ({}));
 vi.mock('@/ui/features/flow', () => ({}));
 vi.mock('@/ui/features/flow/grid-charging-dialog', () => ({}));
@@ -115,5 +127,163 @@ describe('SCOPE-REVISION #6 — the guide is SOFT', () => {
   it('the wizard is launchable from Settings, per step', async () => {
     const settings = await fixture<HTMLElement>(html`<oig-settings></oig-settings>`);
     expect(settings.shadowRoot!.querySelector('[data-testid="launch-onboarding"]')).toBeTruthy();
+  });
+});
+
+// ============================================================================
+// F1 Plan 3.6 Task 11 — real selectors + real interaction proof (finding #14)
+//
+// `dashboard-primary` never existed in production (0 hits in src/); the real
+// selectors are `<oig-tabs>` / `.tab-content` / `.tab-content.active`, used
+// throughout this file already. This block adds the interaction proof both
+// critiques asked for: not "the button isn't disabled" but an actual click,
+// during an actual Step-2 classified-error state.
+//
+// Chosen semantic (v2 plan, default — occlusion reading): the wizard is a
+// deliberately-opened `.overlay` (position:fixed, z-index:1000) covering the
+// dashboard while open. It may occlude the dashboard while open; wizard-close
+// and wizard-skip stay usable throughout, and dashboard-nav-after-close is
+// proven to actually work (not just "not disabled"). Click-through to the
+// dashboard while the overlay is still open is NOT implemented — that is the
+// stricter, unconfirmed reading the v2 plan flags as new scope.
+// ============================================================================
+describe('Task 11 — soft-guide real interaction proof (F1 Plan 3.6, occlusion reading)', () => {
+  let el: TestApp;
+
+  beforeEach(async () => {
+    loadFieldRegistryMock.mockReset();
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+
+    el = await fixture<TestApp>(html`<oig-app></oig-app>`);
+    (el as any).loading = false;
+    (el as any).error = null;
+    el.onboarding = { steps: { ai: 'pending', solar: 'pending', pricing: 'pending' } };
+    await el.updateComplete;
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+    loadFieldRegistryMock.mockReset();
+    loadFieldRegistryMock.mockResolvedValue(null);
+  });
+
+  function getWizard(): HTMLElement & Record<string, any> {
+    return el.shadowRoot!.querySelector('oig-onboarding-wizard') as HTMLElement & Record<string, any>;
+  }
+
+  /** Open the wizard and force it onto Step-2 with a classified test error —
+   *  the real state shape `runSolarTest()` sets on a failed `/solar_test`. */
+  async function openWizardOnSolarErrorStep(): Promise<HTMLElement & Record<string, any>> {
+    (el as any).onboardingWizardOpen = true;
+    await el.updateComplete;
+
+    const wizard = getWizard();
+    await wizard.updateComplete;
+    // `app.ts` binds `.inverterSn` from the module-level `INVERTER_SN`
+    // (parsed from the URL query string), which is empty in the test
+    // environment — the wizard's bootstrap in `updated()` is gated on a
+    // truthy `inverterSn`, so force one directly to exercise the real
+    // registry-driven render.
+    wizard.inverterSn = 'SN123';
+    await wizard.updateComplete;
+    // Let the bootstrap `loadFieldRegistry()` microtask resolve before
+    // forcing the step/error state below.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await wizard.updateComplete;
+
+    wizard.currentStep = 'solar';
+    wizard.solarTestError = { code: 'timeout', message: 'Časový limit vypršel.' };
+    wizard.requestUpdate();
+    await wizard.updateComplete;
+
+    return wizard;
+  }
+
+  it('<oig-tabs> and .tab-content.active stay present and unmodified while the wizard is open with pending onboarding', async () => {
+    (el as any).onboardingWizardOpen = true;
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('oig-tabs')).toBeTruthy();
+    const activeTabContent = el.shadowRoot!.querySelector('.tab-content.active');
+    expect(activeTabContent).toBeTruthy();
+    expect((el as any).activeTab).toBe('flow');
+  });
+
+  it('grandfathered renders no <oig-onboarding-banner>, wizard open or not', async () => {
+    el.onboarding = { grandfathered: true, steps: { ai: 'pending', solar: 'done', pricing: 'done' } };
+    (el as any).onboardingWizardOpen = true;
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('oig-onboarding-banner')).toBeNull();
+  });
+
+  it('during the Step-2 classified-error state, wizard-close and wizard-skip are real, clickable, functional controls', async () => {
+    const wizard = await openWizardOnSolarErrorStep();
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    expect(content.querySelector('[data-testid="solar-test-error"]')).toBeTruthy();
+
+    const closeBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-close"]') as HTMLButtonElement;
+    const skipBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-skip"]') as HTMLButtonElement;
+    expect(closeBtn).toBeTruthy();
+    expect(skipBtn).toBeTruthy();
+    expect(closeBtn.disabled).toBe(false);
+    expect(skipBtn.disabled).toBe(false);
+  });
+
+  it('clicking wizard-skip during the Step-2 error advances the step (real click, real transition)', async () => {
+    const wizard = await openWizardOnSolarErrorStep();
+
+    const skipBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-skip"]') as HTMLButtonElement;
+    skipBtn.click();
+    await wizard.updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await wizard.updateComplete;
+
+    const active = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-steps"] button.active',
+    ) as HTMLButtonElement | null;
+    expect(active?.getAttribute('data-step')).toBe('pricing');
+  });
+
+  it('clicking wizard-close during the Step-2 error actually closes the wizard, and a dashboard tab click works after', async () => {
+    const wizard = await openWizardOnSolarErrorStep();
+
+    const closeBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-close"]') as HTMLButtonElement;
+    closeBtn.click();
+    await el.updateComplete;
+    await wizard.updateComplete;
+
+    expect(wizard.hasAttribute('open')).toBe(false);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="onboarding-wizard-overlay"]')).toBeNull();
+
+    // Real dashboard-nav-after-close: click the actual <oig-tabs> button.
+    const tabs = el.shadowRoot!.querySelector('oig-tabs') as HTMLElement;
+    const pricingTabBtn = Array.from(tabs.shadowRoot!.querySelectorAll('button.tab')).find(
+      (b) => b.textContent?.includes('Ceny'),
+    ) as HTMLButtonElement | undefined;
+    expect(pricingTabBtn).toBeTruthy();
+
+    pricingTabBtn!.click();
+    await el.updateComplete;
+
+    expect((el as any).activeTab).toBe('pricing');
+    expect(el.shadowRoot!.querySelector('.tab-content.active')).toBeTruthy();
+  });
+
+  it('app.ts refreshes onboarding state on close (kept); a mid-wizard onboarding-changed does not need a separate app.ts listener, because Finish always closes too', async () => {
+    const loadOnboardingSpy = vi.spyOn(el as any, 'loadOnboarding');
+    const wizard = getWizard();
+
+    // Mid-wizard event (skip()/persistCurrentStep() dispatch this while the
+    // wizard stays open) — under the occlusion reading the banner is hidden
+    // behind the open overlay, so no dashboard-visible refresh is needed yet.
+    wizard.dispatchEvent(new CustomEvent('onboarding-changed', { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(loadOnboardingSpy).not.toHaveBeenCalled();
+
+    // Close (including the one `finish()` always issues) is the single
+    // trigger that refreshes the dashboard's onboarding snapshot.
+    wizard.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(loadOnboardingSpy).toHaveBeenCalledTimes(1);
   });
 });
