@@ -314,6 +314,17 @@ interface SolarTestResult {
 }
 
 /**
+ * Per-bootstrap-endpoint outcome (F1 Plan 3.6 Task 9 rework, finding #1).
+ * `pending` covers both "still in flight" and "never settled" — the 5s
+ * deadline treats anything that isn't `success` as needing a retry,
+ * including an endpoint that was `aborted` at the 3s mark: an abort makes
+ * the underlying fetch SETTLE (real `fetchOIGAPI` catches it and resolves
+ * to `null`), so a plain settled/unsettled boolean can't tell "aborted"
+ * apart from "succeeded" — that conflation was the bug.
+ */
+type BootstrapOutcome = 'pending' | 'success' | 'aborted' | 'failed';
+
+/**
  * Q1 wire schema (plan §Task 6): registry key names verbatim, with ONE fixed
  * rename — `solar_forecast_provider` → `provider` — plus one exclusion:
  * `solar_forecast_mode` is registry-visible but not part of the schema the
@@ -421,10 +432,10 @@ export class OigOnboardingWizard extends LitElement {
   private _bootstrapController: AbortController | null = null;
   private _bootstrapAbortTimer: ReturnType<typeof setTimeout> | null = null;
   private _bootstrapDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
-  private _onboardingStateSettled = false;
-  private _registrySettled = false;
-  private _pricingSettled = false;
-  private _pricingConfigSettled = false;
+  private _onboardingStateOutcome: BootstrapOutcome = 'pending';
+  private _registryOutcome: BootstrapOutcome = 'pending';
+  private _pricingOutcome: BootstrapOutcome = 'pending';
+  private _pricingConfigOutcome: BootstrapOutcome = 'pending';
   @state() private bootstrapRetry = {
     onboardingState: false,
     registry: false,
@@ -599,9 +610,11 @@ export class OigOnboardingWizard extends LitElement {
     this._onboardingStateLoadedFor = this.inverterSn;
     try {
       this.onboardingState = await loadOnboardingState(this.inverterSn, signal);
+      this._onboardingStateOutcome = signal?.aborted ? 'aborted' : this.onboardingState !== null ? 'success' : 'failed';
+    } catch {
+      this._onboardingStateOutcome = signal?.aborted ? 'aborted' : 'failed';
     } finally {
-      this._onboardingStateSettled = true;
-      if (this.bootstrapRetry.onboardingState) {
+      if (this._onboardingStateOutcome === 'success' && this.bootstrapRetry.onboardingState) {
         this.bootstrapRetry = { ...this.bootstrapRetry, onboardingState: false };
       }
     }
@@ -739,6 +752,7 @@ export class OigOnboardingWizard extends LitElement {
 
   private close(): void {
     this.open = false;
+    this.stopBootstrap();
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   }
 
@@ -747,6 +761,7 @@ export class OigOnboardingWizard extends LitElement {
     this._registryLoaded = true;
     try {
       this._registry = await loadFieldRegistry(signal);
+      this._registryOutcome = signal?.aborted ? 'aborted' : this._registry !== null ? 'success' : 'failed';
       this.solarDraft = {};
       // seed default values from the registry
       if (this._registry) {
@@ -758,9 +773,11 @@ export class OigOnboardingWizard extends LitElement {
         }
         this.requestUpdate();
       }
+    } catch {
+      this._registry = null;
+      this._registryOutcome = signal?.aborted ? 'aborted' : 'failed';
     } finally {
-      this._registrySettled = true;
-      if (this.bootstrapRetry.registry) {
+      if (this._registryOutcome === 'success' && this.bootstrapRetry.registry) {
         this.bootstrapRetry = { ...this.bootstrapRetry, registry: false };
       }
     }
@@ -777,12 +794,14 @@ export class OigOnboardingWizard extends LitElement {
         `/${this.inverterSn}/module_config`,
         { signal },
       );
+      this._pricingConfigOutcome = signal?.aborted ? 'aborted' : data !== null ? 'success' : 'failed';
       if (data && data.pricing) {
         this.pricingDraft = { ...data.pricing };
       }
+    } catch {
+      this._pricingConfigOutcome = signal?.aborted ? 'aborted' : 'failed';
     } finally {
-      this._pricingConfigSettled = true;
-      if (this.bootstrapRetry.pricingConfig) {
+      if (this._pricingConfigOutcome === 'success' && this.bootstrapRetry.pricingConfig) {
         this.bootstrapRetry = { ...this.bootstrapRetry, pricingConfig: false };
       }
     }
@@ -799,21 +818,19 @@ export class OigOnboardingWizard extends LitElement {
    * step navigation within the SAME open.
    */
   private startBootstrap(): void {
-    this._bootstrapController?.abort();
-    if (this._bootstrapAbortTimer !== null) clearTimeout(this._bootstrapAbortTimer);
-    if (this._bootstrapDeadlineTimer !== null) clearTimeout(this._bootstrapDeadlineTimer);
+    this.stopBootstrap();
 
     const controller = new AbortController();
     this._bootstrapController = controller;
 
     this._onboardingStateLoadedFor = null;
-    this._onboardingStateSettled = false;
+    this._onboardingStateOutcome = 'pending';
     this._registryLoaded = false;
     this._registry = null;
-    this._registrySettled = false;
+    this._registryOutcome = 'pending';
     this._pricingConfigLoaded = false;
-    this._pricingConfigSettled = false;
-    this._pricingSettled = false;
+    this._pricingConfigOutcome = 'pending';
+    this._pricingOutcome = 'pending';
     this.pricing = null;
     this.pricingLoadFailed = false;
     this.bootstrapRetry = { onboardingState: false, registry: false, pricing: false, pricingConfig: false };
@@ -825,10 +842,10 @@ export class OigOnboardingWizard extends LitElement {
     this._bootstrapDeadlineTimer = setTimeout(() => {
       if (this._bootstrapController !== controller) return;
       this.bootstrapRetry = {
-        onboardingState: !this._onboardingStateSettled,
-        registry: !this._registrySettled,
-        pricing: !this._pricingSettled,
-        pricingConfig: !this._pricingConfigSettled,
+        onboardingState: this._onboardingStateOutcome !== 'success',
+        registry: this._registryOutcome !== 'success',
+        pricing: this._pricingOutcome !== 'success',
+        pricingConfig: this._pricingConfigOutcome !== 'success',
       };
     }, 5000);
 
@@ -836,6 +853,24 @@ export class OigOnboardingWizard extends LitElement {
     void this.refreshPricing(controller.signal);
     void this.loadSolarRegistry(controller.signal);
     void this.loadPricingConfig(controller.signal);
+  }
+
+  /**
+   * Finding #2: closing the mounted wizard must stop the in-flight bootstrap
+   * the same way a remount/unmount would — abort the controller and clear
+   * BOTH timers, so a closed wizard leaves no pending request or queued
+   * timer behind. Shared by `close()` and `disconnectedCallback()`.
+   */
+  private stopBootstrap(): void {
+    if (this._bootstrapAbortTimer !== null) {
+      clearTimeout(this._bootstrapAbortTimer);
+      this._bootstrapAbortTimer = null;
+    }
+    if (this._bootstrapDeadlineTimer !== null) {
+      clearTimeout(this._bootstrapDeadlineTimer);
+      this._bootstrapDeadlineTimer = null;
+    }
+    this._bootstrapController?.abort();
   }
 
   private retrySolarBootstrap(): void {
@@ -862,9 +897,7 @@ export class OigOnboardingWizard extends LitElement {
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    if (this._bootstrapAbortTimer !== null) clearTimeout(this._bootstrapAbortTimer);
-    if (this._bootstrapDeadlineTimer !== null) clearTimeout(this._bootstrapDeadlineTimer);
-    this._bootstrapController?.abort();
+    this.stopBootstrap();
   }
 
   /** Q1: registry values → the exact `/solar_test` wire body, no extra keys. */
@@ -927,13 +960,14 @@ export class OigOnboardingWizard extends LitElement {
         `/${this.inverterSn}/pricelists`,
         { signal },
       );
+      this._pricingOutcome = signal?.aborted ? 'aborted' : this.pricing !== null ? 'success' : 'failed';
     } catch {
       this.pricing = null;
       this.pricingLoadFailed = true;
+      this._pricingOutcome = signal?.aborted ? 'aborted' : 'failed';
     } finally {
       this.pricingLoading = false;
-      this._pricingSettled = true;
-      if (this.bootstrapRetry.pricing) {
+      if (this._pricingOutcome === 'success' && this.bootstrapRetry.pricing) {
         this.bootstrapRetry = { ...this.bootstrapRetry, pricing: false };
       }
     }

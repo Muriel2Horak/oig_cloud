@@ -71,6 +71,32 @@ function defaultFetchOIGAPI(path: string): Promise<unknown> {
   return Promise.resolve(null);
 }
 
+/** Rejects with an AbortError when `signal` fires — like real `fetch`, the
+ * OPPOSITE of a promise that just never settles. Never resolves otherwise. */
+function abortAware<T = unknown>(signal: AbortSignal | undefined): Promise<T> {
+  return new Promise((_resolve, reject) => {
+    if (!signal) return;
+    const onAbort = () => reject(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }));
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** `fetchOIGAPI` mock that hangs (then rejects on abort, like real `fetch`)
+ * for any GET whose path matches one of `hangPaths`; everything else
+ * resolves via `defaultFetchOIGAPI`. POSTs (e.g. complete_step/finish) never
+ * hang, even against a matching path. */
+function abortAwareFetch(hangPaths: string[]) {
+  return (path: string, options?: RequestInit): Promise<unknown> => {
+    const isHang = options?.method !== 'POST' && hangPaths.some((p) => path.includes(p));
+    if (isHang) return abortAware(options?.signal ?? undefined);
+    return defaultFetchOIGAPI(path);
+  };
+}
+
 async function settle(wizard: HTMLElement & { updateComplete: Promise<boolean> }): Promise<void> {
   await wizard.updateComplete;
   if (vi.isFakeTimers()) {
@@ -99,13 +125,16 @@ describe('bounded wizard bootstrap (F1 Plan 3.6 Task 9)', () => {
     vi.useRealTimers();
   });
 
-  it('aborts a never-resolving registry fetch at 3s and shows a retry state by 5s, without disabling close/skip', async () => {
+  it('aborts a hung registry fetch at 3s and shows a retry state by 5s, without disabling close/skip', async () => {
     vi.useFakeTimers();
 
     let capturedSignal: AbortSignal | undefined;
     loadFieldRegistryMock.mockImplementation((signal?: AbortSignal) => {
       capturedSignal = signal;
-      return new Promise(() => undefined); // never resolves
+      // Realistic: rejects when the signal fires, like real `fetch` — NOT a
+      // promise that just never settles (Finding 3: the opposite of real
+      // fetch masked the "aborted looks settled" bug).
+      return abortAware(signal);
     });
 
     const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
@@ -122,7 +151,8 @@ describe('bounded wizard bootstrap (F1 Plan 3.6 Task 9)', () => {
     await vi.advanceTimersByTimeAsync(3000);
     expect(capturedSignal?.aborted).toBe(true);
 
-    // Navigate to the affected (solar) step — no retry state yet at 3s.
+    // Navigate to the affected (solar) step — no retry state yet at 3s, and
+    // the generic "not available" path must not substitute for it either.
     const nextBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement;
     nextBtn.click();
     await settle(wizard);
@@ -131,6 +161,7 @@ describe('bounded wizard bootstrap (F1 Plan 3.6 Task 9)', () => {
     await vi.advanceTimersByTimeAsync(2000); // total 5s
     await settle(wizard);
     expect(wizard.shadowRoot!.querySelector('[data-testid="solar-bootstrap-retry"]')).toBeTruthy();
+    expect(wizard.shadowRoot!.querySelector('[data-testid="solar-not-available"]')).toBeFalsy();
 
     // wizard-skip must be REAL clickable — click it and observe the effect
     // (advances past solar to pricing), not merely "not disabled".
@@ -146,6 +177,53 @@ describe('bounded wizard bootstrap (F1 Plan 3.6 Task 9)', () => {
     closeBtn.click();
     await settle(wizard);
     expect(wizard.hasAttribute('open')).toBe(false);
+  });
+
+  it('an aborted onboarding-state fetch (a second, distinct endpoint) shows its own classified retry at 5s', async () => {
+    vi.useFakeTimers();
+    fetchOIGAPI.mockImplementation(abortAwareFetch(['/onboarding']));
+
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard
+        .inverterSn=${'SN123'}
+        ?open=${true}
+      ></oig-onboarding-wizard>`,
+    );
+    await settle(wizard);
+
+    await vi.advanceTimersByTimeAsync(3000); // abort fires, onboarding fetch rejects
+    await settle(wizard);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="onboarding-state-retry"]')).toBeFalsy();
+
+    await vi.advanceTimersByTimeAsync(2000); // total 5s
+    await settle(wizard);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="onboarding-state-retry"]')).toBeTruthy();
+  });
+
+  it('close aborts the bootstrap controller and clears both timers (no leaked request or timer)', async () => {
+    vi.useFakeTimers();
+    const abortSpy = vi.spyOn(AbortController.prototype, 'abort');
+    loadFieldRegistryMock.mockImplementation((signal?: AbortSignal) => abortAware(signal));
+
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard
+        .inverterSn=${'SN123'}
+        ?open=${true}
+      ></oig-onboarding-wizard>`,
+    );
+    await settle(wizard);
+
+    // The 3s abort timer + 5s deadline timer are both pending mid-bootstrap.
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    const closeBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-close"]') as HTMLButtonElement;
+    closeBtn.click();
+    await settle(wizard);
+
+    expect(abortSpy).toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+
+    abortSpy.mockRestore();
   });
 
   it('the retry button re-fetches and clears the retry state on success', async () => {
