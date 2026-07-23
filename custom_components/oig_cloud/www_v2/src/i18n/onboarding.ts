@@ -6,11 +6,13 @@
  * through a lookup — mirrors the `field.<key>.label` catalog pattern
  * (`i18n/fields.ts`) and the cs/en table shape of `i18n/boiler.ts`.
  *
- * The wizard does not receive `hass` yet, so callers default to `lang: 'cs'`
- * (unchanged rendered output) — the `en` table exists so wiring a real
- * `hass.locale` through later is a `t(key, lang)` call, not a re-write.
+ * The wizard resolves its language from `hass` via `resolveLang` (re-exported
+ * here from `i18n/boiler.ts` so callers only need one import) and passes it
+ * to every `t(key, lang)` call. Callers that omit `lang` still get `'cs'`.
  */
-import type { Lang } from './boiler';
+import { resolveLang, type Lang } from './boiler';
+export { resolveLang };
+export type { Lang };
 
 const STRINGS: Record<Lang, Record<string, string>> = {
   cs: {

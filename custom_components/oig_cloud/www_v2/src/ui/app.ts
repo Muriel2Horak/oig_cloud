@@ -1474,6 +1474,7 @@ export class OigApp extends LitElement {
         <oig-onboarding-wizard
           ?open=${this.onboardingWizardOpen}
           .inverterSn=${INVERTER_SN}
+          .hass=${this.hass}
           @close=${this.onWizardClose}
         ></oig-onboarding-wizard>
       </oig-theme-provider>

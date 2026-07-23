@@ -69,9 +69,9 @@ async function settle(el: { updateComplete: Promise<boolean> }): Promise<void> {
   await el.updateComplete;
 }
 
-async function openWizardOnSolarStep(): Promise<HTMLElement & { updateComplete: Promise<boolean> } & Record<string, any>> {
+async function openWizardOnSolarStep(hass: unknown = null): Promise<HTMLElement & { updateComplete: Promise<boolean> } & Record<string, any>> {
   const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
-    html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    html`<oig-onboarding-wizard .inverterSn=${'SN123'} .hass=${hass} ?open=${true}></oig-onboarding-wizard>`,
   );
   await settle(wizard);
   const nextBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement;
@@ -217,5 +217,35 @@ describe('onboarding classified-error rendering is catalog-driven (Task 12)', ()
     expect(errorEl?.textContent).toBe(t('onboarding.finish.error.in_progress'));
     const retryBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-finish-retry"]');
     expect(retryBtn?.textContent).toBe(t('onboarding.bootstrap.retry_button'));
+  });
+
+  // Review must-fix #2: the wizard used to call `t(key)` with no language,
+  // so classified-error/retry/stale copy always rendered Czech regardless of
+  // `hass.locale`. These tests mount with an English `hass` and drive a real
+  // Step-2 (Solar) error through the component — `t(key, 'en')` alone proves
+  // the catalog HAS an English string, not that the component RENDERS it.
+  it('renders English Step-2 classified-error text when hass.locale.language is en', async () => {
+    fetchOIGAPITyped.mockResolvedValueOnce({ ok: false, status: 504, code: 'timeout', error: 'boom' });
+
+    const wizard = await openWizardOnSolarStep({ locale: { language: 'en' } });
+    const btn = wizard.shadowRoot!.querySelector('[data-testid="solar-test"]') as HTMLButtonElement;
+    btn.click();
+    await settle(wizard);
+
+    const errorEl = wizard.shadowRoot!.querySelector('[data-testid="solar-test-error"]') as HTMLElement;
+    expect(errorEl).toBeTruthy();
+    expect(errorEl.textContent!.trim()).toBe(t('onboarding.solar_test.error.timeout', 'en'));
+    expect(errorEl.textContent!.trim()).not.toBe(t('onboarding.solar_test.error.timeout', 'cs'));
+  });
+
+  it('renders English bootstrap-retry copy when hass.language is en (fallback field, no locale object)', async () => {
+    const wizard = await openWizardOnSolarStep({ language: 'en' });
+    (wizard as any).bootstrapRetry = { onboardingState: false, registry: true, pricing: false, pricingConfig: false };
+    await settle(wizard);
+
+    const solarRetry = wizard.shadowRoot!.querySelector('[data-testid="solar-bootstrap-retry"]');
+    expect(solarRetry?.textContent).toBe(t('onboarding.bootstrap.load_failed', 'en'));
+    const solarRetryBtn = wizard.shadowRoot!.querySelector('[data-testid="solar-bootstrap-retry-button"]');
+    expect(solarRetryBtn?.textContent).toBe(t('onboarding.bootstrap.retry_button', 'en'));
   });
 });

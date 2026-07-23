@@ -46,7 +46,7 @@ import {
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
 import { saveModuleConfig } from '@/data/settings-data';
-import { t } from '@/i18n/onboarding';
+import { t, resolveLang, type Lang, type OnboardingKey } from '@/i18n/onboarding';
 
 const PRICING_CONFIRM_KEYS = [
   'confirmed_distribution_distributor',
@@ -352,14 +352,19 @@ const SOLAR_TEST_ALLOWED_WIRE_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /** Readable message per classified `/solar_test` error code, i18n-routed. */
-const SOLAR_TEST_ERROR_MESSAGES: Readonly<Record<string, string>> = {
-  timeout: t('onboarding.solar_test.error.timeout'),
-  auth: t('onboarding.solar_test.error.auth'),
-  provider_unreachable: t('onboarding.solar_test.error.provider_unreachable'),
-  rate_limited: t('onboarding.solar_test.error.rate_limited'),
-  invalid_response: t('onboarding.solar_test.error.invalid_response'),
-  aborted: t('onboarding.solar_test.error.aborted'),
+const SOLAR_TEST_ERROR_CODE_KEYS: Readonly<Record<string, OnboardingKey>> = {
+  timeout: 'onboarding.solar_test.error.timeout',
+  auth: 'onboarding.solar_test.error.auth',
+  provider_unreachable: 'onboarding.solar_test.error.provider_unreachable',
+  rate_limited: 'onboarding.solar_test.error.rate_limited',
+  invalid_response: 'onboarding.solar_test.error.invalid_response',
+  aborted: 'onboarding.solar_test.error.aborted',
 };
+
+function solarTestErrorMessage(code: string, lang: Lang): string | undefined {
+  const key = SOLAR_TEST_ERROR_CODE_KEYS[code];
+  return key ? t(key, lang) : undefined;
+}
 
 /**
  * Wizard shell — opens in response to a `launch-onboarding` CustomEvent and
@@ -386,6 +391,15 @@ export class OigOnboardingWizard extends LitElement {
 
   /** Inverter SN — forwarded to the AI step so verify/storage work end-to-end. */
   @property({ attribute: false }) inverterSn = '';
+
+  /** HA connection object — `resolveLang(hass)` drives which language the
+   * catalog in `i18n/onboarding.ts` renders, same pattern as `boilerLang`
+   * in `ui/app.ts`. `null` (standalone/test usage) resolves to `'cs'`. */
+  @property({ attribute: false }) hass: any = null;
+
+  private get wizardLang(): Lang {
+    return resolveLang(this.hass);
+  }
 
   /** Internal step routing — single source of truth is `WIZARD_STEPS`. */
   @state() private currentStep: OnboardingStepId = 'ai';
@@ -643,12 +657,12 @@ export class OigOnboardingWizard extends LitElement {
 
   private finishErrorMessage(code: string, error?: string): string {
     if (code === 'finish_in_progress') {
-      return t('onboarding.finish.error.in_progress');
+      return t('onboarding.finish.error.in_progress', this.wizardLang);
     }
     if (code === 'finish_save_failed') {
-      return t('onboarding.finish.error.save_failed');
+      return t('onboarding.finish.error.save_failed', this.wizardLang);
     }
-    return error || t('onboarding.finish.error.generic');
+    return error || t('onboarding.finish.error.generic', this.wizardLang);
   }
 
   private async sendFinishRequest(): Promise<void> {
@@ -933,7 +947,7 @@ export class OigOnboardingWizard extends LitElement {
     } else {
       this.solarTestError = {
         code: result.code,
-        message: SOLAR_TEST_ERROR_MESSAGES[result.code] ?? result.error ?? t('onboarding.solar_test.error.generic'),
+        message: solarTestErrorMessage(result.code, this.wizardLang) ?? result.error ?? t('onboarding.solar_test.error.generic', this.wizardLang),
       };
       this.solarTestMatchesDraft = false;
     }
@@ -1015,7 +1029,7 @@ export class OigOnboardingWizard extends LitElement {
     const result = await saveModuleConfig('pricing', values);
     this.pricingSaving = false;
     if (!result.ok) {
-      this.pricingSaveError = t('onboarding.pricing.save_error');
+      this.pricingSaveError = t('onboarding.pricing.save_error', this.wizardLang);
     }
   }
 
@@ -1046,12 +1060,12 @@ export class OigOnboardingWizard extends LitElement {
           <section class="step step-solar" data-step="solar">
             <h3>② Solar</h3>
             <div class="step-card">
-              <p data-testid="solar-bootstrap-retry">${t('onboarding.bootstrap.load_failed')}</p>
+              <p data-testid="solar-bootstrap-retry">${t('onboarding.bootstrap.load_failed', this.wizardLang)}</p>
               <button
                 type="button"
                 data-testid="solar-bootstrap-retry-button"
                 @click=${() => this.retrySolarBootstrap()}
-              >${t('onboarding.bootstrap.retry_button')}</button>
+              >${t('onboarding.bootstrap.retry_button', this.wizardLang)}</button>
             </div>
           </section>
         `;
@@ -1120,12 +1134,12 @@ export class OigOnboardingWizard extends LitElement {
           <section class="step step-pricing" data-step="pricing">
             <h3>③ Ceny</h3>
             <div class="step-card">
-              <p data-testid="pricing-bootstrap-retry">${t('onboarding.bootstrap.load_failed')}</p>
+              <p data-testid="pricing-bootstrap-retry">${t('onboarding.bootstrap.load_failed', this.wizardLang)}</p>
               <button
                 type="button"
                 data-testid="pricing-bootstrap-retry-button"
                 @click=${() => this.retryPricingBootstrap()}
-              >${t('onboarding.bootstrap.retry_button')}</button>
+              >${t('onboarding.bootstrap.retry_button', this.wizardLang)}</button>
             </div>
           </section>
         `;
@@ -1185,7 +1199,7 @@ export class OigOnboardingWizard extends LitElement {
               ? html`<p data-testid="pricing-save-error">${this.pricingSaveError}</p>`
               : nothing}
             ${this.pricing.stale_warning
-              ? html`<p data-testid="pricing-stale-warning">${t('onboarding.pricing.stale_warning')}</p>`
+              ? html`<p data-testid="pricing-stale-warning">${t('onboarding.pricing.stale_warning', this.wizardLang)}</p>`
               : nothing}
           </div>
         </section>
@@ -1268,12 +1282,12 @@ export class OigOnboardingWizard extends LitElement {
           ${this.bootstrapRetry.onboardingState
             ? html`
                 <div class="finish-status">
-                  <p data-testid="onboarding-state-retry">${t('onboarding.bootstrap.state_load_failed')}</p>
+                  <p data-testid="onboarding-state-retry">${t('onboarding.bootstrap.state_load_failed', this.wizardLang)}</p>
                   <button
                     type="button"
                     data-testid="onboarding-state-retry-button"
                     @click=${() => this.retryOnboardingStateBootstrap()}
-                  >${t('onboarding.bootstrap.retry_button')}</button>
+                  >${t('onboarding.bootstrap.retry_button', this.wizardLang)}</button>
                 </div>
               `
             : nothing}
@@ -1291,7 +1305,7 @@ export class OigOnboardingWizard extends LitElement {
                     data-testid="wizard-finish-retry"
                     ?disabled=${this.finishing}
                     @click=${() => void this.finish()}
-                  >${t('onboarding.bootstrap.retry_button')}</button>
+                  >${t('onboarding.bootstrap.retry_button', this.wizardLang)}</button>
                 </div>
               `
             : nothing}
