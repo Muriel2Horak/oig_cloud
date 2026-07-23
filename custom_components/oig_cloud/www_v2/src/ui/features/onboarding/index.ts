@@ -120,7 +120,17 @@ export type {
 export class OigOnboardingStepAi extends LitElement {
   @property({ attribute: false }) inverterSn = '';
 
-  /** Soft-guide state — null while loading / on network error. */
+  /**
+   * Optional: when the host wizard already has onboarding state loaded
+   * (F1 Plan 3.6 Task 9 bootstrap budget), pass it down instead of letting
+   * this component fetch its own copy — avoids a second `/onboarding` GET
+   * per wizard open. `undefined` (the default) falls back to this
+   * component's own fetch, for standalone usage.
+   */
+  @property({ attribute: false }) onboardingState: OnboardingState | null | undefined = undefined;
+
+  /** Soft-guide state — null while loading / on network error. Only used
+   * when `onboardingState` is not supplied by the host. */
   @state() private state: OnboardingState | null = null;
 
   /** Verifying spinner state — failures still let the user continue (#5/#6). */
@@ -165,7 +175,7 @@ export class OigOnboardingStepAi extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    if (this.inverterSn) void this.refresh();
+    if (this.onboardingState === undefined && this.inverterSn) void this.refresh();
   }
 
   private async refresh(): Promise<void> {
@@ -242,7 +252,7 @@ export class OigOnboardingStepAi extends LitElement {
       <section aria-labelledby="step-ai-heading">
         <h2 id="step-ai-heading">
           ① AI${STEP_AI.skippable ? html` <span class="skippable-badge">(volitelné)</span>` : nothing}
-          ${this.state?.steps.ai === 'done'
+          ${(this.onboardingState !== undefined ? this.onboardingState : this.state)?.steps.ai === 'done'
             ? html`<span class="done-badge">✓ hotovo</span>`
             : nothing}
         </h2>
@@ -399,6 +409,28 @@ export class OigOnboardingWizard extends LitElement {
    * it from outside this class's own methods.
    */
   @state() solarTestMatchesDraft = false;
+
+  /**
+   * Bounded bootstrap (F1 Plan 3.6 Task 9, R10.2/R9.2). One `AbortController`
+   * per open, shared by the four bootstrap fetches (onboarding state, solar
+   * registry, pricelists, pricing module_config): a 3 s timer aborts it,
+   * and an INDEPENDENT 5 s timer force-marks any resource not yet settled as
+   * needing a retry — independent because an aborted fetch is not guaranteed
+   * to reject promptly (or at all) in every environment.
+   */
+  private _bootstrapController: AbortController | null = null;
+  private _bootstrapAbortTimer: ReturnType<typeof setTimeout> | null = null;
+  private _bootstrapDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  private _onboardingStateSettled = false;
+  private _registrySettled = false;
+  private _pricingSettled = false;
+  private _pricingConfigSettled = false;
+  @state() private bootstrapRetry = {
+    onboardingState: false,
+    registry: false,
+    pricing: false,
+    pricingConfig: false,
+  };
 
   static styles = css`
     ${fieldStyles}
@@ -561,11 +593,18 @@ export class OigOnboardingWizard extends LitElement {
     }
   `;
 
-  private async refreshOnboardingState(force = false): Promise<void> {
+  private async refreshOnboardingState(force = false, signal?: AbortSignal): Promise<void> {
     if (!this.inverterSn) return;
     if (!force && this._onboardingStateLoadedFor === this.inverterSn) return;
     this._onboardingStateLoadedFor = this.inverterSn;
-    this.onboardingState = await loadOnboardingState(this.inverterSn);
+    try {
+      this.onboardingState = await loadOnboardingState(this.inverterSn, signal);
+    } finally {
+      this._onboardingStateSettled = true;
+      if (this.bootstrapRetry.onboardingState) {
+        this.bootstrapRetry = { ...this.bootstrapRetry, onboardingState: false };
+      }
+    }
   }
 
   private completeCurrentStepIfNeeded(): Promise<void> | void {
@@ -703,45 +742,129 @@ export class OigOnboardingWizard extends LitElement {
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   }
 
-  private async loadSolarRegistry(): Promise<void> {
+  private async loadSolarRegistry(signal?: AbortSignal): Promise<void> {
     if (this._registryLoaded) return;
     this._registryLoaded = true;
-    this._registry = await loadFieldRegistry();
-    this.solarDraft = {};
-    // seed default values from the registry
-    if (this._registry) {
-      for (const f of STEP_SOLAR.fields(this._registry)) {
-        const spec = this._registry.fields[f.key];
-        if (spec?.default !== undefined) {
-          (this.solarDraft as Record<string, unknown>)[f.key] = spec.default;
+    try {
+      this._registry = await loadFieldRegistry(signal);
+      this.solarDraft = {};
+      // seed default values from the registry
+      if (this._registry) {
+        for (const f of STEP_SOLAR.fields(this._registry)) {
+          const spec = this._registry.fields[f.key];
+          if (spec?.default !== undefined) {
+            (this.solarDraft as Record<string, unknown>)[f.key] = spec.default;
+          }
         }
+        this.requestUpdate();
       }
-      this.requestUpdate();
+    } finally {
+      this._registrySettled = true;
+      if (this.bootstrapRetry.registry) {
+        this.bootstrapRetry = { ...this.bootstrapRetry, registry: false };
+      }
     }
   }
 
   /** Task 7: prefill the pricing draft from the persisted `module_config`
    * `pricing` section — NOT from `/pricelists`' dataset-suggested default,
    * so a real confirm round-trips instead of re-showing the same guess. */
-  private async loadPricingConfig(): Promise<void> {
+  private async loadPricingConfig(signal?: AbortSignal): Promise<void> {
     if (this._pricingConfigLoaded || !this.inverterSn) return;
     this._pricingConfigLoaded = true;
-    const data = await haClient.fetchOIGAPI<{ pricing?: Record<string, unknown> } | null>(
-      `/${this.inverterSn}/module_config`,
-    );
-    if (data && data.pricing) {
-      this.pricingDraft = { ...data.pricing };
+    try {
+      const data = await haClient.fetchOIGAPI<{ pricing?: Record<string, unknown> } | null>(
+        `/${this.inverterSn}/module_config`,
+        { signal },
+      );
+      if (data && data.pricing) {
+        this.pricingDraft = { ...data.pricing };
+      }
+    } finally {
+      this._pricingConfigSettled = true;
+      if (this.bootstrapRetry.pricingConfig) {
+        this.bootstrapRetry = { ...this.bootstrapRetry, pricingConfig: false };
+      }
     }
   }
 
-  connectedCallback(): void {
-    super.connectedCallback();
-    if (this.open && this.inverterSn) {
-      void this.refreshOnboardingState(true);
-      void this.refreshPricing();
-      void this.loadSolarRegistry();
-      void this.loadPricingConfig();
-    }
+  /**
+   * One `AbortController` per open (F1 Plan 3.6 Task 9): fans out the four
+   * bootstrap fetches, aborts them at 3 s, and — independent of whether the
+   * abort actually unblocked anything — force-marks whatever hasn't settled
+   * by 5 s as needing a retry. Never disables `wizard-close`/`wizard-skip`/
+   * dashboard nav; only the affected step's content shows a retry control.
+   * A NEW open (mount, or `open`/`inverterSn` flipping while mounted) always
+   * gets a fresh controller and re-fetches — cached results only survive
+   * step navigation within the SAME open.
+   */
+  private startBootstrap(): void {
+    this._bootstrapController?.abort();
+    if (this._bootstrapAbortTimer !== null) clearTimeout(this._bootstrapAbortTimer);
+    if (this._bootstrapDeadlineTimer !== null) clearTimeout(this._bootstrapDeadlineTimer);
+
+    const controller = new AbortController();
+    this._bootstrapController = controller;
+
+    this._onboardingStateLoadedFor = null;
+    this._onboardingStateSettled = false;
+    this._registryLoaded = false;
+    this._registry = null;
+    this._registrySettled = false;
+    this._pricingConfigLoaded = false;
+    this._pricingConfigSettled = false;
+    this._pricingSettled = false;
+    this.pricing = null;
+    this.pricingLoadFailed = false;
+    this.bootstrapRetry = { onboardingState: false, registry: false, pricing: false, pricingConfig: false };
+
+    this._bootstrapAbortTimer = setTimeout(() => {
+      if (this._bootstrapController === controller) controller.abort();
+    }, 3000);
+
+    this._bootstrapDeadlineTimer = setTimeout(() => {
+      if (this._bootstrapController !== controller) return;
+      this.bootstrapRetry = {
+        onboardingState: !this._onboardingStateSettled,
+        registry: !this._registrySettled,
+        pricing: !this._pricingSettled,
+        pricingConfig: !this._pricingConfigSettled,
+      };
+    }, 5000);
+
+    void this.refreshOnboardingState(true, controller.signal);
+    void this.refreshPricing(controller.signal);
+    void this.loadSolarRegistry(controller.signal);
+    void this.loadPricingConfig(controller.signal);
+  }
+
+  private retrySolarBootstrap(): void {
+    this.bootstrapRetry = { ...this.bootstrapRetry, registry: false };
+    this._registryLoaded = false;
+    void this.loadSolarRegistry();
+  }
+
+  private retryPricingBootstrap(): void {
+    this.bootstrapRetry = { ...this.bootstrapRetry, registry: false, pricing: false, pricingConfig: false };
+    this._registryLoaded = false;
+    this._pricingConfigLoaded = false;
+    this.pricingLoadFailed = false;
+    void this.loadSolarRegistry();
+    void this.refreshPricing();
+    void this.loadPricingConfig();
+  }
+
+  private retryOnboardingStateBootstrap(): void {
+    this.bootstrapRetry = { ...this.bootstrapRetry, onboardingState: false };
+    this._onboardingStateLoadedFor = null;
+    void this.refreshOnboardingState(true);
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    if (this._bootstrapAbortTimer !== null) clearTimeout(this._bootstrapAbortTimer);
+    if (this._bootstrapDeadlineTimer !== null) clearTimeout(this._bootstrapDeadlineTimer);
+    this._bootstrapController?.abort();
   }
 
   /** Q1: registry values → the exact `/solar_test` wire body, no extra keys. */
@@ -789,16 +912,11 @@ export class OigOnboardingWizard extends LitElement {
       this.open &&
       this.inverterSn
     ) {
-      void this.refreshOnboardingState(true);
-      if (!this.pricing && !this.pricingLoading) {
-        void this.refreshPricing();
-      }
-      void this.loadSolarRegistry();
-      void this.loadPricingConfig();
+      this.startBootstrap();
     }
   }
 
-  private async refreshPricing(): Promise<void> {
+  private async refreshPricing(signal?: AbortSignal): Promise<void> {
     if (!this.inverterSn || this.pricingLoading) {
       return;
     }
@@ -807,12 +925,17 @@ export class OigOnboardingWizard extends LitElement {
     try {
       this.pricing = await haClient.fetchOIGAPI<PricelistsResponse>(
         `/${this.inverterSn}/pricelists`,
+        { signal },
       );
     } catch {
       this.pricing = null;
       this.pricingLoadFailed = true;
     } finally {
       this.pricingLoading = false;
+      this._pricingSettled = true;
+      if (this.bootstrapRetry.pricing) {
+        this.bootstrapRetry = { ...this.bootstrapRetry, pricing: false };
+      }
     }
   }
 
@@ -873,14 +996,31 @@ export class OigOnboardingWizard extends LitElement {
   private renderStepContent() {
     if (this.currentStep === 'ai') {
       // Reuse the typed AI renderer (provider cards + key verify). It owns
-      // its own state — the wizard just hosts it.
+      // its own verify state — but shares the wizard's already-bootstrapped
+      // onboarding state (Task 9 budget) instead of fetching its own copy.
       return html`<oig-onboarding-step-ai
         class="step step-ai"
         .inverterSn=${this.inverterSn}
+        .onboardingState=${this.onboardingState}
       ></oig-onboarding-step-ai>`;
     }
 
     if (this.currentStep === 'solar') {
+      if (this.bootstrapRetry.registry) {
+        return html`
+          <section class="step step-solar" data-step="solar">
+            <h3>② Solar</h3>
+            <div class="step-card">
+              <p data-testid="solar-bootstrap-retry">Načtení dat selhalo.</p>
+              <button
+                type="button"
+                data-testid="solar-bootstrap-retry-button"
+                @click=${() => this.retrySolarBootstrap()}
+              >Zkusit znovu</button>
+            </div>
+          </section>
+        `;
+      }
       if (!this._registry || STEP_SOLAR.fields(this._registry).length === 0) {
         return html`
           <section class="step step-solar" data-step="solar">
@@ -940,6 +1080,21 @@ export class OigOnboardingWizard extends LitElement {
     }
 
     if (this.currentStep === 'pricing') {
+      if (this.bootstrapRetry.registry || this.bootstrapRetry.pricing || this.bootstrapRetry.pricingConfig) {
+        return html`
+          <section class="step step-pricing" data-step="pricing">
+            <h3>③ Ceny</h3>
+            <div class="step-card">
+              <p data-testid="pricing-bootstrap-retry">Načtení dat selhalo.</p>
+              <button
+                type="button"
+                data-testid="pricing-bootstrap-retry-button"
+                @click=${() => this.retryPricingBootstrap()}
+              >Zkusit znovu</button>
+            </div>
+          </section>
+        `;
+      }
       const distributorCount = Object.keys(this.pricing?.distributors || {}).length;
       if (
         !this._registry ||
@@ -1074,6 +1229,19 @@ export class OigOnboardingWizard extends LitElement {
               })()}
             `)}
           </nav>
+
+          ${this.bootstrapRetry.onboardingState
+            ? html`
+                <div class="finish-status">
+                  <p data-testid="onboarding-state-retry">Stav průvodce se nepodařilo načíst.</p>
+                  <button
+                    type="button"
+                    data-testid="onboarding-state-retry-button"
+                    @click=${() => this.retryOnboardingStateBootstrap()}
+                  >Zkusit znovu</button>
+                </div>
+              `
+            : nothing}
 
           <div class="content" data-testid="wizard-content">
             ${this.renderStepContent()}

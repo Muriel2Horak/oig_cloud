@@ -26,9 +26,10 @@ export interface RegistrySpec {
 }
 export interface FieldRegistry { fields: Record<string, RegistrySpec>; sections: string[]; }
 
-export async function loadFieldRegistry(): Promise<FieldRegistry | null> {
+export async function loadFieldRegistry(signal?: AbortSignal): Promise<FieldRegistry | null> {
   const data = await haClient.fetchOIGAPI<FieldRegistry | { error?: string }>(
     `/${INVERTER_SN}/config_registry`,
+    { signal },
   );
   if (!data || (data as any).error || !(data as any).fields) return null;
   return data as FieldRegistry;

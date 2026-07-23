@@ -108,9 +108,10 @@ export interface ModuleConfig {
 
 export type SettingsSection = 'modules' | 'battery' | 'solar' | 'boiler' | 'pricing';
 
-export async function loadModuleConfig(): Promise<ModuleConfig | null> {
+export async function loadModuleConfig(signal?: AbortSignal): Promise<ModuleConfig | null> {
   const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(
     `/${INVERTER_SN}/module_config`,
+    { signal },
   );
   if (!data || (data as any).error) {
     oigLog.warn('[Settings] module_config load failed', data as any);

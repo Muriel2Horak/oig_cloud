@@ -46,7 +46,10 @@ describe('loadFieldRegistry', () => {
     mockFetch.mockResolvedValue(REGISTRY);
     const reg = await loadFieldRegistry();
     expect(reg!.fields.solcast_api_key.secret).toBe(true);
-    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/config_registry'));
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/config_registry'),
+      expect.objectContaining({ signal: undefined }),
+    );
   });
 });
 

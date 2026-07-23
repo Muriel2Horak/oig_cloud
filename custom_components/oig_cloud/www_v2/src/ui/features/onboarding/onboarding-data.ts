@@ -91,9 +91,12 @@ export const EMPTY_ONBOARDING_STATE: OnboardingState = {
  * (the wizard treats null as "no prior state" and starts fresh — soft guide,
  * never a wall).
  */
-export async function loadOnboardingState(inverterSn: string): Promise<OnboardingState | null> {
+export async function loadOnboardingState(
+  inverterSn: string,
+  signal?: AbortSignal,
+): Promise<OnboardingState | null> {
   if (!inverterSn) return null;
-  return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`);
+  return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, { signal });
 }
 
 /**
