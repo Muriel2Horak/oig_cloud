@@ -1154,7 +1154,7 @@ class OIGCloudModuleConfigView(HomeAssistantView):
             if solar_store is not None
             else {}
         )
-        for section in ("basic", "modules", "battery", "solar", "boiler"):
+        for section in ("basic", "modules", "battery", "solar", "boiler", "pricing"):
             sec: dict[str, Any] = {}
             for key, field in fields_for_section(section).items():
                 if section == "solar" and key in SOLAR_PRIVATE_FIELDS:

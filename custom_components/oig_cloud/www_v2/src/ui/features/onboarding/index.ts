@@ -29,7 +29,7 @@ import {
   validateKeyShape,
 } from './step-ai';
 import type { FieldRegistry } from '@/data/registry-data';
-import { loadFieldRegistry } from '@/data/registry-data';
+import { loadFieldRegistry, fieldsFromRegistry } from '@/data/registry-data';
 import { STEP_SOLAR } from './step-solar';
 import { STEP_PRICING } from './step-pricing';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
@@ -43,6 +43,15 @@ import {
   type AiVerifyResult,
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
+import { saveModuleConfig } from '@/data/settings-data';
+
+const PRICING_CONFIRM_KEYS = [
+  'confirmed_distribution_distributor',
+  'confirmed_distribution_tariff',
+  'confirmed_distribution_price_incl_vat',
+  'confirmed_distribution_price_excl_vat',
+  'confirmed_distribution_unit',
+] as const;
 
 interface PricingRate {
   price_incl_vat: number;
@@ -354,6 +363,13 @@ export class OigOnboardingWizard extends LitElement {
   @state() private pricingLoading = false;
   @state() private pricingLoadFailed = false;
 
+  /** Pricing step: draft form values, seeded from the persisted module_config
+   * `pricing` section (Task 7) — never re-fetched for step navigation. */
+  private _pricingConfigLoaded = false;
+  @state() private pricingDraft: Record<string, unknown> = {};
+  @state() private pricingSaving = false;
+  @state() private pricingSaveError: string | null = null;
+
   /** Solar step: registry cached per open (never re-fetched for step navigation). */
   private _registry: FieldRegistry | null = null;
   private _registryLoaded = false;
@@ -560,11 +576,26 @@ export class OigOnboardingWizard extends LitElement {
     }
   }
 
+  /** Task 7: prefill the pricing draft from the persisted `module_config`
+   * `pricing` section — NOT from `/pricelists`' dataset-suggested default,
+   * so a real confirm round-trips instead of re-showing the same guess. */
+  private async loadPricingConfig(): Promise<void> {
+    if (this._pricingConfigLoaded || !this.inverterSn) return;
+    this._pricingConfigLoaded = true;
+    const data = await haClient.fetchOIGAPI<{ pricing?: Record<string, unknown> } | null>(
+      `/${this.inverterSn}/module_config`,
+    );
+    if (data && data.pricing) {
+      this.pricingDraft = { ...data.pricing };
+    }
+  }
+
   connectedCallback(): void {
     super.connectedCallback();
     if (this.open && this.inverterSn) {
       void this.refreshPricing();
       void this.loadSolarRegistry();
+      void this.loadPricingConfig();
     }
   }
 
@@ -617,6 +648,7 @@ export class OigOnboardingWizard extends LitElement {
         void this.refreshPricing();
       }
       void this.loadSolarRegistry();
+      void this.loadPricingConfig();
     }
   }
 
@@ -635,6 +667,51 @@ export class OigOnboardingWizard extends LitElement {
       this.pricingLoadFailed = true;
     } finally {
       this.pricingLoading = false;
+    }
+  }
+
+  /** Distributor/tariff change re-derives the OTHER field + the price/unit
+   * from the live `/pricelists` dataset (the immutable rate source — R6.3). */
+  private onPricingFieldChange(key: string, value: unknown): void {
+    const next: Record<string, unknown> = { ...this.pricingDraft, [key]: value };
+    const distributors = this.pricing?.distributors ?? {};
+
+    if (key === 'confirmed_distribution_distributor') {
+      const rates = distributors[String(value)] ?? {};
+      const tariff = Object.keys(rates)[0] ?? '';
+      next.confirmed_distribution_tariff = tariff;
+      const rate = rates[tariff];
+      if (rate) {
+        next.confirmed_distribution_price_incl_vat = rate.price_incl_vat;
+        next.confirmed_distribution_price_excl_vat = rate.price_excl_vat;
+        next.confirmed_distribution_unit = rate.unit;
+      }
+    } else if (key === 'confirmed_distribution_tariff') {
+      const distributor = String(next.confirmed_distribution_distributor ?? '');
+      const rate = distributors[distributor]?.[String(value)];
+      if (rate) {
+        next.confirmed_distribution_price_incl_vat = rate.price_incl_vat;
+        next.confirmed_distribution_price_excl_vat = rate.price_excl_vat;
+        next.confirmed_distribution_unit = rate.unit;
+      }
+    }
+
+    this.pricingDraft = next;
+  }
+
+  /** [Potvrdit] — real confirm + persistence (Task 7, closes finding #9). */
+  private async confirmPricing(): Promise<void> {
+    if (this.pricingSaving) return;
+    this.pricingSaving = true;
+    this.pricingSaveError = null;
+
+    const values: Record<string, unknown> = {};
+    for (const key of PRICING_CONFIRM_KEYS) values[key] = this.pricingDraft[key];
+
+    const result = await saveModuleConfig('pricing', values);
+    this.pricingSaving = false;
+    if (!result.ok) {
+      this.pricingSaveError = 'Uložení se nezdařilo.';
     }
   }
 
@@ -719,10 +796,12 @@ export class OigOnboardingWizard extends LitElement {
     if (this.currentStep === 'pricing') {
       const distributorCount = Object.keys(this.pricing?.distributors || {}).length;
       if (
+        !this._registry ||
         !this.pricing ||
         this.pricingLoadFailed ||
         distributorCount === 0 ||
-        this.pricing.tariffs.length === 0
+        this.pricing.tariffs.length === 0 ||
+        Object.keys(this.pricingDraft).length === 0
       ) {
         return html`
           <section class="step step-pricing" data-step="pricing">
@@ -736,63 +815,39 @@ export class OigOnboardingWizard extends LitElement {
         `;
       }
 
-      const distributors = Object.entries(this.pricing.distributors);
-      const selectedDistributor = this.pricing.selected_distributor ||
-        (distributors.length > 0 ? distributors[0][0] : '');
-      const selectedTariff = this.pricing.selected_tariff ||
-        (selectedDistributor && Object.keys(this.pricing.distributors[selectedDistributor] || {}).length > 0
-          ? (Object.keys(this.pricing.distributors[selectedDistributor] as Record<string, PricingRate>)[0] || '')
-          : '');
-      const selectedTariffRates = selectedDistributor
-        ? this.pricing.distributors[selectedDistributor]?.[selectedTariff]
-        : null;
-      const priceIncl = selectedTariffRates?.price_incl_vat ??
-        this.pricing.confirmed_distribution_price_incl_vat;
-      const priceExcl = selectedTariffRates?.price_excl_vat ??
-        this.pricing.confirmed_distribution_price_excl_vat;
+      // U1: the tariff enum in the registry is the union across ALL
+      // distributors (config_registry.py's _PRICE_TARIFFS) — the visible
+      // options must be re-derived per selected distributor from the live
+      // /pricelists dataset, same as Solar's provider-conditional fields.
+      const distributor = String(this.pricingDraft.confirmed_distribution_distributor ?? '');
+      const tariffOptions: [string, string][] = Object.keys(this.pricing.distributors[distributor] || {})
+        .map((t) => [t, t]);
+      const pricingFields = fieldsFromRegistry(this._registry, 'pricing').map((f) =>
+        f.key === 'confirmed_distribution_tariff' ? { ...f, options: tariffOptions } : f,
+      );
 
       return html`
         <section class="step step-pricing" data-step="pricing">
           <h3>③ Ceny</h3>
           <div class="step-card">
-            <label>
-              Distributor
-              <select data-testid="pricing-distributor-select">
-                ${Object.keys(this.pricing.distributors).map((item) => html`
-                  <option value=${item} ?selected=${item === selectedDistributor}>
-                    ${item}
-                  </option>
-                `)}
-              </select>
-            </label>
-            <label>
-              Tariffa
-              <select data-testid="pricing-tariff-select">
-                ${Object.keys(this.pricing.distributors[selectedDistributor] || {}).map((item) => html`
-                  <option value=${item} ?selected=${item === selectedTariff}>
-                    ${item}
-                  </option>
-                `)}
-              </select>
-            </label>
-            <div>
-              <label>
-                Cena s DPH
-                <input
-                  data-testid="pricing-price-incl"
-                  value=${String(priceIncl)}
-                  readonly
-                />
-              </label>
-              <label>
-                Cena bez DPH
-                <input
-                  data-testid="pricing-price-excl"
-                  value=${String(priceExcl)}
-                  readonly
-                />
-              </label>
-            </div>
+            ${pricingFields.map((f) =>
+              renderFieldPresenter(f, {
+                value: this.pricingDraft[f.key],
+                dirty: false,
+                secretSet: false,
+                onChange: (v: unknown) => this.onPricingFieldChange(f.key, v),
+                entityCatalog: [],
+              }),
+            )}
+            <button
+              type="button"
+              data-testid="pricing-confirm"
+              ?disabled=${this.pricingSaving}
+              @click=${() => void this.confirmPricing()}
+            >${this.pricingSaving ? 'Ukládám…' : 'Potvrdit'}</button>
+            ${this.pricingSaveError
+              ? html`<p data-testid="pricing-save-error">${this.pricingSaveError}</p>`
+              : nothing}
             ${this.pricing.stale_warning
               ? html`<p data-testid="pricing-stale-warning">Ceny jsou z předchozího roku.</p>`
               : nothing}

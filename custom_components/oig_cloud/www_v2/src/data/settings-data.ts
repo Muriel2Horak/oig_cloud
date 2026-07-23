@@ -89,14 +89,24 @@ export interface BoilerConfig {
   boiler_legionella_target_temp_c: number | null;
 }
 
+/** F1 Plan 3.6 Task 7 — mirrors config_registry.py's `pricing` section. */
+export interface PricingConfig {
+  confirmed_distribution_distributor: string;
+  confirmed_distribution_tariff: string;
+  confirmed_distribution_price_incl_vat: number;
+  confirmed_distribution_price_excl_vat: number;
+  confirmed_distribution_unit: string;
+}
+
 export interface ModuleConfig {
   modules: ModulesConfig;
   battery: BatteryConfig;
   solar: SolarConfig;
   boiler: BoilerConfig;
+  pricing?: PricingConfig;
 }
 
-export type SettingsSection = 'modules' | 'battery' | 'solar' | 'boiler';
+export type SettingsSection = 'modules' | 'battery' | 'solar' | 'boiler' | 'pricing';
 
 export async function loadModuleConfig(): Promise<ModuleConfig | null> {
   const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(

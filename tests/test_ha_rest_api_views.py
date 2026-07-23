@@ -1331,3 +1331,80 @@ async def test_module_config_get_requires_admin_and_hides_solar_location():
     assert "solar_forecast_latitude" not in body_text
     assert "solar_forecast_longitude" not in body_text
     assert "site_leak_12345" not in body_text
+
+
+# --- F1 Plan 3.6 Task 7: pricing section wired into module_config GET/POST -
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_includes_pricing_section():
+    """The GET section tuple omitted "pricing" — the exact gap Task 7 closes."""
+    hass, entry = _make_hass_for_module_config("pricebox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    request = _module_config_request(hass, {})
+    response = await view.get(request, "pricebox")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert "pricing" in payload
+    pricing = payload["pricing"]
+    for key in (
+        "confirmed_distribution_distributor",
+        "confirmed_distribution_tariff",
+        "confirmed_distribution_price_incl_vat",
+        "confirmed_distribution_price_excl_vat",
+        "confirmed_distribution_unit",
+    ):
+        assert key in pricing
+    assert isinstance(pricing["confirmed_distribution_distributor"], str)
+    assert pricing["confirmed_distribution_distributor"] != ""
+    assert isinstance(pricing["confirmed_distribution_tariff"], str)
+    assert pricing["confirmed_distribution_tariff"] != ""
+    assert isinstance(pricing["confirmed_distribution_price_incl_vat"], float)
+    assert isinstance(pricing["confirmed_distribution_price_excl_vat"], float)
+    assert isinstance(pricing["confirmed_distribution_unit"], str)
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_round_trips_via_merge_entry_options():
+    """POST {section:"pricing", values} must persist via the same shared
+    merge_entry_options path every other section uses — no special-casing."""
+    hass, entry = _make_hass_for_module_config("pricebox", {})
+    view = api_module.OIGCloudModuleConfigView()
+
+    baseline = json.loads(
+        (await view.get(_module_config_request(hass, {}), "pricebox")).text
+    )["pricing"]
+    distributor = baseline["confirmed_distribution_distributor"]
+    tariff = baseline["confirmed_distribution_tariff"]
+
+    post_response = await view.post(
+        _module_config_request(
+            hass,
+            {
+                "section": "pricing",
+                "values": {
+                    "confirmed_distribution_distributor": distributor,
+                    "confirmed_distribution_tariff": tariff,
+                    "confirmed_distribution_price_incl_vat": 11.5,
+                    "confirmed_distribution_price_excl_vat": 9.0,
+                    "confirmed_distribution_unit": "Kc/kWh",
+                },
+            },
+        ),
+        "pricebox",
+    )
+    post_payload = json.loads(post_response.text)
+
+    assert post_response.status == 200
+    assert post_payload["updated"] is True
+    assert entry.options["confirmed_distribution_price_incl_vat"] == 11.5
+    assert entry.options["confirmed_distribution_price_excl_vat"] == 9.0
+    assert entry.options["confirmed_distribution_unit"] == "Kc/kWh"
+
+    after = json.loads(
+        (await view.get(_module_config_request(hass, {}), "pricebox")).text
+    )["pricing"]
+    assert after["confirmed_distribution_price_incl_vat"] == 11.5
+    assert after["confirmed_distribution_price_excl_vat"] == 9.0
+    assert after["confirmed_distribution_unit"] == "Kc/kWh"
