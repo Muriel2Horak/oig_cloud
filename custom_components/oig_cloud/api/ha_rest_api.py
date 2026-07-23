@@ -1848,10 +1848,19 @@ class OIGCloudOnboardingView(HomeAssistantView):
         # (soft guide — no lock; #5/#6). "complete_step" (the FE's complete verb)
         # and the default both mean done.
         action = payload.get("action") or payload.get("status")
+        normalized_action = action.strip().lower() if isinstance(action, str) else None
+        if normalized_action == "finish":
+            result = await ob.async_finish()
+            code = result.get("code")
+            if code == "finish_in_progress":
+                return web.json_response(result, status=409)
+            if code == "finish_save_failed":
+                return web.json_response(result, status=503)
+            return web.json_response(result)
         if step is not None:
             if not isinstance(step, str) or step not in ONBOARDING_STEPS:
                 return web.json_response({"error": "unknown step"}, status=400)
-            if isinstance(action, str) and action.strip().lower() in ("skip", "skipped"):
+            if normalized_action in ("skip", "skipped"):
                 await ob.async_skip_step(step)
             else:
                 await ob.async_complete_step(step)

@@ -2,6 +2,7 @@
 skip (POST {action: skip}), end-to-end, still admin-gated and fail-closed (#6)."""
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -40,6 +41,21 @@ class _MemStore:
     async def async_save(self, data):
         self.saved = data
         _MemStore._bucket[self._key] = data
+
+
+class _SlowMemStore(_MemStore):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def async_save(self, data):
+        _SlowMemStore.entered.set()
+        await _SlowMemStore.release.wait()
+        await super().async_save(data)
+
+
+class _FailingMemStore(_MemStore):
+    async def async_save(self, data):
+        raise RuntimeError("boom")
 
 
 @pytest.fixture
@@ -111,3 +127,97 @@ async def test_post_default_action_completes(ob_env):
     resp = await ob_env.view.post(req, "box1")
     body = json.loads(resp.text)
     assert body["steps"]["pricing"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_post_finish_preserves_pending_solar_and_sets_finished_at(ob_env):
+    await ob_env.view.post(
+        DummyJsonRequest(ob_env.hass, payload={"step": "ai"}), "box1"
+    )
+    await ob_env.view.post(
+        DummyJsonRequest(ob_env.hass, payload={"step": "pricing"}), "box1"
+    )
+
+    resp = await ob_env.view.post(
+        DummyJsonRequest(ob_env.hass, payload={"action": "finish"}), "box1"
+    )
+    body = json.loads(resp.text)
+
+    assert resp.status == 200
+    assert body["steps"] == {"ai": "done", "solar": "pending", "pricing": "done"}
+    assert body["finished_at"]
+
+    resp2 = await ob_env.view.get(DummyRequest(ob_env.hass), "box1")
+    body2 = json.loads(resp2.text)
+    assert body2["steps"] == {"ai": "done", "solar": "pending", "pricing": "done"}
+    assert body2["finished_at"] == body["finished_at"]
+
+
+@pytest.mark.asyncio
+async def test_post_finish_rejects_duplicate_in_flight(ob_env, monkeypatch):
+    _SlowMemStore.entered = asyncio.Event()
+    _SlowMemStore.release = asyncio.Event()
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.onboarding.state.Store", _SlowMemStore
+    )
+
+    first = asyncio.create_task(
+        ob_env.view.post(
+            DummyJsonRequest(ob_env.hass, payload={"action": "finish"}), "box1"
+        )
+    )
+    await _SlowMemStore.entered.wait()
+    second = await ob_env.view.post(
+        DummyJsonRequest(ob_env.hass, payload={"action": "finish"}), "box1"
+    )
+    _SlowMemStore.release.set()
+    first_resp = await first
+
+    assert first_resp.status == 200
+    assert second.status == 409
+    body = json.loads(second.text)
+    assert body["code"] == "finish_in_progress"
+    assert body["error"] == "finish_in_progress"
+
+
+@pytest.mark.asyncio
+async def test_post_finish_persists_for_grandfathered_settings_launch(ob_env):
+    ob_env.entry.options = {
+        "solar_forecast_provider": "forecast_solar",
+        "solar_forecast_api_key": "fs_x",
+    }
+    await ob_env.view.post(
+        DummyJsonRequest(ob_env.hass, payload={"step": "pricing"}), "box1"
+    )
+
+    resp = await ob_env.view.post(
+        DummyJsonRequest(ob_env.hass, payload={"action": "finish"}), "box1"
+    )
+    body = json.loads(resp.text)
+
+    assert resp.status == 200
+    assert body["grandfathered"] is True
+    assert body["steps"]["pricing"] == "done"
+    assert body["steps"]["solar"] == "pending"
+    assert body["finished_at"]
+
+    resp2 = await ob_env.view.get(DummyRequest(ob_env.hass), "box1")
+    body2 = json.loads(resp2.text)
+    assert body2["grandfathered"] is True
+    assert body2["finished_at"] == body["finished_at"]
+
+
+@pytest.mark.asyncio
+async def test_post_finish_store_failure_is_classified(ob_env, monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.onboarding.state.Store", _FailingMemStore
+    )
+
+    resp = await ob_env.view.post(
+        DummyJsonRequest(ob_env.hass, payload={"action": "finish"}), "box1"
+    )
+    body = json.loads(resp.text)
+
+    assert resp.status == 503
+    assert body["code"] == "finish_save_failed"
+    assert body["error"] == "finish_save_failed"

@@ -9,15 +9,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
+import type { FieldRegistry } from '@/data/registry-data';
 
 // --- mocks mirrored from onboarding-soft-gate.test.ts (same app surface) ----
+
+const fetchOIGAPI = vi.hoisted(() =>
+  vi.fn<[path: string, options?: RequestInit], Promise<unknown>>().mockResolvedValue(null),
+);
+const fetchOIGAPITyped = vi.hoisted(() =>
+  vi.fn<[path: string, options?: RequestInit], Promise<any>>().mockResolvedValue({
+    ok: true,
+    status: 200,
+    data: null,
+  }),
+);
+const loadFieldRegistryMock = vi.hoisted(() =>
+  vi.fn<[], Promise<FieldRegistry | null>>().mockResolvedValue(null),
+);
+const saveModuleConfigMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ ok: true }),
+);
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {
     getHass: vi.fn(() => new Promise(() => undefined)),
     getHassSync: vi.fn().mockReturnValue(null),
     refreshHass: vi.fn().mockResolvedValue(null),
-    fetchOIGAPI: vi.fn().mockResolvedValue(null),
+    fetchOIGAPI,
+    fetchOIGAPITyped,
   },
 }));
 
@@ -42,16 +61,19 @@ vi.mock('@/data/settings-data', () => ({
     battery: {},
     solar: {},
     boiler: {},
+    pricing: {},
   }),
-  saveModuleConfig: vi.fn(),
+  saveModuleConfig: saveModuleConfigMock,
   waitForModuleConfigAfterReload: vi.fn(),
 }));
 
-vi.mock('@/data/registry-data', () => ({
-  loadFieldRegistry: vi.fn().mockResolvedValue(null),
-  fieldsFromRegistry: vi.fn().mockReturnValue([]),
-  isVisible: vi.fn().mockReturnValue(true),
-}));
+vi.mock('@/data/registry-data', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/data/registry-data')>();
+  return {
+    ...actual,
+    loadFieldRegistry: loadFieldRegistryMock,
+  };
+});
 
 vi.mock('@/ui/components/header', () => ({}));
 vi.mock('@/ui/components/theme-provider', () => ({}));
@@ -103,10 +125,81 @@ function wizardRoot(wizard: HTMLElement): ShadowRoot {
   return wizard.shadowRoot as unknown as ShadowRoot;
 }
 
+const PRICING_STATE = {
+  confirmed_distribution_distributor: 'cez',
+  confirmed_distribution_tariff: 'D57d',
+  confirmed_distribution_price_incl_vat: 7.1,
+  confirmed_distribution_price_excl_vat: 5.6,
+  confirmed_distribution_unit: 'Kc/kWh',
+};
+
+const PRICING_PAYLOAD = {
+  distributors: {
+    cez: {
+      D57d: {
+        price_incl_vat: 7.1,
+        price_excl_vat: 5.6,
+        unit: 'Kc/kWh',
+      },
+    },
+  },
+  tariffs: ['D57d'],
+  selected_distributor: 'cez',
+  selected_tariff: 'D57d',
+  confirmed_distribution_price_incl_vat: 7.1,
+  confirmed_distribution_price_excl_vat: 5.6,
+  confirmed_distribution_unit: 'Kc/kWh',
+  stale_warning: false,
+  valid_from: null,
+  year: 2026,
+};
+
+const MINIMAL_REGISTRY: FieldRegistry = {
+  sections: ['pricing'],
+  fields: {},
+};
+
+type StepState = Record<'ai' | 'solar' | 'pricing', 'pending' | 'done' | 'skipped'>;
+
+interface OnboardingFixtureState {
+  schema_version: number;
+  steps: StepState;
+  timestamps: Record<string, unknown>;
+  provider: string | null;
+  grandfathered: boolean;
+  finished_at?: string;
+}
+
+function cloneState<T>(state: T): T {
+  return JSON.parse(JSON.stringify(state)) as T;
+}
+
+async function flushWizard(wizard: HTMLElement & { updateComplete: Promise<boolean> }) {
+  await wizard.updateComplete;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await wizard.updateComplete;
+}
+
+function typedFinishCalls() {
+  return fetchOIGAPITyped.mock.calls.filter(([path, options]) => {
+    if (path !== '/SN123/onboarding' || options?.method !== 'POST') return false;
+    return JSON.parse(String(options.body)).action === 'finish';
+  });
+}
+
 describe('wizard mount + route (Plan 3.5 item 4)', () => {
   let el: TestApp;
 
   beforeEach(async () => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPI.mockResolvedValue(null);
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(null);
+    saveModuleConfigMock.mockResolvedValue({ ok: true });
+
     el = await fixture<TestApp>(html`<oig-app></oig-app>`);
     (el as any).loading = false;
     (el as any).error = null;
@@ -265,5 +358,242 @@ describe('wizard mount + route (Plan 3.5 item 4)', () => {
     expect(el.shadowRoot!.querySelector('oig-tabs')).toBeTruthy();
     // activeTab stays on `flow` — the wizard never replaces the dashboard.
     expect((el as any).activeTab).toBe('flow');
+  });
+});
+
+describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    loadFieldRegistryMock.mockResolvedValue(MINIMAL_REGISTRY);
+    saveModuleConfigMock.mockResolvedValue({ ok: true });
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  it('real Finish click posts action:"finish" and remount shows ai=done, solar=pending, pricing=done', async () => {
+    let persisted: OnboardingFixtureState = {
+      schema_version: 1,
+      steps: { ai: 'pending', solar: 'pending', pricing: 'pending' },
+      timestamps: {},
+      provider: null,
+      grandfathered: false,
+    };
+
+    fetchOIGAPI.mockImplementation((path: string, options?: RequestInit) => {
+      if (path === '/SN123/onboarding') {
+        if (options?.method === 'POST') {
+          const body = JSON.parse(String(options.body));
+          if (body.action === 'complete_step') {
+            const step = body.step as keyof StepState;
+            persisted = {
+              ...persisted,
+              steps: { ...persisted.steps, [step]: 'done' },
+            };
+          }
+        }
+        return Promise.resolve(cloneState(persisted));
+      }
+      if (path === '/SN123/pricelists') return Promise.resolve(PRICING_PAYLOAD);
+      if (path === '/SN123/module_config') return Promise.resolve({ pricing: PRICING_STATE });
+      if (path === '/SN123/ai') {
+        return Promise.resolve({ ok: true, provider: 'groq', verified: true });
+      }
+      return Promise.resolve(null);
+    });
+
+    fetchOIGAPITyped.mockImplementation((path: string, options?: RequestInit) => {
+      if (path === '/SN123/onboarding' && options?.method === 'POST') {
+        const body = JSON.parse(String(options.body));
+        if (body.action === 'finish') {
+          persisted = { ...persisted, finished_at: '2026-07-23T00:00:00+00:00' };
+          return Promise.resolve({ ok: true, status: 200, data: cloneState(persisted) });
+        }
+      }
+      return Promise.resolve({ ok: true, status: 200, data: null });
+    });
+
+    let wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard
+        .inverterSn=${'SN123'}
+        ?open=${true}
+      ></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    const aiStep = wizard.shadowRoot!.querySelector('oig-onboarding-step-ai') as
+      | (HTMLElement & { updateComplete: Promise<boolean> })
+      | null;
+    expect(aiStep).toBeTruthy();
+    await flushWizard(aiStep!);
+    const aiKey = aiStep!.shadowRoot!.querySelector('input[type="password"]') as HTMLInputElement;
+    expect(aiKey).toBeTruthy();
+    aiKey.value = 'gsk_123456789';
+    aiKey.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await flushWizard(wizard);
+
+    let nextBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+    nextBtn.click();
+    await flushWizard(wizard);
+    nextBtn.click();
+    await flushWizard(wizard);
+
+    const confirmBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="pricing-confirm"]',
+    ) as HTMLButtonElement;
+    confirmBtn.click();
+    await flushWizard(wizard);
+    nextBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+    nextBtn.click();
+    await flushWizard(wizard);
+
+    expect(typedFinishCalls()).toHaveLength(1);
+    expect(JSON.parse(String(typedFinishCalls()[0][1]!.body))).toEqual({ action: 'finish' });
+    expect(persisted.steps).toEqual({ ai: 'done', solar: 'pending', pricing: 'done' });
+    expect(wizard.hasAttribute('open')).toBe(false);
+
+    fixtureCleanup();
+    wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard
+        .inverterSn=${'SN123'}
+        ?open=${true}
+      ></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-ai"]')?.textContent)
+      .toContain('done');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-solar"]')?.textContent)
+      .toContain('pending');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-pricing"]')?.textContent)
+      .toContain('done');
+  });
+
+  it('double-clicking Finish issues exactly one action:"finish" request', async () => {
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path === '/SN123/onboarding') {
+        return Promise.resolve({
+          schema_version: 1,
+          steps: { ai: 'done', solar: 'pending', pricing: 'done' },
+          timestamps: {},
+          provider: null,
+          grandfathered: false,
+        });
+      }
+      if (path === '/SN123/pricelists') return Promise.resolve(PRICING_PAYLOAD);
+      if (path === '/SN123/module_config') return Promise.resolve({ pricing: PRICING_STATE });
+      return Promise.resolve(null);
+    });
+
+    let resolveFinish: ((value: unknown) => void) | null = null;
+    fetchOIGAPITyped.mockImplementation((_path: string, _options?: RequestInit) =>
+      new Promise((resolve) => {
+        resolveFinish = resolve;
+      }),
+    );
+
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard
+        .inverterSn=${'SN123'}
+        ?open=${true}
+      ></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    (wizard.shadowRoot!.querySelector('button[data-step="pricing"]') as HTMLButtonElement).click();
+    await flushWizard(wizard);
+
+    const finishBtn = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-next"]',
+    ) as HTMLButtonElement;
+    finishBtn.click();
+    finishBtn.click();
+    await flushWizard(wizard);
+
+    expect(typedFinishCalls()).toHaveLength(1);
+
+    resolveFinish!({
+      ok: true,
+      status: 200,
+      data: {
+        schema_version: 1,
+        steps: { ai: 'done', solar: 'pending', pricing: 'done' },
+        timestamps: {},
+        provider: null,
+        grandfathered: false,
+        finished_at: '2026-07-23T00:00:00+00:00',
+      },
+    });
+    await flushWizard(wizard);
+  });
+
+  it('classified Finish failure keeps the wizard open with a retry control', async () => {
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path === '/SN123/onboarding') {
+        return Promise.resolve({
+          schema_version: 1,
+          steps: { ai: 'done', solar: 'pending', pricing: 'done' },
+          timestamps: {},
+          provider: null,
+          grandfathered: false,
+        });
+      }
+      if (path === '/SN123/pricelists') return Promise.resolve(PRICING_PAYLOAD);
+      if (path === '/SN123/module_config') return Promise.resolve({ pricing: PRICING_STATE });
+      return Promise.resolve(null);
+    });
+    fetchOIGAPITyped
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        code: 'finish_save_failed',
+        error: 'finish_save_failed',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        data: {
+          schema_version: 1,
+          steps: { ai: 'done', solar: 'pending', pricing: 'done' },
+          timestamps: {},
+          provider: null,
+          grandfathered: false,
+          finished_at: '2026-07-23T00:00:00+00:00',
+        },
+      });
+
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard
+        .inverterSn=${'SN123'}
+        ?open=${true}
+      ></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    (wizard.shadowRoot!.querySelector('button[data-step="pricing"]') as HTMLButtonElement).click();
+    await flushWizard(wizard);
+
+    (wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement).click();
+    await flushWizard(wizard);
+
+    expect(wizard.hasAttribute('open')).toBe(true);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-finish-error"]')).toBeTruthy();
+    const retry = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-finish-retry"]',
+    ) as HTMLButtonElement;
+    expect(retry).toBeTruthy();
+
+    retry.click();
+    await flushWizard(wizard);
+    expect(typedFinishCalls()).toHaveLength(2);
+    expect(wizard.hasAttribute('open')).toBe(false);
   });
 });

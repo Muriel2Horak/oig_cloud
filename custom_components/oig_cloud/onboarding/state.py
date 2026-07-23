@@ -2,7 +2,7 @@
 
 SCOPE-REVISION #6: onboarding is a SOFT guide. There is NO ``locked`` concept and
 nothing here may imply one — an existing user sees a banner, never a wall. The state
-holds only ``{schema_version, steps, timestamps, provider}``; the four banned keys
+holds only ``{schema_version, steps, timestamps, provider, finished_at}``; the four banned keys
 ("locked", "gate", "dashboard_locked", "complete_required") never appear.
 
 The state persists over the private Home Assistant Store, mirroring the
@@ -14,15 +14,20 @@ before solar.
 """
 from __future__ import annotations
 
+import asyncio
+import copy
 import logging
 from typing import Any, Dict, Mapping, Optional
 
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from ..const import DOMAIN
+
 _LOGGER = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
+_FINISH_LOCKS_KEY = "onboarding_finish_locks"
 
 #: The three independent onboarding steps. AI is optional (#5) and unordered.
 ONBOARDING_STEPS = ("ai", "solar", "pricing")
@@ -35,7 +40,24 @@ def _fresh_state() -> Dict[str, Any]:
         "steps": {step: "pending" for step in ONBOARDING_STEPS},
         "timestamps": {step: None for step in ONBOARDING_STEPS},
         "provider": None,
+        "finished_at": None,
     }
+
+
+def _finish_lock_for(hass: Any, entry_id: str) -> asyncio.Lock:
+    data = getattr(hass, "data", None)
+    if not isinstance(data, dict):
+        return asyncio.Lock()
+    domain_data = data.setdefault(DOMAIN, {})
+    if not isinstance(domain_data, dict):
+        domain_data = {}
+        data[DOMAIN] = domain_data
+    locks = domain_data.setdefault(_FINISH_LOCKS_KEY, {})
+    lock = locks.get(entry_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        locks[entry_id] = lock
+    return lock
 
 
 def is_grandfathered(options: Optional[Mapping[str, Any]]) -> bool:
@@ -73,6 +95,7 @@ class OnboardingState:
         # banner, never a wall. None → not grandfathered (is_grandfathered guards).
         self._options: Optional[Mapping[str, Any]] = options
         self._data: Optional[Dict[str, Any]] = None
+        self._finish_lock = _finish_lock_for(hass, entry_id)
 
     async def _async_data(self) -> Dict[str, Any]:
         if self._data is None:
@@ -126,3 +149,20 @@ class OnboardingState:
         data["provider"] = provider
         await self._store.async_save(data)
         return data
+
+    async def async_finish(self) -> Dict[str, Any]:
+        """Persist a final checkpoint without changing any per-step status."""
+        if self._finish_lock.locked():
+            return {"error": "finish_in_progress", "code": "finish_in_progress"}
+
+        async with self._finish_lock:
+            current = await self._async_data()
+            data = copy.deepcopy(current)
+            data["finished_at"] = dt_util.utcnow().isoformat()
+            try:
+                await self._store.async_save(data)
+            except Exception as err:
+                _LOGGER.error("Failed to persist onboarding finish: %s", err)
+                return {"error": "finish_save_failed", "code": "finish_save_failed"}
+            self._data = data
+            return data

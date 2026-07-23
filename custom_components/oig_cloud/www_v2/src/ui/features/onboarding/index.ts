@@ -35,11 +35,13 @@ import { STEP_PRICING } from './step-pricing';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 export { renderFieldPresenter, fieldStyles };
 import {
+  completeOnboardingStep,
   loadOnboardingState,
   skipOnboardingStep,
   verifyAiKey,
   type OnboardingState,
   type OnboardingStepId,
+  type OnboardingStepStatus,
   type AiVerifyResult,
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
@@ -286,6 +288,12 @@ const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
   pricing: STEP_PRICING.skippable,
 };
 
+const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
+  pending: 'pending',
+  done: 'done',
+  skipped: 'skipped',
+};
+
 /**
  * `POST /{sn}/solar_test` result shape — mirrors
  * `run_solar_candidate_test`'s success dict (`forecast/candidate_test.py`).
@@ -359,9 +367,13 @@ export class OigOnboardingWizard extends LitElement {
 
   /** Internal step routing — single source of truth is `WIZARD_STEPS`. */
   @state() private currentStep: OnboardingStepId = 'ai';
+  @state() private onboardingState: OnboardingState | null = null;
   @state() private pricing: PricelistsResponse | null = null;
   @state() private pricingLoading = false;
   @state() private pricingLoadFailed = false;
+  @state() private finishing = false;
+  @state() private finishError: string | null = null;
+  private _onboardingStateLoadedFor: string | null = null;
 
   /** Pricing step: draft form values, seeded from the persisted module_config
    * `pricing` section (Task 7) — never re-fetched for step navigation. */
@@ -515,15 +527,146 @@ export class OigOnboardingWizard extends LitElement {
     }
 
     footer button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .step-status {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+      opacity: 0.72;
+      font-weight: 400;
+    }
+
+    .finish-status {
+      padding: 0 18px 12px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .finish-status p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--error-color, #ff8a80);
+    }
+
+    .finish-status button {
+      padding: 7px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.18));
+      background: var(--card-bg, transparent);
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+    }
   `;
 
-  private goNext(): void {
-    const i = WIZARD_STEPS.indexOf(this.currentStep);
-    if (i < 0) return;
-    if (i >= WIZARD_STEPS.length - 1) {
+  private async refreshOnboardingState(force = false): Promise<void> {
+    if (!this.inverterSn) return;
+    if (!force && this._onboardingStateLoadedFor === this.inverterSn) return;
+    this._onboardingStateLoadedFor = this.inverterSn;
+    this.onboardingState = await loadOnboardingState(this.inverterSn);
+  }
+
+  private completeCurrentStepIfNeeded(): Promise<void> | void {
+    if (!this.inverterSn) return;
+    if (this.currentStep === 'solar' && !this.solarTestMatchesDraft) return;
+
+    return this.persistCurrentStep();
+  }
+
+  private async persistCurrentStep(): Promise<void> {
+    try {
+      const state = await completeOnboardingStep(this.inverterSn, this.currentStep);
+      if (state) this.onboardingState = state;
+      this.dispatchEvent(new CustomEvent('onboarding-changed', {
+        bubbles: true,
+        composed: true,
+      }));
+    } catch {
+      // Soft guide: failed per-step persistence must not block navigation.
+    }
+  }
+
+  private finishErrorMessage(code: string, error?: string): string {
+    if (code === 'finish_in_progress') {
+      return 'Dokončení už probíhá.';
+    }
+    if (code === 'finish_save_failed') {
+      return 'Dokončení se nepodařilo uložit.';
+    }
+    return error || 'Dokončení se nepodařilo.';
+  }
+
+  private async sendFinishRequest(): Promise<void> {
+    const result = await haClient.fetchOIGAPITyped<OnboardingState>(
+      `/${this.inverterSn}/onboarding`,
+      { method: 'POST', body: JSON.stringify({ action: 'finish' }) },
+    );
+    if (!result.ok) {
+      this.finishError = this.finishErrorMessage(result.code, result.error);
+      return;
+    }
+    if (result.data) this.onboardingState = result.data;
+    this.dispatchEvent(new CustomEvent('onboarding-changed', {
+      bubbles: true,
+      composed: true,
+    }));
+    this.close();
+  }
+
+  private async finish(): Promise<void> {
+    if (!this.inverterSn) {
       this.close();
       return;
     }
+    if (this.finishing) return;
+
+    this.finishing = true;
+    this.finishError = null;
+    try {
+      await this.sendFinishRequest();
+    } finally {
+      this.finishing = false;
+    }
+  }
+
+  private async advanceFromCurrentStep(): Promise<void> {
+    const i = WIZARD_STEPS.indexOf(this.currentStep);
+    if (i < 0) return;
+    if (i >= WIZARD_STEPS.length - 1) {
+      await this.finish();
+      return;
+    }
+    this.finishError = null;
+    this.currentStep = WIZARD_STEPS[i + 1];
+  }
+
+  private async goNext(): Promise<void> {
+    const i = WIZARD_STEPS.indexOf(this.currentStep);
+    if (i < 0) return;
+
+    if (i >= WIZARD_STEPS.length - 1) {
+      if (this.finishing) return;
+      this.finishing = true;
+      this.finishError = null;
+      try {
+        const completion = this.completeCurrentStepIfNeeded();
+        if (completion) await completion;
+        if (!this.inverterSn) {
+          this.close();
+        } else {
+          await this.sendFinishRequest();
+        }
+      } finally {
+        this.finishing = false;
+      }
+      return;
+    }
+
+    const completion = this.completeCurrentStepIfNeeded();
+    if (completion) await completion;
+    this.finishError = null;
     this.currentStep = WIZARD_STEPS[i + 1];
   }
 
@@ -542,7 +685,8 @@ export class OigOnboardingWizard extends LitElement {
   private async skip(): Promise<void> {
     if (this.inverterSn) {
       try {
-        await skipOnboardingStep(this.inverterSn, this.currentStep);
+        const state = await skipOnboardingStep(this.inverterSn, this.currentStep);
+        if (state) this.onboardingState = state;
         this.dispatchEvent(new CustomEvent('onboarding-changed', {
           bubbles: true,
           composed: true,
@@ -551,7 +695,7 @@ export class OigOnboardingWizard extends LitElement {
         // Soft guide: a failed skip must not wall the user — advance anyway.
       }
     }
-    this.goNext();
+    await this.advanceFromCurrentStep();
   }
 
   private close(): void {
@@ -593,6 +737,7 @@ export class OigOnboardingWizard extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     if (this.open && this.inverterSn) {
+      void this.refreshOnboardingState(true);
       void this.refreshPricing();
       void this.loadSolarRegistry();
       void this.loadPricingConfig();
@@ -644,6 +789,7 @@ export class OigOnboardingWizard extends LitElement {
       this.open &&
       this.inverterSn
     ) {
+      void this.refreshOnboardingState(true);
       if (!this.pricing && !this.pricingLoading) {
         void this.refreshPricing();
       }
@@ -908,18 +1054,44 @@ export class OigOnboardingWizard extends LitElement {
 
           <nav class="steps" data-testid="wizard-steps" aria-label="Kroky průvodce">
             ${WIZARD_STEPS.map((s, i) => html`
+              ${(() => {
+                const status = this.onboardingState?.steps[s] ?? 'pending';
+                return html`
               <button
                 type="button"
                 class=${this.currentStep === s ? 'active' : ''}
                 data-step=${s}
                 @click=${() => this.jumpTo(s)}
-              >${i + 1} ${STEP_LABELS[s]}</button>
+              >
+                ${i + 1} ${STEP_LABELS[s]}
+                <span
+                  class="step-status"
+                  data-testid=${`wizard-step-status-${s}`}
+                  data-status=${status}
+                >${STEP_STATUS_LABELS[status]}</span>
+              </button>
+                `;
+              })()}
             `)}
           </nav>
 
           <div class="content" data-testid="wizard-content">
             ${this.renderStepContent()}
           </div>
+
+          ${this.finishError
+            ? html`
+                <div class="finish-status">
+                  <p data-testid="wizard-finish-error">${this.finishError}</p>
+                  <button
+                    type="button"
+                    data-testid="wizard-finish-retry"
+                    ?disabled=${this.finishing}
+                    @click=${() => void this.finish()}
+                  >Zkusit znovu</button>
+                </div>
+              `
+            : nothing}
 
           <footer>
             <button
@@ -940,8 +1112,9 @@ export class OigOnboardingWizard extends LitElement {
               type="button"
               class="primary next"
               data-testid="wizard-next"
-              @click=${this.goNext}
-            >${isLast ? 'Dokončit' : 'Další →'}</button>
+              ?disabled=${this.finishing}
+              @click=${() => void this.goNext()}
+            >${this.finishing ? 'Dokončuji…' : isLast ? 'Dokončit' : 'Další →'}</button>
           </footer>
         </div>
       </div>
