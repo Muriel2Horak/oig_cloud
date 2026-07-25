@@ -288,7 +288,7 @@ describe('Task 11 — soft-guide real interaction proof (F1 Plan 3.6, occlusion 
     const active = wizard.shadowRoot!.querySelector(
       '[data-testid="wizard-steps"] button.active',
     ) as HTMLButtonElement | null;
-    expect(active?.getAttribute('data-step')).toBe('pricing');
+    expect(active?.getAttribute('data-step')).toBe('pricing_distribution');
   });
 
   it('clicking wizard-close during the Step-2 error actually closes the wizard, and a dashboard tab click works after', async () => {

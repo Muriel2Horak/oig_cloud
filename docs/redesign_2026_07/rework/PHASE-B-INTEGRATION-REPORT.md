@@ -124,3 +124,47 @@ S2+S3 commit range: `5859cb4cf..fdb10635e` (13 commits) atop `b481403ab`.
   remain and are honestly reported NOT DONE at the continuation wall.
 - S4/S5 child orchestrator was left live (NOT killed) in `/repos/wt-f1-wv2-s4s5`; its bundle can be
   harvested by a further continuation once its run row is terminal.
+
+---
+
+## PHASE B FINAL — S4 + S5 integrated, all gates GREEN (2026-07-25)
+
+Integrated tip: `f1/wizard-v2-impl` (fast-forwarded to this commit). Base `bbfd02613`
+(= `fdb10635e` + docs continuation). S4 and S5 applied from the frozen, cross-family-reviewed
+worker bundles. Both reviews positive before integration.
+
+### Per-task table
+
+| stage | task | worker | model | review | model | verdict | integrated |
+|---|---|---|---|---|---|---|---|
+| S4 | i18n completeness parity guard + hassfest | `task-s4-i18n-completeness-parity-guar-243201` | sonnet | `review-f1-wv2-s4-i18n-parity-has-622d59` | opus | grounded/in_scope/honest/complete, rework=**trivial** | yes |
+| S5 | remove 3-step overlay dead code + retire/update tests | `task-s5-cleanup-3-step-overlay-dead-c-17b8eb` | sonnet | `review-f1-wv2-s5-3-step-overlay-1f486e` | opus-3 | grounded/in_scope/honest/complete, rework=**none** | yes |
+
+- S4 deliverable: `i18n/fields.ts` (+4 keys: ai_provider, ai_base_url, ai_model, enable_dashboard),
+  `__tests__/registry-data.test.ts` (+93 lines — coverage guard: 95 config_registry Field() keys vs
+  ALL_REGISTRY_KEYS, 0 unguarded / 0 stale). Reviewer's `rework=trivial` = exclude stray
+  `pnpm-lock.yaml` / `pnpm-workspace.yaml` (placeholder; CI uses `npm ci`) — those untracked files
+  were NOT committed.
+- S5 deliverable: deleted `onboarding-pricing-render.test.ts` (313 lines, superseded by
+  pricing-distribution + review-mode tests), trimmed `onboarding-production-launch.test.ts`
+  (click-through superseded by mount/step-ai/review-mode tests), JSDoc-only edits to
+  `index.ts` / `onboarding-data.ts` (no code removed), new stale-warning test.
+  8 files, +59 / -533. Reviewer confirmed each removed test superseded or asserts gone behavior.
+
+### FINAL GATES (run by integrator in `/repos/wt-f1-wv2-final`, exact numbers)
+
+| gate | result |
+|---|---|
+| (a) BE full pytest suite | **4510 passed, 28 skipped, 0 failed** (57.4s) |
+| (b) FE tsc `--noEmit` | **clean (rc=0)** |
+| (b) FE vitest full | **1620 passed, 0 failed**, 73 files — **no expected-red remaining** |
+| (c) `npm run build` | **clean (rc=0)**, `dist/` rebuilt + committed (index.js, index.js.map, index.html) |
+| (d) flake8 changed .py vs `fdb10635e` | **0 new** — no `.py` changed (S4/S5 are FE-only) |
+| (e) raw URLs in `translations/{cs,en}.json` description values | **none** (grep rc=1 both files) |
+
+All-green. The ~18 previously expected-red vitest specs are GREEN after S5 (0 failed, no reds left).
+
+### Deliverable
+
+Fast-forward + push `f1/wizard-v2-impl`. NO merge elsewhere, NO deploy. Phase B (S1–S5) complete
+and all-green.

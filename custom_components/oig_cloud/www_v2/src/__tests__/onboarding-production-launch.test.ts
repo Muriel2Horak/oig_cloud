@@ -331,8 +331,10 @@ describe('production-launch anti-stub coverage (F1 Plan 3.6 Task 10)', () => {
     await flush(el, wizard);
     expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]')).toBeTruthy();
     expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-steps"]')).toBeTruthy();
+    // wizard-v2 (Stage S1) opens on `welcome`, the first of the 10-step
+    // sequence — `ai` no longer leads.
     const active = wizard.shadowRoot!.querySelector('button.active') as HTMLButtonElement | null;
-    expect(active?.getAttribute('data-step')).toBe('ai');
+    expect(active?.getAttribute('data-step')).toBe('welcome');
   });
 
   it('entry point 2: the Settings launch-onboarding button opens the SAME wizard component (convergence)', async () => {
@@ -358,203 +360,23 @@ describe('production-launch anti-stub coverage (F1 Plan 3.6 Task 10)', () => {
     expect(wizard.inverterSn).toBe(TEST_SN);
   });
 
-  it('full production click-through: AI -> Solar -> Pricing -> Finish through the real oig-app mount, with matching request payloads at every step, then a fresh remount reflects the persisted values', async () => {
-    // ---- open via the real banner button --------------------------------
-    const banner = getBanner(el)!;
-    (banner.shadowRoot.querySelector('button.launch') as HTMLButtonElement).click();
-    await flush(el);
-
-    const wizard = getWizard(el);
-    expect(wizard.hasAttribute('open')).toBe(true);
-    await flush(el, wizard);
-
-    // ---- Step 1: AI — fill the Groq key input, real [Ověřit] POST -------
-    const aiStep = wizard.shadowRoot!.querySelector('oig-onboarding-step-ai') as
-      HTMLElement & { updateComplete: Promise<boolean> };
-    expect(aiStep).toBeTruthy();
-    await flush(aiStep);
-
-    const aiKeyInput = aiStep.shadowRoot!.querySelector(
-      '[data-provider="groq"] input.paste',
-    ) as HTMLInputElement;
-    expect(aiKeyInput).toBeTruthy();
-    aiKeyInput.value = 'gsk_1234567890';
-    aiKeyInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-    await flush(aiStep, wizard);
-
-    expect(backend.aiPosts).toEqual([{ action: 'verify', provider: 'groq', api_key: 'gsk_1234567890' }]);
-
-    const nextBtn = () => wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement;
-    nextBtn().click(); // AI -> Solar (real POST complete_step "ai")
-    await flush(wizard);
-
-    let active = wizard.shadowRoot!.querySelector('button.active') as HTMLButtonElement | null;
-    expect(active?.getAttribute('data-step')).toBe('solar');
-
-    // ---- Step 2: Solar — fill the registry-driven fields, run [Otestovat] ----
-    // `renderFieldPresenter` renders exactly one `.row` per visible field, in
-    // the registry's own field order (P5 — no second field list) — locate a
-    // field's input by its position in that order rather than inventing a
-    // second selector scheme.
-    function fieldRow(key: string): HTMLElement {
-      return wizard.shadowRoot!.querySelectorAll(
-        '[data-step="solar"] .row',
-      )[SOLAR_FIELD_ORDER.indexOf(key)] as HTMLElement;
-    }
-
-    const setNumber = (key: string, value: number) => {
-      const input = fieldRow(key)?.querySelector('input') as HTMLInputElement;
-      expect(input).toBeTruthy();
-      input.value = String(value);
-      input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-    };
-
-    setNumber('solar_forecast_latitude', 49.5);
-    setNumber('solar_forecast_longitude', 14.0);
-    setNumber('solar_forecast_string1_kwp', 5.4);
-    setNumber('solar_forecast_string1_declination', 35);
-    setNumber('solar_forecast_string1_azimuth', 180);
-    await flush(wizard);
-
-    const solarTestBtn = wizard.shadowRoot!.querySelector('[data-testid="solar-test"]') as HTMLButtonElement;
-    expect(solarTestBtn).toBeTruthy();
-    solarTestBtn.click();
-    await flush(wizard);
-
-    expect(backend.solarTestPosts).toEqual([{
-      provider: 'forecast_solar',
-      solar_forecast_latitude: 49.5,
-      solar_forecast_longitude: 14,
-      solar_forecast_string1_enabled: true,
-      solar_forecast_string1_kwp: 5.4,
-      solar_forecast_string1_declination: 35,
-      solar_forecast_string1_azimuth: 180,
-      solar_forecast_string2_enabled: false,
-    }]);
-    const successEl = wizard.shadowRoot!.querySelector('[data-testid="solar-test-success"]');
-    expect(successEl).toBeTruthy();
-    expect(successEl!.textContent).toContain('12.3');
-
-    nextBtn().click(); // Solar -> Pricing (real POST complete_step "solar", solarTestMatchesDraft=true)
-    await flush(wizard);
-    active = wizard.shadowRoot!.querySelector('button.active') as HTMLButtonElement | null;
-    expect(active?.getAttribute('data-step')).toBe('pricing');
-
-    // ---- Step 3: Pricing — select distributor + tariff, confirm ---------
-    const pricingSelects = () => Array.from(
-      wizard.shadowRoot!.querySelectorAll('[data-step="pricing"] select'),
-    ) as HTMLSelectElement[];
-
-    let [distributorSelect, tariffSelect] = pricingSelects();
-    expect(distributorSelect).toBeTruthy();
-    expect(tariffSelect).toBeTruthy();
-    expect(distributorSelect.value).toBe('cez');
-    expect(tariffSelect.value).toBe('D57d');
-
-    // Select a different distributor — the tariff + price/unit re-derive live
-    // from the /pricelists dataset (R6.3), not a second hard-coded list.
-    distributorSelect.value = 'pre';
-    distributorSelect.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-    await flush(wizard);
-
-    [distributorSelect, tariffSelect] = pricingSelects();
-    expect(distributorSelect.value).toBe('pre');
-    expect(tariffSelect.value).toBe('D26d');
-
-    // Switch back to cez, then EXPLICITLY select a tariff (distinct from the
-    // distributor-triggered default) — proves both controls are real and wired.
-    distributorSelect.value = 'cez';
-    distributorSelect.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-    await flush(wizard);
-
-    [distributorSelect, tariffSelect] = pricingSelects();
-    tariffSelect.value = 'D56d';
-    tariffSelect.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-    await flush(wizard);
-
-    const confirmBtn = wizard.shadowRoot!.querySelector('[data-testid="pricing-confirm"]') as HTMLButtonElement;
-    expect(confirmBtn).toBeTruthy();
-    confirmBtn.click();
-    await flush(wizard);
-
-    expect(backend.moduleConfigPosts).toEqual([{
-      section: 'pricing',
-      values: {
-        confirmed_distribution_distributor: 'cez',
-        confirmed_distribution_tariff: 'D56d',
-        confirmed_distribution_price_incl_vat: 6.8,
-        confirmed_distribution_price_excl_vat: 5.3,
-        confirmed_distribution_unit: 'Kc/kWh',
-      },
-    }]);
-    expect(wizard.shadowRoot!.querySelector('[data-testid="pricing-save-error"]')).toBeFalsy();
-
-    // ---- Finish -----------------------------------------------------------
-    nextBtn().click(); // last step -> Finish (real POST complete_step "pricing" + action:"finish")
-    await flush(el, wizard);
-
-    expect(backend.finishPosts).toEqual([{ action: 'finish' }]);
-    expect(backend.onboardingPosts.filter((p) => p.action === 'complete_step')).toEqual([
-      { action: 'complete_step', step: 'ai' },
-      { action: 'complete_step', step: 'solar' },
-      { action: 'complete_step', step: 'pricing' },
-    ]);
-    expect(backend.onboarding.steps).toEqual({ ai: 'done', solar: 'done', pricing: 'done' });
-    expect(wizard.hasAttribute('open')).toBe(false);
-
-    // ---- Remount fresh with the mocked persisted backend state -----------
-    fixtureCleanup();
-
-    el = await fixture<TestApp>(html`<oig-app></oig-app>`);
-    (el as any).loading = false;
-    (el as any).error = null;
-    el.onboarding = { steps: cloneState(backend.onboarding.steps) };
-    await el.updateComplete;
-
-    // All three steps are now `done` — the banner is correctly ABSENT (its
-    // hide condition, unchanged), not a gap. Both real launch entry points
-    // are already proven above; open directly to inspect the persisted DOM.
-    expect(getBanner(el)).toBeNull();
-    el.onboardingWizardOpen = true;
-    await flush(el);
-
-    const freshWizard = getWizard(el);
-    await flush(el, freshWizard);
-
-    // DOM reflects the persisted step statuses...
-    expect(freshWizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-ai"]')!.textContent)
-      .toContain('done');
-    expect(freshWizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-solar"]')!.textContent)
-      .toContain('done');
-    expect(freshWizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-pricing"]')!.textContent)
-      .toContain('done');
-
-    // ...and the pricing draft is prefilled from the persisted module_config
-    // (Task 7's round-trip), not from the /pricelists suggested default.
-    (freshWizard.shadowRoot!.querySelector('button[data-step="pricing"]') as HTMLButtonElement).click();
-    await flush(freshWizard);
-    const [freshDistributor, freshTariff] = Array.from(
-      freshWizard.shadowRoot!.querySelectorAll('[data-step="pricing"] select'),
-    ) as HTMLSelectElement[];
-    expect(freshDistributor.value).toBe('cez');
-    expect(freshTariff.value).toBe('D56d');
-  });
+  // The full AI -> Solar -> Pricing -> Finish click-through (Task 10's
+  // original anti-stub proof) asserted the retired 3-step shell verbatim:
+  // a single unified "pricing" step with distributor/tariff <select>s and
+  // an explicit [data-testid="pricing-confirm"] button, and an exact
+  // 3-entry complete_step sequence. wizard-v2 (Stage S1-S3) split pricing
+  // into pricing_distribution/pricing_supplier, inserted welcome/modules/
+  // battery/boiler/connection/summary, and replaced the per-step confirm
+  // button with a single batch save on Finish — none of which this test's
+  // premise can express. Retired; the same production-wiring proof now
+  // lives across:
+  //   - banner-launch + full 10-step routing order + Finish + remount
+  //     persistence: onboarding-mount.test.ts
+  //   - AI [Ověřit] POST: onboarding-step-ai.test.ts
+  //   - registry-driven pricing_distribution/pricing_supplier fields:
+  //     onboarding-pricing-distribution.test.ts, onboarding-pricing-supplier.test.ts
+  //   - batch saveModuleConfig on Finish + round-trip prefill from
+  //     module_config (originalValues snapshot): onboarding-review-mode.test.ts
+  //   - solar registry fields + [Otestovat]: onboarding-solar-gps.test.ts,
+  //     onboarding-bootstrap.test.ts
 });
-
-/** Solar registry field order (matches `SOLAR_REGISTRY_FIXTURE`'s insertion
- *  order, filtered by `STEP_SOLAR.visibleFields` for the default draft:
- *  provider=forecast_solar, string1 enabled, string2 disabled) — used to
- *  locate a field's `.row` by position instead of inventing a second
- *  selector scheme (P5). */
-const SOLAR_FIELD_ORDER = [
-  'solar_forecast_provider',
-  'solar_forecast_api_key',
-  'solar_forecast_mode',
-  'solar_forecast_latitude',
-  'solar_forecast_longitude',
-  'solar_forecast_string1_enabled',
-  'solar_forecast_string1_kwp',
-  'solar_forecast_string1_declination',
-  'solar_forecast_string1_azimuth',
-  'solar_forecast_string2_enabled',
-];
