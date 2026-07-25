@@ -29,12 +29,13 @@ import {
   validateKeyShape,
 } from './step-ai';
 import type { FieldRegistry } from '@/data/registry-data';
-import { loadFieldRegistry } from '@/data/registry-data';
+import { loadFieldRegistry, fieldsFromRegistry } from '@/data/registry-data';
+import type { FieldDef } from '@/ui/features/settings';
 import { STEP_SOLAR } from './step-solar';
 import { STEP_PRICING_DISTRIBUTION } from './step-pricing-distribution';
 import { STEP_PRICING_SUPPLIER } from './step-pricing-supplier';
-import { STEP_BATTERY } from './step-battery';
-import { STEP_BOILER } from './step-boiler';
+import { STEP_BATTERY, BATTERY_GROUPS } from './step-battery';
+import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-boiler';
 import { STEP_CONNECTION } from './step-connection';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 export { renderFieldPresenter, fieldStyles };
@@ -274,6 +275,12 @@ export class OigOnboardingStepAi extends LitElement {
             ? html`<span class="done-badge">✓ hotovo</span>`
             : nothing}
         </h2>
+        <div data-testid="ai-intro">
+          <h3>${t('onboarding.ai.intro_heading', this.stepLang)}</h3>
+          <p>${t('onboarding.ai.intro_body', this.stepLang)}</p>
+          <p>${t('onboarding.ai.intro_why_it_matters', this.stepLang)}</p>
+          <p>${t('onboarding.ai.intro_optionality', this.stepLang)}</p>
+        </div>
         <div class="grid">
           ${Object.keys(PROVIDER_GUIDES).map((p) => this.renderProvider(p))}
         </div>
@@ -361,6 +368,20 @@ const STEP_GATE: Partial<Record<OnboardingStepId, string>> = {
   battery: 'enable_battery_prediction',
   boiler: 'enable_boiler',
 };
+
+/**
+ * Modules step grouping (Stage S3 Task 21, UX-SPEC §Step 1) — "Hlavní
+ * moduly" (each gates a later step, `STEP_GATE` above) above "Doplňkové"
+ * (no gated step). Spec-fixed order, NOT the registry's own field order
+ * (`config_registry.py` lists `enable_battery_prediction` before
+ * `enable_pricing`).
+ */
+const MODULES_GROUP_HLAVNI = [
+  'enable_solar_forecast', 'enable_pricing', 'enable_battery_prediction', 'enable_boiler',
+] as const;
+const MODULES_GROUP_DOPLNKOVE = [
+  'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings',
+] as const;
 
 /**
  * `pricing_supplier` registry keys the LEGACY options-flow already wrote
@@ -541,6 +562,20 @@ export class OigOnboardingWizard extends LitElement {
   private _pricingConfigLoaded = false;
   @state() private pricingDraft: Record<string, unknown> = {};
 
+  /** Connection step (Task 20): draft form values for the `basic` registry
+   * section. Not yet seeded from `entry.options` — new-install fields start
+   * empty, same as `solarDraft` before Task 8. */
+  @state() private connectionDraft: Record<string, unknown> = {};
+
+  /**
+   * Boiler step: local edits only (Task 19) — read-seeded per field at render
+   * time from `originalValues` / the registry default, same fallback chain
+   * `seedSolarDraft` uses, but without a persistent seed pass: wiring this
+   * into `sectionDrafts()`/`allDraftValues()` (save + step-9 diff row) is
+   * Stage S3 Task 21 (`:1236` note), not this task.
+   */
+  @state() private boilerDraft: Record<string, unknown> = {};
+
   /**
    * Every section's entry.options-derived value, flattened and frozen once
    * per wizard open (UX-SPEC §3 "snapshotted once at wizard open") — a peer
@@ -553,6 +588,11 @@ export class OigOnboardingWizard extends LitElement {
   private _registry: FieldRegistry | null = null;
   private _registryLoaded = false;
   @state() private solarDraft: Record<string, unknown> = {};
+
+  /** Battery step (Task 18): draft form values, seeded alongside `solarDraft`
+   * from the same shared `_registry` fetch — the registry is not fetched a
+   * second time per section. */
+  @state() private batteryDraft: Record<string, unknown> = {};
 
   /** [Otestovat] — Task 6. */
   @state() private solarTestLoading = false;
@@ -698,6 +738,16 @@ export class OigOnboardingWizard extends LitElement {
     }
 
     .step-card p { margin: 0 0 8px; }
+
+    .module-group + .module-group { margin-top: 16px; }
+    .module-group h4 {
+      margin: 0 0 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.7;
+    }
 
     footer {
       display: flex;
@@ -982,6 +1032,46 @@ export class OigOnboardingWizard extends LitElement {
     this.solarDraft = draft;
   }
 
+  /** Same seeding rule as `seedSolarDraft` (Task 18) — `entry.options` first,
+   * registry `default` only for a field genuinely unset either way. */
+  private seedBatteryDraft(): void {
+    if (!this._registry) return;
+    const draft: Record<string, unknown> = {};
+    for (const f of STEP_BATTERY.fields(this._registry)) {
+      const spec = this._registry.fields[f.key];
+      const seeded = this.originalValues[f.key] ?? spec?.default;
+      if (seeded !== undefined) draft[f.key] = seeded;
+    }
+    this.batteryDraft = draft;
+  }
+
+  /**
+   * Seed `modulesDraft` from `originalValues` (entry.options, via
+   * `/module_config`'s `modules` section) FIRST, the registry's own
+   * `default` only for a field genuinely unset either way (Stage S3 Task
+   * 21, mirrors `seedSolarDraft` — Task 8's pattern applied to the modules
+   * section). New install: "all off except recommended defaults" (UX-SPEC
+   * table-of-contents) IS the registry `default` for every module key
+   * (`config_registry.py`) — no separate rule needed here.
+   *
+   * Guarded on the registry actually describing the `modules` section:
+   * every other bootstrap fixture in this test suite registers only its
+   * own section (e.g. `solar`), so this never fires there and the Stage S1
+   * every-gate-on stub (`:525-530`) keeps gating nav in those tests exactly
+   * as before — only a registry response that genuinely includes `modules`
+   * (production, or this task's own test fixture) replaces it.
+   */
+  private seedModulesDraft(): void {
+    if (!this._registry || !this._registry.sections.includes('modules')) return;
+    const draft: Record<string, unknown> = {};
+    for (const key of [...MODULES_GROUP_HLAVNI, ...MODULES_GROUP_DOPLNKOVE]) {
+      const spec = this._registry.fields[key];
+      const seeded = this.originalValues[key] ?? spec?.default;
+      if (seeded !== undefined) draft[key] = seeded;
+    }
+    this.modulesDraft = draft;
+  }
+
   private async loadSolarRegistry(signal?: AbortSignal): Promise<void> {
     if (this._registryLoaded) return;
     this._registryLoaded = true;
@@ -989,6 +1079,8 @@ export class OigOnboardingWizard extends LitElement {
       this._registry = await loadFieldRegistry(signal);
       this._registryOutcome = signal?.aborted ? 'aborted' : this._registry !== null ? 'success' : 'failed';
       this.seedSolarDraft();
+      this.seedBatteryDraft();
+      this.seedModulesDraft();
     } catch {
       this._registry = null;
       this._registryOutcome = signal?.aborted ? 'aborted' : 'failed';
@@ -1015,6 +1107,8 @@ export class OigOnboardingWizard extends LitElement {
         this.originalValues = Object.freeze(flattenModuleConfig(data));
         if (data.pricing) this.pricingDraft = { ...data.pricing };
         this.seedSolarDraft(); // re-seed if the registry already settled first
+        this.seedBatteryDraft(); // T18 review: battery draft misses entry.options on registry-first race
+        this.seedModulesDraft(); // re-seed if the registry already settled first
       }
     } catch {
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : 'failed';
@@ -1233,11 +1327,11 @@ export class OigOnboardingWizard extends LitElement {
    * every-gate-on stub (`:476-481`), not yet seeded from `entry.options`
    * (Stage S3 Task 21 does that), so diffing it against `originalValues`
    * would produce false-positive rows for a value the user never touched.
-   * Stage S3 must add its new drafts (battery/boiler/connection/
-   * pricing_supplier) here once each is properly seeded.
+   * Stage S3 must add its new drafts (boiler/connection/pricing_supplier)
+   * here once each is properly seeded. `batteryDraft` added by Task 18.
    */
   private allDraftValues(): Record<string, unknown> {
-    return { ...this.solarDraft, ...this.pricingDraft };
+    return { ...this.solarDraft, ...this.pricingDraft, ...this.batteryDraft };
   }
 
   /** One row per field whose current draft value differs from its
@@ -1315,8 +1409,8 @@ export class OigOnboardingWizard extends LitElement {
                   Povolte alespoň jeden string pro zobrazení polí výkonu a orientace.
                 </p>`
               : nothing}
-            ${visible.map((f) =>
-              renderFieldPresenter(f, {
+            ${visible.flatMap((f) => {
+              const row = renderFieldPresenter(f, {
                 value: this.solarDraft[f.key],
                 dirty: false,
                 secretSet: false,
@@ -1327,8 +1421,29 @@ export class OigOnboardingWizard extends LitElement {
                   this.solarTestMatchesDraft = false;
                 },
                 entityCatalog: [],
-              }),
-            )}
+              });
+              // Owner correction round 2 (UX-SPEC §Step 3): one-click action
+              // directly below the GPS pair, wiring hass.config into the
+              // fields the user could otherwise only type by hand — not a
+              // new data source (steps.py:1687-1688 reads the same values).
+              if (f.key !== 'solar_forecast_longitude') return [row];
+              return [
+                row,
+                html`<button
+                  type="button"
+                  data-testid="solar-gps-from-hass"
+                  ?disabled=${!this.hass?.config?.latitude}
+                  @click=${() => {
+                    this.solarDraft = {
+                      ...this.solarDraft,
+                      solar_forecast_latitude: this.hass?.config?.latitude,
+                      solar_forecast_longitude: this.hass?.config?.longitude,
+                    };
+                    this.solarTestMatchesDraft = false;
+                  }}
+                >📍 Převzít z Home Assistanta</button>`,
+              ];
+            })}
             <button
               type="button"
               data-testid="solar-test"
@@ -1344,6 +1459,67 @@ export class OigOnboardingWizard extends LitElement {
             ${this.solarTestError
               ? html`<p data-testid="solar-test-error">${this.solarTestError.message}</p>`
               : nothing}
+          </div>
+        </section>
+      `;
+    }
+
+    if (this.currentStep === 'battery') {
+      if (this.bootstrapRetry.registry) {
+        return html`
+          <section class="step step-battery" data-step="battery">
+            <h3>${STEP_LABELS.battery}</h3>
+            <div class="step-card">
+              <p data-testid="battery-bootstrap-retry">${t('onboarding.bootstrap.load_failed', this.wizardLang)}</p>
+              <button
+                type="button"
+                data-testid="battery-bootstrap-retry-button"
+                @click=${() => this.retrySolarBootstrap()}
+              >${t('onboarding.bootstrap.retry_button', this.wizardLang)}</button>
+            </div>
+          </section>
+        `;
+      }
+      if (!this._registry || STEP_BATTERY.fields(this._registry).length === 0) {
+        return html`
+          <section class="step step-battery" data-step="battery">
+            <h3>${STEP_LABELS.battery}</h3>
+            <div class="step-card">
+              <p data-testid="battery-not-available">
+                Pole baterie nejsou k dispozici.
+              </p>
+            </div>
+          </section>
+        `;
+      }
+
+      const visible = STEP_BATTERY.visibleFields(this._registry, this.batteryDraft);
+      const visibleByKey = new Map(visible.map((f) => [f.key, f]));
+
+      return html`
+        <section class="step step-battery" data-step="battery">
+          <h3>${STEP_LABELS.battery}</h3>
+          <div class="step-card">
+            ${BATTERY_GROUPS.map((group) => html`
+              <div class="battery-group" data-group=${group.id}>
+                <h4 data-testid="battery-group-heading">${group.heading}</h4>
+                ${group.keys.map((key) => visibleByKey.get(key)).filter((f): f is FieldDef => !!f).map((f) => html`
+                  <div data-key=${f.key}>
+                    ${renderFieldPresenter(f, {
+                      value: this.batteryDraft[f.key],
+                      dirty: false,
+                      secretSet: false,
+                      originalValue: this.originalValues[f.key],
+                      reviewMode: this.onboardingState?.grandfathered === true,
+                      onChange: (v: unknown) => {
+                        this.batteryDraft = { ...this.batteryDraft, [f.key]: v };
+                      },
+                      entityCatalog: [],
+                    })}
+                  </div>
+                `)}
+              </div>
+            `)}
           </div>
         </section>
       `;
@@ -1386,10 +1562,93 @@ export class OigOnboardingWizard extends LitElement {
       `;
     }
 
+    if (this.currentStep === 'boiler') {
+      if (!this._registry || STEP_BOILER.fields(this._registry).length === 0) {
+        return html`
+          <section class="step step-boiler" data-step="boiler">
+            <h3>${STEP_LABELS.boiler}</h3>
+            <div class="step-card">
+              <p data-testid="boiler-not-available">Pole bojleru nejsou k dispozici.</p>
+            </div>
+          </section>
+        `;
+      }
+
+      const registry = this._registry;
+      const byKey = new Map(STEP_BOILER.fields(registry).map((f) => [f.key, f]));
+      const reviewMode = this.onboardingState?.grandfathered === true;
+      const renderRow = (f: FieldDef) => html`
+        <div data-key=${f.key}>
+          ${renderFieldPresenter(f, {
+            value: this.boilerDraft[f.key] ?? this.originalValues[f.key] ?? registry.fields[f.key]?.default,
+            dirty: false,
+            secretSet: false,
+            originalValue: this.originalValues[f.key],
+            reviewMode,
+            onChange: (v: unknown) => {
+              this.boilerDraft = { ...this.boilerDraft, [f.key]: v };
+            },
+            entityCatalog: [],
+          })}
+        </div>
+      `;
+
+      return html`
+        <section class="step step-boiler" data-step="boiler">
+          <h3>${STEP_LABELS.boiler}</h3>
+          <div class="step-card">
+            ${BOILER_FIELD_GROUPS.map((group) => {
+              const groupFields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+              if (groupFields.length === 0) return nothing;
+              return html`
+                <div class="field-group" data-testid="boiler-group">
+                  <h4>${group.heading}</h4>
+                  ${groupFields.map(renderRow)}
+                </div>
+              `;
+            })}
+            ${(() => {
+              const leftover = ungroupedBoilerFields(registry);
+              return leftover.length === 0 ? nothing : html`
+                <div class="field-group" data-testid="boiler-group-other">
+                  ${leftover.map(renderRow)}
+                </div>
+              `;
+            })()}
+          </div>
+        </section>
+      `;
+    }
+
     if (this.currentStep === 'modules') {
       const turnedOff = this.turnedOffModuleKeys();
+
+      // Spec-fixed group order (`MODULES_GROUP_HLAVNI`/`_DOPLNKOVE`, :357-369),
+      // NOT the registry's own field order — same lookup-by-key approach as
+      // `STEP_GATE`.
+      const moduleFields = this._registry ? fieldsFromRegistry(this._registry, 'modules') : [];
+      const byKey = new Map(moduleFields.map((f): [string, FieldDef] => [f.key, f]));
+      const hlavniFields = MODULES_GROUP_HLAVNI.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+      const doplnkoveFields = MODULES_GROUP_DOPLNKOVE.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+
+      const renderGroup = (fields: FieldDef[]) => fields.map((f) => html`
+        <div data-key=${f.key}>
+          ${renderFieldPresenter(f, {
+            value: this.modulesDraft[f.key],
+            dirty: false,
+            secretSet: false,
+            originalValue: this.originalValues[f.key],
+            reviewMode: this.onboardingState?.grandfathered === true,
+            onChange: (v: unknown) => {
+              this.modulesDraft = { ...this.modulesDraft, [f.key]: v };
+            },
+            entityCatalog: [],
+          })}
+        </div>
+      `);
+
       return html`
-        <section class="step step-stub" data-step="modules">
+        <section class="step step-modules" data-step="modules">
           <h3>${STEP_LABELS.modules}</h3>
           <div class="step-card">
             ${turnedOff.length > 0
@@ -1397,9 +1656,18 @@ export class OigOnboardingWizard extends LitElement {
                   ${t('onboarding.modules.off_warning', this.wizardLang)}
                 </p>`
               : nothing}
-            <p data-testid="step-stub-placeholder">
-              Tento krok bude doplněn v další verzi průvodce.
-            </p>
+            ${hlavniFields.length === 0 && doplnkoveFields.length === 0
+              ? html`<p data-testid="modules-not-available">Moduly nejsou k dispozici.</p>`
+              : html`
+                  <div class="module-group" data-group="hlavni">
+                    <h4>${t('onboarding.modules.group_hlavni', this.wizardLang)}</h4>
+                    ${renderGroup(hlavniFields)}
+                  </div>
+                  <div class="module-group" data-group="doplnkove">
+                    <h4>${t('onboarding.modules.group_doplnkove', this.wizardLang)}</h4>
+                    ${renderGroup(doplnkoveFields)}
+                  </div>
+                `}
           </div>
         </section>
       `;
@@ -1454,9 +1722,47 @@ export class OigOnboardingWizard extends LitElement {
       `;
     }
 
-    // Every other step without dedicated content yet (battery, boiler,
-    // connection — Stage S3 fills these in). A stub, not a second source
-    // of truth.
+    if (this.currentStep === 'connection') {
+      if (!this._registry) {
+        return html`
+          <section class="step step-stub" data-step="connection">
+            <h3>${STEP_LABELS.connection}</h3>
+            <div class="step-card">
+              <p data-testid="step-stub-placeholder">
+                Tento krok bude doplněn v další verzi průvodce.
+              </p>
+            </div>
+          </section>
+        `;
+      }
+
+      const visible = STEP_CONNECTION.visibleFields(this._registry, this.connectionDraft);
+      return html`
+        <section class="step step-connection" data-step="connection">
+          <h3>${STEP_LABELS.connection}</h3>
+          <div class="step-card">
+            ${visible.map((f) => html`
+              <div data-key=${f.key}>
+                ${renderFieldPresenter(f, {
+                  value: this.connectionDraft[f.key],
+                  dirty: false,
+                  secretSet: false,
+                  originalValue: this.originalValues[f.key],
+                  reviewMode: this.onboardingState?.grandfathered === true,
+                  onChange: (v: unknown) => {
+                    this.connectionDraft = { ...this.connectionDraft, [f.key]: v };
+                  },
+                  entityCatalog: [],
+                })}
+              </div>
+            `)}
+          </div>
+        </section>
+      `;
+    }
+
+    // Every other step without dedicated content yet (battery, boiler —
+    // Stage S3 fills these in). A stub, not a second source of truth.
     return html`
       <section class="step step-stub" data-step=${this.currentStep}>
         <h3>${STEP_LABELS[this.currentStep]}</h3>

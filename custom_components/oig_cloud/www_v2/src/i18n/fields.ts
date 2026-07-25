@@ -115,6 +115,15 @@ const CS_LABELS: Record<string, string> = {
   'field.tariff_vt_start_weekend.label': 'VT začátek, víkend (hodina)',
   'field.tariff_nt_start_weekend.label': 'NT začátek, víkend (hodina1,hodina2)',
   'field.dual_tariff_enabled.label': 'Dvoutarifní sazba (odvozeno automaticky)',
+
+  // --- connection / 'basic' section (Task 20, UX-SPEC §Step 8) — copy
+  // adapted from cs.json's wizard_intervals (translations/cs.json:200-208),
+  // this FE step reads CS_LABELS, not that HA-native translation layer.
+  'field.data_source_mode.label': 'Zdroj telemetrie',
+  'field.standard_scan_interval.label': 'Základní data (sekund)',
+  'field.extended_scan_interval.label': 'Rozšířená data (sekund)',
+  'field.local_proxy_stale_minutes.label': 'Fallback na cloud po (minut)',
+  'field.local_event_debounce_ms.label': 'Local event debounce (ms)',
 };
 
 const CS_HINTS: Record<string, string> = {
@@ -197,6 +206,14 @@ const CS_HINTS: Record<string, string> = {
   'field.tariff_vt_start_weekend.hint': 'Nechte prázdné pro NT celý den',
   'field.tariff_nt_start_weekend.hint': "Např. '0' = NT celý den",
   'field.dual_tariff_enabled.hint': 'Odvozeno z tarifu vybraného v kroku Ceny — distribuce; drženo pro zpětnou kompatibilitu.',
+
+  // --- connection / 'basic' section (Task 20, UX-SPEC §Step 8) — copy
+  // adapted from cs.json's wizard_intervals (translations/cs.json:211-218).
+  'field.data_source_mode.hint': 'Cloud only = všechny senzory čtou z cloudu; Local only = čtení z lokálních entit (při výpadku proxy > limit minut se dočasně vrátí na cloud)',
+  'field.standard_scan_interval.hint': 'Jak často načítat spotřebu, výrobu, stav baterie a další základní údaje (minimálně 30 sekund, doporučeno 30-60 sekund)',
+  'field.extended_scan_interval.hint': 'Jak často načítat napětí článků, teploty, proudy a další detailní údaje (minimálně 300 sekund, doporučeno 300-600 sekund)',
+  'field.local_proxy_stale_minutes.hint': 'Po kolika minutách bez lokálních dat se přepnout do cloudu. Jakmile proxy znovu odpoví, vrátí se zpět na local.',
+  'field.local_event_debounce_ms.hint': 'Debounce pro event-driven refresh z lokálních entit (nižší = rychlejší reakce, vyšší = méně aktualizací)',
 };
 
 /** Falls back to a humanised key — never returns a raw i18n key. */
