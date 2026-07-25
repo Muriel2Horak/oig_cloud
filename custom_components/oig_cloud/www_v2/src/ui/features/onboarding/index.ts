@@ -562,6 +562,11 @@ export class OigOnboardingWizard extends LitElement {
   private _pricingConfigLoaded = false;
   @state() private pricingDraft: Record<string, unknown> = {};
 
+  /** Connection step (Task 20): draft form values for the `basic` registry
+   * section. Not yet seeded from `entry.options` — new-install fields start
+   * empty, same as `solarDraft` before Task 8. */
+  @state() private connectionDraft: Record<string, unknown> = {};
+
   /**
    * Boiler step: local edits only (Task 19) — read-seeded per field at render
    * time from `originalValues` / the registry default, same fallback chain
@@ -1717,9 +1722,47 @@ export class OigOnboardingWizard extends LitElement {
       `;
     }
 
-    // Every other step without dedicated content yet (battery, boiler,
-    // connection — Stage S3 fills these in). A stub, not a second source
-    // of truth.
+    if (this.currentStep === 'connection') {
+      if (!this._registry) {
+        return html`
+          <section class="step step-stub" data-step="connection">
+            <h3>${STEP_LABELS.connection}</h3>
+            <div class="step-card">
+              <p data-testid="step-stub-placeholder">
+                Tento krok bude doplněn v další verzi průvodce.
+              </p>
+            </div>
+          </section>
+        `;
+      }
+
+      const visible = STEP_CONNECTION.visibleFields(this._registry, this.connectionDraft);
+      return html`
+        <section class="step step-connection" data-step="connection">
+          <h3>${STEP_LABELS.connection}</h3>
+          <div class="step-card">
+            ${visible.map((f) => html`
+              <div data-key=${f.key}>
+                ${renderFieldPresenter(f, {
+                  value: this.connectionDraft[f.key],
+                  dirty: false,
+                  secretSet: false,
+                  originalValue: this.originalValues[f.key],
+                  reviewMode: this.onboardingState?.grandfathered === true,
+                  onChange: (v: unknown) => {
+                    this.connectionDraft = { ...this.connectionDraft, [f.key]: v };
+                  },
+                  entityCatalog: [],
+                })}
+              </div>
+            `)}
+          </div>
+        </section>
+      `;
+    }
+
+    // Every other step without dedicated content yet (battery, boiler —
+    // Stage S3 fills these in). A stub, not a second source of truth.
     return html`
       <section class="step step-stub" data-step=${this.currentStep}>
         <h3>${STEP_LABELS[this.currentStep]}</h3>
