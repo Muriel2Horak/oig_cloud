@@ -400,8 +400,13 @@ class WizardMixin:
 
         return options
 
-    @staticmethod
-    def _build_solar_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_solar_options(self, wizard_data: Dict[str, Any]) -> Dict[str, Any]:
+        # RCA-R4: same order as the schema default (option -> hass.config ->
+        # None) -- this is the payload actually persisted to entry.options,
+        # so a fabricated Prague fallback here is the live bug, not just a
+        # form pre-fill. Downstream (solar_forecast_sensor.py) already
+        # treats a missing/None GPS as "not configured" and surfaces a repair.
+        ha_latitude, ha_longitude = self._get_hass_gps()
         return {
             CONF_SOLAR_FORECAST_PROVIDER: wizard_data.get(
                 CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar"
@@ -410,10 +415,10 @@ class WizardMixin:
                 "solar_forecast_mode", "daily_optimized"
             ),
             CONF_SOLAR_FORECAST_LATITUDE: wizard_data.get(
-                CONF_SOLAR_FORECAST_LATITUDE, 50.0
+                CONF_SOLAR_FORECAST_LATITUDE, ha_latitude
             ),
             CONF_SOLAR_FORECAST_LONGITUDE: wizard_data.get(
-                CONF_SOLAR_FORECAST_LONGITUDE, 14.0
+                CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude
             ),
             CONF_SOLAR_FORECAST_STRING1_ENABLED: wizard_data.get(
                 CONF_SOLAR_FORECAST_STRING1_ENABLED, True
@@ -1676,6 +1681,33 @@ Kliknutím na "Odeslat" spustíte průvodce.
             errors["base"] = "invalid_string2_params"
         return errors
 
+    def _get_hass_gps(self) -> tuple[Optional[float], Optional[float]]:
+        """Read (latitude, longitude) from `hass.config`, or (None, None).
+
+        Defensive against `self.hass` being unset or a minimal test double
+        without `.config` -- both are real states (RCA-R4), not just test
+        artifacts, so this must return empty rather than raise.
+        """
+        config = getattr(self.hass, "config", None)
+        return getattr(config, "latitude", None), getattr(config, "longitude", None)
+
+    @staticmethod
+    def _gps_marker(key: str, default_value: Optional[float], suggested: Optional[float]) -> vol.Marker:
+        """Build a GPS field marker: default only when a real value exists.
+
+        Never fabricate a default (RCA-R4) -- an unresolved default renders
+        the field genuinely empty instead of a plausible-looking coordinate.
+        `suggested` is exposed separately via `description.suggested_value`
+        so the FE can offer an explicit "Prevzit z Home Assistanta" action
+        (UX-SPEC step-3) independent of which default won.
+        """
+        kwargs: Dict[str, Any] = {}
+        if default_value is not None:
+            kwargs["default"] = default_value
+        if suggested is not None:
+            kwargs["description"] = {"suggested_value": suggested}
+        return vol.Optional(key, **kwargs)
+
     def _get_solar_schema(
         self, defaults: Optional[Dict[str, Any]] = None
     ) -> vol.Schema:
@@ -1683,9 +1715,12 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if defaults is None:
             defaults = self._wizard_data if self._wizard_data else {}
 
-        # Získat GPS souřadnice z Home Assistant konfigurace jako default
-        ha_latitude = self.hass.config.latitude if self.hass else 50.0
-        ha_longitude = self.hass.config.longitude if self.hass else 14.0
+        # RCA-R4: hass.config GPS is a fallback *default* (option -> hass ->
+        # empty), never a fabricated Prague value -- and it is ALSO exposed
+        # via description.suggested_value regardless of which default wins,
+        # so the FE can offer an explicit "Prevzit z Home Assistanta" action
+        # (UX-SPEC step-3) without ever silently overwriting a saved value.
+        ha_latitude, ha_longitude = self._get_hass_gps()
 
         provider = defaults.get(CONF_SOLAR_FORECAST_PROVIDER, "forecast_solar")
 
@@ -1710,13 +1745,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     "hourly": "⚡ Každou hodinu (vyžaduje API klíč)",
                 }
             ),
-            vol.Optional(
+            self._gps_marker(
                 CONF_SOLAR_FORECAST_LATITUDE,
-                default=defaults.get(CONF_SOLAR_FORECAST_LATITUDE, ha_latitude),
+                defaults.get(CONF_SOLAR_FORECAST_LATITUDE, ha_latitude),
+                ha_latitude,
             ): vol.Coerce(float),
-            vol.Optional(
+            self._gps_marker(
                 CONF_SOLAR_FORECAST_LONGITUDE,
-                default=defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude),
+                defaults.get(CONF_SOLAR_FORECAST_LONGITUDE, ha_longitude),
+                ha_longitude,
             ): vol.Coerce(float),
             vol.Optional(
                 CONF_SOLAR_FORECAST_STRING1_ENABLED,

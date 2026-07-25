@@ -343,8 +343,11 @@ async def test_wizard_summary_defaults_for_solar_and_battery():
     assert "solar_forecast_api_key" not in options
     assert "solcast_api_key" not in options
     assert "solcast_site_id" not in options
-    assert options["solar_forecast_latitude"] == 50.0
-    assert options["solar_forecast_longitude"] == 14.0
+    # RCA-R4: no fabricated Prague fallback -- hass here has no `.config`
+    # (DummyConfigFlow's bare SimpleNamespace), and no option was supplied,
+    # so the field must come back empty, never a plausible-looking default.
+    assert options["solar_forecast_latitude"] is None
+    assert options["solar_forecast_longitude"] is None
     assert options["solar_forecast_string1_enabled"] is True
     assert options["solar_forecast_string1_kwp"] == 5.0
     assert options["solar_forecast_string2_enabled"] is False
