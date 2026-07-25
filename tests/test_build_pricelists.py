@@ -4,18 +4,33 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "build_pricelists.py"
-PYTHON = ROOT / ".venv" / "bin" / "python"
+_VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
+# Fall back to the running interpreter when a repo-local .venv is absent
+# (e.g. worktrees that use an external HA env); openpyxl is a dev dependency.
+PYTHON = _VENV_PYTHON if _VENV_PYTHON.exists() else Path(sys.executable)
 FIXTURES = ROOT / "tests" / "fixtures" / "pricelists"
 MANIFEST = ROOT / "custom_components" / "oig_cloud" / "manifest.json"
 REQUIREMENTS_DEV = ROOT / "requirements-dev.in"
 
+# Shipped, bundled dataset (the real ERU-derived artifact users receive).
+SHIPPED_JSON = ROOT / "custom_components" / "oig_cloud" / "remote_config" / "data" / "pricelists.json"
+ERU_SOURCE_XLSX = ROOT / "scripts" / "data_sources" / "ceny-nn26-1.xlsx"
+ERU_SOURCE_URL = "https://eru.gov.cz/sites/default/files/obsah/prilohy/ceny-nn26-1.xlsx"
+
 REQUIRED_DSOS = {"cez", "egd", "pre"}
 REQUIRED_TARIFFS = {"VT", "NT", "POZE"}
+# Household D-tariffs the 14/2025 (věstník 18/2025) NN decree lists.
+REQUIRED_D_TARIFFS = {
+    "D01d", "D02d", "D25d", "D26d", "D27d", "D35d", "D45d", "D56d", "D57d", "D61d",
+}
+# Two-tariff sazby carry a distinct NT (low-tariff) distribution price.
+TWO_TARIFF_D_CODES = {"D25d", "D26d", "D27d", "D35d", "D45d", "D56d", "D57d", "D61d"}
 
 
 def _run_builder(files: list[Path], output: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -151,3 +166,115 @@ def test_manifest_excludes_openpyxl_requirement() -> None:
 def test_build_requirements_mark_openpyxl_as_dev_dependency() -> None:
     text = REQUIREMENTS_DEV.read_text(encoding="utf-8")
     assert "openpyxl" in text
+
+
+# --- shipped dataset guards (audit gap O3) ------------------------------------
+# These assert the SHIPPED bundle, not a fixture, so a fixture-built or
+# hand-typed artifact can never be released silently again.
+
+
+def _load_shipped() -> dict[str, Any]:
+    return json.loads(SHIPPED_JSON.read_text(encoding="utf-8"))
+
+
+def test_shipped_pricelists_sources_are_real_https_never_file() -> None:
+    payload = _load_shipped()
+    assert payload["sources"], "shipped dataset must record its source"
+    for name, meta in payload["sources"].items():
+        url = meta["source_url"]
+        assert url.startswith("https://"), f"{name} source_url must be https, got {url!r}"
+        assert not url.startswith("file://"), f"{name} must not ship a file:// URL"
+        assert "eru.gov.cz" in url, f"{name} must come from the ERU regulator, got {url!r}"
+        assert meta["sha256"] and len(meta["sha256"]) == 64
+        assert meta["fetched_at"]
+
+
+def test_shipped_pricelists_has_full_d_tariff_coverage() -> None:
+    payload = _load_shipped()
+    distributors = payload["distributors"]
+    assert set(distributors.keys()) == REQUIRED_DSOS
+    for dso in REQUIRED_DSOS:
+        codes = set(distributors[dso].keys())
+        missing = REQUIRED_D_TARIFFS - codes
+        assert not missing, f"{dso} shipped dataset missing D-tariff(s): {sorted(missing)}"
+
+
+def test_shipped_pricelists_unit_rules() -> None:
+    """VT/NT distribution prices are Kc/MWh; only POZE is per-ampere Kc/A/mesic."""
+    payload = _load_shipped()
+    for dso, rates in payload["distributors"].items():
+        for code in REQUIRED_D_TARIFFS:
+            rate = rates[code]
+            assert rate["unit"] == "Kc/MWh", f"{dso}/{code} must be Kc/MWh"
+            assert rate["price_incl_vat"] is not None
+            assert rate["price_excl_vat"] is not None
+            # canonical VT leg
+            assert rate["vt"]["unit"] == "Kc/MWh"
+            if code in TWO_TARIFF_D_CODES:
+                assert "nt" in rate, f"{dso}/{code} is two-tariff, needs an NT leg"
+                assert rate["nt"]["unit"] == "Kc/MWh"
+        poze = rates["POZE"]
+        assert poze["unit"] == "Kc/A/mesic", f"{dso} POZE must be Kc/A/mesic"
+    # No VT/NT distribution rate may masquerade as the per-ampere unit.
+    def _walk(node: Any):
+        if isinstance(node, dict):
+            if node.get("unit") == "Kc/A/mesic":
+                yield node
+            for value in node.values():
+                yield from _walk(value)
+    perampere = list(_walk(payload["distributors"]))
+    # exactly the three POZE entries carry Kc/A/mesic
+    assert len(perampere) == len(REQUIRED_DSOS)
+
+
+def test_shipped_pricelists_snapshots_have_valid_from() -> None:
+    payload = _load_shipped()
+    snapshots = payload["valid_from_snapshots"]
+    assert isinstance(snapshots, list) and snapshots
+    for snap in snapshots:
+        assert snap["valid_from"], "every snapshot must carry valid_from"
+        assert set(snap["distributors"].keys()) == REQUIRED_DSOS
+    assert payload["year"] >= 2026
+    assert payload["schema_version"] >= 2
+
+
+def test_shipped_pricelists_is_reproducible_from_committed_source() -> None:
+    """Rebuilding from the committed ERU XLSX reproduces the shipped rates.
+
+    Guards against hand-edited prices: the shipped distributors/snapshots must be
+    exactly what the compiler emits from the real source file.
+    """
+    if not ERU_SOURCE_XLSX.exists():  # pragma: no cover - source must be committed
+        raise AssertionError("committed ERU source XLSX is missing")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "rebuilt.json"
+        result = _run_builder(
+            [ERU_SOURCE_XLSX],
+            out,
+            "--source-url",
+            f"ceny-nn26-1.xlsx={ERU_SOURCE_URL}",
+            "--valid-from",
+            "2026-01-01",
+        )
+        assert result.returncode == 0, result.stderr
+        rebuilt = _load_payload(out)
+
+    shipped = _load_shipped()
+    assert rebuilt["distributors"] == shipped["distributors"]
+    assert rebuilt["valid_from_snapshots"] == shipped["valid_from_snapshots"]
+    assert (
+        rebuilt["sources"]["ceny-nn26-1.xlsx"]["source_url"]
+        == shipped["sources"]["ceny-nn26-1.xlsx"]["source_url"]
+    )
+
+
+def test_eru_mode_refuses_without_real_source_url(tmp_path: Path) -> None:
+    """ERU-decree mode must fail loudly rather than emit a file:// provenance."""
+    output = tmp_path / "pricelists.json"
+    output.write_text("keep", encoding="utf-8")
+    result = _run_builder([ERU_SOURCE_XLSX], output, "--eru-decree")
+    assert result.returncode != 0
+    assert "source-url" in result.stderr
+    assert output.read_text(encoding="utf-8") == "keep"

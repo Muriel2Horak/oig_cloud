@@ -1,128 +1,911 @@
 {
   "distributors": {
     "cez": {
-      "NT": {
-        "price_excl_vat": 7.1,
-        "price_incl_vat": 9.2,
-        "unit": "Kc/A/mesic"
+      "D01d": {
+        "price_excl_vat": 2666.66,
+        "price_incl_vat": 3226.66,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 2666.66,
+          "price_incl_vat": 3226.66,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D02d": {
+        "price_excl_vat": 2078.58,
+        "price_incl_vat": 2515.08,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 2078.58,
+          "price_incl_vat": 2515.08,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D25d": {
+        "nt": {
+          "price_excl_vat": 116.5,
+          "price_incl_vat": 140.97,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 2252.45,
+        "price_incl_vat": 2725.46,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 2252.45,
+          "price_incl_vat": 2725.46,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D26d": {
+        "nt": {
+          "price_excl_vat": 116.5,
+          "price_incl_vat": 140.97,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 1202.06,
+        "price_incl_vat": 1454.49,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 1202.06,
+          "price_incl_vat": 1454.49,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D27d": {
+        "nt": {
+          "price_excl_vat": 116.5,
+          "price_incl_vat": 140.97,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 2252.45,
+        "price_incl_vat": 2725.46,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 2252.45,
+          "price_incl_vat": 2725.46,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D35d": {
+        "nt": {
+          "price_excl_vat": 116.5,
+          "price_incl_vat": 140.97,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 754.77,
+        "price_incl_vat": 913.27,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 754.77,
+          "price_incl_vat": 913.27,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D45d": {
+        "nt": {
+          "price_excl_vat": 116.5,
+          "price_incl_vat": 140.97,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 754.77,
+        "price_incl_vat": 913.27,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 754.77,
+          "price_incl_vat": 913.27,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D56d": {
+        "nt": {
+          "price_excl_vat": 116.5,
+          "price_incl_vat": 140.97,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 754.77,
+        "price_incl_vat": 913.27,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 754.77,
+          "price_incl_vat": 913.27,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D57d": {
+        "nt": {
+          "price_excl_vat": 116.5,
+          "price_incl_vat": 140.97,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 754.77,
+        "price_incl_vat": 913.27,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 754.77,
+          "price_incl_vat": 913.27,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D61d": {
+        "nt": {
+          "price_excl_vat": 116.5,
+          "price_incl_vat": 140.97,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 3306.67,
+        "price_incl_vat": 4001.07,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 3306.67,
+          "price_incl_vat": 4001.07,
+          "unit": "Kc/MWh"
+        }
       },
       "POZE": {
-        "price_excl_vat": 1.6,
-        "price_incl_vat": 2.1,
-        "unit": "Kc/A/mesic"
-      },
-      "VT": {
-        "price_excl_vat": 9.5,
-        "price_incl_vat": 12.4,
+        "price_excl_vat": 0.0,
+        "price_incl_vat": 0.0,
         "unit": "Kc/A/mesic"
       }
     },
     "egd": {
-      "NT": {
-        "price_excl_vat": 6.4,
-        "price_incl_vat": 8.7,
-        "unit": "Kc/A/mesic"
+      "D01d": {
+        "price_excl_vat": 2711.14,
+        "price_incl_vat": 3280.48,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 2711.14,
+          "price_incl_vat": 3280.48,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D02d": {
+        "price_excl_vat": 2295.34,
+        "price_incl_vat": 2777.36,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 2295.34,
+          "price_incl_vat": 2777.36,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D25d": {
+        "nt": {
+          "price_excl_vat": 224.3,
+          "price_incl_vat": 271.4,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 2243.88,
+        "price_incl_vat": 2715.09,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 2243.88,
+          "price_incl_vat": 2715.09,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D26d": {
+        "nt": {
+          "price_excl_vat": 224.3,
+          "price_incl_vat": 271.4,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 1237.94,
+        "price_incl_vat": 1497.91,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 1237.94,
+          "price_incl_vat": 1497.91,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D27d": {
+        "nt": {
+          "price_excl_vat": 224.3,
+          "price_incl_vat": 271.4,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 2243.88,
+        "price_incl_vat": 2715.09,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 2243.88,
+          "price_incl_vat": 2715.09,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D35d": {
+        "nt": {
+          "price_excl_vat": 224.3,
+          "price_incl_vat": 271.4,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 749.87,
+        "price_incl_vat": 907.34,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 749.87,
+          "price_incl_vat": 907.34,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D45d": {
+        "nt": {
+          "price_excl_vat": 224.3,
+          "price_incl_vat": 271.4,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 749.87,
+        "price_incl_vat": 907.34,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 749.87,
+          "price_incl_vat": 907.34,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D56d": {
+        "nt": {
+          "price_excl_vat": 224.3,
+          "price_incl_vat": 271.4,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 749.87,
+        "price_incl_vat": 907.34,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 749.87,
+          "price_incl_vat": 907.34,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D57d": {
+        "nt": {
+          "price_excl_vat": 224.3,
+          "price_incl_vat": 271.4,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 749.87,
+        "price_incl_vat": 907.34,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 749.87,
+          "price_incl_vat": 907.34,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D61d": {
+        "nt": {
+          "price_excl_vat": 224.3,
+          "price_incl_vat": 271.4,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 3367.23,
+        "price_incl_vat": 4074.35,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 3367.23,
+          "price_incl_vat": 4074.35,
+          "unit": "Kc/MWh"
+        }
       },
       "POZE": {
-        "price_excl_vat": 1.8,
-        "price_incl_vat": 2.3,
-        "unit": "Kc/A/mesic"
-      },
-      "VT": {
-        "price_excl_vat": 10.0,
-        "price_incl_vat": 13.1,
+        "price_excl_vat": 0.0,
+        "price_incl_vat": 0.0,
         "unit": "Kc/A/mesic"
       }
     },
     "pre": {
-      "NT": {
-        "price_excl_vat": 6.6,
-        "price_incl_vat": 8.9,
-        "unit": "Kc/A/mesic"
+      "D01d": {
+        "price_excl_vat": 1854.71,
+        "price_incl_vat": 2244.2,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 1854.71,
+          "price_incl_vat": 2244.2,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D02d": {
+        "price_excl_vat": 1516.53,
+        "price_incl_vat": 1835.0,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 1516.53,
+          "price_incl_vat": 1835.0,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D25d": {
+        "nt": {
+          "price_excl_vat": 175.2,
+          "price_incl_vat": 211.99,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 1656.49,
+        "price_incl_vat": 2004.35,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 1656.49,
+          "price_incl_vat": 2004.35,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D26d": {
+        "nt": {
+          "price_excl_vat": 175.2,
+          "price_incl_vat": 211.99,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 1009.35,
+        "price_incl_vat": 1221.31,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 1009.35,
+          "price_incl_vat": 1221.31,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D27d": {
+        "nt": {
+          "price_excl_vat": 175.2,
+          "price_incl_vat": 211.99,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 1656.49,
+        "price_incl_vat": 2004.35,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 1656.49,
+          "price_incl_vat": 2004.35,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D35d": {
+        "nt": {
+          "price_excl_vat": 175.2,
+          "price_incl_vat": 211.99,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 421.52,
+        "price_incl_vat": 510.04,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 421.52,
+          "price_incl_vat": 510.04,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D45d": {
+        "nt": {
+          "price_excl_vat": 175.2,
+          "price_incl_vat": 211.99,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 421.52,
+        "price_incl_vat": 510.04,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 421.52,
+          "price_incl_vat": 510.04,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D56d": {
+        "nt": {
+          "price_excl_vat": 175.2,
+          "price_incl_vat": 211.99,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 421.52,
+        "price_incl_vat": 510.04,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 421.52,
+          "price_incl_vat": 510.04,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D57d": {
+        "nt": {
+          "price_excl_vat": 175.2,
+          "price_incl_vat": 211.99,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 421.52,
+        "price_incl_vat": 510.04,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 421.52,
+          "price_incl_vat": 510.04,
+          "unit": "Kc/MWh"
+        }
+      },
+      "D61d": {
+        "nt": {
+          "price_excl_vat": 175.2,
+          "price_incl_vat": 211.99,
+          "unit": "Kc/MWh"
+        },
+        "price_excl_vat": 2343.05,
+        "price_incl_vat": 2835.09,
+        "unit": "Kc/MWh",
+        "vt": {
+          "price_excl_vat": 2343.05,
+          "price_incl_vat": 2835.09,
+          "unit": "Kc/MWh"
+        }
       },
       "POZE": {
-        "price_excl_vat": 1.5,
-        "price_incl_vat": 2.0,
-        "unit": "Kc/A/mesic"
-      },
-      "VT": {
-        "price_excl_vat": 8.5,
-        "price_incl_vat": 11.4,
+        "price_excl_vat": 0.0,
+        "price_incl_vat": 0.0,
         "unit": "Kc/A/mesic"
       }
     }
   },
-  "generated_at": "2026-07-19T05:14:23+00:00",
-  "schema_version": 1,
+  "generated_at": "2026-07-25T06:14:57+00:00",
+  "schema_version": 2,
   "sources": {
-    "complete.xlsx": {
-      "fetched_at": "2026-07-19T04:57:53+00:00",
-      "sha256": "df4cb3096eec1209663bdaaceef6e578e052986ced00f3a1f9e9b3075bbd2350",
-      "source_url": "file:///repos/wt-p4-t6bc/tests/fixtures/pricelists/complete.xlsx"
+    "ceny-nn26-1.xlsx": {
+      "decree": "14/2025 (Energetický regulační věstník 18/2025), distribuce NN pro rok 2026",
+      "fetched_at": "2026-07-25T05:55:48+00:00",
+      "note": "POZE (příspěvek na podporované zdroje) je pro rok 2026 vynulován výměrem 15/2025 (navazuje na 13/2025), účinnost od 2026-01-01; zveřejněný XLSX už tuto nulu obsahuje. price_incl_vat je odvozeno z cen bez DPH v XLSX sazbou vat_rate.",
+      "sha256": "ca2948ae156708fa5a340000577b912e10cc92de973de10deb8a215bd46af480",
+      "source_url": "https://eru.gov.cz/sites/default/files/obsah/prilohy/ceny-nn26-1.xlsx"
     }
   },
   "valid_from_snapshots": [
     {
       "distributors": {
         "cez": {
-          "NT": {
-            "price_excl_vat": 7.1,
-            "price_incl_vat": 9.2,
-            "unit": "Kc/A/mesic"
+          "D01d": {
+            "price_excl_vat": 2666.66,
+            "price_incl_vat": 3226.66,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 2666.66,
+              "price_incl_vat": 3226.66,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D02d": {
+            "price_excl_vat": 2078.58,
+            "price_incl_vat": 2515.08,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 2078.58,
+              "price_incl_vat": 2515.08,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D25d": {
+            "nt": {
+              "price_excl_vat": 116.5,
+              "price_incl_vat": 140.97,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 2252.45,
+            "price_incl_vat": 2725.46,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 2252.45,
+              "price_incl_vat": 2725.46,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D26d": {
+            "nt": {
+              "price_excl_vat": 116.5,
+              "price_incl_vat": 140.97,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 1202.06,
+            "price_incl_vat": 1454.49,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 1202.06,
+              "price_incl_vat": 1454.49,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D27d": {
+            "nt": {
+              "price_excl_vat": 116.5,
+              "price_incl_vat": 140.97,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 2252.45,
+            "price_incl_vat": 2725.46,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 2252.45,
+              "price_incl_vat": 2725.46,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D35d": {
+            "nt": {
+              "price_excl_vat": 116.5,
+              "price_incl_vat": 140.97,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 754.77,
+            "price_incl_vat": 913.27,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 754.77,
+              "price_incl_vat": 913.27,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D45d": {
+            "nt": {
+              "price_excl_vat": 116.5,
+              "price_incl_vat": 140.97,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 754.77,
+            "price_incl_vat": 913.27,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 754.77,
+              "price_incl_vat": 913.27,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D56d": {
+            "nt": {
+              "price_excl_vat": 116.5,
+              "price_incl_vat": 140.97,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 754.77,
+            "price_incl_vat": 913.27,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 754.77,
+              "price_incl_vat": 913.27,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D57d": {
+            "nt": {
+              "price_excl_vat": 116.5,
+              "price_incl_vat": 140.97,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 754.77,
+            "price_incl_vat": 913.27,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 754.77,
+              "price_incl_vat": 913.27,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D61d": {
+            "nt": {
+              "price_excl_vat": 116.5,
+              "price_incl_vat": 140.97,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 3306.67,
+            "price_incl_vat": 4001.07,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 3306.67,
+              "price_incl_vat": 4001.07,
+              "unit": "Kc/MWh"
+            }
           },
           "POZE": {
-            "price_excl_vat": 1.6,
-            "price_incl_vat": 2.1,
-            "unit": "Kc/A/mesic"
-          },
-          "VT": {
-            "price_excl_vat": 9.5,
-            "price_incl_vat": 12.4,
+            "price_excl_vat": 0.0,
+            "price_incl_vat": 0.0,
             "unit": "Kc/A/mesic"
           }
         },
         "egd": {
-          "NT": {
-            "price_excl_vat": 6.4,
-            "price_incl_vat": 8.7,
-            "unit": "Kc/A/mesic"
+          "D01d": {
+            "price_excl_vat": 2711.14,
+            "price_incl_vat": 3280.48,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 2711.14,
+              "price_incl_vat": 3280.48,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D02d": {
+            "price_excl_vat": 2295.34,
+            "price_incl_vat": 2777.36,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 2295.34,
+              "price_incl_vat": 2777.36,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D25d": {
+            "nt": {
+              "price_excl_vat": 224.3,
+              "price_incl_vat": 271.4,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 2243.88,
+            "price_incl_vat": 2715.09,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 2243.88,
+              "price_incl_vat": 2715.09,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D26d": {
+            "nt": {
+              "price_excl_vat": 224.3,
+              "price_incl_vat": 271.4,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 1237.94,
+            "price_incl_vat": 1497.91,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 1237.94,
+              "price_incl_vat": 1497.91,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D27d": {
+            "nt": {
+              "price_excl_vat": 224.3,
+              "price_incl_vat": 271.4,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 2243.88,
+            "price_incl_vat": 2715.09,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 2243.88,
+              "price_incl_vat": 2715.09,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D35d": {
+            "nt": {
+              "price_excl_vat": 224.3,
+              "price_incl_vat": 271.4,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 749.87,
+            "price_incl_vat": 907.34,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 749.87,
+              "price_incl_vat": 907.34,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D45d": {
+            "nt": {
+              "price_excl_vat": 224.3,
+              "price_incl_vat": 271.4,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 749.87,
+            "price_incl_vat": 907.34,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 749.87,
+              "price_incl_vat": 907.34,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D56d": {
+            "nt": {
+              "price_excl_vat": 224.3,
+              "price_incl_vat": 271.4,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 749.87,
+            "price_incl_vat": 907.34,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 749.87,
+              "price_incl_vat": 907.34,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D57d": {
+            "nt": {
+              "price_excl_vat": 224.3,
+              "price_incl_vat": 271.4,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 749.87,
+            "price_incl_vat": 907.34,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 749.87,
+              "price_incl_vat": 907.34,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D61d": {
+            "nt": {
+              "price_excl_vat": 224.3,
+              "price_incl_vat": 271.4,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 3367.23,
+            "price_incl_vat": 4074.35,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 3367.23,
+              "price_incl_vat": 4074.35,
+              "unit": "Kc/MWh"
+            }
           },
           "POZE": {
-            "price_excl_vat": 1.8,
-            "price_incl_vat": 2.3,
-            "unit": "Kc/A/mesic"
-          },
-          "VT": {
-            "price_excl_vat": 10.0,
-            "price_incl_vat": 13.1,
+            "price_excl_vat": 0.0,
+            "price_incl_vat": 0.0,
             "unit": "Kc/A/mesic"
           }
         },
         "pre": {
-          "NT": {
-            "price_excl_vat": 6.6,
-            "price_incl_vat": 8.9,
-            "unit": "Kc/A/mesic"
+          "D01d": {
+            "price_excl_vat": 1854.71,
+            "price_incl_vat": 2244.2,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 1854.71,
+              "price_incl_vat": 2244.2,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D02d": {
+            "price_excl_vat": 1516.53,
+            "price_incl_vat": 1835.0,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 1516.53,
+              "price_incl_vat": 1835.0,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D25d": {
+            "nt": {
+              "price_excl_vat": 175.2,
+              "price_incl_vat": 211.99,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 1656.49,
+            "price_incl_vat": 2004.35,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 1656.49,
+              "price_incl_vat": 2004.35,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D26d": {
+            "nt": {
+              "price_excl_vat": 175.2,
+              "price_incl_vat": 211.99,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 1009.35,
+            "price_incl_vat": 1221.31,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 1009.35,
+              "price_incl_vat": 1221.31,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D27d": {
+            "nt": {
+              "price_excl_vat": 175.2,
+              "price_incl_vat": 211.99,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 1656.49,
+            "price_incl_vat": 2004.35,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 1656.49,
+              "price_incl_vat": 2004.35,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D35d": {
+            "nt": {
+              "price_excl_vat": 175.2,
+              "price_incl_vat": 211.99,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 421.52,
+            "price_incl_vat": 510.04,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 421.52,
+              "price_incl_vat": 510.04,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D45d": {
+            "nt": {
+              "price_excl_vat": 175.2,
+              "price_incl_vat": 211.99,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 421.52,
+            "price_incl_vat": 510.04,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 421.52,
+              "price_incl_vat": 510.04,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D56d": {
+            "nt": {
+              "price_excl_vat": 175.2,
+              "price_incl_vat": 211.99,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 421.52,
+            "price_incl_vat": 510.04,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 421.52,
+              "price_incl_vat": 510.04,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D57d": {
+            "nt": {
+              "price_excl_vat": 175.2,
+              "price_incl_vat": 211.99,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 421.52,
+            "price_incl_vat": 510.04,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 421.52,
+              "price_incl_vat": 510.04,
+              "unit": "Kc/MWh"
+            }
+          },
+          "D61d": {
+            "nt": {
+              "price_excl_vat": 175.2,
+              "price_incl_vat": 211.99,
+              "unit": "Kc/MWh"
+            },
+            "price_excl_vat": 2343.05,
+            "price_incl_vat": 2835.09,
+            "unit": "Kc/MWh",
+            "vt": {
+              "price_excl_vat": 2343.05,
+              "price_incl_vat": 2835.09,
+              "unit": "Kc/MWh"
+            }
           },
           "POZE": {
-            "price_excl_vat": 1.5,
-            "price_incl_vat": 2.0,
-            "unit": "Kc/A/mesic"
-          },
-          "VT": {
-            "price_excl_vat": 8.5,
-            "price_incl_vat": 11.4,
+            "price_excl_vat": 0.0,
+            "price_incl_vat": 0.0,
             "unit": "Kc/A/mesic"
           }
         }
       },
       "sources": {
-        "cez": "complete.xlsx",
-        "egd": "complete.xlsx",
-        "pre": "complete.xlsx"
+        "cez": "ceny-nn26-1.xlsx",
+        "egd": "ceny-nn26-1.xlsx",
+        "pre": "ceny-nn26-1.xlsx"
       },
       "valid_from": "2026-01-01"
     }
   ],
+  "vat_rate": 0.21,
   "year": 2026
 }
