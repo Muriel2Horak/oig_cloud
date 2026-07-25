@@ -215,6 +215,7 @@ def test_shipped_pricelists_unit_rules() -> None:
                 assert rate["nt"]["unit"] == "Kc/MWh"
         poze = rates["POZE"]
         assert poze["unit"] == "Kc/A/mesic", f"{dso} POZE must be Kc/A/mesic"
+
     # No VT/NT distribution rate may masquerade as the per-ampere unit.
     def _walk(node: Any):
         if isinstance(node, dict):
