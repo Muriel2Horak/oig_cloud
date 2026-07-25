@@ -54,8 +54,8 @@ standalone.
 | 1 | Moduly (Modules) | Pick which optional modules are active — gates which later steps render | All off except recommended defaults | Pre-filled from `entry.options`; toggling off a previously-on module surfaces a warning, not silent field loss |
 | 2 | AI — proč a jak (AI — why & how) | R5: explain what AI does + why, then existing key-acquisition guide | No provider selected; disclosure shown before any key entry | Pre-filled provider/model; key never re-shown (write-only), "change key" affordance instead |
 | 3 | Solar | Forecast provider, GPS, string geometry | Empty GPS/string fields (R4 fix: no Prague fallback) — only shown if `enable_solar_forecast` | Pre-filled from `entry.options`/`hass.config`; diff hint on edit |
-| 4 | Ceny — distribuce (Pricing — distribution) | Distributor/tariff dataset selection (existing 5 registry fields) | Dataset default shown as a *suggestion*, requires explicit confirm | Pre-filled from `entry.options`; diff hint on edit |
-| 5 | Ceny — dodavatel (Pricing — supplier) | RESTORED: 19 legacy supplier/commercial keys (RCA-R3), only shown if `enable_pricing` | Empty/dataset-neutral defaults, `show_if`-gated by scenario pickers | Pre-filled from `entry.options` (values already live there — R3 finding); diff hint on edit |
+| 4 | Ceny — distribuce (Pricing — distribution) | Distributor/tariff dataset selection (5 registry fields) + derived single/dual info line + 5 tariff-schedule keys (dual only, round-2 move from step 5) | Dataset default shown as a *suggestion*, requires explicit confirm | Pre-filled from `entry.options`; diff hint on edit |
+| 5 | Ceny — dodavatel (Pricing — supplier) | RESTORED: 18 of 24 legacy supplier/commercial keys (RCA-R3 + round-2 NT variants), only shown if `enable_pricing` | Empty/dataset-neutral defaults, `show_if`-gated by scenario pickers | Pre-filled from `entry.options` (values already live there — R3 finding); diff hint on edit |
 | 6 | Baterie a plánovač (Battery & planner) | Battery sizing + balancing/planner tuning, only shown if `enable_battery_prediction` | Empty numeric fields, no invented defaults | Pre-filled; diff hint on edit |
 | 7 | Bojler (Boiler) | Physical boiler setup, only shown if `enable_boiler` | Empty entity pickers/fields | Pre-filled; diff hint on edit |
 | 8 | Připojení (Connection/basic) | Scan intervals, data source mode — set-once technical plumbing | Registry defaults (30 s / 300 s / cloud_only) | Pre-filled; diff hint on edit |
@@ -124,23 +124,75 @@ See §5 below (full R5 content — this step's copy is the centerpiece of this s
 
 ### Step 3 — Solar
 
-Fields, in order: `solar_forecast_provider` → (`solar_forecast_mode` | `solar_forecast_api_key`
-if provider=`forecast_solar`; `solcast_api_key`+`solcast_site_id` if provider=`solcast`) →
-`solar_forecast_latitude`+`solar_forecast_longitude` (rendered as a paired GPS control, ideally
-a map picker per F1-DESIGN §5's "GPS (z HA, mapa)" — visual guidance only, no widget code here)
-→ String 1 group (`solar_forecast_string1_enabled` → kwp/declination/azimuth, shown only if
-enabled) → String 2 group (same pattern).
+Fields, in order: `solar_forecast_provider` → provider-conditional block → GPS pair → String 1
+group → String 2 group.
+
+**Provider-conditional block (owner correction, round 2):**
+
+- `solar_forecast_provider=forecast_solar`: `solar_forecast_mode` (required, enum) +
+  `solar_forecast_api_key` (**optional** — `config_registry.py:312-313`,
+  `optional=True`, `default=""`; needed only for the faster update modes, not for
+  `daily_optimized`).
+- `solar_forecast_provider=solcast`: **both** `solcast_api_key` **and** `solcast_site_id` are
+  required (`config_registry.py:314-317` — neither `Field()` carries `optional=True`, both
+  `secret=True`, both `show_if=("solar_forecast_provider", ("solcast",))`). The original spec
+  omitted `solcast_site_id` from the field order; it must render explicitly, directly below the
+  API key field:
+
+  | Field | CZ label | CZ hint |
+  |---|---|---|
+  | `solcast_site_id` | **CZ:** "Solcast Site ID" | **CZ:** "Povinný — ID vaší instalace ze solcast.com" |
+
+  (Supersedes the current `fields.ts:39,100` entry — "Solcast site ID" / "Jen pro Solcast (z
+  rooftop site URL)" — which is close but not the owner's wording; this spec's copy is
+  authoritative.)
+
+`solar_forecast_mode` is an enum (`hourly`, `every_4h`, `daily_optimized`,
+`config_registry.py:309-311`) with **no per-value CZ label anywhere in the codebase today**
+(`fields.ts` has a field-level label/hint at lines 81/128 but no enum-value map — confirmed by
+grep, zero hits for `daily_optimized`/`every_4h` outside test fixtures). Per §6's enum-label
+principle, render:
+
+> **CZ:** "Každou hodinu (vyžaduje API klíč)" (`hourly`) / "Každé 4 hodiny (vyžaduje API klíč)"
+> (`every_4h`) / "Denně, optimalizovaně (výchozí)" (`daily_optimized`)
+
+**GPS pair** (`solar_forecast_latitude`+`solar_forecast_longitude`, rendered as a paired GPS
+control, ideally a map picker per F1-DESIGN §5's "GPS (z HA, mapa)" — visual guidance only, no
+widget code here). New-install mode: R4 fix removes the Prague fallback, so the fields render
+**empty with a placeholder** instead of a silently-filled 50.0/14.0:
+
+> **CZ:** (placeholder text, not a value) "Zadejte GPS souřadnice instalace (najdete je v HA →
+> Nastavení → Systém → Obecné, nebo na mapě)"
+
+**Owner correction, round 2:** add an explicit one-click action next to the GPS pair that reads
+`hass.config.latitude`/`hass.config.longitude` (same values the HA-native flow already reads at
+`steps.py:1687-1688`, so this is wiring an existing source into a new affordance, not a new data
+source) into the two fields. This does **not** reintroduce the R4 defect: R4's bug was a silent,
+unconditional fallback the user never asked for; this is an explicit, user-triggered action —
+the no-fabricated-prefill principle is about values appearing *without* user intent, not about
+offering a shortcut the user chooses to invoke.
+
+> **CZ:** "📍 Převzít z Home Assistanta"
+
+**String groups** (owner correction, round 2 — the original spec's "kwp/declination/azimuth"
+shorthand read ambiguously as one combined control; it is not): each string is **three separate
+numeric fields**, no combined input, shown only if `solar_forecast_stringN_enabled=true`:
+
+| Field | CZ label | CZ hint |
+|---|---|---|
+| `solar_forecast_string1_kwp` | **CZ:** "Výkon stringu 1 (kWp)" | **CZ:** "Špičkový výkon panelů v tomto stringu" |
+| `solar_forecast_string1_declination` | **CZ:** "Sklon stringu 1 (°)" | **CZ:** "0 = vodorovně, 90 = svisle" |
+| `solar_forecast_string1_azimuth` | **CZ:** "Azimut stringu 1 (°)" | **CZ:** "0 = jih, −90 = východ, 90 = západ" |
+
+(String 2 fields mirror the above with "stringu 2" / `string2` — omitted here to avoid
+duplication.)
 
 The registry-driven FE resolves these labels from `CS_LABELS` in
 `www_v2/src/i18n/fields.ts` (not `cs.json`'s `wizard_solar` section — that is a separate,
 HA-native translation layer this FE step does not read). All 15 solar fields already have
 correct `CS_LABELS` entries per RCA-R1's corrected inventory (R1's defect is scoped to 5 pricing
-+ 2 battery fields; solar is unaffected) — reuse verbatim. The one content change this spec
-requires: the R4 fix removes the Prague fallback, so in new-install mode the GPS fields render
-**empty with a placeholder** instead of a silently-filled 50.0/14.0:
-
-> **CZ:** (placeholder text, not a value) "Zadejte GPS souřadnice instalace (najdete je v HA →
-> Nastavení → Systém → Obecné, nebo na mapě)"
++ 2 battery fields; solar is unaffected) — reuse verbatim for the fields whose copy is not
+revised above.
 
 ### Step 4 — Ceny — distribuce
 
@@ -148,6 +200,33 @@ Fields: `confirmed_distribution_distributor` → `confirmed_distribution_tariff`
 re-derived from the live `/pricelists` dataset per selected distributor, existing
 `onPricingFieldChange` logic in `index.ts:1011-1038` — reuse, not redesigned) →
 `confirmed_distribution_price_incl_vat`/`price_excl_vat`/`unit` (read-only display, derived).
+
+**Dual-tariff derivation (owner correction, round 2 — MAJOR, see §4 for the full field-inventory
+impact).** The selected `confirmed_distribution_tariff` code carries single/dual-tariff nature by
+itself — verified against the bundled dataset: `D01d`/`D02d` never carry an `nt` price leg,
+`D25d`/`D26d`/`D27d`/`D35d`/`D45d`/`D56d`/`D57d`/`D61d` always do, for all three distributors
+(`remote_config/data/pricelists.json`, cross-checked programmatically — 30/30 tariff×distributor
+combinations match this split with zero exceptions). The wizard must **derive** dual-ness from
+this selection; the user never answers "do I have two tariffs" as a separate question — the
+sazba they picked already says so. Immediately after tariff selection, show an info line:
+
+> **CZ (single):** "Jednotarifní — jedna cena po celý den."
+>
+> **CZ (dual):** "Dvoutarifní — ceny zvlášť pro VT a NT."
+
+When dual, this step additionally reveals:
+- The NT start-time field(s) (moved here from step 5's old placement — this step is where the
+  tariff is chosen, so this is where its consequences should show, not one step later).
+- **Both** VT and NT distribution prices from the dataset, not VT only. This is a display gap,
+  not a data gap — see §4a: the dataset already carries the NT leg, the wizard just does not
+  render it yet.
+
+**Cross-step data flow:** step 5's layout (which supplier fields render, VT-only vs VT+NT)
+depends on step 4's tariff selection. This is a new explicit dependency between two steps that
+did not previously share state this way — the wizard's draft state must carry the derived
+single/dual flag forward from step 4 into step 5's `show_if` evaluation (same mechanism as the
+existing per-step draft objects, e.g. `solarDraft`/`pricingDraft` in `index.ts` — a peer to those,
+not a rename of them).
 
 RCA-R1 defect (corrected): these 5 fields currently render **humanised** fallback labels
 (`confirmed_distribution_distributor` → "confirmed distribution distributor") because
@@ -169,7 +248,9 @@ Stale-dataset warning (`pricing.stale_warning`, already wired in `index.ts:1222-
 
 ### Step 5 — Ceny — dodavatel (RESTORED, RCA-R3 "proper fix")
 
-See §4 below — the 19-field restoration is the second centerpiece of this spec.
+See §4 below — the field-inventory restoration is the second centerpiece of this spec. Revised
+round 2: 18 of the 24 `pricing_supplier` keys render here (5 tariff-schedule keys moved to step
+4, `dual_tariff_enabled` is derived and renders nowhere) — see §4's field-inventory count.
 
 ### Step 6 — Baterie a plánovač
 
@@ -208,7 +289,33 @@ pattern (per §6 below) replaces it.
 
 Fields: `data_source_mode` → `standard_scan_interval`/`extended_scan_interval` →
 (`local_proxy_stale_minutes`/`local_event_debounce_ms`, shown only if `data_source_mode=
-local_only`). Existing `cs.json` `wizard_intervals` labels are correct Czech — reuse verbatim.
+local_only`).
+
+**Correction to the original spec text:** this step is part of the FE dashboard wizard (this
+spec's target surface, per the Scope section above), so — same as steps 3/6 — it resolves labels
+from `CS_LABELS` in `fields.ts`, **not** `cs.json`'s `wizard_intervals` section (a separate,
+HA-native translation layer this FE step does not read). The original spec's "reuse `cs.json`
+verbatim" instruction was inconsistent with its own established pattern; verified: `fields.ts`
+has **zero entries** for `data_source_mode`, `standard_scan_interval`, `extended_scan_interval`,
+or the `local_proxy_stale_minutes`/`local_event_debounce_ms` pair today (grep, zero hits) — this
+step's fields are entirely unlabeled in the FE layer, not merely mislabeled.
+
+`data_source_mode` (owner correction, round 2 — enum labels, general principle in §6): enum is
+3-valued in the registry (`cloud_only`/`local_only`/`hybrid`,
+`config_registry.py:451-457`) but the UI only ever offers two — `hybrid` is a legacy value kept
+in the enum purely so a GET→POST round-trip on a pre-existing entry that still stores `hybrid`
+stays honest (`config_registry.py:446-449` comment, verified). No raw enum value may be a visible
+label:
+
+> **CZ:** "Přes OIG Cloud (výchozí — funguje vždy)" (`cloud_only`) / "Přímo z boxu po domácí síti
+> (rychlejší, bez internetu)" (`local_only`)
+
+`standard_scan_interval`/`extended_scan_interval`/`local_proxy_stale_minutes`/
+`local_event_debounce_ms` are numeric fields (seconds/minutes/ms) — reuse the existing `cs.json`
+`wizard_intervals` **copy text** as source material for the new `fields.ts` entries (the words
+are fine, only the file they live in is wrong), adapted to this step's field-level label/hint
+shape.
+
 `enable_dashboard` is NOT shown here — it is the premium gate checkbox itself (D9), out of
 scope for a step that runs after the gate is already open.
 
@@ -260,6 +367,13 @@ difference is entirely in per-field state and step 9's content.
   present in `entry.options` **and** the entry predates this wizard version — i.e., a true
   "we recovered this" case, not shown for a fresh install that happens to have defaults.)
 
+  This paragraph describes what RCA-R3 found *already stored* by the legacy options-flow —
+  necessarily the original 19-key set, since the 5 new `_nt`-variant keys (§4, round 2) are net
+  new and cannot pre-exist in any entry. A dual-tariff user reviewing a pre-R3-fix install
+  correctly sees their 19 legacy values recovered per the note above, **and** empty new `_nt`
+  fields per the new-install rule (nothing to recover — the value never existed) — both rules
+  apply simultaneously per-field, not as a whole-section either/or.
+
 - **Per-field changed-vs-current diff hint** (the R2/D11 "review your config, nothing lost"
   requirement, K2e): when the user edits a pre-filled field, render a small inline hint below
   it, cleared if the user reverts to the original value:
@@ -292,10 +406,27 @@ difference is entirely in per-field state and step 9's content.
 ## 4. Restored commercial-price section (RCA-R3 "proper fix")
 
 Registry split, per RCA-R3's proposal: `pricing_distribution` (existing 5 dataset fields,
-already in `config_registry.py`, unchanged — this is step 4) and a new `pricing_supplier`
-section (19 fields below, step 5). This spec designs the wizard UI for `pricing_supplier`;
-the registry/backend wiring (`Field()` definitions, `_map_pricing_to_backend`) is
-implementation, not this spec's deliverable.
+already in `config_registry.py`, unchanged — step 4) and `pricing_supplier` — RCA-R3's original
+19 legacy keys, **revised below (owner correction, round 2 — MAJOR)** to 24 distinct keys (19 +
+5 new NT-variant keys) split across two steps: the 5 tariff-schedule keys now render in step 4
+(they describe the tariff itself, a distribution-level fact), everything else renders in step 5
+(the supplier contract). This spec designs the wizard UI for `pricing_supplier`; the
+registry/backend wiring (`Field()` definitions, `_map_pricing_to_backend`) is implementation,
+not this spec's deliverable — the `_vt`/`_nt` suffix convention used below is not invented here:
+it is already established at `steps.py:147-216` (`_migrate_import_percentage`,
+`_migrate_import_fixed`, `_migrate_export_pricing` — a pre-existing migration path for the
+HA-native flow's own dual-tariff handling) and already partly used in RCA-R3's original 19-key
+set (`fixed_commercial_price_vt`/`_nt`, `distribution_fee_vt_kwh`/`_nt`,
+`tariff_vt_start_weekday`/`tariff_nt_start_weekday`). This spec extends the same convention to
+the three fields that RCA-R3's inventory left unsplit; final backend key names remain the
+implementer's call.
+
+**`dual_tariff_enabled` is no longer a user-facing field, in either step** (owner correction,
+round 2 — MAJOR): dual-ness is derived from `confirmed_distribution_tariff` in step 4 (see
+above), never asked of the user directly. The option key itself may remain in `entry.options`
+as a derived/persisted value — implementer's call, for backward compat with entries that already
+have it stored — but the UI contract is unconditional: **no step renders a "Mám dva tarify"
+toggle anywhere.**
 
 Step 5 layout — three sub-groups matching the legacy wizard's existing 3-step split
 (`wizard_pricing_import`/`export`/`distribution`), collapsed into sections within one step
@@ -305,41 +436,69 @@ instead of three separate steps (consistent with this spec's "fewer, richer step
 **A — Nákupní cena (import)**
 
 `spot_pricing_model` (enum: `percentage`|`fixed`|`fixed_prices` — selector, drives the rest of
-this group via `show_if`):
+this group via `show_if`). Owner correction, round 2: the two variable-price scenarios now split
+VT/NT the same way `fixed_prices` already did — `_vt` is the base key (always shown when its
+scenario is selected), `_nt` is a new key shown only when the tariff is dual:
 
 | Field | `show_if` | CZ label | CZ hint |
 |---|---|---|---|
 | `spot_pricing_model` | — | **CZ:** "Scénář nákupní ceny" | **CZ:** "💰 SPOT + procento — variabilní cena podle burzy · 💵 SPOT + fixní poplatek — stabilnější · 🔒 FIX cena — předvídatelná" |
-| `spot_positive_fee_percent` | `spot_pricing_model=percentage` | **CZ:** "Přirážka při kladné spotové ceně (%)" | **CZ:** "Při kladné spotové ceně: cena × (1 + procento/100). Např. 15 % = spot × 1,15" |
-| `spot_negative_fee_percent` | `spot_pricing_model=percentage` | **CZ:** "Přirážka při záporné spotové ceně (%)" | **CZ:** "Při záporné spotové ceně: cena × (1 − procento/100). Např. 9 % = spot × 0,91" |
-| `spot_fixed_fee_mwh` | `spot_pricing_model=fixed` | **CZ:** "Fixní poplatek (CZK/MWh)" | **CZ:** "Konstantní poplatek přičtený ke spotové ceně" |
+| `spot_positive_fee_percent_vt` | `spot_pricing_model=percentage` | **CZ:** "Přirážka při kladné spotové ceně, VT (%)" | **CZ:** "Při kladné spotové ceně: cena × (1 + procento/100). Např. 15 % = spot × 1,15" |
+| `spot_positive_fee_percent_nt` *(new)* | `spot_pricing_model=percentage` AND tariff is dual | **CZ:** "Přirážka při kladné spotové ceně, NT (%)" | same formula, NT leg |
+| `spot_negative_fee_percent_vt` | `spot_pricing_model=percentage` | **CZ:** "Přirážka při záporné spotové ceně, VT (%)" | **CZ:** "Při záporné spotové ceně: cena × (1 − procento/100). Např. 9 % = spot × 0,91" |
+| `spot_negative_fee_percent_nt` *(new)* | `spot_pricing_model=percentage` AND tariff is dual | **CZ:** "Přirážka při záporné spotové ceně, NT (%)" | same formula, NT leg |
+| `spot_fixed_fee_mwh_vt` | `spot_pricing_model=fixed` | **CZ:** "Fixní poplatek, VT (CZK/MWh)" | **CZ:** "Konstantní poplatek přičtený ke spotové ceně" |
+| `spot_fixed_fee_mwh_nt` *(new)* | `spot_pricing_model=fixed` AND tariff is dual | **CZ:** "Fixní poplatek, NT (CZK/MWh)" | same, NT leg |
 | `fixed_commercial_price_vt` | `spot_pricing_model=fixed_prices` | **CZ:** "Fixní nákupní cena VT (CZK/kWh)" | **CZ:** "⚠️ Zadávejte bez DPH a distribuce" |
-| `fixed_commercial_price_nt` | `spot_pricing_model=fixed_prices` AND `dual_tariff_enabled=true` | **CZ:** "Fixní nákupní cena NT (CZK/kWh)" | **CZ:** "⚠️ Zadávejte bez DPH a distribuce" |
+| `fixed_commercial_price_nt` | `spot_pricing_model=fixed_prices` AND tariff is dual | **CZ:** "Fixní nákupní cena NT (CZK/kWh)" | **CZ:** "⚠️ Zadávejte bez DPH a distribuce" |
 
 **B — Prodejní cena / export**
+
+Same VT/NT treatment as group A, for the two scenarios with a migration precedent
+(`_migrate_export_pricing`, `steps.py:201-235`). `export_fixed_price` (the `fixed_prices`
+scenario) has **no VT/NT precedent anywhere in the codebase today** — `_migrate_old_pricing_data`
+has no branch for it at all (confirmed by reading the function in full) — so it is **not** split
+here; flagged in "Not established" at the end of this document rather than invented.
 
 | Field | `show_if` | CZ label | CZ hint |
 |---|---|---|---|
 | `export_pricing_model` | — | **CZ:** "Scénář prodejní ceny" | **CZ:** "💰 SPOT − procento — výhodné při vysokých cenách · 💵 SPOT − fixní srážka — stabilnější výkup · 🔒 FIX cena — stabilní po celý rok" |
-| `export_fee_percent` | `export_pricing_model=percentage` | **CZ:** "Srážka z exportu (%)" | **CZ:** "Např. 15 % = dostanete 85 % ze spotové ceny (spot × 0,85)" |
-| `export_fixed_fee_czk` | `export_pricing_model=fixed` | **CZ:** "Fixní srážka exportu (CZK/kWh)" | **CZ:** "Fixní srážka od spotové ceny. Např. 0,20 CZK/kWh = spot − 0,20" |
+| `export_fee_percent_vt` | `export_pricing_model=percentage` | **CZ:** "Srážka z exportu, VT (%)" | **CZ:** "Např. 15 % = dostanete 85 % ze spotové ceny (spot × 0,85)" |
+| `export_fee_percent_nt` *(new)* | `export_pricing_model=percentage` AND tariff is dual | **CZ:** "Srážka z exportu, NT (%)" | same formula, NT leg |
+| `export_fixed_fee_czk_vt` | `export_pricing_model=fixed` | **CZ:** "Fixní srážka exportu, VT (CZK/kWh)" | **CZ:** "Fixní srážka od spotové ceny. Např. 0,20 CZK/kWh = spot − 0,20" |
+| `export_fixed_fee_czk_nt` *(new)* | `export_pricing_model=fixed` AND tariff is dual | **CZ:** "Fixní srážka exportu, NT (CZK/kWh)" | same, NT leg |
 | `export_fixed_price` | `export_pricing_model=fixed_prices` | **CZ:** "Fixní výkupní cena (CZK/kWh)" | **CZ:** "Výkupní cena bez ohledu na spot" |
 
 **C — Distribuce, tarify a DPH**
 
+Shrunk from 9 to 3 keys: `dual_tariff_enabled` is gone (derived, see above) and the 5
+tariff-schedule keys moved to step 4 (see there).
+
 | Field | `show_if` | CZ label | CZ hint |
 |---|---|---|---|
-| `dual_tariff_enabled` | — | **CZ:** "Mám dva tarify (VT/NT)" | **CZ:** "Zapněte, pokud váš distributor rozlišuje vysoký a nízký tarif" |
 | `distribution_fee_vt_kwh` | — | **CZ:** "Poplatek za distribuci VT (CZK/kWh)" | **CZ:** "Např. 1,42 CZK/kWh" |
-| `distribution_fee_nt_kwh` | `dual_tariff_enabled=true` | **CZ:** "Poplatek za distribuci NT (CZK/kWh)" | **CZ:** "Např. 0,91 CZK/kWh" |
-| `tariff_vt_start_weekday` | — | **CZ:** "VT začátek, pracovní den (hodina)" | **CZ:** "Např. '6' = 06:00" |
-| `tariff_nt_start_weekday` | `dual_tariff_enabled=true` | **CZ:** "NT začátek, pracovní den (hodina1,hodina2)" | **CZ:** "Např. '22,2' = 22:00 večer a 02:00 ráno" |
-| `tariff_weekend_same_as_weekday` | `dual_tariff_enabled=true` | **CZ:** "Víkend stejně jako pracovní dny" | **CZ:** "Vypněte, pokud se víkendové tarify liší" |
-| `tariff_vt_start_weekend` | `dual_tariff_enabled=true` AND `tariff_weekend_same_as_weekday=false` | **CZ:** "VT začátek, víkend (hodina)" | **CZ:** "Nechte prázdné pro NT celý den" |
-| `tariff_nt_start_weekend` | `dual_tariff_enabled=true` AND `tariff_weekend_same_as_weekday=false` | **CZ:** "NT začátek, víkend (hodina1,hodina2)" | **CZ:** "Např. '0' = NT celý den" |
+| `distribution_fee_nt_kwh` | tariff is dual | **CZ:** "Poplatek za distribuci NT (CZK/kWh)" | **CZ:** "Např. 0,91 CZK/kWh" |
 | `vat_rate` | — | **CZ:** "DPH (%)" | **CZ:** "Standardně 21 %" |
 
-19 fields accounted for: 6 (A) + 4 (B) + 9 (C) = 19, matching RCA-R3's inventory exactly.
+**Step 4's tariff-schedule fields** (relocated from this section, owner correction round 2 — the
+tariff's own start-time schedule is a distribution-level fact, shown right after tariff
+selection, not bundled into the supplier-contract step):
+
+| Field | `show_if` | CZ label | CZ hint |
+|---|---|---|---|
+| `tariff_vt_start_weekday` | tariff is dual | **CZ:** "VT začátek, pracovní den (hodina)" | **CZ:** "Např. '6' = 06:00" |
+| `tariff_nt_start_weekday` | tariff is dual | **CZ:** "NT začátek, pracovní den (hodina1,hodina2)" | **CZ:** "Např. '22,2' = 22:00 večer a 02:00 ráno" |
+| `tariff_weekend_same_as_weekday` | tariff is dual | **CZ:** "Víkend stejně jako pracovní dny" | **CZ:** "Vypněte, pokud se víkendové tarify liší" |
+| `tariff_vt_start_weekend` | tariff is dual AND `tariff_weekend_same_as_weekday=false` | **CZ:** "VT začátek, víkend (hodina)" | **CZ:** "Nechte prázdné pro NT celý den" |
+| `tariff_nt_start_weekend` | tariff is dual AND `tariff_weekend_same_as_weekday=false` | **CZ:** "NT začátek, víkend (hodina1,hodina2)" | **CZ:** "Např. '0' = NT celý den" |
+
+**Field-inventory count, revised:** RCA-R3's original 19 keys + 5 new `_nt`-variant keys
+(`spot_positive_fee_percent_nt`, `spot_negative_fee_percent_nt`, `spot_fixed_fee_mwh_nt`,
+`export_fee_percent_nt`, `export_fixed_fee_czk_nt`) = **24 distinct `pricing_supplier` registry
+keys**. Of those: 18 render in step 5 (group A 9 + group B 6 + group C 3), 5 render in step 4
+(tariff schedule), 1 (`dual_tariff_enabled`) is derived/persisted and renders nowhere. At most
+scenario-count-many fields are visible at once (the `show_if` chains are mutually exclusive per
+scenario selector), never all 24 simultaneously.
 
 Section intro copy (step 5, replaces the "not configurable" gap RCA-R3 found):
 
@@ -351,6 +510,46 @@ That last sentence exists specifically to prevent the confusion RCA-R3's split i
 around: two visually similar "pricing" steps back to back need an explicit sentence
 distinguishing "dataset reference price" (step 4) from "your actual contract" (step 5), or the
 restoration re-creates the exact "which price field is real" confusion R6 complains about.
+
+## 4a. Bundled dataset VT/NT: already shipped, spec correction (owner correction, round 2)
+
+The owner's round-2 brief asked for a new dataset requirement: "`pricelists.json` currently
+carries ONE price per tariff; dual tariffs need a VT/NT price split per distributor — extend the
+dataset schema + `scripts/build_pricelists.py`." **Verified against code: this premise does not
+hold. The split already exists and is already correct** — flagging the mismatch rather than
+designing around it, same precedent as RCA-R4's "Discrepancy with the original ticket wording."
+
+Evidence:
+
+- `scripts/build_pricelists.py`'s own module docstring (schema v2, "ERU-decree mode") already
+  documents a per-tariff `vt`/`nt` sub-object split: single-tariff codes (`D01d`, `D02d`) carry
+  `vt` only, dual-tariff codes carry both `vt` and `nt`, with the top-level `price_incl_vat`/
+  `price_excl_vat` mirroring the VT leg "so existing 2-level readers keep working."
+- The bundled `remote_config/data/pricelists.json` matches this exactly: checked
+  programmatically across all 3 distributors × 11 tariff codes (33 combinations) — `nt` is
+  present if and only if the tariff code is one of `D25d/D26d/D27d/D35d/D45d/D56d/D57d/D61d`,
+  absent for `D01d`/`D02d`/`POZE`. Zero exceptions.
+- The source XLSX (`scripts/data_sources/ceny-nn26-1.xlsx`, sheet `Distribuce`) genuinely
+  carries both legs for every dual-tariff sazba: e.g. row 322 "z platu za distribuované množství
+  elektřiny **ve vysokém tarifu**" (VT) and row 325 "**v nízkém tarifu**" (NT) are two separate
+  labeled price-row blocks under "Sazba D 25d". `build_pricelists.py` already reads both and the
+  resulting JSON values match the XLSX cells exactly (ČEZ D25d: VT 2252.45, NT 116.5 Kč/MWh in
+  both the sheet and the bundled JSON).
+- The `/pricelists` REST endpoint (`ha_rest_api.py:1354-1419`, `OIGCloudPricelistsView`) already
+  forwards the raw per-tariff dict — including the `nt` sub-object — to the frontend unfiltered
+  (`distributors[distributor][tariff] = dict(rates)`, no key allowlist). The FE already has the
+  NT data on the wire today, for every request.
+
+**What is actually missing** — and what step 4's "displays BOTH VT and NT distribution prices"
+requirement (above) really depends on: `config_registry.py`'s `pricing` section only declares
+`confirmed_distribution_price_incl_vat`/`_excl_vat` (the VT-mirrored top-level pair, per
+`config_registry.py:421-434`) — there is no registered field for the NT leg, and step 4's current
+FE rendering only ever reads the VT-mirrored pair, never `selected_rate.nt`. This is a **wizard
+display gap**, not a dataset or build-script gap. The implementer's task is: add NT-leg display
+(either two new registry `Field()`s, `confirmed_distribution_price_nt_incl_vat`/`_excl_vat`, or a
+direct read of the already-delivered `distributors[...].nt` object client-side — implementer's
+call) and render it in step 4 when the tariff is dual. No change to `pricelists.json`'s schema or
+to `scripts/build_pricelists.py` is needed or should be made.
 
 ## 5. "AI — proč a jak" intro block (R5)
 
@@ -435,6 +634,17 @@ keeps the step count in the table of contents accurate (AI is still one step, no
 
 Principles for whoever implements this — no pixel-level design, no CSS, no code.
 
+**No raw enum value is ever a visible label (owner correction, round 2 — spec-wide principle).**
+Every `enum`-typed registry field renders a human Czech label per allowed value, never the raw
+string (`hourly`, `cloud_only`, `percentage`, …) — this generalizes the specific defects already
+fixed above (RCA-R1's field-label gap was about *field* labels; this is the equivalent
+requirement for *enum-value* labels, a distinct gap RCA-R1 did not cover). Concrete cases fixed
+by this spec: `solar_forecast_mode` (§ Step 3), `data_source_mode` (§ Step 8, note `hybrid` stays
+out of the UI per `config_registry.py:447-449`). Cases already correct and unchanged: every
+pricing-scenario enum (`spot_pricing_model`, `export_pricing_model`, `import_pricing_scenario`,
+`export_pricing_scenario`) already carries humanized labels in §4's tables above — no rework
+needed there, cited here only so the principle's scope is unambiguous.
+
 **Progress indicator.** Two-level: macro-phase (Phase A / Phase B, §table-of-contents) as a
 faint grouping label above the existing step-number nav (`nav.steps` in `index.ts` already
 renders numbered buttons with a status badge per step — extend it with a phase label spanning
@@ -487,3 +697,11 @@ so the user sees the change at the moment they make it, not just at the end.
   no existing precedent to verify against; recommend user-testing the two-step-back-to-back
   framing before shipping, since RCA-R3 itself did not investigate the dashboard settings form's
   current supplier-pricing UI (RCA-R3 "Not established").
+- **`export_fixed_price` VT/NT split** (§4, group B, round 2): every other commercial-price
+  scenario has an established `_vt`/`_nt` migration precedent in `steps.py` (either in
+  `_migrate_old_pricing_data` or already in RCA-R3's original inventory); the `fixed_prices`
+  export scenario has none — `_migrate_old_pricing_data` has no branch for old
+  `export_pricing_model=fixed_prices` at all. This spec deliberately does **not** invent a split
+  for it (see §4). Flag to whoever wires the registry: either add the missing migration branch
+  (mirroring `fixed_commercial_price_vt`/`_nt`'s existing pattern) or confirm this scenario is
+  genuinely VT-only by design and the asymmetry is intentional.
