@@ -330,6 +330,102 @@ describe('single final save at step 9 (Task 10)', () => {
   });
 });
 
+describe('recovered pricing_supplier note + module-off warning (Task 11)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  async function goToStep(
+    wizard: HTMLElement & { updateComplete: Promise<boolean> },
+    step: string,
+  ): Promise<void> {
+    const btn = wizard.shadowRoot!.querySelector(
+      `[data-testid="wizard-steps"] [data-step="${step}"]`,
+    ) as HTMLButtonElement;
+    btn.click();
+    await settle(wizard);
+  }
+
+  it('shows the recovered-values note only when enable_pricing=true AND a legacy key is present AND the entry predates wizard v2', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing_supplier: { spot_pricing_model: 'percentage', vat_rate: 21.0 },
+    }));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_supplier');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="recovered-pricing-note"]')).toBeTruthy();
+  });
+
+  it('hides the recovered-values note when enable_pricing is off', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing_supplier: { spot_pricing_model: 'percentage', vat_rate: 21.0 },
+    }));
+    const wizard = await openWizard();
+    internals(wizard).modulesDraft = { ...internals(wizard).modulesDraft, enable_pricing: false };
+    await goToStep(wizard, 'pricing_supplier');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="recovered-pricing-note"]')).toBeNull();
+  });
+
+  it('hides the recovered-values note for a fresh install with no legacy key present', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({ pricing_supplier: {} }));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_supplier');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="recovered-pricing-note"]')).toBeNull();
+  });
+
+  it('hides the recovered-values note when the entry is not grandfathered, even with legacy keys present', async () => {
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path.includes('/onboarding')) return Promise.resolve({ ...REVIEW_ONBOARDING_STATE, grandfathered: false });
+      if (path.includes('/pricelists')) return Promise.resolve(PRICELISTS);
+      if (path.includes('/module_config')) {
+        return Promise.resolve({ pricing_supplier: { spot_pricing_model: 'percentage', vat_rate: 21.0 } });
+      }
+      return Promise.resolve(null);
+    });
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_supplier');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="recovered-pricing-note"]')).toBeNull();
+  });
+
+  it('shows the module-off warning in review mode when a module is toggled OFF this session', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({ modules: { enable_boiler: true } }));
+    const wizard = await openWizard();
+    expect(internals(wizard).originalValues.enable_boiler).toBe(true);
+
+    internals(wizard).modulesDraft = { ...internals(wizard).modulesDraft, enable_boiler: false };
+    await goToStep(wizard, 'modules');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="module-off-warning"]')).toBeTruthy();
+  });
+
+  it('does not show the module-off warning for a new install turning a module ON (nothing to lose yet)', async () => {
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path.includes('/onboarding')) return Promise.resolve({ ...REVIEW_ONBOARDING_STATE, grandfathered: false });
+      if (path.includes('/pricelists')) return Promise.resolve(PRICELISTS);
+      if (path.includes('/module_config')) return Promise.resolve({ modules: { enable_boiler: false } });
+      return Promise.resolve(null);
+    });
+    const wizard = await openWizard();
+    internals(wizard).modulesDraft = { ...internals(wizard).modulesDraft, enable_boiler: true };
+    await goToStep(wizard, 'modules');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="module-off-warning"]')).toBeNull();
+  });
+
+  it('does not show the module-off warning when nothing was turned off', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({ modules: { enable_boiler: true } }));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'modules');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="module-off-warning"]')).toBeNull();
+  });
+});
+
 describe('re-seed ordering (Task 8 continued)', () => {
   beforeEach(() => {
     fetchOIGAPI.mockReset();

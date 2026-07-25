@@ -362,6 +362,22 @@ const STEP_GATE: Partial<Record<OnboardingStepId, string>> = {
   boiler: 'enable_boiler',
 };
 
+/**
+ * `pricing_supplier` registry keys the LEGACY options-flow already wrote
+ * before wizard v2 existed (RCA-R3, UX-SPEC §3) — the original 19-key set,
+ * excluding the 5 `_nt`-variant keys added in round 2 (§4a), which are net
+ * new and cannot pre-exist in any entry. Mirrors
+ * `PricingSupplierConfig` (`data/settings-data.ts`) minus its `*_nt` fields.
+ */
+const LEGACY_PRICING_SUPPLIER_KEYS: ReadonlyArray<string> = [
+  'spot_pricing_model', 'spot_positive_fee_percent', 'spot_negative_fee_percent',
+  'spot_fixed_fee_mwh', 'fixed_commercial_price_vt', 'fixed_commercial_price_nt',
+  'export_pricing_model', 'export_fee_percent', 'export_fixed_fee_czk', 'export_fixed_price',
+  'distribution_fee_vt_kwh', 'distribution_fee_nt_kwh', 'vat_rate',
+  'tariff_vt_start_weekday', 'tariff_nt_start_weekday', 'tariff_weekend_same_as_weekday',
+  'tariff_vt_start_weekend', 'tariff_nt_start_weekend', 'dual_tariff_enabled',
+];
+
 const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
   pending: 'pending',
   done: 'done',
@@ -1186,6 +1202,32 @@ export class OigOnboardingWizard extends LitElement {
   }
 
   /**
+   * "We recovered these values" note (UX-SPEC §3) — shown only for a true
+   * recovered case: pricing enabled, at least one legacy `pricing_supplier`
+   * key present in the entry.options snapshot, AND the entry predates
+   * wizard v2 (grandfathered) — never for a fresh install that merely
+   * happens to match a registry default.
+   */
+  private showRecoveredPricingNote(): boolean {
+    return !!this.modulesDraft.enable_pricing
+      && this.onboardingState?.grandfathered === true
+      && Object.keys(this.originalValues).some((k) => LEGACY_PRICING_SUPPLIER_KEYS.includes(k));
+  }
+
+  /**
+   * Module toggles turned OFF this session, review mode only (UX-SPEC §3) —
+   * a toggle whose `originalValues` snapshot was `true`, now `false` in
+   * `modulesDraft`. New-install has nothing to lose yet (nothing was ever
+   * on), so it never gates this warning.
+   */
+  private turnedOffModuleKeys(): string[] {
+    if (this.onboardingState?.grandfathered !== true) return [];
+    return Object.keys(this.modulesDraft).filter((key) =>
+      this.originalValues[key] === true && this.modulesDraft[key] === false,
+    );
+  }
+
+  /**
    * Every currently-seeded section draft, flattened (Stage S2 Task 9) —
    * `modulesDraft` is deliberately EXCLUDED: it is still Task 2's
    * every-gate-on stub (`:476-481`), not yet seeded from `entry.options`
@@ -1328,10 +1370,34 @@ export class OigOnboardingWizard extends LitElement {
         <section class="step step-stub" data-step=${this.currentStep}>
           <h3>${STEP_LABELS[this.currentStep]}</h3>
           <div class="step-card">
+            ${this.currentStep === 'pricing_supplier' && this.showRecoveredPricingNote()
+              ? html`<p data-testid="recovered-pricing-note" class="hint">
+                  ${t('onboarding.pricing_supplier.recovered_note', this.wizardLang)}
+                </p>`
+              : nothing}
             <p data-testid="step-stub-placeholder">
               ${this.pricingLoadFailed || Object.keys(this.pricingDraft).length === 0
                 ? 'Ceny nejsou dostupné.'
                 : 'Tento krok bude doplněn v další verzi průvodce.'}
+            </p>
+          </div>
+        </section>
+      `;
+    }
+
+    if (this.currentStep === 'modules') {
+      const turnedOff = this.turnedOffModuleKeys();
+      return html`
+        <section class="step step-stub" data-step="modules">
+          <h3>${STEP_LABELS.modules}</h3>
+          <div class="step-card">
+            ${turnedOff.length > 0
+              ? html`<p data-testid="module-off-warning" class="hint">
+                  ${t('onboarding.modules.off_warning', this.wizardLang)}
+                </p>`
+              : nothing}
+            <p data-testid="step-stub-placeholder">
+              Tento krok bude doplněn v další verzi průvodce.
             </p>
           </div>
         </section>
@@ -1387,9 +1453,9 @@ export class OigOnboardingWizard extends LitElement {
       `;
     }
 
-    // Every other step without dedicated content yet (modules, battery,
-    // boiler, connection — Stage S3 fills these in). A stub, not a second
-    // source of truth.
+    // Every other step without dedicated content yet (battery, boiler,
+    // connection — Stage S3 fills these in). A stub, not a second source
+    // of truth.
     return html`
       <section class="step step-stub" data-step=${this.currentStep}>
         <h3>${STEP_LABELS[this.currentStep]}</h3>

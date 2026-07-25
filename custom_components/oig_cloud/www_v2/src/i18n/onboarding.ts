@@ -58,6 +58,11 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // F1 Wizard v2 Stage S2 Task 9 — review-mode diff table (UX-SPEC §3).
     'onboarding.summary.confirm_notice': 'Toto se změní. Dokud nekliknete na Uložit, nic se neuloží.',
     'onboarding.summary.diff_empty': 'Žádné změny oproti stávajícímu nastavení.',
+
+    // F1 Wizard v2 Stage S2 Task 11 — recovered pricing_supplier note +
+    // module-off-in-review-mode warning (UX-SPEC §3, spec-verbatim CZ).
+    'onboarding.pricing_supplier.recovered_note': 'Tyto hodnoty jsme našli ve vašem stávajícím nastavení — dosud nebyly v průvodci vidět, teď je můžete zkontrolovat.',
+    'onboarding.modules.off_warning': 'Vypnutím modulu se jeho nastavení skryje, ale zůstane uloženo — pokud modul znovu zapnete, hodnoty budou stále tady.',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
@@ -97,6 +102,9 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     'onboarding.summary.confirm_notice': 'This will change. Nothing is saved until you click Save.',
     'onboarding.summary.diff_empty': 'No changes from your existing configuration.',
+
+    'onboarding.pricing_supplier.recovered_note': 'We found these values in your existing configuration — they weren\'t visible in the wizard until now, so you can review them.',
+    'onboarding.modules.off_warning': 'Turning off a module hides its settings, but they stay saved — if you turn the module back on, the values will still be there.',
   },
 };
 
