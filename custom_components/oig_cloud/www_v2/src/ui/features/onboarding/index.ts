@@ -1321,6 +1321,7 @@ export class OigOnboardingWizard extends LitElement {
                 dirty: false,
                 secretSet: false,
                 originalValue: this.originalValues[f.key],
+                reviewMode: this.onboardingState?.grandfathered === true,
                 onChange: (v: unknown) => {
                   this.solarDraft = { ...this.solarDraft, [f.key]: v };
                   this.solarTestMatchesDraft = false;

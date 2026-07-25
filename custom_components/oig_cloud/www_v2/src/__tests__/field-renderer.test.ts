@@ -158,15 +158,24 @@ describe('renderFieldPresenter (Task 1 — shared field renderer/presenter)', ()
     expect(unchanged.querySelector('[data-testid="diff-hint"]')).toBeNull();
   });
 
-  it('a secret field never shows its raw value in the diff hint — masked, and only when dirty', () => {
+  it('a secret field never shows its raw value in the diff hint — masked, and only when dirty in review mode', () => {
     const f: FieldDef = { key: 'solcast_api_key', label: 'Solcast API klíč', type: 'text', secret: true };
 
-    const changed = mount(f, baseCtx({ value: 'new-secret-value', dirty: true, secretSet: true }));
+    const changed = mount(f, baseCtx({ value: 'new-secret-value', dirty: true, secretSet: true, reviewMode: true }));
     const hint = changed.querySelector('[data-testid="diff-hint"]');
     expect(hint?.textContent).toBe('Bylo: (nastaveno) → Nyní: (změněno)');
     expect(hint?.textContent).not.toContain('new-secret-value');
 
-    const untouched = mount(f, baseCtx({ value: '', dirty: false, secretSet: true }));
+    const untouched = mount(f, baseCtx({ value: '', dirty: false, secretSet: true, reviewMode: true }));
     expect(untouched.querySelector('[data-testid="diff-hint"]')).toBeNull();
+  });
+
+  // regression: opus S2 review — secret diff hint keys off `dirty` only, so a
+  // dirty secret edit in the plain settings UI (reviewMode absent) leaked the
+  // review-mode "Bylo → Nyní" hint. It must render ONLY in review mode.
+  it('a dirty secret does NOT show the diff hint outside review mode (settings UI leak)', () => {
+    const f: FieldDef = { key: 'solcast_api_key', label: 'Solcast API klíč', type: 'text', secret: true };
+    const settingsEdit = mount(f, baseCtx({ value: 'new-secret-value', dirty: true, secretSet: true }));
+    expect(settingsEdit.querySelector('[data-testid="diff-hint"]')).toBeNull();
   });
 });

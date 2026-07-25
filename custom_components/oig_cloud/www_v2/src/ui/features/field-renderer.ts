@@ -30,6 +30,13 @@ export interface FieldPresenterContext {
    * reaches the client). Drives the diff hint below the control.
    */
   originalValue?: unknown;
+  /**
+   * True only inside the review-mode wizard. Gates the secret diff hint, which
+   * cannot key off `originalValue` (a secret's real value never reaches the
+   * client), so without this flag it would leak into the plain settings UI on
+   * any dirty secret edit. Non-secret hints are already gated by `originalValue`.
+   */
+  reviewMode?: boolean;
 }
 
 /** Render label text with optional "(volitelné)" suffix and hint below. */
@@ -68,7 +75,7 @@ function formatFieldValue(f: FieldDef, value: unknown): string {
  */
 function renderDiffHint(f: FieldDef, ctx: FieldPresenterContext): TemplateResult | typeof nothing {
   if (f.secret) {
-    if (!ctx.dirty) return nothing;
+    if (!ctx.reviewMode || !ctx.dirty) return nothing;
     return html`<span class="diff-hint" data-testid="diff-hint">Bylo: (nastaveno) → Nyní: (změněno)</span>`;
   }
   if (ctx.originalValue === undefined) return nothing;
