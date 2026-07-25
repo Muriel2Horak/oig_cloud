@@ -49,6 +49,7 @@ import {
   type AiVerifyResult,
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
+import { saveModuleConfig, type SettingsSection } from '@/data/settings-data';
 import { t, resolveLang, type Lang, type OnboardingKey } from '@/i18n/onboarding';
 import { fieldLabel } from '@/i18n/fields';
 
@@ -792,7 +793,39 @@ export class OigOnboardingWizard extends LitElement {
     return error || t('onboarding.finish.error.generic', this.wizardLang);
   }
 
+  /**
+   * Every seeded section draft, paired with its `SettingsSection` name for
+   * `saveModuleConfig` (Stage S2 Task 10) — `modulesDraft` is excluded, same
+   * reason as `allDraftValues()` (`:1157-1166`): it isn't seeded from
+   * `entry.options` yet, so it never has a genuine "changed" field to save.
+   */
+  private sectionDrafts(): Array<{ section: SettingsSection; draft: Record<string, unknown> }> {
+    return [
+      { section: 'solar', draft: this.solarDraft },
+      { section: 'pricing', draft: this.pricingDraft },
+    ];
+  }
+
+  /**
+   * Single final save (UX-SPEC §3): write only the fields that differ from
+   * `originalValues`, one `saveModuleConfig` call per section that has any,
+   * and nothing for a section with no changes. Called once, from
+   * `sendFinishRequest` — no per-step auto-save anywhere else in the wizard.
+   */
+  private async saveAllChangedSections(): Promise<void> {
+    for (const { section, draft } of this.sectionDrafts()) {
+      const changed: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(draft)) {
+        if (String(this.originalValues[key]) !== String(value)) changed[key] = value;
+      }
+      if (Object.keys(changed).length > 0) {
+        await saveModuleConfig(section, changed);
+      }
+    }
+  }
+
   private async sendFinishRequest(): Promise<void> {
+    await this.saveAllChangedSections();
     const result = await haClient.fetchOIGAPITyped<OnboardingState>(
       `/${this.inverterSn}/onboarding`,
       { method: 'POST', body: JSON.stringify({ action: 'finish' }) },

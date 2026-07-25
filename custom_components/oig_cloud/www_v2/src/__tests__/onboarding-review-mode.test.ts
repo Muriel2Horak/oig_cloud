@@ -266,6 +266,70 @@ describe('step-9 full diff table in review mode (Task 9)', () => {
   });
 });
 
+describe('single final save at step 9 (Task 10)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+    saveModuleConfigMock.mockResolvedValue({ ok: true });
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  it('summary Uložit saves every changed section in one batch, nothing before it', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      solar: {
+        solar_forecast_provider: 'forecast_solar', solar_forecast_mode: 'hourly',
+        solar_forecast_string1_enabled: true, solar_forecast_string2_enabled: false,
+        solar_forecast_latitude: 49.5, solar_forecast_longitude: 14.0,
+      },
+      pricing: { confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D57d' },
+    }));
+
+    const wizard = await openWizardOnSummary();
+    // No save before the summary step's own save click.
+    expect(saveModuleConfigMock).not.toHaveBeenCalled();
+
+    // Change a solar field and a pricing field.
+    internals(wizard).solarDraft = { ...internals(wizard).solarDraft, solar_forecast_latitude: 50.1 };
+    internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, confirmed_distribution_distributor: 'egd' };
+    await wizard.updateComplete;
+
+    (wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement).click();
+    await settle(wizard);
+
+    expect(saveModuleConfigMock).toHaveBeenCalledTimes(2);
+    expect(saveModuleConfigMock).toHaveBeenCalledWith('solar', { solar_forecast_latitude: 50.1 });
+    expect(saveModuleConfigMock).toHaveBeenCalledWith('pricing', { confirmed_distribution_distributor: 'egd' });
+  });
+
+  it('does not call saveModuleConfig for a section with no changes', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      solar: {
+        solar_forecast_provider: 'forecast_solar', solar_forecast_mode: 'hourly',
+        solar_forecast_string1_enabled: true, solar_forecast_string2_enabled: false,
+        solar_forecast_latitude: 49.5, solar_forecast_longitude: 14.0,
+      },
+      pricing: { confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D57d' },
+    }));
+
+    const wizard = await openWizardOnSummary();
+    internals(wizard).solarDraft = { ...internals(wizard).solarDraft, solar_forecast_latitude: 50.1 };
+    await wizard.updateComplete;
+
+    (wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement).click();
+    await settle(wizard);
+
+    expect(saveModuleConfigMock).toHaveBeenCalledTimes(1);
+    expect(saveModuleConfigMock).toHaveBeenCalledWith('solar', { solar_forecast_latitude: 50.1 });
+  });
+});
+
 describe('re-seed ordering (Task 8 continued)', () => {
   beforeEach(() => {
     fetchOIGAPI.mockReset();
