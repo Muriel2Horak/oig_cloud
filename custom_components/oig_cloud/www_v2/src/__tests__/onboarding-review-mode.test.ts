@@ -138,3 +138,78 @@ describe('originalValues snapshot + review-mode detection (Task 6)', () => {
     expect(internals(wizard2).originalValues.charge_rate_kw).toBe(3.4);
   });
 });
+
+describe('seed every step draft from entry.options in review mode (Task 8)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  it('review mode (grandfathered) seeds solarDraft from module_config, not registry defaults', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      solar: {
+        solar_forecast_provider: 'solcast', // registry default is 'forecast_solar' — proves the source
+        solar_forecast_latitude: 49.5,
+        solar_forecast_longitude: 14.0,
+      },
+    }));
+
+    const wizard = await openWizard();
+    const w = internals(wizard);
+
+    expect(w.solarDraft.solar_forecast_provider).toBe('solcast');
+    expect(w.solarDraft.solar_forecast_latitude).toBe(49.5);
+    expect(w.solarDraft.solar_forecast_longitude).toBe(14.0);
+  });
+
+  it('new install (no module_config solar section) leaves fields empty, no fabricated value', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      solar: {
+        solar_forecast_provider: 'forecast_solar',
+        solar_forecast_latitude: null,
+        solar_forecast_longitude: null,
+      },
+    }));
+
+    const wizard = await openWizard();
+    const w = internals(wizard);
+
+    // No live source and no registry default (SOLAR_REGISTRY_FIXTURE) for
+    // lat/lon — must stay empty, never a fabricated coordinate.
+    expect(w.solarDraft.solar_forecast_latitude).toBeUndefined();
+    expect(w.solarDraft.solar_forecast_longitude).toBeUndefined();
+    // A field WITH a registry default still gets it (registry-default
+    // fallback for a genuinely-unset field is correct, per spec §3).
+    expect(w.solarDraft.solar_forecast_string1_enabled).toBe(true);
+  });
+
+  it('re-seeds correctly regardless of which of the two bootstrap fetches settles first', async () => {
+    let releaseRegistry: (() => void) | undefined;
+    loadFieldRegistryMock.mockImplementation(
+      () => new Promise((resolve) => { releaseRegistry = () => resolve(SOLAR_REGISTRY_FIXTURE); }),
+    );
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      solar: { solar_forecast_provider: 'solcast', solar_forecast_latitude: 49.5, solar_forecast_longitude: 14.0 },
+    }));
+
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    );
+    await settle(wizard);
+    // module_config has settled; the registry fetch is still pending.
+    expect(internals(wizard).originalValues.solar_forecast_latitude).toBe(49.5);
+    expect(internals(wizard).solarDraft.solar_forecast_latitude).toBeUndefined();
+
+    releaseRegistry?.();
+    await settle(wizard);
+    expect(internals(wizard).solarDraft.solar_forecast_latitude).toBe(49.5);
+  });
+});

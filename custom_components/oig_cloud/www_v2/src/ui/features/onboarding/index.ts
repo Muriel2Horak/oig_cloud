@@ -905,23 +905,33 @@ export class OigOnboardingWizard extends LitElement {
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   }
 
+  /**
+   * Seed `solarDraft` from `originalValues` (entry.options, via
+   * `/module_config`'s `solar` section) FIRST, the registry's own `default`
+   * only for a field genuinely unset either way (Stage S2 Task 8, UX-SPEC
+   * §3) — never a fabricated value for a field with no live source (GPS).
+   * Idempotent and safe to call from either bootstrap loader, in either
+   * order: the registry fetch and the module_config fetch settle
+   * independently, and whichever settles second produces the correct seed.
+   */
+  private seedSolarDraft(): void {
+    if (!this._registry) return;
+    const draft: Record<string, unknown> = {};
+    for (const f of STEP_SOLAR.fields(this._registry)) {
+      const spec = this._registry.fields[f.key];
+      const seeded = this.originalValues[f.key] ?? spec?.default;
+      if (seeded !== undefined) draft[f.key] = seeded;
+    }
+    this.solarDraft = draft;
+  }
+
   private async loadSolarRegistry(signal?: AbortSignal): Promise<void> {
     if (this._registryLoaded) return;
     this._registryLoaded = true;
     try {
       this._registry = await loadFieldRegistry(signal);
       this._registryOutcome = signal?.aborted ? 'aborted' : this._registry !== null ? 'success' : 'failed';
-      this.solarDraft = {};
-      // seed default values from the registry
-      if (this._registry) {
-        for (const f of STEP_SOLAR.fields(this._registry)) {
-          const spec = this._registry.fields[f.key];
-          if (spec?.default !== undefined) {
-            (this.solarDraft as Record<string, unknown>)[f.key] = spec.default;
-          }
-        }
-        this.requestUpdate();
-      }
+      this.seedSolarDraft();
     } catch {
       this._registry = null;
       this._registryOutcome = signal?.aborted ? 'aborted' : 'failed';
@@ -947,6 +957,7 @@ export class OigOnboardingWizard extends LitElement {
       if (data) {
         this.originalValues = Object.freeze(flattenModuleConfig(data));
         if (data.pricing) this.pricingDraft = { ...data.pricing };
+        this.seedSolarDraft(); // re-seed if the registry already settled first
       }
     } catch {
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : 'failed';
