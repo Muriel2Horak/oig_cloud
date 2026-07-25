@@ -26,7 +26,7 @@ import {
 import { oigLog } from '@/core/logger';
 import { throttle, withRetry } from '@/utils/format';
 import { shieldController } from '@/data/shield-controller';
-import { loadOnboardingState } from '@/ui/features/onboarding/onboarding-data';
+import { dismissOnboardingBanner, loadOnboardingState } from '@/ui/features/onboarding/onboarding-data';
 
 import '@/ui/components/header';
 import '@/ui/components/theme-provider';
@@ -986,6 +986,22 @@ export class OigApp extends LitElement {
     void this.loadOnboarding();
   }
 
+  private onDismissOnboardingBanner(e: Event): void {
+    // Grandfathered-only (banner.ts gates the event on .grandfathered): persist
+    // the dismissal so it survives a reload (D11), then re-sync local state.
+    e.stopPropagation();
+    void this.persistBannerDismissal();
+  }
+
+  private async persistBannerDismissal(): Promise<void> {
+    try {
+      await dismissOnboardingBanner(INVERTER_SN);
+    } catch {
+      // best-effort — the banner already hid itself locally (banner.ts)
+    }
+    void this.loadOnboarding();
+  }
+
   private onGridChargingOpen(): void {
     const dialog = this.shadowRoot?.querySelector('oig-grid-charging-dialog') as OigGridChargingDialog | null;
     dialog?.show();
@@ -1308,9 +1324,12 @@ export class OigApp extends LitElement {
     }
 
     const chmuAlertCount = this.chmuData.effectiveSeverity > 0 ? this.chmuData.warningsCount : 0;
-    const showOnboardingBanner = this.onboarding
-      && !this.onboarding.grandfathered
-      && Object.values(this.onboarding.steps).some((step) => step !== 'done');
+    // D11: a grandfathered entry gets the banner too (review-config invitation,
+    // never a wall) — shown until its own dismissal is persisted. A
+    // non-grandfathered, incomplete-setup entry keeps its prior behavior.
+    const showOnboardingBanner = this.onboarding && (this.onboarding.grandfathered
+      ? !this.onboarding.banner_dismissed
+      : Object.values(this.onboarding.steps).some((step) => step !== 'done'));
 
     return html`
       <oig-theme-provider>
@@ -1338,7 +1357,10 @@ export class OigApp extends LitElement {
           ${showOnboardingBanner ? html`
             <oig-onboarding-banner
               role="status"
+              .grandfathered=${!!this.onboarding.grandfathered}
+              .lang=${this.boilerLang}
               @launch-onboarding=${this.onLaunchOnboarding}
+              @dismiss-onboarding-banner=${this.onDismissOnboardingBanner}
             ></oig-onboarding-banner>
           ` : nothing}
           <oig-grid .editable=${this.editMode}>
