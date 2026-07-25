@@ -29,7 +29,7 @@ import {
   validateKeyShape,
 } from './step-ai';
 import type { FieldRegistry } from '@/data/registry-data';
-import { loadFieldRegistry } from '@/data/registry-data';
+import { loadFieldRegistry, fieldsFromRegistry } from '@/data/registry-data';
 import type { FieldDef } from '@/ui/features/settings';
 import { STEP_SOLAR } from './step-solar';
 import { STEP_PRICING_DISTRIBUTION } from './step-pricing-distribution';
@@ -368,6 +368,20 @@ const STEP_GATE: Partial<Record<OnboardingStepId, string>> = {
   battery: 'enable_battery_prediction',
   boiler: 'enable_boiler',
 };
+
+/**
+ * Modules step grouping (Stage S3 Task 21, UX-SPEC §Step 1) — "Hlavní
+ * moduly" (each gates a later step, `STEP_GATE` above) above "Doplňkové"
+ * (no gated step). Spec-fixed order, NOT the registry's own field order
+ * (`config_registry.py` lists `enable_battery_prediction` before
+ * `enable_pricing`).
+ */
+const MODULES_GROUP_HLAVNI = [
+  'enable_solar_forecast', 'enable_pricing', 'enable_battery_prediction', 'enable_boiler',
+] as const;
+const MODULES_GROUP_DOPLNKOVE = [
+  'enable_statistics', 'enable_extended_sensors', 'enable_chmu_warnings',
+] as const;
 
 /**
  * `pricing_supplier` registry keys the LEGACY options-flow already wrote
@@ -720,6 +734,16 @@ export class OigOnboardingWizard extends LitElement {
 
     .step-card p { margin: 0 0 8px; }
 
+    .module-group + .module-group { margin-top: 16px; }
+    .module-group h4 {
+      margin: 0 0 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.7;
+    }
+
     footer {
       display: flex;
       justify-content: space-between;
@@ -1016,6 +1040,33 @@ export class OigOnboardingWizard extends LitElement {
     this.batteryDraft = draft;
   }
 
+  /**
+   * Seed `modulesDraft` from `originalValues` (entry.options, via
+   * `/module_config`'s `modules` section) FIRST, the registry's own
+   * `default` only for a field genuinely unset either way (Stage S3 Task
+   * 21, mirrors `seedSolarDraft` — Task 8's pattern applied to the modules
+   * section). New install: "all off except recommended defaults" (UX-SPEC
+   * table-of-contents) IS the registry `default` for every module key
+   * (`config_registry.py`) — no separate rule needed here.
+   *
+   * Guarded on the registry actually describing the `modules` section:
+   * every other bootstrap fixture in this test suite registers only its
+   * own section (e.g. `solar`), so this never fires there and the Stage S1
+   * every-gate-on stub (`:525-530`) keeps gating nav in those tests exactly
+   * as before — only a registry response that genuinely includes `modules`
+   * (production, or this task's own test fixture) replaces it.
+   */
+  private seedModulesDraft(): void {
+    if (!this._registry || !this._registry.sections.includes('modules')) return;
+    const draft: Record<string, unknown> = {};
+    for (const key of [...MODULES_GROUP_HLAVNI, ...MODULES_GROUP_DOPLNKOVE]) {
+      const spec = this._registry.fields[key];
+      const seeded = this.originalValues[key] ?? spec?.default;
+      if (seeded !== undefined) draft[key] = seeded;
+    }
+    this.modulesDraft = draft;
+  }
+
   private async loadSolarRegistry(signal?: AbortSignal): Promise<void> {
     if (this._registryLoaded) return;
     this._registryLoaded = true;
@@ -1024,6 +1075,7 @@ export class OigOnboardingWizard extends LitElement {
       this._registryOutcome = signal?.aborted ? 'aborted' : this._registry !== null ? 'success' : 'failed';
       this.seedSolarDraft();
       this.seedBatteryDraft();
+      this.seedModulesDraft();
     } catch {
       this._registry = null;
       this._registryOutcome = signal?.aborted ? 'aborted' : 'failed';
@@ -1051,6 +1103,7 @@ export class OigOnboardingWizard extends LitElement {
         if (data.pricing) this.pricingDraft = { ...data.pricing };
         this.seedSolarDraft(); // re-seed if the registry already settled first
         this.seedBatteryDraft(); // T18 review: battery draft misses entry.options on registry-first race
+        this.seedModulesDraft(); // re-seed if the registry already settled first
       }
     } catch {
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : 'failed';
@@ -1564,8 +1617,33 @@ export class OigOnboardingWizard extends LitElement {
 
     if (this.currentStep === 'modules') {
       const turnedOff = this.turnedOffModuleKeys();
+
+      // Spec-fixed group order (`MODULES_GROUP_HLAVNI`/`_DOPLNKOVE`, :357-369),
+      // NOT the registry's own field order — same lookup-by-key approach as
+      // `STEP_GATE`.
+      const moduleFields = this._registry ? fieldsFromRegistry(this._registry, 'modules') : [];
+      const byKey = new Map(moduleFields.map((f): [string, FieldDef] => [f.key, f]));
+      const hlavniFields = MODULES_GROUP_HLAVNI.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+      const doplnkoveFields = MODULES_GROUP_DOPLNKOVE.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+
+      const renderGroup = (fields: FieldDef[]) => fields.map((f) => html`
+        <div data-key=${f.key}>
+          ${renderFieldPresenter(f, {
+            value: this.modulesDraft[f.key],
+            dirty: false,
+            secretSet: false,
+            originalValue: this.originalValues[f.key],
+            reviewMode: this.onboardingState?.grandfathered === true,
+            onChange: (v: unknown) => {
+              this.modulesDraft = { ...this.modulesDraft, [f.key]: v };
+            },
+            entityCatalog: [],
+          })}
+        </div>
+      `);
+
       return html`
-        <section class="step step-stub" data-step="modules">
+        <section class="step step-modules" data-step="modules">
           <h3>${STEP_LABELS.modules}</h3>
           <div class="step-card">
             ${turnedOff.length > 0
@@ -1573,9 +1651,18 @@ export class OigOnboardingWizard extends LitElement {
                   ${t('onboarding.modules.off_warning', this.wizardLang)}
                 </p>`
               : nothing}
-            <p data-testid="step-stub-placeholder">
-              Tento krok bude doplněn v další verzi průvodce.
-            </p>
+            ${hlavniFields.length === 0 && doplnkoveFields.length === 0
+              ? html`<p data-testid="modules-not-available">Moduly nejsou k dispozici.</p>`
+              : html`
+                  <div class="module-group" data-group="hlavni">
+                    <h4>${t('onboarding.modules.group_hlavni', this.wizardLang)}</h4>
+                    ${renderGroup(hlavniFields)}
+                  </div>
+                  <div class="module-group" data-group="doplnkove">
+                    <h4>${t('onboarding.modules.group_doplnkove', this.wizardLang)}</h4>
+                    ${renderGroup(doplnkoveFields)}
+                  </div>
+                `}
           </div>
         </section>
       `;
