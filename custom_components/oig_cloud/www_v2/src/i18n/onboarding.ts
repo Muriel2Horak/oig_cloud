@@ -48,6 +48,12 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.ai.disclosure.ai_task': 'Zpracování probíhá u AI, kterou už máte nastavenou v Home Assistantu — nezavádíme žádnou novou třetí stranu.',
     'onboarding.ai.disclosure.groq': 'Dle smluvních podmínek Groq NETRÉNUJE na vstupech. Naše integrace posílá výhradně anonymní číselné hodnoty, žádné osobní údaje.',
     'onboarding.ai.disclosure.nvidia': 'Free tier NVIDIA je dle ToS „trial/evaluation, ne produkce" — trvalé použití je šedá zóna. Dle §3.3 smí NVIDIA deidentifikovaně používat vstupy ke zlepšování modelů; osobní údaje v promptech jsou zakázané. Naše integrace posílá výhradně anonymní číselné hodnoty.',
+
+    // F1 Wizard v2 Stage S1 Task 5 — welcome (step 0) / summary (step 9),
+    // spec-verbatim copy (UX-SPEC-wizard-v2.md §Step 0 / §Step 9).
+    'onboarding.welcome.new_install': 'Vítejte v průvodci nastavením OIG Cloud. Projdeme spolu pár kroků — solární předpověď, ceny energie, volitelně AI a bojler. Nic nemusíte vyplnit najednou, průvodce si pamatuje, kde jste skončili.',
+    'onboarding.welcome.review': 'Váš stávající nastavení zůstává beze změny, dokud ho výslovně nepotvrdíte. V každém kroku uvidíte svou aktuální hodnotu a můžete ji ověřit nebo upravit — nic se nesmaže, dokud nedáte Uložit.',
+    'onboarding.summary.new_install_heading': 'Shrnutí nastavení — zkontrolujte prosím před uložením:',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
@@ -80,6 +86,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.ai.disclosure.ai_task': 'Processing stays with whichever AI backend you already configured in Home Assistant — we don’t introduce any new third party.',
     'onboarding.ai.disclosure.groq': 'Per its terms of service, Groq contractually does not train on your inputs. Our integration sends only anonymous numeric values — no personal data.',
     'onboarding.ai.disclosure.nvidia': 'NVIDIA’s free tier is, per its ToS, "trial/evaluation, not production" — permanent use is a gray area. Under §3.3, NVIDIA may use deidentified inputs to improve its models; personal data in prompts is prohibited. Our integration sends only anonymous numeric values.',
+
+    'onboarding.welcome.new_install': 'Welcome to the OIG Cloud setup wizard. We\'ll walk through a few steps together — solar forecast, energy prices, optionally AI and boiler. You don\'t need to fill everything in one go, the wizard remembers where you left off.',
+    'onboarding.welcome.review': 'Your existing setup stays unchanged until you explicitly confirm it. On every step you\'ll see your current value and can verify or edit it — nothing is deleted until you click Save.',
+    'onboarding.summary.new_install_heading': 'Setup summary — please review before saving:',
   },
 };
 

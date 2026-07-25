@@ -670,4 +670,66 @@ describe('WIZARD_STEPS 10-step sequence (F1 Wizard v2 S1 Task 2)', () => {
       .map((b) => b.getAttribute('data-step'));
     expect(steps).not.toContain('boiler');
   });
+
+  it('welcome step shows new-install copy for a fresh entry, review copy for a grandfathered one', async () => {
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path === '/SN123/onboarding') {
+        return Promise.resolve({
+          schema_version: 1,
+          steps: {},
+          timestamps: {},
+          provider: null,
+          grandfathered: false,
+          banner_dismissed: false,
+        });
+      }
+      return Promise.resolve(null);
+    });
+    const freshWizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    );
+    await flushWizard(freshWizard);
+    expect(
+      freshWizard.shadowRoot!.querySelector('[data-testid="wizard-content"] [data-step="welcome"]')!.textContent,
+    ).toContain('Nic nemusíte vyplnit najednou');
+    fixtureCleanup();
+
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path === '/SN123/onboarding') {
+        return Promise.resolve({
+          schema_version: 1,
+          steps: {},
+          timestamps: {},
+          provider: null,
+          grandfathered: true,
+          banner_dismissed: false,
+        });
+      }
+      return Promise.resolve(null);
+    });
+    const reviewWizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    );
+    await flushWizard(reviewWizard);
+    expect(
+      reviewWizard.shadowRoot!.querySelector('[data-testid="wizard-content"] [data-step="welcome"]')!.textContent,
+    ).toContain('nic se nesmaže, dokud nedáte Uložit');
+  });
+
+  it('summary step (new install) renders the flat "toto se vytvoří" heading + enabled module names', async () => {
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> } & Record<string, any>>(
+      html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    (wizard.shadowRoot!.querySelector('button[data-step="summary"]') as HTMLButtonElement).click();
+    await flushWizard(wizard);
+
+    const content = wizard.shadowRoot!.querySelector(
+      '[data-testid="wizard-content"] [data-step="summary"]',
+    ) as HTMLElement;
+    expect(content).toBeTruthy();
+    expect(content.textContent).toContain('Shrnutí nastavení');
+    expect(content.textContent).toContain('Bojler');
+  });
 });

@@ -50,6 +50,7 @@ import {
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
 import { t, resolveLang, type Lang, type OnboardingKey } from '@/i18n/onboarding';
+import { fieldLabel } from '@/i18n/fields';
 
 interface PricingRate {
   price_incl_vat: number;
@@ -1099,6 +1100,17 @@ export class OigOnboardingWizard extends LitElement {
   }
 
   private renderStepContent() {
+    if (this.currentStep === 'welcome') {
+      const isReview = this.onboardingState?.grandfathered === true; // design decision 3
+      return html`
+        <section class="step step-welcome" data-step="welcome">
+          <h3>${STEP_LABELS.welcome}</h3>
+          <div class="step-card">
+            <p>${t(isReview ? 'onboarding.welcome.review' : 'onboarding.welcome.new_install', this.wizardLang)}</p>
+          </div>
+        </section>`;
+    }
+
     if (this.currentStep === 'ai') {
       // Reuse the typed AI renderer (provider cards + key verify). It owns
       // its own verify state — but shares the wizard's already-bootstrapped
@@ -1217,9 +1229,28 @@ export class OigOnboardingWizard extends LitElement {
       `;
     }
 
+    if (this.currentStep === 'summary') {
+      // Full diff table (review mode) lands in Stage S2 Task 9 — this task
+      // only wires the flat "new install" list per spec §Step 9.
+      const enabledModules = Object.entries(this.modulesDraft)
+        .filter(([key, value]) => key.startsWith('enable_') && value === true)
+        .map(([key]) => fieldLabel(key, `field.${key}.label`));
+      return html`
+        <section class="step step-summary" data-step="summary">
+          <h3>${STEP_LABELS.summary}</h3>
+          <div class="step-card">
+            <p>${t('onboarding.summary.new_install_heading', this.wizardLang)}</p>
+            <ul>
+              ${enabledModules.map((label) => html`<li>${label}</li>`)}
+            </ul>
+          </div>
+        </section>
+      `;
+    }
+
     // Every other step without dedicated content yet (modules, battery,
-    // boiler, connection — Stage S3 fills these in; welcome/summary land in
-    // Task 5). A stub, not a second source of truth.
+    // boiler, connection — Stage S3 fills these in). A stub, not a second
+    // source of truth.
     return html`
       <section class="step step-stub" data-step=${this.currentStep}>
         <h3>${STEP_LABELS[this.currentStep]}</h3>
