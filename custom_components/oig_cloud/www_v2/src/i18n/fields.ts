@@ -79,6 +79,16 @@ const CS_LABELS: Record<string, string> = {
   // NEW (U2 — no live copy exists, these two were never rendered):
   'field.solar_forecast_api_key.label': 'forecast.solar API klíč',
   'field.solar_forecast_mode.label': 'Frekvence aktualizace',
+
+  // RCA-R1 (2026-07-25) — 5 pricing fields, UX-SPEC-wizard-v2.md §step-4 table:
+  'field.confirmed_distribution_distributor.label': 'Distributor',
+  'field.confirmed_distribution_tariff.label': 'Sazba (tarif)',
+  'field.confirmed_distribution_price_incl_vat.label': 'Cena s DPH',
+  'field.confirmed_distribution_price_excl_vat.label': 'Cena bez DPH',
+  'field.confirmed_distribution_unit.label': 'Jednotka',
+  // RCA-R1 (2026-07-25) — 2 battery fields, UX-SPEC-wizard-v2.md §step-6 table:
+  'field.balancing_opportunistic_threshold.label': 'Oportunní práh balancování (%)',
+  'field.balancing_economic_threshold.label': 'Ekonomický práh balancování (%)',
 };
 
 const CS_HINTS: Record<string, string> = {
@@ -126,6 +136,15 @@ const CS_HINTS: Record<string, string> = {
 
   // NEW (U2 — no live copy exists):
   'field.solar_forecast_mode.hint': 'Hodinově a po 4 h vyžaduje API klíč forecast.solar',
+
+  // RCA-R1 (2026-07-25) — pricing + battery hints, UX-SPEC-wizard-v2.md §step-4/§step-6:
+  'field.confirmed_distribution_distributor.hint': 'Vyberte svého distributora elektřiny (ČEZ, EG.D, PRE)',
+  'field.confirmed_distribution_tariff.hint': 'Vaše distribuční sazba dle smlouvy s distributorem',
+  'field.confirmed_distribution_price_incl_vat.hint': 'Doplněno automaticky z ceníku distributora',
+  'field.confirmed_distribution_price_excl_vat.hint': 'Doplněno automaticky z ceníku distributora',
+  'field.confirmed_distribution_unit.hint': 'Doplněno automaticky z ceníku distributora',
+  'field.balancing_opportunistic_threshold.hint': 'Balancování proběhne dřív, pokud je v tomto okně dost levné energie',
+  'field.balancing_economic_threshold.hint': 'Nad tímto cenovým prahem se balancování odkládá, aby se nenabíjelo draze',
 };
 
 /** Falls back to a humanised key — never returns a raw i18n key. */
