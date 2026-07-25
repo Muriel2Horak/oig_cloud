@@ -130,6 +130,15 @@ export class OigOnboardingStepAi extends LitElement {
    */
   @property({ attribute: false }) onboardingState: OnboardingState | null | undefined = undefined;
 
+  /** HA connection object — drives which language the per-provider disclosure
+   * (audit gap O2/P10) renders in, same `resolveLang(hass)` pattern as the
+   * wizard shell. `null` (standalone/test usage) resolves to `'cs'`. */
+  @property({ attribute: false }) hass: any = null;
+
+  private get stepLang(): Lang {
+    return resolveLang(this.hass);
+  }
+
   /** Soft-guide state — null while loading / on network error. Only used
    * when `onboardingState` is not supplied by the host. */
   @state() private state: OnboardingState | null = null;
@@ -157,6 +166,14 @@ export class OigOnboardingStepAi extends LitElement {
     .card ol { padding-left: 18px; margin: 6px 0; }
     .card li { font-size: 12px; line-height: 1.45; margin-bottom: 3px; }
     .tier { font-size: 11px; opacity: 0.75; margin-top: 6px; }
+    .disclosure {
+      font-size: 11px;
+      line-height: 1.4;
+      opacity: 0.85;
+      margin-top: 8px;
+      padding: 6px 8px;
+      border-left: 2px solid var(--divider-color, rgba(255, 255, 255, 0.25));
+    }
     .paste {
       width: 100%;
       box-sizing: border-box;
@@ -222,6 +239,9 @@ export class OigOnboardingStepAi extends LitElement {
           ${guide.steps.map((s) => html`<li>${s}</li>`)}
         </ol>
         ${guide.freeTier ? html`<div class="tier">${guide.freeTier}</div>` : nothing}
+        <div class="disclosure" data-testid=${`disclosure-${provider}`}>
+          ${t(guide.disclosureKey, this.stepLang)}
+        </div>
         ${prefix
           ? html`
               <input
@@ -1051,6 +1071,7 @@ export class OigOnboardingWizard extends LitElement {
         class="step step-ai"
         .inverterSn=${this.inverterSn}
         .onboardingState=${this.onboardingState}
+        .hass=${this.hass}
       ></oig-onboarding-step-ai>`;
     }
 

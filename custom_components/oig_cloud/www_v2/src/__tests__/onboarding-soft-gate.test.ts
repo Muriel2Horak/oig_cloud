@@ -118,10 +118,56 @@ describe('SCOPE-REVISION #6 — the guide is SOFT', () => {
     expect(el.shadowRoot!.querySelector('oig-onboarding-banner')).toBeNull();
   });
 
-  it('a grandfathered entry gets no banner and no wizard (D11 × #6)', async () => {
-    el.onboarding = { grandfathered: true, steps: { ai: 'pending', solar: 'done', pricing: 'done' } };
+  it('a grandfathered entry gets the review banner, never a wizard wall (D11 × #6)', async () => {
+    el.onboarding = { grandfathered: true, banner_dismissed: false, steps: { ai: 'pending', solar: 'done', pricing: 'done' } };
+    await el.updateComplete;
+    const banner = el.shadowRoot!.querySelector('oig-onboarding-banner');
+    expect(banner).toBeTruthy();
+    expect(banner!.getAttribute('role')).toBe('status');   // not 'alertdialog'
+    expect(el.shadowRoot!.querySelector('.tab-content')).toBeTruthy();   // dashboard still renders — no gate
+  });
+
+  it('a grandfathered entry whose banner was already dismissed sees no banner', async () => {
+    el.onboarding = { grandfathered: true, banner_dismissed: true, steps: { ai: 'pending', solar: 'done', pricing: 'done' } };
     await el.updateComplete;
     expect(el.shadowRoot!.querySelector('oig-onboarding-banner')).toBeNull();
+  });
+
+  it('the grandfathered banner shows distinct "review your configuration" copy', async () => {
+    el.onboarding = { grandfathered: true, banner_dismissed: false, steps: { ai: 'pending', solar: 'done', pricing: 'done' } };
+    await el.updateComplete;
+    const banner = el.shadowRoot!.querySelector('oig-onboarding-banner')!;
+    expect(banner.shadowRoot!.textContent).toMatch(/zkontrolujte svou stávající konfiguraci/i);
+  });
+
+  it('dismissing the grandfathered banner hides it immediately and re-syncs onboarding state (persistence contract covered in onboarding-skip.test.ts)', async () => {
+    // app.ts binds `.inverterSn`-style values from a module-level constant
+    // parsed from the URL query string, empty in this test environment (see
+    // the Task 11 block below) — so the REST round-trip itself is a no-op
+    // here. What IS observable at this layer: the optimistic local hide, and
+    // that the dismiss event triggers the same reload path as wizard-close.
+    const loadOnboardingSpy = vi.spyOn(el as any, 'loadOnboarding');
+
+    el.onboarding = { grandfathered: true, banner_dismissed: false, steps: { ai: 'pending', solar: 'done', pricing: 'done' } };
+    await el.updateComplete;
+
+    const banner = el.shadowRoot!.querySelector('oig-onboarding-banner')!;
+    const closeBtn = banner.shadowRoot!.querySelector('.close') as HTMLButtonElement;
+    closeBtn.click();
+    await banner.updateComplete;
+    // Local optimistic hide — instant, before any REST round-trip.
+    expect(banner.shadowRoot!.querySelector('.banner')).toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(loadOnboardingSpy).toHaveBeenCalled();
+  });
+
+  it('the wizard stays launchable for a grandfathered entry after the banner is dismissed (no gate)', async () => {
+    el.onboarding = { grandfathered: true, banner_dismissed: true, steps: { ai: 'pending', solar: 'done', pricing: 'done' } };
+    await el.updateComplete;
+    (el as any).onboardingWizardOpen = true;
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('oig-onboarding-wizard')).toBeTruthy();
   });
 
   it('the wizard is launchable from Settings, per step', async () => {
@@ -209,11 +255,12 @@ describe('Task 11 — soft-guide real interaction proof (F1 Plan 3.6, occlusion 
     expect((el as any).activeTab).toBe('flow');
   });
 
-  it('grandfathered renders no <oig-onboarding-banner>, wizard open or not', async () => {
-    el.onboarding = { grandfathered: true, steps: { ai: 'pending', solar: 'done', pricing: 'done' } };
+  it('grandfathered still renders <oig-onboarding-banner> when open; wizard itself stays manually launchable', async () => {
+    el.onboarding = { grandfathered: true, banner_dismissed: false, steps: { ai: 'pending', solar: 'done', pricing: 'done' } };
     (el as any).onboardingWizardOpen = true;
     await el.updateComplete;
-    expect(el.shadowRoot!.querySelector('oig-onboarding-banner')).toBeNull();
+    expect(el.shadowRoot!.querySelector('oig-onboarding-banner')).toBeTruthy();
+    expect(el.shadowRoot!.querySelector('oig-onboarding-wizard')).toBeTruthy();
   });
 
   it('during the Step-2 classified-error state, wizard-close and wizard-skip are real, clickable, functional controls', async () => {

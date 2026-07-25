@@ -46,11 +46,17 @@ export interface OnboardingState {
   provider: string | null;
   /**
    * True when the entry was already configured (solar provider + keys) before
-   * onboarding existed — such a user is shown NO banner (SCOPE-REVISION #6 /
-   * D11: banner-not-wall, and a grandfathered entry gets neither). Derived
-   * server-side from the config-entry options.
+   * onboarding existed. Such a user gets the migration/review banner — a
+   * dismissible invitation to review their config in the wizard — but never
+   * a forced wizard or gate (D11 / SCOPE-REVISION #6). Derived server-side
+   * from the config-entry options.
    */
   grandfathered: boolean;
+  /**
+   * True once the user has closed the banner. Persisted so a grandfathered
+   * user who never wants the wizard doesn't see it again after reload (D11).
+   */
+  banner_dismissed: boolean;
 }
 
 /**
@@ -80,6 +86,7 @@ export const EMPTY_ONBOARDING_STATE: OnboardingState = {
   timestamps: {},
   provider: null,
   grandfathered: false,
+  banner_dismissed: false,
 };
 
 // ============================================================================
@@ -131,6 +138,21 @@ export async function skipOnboardingStep(
   return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
     method: 'POST',
     body: JSON.stringify({ action: 'skip', step }),
+  });
+}
+
+/**
+ * Persist that the user closed the migration/review banner (D11) — mainly for
+ * grandfathered users, who may never want the wizard. Not a gate: the wizard
+ * stays launchable from Settings regardless (#6).
+ */
+export async function dismissOnboardingBanner(
+  inverterSn: string,
+): Promise<OnboardingState | null> {
+  if (!inverterSn) return null;
+  return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'dismiss_banner' }),
   });
 }
 

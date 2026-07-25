@@ -1005,6 +1005,50 @@ async def test_pricelists_view_returns_dataset_for_admin():
     assert "valid_from" in payload
 
 
+def _synthetic_pricelist(year, valid_from):
+    rates = {"price_incl_vat": 1.0, "price_excl_vat": 1.0, "unit": "Kc"}
+    return {
+        "year": year,
+        "distributors": {"d1": {"t1": dict(rates)}},
+        "valid_from_snapshots": [
+            {"valid_from": valid_from, "distributors": {"d1": {"t1": dict(rates)}}},
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_pricelists_view_stale_warning_uses_snapshot_valid_from_year(monkeypatch):
+    current_year = datetime.now(timezone.utc).year
+    hass = DummyHass(config_entries=DummyConfigEntries([DummyEntry(entry_id="e3")]))
+    hass.data[DOMAIN] = {"e3": {"coordinator": SimpleNamespace(data={"box3": {}})}}
+    view = api_module.OIGCloudPricelistsView()
+
+    # Top-level "year" says current (not stale) but the SELECTED snapshot's
+    # valid_from is last year — R7.6/R8.6 require the check to key off the
+    # snapshot's valid_from, not the top-level field.
+    monkeypatch.setattr(
+        api_module,
+        "_load_released_pricelists",
+        lambda: _synthetic_pricelist(current_year, f"{current_year - 1}-01-01"),
+    )
+    response = await view.get(DummyRequest(hass), "box3")
+    payload = json.loads(response.text)
+    assert payload["year"] == current_year - 1
+    assert payload["stale_warning"] is True
+
+    # Inverse: top-level year says stale but the snapshot's valid_from is
+    # current — must NOT warn.
+    monkeypatch.setattr(
+        api_module,
+        "_load_released_pricelists",
+        lambda: _synthetic_pricelist(current_year - 1, f"{current_year}-01-01"),
+    )
+    response = await view.get(DummyRequest(hass), "box3")
+    payload = json.loads(response.text)
+    assert payload["year"] == current_year
+    assert payload["stale_warning"] is False
+
+
 @pytest.mark.asyncio
 async def test_config_registry_view_ok():
     entry = DummyEntry(entry_id="entry1")

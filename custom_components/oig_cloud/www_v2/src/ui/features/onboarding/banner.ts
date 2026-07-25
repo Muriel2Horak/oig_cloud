@@ -1,8 +1,17 @@
 import { LitElement, css, html, nothing } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
+import { t } from '@/i18n/onboarding';
 
 @customElement('oig-onboarding-banner')
 export class OigOnboardingBanner extends LitElement {
+  /**
+   * True for an existing (grandfathered) entry — D11: shown a distinct
+   * "review your config" copy, and its dismissal is persisted server-side
+   * (`dismiss-onboarding-banner` event) since such a user may never want
+   * the wizard. A non-grandfathered dismissal stays local/session-only.
+   */
+  @property({ type: Boolean }) grandfathered = false;
+  @property({ type: String }) lang: 'cs' | 'en' = 'cs';
   @state() private dismissed = false;
 
   static styles = css`
@@ -76,22 +85,45 @@ export class OigOnboardingBanner extends LitElement {
     }));
   }
 
+  private close(): void {
+    this.dismissed = true;
+    if (this.grandfathered) {
+      // Session-local hide is instant; the grandfathered case additionally
+      // needs the dismissal to survive a reload (D11) — the parent persists
+      // it via REST and refreshes onboarding state.
+      this.dispatchEvent(new CustomEvent('dismiss-onboarding-banner', {
+        bubbles: true,
+        composed: true,
+      }));
+    }
+  }
+
   render() {
     if (this.dismissed) return nothing;
+
+    const title = this.grandfathered
+      ? t('onboarding.banner.grandfathered_title', this.lang)
+      : t('onboarding.banner.title', this.lang);
+    const body = this.grandfathered
+      ? t('onboarding.banner.grandfathered_body', this.lang)
+      : t('onboarding.banner.body', this.lang);
+    const closeLabel = this.grandfathered
+      ? t('onboarding.banner.grandfathered_close_label', this.lang)
+      : t('onboarding.banner.close_label', this.lang);
 
     return html`
       <div class="banner">
         <div class="copy">
-          <strong>Průvodce nastavením je připraven</strong>
-          Nastavení můžete doplnit teď nebo se k němu kdykoli vrátit později.
+          <strong>${title}</strong>
+          ${body}
         </div>
-        <button class="launch" type="button" @click=${this.launch}>Spustit průvodce</button>
+        <button class="launch" type="button" @click=${this.launch}>${t('onboarding.banner.launch', this.lang)}</button>
         <button
           class="close"
           type="button"
-          aria-label="Skrýt průvodce nastavením"
-          title="Skrýt"
-          @click=${() => { this.dismissed = true; }}
+          aria-label=${closeLabel}
+          title=${closeLabel}
+          @click=${this.close}
         >×</button>
       </div>
     `;

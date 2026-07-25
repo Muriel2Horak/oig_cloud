@@ -7,11 +7,15 @@ field lists.
 """
 from __future__ import annotations
 
+import logging
 import math
 import json
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -104,7 +108,25 @@ def _load_released_pricelists() -> Dict[str, Any]:
     return payload
 
 
-def _pick_latest_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _snapshot_valid_from_date(item: Dict[str, Any]) -> Optional[date]:
+    raw = item.get("valid_from")
+    if not isinstance(raw, str):
+        return None
+    try:
+        return date.fromisoformat(raw[:10])
+    except ValueError:
+        return None
+
+
+def _pick_latest_snapshot(
+    payload: Dict[str, Any], *, now: Optional[date] = None
+) -> Dict[str, Any]:
+    """Select the newest bundled snapshot with ``valid_from <= now`` (R7.6/R8.6).
+
+    ``now`` is an injectable reference date for deterministic tests (R8.6
+    forbids a module-level clock override) — production callers omit it and
+    get the real UTC date.
+    """
     snapshots = payload.get("valid_from_snapshots")
     if not snapshots:
         return payload
@@ -115,7 +137,24 @@ def _pick_latest_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
     except Exception as err:
         raise RuntimeError("pricing snapshot sorting failed") from err
-    return ordered[-1]
+
+    reference = now if now is not None else datetime.now(timezone.utc).date()
+    non_future = [
+        item
+        for item in ordered
+        if (snapshot_date := _snapshot_valid_from_date(item)) is not None
+        and snapshot_date <= reference
+    ]
+    if non_future:
+        return non_future[-1]
+
+    _LOGGER.warning(
+        "All %d pricing snapshot(s) are future-dated relative to %s; "
+        "falling back to the earliest snapshot",
+        len(ordered),
+        reference.isoformat(),
+    )
+    return ordered[0]
 
 
 def _derive_pricing_enums() -> tuple[

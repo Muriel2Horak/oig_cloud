@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import pytest
 
+from datetime import date
+
 from custom_components.oig_cloud.config_registry import (
     FIELD_REGISTRY,
     Field,
+    _pick_latest_snapshot,
     coerce_value,
     fields_for_section,
     registry_as_api_dict,
@@ -316,6 +319,34 @@ def test_no_enum_field_defaults_outside_its_own_enum():
         if f.default in ("", None) and f.optional:
             continue   # deliberately unset — Task 8's ai_provider
         assert f.default in f.enum, f"{key}: default {f.default!r} not in {f.enum}"
+
+
+def _snapshots_payload(snapshots):
+    return {"distributors": {}, "valid_from_snapshots": snapshots}
+
+
+def test_pick_latest_snapshot_skips_future_dated_snapshot():
+    payload = _snapshots_payload([
+        {"valid_from": "2024-01-01"},
+        {"valid_from": "2025-01-01"},
+        {"valid_from": "2099-01-01"},  # future relative to `now` below
+    ])
+    selected = _pick_latest_snapshot(payload, now=date(2026, 1, 1))
+    assert selected["valid_from"] == "2025-01-01"
+
+
+def test_pick_latest_snapshot_all_future_falls_back_to_earliest_without_crashing():
+    payload = _snapshots_payload([
+        {"valid_from": "2099-06-01"},
+        {"valid_from": "2050-01-01"},
+    ])
+    selected = _pick_latest_snapshot(payload, now=date(2026, 1, 1))
+    assert selected["valid_from"] == "2050-01-01"
+
+
+def test_pick_latest_snapshot_no_snapshots_key_returns_payload_unchanged():
+    payload = {"distributors": {}, "year": 2026}
+    assert _pick_latest_snapshot(payload, now=date(2026, 1, 1)) is payload
 
 
 def test_api_dict_emits_show_if_and_widget_metadata():
