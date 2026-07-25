@@ -44,6 +44,7 @@ from ..config_merge import merge_entry_options
 from ..config_registry import (
     _load_released_pricelists,
     _pick_latest_snapshot,
+    _snapshot_valid_from_date,
     FIELD_REGISTRY,
     coerce_value,
     fields_for_section,
@@ -1391,15 +1392,10 @@ class OIGCloudPricelistsView(HomeAssistantView):
             if not isinstance(selected_rate, dict):
                 selected_rate = {}
 
-            source_year = payload.get("year")
-            try:
-                year = int(source_year) if source_year is not None else None
-            except (TypeError, ValueError):
-                year = None
             valid_from = snapshot.get("valid_from")
-            stale_warning = False
-            if year is not None:
-                stale_warning = year < dt_util.utcnow().year
+            snapshot_date = _snapshot_valid_from_date(snapshot)
+            year = snapshot_date.year if snapshot_date is not None else None
+            stale_warning = year is not None and year < dt_util.utcnow().year
 
             return web.json_response(
                 {

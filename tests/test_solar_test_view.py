@@ -125,6 +125,7 @@ except ModuleNotFoundError:
 
 from custom_components.oig_cloud.api import ha_rest_api as api_module
 from custom_components.oig_cloud.const import DOMAIN
+from custom_components.oig_cloud.forecast import solar_test_limiter
 
 
 _ADMIN_USER = SimpleNamespace(is_admin=True)
@@ -402,6 +403,44 @@ def test_solar_test_success_uses_shared_session_and_returns_shape(
     assert calls[0][4] == [
         {"kwp": 5.5, "declination": 35.0, "azimuth": 180.0},
     ]
+
+
+def test_solar_test_releases_lease_when_provider_call_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hass, _ = _hass()
+    hass.data[DOMAIN][solar_test_limiter.HASS_DATA_KEY] = solar_test_limiter.SolarTestLimiter(
+        window_seconds=0
+    )
+    shared_session = object()
+    calls = 0
+
+    async def _stub(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("boom mid critical section")
+        return {"tomorrow_total_kwh": 4.25, "forecast_covers_tomorrow": True}
+
+    monkeypatch.setattr(
+        api_module.aiohttp_client,
+        "async_get_clientsession",
+        lambda _hass: shared_session,
+    )
+    monkeypatch.setattr(api_module, "run_solar_candidate_test", _stub, raising=False)
+
+    view = _solar_view()
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(view.post(DummyJsonRequest(hass, _forecast_payload()), "box1"))
+
+    # A leaked pair-lock or global slot would keep this second call 429 rate_limited forever.
+    response = asyncio.run(view.post(DummyJsonRequest(hass, _forecast_payload()), "box1"))
+    payload = json.loads(response.text)
+
+    assert calls == 2
+    assert response.status == 200
+    assert payload == {"tomorrow_total_kwh": 4.25, "forecast_covers_tomorrow": True}
 
 
 def test_solar_test_rate_limits_same_pair_burst_before_shared_session(
