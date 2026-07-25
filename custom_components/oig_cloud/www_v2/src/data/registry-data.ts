@@ -12,6 +12,7 @@
 import { haClient } from '@/data/ha-client';
 import type { FieldDef } from '@/ui/features/settings';
 import { fieldLabel, fieldHint } from '@/i18n/fields';
+import { enumLabel } from '@/i18n/enum-labels';
 
 const params = new URLSearchParams(window.location.search);
 const INVERTER_SN = params.get('sn') || params.get('inverter_sn') || '';
@@ -52,7 +53,7 @@ export function fieldsFromRegistry(reg: FieldRegistry, section: string): FieldDe
       hint: fieldHint(key, spec.hint),
       type: widgetFor(spec),
       min: spec.min, max: spec.max, step: spec.step,
-      options: spec.enum?.map((v) => [v, v] as [string, string]),
+      options: spec.enum?.map((v) => [v, enumLabel(key, v)] as [string, string]),
       scale: spec.scale,
       optional: spec.optional,
       secret: spec.secret,

@@ -1315,8 +1315,8 @@ export class OigOnboardingWizard extends LitElement {
                   Povolte alespoň jeden string pro zobrazení polí výkonu a orientace.
                 </p>`
               : nothing}
-            ${visible.map((f) =>
-              renderFieldPresenter(f, {
+            ${visible.flatMap((f) => {
+              const row = renderFieldPresenter(f, {
                 value: this.solarDraft[f.key],
                 dirty: false,
                 secretSet: false,
@@ -1327,8 +1327,29 @@ export class OigOnboardingWizard extends LitElement {
                   this.solarTestMatchesDraft = false;
                 },
                 entityCatalog: [],
-              }),
-            )}
+              });
+              // Owner correction round 2 (UX-SPEC §Step 3): one-click action
+              // directly below the GPS pair, wiring hass.config into the
+              // fields the user could otherwise only type by hand — not a
+              // new data source (steps.py:1687-1688 reads the same values).
+              if (f.key !== 'solar_forecast_longitude') return [row];
+              return [
+                row,
+                html`<button
+                  type="button"
+                  data-testid="solar-gps-from-hass"
+                  ?disabled=${!this.hass?.config?.latitude}
+                  @click=${() => {
+                    this.solarDraft = {
+                      ...this.solarDraft,
+                      solar_forecast_latitude: this.hass?.config?.latitude,
+                      solar_forecast_longitude: this.hass?.config?.longitude,
+                    };
+                    this.solarTestMatchesDraft = false;
+                  }}
+                >📍 Převzít z Home Assistanta</button>`,
+              ];
+            })}
             <button
               type="button"
               data-testid="solar-test"

@@ -34,6 +34,18 @@ const REGISTRY = {
   sections: ['battery', 'solar'],
 };
 
+const REGISTRY_WITH_SOLAR_FORECAST_MODE = {
+  fields: {
+    ...REGISTRY.fields,
+    solar_forecast_mode: {
+      section: 'solar', type: 'str', scope: 'premium',
+      label: 'field.solar_forecast_mode.label', hint: 'field.solar_forecast_mode.hint',
+      default: 'daily_optimized', enum: ['hourly', 'every_4h', 'daily_optimized'],
+    },
+  },
+  sections: ['battery', 'solar'],
+};
+
 beforeEach(() => mockFetch.mockReset());
 
 describe('loadFieldRegistry', () => {
@@ -78,6 +90,16 @@ describe('fieldsFromRegistry', () => {
       expect(d.label).not.toMatch(/^field\./);
       expect(d.label.length).toBeGreaterThan(0);
     }
+  });
+
+  it('renders humanized CZ labels for solar_forecast_mode enum values, never the raw enum string', () => {
+    const fields = fieldsFromRegistry(REGISTRY_WITH_SOLAR_FORECAST_MODE as any, 'solar');
+    const modeField = fields.find((f) => f.key === 'solar_forecast_mode')!;
+    expect(modeField.options).toEqual([
+      ['hourly', 'Každou hodinu (vyžaduje API klíč)'],
+      ['every_4h', 'Každé 4 hodiny (vyžaduje API klíč)'],
+      ['daily_optimized', 'Denně, optimalizovaně (výchozí)'],
+    ]);
   });
 });
 
