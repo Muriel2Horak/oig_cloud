@@ -452,6 +452,14 @@ function flattenModuleConfig(doc: ModuleConfigDoc): Record<string, unknown> {
   return out;
 }
 
+/** Display string for a step-9 diff-table cell — humanized bool, em dash for
+ * empty, raw value otherwise (Stage S2 Task 9). */
+function formatDiffValue(value: unknown): string {
+  if (typeof value === 'boolean') return value ? 'Zapnuto' : 'Vypnuto';
+  if (value == null || value === '') return '—';
+  return String(value);
+}
+
 /**
  * Wizard shell — opens in response to a `launch-onboarding` CustomEvent and
  * routes the three independent onboarding steps in order. Closing returns
@@ -1144,6 +1152,28 @@ export class OigOnboardingWizard extends LitElement {
     return this.visibleWizardSteps().indexOf(this.currentStep);
   }
 
+  /**
+   * Every currently-seeded section draft, flattened (Stage S2 Task 9) —
+   * `modulesDraft` is deliberately EXCLUDED: it is still Task 2's
+   * every-gate-on stub (`:476-481`), not yet seeded from `entry.options`
+   * (Stage S3 Task 21 does that), so diffing it against `originalValues`
+   * would produce false-positive rows for a value the user never touched.
+   * Stage S3 must add its new drafts (battery/boiler/connection/
+   * pricing_supplier) here once each is properly seeded.
+   */
+  private allDraftValues(): Record<string, unknown> {
+    return { ...this.solarDraft, ...this.pricingDraft };
+  }
+
+  /** One row per field whose current draft value differs from its
+   * `originalValues` snapshot — unchanged fields are omitted (UX-SPEC §3:
+   * "a wall of 'X → X' rows defeats the purpose"). */
+  private summaryDiffRows(): Array<{ key: string; oldValue: unknown; newValue: unknown }> {
+    return Object.entries(this.allDraftValues())
+      .filter(([key, value]) => String(this.originalValues[key]) !== String(value))
+      .map(([key, value]) => ({ key, oldValue: this.originalValues[key], newValue: value }));
+  }
+
   private renderStepContent() {
     if (this.currentStep === 'welcome') {
       const isReview = this.onboardingState?.grandfathered === true; // design decision 3
@@ -1276,8 +1306,38 @@ export class OigOnboardingWizard extends LitElement {
     }
 
     if (this.currentStep === 'summary') {
-      // Full diff table (review mode) lands in Stage S2 Task 9 — this task
-      // only wires the flat "new install" list per spec §Step 9.
+      const isReview = this.onboardingState?.grandfathered === true; // design decision 3
+      if (isReview) {
+        // Full diff table (UX-SPEC §3): "review mode... full diff table is
+        // this step's entire content, not a generic summary."
+        const rows = this.summaryDiffRows();
+        return html`
+          <section class="step step-summary" data-step="summary">
+            <h3>${STEP_LABELS.summary}</h3>
+            <div class="step-card">
+              ${rows.length === 0
+                ? html`<p data-testid="summary-diff-empty">${t('onboarding.summary.diff_empty', this.wizardLang)}</p>`
+                : html`
+                    <table data-testid="summary-diff-table">
+                      <thead><tr><th>Pole</th><th>Bylo</th><th>Nyní</th></tr></thead>
+                      <tbody>
+                        ${rows.map((r) => html`
+                          <tr data-testid="summary-diff-row">
+                            <td>${fieldLabel(r.key, `field.${r.key}.label`)}</td>
+                            <td>${formatDiffValue(r.oldValue)}</td>
+                            <td>${formatDiffValue(r.newValue)}</td>
+                          </tr>
+                        `)}
+                      </tbody>
+                    </table>
+                  `}
+              <p>${t('onboarding.summary.confirm_notice', this.wizardLang)}</p>
+            </div>
+          </section>
+        `;
+      }
+
+      // New install: flat "toto se vytvoří" confirm list (Stage S1 Task 5).
       const enabledModules = Object.entries(this.modulesDraft)
         .filter(([key, value]) => key.startsWith('enable_') && value === true)
         .map(([key]) => fieldLabel(key, `field.${key}.label`));
@@ -1317,6 +1377,7 @@ export class OigOnboardingWizard extends LitElement {
     const isFirst = idx <= 0;
     const isLast = idx >= visibleSteps.length - 1;
     const skippable = STEP_SKIPPABLE[this.currentStep];
+    const isReview = this.onboardingState?.grandfathered === true; // design decision 3
 
     return html`
       <div
@@ -1433,7 +1494,7 @@ export class OigOnboardingWizard extends LitElement {
               data-testid="wizard-next"
               ?disabled=${this.finishing}
               @click=${() => void this.goNext()}
-            >${this.finishing ? 'Dokončuji…' : isLast ? 'Dokončit' : 'Další →'}</button>
+            >${this.finishing ? 'Dokončuji…' : isLast ? (isReview ? 'Uložit' : 'Dokončit') : 'Další →'}</button>
           </footer>
         </div>
       </div>

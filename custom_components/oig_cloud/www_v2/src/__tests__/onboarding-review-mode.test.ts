@@ -93,6 +93,17 @@ async function openWizard(): Promise<HTMLElement & { updateComplete: Promise<boo
   return wizard;
 }
 
+async function openWizardOnSummary(): Promise<HTMLElement & { updateComplete: Promise<boolean> }> {
+  const wizard = await openWizard();
+  const nextBtn = () => wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement;
+  const activeStep = () => wizard.shadowRoot!.querySelector('button.active')?.getAttribute('data-step');
+  for (let i = 0; i < 12 && activeStep() !== 'summary'; i++) {
+    nextBtn().click();
+    await settle(wizard);
+  }
+  return wizard;
+}
+
 describe('originalValues snapshot + review-mode detection (Task 6)', () => {
   beforeEach(() => {
     fetchOIGAPI.mockReset();
@@ -189,6 +200,84 @@ describe('seed every step draft from entry.options in review mode (Task 8)', () 
     // A field WITH a registry default still gets it (registry-default
     // fallback for a genuinely-unset field is correct, per spec §3).
     expect(w.solarDraft.solar_forecast_string1_enabled).toBe(true);
+  });
+
+});
+
+describe('step-9 full diff table in review mode (Task 9)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  it('renders one row per CHANGED field only, columns Pole/Bylo/Nyní', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      solar: {
+        solar_forecast_provider: 'forecast_solar', solar_forecast_mode: 'hourly',
+        solar_forecast_string1_enabled: true, solar_forecast_string2_enabled: false,
+        solar_forecast_latitude: 49.5, solar_forecast_longitude: 14.0,
+      },
+      pricing: { confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D57d' },
+    }));
+
+    const wizard = await openWizardOnSummary();
+    expect(internals(wizard).currentStep).toBe('summary');
+
+    // Edit a solar field so it diverges from its snapshot — the summary
+    // step reads whatever is in solarDraft NOW, no re-fetch needed.
+    internals(wizard).solarDraft = { ...internals(wizard).solarDraft, solar_forecast_latitude: 50.1 };
+    await wizard.updateComplete;
+
+    const rows = wizard.shadowRoot!.querySelectorAll('[data-testid="summary-diff-row"]');
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain('49.5');
+    expect(rows[0].textContent).toContain('50.1');
+  });
+
+  it('shows the empty-diff message and the confirm-copy notice when nothing changed', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      solar: {
+        solar_forecast_provider: 'forecast_solar', solar_forecast_mode: 'hourly',
+        solar_forecast_string1_enabled: true, solar_forecast_string2_enabled: false,
+        solar_forecast_latitude: 49.5, solar_forecast_longitude: 14.0,
+      },
+    }));
+    const wizard = await openWizardOnSummary();
+
+    expect(wizard.shadowRoot!.querySelector('[data-testid="summary-diff-row"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-testid="summary-diff-empty"]')).toBeTruthy();
+    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]')?.textContent)
+      .toContain('Toto se změní. Dokud nekliknete na Uložit, nic se neuloží.');
+  });
+
+  it('the summary save button reads "Uložit" in review mode (spec §6 — same primary-action convention)', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({ solar: { solar_forecast_provider: 'forecast_solar' } }));
+    const wizard = await openWizardOnSummary();
+    expect((wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement).textContent)
+      .toBe('Uložit');
+  });
+});
+
+describe('re-seed ordering (Task 8 continued)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(SOLAR_REGISTRY_FIXTURE);
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
   });
 
   it('re-seeds correctly regardless of which of the two bootstrap fetches settles first', async () => {

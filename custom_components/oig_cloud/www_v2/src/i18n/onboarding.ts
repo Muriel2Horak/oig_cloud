@@ -54,6 +54,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.welcome.new_install': 'Vítejte v průvodci nastavením OIG Cloud. Projdeme spolu pár kroků — solární předpověď, ceny energie, volitelně AI a bojler. Nic nemusíte vyplnit najednou, průvodce si pamatuje, kde jste skončili.',
     'onboarding.welcome.review': 'Váš stávající nastavení zůstává beze změny, dokud ho výslovně nepotvrdíte. V každém kroku uvidíte svou aktuální hodnotu a můžete ji ověřit nebo upravit — nic se nesmaže, dokud nedáte Uložit.',
     'onboarding.summary.new_install_heading': 'Shrnutí nastavení — zkontrolujte prosím před uložením:',
+
+    // F1 Wizard v2 Stage S2 Task 9 — review-mode diff table (UX-SPEC §3).
+    'onboarding.summary.confirm_notice': 'Toto se změní. Dokud nekliknete na Uložit, nic se neuloží.',
+    'onboarding.summary.diff_empty': 'Žádné změny oproti stávajícímu nastavení.',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
@@ -90,6 +94,9 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.welcome.new_install': 'Welcome to the OIG Cloud setup wizard. We\'ll walk through a few steps together — solar forecast, energy prices, optionally AI and boiler. You don\'t need to fill everything in one go, the wizard remembers where you left off.',
     'onboarding.welcome.review': 'Your existing setup stays unchanged until you explicitly confirm it. On every step you\'ll see your current value and can verify or edit it — nothing is deleted until you click Save.',
     'onboarding.summary.new_install_heading': 'Setup summary — please review before saving:',
+
+    'onboarding.summary.confirm_notice': 'This will change. Nothing is saved until you click Save.',
+    'onboarding.summary.diff_empty': 'No changes from your existing configuration.',
   },
 };
 
