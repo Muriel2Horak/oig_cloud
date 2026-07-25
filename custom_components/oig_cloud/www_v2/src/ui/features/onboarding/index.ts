@@ -428,6 +428,30 @@ function solarTestErrorMessage(code: string, lang: Lang): string | undefined {
   return key ? t(key, lang) : undefined;
 }
 
+/** Shape of a `/module_config` GET — every registry section, keyed loosely
+ * since not every section is populated in every fixture/response. */
+type ModuleConfigDoc = Partial<Record<string, Record<string, unknown>>>;
+
+/**
+ * Flatten a `/module_config` response into one cross-section map for
+ * review-mode diff hints (UX-SPEC §3) — registry keys are globally unique
+ * across sections (verified: no collision across modules/battery/solar/
+ * boiler/pricing/pricing_supplier/basic in `config_registry.py`). Secret
+ * fields never appear here — the backend emits only their `{key}_set` flag,
+ * never the value itself.
+ */
+function flattenModuleConfig(doc: ModuleConfigDoc): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const section of Object.values(doc)) {
+    if (!section) continue;
+    for (const [key, value] of Object.entries(section)) {
+      if (key.endsWith('_set')) continue;
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 /**
  * Wizard shell — opens in response to a `launch-onboarding` CustomEvent and
  * routes the three independent onboarding steps in order. Closing returns
@@ -491,6 +515,14 @@ export class OigOnboardingWizard extends LitElement {
    * `pricing` section (Task 7) — never re-fetched for step navigation. */
   private _pricingConfigLoaded = false;
   @state() private pricingDraft: Record<string, unknown> = {};
+
+  /**
+   * Every section's entry.options-derived value, flattened and frozen once
+   * per wizard open (UX-SPEC §3 "snapshotted once at wizard open") — a peer
+   * to `solarDraft`/`pricingDraft`, never itself edited by the user. Drives
+   * every step's diff hint (Task 7) and the step-9 diff table (Task 9).
+   */
+  @state() private originalValues: Record<string, unknown> = {};
 
   /** Solar step: registry cached per open (never re-fetched for step navigation). */
   private _registry: FieldRegistry | null = null;
@@ -907,13 +939,14 @@ export class OigOnboardingWizard extends LitElement {
     if (this._pricingConfigLoaded || !this.inverterSn) return;
     this._pricingConfigLoaded = true;
     try {
-      const data = await haClient.fetchOIGAPI<{ pricing?: Record<string, unknown> } | null>(
+      const data = await haClient.fetchOIGAPI<ModuleConfigDoc | null>(
         `/${this.inverterSn}/module_config`,
         { signal },
       );
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : data !== null ? 'success' : 'failed';
-      if (data && data.pricing) {
-        this.pricingDraft = { ...data.pricing };
+      if (data) {
+        this.originalValues = Object.freeze(flattenModuleConfig(data));
+        if (data.pricing) this.pricingDraft = { ...data.pricing };
       }
     } catch {
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : 'failed';
@@ -948,6 +981,7 @@ export class OigOnboardingWizard extends LitElement {
     this._pricingConfigLoaded = false;
     this._pricingConfigOutcome = 'pending';
     this._pricingOutcome = 'pending';
+    this.originalValues = {};
     this.pricing = null;
     this.pricingLoadFailed = false;
     this.bootstrapRetry = { onboardingState: false, registry: false, pricing: false, pricingConfig: false };
@@ -1170,6 +1204,7 @@ export class OigOnboardingWizard extends LitElement {
                 value: this.solarDraft[f.key],
                 dirty: false,
                 secretSet: false,
+                originalValue: this.originalValues[f.key],
                 onChange: (v: unknown) => {
                   this.solarDraft = { ...this.solarDraft, [f.key]: v };
                   this.solarTestMatchesDraft = false;

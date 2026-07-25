@@ -131,4 +131,42 @@ describe('renderFieldPresenter (Task 1 — shared field renderer/presenter)', ()
     input.dispatchEvent(new Event('change'));
     expect(onChange).toHaveBeenCalledWith('xyz');
   });
+
+  // -- Stage S2 Task 7: per-field diff hint (UX-SPEC §3/§6) --------------
+
+  it('renders a diff hint when value differs from originalValue, none when equal', () => {
+    const f: FieldDef = { key: 'charge_rate_kw', label: 'Nabíjecí výkon', type: 'number' };
+    const withDiff = mount(f, baseCtx({ value: 3.0, originalValue: 2.8, dirty: true }));
+    expect(withDiff.querySelector('[data-testid="diff-hint"]')?.textContent).toBe('Bylo: 2.8 → Nyní: 3');
+
+    const noDiff = mount(f, baseCtx({ value: 2.8, originalValue: 2.8 }));
+    expect(noDiff.querySelector('[data-testid="diff-hint"]')).toBeNull();
+  });
+
+  it('does not render a diff hint when originalValue is undefined (new install, nothing to compare)', () => {
+    const f: FieldDef = { key: 'solar_forecast_latitude', label: 'Zeměpisná šířka', type: 'number' };
+    const el = mount(f, baseCtx({ value: 49.5, originalValue: undefined }));
+    expect(el.querySelector('[data-testid="diff-hint"]')).toBeNull();
+  });
+
+  it('renders a diff hint for a bool field using humanized Zapnuto/Vypnuto, none when unchanged', () => {
+    const f: FieldDef = { key: 'enable_boiler', label: 'Bojler', type: 'bool' };
+    const changed = mount(f, baseCtx({ value: false, originalValue: true, dirty: true }));
+    expect(changed.querySelector('[data-testid="diff-hint"]')?.textContent).toBe('Bylo: Zapnuto → Nyní: Vypnuto');
+
+    const unchanged = mount(f, baseCtx({ value: true, originalValue: true }));
+    expect(unchanged.querySelector('[data-testid="diff-hint"]')).toBeNull();
+  });
+
+  it('a secret field never shows its raw value in the diff hint — masked, and only when dirty', () => {
+    const f: FieldDef = { key: 'solcast_api_key', label: 'Solcast API klíč', type: 'text', secret: true };
+
+    const changed = mount(f, baseCtx({ value: 'new-secret-value', dirty: true, secretSet: true }));
+    const hint = changed.querySelector('[data-testid="diff-hint"]');
+    expect(hint?.textContent).toBe('Bylo: (nastaveno) → Nyní: (změněno)');
+    expect(hint?.textContent).not.toContain('new-secret-value');
+
+    const untouched = mount(f, baseCtx({ value: '', dirty: false, secretSet: true }));
+    expect(untouched.querySelector('[data-testid="diff-hint"]')).toBeNull();
+  });
 });

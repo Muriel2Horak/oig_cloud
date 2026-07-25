@@ -24,6 +24,12 @@ export interface FieldPresenterContext {
   entityCatalog: EntityEntry[];
   /** Bool fields only: force-unchecked, greyed out, non-interactive. */
   disabled?: boolean;
+  /**
+   * Review-mode snapshot value (UX-SPEC §3) — `undefined` means "nothing to
+   * compare against" (new install, or a secret field, whose real value never
+   * reaches the client). Drives the diff hint below the control.
+   */
+  originalValue?: unknown;
 }
 
 /** Render label text with optional "(volitelné)" suffix and hint below. */
@@ -33,6 +39,43 @@ function renderLabel(f: FieldDef): TemplateResult {
       ${f.label}${f.optional ? html`<span class="optional-badge"> (volitelné)</span>` : nothing}
       ${f.hint ? html`<span class="hint">${f.hint}</span>` : nothing}
     </span>`;
+}
+
+/** Scale-aware display string for a field's value — the same rounding the
+ * number branch already applies (`:72` pre-extraction), reused as the diff
+ * hint's comparison basis so a raw/display mismatch (e.g. scale rounding)
+ * never produces a spurious "X → X" row. */
+function formatFieldValue(f: FieldDef, value: unknown): string {
+  if (f.type === 'bool') return value ? 'Zapnuto' : 'Vypnuto';
+  if (value == null || value === '') return '—';
+  if (f.type === 'number') {
+    const scale = f.scale ?? 1;
+    return String(Math.round((Number(value) * scale + Number.EPSILON) * 10000) / 10000);
+  }
+  if (f.type === 'select') {
+    const opt = (f.options ?? []).find(([v]) => v === String(value));
+    return opt ? opt[1] : String(value);
+  }
+  return String(value);
+}
+
+/**
+ * Per-field diff hint (UX-SPEC §3/§6, "Bylo: X → Nyní: Y") — rendered inline
+ * directly under the control, never a modal/toast/summary-only surface. A
+ * secret field's real value never reaches the client (backend only emits a
+ * `{key}_set` flag), so it is gated on `dirty` instead of a value compare and
+ * never shows the raw string either side of the arrow.
+ */
+function renderDiffHint(f: FieldDef, ctx: FieldPresenterContext): TemplateResult | typeof nothing {
+  if (f.secret) {
+    if (!ctx.dirty) return nothing;
+    return html`<span class="diff-hint" data-testid="diff-hint">Bylo: (nastaveno) → Nyní: (změněno)</span>`;
+  }
+  if (ctx.originalValue === undefined) return nothing;
+  const oldText = formatFieldValue(f, ctx.originalValue);
+  const newText = formatFieldValue(f, ctx.value);
+  if (oldText === newText) return nothing;
+  return html`<span class="diff-hint" data-testid="diff-hint">Bylo: ${oldText} → Nyní: ${newText}</span>`;
 }
 
 export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): TemplateResult {
@@ -50,6 +93,7 @@ export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): T
             <span class="slider"></span>
           </label>
         </div>
+        ${renderDiffHint(f, ctx)}
       </div>`;
   }
 
@@ -64,6 +108,7 @@ export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): T
             ${(f.options ?? []).map(([v, l]) => html`<option value=${v} ?selected=${v === val}>${l}</option>`)}
           </select>
         </div>
+        ${renderDiffHint(f, ctx)}
       </div>`;
   }
 
@@ -82,6 +127,7 @@ export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): T
               onChange(Number(v) / scale);
             }} />
         </div>
+        ${renderDiffHint(f, ctx)}
       </div>`;
   }
 
@@ -101,6 +147,7 @@ export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): T
             @entity-change=${(e: CustomEvent) => onChange(e.detail.value)}
           ></oig-entity-picker>
         </div>
+        ${renderDiffHint(f, ctx)}
       </div>`;
   }
 
@@ -115,6 +162,7 @@ export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): T
           placeholder=${isSecret ? (secretSet ? '••••• (nastaveno)' : 'nenastaveno') : (f.optional ? 'nevyplněno' : '')}
           @change=${(e: Event) => onChange((e.target as HTMLInputElement).value)} />
       </div>
+      ${renderDiffHint(f, ctx)}
     </div>`;
 }
 
@@ -127,6 +175,7 @@ export const fieldStyles = css`
   /* ---- Rows ---- */
   .row {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: flex-start;
     gap: 12px;
@@ -134,6 +183,17 @@ export const fieldStyles = css`
     border-bottom: 1px dashed ${u(CSS_VARS.divider)};
   }
   .row:last-of-type { border-bottom: none; }
+
+  /* Review-mode diff hint (UX-SPEC §3/§6) — full-width, directly under the
+     control, muted like the existing field-help .hint treatment. */
+  .diff-hint {
+    flex-basis: 100%;
+    display: block;
+    font-size: 10.5px;
+    color: ${u(CSS_VARS.textSecondary)};
+    margin-top: 2px;
+    line-height: 1.4;
+  }
 
   .lab {
     font-size: 12.5px;
