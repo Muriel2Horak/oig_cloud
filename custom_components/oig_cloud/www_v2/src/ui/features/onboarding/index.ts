@@ -32,8 +32,13 @@ import type { FieldRegistry } from '@/data/registry-data';
 import { loadFieldRegistry, fieldsFromRegistry } from '@/data/registry-data';
 import type { FieldDef } from '@/ui/features/settings';
 import { STEP_SOLAR } from './step-solar';
-import { STEP_PRICING_DISTRIBUTION } from './step-pricing-distribution';
-import { STEP_PRICING_SUPPLIER } from './step-pricing-supplier';
+import { STEP_PRICING_DISTRIBUTION, isDualTariffCode } from './step-pricing-distribution';
+import {
+  STEP_PRICING_SUPPLIER,
+  PRICING_SUPPLIER_GROUP_A_KEYS,
+  PRICING_SUPPLIER_GROUP_B_KEYS,
+  PRICING_SUPPLIER_GROUP_C_KEYS,
+} from './step-pricing-supplier';
 import { STEP_BATTERY, BATTERY_GROUPS } from './step-battery';
 import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-boiler';
 import { STEP_CONNECTION } from './step-connection';
@@ -399,6 +404,16 @@ const LEGACY_PRICING_SUPPLIER_KEYS: ReadonlyArray<string> = [
   'tariff_vt_start_weekend', 'tariff_nt_start_weekend', 'dual_tariff_enabled',
 ];
 
+/** UX-SPEC §6 card grouping for the pricing_supplier step (Task 16) — CZ
+ * section headings straight from §4's group titles. */
+const PRICING_SUPPLIER_GROUPS: ReadonlyArray<{
+  slug: string; badge: string; heading: string; keys: readonly string[];
+}> = [
+  { slug: 'import', badge: 'A', heading: 'Nákupní cena', keys: PRICING_SUPPLIER_GROUP_A_KEYS },
+  { slug: 'export', badge: 'B', heading: 'Prodejní cena / export', keys: PRICING_SUPPLIER_GROUP_B_KEYS },
+  { slug: 'distribution', badge: 'C', heading: 'Distribuce, tarify a DPH', keys: PRICING_SUPPLIER_GROUP_C_KEYS },
+];
+
 const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
   pending: 'pending',
   done: 'done',
@@ -577,6 +592,14 @@ export class OigOnboardingWizard extends LitElement {
   @state() private boilerDraft: Record<string, unknown> = {};
 
   /**
+   * Task 17 cross-step flag: derived from the distribution step's tariff
+   * selection (`isDualTariffCode`, step-pricing-distribution.ts), read by
+   * the supplier step's `_nt`-variant `show_if_all` gating — a peer to
+   * `solarDraft`/`pricingDraft` (UX-SPEC §4), not a rename of them.
+   */
+  @state() private isDualTariff = false;
+
+  /**
    * Every section's entry.options-derived value, flattened and frozen once
    * per wizard open (UX-SPEC §3 "snapshotted once at wizard open") — a peer
    * to `solarDraft`/`pricingDraft`, never itself edited by the user. Drives
@@ -747,6 +770,41 @@ export class OigOnboardingWizard extends LitElement {
       text-transform: uppercase;
       letter-spacing: 0.04em;
       opacity: 0.7;
+    }
+
+    /* Section grouping within a step (UX-SPEC §6, "cards over a flat list")
+       — mirrors the admin tile dialog's numbered-section pattern (164c622a8,
+       tile-dialog.ts .sec/.sect), reused here rather than a new mechanism. */
+    .field-group {
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
+      border-radius: 10px;
+    }
+
+    .field-group:last-child { margin-bottom: 0; }
+
+    .field-group-heading {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      opacity: 0.7;
+      margin-bottom: 8px;
+    }
+
+    .field-group-heading .field-group-badge {
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      background: var(--primary-color, #4f7cff);
+      color: #06121f;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
     }
 
     footer {
@@ -1105,7 +1163,15 @@ export class OigOnboardingWizard extends LitElement {
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : data !== null ? 'success' : 'failed';
       if (data) {
         this.originalValues = Object.freeze(flattenModuleConfig(data));
-        if (data.pricing) this.pricingDraft = { ...data.pricing };
+        if (data.pricing) {
+          this.pricingDraft = { ...data.pricing };
+          // Task 17: a review/recovered entry never touches the distribution
+          // step's tariff onChange, so the cross-step flag must also be
+          // derived here — same `isDualTariffCode`, not a second mechanism.
+          this.isDualTariff = isDualTariffCode(
+            this.pricingDraft['confirmed_distribution_tariff'] as string | undefined,
+          );
+        }
         this.seedSolarDraft(); // re-seed if the registry already settled first
         this.seedBatteryDraft(); // T18 review: battery draft misses entry.options on registry-first race
         this.seedModulesDraft(); // re-seed if the registry already settled first
@@ -1526,9 +1592,11 @@ export class OigOnboardingWizard extends LitElement {
     }
 
     if (this.currentStep === 'pricing_distribution' || this.currentStep === 'pricing_supplier') {
-      // Bootstrap plumbing is shared with the (Stage S3) field bodies — the
-      // retry affordance is shell behaviour, not step content, so it stays.
-      if (this.bootstrapRetry.pricing || this.bootstrapRetry.pricingConfig) {
+      // Bootstrap plumbing is shared by both field bodies below — the retry
+      // affordance is shell behaviour, not step content, so it stays common.
+      // Both steps now render registry-driven fields (Stage S3 Tasks 14-16),
+      // so the registry outcome gates them too, same as solar's own check.
+      if (this.bootstrapRetry.registry || this.bootstrapRetry.pricing || this.bootstrapRetry.pricingConfig) {
         return html`
           <section class="step step-stub" data-step=${this.currentStep}>
             <h3>${STEP_LABELS[this.currentStep]}</h3>
@@ -1543,20 +1611,131 @@ export class OigOnboardingWizard extends LitElement {
           </section>
         `;
       }
+    }
+
+    if (this.currentStep === 'pricing_distribution') {
+      if (!this._registry || STEP_PRICING_DISTRIBUTION.fields(this._registry).length === 0) {
+        return html`
+          <section class="step step-pricing-distribution" data-step="pricing_distribution">
+            <h3>${STEP_LABELS.pricing_distribution}</h3>
+            <div class="step-card">
+              <p data-testid="pricing-distribution-not-available">Ceny nejsou dostupné.</p>
+            </div>
+          </section>
+        `;
+      }
+
+      // Task 14: dual-ness for THIS step's own display is derived fresh from
+      // the live draft on every render (no stored flag needed locally).
+      const tariff = this.pricingDraft['confirmed_distribution_tariff'] as string | undefined;
+      const dual = isDualTariffCode(tariff);
+
+      const visible = STEP_PRICING_DISTRIBUTION.visibleFields(this._registry, this.pricingDraft);
+      const distributor = this.pricingDraft['confirmed_distribution_distributor'] as string | undefined;
+      const rate = distributor && tariff
+        ? (this.pricing as unknown as { distributors?: Record<string, Record<string, { nt?: { price_incl_vat: number; price_excl_vat: number; unit: string } }>> })
+          ?.distributors?.[distributor]?.[tariff]
+        : undefined;
+
       return html`
-        <section class="step step-stub" data-step=${this.currentStep}>
-          <h3>${STEP_LABELS[this.currentStep]}</h3>
+        <section class="step step-pricing-distribution" data-step="pricing_distribution">
+          <h3>${STEP_LABELS.pricing_distribution}</h3>
           <div class="step-card">
-            ${this.currentStep === 'pricing_supplier' && this.showRecoveredPricingNote()
+            ${visible.map((f) => html`
+              <div data-key=${f.key}>
+                ${renderFieldPresenter(f, {
+                  value: this.pricingDraft[f.key],
+                  dirty: false,
+                  secretSet: false,
+                  originalValue: this.originalValues[f.key],
+                  reviewMode: this.onboardingState?.grandfathered === true,
+                  onChange: (v: unknown) => {
+                    this.pricingDraft = { ...this.pricingDraft, [f.key]: v };
+                    // Task 17: the distribution step's tariff-change handler
+                    // is where the cross-step `isDualTariff` flag is set —
+                    // reuses Task 14's `isDualTariffCode`, not a second
+                    // dual-code-set.
+                    if (f.key === 'confirmed_distribution_tariff') {
+                      this.isDualTariff = isDualTariffCode(v);
+                    }
+                  },
+                  entityCatalog: [],
+                })}
+              </div>
+            `)}
+            ${tariff
+              ? html`<p data-testid="tariff-dual-info" class="hint">
+                  ${dual ? 'Dvoutarifní — ceny zvlášť pro VT a NT.' : 'Jednotarifní — jedna cena po celý den.'}
+                </p>`
+              : nothing}
+            ${dual && rate?.nt
+              ? html`<div class="row" data-testid="distribution-nt-price">
+                  <span class="lab">Cena NT s DPH</span>
+                  <div class="row-control">${rate.nt.price_incl_vat} ${rate.nt.unit}</div>
+                </div>`
+              : nothing}
+            ${this.pricingLoadFailed
+              ? html`<p data-testid="pricing-stale-warning" class="hint">Ceny nejsou dostupné.</p>`
+              : nothing}
+          </div>
+        </section>
+      `;
+    }
+
+    if (this.currentStep === 'pricing_supplier') {
+      // The recovered-values note (K2f, Task 11) and section intro are
+      // step-level copy, independent of whether the registry happens to
+      // carry `pricing_supplier` fields in this render — never gated behind
+      // the fields-available check below (a registry fixture that only
+      // seeds OTHER sections must not silently hide them).
+      const hasFields = !!this._registry && STEP_PRICING_SUPPLIER.fields(this._registry).length > 0;
+      const visible = hasFields
+        ? STEP_PRICING_SUPPLIER.visibleFields(this._registry!, this.pricingDraft, this.isDualTariff)
+        : [];
+
+      return html`
+        <section class="step step-pricing-supplier" data-step="pricing_supplier">
+          <h3>${STEP_LABELS.pricing_supplier}</h3>
+          <div class="step-card">
+            ${this.showRecoveredPricingNote()
               ? html`<p data-testid="recovered-pricing-note" class="hint">
                   ${t('onboarding.pricing_supplier.recovered_note', this.wizardLang)}
                 </p>`
               : nothing}
-            <p data-testid="step-stub-placeholder">
-              ${this.pricingLoadFailed || Object.keys(this.pricingDraft).length === 0
-                ? 'Ceny nejsou dostupné.'
-                : 'Tento krok bude doplněn v další verzi průvodce.'}
+            <p data-testid="pricing-supplier-intro" class="hint">
+              Dodavatelské a distribuční ceny (obchodní podmínky vaší smlouvy s dodavatelem a
+              distributorem elektřiny). Tyto hodnoty se liší od datové sady v předchozím kroku —
+              tam je orientační ceník distributora, tady je vaše skutečná smlouva.
             </p>
+            ${hasFields
+              ? PRICING_SUPPLIER_GROUPS.map((group) => {
+                  const groupFields = visible.filter((f) => (group.keys as readonly string[]).includes(f.key));
+                  return groupFields.length === 0
+                    ? nothing
+                    : html`
+                        <div class="field-group" data-group=${group.slug}>
+                          <div class="field-group-heading">
+                            <span class="field-group-badge">${group.badge}</span> ${group.heading}
+                          </div>
+                          ${groupFields.map((f) => html`
+                            <div data-key=${f.key}>
+                              ${renderFieldPresenter(f, {
+                                value: this.pricingDraft[f.key],
+                                dirty: false,
+                                secretSet: false,
+                                originalValue: this.originalValues[f.key],
+                                reviewMode: this.onboardingState?.grandfathered === true,
+                                onChange: (v: unknown) => {
+                                  this.pricingDraft = { ...this.pricingDraft, [f.key]: v };
+                                },
+                                entityCatalog: [],
+                              })}
+                            </div>
+                          `)}
+                        </div>
+                      `;
+                })
+              : html`<p data-testid="pricing-supplier-not-available">Ceny nejsou dostupné.</p>`}
           </div>
         </section>
       `;
