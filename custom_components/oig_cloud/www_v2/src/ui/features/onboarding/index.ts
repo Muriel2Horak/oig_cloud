@@ -515,21 +515,21 @@ function formatDiffValue(value: unknown): string {
 
 /**
  * Wizard shell — opens in response to a `launch-onboarding` CustomEvent and
- * routes the three independent onboarding steps in order. Closing returns
- * the user to the dashboard (the dashboard is NEVER replaced — SCOPE #6).
+ * routes the 10-step wizard-v2 sequence (`WIZARD_STEPS`, `:315`) in order.
+ * Closing returns the user to the dashboard (the dashboard is NEVER
+ * replaced — SCOPE #6).
  *
  * The user can:
- *   - click the step indicator to jump to any step (no lock/gate; #6)
+ *   - click the step indicator to jump to any visible step (no lock/gate; #6)
  *   - click [Zpět] / [Další] for linear navigation
  *   - click [Přeskočit] on any skippable step
  *   - click × or the backdrop to close and return to the dashboard
  *
- * Step content:
- *   - ① AI   → reuses the typed <oig-onboarding-step-ai> renderer
- *   - ② Solar → brief description + pointer to Nastavení tab (P5: no second
- *               field list — fields live in the registry, rendered once
- *               by the Settings tab)
- *   - ③ Pricing → brief description + pointer to the Ceny tab (same reason)
+ * Step content (`renderStepContent`, `:1412`): each content step (ai, solar,
+ * pricing_distribution, pricing_supplier, battery, boiler, connection) renders
+ * its own field forms from the shared registry — no second field list lives
+ * elsewhere (P5). `welcome`/`summary` are static/derived, never individually
+ * skippable.
  */
 @customElement('oig-onboarding-wizard')
 export class OigOnboardingWizard extends LitElement {

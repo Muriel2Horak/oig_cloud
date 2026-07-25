@@ -124,6 +124,13 @@ const CS_LABELS: Record<string, string> = {
   'field.extended_scan_interval.label': 'Rozšířená data (sekund)',
   'field.local_proxy_stale_minutes.label': 'Fallback na cloud po (minut)',
   'field.local_event_debounce_ms.label': 'Local event debounce (ms)',
+  'field.enable_dashboard.label': '📊 Webový dashboard s grafy',
+
+  // --- 'ai' section (Task 23 gap fill — copy transcribed from strings.json's
+  // options-flow AI step, translations/cs.json:782-784) ---
+  'field.ai_provider.label': 'Poskytovatel AI',
+  'field.ai_base_url.label': 'Base URL API',
+  'field.ai_model.label': 'Model',
 };
 
 const CS_HINTS: Record<string, string> = {
@@ -214,6 +221,13 @@ const CS_HINTS: Record<string, string> = {
   'field.extended_scan_interval.hint': 'Jak často načítat napětí článků, teploty, proudy a další detailní údaje (minimálně 300 sekund, doporučeno 300-600 sekund)',
   'field.local_proxy_stale_minutes.hint': 'Po kolika minutách bez lokálních dat se přepnout do cloudu. Jakmile proxy znovu odpoví, vrátí se zpět na local.',
   'field.local_event_debounce_ms.hint': 'Debounce pro event-driven refresh z lokálních entit (nižší = rychlejší reakce, vyšší = méně aktualizací)',
+  'field.enable_dashboard.hint': 'Webové rozhraní s grafy přístupné v HA',
+
+  // --- 'ai' section (Task 23 gap fill — copy transcribed from strings.json's
+  // options-flow AI step, translations/cs.json:788-790) ---
+  'field.ai_provider.hint': 'Volitelné; žádný poskytovatel není předvybrán ani zvýhodněn.',
+  'field.ai_base_url.hint': 'Volitelná vlastní OpenAI-compatible URL.',
+  'field.ai_model.hint': 'Volitelný identifikátor modelu.',
 };
 
 /** Falls back to a humanised key — never returns a raw i18n key. */

@@ -350,4 +350,14 @@ describe('pricing_distribution step render (Task 14/15)', () => {
       .toContain('Dvoutarifní');
     expect(internals(wizard).isDualTariff).toBe(true);
   });
+
+  it('shows the stale-price warning when the pricelists fetch failed (pricingLoadFailed)', async () => {
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="pricing-stale-warning"]')).toBeNull();
+
+    internals(wizard).pricingLoadFailed = true;
+    await settle(wizard);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="pricing-stale-warning"]')).toBeTruthy();
+  });
 });

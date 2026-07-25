@@ -153,8 +153,11 @@ describe('bounded wizard bootstrap (F1 Plan 3.6 Task 9)', () => {
 
     // Navigate to the affected (solar) step — no retry state yet at 3s, and
     // the generic "not available" path must not substitute for it either.
-    const nextBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement;
-    nextBtn.click();
+    // wizard-v2 (Stage S1) inserted welcome/modules ahead of ai/solar, so
+    // jump straight to the solar step via its nav indicator (#6: any step
+    // is directly reachable, no lock/gate) rather than clicking [Další] once.
+    const solarNavBtn = wizard.shadowRoot!.querySelector('button[data-step="solar"]') as HTMLButtonElement;
+    solarNavBtn.click();
     await settle(wizard);
     expect(wizard.shadowRoot!.querySelector('[data-testid="solar-bootstrap-retry"]')).toBeFalsy();
 
@@ -164,13 +167,13 @@ describe('bounded wizard bootstrap (F1 Plan 3.6 Task 9)', () => {
     expect(wizard.shadowRoot!.querySelector('[data-testid="solar-not-available"]')).toBeFalsy();
 
     // wizard-skip must be REAL clickable — click it and observe the effect
-    // (advances past solar to pricing), not merely "not disabled".
+    // (advances past solar to the next wizard-v2 step), not merely "not disabled".
     const skipBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-skip"]') as HTMLButtonElement;
     expect(skipBtn.disabled).toBe(false);
     skipBtn.click();
     await settle(wizard);
     const active = wizard.shadowRoot!.querySelector('button.active') as HTMLButtonElement | null;
-    expect(active?.getAttribute('data-step')).toBe('pricing');
+    expect(active?.getAttribute('data-step')).toBe('pricing_distribution');
 
     // wizard-close must be REAL clickable too — click it and observe the close.
     const closeBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-close"]') as HTMLButtonElement;
@@ -239,7 +242,8 @@ describe('bounded wizard bootstrap (F1 Plan 3.6 Task 9)', () => {
     );
     await settle(wizard);
 
-    (wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement).click();
+    // Jump straight to solar (welcome/modules precede it in wizard-v2 order).
+    (wizard.shadowRoot!.querySelector('button[data-step="solar"]') as HTMLButtonElement).click();
     await settle(wizard);
 
     await vi.advanceTimersByTimeAsync(5000);

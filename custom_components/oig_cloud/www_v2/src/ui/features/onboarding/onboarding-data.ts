@@ -10,9 +10,10 @@
  *   POST /api/oig_cloud/<sn>/ai           — verify a provider key
  *
  * Wizard steps themselves live under `ui/features/onboarding/`:
- *   - step-ai.ts        (data + helpers — provider guides, key shape)
- *   - step-solar.ts     (Task 13)
- *   - step-pricing.ts   (Task 13)
+ *   - step-ai.ts                    (data + helpers — provider guides, key shape)
+ *   - step-solar.ts
+ *   - step-pricing-distribution.ts, step-pricing-supplier.ts
+ *   - step-battery.ts, step-boiler.ts, step-connection.ts
  *
  * The component shell (`index.ts`) imports from here so the steps can stay
  * purely presentational and tested in isolation.

@@ -74,8 +74,10 @@ async function openWizardOnSolarStep(hass: unknown = null): Promise<HTMLElement 
     html`<oig-onboarding-wizard .inverterSn=${'SN123'} .hass=${hass} ?open=${true}></oig-onboarding-wizard>`,
   );
   await settle(wizard);
-  const nextBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement;
-  nextBtn.click();
+  // wizard-v2 (Stage S1) inserted welcome/modules ahead of ai/solar — jump
+  // straight to solar via its nav indicator (#6: any step directly reachable).
+  const solarNavBtn = wizard.shadowRoot!.querySelector('button[data-step="solar"]') as HTMLButtonElement;
+  solarNavBtn.click();
   await settle(wizard);
   return wizard as HTMLElement & { updateComplete: Promise<boolean> } & Record<string, any>;
 }
