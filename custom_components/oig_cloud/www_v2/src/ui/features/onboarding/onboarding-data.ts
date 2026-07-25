@@ -25,12 +25,23 @@ import { haClient } from '@/data/ha-client';
 // ============================================================================
 
 /**
- * The four independent onboarding steps. AI is OPTIONAL (#5) and the four
- * are unordered (SCOPE-REVISION #6 / K2f — no lock/gate concept). The
- * Python-side `ONBOARDING_STEPS` (custom_components/oig_cloud/onboarding/state.py)
- * mirrors this list; keep in sync.
+ * The 10 wizard-v2 step ids: the 8 status-tracked content steps (mirrors
+ * Python-side `ONBOARDING_STEPS`, custom_components/oig_cloud/onboarding/state.py
+ * — keep in sync) plus `welcome`/`summary`, which the FE routes to as
+ * always-rendered navigation endpoints but which carry no independent
+ * pending/done/skipped status (design decision 1).
  */
-export type OnboardingStepId = 'ai' | 'solar' | 'pricing';
+export type OnboardingStepId =
+  | 'welcome'
+  | 'modules'
+  | 'ai'
+  | 'solar'
+  | 'pricing_distribution'
+  | 'pricing_supplier'
+  | 'battery'
+  | 'boiler'
+  | 'connection'
+  | 'summary';
 
 export type OnboardingStepStatus = 'pending' | 'done' | 'skipped';
 
@@ -41,7 +52,12 @@ export type OnboardingStepStatus = 'pending' | 'done' | 'skipped';
  */
 export interface OnboardingState {
   schema_version: number;
-  steps: Record<OnboardingStepId, OnboardingStepStatus>;
+  /**
+   * `welcome`/`summary` never appear here — they are always-rendered
+   * navigation endpoints, not independently pending/done/skipped (design
+   * decision 1). Only the 8 content steps (`ONBOARDING_STEPS`) are keys.
+   */
+  steps: Partial<Record<OnboardingStepId, OnboardingStepStatus>>;
   timestamps: Partial<Record<OnboardingStepId, string>>;
   provider: string | null;
   /**
@@ -77,12 +93,24 @@ export interface AiVerifyResult {
 // ============================================================================
 
 /** Mirror of `ONBOARDING_STEPS` in Python — used for completion validation. */
-export const ONBOARDING_STEPS: ReadonlyArray<OnboardingStepId> = ['ai', 'solar', 'pricing'];
+export const ONBOARDING_STEPS: ReadonlyArray<OnboardingStepId> = [
+  'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
+  'battery', 'boiler', 'connection',
+];
 
 /** Empty state used when the backend returns nothing (404 / cold start). */
 export const EMPTY_ONBOARDING_STATE: OnboardingState = {
   schema_version: 1,
-  steps: { ai: 'pending', solar: 'pending', pricing: 'pending' },
+  steps: {
+    modules: 'pending',
+    ai: 'pending',
+    solar: 'pending',
+    pricing_distribution: 'pending',
+    pricing_supplier: 'pending',
+    battery: 'pending',
+    boiler: 'pending',
+    connection: 'pending',
+  },
   timestamps: {},
   provider: null,
   grandfathered: false,

@@ -35,7 +35,16 @@ def store(monkeypatch):
 async def test_fresh_state_is_versioned_and_all_steps_pending(store):
     state = await store.async_get()
     assert state["schema_version"] == SCHEMA_VERSION
-    assert state["steps"] == {"ai": "pending", "solar": "pending", "pricing": "pending"}
+    assert state["steps"] == {
+        "modules": "pending",
+        "ai": "pending",
+        "solar": "pending",
+        "pricing_distribution": "pending",
+        "pricing_supplier": "pending",
+        "battery": "pending",
+        "boiler": "pending",
+        "connection": "pending",
+    }
 
 
 @pytest.mark.asyncio
@@ -57,19 +66,19 @@ async def test_completing_a_step_stamps_it(store):
 @pytest.mark.asyncio
 async def test_steps_are_independent_no_ordering_enforced(store):
     """A user may do ③ before ① — AI is optional (#5)."""
-    await store.async_complete_step("pricing")
+    await store.async_complete_step("pricing_distribution")
     state = await store.async_get()
-    assert state["steps"]["pricing"] == "done"
+    assert state["steps"]["pricing_distribution"] == "done"
     assert state["steps"]["ai"] == "pending"
 
 
 @pytest.mark.asyncio
 async def test_skipping_a_step_stamps_it_skipped(store):
     """#5: every step is skippable — a skip persists status 'skipped' + a timestamp."""
-    await store.async_skip_step("pricing")
+    await store.async_skip_step("pricing_distribution")
     state = await store.async_get()
-    assert state["steps"]["pricing"] == "skipped"
-    assert state["timestamps"]["pricing"]
+    assert state["steps"]["pricing_distribution"] == "skipped"
+    assert state["timestamps"]["pricing_distribution"]
 
 
 @pytest.mark.asyncio
@@ -85,7 +94,7 @@ async def test_skip_and_complete_are_independent(store):
     state = await store.async_get()
     assert state["steps"]["ai"] == "skipped"
     assert state["steps"]["solar"] == "done"
-    assert state["steps"]["pricing"] == "pending"
+    assert state["steps"]["pricing_distribution"] == "pending"
 
 
 @pytest.mark.asyncio
@@ -118,3 +127,11 @@ def test_configured_entry_is_grandfathered_not_gated():
     assert is_grandfathered({"solar_forecast_provider": "solcast",
                              "solcast_api_key": "k", "solcast_site_id": "s"}) is True
     assert is_grandfathered({}) is False
+
+
+def test_onboarding_steps_cover_wizard_v2_content_steps():
+    from custom_components.oig_cloud.onboarding.state import ONBOARDING_STEPS
+    assert ONBOARDING_STEPS == (
+        "modules", "ai", "solar", "pricing_distribution", "pricing_supplier",
+        "battery", "boiler", "connection",
+    )

@@ -123,10 +123,10 @@ async def test_post_skip_persists_skipped_status(ob_env):
 
 @pytest.mark.asyncio
 async def test_post_default_action_completes(ob_env):
-    req = DummyJsonRequest(ob_env.hass, payload={"step": "pricing"})
+    req = DummyJsonRequest(ob_env.hass, payload={"step": "pricing_distribution"})
     resp = await ob_env.view.post(req, "box1")
     body = json.loads(resp.text)
-    assert body["steps"]["pricing"] == "done"
+    assert body["steps"]["pricing_distribution"] == "done"
 
 
 @pytest.mark.asyncio
@@ -135,7 +135,7 @@ async def test_post_finish_preserves_pending_solar_and_sets_finished_at(ob_env):
         DummyJsonRequest(ob_env.hass, payload={"step": "ai"}), "box1"
     )
     await ob_env.view.post(
-        DummyJsonRequest(ob_env.hass, payload={"step": "pricing"}), "box1"
+        DummyJsonRequest(ob_env.hass, payload={"step": "pricing_distribution"}), "box1"
     )
 
     resp = await ob_env.view.post(
@@ -144,12 +144,21 @@ async def test_post_finish_preserves_pending_solar_and_sets_finished_at(ob_env):
     body = json.loads(resp.text)
 
     assert resp.status == 200
-    assert body["steps"] == {"ai": "done", "solar": "pending", "pricing": "done"}
+    assert body["steps"] == {
+        "modules": "pending",
+        "ai": "done",
+        "solar": "pending",
+        "pricing_distribution": "done",
+        "pricing_supplier": "pending",
+        "battery": "pending",
+        "boiler": "pending",
+        "connection": "pending",
+    }
     assert body["finished_at"]
 
     resp2 = await ob_env.view.get(DummyRequest(ob_env.hass), "box1")
     body2 = json.loads(resp2.text)
-    assert body2["steps"] == {"ai": "done", "solar": "pending", "pricing": "done"}
+    assert body2["steps"] == body["steps"]
     assert body2["finished_at"] == body["finished_at"]
 
 
@@ -187,7 +196,7 @@ async def test_post_finish_persists_for_grandfathered_settings_launch(ob_env):
         "solar_forecast_api_key": "fs_x",
     }
     await ob_env.view.post(
-        DummyJsonRequest(ob_env.hass, payload={"step": "pricing"}), "box1"
+        DummyJsonRequest(ob_env.hass, payload={"step": "pricing_distribution"}), "box1"
     )
 
     resp = await ob_env.view.post(
@@ -197,7 +206,7 @@ async def test_post_finish_persists_for_grandfathered_settings_launch(ob_env):
 
     assert resp.status == 200
     assert body["grandfathered"] is True
-    assert body["steps"]["pricing"] == "done"
+    assert body["steps"]["pricing_distribution"] == "done"
     assert body["steps"]["solar"] == "pending"
     assert body["finished_at"]
 

@@ -29,8 +29,13 @@ _LOGGER = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 _FINISH_LOCKS_KEY = "onboarding_finish_locks"
 
-#: The three independent onboarding steps. AI is optional (#5) and unordered.
-ONBOARDING_STEPS = ("ai", "solar", "pricing")
+#: The 8 wizard-v2 content steps (F1 Wizard v2 plan, design decision 1).
+#: `welcome`/`summary` are FE-only navigation endpoints, never status-tracked
+#: here. AI is optional (#5) and steps are unordered.
+ONBOARDING_STEPS = (
+    "modules", "ai", "solar", "pricing_distribution", "pricing_supplier",
+    "battery", "boiler", "connection",
+)
 
 
 def _fresh_state() -> Dict[str, Any]:

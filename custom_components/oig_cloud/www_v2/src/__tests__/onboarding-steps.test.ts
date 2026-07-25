@@ -502,6 +502,17 @@ describe('step ③ pricing', () => {
   });
 });
 
+describe('ONBOARDING_STEPS wizard-v2 content steps (F1 Wizard v2 S1 Task 1)', () => {
+  it('ONBOARDING_STEPS covers the 8 wizard-v2 content steps', async () => {
+    const { ONBOARDING_STEPS, EMPTY_ONBOARDING_STATE } = await import('@/ui/features/onboarding/onboarding-data');
+    expect(ONBOARDING_STEPS).toEqual([
+      'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
+      'battery', 'boiler', 'connection',
+    ]);
+    expect(Object.keys(EMPTY_ONBOARDING_STATE.steps)).toEqual(ONBOARDING_STEPS);
+  });
+});
+
 describe('paired-host regression (Task 1 — shared field renderer)', () => {
   afterEach(() => {
     fixtureCleanup();
