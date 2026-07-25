@@ -85,3 +85,42 @@ claim.
    TDD-red for later stages, but full BE/FE gates + rebuilt `dist/` remain to be re-run at the
    final integrated state.
 4. **Stopped at the turn-budget wall by design**, not because S1 was the intended endpoint.
+
+---
+
+## Continuation — harvest S2, integrate S2+S3 (orchestrator `task-phase-b-continuation-harvest-s2-2fd6f6`)
+
+Date: 2026-07-25. Landed at the continuation orchestrator's turn-budget wall (turn 42/45).
+Same wall rule: only reviewed work landed; S4/S5 reported NOT DONE (still in flight).
+
+### Advanced state — public branch `f1/wizard-v2-impl` now at `fdb10635e`
+
+Fast-forward from `b481403ab` (S1+report) to `fdb10635e`. Linear, no divergence. New content:
+
+| Stage | Scope | State | Review |
+|-------|-------|-------|--------|
+| S2 — review-mode state (Tasks 6–11) | originalValues+per-field diff hint, per-step draft seeding from entry.options, step-9 full diff table, single final save (no per-step auto-save), recovered-pricing note + module-off warning, secret diff-hint gated on review mode | DONE, integrated | opus S2 review (commit `8d221f241` gates secret diff-hint on review mode) |
+| S3 — step content (Tasks 12–22) | solar GPS-from-HASS button, enum-value CZ labels, battery/boiler/connection/modules steps, dual-tariff distribution + supplier pricing cluster | DONE, integrated | reviewed opus / opus-3 (commits `3f8ea39b9`, `fdb10635e`) |
+| S4 — i18n parity + hassfest | — | IN FLIGHT | child orchestrator `task-wizard-v2-s4-s5-child-orchestrat-22a978` (opus) live in `/repos/wt-f1-wv2-s4s5` |
+| S5 — cleanup old 3-step overlay + its tests | — | IN FLIGHT | same child |
+
+S2+S3 commit range: `5859cb4cf..fdb10635e` (13 commits) atop `b481403ab`.
+
+### Gate status at `fdb10635e` (S2+S3 integrated) — NOT a final all-green claim
+
+- **Code reviewed**: S2 (opus) and S3 (opus/opus-3) integration commits carry cross-family review verdicts.
+- **Full-suite gates NOT re-established green at this tip.** Every delegated verify worker for the
+  S3-integrated state hit `tool_failure` (rc=1), not a test failure: `integrate-s3-merge-fe-verify…`
+  (spark), `integrate-be-full-pytest-suite-verify…` (spark), `integrate-s3-integrated-be-full-pytest…`
+  (spark), `integrate-s3-integrated-fe-tsc-vitest-buil…` (spark). Absence of a green run, not evidence
+  of red. Citable BE-pytest / FE-tsc+vitest / npm-build / flake8 numbers remain to be produced.
+- **`dist/` NOT rebuilt** for this push (final-stage gate, deferred with S4/S5).
+- The ~18 vitest specs expected-red at S1 are progressively satisfied by S2–S5; not all green until S5.
+
+### Deliverable
+
+- Advanced `f1/wizard-v2-impl` to `fdb10635e` + this report commit; pushed to origin.
+  NO merge elsewhere, NO deploy. S2 and S3 are reviewed; full-suite gates + rebuilt `dist/` + S4/S5
+  remain and are honestly reported NOT DONE at the continuation wall.
+- S4/S5 child orchestrator was left live (NOT killed) in `/repos/wt-f1-wv2-s4s5`; its bundle can be
+  harvested by a further continuation once its run row is terminal.
