@@ -168,3 +168,20 @@ All-green. The ~18 previously expected-red vitest specs are GREEN after S5 (0 fa
 
 Fast-forward + push `f1/wizard-v2-impl`. NO merge elsewhere, NO deploy. Phase B (S1–S5) complete
 and all-green.
+
+---
+
+## FINAL — S4+S5 landed, all-green verified by integrator (2026-07-25)
+
+Final orchestrator `task-phase-b-final-s4-i18n-s5-cleanup-2c84e4` delivered S4+S5 as `65a43e7e0`
+(S4 sonnet/reviewed opus rework=trivial; S5 sonnet/reviewed opus-3 rework=none) but died
+(cause=no_progress) before fast-forward+push; the integrator completed the merge and
+INDEPENDENTLY re-ran all gates at `65a43e7e0`:
+
+- BE full suite (.ha-env): 4510 passed / 0 failed / 28 skipped
+- FE: tsc clean; vitest 73 files / 1620 passed / 0 failed (all former expected-red green)
+- npm run build clean; dist/ rebuilt and committed in `65a43e7e0`
+- flake8: zero new vs base; translations: no raw URLs in descriptions
+
+Phase B COMPLETE. Branch: `f1/wizard-v2-impl`. Not merged elsewhere; deploy to the owner
+debug box follows separately.
