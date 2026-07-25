@@ -29,9 +29,13 @@ import {
   validateKeyShape,
 } from './step-ai';
 import type { FieldRegistry } from '@/data/registry-data';
-import { loadFieldRegistry, fieldsFromRegistry } from '@/data/registry-data';
+import { loadFieldRegistry } from '@/data/registry-data';
 import { STEP_SOLAR } from './step-solar';
-import { STEP_PRICING } from './step-pricing';
+import { STEP_PRICING_DISTRIBUTION } from './step-pricing-distribution';
+import { STEP_PRICING_SUPPLIER } from './step-pricing-supplier';
+import { STEP_BATTERY } from './step-battery';
+import { STEP_BOILER } from './step-boiler';
+import { STEP_CONNECTION } from './step-connection';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 export { renderFieldPresenter, fieldStyles };
 import {
@@ -45,16 +49,7 @@ import {
   type AiVerifyResult,
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
-import { saveModuleConfig } from '@/data/settings-data';
 import { t, resolveLang, type Lang, type OnboardingKey } from '@/i18n/onboarding';
-
-const PRICING_CONFIRM_KEYS = [
-  'confirmed_distribution_distributor',
-  'confirmed_distribution_tariff',
-  'confirmed_distribution_price_incl_vat',
-  'confirmed_distribution_price_excl_vat',
-  'confirmed_distribution_unit',
-] as const;
 
 interface PricingRate {
   price_incl_vat: number;
@@ -297,26 +292,49 @@ declare global {
 // ============================================================================
 
 /**
- * The wizard's step sequence. AI → Solar → Pricing. Each step is soft /
- * skippable per SCOPE-REVISION #5/#6 — this is a guide, never a wall.
+ * The wizard's 10-step wizard-v2 sequence (F1 Wizard v2 plan, Stage S1 Task
+ * 2): welcome → modules → ai → solar → pricing_distribution →
+ * pricing_supplier → battery → boiler → connection → summary. Each content
+ * step is soft/skippable per SCOPE-REVISION #5/#6 — this is a guide, never
+ * a wall; welcome/summary are never individually skippable (design decision 1).
  */
-const WIZARD_STEPS: ReadonlyArray<OnboardingStepId> = ['ai', 'solar', 'pricing'];
+const WIZARD_STEPS: ReadonlyArray<OnboardingStepId> = [
+  'welcome', 'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
+  'battery', 'boiler', 'connection', 'summary',
+];
 
 /**
  * Per-step display meta. `skippable` is sourced from the typed step
- * descriptors (STEP_AI / STEP_SOLAR / STEP_PRICING) so adding a new step only
- * needs touching step-*.ts + this map — no second source of truth.
+ * descriptors (STEP_AI / STEP_SOLAR / STEP_PRICING_DISTRIBUTION / ...) so
+ * adding a new step only needs touching step-*.ts + this map — no second
+ * source of truth.
  */
 const STEP_LABELS: Record<OnboardingStepId, string> = {
+  welcome: 'Vítejte',
+  modules: 'Moduly',
   ai: 'AI',
   solar: 'Solar',
-  pricing: 'Ceny',
+  pricing_distribution: 'Ceny — distribuce',
+  pricing_supplier: 'Ceny — dodavatel',
+  battery: 'Baterie a plánovač',
+  boiler: 'Bojler',
+  connection: 'Připojení',
+  summary: 'Shrnutí',
 };
 
+// welcome/summary are not in ONBOARDING_STEPS (design decision 1) and are never
+// individually skippable — Přeskočit is disabled on them regardless of this map.
 const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
+  welcome: false,
+  modules: false, // gates later steps; skipping it is meaningless
   ai: STEP_AI.skippable,
   solar: STEP_SOLAR.skippable,
-  pricing: STEP_PRICING.skippable,
+  pricing_distribution: STEP_PRICING_DISTRIBUTION.skippable,
+  pricing_supplier: STEP_PRICING_SUPPLIER.skippable,
+  battery: STEP_BATTERY.skippable,
+  boiler: STEP_BOILER.skippable,
+  connection: STEP_CONNECTION.skippable,
+  summary: false,
 };
 
 const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
@@ -422,7 +440,7 @@ export class OigOnboardingWizard extends LitElement {
   }
 
   /** Internal step routing — single source of truth is `WIZARD_STEPS`. */
-  @state() private currentStep: OnboardingStepId = 'ai';
+  @state() private currentStep: OnboardingStepId = 'welcome';
   @state() private onboardingState: OnboardingState | null = null;
   @state() private pricing: PricelistsResponse | null = null;
   @state() private pricingLoading = false;
@@ -435,8 +453,6 @@ export class OigOnboardingWizard extends LitElement {
    * `pricing` section (Task 7) — never re-fetched for step navigation. */
   private _pricingConfigLoaded = false;
   @state() private pricingDraft: Record<string, unknown> = {};
-  @state() private pricingSaving = false;
-  @state() private pricingSaveError: string | null = null;
 
   /** Solar step: registry cached per open (never re-fetched for step navigation). */
   private _registry: FieldRegistry | null = null;
@@ -1008,51 +1024,6 @@ export class OigOnboardingWizard extends LitElement {
     }
   }
 
-  /** Distributor/tariff change re-derives the OTHER field + the price/unit
-   * from the live `/pricelists` dataset (the immutable rate source — R6.3). */
-  private onPricingFieldChange(key: string, value: unknown): void {
-    const next: Record<string, unknown> = { ...this.pricingDraft, [key]: value };
-    const distributors = this.pricing?.distributors ?? {};
-
-    if (key === 'confirmed_distribution_distributor') {
-      const rates = distributors[String(value)] ?? {};
-      const tariff = Object.keys(rates)[0] ?? '';
-      next.confirmed_distribution_tariff = tariff;
-      const rate = rates[tariff];
-      if (rate) {
-        next.confirmed_distribution_price_incl_vat = rate.price_incl_vat;
-        next.confirmed_distribution_price_excl_vat = rate.price_excl_vat;
-        next.confirmed_distribution_unit = rate.unit;
-      }
-    } else if (key === 'confirmed_distribution_tariff') {
-      const distributor = String(next.confirmed_distribution_distributor ?? '');
-      const rate = distributors[distributor]?.[String(value)];
-      if (rate) {
-        next.confirmed_distribution_price_incl_vat = rate.price_incl_vat;
-        next.confirmed_distribution_price_excl_vat = rate.price_excl_vat;
-        next.confirmed_distribution_unit = rate.unit;
-      }
-    }
-
-    this.pricingDraft = next;
-  }
-
-  /** [Potvrdit] — real confirm + persistence (Task 7, closes finding #9). */
-  private async confirmPricing(): Promise<void> {
-    if (this.pricingSaving) return;
-    this.pricingSaving = true;
-    this.pricingSaveError = null;
-
-    const values: Record<string, unknown> = {};
-    for (const key of PRICING_CONFIRM_KEYS) values[key] = this.pricingDraft[key];
-
-    const result = await saveModuleConfig('pricing', values);
-    this.pricingSaving = false;
-    if (!result.ok) {
-      this.pricingSaveError = t('onboarding.pricing.save_error', this.wizardLang);
-    }
-  }
-
   private jumpTo(step: OnboardingStepId): void {
     this.currentStep = step;
   }
@@ -1149,11 +1120,13 @@ export class OigOnboardingWizard extends LitElement {
       `;
     }
 
-    if (this.currentStep === 'pricing') {
-      if (this.bootstrapRetry.registry || this.bootstrapRetry.pricing || this.bootstrapRetry.pricingConfig) {
+    if (this.currentStep === 'pricing_distribution' || this.currentStep === 'pricing_supplier') {
+      // Bootstrap plumbing is shared with the (Stage S3) field bodies — the
+      // retry affordance is shell behaviour, not step content, so it stays.
+      if (this.bootstrapRetry.pricing || this.bootstrapRetry.pricingConfig) {
         return html`
-          <section class="step step-pricing" data-step="pricing">
-            <h3>③ Ceny</h3>
+          <section class="step step-stub" data-step=${this.currentStep}>
+            <h3>${STEP_LABELS[this.currentStep]}</h3>
             <div class="step-card">
               <p data-testid="pricing-bootstrap-retry">${t('onboarding.bootstrap.load_failed', this.wizardLang)}</p>
               <button
@@ -1165,79 +1138,29 @@ export class OigOnboardingWizard extends LitElement {
           </section>
         `;
       }
-      const distributorCount = Object.keys(this.pricing?.distributors || {}).length;
-      if (
-        !this._registry ||
-        !this.pricing ||
-        this.pricingLoadFailed ||
-        distributorCount === 0 ||
-        this.pricing.tariffs.length === 0 ||
-        Object.keys(this.pricingDraft).length === 0
-      ) {
-        return html`
-          <section class="step step-pricing" data-step="pricing">
-            <h3>③ Ceny</h3>
-            <div class="step-card">
-              <p data-testid="pricing-data-missing">
-                Ceny nejsou dostupné.
-              </p>
-            </div>
-          </section>
-        `;
-      }
-
-      // U1: the tariff enum in the registry is the union across ALL
-      // distributors (config_registry.py's _PRICE_TARIFFS) — the visible
-      // options must be re-derived per selected distributor from the live
-      // /pricelists dataset, same as Solar's provider-conditional fields.
-      const distributor = String(this.pricingDraft.confirmed_distribution_distributor ?? '');
-      const tariffOptions: [string, string][] = Object.keys(this.pricing.distributors[distributor] || {})
-        .map((t) => [t, t]);
-      const pricingFields = fieldsFromRegistry(this._registry, 'pricing').map((f) =>
-        f.key === 'confirmed_distribution_tariff' ? { ...f, options: tariffOptions } : f,
-      );
-
       return html`
-        <section class="step step-pricing" data-step="pricing">
-          <h3>③ Ceny</h3>
+        <section class="step step-stub" data-step=${this.currentStep}>
+          <h3>${STEP_LABELS[this.currentStep]}</h3>
           <div class="step-card">
-            ${pricingFields.map((f) =>
-              renderFieldPresenter(f, {
-                value: this.pricingDraft[f.key],
-                dirty: false,
-                secretSet: false,
-                onChange: (v: unknown) => this.onPricingFieldChange(f.key, v),
-                entityCatalog: [],
-              }),
-            )}
-            <button
-              type="button"
-              data-testid="pricing-confirm"
-              ?disabled=${this.pricingSaving}
-              @click=${() => void this.confirmPricing()}
-            >${this.pricingSaving ? 'Ukládám…' : 'Potvrdit'}</button>
-            ${this.pricingSaveError
-              ? html`<p data-testid="pricing-save-error">${this.pricingSaveError}</p>`
-              : nothing}
-            ${this.pricing.stale_warning
-              ? html`<p data-testid="pricing-stale-warning">${t('onboarding.pricing.stale_warning', this.wizardLang)}</p>`
-              : nothing}
+            <p data-testid="step-stub-placeholder">
+              ${this.pricingLoadFailed || Object.keys(this.pricingDraft).length === 0
+                ? 'Ceny nejsou dostupné.'
+                : 'Tento krok bude doplněn v další verzi průvodce.'}
+            </p>
           </div>
         </section>
       `;
     }
 
-    // pricing
+    // Every other step without dedicated content yet (modules, battery,
+    // boiler, connection — Stage S3 fills these in; welcome/summary land in
+    // Task 5). A stub, not a second source of truth.
     return html`
-      <section class="step step-pricing" data-step="pricing">
-        <h3>③ Ceny</h3>
+      <section class="step step-stub" data-step=${this.currentStep}>
+        <h3>${STEP_LABELS[this.currentStep]}</h3>
         <div class="step-card">
-          <p>
-            Tarify, spotové ceny a kalkulace najdete v záložce <strong>Ceny</strong>.
-          </p>
-          <p>
-            Průvodce nezobrazuje cenový editor znovu — konfigurace tarifů se
-            provede jednou, a to v Nastavení → Tarify.
+          <p data-testid="step-stub-placeholder">
+            Tento krok bude doplněn v další verzi průvodce.
           </p>
         </div>
       </section>

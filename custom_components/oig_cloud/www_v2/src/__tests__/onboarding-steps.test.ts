@@ -4,7 +4,7 @@ import { html, render } from 'lit';
 import { fieldsFromRegistry } from '@/data/registry-data';
 import type { FieldRegistry } from '@/data/registry-data';
 import { STEP_SOLAR } from '@/ui/features/onboarding/step-solar';
-import { STEP_PRICING } from '@/ui/features/onboarding/step-pricing';
+import { STEP_PRICING_DISTRIBUTION } from '@/ui/features/onboarding/step-pricing-distribution';
 import { REGISTRY_FIXTURE } from './fixtures/registry-fixture';
 import {
   SOLAR_REGISTRY_FIXTURE,
@@ -112,10 +112,10 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
     await (wizard as any).updateComplete;
 
     // Navigate to solar step
-    const nextBtn = wizard.shadowRoot!.querySelector(
-      '[data-testid="wizard-next"]',
+    const solarNavBtn = wizard.shadowRoot!.querySelector(
+      'button[data-step="solar"]',
     ) as HTMLButtonElement;
-    nextBtn.click();
+    solarNavBtn.click();
     await (wizard as any).updateComplete;
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
@@ -145,10 +145,10 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
     await (wizard as any).updateComplete;
 
     // Navigate to solar
-    const nextBtn = wizard.shadowRoot!.querySelector(
-      '[data-testid="wizard-next"]',
+    const solarNavBtn = wizard.shadowRoot!.querySelector(
+      'button[data-step="solar"]',
     ) as HTMLButtonElement;
-    nextBtn.click();
+    solarNavBtn.click();
     await (wizard as any).updateComplete;
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
@@ -202,10 +202,10 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
 
-    const nextBtn = wizard.shadowRoot!.querySelector(
-      '[data-testid="wizard-next"]',
+    const solarNavBtn = wizard.shadowRoot!.querySelector(
+      'button[data-step="solar"]',
     ) as HTMLButtonElement;
-    nextBtn.click();
+    solarNavBtn.click();
     await (wizard as any).updateComplete;
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
@@ -252,10 +252,10 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
 
-    const nextBtn = wizard.shadowRoot!.querySelector(
-      '[data-testid="wizard-next"]',
+    const solarNavBtn = wizard.shadowRoot!.querySelector(
+      'button[data-step="solar"]',
     ) as HTMLButtonElement;
-    nextBtn.click();
+    solarNavBtn.click();
     await (wizard as any).updateComplete;
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
@@ -278,7 +278,7 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
     expect(numberInputs.length).toBeLessThanOrEqual(2);
   });
 
-  it('loads the field registry exactly once across AI→Solar→Pricing navigation', async () => {
+  it('loads the field registry exactly once across Solar→Pricing-distribution navigation', async () => {
     const wizard = await fixture<HTMLElement>(html`<oig-onboarding-wizard
       .inverterSn=${'SN123'}
       ?open=${true}
@@ -287,18 +287,16 @@ describe('solar step render (F1 Plan 3.6 Task 2)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
 
-    const nextBtn = wizard.shadowRoot!.querySelector(
-      '[data-testid="wizard-next"]',
-    ) as HTMLButtonElement;
-
-    // AI → Solar
-    nextBtn.click();
+    // → Solar
+    (wizard.shadowRoot!.querySelector('button[data-step="solar"]') as HTMLButtonElement).click();
     await (wizard as any).updateComplete;
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
 
-    // Solar → Pricing
-    nextBtn.click();
+    // Solar → Pricing-distribution
+    (wizard.shadowRoot!.querySelector(
+      'button[data-step="pricing_distribution"]',
+    ) as HTMLButtonElement).click();
     await (wizard as any).updateComplete;
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
@@ -368,10 +366,10 @@ describe('solar step [Otestovat] button (F1 Plan 3.6 Task 6)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
 
-    const nextBtn = wizard.shadowRoot!.querySelector(
-      '[data-testid="wizard-next"]',
+    const solarNavBtn = wizard.shadowRoot!.querySelector(
+      'button[data-step="solar"]',
     ) as HTMLButtonElement;
-    nextBtn.click();
+    solarNavBtn.click();
     await (wizard as any).updateComplete;
     await new Promise((resolve) => setTimeout(resolve, 0));
     await (wizard as any).updateComplete;
@@ -463,7 +461,7 @@ describe('solar step [Otestovat] button (F1 Plan 3.6 Task 6)', () => {
     await wizard.updateComplete;
 
     const newContent = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
-    expect(newContent.querySelector('[data-step="pricing"]')).toBeTruthy();
+    expect(newContent.querySelector('[data-step="pricing_distribution"]')).toBeTruthy();
   });
 
   it('editing a solar field after a successful test clears solarTestMatchesDraft', async () => {
@@ -492,13 +490,10 @@ describe('solar step [Otestovat] button (F1 Plan 3.6 Task 6)', () => {
   });
 });
 
-describe('step ③ pricing', () => {
-  it('is reachable without a verified AI (#5)', () => {
-    expect(STEP_PRICING.requiresAi).toBe(false);
-  });
-
-  it('AI cross-verification is an optional helper button, not a precondition', () => {
-    expect(STEP_PRICING.aiVerify.optional).toBe(true);
+describe('step pricing_distribution (stub — F1 Wizard v2 S1 Task 2)', () => {
+  it('never blocks the dashboard and is skippable, same contract as every step (#5/#6)', () => {
+    expect(STEP_PRICING_DISTRIBUTION.blocksDashboard).toBe(false);
+    expect(STEP_PRICING_DISTRIBUTION.skippable).toBe(true);
   });
 });
 

@@ -241,7 +241,7 @@ describe('wizard mount + route (Plan 3.5 item 4)', () => {
     expect(wizard.hasAttribute('open')).toBe(true);
   });
 
-  it('routes steps in order AI → Solar → Pricing via [Další]', async () => {
+  it('routes steps in order welcome → modules → ai → solar → … via [Další]', async () => {
     const banner = el.shadowRoot!.querySelector('oig-onboarding-banner')!;
     banner.dispatchEvent(new CustomEvent('launch-onboarding', {
       bubbles: true,
@@ -257,26 +257,35 @@ describe('wizard mount + route (Plan 3.5 item 4)', () => {
     const overlay = wizardRoot(wizard).querySelector('[data-testid="onboarding-wizard"]');
     expect(overlay).toBeTruthy();
 
-    // ① AI
+    // ⓪ Welcome (first step, opens by default)
     let active = wizardRoot(wizard).querySelector('button.active') as HTMLButtonElement | null;
-    expect(active?.getAttribute('data-step')).toBe('ai');
+    expect(active?.getAttribute('data-step')).toBe('welcome');
 
-    // click [Další] → ② Solar
+    // click [Další] → modules
     const nextBtn = wizardRoot(wizard).querySelector(
       '[data-testid="wizard-next"]',
     ) as HTMLButtonElement;
     nextBtn.click();
     await (wizard as any).updateComplete;
     active = wizardRoot(wizard).querySelector('button.active') as HTMLButtonElement | null;
-    expect(active?.getAttribute('data-step')).toBe('solar');
+    expect(active?.getAttribute('data-step')).toBe('modules');
 
-    // click [Další] again → ③ Pricing
+    // click [Další] again → ai
     (wizardRoot(wizard).querySelector(
       '[data-testid="wizard-next"]',
     ) as HTMLButtonElement).click();
     await (wizard as any).updateComplete;
     active = wizardRoot(wizard).querySelector('button.active') as HTMLButtonElement | null;
-    expect(active?.getAttribute('data-step')).toBe('pricing');
+    expect(active?.getAttribute('data-step')).toBe('ai');
+
+    // jump directly to the last step (summary) — full ordering is covered by
+    // the dedicated WIZARD_STEPS test.
+    (wizardRoot(wizard).querySelector(
+      'button[data-step="summary"]',
+    ) as HTMLButtonElement).click();
+    await (wizard as any).updateComplete;
+    active = wizardRoot(wizard).querySelector('button.active') as HTMLButtonElement | null;
+    expect(active?.getAttribute('data-step')).toBe('summary');
 
     // clicking [Další] on the last step closes the wizard.
     (wizardRoot(wizard).querySelector(
@@ -295,6 +304,13 @@ describe('wizard mount + route (Plan 3.5 item 4)', () => {
     await el.updateComplete;
 
     const wizard = getWizard(el)!;
+
+    // Drive to the AI step by clicking the indicator directly (wizard opens
+    // on 'welcome' now).
+    (wizardRoot(wizard).querySelector(
+      'button[data-step="ai"]',
+    ) as HTMLButtonElement).click();
+    await (wizard as any).updateComplete;
     let active = wizardRoot(wizard).querySelector('button.active') as HTMLButtonElement | null;
     expect(active?.getAttribute('data-step')).toBe('ai');
 
@@ -333,7 +349,7 @@ describe('wizard mount + route (Plan 3.5 item 4)', () => {
     ) as HTMLButtonElement).click();
     await (wizard as any).updateComplete;
     active = wizardRoot(wizard).querySelector('button.active') as HTMLButtonElement | null;
-    expect(active?.getAttribute('data-step')).toBe('pricing');
+    expect(active?.getAttribute('data-step')).toBe('pricing_distribution');
   });
 
   it('returns to the dashboard when the user closes the wizard (no lock, #6)', async () => {
@@ -425,6 +441,11 @@ describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
     );
     await flushWizard(wizard);
 
+    // Wizard opens on 'welcome' — jump to 'ai' directly (#6: no lock/gate,
+    // any step is reachable from the nav).
+    (wizard.shadowRoot!.querySelector('button[data-step="ai"]') as HTMLButtonElement).click();
+    await flushWizard(wizard);
+
     const aiStep = wizard.shadowRoot!.querySelector('oig-onboarding-step-ai') as
       | (HTMLElement & { updateComplete: Promise<boolean> })
       | null;
@@ -436,28 +457,24 @@ describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
     aiKey.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     await flushWizard(wizard);
 
-    let nextBtn = wizard.shadowRoot!.querySelector(
+    // [Další] from 'ai' persists it 'done' and advances to 'solar'.
+    const nextBtn = wizard.shadowRoot!.querySelector(
       '[data-testid="wizard-next"]',
     ) as HTMLButtonElement;
-    nextBtn.click();
-    await flushWizard(wizard);
     nextBtn.click();
     await flushWizard(wizard);
 
-    const confirmBtn = wizard.shadowRoot!.querySelector(
-      '[data-testid="pricing-confirm"]',
-    ) as HTMLButtonElement;
-    confirmBtn.click();
+    // Jump straight to the last step (summary) — the stub steps in between
+    // (Stage S3 content) have nothing to interact with in S1.
+    (wizard.shadowRoot!.querySelector('button[data-step="summary"]') as HTMLButtonElement).click();
     await flushWizard(wizard);
-    nextBtn = wizard.shadowRoot!.querySelector(
-      '[data-testid="wizard-next"]',
-    ) as HTMLButtonElement;
-    nextBtn.click();
+    (wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement).click();
     await flushWizard(wizard);
 
     expect(typedFinishCalls()).toHaveLength(1);
     expect(JSON.parse(String(typedFinishCalls()[0][1]!.body))).toEqual({ action: 'finish' });
-    expect(persisted.steps).toEqual({ ai: 'done', solar: 'pending', pricing: 'done' });
+    expect(persisted.steps.ai).toBe('done');
+    expect(persisted.steps.solar).toBe('pending');
     expect(wizard.hasAttribute('open')).toBe(false);
 
     fixtureCleanup();
@@ -473,8 +490,6 @@ describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
       .toContain('done');
     expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-solar"]')?.textContent)
       .toContain('pending');
-    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-pricing"]')?.textContent)
-      .toContain('done');
   });
 
   it('double-clicking Finish issues exactly one action:"finish" request', async () => {
@@ -508,7 +523,7 @@ describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
     );
     await flushWizard(wizard);
 
-    (wizard.shadowRoot!.querySelector('button[data-step="pricing"]') as HTMLButtonElement).click();
+    (wizard.shadowRoot!.querySelector('button[data-step="summary"]') as HTMLButtonElement).click();
     await flushWizard(wizard);
 
     const finishBtn = wizard.shadowRoot!.querySelector(
@@ -578,7 +593,7 @@ describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
     );
     await flushWizard(wizard);
 
-    (wizard.shadowRoot!.querySelector('button[data-step="pricing"]') as HTMLButtonElement).click();
+    (wizard.shadowRoot!.querySelector('button[data-step="summary"]') as HTMLButtonElement).click();
     await flushWizard(wizard);
 
     (wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement).click();
@@ -595,5 +610,36 @@ describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
     await flushWizard(wizard);
     expect(typedFinishCalls()).toHaveLength(2);
     expect(wizard.hasAttribute('open')).toBe(false);
+  });
+});
+
+describe('WIZARD_STEPS 10-step sequence (F1 Wizard v2 S1 Task 2)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPI.mockResolvedValue(null);
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(null);
+    saveModuleConfigMock.mockResolvedValue({ ok: true });
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  it('WIZARD_STEPS is the 10-step wizard-v2 sequence, welcome first and summary last', async () => {
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    const steps = [...wizard.shadowRoot!.querySelectorAll('[data-testid="wizard-steps"] button')]
+      .map((b) => b.getAttribute('data-step'));
+    expect(steps).toEqual([
+      'welcome', 'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
+      'battery', 'boiler', 'connection', 'summary',
+    ]);
   });
 });
