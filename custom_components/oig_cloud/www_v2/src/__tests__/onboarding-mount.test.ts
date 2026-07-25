@@ -642,4 +642,18 @@ describe('WIZARD_STEPS 10-step sequence (F1 Wizard v2 S1 Task 2)', () => {
       'battery', 'boiler', 'connection', 'summary',
     ]);
   });
+
+  it('phase label groups modules/ai/solar/pricing_distribution/boiler/connection as Phase A, pricing_supplier/battery as Phase B', async () => {
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    const phaseA = wizard.shadowRoot!.querySelectorAll('[data-testid="wizard-phase-a"]');
+    const phaseB = wizard.shadowRoot!.querySelectorAll('[data-testid="wizard-phase-b"]');
+    expect(phaseA.length).toBe(1);
+    expect(phaseB.length).toBe(1);
+    expect(phaseA[0].textContent).toContain('Nastavuje se jednou');
+    expect(phaseB[0].textContent).toContain('Mění se v čase');
+  });
 });

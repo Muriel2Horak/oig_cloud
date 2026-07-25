@@ -337,6 +337,19 @@ const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
   summary: false,
 };
 
+/**
+ * Which UX-SPEC phase (§table-of-contents) a step belongs to — `undefined`
+ * (welcome/summary) means "spans both", per spec's own framing. Not
+ * contiguous in `WIZARD_STEPS` order (pricing_supplier/battery sit between
+ * two Phase-A runs), so the legend below is a static label, not a spanning
+ * grid cell tied to nav button positions.
+ */
+const STEP_PHASE: Partial<Record<OnboardingStepId, 'A' | 'B'>> = {
+  modules: 'A', ai: 'A', solar: 'A', pricing_distribution: 'A', boiler: 'A', connection: 'A',
+  pricing_supplier: 'B', battery: 'B',
+};
+const PHASE_LABELS = { A: 'Nastavuje se jednou', B: 'Mění se v čase' } as const;
+
 const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
   pending: 'pending',
   done: 'done',
@@ -549,6 +562,19 @@ export class OigOnboardingWizard extends LitElement {
       font-size: 18px;
       line-height: 1;
       cursor: pointer;
+    }
+
+    .phase-legend {
+      display: flex;
+      gap: 14px;
+      padding: 8px 18px 0;
+      font-size: 11px;
+      opacity: 0.7;
+    }
+
+    .phase-chip strong {
+      font-weight: 600;
+      margin-right: 4px;
     }
 
     nav.steps {
@@ -1199,6 +1225,21 @@ export class OigOnboardingWizard extends LitElement {
               @click=${this.close}
             >×</button>
           </header>
+
+          <div class="phase-legend" data-testid="wizard-phase-legend">
+            <div class="phase-chip" data-testid="wizard-phase-a">
+              <strong>${PHASE_LABELS.A}</strong>
+              <span class="phase-steps">
+                ${WIZARD_STEPS.filter((s) => STEP_PHASE[s] === 'A').map((s) => STEP_LABELS[s]).join(', ')}
+              </span>
+            </div>
+            <div class="phase-chip" data-testid="wizard-phase-b">
+              <strong>${PHASE_LABELS.B}</strong>
+              <span class="phase-steps">
+                ${WIZARD_STEPS.filter((s) => STEP_PHASE[s] === 'B').map((s) => STEP_LABELS[s]).join(', ')}
+              </span>
+            </div>
+          </div>
 
           <nav class="steps" data-testid="wizard-steps" aria-label="Kroky průvodce">
             ${WIZARD_STEPS.map((s, i) => html`
