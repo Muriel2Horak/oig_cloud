@@ -1,8 +1,8 @@
 // src/__tests__/onboarding-skip.test.ts
 //
 // Plan 3.5 item 5: skipOnboardingStep posts a skip end-to-end. A skip is a user
-// choice (#5 — every step skippable), never a lock (#6). The banner-suppression
-// for a grandfathered entry is covered in onboarding-soft-gate.test.ts.
+// choice (#5 — every step skippable), never a lock (#6). The grandfathered
+// banner's copy/visibility (D11) is covered in onboarding-soft-gate.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { fetchOIGAPI } = vi.hoisted(() => ({
@@ -16,6 +16,7 @@ vi.mock('@/data/ha-client', () => ({
 import {
   skipOnboardingStep,
   completeOnboardingStep,
+  dismissOnboardingBanner,
   EMPTY_ONBOARDING_STATE,
 } from '@/ui/features/onboarding/onboarding-data';
 
@@ -48,8 +49,27 @@ describe('skipOnboardingStep (Plan 3.5 item 5)', () => {
   });
 });
 
-describe('OnboardingState shape carries grandfathered (banner suppression source)', () => {
-  it('EMPTY_ONBOARDING_STATE defaults grandfathered to false', () => {
+describe('dismissOnboardingBanner (D11)', () => {
+  beforeEach(() => fetchOIGAPI.mockClear());
+
+  it('POSTs {action: "dismiss_banner"} to the box onboarding endpoint', async () => {
+    await dismissOnboardingBanner('SN123');
+    expect(fetchOIGAPI).toHaveBeenCalledTimes(1);
+    const [path, opts] = fetchOIGAPI.mock.calls[0];
+    expect(path).toBe('/SN123/onboarding');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ action: 'dismiss_banner' });
+  });
+
+  it('is a no-op when inverterSn is empty', async () => {
+    expect(await dismissOnboardingBanner('')).toBeNull();
+    expect(fetchOIGAPI).not.toHaveBeenCalled();
+  });
+});
+
+describe('OnboardingState shape carries grandfathered + banner_dismissed (D11 banner copy/persistence source)', () => {
+  it('EMPTY_ONBOARDING_STATE defaults grandfathered and banner_dismissed to false', () => {
     expect(EMPTY_ONBOARDING_STATE.grandfathered).toBe(false);
+    expect(EMPTY_ONBOARDING_STATE.banner_dismissed).toBe(false);
   });
 });

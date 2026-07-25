@@ -34,6 +34,14 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.finish.error.in_progress': 'Dokončení už probíhá.',
     'onboarding.finish.error.save_failed': 'Dokončení se nepodařilo uložit.',
     'onboarding.finish.error.generic': 'Dokončení se nepodařilo.',
+
+    'onboarding.banner.title': 'Průvodce nastavením je připraven',
+    'onboarding.banner.body': 'Nastavení můžete doplnit teď nebo se k němu kdykoli vrátit později.',
+    'onboarding.banner.launch': 'Spustit průvodce',
+    'onboarding.banner.close_label': 'Skrýt průvodce nastavením',
+    'onboarding.banner.grandfathered_title': 'Zkontrolujte svou stávající konfiguraci',
+    'onboarding.banner.grandfathered_body': 'Váš box je už nastavený. Průvodcem můžete kdykoli projít a zkontrolovat svou stávající konfiguraci — nic se tím neztratí.',
+    'onboarding.banner.grandfathered_close_label': 'Skrýt tuto nabídku',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
@@ -54,6 +62,14 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.finish.error.in_progress': 'Finish is already in progress.',
     'onboarding.finish.error.save_failed': 'Failed to save on finish.',
     'onboarding.finish.error.generic': 'Finish failed.',
+
+    'onboarding.banner.title': 'Setup wizard is ready',
+    'onboarding.banner.body': 'You can finish setup now or come back to it anytime.',
+    'onboarding.banner.launch': 'Launch wizard',
+    'onboarding.banner.close_label': 'Hide setup wizard',
+    'onboarding.banner.grandfathered_title': 'Review your existing configuration',
+    'onboarding.banner.grandfathered_body': 'Your box is already set up. You can walk through the wizard anytime to review your existing configuration — nothing will be lost.',
+    'onboarding.banner.grandfathered_close_label': 'Hide this prompt',
   },
 };
 

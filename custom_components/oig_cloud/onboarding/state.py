@@ -41,6 +41,7 @@ def _fresh_state() -> Dict[str, Any]:
         "timestamps": {step: None for step in ONBOARDING_STEPS},
         "provider": None,
         "finished_at": None,
+        "banner_dismissed": False,
     }
 
 
@@ -104,12 +105,16 @@ class OnboardingState:
             # else (absent / older schema / corrupt) is a fresh soft-guide state.
             if isinstance(loaded, dict) and loaded.get("schema_version") == SCHEMA_VERSION:
                 self._data = loaded
+                # A state persisted before D11 added the banner-dismissal flag
+                # lacks the key — default it rather than bumping the schema.
+                self._data.setdefault("banner_dismissed", False)
             else:
                 self._data = _fresh_state()
             # ``grandfathered`` is DERIVED from the live config-entry options and
             # recomputed on every load so it can never go stale (a user who later
             # removes their solar keys stops being grandfathered). It is not a
-            # lock/gate — only whether to suppress the soft banner (#6).
+            # lock/gate — it only selects the banner's "review your config" copy
+            # (D11); the banner itself is still shown until ``banner_dismissed``.
             self._data["grandfathered"] = is_grandfathered(self._options)
         return self._data
 
@@ -141,6 +146,19 @@ class OnboardingState:
         data["timestamps"][step] = dt_util.utcnow().isoformat()
         await self._store.async_save(data)
         _LOGGER.debug("Onboarding step '%s' skipped for entry", step)
+        return data
+
+    async def async_dismiss_banner(self) -> Dict[str, Any]:
+        """Persist that the user closed the migration/review banner (D11).
+
+        Grandfathered users may never want the wizard — this is the only way
+        their dismissal survives a reload. Not a gate: the wizard stays
+        launchable from Settings regardless (#6).
+        """
+        data = await self._async_data()
+        data["banner_dismissed"] = True
+        await self._store.async_save(data)
+        _LOGGER.debug("Onboarding banner dismissed for entry")
         return data
 
     async def async_set_provider(self, provider: str) -> Dict[str, Any]:
