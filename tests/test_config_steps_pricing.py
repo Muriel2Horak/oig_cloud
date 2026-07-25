@@ -129,6 +129,53 @@ def test_map_backend_to_frontend():
 
 
 @pytest.mark.parametrize(
+    "malformed_backend_data",
+    [
+        # explicit None for a numeric key that previously raised TypeError on `/`
+        {"spot_pricing_model": "fixed", "spot_fixed_fee_mwh": None},
+        # legacy/edited-by-hand storage: numeric value stored as a string
+        {"spot_pricing_model": "fixed", "spot_fixed_fee_mwh": "500"},
+        # vat_rate stored as a non-numeric string
+        {"vat_rate": "n/a"},
+        # backend_data itself is not a dict (defensive floor)
+        None,
+    ],
+)
+def test_map_backend_to_frontend_never_raises_on_malformed_input(malformed_backend_data):
+    """RCA-R2: realistic malformed entry.options must not raise.
+
+    Previously `_map_backend_to_frontend` raised on these inputs, which the
+    OptionsFlow __init__ caller swallowed silently and reverted the WHOLE
+    pricing section to hardcoded defaults. The mapper itself must now be
+    robust so the failure never reaches that fallback in the first place.
+    """
+    frontend = WizardMixin._map_backend_to_frontend(malformed_backend_data)
+    assert isinstance(frontend, dict)
+    # vat_rate must always resolve to a usable float, never crash or vanish.
+    assert isinstance(frontend["vat_rate"], float)
+
+
+def test_map_backend_to_frontend_partial_failure_keeps_other_sections():
+    """One malformed section must not blank out sections that mapped fine."""
+    backend_data = {
+        "spot_pricing_model": "fixed",
+        "spot_fixed_fee_mwh": None,  # import section: malformed, was a raise
+        "export_pricing_model": "fixed",
+        "export_fixed_fee_czk": 0.25,  # export section: healthy
+        "dual_tariff_enabled": False,
+        "distribution_fee_vt_kwh": 1.4,  # distribution section: healthy
+        "vat_rate": 19.0,
+    }
+
+    frontend = WizardMixin._map_backend_to_frontend(backend_data)
+
+    assert frontend["export_pricing_scenario"] == "spot_fixed"
+    assert frontend["export_fixed_fee_czk"] == 0.25
+    assert frontend["distribution_fee_vt_kwh"] == 1.4
+    assert frontend["vat_rate"] == 19.0
+
+
+@pytest.mark.parametrize(
     "scenario,expected",
     [
         (

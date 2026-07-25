@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from typing import Any
 
@@ -107,6 +108,94 @@ async def test_options_flow_init_redirect():
     assert result["step_id"] == "init"
     assert "section_modules" in result["menu_options"]
     assert "section_all" in result["menu_options"]
+
+
+@pytest.mark.asyncio
+async def test_options_flow_init_seeds_pricing_and_solar_from_existing_options():
+    """RCA-R2 / D11: a configured entry's values MUST reach the wizard bootstrap
+    payload -- not the hardcoded step defaults (15.0, 9.0, 1.42, 0.91, 4.50 ...)
+    RCA-R2 names as the silent-swallow fallback.
+    """
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            "spot_pricing_model": "fixed_prices",
+            "fixed_commercial_price_vt": 3.9,
+            "fixed_commercial_price_nt": 2.7,
+            "export_pricing_model": "fixed",
+            "export_fixed_fee_czk": 0.31,
+            "dual_tariff_enabled": True,
+            "distribution_fee_vt_kwh": 1.55,
+            "distribution_fee_nt_kwh": 0.77,
+            "vat_rate": 21.0,
+            **_solar_values(),
+        },
+    )
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    assert flow._wizard_data["import_pricing_scenario"] == "fix_price"
+    assert flow._wizard_data["fixed_price_vt_kwh"] == 3.9
+    assert flow._wizard_data["fixed_price_nt_kwh"] == 2.7
+    assert flow._wizard_data["export_pricing_scenario"] == "spot_fixed"
+    assert flow._wizard_data["export_fixed_fee_czk"] == 0.31
+    assert flow._wizard_data["distribution_fee_vt_kwh"] == 1.55
+    assert flow._wizard_data["distribution_fee_nt_kwh"] == 0.77
+    assert flow._wizard_data["vat_rate"] == 21.0
+
+    # Non-pricing (solar) keys pass through the same seeding path.
+    assert flow._wizard_data["enable_solar_forecast"] is True
+    assert flow._wizard_data["solar_forecast_provider"] == "forecast_solar"
+    assert flow._wizard_data["solar_forecast_latitude"] == 50.12
+    assert flow._wizard_data["solar_forecast_string1_kwp"] == 5.5
+
+
+@pytest.mark.asyncio
+async def test_options_flow_init_pricing_mapping_failure_falls_back_to_raw_copy(
+    monkeypatch, caplog
+):
+    """If `_map_backend_to_frontend` still somehow raises, __init__ must not
+    silently swallow to {} -- pricing fields must show SOME prior value
+    (best-effort raw backend copy) and the failure must be logged loudly.
+    """
+    entry = SimpleNamespace(
+        entry_id="entry1",
+        data={CONF_USERNAME: "demo"},
+        options={
+            "spot_pricing_model": "fixed",
+            "spot_fixed_fee_mwh": 480.0,
+            "distribution_fee_vt_kwh": 1.5,
+        },
+    )
+
+    def _boom(_backend_data):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(WizardMixin, "_map_backend_to_frontend", staticmethod(_boom))
+
+    caplog.set_level(logging.DEBUG, logger="custom_components.oig_cloud.config.steps")
+    flow = DummyOptionsFlow(entry)
+    flow.hass = DummyHass()
+
+    assert "pricing mapping failed" in caplog.text
+
+    # The actual object passed to the "Frontend pricing data" debug log is the
+    # ground truth for what __init__ used as the fallback -- a raw copy of
+    # backend_options, never a silent {} that drops all pricing context.
+    frontend_pricing_records = [
+        r
+        for r in caplog.records
+        if r.msg == "🔧 OptionsFlow: Frontend pricing data: %s"
+    ]
+    assert frontend_pricing_records
+    # logging's single-dict-arg special case: record.args IS the dict itself,
+    # not a 1-tuple containing it.
+    frontend_pricing = frontend_pricing_records[0].args
+    assert frontend_pricing != {}
+    assert frontend_pricing.get("spot_pricing_model") == "fixed"
+    assert frontend_pricing.get("spot_fixed_fee_mwh") == 480.0
+    assert frontend_pricing.get("distribution_fee_vt_kwh") == 1.5
 
 
 @pytest.mark.asyncio

@@ -634,12 +634,31 @@ class WizardMixin:
 
         This is the reverse of _map_pricing_to_backend - used when loading
         existing configuration in OptionsFlow.
+
+        Each section mapper runs independently (RCA-R2): a malformed value in
+        one section (missing key, explicit None, wrong type - e.g. a legacy
+        `spot_fixed_fee_mwh` stored as a string) must not blank out the other
+        sections by raising out of the whole function.
         """
+        if not isinstance(backend_data, dict):
+            backend_data = {}
         frontend_data: Dict[str, Any] = {}
-        frontend_data.update(WizardMixin._map_import_frontend(backend_data))
-        frontend_data.update(WizardMixin._map_export_frontend(backend_data))
-        frontend_data.update(WizardMixin._map_distribution_frontend(backend_data))
-        frontend_data["vat_rate"] = backend_data.get("vat_rate", 21.0)
+        for section_name, mapper in (
+            ("import", WizardMixin._map_import_frontend),
+            ("export", WizardMixin._map_export_frontend),
+            ("distribution", WizardMixin._map_distribution_frontend),
+        ):
+            try:
+                frontend_data.update(mapper(backend_data))
+            except Exception:  # pragma: no cover - defensivní logika
+                _LOGGER.exception(
+                    "OptionsFlow init: %s pricing mapping failed, section skipped",
+                    section_name,
+                )
+        try:
+            frontend_data["vat_rate"] = float(backend_data.get("vat_rate", 21.0))
+        except (TypeError, ValueError):
+            frontend_data["vat_rate"] = 21.0
         return frontend_data
 
     @staticmethod
@@ -3443,6 +3462,10 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
             frontend_pricing = self._map_backend_to_frontend(backend_options)
         except Exception:  # pragma: no cover - defensivní logika
             _LOGGER.exception("OptionsFlow init: pricing mapping failed, keeping raw")
+            # Best-effort: raw backend keys still land in _wizard_data below, so
+            # pricing fields show SOME prior value instead of silently reverting
+            # to hardcoded step defaults (RCA-R2 minimal fix).
+            frontend_pricing = dict(backend_options)
 
         self._wizard_data = backend_options | frontend_pricing
         for legacy_telemetry_key in (
