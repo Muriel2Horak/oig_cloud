@@ -131,10 +131,13 @@ a map picker per F1-DESIGN §5's "GPS (z HA, mapa)" — visual guidance only, no
 → String 1 group (`solar_forecast_string1_enabled` → kwp/declination/azimuth, shown only if
 enabled) → String 2 group (same pattern).
 
-Existing `cs.json` `wizard_solar` labels/hints are already correct Czech (RCA-R1 does not flag
-this step) — reuse verbatim. The one content change this spec requires: the R4 fix removes the
-Prague fallback, so in new-install mode the GPS fields render **empty with a placeholder**
-instead of a silently-filled 50.0/14.0:
+The registry-driven FE resolves these labels from `CS_LABELS` in
+`www_v2/src/i18n/fields.ts` (not `cs.json`'s `wizard_solar` section — that is a separate,
+HA-native translation layer this FE step does not read). All 15 solar fields already have
+correct `CS_LABELS` entries per RCA-R1's corrected inventory (R1's defect is scoped to 5 pricing
++ 2 battery fields; solar is unaffected) — reuse verbatim. The one content change this spec
+requires: the R4 fix removes the Prague fallback, so in new-install mode the GPS fields render
+**empty with a placeholder** instead of a silently-filled 50.0/14.0:
 
 > **CZ:** (placeholder text, not a value) "Zadejte GPS souřadnice instalace (najdete je v HA →
 > Nastavení → Systém → Obecné, nebo na mapě)"
@@ -146,10 +149,12 @@ re-derived from the live `/pricelists` dataset per selected distributor, existin
 `onPricingFieldChange` logic in `index.ts:1011-1038` — reuse, not redesigned) →
 `confirmed_distribution_price_incl_vat`/`price_excl_vat`/`unit` (read-only display, derived).
 
-RCA-R1 defect: these 5 fields currently render raw registry keys as labels
-(`confirmed_distribution_distributor` etc.) because `strings.json`/`translations/cs.json` lack a
-`"field"` section (R1 fix is translation-data-only, tracked separately — this spec supplies the
-copy R1's fix should ship):
+RCA-R1 defect (corrected): these 5 fields currently render **humanised** fallback labels
+(`confirmed_distribution_distributor` → "confirmed distribution distributor") because
+`CS_LABELS` in `www_v2/src/i18n/fields.ts` has no entry for them — `strings.json`/
+`translations/cs.json` are a different, HA-native layer and are not the cause (R1 fix is
+translation-data-only in `fields.ts`, tracked separately — this spec supplies the copy R1's fix
+should ship):
 
 | Field | CZ label | CZ hint |
 |---|---|---|
@@ -173,18 +178,18 @@ Fields, grouped: "Nabíjení" (`charge_rate_kw`, `battery_comfort_soc_percent`) 
 `balancing_interval_days`/`balancing_hold_hours`/`balancing_opportunistic_threshold`/
 `balancing_economic_threshold`) → "Plánovač" (`expensive_percentile`, `cheap_window_percentile`).
 
-Existing `cs.json` `wizard_battery` labels are already correct Czech for the registry-backed
-fields (`auto_mode_switch_enabled`, `balancing_*`, `cheap_window_percentile`) — reuse verbatim.
-Two registry fields have no existing translation (`charge_rate_kw` maps to legacy
-`home_charge_rate` via `Field.mirror`, already labeled; `battery_comfort_soc_percent` and
-`expensive_percentile` need labels distinct from the legacy `target_capacity_percent`/
-`expensive_percentile_pct` strings, since scale differs — registry stores `expensive_percentile`
-as a 0.5–0.95 fraction scaled ×100 for display, `scale=100` in `config_registry.py:291-292`):
+The registry-driven FE resolves these labels from `CS_LABELS` in `www_v2/src/i18n/fields.ts`
+(not `cs.json`'s `wizard_battery` section — a separate, HA-native layer this FE step does not
+read). 8 of 10 battery fields already have correct `CS_LABELS` entries — including
+`battery_comfort_soc_percent` ("Komfortní rezerva baterie (%)") and `expensive_percentile`
+("Práh drahých hodin (%)"), both already present at `fields.ts:30-31` — reuse verbatim, no new
+copy needed for those two. RCA-R1's corrected inventory found the actual 2 missing entries are
+`balancing_opportunistic_threshold` and `balancing_economic_threshold`:
 
 | Field | CZ label | CZ hint |
 |---|---|---|
-| `battery_comfort_soc_percent` | **CZ:** "Komfortní nabití baterie (%)" | **CZ:** "Baterie se nenechá klesnout pod tuto hodnotu mimo plánované vybíjení" |
-| `expensive_percentile` | **CZ:** "Práh drahých hodin (percentil)" | **CZ:** "Import dražší než tento percentil se plánovač snaží pokrýt levným přednabitím" |
+| `balancing_opportunistic_threshold` | **CZ:** "Oportunní práh balancování (%)" | **CZ:** "Balancování proběhne dřív, pokud je v tomto okně dost levné energie" |
+| `balancing_economic_threshold` | **CZ:** "Ekonomický práh balancování (%)" | **CZ:** "Nad tímto cenovým prahem se balancování odkládá, aby se nenabíjelo draze" |
 
 ### Step 7 — Bojler
 
