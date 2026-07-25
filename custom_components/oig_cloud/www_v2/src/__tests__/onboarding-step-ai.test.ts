@@ -113,3 +113,26 @@ describe('step ① — per-provider data-use disclosure (audit gap O2/P10)', () 
     );
   });
 });
+
+describe('step ① — R5 "K čemu je tu AI" intro block (UX-SPEC §5)', () => {
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  it('renders the intro block (heading, body, why-it-matters, optionality) above the provider cards', async () => {
+    const el = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-step-ai></oig-onboarding-step-ai>`,
+    );
+    await el.updateComplete;
+
+    const intro = el.shadowRoot!.querySelector('[data-testid="ai-intro"]');
+    expect(intro).toBeTruthy();
+    expect(intro!.textContent).toContain('K čemu je tu AI');
+    expect(intro!.textContent).toContain('AI Task');
+
+    const gridEl = el.shadowRoot!.querySelector('.grid');
+    expect(gridEl).toBeTruthy();
+    // structural check: intro precedes .grid in DOM order
+    expect(intro!.compareDocumentPosition(gridEl!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});

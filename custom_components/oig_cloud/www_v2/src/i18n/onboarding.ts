@@ -63,6 +63,14 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // module-off-in-review-mode warning (UX-SPEC §3, spec-verbatim CZ).
     'onboarding.pricing_supplier.recovered_note': 'Tyto hodnoty jsme našli ve vašem stávajícím nastavení — dosud nebyly v průvodci vidět, teď je můžete zkontrolovat.',
     'onboarding.modules.off_warning': 'Vypnutím modulu se jeho nastavení skryje, ale zůstane uloženo — pokud modul znovu zapnete, hodnoty budou stále tady.',
+
+    // F1 Wizard v2 Stage S4 Task 22 — AI step R5 "K čemu je tu AI" intro
+    // block, spec-verbatim CZ copy (UX-SPEC-wizard-v2.md §5). CZ-only: this
+    // copy ships in Czech per spec, no EN source text given.
+    'onboarding.ai.intro_heading': '🤖 K čemu je tu AI',
+    'onboarding.ai.intro_body': 'Když nastavíte AI, vaše instalace (OIG Cloud) získá vlastní „AI Task" entitu přímo ve vaší Home Assistant instanci. To znamená, že si ve svých automatizacích a skriptech můžete nechat od AI vygenerovat strukturovanou odpověď — založenou na pár anonymních číslech z vaší instalace (výkon a orientace panelů, kapacita a nastavení baterie), nikdy na vaší poloze, jménu nebo e-mailu. Tahle čísla nikam neodejdou bez vašeho souhlasu — a pokud zvolíte „moje vlastní AI v Home Assistantu", neodejdou vůbec, protože se použije AI, kterou už máte nastavenou u sebe doma.',
+    'onboarding.ai.intro_why_it_matters': 'Nejde o žádnou skrytou magii navíc — je to stejná AI Task funkce, kterou Home Assistant nabízí pro cokoliv jiného, jen předpřipravená s čísly z vaší FVE a baterie, abyste je nemuseli do každé automatizace přepisovat ručně.',
+    'onboarding.ai.intro_optionality': 'AI je volitelná — dashboard i všechny výpočty (predikce baterie, ceny, bojler) fungují úplně stejně bez ní. Nic se kvůli vynechání tohoto kroku nezhorší.',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
