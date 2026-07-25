@@ -42,6 +42,12 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.banner.grandfathered_title': 'Zkontrolujte svou stávající konfiguraci',
     'onboarding.banner.grandfathered_body': 'Váš box je už nastavený. Průvodcem můžete kdykoli projít a zkontrolovat svou stávající konfiguraci — nic se tím neztratí.',
     'onboarding.banner.grandfathered_close_label': 'Skrýt tuto nabídku',
+
+    // Audit gap O2/P10 (DECISIONS.md) — per-provider data-use disclosure, shown
+    // before the user enters a key. Derive edits strictly from O2/P10 text.
+    'onboarding.ai.disclosure.ai_task': 'Zpracování probíhá u AI, kterou už máte nastavenou v Home Assistantu — nezavádíme žádnou novou třetí stranu.',
+    'onboarding.ai.disclosure.groq': 'Dle smluvních podmínek Groq NETRÉNUJE na vstupech. Naše integrace posílá výhradně anonymní číselné hodnoty, žádné osobní údaje.',
+    'onboarding.ai.disclosure.nvidia': 'Free tier NVIDIA je dle ToS „trial/evaluation, ne produkce" — trvalé použití je šedá zóna. Dle §3.3 smí NVIDIA deidentifikovaně používat vstupy ke zlepšování modelů; osobní údaje v promptech jsou zakázané. Naše integrace posílá výhradně anonymní číselné hodnoty.',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
@@ -70,6 +76,10 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.banner.grandfathered_title': 'Review your existing configuration',
     'onboarding.banner.grandfathered_body': 'Your box is already set up. You can walk through the wizard anytime to review your existing configuration — nothing will be lost.',
     'onboarding.banner.grandfathered_close_label': 'Hide this prompt',
+
+    'onboarding.ai.disclosure.ai_task': 'Processing stays with whichever AI backend you already configured in Home Assistant — we don’t introduce any new third party.',
+    'onboarding.ai.disclosure.groq': 'Per its terms of service, Groq contractually does not train on your inputs. Our integration sends only anonymous numeric values — no personal data.',
+    'onboarding.ai.disclosure.nvidia': 'NVIDIA’s free tier is, per its ToS, "trial/evaluation, not production" — permanent use is a gray area. Under §3.3, NVIDIA may use deidentified inputs to improve its models; personal data in prompts is prohibited. Our integration sends only anonymous numeric values.',
   },
 };
 

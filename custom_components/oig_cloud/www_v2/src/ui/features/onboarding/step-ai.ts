@@ -13,6 +13,8 @@
  * continue** (#5/#6 — AI is optional, soft #6).
  */
 
+import type { OnboardingKey } from '@/i18n/onboarding';
+
 export interface ProviderGuide {
   label: string;
   registerUrl?: string;
@@ -23,6 +25,12 @@ export interface ProviderGuide {
   /** Deliberately absent for every provider — the three are CO-EQUAL (SCOPE-REVISION #8).
    *  Declared only so callers can assert it is never set; never populate it. */
   recommended?: undefined;
+  /**
+   * i18n key (`i18n/onboarding.ts`) for the per-provider data-use/ToS disclosure —
+   * audit gap O2/P10 (`docs/redesign_2026_07/DECISIONS.md`). Rendered before the
+   * key input, not hidden behind a tooltip; every provider MUST carry one.
+   */
+  disclosureKey: OnboardingKey;
 }
 
 /** Verbatim from SCOPE-REVISION #7 (ověřeno 2026-07-17). Co-equal — no ranking (#8). */
@@ -30,6 +38,7 @@ export const PROVIDER_GUIDES: Record<string, ProviderGuide> = {
   ai_task: {
     label: 'Moje vlastní AI v Home Assistantu (ai_task)',
     steps: ['Použije se AI, kterou už máš v HA nastavenou.'],
+    disclosureKey: 'onboarding.ai.disclosure.ai_task',
   },
   groq: {
     label: 'Groq',
@@ -43,6 +52,7 @@ export const PROVIDER_GUIDES: Record<string, ProviderGuide> = {
       'Klikni na [Create API Key].',
       'Zkopíruj klíč (zobrazí se jen jednou) a vlož ho níže.',
     ],
+    disclosureKey: 'onboarding.ai.disclosure.groq',
   },
   nvidia: {
     label: 'NVIDIA',
@@ -56,6 +66,7 @@ export const PROVIDER_GUIDES: Record<string, ProviderGuide> = {
       'Klikni na [Generate API Key].',
       'Zkopíruj klíč a vlož ho níže.',
     ],
+    disclosureKey: 'onboarding.ai.disclosure.nvidia',
   },
 };
 
