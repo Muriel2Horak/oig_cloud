@@ -48,6 +48,7 @@ from ..config_registry import (
     FIELD_REGISTRY,
     coerce_value,
     fields_for_section,
+    is_dual_tariff,
     registry_as_api_dict,
 )
 from ..config.solar_rules import normalize_azimuth, validate_solar_effective
@@ -1155,7 +1156,10 @@ class OIGCloudModuleConfigView(HomeAssistantView):
             if solar_store is not None
             else {}
         )
-        for section in ("basic", "modules", "battery", "solar", "boiler", "pricing"):
+        for section in (
+            "basic", "modules", "battery", "solar", "boiler", "pricing",
+            "pricing_supplier",
+        ):
             sec: dict[str, Any] = {}
             for key, field in fields_for_section(section).items():
                 if section == "solar" and key in SOLAR_PRIVATE_FIELDS:
@@ -1269,6 +1273,14 @@ class OIGCloudModuleConfigView(HomeAssistantView):
             )
         if not updates and not private_updates:
             return web.json_response({"updated": False})
+
+        # RCA-R3 (F1 U4): dual-ness is derived from confirmed_distribution_tariff,
+        # never asked of the user directly, but PERSISTED under the legacy
+        # dual_tariff_enabled key so existing pricing consumers keep working.
+        if section == "pricing" and "confirmed_distribution_tariff" in updates:
+            updates["dual_tariff_enabled"] = is_dual_tariff(
+                updates["confirmed_distribution_tariff"]
+            )
 
         previous_provider = entry.options.get("solar_forecast_provider", "forecast_solar")
         wrote = merge_entry_options(hass, entry, updates)

@@ -89,6 +89,32 @@ const CS_LABELS: Record<string, string> = {
   // RCA-R1 (2026-07-25) — 2 battery fields, UX-SPEC-wizard-v2.md §step-6 table:
   'field.balancing_opportunistic_threshold.label': 'Oportunní práh balancování (%)',
   'field.balancing_economic_threshold.label': 'Ekonomický práh balancování (%)',
+
+  // --- pricing_supplier (F1 U4 R3 — RCA-R3 restoration, UX-SPEC-wizard-v2.md §4) ---
+  'field.spot_pricing_model.label': 'Scénář nákupní ceny',
+  'field.spot_positive_fee_percent.label': 'Přirážka při kladné spotové ceně, VT (%)',
+  'field.spot_positive_fee_percent_nt.label': 'Přirážka při kladné spotové ceně, NT (%)',
+  'field.spot_negative_fee_percent.label': 'Přirážka při záporné spotové ceně, VT (%)',
+  'field.spot_negative_fee_percent_nt.label': 'Přirážka při záporné spotové ceně, NT (%)',
+  'field.spot_fixed_fee_mwh.label': 'Fixní poplatek, VT (CZK/MWh)',
+  'field.spot_fixed_fee_mwh_nt.label': 'Fixní poplatek, NT (CZK/MWh)',
+  'field.fixed_commercial_price_vt.label': 'Fixní nákupní cena VT (CZK/kWh)',
+  'field.fixed_commercial_price_nt.label': 'Fixní nákupní cena NT (CZK/kWh)',
+  'field.export_pricing_model.label': 'Scénář prodejní ceny',
+  'field.export_fee_percent.label': 'Srážka z exportu, VT (%)',
+  'field.export_fee_percent_nt.label': 'Srážka z exportu, NT (%)',
+  'field.export_fixed_fee_czk.label': 'Fixní srážka exportu, VT (CZK/kWh)',
+  'field.export_fixed_fee_czk_nt.label': 'Fixní srážka exportu, NT (CZK/kWh)',
+  'field.export_fixed_price.label': 'Fixní výkupní cena (CZK/kWh)',
+  'field.distribution_fee_vt_kwh.label': 'Poplatek za distribuci VT (CZK/kWh)',
+  'field.distribution_fee_nt_kwh.label': 'Poplatek za distribuci NT (CZK/kWh)',
+  'field.vat_rate.label': 'DPH (%)',
+  'field.tariff_vt_start_weekday.label': 'VT začátek, pracovní den (hodina)',
+  'field.tariff_nt_start_weekday.label': 'NT začátek, pracovní den (hodina1,hodina2)',
+  'field.tariff_weekend_same_as_weekday.label': 'Víkend stejně jako pracovní dny',
+  'field.tariff_vt_start_weekend.label': 'VT začátek, víkend (hodina)',
+  'field.tariff_nt_start_weekend.label': 'NT začátek, víkend (hodina1,hodina2)',
+  'field.dual_tariff_enabled.label': 'Dvoutarifní sazba (odvozeno automaticky)',
 };
 
 const CS_HINTS: Record<string, string> = {
@@ -145,6 +171,32 @@ const CS_HINTS: Record<string, string> = {
   'field.confirmed_distribution_unit.hint': 'Doplněno automaticky z ceníku distributora',
   'field.balancing_opportunistic_threshold.hint': 'Balancování proběhne dřív, pokud je v tomto okně dost levné energie',
   'field.balancing_economic_threshold.hint': 'Nad tímto cenovým prahem se balancování odkládá, aby se nenabíjelo draze',
+
+  // --- pricing_supplier (F1 U4 R3 — RCA-R3 restoration, UX-SPEC-wizard-v2.md §4) ---
+  'field.spot_pricing_model.hint': '💰 SPOT + procento — variabilní cena podle burzy · 💵 SPOT + fixní poplatek — stabilnější · 🔒 FIX cena — předvídatelná',
+  'field.spot_positive_fee_percent.hint': 'Při kladné spotové ceně: cena × (1 + procento/100). Např. 15 % = spot × 1,15',
+  'field.spot_positive_fee_percent_nt.hint': 'Stejný vzorec jako VT, NT větev',
+  'field.spot_negative_fee_percent.hint': 'Při záporné spotové ceně: cena × (1 − procento/100). Např. 9 % = spot × 0,91',
+  'field.spot_negative_fee_percent_nt.hint': 'Stejný vzorec jako VT, NT větev',
+  'field.spot_fixed_fee_mwh.hint': 'Konstantní poplatek přičtený ke spotové ceně',
+  'field.spot_fixed_fee_mwh_nt.hint': 'Konstantní poplatek přičtený ke spotové ceně, NT větev',
+  'field.fixed_commercial_price_vt.hint': '⚠️ Zadávejte bez DPH a distribuce',
+  'field.fixed_commercial_price_nt.hint': '⚠️ Zadávejte bez DPH a distribuce',
+  'field.export_pricing_model.hint': '💰 SPOT − procento — výhodné při vysokých cenách · 💵 SPOT − fixní srážka — stabilnější výkup · 🔒 FIX cena — stabilní po celý rok',
+  'field.export_fee_percent.hint': 'Např. 15 % = dostanete 85 % ze spotové ceny (spot × 0,85)',
+  'field.export_fee_percent_nt.hint': 'Stejný vzorec jako VT, NT větev',
+  'field.export_fixed_fee_czk.hint': 'Fixní srážka od spotové ceny. Např. 0,20 CZK/kWh = spot − 0,20',
+  'field.export_fixed_fee_czk_nt.hint': 'Fixní srážka od spotové ceny, NT větev',
+  'field.export_fixed_price.hint': 'Výkupní cena bez ohledu na spot',
+  'field.distribution_fee_vt_kwh.hint': 'Např. 1,42 CZK/kWh',
+  'field.distribution_fee_nt_kwh.hint': 'Např. 0,91 CZK/kWh',
+  'field.vat_rate.hint': 'Standardně 21 %',
+  'field.tariff_vt_start_weekday.hint': "Např. '6' = 06:00",
+  'field.tariff_nt_start_weekday.hint': "Např. '22,2' = 22:00 večer a 02:00 ráno",
+  'field.tariff_weekend_same_as_weekday.hint': 'Vypněte, pokud se víkendové tarify liší',
+  'field.tariff_vt_start_weekend.hint': 'Nechte prázdné pro NT celý den',
+  'field.tariff_nt_start_weekend.hint': "Např. '0' = NT celý den",
+  'field.dual_tariff_enabled.hint': 'Odvozeno z tarifu vybraného v kroku Ceny — distribuce; drženo pro zpětnou kompatibilitu.',
 };
 
 /** Falls back to a humanised key — never returns a raw i18n key. */

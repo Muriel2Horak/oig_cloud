@@ -6,11 +6,13 @@ import pytest
 from datetime import date
 
 from custom_components.oig_cloud.config_registry import (
+    DUAL_TARIFF_CODES,
     FIELD_REGISTRY,
     Field,
     _pick_latest_snapshot,
     coerce_value,
     fields_for_section,
+    is_dual_tariff,
     registry_as_api_dict,
 )
 
@@ -57,7 +59,10 @@ def test_coerce_enum():
 def test_registry_keys_match_field_keys():
     for key, field in FIELD_REGISTRY.items():
         assert key == field.key
-        assert field.section in ("modules", "battery", "solar", "boiler", "basic", "ai", "pricing")
+        assert field.section in (
+            "modules", "battery", "solar", "boiler", "basic", "ai", "pricing",
+            "pricing_supplier",
+        )
 
 
 def test_fields_for_section_filters():
@@ -356,3 +361,154 @@ def test_api_dict_emits_show_if_and_widget_metadata():
     assert api["expensive_percentile"]["scale"] == 100
     assert api["boiler_temp_sensor_top"]["entity_domain"] == "sensor"
     assert api["boiler_temp_sensor_bottom"]["optional"] is True
+
+
+# --- F1 U4 R3: pricing_supplier restoration (RCA-R3 + UX-SPEC-wizard-v2.md §4) ---
+
+
+def test_pricing_supplier_section_has_all_24_legacy_keys():
+    """RCA-R3's 19-key inventory + UX-SPEC round-2's 5 new _nt keys."""
+    supplier = fields_for_section("pricing_supplier")
+    assert set(supplier) == {
+        # A — import
+        "spot_pricing_model",
+        "spot_positive_fee_percent", "spot_positive_fee_percent_nt",
+        "spot_negative_fee_percent", "spot_negative_fee_percent_nt",
+        "spot_fixed_fee_mwh", "spot_fixed_fee_mwh_nt",
+        "fixed_commercial_price_vt", "fixed_commercial_price_nt",
+        # B — export
+        "export_pricing_model",
+        "export_fee_percent", "export_fee_percent_nt",
+        "export_fixed_fee_czk", "export_fixed_fee_czk_nt",
+        "export_fixed_price",
+        # C — distribution/VAT
+        "distribution_fee_vt_kwh", "distribution_fee_nt_kwh", "vat_rate",
+        # tariff schedule
+        "tariff_vt_start_weekday", "tariff_nt_start_weekday",
+        "tariff_weekend_same_as_weekday",
+        "tariff_vt_start_weekend", "tariff_nt_start_weekend",
+        # derived
+        "dual_tariff_enabled",
+    }
+    assert len(supplier) == 24
+    for key, field in supplier.items():
+        assert field.section == "pricing_supplier"
+
+
+def test_pricing_supplier_base_keys_match_legacy_entry_options_names():
+    """No renames (RCA-R3 hard requirement): the base/legacy fields keep the
+    EXACT unsuffixed key already live in existing entry.options — only the
+    genuinely new NT variants get a `_nt` suffix."""
+    supplier = fields_for_section("pricing_supplier")
+    legacy_unsuffixed = {
+        "spot_pricing_model", "spot_positive_fee_percent",
+        "spot_negative_fee_percent", "spot_fixed_fee_mwh",
+        "export_pricing_model", "export_fee_percent", "export_fixed_fee_czk",
+        "export_fixed_price", "dual_tariff_enabled", "vat_rate",
+    }
+    for key in legacy_unsuffixed:
+        assert key in supplier
+        assert not key.endswith("_vt") and not key.endswith("_nt")
+    new_nt_keys = {
+        "spot_positive_fee_percent_nt", "spot_negative_fee_percent_nt",
+        "spot_fixed_fee_mwh_nt", "export_fee_percent_nt",
+        "export_fixed_fee_czk_nt",
+    }
+    for key in new_nt_keys:
+        assert key in supplier
+        assert key.endswith("_nt")
+
+
+@pytest.mark.parametrize("code", DUAL_TARIFF_CODES)
+def test_is_dual_tariff_true_for_every_dual_code(code):
+    assert is_dual_tariff(code) is True
+
+
+@pytest.mark.parametrize("code", ["D01d", "D02d", "POZE", "", "unknown"])
+def test_is_dual_tariff_false_for_single_tariff_codes(code):
+    assert is_dual_tariff(code) is False
+
+
+def test_dual_tariff_codes_match_ux_spec_inventory():
+    assert set(DUAL_TARIFF_CODES) == {
+        "D25d", "D26d", "D27d", "D35d", "D45d", "D56d", "D57d", "D61d",
+    }
+
+
+def test_dual_tariff_enabled_is_hidden_and_not_user_facing():
+    """UX-SPEC §4 (owner correction, round 2 — MAJOR): dual_tariff_enabled
+    is never a user-facing field in any step."""
+    field = FIELD_REGISTRY["dual_tariff_enabled"]
+    assert field.hidden is True
+    assert field.type is bool
+    assert field.default is True
+    api = registry_as_api_dict()
+    assert "dual_tariff_enabled" not in api  # hidden fields never reach the FE
+
+
+def test_pricing_supplier_show_if_predicates_resolve_to_known_fields():
+    """Every show_if / show_if_all target must be a real field the section
+    (or a sibling section, for the cross-section tariff-dual predicate) owns."""
+    supplier = fields_for_section("pricing_supplier")
+    known_targets = set(FIELD_REGISTRY)
+    for key, field in supplier.items():
+        if field.show_if is not None:
+            target, allowed = field.show_if
+            assert target in known_targets, f"{key}: unknown show_if target {target}"
+            assert allowed
+        if field.show_if_all is not None:
+            assert len(field.show_if_all) >= 2, f"{key}: show_if_all needs 2+ conditions"
+            for target, allowed in field.show_if_all:
+                assert target in known_targets, f"{key}: unknown show_if_all target {target}"
+                assert allowed
+
+
+def test_nt_variant_fields_gate_on_scenario_and_tariff_dual():
+    """The 5 new _nt fields need BOTH the parent scenario AND tariff
+    dual-ness — this is exactly why show_if_all (AND) exists."""
+    supplier = fields_for_section("pricing_supplier")
+    expected = {
+        "spot_positive_fee_percent_nt": "spot_pricing_model",
+        "spot_negative_fee_percent_nt": "spot_pricing_model",
+        "spot_fixed_fee_mwh_nt": "spot_pricing_model",
+        "export_fee_percent_nt": "export_pricing_model",
+        "export_fixed_fee_czk_nt": "export_pricing_model",
+    }
+    for key, scenario_field in expected.items():
+        field = supplier[key]
+        assert field.show_if is None
+        assert field.show_if_all is not None
+        targets = {target for target, _ in field.show_if_all}
+        assert targets == {scenario_field, "confirmed_distribution_tariff"}
+        for target, allowed in field.show_if_all:
+            if target == "confirmed_distribution_tariff":
+                assert set(allowed) == set(DUAL_TARIFF_CODES)
+
+
+def test_tariff_weekend_fields_gate_on_dual_and_not_same_as_weekday():
+    supplier = fields_for_section("pricing_supplier")
+    for key in ("tariff_vt_start_weekend", "tariff_nt_start_weekend"):
+        field = supplier[key]
+        assert field.show_if_all is not None
+        conds = dict(field.show_if_all)
+        assert set(conds["confirmed_distribution_tariff"]) == set(DUAL_TARIFF_CODES)
+        assert conds["tariff_weekend_same_as_weekday"] == (False,)
+
+
+def test_pricing_supplier_fields_have_show_if_all_serialized_in_api_dict():
+    api = registry_as_api_dict()
+    spec = api["spot_positive_fee_percent_nt"]
+    assert spec["show_if_all"] == [
+        {"field": "spot_pricing_model", "in": ["percentage"]},
+        {"field": "confirmed_distribution_tariff", "in": list(DUAL_TARIFF_CODES)},
+    ]
+    # Fields with only a single condition still use the original show_if shape.
+    assert api["spot_positive_fee_percent"]["show_if"] == {
+        "field": "spot_pricing_model", "in": ["percentage"]}
+    assert "show_if_all" not in api["spot_positive_fee_percent"]
+
+
+def test_pricing_supplier_scope_and_no_secrets():
+    for field in fields_for_section("pricing_supplier").values():
+        assert field.secret is False
+        assert field.mirror is None

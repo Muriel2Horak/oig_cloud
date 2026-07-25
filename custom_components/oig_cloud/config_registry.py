@@ -39,10 +39,18 @@ class Field:
     # (field_key, allowed_values) — field is rendered/validated only when the
     # referenced field's current value is in allowed_values.
     show_if: Optional[Tuple[str, Tuple[Any, ...]]] = None
+    # F1 U4 R3: additive AND-extension for fields whose visibility depends on
+    # MORE than one other field (e.g. an NT variant gated on both a pricing
+    # scenario AND tariff dual-ness). Every (field, allowed_values) pair must
+    # hold. `show_if` itself is untouched — existing single-condition fields
+    # need no change; this is a second, optional predicate list, not a
+    # rewrite of the mechanism.
+    show_if_all: Optional[Tuple[Tuple[str, Tuple[Any, ...]], ...]] = None
     widget: Optional[str] = None        # override the type-derived control
     scale: Optional[float] = None       # display multiplier (fraction stored, % shown)
     optional: bool = False              # may be left blank
     entity_domain: Optional[str] = None  # render an entity picker for this domain
+    hidden: bool = False                # excluded from /config_registry (FE never renders it)
 
     def __post_init__(self) -> None:
         if not self.label:
@@ -238,6 +246,8 @@ def registry_as_api_dict() -> Dict[str, Dict[str, Any]]:
     """Serializable field definitions for the FE (no secret defaults)."""
     out: Dict[str, Dict[str, Any]] = {}
     for key, f in FIELD_REGISTRY.items():
+        if f.hidden:
+            continue
         spec: Dict[str, Any] = {
             "section": f.section,
             "type": f.type.__name__,
@@ -259,6 +269,10 @@ def registry_as_api_dict() -> Dict[str, Dict[str, Any]]:
         if f.show_if is not None:
             target, allowed = f.show_if
             spec["show_if"] = {"field": target, "in": list(allowed)}
+        if f.show_if_all is not None:
+            spec["show_if_all"] = [
+                {"field": target, "in": list(allowed)} for target, allowed in f.show_if_all
+            ]
         for attr in ("widget", "scale", "entity_domain"):
             if getattr(f, attr) is not None:
                 spec[attr] = getattr(f, attr)
@@ -439,6 +453,103 @@ _register(
         default=_PRICE_DEFAULT_UNIT,
         optional=True,
     ),
+)
+
+
+# --- section: pricing_supplier ----------------------------------------------
+# RCA-R3 (docs/redesign_2026_07/rework/RCA-R3.md): the commercial/supplier
+# pricing fields the legacy `config/steps.py` wizard reads/writes were never
+# ported to the registry. This section restores them under the EXACT legacy
+# `entry.options` key names (RCA-R3's inventory) — no migration, no renames —
+# plus the 5 new NT-variant keys UX-SPEC-wizard-v2.md §4 (owner correction,
+# round 2) adds for the VT/NT split of the three fields the legacy flow left
+# unsplit. Key-naming call (spec explicitly leaves this to the implementer,
+# §4 line ~421): the *base* field keeps the legacy unsuffixed name
+# (`spot_positive_fee_percent`, not `..._vt`) because that is the literal key
+# already live in users' `entry.options` — RCA-R3's backward-compat
+# requirement overrides the spec's illustrative `_vt` spelling for fields
+# that have no suffix today. `fixed_commercial_price_vt`/`_nt` and
+# `distribution_fee_vt_kwh`/`_nt` already carry legacy suffixes, unchanged.
+DUAL_TARIFF_CODES: Tuple[str, ...] = (
+    "D25d", "D26d", "D27d", "D35d", "D45d", "D56d", "D57d", "D61d",
+)
+
+
+def is_dual_tariff(tariff_code: Any) -> bool:
+    """RCA-R3 dual-ness derivation: tariff code decides the VT/NT split."""
+    return tariff_code in DUAL_TARIFF_CODES
+
+
+_register(
+    # --- A: Nakupni cena (import) ---
+    Field("spot_pricing_model", "pricing_supplier", str, default="percentage",
+          enum=("percentage", "fixed", "fixed_prices")),
+    Field("spot_positive_fee_percent", "pricing_supplier", float, default=15.0,
+          min=0.0, max=100.0, show_if=("spot_pricing_model", ("percentage",))),
+    Field("spot_positive_fee_percent_nt", "pricing_supplier", float, default=13.0,
+          min=0.0, max=100.0,
+          show_if_all=(("spot_pricing_model", ("percentage",)),
+                       ("confirmed_distribution_tariff", DUAL_TARIFF_CODES))),
+    Field("spot_negative_fee_percent", "pricing_supplier", float, default=9.0,
+          min=0.0, max=100.0, show_if=("spot_pricing_model", ("percentage",))),
+    Field("spot_negative_fee_percent_nt", "pricing_supplier", float, default=7.0,
+          min=0.0, max=100.0,
+          show_if_all=(("spot_pricing_model", ("percentage",)),
+                       ("confirmed_distribution_tariff", DUAL_TARIFF_CODES))),
+    Field("spot_fixed_fee_mwh", "pricing_supplier", float, default=500.0,
+          min=0.0, show_if=("spot_pricing_model", ("fixed",))),
+    Field("spot_fixed_fee_mwh_nt", "pricing_supplier", float, default=400.0,
+          min=0.0,
+          show_if_all=(("spot_pricing_model", ("fixed",)),
+                       ("confirmed_distribution_tariff", DUAL_TARIFF_CODES))),
+    Field("fixed_commercial_price_vt", "pricing_supplier", float, default=4.50,
+          min=0.0, show_if=("spot_pricing_model", ("fixed_prices",))),
+    Field("fixed_commercial_price_nt", "pricing_supplier", float, default=3.20,
+          min=0.0,
+          show_if_all=(("spot_pricing_model", ("fixed_prices",)),
+                       ("confirmed_distribution_tariff", DUAL_TARIFF_CODES))),
+
+    # --- B: Prodejni cena / export ---
+    Field("export_pricing_model", "pricing_supplier", str, default="percentage",
+          enum=("percentage", "fixed", "fixed_prices")),
+    Field("export_fee_percent", "pricing_supplier", float, default=15.0,
+          min=0.0, max=100.0, show_if=("export_pricing_model", ("percentage",))),
+    Field("export_fee_percent_nt", "pricing_supplier", float, default=13.0,
+          min=0.0, max=100.0,
+          show_if_all=(("export_pricing_model", ("percentage",)),
+                       ("confirmed_distribution_tariff", DUAL_TARIFF_CODES))),
+    Field("export_fixed_fee_czk", "pricing_supplier", float, default=0.20,
+          min=0.0, show_if=("export_pricing_model", ("fixed",))),
+    Field("export_fixed_fee_czk_nt", "pricing_supplier", float, default=0.15,
+          min=0.0,
+          show_if_all=(("export_pricing_model", ("fixed",)),
+                       ("confirmed_distribution_tariff", DUAL_TARIFF_CODES))),
+    Field("export_fixed_price", "pricing_supplier", float, default=2.50,
+          min=0.0, show_if=("export_pricing_model", ("fixed_prices",))),
+
+    # --- C: Distribuce, tarify a DPH ---
+    Field("distribution_fee_vt_kwh", "pricing_supplier", float, default=1.42, min=0.0),
+    Field("distribution_fee_nt_kwh", "pricing_supplier", float, default=0.91, min=0.0,
+          show_if=("confirmed_distribution_tariff", DUAL_TARIFF_CODES)),
+    Field("vat_rate", "pricing_supplier", float, default=21.0, min=0.0, max=100.0),
+
+    # --- Tariff schedule (UX-SPEC step 4; registry-side this is still
+    # pricing_supplier — the step split is wizard-UI layout, out of scope) ---
+    Field("tariff_vt_start_weekday", "pricing_supplier", str, default="6",
+          show_if=("confirmed_distribution_tariff", DUAL_TARIFF_CODES)),
+    Field("tariff_nt_start_weekday", "pricing_supplier", str, default="22,2",
+          show_if=("confirmed_distribution_tariff", DUAL_TARIFF_CODES)),
+    Field("tariff_weekend_same_as_weekday", "pricing_supplier", bool, default=True,
+          show_if=("confirmed_distribution_tariff", DUAL_TARIFF_CODES)),
+    Field("tariff_vt_start_weekend", "pricing_supplier", str, default="", optional=True,
+          show_if_all=(("confirmed_distribution_tariff", DUAL_TARIFF_CODES),
+                       ("tariff_weekend_same_as_weekday", (False,)))),
+    Field("tariff_nt_start_weekend", "pricing_supplier", str, default="0",
+          show_if_all=(("confirmed_distribution_tariff", DUAL_TARIFF_CODES),
+                       ("tariff_weekend_same_as_weekday", (False,)))),
+
+    # --- Derived, not user-facing (UX-SPEC §4, owner correction round 2) ---
+    Field("dual_tariff_enabled", "pricing_supplier", bool, default=True, hidden=True),
 )
 
 

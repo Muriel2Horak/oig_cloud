@@ -98,15 +98,51 @@ export interface PricingConfig {
   confirmed_distribution_unit: string;
 }
 
+/** F1 U4 R3 (RCA-R3 restoration) — mirrors config_registry.py's
+ * `pricing_supplier` section: legacy commercial/supplier pricing keys. */
+export interface PricingSupplierConfig {
+  spot_pricing_model: string;
+  spot_positive_fee_percent: number;
+  spot_positive_fee_percent_nt: number;
+  spot_negative_fee_percent: number;
+  spot_negative_fee_percent_nt: number;
+  spot_fixed_fee_mwh: number;
+  spot_fixed_fee_mwh_nt: number;
+  fixed_commercial_price_vt: number;
+  fixed_commercial_price_nt: number;
+  export_pricing_model: string;
+  export_fee_percent: number;
+  export_fee_percent_nt: number;
+  export_fixed_fee_czk: number;
+  export_fixed_fee_czk_nt: number;
+  export_fixed_price: number;
+  distribution_fee_vt_kwh: number;
+  distribution_fee_nt_kwh: number;
+  vat_rate: number;
+  tariff_vt_start_weekday: string;
+  tariff_nt_start_weekday: string;
+  tariff_weekend_same_as_weekday: boolean;
+  tariff_vt_start_weekend: string;
+  tariff_nt_start_weekend: string;
+  dual_tariff_enabled: boolean;
+}
+
 export interface ModuleConfig {
   modules: ModulesConfig;
   battery: BatteryConfig;
   solar: SolarConfig;
   boiler: BoilerConfig;
   pricing?: PricingConfig;
+  pricing_supplier?: PricingSupplierConfig;
 }
 
-export type SettingsSection = 'modules' | 'battery' | 'solar' | 'boiler' | 'pricing';
+export type SettingsSection =
+  | 'modules'
+  | 'battery'
+  | 'solar'
+  | 'boiler'
+  | 'pricing'
+  | 'pricing_supplier';
 
 export async function loadModuleConfig(signal?: AbortSignal): Promise<ModuleConfig | null> {
   const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(

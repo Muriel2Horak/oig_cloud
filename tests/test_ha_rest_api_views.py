@@ -1452,3 +1452,175 @@ async def test_module_config_post_pricing_round_trips_via_merge_entry_options():
     assert after["confirmed_distribution_price_incl_vat"] == 11.5
     assert after["confirmed_distribution_price_excl_vat"] == 9.0
     assert after["confirmed_distribution_unit"] == "Kc/kWh"
+
+
+# --- F1 U4 R3: pricing_supplier wired into module_config GET/POST ----------
+# (RCA-R3 restoration — same "no special-casing" pattern as Task 7's
+# `pricing` section wiring above; the GET section tuple omitted
+# "pricing_supplier" until this unit added it.)
+
+
+_LEGACY_PRICING_OPTIONS = {
+    # A realistic pre-existing entry.options as the legacy config/steps.py
+    # wizard would have written it — every key WITHOUT the new _nt suffixes,
+    # since no install has ever had those.
+    "spot_pricing_model": "percentage",
+    "spot_positive_fee_percent": 20.0,
+    "spot_negative_fee_percent": 11.0,
+    "spot_fixed_fee_mwh": 480.0,
+    "fixed_commercial_price_vt": 5.10,
+    "fixed_commercial_price_nt": 3.90,
+    "export_pricing_model": "fixed",
+    "export_fee_percent": 12.0,
+    "export_fixed_fee_czk": 0.18,
+    "export_fixed_price": 2.75,
+    "dual_tariff_enabled": True,
+    "distribution_fee_vt_kwh": 1.55,
+    "distribution_fee_nt_kwh": 0.95,
+    "tariff_vt_start_weekday": "7",
+    "tariff_nt_start_weekday": "23,3",
+    "tariff_vt_start_weekend": "8",
+    "tariff_nt_start_weekend": "1",
+    "tariff_weekend_same_as_weekday": False,
+    "vat_rate": 21.0,
+}
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_includes_pricing_supplier_section():
+    hass, entry = _make_hass_for_module_config("supplierbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    response = await view.get(_module_config_request(hass, {}), "supplierbox")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert "pricing_supplier" in payload
+    supplier = payload["pricing_supplier"]
+    for key in (
+        "spot_pricing_model", "spot_positive_fee_percent",
+        "spot_positive_fee_percent_nt", "export_pricing_model",
+        "distribution_fee_vt_kwh", "vat_rate", "tariff_vt_start_weekday",
+        "dual_tariff_enabled",
+    ):
+        assert key in supplier
+
+
+@pytest.mark.asyncio
+async def test_module_config_get_reflects_preexisting_legacy_options_unmigrated():
+    """RCA-R3's core requirement: existing entry.options values reappear
+    through the registry with NO migration — the legacy keys are read as-is."""
+    hass, entry = _make_hass_for_module_config("legacybox", _LEGACY_PRICING_OPTIONS)
+    view = api_module.OIGCloudModuleConfigView()
+    response = await view.get(_module_config_request(hass, {}), "legacybox")
+    supplier = json.loads(response.text)["pricing_supplier"]
+
+    for key, value in _LEGACY_PRICING_OPTIONS.items():
+        assert supplier[key] == value, key
+    # The new NT-only keys never lived in this legacy entry — they fall back
+    # to their registry defaults, not an error or a missing key.
+    assert supplier["spot_positive_fee_percent_nt"] == 13.0
+    assert supplier["export_fee_percent_nt"] == 13.0
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_supplier_round_trips_preserving_other_legacy_keys():
+    """POST {section:"pricing_supplier", values} must merge — not replace —
+    so unrelated legacy keys already in entry.options survive untouched."""
+    hass, entry = _make_hass_for_module_config("supplierbox", _LEGACY_PRICING_OPTIONS)
+    view = api_module.OIGCloudModuleConfigView()
+
+    post_response = await view.post(
+        _module_config_request(
+            hass,
+            {
+                "section": "pricing_supplier",
+                "values": {"spot_positive_fee_percent": 17.5},
+            },
+        ),
+        "supplierbox",
+    )
+    post_payload = json.loads(post_response.text)
+
+    assert post_response.status == 200
+    assert post_payload["updated"] is True
+    assert entry.options["spot_positive_fee_percent"] == 17.5
+    # every other legacy key untouched
+    for key, value in _LEGACY_PRICING_OPTIONS.items():
+        if key == "spot_positive_fee_percent":
+            continue
+        assert entry.options[key] == value, key
+
+    after = json.loads(
+        (await view.get(_module_config_request(hass, {}), "supplierbox")).text
+    )["pricing_supplier"]
+    assert after["spot_positive_fee_percent"] == 17.5
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_supplier_rejects_unknown_field():
+    hass, entry = _make_hass_for_module_config("supplierbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+    response = await view.post(
+        _module_config_request(
+            hass,
+            {"section": "pricing_supplier", "values": {"not_a_real_key": 1}},
+        ),
+        "supplierbox",
+    )
+    payload = json.loads(response.text)
+    assert response.status == 400
+    assert payload["fields"]["not_a_real_key"] == "unknown field"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tariff_code,expected", [
+    ("D25d", True), ("D26d", True), ("D27d", True), ("D35d", True),
+    ("D45d", True), ("D56d", True), ("D57d", True), ("D61d", True),
+    ("D01d", False), ("D02d", False), ("POZE", False),
+])
+async def test_module_config_post_pricing_derives_and_persists_dual_tariff_enabled(
+    tariff_code, expected,
+):
+    """RCA-R3 + UX-SPEC §4 (owner correction round 2): dual_tariff_enabled is
+    never posted by the client — it is derived from confirmed_distribution_tariff
+    and persisted under the legacy key for backward compat."""
+    hass, entry = _make_hass_for_module_config("dualbox", {})
+    view = api_module.OIGCloudModuleConfigView()
+
+    post_response = await view.post(
+        _module_config_request(
+            hass,
+            {
+                "section": "pricing",
+                "values": {"confirmed_distribution_tariff": tariff_code},
+            },
+        ),
+        "dualbox",
+    )
+    assert post_response.status == 200
+    assert entry.options["dual_tariff_enabled"] is expected
+
+    after = json.loads(
+        (await view.get(_module_config_request(hass, {}), "dualbox")).text
+    )
+    assert after["pricing_supplier"]["dual_tariff_enabled"] is expected
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_supplier_save_does_not_reset_dual_tariff_enabled():
+    """Saving pricing_supplier fields must not touch the derived value —
+    only a confirmed_distribution_tariff change (section "pricing") does."""
+    hass, entry = _make_hass_for_module_config(
+        "dualbox", {"dual_tariff_enabled": True, "confirmed_distribution_tariff": "D25d"}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+
+    await view.post(
+        _module_config_request(
+            hass,
+            {"section": "pricing_supplier", "values": {"vat_rate": 15.0}},
+        ),
+        "dualbox",
+    )
+    assert entry.options["dual_tariff_enabled"] is True
+    assert entry.options["vat_rate"] == 15.0

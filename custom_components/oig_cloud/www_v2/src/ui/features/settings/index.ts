@@ -494,6 +494,48 @@ export class OigSettings extends LitElement {
     return sec ? sec[key] : undefined;
   }
 
+  /**
+   * Cross-section value lookup (F1 U4 R3). `current()` is section-scoped,
+   * but pricing_supplier's show_if predicates reference
+   * `confirmed_distribution_tariff`, which lives in the `pricing` section
+   * (dual-ness derives from the tariff selected in the distribution step,
+   * not from anything in pricing_supplier itself). Tries the field's own
+   * section first, then searches every other loaded section.
+   */
+  private currentCrossSection(section: SettingsSection, key: string): unknown {
+    const own = this.current(section, key);
+    if (own !== undefined) return own;
+    for (const sec of Object.keys(this.pending)) {
+      if (sec === section) continue;
+      const pend = (this.pending as any)[sec];
+      if (pend && key in pend) return pend[key];
+    }
+    const cfg: any = this.config;
+    if (cfg) {
+      for (const sec of Object.keys(cfg)) {
+        if (sec === section) continue;
+        if (cfg[sec] && key in cfg[sec]) return cfg[sec][key];
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Field visibility, extended for `show_if_all` (F1 U4 R3): registry-data's
+   * `isVisible` only evaluates the single-condition `show_if`; pricing_supplier's
+   * NT-variant fields need a second, ANDed condition (scenario AND tariff
+   * dual-ness), read straight off the raw registry spec since FieldDef has
+   * no showIfAll of its own.
+   */
+  private isFieldVisible(section: SettingsSection, f: FieldDef): boolean {
+    const get = (k: string) => this.currentCrossSection(section, k);
+    if (!isVisible(f, get)) return false;
+    const spec: any = this.registry?.fields[f.key];
+    const extra: { field: string; in: unknown[] }[] | undefined = spec?.show_if_all;
+    if (!extra) return true;
+    return extra.every((cond) => cond.in.some((v) => v === get(cond.field)));
+  }
+
   private setPending(section: SettingsSection, key: string, value: unknown): void {
     this.pending = {
       ...this.pending,
@@ -584,7 +626,7 @@ export class OigSettings extends LitElement {
     // U1: showIf filtering. `current()` prefers pending over saved, so the
     // reveal happens on the *pending* provider value the instant the select
     // changes — matches the UX-AUDIT U1 fix.
-    const visible = fields.filter((f) => isVisible(f, (k) => this.current(section, k)));
+    const visible = fields.filter((f) => this.isFieldVisible(section, f));
     return html`
       <div class="card">
         <h2>${title}</h2>
@@ -775,6 +817,7 @@ export class OigSettings extends LitElement {
         ${this.renderCard('modules', '🧩 Moduly', 'Zapnutí modulu přidá senzory a záložky; konfigurace níže.', this.fieldsFor('modules'))}
         ${this.renderCard('battery', '🔋 Baterie a plánovač', 'Parametry ekonomického plánovače a balancování.', this.fieldsFor('battery'))}
         ${this.renderCard('solar', '☀️ Solární předpověď', 'Poskytovatel a geometrie stringů.', this.fieldsFor('solar'))}
+        ${this.renderCard('pricing_supplier', '💳 Dodavatelské a distribuční ceny', 'Obchodní podmínky vaší smlouvy s dodavatelem a distributorem elektřiny.', this.fieldsFor('pricing_supplier'))}
         ${this.renderBoilerCard()}
       </div>
     `;

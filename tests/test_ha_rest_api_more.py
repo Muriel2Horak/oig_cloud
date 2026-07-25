@@ -502,7 +502,9 @@ async def test_module_config_no_legacy_helpers_in_runtime_path(monkeypatch):
     monkeypatch.setattr(api_module, "fields_for_section", record_fields)
     get_response = await view.get(AdminRequest(hass), "123")
     assert get_response.status == 200
-    assert fields_seen == ["basic", "modules", "battery", "solar", "boiler", "pricing"]
+    assert fields_seen == [
+        "basic", "modules", "battery", "solar", "boiler", "pricing", "pricing_supplier",
+    ]
 
     coerce_seen = []
     merge_seen = []
