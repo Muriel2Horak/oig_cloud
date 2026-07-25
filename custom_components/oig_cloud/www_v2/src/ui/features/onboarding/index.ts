@@ -350,6 +350,16 @@ const STEP_PHASE: Partial<Record<OnboardingStepId, 'A' | 'B'>> = {
 };
 const PHASE_LABELS = { A: 'Nastavuje se jednou', B: 'Mění se v čase' } as const;
 
+/** Steps gated by a modules-step toggle (UX-SPEC table-of-contents "New install" column). */
+const STEP_GATE: Partial<Record<OnboardingStepId, string>> = {
+  ai: '', // AI is never gated by a modules toggle — always shown (optional, not conditional)
+  solar: 'enable_solar_forecast',
+  pricing_distribution: 'enable_pricing',
+  pricing_supplier: 'enable_pricing',
+  battery: 'enable_battery_prediction',
+  boiler: 'enable_boiler',
+};
+
 const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
   pending: 'pending',
   done: 'done',
@@ -452,8 +462,22 @@ export class OigOnboardingWizard extends LitElement {
     return resolveLang(this.hass);
   }
 
-  /** Internal step routing — single source of truth is `WIZARD_STEPS`. */
+  /** Internal step routing — single source of truth is `visibleWizardSteps()`. */
   @state() private currentStep: OnboardingStepId = 'welcome';
+  /**
+   * Modules step draft (Stage S3 wires the real step body, seeded from the
+   * `modules` registry section / `entry.options`). `STEP_GATE` reads it to
+   * decide which content steps are currently reachable. Stubbed here with
+   * every gate defaulted on so the shell's nav shows all 10 steps until the
+   * real modules step lands — the plan's own S1 done-criteria for this task
+   * requires Task 2/3's "every module on" nav assertions to keep passing.
+   */
+  @state() private modulesDraft: Record<string, unknown> = {
+    enable_solar_forecast: true,
+    enable_pricing: true,
+    enable_battery_prediction: true,
+    enable_boiler: true,
+  };
   @state() private onboardingState: OnboardingState | null = null;
   @state() private pricing: PricelistsResponse | null = null;
   @state() private pricingLoading = false;
@@ -760,22 +784,36 @@ export class OigOnboardingWizard extends LitElement {
     }
   }
 
+  /**
+   * `WIZARD_STEPS` filtered to steps whose gating module toggle (if any) is
+   * on — the single source of truth for both nav rendering and step-advance
+   * logic (Task 4). A step with no entry in `STEP_GATE` is always visible.
+   */
+  private visibleWizardSteps(): OnboardingStepId[] {
+    return WIZARD_STEPS.filter((s) => {
+      const gate = STEP_GATE[s];
+      return !gate || !!this.modulesDraft[gate];
+    });
+  }
+
   private async advanceFromCurrentStep(): Promise<void> {
-    const i = WIZARD_STEPS.indexOf(this.currentStep);
+    const steps = this.visibleWizardSteps();
+    const i = steps.indexOf(this.currentStep);
     if (i < 0) return;
-    if (i >= WIZARD_STEPS.length - 1) {
+    if (i >= steps.length - 1) {
       await this.finish();
       return;
     }
     this.finishError = null;
-    this.currentStep = WIZARD_STEPS[i + 1];
+    this.currentStep = steps[i + 1];
   }
 
   private async goNext(): Promise<void> {
-    const i = WIZARD_STEPS.indexOf(this.currentStep);
+    const steps = this.visibleWizardSteps();
+    const i = steps.indexOf(this.currentStep);
     if (i < 0) return;
 
-    if (i >= WIZARD_STEPS.length - 1) {
+    if (i >= steps.length - 1) {
       if (this.finishing) return;
       this.finishing = true;
       this.finishError = null;
@@ -796,13 +834,14 @@ export class OigOnboardingWizard extends LitElement {
     const completion = this.completeCurrentStepIfNeeded();
     if (completion) await completion;
     this.finishError = null;
-    this.currentStep = WIZARD_STEPS[i + 1];
+    this.currentStep = steps[i + 1];
   }
 
   private goPrev(): void {
-    const i = WIZARD_STEPS.indexOf(this.currentStep);
+    const steps = this.visibleWizardSteps();
+    const i = steps.indexOf(this.currentStep);
     if (i <= 0) return;
-    this.currentStep = WIZARD_STEPS[i - 1];
+    this.currentStep = steps[i - 1];
   }
 
   /**
@@ -1056,7 +1095,7 @@ export class OigOnboardingWizard extends LitElement {
 
   /** Order index of the current step — drives disabled-state and labels. */
   private currentIndex(): number {
-    return WIZARD_STEPS.indexOf(this.currentStep);
+    return this.visibleWizardSteps().indexOf(this.currentStep);
   }
 
   private renderStepContent() {
@@ -1196,9 +1235,10 @@ export class OigOnboardingWizard extends LitElement {
   render() {
     if (!this.open) return nothing;
 
+    const visibleSteps = this.visibleWizardSteps();
     const idx = this.currentIndex();
     const isFirst = idx <= 0;
-    const isLast = idx >= WIZARD_STEPS.length - 1;
+    const isLast = idx >= visibleSteps.length - 1;
     const skippable = STEP_SKIPPABLE[this.currentStep];
 
     return html`
@@ -1242,7 +1282,7 @@ export class OigOnboardingWizard extends LitElement {
           </div>
 
           <nav class="steps" data-testid="wizard-steps" aria-label="Kroky průvodce">
-            ${WIZARD_STEPS.map((s, i) => html`
+            ${visibleSteps.map((s, i) => html`
               ${(() => {
                 const status = this.onboardingState?.steps[s] ?? 'pending';
                 return html`

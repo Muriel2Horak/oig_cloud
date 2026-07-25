@@ -656,4 +656,18 @@ describe('WIZARD_STEPS 10-step sequence (F1 Wizard v2 S1 Task 2)', () => {
     expect(phaseA[0].textContent).toContain('Nastavuje se jednou');
     expect(phaseB[0].textContent).toContain('Mění se v čase');
   });
+
+  it('turning off enable_boiler in the modules step hides the boiler step from nav and skips it on Next', async () => {
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> } & Record<string, any>>(
+      html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    wizard.modulesDraft = { enable_boiler: false };
+    await flushWizard(wizard);
+
+    const steps = [...wizard.shadowRoot!.querySelectorAll('[data-testid="wizard-steps"] button')]
+      .map((b) => b.getAttribute('data-step'));
+    expect(steps).not.toContain('boiler');
+  });
 });
