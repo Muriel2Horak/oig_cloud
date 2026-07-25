@@ -3608,6 +3608,12 @@ class OigCloudOptionsFlowHandler(WizardMixin, config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="ai",
             data_schema=self._get_ai_schema(current),
+            description_placeholders={
+                "groq_console_url": "https://console.groq.com",
+                "groq_keys_url": "https://console.groq.com/keys",
+                "nvidia_build_url": "https://build.nvidia.com",
+                "nvidia_keys_url": "https://build.nvidia.com/settings/api-keys",
+            },
         )
 
     async def async_step_section_pricing(

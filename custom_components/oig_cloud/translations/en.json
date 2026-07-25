@@ -899,7 +899,7 @@
       },
       "ai": {
         "title": "🤖 Optional AI helper",
-        "description": "AI is optional and the dashboard works without it. Groq, NVIDIA, and your own HA AI Task are co-equal choices.\n\n**Groq:** 1. Register at https://console.groq.com. 2. Open https://console.groq.com/keys. 3. Choose Create API Key and copy the key immediately.\n\n**NVIDIA:** 1. Register at https://build.nvidia.com. 2. Open https://build.nvidia.com/settings/api-keys. 3. Choose Generate API Key and copy the key.\n\nThe key is stored privately in .storage and never in options.",
+        "description": "AI is optional and the dashboard works without it. Groq, NVIDIA, and your own HA AI Task are co-equal choices.\n\n**Groq:** 1. Register at {groq_console_url}. 2. Open {groq_keys_url}. 3. Choose Create API Key and copy the key immediately.\n\n**NVIDIA:** 1. Register at {nvidia_build_url}. 2. Open {nvidia_keys_url}. 3. Choose Generate API Key and copy the key.\n\nThe key is stored privately in .storage and never in options.",
         "data": {
           "ai_provider": "AI provider",
           "ai_base_url": "API base URL",
