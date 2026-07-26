@@ -3339,9 +3339,9 @@ export class OigOnboardingWizard extends LitElement {
                   ${t('onboarding.pricing_supplier.recovered_note', this.wizardLang)}
                 </p>`
               : nothing}
-            <p data-testid="pricing-supplier-intro" class="hint">
-              Nákupní cena od dodavatele — vyberte scénář, který odpovídá vaší smlouvě.
-            </p>
+            <div class="oneliner" data-testid="pricing-supplier-intro">
+              Nákupní cena od dodavatele — vyberte scénář dle vaší smlouvy.
+            </div>
             ${hasFields
               ? html`
                   ${renderScenarioCards(
@@ -3370,9 +3370,9 @@ export class OigOnboardingWizard extends LitElement {
         <section class="step step-pricing-supplier-sell" data-step="pricing_supplier_sell" style=${`--sc:${STEP_COLOR_VAR.pricing_supplier_sell}`}>
           ${this.renderStepHead('pricing_supplier_sell')}
           <div class="step-card">
-            <p data-testid="pricing-supplier-sell-intro" class="hint">
-              Prodejní (výkupní) cena — vyberte scénář, který odpovídá vaší smlouvě.
-            </p>
+            <div class="oneliner" data-testid="pricing-supplier-sell-intro">
+              Prodejní (výkupní) cena — vyberte scénář dle vaší smlouvy.
+            </div>
             ${hasFields
               ? html`
                   ${renderScenarioCards(
