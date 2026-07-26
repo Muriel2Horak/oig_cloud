@@ -116,6 +116,12 @@ const CS_LABELS: Record<string, string> = {
   'field.tariff_nt_start_weekend.label': 'NT začátek, víkend (hodina1,hodina2)',
   'field.dual_tariff_enabled.label': 'Dvoutarifní sazba (odvozeno automaticky)',
 
+  // NT/VT schedule grid (owner live-walk UX rev, item 4) — synthetic diff-row
+  // keys `summaryDiffRows()` emits in place of the raw 4 start-hour keys,
+  // step-9's "Pole" column.
+  'field.tariff_schedule_weekday.label': 'Rozvrh NT/VT — pracovní dny',
+  'field.tariff_schedule_weekend.label': 'Rozvrh NT/VT — víkend',
+
   // --- connection / 'basic' section (Task 20, UX-SPEC §Step 8) — copy
   // adapted from cs.json's wizard_intervals (translations/cs.json:200-208),
   // this FE step reads CS_LABELS, not that HA-native translation layer.

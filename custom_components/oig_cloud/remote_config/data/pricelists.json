@@ -2,6 +2,7 @@
   "distributors": {
     "cez": {
       "D01d": {
+        "description": "Jednotarifová sazba (pro malou spotřebu)",
         "price_excl_vat": 2666.66,
         "price_incl_vat": 3226.66,
         "unit": "Kc/MWh",
@@ -12,6 +13,7 @@
         }
       },
       "D02d": {
+        "description": "Jednotarifová sazba (pro střední spotřebu)",
         "price_excl_vat": 2078.58,
         "price_incl_vat": 2515.08,
         "unit": "Kc/MWh",
@@ -22,6 +24,7 @@
         }
       },
       "D25d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
         "nt": {
           "price_excl_vat": 116.5,
           "price_incl_vat": 140.97,
@@ -37,6 +40,7 @@
         }
       },
       "D26d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin (pro vyšší využití)",
         "nt": {
           "price_excl_vat": 116.5,
           "price_incl_vat": 140.97,
@@ -52,6 +56,7 @@
         }
       },
       "D27d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
         "nt": {
           "price_excl_vat": 116.5,
           "price_incl_vat": 140.97,
@@ -67,6 +72,7 @@
         }
       },
       "D35d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 116.5,
           "price_incl_vat": 140.97,
@@ -82,6 +88,7 @@
         }
       },
       "D45d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 116.5,
           "price_incl_vat": 140.97,
@@ -97,6 +104,7 @@
         }
       },
       "D56d": {
+        "description": "Dvoutarifová sazba pro vytápění s tepelným čerpadlem uvedeným do provozu od 1. 4. 2005 a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 116.5,
           "price_incl_vat": 140.97,
@@ -112,6 +120,7 @@
         }
       },
       "D57d": {
+        "description": "Dvoutarifová sazba pro vytápění topným elektrickým spotřebičem a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 116.5,
           "price_incl_vat": 140.97,
@@ -127,6 +136,7 @@
         }
       },
       "D61d": {
+        "description": "Dvoutarifová sazba ve víkendovém režimu",
         "nt": {
           "price_excl_vat": 116.5,
           "price_incl_vat": 140.97,
@@ -149,6 +159,7 @@
     },
     "egd": {
       "D01d": {
+        "description": "Jednotarifová sazba (pro malou spotřebu)",
         "price_excl_vat": 2711.14,
         "price_incl_vat": 3280.48,
         "unit": "Kc/MWh",
@@ -159,6 +170,7 @@
         }
       },
       "D02d": {
+        "description": "Jednotarifová sazba (pro střední spotřebu)",
         "price_excl_vat": 2295.34,
         "price_incl_vat": 2777.36,
         "unit": "Kc/MWh",
@@ -169,6 +181,7 @@
         }
       },
       "D25d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
         "nt": {
           "price_excl_vat": 224.3,
           "price_incl_vat": 271.4,
@@ -184,6 +197,7 @@
         }
       },
       "D26d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin (pro vyšší využití)",
         "nt": {
           "price_excl_vat": 224.3,
           "price_incl_vat": 271.4,
@@ -199,6 +213,7 @@
         }
       },
       "D27d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
         "nt": {
           "price_excl_vat": 224.3,
           "price_incl_vat": 271.4,
@@ -214,6 +229,7 @@
         }
       },
       "D35d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 224.3,
           "price_incl_vat": 271.4,
@@ -229,6 +245,7 @@
         }
       },
       "D45d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 224.3,
           "price_incl_vat": 271.4,
@@ -244,6 +261,7 @@
         }
       },
       "D56d": {
+        "description": "Dvoutarifová sazba pro vytápění s tepelným čerpadlem uvedeným do provozu od 1. 4. 2005 a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 224.3,
           "price_incl_vat": 271.4,
@@ -259,6 +277,7 @@
         }
       },
       "D57d": {
+        "description": "Dvoutarifová sazba pro vytápění topným elektrickým spotřebičem a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 224.3,
           "price_incl_vat": 271.4,
@@ -274,6 +293,7 @@
         }
       },
       "D61d": {
+        "description": "Dvoutarifová sazba ve víkendovém režimu",
         "nt": {
           "price_excl_vat": 224.3,
           "price_incl_vat": 271.4,
@@ -296,6 +316,7 @@
     },
     "pre": {
       "D01d": {
+        "description": "Jednotarifová sazba (pro malou spotřebu)",
         "price_excl_vat": 1854.71,
         "price_incl_vat": 2244.2,
         "unit": "Kc/MWh",
@@ -306,6 +327,7 @@
         }
       },
       "D02d": {
+        "description": "Jednotarifová sazba (pro střední spotřebu)",
         "price_excl_vat": 1516.53,
         "price_incl_vat": 1835.0,
         "unit": "Kc/MWh",
@@ -316,6 +338,7 @@
         }
       },
       "D25d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
         "nt": {
           "price_excl_vat": 175.2,
           "price_incl_vat": 211.99,
@@ -331,6 +354,7 @@
         }
       },
       "D26d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin (pro vyšší využití)",
         "nt": {
           "price_excl_vat": 175.2,
           "price_incl_vat": 211.99,
@@ -346,6 +370,7 @@
         }
       },
       "D27d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
         "nt": {
           "price_excl_vat": 175.2,
           "price_incl_vat": 211.99,
@@ -361,6 +386,7 @@
         }
       },
       "D35d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 175.2,
           "price_incl_vat": 211.99,
@@ -376,6 +402,7 @@
         }
       },
       "D45d": {
+        "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 175.2,
           "price_incl_vat": 211.99,
@@ -391,6 +418,7 @@
         }
       },
       "D56d": {
+        "description": "Dvoutarifová sazba pro vytápění s tepelným čerpadlem uvedeným do provozu od 1. 4. 2005 a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 175.2,
           "price_incl_vat": 211.99,
@@ -406,6 +434,7 @@
         }
       },
       "D57d": {
+        "description": "Dvoutarifová sazba pro vytápění topným elektrickým spotřebičem a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
         "nt": {
           "price_excl_vat": 175.2,
           "price_incl_vat": 211.99,
@@ -421,6 +450,7 @@
         }
       },
       "D61d": {
+        "description": "Dvoutarifová sazba ve víkendovém režimu",
         "nt": {
           "price_excl_vat": 175.2,
           "price_incl_vat": 211.99,
@@ -442,12 +472,12 @@
       }
     }
   },
-  "generated_at": "2026-07-25T06:14:57+00:00",
+  "generated_at": "2026-07-26T04:58:56+00:00",
   "schema_version": 2,
   "sources": {
     "ceny-nn26-1.xlsx": {
       "decree": "14/2025 (Energetický regulační věstník 18/2025), distribuce NN pro rok 2026",
-      "fetched_at": "2026-07-25T05:55:48+00:00",
+      "fetched_at": "2026-07-26T04:43:02+00:00",
       "note": "POZE (příspěvek na podporované zdroje) je pro rok 2026 vynulován výměrem 15/2025 (navazuje na 13/2025), účinnost od 2026-01-01; zveřejněný XLSX už tuto nulu obsahuje. price_incl_vat je odvozeno z cen bez DPH v XLSX sazbou vat_rate.",
       "sha256": "ca2948ae156708fa5a340000577b912e10cc92de973de10deb8a215bd46af480",
       "source_url": "https://eru.gov.cz/sites/default/files/obsah/prilohy/ceny-nn26-1.xlsx"
@@ -458,6 +488,7 @@
       "distributors": {
         "cez": {
           "D01d": {
+            "description": "Jednotarifová sazba (pro malou spotřebu)",
             "price_excl_vat": 2666.66,
             "price_incl_vat": 3226.66,
             "unit": "Kc/MWh",
@@ -468,6 +499,7 @@
             }
           },
           "D02d": {
+            "description": "Jednotarifová sazba (pro střední spotřebu)",
             "price_excl_vat": 2078.58,
             "price_incl_vat": 2515.08,
             "unit": "Kc/MWh",
@@ -478,6 +510,7 @@
             }
           },
           "D25d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
             "nt": {
               "price_excl_vat": 116.5,
               "price_incl_vat": 140.97,
@@ -493,6 +526,7 @@
             }
           },
           "D26d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin (pro vyšší využití)",
             "nt": {
               "price_excl_vat": 116.5,
               "price_incl_vat": 140.97,
@@ -508,6 +542,7 @@
             }
           },
           "D27d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
             "nt": {
               "price_excl_vat": 116.5,
               "price_incl_vat": 140.97,
@@ -523,6 +558,7 @@
             }
           },
           "D35d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 116.5,
               "price_incl_vat": 140.97,
@@ -538,6 +574,7 @@
             }
           },
           "D45d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 116.5,
               "price_incl_vat": 140.97,
@@ -553,6 +590,7 @@
             }
           },
           "D56d": {
+            "description": "Dvoutarifová sazba pro vytápění s tepelným čerpadlem uvedeným do provozu od 1. 4. 2005 a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 116.5,
               "price_incl_vat": 140.97,
@@ -568,6 +606,7 @@
             }
           },
           "D57d": {
+            "description": "Dvoutarifová sazba pro vytápění topným elektrickým spotřebičem a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 116.5,
               "price_incl_vat": 140.97,
@@ -583,6 +622,7 @@
             }
           },
           "D61d": {
+            "description": "Dvoutarifová sazba ve víkendovém režimu",
             "nt": {
               "price_excl_vat": 116.5,
               "price_incl_vat": 140.97,
@@ -605,6 +645,7 @@
         },
         "egd": {
           "D01d": {
+            "description": "Jednotarifová sazba (pro malou spotřebu)",
             "price_excl_vat": 2711.14,
             "price_incl_vat": 3280.48,
             "unit": "Kc/MWh",
@@ -615,6 +656,7 @@
             }
           },
           "D02d": {
+            "description": "Jednotarifová sazba (pro střední spotřebu)",
             "price_excl_vat": 2295.34,
             "price_incl_vat": 2777.36,
             "unit": "Kc/MWh",
@@ -625,6 +667,7 @@
             }
           },
           "D25d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
             "nt": {
               "price_excl_vat": 224.3,
               "price_incl_vat": 271.4,
@@ -640,6 +683,7 @@
             }
           },
           "D26d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin (pro vyšší využití)",
             "nt": {
               "price_excl_vat": 224.3,
               "price_incl_vat": 271.4,
@@ -655,6 +699,7 @@
             }
           },
           "D27d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
             "nt": {
               "price_excl_vat": 224.3,
               "price_incl_vat": 271.4,
@@ -670,6 +715,7 @@
             }
           },
           "D35d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 224.3,
               "price_incl_vat": 271.4,
@@ -685,6 +731,7 @@
             }
           },
           "D45d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 224.3,
               "price_incl_vat": 271.4,
@@ -700,6 +747,7 @@
             }
           },
           "D56d": {
+            "description": "Dvoutarifová sazba pro vytápění s tepelným čerpadlem uvedeným do provozu od 1. 4. 2005 a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 224.3,
               "price_incl_vat": 271.4,
@@ -715,6 +763,7 @@
             }
           },
           "D57d": {
+            "description": "Dvoutarifová sazba pro vytápění topným elektrickým spotřebičem a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 224.3,
               "price_incl_vat": 271.4,
@@ -730,6 +779,7 @@
             }
           },
           "D61d": {
+            "description": "Dvoutarifová sazba ve víkendovém režimu",
             "nt": {
               "price_excl_vat": 224.3,
               "price_incl_vat": 271.4,
@@ -752,6 +802,7 @@
         },
         "pre": {
           "D01d": {
+            "description": "Jednotarifová sazba (pro malou spotřebu)",
             "price_excl_vat": 1854.71,
             "price_incl_vat": 2244.2,
             "unit": "Kc/MWh",
@@ -762,6 +813,7 @@
             }
           },
           "D02d": {
+            "description": "Jednotarifová sazba (pro střední spotřebu)",
             "price_excl_vat": 1516.53,
             "price_incl_vat": 1835.0,
             "unit": "Kc/MWh",
@@ -772,6 +824,7 @@
             }
           },
           "D25d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
             "nt": {
               "price_excl_vat": 175.2,
               "price_incl_vat": 211.99,
@@ -787,6 +840,7 @@
             }
           },
           "D26d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin (pro vyšší využití)",
             "nt": {
               "price_excl_vat": 175.2,
               "price_incl_vat": 211.99,
@@ -802,6 +856,7 @@
             }
           },
           "D27d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin",
             "nt": {
               "price_excl_vat": 175.2,
               "price_incl_vat": 211.99,
@@ -817,6 +872,7 @@
             }
           },
           "D35d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 175.2,
               "price_incl_vat": 211.99,
@@ -832,6 +888,7 @@
             }
           },
           "D45d": {
+            "description": "Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 175.2,
               "price_incl_vat": 211.99,
@@ -847,6 +904,7 @@
             }
           },
           "D56d": {
+            "description": "Dvoutarifová sazba pro vytápění s tepelným čerpadlem uvedeným do provozu od 1. 4. 2005 a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 175.2,
               "price_incl_vat": 211.99,
@@ -862,6 +920,7 @@
             }
           },
           "D57d": {
+            "description": "Dvoutarifová sazba pro vytápění topným elektrickým spotřebičem a operativním řízením doby platnosti nízkého tarifu po dobu 20 hodin",
             "nt": {
               "price_excl_vat": 175.2,
               "price_incl_vat": 211.99,
@@ -877,6 +936,7 @@
             }
           },
           "D61d": {
+            "description": "Dvoutarifová sazba ve víkendovém režimu",
             "nt": {
               "price_excl_vat": 175.2,
               "price_incl_vat": 211.99,

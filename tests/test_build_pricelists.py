@@ -228,6 +228,27 @@ def test_shipped_pricelists_unit_rules() -> None:
     assert len(perampere) == len(REQUIRED_DSOS)
 
 
+def test_shipped_pricelists_has_tariff_descriptions() -> None:
+    """Owner UX rev item 2: each D-tariff carries the ERU decree's own short
+    description (used by the wizard's step 4 tariff-select copy), identical
+    across all three distributors since the sazba is a decree-wide fact."""
+    payload = _load_shipped()
+    for dso in REQUIRED_DSOS:
+        rates = payload["distributors"][dso]
+        for code in REQUIRED_D_TARIFFS:
+            description = rates[code].get("description")
+            assert description, f"{dso}/{code} missing tariff description"
+    descriptions_by_code = {
+        code: payload["distributors"]["cez"][code]["description"] for code in REQUIRED_D_TARIFFS
+    }
+    for dso in REQUIRED_DSOS - {"cez"}:
+        for code in REQUIRED_D_TARIFFS:
+            assert payload["distributors"][dso][code]["description"] == descriptions_by_code[code], (
+                f"{dso}/{code} description diverges from cez — should be distributor-independent"
+            )
+    assert descriptions_by_code["D01d"] == "Jednotarifová sazba (pro malou spotřebu)"
+
+
 def test_shipped_pricelists_snapshots_have_valid_from() -> None:
     payload = _load_shipped()
     snapshots = payload["valid_from_snapshots"]

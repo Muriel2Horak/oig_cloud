@@ -20,6 +20,16 @@ export function isDualTariffCode(code: unknown): boolean {
 }
 
 /**
+ * Owner live-walk UX rev, item 1: a logo/icon slot left of the distributor
+ * name — implemented, but fed ONLY by a bundled asset already present in the
+ * repo. None exists today (checked: no cez/egd/pre logo under `www_v2`), and
+ * drawing or downloading a company logo is a trademark question flagged to
+ * the human — so this map ships EMPTY and the slot renders text-only until
+ * someone adds a cleared asset here.
+ */
+export const DISTRIBUTOR_LOGO_ASSETS: Readonly<Record<string, string>> = {};
+
+/**
  * Registry-side these 5 fields are `pricing_supplier` (config_registry.py
  * :536-549, "the step split is wizard-UI layout") — UX-SPEC §4 relocates
  * them to THIS step (step 4): the tariff's own schedule is a
@@ -29,6 +39,21 @@ export const TARIFF_SCHEDULE_KEYS = [
   'tariff_vt_start_weekday', 'tariff_nt_start_weekday', 'tariff_weekend_same_as_weekday',
   'tariff_vt_start_weekend', 'tariff_nt_start_weekend',
 ] as const;
+
+/**
+ * Owner live-walk UX rev (F1 dist-ux, item 3) — the VT/NT distribution price
+ * excl. VAT is registry-side `pricing_supplier` (config_registry.py:531-534,
+ * already in Kc/kWh, already editable, already what every BE consumer reads
+ * — `battery_forecast/data/pricing.py`, `pricing/spot_price_15min.py`,
+ * `entities/analytics_sensor.py`) — same "wizard-UI layout, not a registry
+ * move" pattern as `TARIFF_SCHEDULE_KEYS` above. Relocated here so the price
+ * the user is confirming sits next to the tariff that produced the
+ * suggestion, per the owner's walk-through.
+ */
+export const DISTRIBUTION_PRICE_KEYS = ['distribution_fee_vt_kwh', 'distribution_fee_nt_kwh'] as const;
+
+/** Hidden-by-default VAT-rate override (owner brief: "Upravit DPH" reveal link). */
+export const VAT_RATE_KEY = 'vat_rate';
 
 /**
  * A field is visible when its `show_if` holds AND (if present) every
@@ -52,10 +77,12 @@ export function fieldVisible(
 }
 
 function distributionFields(reg: FieldRegistry): FieldDef[] {
+  const relocatedKeys: readonly string[] = [
+    ...TARIFF_SCHEDULE_KEYS, ...DISTRIBUTION_PRICE_KEYS, VAT_RATE_KEY,
+  ];
   return [
     ...fieldsFromRegistry(reg, 'pricing'),
-    ...fieldsFromRegistry(reg, 'pricing_supplier').filter((f) =>
-      (TARIFF_SCHEDULE_KEYS as readonly string[]).includes(f.key)),
+    ...fieldsFromRegistry(reg, 'pricing_supplier').filter((f) => relocatedKeys.includes(f.key)),
   ];
 }
 

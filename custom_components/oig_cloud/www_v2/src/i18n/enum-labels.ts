@@ -47,6 +47,13 @@ const CS_ENUM_LABELS: Record<string, string> = {
   'field.ai_provider.enum.ai_task': 'Vlastní AI v Home Assistantu (ai_task)',
   'field.ai_provider.enum.groq': 'Groq',
   'field.ai_provider.enum.nvidia': 'NVIDIA',
+  // confirmed_distribution_distributor (owner live-walk UX rev, F1 dist-ux) —
+  // human distributor names; the enum VALUE stays the technical cez/egd/pre
+  // code (config_registry.py's `_PRICE_DISTRIBUTORS`), only the rendered
+  // label changes.
+  'field.confirmed_distribution_distributor.enum.cez': 'ČEZ Distribuce',
+  'field.confirmed_distribution_distributor.enum.egd': 'EG.D',
+  'field.confirmed_distribution_distributor.enum.pre': 'PREdistribuce',
 };
 
 /** Falls back to the raw enum value — never throws, matches CS_LABELS' fallback pattern. */

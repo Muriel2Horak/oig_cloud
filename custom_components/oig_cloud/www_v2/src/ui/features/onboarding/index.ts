@@ -32,12 +32,25 @@ import type { FieldRegistry } from '@/data/registry-data';
 import { loadFieldRegistry, fieldsFromRegistry } from '@/data/registry-data';
 import type { FieldDef } from '@/ui/features/settings';
 import { STEP_SOLAR, SOLAR_PROVIDER_GUIDES } from './step-solar';
-import { STEP_PRICING_DISTRIBUTION, isDualTariffCode } from './step-pricing-distribution';
+import {
+  STEP_PRICING_DISTRIBUTION,
+  isDualTariffCode,
+  TARIFF_SCHEDULE_KEYS,
+  DISTRIBUTION_PRICE_KEYS,
+  VAT_RATE_KEY,
+  DISTRIBUTOR_LOGO_ASSETS,
+} from './step-pricing-distribution';
+import {
+  stringsToGrid,
+  gridToStrings,
+  summarizeNtIntervals,
+  type Paint,
+  type DayGroup,
+} from './tariff-hour-matrix';
 import {
   STEP_PRICING_SUPPLIER,
   PRICING_SUPPLIER_GROUP_A_KEYS,
   PRICING_SUPPLIER_GROUP_B_KEYS,
-  PRICING_SUPPLIER_GROUP_C_KEYS,
 } from './step-pricing-supplier';
 import { STEP_BATTERY, BATTERY_GROUPS } from './step-battery';
 import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-boiler';
@@ -63,6 +76,12 @@ interface PricingRate {
   price_incl_vat: number;
   price_excl_vat: number;
   unit: string;
+  vt?: { price_incl_vat: number; price_excl_vat: number; unit: string };
+  nt?: { price_incl_vat: number; price_excl_vat: number; unit: string };
+  /** ERU decree's own short-form CZ label for the sazba (owner UX rev item
+   * 2, `build_pricelists.py`'s ERU-decree mode) — same text for every
+   * distributor, absent from non-ERU (flat-fixture) datasets. */
+  description?: string;
 }
 
 interface PricelistsResponse {
@@ -411,7 +430,6 @@ const PRICING_SUPPLIER_GROUPS: ReadonlyArray<{
 }> = [
   { slug: 'import', badge: 'A', heading: 'Nákupní cena', keys: PRICING_SUPPLIER_GROUP_A_KEYS },
   { slug: 'export', badge: 'B', heading: 'Prodejní cena / export', keys: PRICING_SUPPLIER_GROUP_B_KEYS },
-  { slug: 'distribution', badge: 'C', heading: 'Distribuce, tarify a DPH', keys: PRICING_SUPPLIER_GROUP_C_KEYS },
 ];
 
 const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
@@ -516,6 +534,17 @@ function formatDiffValue(value: unknown): string {
   return String(value);
 }
 
+/** Owner UX rev, item 4 last bullet: the NT/VT diff hint (inline + step-9
+ * table) shows the painted interval summary, never the raw start-hour
+ * strings the grid persists as. Falls back to a raw VT/NT readout only if
+ * the strings don't parse (never silently drops a real change). */
+function describeSchedule(vt: string, nt: string, allowSingleTariff: boolean): string {
+  const grid = stringsToGrid(vt, nt, allowSingleTariff);
+  if (grid) return summarizeNtIntervals(grid);
+  if (!vt && !nt) return '—';
+  return `VT ${vt || '—'} / NT ${nt || '—'}`;
+}
+
 /**
  * Wizard shell — opens in response to a `launch-onboarding` CustomEvent and
  * routes the 10-step wizard-v2 sequence (`WIZARD_STEPS`, `:315`) in order.
@@ -601,6 +630,25 @@ export class OigOnboardingWizard extends LitElement {
    * `solarDraft`/`pricingDraft` (UX-SPEC §4), not a rename of them.
    */
   @state() private isDualTariff = false;
+
+  /**
+   * NT/VT schedule grid (owner live-walk UX rev, item 4): the 4 start-string
+   * keys in `pricingDraft` remain the single source of truth — the grid is
+   * derived from them fresh on every render (`stringsToGrid`). This override
+   * holds ONLY a transient, not-yet-persistable paint (weekday monochrome,
+   * blocked per the brief) so the invalid state stays visible without
+   * corrupting `pricingDraft`'s last-valid strings. Cleared once the group's
+   * paint becomes expressible again.
+   */
+  @state() private tariffMatrixOverride: Partial<Record<DayGroup, Paint[]>> = {};
+  @state() private tariffMatrixError: Partial<Record<DayGroup, string>> = {};
+  @state() private showVatOverride = false;
+  /** Click-drag paint tracking — deliberately NOT `@state()`: it changes on
+   * every `mouseenter` during a drag and never affects rendered output by
+   * itself (each cell entered already calls `paintMatrixCell`, which does
+   * trigger a render via `pricingDraft`/`tariffMatrixOverride`). */
+  private _dragGroup: DayGroup | null = null;
+  private _dragPaint: Paint | null = null;
 
   /**
    * Every section's entry.options-derived value, flattened and frozen once
@@ -886,6 +934,65 @@ export class OigOnboardingWizard extends LitElement {
       cursor: pointer;
       font: inherit;
     }
+
+    /* Owner live-walk UX rev (F1 dist-ux) — distributor icon slot, VT/NT
+       price pair, NT/VT schedule grid. */
+    .distributor-icon {
+      display: inline-flex;
+      width: 18px; height: 18px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .distributor-icon img { width: 100%; height: 100%; object-fit: contain; }
+
+    .distribution-price-pair {
+      display: flex;
+      gap: 16px;
+      padding: 10px 0;
+      border-bottom: 1px dashed var(--divider-color, rgba(255, 255, 255, 0.12));
+    }
+    .price-cell { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+    .price-cell input { max-width: 100px; }
+
+    .link-button {
+      background: transparent;
+      border: none;
+      color: var(--primary-color, #4f7cff);
+      font-size: 11.5px;
+      cursor: pointer;
+      padding: 4px 0;
+      text-decoration: underline;
+    }
+
+    .tariff-matrix { padding: 10px 0; }
+    .tariff-matrix-legend {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; opacity: 0.8; margin-bottom: 8px;
+    }
+    .legend-swatch {
+      display: inline-block; width: 11px; height: 11px; border-radius: 2px;
+    }
+    .legend-swatch.vt { background: var(--card-bg, rgba(255, 255, 255, 0.12)); border: 1px solid var(--divider-color, rgba(255,255,255,0.3)); }
+    .legend-swatch.nt { background: var(--primary-color, #4f7cff); }
+
+    .tariff-matrix-row { margin-bottom: 12px; }
+    .tariff-matrix-row-label { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+    .tariff-matrix-cells {
+      display: grid;
+      grid-template-columns: repeat(24, 1fr);
+      gap: 1px;
+    }
+    .tariff-cell {
+      height: 22px;
+      padding: 0;
+      border: none;
+      border-radius: 2px;
+      cursor: pointer;
+      background: var(--card-bg, rgba(255, 255, 255, 0.12));
+    }
+    .tariff-cell.nt { background: var(--primary-color, #4f7cff); }
+    .tariff-matrix-summary { font-size: 11px; opacity: 0.75; margin: 4px 0 0; }
+    .tariff-matrix-error { font-size: 11px; color: var(--error-color, #ff8a80); margin: 4px 0 0; }
   `;
 
   private async refreshOnboardingState(force = false, signal?: AbortSignal): Promise<void> {
@@ -1291,9 +1398,15 @@ export class OigOnboardingWizard extends LitElement {
     void this.refreshOnboardingState(true);
   }
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    window.addEventListener('mouseup', this.endMatrixDrag);
+  }
+
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.stopBootstrap();
+    window.removeEventListener('mouseup', this.endMatrixDrag);
   }
 
   /**
@@ -1325,6 +1438,12 @@ export class OigOnboardingWizard extends LitElement {
       </div>
     `;
   }
+  /** Ends a tariff-matrix click-drag even if the mouse is released outside
+   * the grid — bound once per connection, not per render. */
+  private endMatrixDrag = (): void => {
+    this._dragGroup = null;
+    this._dragPaint = null;
+  };
 
   /** Q1: registry values → the exact `/solar_test` wire body, no extra keys. */
   private buildSolarTestBody(): Record<string, unknown> {
@@ -1451,9 +1570,254 @@ export class OigOnboardingWizard extends LitElement {
    * `originalValues` snapshot — unchanged fields are omitted (UX-SPEC §3:
    * "a wall of 'X → X' rows defeats the purpose"). */
   private summaryDiffRows(): Array<{ key: string; oldValue: unknown; newValue: unknown }> {
-    return Object.entries(this.allDraftValues())
-      .filter(([key, value]) => String(this.originalValues[key]) !== String(value))
+    const all = this.allDraftValues();
+    // The 4 raw start-hour keys collapse into one summary row per day-group
+    // (owner UX rev, item 4) — a raw "Bylo: 6 → Nyní: 7" row means nothing
+    // to the owner; the painted interval summary does.
+    const scheduleKeys = new Set(TARIFF_SCHEDULE_KEYS as readonly string[]);
+    const rows = Object.entries(all)
+      .filter(([key, value]) => !scheduleKeys.has(key) && String(this.originalValues[key]) !== String(value))
       .map(([key, value]) => ({ key, oldValue: this.originalValues[key], newValue: value }));
+
+    for (const group of ['weekday', 'weekend'] as const) {
+      const vtKey = `tariff_vt_start_${group}`;
+      const ntKey = `tariff_nt_start_${group}`;
+      const allowSingle = group === 'weekend';
+      const oldVt = String(this.originalValues[vtKey] ?? '');
+      const oldNt = String(this.originalValues[ntKey] ?? '');
+      const newVt = String(all[vtKey] ?? '');
+      const newNt = String(all[ntKey] ?? '');
+      if (oldVt === newVt && oldNt === newNt) continue;
+      rows.push({
+        key: `tariff_schedule_${group}`,
+        oldValue: describeSchedule(oldVt, oldNt, allowSingle),
+        newValue: describeSchedule(newVt, newNt, allowSingle),
+      });
+    }
+    return rows;
+  }
+
+  // --------------------------------------------------------------------
+  // Owner live-walk UX rev (F1 dist-ux) — items 1/3/4: distributor icon
+  // slot, editable VT/NT distribution price, NT/VT schedule grid.
+  // --------------------------------------------------------------------
+
+  /** Item 1: icon/logo slot left of the distributor name — text-only until
+   * a cleared bundled asset exists (`DISTRIBUTOR_LOGO_ASSETS`, currently
+   * empty; see that file for why no logo ships today). */
+  private renderDistributorIconSlot() {
+    const code = this.pricingDraft['confirmed_distribution_distributor'] as string | undefined;
+    const asset = code ? DISTRIBUTOR_LOGO_ASSETS[code] : undefined;
+    return html`
+      <span class="distributor-icon" data-testid="distributor-icon">
+        ${asset ? html`<img src=${asset} alt="" width="18" height="18" />` : nothing}
+      </span>`;
+  }
+
+  /** Item 3: prefills `distribution_fee_vt_kwh`/`_nt_kwh` from the selected
+   * distributor+tariff's dataset price (Kc/MWh -> Kc/kWh, /1000) ONLY while
+   * the field is still at its untouched registry default — an existing
+   * user's already-customized value is never overwritten (UX-SPEC §3 review
+   * mode: "existing users see THEIR values, not dataset defaults"). */
+  private applyDistributionFeeSuggestion(): void {
+    if (!this._registry) return;
+    const distributor = this.pricingDraft['confirmed_distribution_distributor'] as string | undefined;
+    const tariff = this.pricingDraft['confirmed_distribution_tariff'] as string | undefined;
+    if (!distributor || !tariff) return;
+    const rate = this.pricing?.distributors?.[distributor]?.[tariff];
+    if (!rate) return;
+
+    const suggest = (key: string, leg?: { price_excl_vat: number }): [string, number] | null => {
+      if (!leg) return null;
+      const current = this.pricingDraft[key];
+      const registryDefault = this._registry!.fields[key]?.default;
+      const untouched = current === undefined || current === registryDefault;
+      if (!untouched) return null;
+      return [key, Math.round((leg.price_excl_vat / 1000) * 100) / 100];
+    };
+
+    const updates = [
+      suggest('distribution_fee_vt_kwh', rate.vt),
+      suggest('distribution_fee_nt_kwh', rate.nt),
+    ].filter((u): u is [string, number] => u !== null);
+    if (updates.length === 0) return;
+    this.pricingDraft = { ...this.pricingDraft, ...Object.fromEntries(updates) };
+  }
+
+  /** Item 3: VT (+ NT, when dual) distribution price excl. VAT, side by
+   * side, both editable — plus the read-only computed "s DPH" line and the
+   * `vat_rate` reveal link. */
+  private renderDistributionPriceBlock(
+    dual: boolean,
+    vtField: FieldDef,
+    ntField: FieldDef | undefined,
+    vatField: FieldDef | undefined,
+    vatRatePercent: number,
+  ) {
+    const vatMultiplier = 1 + vatRatePercent / 100;
+    const cell = (field: FieldDef, testid: string) => {
+      const raw = this.pricingDraft[field.key];
+      const excl = raw == null || raw === '' ? null : Number(raw);
+      const incl = excl == null ? null : Math.round(excl * vatMultiplier * 100) / 100;
+      return html`
+        <div class="price-cell" data-testid=${testid}>
+          <span class="lab">${field.label}</span>
+          <input
+            type="number" step="0.01" min="0"
+            data-testid="${testid}-input"
+            .value=${excl == null ? '' : String(excl)}
+            @change=${(e: Event) => {
+              const v = (e.target as HTMLInputElement).value;
+              this.pricingDraft = { ...this.pricingDraft, [field.key]: v === '' ? null : Number(v) };
+            }}
+          />
+          <span class="hint" data-testid="${testid}-incl-vat">
+            ${incl == null ? nothing : html`s DPH ${vatRatePercent} %: ${incl.toFixed(2)} Kč/kWh`}
+          </span>
+        </div>`;
+    };
+    return html`
+      <div class="row distribution-price-pair" data-testid="distribution-price-pair">
+        ${cell(vtField, 'distribution-fee-vt')}
+        ${dual && ntField ? cell(ntField, 'distribution-fee-nt') : nothing}
+      </div>
+      ${vatField
+        ? html`
+            <button
+              type="button" class="link-button" data-testid="vat-rate-toggle"
+              @click=${() => { this.showVatOverride = !this.showVatOverride; }}
+            >${this.showVatOverride ? 'Skrýt DPH' : 'Upravit DPH'}</button>
+            ${this.showVatOverride
+              ? html`<div data-key=${VAT_RATE_KEY}>
+                  ${renderFieldPresenter(vatField, {
+                    value: this.pricingDraft[VAT_RATE_KEY],
+                    dirty: false,
+                    secretSet: false,
+                    originalValue: this.originalValues[VAT_RATE_KEY],
+                    reviewMode: this.onboardingState?.grandfathered === true,
+                    onChange: (v: unknown) => {
+                      this.pricingDraft = { ...this.pricingDraft, [VAT_RATE_KEY]: v };
+                    },
+                    entityCatalog: [],
+                  })}
+                </div>`
+              : nothing}
+          `
+        : nothing}
+    `;
+  }
+
+  /** `tariff_vt_start_*`/`tariff_nt_start_*` key pair + whether the BE
+   * validates that day-group with `allow_single_tariff` (weekend only —
+   * schema.py `validate_tariff_hours`/steps.py:2333-2335). */
+  private matrixKeysFor(group: DayGroup): { vt: string; nt: string; allowSingleTariff: boolean } {
+    return group === 'weekday'
+      ? { vt: 'tariff_vt_start_weekday', nt: 'tariff_nt_start_weekday', allowSingleTariff: false }
+      : { vt: 'tariff_vt_start_weekend', nt: 'tariff_nt_start_weekend', allowSingleTariff: true };
+  }
+
+  /** `pricingDraft`'s 4 strings are the single source of truth; a group's
+   * grid is derived fresh every render UNLESS a not-yet-expressible paint is
+   * pending for it (`tariffMatrixOverride`). */
+  private matrixGridFor(group: DayGroup): Paint[] {
+    const override = this.tariffMatrixOverride[group];
+    if (override) return override;
+    const { vt, nt, allowSingleTariff } = this.matrixKeysFor(group);
+    const grid = stringsToGrid(String(this.pricingDraft[vt] ?? ''), String(this.pricingDraft[nt] ?? ''), allowSingleTariff);
+    return grid ?? Array<Paint>(24).fill('VT');
+  }
+
+  private commitMatrixGrid(group: DayGroup, grid: Paint[]): void {
+    const { vt, nt, allowSingleTariff } = this.matrixKeysFor(group);
+    const result = gridToStrings(grid, allowSingleTariff);
+    if (!result) {
+      this.tariffMatrixOverride = { ...this.tariffMatrixOverride, [group]: grid };
+      this.tariffMatrixError = {
+        ...this.tariffMatrixError,
+        [group]: 'Tento vzor zatím neumíme uložit - intervaly musí být souvislé bloky NT/VT',
+      };
+      return;
+    }
+    const nextOverride = { ...this.tariffMatrixOverride };
+    delete nextOverride[group];
+    const nextError = { ...this.tariffMatrixError };
+    delete nextError[group];
+    this.tariffMatrixOverride = nextOverride;
+    this.tariffMatrixError = nextError;
+    this.pricingDraft = { ...this.pricingDraft, [vt]: result.vt, [nt]: result.nt };
+  }
+
+  private paintMatrixCell(group: DayGroup, hour: number, paint: Paint): void {
+    const grid = this.matrixGridFor(group);
+    if (grid[hour] === paint) return;
+    const next = [...grid];
+    next[hour] = paint;
+    this.commitMatrixGrid(group, next);
+  }
+
+  private beginMatrixPaint(group: DayGroup, hour: number): void {
+    const grid = this.matrixGridFor(group);
+    const paint: Paint = grid[hour] === 'NT' ? 'VT' : 'NT';
+    this._dragGroup = group;
+    this._dragPaint = paint;
+    this.paintMatrixCell(group, hour, paint);
+  }
+
+  private continueMatrixPaint(group: DayGroup, hour: number): void {
+    if (this._dragGroup !== group || !this._dragPaint) return;
+    this.paintMatrixCell(group, hour, this._dragPaint);
+  }
+
+  /** Item 4: the NT/VT schedule grid — replaces the old VT/NT start-hour
+   * text inputs when the tariff is dual. Single-tariff never renders this
+   * (no matrix, no time fields — whole day VT, matching the old behaviour). */
+  private renderTariffMatrix() {
+    const groups: Array<{ id: DayGroup; label: string }> = [
+      { id: 'weekday', label: 'Pracovní dny (Po–Pá)' },
+      { id: 'weekend', label: 'Víkend (So–Ne)' },
+    ];
+    return html`
+      <div class="tariff-matrix" data-testid="tariff-matrix">
+        <div class="tariff-matrix-legend">
+          <span class="legend-swatch vt"></span> VT
+          <span class="legend-swatch nt"></span> NT
+        </div>
+        ${groups.map(({ id, label }) => {
+          const grid = this.matrixGridFor(id);
+          const error = this.tariffMatrixError[id];
+          return html`
+            <div class="tariff-matrix-row" data-testid="tariff-matrix-row-${id}">
+              <div class="tariff-matrix-row-label">${label}</div>
+              <div class="tariff-matrix-cells" data-testid="tariff-matrix-cells-${id}">
+                ${grid.map((paint, hour) => html`
+                  <button
+                    type="button"
+                    class="tariff-cell ${paint === 'NT' ? 'nt' : 'vt'}"
+                    data-testid="tariff-cell-${id}-${hour}"
+                    title="${String(hour).padStart(2, '0')}:00"
+                    @mousedown=${(e: MouseEvent) => { e.preventDefault(); this.beginMatrixPaint(id, hour); }}
+                    @mouseenter=${(e: MouseEvent) => { if (e.buttons === 1) this.continueMatrixPaint(id, hour); }}
+                  ></button>
+                `)}
+              </div>
+              <p class="tariff-matrix-summary" data-testid="tariff-matrix-summary-${id}">
+                ${summarizeNtIntervals(grid)}
+              </p>
+              ${error
+                ? html`<p class="tariff-matrix-error" data-testid="tariff-matrix-error-${id}">${error}</p>`
+                : nothing}
+            </div>
+          `;
+        })}
+      </div>`;
+  }
+
+  /** True while any day-group's paint is currently inexpressible — gates the
+   * wizard's "Next"/"Uložit" button (owner brief: "block save of this step,
+   * not the wizard" — Back/Přeskočit stay enabled, only advancing is blocked). */
+  private hasBlockingTariffMatrixError(): boolean {
+    return this.currentStep === 'pricing_distribution'
+      && (this.tariffMatrixError.weekday !== undefined || this.tariffMatrixError.weekend !== undefined);
   }
 
   private renderStepContent() {
@@ -1680,12 +2044,25 @@ export class OigOnboardingWizard extends LitElement {
       const tariff = this.pricingDraft['confirmed_distribution_tariff'] as string | undefined;
       const dual = isDualTariffCode(tariff);
 
-      const visible = STEP_PRICING_DISTRIBUTION.visibleFields(this._registry, this.pricingDraft);
+      const registry = this._registry;
+      const excludedFromGenericRender: readonly string[] = [
+        ...TARIFF_SCHEDULE_KEYS, ...DISTRIBUTION_PRICE_KEYS, VAT_RATE_KEY,
+        // Item 3: replaced by the editable VT/NT price block below — the
+        // read-only auto-derived trio only still applies when the price
+        // block itself has nothing to show (registry not loaded).
+        ...(dual
+          ? ['confirmed_distribution_price_incl_vat', 'confirmed_distribution_price_excl_vat', 'confirmed_distribution_unit']
+          : []),
+      ];
+      const visible = STEP_PRICING_DISTRIBUTION.visibleFields(registry, this.pricingDraft)
+        .filter((f) => !excludedFromGenericRender.includes(f.key));
       const distributor = this.pricingDraft['confirmed_distribution_distributor'] as string | undefined;
-      const rate = distributor && tariff
-        ? (this.pricing as unknown as { distributors?: Record<string, Record<string, { nt?: { price_incl_vat: number; price_excl_vat: number; unit: string } }>> })
-          ?.distributors?.[distributor]?.[tariff]
-        : undefined;
+      const rate = distributor && tariff ? this.pricing?.distributors?.[distributor]?.[tariff] : undefined;
+
+      const vtFeeField = STEP_PRICING_DISTRIBUTION.fields(registry).find((f) => f.key === 'distribution_fee_vt_kwh');
+      const ntFeeField = STEP_PRICING_DISTRIBUTION.fields(registry).find((f) => f.key === 'distribution_fee_nt_kwh');
+      const vatField = STEP_PRICING_DISTRIBUTION.fields(registry).find((f) => f.key === VAT_RATE_KEY);
+      const vatRate = Number(this.pricingDraft[VAT_RATE_KEY] ?? registry?.fields[VAT_RATE_KEY]?.default ?? 21);
 
       return html`
         <section class="step step-pricing-distribution" data-step="pricing_distribution">
@@ -1693,6 +2070,7 @@ export class OigOnboardingWizard extends LitElement {
           <div class="step-card">
             ${visible.map((f) => html`
               <div data-key=${f.key}>
+                ${f.key === 'confirmed_distribution_distributor' ? this.renderDistributorIconSlot() : nothing}
                 ${renderFieldPresenter(f, {
                   value: this.pricingDraft[f.key],
                   dirty: false,
@@ -1708,9 +2086,22 @@ export class OigOnboardingWizard extends LitElement {
                     if (f.key === 'confirmed_distribution_tariff') {
                       this.isDualTariff = isDualTariffCode(v);
                     }
+                    if (f.key === 'confirmed_distribution_tariff' || f.key === 'confirmed_distribution_distributor') {
+                      this.applyDistributionFeeSuggestion();
+                    }
                   },
                   entityCatalog: [],
                 })}
+                ${f.key === 'confirmed_distribution_tariff'
+                  ? html`
+                      ${rate?.description
+                        ? html`<p class="hint" data-testid="tariff-description">${rate.description}</p>`
+                        : nothing}
+                      <p class="hint" data-testid="tariff-invoice-hint">
+                        Svou sazbu najdete na faktuře za elektřinu, obvykle v části „Distribuční sazba“ nebo „Sazba“.
+                      </p>
+                    `
+                  : nothing}
               </div>
             `)}
             ${tariff
@@ -1718,12 +2109,10 @@ export class OigOnboardingWizard extends LitElement {
                   ${dual ? 'Dvoutarifní — ceny zvlášť pro VT a NT.' : 'Jednotarifní — jedna cena po celý den.'}
                 </p>`
               : nothing}
-            ${dual && rate?.nt
-              ? html`<div class="row" data-testid="distribution-nt-price">
-                  <span class="lab">Cena NT s DPH</span>
-                  <div class="row-control">${rate.nt.price_incl_vat} ${rate.nt.unit}</div>
-                </div>`
+            ${tariff && vtFeeField
+              ? this.renderDistributionPriceBlock(dual, vtFeeField, ntFeeField, vatField, vatRate)
               : nothing}
+            ${dual ? this.renderTariffMatrix() : nothing}
             ${this.pricingLoadFailed
               ? html`<p data-testid="pricing-stale-warning" class="hint">Ceny nejsou dostupné.</p>`
               : nothing}
@@ -2127,7 +2516,7 @@ export class OigOnboardingWizard extends LitElement {
               type="button"
               class="primary next"
               data-testid="wizard-next"
-              ?disabled=${this.finishing}
+              ?disabled=${this.finishing || this.hasBlockingTariffMatrixError()}
               @click=${() => void this.goNext()}
             >${this.finishing ? 'Dokončuji…' : isLast ? (isReview ? 'Uložit' : 'Dokončit') : 'Další →'}</button>
           </footer>
