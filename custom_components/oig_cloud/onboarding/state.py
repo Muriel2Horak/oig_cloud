@@ -117,6 +117,18 @@ class OnboardingState:
                 # A state persisted before D11 added the banner-dismissal flag
                 # lacks the key — default it rather than bumping the schema.
                 self._data.setdefault("banner_dismissed", False)
+                # A state persisted before the 3-step-to-9-step split still
+                # carries the old "pricing" key, which the FE rejects as an
+                # unknown step id. Migrate its status onto `pricing_distribution`
+                # only if that key is absent (a state that already completed
+                # the new split takes precedence); either way `pricing` never
+                # survives the load, so the store self-heals on next write.
+                legacy_steps = self._data.setdefault("steps", {})
+                if "pricing" in legacy_steps:
+                    legacy_status = legacy_steps.pop("pricing")
+                    if "pricing_distribution" not in legacy_steps:
+                        legacy_steps["pricing_distribution"] = legacy_status
+                self._data.setdefault("timestamps", {}).pop("pricing", None)
                 # A state persisted before the supplier-step split (new
                 # "pricing_supplier_sell" step id) lacks it in `steps`/
                 # `timestamps` — default it rather than bumping the schema,
