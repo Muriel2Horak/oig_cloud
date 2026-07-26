@@ -323,6 +323,23 @@ describe('pricing_distribution step render (Task 14/15)', () => {
     expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt"]')).toBeTruthy();
   });
 
+  it('content fix (a): the legacy dataset price trio (incl-VAT/excl-VAT/editable MWh unit) never renders, single- or dual-tariff — the kWh fee block is the single price surface', async () => {
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, confirmed_distribution_tariff: 'D01d' };
+    await settle(wizard);
+    expect(wizard.shadowRoot!.querySelector('[data-key="confirmed_distribution_price_incl_vat"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="confirmed_distribution_price_excl_vat"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="confirmed_distribution_unit"]')).toBeNull();
+
+    internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, confirmed_distribution_tariff: 'D25d' };
+    await settle(wizard);
+    expect(wizard.shadowRoot!.querySelector('[data-key="confirmed_distribution_price_incl_vat"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="confirmed_distribution_price_excl_vat"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="confirmed_distribution_unit"]')).toBeNull();
+  });
+
   it('dual tariff always shows both matrix rows (weekday + weekend), no separate same-as-weekday toggle', async () => {
     const wizard = await openWizard();
     await goToStep(wizard, 'pricing_distribution');

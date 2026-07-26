@@ -66,14 +66,14 @@ export const SOLAR_PROVIDER_GUIDES: Record<string, SolarProviderGuide> = {
     registerUrl: 'https://toolkit.solcast.com.au',
     keysUrl: 'https://toolkit.solcast.com.au',
     steps: [
-      'Solcast vyžaduje bezplatnou registraci — API klíč i Site ID najdeš ve svém Toolkit účtu.',
-      'Otevři toolkit.solcast.com.au a zaregistruj se (e-mail).',
-      'API klíč najdeš v nastavení účtu (API Key) — zkopíruj ho do pole níže.',
+      'Solcast vyžaduje bezplatnou registraci — API klíč i Site ID najdete ve svém Toolkit účtu.',
+      'Otevřete toolkit.solcast.com.au a zaregistrujte se (e-mail).',
+      'API klíč najdete v nastavení účtu (API Key) — zkopírujte ho do pole níže.',
     ],
     siteIdSteps: [
-      'V Toolkitu přidej svou střechu jako Rooftop Site (adresa, výkon a orientace panelů).',
-      'Otevři vytvořenou instalaci — v jejím detailu (případně v adrese URL) najdeš Site ID.',
-      'Zkopíruj Site ID do pole níže — je to jiná hodnota než API klíč, potřebuješ obě.',
+      'V Toolkitu přidejte svou střechu jako Rooftop Site (adresa, výkon a orientace panelů).',
+      'Otevřete vytvořenou instalaci — v jejím detailu (případně v adrese URL) najdete Site ID.',
+      'Zkopírujte Site ID do pole níže — je to jiná hodnota než API klíč, potřebujete obě.',
     ],
   },
 };
