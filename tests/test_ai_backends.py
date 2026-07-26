@@ -6,9 +6,11 @@ import json
 import pytest
 
 from custom_components.oig_cloud.ai.backends import (
+    AiBackendError,
     PROMPT_ALLOWED_FIELDS,
     PROVIDERS,
     OpenAiCompatBackend,
+    _classify_http_status,
     build_anonymous_prompt,
 )
 from custom_components.oig_cloud.ai.model_cache import LastWorkingModelCache
@@ -62,6 +64,20 @@ def test_providers_are_co_equal_with_no_recommended_default():
 def test_key_prefixes_match_scope_revision_7():
     assert PROVIDERS["groq"]["key_prefix"] == "gsk_"
     assert PROVIDERS["nvidia"]["key_prefix"] == "nvapi-"
+
+
+def test_classify_429_as_no_credits():
+    assert _classify_http_status(429) == "no_credits"
+
+
+def test_classify_401_as_auth():
+    assert _classify_http_status(401) == "auth"
+    assert _classify_http_status(403) == "auth"
+
+
+def test_classify_5xx_as_provider_unreachable():
+    assert _classify_http_status(500) == "provider_unreachable"
+    assert _classify_http_status(503) == "provider_unreachable"
 
 
 @pytest.mark.asyncio
@@ -282,6 +298,61 @@ async def test_failover_exhausts_chain_and_raises_classified_error():
         models=("m1", "m2", "m3"))
     with pytest.raises(RuntimeError, match="all 3 models"):
         await backend.async_generate_data("validate_config", {"capacity_kwh": 10}, {})
+
+
+@pytest.mark.asyncio
+async def test_chain_exhausted_raises_with_the_last_models_classification():
+    class _Resp:
+        def __init__(self, status):
+            self.status = status
+
+        async def __aenter__(self): return self
+
+        async def __aexit__(self, *a): return False
+
+        async def json(self): return {}
+
+    class _Session:
+        def post(self, url, headers, json, timeout):
+            if json["model"] == "model-a":
+                return _Resp(500)
+            return _Resp(429)
+
+        def get(self, *a, **kw): raise AssertionError("verify not used here")
+
+    backend = OpenAiCompatBackend(
+        session=_Session(), base_url="https://x", api_key="k",
+        models=("model-a", "model-b"))
+
+    with pytest.raises(AiBackendError) as exc:
+        await backend.async_generate_data("validate_config", {"capacity_kwh": 10}, {})
+
+    assert exc.value.code == "no_credits"
+
+
+@pytest.mark.asyncio
+async def test_classified_error_does_not_include_raw_429_body_or_key():
+    fake_key = "gsk_DO_NOT_LEAK_1234567890"
+
+    class _Resp:
+        status = 429
+
+        async def __aenter__(self): return self
+
+        async def __aexit__(self, *a): return False
+
+        async def json(self):
+            return {"error": f"quota exhausted for {fake_key}"}
+
+    backend = OpenAiCompatBackend(
+        session=_Session(_Resp()), base_url="https://x", api_key=fake_key,
+        models=("model-a",))
+
+    with pytest.raises(AiBackendError) as exc:
+        await backend.async_generate_data("validate_config", {"capacity_kwh": 10}, {})
+
+    assert exc.value.code == "no_credits"
+    assert fake_key not in str(exc.value)
 
 
 @pytest.mark.asyncio

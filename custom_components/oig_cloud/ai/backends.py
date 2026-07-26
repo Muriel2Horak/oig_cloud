@@ -12,6 +12,7 @@ field somebody forgot to think about.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, Dict, Mapping, Sequence
@@ -60,6 +61,31 @@ ALLOWED_TASKS = frozenset({
     "ai_task_generate_data",
     "validate_config",
 })
+
+
+class AiBackendError(RuntimeError):
+    """Sanitized AI backend failure with a closed classification code."""
+
+    def __init__(self, code: str, attempts: int | None = None) -> None:
+        self.code = code
+        if attempts is None:
+            super().__init__(f"AI backend failed ({code})")
+            return
+        super().__init__(
+            f"AI backend: all {attempts} models in chain failed ({code})"
+        )
+
+
+def _classify_http_status(status: int) -> str:
+    if status == 429:
+        # P1 names this state no_credits, but bundled providers use it for a
+        # quota/rate window exhausted for this key, not a literal balance signal.
+        return "no_credits"
+    if status in (401, 403):
+        return "auth"
+    if 500 <= status <= 599:
+        return "provider_unreachable"
+    return "invalid_response"
 
 
 def _validated_task(task: str) -> str:
@@ -133,38 +159,38 @@ class OpenAiCompatBackend:
         Walks the ordered model chain (P1): tries the cached last-working model
         first (Task 3), then falls back to chain order. On HTTP error, timeout,
         or invalid JSON from one model, continues to the next. Exhausting the
-        chain raises a classified RuntimeError.
+        chain raises a classified AiBackendError.
         """
         content = build_anonymous_prompt(task, install)
-        last_err = None
+        last_code: str | None = None
 
         # Try cached model first (Task 3)
         if self._model_cache and self._entry_id and self._provider:
             cached = self._model_cache.get(self._entry_id, self._provider)
             if cached:
-                result = await self._try_model(
+                result, code = await self._try_model(
                     cached, content,
                 )
-                if result is not None:
+                if code is None:
                     self._model_cache.set(
                         self._entry_id, self._provider, cached,
                     )
                     return result
+                last_code = code
 
         for model in self._models:
-            result = await self._try_model(model, content)
-            if result is not None:
+            result, code = await self._try_model(model, content)
+            if code is None:
                 if self._model_cache and self._entry_id and self._provider:
                     self._model_cache.set(
                         self._entry_id, self._provider, model,
                     )
                 return result
-        raise RuntimeError(
-            f"AI backend: all {len(self._models)} models in chain failed"
-        ) from last_err
+            last_code = code
+        raise AiBackendError(last_code or "provider_unreachable", len(self._models))
 
-    async def _try_model(self, model: str, content: str) -> Any | None:
-        """Try a single model; return parsed JSON on success, None on failure."""
+    async def _try_model(self, model: str, content: str) -> tuple[Any | None, str | None]:
+        """Try a single model; return (parsed JSON, None) or (None, error code)."""
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": content}],
@@ -177,9 +203,18 @@ class OpenAiCompatBackend:
                 json=payload, timeout=DEFAULT_TIMEOUT_S,
             ) as resp:
                 if resp.status != 200:
-                    return None
-                body = await resp.json()
+                    return None, _classify_http_status(resp.status)
+                try:
+                    body = await resp.json()
+                except Exception:
+                    return None, "invalid_response"
             msg_content = body["choices"][0]["message"]["content"]
-            return json.loads(msg_content)
+            return json.loads(msg_content), None
+        except (asyncio.TimeoutError, TimeoutError):
+            return None, "timeout"
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return None, "invalid_response"
+        except (ConnectionError, OSError):
+            return None, "provider_unreachable"
         except Exception:
-            return None
+            return None, "provider_unreachable"
