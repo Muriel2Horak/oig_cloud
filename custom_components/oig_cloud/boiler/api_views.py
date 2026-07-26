@@ -66,7 +66,12 @@ from .planner_contract import (
     resolve_alt_source_capability,
 )
 from .planner_core import _build_empty_slots, plan_comfort_core
-from .runtime import _build_planner_topology, _float_config, planner_input_horizon_hours
+from .runtime import (
+    _build_planner_topology,
+    _float_config,
+    _normalize_deadline_time,
+    planner_input_horizon_hours,
+)
 from .thermal import calculate_energy_to_heat
 
 
@@ -619,8 +624,15 @@ def _run_boiler_simulation(
     cold_inlet_c = _float_config(
         merged_config, CONF_BOILER_COLD_INLET_TEMP_C, DEFAULT_BOILER_COLD_INLET_TEMP_C
     )
-    deadline_time = str(
-        merged_config.get(CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME)
+    # merged_config carries the entry's LIVE stored value, which can be
+    # anything a `selector.TimeSelector()` config-flow field has ever
+    # produced ("HH:MM:SS", a datetime.time, ...) — normalize it the same
+    # way the live planner does (runtime.py) instead of a bare str() cast,
+    # which used to hand PlannerInput's strict HH:MM validator a 3-part
+    # string and 500 on the owner's real config.
+    deadline_time = _normalize_deadline_time(
+        merged_config.get(CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME),
+        DEFAULT_BOILER_DEADLINE_TIME,
     )
 
     start_temp_raw = payload.get("start_temp_c")

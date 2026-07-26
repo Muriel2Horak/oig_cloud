@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+from datetime import time as datetime_time
 from types import SimpleNamespace
 
 import pytest
@@ -183,6 +184,115 @@ async def test_simulate_legionella_preset_sets_obligation_source():
 
     assert response.status == 200
     assert payload["source"]["legionella_obligation"] == "preset"
+
+
+# ============================================================================
+# LIVE-CONFIG deadline_time TOLERANCE (owner box probe: TimeSelector stores
+# "HH:MM:SS", the sim used to str()-cast that straight into a validator that
+# only accepted "HH:MM" -> 500.
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_simulate_accepts_hh_mm_ss_deadline_time_from_live_config():
+    hass, _entry, _runtime = _build_hass_with_runtime(
+        config={
+            "boiler_volume_l": 200,
+            "boiler_target_temp_c": 60.0,
+            "boiler_cold_inlet_temp_c": 10.0,
+            "boiler_deadline_time": "06:00:00",
+        }
+    )
+    view = module.BoilerSimulateView(hass)
+    request = DummyRequest(hass, json_body={"preset": "workday", "now": FIXED_NOW})
+
+    response = await view.post(request, "entry1", "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["inputs"]["deadline_time"] == "06:00"
+
+
+@pytest.mark.asyncio
+async def test_simulate_accepts_datetime_time_deadline_time_from_live_config():
+    hass, _entry, _runtime = _build_hass_with_runtime(
+        config={
+            "boiler_volume_l": 200,
+            "boiler_target_temp_c": 60.0,
+            "boiler_cold_inlet_temp_c": 10.0,
+            "boiler_deadline_time": datetime_time(6, 30),
+        }
+    )
+    view = module.BoilerSimulateView(hass)
+    request = DummyRequest(hass, json_body={"preset": "workday", "now": FIXED_NOW})
+
+    response = await view.post(request, "entry1", "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["inputs"]["deadline_time"] == "06:30"
+
+
+@pytest.mark.asyncio
+async def test_simulate_accepts_numeric_hour_deadline_time():
+    hass, _entry, _runtime = _build_hass_with_runtime(
+        config={
+            "boiler_volume_l": 200,
+            "boiler_target_temp_c": 60.0,
+            "boiler_cold_inlet_temp_c": 10.0,
+            "boiler_deadline_time": 6,
+        }
+    )
+    view = module.BoilerSimulateView(hass)
+    request = DummyRequest(hass, json_body={"preset": "workday", "now": FIXED_NOW})
+
+    response = await view.post(request, "entry1", "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["inputs"]["deadline_time"] == "06:00"
+
+
+@pytest.mark.asyncio
+async def test_simulate_falls_back_to_default_on_unparseable_deadline_time(caplog):
+    hass, _entry, _runtime = _build_hass_with_runtime(
+        config={
+            "boiler_volume_l": 200,
+            "boiler_target_temp_c": 60.0,
+            "boiler_cold_inlet_temp_c": 10.0,
+            "boiler_deadline_time": "not-a-time",
+        }
+    )
+    view = module.BoilerSimulateView(hass)
+    request = DummyRequest(hass, json_body={"preset": "workday", "now": FIXED_NOW})
+
+    with caplog.at_level("WARNING"):
+        response = await view.post(request, "entry1", "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["inputs"]["deadline_time"] == module.DEFAULT_BOILER_DEADLINE_TIME
+    assert any("deadline_time" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_simulate_falls_back_to_default_on_none_deadline_time():
+    hass, _entry, _runtime = _build_hass_with_runtime(
+        config={
+            "boiler_volume_l": 200,
+            "boiler_target_temp_c": 60.0,
+            "boiler_cold_inlet_temp_c": 10.0,
+            "boiler_deadline_time": None,
+        }
+    )
+    view = module.BoilerSimulateView(hass)
+    request = DummyRequest(hass, json_body={"preset": "workday", "now": FIXED_NOW})
+
+    response = await view.post(request, "entry1", "123")
+    payload = json.loads(response.text)
+
+    assert response.status == 200
+    assert payload["inputs"]["deadline_time"] == module.DEFAULT_BOILER_DEADLINE_TIME
 
 
 # ============================================================================

@@ -112,9 +112,23 @@ _FORCED_REPLAN_TRIGGERS = frozenset({"override_expiry", "restart_restore"})
 
 
 def _normalize_deadline_time(value: Any, default: str) -> str:
+    """Tolerantly coerce a live-config deadline_time into canonical HH:MM.
+
+    Accepts what a `selector.TimeSelector()` config-flow field and its
+    historical formats can hold: a `datetime.time`, an "HH:MM" or "HH:MM:SS"
+    string, or a bare int/float hour. `None` and anything else unparseable
+    fall back to `default` with a warning — never raises, since this feeds
+    both the live planner and the dry-run simulator.
+    """
     if isinstance(value, datetime_time):
         return value.strftime("%H:%M")
-    if isinstance(value, str):
+    if isinstance(value, bool):
+        pass  # bool is an int subclass; fall through to the warning below
+    elif isinstance(value, (int, float)):
+        hh = int(value)
+        if 0 <= hh <= 23:
+            return f"{hh:02d}:00"
+    elif isinstance(value, str):
         parts = value.split(":")
         if len(parts) in (2, 3):
             try:
@@ -123,6 +137,12 @@ def _normalize_deadline_time(value: Any, default: str) -> str:
                     return f"{hh:02d}:{mm:02d}"
             except ValueError:
                 pass
+    if value is not None:
+        _LOGGER.warning(
+            "Unparseable boiler deadline_time %r, falling back to default %s",
+            value,
+            default,
+        )
     return default
 
 

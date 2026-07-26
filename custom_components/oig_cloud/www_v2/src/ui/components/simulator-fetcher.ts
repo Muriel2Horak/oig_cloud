@@ -15,7 +15,10 @@ export interface BatteryInterval {
 
 export interface BatterySummary {
   cost: number;
-  base_cost: number;
+  // The real planner_simulate endpoint has no notion of an un-optimized
+  // baseline cost — only the mock scenario can compute one. Omit rather
+  // than fabricate a number the BE never priced.
+  base_cost?: number;
   ups_hours: number;
 }
 
@@ -284,6 +287,111 @@ function runBoilerScenario(presetId: string | undefined, draft: Record<string, u
   };
 }
 
+// --- Real BE response shapes (live-probed) and their mapping to the FE contract ---
+//
+// POST /{box}/planner_simulate -> {preset, horizon_intervals, interval_minutes,
+// timeline:[{interval_index, soc_kwh, solar_kwh, load_kwh, grid_import_kwh,
+// grid_export_kwh, cost_czk, mode, mode_name, soc_percent}], summary:{...}}
+// (api/planning_api.py: _planner_result_to_response)
+
+interface PlannerSimulateTimelineEntry {
+  interval_index: number;
+  soc_percent: number;
+  cost_czk: number;
+  mode_name: string;
+}
+
+interface PlannerSimulateResponse {
+  interval_minutes: number;
+  timeline: PlannerSimulateTimelineEntry[];
+  summary: {
+    total_cost_czk: number;
+    mode_distribution: Record<string, number>;
+  };
+}
+
+function toIntervalIso(intervalIndex: number, intervalMinutes: number): string {
+  const totalMinutes = intervalIndex * intervalMinutes;
+  const hour = Math.floor(totalMinutes / 60) % 24;
+  const minute = totalMinutes % 60;
+  return `2099-06-14T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00Z`;
+}
+
+function mapPlannerSimulateResponse(raw: PlannerSimulateResponse): Extract<SimResponse, { kind: 'battery' }> {
+  const intervalMinutes = raw.interval_minutes ?? 15;
+  const intervals: BatteryInterval[] = (raw.timeline ?? []).map((entry) => ({
+    t: toIntervalIso(entry.interval_index, intervalMinutes),
+    mode: entry.mode_name?.includes('UPS') ? 'ups' : 'home',
+    soc: entry.soc_percent,
+    cost: entry.cost_czk,
+  }));
+
+  // No un-optimized baseline in the real response — derive ups_hours from
+  // mode_distribution (interval counts), leave base_cost unset (see
+  // BatterySummary).
+  const upsIntervals = raw.summary?.mode_distribution?.['HOME UPS'] ?? 0;
+
+  return {
+    kind: 'battery',
+    intervals,
+    summary: {
+      cost: round(raw.summary?.total_cost_czk ?? 0),
+      ups_hours: round((upsIntervals * intervalMinutes) / 60, 2),
+    },
+  };
+}
+
+// POST /boiler/{entry}/{box}/simulate_water_day -> {..., timeline:[{start, end,
+// action, source, heating_kwh, pv_kwh, grid_kwh, alt_kwh, battery_kwh,
+// estimated_cost_czk, predicted_top_temp_c, purpose}], summary:{total_heating_kwh,
+// cost_czk, pv_kwh, ...}} (boiler/api_views.py: _run_boiler_simulation)
+
+interface BoilerSimulateTimelineEntry {
+  start: string;
+  action: string;
+  source: string | null;
+  predicted_top_temp_c: number;
+}
+
+interface BoilerSimulateResponse {
+  timeline: BoilerSimulateTimelineEntry[];
+  summary: {
+    total_heating_kwh: number;
+    cost_czk: number;
+    pv_kwh: number;
+  };
+}
+
+function mapBoilerSource(source: string | null): 'solar' | 'grid' {
+  // fve/overflow are both PV-derived; battery/alternative/grid/null all draw
+  // from a non-solar source. FE's BoilerInterval.source stays the existing
+  // binary split rather than growing a third bucket for one chart.
+  return source === 'fve' || source === 'overflow' ? 'solar' : 'grid';
+}
+
+function mapBoilerSimulateResponse(raw: BoilerSimulateResponse): Extract<SimResponse, { kind: 'boiler' }> {
+  const intervals: BoilerInterval[] = (raw.timeline ?? []).map((slot) => ({
+    t: slot.start,
+    heating: slot.action === 'heat',
+    source: mapBoilerSource(slot.source),
+    temp: slot.predicted_top_temp_c,
+  }));
+
+  const totalHeatingKwh = raw.summary?.total_heating_kwh ?? 0;
+  const pvKwh = raw.summary?.pv_kwh ?? 0;
+  const solarShare = totalHeatingKwh > 0 ? pvKwh / totalHeatingKwh : 0;
+
+  return {
+    kind: 'boiler',
+    intervals,
+    summary: {
+      kwh: round(totalHeatingKwh, 1),
+      cost: round(raw.summary?.cost_czk ?? 0),
+      solar_share: round(solarShare),
+    },
+  };
+}
+
 function resolveBoxId(draft: Record<string, unknown>): string | null {
   const draftBox =
     (typeof draft.box_id === 'string' && draft.box_id) ||
@@ -337,12 +445,14 @@ export async function defaultFetcher(req: SimRequest): Promise<SimResponse> {
 
   if (req.kind === 'battery') {
     const body: Record<string, unknown> = {
-      preset_id: req.presetId,
+      // BE reads `preset` (planning_api.py) — not preset_id.
+      preset: req.presetId,
       config_overrides: req.draft,
     };
     const socStart = numberFrom(req.draft.soc_start ?? req.draft.battery_start ?? req.draft.battery_soc);
     if (socStart != null) body.soc_start = socStart;
-    return postJson<SimResponse>(`/api/oig_cloud/${boxId}/planner_simulate`, body);
+    const raw = await postJson<PlannerSimulateResponse>(`/api/oig_cloud/${boxId}/planner_simulate`, body);
+    return mapPlannerSimulateResponse(raw);
   }
 
   const entryId = new URLSearchParams(window.location.search).get('entry_id') || '';
@@ -350,10 +460,12 @@ export async function defaultFetcher(req: SimRequest): Promise<SimResponse> {
     throw new Error('Unable to resolve entry id for boiler simulation');
   }
   // BE route (boiler/api_views.py): /api/oig_cloud/boiler/{entry_id}/{box_id}/simulate_water_day
-  return postJson<SimResponse>(`/api/oig_cloud/boiler/${entryId}/${boxId}/simulate_water_day`, {
-    preset_id: req.presetId,
-    config_overrides: req.draft,
+  // reads `preset` and `override_config` — not preset_id/config_overrides.
+  const raw = await postJson<BoilerSimulateResponse>(`/api/oig_cloud/boiler/${entryId}/${boxId}/simulate_water_day`, {
+    preset: req.presetId,
+    override_config: req.draft,
   });
+  return mapBoilerSimulateResponse(raw);
 }
 
 export async function mockFetcher(req: SimRequest): Promise<SimResponse> {

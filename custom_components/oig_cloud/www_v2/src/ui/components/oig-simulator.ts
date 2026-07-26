@@ -818,9 +818,10 @@ export class OigSimulator extends LitElement {
     `;
   }
 
-  private renderBatteryTiles(summary: { cost: number; base_cost: number; ups_hours: number }): unknown {
-    const savings = summary.base_cost - summary.cost;
-    const savingsLabel = savings > 0 ? '−' : '';
+  private renderBatteryTiles(summary: { cost: number; base_cost?: number; ups_hours: number }): unknown {
+    const hasBaseCost = typeof summary.base_cost === 'number';
+    const savings = hasBaseCost ? (summary.base_cost as number) - summary.cost : null;
+    const savingsLabel = savings != null && savings > 0 ? '−' : '';
     return html`
       <div class="tiles">
         <div class="tile" data-testid="kpi-day-cost">
@@ -829,11 +830,19 @@ export class OigSimulator extends LitElement {
         </div>
         <div class="tile" data-testid="kpi-base-cost">
           <b>${fieldLabel('base_cost', 'simulator.kpi.base_cost.label')}</b>
-          <div class="n">${formatNumber(summary.base_cost, 0)} <small>Kč</small></div>
+          <div class="n">
+            ${hasBaseCost
+              ? html`${formatNumber(summary.base_cost as number, 0)} <small>Kč</small>`
+              : html`<small>—</small>`}
+          </div>
         </div>
         <div class="tile" data-testid="kpi-savings">
           <b>${fieldLabel('savings', 'simulator.kpi.savings.label')}</b>
-          <div class="n price">${savingsLabel}${formatNumber(Math.abs(savings), 0)} <small>Kč</small></div>
+          <div class="n price">
+            ${savings != null
+              ? html`${savingsLabel}${formatNumber(Math.abs(savings), 0)} <small>Kč</small>`
+              : html`<small>—</small>`}
+          </div>
         </div>
         <div class="tile" data-testid="kpi-ups-hours">
           <b>${fieldLabel('ups_hours', 'simulator.kpi.ups_hours.label')}</b>
