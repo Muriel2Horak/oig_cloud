@@ -77,9 +77,14 @@ export function fieldVisible(
 }
 
 function distributionFields(reg: FieldRegistry): FieldDef[] {
-  const relocatedKeys: readonly string[] = [
-    ...TARIFF_SCHEDULE_KEYS, ...DISTRIBUTION_PRICE_KEYS, VAT_RATE_KEY,
-  ];
+  // Seam merge: the supplier-step redesign moved distribution_fee_vt/nt_kwh
+  // and vat_rate REGISTRY-side from `pricing_supplier` to `pricing`
+  // (config_registry.py), so they now arrive via the `pricing` section fetch
+  // below. Only the tariff-schedule keys still live in `pricing_supplier`
+  // while rendering here (UX-SPEC §4), so the cross-section pull is reduced to
+  // them. `DISTRIBUTION_PRICE_KEYS`/`VAT_RATE_KEY` remain exported for the
+  // step-4 price block + "Upravit DPH" reveal, which look them up by name.
+  const relocatedKeys: readonly string[] = [...TARIFF_SCHEDULE_KEYS];
   return [
     ...fieldsFromRegistry(reg, 'pricing'),
     ...fieldsFromRegistry(reg, 'pricing_supplier').filter((f) => relocatedKeys.includes(f.key)),

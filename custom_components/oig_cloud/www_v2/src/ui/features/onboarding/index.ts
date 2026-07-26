@@ -47,11 +47,14 @@ import {
   type Paint,
   type DayGroup,
 } from './tariff-hour-matrix';
-import {
-  STEP_PRICING_SUPPLIER,
-  PRICING_SUPPLIER_GROUP_A_KEYS,
-  PRICING_SUPPLIER_GROUP_B_KEYS,
-} from './step-pricing-supplier';
+// Seam merge: supplier redesign split the supplier step into Nakup/Prodej
+// scenario-card steps, superseding the distribution branch's single-step
+// group rendering (PRICING_SUPPLIER_GROUP_A/B_KEYS + PRICING_SUPPLIER_GROUPS
+// are gone). Group B keys now live in step-pricing-supplier-sell.ts.
+import { STEP_PRICING_SUPPLIER, SCENARIO_CARDS_BUY } from './step-pricing-supplier';
+import { STEP_PRICING_SUPPLIER_SELL, SCENARIO_CARDS_SELL } from './step-pricing-supplier-sell';
+import { renderScenarioCards, scenarioCardStyles } from './scenario-radio-cards';
+import { priceInclVat } from './pricing-vat';
 import { STEP_BATTERY, BATTERY_GROUPS } from './step-battery';
 import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-boiler';
 import { STEP_CONNECTION } from './step-connection';
@@ -333,7 +336,7 @@ declare global {
  */
 const WIZARD_STEPS: ReadonlyArray<OnboardingStepId> = [
   'welcome', 'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
-  'battery', 'boiler', 'connection', 'summary',
+  'pricing_supplier_sell', 'battery', 'boiler', 'connection', 'summary',
 ];
 
 /**
@@ -348,7 +351,8 @@ const STEP_LABELS: Record<OnboardingStepId, string> = {
   ai: 'AI',
   solar: 'Solar',
   pricing_distribution: 'Ceny — distribuce',
-  pricing_supplier: 'Ceny — dodavatel',
+  pricing_supplier: 'Ceny — nákup',
+  pricing_supplier_sell: 'Ceny — prodej',
   battery: 'Baterie a plánovač',
   boiler: 'Bojler',
   connection: 'Připojení',
@@ -364,6 +368,7 @@ const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
   solar: STEP_SOLAR.skippable,
   pricing_distribution: STEP_PRICING_DISTRIBUTION.skippable,
   pricing_supplier: STEP_PRICING_SUPPLIER.skippable,
+  pricing_supplier_sell: STEP_PRICING_SUPPLIER_SELL.skippable,
   battery: STEP_BATTERY.skippable,
   boiler: STEP_BOILER.skippable,
   connection: STEP_CONNECTION.skippable,
@@ -379,7 +384,7 @@ const STEP_SKIPPABLE: Record<OnboardingStepId, boolean> = {
  */
 const STEP_PHASE: Partial<Record<OnboardingStepId, 'A' | 'B'>> = {
   modules: 'A', ai: 'A', solar: 'A', pricing_distribution: 'A', boiler: 'A', connection: 'A',
-  pricing_supplier: 'B', battery: 'B',
+  pricing_supplier: 'B', pricing_supplier_sell: 'B', battery: 'B',
 };
 const PHASE_LABELS = { A: 'Nastavuje se jednou', B: 'Mění se v čase' } as const;
 
@@ -389,6 +394,7 @@ const STEP_GATE: Partial<Record<OnboardingStepId, string>> = {
   solar: 'enable_solar_forecast',
   pricing_distribution: 'enable_pricing',
   pricing_supplier: 'enable_pricing',
+  pricing_supplier_sell: 'enable_pricing',
   battery: 'enable_battery_prediction',
   boiler: 'enable_boiler',
 };
@@ -421,15 +427,6 @@ const LEGACY_PRICING_SUPPLIER_KEYS: ReadonlyArray<string> = [
   'distribution_fee_vt_kwh', 'distribution_fee_nt_kwh', 'vat_rate',
   'tariff_vt_start_weekday', 'tariff_nt_start_weekday', 'tariff_weekend_same_as_weekday',
   'tariff_vt_start_weekend', 'tariff_nt_start_weekend', 'dual_tariff_enabled',
-];
-
-/** UX-SPEC §6 card grouping for the pricing_supplier step (Task 16) — CZ
- * section headings straight from §4's group titles. */
-const PRICING_SUPPLIER_GROUPS: ReadonlyArray<{
-  slug: string; badge: string; heading: string; keys: readonly string[];
-}> = [
-  { slug: 'import', badge: 'A', heading: 'Nákupní cena', keys: PRICING_SUPPLIER_GROUP_A_KEYS },
-  { slug: 'export', badge: 'B', heading: 'Prodejní cena / export', keys: PRICING_SUPPLIER_GROUP_B_KEYS },
 ];
 
 const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
@@ -705,6 +702,7 @@ export class OigOnboardingWizard extends LitElement {
 
   static styles = css`
     ${fieldStyles}
+    ${scenarioCardStyles}
 
     :host {
       display: contents;
@@ -871,6 +869,14 @@ export class OigOnboardingWizard extends LitElement {
     .provider-guide-links { display: flex; gap: 12px; margin-bottom: 6px; }
     .provider-guide ol { margin: 4px 0; padding-left: 18px; }
     .provider-guide li { margin-bottom: 3px; line-height: 1.4; }
+
+    /* Fixed-price purchase scenario, dual tariff: VT/NT side by side
+       (supplier-step redesign brief item 2). */
+    .vt-nt-row {
+      display: flex;
+      gap: 12px;
+    }
+    .vt-nt-row > div { flex: 1; min-width: 0; }
 
     footer {
       display: flex;
@@ -1287,14 +1293,21 @@ export class OigOnboardingWizard extends LitElement {
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : data !== null ? 'success' : 'failed';
       if (data) {
         this.originalValues = Object.freeze(flattenModuleConfig(data));
-        if (data.pricing) {
-          this.pricingDraft = { ...data.pricing };
-          // Task 17: a review/recovered entry never touches the distribution
-          // step's tariff onChange, so the cross-step flag must also be
-          // derived here — same `isDualTariffCode`, not a second mechanism.
-          this.isDualTariff = isDualTariffCode(
-            this.pricingDraft['confirmed_distribution_tariff'] as string | undefined,
-          );
+        if (data.pricing || data.pricing_supplier) {
+          // Supplier-step redesign: the Nakup/Prodej scenario cards must
+          // preselect from a review/recovered entry's stored scenario
+          // (`spot_pricing_model`/`export_pricing_model`, both
+          // `pricing_supplier`-sectioned) — merged into the same shared
+          // `pricingDraft` as `data.pricing`, not a second draft object.
+          this.pricingDraft = { ...data.pricing, ...data.pricing_supplier };
+          if (data.pricing) {
+            // Task 17: a review/recovered entry never touches the distribution
+            // step's tariff onChange, so the cross-step flag must also be
+            // derived here — same `isDualTariffCode`, not a second mechanism.
+            this.isDualTariff = isDualTariffCode(
+              this.pricingDraft['confirmed_distribution_tariff'] as string | undefined,
+            );
+          }
         }
         this.seedSolarDraft(); // re-seed if the registry already settled first
         this.seedBatteryDraft(); // T18 review: battery draft misses entry.options on registry-first race
@@ -1820,6 +1833,85 @@ export class OigOnboardingWizard extends LitElement {
       && (this.tariffMatrixError.weekday !== undefined || this.tariffMatrixError.weekend !== undefined);
   }
 
+  /**
+   * Read-only "s DPH" computed line (UX-SPEC §4, `fixed_commercial_price_vt`/
+   * `_nt` hint: "Zadávejte bez DPH a distribuce") — same pattern as the
+   * distribution step's incl-VAT display, computed here since
+   * `fixed_commercial_price_*` is a user-entered excl-VAT price, not a
+   * dataset lookup (`pricing-vat.ts`'s shared helper).
+   */
+  private renderInclVatLine(fieldKey: string) {
+    const excl = Number(this.pricingDraft[fieldKey] ?? 0);
+    const vatRate = Number(this.pricingDraft['vat_rate'] ?? 21);
+    const incl = priceInclVat(excl, vatRate);
+    return html`
+      <div class="row" data-testid=${`incl-vat-${fieldKey}`}>
+        <span class="lab">Cena s DPH</span>
+        <div class="row-control">${incl.toFixed(2)} Kč/kWh</div>
+      </div>
+    `;
+  }
+
+  /**
+   * Buy step (Nakup) scenario field body. The `fixed_prices` scenario gets
+   * VT/NT side by side (UX-SPEC brief item 2) plus the incl-VAT computed
+   * line each; `dual` is implicit — `fixed_commercial_price_nt` is simply
+   * absent from `fields` when the tariff isn't dual (registry `show_if_all`),
+   * so a single VT field alone is exactly "single tariff -> one field".
+   * The other two scenarios (percentage/fixed) render generically, same as
+   * the sell step.
+   */
+  private renderBuyScenarioFields(scenario: string, fields: FieldDef[]) {
+    if (scenario !== 'fixed_prices') {
+      return html`
+        <div class="scenario-fields" data-testid="scenario-fields-buy">
+          ${fields.map((f) => html`
+            <div data-key=${f.key}>
+              ${renderFieldPresenter(f, {
+                value: this.pricingDraft[f.key],
+                dirty: false,
+                secretSet: false,
+                originalValue: this.originalValues[f.key],
+                reviewMode: this.onboardingState?.grandfathered === true,
+                onChange: (v: unknown) => {
+                  this.pricingDraft = { ...this.pricingDraft, [f.key]: v };
+                },
+                entityCatalog: [],
+              })}
+            </div>
+          `)}
+        </div>
+      `;
+    }
+
+    const vtField = fields.find((f) => f.key === 'fixed_commercial_price_vt');
+    const ntField = fields.find((f) => f.key === 'fixed_commercial_price_nt');
+    const renderPrice = (f: FieldDef) => html`
+      <div data-key=${f.key}>
+        ${renderFieldPresenter(f, {
+          value: this.pricingDraft[f.key],
+          dirty: false,
+          secretSet: false,
+          originalValue: this.originalValues[f.key],
+          reviewMode: this.onboardingState?.grandfathered === true,
+          onChange: (v: unknown) => {
+            this.pricingDraft = { ...this.pricingDraft, [f.key]: v };
+          },
+          entityCatalog: [],
+        })}
+        ${this.renderInclVatLine(f.key)}
+      </div>
+    `;
+    return html`
+      <div class="scenario-fields" data-testid="scenario-fields-buy">
+        <div class="vt-nt-row" data-testid="fixed-price-vt-nt-row">
+          ${vtField ? renderPrice(vtField) : nothing}
+          ${ntField ? renderPrice(ntField) : nothing}
+        </div>
+      </div>
+    `;
+  }
+
   private renderStepContent() {
     if (this.currentStep === 'welcome') {
       const isReview = this.onboardingState?.grandfathered === true; // design decision 3
@@ -2005,7 +2097,11 @@ export class OigOnboardingWizard extends LitElement {
       `;
     }
 
-    if (this.currentStep === 'pricing_distribution' || this.currentStep === 'pricing_supplier') {
+    if (
+      this.currentStep === 'pricing_distribution'
+      || this.currentStep === 'pricing_supplier'
+      || this.currentStep === 'pricing_supplier_sell'
+    ) {
       // Bootstrap plumbing is shared by both field bodies below — the retry
       // affordance is shell behaviour, not step content, so it stays common.
       // Both steps now render registry-driven fields (Stage S3 Tasks 14-16),
@@ -2122,15 +2218,17 @@ export class OigOnboardingWizard extends LitElement {
     }
 
     if (this.currentStep === 'pricing_supplier') {
-      // The recovered-values note (K2f, Task 11) and section intro are
-      // step-level copy, independent of whether the registry happens to
-      // carry `pricing_supplier` fields in this render — never gated behind
-      // the fields-available check below (a registry fixture that only
-      // seeds OTHER sections must not silently hide them).
+      // The recovered-values note (K2f, Task 11) is step-level copy,
+      // independent of whether the registry happens to carry
+      // `pricing_supplier` fields in this render — never gated behind the
+      // fields-available check below (a registry fixture that only seeds
+      // OTHER sections must not silently hide it).
       const hasFields = !!this._registry && STEP_PRICING_SUPPLIER.fields(this._registry).length > 0;
       const visible = hasFields
         ? STEP_PRICING_SUPPLIER.visibleFields(this._registry!, this.pricingDraft, this.isDualTariff)
         : [];
+      const scenario = this.pricingDraft['spot_pricing_model'] as string | undefined;
+      const scenarioFields = visible.filter((f) => f.key !== 'spot_pricing_model');
 
       return html`
         <section class="step step-pricing-supplier" data-step="pricing_supplier">
@@ -2142,21 +2240,53 @@ export class OigOnboardingWizard extends LitElement {
                 </p>`
               : nothing}
             <p data-testid="pricing-supplier-intro" class="hint">
-              Dodavatelské a distribuční ceny (obchodní podmínky vaší smlouvy s dodavatelem a
-              distributorem elektřiny). Tyto hodnoty se liší od datové sady v předchozím kroku —
-              tam je orientační ceník distributora, tady je vaše skutečná smlouva.
+              Nákupní cena od dodavatele — kolik platíte za elektřinu odebranou ze sítě. Vyberte
+              scénář, který odpovídá vaší smlouvě.
             </p>
             ${hasFields
-              ? PRICING_SUPPLIER_GROUPS.map((group) => {
-                  const groupFields = visible.filter((f) => (group.keys as readonly string[]).includes(f.key));
-                  return groupFields.length === 0
-                    ? nothing
-                    : html`
-                        <div class="field-group" data-group=${group.slug}>
-                          <div class="field-group-heading">
-                            <span class="field-group-badge">${group.badge}</span> ${group.heading}
-                          </div>
-                          ${groupFields.map((f) => html`
+              ? html`
+                  ${renderScenarioCards(
+                    SCENARIO_CARDS_BUY,
+                    scenario,
+                    (v) => { this.pricingDraft = { ...this.pricingDraft, spot_pricing_model: v }; },
+                    'scenario-cards-buy',
+                  )}
+                  ${scenario ? this.renderBuyScenarioFields(scenario, scenarioFields) : nothing}
+                `
+              : html`<p data-testid="pricing-supplier-not-available">Ceny nejsou dostupné.</p>`}
+          </div>
+        </section>
+      `;
+    }
+
+    if (this.currentStep === 'pricing_supplier_sell') {
+      const hasFields = !!this._registry && STEP_PRICING_SUPPLIER_SELL.fields(this._registry).length > 0;
+      const visible = hasFields
+        ? STEP_PRICING_SUPPLIER_SELL.visibleFields(this._registry!, this.pricingDraft, this.isDualTariff)
+        : [];
+      const scenario = this.pricingDraft['export_pricing_model'] as string | undefined;
+      const scenarioFields = visible.filter((f) => f.key !== 'export_pricing_model');
+
+      return html`
+        <section class="step step-pricing-supplier-sell" data-step="pricing_supplier_sell">
+          <h3>${STEP_LABELS.pricing_supplier_sell}</h3>
+          <div class="step-card">
+            <p data-testid="pricing-supplier-sell-intro" class="hint">
+              Prodejní (výkupní) cena — kolik dostanete za elektřinu dodanou do sítě. Vyberte
+              scénář, který odpovídá vaší smlouvě.
+            </p>
+            ${hasFields
+              ? html`
+                  ${renderScenarioCards(
+                    SCENARIO_CARDS_SELL,
+                    scenario,
+                    (v) => { this.pricingDraft = { ...this.pricingDraft, export_pricing_model: v }; },
+                    'scenario-cards-sell',
+                  )}
+                  ${scenario
+                    ? html`
+                        <div class="scenario-fields" data-testid="scenario-fields-sell">
+                          ${scenarioFields.map((f) => html`
                             <div data-key=${f.key}>
                               ${renderFieldPresenter(f, {
                                 value: this.pricingDraft[f.key],
@@ -2172,9 +2302,10 @@ export class OigOnboardingWizard extends LitElement {
                             </div>
                           `)}
                         </div>
-                      `;
-                })
-              : html`<p data-testid="pricing-supplier-not-available">Ceny nejsou dostupné.</p>`}
+                      `
+                    : nothing}
+                `
+              : html`<p data-testid="pricing-supplier-sell-not-available">Ceny nejsou dostupné.</p>`}
           </div>
         </section>
       `;

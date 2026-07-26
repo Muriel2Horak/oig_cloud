@@ -150,6 +150,7 @@ async def test_post_finish_preserves_pending_solar_and_sets_finished_at(ob_env):
         "solar": "pending",
         "pricing_distribution": "done",
         "pricing_supplier": "pending",
+        "pricing_supplier_sell": "pending",
         "battery": "pending",
         "boiler": "pending",
         "connection": "pending",

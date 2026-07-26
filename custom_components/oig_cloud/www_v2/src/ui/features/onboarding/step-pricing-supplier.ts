@@ -4,30 +4,24 @@ import type { FieldDef } from '@/ui/features/settings';
 import type { WizardStep } from '@/ui/features/onboarding/step-solar';
 import {
   DUAL_TARIFF_CODES,
-  TARIFF_SCHEDULE_KEYS,
-  DISTRIBUTION_PRICE_KEYS,
-  VAT_RATE_KEY,
   fieldVisible,
 } from '@/ui/features/onboarding/step-pricing-distribution';
-
-/** Rendered in step 4 instead (owner live-walk UX rev, item 3/4) — same
- * "wizard-UI layout, not a registry move" pattern as the tariff-schedule
- * relocation above. */
-const RELOCATED_TO_DISTRIBUTION_KEYS: readonly string[] = [
-  ...TARIFF_SCHEDULE_KEYS, ...DISTRIBUTION_PRICE_KEYS, VAT_RATE_KEY,
-];
-
-function supplierFields(reg: FieldRegistry): FieldDef[] {
-  return fieldsFromRegistry(reg, 'pricing_supplier').filter((f) =>
-    !RELOCATED_TO_DISTRIBUTION_KEYS.includes(f.key));
-}
+import type { ScenarioCard } from '@/ui/features/onboarding/scenario-radio-cards';
 
 /**
- * UX-SPEC §4 group membership (A/B/C), verified against the landed registry
- * (config_registry.py:483-552 section comments) — reused by index.ts to
- * render the three group cards (§6 "cards over a flat list"), not
- * re-derived from field order.
+ * "Ceny — nákup" (Nakup) step — supplier-step redesign (owner walkthrough:
+ * the combined supplier step was "too dense"; this brief SUPERSEDES
+ * UX-SPEC-wizard-v2.md §step-5's single-step layout where they conflict).
+ * Only group A ("Nákupní cena / import") keys render here now — group B
+ * (export) moved to `step-pricing-supplier-sell.ts`, group C
+ * (distribution fee + VAT keys) moved to the registry `pricing` section
+ * and no longer renders in either supplier step (config_registry.py).
  */
+function supplierFields(reg: FieldRegistry): FieldDef[] {
+  return fieldsFromRegistry(reg, 'pricing_supplier').filter((f) =>
+    (PRICING_SUPPLIER_GROUP_A_KEYS as readonly string[]).includes(f.key));
+}
+
 export const PRICING_SUPPLIER_GROUP_A_KEYS = [
   'spot_pricing_model',
   'spot_positive_fee_percent', 'spot_positive_fee_percent_nt',
@@ -36,12 +30,24 @@ export const PRICING_SUPPLIER_GROUP_A_KEYS = [
   'fixed_commercial_price_vt', 'fixed_commercial_price_nt',
 ] as const;
 
-export const PRICING_SUPPLIER_GROUP_B_KEYS = [
-  'export_pricing_model',
-  'export_fee_percent', 'export_fee_percent_nt',
-  'export_fixed_fee_czk', 'export_fixed_fee_czk_nt',
-  'export_fixed_price',
-] as const;
+/** UX-SPEC §4 table A copy, human names — no raw enum value ever renders. */
+export const SCENARIO_CARDS_BUY: readonly ScenarioCard[] = [
+  {
+    value: 'percentage',
+    title: 'SPOT + procento',
+    hint: 'Variabilní cena podle burzy — cena roste a klesá se spotovým trhem.',
+  },
+  {
+    value: 'fixed',
+    title: 'SPOT + pevná přirážka',
+    hint: 'Stabilnější než procento — k burzovní ceně se přičte fixní poplatek.',
+  },
+  {
+    value: 'fixed_prices',
+    title: 'Pevná cena',
+    hint: 'Předvídatelná cena bez ohledu na burzu, dle vaší smlouvy.',
+  },
+];
 
 /**
  * `isDualTariff` is the Task 17 cross-step flag — the supplier step's own

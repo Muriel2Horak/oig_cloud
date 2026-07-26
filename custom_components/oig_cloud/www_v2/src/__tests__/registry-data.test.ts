@@ -193,6 +193,10 @@ const ALL_REGISTRY_KEYS: Record<string, string[]> = {
     'confirmed_distribution_distributor', 'confirmed_distribution_tariff',
     'confirmed_distribution_price_incl_vat', 'confirmed_distribution_price_excl_vat',
     'confirmed_distribution_unit',
+    // Relocated from pricing_supplier (supplier-step redesign, owner
+    // correction round 2 — distribution does not belong in the supplier
+    // contract's step; key names unchanged, config_registry.py).
+    'distribution_fee_vt_kwh', 'distribution_fee_nt_kwh', 'vat_rate',
   ],
   pricing_supplier: [
     'spot_pricing_model', 'spot_positive_fee_percent', 'spot_positive_fee_percent_nt',
@@ -200,7 +204,6 @@ const ALL_REGISTRY_KEYS: Record<string, string[]> = {
     'spot_fixed_fee_mwh_nt', 'fixed_commercial_price_vt', 'fixed_commercial_price_nt',
     'export_pricing_model', 'export_fee_percent', 'export_fee_percent_nt',
     'export_fixed_fee_czk', 'export_fixed_fee_czk_nt', 'export_fixed_price',
-    'distribution_fee_vt_kwh', 'distribution_fee_nt_kwh', 'vat_rate',
     'tariff_vt_start_weekday', 'tariff_nt_start_weekday', 'tariff_weekend_same_as_weekday',
     'tariff_vt_start_weekend', 'tariff_nt_start_weekend', 'dual_tariff_enabled',
   ],

@@ -215,6 +215,9 @@ def test_pricing_section_has_distributor_selector_and_confirmed_price_fields():
         "confirmed_distribution_price_incl_vat",
         "confirmed_distribution_price_excl_vat",
         "confirmed_distribution_unit",
+        # Relocated from pricing_supplier (UX-SPEC §3/§4, owner correction
+        # round 2) — see test_distribution_fee_and_vat_rate_moved_to_pricing_section.
+        "distribution_fee_vt_kwh", "distribution_fee_nt_kwh", "vat_rate",
     }
     assert pricing["confirmed_distribution_distributor"].section == "pricing"
     assert pricing["confirmed_distribution_distributor"].enum
@@ -366,8 +369,11 @@ def test_api_dict_emits_show_if_and_widget_metadata():
 # --- F1 U4 R3: pricing_supplier restoration (RCA-R3 + UX-SPEC-wizard-v2.md §4) ---
 
 
-def test_pricing_supplier_section_has_all_24_legacy_keys():
-    """RCA-R3's 19-key inventory + UX-SPEC round-2's 5 new _nt keys."""
+def test_pricing_supplier_section_has_all_21_legacy_keys():
+    """RCA-R3's 19-key inventory + UX-SPEC round-2's 5 new _nt keys, minus
+    the 3 distribution/VAT keys relocated to the `pricing` section by the
+    supplier-step redesign (UX-SPEC §3/§4, owner correction round 2 —
+    distribution does not belong in the supplier-contract step)."""
     supplier = fields_for_section("pricing_supplier")
     assert set(supplier) == {
         # A — import
@@ -381,8 +387,6 @@ def test_pricing_supplier_section_has_all_24_legacy_keys():
         "export_fee_percent", "export_fee_percent_nt",
         "export_fixed_fee_czk", "export_fixed_fee_czk_nt",
         "export_fixed_price",
-        # C — distribution/VAT
-        "distribution_fee_vt_kwh", "distribution_fee_nt_kwh", "vat_rate",
         # tariff schedule
         "tariff_vt_start_weekday", "tariff_nt_start_weekday",
         "tariff_weekend_same_as_weekday",
@@ -390,9 +394,23 @@ def test_pricing_supplier_section_has_all_24_legacy_keys():
         # derived
         "dual_tariff_enabled",
     }
-    assert len(supplier) == 24
+    assert len(supplier) == 21
     for key, field in supplier.items():
         assert field.section == "pricing_supplier"
+
+
+def test_distribution_fee_and_vat_rate_moved_to_pricing_section():
+    """UX-SPEC §3/§4 (owner correction round 2): distribution_fee_vt_kwh/
+    _nt_kwh and vat_rate are a distribution-level fact, not the supplier
+    contract — relocated out of `pricing_supplier` into `pricing`. Key names
+    are UNCHANGED (no migration needed for stored `entry.options`)."""
+    supplier = fields_for_section("pricing_supplier")
+    pricing = fields_for_section("pricing")
+    for key in ("distribution_fee_vt_kwh", "distribution_fee_nt_kwh", "vat_rate"):
+        assert key not in supplier
+        assert key in pricing
+        assert pricing[key].section == "pricing"
+        assert pricing[key].secret is False
 
 
 def test_pricing_supplier_base_keys_match_legacy_entry_options_names():
@@ -404,7 +422,7 @@ def test_pricing_supplier_base_keys_match_legacy_entry_options_names():
         "spot_pricing_model", "spot_positive_fee_percent",
         "spot_negative_fee_percent", "spot_fixed_fee_mwh",
         "export_pricing_model", "export_fee_percent", "export_fixed_fee_czk",
-        "export_fixed_price", "dual_tariff_enabled", "vat_rate",
+        "export_fixed_price", "dual_tariff_enabled",
     }
     for key in legacy_unsuffixed:
         assert key in supplier
