@@ -362,10 +362,15 @@ function resolveEntityValue(entityId: string): { value: string; unit: string; is
  * Resolve all tiles in a config to their current entity values.
  */
 export function resolveTiles(config: TilesConfig): { left: ResolvedTile[]; right: ResolvedTile[] } {
-  const resolveArray = (tiles: Array<TileConfig | null>, count: number): ResolvedTile[] => {
+  // left_count/right_count are legacy fields nothing keeps in sync with
+  // actual occupancy (no UI reads or writes them; onTileSaved fills the
+  // first free null slot regardless of count) — bounding the resolve loop
+  // by them silently drops tiles that are fully intact in storage. Resolve
+  // every occupied slot in the (always <= 6, see normalizeTilesConfig) array
+  // instead.
+  const resolveArray = (tiles: Array<TileConfig | null>): ResolvedTile[] => {
     const result: ResolvedTile[] = [];
-    for (let i = 0; i < count; i++) {
-      const tileConfig = tiles[i];
+    for (const tileConfig of tiles) {
       if (!tileConfig) continue;
 
       const main = resolveEntityValue(tileConfig.entity_id);
@@ -394,8 +399,8 @@ export function resolveTiles(config: TilesConfig): { left: ResolvedTile[]; right
   };
 
   return {
-    left: resolveArray(config.tiles_left, config.left_count),
-    right: resolveArray(config.tiles_right, config.right_count),
+    left: resolveArray(config.tiles_left),
+    right: resolveArray(config.tiles_right),
   };
 }
 
@@ -442,9 +447,8 @@ export async function executeTileAction(entityId: string, action: string = 'togg
 export function getTileEntityIds(config: TilesConfig): string[] {
   const ids = new Set<string>();
 
-  const collect = (tiles: Array<TileConfig | null>, count: number) => {
-    for (let i = 0; i < count; i++) {
-      const tile = tiles[i];
+  const collect = (tiles: Array<TileConfig | null>) => {
+    for (const tile of tiles) {
       if (!tile) continue;
       ids.add(tile.entity_id);
       if (tile.support_entities?.top_right) ids.add(tile.support_entities.top_right);
@@ -452,7 +456,7 @@ export function getTileEntityIds(config: TilesConfig): string[] {
     }
   };
 
-  collect(config.tiles_left, config.left_count);
-  collect(config.tiles_right, config.right_count);
+  collect(config.tiles_left);
+  collect(config.tiles_right);
   return [...ids];
 }
