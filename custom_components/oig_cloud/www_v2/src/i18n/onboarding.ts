@@ -33,6 +33,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     'onboarding.finish.error.in_progress': 'Dokončení už probíhá.',
     'onboarding.finish.error.save_failed': 'Dokončení se nepodařilo uložit.',
+    'onboarding.finish.error.reload_timeout': 'Integrace se po uložení nevrátila. Zkuste to znovu.',
     'onboarding.finish.error.generic': 'Dokončení se nepodařilo.',
 
     'onboarding.banner.title': 'Průvodce nastavením je připraven',
@@ -95,6 +96,17 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // falls back to the cloud path automatically.
     'onboarding.connection.explainer_cloud': 'Bez proxy (přes OIG Cloud): box posílá data do cloudu výrobce a my je odtud čteme. Funguje vždy a odkudkoliv, data jdou přes internet a obnovují se v nastaveném intervalu.',
     'onboarding.connection.explainer_local': 'S lokální proxy: čteme data přímo z boxu ve vaší domácí síti — rychlejší odezva a funguje i při výpadku internetu. Vyžaduje běžící doplněk lokální proxy.',
+
+    // fe/fix defect #1 — blocking post-save reload overlay.
+    'onboarding.reload.message': 'Ukládám a přenačítám…',
+
+    // fe/fix defect #2 — sticky quick-save bar, every step.
+    'onboarding.quicksave.bar_label': 'Máte neuložené změny',
+    'onboarding.quicksave.save': 'Uložit',
+    'onboarding.quicksave.discard': 'Zahodit',
+    'onboarding.quicksave.discard_confirm': 'Opravdu chcete zahodit neuložené změny? Vrátí se k naposledy uloženým hodnotám.',
+    'onboarding.quicksave.discard_confirm_yes': 'Zahodit změny',
+    'onboarding.quicksave.discard_cancel': 'Zrušit',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
@@ -114,6 +126,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     'onboarding.finish.error.in_progress': 'Finish is already in progress.',
     'onboarding.finish.error.save_failed': 'Failed to save on finish.',
+    'onboarding.finish.error.reload_timeout': 'The integration did not come back after saving. Try again.',
     'onboarding.finish.error.generic': 'Finish failed.',
 
     'onboarding.banner.title': 'Setup wizard is ready',
@@ -140,6 +153,15 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     'onboarding.modules.group_hlavni': 'Main modules',
     'onboarding.modules.group_doplnkove': 'Additional',
+
+    'onboarding.reload.message': 'Saving and reloading…',
+
+    'onboarding.quicksave.bar_label': 'You have unsaved changes',
+    'onboarding.quicksave.save': 'Save',
+    'onboarding.quicksave.discard': 'Discard',
+    'onboarding.quicksave.discard_confirm': 'Discard unsaved changes? This reverts to the last saved values.',
+    'onboarding.quicksave.discard_confirm_yes': 'Discard changes',
+    'onboarding.quicksave.discard_cancel': 'Cancel',
   },
 };
 

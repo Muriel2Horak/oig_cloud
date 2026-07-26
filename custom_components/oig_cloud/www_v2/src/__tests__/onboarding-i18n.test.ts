@@ -125,6 +125,7 @@ describe('onboarding i18n catalog (F1 Plan 3.6 Task 12)', () => {
       'onboarding.pricing.stale_warning',
       'onboarding.finish.error.in_progress',
       'onboarding.finish.error.save_failed',
+      'onboarding.finish.error.reload_timeout',
       'onboarding.finish.error.generic',
     ];
     for (const key of keys) {

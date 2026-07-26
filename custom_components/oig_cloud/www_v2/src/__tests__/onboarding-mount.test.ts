@@ -29,6 +29,14 @@ const loadFieldRegistryMock = vi.hoisted(() =>
 const saveModuleConfigMock = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ ok: true }),
 );
+// fe/fix defect #1: default behavior calls `onSuccess` straight away so the
+// post-save reload flow (`runPostSaveReload`) settles without a real network
+// poll — a test that cares about the pending/timeout window overrides this.
+const waitForModuleConfigAfterReloadMock = vi.hoisted(() =>
+  vi.fn((onSuccess: (cfg: unknown) => void, _onTimeout: () => void) => {
+    onSuccess({});
+  }),
+);
 
 vi.mock('@/data/ha-client', () => ({
   haClient: {
@@ -64,7 +72,7 @@ vi.mock('@/data/settings-data', () => ({
     pricing: {},
   }),
   saveModuleConfig: saveModuleConfigMock,
-  waitForModuleConfigAfterReload: vi.fn(),
+  waitForModuleConfigAfterReload: waitForModuleConfigAfterReloadMock,
 }));
 
 vi.mock('@/data/registry-data', async (importOriginal) => {
@@ -378,17 +386,32 @@ describe('wizard mount + route (Plan 3.5 item 4)', () => {
 });
 
 describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
+  let reloadPanelSpy: any;
+
   beforeEach(() => {
     fetchOIGAPI.mockReset();
     fetchOIGAPITyped.mockReset();
     loadFieldRegistryMock.mockReset();
     saveModuleConfigMock.mockReset();
+    waitForModuleConfigAfterReloadMock.mockReset();
     loadFieldRegistryMock.mockResolvedValue(MINIMAL_REGISTRY);
     saveModuleConfigMock.mockResolvedValue({ ok: true });
+    waitForModuleConfigAfterReloadMock.mockImplementation((onSuccess: (cfg: unknown) => void) => {
+      onSuccess({});
+    });
+    // fe/fix defect #1: `runPostSaveReload` ends in a real `location.reload()`
+    // — jsdom doesn't implement navigation, so every test in this suite spies
+    // it out on the actual custom element prototype (no direct class import
+    // here; the element is registered via the `@/ui/app` side-effect import).
+    reloadPanelSpy = vi.spyOn(
+      customElements.get('oig-onboarding-wizard')!.prototype as unknown as { reloadPanel(): void },
+      'reloadPanel',
+    ).mockImplementation(() => {});
   });
 
   afterEach(() => {
     fixtureCleanup();
+    reloadPanelSpy.mockRestore();
   });
 
   it('real Finish click posts action:"finish" and remount shows ai=done, solar=pending, pricing=done', async () => {
@@ -475,7 +498,13 @@ describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
     expect(JSON.parse(String(typedFinishCalls()[0][1]!.body))).toEqual({ action: 'finish' });
     expect(persisted.steps.ai).toBe('done');
     expect(persisted.steps.solar).toBe('pending');
-    expect(wizard.hasAttribute('open')).toBe(false);
+    // fe/fix defect #1: a successful save no longer closes the wizard on the
+    // spot (that dead-ended behind a stale dashboard) — it blocks with the
+    // reload overlay, waits for the integration to come back
+    // (`waitForModuleConfigAfterReloadMock`, mocked to settle immediately
+    // here), then soft-reloads the panel (`reloadPanelSpy`).
+    expect(wizard.shadowRoot!.querySelector('[data-testid="onboarding-wizard-reloading"]')).toBeTruthy();
+    expect(reloadPanelSpy).toHaveBeenCalledTimes(1);
 
     fixtureCleanup();
     wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
@@ -616,7 +645,10 @@ describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
     retry.click();
     await flushWizard(wizard);
     expect(typedFinishCalls()).toHaveLength(2);
-    expect(wizard.hasAttribute('open')).toBe(false);
+    // fe/fix defect #1: same as the success-path test above — the retry's
+    // success blocks with the reload overlay instead of closing outright.
+    expect(wizard.shadowRoot!.querySelector('[data-testid="onboarding-wizard-reloading"]')).toBeTruthy();
+    expect(reloadPanelSpy).toHaveBeenCalledTimes(1);
   });
 });
 

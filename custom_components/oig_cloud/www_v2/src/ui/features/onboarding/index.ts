@@ -71,7 +71,7 @@ import {
   type AiVerifyResult,
 } from './onboarding-data';
 import { haClient } from '@/data/ha-client';
-import { saveModuleConfig, type SettingsSection } from '@/data/settings-data';
+import { saveModuleConfig, waitForModuleConfigAfterReload, type SettingsSection } from '@/data/settings-data';
 import { t, resolveLang, type Lang, type OnboardingKey } from '@/i18n/onboarding';
 import { fieldLabel } from '@/i18n/fields';
 
@@ -692,6 +692,18 @@ export class OigOnboardingWizard extends LitElement {
   @state() private finishError: string | null = null;
   private _onboardingStateLoadedFor: string | null = null;
 
+  /**
+   * fe/fix defect #1: true from a successful save until the panel soft-
+   * reloads. Blocks the wizard shell with a full-screen overlay — see
+   * `runPostSaveReload` — so a save never dead-ends with a stale/broken
+   * dashboard behind it.
+   */
+  @state() private postSaveReloading = false;
+
+  /** fe/fix defect #2: pending confirmation for the quick-save bar's
+   * "Zahodit" — same non-null-renders-confirm pattern as `_pendingPrereqOff`. */
+  @state() private _pendingDiscardDrafts = false;
+
   /** Pricing step: draft form values, seeded from the persisted module_config
    * `pricing` section (Task 7) — never re-fetched for step navigation. */
   private _pricingConfigLoaded = false;
@@ -1071,6 +1083,87 @@ export class OigOnboardingWizard extends LitElement {
       color: var(--warning-color, #e0a52b);
     }
 
+    /* fe/fix defect #2 — quick-save bar, every step, non-empty diff only. A
+       static flex child AFTER .content (never inside its own scroll box),
+       so it stays visible without fighting .content's internal scroll —
+       same trick footer already relies on. */
+    .quicksave-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      border-top: 1px solid var(--primary-color, #4f7cff);
+      background: color-mix(in srgb, var(--primary-color, #4f7cff) 8%, transparent);
+    }
+    .quicksave-bar .quicksave-label {
+      flex: 1;
+      font-size: 12.5px;
+    }
+    .quicksave-bar button {
+      padding: 7px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.18));
+      background: var(--card-bg, transparent);
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+    }
+    .quicksave-bar button.primary {
+      background: linear-gradient(135deg, var(--primary-color, #4f7cff), #7ba4ff);
+      border-color: transparent;
+      color: #fff;
+      font-weight: 600;
+    }
+    .quicksave-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .quicksave-discard-confirm {
+      margin: 0 18px 10px;
+      padding: 12px 14px;
+      border: 1px solid var(--warning-color, #e0a52b);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--warning-color, #e0a52b) 12%, transparent);
+    }
+    .quicksave-discard-confirm p { margin: 0 0 10px; font-size: 13px; }
+    .quicksave-discard-confirm-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .quicksave-discard-confirm-actions button {
+      padding: 4px 12px;
+      font: inherit;
+      cursor: pointer;
+      border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.2));
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+    }
+    .quicksave-discard-confirm-actions .danger {
+      border-color: var(--warning-color, #e0a52b);
+      color: var(--warning-color, #e0a52b);
+    }
+
+    /* fe/fix defect #1 — blocking post-save reload overlay. Replaces the
+       whole modal body; no close control, by design (Do-NOT: no dead ends,
+       ever — the wizard must not be dismissible mid-reload). */
+    .reload-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 48px 24px;
+      text-align: center;
+    }
+    .reload-spinner {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 3px solid var(--divider-color, rgba(255, 255, 255, 0.18));
+      border-top-color: var(--primary-color, #4f7cff);
+      animation: reload-spin 0.8s linear infinite;
+    }
+    @keyframes reload-spin { to { transform: rotate(360deg); } }
+
     /* Section grouping within a step (UX-SPEC §6, "cards over a flat list")
        — mirrors the admin tile dialog's numbered-section pattern (164c622a8,
        tile-dialog.ts .sec/.sect), reused here rather than a new mechanism. */
@@ -1397,50 +1490,154 @@ export class OigOnboardingWizard extends LitElement {
     if (code === 'finish_save_failed') {
       return t('onboarding.finish.error.save_failed', this.wizardLang);
     }
+    if (code === 'reload_timeout') {
+      return t('onboarding.finish.error.reload_timeout', this.wizardLang);
+    }
     return error || t('onboarding.finish.error.generic', this.wizardLang);
   }
 
   /**
-   * Every seeded section draft, paired with its `SettingsSection` name for
-   * `saveModuleConfig` (Stage S2 Task 10). `modulesDraft` IS included now
-   * (f1/wv2-modules-fix root cause a): once `seedModulesDraft` (Task 21)
-   * lands it is genuinely seeded from `entry.options`, so a flipped toggle is
-   * a real change to write. Guarded on the same `sections.includes('modules')`
-   * condition `seedModulesDraft` uses — before that seed runs `modulesDraft`
-   * is the every-gate-on nav stub (`:641`) and diffing it against an unseeded
-   * `originalValues` would fabricate saves for toggles the user never touched.
+   * Resolve a draft key to the backend section that accepts it.
+   * Combined drafts like `pricingDraft` must split by the registry's actual
+   * field section, or `pricing_supplier` keys get posted to `pricing` and
+   * rejected by the module_config validator.
    */
-  private sectionDrafts(): Array<{ section: SettingsSection; draft: Record<string, unknown> }> {
-    const drafts: Array<{ section: SettingsSection; draft: Record<string, unknown> }> = [
-      { section: 'solar', draft: this.solarDraft },
-      { section: 'pricing', draft: this.pricingDraft },
-    ];
-    if (this._registry?.sections.includes('modules')) {
-      drafts.push({ section: 'modules', draft: this.modulesDraft });
+  private saveSectionForKey(key: string, fallback: SettingsSection): SettingsSection {
+    switch (this._registry?.fields[key]?.section) {
+      case 'basic':
+      case 'modules':
+      case 'battery':
+      case 'solar':
+      case 'boiler':
+      case 'pricing':
+      case 'pricing_supplier':
+        return this._registry!.fields[key].section as SettingsSection;
+      default:
+        return fallback;
     }
-    return drafts;
+  }
+
+  /**
+   * Which visible step renders `key`, derived from the SAME per-step
+   * `fields(reg)` lists `renderStepContent` uses — no second field-to-step
+   * table. Returns `null` for a key no current step's registry section owns
+   * (falls back to the current step at the call site).
+   */
+  private stepForFieldKey(key: string): OnboardingStepId | null {
+    if (!this._registry) return null;
+    const reg = this._registry;
+    const candidates: Array<[OnboardingStepId, FieldDef[]]> = [
+      ['modules', fieldsFromRegistry(reg, 'modules')],
+      ['solar', STEP_SOLAR.fields(reg)],
+      ['pricing_distribution', STEP_PRICING_DISTRIBUTION.fields(reg)],
+      ['pricing_supplier', STEP_PRICING_SUPPLIER.fields(reg)],
+      ['pricing_supplier_sell', STEP_PRICING_SUPPLIER_SELL.fields(reg)],
+      ['battery', STEP_BATTERY.fields(reg)],
+      ['boiler', STEP_BOILER.fields(reg)],
+      ['connection', STEP_CONNECTION.fields(reg)],
+    ];
+    for (const [step, fields] of candidates) {
+      if (fields.some((f) => f.key === key)) return step;
+    }
+    return null;
   }
 
   /**
    * Single final save (UX-SPEC §3): write only the fields that differ from
-   * `originalValues`, one `saveModuleConfig` call per section that has any,
-   * and nothing for a section with no changes. Called once, from
-   * `sendFinishRequest` — no per-step auto-save anywhere else in the wizard.
+   * `originalValues`, one `saveModuleConfig` call per backend section that
+   * has any, and nothing for a section with no changes. Called once, from
+   * `sendFinishRequest` — shared by the step-9 Finish button AND the
+   * quick-save bar's Uložit (fe/fix defect #2: one save+validate
+   * implementation, never forked). Returns any per-field validation errors
+   * the backend reported, so the caller can navigate to the offending step.
    */
-  private async saveAllChangedSections(): Promise<void> {
-    for (const { section, draft } of this.sectionDrafts()) {
-      const changed: Record<string, unknown> = {};
+  private async saveAllChangedSections(): Promise<Array<{ step: OnboardingStepId; key: string; message: string }>> {
+    const errors: Array<{ step: OnboardingStepId; key: string; message: string }> = [];
+    const changedBySection = new Map<SettingsSection, Record<string, unknown>>();
+    const collectChanged = (fallback: SettingsSection, draft: Record<string, unknown>) => {
       for (const [key, value] of Object.entries(draft)) {
-        if (String(this.originalValues[key]) !== String(value)) changed[key] = value;
+        if (String(this.originalValues[key]) === String(value)) continue;
+        const section = this.saveSectionForKey(key, fallback);
+        const changed = changedBySection.get(section) ?? {};
+        changed[key] = value;
+        changedBySection.set(section, changed);
       }
-      if (Object.keys(changed).length > 0) {
-        await saveModuleConfig(section, changed);
+    };
+
+    collectChanged('solar', this.solarDraft);
+    collectChanged('pricing', this.pricingDraft);
+    if (this._registry?.sections.includes('modules')) {
+      collectChanged('modules', this.modulesDraft);
+    }
+    if (this._registry?.sections.includes('battery')) {
+      collectChanged('battery', this.batteryDraft);
+    }
+    if (this._registry?.sections.includes('basic')) {
+      collectChanged('basic', this.connectionDraft);
+    }
+    if (this._registry?.sections.includes('boiler')) {
+      collectChanged('boiler', this.boilerDraft);
+    }
+
+    const saveOrder: SettingsSection[] = ['solar', 'pricing', 'pricing_supplier', 'modules', 'battery', 'basic', 'boiler'];
+    for (const section of saveOrder) {
+      const changed = changedBySection.get(section);
+      if (!changed || Object.keys(changed).length === 0) continue;
+      const res = await saveModuleConfig(section, changed);
+      if (!res.ok && res.fields) {
+        for (const [key, message] of Object.entries(res.fields)) {
+          errors.push({ step: this.stepForFieldKey(key) ?? this.currentStep, key, message });
+        }
       }
     }
+    return errors;
+  }
+
+  /**
+   * Post-save reload (fe/fix defect #1): every `saveModuleConfig` write
+   * reloads the config entry async, unconditionally (`__init__.py`'s
+   * `add_update_listener` — no section is exempt). Block the wizard, poll
+   * the SAME `/module_config` endpoint + backoff the Settings tab already
+   * uses to detect "integration back" (`waitForModuleConfigAfterReload`),
+   * then soft-reload the panel so the user lands back on the dashboard with
+   * the wizard closed. On timeout, clear the overlay and surface a retry
+   * state instead of blind-reloading.
+   */
+  private async runPostSaveReload(): Promise<void> {
+    this.postSaveReloading = true;
+    let recovered = false;
+    await new Promise<void>((resolve) => {
+      void waitForModuleConfigAfterReload(
+        () => {
+          recovered = true;
+          resolve();
+        },
+        () => {
+          recovered = false;
+          resolve();
+        },
+      );
+    });
+    if (!recovered) {
+      this.postSaveReloading = false;
+      this.finishError = this.finishErrorMessage('reload_timeout');
+      return;
+    }
+    this.reloadPanel();
+  }
+
+  /** Isolated so tests can stub the untestable jsdom navigation call. */
+  private reloadPanel(): void {
+    window.location.reload();
   }
 
   private async sendFinishRequest(): Promise<void> {
-    await this.saveAllChangedSections();
+    const validationErrors = await this.saveAllChangedSections();
+    if (validationErrors.length > 0) {
+      this.finishError = validationErrors.map((e) => `${e.key}: ${e.message}`).join(', ');
+      this.currentStep = validationErrors[0].step;
+      return;
+    }
     const result = await haClient.fetchOIGAPITyped<OnboardingState>(
       `/${this.inverterSn}/onboarding`,
       { method: 'POST', body: JSON.stringify({ action: 'finish' }) },
@@ -1454,7 +1651,7 @@ export class OigOnboardingWizard extends LitElement {
       bubbles: true,
       composed: true,
     }));
-    this.close();
+    await this.runPostSaveReload();
   }
 
   private async finish(): Promise<void> {
@@ -1644,6 +1841,44 @@ export class OigOnboardingWizard extends LitElement {
       if (seeded !== undefined) draft[f.key] = seeded;
     }
     this.connectionDraft = draft;
+  }
+
+  /**
+   * Quick-save bar "Zahodit" (fe/fix defect #2): revert every step's draft
+   * to `originalValues` — the SAME frozen snapshot the `seed*Draft` methods
+   * read from on open, so a discard is exactly "undo everything since open".
+   * `pricingDraft` has no dedicated seed method (it's merged straight from
+   * the `module_config` fetch, `:1689`) — reset it key-by-key from
+   * `originalValues` instead. `boilerDraft` has no seed helper at all, so
+   * clear it outright; then drop the tariff-matrix paint cache so the grid
+   * re-derives from the reset VT/NT keys instead of showing stale paint.
+   */
+  private resetAllDraftsToOriginal(): void {
+    this.seedSolarDraft();
+    this.seedBatteryDraft();
+    this.seedModulesDraft();
+    this.seedConnectionDraft();
+    const resetPricing: Record<string, unknown> = {};
+    for (const key of Object.keys(this.pricingDraft)) {
+      resetPricing[key] = this.originalValues[key];
+    }
+    this.pricingDraft = resetPricing;
+    this.boilerDraft = {};
+    this.tariffMatrixOverride = {};
+    this.tariffMatrixError = {};
+  }
+
+  private requestDiscardDrafts(): void {
+    this._pendingDiscardDrafts = true;
+  }
+
+  private cancelDiscardDrafts(): void {
+    this._pendingDiscardDrafts = false;
+  }
+
+  private confirmDiscardDrafts(): void {
+    this._pendingDiscardDrafts = false;
+    this.resetAllDraftsToOriginal();
   }
 
   private async loadSolarRegistry(signal?: AbortSignal): Promise<void> {
@@ -2030,7 +2265,14 @@ export class OigOnboardingWizard extends LitElement {
    */
   private allDraftValues(): Record<string, unknown> {
     const modules = this._registry?.sections.includes('modules') ? this.modulesDraft : {};
-    return { ...this.solarDraft, ...this.pricingDraft, ...this.batteryDraft, ...modules };
+    return {
+      ...this.solarDraft,
+      ...this.pricingDraft,
+      ...this.batteryDraft,
+      ...this.boilerDraft,
+      ...this.connectionDraft,
+      ...modules,
+    };
   }
 
   /** One row per field whose current draft value differs from its
@@ -3040,12 +3282,26 @@ export class OigOnboardingWizard extends LitElement {
   render() {
     if (!this.open) return nothing;
 
+    if (this.postSaveReloading) {
+      return html`
+        <div class="overlay" data-testid="onboarding-wizard-overlay">
+          <div class="modal" role="dialog" aria-modal="true" data-testid="onboarding-wizard-reloading">
+            <div class="reload-panel">
+              <div class="reload-spinner" aria-hidden="true"></div>
+              <p data-testid="wizard-reload-message">${t('onboarding.reload.message', this.wizardLang)}</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     const visibleSteps = this.visibleWizardSteps();
     const idx = this.currentIndex();
     const isFirst = idx <= 0;
     const isLast = idx >= visibleSteps.length - 1;
     const skippable = STEP_SKIPPABLE[this.currentStep];
     const isReview = this.onboardingState?.grandfathered === true; // design decision 3
+    const diffCount = this.summaryDiffRows().length;
 
     return html`
       <div
@@ -3143,6 +3399,47 @@ export class OigOnboardingWizard extends LitElement {
                     ?disabled=${this.finishing}
                     @click=${() => void this.finish()}
                   >${t('onboarding.bootstrap.retry_button', this.wizardLang)}</button>
+                </div>
+              `
+            : nothing}
+
+          ${this._pendingDiscardDrafts
+            ? html`
+                <div class="quicksave-discard-confirm" data-testid="quicksave-discard-confirm" role="alertdialog">
+                  <p>${t('onboarding.quicksave.discard_confirm', this.wizardLang)}</p>
+                  <div class="quicksave-discard-confirm-actions">
+                    <button type="button" data-testid="quicksave-discard-cancel"
+                      @click=${() => this.cancelDiscardDrafts()}>
+                      ${t('onboarding.quicksave.discard_cancel', this.wizardLang)}
+                    </button>
+                    <button type="button" class="danger" data-testid="quicksave-discard-confirm-yes"
+                      @click=${() => this.confirmDiscardDrafts()}>
+                      ${t('onboarding.quicksave.discard_confirm_yes', this.wizardLang)}
+                    </button>
+                  </div>
+                </div>
+              `
+            : nothing}
+
+          ${diffCount > 0
+            ? html`
+                <div class="quicksave-bar" data-testid="quicksave-bar">
+                  <span class="quicksave-label" data-testid="quicksave-count">
+                    ${t('onboarding.quicksave.bar_label', this.wizardLang)} (${diffCount})
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="quicksave-discard"
+                    ?disabled=${this.finishing}
+                    @click=${() => this.requestDiscardDrafts()}
+                  >${t('onboarding.quicksave.discard', this.wizardLang)}</button>
+                  <button
+                    type="button"
+                    class="primary"
+                    data-testid="quicksave-save"
+                    ?disabled=${this.finishing || this.hasBlockingTariffMatrixError()}
+                    @click=${() => void this.finish()}
+                  >${this.finishing ? 'Ukládám…' : t('onboarding.quicksave.save', this.wizardLang)}</button>
                 </div>
               `
             : nothing}
