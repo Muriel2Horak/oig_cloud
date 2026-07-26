@@ -75,6 +75,15 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // Stage S3 Task 21 — Modules step group headers (UX-SPEC §Step 1, spec-verbatim CZ).
     'onboarding.modules.group_hlavni': 'Hlavní moduly',
     'onboarding.modules.group_doplnkove': 'Doplňkové',
+
+    // fe/fix connection-step defect: plain-language explainer above the
+    // data_source_mode select (owner live-walk finding — CZ-only, no EN
+    // source text given). Verified against core/data_source.py: without the
+    // proxy, data always comes via OIG Cloud; with local_only, an unreachable/
+    // stale proxy (`get_proxy_stale_minutes`/`_evaluate_local_freshness`)
+    // falls back to the cloud path automatically.
+    'onboarding.connection.explainer_cloud': 'Bez proxy (přes OIG Cloud): box posílá data do cloudu výrobce a my je odtud čteme. Funguje vždy a odkudkoliv, data jdou přes internet a obnovují se v nastaveném intervalu.',
+    'onboarding.connection.explainer_local': 'S lokální proxy: čteme data přímo z boxu ve vaší domácí síti — rychlejší odezva a funguje i při výpadku internetu. Vyžaduje běžící doplněk lokální proxy.',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
