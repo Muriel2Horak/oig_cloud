@@ -631,7 +631,7 @@ async def test_boiler_sensors_and_api_views():
     )
 
     register_boiler_api_views(hass)
-    assert len(hass.http.views) == 3
+    assert len(hass.http.views) == 4
 
     profile_view = BoilerProfileView(hass)
     response = await profile_view.get(None, "entry1")
