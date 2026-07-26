@@ -33,6 +33,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     'onboarding.finish.error.in_progress': 'Dokončení už probíhá.',
     'onboarding.finish.error.save_failed': 'Dokončení se nepodařilo uložit.',
+    'onboarding.finish.error.reload_timeout': 'Integrace se po uložení nevrátila. Zkuste to znovu.',
     'onboarding.finish.error.generic': 'Dokončení se nepodařilo.',
 
     'onboarding.banner.title': 'Průvodce nastavením je připraven',
@@ -106,6 +107,16 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.boiler.advanced.circulation_summary': 'Řídí oběhové čerpadlo, předstih a dobu běhu.',
     'onboarding.boiler.advanced.legionella_summary': 'Periodicky ohřívá vodu na dezinfekční teplotu.',
     'onboarding.boiler.advanced.alt_source_summary': 'Nastavení alternativního zdroje tepla a souvisejících voleb.',
+    // fe/fix defect #1 — blocking post-save reload overlay.
+    'onboarding.reload.message': 'Ukládám a přenačítám…',
+
+    // fe/fix defect #2 — sticky quick-save bar, every step.
+    'onboarding.quicksave.bar_label': 'Máte neuložené změny',
+    'onboarding.quicksave.save': 'Uložit',
+    'onboarding.quicksave.discard': 'Zahodit',
+    'onboarding.quicksave.discard_confirm': 'Opravdu chcete zahodit neuložené změny? Vrátí se k naposledy uloženým hodnotám.',
+    'onboarding.quicksave.discard_confirm_yes': 'Zahodit změny',
+    'onboarding.quicksave.discard_cancel': 'Zrušit',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
@@ -125,6 +136,7 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     'onboarding.finish.error.in_progress': 'Finish is already in progress.',
     'onboarding.finish.error.save_failed': 'Failed to save on finish.',
+    'onboarding.finish.error.reload_timeout': 'The integration did not come back after saving. Try again.',
     'onboarding.finish.error.generic': 'Finish failed.',
 
     'onboarding.banner.title': 'Setup wizard is ready',
@@ -162,6 +174,14 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.boiler.advanced.circulation_summary': 'Controls the circulation pump, lead time, and run duration.',
     'onboarding.boiler.advanced.legionella_summary': 'Periodically heats water to a disinfection temperature.',
     'onboarding.boiler.advanced.alt_source_summary': 'Settings for the alternative heat source and related expert options.',
+    'onboarding.reload.message': 'Saving and reloading…',
+
+    'onboarding.quicksave.bar_label': 'You have unsaved changes',
+    'onboarding.quicksave.save': 'Save',
+    'onboarding.quicksave.discard': 'Discard',
+    'onboarding.quicksave.discard_confirm': 'Discard unsaved changes? This reverts to the last saved values.',
+    'onboarding.quicksave.discard_confirm_yes': 'Discard changes',
+    'onboarding.quicksave.discard_cancel': 'Cancel',
   },
 };
 

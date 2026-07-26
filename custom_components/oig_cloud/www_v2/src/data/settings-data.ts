@@ -131,6 +131,7 @@ export interface PricingSupplierConfig {
 }
 
 export interface ModuleConfig {
+  basic?: Record<string, unknown>;
   modules: ModulesConfig;
   battery: BatteryConfig;
   solar: SolarConfig;
@@ -140,6 +141,7 @@ export interface ModuleConfig {
 }
 
 export type SettingsSection =
+  | 'basic'
   | 'modules'
   | 'battery'
   | 'solar'
@@ -178,9 +180,15 @@ export async function waitForModuleConfigAfterReload(
   for (const delay of delaysMs) {
     await new Promise<void>((res) => setTimeout(res, delay));
     // Deliberately call fetchOIGAPI directly to silence the normal warn path.
-    const data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(
-      `/${INVERTER_SN}/module_config`,
-    );
+    let data: ModuleConfig | { error?: string } | null;
+    try {
+      data = await haClient.fetchOIGAPI<ModuleConfig | { error?: string }>(
+        `/${INVERTER_SN}/module_config`,
+      );
+    } catch {
+      onTimeout();
+      return;
+    }
     if (data && !(data as any).error) {
       onSuccess(data as ModuleConfig);
       return;
