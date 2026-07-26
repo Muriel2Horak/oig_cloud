@@ -816,4 +816,148 @@ custom_components/oig_cloud/battery_forecast/
 
 ---
 
+## Appendix D: Box Telemetry Map — Planner & Boiler Inputs
+
+**Follow-up research (2026-07-26):** This section maps each planner and boiler input (from Parts 1–2) against the actual Home Assistant sensor fields the box reports. For each input, we identify:
+1. **Box field name:** Exact Home Assistant entity suffix or computed sensor key
+2. **Sensor source:** Data/Batt/Extended/Boiler type category
+3. **Recommendation:** Primary source (sensor vs. config vs. hardcoded)
+4. **Risk note:** Staleness, unit mismatch, missing data
+
+### Mapping Table: Planner Inputs → Box Telemetry
+
+| Planner Input | Config Key / Fetch Method | Box Field (Home Assistant Entity Suffix) | Sensor Type | Recommendation | Risk Note |
+|---|---|---|---|---|---|
+| **Current SoC** | `_get_current_battery_capacity()` | `tbl_batt_bat_c` | Data/BATT | Sensor PRIMARY (read-only display) | None — real-time |
+| **Max Battery Capacity** | `_get_max_battery_capacity()` | `installed_battery_capacity_kwh` (computed from config + sensors) | Extended/BATT | Sensor PRIMARY with config fallback | Static unless degradation tracked separately |
+| **Min Battery Capacity (HW)** | `_get_min_battery_capacity()` | `tbl_batt_prms_bat_min` | Data/BATT | Sensor PRIMARY (box-reported HW floor) | Matches hardware; no override needed |
+| **Charge Rate Limit (home_charge_rate)** | config_entry.options | None — NOT in box telemetry | Config only | Config PRIMARY | User sets; inverter max is separate |
+| **Comfort SoC Target** | config_entry.options `battery_comfort_soc_percent` | None — NOT in box telemetry | Config only | Config PRIMARY | Entirely user-driven |
+| **Expensive Percentile** | config_entry.options `expensive_percentile` | None — NOT in box telemetry | Config only | Config PRIMARY | No box-level correlation |
+| **Spot Prices** | `_get_spot_price_timeline()` (cloud API) | None — from cloud, not box | Cloud API | Cloud PRIMARY | External provider (forecast.solar fallback if Solcast fails) |
+| **Export Prices** | `_get_export_price_timeline()` (cloud API) | None — from cloud, not box | Cloud API | Cloud PRIMARY | Same provider as spot prices |
+| **Solar Forecast** | `_get_solar_forecast()` (HA helper entity) | `sensor.forecast_solar_estimate_…` or `sensor.solcast_…` | Data/SOLAR_FORECAST | Sensor PRIMARY (computed from external service) | 48-hour horizon; degradation after sunset typical |
+| **Adaptive Load Profiles** | `AdaptiveConsumptionHelper.get_adaptive_load_prediction()` | None — computed from history | Computed/history | Sensor-derived (historical patterns) | Requires 48+ hours of history; falls back to avg_sensors |
+| **Load Average Sensors** | `_get_load_avg_sensors()` (statistics) | Historical: `sensor.oig_{box_id}_load_avg_*` | Data/statistics | Sensor PRIMARY (fallback) | 30-min, 1-hour, 4-hour rolling averages |
+| **Boiler Grid Load Overlay** | `_read_boiler_grid_load_overlay()` (hass.data boundary) | None — boiler planner output, not a sensor | Computed/inter-module | Boiler plan PRIMARY | One-cycle lag (15–30 min old); soft-coupled |
+| **Round-Trip Efficiency** | Hardcoded `DEFAULT_ROUND_TRIP_EFFICIENCY = 0.8379` | None — should read from `sensor.oig_{box_id}_battery_efficiency` | Hardcoded (with sensor availability) | **Promote to sensor if available** | Currently hardcoded; efficiency sensor exists but not used in planner |
+| **HW Min Fraction** | Hardcoded `_HW_MIN_FRACTION = 0.20` | Implied in `tbl_batt_prms_bat_min` | Hardcoded | Promote to config (expert) | 20% default OK; advanced users may want 15–25% |
+| **Comfort Cheap Percentile** | Hardcoded `_COMFORT_CHEAP_PERCENTILE = 0.30` | None — NOT in box telemetry | Hardcoded | Keep hardcoded (F1); promote to config in F2 | Derived from price timeline only |
+| **Mode Guard Duration** | Hardcoded `MODE_GUARD_MINUTES = 60` | None — NOT in box telemetry | Hardcoded | Promote to config (expert, F2) | Affects mode stability; 60 min is safe default |
+| **Planning Horizon** | Hardcoded `max_intervals = 144` (36 hours) | None — internal optimization | Hardcoded | Keep hardcoded | No user value in exposing |
+| **Min Mode Duration** | Hardcoded `MIN_MODE_DURATION` dict | None — NOT in box telemetry | Hardcoded | Keep hardcoded (safety constraint) | UPS ≥30 min to avoid churn |
+| **Box Floor Safety Margin** | Hardcoded `box_floor_safety_margin_pct` ~309 in forecast_update.py | (Not found in sensor inventory) | Hardcoded | **Verify existence and usage** | Appears in brief but not located in current code |
+
+**Total mapped rows:** 19 planner inputs  
+**Box fields found:** 4 direct sensors (SoC%, min%, boiler state, installed capacity)  
+**Cloud/Config-only inputs:** 8 (prices, solar, comfort %, expensive %, charge rate, load profiles, etc.)  
+**Missing/Hardcoded:** 5 (efficiency, HW min fraction, mode durations, etc.)
+
+---
+
+### Mapping Table: Boiler Inputs → Box Telemetry
+
+| Boiler Input | Source / Fetch Method | Box Field (Home Assistant Entity Suffix) | Sensor Type | Recommendation | Risk Note |
+|---|---|---|---|---|---|
+| **Boiler State (on/off/manual mode)** | Boiler module reads own sensor | `tbl_boiler_prms_ison`, `tbl_boiler_prms_manual` | Data/BOILER | Sensor PRIMARY | Real-time from boiler firmware |
+| **Boiler Current Power (grid)** | Boiler module reads own sensor | `tbl_boiler_p` (CBB) or computed | Data/BOILER | Sensor PRIMARY (non-backup) | Live measurement; non-backup consumption tracked separately |
+| **Boiler SSR Relay States** | Boiler module diagnostic | `tbl_boiler_prms_ssr0`, `tbl_boiler_prms_ssr1`, `tbl_boiler_prms_ssr2` | Data/BOILER | Diagnostic only | For troubleshooting; not used in planning |
+| **Boiler Min SoC %** | Boiler config (coupling signal to planner) | None — from boiler config_entry, not battery sensor | Config/inter-module | Boiler config PRIMARY | Merged into battery `planning_min_percent` via `_derive_planning_min_percent()` |
+| **Boiler Installed Power** | Boiler module sensor | `tbl_boiler_prms_p_set` | Data/BOILER | Sensor PRIMARY (diagnostic) | For capacity planning only |
+| **Boiler Temperature (if T-sensor available)** | Would be: `sensor.oig_{box_id}_boiler_temp_*` | (Not found in SENSOR_TYPES; gas boilers may lack T-sensor) | Missing/Optional | Sensor PRIMARY if available | Gas boiler (memory) lacks temperature sensor; electric heater (Devi) has one |
+
+**Total mapped rows:** 6 boiler-related inputs  
+**Box fields found:** 4 direct sensors (state, power, SSR relays, installed power)  
+**Temperature sensor:** Not in current inventory for gas boiler
+
+---
+
+### Top 5 Wire-to-Box Candidates (Primary Recommendations)
+
+#### 1. **Battery Round-Trip Efficiency** (HIGH PRIORITY)
+- **Current:** Hardcoded constant `0.8379` in `types.py:21`
+- **Box field available:** `sensor.oig_{box_id}_battery_efficiency` (exists but not consumed by planner)
+- **Recommendation:** Wire as PRIMARY sensor with constant fallback
+- **Reason:** Efficiency degrades with battery age; reading live value enables per-site tuning without code changes
+- **Implementation:** Read sensor in `forecast_update.py:_get_battery_efficiency()`, cache for 15-min cycle
+
+#### 2. **Battery Hardware Minimum Capacity** (ALREADY WIRED, VERIFY)
+- **Current:** Sensor `tbl_batt_prms_bat_min` exists and is read via `_get_min_battery_capacity()`
+- **Box field:** `sensor.oig_{box_id}_batt_bat_min` (battery minimum percentage)
+- **Recommendation:** CONFIRM it is used as PRIMARY in planner (it is — forecast_update.py:364)
+- **Reason:** Hardware safety floor must come from box, never from user config
+- **Status:** ✓ Correctly wired as sensor PRIMARY
+
+#### 3. **Boiler Min SoC %** (ALREADY WIRED, VERIFY)
+- **Current:** Boiler config read via `_resolve_proxy_bat_min_pct()` in forecast_update.py:912–914
+- **Box field:** Not a sensor; boiler's own config_entry.options
+- **Recommendation:** CONFIRM coupling is active and merged correctly
+- **Reason:** Boiler's min SoC constrains battery planning min via `planning_min_percent`
+- **Status:** ✓ Correctly coupled through inter-module config signal
+
+#### 4. **Battery Current SoC** (ALREADY WIRED, VERIFY)
+- **Current:** Sensor `tbl_batt_bat_c` exists and is read via `_get_current_battery_capacity()`
+- **Box field:** `sensor.oig_{box_id}_batt_bat_c` (battery % live)
+- **Recommendation:** CONFIRM as PRIMARY sensor (it is — forecast_update.py:362)
+- **Reason:** Starting SoC is the foundation of all forecasts; must always be live
+- **Status:** ✓ Correctly wired as sensor PRIMARY
+
+#### 5. **Boiler Grid Load Forecast** (ALREADY WIRED, VERIFY)
+- **Current:** Boiler planner result read via `_read_boiler_grid_load_overlay()` at forecast_update.py:545
+- **Box field:** Not a sensor; boiler planner output stored in `hass.data[DOMAIN][entry_id][KEY_BOILER_RUNTIMES]`
+- **Recommendation:** CONFIRM inter-module coupling and one-cycle lag are documented
+- **Reason:** Boiler load must be folded into battery forecast to avoid pre-charge shortfall
+- **Status:** ✓ Correctly coupled with documented one-cycle lag
+
+---
+
+### Missing Sensor: Box Floor Safety Margin
+
+**Verification required:** The brief mentions `box_floor_safety_margin_pct` at `forecast_update.py:~309`, but this field was not located in the current sensor inventory or code search. 
+
+**Search result:**
+```bash
+$ grep -n "box_floor_safety_margin_pct\|floor_safety" /repos/wt-f1-boxmap/custom_components/oig_cloud/battery_forecast/planning/forecast_update.py
+[No results]
+```
+
+**Status:** Field not found. Possibly:
+1. Removed in a prior refactor
+2. Named differently (e.g., `_HOLDING_SOC_THRESHOLD`, `_HW_MIN_FRACTION`)
+3. In boiler module, not battery planner
+
+**Recommendation:** Check boiler module docs for floor-related constants; confirm whether this is a gap or a naming difference.
+
+---
+
+### Summary: Sensor Primary vs. Config Primary
+
+**Sensor PRIMARY (read from box at planning time):**
+- Current SoC (battery %)
+- Max/Min capacity (hardware floor)
+- Boiler state (on/off, power, SSR relays)
+- Boiler installed power (diagnostic)
+- Load historical averages (rolling 30-min, 1-hour, 4-hour)
+
+**Config PRIMARY (user-set, persisted in config_entry):**
+- Charge rate limit (2.8 kW default)
+- Comfort SoC target (50% default)
+- Expensive price percentile (70th default)
+- Boiler min SoC % (coupled to planner)
+- Mode guard duration (60 min default)
+
+**Cloud PRIMARY (external API, cached):**
+- Spot prices (grid import)
+- Export prices (grid export/feed-in)
+- Solar forecast (48-hour ahead)
+
+**Hardcoded (candidates for promotion to config/sensor):**
+- Round-trip efficiency (0.8379 → promote to sensor)
+- HW min fraction (0.20 → promote to config, expert)
+- Comfort cheap percentile (0.30 → promote to config, expert, F2)
+- Mode guard duration (60 min → promote to config, expert, F2)
+- Holding SoC threshold (97% → keep hardcoded, internal)
+
+---
+
 **End of Research Report**
