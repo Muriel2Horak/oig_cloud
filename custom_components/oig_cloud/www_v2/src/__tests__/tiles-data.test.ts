@@ -19,6 +19,8 @@ import {
   filterDashboardTiles,
   shouldRenderDashboardTile,
   isEmptyTilesConfig,
+  resolveTiles,
+  getTileEntityIds,
   type ResolvedTile,
   type TilesConfig,
 } from '@/data/tiles-data';
@@ -143,6 +145,105 @@ describe('loadTilesConfig — recovery', () => {
 
     const result = await loadTilesConfig();
     expect(isEmptyTilesConfig(result)).toBe(true);
+  });
+});
+
+// Owner live-storage payload (INTEGRATOR EVIDENCE, fix-tiles-render-empty-despite-valid):
+// /config/.storage/oig_dashboard_tiles held these 3 tiles — mostly external
+// (non-oig) entities plus one button — but left_count/right_count are stale
+// legacy fields nothing in the app ever keeps in sync with occupancy (no UI
+// reads or writes them; onTileSaved fills the first free null slot with no
+// regard for count). A config saved back when count was smaller than the
+// slot index a tile now occupies renders that tile invisible even though it
+// is fully intact in storage.
+const OWNER_LIVE_PAYLOAD = {
+  tiles_left: [
+    {
+      type: 'entity',
+      entity_id: 'sensor.bazen_teplota',
+      label: 'Bazen',
+      icon: 'mdi:pool',
+      support_entities: { top_right: 'sensor.bazen_ph', bottom_right: 'sensor.bazen_chlor' },
+    },
+    {
+      type: 'entity',
+      entity_id: 'sensor.bojler_nahora_local_teplota',
+      label: 'Bojler',
+    },
+    {
+      type: 'button',
+      entity_id: 'input_boolean.doohrev_plynem_manual',
+      label: 'Ohrat',
+      action: 'toggle',
+    },
+    null, null, null,
+  ],
+  tiles_right: [null, null, null, null, null, null],
+  // Stale legacy value: only the first slot was ever within count when this
+  // config was first created; the 2nd and 3rd tiles were added later.
+  left_count: 1,
+  right_count: 4,
+  visible: true,
+  version: 1,
+};
+
+describe('owner live-storage payload — render/load path (fix-tiles-render-empty-despite-valid)', () => {
+  it('normalizeTilesConfig (via loadTilesConfig) drops none of the 3 owner tiles', async () => {
+    vi.mocked(haClient.callWS).mockResolvedValue({ response: { config: OWNER_LIVE_PAYLOAD } });
+
+    const result = await loadTilesConfig();
+    expect(result.tiles_left.filter(Boolean)).toHaveLength(3);
+  });
+
+  it('the button tile survives normalize with its type and action intact', async () => {
+    vi.mocked(haClient.callWS).mockResolvedValue({ response: { config: OWNER_LIVE_PAYLOAD } });
+
+    const result = await loadTilesConfig();
+    const button = result.tiles_left.find((t) => t?.entity_id === 'input_boolean.doohrev_plynem_manual');
+    expect(button?.type).toBe('button');
+    expect(button?.action).toBe('toggle');
+  });
+
+  it('resolveTiles renders every occupied slot, not just the ones within the stale left_count', async () => {
+    vi.mocked(haClient.callWS).mockResolvedValue({ response: { config: OWNER_LIVE_PAYLOAD } });
+
+    const cfg = await loadTilesConfig();
+    const resolved = resolveTiles(cfg);
+    expect(resolved.left).toHaveLength(3);
+  });
+
+  it('getTileEntityIds watches every occupied slot too, not just the ones within count', async () => {
+    vi.mocked(haClient.callWS).mockResolvedValue({ response: { config: OWNER_LIVE_PAYLOAD } });
+
+    const cfg = await loadTilesConfig();
+    const ids = getTileEntityIds(cfg);
+    expect(ids).toEqual(expect.arrayContaining([
+      'sensor.bazen_teplota',
+      'sensor.bazen_ph',
+      'sensor.bazen_chlor',
+      'sensor.bojler_nahora_local_teplota',
+      'input_boolean.doohrev_plynem_manual',
+    ]));
+  });
+
+  it('all 3 tiles pass the dashboard filter with every module enabled', async () => {
+    vi.mocked(haClient.callWS).mockResolvedValue({ response: { config: OWNER_LIVE_PAYLOAD } });
+
+    const cfg = await loadTilesConfig();
+    const resolved = resolveTiles(cfg);
+    const visible = filterDashboardTiles([...resolved.left, ...resolved.right], {
+      enablePricing: true, enableBoiler: true, enableStatistics: true, enablePrediction: true,
+    });
+    expect(visible).toHaveLength(3);
+  });
+
+  it('all 3 tiles still render when module flags are unavailable (mid-load / bootstrap not done) — fail-open', async () => {
+    vi.mocked(haClient.callWS).mockResolvedValue({ response: { config: OWNER_LIVE_PAYLOAD } });
+
+    const cfg = await loadTilesConfig();
+    const resolved = resolveTiles(cfg);
+    const visible = filterDashboardTiles([...resolved.left, ...resolved.right]);
+    expect(visible).toHaveLength(3);
   });
 });
 
