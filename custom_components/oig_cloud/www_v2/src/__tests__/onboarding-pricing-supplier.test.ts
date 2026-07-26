@@ -229,22 +229,24 @@ async function goToStep(
 // ============================================================================
 // STEP_PRICING_SUPPLIER contract (unit-level)
 // ============================================================================
-describe('STEP_PRICING_SUPPLIER field set (Task 16)', () => {
-  it('fields() = 18 keys — the 24 pricing_supplier keys minus the 5 tariff-schedule keys minus hidden dual_tariff_enabled', () => {
+describe('STEP_PRICING_SUPPLIER field set (Task 16, owner UX rev item 3 relocates group C to step 4)', () => {
+  it('fields() = 15 keys — 24 pricing_supplier keys minus 5 tariff-schedule minus hidden dual_tariff_enabled minus group C (distribution_fee_vt/nt_kwh, vat_rate — now step 4)', () => {
     const keys = STEP_PRICING_SUPPLIER.fields(REGISTRY_FIXTURE).map((f) => f.key);
-    expect(keys.length).toBe(18);
+    expect(keys.length).toBe(15);
     expect(keys).not.toContain('tariff_vt_start_weekday');
     expect(keys).not.toContain('dual_tariff_enabled');
-    expect(keys).toContain('vat_rate');
+    expect(keys).not.toContain('vat_rate');
+    expect(keys).not.toContain('distribution_fee_vt_kwh');
+    expect(keys).not.toContain('distribution_fee_nt_kwh');
   });
 
-  it('visibleFields shows group A percentage fields when spot_pricing_model=percentage, hides the wrong scenario, group C always visible', () => {
+  it('visibleFields shows group A percentage fields when spot_pricing_model=percentage, hides the wrong scenario', () => {
     const visible = STEP_PRICING_SUPPLIER.visibleFields(
       REGISTRY_FIXTURE, { spot_pricing_model: 'percentage' }, false,
     ).map((f) => f.key);
     expect(visible).toContain('spot_positive_fee_percent');
     expect(visible).not.toContain('fixed_commercial_price_vt');
-    expect(visible).toContain('vat_rate');
+    expect(visible).not.toContain('vat_rate');
   });
 
   it('_nt variant fields are hidden when isDualTariff=false, even in the matching scenario', () => {
@@ -262,12 +264,6 @@ describe('STEP_PRICING_SUPPLIER field set (Task 16)', () => {
     expect(visible).toContain('spot_negative_fee_percent_nt');
   });
 
-  it('distribution_fee_nt_kwh (single show_if, no _all) also tracks isDualTariff', () => {
-    expect(STEP_PRICING_SUPPLIER.visibleFields(REGISTRY_FIXTURE, {}, false).map((f) => f.key))
-      .not.toContain('distribution_fee_nt_kwh');
-    expect(STEP_PRICING_SUPPLIER.visibleFields(REGISTRY_FIXTURE, {}, true).map((f) => f.key))
-      .toContain('distribution_fee_nt_kwh');
-  });
 });
 
 // ============================================================================
@@ -290,7 +286,7 @@ describe('pricing_supplier step render (Task 16)', () => {
     fixtureCleanup();
   });
 
-  it('renders group A (import) fields gated by spot_pricing_model, group B (export), group C (distribution/VAT)', async () => {
+  it('renders group A (import) fields gated by spot_pricing_model, group B (export); group C (distribution/VAT) moved to step 4', async () => {
     const wizard = await openWizard();
     await goToStep(wizard, 'pricing_supplier');
     internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, spot_pricing_model: 'percentage' };
@@ -298,17 +294,18 @@ describe('pricing_supplier step render (Task 16)', () => {
 
     expect(wizard.shadowRoot!.querySelector('[data-key="spot_positive_fee_percent"]')).not.toBeNull();
     expect(wizard.shadowRoot!.querySelector('[data-key="fixed_commercial_price_vt"]')).toBeNull();
-    expect(wizard.shadowRoot!.querySelector('[data-key="vat_rate"]')).not.toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="vat_rate"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="distribution_fee_vt_kwh"]')).toBeNull();
   });
 
-  it('renders three group cards (A/B/C), each field inside its own group, UX-SPEC §6 card grouping', async () => {
+  it('renders two group cards (A/B) — group C no longer rendered here (owner UX rev item 3)', async () => {
     const wizard = await openWizard();
     await goToStep(wizard, 'pricing_supplier');
     internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, spot_pricing_model: 'percentage' };
     await settle(wizard);
 
     const groups = [...wizard.shadowRoot!.querySelectorAll('[data-group]')].map((g) => g.getAttribute('data-group'));
-    expect(groups).toEqual(['import', 'export', 'distribution']);
+    expect(groups).toEqual(['import', 'export']);
 
     const importGroup = wizard.shadowRoot!.querySelector('[data-group="import"]')!;
     expect(importGroup.querySelector('[data-key="spot_positive_fee_percent"]')).not.toBeNull();
@@ -318,10 +315,7 @@ describe('pricing_supplier step render (Task 16)', () => {
     expect(exportGroup.querySelector('[data-key="export_pricing_model"]')).not.toBeNull();
     expect(exportGroup.querySelector('[data-key="spot_positive_fee_percent"]')).toBeNull();
 
-    const distributionGroup = wizard.shadowRoot!.querySelector('[data-group="distribution"]')!;
-    expect(distributionGroup.querySelector('[data-key="vat_rate"]')).not.toBeNull();
-    expect(distributionGroup.querySelector('[data-key="distribution_fee_vt_kwh"]')).not.toBeNull();
-    expect(distributionGroup.querySelector('[data-key="export_pricing_model"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-group="distribution"]')).toBeNull();
   });
 
   it('section intro copy distinguishes dataset price (step 4) from actual contract (step 5)', async () => {

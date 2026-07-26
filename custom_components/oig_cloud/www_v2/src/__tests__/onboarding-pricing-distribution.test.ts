@@ -85,7 +85,11 @@ const fields: Record<string, SpecWithAll> = {
     default: 'percentage', enum: ['percentage', 'fixed', 'fixed_prices'],
   },
   distribution_fee_vt_kwh: {
-    section: 'pricing_supplier', type: 'float', scope: 'premium', label: 'l', hint: 'h', default: 1.42,
+    section: 'pricing_supplier', type: 'float', scope: 'premium', label: 'VT (bez DPH)', hint: 'h', default: 1.42,
+  },
+  distribution_fee_nt_kwh: {
+    section: 'pricing_supplier', type: 'float', scope: 'premium', label: 'NT (bez DPH)', hint: 'h', default: 0.91,
+    show_if: { field: 'confirmed_distribution_tariff', in: [...DUAL_TARIFF_CODES] },
   },
   vat_rate: {
     section: 'pricing_supplier', type: 'float', scope: 'premium', label: 'l', hint: 'h', default: 21,
@@ -124,10 +128,16 @@ const REGISTRY_FIXTURE = { sections: ['pricing', 'pricing_supplier'], fields } a
 const PRICELISTS_SINGLE_AND_DUAL = {
   distributors: {
     cez: {
-      D01d: { price_incl_vat: 3.1, price_excl_vat: 2.56, unit: 'Kc/kWh' },
+      D01d: {
+        price_incl_vat: 3.1, price_excl_vat: 2.56, unit: 'Kc/kWh',
+        vt: { price_incl_vat: 3.1, price_excl_vat: 2560, unit: 'Kc/MWh' },
+        description: 'Jednotarifová sazba (pro malou spotřebu)',
+      },
       D25d: {
         price_incl_vat: 2.72, price_excl_vat: 2.25, unit: 'Kc/kWh',
-        nt: { price_incl_vat: 1.41, price_excl_vat: 1.17, unit: 'Kc/kWh' },
+        vt: { price_incl_vat: 2.72, price_excl_vat: 2250, unit: 'Kc/MWh' },
+        nt: { price_incl_vat: 1.41, price_excl_vat: 1170, unit: 'Kc/MWh' },
+        description: 'Dvoutarifová sazba s operativním řízením doby platnosti nízkého tarifu po dobu 8 hodin',
       },
     },
   },
@@ -205,22 +215,22 @@ describe('dual-tariff code-set derivation (Task 14, shared by Task 17)', () => {
 // STEP_PRICING_DISTRIBUTION contract (unit-level, mirrors onboarding-steps
 // .test.ts's STEP_SOLAR coverage style)
 // ============================================================================
-describe('STEP_PRICING_DISTRIBUTION field set (Task 14/15)', () => {
-  it('fields() = the 5 pricing fields + the 5 tariff-schedule fields (moved from supplier)', () => {
+describe('STEP_PRICING_DISTRIBUTION field set (Task 14/15, extended by owner UX rev item 3)', () => {
+  it('fields() = the 5 pricing fields + the 5 tariff-schedule fields + the 2 distribution-fee fields + vat_rate', () => {
     const keys = STEP_PRICING_DISTRIBUTION.fields(REGISTRY_FIXTURE).map((f) => f.key).sort();
     expect(keys).toEqual([
       'confirmed_distribution_distributor', 'confirmed_distribution_price_excl_vat',
       'confirmed_distribution_price_incl_vat', 'confirmed_distribution_tariff',
       'confirmed_distribution_unit',
+      'distribution_fee_vt_kwh', 'distribution_fee_nt_kwh', 'vat_rate',
       'tariff_nt_start_weekday', 'tariff_nt_start_weekend', 'tariff_vt_start_weekday',
       'tariff_vt_start_weekend', 'tariff_weekend_same_as_weekday',
     ].sort());
   });
 
-  it('never includes pricing_supplier-only fields (spot_pricing_model, vat_rate, ...)', () => {
+  it('never includes pricing_supplier-only fields (spot_pricing_model, ...)', () => {
     const keys = STEP_PRICING_DISTRIBUTION.fields(REGISTRY_FIXTURE).map((f) => f.key);
     expect(keys).not.toContain('spot_pricing_model');
-    expect(keys).not.toContain('vat_rate');
     expect(keys).not.toContain('dual_tariff_enabled');
   });
 
@@ -274,7 +284,7 @@ describe('pricing_distribution step render (Task 14/15)', () => {
     fixtureCleanup();
   });
 
-  it('selecting a dual-tariff code (D25d) shows the dual info line + NT price, no fabricated field-driven endpoint', async () => {
+  it('selecting a dual-tariff code (D25d) shows the dual info line + the NT/VT matrix', async () => {
     const wizard = await openWizard();
     await goToStep(wizard, 'pricing_distribution');
 
@@ -283,15 +293,11 @@ describe('pricing_distribution step render (Task 14/15)', () => {
 
     const info = wizard.shadowRoot!.querySelector('[data-testid="tariff-dual-info"]');
     expect(info?.textContent).toContain('Dvoutarifní');
-
-    // Direct-read from `this.pricing.distributors[...][tariff].nt` (plan's
-    // preferred option — no Phase A registry field for the NT leg).
-    const ntPrice = wizard.shadowRoot!.querySelector('[data-testid="distribution-nt-price"]');
-    expect(ntPrice).toBeTruthy();
-    expect(ntPrice!.textContent).toContain('1.41');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-matrix"]')).toBeTruthy();
+    expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-nt"]')).toBeTruthy();
   });
 
-  it('selecting a single-tariff code (D01d) shows single-tariff info, no NT price, no tariff-schedule fields', async () => {
+  it('selecting a single-tariff code (D01d) shows single-tariff info, no matrix, no NT price cell', async () => {
     const wizard = await openWizard();
     await goToStep(wizard, 'pricing_distribution');
 
@@ -300,38 +306,128 @@ describe('pricing_distribution step render (Task 14/15)', () => {
 
     const info = wizard.shadowRoot!.querySelector('[data-testid="tariff-dual-info"]');
     expect(info?.textContent).toContain('Jednotarifní');
-    expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-nt-price"]')).toBeNull();
-    expect(wizard.shadowRoot!.querySelector('[data-key="tariff_vt_start_weekday"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-matrix"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-nt"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt"]')).toBeTruthy();
   });
 
-  it('dual tariff shows the 5 tariff-schedule fields (VT/NT start times, weekend toggle)', async () => {
+  it('dual tariff always shows both matrix rows (weekday + weekend), no separate same-as-weekday toggle', async () => {
     const wizard = await openWizard();
     await goToStep(wizard, 'pricing_distribution');
 
     internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, confirmed_distribution_tariff: 'D25d' };
     await settle(wizard);
 
-    for (const k of ['tariff_vt_start_weekday', 'tariff_nt_start_weekday', 'tariff_weekend_same_as_weekday']) {
-      expect(wizard.shadowRoot!.querySelector(`[data-key="${k}"]`)).not.toBeNull();
-    }
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-matrix-row-weekday"]')).not.toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-matrix-row-weekend"]')).not.toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="tariff_weekend_same_as_weekday"]')).toBeNull();
+    // 24 cells per row.
+    expect(wizard.shadowRoot!.querySelectorAll('[data-testid^="tariff-cell-weekday-"]').length).toBe(24);
+    expect(wizard.shadowRoot!.querySelectorAll('[data-testid^="tariff-cell-weekend-"]').length).toBe(24);
   });
 
-  it('tariff_vt_start_weekend/tariff_nt_start_weekend show only when weekend_same_as_weekday=false', async () => {
+  it('matrix seeds from the 4 stored start-hour keys (owner-like weekday "6"/"22,2")', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing: {
+        confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D25d',
+        tariff_vt_start_weekday: '6', tariff_nt_start_weekday: '22,2',
+        tariff_vt_start_weekend: '', tariff_nt_start_weekend: '0',
+      },
+    }));
     const wizard = await openWizard();
     await goToStep(wizard, 'pricing_distribution');
 
-    internals(wizard).pricingDraft = {
-      ...internals(wizard).pricingDraft,
-      confirmed_distribution_tariff: 'D25d',
-      tariff_weekend_same_as_weekday: true,
-    };
-    await settle(wizard);
-    expect(wizard.shadowRoot!.querySelector('[data-key="tariff_vt_start_weekend"]')).toBeNull();
+    // Hour 22 (NT) and hour 6 (VT) on weekday.
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-cell-weekday-22"]')!.classList.contains('nt')).toBe(true);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-cell-weekday-6"]')!.classList.contains('vt')).toBe(true);
+    // Weekend is the NT-all-day default.
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-cell-weekend-0"]')!.classList.contains('nt')).toBe(true);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-cell-weekend-12"]')!.classList.contains('nt')).toBe(true);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-matrix-summary-weekday"]')!.textContent)
+      .toContain('NT: 22:00-06:00');
+  });
 
-    internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, tariff_weekend_same_as_weekday: false };
+  it('clicking a weekday cell toggles it and persists the recomputed start-hour strings', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing: {
+        confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D25d',
+        tariff_vt_start_weekday: '6', tariff_nt_start_weekday: '22,2',
+        tariff_vt_start_weekend: '6', tariff_nt_start_weekend: '22,2',
+      },
+    }));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    const cell = wizard.shadowRoot!.querySelector('[data-testid="tariff-cell-weekday-10"]') as HTMLButtonElement;
+    expect(cell.classList.contains('vt')).toBe(true);
+    cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }));
     await settle(wizard);
-    expect(wizard.shadowRoot!.querySelector('[data-key="tariff_vt_start_weekend"]')).not.toBeNull();
-    expect(wizard.shadowRoot!.querySelector('[data-key="tariff_nt_start_weekend"]')).not.toBeNull();
+
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-cell-weekday-10"]')!.classList.contains('nt')).toBe(true);
+    // Painting hour 10 alone (surrounded by VT on both sides) creates a new
+    // single-hour NT block with its own start. Hour 2 is no longer a
+    // transition (hour 1 is already NT) so it drops out of the minimal
+    // start-hour encoding — the grid itself, not the original "22,2"
+    // spelling, is the round-trip invariant (see tariff-hour-matrix.test.ts).
+    const draft = internals(wizard).pricingDraft;
+    expect(String(draft.tariff_nt_start_weekday).split(',').map(Number).sort((a: number, b: number) => a - b))
+      .toEqual([10, 22]);
+    expect(String(draft.tariff_vt_start_weekday).split(',').map(Number).sort((a: number, b: number) => a - b))
+      .toEqual([6, 11]);
+  });
+
+  it('painting a weekday cell monochrome (all-NT) is blocked: CZ error shown, pricingDraft unchanged, Next disabled', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing: {
+        confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D25d',
+        tariff_vt_start_weekday: '6', tariff_nt_start_weekday: '22,2',
+        tariff_vt_start_weekend: '6', tariff_nt_start_weekend: '22,2',
+      },
+    }));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    // Paint every weekday hour NT — the last VT cell flipping is what makes
+    // the whole row monochrome and therefore inexpressible. Every paint up
+    // to the last one is still a valid (non-monochrome) dual pattern and
+    // DOES commit — only the FINAL, monochrome-producing paint is blocked,
+    // so the draft's last-valid state is whatever the second-to-last paint
+    // left it at, not the very first "before" snapshot.
+    let lastValidVt: unknown;
+    let lastValidNt: unknown;
+    for (let h = 0; h < 24; h += 1) {
+      const cell = wizard.shadowRoot!.querySelector(`[data-testid="tariff-cell-weekday-${h}"]`) as HTMLButtonElement | null;
+      if (cell && cell.classList.contains('vt')) {
+        lastValidVt = internals(wizard).pricingDraft.tariff_vt_start_weekday;
+        lastValidNt = internals(wizard).pricingDraft.tariff_nt_start_weekday;
+        cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }));
+        await settle(wizard);
+      }
+    }
+
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-matrix-error-weekday"]')).toBeTruthy();
+    // The blocked commit never touched pricingDraft — it still holds the
+    // last EXPRESSIBLE pattern (one VT hour left), not a monochrome one.
+    expect(internals(wizard).pricingDraft.tariff_vt_start_weekday).toBe(lastValidVt);
+    expect(internals(wizard).pricingDraft.tariff_nt_start_weekday).toBe(lastValidNt);
+    const nextBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement;
+    expect(nextBtn.disabled).toBe(true);
+  });
+
+  it('a monochrome weekend (all-NT) is valid — no error, matches the registry single-tariff-weekend convention', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing: {
+        confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D25d',
+        tariff_vt_start_weekday: '6', tariff_nt_start_weekday: '22,2',
+        tariff_vt_start_weekend: '', tariff_nt_start_weekend: '0',
+      },
+    }));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-matrix-error-weekend"]')).toBeNull();
+    const nextBtn = wizard.shadowRoot!.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement;
+    expect(nextBtn.disabled).toBe(false);
   });
 
   it('real select change on confirmed_distribution_tariff (D25d) drives the dual info line — no-op selects must fail this', async () => {
@@ -359,5 +455,110 @@ describe('pricing_distribution step render (Task 14/15)', () => {
     internals(wizard).pricingLoadFailed = true;
     await settle(wizard);
     expect(wizard.shadowRoot!.querySelector('[data-testid="pricing-stale-warning"]')).toBeTruthy();
+  });
+});
+
+// ============================================================================
+// Owner live-walk UX rev — item 1 (human distributor names + icon slot),
+// item 2 (tariff description + invoice hint), item 3 (VT/NT price editable).
+// ============================================================================
+describe('owner UX rev — distributor names, tariff description, editable price (items 1-3)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(REGISTRY_FIXTURE);
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing: { confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D01d' },
+    }));
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  it('renders human distributor names (ČEZ Distribuce), technical value unchanged, plus an icon slot', async () => {
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    const select = wizard.shadowRoot!.querySelector(
+      '[data-key="confirmed_distribution_distributor"] select',
+    ) as HTMLSelectElement;
+    expect(select.value).toBe('cez');
+    const option = Array.from(select.options).find((o) => o.value === 'cez');
+    expect(option?.textContent).toBe('ČEZ Distribuce');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="distributor-icon"]')).toBeTruthy();
+  });
+
+  it('shows the tariff description from the dataset and the constant invoice hint', async () => {
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, confirmed_distribution_tariff: 'D25d' };
+    await settle(wizard);
+
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-description"]')?.textContent)
+      .toContain('Dvoutarifová sazba');
+    expect(wizard.shadowRoot!.querySelector('[data-testid="tariff-invoice-hint"]')?.textContent)
+      .toContain('faktuře za elektřinu');
+  });
+
+  it('VT price is editable, excl VAT, with a live-updated "s DPH" line', async () => {
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    const input = wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-input"]') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    input.value = '2';
+    input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    await settle(wizard);
+
+    expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(2);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-incl-vat"]')?.textContent)
+      .toContain('s DPH 21 %: 2.42 Kč/kWh');
+  });
+
+  it('vat_rate is hidden by default behind "Upravit DPH" and reveals on click', async () => {
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    expect(wizard.shadowRoot!.querySelector('[data-key="vat_rate"]')).toBeNull();
+    const toggle = wizard.shadowRoot!.querySelector('[data-testid="vat-rate-toggle"]') as HTMLButtonElement;
+    expect(toggle).toBeTruthy();
+    toggle.click();
+    await settle(wizard);
+    expect(wizard.shadowRoot!.querySelector('[data-key="vat_rate"]')).not.toBeNull();
+  });
+
+  it('dual tariff selection prefills VT/NT price from the dataset (Kc/MWh -> Kc/kWh) when still at the registry default', async () => {
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, confirmed_distribution_tariff: 'D25d' };
+    internals(wizard).applyDistributionFeeSuggestion();
+    await settle(wizard);
+
+    // Dataset D25d vt.price_excl_vat = 2250 Kc/MWh -> 2.25 Kc/kWh; nt = 1170 -> 1.17.
+    expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(2.25);
+    expect(internals(wizard).pricingDraft.distribution_fee_nt_kwh).toBe(1.17);
+  });
+
+  it('does not overwrite an already-customized distribution fee (review-mode "existing values stay")', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing: {
+        confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D01d',
+        distribution_fee_vt_kwh: 9.99,
+      },
+    }));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, confirmed_distribution_tariff: 'D25d' };
+    internals(wizard).applyDistributionFeeSuggestion();
+    await settle(wizard);
+
+    expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(9.99);
   });
 });

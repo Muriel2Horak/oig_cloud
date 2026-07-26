@@ -561,6 +561,12 @@ ERU_DSO_HEADERS = {
     "pre": "pre",
 }
 _ERU_TARIFF_RE = re.compile(r"sazba\s+([cd])\s*(\d+d)\b")
+# The tariff-header row's own text carries a short description after the code
+# (e.g. "Sazba D 25d - Dvoutarifová sazba s operativním řízením ..."), one
+# per household D-tariff, identical across all three distributors — matched
+# on the RAW (accented) cell, unlike `_ERU_TARIFF_RE` which runs against the
+# accent-stripped routing text.
+_ERU_DESC_PREFIX_RE = re.compile(r"^sazba\s+[a-z]\s*\d+d\s*[-–]\s*(.+)$", re.IGNORECASE)
 _ERU_VT_HINT = "distribuovane mnozstvi elektriny ve vysokem tarifu"
 _ERU_NT_HINT = "distribuovane mnozstvi elektriny v nizkem tarifu"
 _ERU_SINGLE_HINT = "distribuovane mnozstvi elektriny:"
@@ -576,6 +582,15 @@ def _strip_accents(value: Any) -> str:
 
 def _eru_dso_of(value: Any) -> Optional[str]:
     return ERU_DSO_HEADERS.get(_strip_accents(value).replace(" ", ""))
+
+
+def _eru_description(raw: Any) -> str:
+    """Description text after "Sazba <cat> <code> - " on the header row, with
+    diacritics preserved (unlike the accent-stripped routing match)."""
+    text = "" if raw is None else str(raw)
+    text = re.sub(r"\s+", " ", text.replace("\xa0", " ")).strip()
+    match = _ERU_DESC_PREFIX_RE.match(text)
+    return match.group(1).strip() if match else text
 
 
 def _is_eru_workbook(workbook) -> bool:
@@ -632,21 +647,26 @@ def _extract_eru_poze(workbook) -> Dict[str, float]:
     raise BuildError("could not find POZE (podpora podporovaných zdrojů) row on 'Regulovaná složka' sheet")
 
 
-def _parse_eru_tariffs(worksheet) -> Dict[str, Dict[str, Dict[str, float]]]:
+def _parse_eru_tariffs(
+    worksheet,
+) -> Tuple[Dict[str, Dict[str, Dict[str, float]]], Dict[str, str]]:
     rows = [
         [worksheet.cell(r, c).value for c in range(1, (worksheet.max_column or 1) + 1)]
         for r in range(1, (worksheet.max_row or 1) + 1)
     ]
     tariffs: Dict[str, Dict[str, Dict[str, float]]] = {}
+    descriptions: Dict[str, str] = {}
     current: Optional[str] = None
     for i, row in enumerate(rows):
-        label = _strip_accents(row[0])
+        raw = row[0]
+        label = _strip_accents(raw)
         match = _ERU_TARIFF_RE.match(label)
         if match:
             # Household tariffs are category D; category C (business) is skipped.
             current = f"D{match.group(2)}" if match.group(1) == "d" else None
             if current:
                 tariffs.setdefault(current, {})
+                descriptions[current] = _eru_description(raw)
             continue
         if current is None:
             continue
@@ -658,7 +678,7 @@ def _parse_eru_tariffs(worksheet) -> Dict[str, Dict[str, Dict[str, float]]]:
             tariffs[current]["VT"] = _eru_price_row(rows, i)
     if not tariffs:
         raise BuildError("no D-category tariff blocks found on Distribuce sheet")
-    return tariffs
+    return tariffs, descriptions
 
 
 def _round2(value: float) -> float:
@@ -674,7 +694,7 @@ def _eru_point(unit: str, excl: float, vat_rate: float) -> Dict[str, Any]:
 
 
 def _eru_tariff_payload(
-    legs: Dict[str, Dict[str, float]], dso: str, vat_rate: float
+    legs: Dict[str, Dict[str, float]], dso: str, vat_rate: float, description: str
 ) -> Dict[str, Any]:
     """One D-tariff rate for a distributor.
 
@@ -682,12 +702,14 @@ def _eru_tariff_payload(
     the VT (high/single) leg so the existing config_registry / pricelists-endpoint
     readers (distributor -> tariff -> {unit, price_incl_vat, price_excl_vat}) keep
     working. The canonical per-leg data lives in the `vt` (and, for two-tariff
-    sazby, `nt`) sub-objects, both in Kc/MWh.
+    sazby, `nt`) sub-objects, both in Kc/MWh. `description` is the ERU decree's
+    own short-form CZ label for the sazba (owner UX rev item 2) — additive, no
+    existing reader keys on it.
     """
     if "VT" not in legs or dso not in legs["VT"]:
         raise BuildError(f"tariff missing VT price for {dso}")
     vt = _eru_point("Kc/MWh", legs["VT"][dso], vat_rate)
-    payload: Dict[str, Any] = {**vt, "vt": vt}
+    payload: Dict[str, Any] = {**vt, "vt": vt, "description": description}
     if "NT" in legs:
         if dso not in legs["NT"]:
             raise BuildError(f"two-tariff sazba missing NT price for {dso}")
@@ -697,6 +719,7 @@ def _eru_tariff_payload(
 
 def _build_eru_distributors(
     tariffs: Dict[str, Dict[str, Dict[str, float]]],
+    descriptions: Dict[str, str],
     poze: Dict[str, float],
     vat_rate: float,
 ) -> Dict[str, Any]:
@@ -704,7 +727,7 @@ def _build_eru_distributors(
     for dso in sorted(REQUIRED_DSOS):
         rates: Dict[str, Any] = {}
         for code in sorted(tariffs):
-            rates[code] = _eru_tariff_payload(tariffs[code], dso, vat_rate)
+            rates[code] = _eru_tariff_payload(tariffs[code], dso, vat_rate, descriptions.get(code, ""))
         # POZE is the only per-ampere item; kept as a tariff-level key for
         # backward compatibility with the existing 2-level readers.
         rates["POZE"] = _eru_point("Kc/A/mesic", poze["excl"], vat_rate)
@@ -755,12 +778,12 @@ def _build_eru(args: argparse.Namespace) -> Dict[str, Any]:
         )
         if distribuce is None:
             raise BuildError("ERU workbook has no 'Distribuce' sheet")
-        tariffs = _parse_eru_tariffs(distribuce)
+        tariffs, descriptions = _parse_eru_tariffs(distribuce)
         poze = _extract_eru_poze(workbook)
     finally:
         workbook.close()
 
-    distributors = _build_eru_distributors(tariffs, poze, args.vat_rate)
+    distributors = _build_eru_distributors(tariffs, descriptions, poze, args.vat_rate)
     _validate_eru_distributors(distributors, set(tariffs.keys()))
 
     stat = path.stat()

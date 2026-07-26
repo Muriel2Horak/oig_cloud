@@ -5,12 +5,21 @@ import type { WizardStep } from '@/ui/features/onboarding/step-solar';
 import {
   DUAL_TARIFF_CODES,
   TARIFF_SCHEDULE_KEYS,
+  DISTRIBUTION_PRICE_KEYS,
+  VAT_RATE_KEY,
   fieldVisible,
 } from '@/ui/features/onboarding/step-pricing-distribution';
 
+/** Rendered in step 4 instead (owner live-walk UX rev, item 3/4) — same
+ * "wizard-UI layout, not a registry move" pattern as the tariff-schedule
+ * relocation above. */
+const RELOCATED_TO_DISTRIBUTION_KEYS: readonly string[] = [
+  ...TARIFF_SCHEDULE_KEYS, ...DISTRIBUTION_PRICE_KEYS, VAT_RATE_KEY,
+];
+
 function supplierFields(reg: FieldRegistry): FieldDef[] {
   return fieldsFromRegistry(reg, 'pricing_supplier').filter((f) =>
-    !(TARIFF_SCHEDULE_KEYS as readonly string[]).includes(f.key));
+    !RELOCATED_TO_DISTRIBUTION_KEYS.includes(f.key));
 }
 
 /**
@@ -32,10 +41,6 @@ export const PRICING_SUPPLIER_GROUP_B_KEYS = [
   'export_fee_percent', 'export_fee_percent_nt',
   'export_fixed_fee_czk', 'export_fixed_fee_czk_nt',
   'export_fixed_price',
-] as const;
-
-export const PRICING_SUPPLIER_GROUP_C_KEYS = [
-  'distribution_fee_vt_kwh', 'distribution_fee_nt_kwh', 'vat_rate',
 ] as const;
 
 /**
