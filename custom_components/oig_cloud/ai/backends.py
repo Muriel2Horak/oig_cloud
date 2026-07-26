@@ -64,6 +64,30 @@ ALLOWED_TASKS = frozenset({
     "validate_config",
 })
 
+# One response contract for the validate_config task. The direct backend accepts
+# this JSON-schema form; the host ai_task path uses validate_config_selector_schema()
+# below, derived from this same source of truth.
+VALIDATE_CONFIG_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "ok": {"const": True},
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "severity": {"type": "string"},
+                    "message": {"type": "string"},
+                },
+                "required": ["severity", "message"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["findings"],
+    "additionalProperties": False,
+}
+
 
 class AiBackendError(RuntimeError):
     """Sanitized AI backend failure with a closed classification code."""
@@ -152,6 +176,20 @@ def _validate_response_schema(parsed: Any, schema: Any) -> Any:
     if not isinstance(validator, vol.Schema):
         validator = vol.Schema(validator)
     return validator(parsed)
+
+
+def validate_config_selector_schema() -> vol.Schema:
+    """Return the host ai_task selector shape for validate_config."""
+    return _json_schema_to_vol(VALIDATE_CONFIG_SCHEMA)
+
+
+def validate_config_result(result: Any) -> Dict[str, Any]:
+    """Validate and normalize one provider's validate_config response."""
+    try:
+        validated = _validate_response_schema(result, VALIDATE_CONFIG_SCHEMA)
+    except vol.Invalid as err:
+        raise AiBackendError("invalid_response") from err
+    return {"findings": list(validated["findings"])}
 
 
 def _classify_http_status(status: int) -> str:
