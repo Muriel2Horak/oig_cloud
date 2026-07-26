@@ -1925,10 +1925,12 @@ async def _register_entry_services(
         async_setup_services,
     )
 
-    # Setup základních služeb (pouze jednou pro celou integraci)
-    if len([k for k in hass.data[DOMAIN].keys() if k != "shield"]) == 1:
-        await async_setup_services(hass)
-        _register_migration_restore_service(hass)
+    # Setup základních služeb — async_setup_services je idempotentní
+    # (_register_service_if_missing), takže se volá vždy; dřívější guard
+    # `len(hass.data[DOMAIN]) == 1` přestal platit, jakmile si jiné části
+    # integrace odloží data dřív, a základní služby se pak neregistrovaly.
+    await async_setup_services(hass)
+    _register_migration_restore_service(hass)
 
     # Setup entry-specific služeb s shield ochranou
     await async_setup_entry_services_with_shield(hass, entry, service_shield)
