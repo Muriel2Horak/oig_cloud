@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
+from .const import COMMAND_ON_W
+
 _LOGGER = logging.getLogger(__name__)
 
 # Thermal constants
@@ -31,9 +33,6 @@ ENERGY_CONSTANT_KWH_L_K: float = 4186.0 / 3_600_000.0  # ~1.163e-3 kWh/(L·K)
 DRAW_RATE_THRESHOLD_C_PER_MIN: float = 0.15  # degC/min — rejects standing loss (~0.05)
 DRAW_MIN_DROP_C: float = 0.5  # minimum total drop to count as draw
 DRAW_MIN_INTERVALS: int = 2  # sustained over at least 2 consecutive intervals
-# Commanded-heater threshold [W]: below this cbb_w counts as "off", so any
-# non-backup power is house load and is not credited as boiler heating.
-COMMAND_ON_W: float = 100.0
 
 # Slot model
 SLOT_DURATION_MIN: int = 15

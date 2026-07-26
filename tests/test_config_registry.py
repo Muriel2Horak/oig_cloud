@@ -552,3 +552,7 @@ def test_pricing_supplier_scope_and_no_secrets():
     for field in fields_for_section("pricing_supplier").values():
         assert field.secret is False
         assert field.mirror is None
+
+
+def test_boiler_battery_cycle_cost_default_matches_legacy_literal():
+    assert FIELD_REGISTRY["boiler_battery_cycle_cost_czk_kwh"].default == pytest.approx(0.50)

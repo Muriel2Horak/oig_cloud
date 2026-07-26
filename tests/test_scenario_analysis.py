@@ -25,6 +25,12 @@ class DummySensor:
         return CBB_MODE_HOME_II
 
 
+class OptionFreeSensor(DummySensor):
+    @property
+    def _config_entry(self):
+        raise AssertionError("scenario analysis must not read config options")
+
+
 def test_simulate_interval_uses_planning_min(monkeypatch):
     def _simulate(**kwargs):
         return SimpleNamespace(
@@ -312,6 +318,38 @@ def test_generate_alternatives(monkeypatch):
     )
     assert "HOME I" in alternatives
     assert "DO NOTHING" in alternatives
+
+
+def test_generate_alternatives_uses_explicit_ups_parameters(monkeypatch):
+    sensor = OptionFreeSensor()
+    fixed_now = datetime(2025, 1, 2, 0, 0, 0)
+    monkeypatch.setattr(scenario_analysis.dt_util, "now", lambda: fixed_now)
+    monkeypatch.setattr(
+        scenario_analysis, "get_solar_for_timestamp", lambda *_a, **_k: 0.0
+    )
+
+    captured = {}
+
+    def _simulate_home_ups(*args, **kwargs):
+        captured.update(kwargs)
+        return 0.0, args[1] if len(args) > 1 else kwargs["battery"]
+
+    monkeypatch.setattr(scenario_analysis, "_simulate_home_ups", _simulate_home_ups)
+    scenario_analysis.generate_alternatives(
+        sensor,
+        spot_prices=[{"time": fixed_now.isoformat(), "price": 1.0}],
+        solar_forecast={},
+        load_forecast=[0.2],
+        optimal_cost_48h=1.0,
+        current_capacity=1.0,
+        max_capacity=2.0,
+        efficiency=1.0,
+        opportunistic_price_czk_kwh=0.7,
+        opportunistic_charge_rate_kw=1.1,
+    )
+
+    assert captured["opportunistic_price_czk_kwh"] == 0.7
+    assert captured["opportunistic_charge_rate_kw"] == 1.1
 
 
 def test_generate_alternatives_bad_timestamp(monkeypatch):
