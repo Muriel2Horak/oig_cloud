@@ -305,6 +305,7 @@ async def test_check_balancing_cycle_forced(monkeypatch):
     result = await mgr.check_balancing()
     assert isinstance(result, BalancingPlan)
 
+
 @pytest.mark.asyncio
 async def test_check_balancing_force_and_natural(monkeypatch):
     mgr = _make_manager()
@@ -577,6 +578,7 @@ async def test_check_natural_balancing_resets_window():
         ]
     )
     assert await mgr._check_natural_balancing() is None
+
 
 @pytest.mark.asyncio
 async def test_create_opportunistic_plan_paths(monkeypatch):
@@ -936,9 +938,17 @@ def test_is_holding_soc_counts_daily_full_charge():
     # The box's daily solar charge often peaks at 98–100%, not a flat 99%+.
     # 97% must count as "holding" so routine full charges register as balancing
     # and the manager doesn't force a redundant grid charge (planner interference).
-    assert module.BalancingManager._is_holding_soc(100.0) is True
-    assert module.BalancingManager._is_holding_soc(98.0) is True
-    assert module.BalancingManager._is_holding_soc(97.0) is True
-    assert module.BalancingManager._is_holding_soc(96.0) is False
-    assert module.BalancingManager._is_holding_soc(0) is False
-    assert module.BalancingManager._is_holding_soc(None) is False
+    mgr = _make_manager()
+    assert mgr._is_holding_soc(100.0) is True
+    assert mgr._is_holding_soc(98.0) is True
+    assert mgr._is_holding_soc(97.0) is True
+    assert mgr._is_holding_soc(96.0) is False
+    assert mgr._is_holding_soc(0) is False
+    assert mgr._is_holding_soc(None) is False
+
+
+def test_is_holding_soc_reads_configured_threshold():
+    # holding_soc_threshold_percent (battery config) overrides the 97% default.
+    mgr = _make_manager(options={"holding_soc_threshold_percent": 90.0})
+    assert mgr._is_holding_soc(91.0) is True
+    assert mgr._is_holding_soc(89.0) is False
