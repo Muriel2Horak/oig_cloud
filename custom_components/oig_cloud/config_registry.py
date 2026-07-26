@@ -566,9 +566,16 @@ _register(
           step=1, scope="basic"),
     Field("data_source_mode", "basic", str, default="cloud_only",
           enum=("cloud_only", "local_only", "hybrid"), scope="basic"),
+    # Proxy-only knobs: relevant only when data_source_mode reads from the
+    # local proxy ("hybrid" is the legacy alias _sanitize_data_source_mode
+    # maps to local_only, config/steps.py:95 — a pre-existing entry stored
+    # with that value must still show these fields, not just new local_only
+    # picks).
     Field("local_proxy_stale_minutes", "basic", int, default=10, min=1, max=120,
-          step=1, scope="basic"),
+          step=1, scope="basic",
+          show_if=("data_source_mode", ("local_only", "hybrid"))),
     Field("local_event_debounce_ms", "basic", int, default=300, min=0, max=5000,
-          step=1, scope="basic"),
+          step=1, scope="basic",
+          show_if=("data_source_mode", ("local_only", "hybrid"))),
     Field("enable_dashboard", "basic", bool, default=False, scope="basic"),
 )

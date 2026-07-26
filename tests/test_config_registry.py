@@ -237,14 +237,23 @@ def test_basic_field_metadata_matches_flow():
         "data_source_mode", "basic", str, default="cloud_only",
         enum=("cloud_only", "local_only", "hybrid"), scope="basic",
     )
+    # Proxy-only fields render/apply only in local_only/hybrid mode (fe/fix
+    # connection-step defect: FE `show_if` mechanism existed but the backend
+    # registry never set it for these two, so they always rendered).
     assert basic["local_proxy_stale_minutes"] == Field(
         "local_proxy_stale_minutes", "basic", int, default=10, min=1, max=120, step=1,
-        scope="basic",
+        scope="basic", show_if=("data_source_mode", ("local_only", "hybrid")),
     )
     assert basic["local_event_debounce_ms"] == Field(
         "local_event_debounce_ms", "basic", int, default=300, min=0, max=5000, step=1,
-        scope="basic",
+        scope="basic", show_if=("data_source_mode", ("local_only", "hybrid")),
     )
+
+
+def test_proxy_fields_hidden_outside_local_hybrid_mode():
+    basic = fields_for_section("basic")
+    for key in ("local_proxy_stale_minutes", "local_event_debounce_ms"):
+        assert basic[key].show_if == ("data_source_mode", ("local_only", "hybrid")), key
     assert basic["enable_dashboard"] == Field(
         "enable_dashboard", "basic", bool, default=False, scope="basic",
     )

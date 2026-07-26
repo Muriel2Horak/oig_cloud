@@ -225,4 +225,66 @@ describe('connection step render (F1 Wizard v2 Stage S3 Task 20)', () => {
     expect(content.querySelector('[data-key="local_proxy_stale_minutes"]')).toBeTruthy();
     expect(content.querySelector('[data-key="local_event_debounce_ms"]')).toBeTruthy();
   });
+
+  it('seeds the step from the entry\'s stored basic-section values (owner live-walk defect: draft started empty)', async () => {
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path.includes('/onboarding')) {
+        return Promise.resolve({
+          steps: { ai: 'pending', solar: 'pending', pricing: 'pending' },
+          timestamps: {},
+          grandfathered: true,
+        });
+      }
+      if (path.includes('/pricelists')) {
+        return Promise.resolve({
+          distributors: {}, tariffs: [],
+          selected_distributor: '', selected_tariff: '',
+          confirmed_distribution_price_incl_vat: 0,
+          confirmed_distribution_price_excl_vat: 0,
+          confirmed_distribution_unit: '',
+          stale_warning: false, valid_from: null, year: null,
+        });
+      }
+      if (path.includes('/module_config')) {
+        return Promise.resolve({
+          basic: {
+            data_source_mode: 'local_only',
+            standard_scan_interval: 45,
+            extended_scan_interval: 600,
+            local_proxy_stale_minutes: 20,
+            local_event_debounce_ms: 750,
+          },
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    const wizard = await openWizardOnConnectionStep();
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+
+    const select = content.querySelector('[data-key="data_source_mode"] select') as HTMLSelectElement;
+    expect(select.value).toBe('local_only');
+
+    const scanInput = content.querySelector('[data-key="standard_scan_interval"] input') as HTMLInputElement;
+    expect(scanInput.value).toBe('45');
+    const staleInput = content.querySelector('[data-key="local_proxy_stale_minutes"] input') as HTMLInputElement;
+    expect(staleInput.value).toBe('20');
+    const debounceInput = content.querySelector('[data-key="local_event_debounce_ms"] input') as HTMLInputElement;
+    expect(debounceInput.value).toBe('750');
+  });
+
+  it('renders the plain-language proxy explainer above the mode select, wording matching the code (fallback to cloud on stale/missing proxy)', async () => {
+    const wizard = await openWizardOnConnectionStep();
+    const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    const explainer = content.querySelector('[data-testid="connection-explainer"]') as HTMLElement;
+    expect(explainer).toBeTruthy();
+
+    const modeField = content.querySelector('[data-key="data_source_mode"]') as HTMLElement;
+    expect(
+      explainer.compareDocumentPosition(modeField) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    expect(explainer.textContent).toContain('OIG Cloud');
+    expect(explainer.textContent).toContain('lokální proxy');
+  });
 });

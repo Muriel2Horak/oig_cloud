@@ -578,8 +578,8 @@ export class OigOnboardingWizard extends LitElement {
   @state() private pricingDraft: Record<string, unknown> = {};
 
   /** Connection step (Task 20): draft form values for the `basic` registry
-   * section. Not yet seeded from `entry.options` — new-install fields start
-   * empty, same as `solarDraft` before Task 8. */
+   * section — seeded from `entry.options` FIRST, registry `default` otherwise
+   * (`seedConnectionDraft`, same rule as `seedSolarDraft`). */
   @state() private connectionDraft: Record<string, unknown> = {};
 
   /**
@@ -1130,6 +1130,21 @@ export class OigOnboardingWizard extends LitElement {
     this.modulesDraft = draft;
   }
 
+  /** Same seeding rule as `seedSolarDraft` — `entry.options` first, registry
+   * `default` only for a field genuinely unset either way (fe/fix connection
+   * step: `connectionDraft` was never seeded, so the step always rendered its
+   * registry defaults instead of the owner's stored `basic`-section values). */
+  private seedConnectionDraft(): void {
+    if (!this._registry) return;
+    const draft: Record<string, unknown> = {};
+    for (const f of STEP_CONNECTION.fields(this._registry)) {
+      const spec = this._registry.fields[f.key];
+      const seeded = this.originalValues[f.key] ?? spec?.default;
+      if (seeded !== undefined) draft[f.key] = seeded;
+    }
+    this.connectionDraft = draft;
+  }
+
   private async loadSolarRegistry(signal?: AbortSignal): Promise<void> {
     if (this._registryLoaded) return;
     this._registryLoaded = true;
@@ -1139,6 +1154,7 @@ export class OigOnboardingWizard extends LitElement {
       this.seedSolarDraft();
       this.seedBatteryDraft();
       this.seedModulesDraft();
+      this.seedConnectionDraft();
     } catch {
       this._registry = null;
       this._registryOutcome = signal?.aborted ? 'aborted' : 'failed';
@@ -1175,6 +1191,7 @@ export class OigOnboardingWizard extends LitElement {
         this.seedSolarDraft(); // re-seed if the registry already settled first
         this.seedBatteryDraft(); // T18 review: battery draft misses entry.options on registry-first race
         this.seedModulesDraft(); // re-seed if the registry already settled first
+        this.seedConnectionDraft(); // re-seed if the registry already settled first
       }
     } catch {
       this._pricingConfigOutcome = signal?.aborted ? 'aborted' : 'failed';
@@ -1920,6 +1937,10 @@ export class OigOnboardingWizard extends LitElement {
         <section class="step step-connection" data-step="connection">
           <h3>${STEP_LABELS.connection}</h3>
           <div class="step-card">
+            <div class="connection-explainer" data-testid="connection-explainer">
+              <p>${t('onboarding.connection.explainer_cloud', this.wizardLang)}</p>
+              <p>${t('onboarding.connection.explainer_local', this.wizardLang)}</p>
+            </div>
             ${visible.map((f) => html`
               <div data-key=${f.key}>
                 ${renderFieldPresenter(f, {
