@@ -244,7 +244,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
 
     if provider == "ai_task":
         # Delegation path: use the AI the user already runs in their own HA.
-        # The OIG backend is deliberately NOT constructed on this branch.
+        # The primary OIG backend is deliberately NOT constructed on this branch.
         if not hass.services.has_service("ai_task", "generate_data"):
             return
         consent = bool(
@@ -252,11 +252,27 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
                 "ai_consent_cross_provider_fallback", False
             )
         )
+        fallback_backend = None
+        if consent:
+            fallback_provider = await store.async_get_fallback_provider()
+            fallback_key = await store.async_get_fallback_key()
+            if fallback_provider in PROVIDERS and fallback_key:
+                cache = get_ai_model_cache(hass)
+                fallback_backend = OpenAiCompatBackend(
+                    session=async_get_clientsession(hass),
+                    base_url=PROVIDERS[fallback_provider]["base_url"],
+                    api_key=fallback_key,
+                    models=MODEL_CHAINS[fallback_provider],
+                    entry_id=entry.entry_id,
+                    provider=fallback_provider,
+                    model_cache=cache,
+                )
         async_add_entities(
             [OigAiTaskEntity(
                 provider="ai_task", backend=None, install={},
                 entry_id=entry.entry_id,
                 consent_cross_provider=consent,
+                fallback_backend=fallback_backend,
             )]
         )
         return

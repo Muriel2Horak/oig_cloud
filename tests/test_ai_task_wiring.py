@@ -81,10 +81,12 @@ from custom_components.oig_cloud.ai.backends import (  # noqa: E402
 # --- fakes for async_setup_entry -------------------------------------------
 
 class _FakeStore:
-    """Stands in for AiKeyStore — returns a preconfigured provider/key."""
-    def __init__(self, provider, key):
+    """Stands in for AiKeyStore — returns configured provider/key pairs."""
+    def __init__(self, provider, key, fallback_provider=None, fallback_key=None):
         self._provider = provider
         self._key = key
+        self._fallback_provider = fallback_provider
+        self._fallback_key = fallback_key
 
     async def async_get_provider(self):
         return self._provider
@@ -92,16 +94,29 @@ class _FakeStore:
     async def async_get_key(self):
         return self._key
 
+    async def async_get_fallback_provider(self):
+        return self._fallback_provider
+
+    async def async_get_fallback_key(self):
+        return self._fallback_key
+
 
 class _Entry:
-    def __init__(self, entry_id="entry1"):
+    def __init__(self, entry_id="entry1", options=None):
         self.entry_id = entry_id
+        self.options = options or {}
 
 
-def _patch_setup(monkeypatch, provider, key):
+def _patch_setup(
+    monkeypatch, provider, key, fallback_provider=None, fallback_key=None
+):
     """Wire async_setup_entry to a fake store + sentinel aiohttp session."""
     monkeypatch.setattr(
-        ai_task, "AiKeyStore", lambda hass, entry_id: _FakeStore(provider, key)
+        ai_task,
+        "AiKeyStore",
+        lambda hass, entry_id: _FakeStore(
+            provider, key, fallback_provider, fallback_key
+        ),
     )
     session = object()
     monkeypatch.setattr(ai_task, "async_get_clientsession", lambda hass: session)
@@ -118,11 +133,24 @@ class _FakeHassForSetup:
         )
 
 
-async def _run_setup(provider, key, monkeypatch, ai_task_service=True):
-    _patch_setup(monkeypatch, provider, key)
+async def _run_setup(
+    provider,
+    key,
+    monkeypatch,
+    ai_task_service=True,
+    fallback_provider=None,
+    fallback_key=None,
+    consent=False,
+):
+    _patch_setup(monkeypatch, provider, key, fallback_provider, fallback_key)
     added = []
     await ai_task.async_setup_entry(
-        _FakeHassForSetup(ai_task_service), _Entry("entry1"), added.extend
+        _FakeHassForSetup(ai_task_service),
+        _Entry(
+            "entry1",
+            options={"ai_consent_cross_provider_fallback": consent},
+        ),
+        added.extend,
     )
     return added
 
@@ -175,6 +203,52 @@ async def test_ai_task_provider_with_host_service_adds_entity(monkeypatch):
 
     assert len(added) == 1
     assert added[0]._provider == "ai_task"
+
+
+@pytest.mark.asyncio
+async def test_ai_task_setup_builds_fallback_backend_when_consent_and_fallback_configured(
+    monkeypatch,
+):
+    added = await _run_setup(
+        "ai_task",
+        None,
+        monkeypatch,
+        fallback_provider="groq",
+        fallback_key="gsk_fallback0000000000",
+        consent=True,
+    )
+
+    assert len(added) == 1
+    fallback = added[0]._fallback_backend
+    assert isinstance(fallback, OpenAiCompatBackend)
+    assert fallback._provider == "groq"
+    assert fallback._base_url == PROVIDERS["groq"]["base_url"].rstrip("/")
+    assert fallback._api_key == "gsk_fallback0000000000"
+
+
+@pytest.mark.asyncio
+async def test_ai_task_setup_no_fallback_backend_without_consent(monkeypatch):
+    added = await _run_setup(
+        "ai_task",
+        None,
+        monkeypatch,
+        fallback_provider="groq",
+        fallback_key="gsk_fallback0000000000",
+        consent=False,
+    )
+
+    assert len(added) == 1
+    assert added[0]._fallback_backend is None
+
+
+@pytest.mark.asyncio
+async def test_ai_task_setup_no_fallback_backend_when_none_configured(monkeypatch):
+    added = await _run_setup(
+        "ai_task", None, monkeypatch, consent=True
+    )
+
+    assert len(added) == 1
+    assert added[0]._fallback_backend is None
 
 
 @pytest.mark.asyncio
