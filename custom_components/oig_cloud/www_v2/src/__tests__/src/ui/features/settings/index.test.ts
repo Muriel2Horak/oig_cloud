@@ -183,7 +183,7 @@ const MODULE_CONFIG: ModuleConfig = {
 function registryWith(extraFields: Partial<FieldRegistry['fields']>): FieldRegistry {
   return {
     ...REGISTRY_FIXTURE,
-    fields: { ...REGISTRY_FIXTURE.fields, ...extraFields },
+    fields: { ...REGISTRY_FIXTURE.fields, ...extraFields } as FieldRegistry['fields'],
   };
 }
 
@@ -198,11 +198,11 @@ type ModuleConfigOverrides = {
 function moduleConfigWith(partial: ModuleConfigOverrides = {}): ModuleConfig {
   return {
     ...MODULE_CONFIG,
-    modules: { ...MODULE_CONFIG.modules, ...partial.modules },
-    battery: { ...MODULE_CONFIG.battery, ...partial.battery },
-    solar: { ...MODULE_CONFIG.solar, ...partial.solar },
-    boiler: { ...MODULE_CONFIG.boiler, ...partial.boiler },
-    pricing_supplier: { ...MODULE_CONFIG.pricing_supplier, ...partial.pricing_supplier },
+    modules: { ...MODULE_CONFIG.modules, ...partial.modules } as ModuleConfig['modules'],
+    battery: { ...MODULE_CONFIG.battery, ...partial.battery } as ModuleConfig['battery'],
+    solar: { ...MODULE_CONFIG.solar, ...partial.solar } as ModuleConfig['solar'],
+    boiler: { ...MODULE_CONFIG.boiler, ...partial.boiler } as ModuleConfig['boiler'],
+    pricing_supplier: { ...MODULE_CONFIG.pricing_supplier, ...partial.pricing_supplier } as ModuleConfig['pricing_supplier'],
   };
 }
 
