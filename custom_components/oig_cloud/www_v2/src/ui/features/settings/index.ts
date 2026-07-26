@@ -35,6 +35,7 @@ import {
   EntityEntry,
 } from '@/ui/components/entity-picker';
 import '@/ui/components/entity-picker';
+import '@/ui/components/reload-overlay';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 import { ergoStyles } from '@/ui/features/onboarding/ergo-styles';
 import { haClient } from '@/data/ha-client';
@@ -44,7 +45,7 @@ import {
   type AiState,
   type AiValidationState,
 } from '@/ui/features/onboarding';
-import { resolveLang, type Lang } from '@/i18n/onboarding';
+import { resolveLang, t, type Lang } from '@/i18n/onboarding';
 
 const u = unsafeCSS;
 const INVERTER_SN = new URLSearchParams(window.location.search).get('sn')
@@ -77,7 +78,7 @@ export interface FieldDef {
  * After save, the GET /module_config will return 404 for a short window —
  * this is expected and must not surface as an error.
  */
-export const RELOAD_SECTIONS: ReadonlySet<SettingsSection> = new Set(['boiler']);
+export const RELOAD_SECTIONS: ReadonlySet<SettingsSection> = new Set(['boiler', 'modules']);
 
 const AI_PROVIDER_OPTIONS: Array<[string, string]> = [
   ['ai_task', 'Vlastní AI v Home Assistantu (ai_task)'],
@@ -188,6 +189,8 @@ export class OigSettings extends LitElement {
   @state() private toast: { section: string; ok: boolean; text: string } | null = null;
   @state() private aiState: AiState | null = null;
   @state() private aiValidation: AiValidationState = { kind: 'idle' };
+  /** True while a RELOAD_SECTIONS save waits out the backend's config-entry reload (fix D). */
+  @state() private reloading = false;
 
   /** Cached entity catalog built from hassStates (rebuilt when hassStates changes). */
   private _entityCatalog: EntityEntry[] = [];
@@ -195,6 +198,11 @@ export class OigSettings extends LitElement {
 
   private get uiLang(): Lang {
     return resolveLang(haClient.getHassSync());
+  }
+
+  /** Isolated so tests can stub the untestable jsdom navigation call (mirrors onboarding's reloadPanel). */
+  private reloadPanel(): void {
+    window.location.reload();
   }
 
   static styles = css`
@@ -559,13 +567,13 @@ export class OigSettings extends LitElement {
     this.pending = { ...this.pending, [section]: {} };
 
     if (section !== 'ai' && RELOAD_SECTIONS.has(section)) {
-      this.toast = { section, ok: true, text: '✓ Uloženo — integrace se restartuje…' };
+      this.reloading = true;
       void waitForModuleConfigAfterReload(
-        (cfg) => {
-          this.config = cfg;
-          this.toast = { section, ok: true, text: '✓ Aplikováno' };
+        () => {
+          this.reloadPanel();
         },
         () => {
+          this.reloading = false;
           this.toast = {
             section,
             ok: true,
@@ -879,6 +887,14 @@ export class OigSettings extends LitElement {
   }
 
   render() {
+    if (this.reloading) {
+      return html`
+        <oig-reload-overlay
+          .message=${t('onboarding.reload.message', this.uiLang)}
+        ></oig-reload-overlay>
+      `;
+    }
+
     const launcher = html`
       <div class="onboarding-launcher">
         <span>Průvodce lze kdykoli znovu otevřít a upravit jednotlivé kroky.</span>

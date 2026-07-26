@@ -288,6 +288,10 @@ class DummyConfigEntries:
         self.unloaded.append((entry, platforms))
         return True
 
+    async def async_forward_entry_unload(self, entry, platform):
+        self.unloaded.append((entry, platform))
+        return True
+
     async def async_reload(self, entry_id):
         self.reloaded.append(entry_id)
 
