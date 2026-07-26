@@ -599,9 +599,9 @@ _register(
 # for any legacy entry that still stores "hybrid".
 _register(
     Field("standard_scan_interval", "basic", int, default=30, min=30, max=300,
-          step=1, scope="basic"),
+          step=1, scope="basic", reload_on_change=True),
     Field("extended_scan_interval", "basic", int, default=300, min=300, max=3600,
-          step=1, scope="basic"),
+          step=1, scope="basic", reload_on_change=True),
     Field("data_source_mode", "basic", str, default="cloud_only",
           enum=("cloud_only", "local_only", "hybrid"), scope="basic"),
     # Proxy-only knobs: relevant only when data_source_mode reads from the

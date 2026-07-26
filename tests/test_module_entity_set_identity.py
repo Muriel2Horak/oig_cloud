@@ -62,26 +62,7 @@ MODULE_FLAGS = [
     "enable_battery_prediction",
     "enable_pricing",
     "enable_boiler",
-    pytest.param(
-        "enable_statistics",
-        marks=pytest.mark.xfail(
-            reason=(
-                "REAL DEFECT (report, do not fix here): sensor_type "
-                "'hourly_real_boiler_kwh' (category=statistics) contains the "
-                "substring '_boiler_', so sensor.py's _is_boiler_entity() "
-                "misclassifies it as a boiler entity in "
-                "_cleanup_renamed_sensors. Its boiler-branch check "
-                "`sensor_type in SENSOR_TYPES` is True (it's a real catalog "
-                "key), so it is NEVER removed via that branch regardless of "
-                "enable_statistics -- it never reaches the normal "
-                "expected_sensor_types removal path either, since the boiler "
-                "branch `continue`s first. Disabling Statistics leaves this "
-                "one entity_registry entry permanently orphaned (state is "
-                "gone, registry entry survives forever)."
-            ),
-            strict=True,
-        ),
-    ),
+    "enable_statistics",
     "enable_extended_sensors",
     "enable_chmu_warnings",
 ]

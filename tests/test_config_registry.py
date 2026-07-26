@@ -241,11 +241,11 @@ def test_basic_field_metadata_matches_flow():
     basic = fields_for_section("basic")
     assert basic["standard_scan_interval"] == Field(
         "standard_scan_interval", "basic", int, default=30, min=30, max=300, step=1,
-        scope="basic",
+        scope="basic", reload_on_change=True,
     )
     assert basic["extended_scan_interval"] == Field(
         "extended_scan_interval", "basic", int, default=300, min=300, max=3600, step=1,
-        scope="basic",
+        scope="basic", reload_on_change=True,
     )
     # OQ-6 resolution: enum is 3-value, including legacy "hybrid". The UI
     # never offers "hybrid" — that is the flow's job (steps._sanitize_data_source_mode).

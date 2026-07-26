@@ -88,12 +88,52 @@ class ExportPrice15MinSensor(BasePrice15MinSensor):
         export_fee_percent: float = options.get("export_fee_percent", 15.0)
         export_fixed_fee_czk: float = options.get("export_fixed_fee_czk", 0.20)
         export_fixed_price: float = options.get("export_fixed_price", 2.50)
+        export_fee_percent_nt: float = options.get(
+            "export_fee_percent_nt", export_fee_percent
+        )
+        export_fixed_fee_czk_nt: float = options.get(
+            "export_fixed_fee_czk_nt", export_fixed_fee_czk
+        )
+
+        current_tariff = self._get_tariff_for_datetime(target_datetime)
 
         if pricing_model == "percentage":
-            export_price = spot_price_czk * (1 - export_fee_percent / 100.0)
+            fee_percent = (
+                export_fee_percent_nt
+                if current_tariff == "NT"
+                else export_fee_percent
+            )
+            export_price = spot_price_czk * (1 - fee_percent / 100.0)
         elif pricing_model == "fixed_prices":
             export_price = export_fixed_price
         else:
-            export_price = spot_price_czk - export_fixed_fee_czk
+            fixed_fee = (
+                export_fixed_fee_czk_nt
+                if current_tariff == "NT"
+                else export_fixed_fee_czk
+            )
+            export_price = spot_price_czk - fixed_fee
 
         return round(export_price, 2)
+
+    def _get_tariff_for_datetime(self, target_datetime: datetime) -> str:
+        """Get tariff (VT/NT) for a given datetime - mirrors SpotPrice15MinSensor."""
+        dual_tariff_enabled = self._entry.options.get("dual_tariff_enabled", True)
+        if not dual_tariff_enabled:
+            return "VT"
+
+        vt_hours = self._parse_tariff_times(self._entry.options.get("vt_hours", ""))
+        if not vt_hours:
+            return "VT"
+
+        hour = target_datetime.hour
+        return "VT" if hour in vt_hours else "NT"
+
+    def _parse_tariff_times(self, time_str: str) -> list[int]:
+        """Parse tariff times string to list of hours."""
+        if not time_str:
+            return []
+        try:
+            return [int(x.strip()) for x in time_str.split(",") if x.strip()]
+        except ValueError:
+            return []

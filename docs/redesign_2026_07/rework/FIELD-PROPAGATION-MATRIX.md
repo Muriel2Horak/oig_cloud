@@ -2,37 +2,40 @@
 
 Owner question this answers: *"projel jsi vsechny volby, ze se propisuji do BE a jsou pouzite?"*
 
-Scope: every field in `config_registry.py FIELD_REGISTRY` (102 total; worktree `/repos/wt-f1-fieldaudit`, branch `f1/field-propagation-audit`, base `f1/wizard-v2-impl`). Guard test: `tests/test_registry_field_consumption.py` (parses FIELD_REGISTRY, greps the BE package for a literal read of each key or its `CONF_*` alias, excluding the wizard/validation write path in `config/` and `config_flow.py`). A field newly added to the registry without a BE reader now fails CI.
+Scope: every field in `config_registry.py FIELD_REGISTRY` (102 total at audit time; worktree `/repos/wt-f1-fieldaudit`, branch `f1/field-propagation-audit`, base `f1/wizard-v2-impl`). Guard test: `tests/test_registry_field_consumption.py` (parses FIELD_REGISTRY, greps the BE package for a literal read of each key or its `CONF_*` alias, excluding the wizard/validation write path in `config/` and `config_flow.py`). A field newly added to the registry without a BE reader now fails CI.
+
+**Post-audit note (dead-cleanup Unit 3, 2026-07-26; rework, 2026-07-26):** `boiler_enable_second_thermometer` was briefly REMOVED from `FIELD_REGISTRY` by dead-cleanup Unit 3 on a zero-BE-consumer verdict, then RESTORED on rework review: the field is BE-dead (no BE runtime reader) but is live-consumed by the FRONTEND — the `/config_registry` REST dump (`ha_rest_api.py:1633`) feeds `settings/index.ts:476` `fieldsFromRegistry`, which drives `secondTherm` (`index.ts:718`) and controls `boiler_temp_sensor_bottom` field visibility (`index.ts:750`). Removing it hid a real config option in the UI. Registry is back to 102 fields.
 
 ## Summary
 
 | verdict | count |
 |---|---|
-| CONSUMED | 87 |
+| CONSUMED | 89 |
 | DISPLAY-ONLY (justified) | 4 |
-| DEAD | 11 |
+| DEAD (BE) | 9 (1 of these, `boiler_enable_second_thermometer`, is FE-consumed — see below) |
 | **total** | **102** |
 
-### DEAD fields (11) — the deliverable highlight
+### DEAD fields (9) — the deliverable highlight
 
 **8 caught by the automated guard test** (zero textual consumer anywhere in the BE package outside `config_registry.py`/`const.py`):
 
 - `ai_provider`, `ai_base_url`, `ai_model` — AI section propagation is broken end to end: the wizard writes all three into `entry.options`, but the runtime (`ai_task.py`) reads the provider from a separate `AiKeyStore` and always uses the hardcoded `PROVIDERS[provider]["base_url"]` / `MODEL_CHAINS[provider]` instead of the stored options. The registry's own comment ("base_url is user-overridable", config_registry.py:430) does not match runtime behaviour.
 - `spot_positive_fee_percent_nt`, `spot_negative_fee_percent_nt`, `spot_fixed_fee_mwh_nt`, `export_fee_percent_nt`, `export_fixed_fee_czk_nt` — the NT (low-tariff) variants of the percentage/fixed pricing-model fees are captured by the wizard (gated by `show_if_all` on a dual-tariff distribution code) but **no pricing consumer branches on tariff for these two models** — only `fixed_prices` actually splits VT/NT (via `fixed_commercial_price_vt`/`_nt`, a different, already-consumed pair). A dual-tariff household on the percentage or fixed pricing model is billed the VT fee around the clock; the NT fields they configured in the wizard are silently ignored.
 
-**3 more found by manual read-path tracing, NOT caught by the automated guard** (a textual mention of the key exists, it's just unreachable — a limitation of any grep-based check, documented in the test's own docstring):
+**1 more found by manual read-path tracing, NOT caught by the automated guard** (a textual mention of the key exists, it's just unreachable — a limitation of any grep-based check, documented in the test's own docstring); dead-cleanup Unit 3 briefly REMOVED it from the registry on this verdict, but rework review found it is FE-consumed and RESTORED it:
 
-- `local_proxy_stale_minutes`, `local_event_debounce_ms` — each has a getter in `core/data_source.py` (`get_proxy_stale_minutes` / `get_local_event_debounce_ms`) that does read the option, but **neither getter has any caller anywhere in the package**.
-- `boiler_enable_second_thermometer` — the only non-wizard hit is a legacy-key allowlist entry in `boiler/migration.py` (migration bookkeeping, never a `.get()` read). Whether the second thermometer is actually used is decided purely by whether `boiler_temp_sensor_bottom` is non-empty (boiler/coordinator.py:105-108); this toggle itself is never consulted.
+- `boiler_enable_second_thermometer` (**BE-dead, FE-consumed, KEPT**) — the only non-wizard BE hit is a legacy-key allowlist entry in `boiler/migration.py` (migration bookkeeping, never a `.get()` read); no BE runtime module consults this flag — whether the second thermometer's data is actually used is decided purely by whether `boiler_temp_sensor_bottom` is non-empty (boiler/coordinator.py:105-108). But the field IS a live consumer target for the FRONTEND: the `/config_registry` REST dump (`ha_rest_api.py:1633`) → `settings/index.ts:476` `fieldsFromRegistry` → drives `secondTherm` (`index.ts:718`) → controls `boiler_temp_sensor_bottom` field visibility (`index.ts:750`). Removing the `Field()` entry hides a real, user-visible config toggle. See full note in the `boiler` section table below.
 
-### reload_on_change mismatches (2)
+**Correction (2026-07-26, dead-cleanup Unit 3):** `local_proxy_stale_minutes` / `local_event_debounce_ms` were previously listed here as DEAD ("neither getter has any caller"). Re-traced: `get_proxy_stale_minutes()`/`get_local_event_debounce_ms()` DO have callers — `core/data_source.py:383` (`init_data_source_state`, called directly and unconditionally from `async_setup_entry` at `__init__.py:1723`), `:443`/`:514` (`DataSourceController.__init__`/`.async_start()`, started from `_start_data_source_controller` via the unconditional background-task chain `async_setup_entry:1834` → `_schedule_entry_startup_completion` → `_complete_entry_startup` → `_start_data_source_controller`, no dead-code gate in between), and `:697` (`DataSourceController._update_state`, called from `async_start` at `:450` and from the proxy/periodic event handlers). All four sites are on a live runtime path. Verdict corrected below: **CONSUMED**, not DEAD. No code change made to these fields or getters.
 
-`standard_scan_interval` and `extended_scan_interval` are read once in `async_setup_entry` (__init__.py:1123/1126) and baked into the cloud-poll coordinator's fixed interval — changing either via the dashboard sets no `_needs_reload` flag (`config_merge.py:35` only flags a reload when `FIELD_REGISTRY[key].reload_on_change` is True), so a saved change silently has no effect until a manual restart. Traced and confirmed correct: every `modules`/`boiler` field (already `reload_on_change=True` on every field per config_registry.py:288-294/:376), `enable_dashboard` (has its own live panel add/remove path in `async_update_options`, __init__.py:2203+), `data_source_mode` (has an explicit live-transition handler, core/data_source.py:784+), and the battery/solar fields sampled (`balancing_enabled`, `solar_forecast_string1/2_enabled`, etc. — all read live via `self._entry.options.get(...)` inside sensor compute methods, not cached at setup).
+### reload_on_change mismatches (2, FIXED — dead-cleanup Unit 3, 2026-07-26)
+
+`standard_scan_interval` and `extended_scan_interval` are read once in `async_setup_entry` (__init__.py:1123/1126) and baked into the cloud-poll coordinator's fixed interval — changing either via the dashboard set no `_needs_reload` flag (`config_merge.py:35` only flags a reload when `FIELD_REGISTRY[key].reload_on_change` is True), so a saved change silently had no effect until a manual restart. Traced and confirmed correct: every `modules`/`boiler` field (already `reload_on_change=True` on every field per config_registry.py:288-294/:376), `enable_dashboard` (has its own live panel add/remove path in `async_update_options`, __init__.py:2203+), `data_source_mode` (has an explicit live-transition handler, core/data_source.py:784+), and the battery/solar fields sampled (`balancing_enabled`, `solar_forecast_string1/2_enabled`, etc. — all read live via `self._entry.options.get(...)` inside sensor compute methods, not cached at setup). No trivial live-re-read path exists for the coordinator's fixed polling interval, so **FIXED**: both fields flipped to `reload_on_change=True` in `config_registry.py` (were `599-602`) — a saved change now sets `_needs_reload` and triggers a reload, same mechanism already used by every `modules`/`boiler` field.
 
 ## Limitations
 
-- CONSUMED verdicts are grep/read-path evidence that *a* BE module reads the key; for the 87 CONSUMED fields this was spot-checked (directory-bucket classification + manual verification of every field flagged as textually-ambiguous), not individually traced to a running code path the way the 11 DEAD fields were. The guard test proves textual presence, not reachability — see the 3 manually-found DEAD fields above for why that gap matters.
-- reload_on_change was traced for every `modules`/`boiler` field (25+7, all correct) plus a risk-selected sample of `battery`/`solar`/`basic` fields (structural-looking flags: entity-count/platform changes, polling cadence, panel registration). The two `basic`-section scan-interval fields are the only confirmed mismatch; a full trace of all ~90 `reload_on_change=False` fields individually was out of scope for this pass.
+- CONSUMED verdicts are grep/read-path evidence that *a* BE module reads the key; for the 89 CONSUMED fields this was spot-checked (directory-bucket classification + manual verification of every field flagged as textually-ambiguous), not individually traced to a running code path the way the 9 DEAD fields were. The guard test proves textual presence, not reachability — see the 1 manually-found DEAD field above for why that gap matters. (Dead-cleanup Unit 3, 2026-07-26: 2 of the original 3 manually-found DEAD fields — `local_proxy_stale_minutes`, `local_event_debounce_ms` — were re-traced and found CONSUMED; see correction above.)
+- reload_on_change was traced for every `modules`/`boiler` field (25+7, all correct) plus a risk-selected sample of `battery`/`solar`/`basic` fields (structural-looking flags: entity-count/platform changes, polling cadence, panel registration). The two `basic`-section scan-interval fields were the only confirmed mismatch, and have since been FIXED (dead-cleanup Unit 3, 2026-07-26 — both flipped to `reload_on_change=True`); a full trace of all ~90 remaining `reload_on_change=False` fields individually was out of scope for this pass.
 
 ## Section: `modules` (7 fields)
 
@@ -94,7 +97,7 @@ Scope: every field in `config_registry.py FIELD_REGISTRY` (102 total; worktree `
 | `boiler_volume_l` | float | **True** | POST/GET `/module_config` | `boiler/api_views.py:911` : 19 | **CONSUMED** |
 | `boiler_temp_sensor_top` | str | **True** | POST/GET `/module_config` | `boiler/api_views.py:867` : 18 | **CONSUMED** |
 | `boiler_temp_sensor_bottom` | str | **True** | POST/GET `/module_config` | `boiler/api_views.py:868` : 15 | **CONSUMED** |
-| `boiler_enable_second_thermometer` | bool | **True** | POST/GET `/module_config` | `boiler/migration.py:34` : 1 | **DEAD** |
+| `boiler_enable_second_thermometer` | bool | **True** | POST/GET `/module_config` | `boiler/migration.py:34` : 1 (BE); `settings/index.ts:718` (FE) | **BE-DEAD, FE-CONSUMED** |
 | `boiler_current_power_entity` | str | **True** | POST/GET `/module_config` | `boiler/runtime.py:1859` : 6 | **CONSUMED** |
 | `boiler_alt_energy_sensor` | str | **True** | POST/GET `/module_config` | `boiler/api_views.py:982` : 8 | **CONSUMED** |
 | `boiler_alt_energy_daily` | bool | **True** | POST/GET `/module_config` | `boiler/api_views.py:1045` : 2 | **CONSUMED** |
@@ -117,7 +120,7 @@ Scope: every field in `config_registry.py FIELD_REGISTRY` (102 total; worktree `
 | `boiler_legionella_interval_days` | int | **True** | POST/GET `/module_config` | `boiler/api_views.py:1627` : 7 | **CONSUMED** |
 | `boiler_legionella_target_temp_c` | float | **True** | POST/GET `/module_config` | `boiler/runtime.py:1149` : 5 | **CONSUMED** |
 
-- **`boiler_enable_second_thermometer`** (DEAD): the only non-wizard hit is `boiler/migration.py:34`, a legacy-key ALLOWLIST for migration bookkeeping (never a `.get()` read). The actual behaviour (whether the bottom-zone thermal read model activates) is gated purely by whether `boiler_temp_sensor_bottom` is non-empty (boiler/coordinator.py:105-108) — this flag is not consulted anywhere.
+- **`boiler_enable_second_thermometer`** (BE-DEAD, FE-CONSUMED, KEPT — rework, 2026-07-26): the only non-wizard BE hit is `boiler/migration.py:34`, a legacy-key ALLOWLIST for migration bookkeeping (never a `.get()` read); the BE runtime behaviour (whether the bottom-zone thermal read model activates) is gated purely by whether `boiler_temp_sensor_bottom` is non-empty (boiler/coordinator.py:105-108, READ-ONLY, untouched) — this flag is never consulted by any BE module. Dead-cleanup Unit 3 REMOVED the `Field()` entry from `config_registry.py` on that zero-BE-consumer verdict; rework review found the verdict incomplete and RESTORED it: the field IS a live consumer target for the FRONTEND — `/config_registry` REST dump (`ha_rest_api.py:1633`) → `settings/index.ts:476` `fieldsFromRegistry` → `secondTherm` (`index.ts:718`) → controls `boiler_temp_sensor_bottom` field visibility (`index.ts:750`). Removing the registry entry would have stopped it being rendered/writable via `/module_config` and the settings dashboard, hiding a real config toggle. Kept `boiler/migration.py:34` allowlist entry (legacy-key bookkeeping still needs to recognize the key on migration). NOTE: the one-time onboarding "simple boiler setup" wizard (`config/boiler_steps.py`, `config/steps.py` — hand-written `vol.Schema`, independent of `FIELD_REGISTRY`, out of this fix's file scope) also shows this toggle to gate whether the bottom-sensor field appears during initial setup; it still writes the key into `entry.options` on entry creation, a separate write path from the one traced above, left as-is.
 
 ## Section: `ai` (4 fields)
 
@@ -186,15 +189,15 @@ Scope: every field in `config_registry.py FIELD_REGISTRY` (102 total; worktree `
 
 | key | type | reload_on_change | write path | consumer (file:line : count) | verdict |
 |---|---|---|---|---|---|
-| `standard_scan_interval` | int | False ⚠ | POST/GET `/module_config` | `__init__.py:1123` : 11 | **CONSUMED** |
-| `extended_scan_interval` | int | False ⚠ | POST/GET `/module_config` | `__init__.py:1126` : 9 | **CONSUMED** |
+| `standard_scan_interval` | int | **True** (fixed) | POST/GET `/module_config` | `__init__.py:1123` : 11 | **CONSUMED** |
+| `extended_scan_interval` | int | **True** (fixed) | POST/GET `/module_config` | `__init__.py:1126` : 9 | **CONSUMED** |
 | `data_source_mode` | str | False | POST/GET `/module_config` | `core/data_source.py:95` : 2 | **CONSUMED** |
-| `local_proxy_stale_minutes` | int | False | POST/GET `/module_config` | `core/data_source.py:107` : 2 | **DEAD** |
-| `local_event_debounce_ms` | int | False | POST/GET `/module_config` | `__init__.py:165` : 2 | **DEAD** |
+| `local_proxy_stale_minutes` | int | False | POST/GET `/module_config` | `core/data_source.py:383,514,697` : 4 | **CONSUMED** |
+| `local_event_debounce_ms` | int | False | POST/GET `/module_config` | `core/data_source.py:443` : 1 | **CONSUMED** |
 | `enable_dashboard` | bool | False | POST/GET `/module_config` | `__init__.py:2203` : 5 | **CONSUMED** |
 
-- **`standard_scan_interval`** (reload_on_change ⚠): read once in `async_setup_entry` (__init__.py:1123) and baked into the cloud-poll coordinator's fixed interval; `reload_on_change=False` means a saved change sets no `_needs_reload` flag (config_merge.py:35) and silently has no effect until a manual restart/reload.
-- **`extended_scan_interval`** (reload_on_change ⚠): same defect as standard_scan_interval — read once at setup (__init__.py:1126), no live re-read path, but not flagged reload_on_change.
-- **`local_proxy_stale_minutes`** (DEAD): written by the wizard and by `_ensure_data_source_option_defaults` (__init__.py:164), and `core/data_source.py:107 get_proxy_stale_minutes()` reads it back — but that getter has ZERO callers anywhere in the package. Static grep sees a hit; nothing calls the function that contains it.
-- **`local_event_debounce_ms`** (DEAD): same shape as local_proxy_stale_minutes: `core/data_source.py:117 get_local_event_debounce_ms()` reads the option but is never called.
+- **`standard_scan_interval`** (FIXED, dead-cleanup Unit 3, 2026-07-26): read once in `async_setup_entry` (__init__.py:1123) and baked into the cloud-poll coordinator's fixed interval. No trivial live-re-read path. `reload_on_change` flipped `False → True` in `config_registry.py` — a saved change now sets `_needs_reload` (config_merge.py:35) and triggers a reload instead of silently doing nothing until manual restart.
+- **`extended_scan_interval`** (FIXED, dead-cleanup Unit 3, 2026-07-26): same shape as standard_scan_interval — read once at setup (__init__.py:1126), no live re-read path. `reload_on_change` flipped `False → True` in `config_registry.py`.
+- **`local_proxy_stale_minutes`** (CONSUMED, corrected 2026-07-26): written by the wizard and by `_ensure_data_source_option_defaults` (__init__.py:164); `core/data_source.py:104 get_proxy_stale_minutes()` reads it back and IS called — from `init_data_source_state` (`:383`, invoked unconditionally at `__init__.py:1723` in `async_setup_entry`), `DataSourceController.async_start` (`:514`), and `DataSourceController._update_state` (`:697`, invoked from `async_start` and the proxy/periodic event handlers). Previously marked DEAD in error; see reachability trace above.
+- **`local_event_debounce_ms`** (CONSUMED, corrected 2026-07-26): `core/data_source.py:113 get_local_event_debounce_ms()` reads the option and is called at `:443` in `DataSourceController.__init__`, constructed by `_start_data_source_controller` on the same live background-task chain as above. Previously marked DEAD in error; see reachability trace above.
 

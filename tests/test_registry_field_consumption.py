@@ -45,30 +45,7 @@ _EXCLUDED_DIRS = {"www_v2", "translations", "__pycache__", "config"}
 # consumer is harmless (the grep check would have passed anyway); a key that
 # should be here but is missing makes the test FAIL, which is the guard doing
 # its job.
-KNOWN_DEAD: dict[str, str] = {
-    # Wizard writes entry.options["ai_provider"] (config/steps.py
-    # async_step_ai); runtime reads the provider from AiKeyStore instead
-    # (ai_task.py:240 `await store.async_get_provider()`). entry.options
-    # copy is never read back.
-    "ai_provider": "runtime reads provider from AiKeyStore, not entry.options",
-    # Wizard captures a custom base URL; ai_task.py/ai/backends.py always use
-    # the hardcoded PROVIDERS[provider]["base_url"] instead.
-    "ai_base_url": "backend construction uses hardcoded PROVIDERS[...]['base_url']",
-    # Wizard captures a custom model; ai_task.py always uses the hardcoded
-    # MODEL_CHAINS[provider] instead.
-    "ai_model": "backend construction uses hardcoded MODEL_CHAINS[provider]",
-    # NT-variant fee fields (UX-SPEC-wizard-v2.md §4 dual-tariff split):
-    # every percentage/fixed pricing-model consumer (pricing/spot_price_15min.py,
-    # pricing/spot_price_export_15min.py, battery_forecast/data/pricing.py,
-    # entities/analytics_sensor.py) always applies the VT/base fee regardless
-    # of current tariff. Only the fixed_prices model splits VT/NT, via
-    # fixed_commercial_price_vt/_nt (a different, already-consumed pair).
-    "spot_positive_fee_percent_nt": "no consumer applies the NT variant (percentage model always uses the VT fee)",
-    "spot_negative_fee_percent_nt": "no consumer applies the NT variant (percentage model always uses the VT fee)",
-    "spot_fixed_fee_mwh_nt": "no consumer applies the NT variant (fixed model always uses the VT fee)",
-    "export_fee_percent_nt": "no consumer applies the NT variant (export percentage model always uses the VT fee)",
-    "export_fixed_fee_czk_nt": "no consumer applies the NT variant (export fixed model always uses the VT fee)",
-}
+KNOWN_DEAD: dict[str, str] = {}
 
 # Reserved for fields that are read but only ever to feed a read-only display
 # value (never a runtime decision) — none currently need the escape hatch
