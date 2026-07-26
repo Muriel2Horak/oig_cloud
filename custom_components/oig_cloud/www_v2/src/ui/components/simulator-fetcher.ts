@@ -345,7 +345,12 @@ export async function defaultFetcher(req: SimRequest): Promise<SimResponse> {
     return postJson<SimResponse>(`/api/oig_cloud/${boxId}/planner_simulate`, body);
   }
 
-  return postJson<SimResponse>(`/api/oig_cloud/${boxId}/boiler_simulate`, {
+  const entryId = new URLSearchParams(window.location.search).get('entry_id') || '';
+  if (!entryId) {
+    throw new Error('Unable to resolve entry id for boiler simulation');
+  }
+  // BE route (boiler/api_views.py): /api/oig_cloud/boiler/{entry_id}/{box_id}/simulate_water_day
+  return postJson<SimResponse>(`/api/oig_cloud/boiler/${entryId}/${boxId}/simulate_water_day`, {
     preset_id: req.presetId,
     config_overrides: req.draft,
   });
