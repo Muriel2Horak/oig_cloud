@@ -31,7 +31,7 @@ import {
 import type { FieldRegistry } from '@/data/registry-data';
 import { loadFieldRegistry, fieldsFromRegistry } from '@/data/registry-data';
 import type { FieldDef } from '@/ui/features/settings';
-import { STEP_SOLAR } from './step-solar';
+import { STEP_SOLAR, SOLAR_PROVIDER_GUIDES } from './step-solar';
 import { STEP_PRICING_DISTRIBUTION, isDualTariffCode } from './step-pricing-distribution';
 import {
   STEP_PRICING_SUPPLIER,
@@ -486,19 +486,22 @@ function solarTestErrorMessage(code: string, lang: Lang): string | undefined {
 type ModuleConfigDoc = Partial<Record<string, Record<string, unknown>>>;
 
 /**
- * Flatten a `/module_config` response into one cross-section map for
- * review-mode diff hints (UX-SPEC §3) — registry keys are globally unique
- * across sections (verified: no collision across modules/battery/solar/
- * boiler/pricing/pricing_supplier/basic in `config_registry.py`). Secret
- * fields never appear here — the backend emits only their `{key}_set` flag,
- * never the value itself.
+ * Flatten a `/module_config` response into one cross-section map, read two
+ * ways downstream: review-mode diff hints (UX-SPEC §3) key off a field's own
+ * `f.key`, secret set-state (live-walk defect 2) keys off `` `${f.key}_set` ``
+ * — same mechanism the settings tab already uses (`settings/index.ts:612`
+ * `this.current(section, \`${f.key}_set\`)`). Registry keys are globally
+ * unique across sections (verified: no collision across modules/battery/
+ * solar/boiler/pricing/pricing_supplier/basic in `config_registry.py`), and
+ * no registry key itself ends in `_set`, so both reads share this one map
+ * safely. Secret fields' real VALUE never appears here either way — the
+ * backend emits only the `{key}_set` boolean, never the value itself.
  */
 function flattenModuleConfig(doc: ModuleConfigDoc): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const section of Object.values(doc)) {
     if (!section) continue;
     for (const [key, value] of Object.entries(section)) {
-      if (key.endsWith('_set')) continue;
       out[key] = value;
     }
   }
@@ -806,6 +809,20 @@ export class OigOnboardingWizard extends LitElement {
       place-items: center;
       font-size: 10px;
     }
+
+    /* Live-walk defect 3 — solar provider acquisition guide, same visual
+       weight as .field-group (UX-SPEC §6 cards over a flat list). */
+    .provider-guide {
+      margin: 4px 0 14px;
+      padding: 10px 14px;
+      border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
+      border-radius: 10px;
+      font-size: 12.5px;
+    }
+    .provider-guide h4 { margin: 0 0 6px; font-size: 12px; }
+    .provider-guide-links { display: flex; gap: 12px; margin-bottom: 6px; }
+    .provider-guide ol { margin: 4px 0; padding-left: 18px; }
+    .provider-guide li { margin-bottom: 3px; line-height: 1.4; }
 
     footer {
       display: flex;
@@ -1279,6 +1296,36 @@ export class OigOnboardingWizard extends LitElement {
     this.stopBootstrap();
   }
 
+  /**
+   * Live-walk defect 3 — acquisition guide for the selected solar provider,
+   * mirroring the AI step's `PROVIDER_GUIDES` card (step-ai.ts:renderProvider).
+   * Rendered right after the provider select so it is visible for whichever
+   * provider is currently chosen, before the credential field(s) below it.
+   */
+  private renderSolarProviderGuide() {
+    const provider = String(this.solarDraft['solar_forecast_provider'] ?? '');
+    const guide = SOLAR_PROVIDER_GUIDES[provider];
+    if (!guide) return nothing;
+    return html`
+      <div class="provider-guide" data-testid="solar-provider-guide" data-provider=${provider}>
+        <h4>${guide.label} — jak získat přístup</h4>
+        <div class="provider-guide-links">
+          <a href=${guide.registerUrl} target="_blank" rel="noopener">Registrace</a>
+          ${guide.keysUrl && guide.keysUrl !== guide.registerUrl
+            ? html`<a href=${guide.keysUrl} target="_blank" rel="noopener">Správa klíčů</a>`
+            : nothing}
+        </div>
+        <ol>${guide.steps.map((s) => html`<li>${s}</li>`)}</ol>
+        ${guide.siteIdSteps
+          ? html`
+              <p class="hint">Jak najít Site ID:</p>
+              <ol>${guide.siteIdSteps.map((s) => html`<li>${s}</li>`)}</ol>
+            `
+          : nothing}
+      </div>
+    `;
+  }
+
   /** Q1: registry values → the exact `/solar_test` wire body, no extra keys. */
   private buildSolarTestBody(): Record<string, unknown> {
     const body: Record<string, unknown> = {};
@@ -1479,7 +1526,7 @@ export class OigOnboardingWizard extends LitElement {
               const row = renderFieldPresenter(f, {
                 value: this.solarDraft[f.key],
                 dirty: false,
-                secretSet: false,
+                secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
                 originalValue: this.originalValues[f.key],
                 reviewMode: this.onboardingState?.grandfathered === true,
                 onChange: (v: unknown) => {
@@ -1488,6 +1535,9 @@ export class OigOnboardingWizard extends LitElement {
                 },
                 entityCatalog: [],
               });
+              // Live-walk defect 3: guide card directly below the provider
+              // select, before its credential field(s).
+              if (f.key === 'solar_forecast_provider') return [row, this.renderSolarProviderGuide()];
               // Owner correction round 2 (UX-SPEC §Step 3): one-click action
               // directly below the GPS pair, wiring hass.config into the
               // fields the user could otherwise only type by hand — not a
@@ -1574,7 +1624,7 @@ export class OigOnboardingWizard extends LitElement {
                     ${renderFieldPresenter(f, {
                       value: this.batteryDraft[f.key],
                       dirty: false,
-                      secretSet: false,
+                      secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
                       originalValue: this.originalValues[f.key],
                       reviewMode: this.onboardingState?.grandfathered === true,
                       onChange: (v: unknown) => {
@@ -1646,7 +1696,7 @@ export class OigOnboardingWizard extends LitElement {
                 ${renderFieldPresenter(f, {
                   value: this.pricingDraft[f.key],
                   dirty: false,
-                  secretSet: false,
+                  secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
                   originalValue: this.originalValues[f.key],
                   reviewMode: this.onboardingState?.grandfathered === true,
                   onChange: (v: unknown) => {
@@ -1722,7 +1772,7 @@ export class OigOnboardingWizard extends LitElement {
                               ${renderFieldPresenter(f, {
                                 value: this.pricingDraft[f.key],
                                 dirty: false,
-                                secretSet: false,
+                                secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
                                 originalValue: this.originalValues[f.key],
                                 reviewMode: this.onboardingState?.grandfathered === true,
                                 onChange: (v: unknown) => {
@@ -1761,7 +1811,7 @@ export class OigOnboardingWizard extends LitElement {
           ${renderFieldPresenter(f, {
             value: this.boilerDraft[f.key] ?? this.originalValues[f.key] ?? registry.fields[f.key]?.default,
             dirty: false,
-            secretSet: false,
+            secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
             originalValue: this.originalValues[f.key],
             reviewMode,
             onChange: (v: unknown) => {
@@ -1815,7 +1865,7 @@ export class OigOnboardingWizard extends LitElement {
           ${renderFieldPresenter(f, {
             value: this.modulesDraft[f.key],
             dirty: false,
-            secretSet: false,
+            secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
             originalValue: this.originalValues[f.key],
             reviewMode: this.onboardingState?.grandfathered === true,
             onChange: (v: unknown) => {
@@ -1925,7 +1975,7 @@ export class OigOnboardingWizard extends LitElement {
                 ${renderFieldPresenter(f, {
                   value: this.connectionDraft[f.key],
                   dirty: false,
-                  secretSet: false,
+                  secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
                   originalValue: this.originalValues[f.key],
                   reviewMode: this.onboardingState?.grandfathered === true,
                   onChange: (v: unknown) => {
