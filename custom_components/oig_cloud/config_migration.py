@@ -25,6 +25,12 @@ from typing import Any, Callable
 
 from homeassistant.helpers.storage import Store
 
+from .const import (
+    CONF_BOILER_ALT_SOURCE_MODE,
+    CONF_BOILER_COMFORT_PROFILE_MODE,
+    CONF_BOILER_PLANNING_HORIZON_HOURS,
+    CONF_BOILER_RECOVERY_RATE_C_PER_HOUR,
+)
 from .config_merge import merge_entry_options
 
 TRANSFORM = Callable[[dict[str, Any]], tuple[dict[str, Any], list[str]] | dict[str, Any]]
@@ -140,10 +146,10 @@ _DEAD_OPTION_KEYS = frozenset(
         "disable_planning_min_guard",
         "price_hysteresis_czk",
         "hw_min_hold_hours",
-        "boiler_comfort_profile_mode",
-        "boiler_planning_horizon_hours",
-        "boiler_recovery_rate_c_per_hour",
-        "boiler_alt_source_mode",
+        CONF_BOILER_COMFORT_PROFILE_MODE,
+        CONF_BOILER_PLANNING_HORIZON_HOURS,
+        CONF_BOILER_RECOVERY_RATE_C_PER_HOUR,
+        CONF_BOILER_ALT_SOURCE_MODE,
     }
 )
 

@@ -408,11 +408,11 @@ async def test_dashboard_modules_view():
 
     assert response.status == 200
     assert payload["enable_boiler"] is True
-    assert payload["enable_auto"] is False
+    assert "enable_auto" not in payload
 
 
 @pytest.mark.asyncio
-async def test_dashboard_modules_view_enable_auto():
+async def test_dashboard_modules_view_strips_legacy_enable_auto():
     entry = DummyEntry(
         entry_id="entry1", options={"enable_boiler": False, "enable_auto": True}
     )
@@ -425,7 +425,7 @@ async def test_dashboard_modules_view_enable_auto():
 
     assert response.status == 200
     assert payload["enable_boiler"] is False
-    assert payload["enable_auto"] is True
+    assert "enable_auto" not in payload
 
 
 @pytest.mark.asyncio

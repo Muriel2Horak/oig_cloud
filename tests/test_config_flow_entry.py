@@ -144,12 +144,9 @@ async def test_quick_setup_success(monkeypatch):
     assert result["options"]["data_source_mode"] == "cloud_only"
 
 
-@pytest.mark.asyncio
-async def test_import_yaml_not_implemented():
+def test_import_yaml_flow_removed():
     flow = DummyConfigFlow()
-    result = await flow.async_step_import_yaml({})
-    assert result["type"] == "abort"
-    assert result["reason"] == "not_implemented"
+    assert not hasattr(flow, "async_step_import_yaml")
 
 
 @pytest.mark.asyncio
@@ -293,7 +290,8 @@ async def test_wizard_summary_full_option_mapping():
     assert options["boiler_plan_slot_minutes"] == 15
     assert options["boiler_temp_sensor_position"] == "upper_quarter"
     assert options["boiler_alt_energy_sensor"] == "sensor.boiler_alt_energy"
-    assert options["enable_auto"] is True
+    assert "boiler_planning_horizon_hours" not in options
+    assert "enable_auto" not in options
 
 
 @pytest.mark.asyncio
@@ -321,7 +319,7 @@ async def test_wizard_summary_defaults_for_optional_sections():
     assert options["max_ups_price_czk"] == 10.0
     assert "disable_planning_min_guard" not in options
     assert options["enable_boiler"] is False
-    assert options["enable_auto"] is False
+    assert "enable_auto" not in options
 
 
 @pytest.mark.asyncio
@@ -436,7 +434,7 @@ async def test_wizard_summary_defaults_for_boiler_fields():
     assert options["boiler_temp_sensor_position"] == "top"
     assert options["boiler_alt_energy_sensor"] == ""
     assert options["boiler_deadline_time"] == "20:00"
-    assert options["boiler_planning_horizon_hours"] == 36
+    assert "boiler_planning_horizon_hours" not in options
     assert options["boiler_plan_slot_minutes"] == 15
 
 

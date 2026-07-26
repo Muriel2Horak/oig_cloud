@@ -19,7 +19,6 @@ from ..const import (
     CONF_PASSWORD,
     CONF_USERNAME,
     DEFAULT_BOILER_PLAN_SLOT_MINUTES,
-    DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
     DEFAULT_CHARGE_RATE_KW,
     DEFAULT_NAME,
     DEFAULT_PLANNING_MIN_PERCENT,
@@ -63,11 +62,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
-
-_BOILER_PLANNING_HORIZON_MIN_HOURS = 12
-_BOILER_PLANNING_HORIZON_MAX_HOURS = 48
-_BOILER_ALT_SOURCE_MODES = frozenset({"disabled", "benchmark_only", "controllable"})
-
 
 class WizardMixin:
     """Mixin třída obsahující všechny wizard kroky.
@@ -477,27 +471,12 @@ class WizardMixin:
         }
 
     @staticmethod
-    def _clamp_boiler_planning_horizon_hours(value: Any) -> int:
-        try:
-            horizon = int(value)
-        except (TypeError, ValueError):
-            horizon = DEFAULT_BOILER_PLANNING_HORIZON_HOURS
-        return max(
-            _BOILER_PLANNING_HORIZON_MIN_HOURS,
-            min(_BOILER_PLANNING_HORIZON_MAX_HOURS, horizon),
-        )
-
-    @staticmethod
     def _build_boiler_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
         enable_boiler = wizard_data.get("enable_boiler", False)
         if wizard_data.get("boiler_module_selected") and not wizard_data.get(
             "boiler_setup_complete"
         ):
             enable_boiler = False
-
-        alt_source_mode = wizard_data.get("boiler_alt_source_mode", "disabled")
-        if alt_source_mode not in _BOILER_ALT_SOURCE_MODES:
-            alt_source_mode = "disabled"
 
         return {
             "enable_boiler": enable_boiler,
@@ -535,9 +514,6 @@ class WizardMixin:
             "boiler_effective_power_w": wizard_data.get(
                 "boiler_effective_power_w", 2000
             ),
-            "boiler_recovery_rate_c_per_hour": wizard_data.get(
-                "boiler_recovery_rate_c_per_hour", 5.0
-            ),
             "boiler_alt_heater_switch_entity": wizard_data.get(
                 "boiler_alt_heater_switch_entity", ""
             ),
@@ -547,22 +523,10 @@ class WizardMixin:
             "boiler_has_alternative_heating": wizard_data.get(
                 "boiler_has_alternative_heating", False
             ),
-            "boiler_alt_source_mode": alt_source_mode,
             "boiler_alt_cost_kwh": wizard_data.get("boiler_alt_cost_kwh", 0.0),
             "boiler_alt_energy_sensor": wizard_data.get("boiler_alt_energy_sensor", ""),
             "boiler_spot_price_sensor": wizard_data.get("boiler_spot_price_sensor", ""),
             "boiler_deadline_time": wizard_data.get("boiler_deadline_time", "20:00"),
-            "boiler_comfort_profile_mode": wizard_data.get(
-                "boiler_comfort_profile_mode", "history_driven"
-            ),
-            "boiler_planning_horizon_hours": (
-                WizardMixin._clamp_boiler_planning_horizon_hours(
-                    wizard_data.get(
-                        "boiler_planning_horizon_hours",
-                        DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                    )
-                )
-            ),
             "boiler_plan_slot_minutes": DEFAULT_BOILER_PLAN_SLOT_MINUTES,
             # F5 new keys (steps 6–8)
             "boiler_alt_source_type": wizard_data.get(
@@ -2389,10 +2353,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
             CONF_BOILER_COLD_INLET_TEMP_C,
             CONF_BOILER_DEADLINE_TIME,
-            CONF_BOILER_ALT_SOURCE_MODE,
             CONF_BOILER_HEATER_POWER_KW_ENTITY,
             CONF_BOILER_HEATER_SWITCH_ENTITY,
-            CONF_BOILER_PLANNING_HORIZON_HOURS,
             CONF_BOILER_SPOT_PRICE_SENSOR,
             CONF_BOILER_STRATIFICATION_MODE,
             CONF_BOILER_TARGET_TEMP_C,
@@ -2403,7 +2365,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_VOLUME_L,
             DEFAULT_BOILER_COLD_INLET_TEMP_C,
             DEFAULT_BOILER_DEADLINE_TIME,
-            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
             DEFAULT_BOILER_STRATIFICATION_MODE,
             DEFAULT_BOILER_TARGET_TEMP_C,
             DEFAULT_BOILER_TEMP_SENSOR_POSITION,
@@ -2550,27 +2511,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                                 selector.EntitySelectorConfig(domain="switch")
                             ),
                             vol.Optional(
-                                CONF_BOILER_ALT_SOURCE_MODE,
-                                default=defaults.get(
-                                    CONF_BOILER_ALT_SOURCE_MODE, "disabled"
-                                ),
-                            ): selector.SelectSelector(
-                                selector.SelectSelectorConfig(
-                                    options=[
-                                        selector.SelectOptionDict(
-                                            value="disabled", label="Disabled"
-                                        ),
-                                        selector.SelectOptionDict(
-                                            value="benchmark_only", label="Benchmark only"
-                                        ),
-                                        selector.SelectOptionDict(
-                                            value="controllable", label="Controllable"
-                                        ),
-                                    ],
-                                    mode=selector.SelectSelectorMode.DROPDOWN,
-                                )
-                            ),
-                            vol.Optional(
                                 CONF_BOILER_ALT_COST_KWH,
                                 default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
                             ): selector.NumberSelector(
@@ -2601,22 +2541,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                                     CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
                                 ),
                             ): selector.TimeSelector(),
-                            vol.Optional(
-                                CONF_BOILER_PLANNING_HORIZON_HOURS,
-                                default=self._clamp_boiler_planning_horizon_hours(
-                                    defaults.get(
-                                        CONF_BOILER_PLANNING_HORIZON_HOURS,
-                                        DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                                    )
-                                ),
-                            ): selector.NumberSelector(
-                                selector.NumberSelectorConfig(
-                                    min=_BOILER_PLANNING_HORIZON_MIN_HOURS,
-                                    max=_BOILER_PLANNING_HORIZON_MAX_HOURS,
-                                    step=1,
-                                    mode=selector.NumberSelectorMode.BOX,
-                                )
-                            ),
                             vol.Optional("go_back", default=False): selector.BooleanSelector(),
                         }
                     ),
@@ -2772,28 +2696,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="switch")
                     ),
-                    # Alternativa
-                    vol.Optional(
-                        CONF_BOILER_ALT_SOURCE_MODE,
-                        default=defaults.get(
-                            CONF_BOILER_ALT_SOURCE_MODE, "disabled"
-                        ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(
-                                    value="disabled", label="Disabled"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="benchmark_only", label="Benchmark only"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="controllable", label="Controllable"
-                                ),
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
                     vol.Optional(
                         CONF_BOILER_ALT_COST_KWH,
                         default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
@@ -2827,23 +2729,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                             CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
                         ),
                     ): selector.TimeSelector(),
-                    # Number inputy místo sliderů
-                    vol.Optional(
-                        CONF_BOILER_PLANNING_HORIZON_HOURS,
-                        default=self._clamp_boiler_planning_horizon_hours(
-                            defaults.get(
-                                CONF_BOILER_PLANNING_HORIZON_HOURS,
-                                DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                            )
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=_BOILER_PLANNING_HORIZON_MIN_HOURS,
-                            max=_BOILER_PLANNING_HORIZON_MAX_HOURS,
-                            step=1,
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
                     vol.Optional("go_back", default=False): selector.BooleanSelector(),
                 }
             ),

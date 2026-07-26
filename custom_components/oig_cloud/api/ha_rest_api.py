@@ -1903,7 +1903,6 @@ class OIGCloudDashboardModulesView(HomeAssistantView):
         return web.json_response(
             {
                 "enable_boiler": bool(opts.get("enable_boiler", False)),
-                "enable_auto": bool(opts.get("enable_auto", False)),
             }
         )
 

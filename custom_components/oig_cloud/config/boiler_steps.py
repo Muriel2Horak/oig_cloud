@@ -149,15 +149,9 @@ def validate_boiler_simple_3(user_input: Dict[str, Any]) -> Dict[str, str]:
     errors: Dict[str, str] = {}
     if not user_input.get(CONF_BOILER_HEATER_SWITCH_ENTITY, ""):
         errors[CONF_BOILER_HEATER_SWITCH_ENTITY] = "required"
-    mode = user_input.get("boiler_heating_capacity_mode", "effective_power_w")
-    if mode == "effective_power_w":
-        power = user_input.get("boiler_effective_power_w", 0)
-        if power < 100 or power > 12000:
-            errors["boiler_effective_power_w"] = "invalid_power"
-    elif mode == "recovery_rate_c_per_hour":
-        rate = user_input.get("boiler_recovery_rate_c_per_hour", 0)
-        if rate < 0.1 or rate > 30:
-            errors["boiler_recovery_rate_c_per_hour"] = "invalid_rate"
+    power = user_input.get("boiler_effective_power_w", 0)
+    if power < 100 or power > 12000:
+        errors["boiler_effective_power_w"] = "invalid_power"
     return errors
 
 
@@ -185,10 +179,6 @@ def get_boiler_simple_3_schema(
                         selector.SelectOptionDict(
                             value="effective_power_w", label="Effective power (W)"
                         ),
-                        selector.SelectOptionDict(
-                            value="recovery_rate_c_per_hour",
-                            label="Recovery rate (°C/hour)",
-                        ),
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
@@ -199,17 +189,6 @@ def get_boiler_simple_3_schema(
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=100, max=12000, step=100, mode=selector.NumberSelectorMode.BOX
-                )
-            ),
-            vol.Optional(
-                "boiler_recovery_rate_c_per_hour",
-                default=defaults.get("boiler_recovery_rate_c_per_hour", 5.0),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0.1,
-                    max=30.0,
-                    step=0.1,
-                    mode=selector.NumberSelectorMode.BOX,
                 )
             ),
             vol.Optional(
@@ -224,12 +203,7 @@ def get_boiler_simple_3_schema(
 
 
 def validate_boiler_simple_4(user_input: Dict[str, Any]) -> Dict[str, str]:
-    errors: Dict[str, str] = {}
-    mode = user_input.get("boiler_alt_source_mode", "disabled")
-    if mode == "controllable":
-        if not user_input.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY, ""):
-            errors[CONF_BOILER_ALT_HEATER_SWITCH_ENTITY] = "required"
-    return errors
+    return {}
 
 
 def get_boiler_simple_4_schema(
@@ -238,45 +212,19 @@ def get_boiler_simple_4_schema(
     if defaults is None:
         defaults = {}
     schema_fields: Dict[Any, Any] = {
-        vol.Required(
-            "boiler_alt_source_mode",
-            default=defaults.get("boiler_alt_source_mode", "disabled"),
-        ): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(value="disabled", label="Disabled"),
-                    selector.SelectOptionDict(
-                        value="benchmark_only", label="Benchmark only"
-                    ),
-                    selector.SelectOptionDict(
-                        value="controllable", label="Controllable"
-                    ),
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            )
-        ),
-    }
-    mode = defaults.get("boiler_alt_source_mode", "disabled")
-    if mode in ("benchmark_only", "controllable"):
-        schema_fields[
-            vol.Optional(
-                CONF_BOILER_ALT_COST_KWH,
-                default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
-            )
-        ] = selector.NumberSelector(
+        vol.Optional(
+            CONF_BOILER_ALT_COST_KWH,
+            default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
+        ): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0, max=20, step=0.1, mode=selector.NumberSelectorMode.BOX
             )
-        )
-    if mode == "controllable":
-        schema_fields[
-            vol.Required(
-                CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
-                default=defaults.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY, ""),
-            )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="switch")
-        )
+        ),
+        vol.Optional(
+            CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+            default=defaults.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY, ""),
+        ): selector.EntitySelector(selector.EntitySelectorConfig(domain="switch")),
+    }
     schema_fields[vol.Optional("go_back", default=False)] = (
         selector.BooleanSelector()
     )
@@ -298,25 +246,6 @@ def get_boiler_simple_5_schema(
         defaults = {}
     return vol.Schema(
         {
-            vol.Required(
-                "boiler_comfort_profile_mode",
-                default=defaults.get("boiler_comfort_profile_mode", "history_driven"),
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(
-                            value="history_driven", label="History driven"
-                        ),
-                        selector.SelectOptionDict(
-                            value="manual", label="Manual"
-                        ),
-                        selector.SelectOptionDict(
-                            value="default", label="Default"
-                        ),
-                    ],
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            ),
             vol.Optional(
                 CONF_BOILER_TARGET_TEMP_C,
                 default=defaults.get(
