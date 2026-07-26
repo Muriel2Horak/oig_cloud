@@ -25,6 +25,7 @@ def merge_entry_options(
     new_options: Dict[str, Any] = dict(current_options)
     new_options.update(updates)
     needs_reload = False
+    reload_reason_keys: list[str] = []
     for key, value in updates.items():
         field = FIELD_REGISTRY.get(key)
         if field is None:
@@ -34,8 +35,10 @@ def merge_entry_options(
         if not suppress_reload and field.reload_on_change:
             if value != current_options.get(key):
                 needs_reload = True
+                reload_reason_keys.append(key)
     if needs_reload:
         new_options["_needs_reload"] = True
+        new_options["_reload_reason"] = ",".join(reload_reason_keys)
     hass.config_entries.async_update_entry(entry, options=new_options)
     _LOGGER.debug("merge_entry_options: merged %s keys", len(updates))
     return True

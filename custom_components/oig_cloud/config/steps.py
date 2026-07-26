@@ -12,6 +12,7 @@ from ..ai.key_store import AiKeyStore
 from ..boiler.const import BATTERY_CYCLE_COST_CZK_PER_KWH
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
+from .modules_validation import missing_dashboard_requirements, validate_modules_selection
 from .solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
 from .solar_rules import normalize_azimuth, validate_solar_effective
 from ..const import (
@@ -917,19 +918,11 @@ Kliknutím na "Odeslat" spustíte průvodce.
         )
 
     def _validate_modules_selection(self, user_input: Dict[str, Any]) -> Dict[str, str]:
-        errors: Dict[str, str] = {}
-        if user_input.get("enable_battery_prediction"):
-            if not user_input.get("enable_solar_forecast"):
-                errors["enable_battery_prediction"] = "requires_solar_forecast"
-            if not user_input.get("enable_extended_sensors"):
-                errors["enable_extended_sensors"] = "required_for_battery"
-
-        if user_input.get("enable_dashboard"):
-            missing = self._missing_dashboard_requirements(user_input)
-            if missing:
-                errors["enable_dashboard"] = "dashboard_requires_all"
-                self._wizard_data["_missing_for_dashboard"] = missing
-
+        errors = validate_modules_selection(user_input)
+        if "enable_dashboard" in errors:
+            self._wizard_data["_missing_for_dashboard"] = missing_dashboard_requirements(
+                user_input
+            )
         return errors
 
     @staticmethod
@@ -1022,21 +1015,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     break
 
         return errors
-
-    @staticmethod
-    def _missing_dashboard_requirements(user_input: Dict[str, Any]) -> list[str]:
-        missing = []
-        if not user_input.get("enable_statistics"):
-            missing.append("Statistiky")
-        if not user_input.get("enable_solar_forecast"):
-            missing.append("Solární předpověď")
-        if not user_input.get("enable_battery_prediction"):
-            missing.append("Predikce baterie")
-        if not user_input.get("enable_pricing"):
-            missing.append("Cenové senzory a spotové ceny")
-        if not user_input.get("enable_extended_sensors"):
-            missing.append("Rozšířené senzory")
-        return missing
 
     def _get_modules_schema(
         self, defaults: Optional[Dict[str, Any]] = None

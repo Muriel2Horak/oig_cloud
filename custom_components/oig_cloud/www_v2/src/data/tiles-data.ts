@@ -58,9 +58,9 @@ export interface ResolvedTile {
 }
 
 export interface ModuleTileFlags {
-  enablePricing: boolean;
-  enableBoiler: boolean;
-  enableStatistics: boolean;
+  enablePricing?: boolean;
+  enableBoiler?: boolean;
+  enableStatistics?: boolean;
   enablePrediction?: boolean;
 }
 
@@ -78,6 +78,11 @@ export const DEFAULT_TILES_CONFIG: TilesConfig = {
 };
 
 const STORAGE_KEY = 'oig_dashboard_tiles';
+// Previous-version snapshot, written on every save before STORAGE_KEY is
+// overwritten. Lets loadTilesConfig recover from a save that wiped current
+// (e.g. a stray save fired while in-memory state had regressed to empty)
+// instead of falling through to DEFAULT_TILES_CONFIG.
+const PREV_STORAGE_KEY = 'oig_dashboard_tiles_prev';
 
 // ============================================================================
 // POWER FORMAT HELPER (V1 formatPowerValue)
@@ -100,8 +105,18 @@ function formatPowerValue(value: number, unit: string): { value: string; unit: s
 // CONFIG MANAGEMENT
 // ============================================================================
 
+/** True when a tiles config has no left/right tiles at all (fresh defaults or a wipe). */
+export function isEmptyTilesConfig(config: TilesConfig | null | undefined): boolean {
+  if (!config) return true;
+  const left = config.tiles_left ?? [];
+  const right = config.tiles_right ?? [];
+  return !left.some(Boolean) && !right.some(Boolean);
+}
+
 /**
- * Load tile configuration from HA (WS call), with localStorage fallback.
+ * Load tile configuration from HA (WS call), with localStorage fallback,
+ * with a final recovery attempt from the previous-version snapshot before
+ * giving up to DEFAULT_TILES_CONFIG.
  */
 export async function loadTilesConfig(): Promise<TilesConfig> {
   try {
@@ -115,8 +130,11 @@ export async function loadTilesConfig(): Promise<TilesConfig> {
 
     const config = response?.response?.config;
     if (config && typeof config === 'object') {
-      oigLog.debug('Loaded tiles config from HA');
-      return normalizeTilesConfig(config);
+      const normalized = normalizeTilesConfig(config);
+      if (!isEmptyTilesConfig(normalized)) {
+        oigLog.debug('Loaded tiles config from HA');
+        return normalized;
+      }
     }
   } catch (e) {
     oigLog.debug('WS tile config load failed, trying localStorage', { error: (e as Error).message });
@@ -126,22 +144,44 @@ export async function loadTilesConfig(): Promise<TilesConfig> {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      const config = JSON.parse(stored);
-      oigLog.debug('Loaded tiles config from localStorage');
-      return normalizeTilesConfig(config);
+      const normalized = normalizeTilesConfig(JSON.parse(stored));
+      if (!isEmptyTilesConfig(normalized)) {
+        oigLog.debug('Loaded tiles config from localStorage');
+        return normalized;
+      }
     }
   } catch {
     oigLog.debug('localStorage tile config load failed');
+  }
+
+  // HA and localStorage both empty/unavailable — try the previous-version
+  // backup before falling back to defaults.
+  try {
+    const prev = localStorage.getItem(PREV_STORAGE_KEY);
+    if (prev) {
+      const recovered = normalizeTilesConfig(JSON.parse(prev));
+      if (!isEmptyTilesConfig(recovered)) {
+        oigLog.info('Recovered tiles config from previous-version backup');
+        return recovered;
+      }
+    }
+  } catch {
+    oigLog.debug('localStorage previous-version tile config recovery failed');
   }
 
   return DEFAULT_TILES_CONFIG;
 }
 
 /**
- * Save tile configuration to HA + localStorage.
+ * Save tile configuration to HA + localStorage. Preserves the value being
+ * overwritten under PREV_STORAGE_KEY on every save, so a save that wipes
+ * current (e.g. stray save on regressed in-memory state) stays recoverable.
  */
 export async function saveTilesConfig(config: TilesConfig): Promise<boolean> {
   try {
+    const previousRaw = localStorage.getItem(STORAGE_KEY);
+    localStorage.setItem(PREV_STORAGE_KEY, previousRaw ?? JSON.stringify(config));
+
     // Save to localStorage first (faster)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
 
@@ -359,18 +399,23 @@ export function resolveTiles(config: TilesConfig): { left: ResolvedTile[]; right
   };
 }
 
-export function shouldRenderDashboardTile(tile: ResolvedTile, flags: ModuleTileFlags): boolean {
+/**
+ * Defaults every flag to visible unless explicitly disabled — a missing or
+ * partial flags object (e.g. cfg.modules absent, or all flags failed to
+ * load) must never hide tiles.
+ */
+export function shouldRenderDashboardTile(tile: ResolvedTile, flags: ModuleTileFlags = {}): boolean {
   const module = isTileModule(tile.config.module)
     ? tile.config.module
     : resolveTileModule(tile.config.entity_id);
 
   switch (module) {
     case 'pricing':
-      return flags.enablePricing;
+      return flags.enablePricing !== false;
     case 'boiler':
-      return flags.enableBoiler;
+      return flags.enableBoiler !== false;
     case 'statistics':
-      return flags.enableStatistics;
+      return flags.enableStatistics !== false;
     case 'battery_prediction':
       return flags.enablePrediction !== false;
     case 'core':
@@ -379,7 +424,7 @@ export function shouldRenderDashboardTile(tile: ResolvedTile, flags: ModuleTileF
   }
 }
 
-export function filterDashboardTiles(tiles: ResolvedTile[], flags: ModuleTileFlags): ResolvedTile[] {
+export function filterDashboardTiles(tiles: ResolvedTile[], flags: ModuleTileFlags = {}): ResolvedTile[] {
   return tiles.filter((tile) => shouldRenderDashboardTile(tile, flags));
 }
 

@@ -382,15 +382,21 @@ describe('BoilerConfig interface', () => {
 });
 
 // ============================================================
-// 8. RELOAD_SECTIONS — boiler triggers reload, others do not
+// 8. RELOAD_SECTIONS — boiler and modules trigger reload, others do not
 // ============================================================
 describe('RELOAD_SECTIONS', () => {
   it('includes boiler', () => {
     expect(RELOAD_SECTIONS.has('boiler')).toBe(true);
   });
 
-  it('does not include modules, battery, solar', () => {
-    expect(RELOAD_SECTIONS.has('modules')).toBe(false);
+  // fix D: modules writes reload the config entry same as boiler — the
+  // settings card must show the same reload overlay + return-to-dashboard
+  // flow, not strand the user on HA's own dashboard mid-reload.
+  it('includes modules', () => {
+    expect(RELOAD_SECTIONS.has('modules')).toBe(true);
+  });
+
+  it('does not include battery, solar', () => {
     expect(RELOAD_SECTIONS.has('battery')).toBe(false);
     expect(RELOAD_SECTIONS.has('solar')).toBe(false);
   });

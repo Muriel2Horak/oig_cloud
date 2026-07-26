@@ -55,6 +55,7 @@ from ..config_registry import (
     registry_as_api_dict,
 )
 from ..battery_forecast.config import SimulatorConfig
+from ..config.modules_validation import validate_modules_selection
 from ..config.solar_rules import normalize_azimuth, validate_solar_effective
 from ..config.solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
 from ..ai.backends import (
@@ -1541,6 +1542,15 @@ class OIGCloudModuleConfigView(HomeAssistantView):
             )
             effective = {**dict(entry.options), **private_effective, **updates}
             errors.update(validate_solar_effective(effective))
+
+        # Cross-field module rules: shared with the onboarding wizard (fix-C
+        # live finding — REST accepted enable_battery_prediction=true with
+        # enable_solar_forecast=false, a combination the wizard blocks). Same
+        # effective-config shape as the solar validation above, so a partial
+        # module toggle can't slip past REST while the wizard would reject it.
+        if section == "modules" and not errors:
+            effective = {**dict(entry.options), **updates}
+            errors.update(validate_modules_selection(effective))
 
         if errors:
             return web.json_response({"error": "validation", "fields": errors}, status=400)

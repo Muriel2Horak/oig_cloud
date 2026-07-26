@@ -704,6 +704,49 @@ def test_current_mode_fallback(monkeypatch):
     assert sensor._get_current_mode() == "HOME I"
 
 
+def test_parse_time_to_datetime_accepts_24_00_as_next_day_midnight(monkeypatch):
+    fixed_now = datetime(2025, 1, 1, 23, 50, 0)
+    monkeypatch.setattr(grid_module.dt_util, "now", lambda: fixed_now)
+    sensor = _make_sensor(monkeypatch, DummyHass())
+
+    assert sensor._parse_time_to_datetime("24:00", "today") == datetime(
+        2025, 1, 2, 0, 0, 0
+    )
+    assert sensor._parse_time_to_datetime("24:00:00", "today") == datetime(
+        2025, 1, 2, 0, 0, 0
+    )
+
+
+def test_build_block_window_accepts_24_00_as_next_day_midnight(monkeypatch):
+    fixed_now = datetime(2025, 1, 1, 23, 50, 0)
+    sensor = _make_sensor(monkeypatch, DummyHass())
+
+    window = sensor._build_block_window(
+        {"time_from": "23:45", "time_to": "24:00", "day": "today"}, fixed_now
+    )
+
+    assert window is not None
+    start_time, end_time, start_str, end_str = window
+    assert start_time == datetime(2025, 1, 1, 23, 45, 0)
+    assert end_time == datetime(2025, 1, 2, 0, 0, 0)
+    assert start_str == "23:45"
+    assert end_str == "24:00"
+
+
+def test_build_block_window_warning_logged_once_not_per_tick(monkeypatch, caplog):
+    sensor = _make_sensor(monkeypatch, DummyHass())
+    now = datetime(2025, 1, 1, 12, 0, 0)
+    block = {"time_from": "bad", "time_to": "bad", "day": "today"}
+
+    with caplog.at_level("WARNING"):
+        for _ in range(5):
+            result = sensor._build_block_window(block, now)
+
+    assert result is None
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+
+
 def test_parse_time_to_datetime_tomorrow(monkeypatch):
     fixed_now = datetime(2025, 1, 1, 10, 30, 0)
     monkeypatch.setattr(grid_module.dt_util, "now", lambda: fixed_now)

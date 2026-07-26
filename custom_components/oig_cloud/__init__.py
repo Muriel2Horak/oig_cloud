@@ -2036,7 +2036,14 @@ async def async_unload_entry(
         if service_shield and hasattr(service_shield, "cleanup"):
             try:
                 await service_shield.cleanup()
-            except Exception as err:
+            except (Exception, asyncio.CancelledError) as err:
+                # B-fix: ServiceShield.cleanup() re-raises CancelledError when it
+                # cancels its own check_task — that is NOT the current task being
+                # cancelled, just our own cleanup finishing. Left uncaught it used
+                # to blow past this except Exception, abort the whole unload, and
+                # (per HA's ConfigEntries.async_reload) permanently skip the
+                # matching async_setup_entry — the module toggle would never
+                # recreate its entities without a full HA restart.
                 _LOGGER.debug("ServiceShield cleanup failed: %s", err)
 
         data_source_controller = hass.data[DOMAIN][entry.entry_id].get(
@@ -2054,7 +2061,7 @@ async def async_unload_entry(
         if boiler_coordinator and hasattr(boiler_coordinator, "async_shutdown"):
             try:
                 await boiler_coordinator.async_shutdown()
-            except Exception as err:
+            except (Exception, asyncio.CancelledError) as err:
                 _LOGGER.debug("BoilerCoordinator shutdown failed: %s", err)
 
         # H4: the MAIN coordinator owns self-re-arming timers (hourly OTE
@@ -2064,34 +2071,65 @@ async def async_unload_entry(
         if main_coordinator and hasattr(main_coordinator, "async_shutdown"):
             try:
                 await main_coordinator.async_shutdown()
-            except Exception as err:
+            except (Exception, asyncio.CancelledError) as err:
+                # B-fix: same self-cancellation re-raise as ServiceShield above —
+                # async_shutdown() cancels its own _spot_retry_task /
+                # _battery_forecast_task and re-raises CancelledError from
+                # awaiting them. Must not abort the unload sequence.
                 _LOGGER.debug("Coordinator shutdown failed: %s", err)
 
         from .shared.emitter import async_shutdown_entry_telemetry
 
         try:
             await async_shutdown_entry_telemetry(hass, entry)
-        except Exception as err:
+        except (Exception, asyncio.CancelledError) as err:
             _LOGGER.debug("Telemetry shutdown failed: %s", err)
 
         from .services import async_unload_services
 
         try:
             await async_unload_services(hass)
-        except Exception as err:
+        except (Exception, asyncio.CancelledError) as err:
             _LOGGER.debug("Service unload failed: %s", err)
 
         session_manager = hass.data[DOMAIN][entry.entry_id].get("session_manager")
         if session_manager:
             _LOGGER.debug("Closing session manager")
-            await session_manager.close()
+            try:
+                await session_manager.close()
+            except (Exception, asyncio.CancelledError) as err:
+                _LOGGER.debug("Session manager close failed: %s", err)
 
-    # M17: unload BOTH forwarded platforms (setup forwards sensor + switch);
-    # unloading only sensor leaked switch entities on every reload.
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
+    # M17: unload BOTH forwarded platforms (setup forwards sensor + switch).
+    # B-fix: unload each platform independently — async_unload_platforms()
+    # gathers all platforms at once, so one platform raising (or returning
+    # False) used to abort the whole call. HA's ConfigEntries.async_reload()
+    # treats any unload failure as terminal and never calls async_setup_entry
+    # again, so a single bad platform unload permanently blocked entities from
+    # being recreated on a module re-enable (only a full HA restart, which
+    # calls async_setup_entry directly, could heal it).
+    platform_unload_ok = True
+    for platform in PLATFORMS:
+        try:
+            ok = await hass.config_entries.async_forward_entry_unload(entry, platform)
+            if not ok:
+                platform_unload_ok = False
+                _LOGGER.warning("Unloading platform %s reported failure", platform)
+        except (Exception, asyncio.CancelledError) as err:
+            platform_unload_ok = False
+            _LOGGER.error(
+                "Unloading platform %s raised %s — continuing so setup can still run",
+                platform,
+                err,
+                exc_info=True,
+            )
+
+    if platform_unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
-    return unload_ok
+    # Always report success: a partial platform-unload failure must not stop
+    # the caller (HA's async_reload / our own async_reload_entry) from running
+    # async_setup_entry again — that is the only thing that recreates entities.
+    return True
 
 
 async def async_remove_entry(
@@ -2201,7 +2239,13 @@ async def async_update_options(
 
     # Pokud byla označena potřeba reload, proveď ho
     if new_options.get("_needs_reload"):
+        reload_reason = new_options.pop("_reload_reason", None) or "unknown"
         new_options.pop("_needs_reload", None)
+        _LOGGER.debug(
+            "Reload scheduled for entry %s, reason: %s",
+            config_entry.entry_id,
+            reload_reason,
+        )
         hass.config_entries.async_update_entry(config_entry, options=new_options)
         hass.async_create_task(hass.config_entries.async_reload(config_entry.entry_id))
     else:

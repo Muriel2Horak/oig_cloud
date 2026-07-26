@@ -35,6 +35,9 @@ async def test_frontend_tile_add_remove(e2e_setup):
     )
     assert response["config"]["tiles_left"] == ["battery"]
 
+    # Contract change (Fix A): a subsequent "remove all tiles" save is
+    # treated as the data-loss case the live finding reported, so the load
+    # returns the backed-up previous config (not the empty overwrite).
     await hass.services.async_call(
         DOMAIN,
         "save_dashboard_tiles",
@@ -48,4 +51,4 @@ async def test_frontend_tile_add_remove(e2e_setup):
         blocking=True,
         return_response=True,
     )
-    assert response["config"]["tiles_left"] == []
+    assert response["config"]["tiles_left"] == ["battery"]

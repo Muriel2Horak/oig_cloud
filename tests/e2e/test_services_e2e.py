@@ -97,8 +97,12 @@ async def test_service_update_solar_forecast_calls_update(e2e_setup):
 
 @pytest.mark.e2e
 async def test_service_dashboard_tiles_roundtrip(e2e_setup):
+    # Contract change (Fix A, live finding "Moje dlazdice wiped"):
+    # an empty tiles config is now treated as "no real data" and the loader
+    # returns None so the FE does not persist DEFAULT_TILES_CONFIG over a
+    # recoverable last-known-good. Saving a deliberately empty config thus
+    # reads back as None, not as the empty config itself.
     hass, _entry = e2e_setup
-    config = {"tiles_left": [], "tiles_right": [], "version": 1}
     await hass.services.async_call(
         DOMAIN,
         "save_dashboard_tiles",
@@ -112,4 +116,28 @@ async def test_service_dashboard_tiles_roundtrip(e2e_setup):
         blocking=True,
         return_response=True,
     )
-    assert response["config"] == config
+    assert response["config"] is None
+
+    # A non-empty save followed by an empty save is the data-loss case
+    # Fix A is built to defend against: the previous non-empty config is
+    # backed up, and the load returns the backup rather than the empty one.
+    await hass.services.async_call(
+        DOMAIN,
+        "save_dashboard_tiles",
+        {"config": '{"tiles_left": ["bazen"], "tiles_right": [], "version": 1}'},
+        blocking=True,
+    )
+    await hass.services.async_call(
+        DOMAIN,
+        "save_dashboard_tiles",
+        {"config": '{"tiles_left": [], "tiles_right": [], "version": 1}'},
+        blocking=True,
+    )
+    response = await hass.services.async_call(
+        DOMAIN,
+        "get_dashboard_tiles",
+        {},
+        blocking=True,
+        return_response=True,
+    )
+    assert response["config"]["tiles_left"] == ["bazen"]
