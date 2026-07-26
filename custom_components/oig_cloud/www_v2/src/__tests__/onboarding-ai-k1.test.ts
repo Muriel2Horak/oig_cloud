@@ -419,7 +419,7 @@ describe('Settings AI card parity', () => {
     configureMocks();
 
     const settings = await mountSettings();
-    expect(deepText(settings.shadowRoot!)).toContain('Poskytovatel AI');
+    expect(deepText(settings.shadowRoot!)).toContain('🤖 AI');
 
     const secretInput = deepQuery(settings.shadowRoot!, 'input[type="password"]') as HTMLInputElement;
     expect(secretInput).toBeTruthy();

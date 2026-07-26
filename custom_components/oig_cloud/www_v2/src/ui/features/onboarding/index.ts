@@ -65,6 +65,7 @@ import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-
 import { STEP_CONNECTION } from './step-connection';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
 export { renderFieldPresenter, fieldStyles };
+import { ergoStyles } from './ergo-styles';
 import {
   completeOnboardingStep,
   loadOnboardingState,
@@ -285,14 +286,18 @@ export class OigOnboardingStepAi extends LitElement {
   }
 
   /** Soft-guide state — null while loading / on network error. Only used
-   * when `onboardingState` is not supplied by the host. */
+    * when `onboardingState` is not supplied by the host. */
   @state() private state: OnboardingState | null = null;
 
   /** Verifying spinner state — failures still let the user continue (#5/#6). */
   @state() private verifying: string | null = null;
   @state() private lastVerify: AiVerifyResult | null = null;
 
+  @state() private selectedProvider: string = 'groq';
+
   static styles = css`
+    ${ergoStyles}
+
     :host {
       display: block;
     }
@@ -360,7 +365,7 @@ export class OigOnboardingStepAi extends LitElement {
     }
   }
 
-  private renderProvider(provider: string) {
+  private renderProviderDetail(provider: string) {
     const guide = PROVIDER_GUIDES[provider];
     if (!guide) return nothing;
     const prefix = keyPrefixFor(provider);
@@ -370,23 +375,18 @@ export class OigOnboardingStepAi extends LitElement {
           ${guide.label}
           ${STEP_AI.skippable ? html`<span class="skippable-badge">(volitelné)</span>` : nothing}
         </h3>
-        ${guide.registerUrl
-          ? html`<div><a href=${guide.registerUrl} target="_blank" rel="noopener">
-                Registrace
-              </a></div>`
-          : nothing}
-        ${guide.keysUrl
-          ? html`<div><a href=${guide.keysUrl} target="_blank" rel="noopener">
-                Správa klíčů
-              </a></div>`
-          : nothing}
-        <ol>
-          ${guide.steps.map((s) => html`<li>${s}</li>`)}
-        </ol>
-        ${guide.freeTier ? html`<div class="tier">${guide.freeTier}</div>` : nothing}
         <div class="disclosure" data-testid=${`disclosure-${provider}`}>
           ${t(guide.disclosureKey, this.stepLang)}
         </div>
+        ${guide.registerUrl
+          ? html`
+              <details class="inline">
+                <summary>Jak získat klíč (${guide.steps.length} kroky)</summary>
+                <ol>${guide.steps.map((s) => html`<li>${s}</li>`)}</ol>
+              </details>
+            `
+          : nothing}
+        ${guide.freeTier ? html`<div class="tier">${guide.freeTier}</div>` : nothing}
         ${prefix
           ? html`
               <input
@@ -408,29 +408,51 @@ export class OigOnboardingStepAi extends LitElement {
                     : nothing}
               </div>
             `
-          : nothing}
+          : html`<div class="tier">Použije se AI, kterou už máte v HA nastavenou. Žádný klíč není potřeba.</div>`}
       </div>
     `;
   }
 
   render() {
+    const PROVIDER_META: Record<string, { ic: string; tag: string }> = {
+      ai_task: { ic: '🏠', tag: 'Nic neopouští váš Home Assistant.' },
+      groq: { ic: '⚡', tag: 'Zdarma, rychlé, smluvně netrénuje na vstupech.' },
+      nvidia: { ic: '🟩', tag: 'Zdarma (trial), velký katalog modelů.' },
+    };
+    const sel = this.selectedProvider;
     return html`
-      <section aria-labelledby="step-ai-heading">
+      <section aria-labelledby="step-ai-heading" style="--sc: var(--c-ai, #9d7bff)">
         <h2 id="step-ai-heading">
           ① AI${STEP_AI.skippable ? html` <span class="skippable-badge">(volitelné)</span>` : nothing}
           ${(this.onboardingState !== undefined ? this.onboardingState : this.state)?.steps.ai === 'done'
             ? html`<span class="done-badge">✓ hotovo</span>`
             : nothing}
         </h2>
-        <div data-testid="ai-intro">
-          <h3>${t('onboarding.ai.intro_heading', this.stepLang)}</h3>
-          <p>${t('onboarding.ai.intro_body', this.stepLang)}</p>
-          <p>${t('onboarding.ai.intro_why_it_matters', this.stepLang)}</p>
-          <p>${t('onboarding.ai.intro_optionality', this.stepLang)}</p>
+        <div class="oneliner" data-testid="ai-intro">
+          Posíláme <b>jen anonymní čísla</b> (výkon panelů, kapacita baterie) — nikdy polohu, jméno či e-mail.
+          <details class="inline"><summary>více o soukromí</summary>
+            <p>AI Task entita vznikne ve vaší HA instanci. U volby „Moje AI v HA" data neopouští váš dům vůbec.
+            Dashboard i všechny výpočty fungují stejně i bez AI.</p>
+          </details>
         </div>
-        <div class="grid">
-          ${Object.keys(PROVIDER_GUIDES).map((p) => this.renderProvider(p))}
+        <div class="ptiles" data-testid="ai-provider-tiles">
+          ${Object.keys(PROVIDER_GUIDES).map((p) => {
+            const meta = PROVIDER_META[p] ?? { ic: '🤖', tag: '' };
+            return html`
+              <button
+                type="button"
+                class="ptile ${p === sel ? 'on' : ''}"
+                data-provider-tile=${p}
+                @click=${() => { this.selectedProvider = p; }}
+              >
+                <span class="pic">${meta.ic}</span>
+                <b>${PROVIDER_GUIDES[p].label}</b>
+                <i>${meta.tag}</i>
+              </button>
+            `;
+          })}
         </div>
+        ${this.renderProviderDetail(sel)}
       </section>
     `;
   }
@@ -939,6 +961,7 @@ export class OigOnboardingWizard extends LitElement {
   static styles = css`
     ${fieldStyles}
     ${scenarioCardStyles}
+    ${ergoStyles}
 
     :host {
       display: contents;
@@ -2332,8 +2355,8 @@ export class OigOnboardingWizard extends LitElement {
     const guide = SOLAR_PROVIDER_GUIDES[provider];
     if (!guide) return nothing;
     return html`
-      <div class="provider-guide" data-testid="solar-provider-guide" data-provider=${provider}>
-        <h4>${guide.label} — jak získat přístup</h4>
+      <details class="inline" data-testid="solar-provider-guide" data-provider=${provider}>
+        <summary>${guide.label} — jak získat přístup</summary>
         <div class="provider-guide-links">
           <a href=${guide.registerUrl} target="_blank" rel="noopener">Registrace</a>
           ${guide.keysUrl && guide.keysUrl !== guide.registerUrl
@@ -2343,11 +2366,13 @@ export class OigOnboardingWizard extends LitElement {
         <ol>${guide.steps.map((s) => html`<li>${s}</li>`)}</ol>
         ${guide.siteIdSteps
           ? html`
-              <p class="hint">Jak najít Site ID:</p>
-              <ol>${guide.siteIdSteps.map((s) => html`<li>${s}</li>`)}</ol>
+              <details class="inline">
+                <summary>Jak najít Site ID</summary>
+                <ol>${guide.siteIdSteps.map((s) => html`<li>${s}</li>`)}</ol>
+              </details>
             `
           : nothing}
-      </div>
+      </details>
     `;
   }
   /** Ends a tariff-matrix click-drag even if the mouse is released outside
@@ -2936,7 +2961,9 @@ export class OigOnboardingWizard extends LitElement {
         <section class="step step-welcome" data-step="welcome" style=${`--sc:${STEP_COLOR_VAR.welcome}`}>
           ${this.renderStepHead('welcome')}
           <div class="step-card">
-            <p>${t(isReview ? 'onboarding.welcome.review' : 'onboarding.welcome.new_install', this.wizardLang)}</p>
+            <div class="oneliner">
+              ${t(isReview ? 'onboarding.welcome.review' : 'onboarding.welcome.new_install', this.wizardLang)}
+            </div>
           </div>
         </section>`;
     }
@@ -3265,9 +3292,10 @@ export class OigOnboardingWizard extends LitElement {
                       ${rate?.description
                         ? html`<p class="hint" data-testid="tariff-description">${rate.description}</p>`
                         : nothing}
-                      <p class="hint" data-testid="tariff-invoice-hint">
-                        Svou sazbu najdete na faktuře za elektřinu, obvykle v části „Distribuční sazba“ nebo „Sazba“.
-                      </p>
+                      <details class="inline" data-testid="tariff-invoice-hint">
+                        <summary>Jak najít svou sazbu</summary>
+                        <p>Svou sazbu najdete na faktuře za elektřinu, obvykle v části „Distribuční sazba" nebo „Sazba".</p>
+                      </details>
                     `
                   : nothing}
               </div>
@@ -3312,8 +3340,7 @@ export class OigOnboardingWizard extends LitElement {
                 </p>`
               : nothing}
             <p data-testid="pricing-supplier-intro" class="hint">
-              Nákupní cena od dodavatele — kolik platíte za elektřinu odebranou ze sítě. Vyberte
-              scénář, který odpovídá vaší smlouvě.
+              Nákupní cena od dodavatele — vyberte scénář, který odpovídá vaší smlouvě.
             </p>
             ${hasFields
               ? html`
@@ -3344,8 +3371,7 @@ export class OigOnboardingWizard extends LitElement {
           ${this.renderStepHead('pricing_supplier_sell')}
           <div class="step-card">
             <p data-testid="pricing-supplier-sell-intro" class="hint">
-              Prodejní (výkupní) cena — kolik dostanete za elektřinu dodanou do sítě. Vyberte
-              scénář, který odpovídá vaší smlouvě.
+              Prodejní (výkupní) cena — vyberte scénář, který odpovídá vaší smlouvě.
             </p>
             ${hasFields
               ? html`
@@ -3409,9 +3435,10 @@ export class OigOnboardingWizard extends LitElement {
         return html`
           <div class="field-group boiler-core" data-testid="boiler-core">
             <h4>${group.heading}</h4>
-            <p class="boiler-core-example">
-              ${t('onboarding.boiler.core_example', this.wizardLang)}
-            </p>
+            <details class="inline">
+              <summary>Příklad</summary>
+              <p>${t('onboarding.boiler.core_example', this.wizardLang)}</p>
+            </details>
             <button
               type="button"
               class="boiler-simulator-button"
@@ -3636,9 +3663,12 @@ export class OigOnboardingWizard extends LitElement {
         <section class="step step-connection" data-step="connection" style=${`--sc:${STEP_COLOR_VAR.connection}`}>
           ${this.renderStepHead('connection')}
           <div class="step-card">
-            <div class="connection-explainer" data-testid="connection-explainer">
-              <p>${t('onboarding.connection.explainer_cloud', this.wizardLang)}</p>
-              <p>${t('onboarding.connection.explainer_local', this.wizardLang)}</p>
+            <div class="oneliner" data-testid="connection-explainer">
+              Data čteme z cloudu výrobce nebo lokálně z boxu ve vaší síti.
+              <details class="inline"><summary>více o připojení</summary>
+                <p>${t('onboarding.connection.explainer_cloud', this.wizardLang)}</p>
+                <p>${t('onboarding.connection.explainer_local', this.wizardLang)}</p>
+              </details>
             </div>
             ${visible.map((f) => html`
               <div data-key=${f.key}>

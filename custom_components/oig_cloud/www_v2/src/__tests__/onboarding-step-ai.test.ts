@@ -61,26 +61,23 @@ describe('step ① — per-provider data-use disclosure (audit gap O2/P10)', () 
     fixtureCleanup();
   });
 
-  it('renders a visible disclosure block for every provider card, before the key input', async () => {
+  it('renders a visible disclosure block for the selected provider tile', async () => {
     const el = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
       html`<oig-onboarding-step-ai></oig-onboarding-step-ai>`,
     );
     await el.updateComplete;
 
     for (const provider of Object.keys(PROVIDER_GUIDES)) {
-      const card = el.shadowRoot!.querySelector(`[data-provider="${provider}"]`) as HTMLElement;
-      expect(card, `${provider} card`).toBeTruthy();
-      const disclosure = card.querySelector(`[data-testid="disclosure-${provider}"]`);
-      expect(disclosure, `${provider} disclosure`).toBeTruthy();
-      expect(disclosure!.textContent).toContain(t(PROVIDER_GUIDES[provider].disclosureKey, 'cs'));
-
-      const disclosureIdx = Array.from(card.children).indexOf(disclosure as Element);
-      const input = card.querySelector('input[type="password"]');
-      if (input) {
-        const inputWrapperIdx = Array.from(card.children).indexOf(input.parentElement as Element);
-        expect(disclosureIdx).toBeLessThan(inputWrapperIdx < 0 ? Number.MAX_SAFE_INTEGER : inputWrapperIdx);
-      }
+      const tile = el.shadowRoot!.querySelector(`[data-provider-tile="${provider}"]`) as HTMLElement;
+      expect(tile, `${provider} tile`).toBeTruthy();
     }
+
+    const selectedProvider = 'groq';
+    const card = el.shadowRoot!.querySelector(`[data-provider="${selectedProvider}"]`) as HTMLElement;
+    expect(card, `${selectedProvider} detail card`).toBeTruthy();
+    const disclosure = card.querySelector(`[data-testid="disclosure-${selectedProvider}"]`);
+    expect(disclosure, `${selectedProvider} disclosure`).toBeTruthy();
+    expect(disclosure!.textContent).toContain(t(PROVIDER_GUIDES[selectedProvider].disclosureKey, 'cs'));
   });
 
   it('renders the en disclosure copy when hass resolves language to en', async () => {
@@ -90,14 +87,11 @@ describe('step ① — per-provider data-use disclosure (audit gap O2/P10)', () 
     );
     await el.updateComplete;
 
-    expect(el.shadowRoot!.querySelector('[data-testid="disclosure-groq"]')!.textContent).toContain(
-      t('onboarding.ai.disclosure.groq', 'en'),
-    );
-    expect(el.shadowRoot!.querySelector('[data-testid="disclosure-nvidia"]')!.textContent).toContain(
-      t('onboarding.ai.disclosure.nvidia', 'en'),
-    );
-    expect(el.shadowRoot!.querySelector('[data-testid="disclosure-ai_task"]')!.textContent).toContain(
-      t('onboarding.ai.disclosure.ai_task', 'en'),
+    const selectedProvider = 'groq';
+    const disclosure = el.shadowRoot!.querySelector(`[data-testid="disclosure-${selectedProvider}"]`);
+    expect(disclosure).toBeTruthy();
+    expect(disclosure!.textContent).toContain(
+      t(`onboarding.ai.disclosure.${selectedProvider}` as any, 'en'),
     );
   });
 
@@ -114,12 +108,12 @@ describe('step ① — per-provider data-use disclosure (audit gap O2/P10)', () 
   });
 });
 
-describe('step ① — R5 "K čemu je tu AI" intro block (UX-SPEC §5)', () => {
+describe('step ① — compact one-liner intro (ergo pattern)', () => {
   afterEach(() => {
     fixtureCleanup();
   });
 
-  it('renders the intro block (heading, body, why-it-matters, optionality) above the provider cards', async () => {
+  it('renders the compact intro one-liner with details expander above the provider tiles', async () => {
     const el = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
       html`<oig-onboarding-step-ai></oig-onboarding-step-ai>`,
     );
@@ -127,12 +121,11 @@ describe('step ① — R5 "K čemu je tu AI" intro block (UX-SPEC §5)', () => {
 
     const intro = el.shadowRoot!.querySelector('[data-testid="ai-intro"]');
     expect(intro).toBeTruthy();
-    expect(intro!.textContent).toContain('K čemu je tu AI');
+    expect(intro!.textContent).toContain('anonymní čísla');
     expect(intro!.textContent).toContain('AI Task');
 
-    const gridEl = el.shadowRoot!.querySelector('.grid');
-    expect(gridEl).toBeTruthy();
-    // structural check: intro precedes .grid in DOM order
-    expect(intro!.compareDocumentPosition(gridEl!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const tiles = el.shadowRoot!.querySelector('.ptiles');
+    expect(tiles).toBeTruthy();
+    expect(intro!.compareDocumentPosition(tiles!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
