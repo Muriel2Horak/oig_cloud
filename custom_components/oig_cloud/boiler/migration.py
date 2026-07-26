@@ -11,7 +11,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from ..const import DOMAIN, STORAGE_KEY_BOILER_SCHEDULE
+from ..const import (
+    CONF_BOILER_ALT_SOURCE_MODE,
+    CONF_BOILER_RECOVERY_RATE_C_PER_HOUR,
+    DOMAIN,
+    STORAGE_KEY_BOILER_SCHEDULE,
+)
 from .planner_contract import PlannerReasonCode
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,10 +37,10 @@ LEGACY_BOILER_CONFIG_ALLOWLIST = frozenset(
         "boiler_two_zone_split_ratio",
         "boiler_heater_switch_entity",
         "boiler_effective_power_w",
-        "boiler_recovery_rate_c_per_hour",
+        CONF_BOILER_RECOVERY_RATE_C_PER_HOUR,
         "boiler_heater_power_kw_entity",
         "boiler_has_alternative_heating",
-        "boiler_alt_source_mode",
+        CONF_BOILER_ALT_SOURCE_MODE,
         "boiler_alt_cost_kwh",
         "boiler_alt_heater_switch_entity",
         "boiler_alt_energy_sensor",
@@ -537,8 +542,8 @@ def _can_safe_map(entry: Any) -> bool:
 
 
 def _has_ambiguous_alt_source_capability(options: dict[str, Any]) -> bool:
-    mode_present = "boiler_alt_source_mode" in options
-    mode = options.get("boiler_alt_source_mode")
+    mode_present = CONF_BOILER_ALT_SOURCE_MODE in options
+    mode = options.get(CONF_BOILER_ALT_SOURCE_MODE)
     if options.get("boiler_has_alternative_heating") is True and not mode_present:
         return True
     if not mode_present:

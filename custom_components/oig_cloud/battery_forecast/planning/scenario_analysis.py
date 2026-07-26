@@ -419,6 +419,8 @@ def generate_alternatives(  # noqa: C901
     current_capacity: float,
     max_capacity: float,
     efficiency: float,
+    opportunistic_price_czk_kwh: float = UPS_OPPORTUNISTIC_PRICE_CZK_KWH,
+    opportunistic_charge_rate_kw: float = UPS_OPPORTUNISTIC_CHARGE_RATE_KW,
 ) -> Dict[str, Dict[str, Any]]:
     """Generate what-if alternatives for all fixed modes."""
     now = dt_util.now()
@@ -441,6 +443,8 @@ def generate_alternatives(  # noqa: C901
             max_capacity=max_capacity,
             efficiency=efficiency,
             home_i_timeline_cache=home_i_timeline_cache,
+            opportunistic_price_czk_kwh=opportunistic_price_czk_kwh,
+            opportunistic_charge_rate_kw=opportunistic_charge_rate_kw,
         )
 
     alternatives: Dict[str, Dict[str, Any]] = {}
@@ -481,6 +485,8 @@ def _simulate_mode_cost(
     max_capacity: float,
     efficiency: float,
     home_i_timeline_cache: List[Dict[str, Any]],
+    opportunistic_price_czk_kwh: float = UPS_OPPORTUNISTIC_PRICE_CZK_KWH,
+    opportunistic_charge_rate_kw: float = UPS_OPPORTUNISTIC_CHARGE_RATE_KW,
 ) -> float:
     battery = current_capacity
     total_cost = 0.0
@@ -534,6 +540,8 @@ def _simulate_mode_cost(
                 price=price,
                 max_capacity=max_capacity,
                 efficiency=efficiency,
+                opportunistic_price_czk_kwh=opportunistic_price_czk_kwh,
+                opportunistic_charge_rate_kw=opportunistic_charge_rate_kw,
             )
 
         battery = max(0, min(battery, max_capacity))
@@ -650,10 +658,12 @@ def _simulate_home_ups(
     price: float,
     max_capacity: float,
     efficiency: float,
+    opportunistic_price_czk_kwh: float = UPS_OPPORTUNISTIC_PRICE_CZK_KWH,
+    opportunistic_charge_rate_kw: float = UPS_OPPORTUNISTIC_CHARGE_RATE_KW,
 ) -> tuple[float, float]:
-    if price < UPS_OPPORTUNISTIC_PRICE_CZK_KWH:
+    if price < opportunistic_price_czk_kwh:
         charge_amount = min(
-            UPS_OPPORTUNISTIC_CHARGE_RATE_KW * UPS_OPPORTUNISTIC_INTERVAL_HOURS,
+            opportunistic_charge_rate_kw * UPS_OPPORTUNISTIC_INTERVAL_HOURS,
             max_capacity - battery,
         )
         if charge_amount > 0:

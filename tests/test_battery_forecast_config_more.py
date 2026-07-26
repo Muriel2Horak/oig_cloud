@@ -8,11 +8,9 @@ def test_simulator_config_properties():
     assert cfg.usable_capacity_kwh == 7.5
 
 
-def test_hybrid_config_emergency_reserve():
-    cfg = config_module.HybridConfig(emergency_reserve_percent=25.0)
-    assert cfg.emergency_reserve_kwh(10.0) == 2.5
+def test_hybrid_config_removed():
+    assert not hasattr(config_module, "HybridConfig")
 
 
-def test_balancing_config_deadline_datetime():
-    cfg = config_module.BalancingConfig()
-    assert cfg.deadline_datetime() == cfg.deadline_time
+def test_balancing_config_removed():
+    assert not hasattr(config_module, "BalancingConfig")

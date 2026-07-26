@@ -71,6 +71,10 @@ BOILER_READY_TEMP_C: Final[float] = 40.0
 # pozitivní trend ≥ tohoto prahu naznačuje ohřev z alternativy.
 ALT_TREND_THRESHOLD_C_PER_MIN: Final[float] = 0.08
 
+# cbb_w above this → the box is commanding heat (single source, was duplicated
+# in demand_profiler.py and heating_estimator.py).
+COMMAND_ON_W: Final[float] = 100.0
+
 # R3: Home 5 maneuver — nominal battery wear cost per kWh cycled through
 # the boiler.  0.50 CZK/kWh is a conservative estimate until calibration data
 # is available (typical Li-ion wear is ~0.10–0.50 CZK/kWh depending on cycle

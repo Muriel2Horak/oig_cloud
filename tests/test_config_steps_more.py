@@ -53,7 +53,9 @@ def test_map_backend_to_frontend_weekend_same_defaults():
     frontend = WizardMixin._map_backend_to_frontend(backend)
     assert frontend["import_pricing_scenario"] == "spot_fixed"
     assert frontend["export_pricing_scenario"] == "fix_price"
-    assert frontend["tariff_weekend_same_as_weekday"] is True
+    # tariff_weekend_same_as_weekday is a verified dead key (P6 audit); it must
+    # not be injected by _map_backend_to_frontend anymore.
+    assert "tariff_weekend_same_as_weekday" not in frontend
 
 
 def test_get_defaults_reconfiguration():

@@ -55,10 +55,25 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.welcome.new_install': 'Vítejte v průvodci nastavením OIG Cloud. Projdeme spolu pár kroků — solární předpověď, ceny energie, volitelně AI a bojler. Nic nemusíte vyplnit najednou, průvodce si pamatuje, kde jste skončili.',
     'onboarding.welcome.review': 'Váš stávající nastavení zůstává beze změny, dokud ho výslovně nepotvrdíte. V každém kroku uvidíte svou aktuální hodnotu a můžete ji ověřit nebo upravit — nic se nesmaže, dokud nedáte Uložit.',
     'onboarding.summary.new_install_heading': 'Shrnutí nastavení — zkontrolujte prosím před uložením:',
+    'settings.ai.badge.awaiting_verification': 'AI čeká na ověření',
+    'settings.ai.badge.no_credits': 'AI došly kredity',
+    'settings.ai.badge.backing_off': 'AI zrovna čeká na další pokus',
+    'onboarding.summary.validate_ai_config_button': 'Zkontrolovat konfiguraci AI',
+    'onboarding.summary.validate_ai_config_result_heading': 'Výsledek ověření AI',
+    'onboarding.summary.validate_ai_config_result_empty': 'Nebyly nalezeny žádné problémy.',
+    'onboarding.summary.validate_ai_config_error.network': 'Ověření AI se nepodařilo spustit.',
+    'onboarding.summary.validate_ai_config_error.ai_not_verified': 'AI ještě není ověřená.',
+    'onboarding.summary.validate_ai_config_error.no_credits': 'AI došly kredity.',
+    'onboarding.summary.validate_ai_config_error.generic': 'Ověření AI selhalo.',
 
     // F1 Wizard v2 Stage S2 Task 9 — review-mode diff table (UX-SPEC §3).
     'onboarding.summary.confirm_notice': 'Toto se změní. Dokud nekliknete na Uložit, nic se neuloží.',
     'onboarding.summary.diff_empty': 'Žádné změny oproti stávajícímu nastavení.',
+
+    'onboarding.battery.simulator_button': '🧪 Vyzkoušet chování',
+    'onboarding.battery.hardware.capacity': 'Kapacita baterie z boxu',
+    'onboarding.battery.hardware.hw_min_soc': 'HW min SoC z boxu',
+    'onboarding.battery.hardware.unavailable': 'nedostupné',
 
     // F1 Wizard v2 Stage S2 Task 11 — recovered pricing_supplier note +
     // module-off-in-review-mode warning (UX-SPEC §3, spec-verbatim CZ).
@@ -97,6 +112,11 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.connection.explainer_cloud': 'Bez proxy (přes OIG Cloud): box posílá data do cloudu výrobce a my je odtud čteme. Funguje vždy a odkudkoliv, data jdou přes internet a obnovují se v nastaveném intervalu.',
     'onboarding.connection.explainer_local': 'S lokální proxy: čteme data přímo z boxu ve vaší domácí síti — rychlejší odezva a funguje i při výpadku internetu. Vyžaduje běžící doplněk lokální proxy.',
 
+    'onboarding.boiler.core_example': 'Při 60 °C a 200 l trvá ohřev zhruba 1–1,5 hodiny.',
+    'onboarding.boiler.simulator_button': '🧪 Vyzkoušet chování',
+    'onboarding.boiler.advanced.circulation_summary': 'Řídí oběhové čerpadlo, předstih a dobu běhu.',
+    'onboarding.boiler.advanced.legionella_summary': 'Periodicky ohřívá vodu na dezinfekční teplotu.',
+    'onboarding.boiler.advanced.alt_source_summary': 'Nastavení alternativního zdroje tepla a souvisejících voleb.',
     // fe/fix defect #1 — blocking post-save reload overlay.
     'onboarding.reload.message': 'Ukládám a přenačítám…',
 
@@ -144,9 +164,24 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.welcome.new_install': 'Welcome to the OIG Cloud setup wizard. We\'ll walk through a few steps together — solar forecast, energy prices, optionally AI and boiler. You don\'t need to fill everything in one go, the wizard remembers where you left off.',
     'onboarding.welcome.review': 'Your existing setup stays unchanged until you explicitly confirm it. On every step you\'ll see your current value and can verify or edit it — nothing is deleted until you click Save.',
     'onboarding.summary.new_install_heading': 'Setup summary — please review before saving:',
+    'settings.ai.badge.awaiting_verification': 'AI is waiting for verification',
+    'settings.ai.badge.no_credits': 'AI credits exhausted',
+    'settings.ai.badge.backing_off': 'AI is backing off for now',
+    'onboarding.summary.validate_ai_config_button': 'Check AI configuration',
+    'onboarding.summary.validate_ai_config_result_heading': 'AI validation result',
+    'onboarding.summary.validate_ai_config_result_empty': 'No issues were found.',
+    'onboarding.summary.validate_ai_config_error.network': 'AI validation could not be started.',
+    'onboarding.summary.validate_ai_config_error.ai_not_verified': 'AI is not verified yet.',
+    'onboarding.summary.validate_ai_config_error.no_credits': 'AI credits exhausted.',
+    'onboarding.summary.validate_ai_config_error.generic': 'AI validation failed.',
 
     'onboarding.summary.confirm_notice': 'This will change. Nothing is saved until you click Save.',
     'onboarding.summary.diff_empty': 'No changes from your existing configuration.',
+
+    'onboarding.battery.simulator_button': '🧪 Test behavior',
+    'onboarding.battery.hardware.capacity': 'Battery capacity from box',
+    'onboarding.battery.hardware.hw_min_soc': 'HW min SoC from box',
+    'onboarding.battery.hardware.unavailable': 'unavailable',
 
     'onboarding.pricing_supplier.recovered_note': 'We found these values in your existing configuration — they weren\'t visible in the wizard until now, so you can review them.',
     'onboarding.modules.off_warning': 'Turning off a module hides its settings, but they stay saved — if you turn the module back on, the values will still be there.',
@@ -154,6 +189,11 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.modules.group_hlavni': 'Main modules',
     'onboarding.modules.group_doplnkove': 'Additional',
 
+    'onboarding.boiler.core_example': 'At 60 °C and 200 l, heating takes about 1–1.5 hours.',
+    'onboarding.boiler.simulator_button': '🧪 Try behavior',
+    'onboarding.boiler.advanced.circulation_summary': 'Controls the circulation pump, lead time, and run duration.',
+    'onboarding.boiler.advanced.legionella_summary': 'Periodically heats water to a disinfection temperature.',
+    'onboarding.boiler.advanced.alt_source_summary': 'Settings for the alternative heat source and related expert options.',
     'onboarding.reload.message': 'Saving and reloading…',
 
     'onboarding.quicksave.bar_label': 'You have unsaved changes',

@@ -9,6 +9,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from ..ai.key_store import AiKeyStore
+from ..boiler.const import BATTERY_CYCLE_COST_CZK_PER_KWH
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
 from .solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
@@ -17,10 +18,8 @@ from ..const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
     CONF_PASSWORD,
-    CONF_PLANNING_MIN_PERCENT,
     CONF_USERNAME,
     DEFAULT_BOILER_PLAN_SLOT_MINUTES,
-    DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
     DEFAULT_CHARGE_RATE_KW,
     DEFAULT_NAME,
     DEFAULT_PLANNING_MIN_PERCENT,
@@ -64,11 +63,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
-
-_BOILER_PLANNING_HORIZON_MIN_HOURS = 12
-_BOILER_PLANNING_HORIZON_MAX_HOURS = 48
-_BOILER_ALT_SOURCE_MODES = frozenset({"disabled", "benchmark_only", "controllable"})
-
 
 class WizardMixin:
     """Mixin třída obsahující všechny wizard kroky.
@@ -248,7 +242,6 @@ class WizardMixin:
         migrated.setdefault("tariff_nt_start_weekday", weekday_nt)
         migrated.setdefault("tariff_vt_start_weekend", weekday_vt)
         migrated.setdefault("tariff_nt_start_weekend", weekday_nt)
-        migrated.setdefault("tariff_weekend_same_as_weekday", True)
 
     @staticmethod
     def _map_pricing_to_backend(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -335,24 +328,12 @@ class WizardMixin:
             backend_data["tariff_nt_start_weekday"] = wizard_data.get(
                 "tariff_nt_start_weekday", "22,2"
             )
-            weekend_same = wizard_data.get("tariff_weekend_same_as_weekday", True)
-            backend_data["tariff_weekend_same_as_weekday"] = bool(weekend_same)
-            if weekend_same:
-                backend_data["tariff_vt_start_weekend"] = backend_data[
-                    "tariff_vt_start_weekday"
-                ]
-                backend_data["tariff_nt_start_weekend"] = backend_data[
-                    "tariff_nt_start_weekday"
-                ]
-            else:
-                backend_data["tariff_vt_start_weekend"] = wizard_data.get(
-                    "tariff_vt_start_weekend",
-                    backend_data["tariff_vt_start_weekday"],
-                )
-                backend_data["tariff_nt_start_weekend"] = wizard_data.get(
-                    "tariff_nt_start_weekend",
-                    backend_data["tariff_nt_start_weekday"],
-                )
+            backend_data["tariff_vt_start_weekend"] = wizard_data.get(
+                "tariff_vt_start_weekend", backend_data["tariff_vt_start_weekday"]
+            )
+            backend_data["tariff_nt_start_weekend"] = wizard_data.get(
+                "tariff_nt_start_weekend", backend_data["tariff_nt_start_weekday"]
+            )
         return backend_data
 
     def _build_options_payload(self, wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -363,7 +344,6 @@ class WizardMixin:
         payload.update(self._build_battery_options(wizard_data))
         payload.update(self._map_pricing_to_backend(wizard_data))
         payload.update(self._build_boiler_options(wizard_data))
-        payload.update(self._build_auto_options(wizard_data))
         return payload
 
     @staticmethod
@@ -448,10 +428,6 @@ class WizardMixin:
 
     @staticmethod
     def _build_battery_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
-        planning_min_percent = wizard_data.get(
-            CONF_PLANNING_MIN_PERCENT,
-            wizard_data.get("min_capacity_percent", DEFAULT_PLANNING_MIN_PERCENT),
-        )
         # charge_rate_kw / home_charge_rate are ONE logical field (registry mirror
         # pair). If both aliases are present and DISAGREE, the registered canonical
         # key wins: it is the key the REST API and the registry validate and write,
@@ -480,7 +456,6 @@ class WizardMixin:
                 "battery_comfort_soc_percent", 50.0
             ),
             "home_charge_rate": charge_rate_kw,
-            CONF_PLANNING_MIN_PERCENT: planning_min_percent,
             CONF_CHARGE_RATE_KW: charge_rate_kw,
             CONF_AUTO_MODE_SWITCH: wizard_data.get(CONF_AUTO_MODE_SWITCH, False),
             "max_ups_price_czk": wizard_data.get("max_ups_price_czk", 10.0),
@@ -497,27 +472,12 @@ class WizardMixin:
         }
 
     @staticmethod
-    def _clamp_boiler_planning_horizon_hours(value: Any) -> int:
-        try:
-            horizon = int(value)
-        except (TypeError, ValueError):
-            horizon = DEFAULT_BOILER_PLANNING_HORIZON_HOURS
-        return max(
-            _BOILER_PLANNING_HORIZON_MIN_HOURS,
-            min(_BOILER_PLANNING_HORIZON_MAX_HOURS, horizon),
-        )
-
-    @staticmethod
     def _build_boiler_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
         enable_boiler = wizard_data.get("enable_boiler", False)
         if wizard_data.get("boiler_module_selected") and not wizard_data.get(
             "boiler_setup_complete"
         ):
             enable_boiler = False
-
-        alt_source_mode = wizard_data.get("boiler_alt_source_mode", "disabled")
-        if alt_source_mode not in _BOILER_ALT_SOURCE_MODES:
-            alt_source_mode = "disabled"
 
         return {
             "enable_boiler": enable_boiler,
@@ -555,9 +515,6 @@ class WizardMixin:
             "boiler_effective_power_w": wizard_data.get(
                 "boiler_effective_power_w", 2000
             ),
-            "boiler_recovery_rate_c_per_hour": wizard_data.get(
-                "boiler_recovery_rate_c_per_hour", 5.0
-            ),
             "boiler_alt_heater_switch_entity": wizard_data.get(
                 "boiler_alt_heater_switch_entity", ""
             ),
@@ -567,29 +524,17 @@ class WizardMixin:
             "boiler_has_alternative_heating": wizard_data.get(
                 "boiler_has_alternative_heating", False
             ),
-            "boiler_alt_source_mode": alt_source_mode,
             "boiler_alt_cost_kwh": wizard_data.get("boiler_alt_cost_kwh", 0.0),
             "boiler_alt_energy_sensor": wizard_data.get("boiler_alt_energy_sensor", ""),
             "boiler_spot_price_sensor": wizard_data.get("boiler_spot_price_sensor", ""),
             "boiler_deadline_time": wizard_data.get("boiler_deadline_time", "20:00"),
-            "boiler_comfort_profile_mode": wizard_data.get(
-                "boiler_comfort_profile_mode", "history_driven"
-            ),
-            "boiler_planning_horizon_hours": (
-                WizardMixin._clamp_boiler_planning_horizon_hours(
-                    wizard_data.get(
-                        "boiler_planning_horizon_hours",
-                        DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                    )
-                )
-            ),
             "boiler_plan_slot_minutes": DEFAULT_BOILER_PLAN_SLOT_MINUTES,
             # F5 new keys (steps 6–8)
             "boiler_alt_source_type": wizard_data.get(
                 "boiler_alt_source_type", "gas"
             ),
             "boiler_battery_cycle_cost_czk_kwh": wizard_data.get(
-                "boiler_battery_cycle_cost_czk_kwh", 0.50
+                "boiler_battery_cycle_cost_czk_kwh", BATTERY_CYCLE_COST_CZK_PER_KWH
             ),
             "box_has_home56": wizard_data.get("box_has_home56", False),
             "boiler_home5_maneuver_enabled": wizard_data.get(
@@ -623,10 +568,6 @@ class WizardMixin:
                 "boiler_alt_energy_daily", True
             ),
         }
-
-    @staticmethod
-    def _build_auto_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
-        return {"enable_auto": wizard_data.get("enable_auto", False)}
 
     @staticmethod
     def _map_backend_to_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -727,17 +668,8 @@ class WizardMixin:
             weekday_nt = backend_data.get("tariff_nt_start_weekday", "22,2")
             weekend_vt = backend_data.get("tariff_vt_start_weekend")
             weekend_nt = backend_data.get("tariff_nt_start_weekend")
-            weekend_same = backend_data.get("tariff_weekend_same_as_weekday")
-            if weekend_same is None:
-                if weekend_vt is None and weekend_nt is None:
-                    weekend_same = True
-                else:
-                    weekend_same = str(weekend_vt) == str(weekday_vt) and str(
-                        weekend_nt
-                    ) == str(weekday_nt)
             frontend_data["tariff_vt_start_weekday"] = weekday_vt
             frontend_data["tariff_nt_start_weekday"] = weekday_nt
-            frontend_data["tariff_weekend_same_as_weekday"] = bool(weekend_same)
             frontend_data["tariff_vt_start_weekend"] = (
                 weekend_vt if weekend_vt is not None else weekday_vt
             )
@@ -1142,9 +1074,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 ): bool,
                 vol.Optional(
                     "enable_boiler", default=defaults.get("enable_boiler", False)
-                ): bool,
-                vol.Optional(
-                    "enable_auto", default=defaults.get("enable_auto", False)
                 ): bool,
                 vol.Optional("go_back", default=False): bool,
             }
@@ -2278,9 +2207,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if old_tariff_count != new_tariff_count:
             return True
 
-        old_weekend_same = self._wizard_data.get("tariff_weekend_same_as_weekday", True)
-        new_weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
-        return new_tariff_count == "dual" and old_weekend_same != new_weekend_same
+        return False
 
     def _validate_pricing_distribution(
         self, user_input: Dict[str, Any]
@@ -2326,15 +2253,13 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if not is_valid and error_key is not None:
             errors["tariff_vt_start_weekday"] = error_key
 
-        weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
-        if not weekend_same:
-            vt_weekend = user_input.get("tariff_vt_start_weekend", "")
-            nt_weekend = user_input.get("tariff_nt_start_weekend", "0")
-            is_valid, error_key = validate_tariff_hours(
-                vt_weekend, nt_weekend, allow_single_tariff=True
-            )
-            if not is_valid and error_key is not None:
-                errors["tariff_vt_start_weekend"] = error_key
+        vt_weekend = user_input.get("tariff_vt_start_weekend", vt_starts)
+        nt_weekend = user_input.get("tariff_nt_start_weekend", nt_starts)
+        is_valid, error_key = validate_tariff_hours(
+            vt_weekend, nt_weekend, allow_single_tariff=True
+        )
+        if not is_valid and error_key is not None:
+            errors["tariff_vt_start_weekend"] = error_key
 
     def _get_pricing_distribution_schema(
         self, defaults: Optional[Dict[str, Any]] = None
@@ -2348,17 +2273,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
         weekday_nt_default = defaults.get("tariff_nt_start_weekday", "22,2")
         weekend_vt_default = defaults.get("tariff_vt_start_weekend", weekday_vt_default)
         weekend_nt_default = defaults.get("tariff_nt_start_weekend", weekday_nt_default)
-        weekend_same_default = defaults.get("tariff_weekend_same_as_weekday")
-        if weekend_same_default is None:
-            if (
-                "tariff_vt_start_weekend" not in defaults
-                and "tariff_nt_start_weekend" not in defaults
-            ):
-                weekend_same_default = True
-            else:
-                weekend_same_default = str(weekend_vt_default) == str(
-                    weekday_vt_default
-                ) and str(weekend_nt_default) == str(weekday_nt_default)
 
         schema_fields = {
             vol.Optional("tariff_count", default=tariff_count): vol.In(
@@ -2390,24 +2304,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
                         default=weekday_nt_default,
                     ): str,
                     vol.Optional(
-                        "tariff_weekend_same_as_weekday",
-                        default=bool(weekend_same_default),
-                    ): bool,
+                        "tariff_vt_start_weekend",
+                        default=weekend_vt_default,
+                    ): str,
+                    vol.Optional(
+                        "tariff_nt_start_weekend",
+                        default=weekend_nt_default,
+                    ): str,
                 }
             )
-            if not weekend_same_default:
-                schema_fields.update(
-                    {
-                        vol.Optional(
-                            "tariff_vt_start_weekend",
-                            default=weekend_vt_default,
-                        ): str,
-                        vol.Optional(
-                            "tariff_nt_start_weekend",
-                            default=weekend_nt_default,
-                        ): str,
-                    }
-                )
             if defaults.get("import_pricing_scenario") == "fix_price":
                 default_fixed_price = defaults.get("fixed_price_kwh", 4.50)
                 schema_fields.update(
@@ -2449,10 +2354,8 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
             CONF_BOILER_COLD_INLET_TEMP_C,
             CONF_BOILER_DEADLINE_TIME,
-            CONF_BOILER_ALT_SOURCE_MODE,
             CONF_BOILER_HEATER_POWER_KW_ENTITY,
             CONF_BOILER_HEATER_SWITCH_ENTITY,
-            CONF_BOILER_PLANNING_HORIZON_HOURS,
             CONF_BOILER_SPOT_PRICE_SENSOR,
             CONF_BOILER_STRATIFICATION_MODE,
             CONF_BOILER_TARGET_TEMP_C,
@@ -2463,7 +2366,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
             CONF_BOILER_VOLUME_L,
             DEFAULT_BOILER_COLD_INLET_TEMP_C,
             DEFAULT_BOILER_DEADLINE_TIME,
-            DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
             DEFAULT_BOILER_STRATIFICATION_MODE,
             DEFAULT_BOILER_TARGET_TEMP_C,
             DEFAULT_BOILER_TEMP_SENSOR_POSITION,
@@ -2610,27 +2512,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                                 selector.EntitySelectorConfig(domain="switch")
                             ),
                             vol.Optional(
-                                CONF_BOILER_ALT_SOURCE_MODE,
-                                default=defaults.get(
-                                    CONF_BOILER_ALT_SOURCE_MODE, "disabled"
-                                ),
-                            ): selector.SelectSelector(
-                                selector.SelectSelectorConfig(
-                                    options=[
-                                        selector.SelectOptionDict(
-                                            value="disabled", label="Disabled"
-                                        ),
-                                        selector.SelectOptionDict(
-                                            value="benchmark_only", label="Benchmark only"
-                                        ),
-                                        selector.SelectOptionDict(
-                                            value="controllable", label="Controllable"
-                                        ),
-                                    ],
-                                    mode=selector.SelectSelectorMode.DROPDOWN,
-                                )
-                            ),
-                            vol.Optional(
                                 CONF_BOILER_ALT_COST_KWH,
                                 default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
                             ): selector.NumberSelector(
@@ -2661,22 +2542,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                                     CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
                                 ),
                             ): selector.TimeSelector(),
-                            vol.Optional(
-                                CONF_BOILER_PLANNING_HORIZON_HOURS,
-                                default=self._clamp_boiler_planning_horizon_hours(
-                                    defaults.get(
-                                        CONF_BOILER_PLANNING_HORIZON_HOURS,
-                                        DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                                    )
-                                ),
-                            ): selector.NumberSelector(
-                                selector.NumberSelectorConfig(
-                                    min=_BOILER_PLANNING_HORIZON_MIN_HOURS,
-                                    max=_BOILER_PLANNING_HORIZON_MAX_HOURS,
-                                    step=1,
-                                    mode=selector.NumberSelectorMode.BOX,
-                                )
-                            ),
                             vol.Optional("go_back", default=False): selector.BooleanSelector(),
                         }
                     ),
@@ -2832,28 +2697,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(domain="switch")
                     ),
-                    # Alternativa
-                    vol.Optional(
-                        CONF_BOILER_ALT_SOURCE_MODE,
-                        default=defaults.get(
-                            CONF_BOILER_ALT_SOURCE_MODE, "disabled"
-                        ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(
-                                    value="disabled", label="Disabled"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="benchmark_only", label="Benchmark only"
-                                ),
-                                selector.SelectOptionDict(
-                                    value="controllable", label="Controllable"
-                                ),
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
                     vol.Optional(
                         CONF_BOILER_ALT_COST_KWH,
                         default=defaults.get(CONF_BOILER_ALT_COST_KWH, 0.0),
@@ -2887,23 +2730,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                             CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME
                         ),
                     ): selector.TimeSelector(),
-                    # Number inputy místo sliderů
-                    vol.Optional(
-                        CONF_BOILER_PLANNING_HORIZON_HOURS,
-                        default=self._clamp_boiler_planning_horizon_hours(
-                            defaults.get(
-                                CONF_BOILER_PLANNING_HORIZON_HOURS,
-                                DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
-                            )
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=_BOILER_PLANNING_HORIZON_MIN_HOURS,
-                            max=_BOILER_PLANNING_HORIZON_MAX_HOURS,
-                            step=1,
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
                     vol.Optional("go_back", default=False): selector.BooleanSelector(),
                 }
             ),
@@ -3178,10 +3004,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
 
             if setup_type == "wizard":
                 return await self.async_step_wizard_welcome()
-            elif setup_type == "quick":
+            if setup_type == "quick":
                 return await self.async_step_quick_setup()
-            else:  # import
-                return await self.async_step_import_yaml()
+            return await self.async_step_wizard_welcome()
 
         return self.async_show_form(
             step_id="user",
@@ -3191,7 +3016,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                         {
                             "wizard": "wizard",
                             "quick": "quick",
-                            "import": "import",
                         }
                     )
                 }
@@ -3347,7 +3171,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                     "enable_dashboard": False,
                     "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
                     "home_charge_rate": DEFAULT_CHARGE_RATE_KW,
-                    CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
                     CONF_CHARGE_RATE_KW: DEFAULT_CHARGE_RATE_KW,
                 },
             )
@@ -3365,13 +3188,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
             ),
             errors=errors,
         )
-
-    async def async_step_import_yaml(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> ConfigFlowResult:
-        """Import from YAML configuration."""
-        # NOTE: YAML import is not implemented yet.
-        return self.async_abort(reason="not_implemented")
 
     async def async_step_wizard_summary(
         self, user_input: Optional[Dict[str, Any]] = None

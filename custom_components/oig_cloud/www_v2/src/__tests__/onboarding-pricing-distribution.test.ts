@@ -42,6 +42,7 @@ import {
   STEP_PRICING_DISTRIBUTION,
   DUAL_TARIFF_CODES,
   isDualTariffCode,
+  DISTRIBUTOR_LOGO_ASSETS,
 } from '@/ui/features/onboarding/step-pricing-distribution';
 
 /** `RegistrySpec` (registry-data.ts) has no `show_if_all` of its own (F1 U4
@@ -519,6 +520,17 @@ describe('owner UX rev — distributor names, tariff description, editable price
     const option = Array.from(select.options).find((o) => o.value === 'cez');
     expect(option?.textContent).toBe('ČEZ Distribuce');
     expect(wizard.shadowRoot!.querySelector('[data-testid="distributor-icon"]')).toBeTruthy();
+    const img = wizard.shadowRoot!.querySelector('[data-testid="distributor-icon"] img') as HTMLImageElement | null;
+    expect(img).toBeTruthy();
+    expect(img?.getAttribute('src')).toBe(DISTRIBUTOR_LOGO_ASSETS.cez);
+    expect(img?.getAttribute('alt')).toBe('');
+  });
+
+  it('bundles official SVG logo assets for CEZ, EG.D, and PRE', () => {
+    expect(Object.keys(DISTRIBUTOR_LOGO_ASSETS).sort()).toEqual(['cez', 'egd', 'pre']);
+    expect(DISTRIBUTOR_LOGO_ASSETS.cez).toMatch(/\.svg$/);
+    expect(DISTRIBUTOR_LOGO_ASSETS.egd).toMatch(/\.svg$/);
+    expect(DISTRIBUTOR_LOGO_ASSETS.pre).toMatch(/\.svg$/);
   });
 
   it('shows the tariff description from the dataset and the constant invoice hint', async () => {

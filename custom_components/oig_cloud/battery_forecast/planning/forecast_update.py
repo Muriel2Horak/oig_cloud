@@ -40,6 +40,10 @@ from . import mode_guard as mode_guard_module
 _LOGGER = logging.getLogger(__name__)
 ISO_TZ_OFFSET = "+00:00"
 MODE_GUARD_MINUTES = 60
+# Hardware safety floor as a fraction of max capacity — fallback only, used
+# when the box's live bat_min sensor (_resolve_proxy_bat_min_pct) is
+# unavailable or implausible. Typically ~20% for CBB 3F Home Plus Premium.
+_HW_MIN_FRACTION = 0.20
 _MANIFEST_PATH = Path(__file__).resolve().parents[2] / "manifest.json"
 _INTEGRATION_VERSION: str | None = None
 
@@ -279,7 +283,8 @@ def _resolve_proxy_bat_min_pct(sensor: Any) -> Optional[float]:
     """Read the BOX bat_min trigger (%) from the local-proxy sensor if available.
 
     Entity: ``sensor.oig_local_{box_id}_tbl_batt_prms_bat_min``. Cloud-only
-    installs do not have it; callers fall back to the hw 20 % floor. Returned
+    installs do not have it; callers use the configured fallback fraction
+    (20 % by default). Returned
     as a plain float so the pure planning layer stays HA-agnostic.
     """
     try:
@@ -301,6 +306,45 @@ def _resolve_proxy_bat_min_pct(sensor: Any) -> Optional[float]:
     return None
 
 
+def _resolve_hw_min_kwh(
+    sensor_min_kwh: Optional[float],
+    max_capacity: float,
+    *,
+    fallback_fraction: Optional[float] = None,
+    correlation_id: str | None = None,
+    run_id: str | None = None,
+) -> float:
+    """Hardware minimum capacity (kWh): sensor > config > constant fallback.
+
+    ``sensor_min_kwh`` is the box-reported bat_min trigger already converted
+    to kWh (see ``_resolve_proxy_bat_min_pct``). Plausibility guards against
+    sensor glitches (stuck at 0, or reporting >= max_capacity). The configured
+    fraction is used only when the sensor is missing or implausible. Never
+    raises — a missing/bad sensor or option must not crash planning.
+    """
+    if sensor_min_kwh is not None and 0 < sensor_min_kwh < max_capacity:
+        return sensor_min_kwh
+
+    try:
+        configured_fraction = float(
+            _HW_MIN_FRACTION if fallback_fraction is None else fallback_fraction
+        )
+    except (TypeError, ValueError):
+        configured_fraction = _HW_MIN_FRACTION
+    if not math.isfinite(configured_fraction) or not 0.0 < configured_fraction < 1.0:
+        configured_fraction = _HW_MIN_FRACTION
+
+    _LOGGER.warning(
+        "%s hw_min sensor unavailable or implausible (value=%s, max_capacity=%.2f kWh); "
+        "using %.0f%% fallback",
+        _planner_log_marker("WARNING", correlation_id, run_id),
+        sensor_min_kwh,
+        max_capacity,
+        configured_fraction * 100.0,
+    )
+    return max_capacity * configured_fraction
+
+
 # The BOX itself force-balances (uncontrolled grid charge to ~full) whenever
 # the battery DWELLS at its bat_min trigger for ~1 h (user-observed). The plan
 # must therefore never AIM at the trigger: the defended planning floor sits a
@@ -310,7 +354,9 @@ BOX_FLOOR_SAFETY_MARGIN_PCT = 2.0
 
 
 def _derive_planning_min_percent(
-    hw_min_percent: float, proxy_bat_min_pct: Optional[float]
+    hw_min_percent: float,
+    proxy_bat_min_pct: Optional[float],
+    safety_margin_pct: float = BOX_FLOOR_SAFETY_MARGIN_PCT,
 ) -> float:
     """Planning floor = box trigger + safety margin (never below hw floor).
 
@@ -320,7 +366,7 @@ def _derive_planning_min_percent(
     behavior emulation, no post-hoc plan patching.
     """
     trigger_pct = proxy_bat_min_pct if proxy_bat_min_pct is not None else hw_min_percent
-    return max(hw_min_percent, trigger_pct + BOX_FLOOR_SAFETY_MARGIN_PCT)
+    return max(hw_min_percent, trigger_pct + safety_margin_pct)
 
 
 def _round_trip_to_directional(efficiency: float) -> float:
@@ -900,7 +946,24 @@ def _run_planner(
             DEFAULT_ROUND_TRIP_EFFICIENCY
         )
         home_charge_rate_kw = float(opts.get("home_charge_rate", 2.8))
-        hw_min_kwh = max_capacity * 0.20
+        # Sensor-first: the box's own bat_min trigger (%) is the true hardware
+        # floor. Converted to kWh and validated for plausibility; falls back
+        # to the configured fallback fraction (20% by default) when the sensor
+        # is unavailable/implausible (see _resolve_hw_min_kwh). Reused below for
+        # planning_min_percent, so the sensor is read once, not twice.
+        proxy_bat_min_pct = _resolve_proxy_bat_min_pct(sensor)
+        sensor_min_kwh = (
+            max_capacity * proxy_bat_min_pct / 100.0
+            if proxy_bat_min_pct is not None
+            else None
+        )
+        hw_min_kwh = _resolve_hw_min_kwh(
+            sensor_min_kwh,
+            max_capacity,
+            fallback_fraction=opts.get("hw_min_fraction", _HW_MIN_FRACTION),
+            correlation_id=correlation_id,
+            run_id=run_id,
+        )
         hw_min_percent = (hw_min_kwh / max_capacity) * 100.0 if max_capacity > 0 else 20.0
         # Floor defense protects the hardware safety minimum PLUS a small
         # margin above the BOX bat_min trigger: dwelling at the trigger makes
@@ -910,7 +973,11 @@ def _run_planner(
         # backup that forces uneconomic grid charging. The legacy
         # `min_capacity_percent` option no longer raises this floor.
         planning_min_percent = _derive_planning_min_percent(
-            hw_min_percent, _resolve_proxy_bat_min_pct(sensor)
+            hw_min_percent,
+            proxy_bat_min_pct,
+            safety_margin_pct=float(
+                opts.get("box_floor_safety_margin_pct", BOX_FLOOR_SAFETY_MARGIN_PCT)
+            ),
         )
 
         # Comfort SoC target: keep a buffer well above the hard floor so the BOX
@@ -957,7 +1024,7 @@ def _run_planner(
             now=dt_util.now(),
             spot_prices=spot_prices,
             modes=result.modes,
-            mode_guard_minutes=MODE_GUARD_MINUTES,
+            mode_guard_minutes=float(opts.get("mode_guard_minutes", MODE_GUARD_MINUTES)),
             plan_lock_until=sensor._plan_lock_until,
             plan_lock_modes=sensor._plan_lock_modes,
         )

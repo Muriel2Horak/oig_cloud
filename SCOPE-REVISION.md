@@ -403,6 +403,8 @@ stay in the original, in quotes (enforced by `brief-lint`).
 | `/api/oig_cloud/{box}/module_config` | `GET` | Returns admin-visible module config only. | `403` with the same safe refusal shape for existing and missing boxes. |
 | `/api/oig_cloud/{box}/config_registry` | `GET` | Returns registry metadata needed to render allowed controls. | `403` with no registry payload and the same safe refusal shape for existing and missing boxes. |
 | `/api/oig_cloud/{box}/pricelists` | `GET` | Returns bundled distributor, tariff, confirmed-price, unit, validity, and stale-warning data from release assets. | `403` with no priced data and the same safe refusal shape for existing and missing boxes. |
+| `/api/oig_cloud/{box}/ai` | `GET`, `POST` | `GET` returns sanitized provider/key/status state; `POST` verifies and stores a provider key. | `403` with the same safe refusal shape for existing and missing boxes. |
+| `/api/oig_cloud/{box}/ai/validate_config` | `POST` | Runs `validate_config` against the entry's allow-listed numeric config and returns structured findings. | `403` before any config field is read, with the same safe refusal shape for existing and missing boxes. |
 | `/api/oig_cloud/{box}/solar_test` | `POST` | Runs the bounded provider check and returns tomorrow forecast data or classified error. | `403` before request values are accepted and before any outbound provider call. |
 | `/api/oig_cloud/{box}/onboarding` | `GET`, `POST` | `GET` returns only non-secret setup state; `POST` accepts only non-secret draft/status updates. | `403` before any body carrying step status, timestamps, GPS, provider, pricing, `solcast_site_id`, or `*_set` fields is returned or accepted. |
 
