@@ -22,7 +22,7 @@ export interface TileSupportEntities {
   bottom_right?: string;
 }
 
-export type TileModule = 'core' | 'pricing' | 'boiler' | 'statistics';
+export type TileModule = 'core' | 'pricing' | 'boiler' | 'statistics' | 'battery_prediction';
 
 export interface TileConfig {
   type: 'entity' | 'button';
@@ -61,6 +61,7 @@ export interface ModuleTileFlags {
   enablePricing: boolean;
   enableBoiler: boolean;
   enableStatistics: boolean;
+  enablePrediction?: boolean;
 }
 
 // ============================================================================
@@ -176,14 +177,19 @@ const TILE_MODULE_HINTS: Array<{
   {
     module: 'statistics',
     markers: [
+      'battery_load_median',
+      'load_avg_',
+      'hourly_',
+    ],
+  },
+  {
+    module: 'battery_prediction',
+    markers: [
       'battery_efficiency',
       'battery_balancing',
       'adaptive_load_profiles',
       'grid_charging_planned',
       'planner_recommended_mode',
-      'battery_load_median',
-      'load_avg_',
-      'hourly_',
     ],
   },
   {
@@ -194,7 +200,13 @@ const TILE_MODULE_HINTS: Array<{
 ];
 
 function isTileModule(value: unknown): value is TileModule {
-  return value === 'core' || value === 'pricing' || value === 'boiler' || value === 'statistics';
+  return (
+    value === 'core'
+    || value === 'pricing'
+    || value === 'boiler'
+    || value === 'statistics'
+    || value === 'battery_prediction'
+  );
 }
 
 /**
@@ -359,6 +371,8 @@ export function shouldRenderDashboardTile(tile: ResolvedTile, flags: ModuleTileF
       return flags.enableBoiler;
     case 'statistics':
       return flags.enableStatistics;
+    case 'battery_prediction':
+      return flags.enablePrediction !== false;
     case 'core':
     default:
       return true;

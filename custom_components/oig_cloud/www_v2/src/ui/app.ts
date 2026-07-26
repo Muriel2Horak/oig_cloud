@@ -105,6 +105,7 @@ export class OigApp extends LitElement {
   @state() private enablePricing = true;
   @state() private enableBoiler = true;
   @state() private enableStatistics = true;
+  @state() private enablePrediction = true;
 
   private get boilerLang() {
     return resolveLang(this.hass);
@@ -124,6 +125,7 @@ export class OigApp extends LitElement {
       enablePricing: this.enablePricing,
       enableBoiler: this.enableBoiler,
       enableStatistics: this.enableStatistics,
+      enablePrediction: this.enablePrediction,
     };
     const tiles = [...(this.tilesLeft ?? []), ...(this.tilesRight ?? [])];
     return filterDashboardTiles(tiles, flags) ?? [];
@@ -934,8 +936,8 @@ export class OigApp extends LitElement {
 
   /**
    * R7 + Unit A-FE: load box_has_home56 (boiler section) and the pricing/
-   * boiler/statistics module enable flags (modules section) from module_config
-   * in one fetch (best-effort).
+   * boiler/statistics/battery_prediction module enable flags (modules section)
+   * from module_config in one fetch (best-effort).
    */
   private async loadBoxHasHome56(): Promise<void> {
     try {
@@ -945,6 +947,7 @@ export class OigApp extends LitElement {
         this.enablePricing = cfg.modules.enable_pricing !== false;
         this.enableBoiler = cfg.modules.enable_boiler !== false;
         this.enableStatistics = cfg.modules.enable_statistics !== false;
+        this.enablePrediction = cfg.modules.enable_battery_prediction !== false;
       }
     } catch {
       // silently ignore — defaults (Home 5/6 hidden, tabs visible) are safe

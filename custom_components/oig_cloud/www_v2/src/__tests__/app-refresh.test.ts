@@ -107,6 +107,7 @@ import { invalidateTimelineCache } from '@/data/pricing-data';
 import { haClient } from '@/data/ha-client';
 import { stateWatcher } from '@/data/state-watcher';
 import { getSensorId } from '@/data/flow-data';
+import { resolveTileModule } from '@/data/tiles-data';
 import { OigApp } from '@/ui/app';
 
 function flattenTemplate(tmpl: unknown): string {
@@ -132,7 +133,7 @@ function getAppTemplateAll(app: OigApp): string {
   return flattenTemplate(result);
 }
 
-type TileModule = 'core' | 'pricing' | 'boiler' | 'statistics';
+type TileModule = 'core' | 'pricing' | 'boiler' | 'statistics' | 'battery_prediction';
 
 function mkTile(entityId: string, module: TileModule): any {
   return {
@@ -329,6 +330,7 @@ describe('OigApp dashboard tile gating', () => {
     app.error = null;
     app.tilesLeft = [];
     app.tilesRight = [];
+    app.enablePrediction = true;
     return app as OigApp;
   }
 
@@ -371,6 +373,49 @@ describe('OigApp dashboard tile gating', () => {
     app.enableStatistics = false;
     app.tilesLeft = [coreTile, statisticsTile];
 
+    expect(app.visibleDashboardTiles).toEqual([coreTile]);
+
+    app.enableStatistics = true;
+    expect(app.visibleDashboardTiles).toEqual([coreTile, statisticsTile]);
+  });
+
+  it('resolves real battery-prediction ids separately from statistics and keeps them visible when statistics is off', () => {
+    const cases: Array<[string, TileModule]> = [
+      ['sensor.oig_2206237016_battery_efficiency', 'battery_prediction'],
+      ['sensor.oig_2206237016_battery_balancing', 'battery_prediction'],
+      ['sensor.oig_2206237016_adaptive_load_profiles', 'battery_prediction'],
+      ['sensor.oig_2206237016_grid_charging_planned', 'battery_prediction'],
+      ['sensor.oig_2206237016_planner_recommended_mode', 'battery_prediction'],
+      ['sensor.oig_2206237016_battery_load_median', 'statistics'],
+      ['sensor.oig_2206237016_load_avg_6_8_weekday', 'statistics'],
+      ['sensor.oig_2206237016_hourly_real_boiler_kwh', 'statistics'],
+    ];
+
+    for (const [entityId, expectedModule] of cases) {
+      expect(resolveTileModule(entityId)).toBe(expectedModule);
+    }
+
+    const app = makeApp() as any;
+    app.enableBoiler = true;
+    app.enablePricing = true;
+    app.enableStatistics = false;
+    app.enablePrediction = true;
+
+    const coreTile = mkTile('sensor.oig_2206237016_actual_aci_wtotal', 'core');
+    const batteryPredictionTile = mkTile(
+      'sensor.oig_2206237016_battery_efficiency',
+      resolveTileModule('sensor.oig_2206237016_battery_efficiency') as any,
+    );
+    const statisticsTile = mkTile(
+      'sensor.oig_2206237016_hourly_real_boiler_kwh',
+      resolveTileModule('sensor.oig_2206237016_hourly_real_boiler_kwh') as any,
+    );
+
+    app.tilesLeft = [coreTile, batteryPredictionTile, statisticsTile];
+
+    expect(app.visibleDashboardTiles).toEqual([coreTile, batteryPredictionTile]);
+
+    app.enablePrediction = false;
     expect(app.visibleDashboardTiles).toEqual([coreTile]);
 
     app.enableStatistics = true;
