@@ -100,6 +100,121 @@ interface PricelistsResponse {
   year: number | null;
 }
 
+export type AiStatus = 'not_configured' | 'verified' | 'unverified' | 'backing_off' | 'no_credits' | 'error';
+
+export interface AiState {
+  provider: string;
+  key_set: boolean;
+  verified: boolean;
+  status: AiStatus;
+  last_error_code: string | null;
+  next_probe_at: string | null;
+}
+
+export interface AiValidationFinding {
+  severity: string;
+  message: string;
+}
+
+export type AiValidationState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'success'; findings: AiValidationFinding[] }
+  | { kind: 'error'; code: string };
+
+interface AiValidationResponseBody {
+  ok: boolean;
+  findings?: AiValidationFinding[];
+  code?: string;
+}
+
+function aiBadgeText(state: AiState | null, lang: Lang): { status: AiStatus; text: string } | null {
+  if (!state || !state.provider || state.status === 'verified') return null;
+  if (state.status === 'no_credits') {
+    return { status: state.status, text: t('settings.ai.badge.no_credits', lang) };
+  }
+  if (state.status === 'backing_off') {
+    return { status: state.status, text: t('settings.ai.badge.backing_off', lang) };
+  }
+  return { status: state.status, text: t('settings.ai.badge.awaiting_verification', lang) };
+}
+
+function aiValidationErrorText(code: string, lang: Lang): string {
+  if (code === 'ai_not_verified') return t('onboarding.summary.validate_ai_config_error.ai_not_verified', lang);
+  if (code === 'no_credits') return t('onboarding.summary.validate_ai_config_error.no_credits', lang);
+  if (code === 'provider_unreachable') return t('onboarding.summary.validate_ai_config_error.network', lang);
+  return t('onboarding.summary.validate_ai_config_error.generic', lang);
+}
+
+export async function loadAiStatus(
+  inverterSn: string,
+  signal?: AbortSignal,
+): Promise<AiState | null> {
+  return haClient.fetchOIGAPI<AiState>(`/${inverterSn}/ai`, { signal });
+}
+
+export function renderAiStatusPanel(options: {
+  aiState: AiState | null;
+  lang: Lang;
+  showValidateButton?: boolean;
+  validationState?: AiValidationState;
+  buttonDisabled?: boolean;
+  onValidate?: () => void;
+}) {
+  const {
+    aiState,
+    lang,
+    showValidateButton = false,
+    validationState = { kind: 'idle' },
+    buttonDisabled = false,
+    onValidate,
+  } = options;
+  const badge = aiBadgeText(aiState, lang);
+  const canValidate = showValidateButton && aiState?.status === 'verified';
+  return html`
+    <div class="ai-status-panel">
+      ${badge
+        ? html`<div class="ai-status-badge" data-testid="ai-status-badge" data-status=${badge.status}>
+            ${badge.text}
+          </div>`
+        : nothing}
+      ${canValidate
+        ? html`
+            <button
+              type="button"
+              class="ai-validate-button"
+              data-testid="validate-ai-config-button"
+              ?disabled=${buttonDisabled || validationState.kind === 'loading'}
+              @click=${() => onValidate?.()}
+            >${t('onboarding.summary.validate_ai_config_button', lang)}</button>
+          `
+        : nothing}
+      ${validationState.kind === 'success'
+        ? html`
+            <div class="ai-validate-findings" data-testid="validate-ai-config-findings">
+              <div class="ai-validate-heading">${t('onboarding.summary.validate_ai_config_result_heading', lang)}</div>
+              ${validationState.findings.length === 0
+                ? html`<div class="ai-validate-empty">${t('onboarding.summary.validate_ai_config_result_empty', lang)}</div>`
+                : html`
+                    <ul>
+                      ${validationState.findings.map((finding) => html`
+                        <li data-severity=${finding.severity}>${finding.message}</li>
+                      `)}
+                    </ul>
+                  `}
+            </div>
+          `
+        : validationState.kind === 'error'
+          ? html`
+              <div class="ai-validate-error" data-testid="validate-ai-config-error">
+                ${aiValidationErrorText(validationState.code, lang)}
+              </div>
+            `
+          : nothing}
+    </div>
+  `;
+}
+
 // ----------------------------------------------------------------------------
 // Re-exports for tests / other tabs
 // ----------------------------------------------------------------------------
@@ -795,6 +910,8 @@ export class OigOnboardingWizard extends LitElement {
   private _registryOutcome: BootstrapOutcome = 'pending';
   private _pricingOutcome: BootstrapOutcome = 'pending';
   private _pricingConfigOutcome: BootstrapOutcome = 'pending';
+  @state() private aiState: AiState | null = null;
+  @state() private aiValidation: AiValidationState = { kind: 'idle' };
   @state() private bootstrapRetry = {
     onboardingState: false,
     registry: false,
@@ -1734,6 +1851,8 @@ export class OigOnboardingWizard extends LitElement {
     this._pricingConfigLoaded = false;
     this._pricingConfigOutcome = 'pending';
     this._pricingOutcome = 'pending';
+    this.aiState = null;
+    this.aiValidation = { kind: 'idle' };
     this.originalValues = {};
     this.pricing = null;
     this.pricingLoadFailed = false;
@@ -1758,6 +1877,7 @@ export class OigOnboardingWizard extends LitElement {
     void this.refreshPricing(controller.signal);
     void this.loadSolarRegistry(controller.signal);
     void this.loadPricingConfig(controller.signal);
+    void this.refreshAiState(controller.signal);
   }
 
   /**
@@ -1918,6 +2038,35 @@ export class OigOnboardingWizard extends LitElement {
         this.bootstrapRetry = { ...this.bootstrapRetry, pricing: false };
       }
     }
+  }
+
+  private async refreshAiState(signal?: AbortSignal): Promise<void> {
+    if (!this.inverterSn) return;
+    try {
+      this.aiState = await loadAiStatus(this.inverterSn, signal);
+    } catch {
+      this.aiState = null;
+    }
+  }
+
+  private async validateAiConfig(): Promise<void> {
+    if (!this.inverterSn || this.aiState?.status !== 'verified' || this.aiValidation.kind === 'loading') {
+      return;
+    }
+    this.aiValidation = { kind: 'loading' };
+    const result = await haClient.fetchOIGAPITyped<AiValidationResponseBody>(
+      `/${this.inverterSn}/ai/validate_config`,
+      { method: 'POST' },
+    );
+    if (!result.ok) {
+      this.aiValidation = { kind: 'error', code: result.code };
+      return;
+    }
+    if (result.data?.ok) {
+      this.aiValidation = { kind: 'success', findings: result.data.findings ?? [] };
+      return;
+    }
+    this.aiValidation = { kind: 'error', code: result.data?.code ?? 'error' };
   }
 
   private jumpTo(step: OnboardingStepId): void {
@@ -2399,12 +2548,16 @@ export class OigOnboardingWizard extends LitElement {
       // Reuse the typed AI renderer (provider cards + key verify). It owns
       // its own verify state — but shares the wizard's already-bootstrapped
       // onboarding state (Task 9 budget) instead of fetching its own copy.
-      return html`<oig-onboarding-step-ai
-        class="step step-ai"
-        .inverterSn=${this.inverterSn}
-        .onboardingState=${this.onboardingState}
-        .hass=${this.hass}
-      ></oig-onboarding-step-ai>`;
+      return html`
+        <div class="step step-ai">
+          ${renderAiStatusPanel({ aiState: this.aiState, lang: this.wizardLang })}
+          <oig-onboarding-step-ai
+            .inverterSn=${this.inverterSn}
+            .onboardingState=${this.onboardingState}
+            .hass=${this.hass}
+          ></oig-onboarding-step-ai>
+        </div>
+      `;
     }
 
     if (this.currentStep === 'solar') {
@@ -2956,6 +3109,13 @@ export class OigOnboardingWizard extends LitElement {
                     </table>
                   `}
               <p>${t('onboarding.summary.confirm_notice', this.wizardLang)}</p>
+              ${renderAiStatusPanel({
+                aiState: this.aiState,
+                lang: this.wizardLang,
+                showValidateButton: true,
+                validationState: this.aiValidation,
+                onValidate: () => void this.validateAiConfig(),
+              })}
             </div>
           </section>
         `;
@@ -2973,6 +3133,13 @@ export class OigOnboardingWizard extends LitElement {
             <ul>
               ${enabledModules.map((label) => html`<li>${label}</li>`)}
             </ul>
+            ${renderAiStatusPanel({
+              aiState: this.aiState,
+              lang: this.wizardLang,
+              showValidateButton: true,
+              validationState: this.aiValidation,
+              onValidate: () => void this.validateAiConfig(),
+            })}
           </div>
         </section>
       `;
