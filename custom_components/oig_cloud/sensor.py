@@ -158,7 +158,7 @@ async def _cleanup_renamed_sensors(
         if not sensor_type:
             continue
 
-        if _is_boiler_entity(entity_id):
+        if _is_boiler_entity(entity_id, sensor_type):
             if sensor_type in SENSOR_TYPES or boiler_enabled:
                 continue
             removed += _remove_entity_entry(entity_reg, entity_entry, sensor_type)
@@ -176,11 +176,21 @@ def _is_oig_sensor_entity(entity_id: str) -> bool:
     return entity_id.startswith("sensor.oig_") and len(entity_id.split("_")) >= 3
 
 
-def _is_boiler_entity(entity_id: str) -> bool:
+def _is_boiler_entity(entity_id: str, sensor_type: str) -> bool:
+    """Boiler identity by catalog, not substring.
+
+    ``sensor_type`` is authoritative: every real boiler sensor_type is
+    prefixed ``boiler_`` -- the legacy `SENSOR_TYPES_BOILER` catalog keys
+    (sensors/SENSOR_TYPES_BOILER.py) and the module sensors from
+    `boiler/sensors.py get_boiler_sensors()` (unique_id_suffix always
+    rendered as ``boiler_<suffix>`` by BoilerSensorBase). A loose substring
+    match on entity_id (former `"_boiler_" in entity_id`) also caught
+    non-boiler entities that merely mention boiler, e.g. the statistics
+    sensor `hourly_real_boiler_kwh`.
+    """
     return (
-        "_bojler_" in entity_id
-        or "_boiler_" in entity_id
-        or entity_id.startswith("sensor.oig_bojler")
+        entity_id.startswith("sensor.oig_bojler")
+        or sensor_type.startswith("boiler_")
     )
 
 

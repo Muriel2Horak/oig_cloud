@@ -237,7 +237,25 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     raising, so a box without AI simply has no AI Task entity.
     """
     store = AiKeyStore(hass, entry.entry_id)
-    provider = await store.async_get_provider()
+    options = getattr(entry, "options", None) or {}
+    options_provider = options.get("ai_provider") or ""
+
+    # `entry.options["ai_provider"]` is AUTHORITATIVE when set (F1 Unit 1):
+    # the wizard writes it, so it must be what selects the backend. The
+    # KeyStore still owns the API KEY — it stores {provider, api_key} as one
+    # pair — so a key is only usable here when the store's own provider
+    # record matches the options selection; otherwise there is no key for
+    # that provider yet and this falls through exactly like "no key stored".
+    if options_provider:
+        provider = options_provider
+        stored_provider = await store.async_get_provider()
+        key = await store.async_get_key() if stored_provider == provider else None
+    else:
+        # Empty options provider — behavior-neutral fallback to the
+        # pre-existing KeyStore-only resolution.
+        provider = await store.async_get_provider()
+        key = await store.async_get_key() if provider else None
+
     if not provider:
         # AI not configured — optional feature, add nothing.
         return
@@ -278,16 +296,21 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         return
 
     if provider in PROVIDERS:
-        key = await store.async_get_key()
         if not key:
             # Provider chosen but no key — cannot call the backend, add nothing.
             return
         cache = get_ai_model_cache(hass)
+        # ai_base_url / ai_model are ADVANCED OVERRIDES (F1 Unit 1): non-empty
+        # replaces the hardcoded default; empty (the common case) falls back
+        # to PROVIDERS[...]/MODEL_CHAINS[...] exactly as before.
+        base_url = options.get("ai_base_url") or PROVIDERS[provider]["base_url"]
+        model_override = options.get("ai_model") or ""
+        models = (model_override,) if model_override else MODEL_CHAINS[provider]
         backend = OpenAiCompatBackend(
             session=async_get_clientsession(hass),
-            base_url=PROVIDERS[provider]["base_url"],
+            base_url=base_url,
             api_key=key,
-            models=MODEL_CHAINS[provider],
+            models=models,
             entry_id=entry.entry_id,
             provider=provider,
             model_cache=cache,
