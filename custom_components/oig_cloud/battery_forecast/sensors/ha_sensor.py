@@ -429,6 +429,23 @@ class OigCloudBatteryForecastSensor(OigCloudSensor, RestoreEntityBase):
         efficiency: float,
     ) -> Dict[str, Dict[str, Any]]:
         """Proxy to scenario analysis helpers."""
+        options = self._config_entry.options if self._config_entry else {}
+        opportunistic_price = options.get(
+            "ups_opportunistic_price_czk_kwh",
+            scenario_analysis_module.UPS_OPPORTUNISTIC_PRICE_CZK_KWH,
+        )
+        opportunistic_rate = options.get(
+            "ups_opportunistic_charge_rate_kw",
+            scenario_analysis_module.UPS_OPPORTUNISTIC_CHARGE_RATE_KW,
+        )
+        if opportunistic_price is None:
+            opportunistic_price = (
+                scenario_analysis_module.UPS_OPPORTUNISTIC_PRICE_CZK_KWH
+            )
+        if opportunistic_rate is None:
+            opportunistic_rate = (
+                scenario_analysis_module.UPS_OPPORTUNISTIC_CHARGE_RATE_KW
+            )
         return scenario_analysis_module.generate_alternatives(
             self,
             spot_prices=spot_prices,
@@ -438,6 +455,8 @@ class OigCloudBatteryForecastSensor(OigCloudSensor, RestoreEntityBase):
             current_capacity=current_capacity,
             max_capacity=max_capacity,
             efficiency=efficiency,
+            opportunistic_price_czk_kwh=float(opportunistic_price),
+            opportunistic_charge_rate_kw=float(opportunistic_rate),
         )
 
     def _update_balancing_plan_snapshot(self, plan: Optional[Dict[str, Any]]) -> None:

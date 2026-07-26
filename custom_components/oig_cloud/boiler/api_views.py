@@ -1,8 +1,11 @@
 """API views pro bojlerový modul."""
 
+import json
 import logging
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Optional
 
 from aiohttp import web
@@ -14,30 +17,38 @@ from ..const import DOMAIN, KEY_BOILER_RUNTIMES
 from ..const import (
     BOILER_ENERGY_CONSTANT_KWH_L_C,
     CONF_BOILER_ALT_COST_KWH,
+    CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+    CONF_BOILER_ALT_POWER_KW,
     CONF_BOILER_ALT_SOURCE_TYPE,
+    CONF_BOILER_BATTERY_CYCLE_COST,
     CONF_BOILER_CIRCULATION_ENABLED,
     CONF_BOILER_COLD_INLET_TEMP_C,
     CONF_BOILER_CIRCULATION_PUMP_SWITCH_ENTITY,
     CONF_BOILER_DEADLINE_TIME,
     CONF_BOILER_EFFECTIVE_POWER_W,
+    CONF_BOILER_HAS_ALTERNATIVE_HEATING,
     CONF_BOILER_HOME5_MANEUVER_ENABLED,
     CONF_BOX_HAS_HOME56,
     CONF_BOILER_LEGIONELLA_INTERVAL_DAYS,
+    CONF_BOILER_LEGIONELLA_TARGET_TEMP_C,
     CONF_BOILER_PLAN_SLOT_MINUTES,
     CONF_BOILER_STRATIFICATION_MODE,
     CONF_BOILER_TARGET_TEMP_C,
     CONF_BOILER_TEMP_SENSOR_POSITION,
     CONF_BOILER_TEMP_SENSOR_TOP,
     CONF_BOILER_TEMP_SENSOR_BOTTOM,
+    CONF_BOILER_THERMAL_ARBITRAGE_ENABLED,
     CONF_BOILER_TWO_ZONE_SPLIT_RATIO,
     CONF_BOILER_VOLUME_L,
     DEFAULT_BOILER_ALT_SOURCE_TYPE,
+    DEFAULT_BOILER_BATTERY_CYCLE_COST,
     DEFAULT_BOILER_CIRCULATION_ENABLED,
     DEFAULT_BOILER_COLD_INLET_TEMP_C,
     DEFAULT_BOILER_DEADLINE_TIME,
     DEFAULT_BOILER_HOME5_MANEUVER_ENABLED,
     DEFAULT_BOX_HAS_HOME56,
     DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS,
+    DEFAULT_BOILER_LEGIONELLA_TARGET_TEMP_C,
     DEFAULT_BOILER_PLAN_SLOT_MINUTES,
     DEFAULT_BOILER_STRATIFICATION_MODE,
     DEFAULT_BOILER_TARGET_TEMP_C,
@@ -46,6 +57,17 @@ from ..const import (
 )
 from .const import BOILER_READY_TEMP_C
 from .classifier import compute_ready_fraction
+from .models import BoilerProfile
+from .planner_contract import (
+    BoilerBatterySignals,
+    DemandTarget,
+    LegionellaObligation,
+    PlannerInput,
+    resolve_alt_source_capability,
+)
+from .planner_core import _build_empty_slots, plan_comfort_core
+from .runtime import _build_planner_topology, _float_config, planner_input_horizon_hours
+from .thermal import calculate_energy_to_heat
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -254,11 +276,528 @@ class BoilerPlanView(HomeAssistantView):
             return web.json_response({"error": str(e)}, status=500)
 
 
+class _SimulationInputError(ValueError):
+    """Malformed boiler_simulate request body — mapped to HTTP 400."""
+
+
+_PRESETS_FILE = Path(__file__).parent / "water_day_presets.json"
+
+# Whitelist: only these config keys may be overridden by a simulate request.
+# Prevents an admin-gated-but-still-external caller from injecting arbitrary
+# config_registry keys through override_config.
+_OVERRIDE_CONFIG_KEYS = frozenset(
+    {
+        CONF_BOILER_VOLUME_L,
+        CONF_BOILER_TARGET_TEMP_C,
+        CONF_BOILER_COLD_INLET_TEMP_C,
+        CONF_BOILER_DEADLINE_TIME,
+        CONF_BOILER_ALT_COST_KWH,
+        CONF_BOILER_HAS_ALTERNATIVE_HEATING,
+        CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+        CONF_BOILER_BATTERY_CYCLE_COST,
+        CONF_BOILER_THERMAL_ARBITRAGE_ENABLED,
+        CONF_BOILER_ALT_POWER_KW,
+        CONF_BOILER_LEGIONELLA_INTERVAL_DAYS,
+        CONF_BOILER_LEGIONELLA_TARGET_TEMP_C,
+        CONF_BOX_HAS_HOME56,
+        CONF_BOILER_HOME5_MANEUVER_ENABLED,
+        CONF_BOILER_STRATIFICATION_MODE,
+        "boiler_heater_power_kw",
+    }
+)
+
+_DEFAULT_SIM_PRICE_CZK_KWH = 3.5
+_DEFAULT_SIM_CHEAP_PRICE_CZK_KWH = 2.0
+_DEFAULT_SIM_CHEAP_HOURS = frozenset(range(0, 6)) | frozenset(range(22, 24))
+
+
+def _require_admin(request: web.Request) -> Optional[web.Response]:
+    """Admin gate mirroring the other boiler/planning mutation POST views."""
+    user = request.get("hass_user") if hasattr(request, "get") else None
+    if user is None and hasattr(request, "app"):
+        user = request.app.get("hass_user")
+    if not user or not getattr(user, "is_admin", False):
+        return web.json_response({"error": "Admin only"}, status=403)
+    return None
+
+
+@lru_cache(maxsize=1)
+def _load_water_day_presets() -> dict[str, Any]:
+    with _PRESETS_FILE.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    return {key: value for key, value in data.items() if not key.startswith("_")}
+
+
+def _resolve_config_source(
+    key: str, override_config: dict[str, Any], base_config: dict[str, Any]
+) -> str:
+    if key in override_config:
+        return "request"
+    if key in base_config:
+        return "config"
+    return "constant"
+
+
+def _resolve_water_draws(
+    payload: dict[str, Any],
+) -> tuple[list[float], Optional[str], str]:
+    preset_id = payload.get("preset")
+    if preset_id is not None:
+        if not isinstance(preset_id, str):
+            raise _SimulationInputError("preset must be a string id")
+        presets = _load_water_day_presets()
+        preset = presets.get(preset_id)
+        if preset is None:
+            raise _SimulationInputError(
+                f"Unknown preset '{preset_id}'. Known presets: {sorted(presets)}"
+            )
+        return list(preset["water_draw_profile_lh"]), preset_id, "preset"
+
+    explicit = payload.get("water_draw_profile_lh")
+    if isinstance(explicit, list) and len(explicit) == 24:
+        try:
+            draws = [float(v) for v in explicit]
+        except (TypeError, ValueError):
+            raise _SimulationInputError(
+                "water_draw_profile_lh must be a list of 24 numbers (litres per hour)"
+            )
+        return draws, None, "request"
+
+    raise _SimulationInputError(
+        'Request must include either {"preset": "<id>"} or '
+        '"water_draw_profile_lh": [24 hourly litres]'
+    )
+
+
+def _resolve_now(payload: dict[str, Any]) -> tuple[datetime, str]:
+    raw = payload.get("now")
+    if raw is None:
+        return dt_util.now(), "constant"
+    if not isinstance(raw, str):
+        raise _SimulationInputError("'now' must be an ISO-8601 datetime string")
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        raise _SimulationInputError("'now' must be an ISO-8601 datetime string")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_util.now().tzinfo)
+    return parsed, "request"
+
+
+def _demand_targets_from_draws(
+    draws: list[float],
+    now: datetime,
+    cold_inlet_c: float,
+    target_temp_c: float,
+) -> list[DemandTarget]:
+    """One DemandTarget per non-zero draw hour, due 1h after that hour starts.
+
+    Hour index is relative to `now` (hour 0 = the first simulated hour), not
+    wall-clock hour-of-day — keeps the simulation independent of calendar
+    day boundaries.
+    """
+    base = now.replace(minute=0, second=0, microsecond=0)
+    targets: list[DemandTarget] = []
+    for hour, liters in enumerate(draws):
+        if liters <= 0:
+            continue
+        required_kwh = calculate_energy_to_heat(liters, cold_inlet_c, target_temp_c)
+        if required_kwh <= 0:
+            continue
+        targets.append(
+            DemandTarget(
+                start=base + timedelta(hours=hour + 1),
+                required_kwh=round(required_kwh, 4),
+                label=f"draw_h{hour:02d}",
+            )
+        )
+    return targets
+
+
+def _default_price_for_slot(slot_start: datetime) -> float:
+    return (
+        _DEFAULT_SIM_CHEAP_PRICE_CZK_KWH
+        if slot_start.hour in _DEFAULT_SIM_CHEAP_HOURS
+        else _DEFAULT_SIM_PRICE_CZK_KWH
+    )
+
+
+def _resolve_spot_prices(
+    payload: dict[str, Any], slots: list[Any]
+) -> tuple[dict[datetime, float], str]:
+    override = payload.get("grid_prices_czk_kwh")
+    if override is not None:
+        if not isinstance(override, list) or len(override) != len(slots):
+            raise _SimulationInputError(
+                f"grid_prices_czk_kwh must be a list of {len(slots)} floats "
+                "(one per 15-minute slot in the horizon)"
+            )
+        try:
+            prices = {
+                slot.start: float(price) for slot, price in zip(slots, override)
+            }
+        except (TypeError, ValueError):
+            raise _SimulationInputError("grid_prices_czk_kwh values must be numbers")
+        return prices, "request"
+
+    return {slot.start: _default_price_for_slot(slot.start) for slot in slots}, "constant"
+
+
+def _resolve_pv_overflow_windows(
+    payload: dict[str, Any],
+) -> tuple[list[tuple[datetime, datetime]], str]:
+    raw = payload.get("pv_overflow_windows")
+    if raw is None:
+        return [], "constant"
+    if not isinstance(raw, list):
+        raise _SimulationInputError(
+            "pv_overflow_windows must be a list of [start_iso, end_iso] pairs"
+        )
+    windows: list[tuple[datetime, datetime]] = []
+    for pair in raw:
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            raise _SimulationInputError(
+                "pv_overflow_windows entries must be [start_iso, end_iso] pairs"
+            )
+        try:
+            start = datetime.fromisoformat(pair[0])
+            end = datetime.fromisoformat(pair[1])
+        except (TypeError, ValueError):
+            raise _SimulationInputError("pv_overflow_windows timestamps must be ISO-8601")
+        windows.append((start, end))
+    return windows, "request"
+
+
+def _maybe_build_legionella_obligation(
+    payload: dict[str, Any],
+    preset_id: Optional[str],
+    merged_config: dict[str, Any],
+    start_temp_c: float,
+) -> tuple[Optional[LegionellaObligation], str]:
+    """Synthetic legionella obligation — opt-in only (no recorder access in a dry run)."""
+    explicit_request = bool(payload.get("legionella_due"))
+    if not explicit_request and preset_id != "legionella_cycle":
+        return None, "constant"
+
+    target_temp_c = _float_config(
+        merged_config,
+        CONF_BOILER_LEGIONELLA_TARGET_TEMP_C,
+        DEFAULT_BOILER_LEGIONELLA_TARGET_TEMP_C,
+    )
+    interval_days = (
+        int(
+            merged_config.get(
+                CONF_BOILER_LEGIONELLA_INTERVAL_DAYS,
+                DEFAULT_BOILER_LEGIONELLA_INTERVAL_DAYS,
+            )
+        )
+        or 7
+    )
+    required_kwh = calculate_energy_to_heat(
+        _float_config(merged_config, CONF_BOILER_VOLUME_L, 200.0),
+        start_temp_c,
+        target_temp_c,
+    )
+    obligation = LegionellaObligation(
+        overdue=True,
+        required_kwh=round(required_kwh, 4),
+        legionella_target_temp_c=target_temp_c,
+        days_since_last=None,
+        interval_days=interval_days,
+    )
+    return obligation, "request" if explicit_request else "preset"
+
+
+def _build_synthetic_profile(
+    category: str, draws: list[float], cold_inlet_c: float, target_temp_c: float
+) -> BoilerProfile:
+    """Assemble a BoilerProfile from the water-day draws.
+
+    Not consumed by plan_comfort_core (it plans from demand_targets, not
+    profile.hourly_avg) but is a required, non-None PlannerInput field —
+    populated here so the contract stays honest for any caller that does
+    read it.
+    """
+    hourly_avg: dict[int, float] = {}
+    confidence: dict[int, float] = {}
+    sample_count: dict[int, int] = {}
+    for hour, liters in enumerate(draws):
+        hourly_avg[hour] = round(
+            calculate_energy_to_heat(float(liters), cold_inlet_c, target_temp_c), 4
+        )
+        confidence[hour] = 1.0
+        sample_count[hour] = 0
+    return BoilerProfile(
+        category=category,
+        hourly_avg=hourly_avg,
+        confidence=confidence,
+        sample_count=sample_count,
+        last_updated=None,
+    )
+
+
+def _serialize_simulated_slot(slot: Any) -> dict[str, Any]:
+    return {
+        "start": slot.start.isoformat(),
+        "end": slot.end.isoformat(),
+        "action": slot.action,
+        "source": _resolve_source_value(slot.source),
+        "heating_kwh": round(slot.heating_kwh, 3),
+        "pv_kwh": round(slot.pv_kwh, 3),
+        "grid_kwh": round(slot.grid_kwh, 3),
+        "alt_kwh": round(slot.alt_kwh, 3),
+        "battery_kwh": round(slot.battery_kwh, 3),
+        "estimated_cost_czk": round(slot.estimated_cost_czk, 2),
+        "predicted_top_temp_c": slot.predicted_top_temp_c,
+        "purpose": slot.purpose,
+    }
+
+
+def _build_simulation_summary(plan_result: Any) -> dict[str, Any]:
+    comfort_status = getattr(plan_result, "comfort_status", None)
+    return {
+        "total_heating_kwh": round(
+            plan_result.pv_kwh
+            + plan_result.grid_kwh
+            + plan_result.alt_kwh
+            + plan_result.battery_kwh,
+            3,
+        ),
+        "cost_czk": round(plan_result.estimated_cost_czk, 2),
+        "pv_kwh": round(plan_result.pv_kwh, 3),
+        "grid_kwh": round(plan_result.grid_kwh, 3),
+        "alt_kwh": round(plan_result.alt_kwh, 3),
+        "battery_kwh": round(plan_result.battery_kwh, 3),
+        "cost_if_all_grid": round(plan_result.cost_if_all_grid, 2),
+        "cost_if_all_alt": round(plan_result.cost_if_all_alt, 2),
+        "comfort_satisfied": plan_result.comfort_satisfied,
+        "comfort_status": (
+            getattr(comfort_status, "value", str(comfort_status))
+            if comfort_status is not None
+            else None
+        ),
+        "temperature_at_deadline_c": plan_result.temperature_at_deadline_c,
+        "unsatisfied_comfort_gap_c": plan_result.unsatisfied_comfort_gap_c,
+        "degraded": plan_result.degraded,
+        "safe_hold": plan_result.safe_hold,
+        "reason_codes": [
+            getattr(code, "value", str(code)) for code in plan_result.reason_codes
+        ],
+        "demands_met": list(plan_result.demands_met),
+        "demand_labels": list(plan_result.demand_labels),
+    }
+
+
+def _run_boiler_simulation(
+    payload: dict[str, Any],
+    base_config: dict[str, Any],
+    entry_id: str,
+    box_id: str,
+) -> dict[str, Any]:
+    """Build a synthetic PlannerInput and run it through the REAL comfort-core
+    planner (plan_comfort_core). Pure function of its arguments plus the
+    wall clock (only when `now` is not supplied) — reads no hass state,
+    writes nothing.
+    """
+    override_config_raw = payload.get("override_config") or {}
+    if not isinstance(override_config_raw, dict):
+        raise _SimulationInputError("override_config must be an object")
+    override_config = {
+        key: value
+        for key, value in override_config_raw.items()
+        if key in _OVERRIDE_CONFIG_KEYS
+    }
+    merged_config = {**base_config, **override_config}
+
+    draws, preset_id, draws_source = _resolve_water_draws(payload)
+    now, now_source = _resolve_now(payload)
+
+    volume_l = _float_config(merged_config, CONF_BOILER_VOLUME_L, 200.0)
+    target_temp_c = _float_config(
+        merged_config, CONF_BOILER_TARGET_TEMP_C, DEFAULT_BOILER_TARGET_TEMP_C
+    )
+    cold_inlet_c = _float_config(
+        merged_config, CONF_BOILER_COLD_INLET_TEMP_C, DEFAULT_BOILER_COLD_INLET_TEMP_C
+    )
+    deadline_time = str(
+        merged_config.get(CONF_BOILER_DEADLINE_TIME, DEFAULT_BOILER_DEADLINE_TIME)
+    )
+
+    start_temp_raw = payload.get("start_temp_c")
+    if start_temp_raw is not None:
+        try:
+            start_temp_c = float(start_temp_raw)
+        except (TypeError, ValueError):
+            raise _SimulationInputError("start_temp_c must be a number")
+        start_temp_source = "request"
+    else:
+        start_temp_c = round((cold_inlet_c + target_temp_c) / 2.0, 1)
+        start_temp_source = "constant"
+
+    topology = _build_planner_topology(merged_config)
+    horizon_hours = planner_input_horizon_hours(merged_config)
+    slots = _build_empty_slots(now, horizon_hours)
+
+    demand_targets = _demand_targets_from_draws(draws, now, cold_inlet_c, target_temp_c)
+    spot_prices, prices_source = _resolve_spot_prices(payload, slots)
+    overflow_windows, overflow_source = _resolve_pv_overflow_windows(payload)
+
+    alt_capability = resolve_alt_source_capability(
+        has_alternative=bool(merged_config.get(CONF_BOILER_HAS_ALTERNATIVE_HEATING, False)),
+        actuator_model="switch" if merged_config.get(CONF_BOILER_ALT_HEATER_SWITCH_ENTITY) else None,
+        supported_models={"switch"},
+    )
+    home5_available = bool(
+        merged_config.get(CONF_BOX_HAS_HOME56, DEFAULT_BOX_HAS_HOME56)
+        and merged_config.get(
+            CONF_BOILER_HOME5_MANEUVER_ENABLED, DEFAULT_BOILER_HOME5_MANEUVER_ENABLED
+        )
+    )
+    battery_cycle_cost = _float_config(
+        merged_config, CONF_BOILER_BATTERY_CYCLE_COST, DEFAULT_BOILER_BATTERY_CYCLE_COST
+    )
+    legionella_obligation, legionella_source = _maybe_build_legionella_obligation(
+        payload, preset_id, merged_config, start_temp_c
+    )
+    synthetic_profile = _build_synthetic_profile(
+        preset_id or "custom", draws, cold_inlet_c, target_temp_c
+    )
+
+    planner_input = PlannerInput(
+        entry_id=entry_id,
+        box_id=box_id,
+        profile=synthetic_profile,
+        spot_prices=spot_prices,
+        overflow_windows=overflow_windows,
+        deadline_time=deadline_time,
+        topology=topology,
+        current_top_temp_c=start_temp_c,
+        current_bottom_temp_c=None,
+        temperature_updated_at=now,
+        alt_source_capability=alt_capability,
+        alt_cost_kwh=_float_config(merged_config, CONF_BOILER_ALT_COST_KWH, 0.0),
+        pv_forecast=0.0,
+        pv_confidence=0.0,
+        battery_signals=BoilerBatterySignals.from_raw(
+            {"overflow_windows": overflow_windows}
+        ),
+        reason_codes=[],
+        demand_targets=demand_targets,
+        legionella_obligation=legionella_obligation,
+        home5_available=home5_available,
+        battery_cycle_cost_czk_kwh=battery_cycle_cost,
+        thermal_arbitrage_enabled=bool(
+            merged_config.get(CONF_BOILER_THERMAL_ARBITRAGE_ENABLED, False)
+        ),
+        alt_power_kw=_float_config(merged_config, CONF_BOILER_ALT_POWER_KW, 0.0),
+    )
+
+    plan_result = plan_comfort_core(planner_input, now=now)
+
+    return {
+        "entry_id": entry_id,
+        "box_id": box_id,
+        "preset": preset_id,
+        "inputs": {
+            "now": now.isoformat(),
+            "horizon_hours": horizon_hours,
+            "water_draw_profile_lh": draws,
+            "start_temp_c": start_temp_c,
+            "boiler_volume_l": volume_l,
+            "boiler_target_temp_c": target_temp_c,
+            "boiler_cold_inlet_temp_c": cold_inlet_c,
+            "deadline_time": deadline_time,
+        },
+        "source": {
+            "water_draw_profile_lh": draws_source,
+            "now": now_source,
+            "start_temp_c": start_temp_source,
+            "grid_prices_czk_kwh": prices_source,
+            "pv_overflow_windows": overflow_source,
+            "boiler_volume_l": _resolve_config_source(
+                CONF_BOILER_VOLUME_L, override_config, base_config
+            ),
+            "boiler_target_temp_c": _resolve_config_source(
+                CONF_BOILER_TARGET_TEMP_C, override_config, base_config
+            ),
+            "boiler_cold_inlet_temp_c": _resolve_config_source(
+                CONF_BOILER_COLD_INLET_TEMP_C, override_config, base_config
+            ),
+            "deadline_time": _resolve_config_source(
+                CONF_BOILER_DEADLINE_TIME, override_config, base_config
+            ),
+            "alt_cost_kwh": _resolve_config_source(
+                CONF_BOILER_ALT_COST_KWH, override_config, base_config
+            ),
+            "battery_cycle_cost_czk_kwh": _resolve_config_source(
+                CONF_BOILER_BATTERY_CYCLE_COST, override_config, base_config
+            ),
+            "thermal_arbitrage_enabled": _resolve_config_source(
+                CONF_BOILER_THERMAL_ARBITRAGE_ENABLED, override_config, base_config
+            ),
+            "legionella_obligation": legionella_source,
+        },
+        "timeline": [_serialize_simulated_slot(slot) for slot in plan_result.slots],
+        "summary": _build_simulation_summary(plan_result),
+    }
+
+
+class BoilerSimulateView(HomeAssistantView):
+    """Dry-run boiler simulator (S2).
+
+    Feeds a synthetic water-usage day (bundled preset or an explicit 24h
+    litre series) through the REAL comfort-core planner (plan_comfort_core)
+    and returns the resulting heating windows, temperature trajectory and
+    cost — without touching any live sensor, runtime state, config entry or
+    persisted store. Admin-gated like the other boiler/planning POST views;
+    this endpoint itself performs no mutation, but override_config is a
+    config-shaped input surface and is gated the same way as module_config.
+    """
+
+    url = "/api/oig_cloud/boiler/{entry_id}/{box_id}/simulate_water_day"
+    name = "api:oig_cloud:boiler_simulate"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+
+    async def post(self, request: web.Request, entry_id: str, box_id: str) -> web.Response:
+        admin_error = _require_admin(request)
+        if admin_error is not None:
+            return admin_error
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+
+        ok, _entry, runtime = _validate_identity(self.hass, entry_id, box_id)
+        if not ok:
+            return _identity_error("Identity not resolved", "api_repair_required")
+
+        base_config: dict[str, Any] = {}
+        if runtime is not None and runtime.coordinator is not None:
+            base_config = dict(getattr(runtime.coordinator, "config", {}) or {})
+
+        try:
+            result = _run_boiler_simulation(payload, base_config, entry_id, box_id)
+        except _SimulationInputError as err:
+            return web.json_response({"error": str(err)}, status=400)
+        except Exception as e:
+            _LOGGER.error("Error in boiler simulate API: %s", e, exc_info=True)
+            return web.json_response({"error": str(e)}, status=500)
+
+        return web.json_response(result)
+
+
 def register_boiler_api_views(hass: HomeAssistant) -> None:
     """Registruje API views pro bojlerový modul."""
     hass.http.register_view(BoilerCanonicalView(hass))
     hass.http.register_view(BoilerProfileView(hass))
     hass.http.register_view(BoilerPlanView(hass))
+    hass.http.register_view(BoilerSimulateView(hass))
     _LOGGER.info("Boiler API views registered")
 
 

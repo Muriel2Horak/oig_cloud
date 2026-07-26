@@ -207,6 +207,11 @@ def test_simulate_interval_proxy(monkeypatch):
 
 def test_scenario_analysis_proxies(monkeypatch):
     sensor, _coordinator = _make_sensor(monkeypatch)
+    sensor._config_entry.options = {
+        "ups_opportunistic_price_czk_kwh": 0.7,
+        "ups_opportunistic_charge_rate_kw": 1.1,
+    }
+    captured = {}
 
     monkeypatch.setattr(
         ha_sensor_module.scenario_analysis_module,
@@ -231,7 +236,7 @@ def test_scenario_analysis_proxies(monkeypatch):
     monkeypatch.setattr(
         ha_sensor_module.scenario_analysis_module,
         "generate_alternatives",
-        lambda *_args, **_kwargs: {"alt": {"cost": 4.0}},
+        lambda *_args, **kwargs: captured.update(kwargs) or {"alt": {"cost": 4.0}},
     )
 
     assert (
@@ -295,6 +300,8 @@ def test_scenario_analysis_proxies(monkeypatch):
         )
         == {"alt": {"cost": 4.0}}
     )
+    assert captured["opportunistic_price_czk_kwh"] == 0.7
+    assert captured["opportunistic_charge_rate_kw"] == 1.1
 
 
 @pytest.mark.asyncio
@@ -459,6 +466,7 @@ async def test_additional_proxy_helpers(monkeypatch):
         "is_baseline_plan_invalid",
         lambda _plan: True,
     )
+
     async def _create_baseline(_sensor, date_str):
         return True
 

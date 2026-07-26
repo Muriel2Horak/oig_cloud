@@ -137,11 +137,12 @@ async def test_boiler_api_views(monkeypatch):
 
     hass = Hass()
     boiler_api.register_boiler_api_views(hass)
-    assert len(hass.http.registered) == 3
+    assert len(hass.http.registered) == 4
     assert [view.name for view in hass.http.registered] == [
         "api:oig_cloud:boiler_canonical",
         "api:oig_cloud:boiler_profile",
         "api:oig_cloud:boiler_plan",
+        "api:oig_cloud:boiler_simulate",
     ]
 
     profile_view = boiler_api.BoilerProfileView(hass)

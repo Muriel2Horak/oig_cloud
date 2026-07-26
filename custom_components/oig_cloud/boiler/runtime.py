@@ -1498,6 +1498,9 @@ class BoilerRuntime:
                     CONF_BOILER_HAS_ALTERNATIVE_HEATING, False
                 )
             ),
+            cold_inlet_c=(getattr(self.coordinator, "config", {}) or {}).get(
+                CONF_BOILER_COLD_INLET_TEMP_C, DEFAULT_BOILER_COLD_INLET_TEMP_C
+            ),
         )
         activity = self._activity_classifier.classify(
             self._last_activity_reading,
