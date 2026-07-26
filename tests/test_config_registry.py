@@ -95,6 +95,19 @@ def test_modules_and_battery_sections_ported():
     assert battery["battery_comfort_soc_percent"].min == 0.0 and battery["battery_comfort_soc_percent"].max == 95.0
 
 
+def test_module_enable_fields_reload_on_change():
+    """f1/wv2-modules-fix root cause (b): a persisted enable_* flip must trigger
+    an entry reload so CHMU/solar/battery/boiler entities appear or disappear
+    without a HA restart. All 7 module toggles carry reload_on_change."""
+    modules = fields_for_section("modules")
+    for key in (
+        "enable_solar_forecast", "enable_battery_prediction", "enable_pricing",
+        "enable_boiler", "enable_statistics", "enable_extended_sensors",
+        "enable_chmu_warnings",
+    ):
+        assert modules[key].reload_on_change is True, key
+
+
 def test_registry_defaults_round_trip_for_all_sections():
     """Every configured default is accepted by its canonical field definition."""
     for section in ("modules", "battery", "solar", "boiler"):

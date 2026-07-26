@@ -76,6 +76,17 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.modules.group_hlavni': 'Hlavní moduly',
     'onboarding.modules.group_doplnkove': 'Doplňkové',
 
+    // f1/wv2-modules-fix §3 — dependency gating. Prereqs are derived from the
+    // BACKEND (config/steps.py:990-993 hard block; runtime degradation for the
+    // soft ones); copy is CZ-only, no EN source given.
+    'onboarding.modules.dep_hard_prefix': 'Nejdřív zapněte:',
+    'onboarding.modules.dep_enable_btn': 'Zapnout předpoklady',
+    'onboarding.modules.dep_soft.enable_battery_prediction': 'Doporučujeme zapnout i Ceny energie — bez nich plánovač nespočítá ekonomická doporučení a plán zůstane prázdný.',
+    'onboarding.modules.dep_soft.enable_boiler': 'Doporučujeme zapnout i Ceny energie a Predikci baterie — bez nich bojler plánuje jen podle síťového tarifu a ztrácí přednostní ohřev z přetoků FVE.',
+    'onboarding.modules.prereq_off_confirm': 'Tento modul potřebují jiné zapnuté moduly. Když ho vypnete, vypnou se i ony. Hodnoty zůstanou uložené — po opětovném zapnutí budou zpět.',
+    'onboarding.modules.prereq_off_confirm_yes': 'Vypnout i závislé moduly',
+    'onboarding.modules.prereq_off_cancel': 'Zrušit',
+
     // fe/fix connection-step defect: plain-language explainer above the
     // data_source_mode select (owner live-walk finding — CZ-only, no EN
     // source text given). Verified against core/data_source.py: without the
