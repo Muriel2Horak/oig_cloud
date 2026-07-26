@@ -180,6 +180,32 @@ const MODULE_CONFIG: ModuleConfig = {
   },
 };
 
+function registryWith(extraFields: Partial<FieldRegistry['fields']>): FieldRegistry {
+  return {
+    ...REGISTRY_FIXTURE,
+    fields: { ...REGISTRY_FIXTURE.fields, ...extraFields },
+  };
+}
+
+type ModuleConfigOverrides = {
+  modules?: Partial<ModuleConfig['modules']>;
+  battery?: Partial<ModuleConfig['battery']>;
+  solar?: Partial<ModuleConfig['solar']>;
+  boiler?: Partial<ModuleConfig['boiler']>;
+  pricing_supplier?: Partial<ModuleConfig['pricing_supplier']>;
+};
+
+function moduleConfigWith(partial: ModuleConfigOverrides = {}): ModuleConfig {
+  return {
+    ...MODULE_CONFIG,
+    modules: { ...MODULE_CONFIG.modules, ...partial.modules },
+    battery: { ...MODULE_CONFIG.battery, ...partial.battery },
+    solar: { ...MODULE_CONFIG.solar, ...partial.solar },
+    boiler: { ...MODULE_CONFIG.boiler, ...partial.boiler },
+    pricing_supplier: { ...MODULE_CONFIG.pricing_supplier, ...partial.pricing_supplier },
+  };
+}
+
 function settle(el: HTMLElement & { updateComplete: Promise<boolean> }): Promise<void> {
   return (async () => {
     await el.updateComplete;
@@ -228,6 +254,100 @@ describe('oig-settings registry-driven render', () => {
     expect(error).toBeTruthy();
     expect(error?.textContent).toContain('Zkusit znovu');
     expect(cardText(settings, 'Bojler')).not.toContain('Poskytovatel AI');
+  });
+});
+
+describe('settings registry-driven — showIf field gating', () => {
+  it('renders a field when enable_boiler is true', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(
+      registryWith({
+        boiler_show_if_gate: {
+          section: 'modules',
+          type: 'str',
+          scope: 'premium',
+          label: 'field.boiler_show_if_gate.label',
+          hint: 'field.boiler_show_if_gate.hint',
+          show_if: { field: 'enable_boiler', in: [true] },
+        },
+      }),
+    );
+    loadModuleConfigMock.mockResolvedValueOnce(
+      moduleConfigWith({
+        modules: { enable_boiler: true },
+      }),
+    );
+
+    const settings = await mountSettings();
+    expect(cardText(settings, 'Moduly')).toContain('boiler show if gate');
+  });
+
+  it('hides the same field when enable_boiler is false', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(
+      registryWith({
+        boiler_show_if_gate: {
+          section: 'modules',
+          type: 'str',
+          scope: 'premium',
+          label: 'field.boiler_show_if_gate.label',
+          hint: 'field.boiler_show_if_gate.hint',
+          show_if: { field: 'enable_boiler', in: [true] },
+        },
+      }),
+    );
+    loadModuleConfigMock.mockResolvedValueOnce(
+      moduleConfigWith({
+        modules: { enable_boiler: false },
+      }),
+    );
+
+    const settings = await mountSettings();
+    expect(cardText(settings, 'Moduly')).not.toContain('boiler show if gate');
+  });
+
+  it('renders a field when spot_pricing_model is in the allowed list', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(
+      registryWith({
+        pricing_show_if_marker: {
+          section: 'pricing_supplier',
+          type: 'str',
+          scope: 'premium',
+          label: 'field.pricing_show_if_marker.label',
+          hint: 'field.pricing_show_if_marker.hint',
+          show_if: { field: 'spot_pricing_model', in: ['fixed', 'percentage'] },
+        },
+      }),
+    );
+    loadModuleConfigMock.mockResolvedValueOnce(
+      moduleConfigWith({
+        pricing_supplier: { spot_pricing_model: 'percentage' },
+      }),
+    );
+
+    const settings = await mountSettings();
+    expect(cardText(settings, 'Dodavatelské a distribuční ceny')).toContain('pricing show if marker');
+  });
+
+  it('hides the same field when spot_pricing_model is outside the allowed list', async () => {
+    loadFieldRegistryMock.mockResolvedValueOnce(
+      registryWith({
+        pricing_show_if_marker: {
+          section: 'pricing_supplier',
+          type: 'str',
+          scope: 'premium',
+          label: 'field.pricing_show_if_marker.label',
+          hint: 'field.pricing_show_if_marker.hint',
+          show_if: { field: 'spot_pricing_model', in: ['fixed', 'percentage'] },
+        },
+      }),
+    );
+    loadModuleConfigMock.mockResolvedValueOnce(
+      moduleConfigWith({
+        pricing_supplier: { spot_pricing_model: 'fixed_prices' },
+      }),
+    );
+
+    const settings = await mountSettings();
+    expect(cardText(settings, 'Dodavatelské a distribuční ceny')).not.toContain('pricing show if marker');
   });
 });
 
