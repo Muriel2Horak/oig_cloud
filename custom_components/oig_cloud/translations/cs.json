@@ -130,13 +130,11 @@
         "data": {
           "boiler_alt_cost_kwh": "Cena alternativního ohřevu (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Přepínač alternativního zdroje - volitelný",
-          "boiler_alt_source_mode": "Režim alternativního zdroje",
           "boiler_circulation_pump_switch_entity": "Přepínač cirkulačního čerpadla - volitelný",
           "boiler_cold_inlet_temp_c": "Teplota studené vody (°C)",
           "boiler_deadline_time": "Deadline (čas do kdy mít ohřáto)",
           "boiler_heater_power_kw_entity": "Senzor výkonu topného tělesa (kW)",
           "boiler_heater_switch_entity": "Přepínač topného tělesa",
-          "boiler_planning_horizon_hours": "Plánovací horizont (hodiny)",
           "boiler_spot_price_sensor": "Senzor spotové ceny",
           "boiler_stratification_mode": "Režim stratifikace",
           "boiler_target_temp_c": "Cílová teplota vody (°C)",
@@ -148,13 +146,11 @@
         "data_description": {
           "boiler_alt_cost_kwh": "Kolik vás stojí 1 kWh z alternativního zdroje (např. 1.5 CZK/kWh pro kotel). Elektrický ohřev se použije jen když je spotová cena levnější.",
           "boiler_alt_heater_switch_entity": "Entity ID přepínače pro alternativní zdroj (např. kotel, tepelné čerpadlo). Nechte prázdné, pokud nemáte.",
-          "boiler_alt_source_mode": "Vyberte vypnuto, pouze benchmarking, nebo ovladatelný zdroj. Ovladatelný zdroj vyžaduje jeden switch; nepodporované akční členy ponechte v režimu pouze benchmarking.",
           "boiler_circulation_pump_switch_entity": "Entity ID přepínače pro cirkulační čerpadlo. Nechte prázdné, pokud cirkulaci neřídíte přes switch.",
           "boiler_cold_inlet_temp_c": "Teplota přítoku studené vody z vodovodu (typicky 10-15°C)",
           "boiler_deadline_time": "Do kdy chcete mít bojler ohřátý (formát HH:MM, např. 20:00). Plánování cílí komfort k tomuto času a zohledňuje náklady i dostupnost zdrojů.",
           "boiler_heater_power_kw_entity": "Entity ID senzoru s aktuálním výkonem (např. sensor.boiler_power). Pokud nemáte, vytvořte helper s konstantní hodnotou (např. 2.0 pro 2kW)",
           "boiler_heater_switch_entity": "Entity ID přepínače pro zapnutí hlavního topného tělesa (např. switch.boiler_heater). Toto bude integrace zapínat/vypínat.",
-          "boiler_planning_horizon_hours": "Jak daleko dopředu plánovat (typicky 24-48 hodin). Čím více, tím lepší optimalizace, ale delší výpočet.",
           "boiler_spot_price_sensor": "Entity ID senzoru se spotovou cenou (např. sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = průměr teplot | two_zone = stratifikovaný model (přesnější, potřebuje 2 senzory)",
           "boiler_target_temp_c": "Na jakou teplotu chcete ohřát vodu (typicky 55-65°C)",
@@ -222,7 +218,6 @@
       },
       "wizard_modules": {
         "data": {
-          "enable_auto": "🚗 Auto - plánování nabíjení vozidla",
           "enable_battery_prediction": "🔋 Inteligentní predikce a optimalizace baterie",
           "enable_boiler": "🔥 Bojler - optimalizace ohřevu vody",
           "enable_chmu_warnings": "🌦️ Varování ČHMÚ (meteorologická výstraha)",
@@ -238,7 +233,6 @@
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
-          "enable_auto": "Optimalizace nabíjení elektromobilu (připravujeme)",
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
           "enable_boiler": "Inteligentní plánování ohřevu bojleru podle spotových cen",
           "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
@@ -268,7 +262,6 @@
           "tariff_nt_start_weekend": "NT začátek víkend (hodina1,hodina2)",
           "tariff_vt_start_weekday": "VT začátek pracovní den (hodina)",
           "tariff_vt_start_weekend": "VT začátek víkend (hodina)",
-          "tariff_weekend_same_as_weekday": "Víkend stejné jako pracovní dny",
           "vat_rate": "DPH (%)"
         },
         "data_description": {
@@ -282,7 +275,6 @@
           "tariff_nt_start_weekend": "Začátek NT o víkendu. Formát: hodina1,hodina2 (např. '0' = NT celý den)",
           "tariff_vt_start_weekday": "Začátek VT v pracovní den. Formát: hodina (např. '6' = 06:00)",
           "tariff_vt_start_weekend": "Začátek VT o víkendu. Formát: hodina (nechte prázdné pro NT celý den)",
-          "tariff_weekend_same_as_weekday": "Použít stejné časy VT/NT i o víkendu",
           "vat_rate": "Sazba DPH v procentech. Standardně 21%"
         },
         "description": "{step}\n{progress}\n\n📖 **Krok 3: Distribuce a DPH**\n\nNastavte distribuční poplatky a DPH.\n\n💡 **Informace:**\n• Distribuce je **nezávislá** na typu nákupu/prodeje (FIX/SPOT)\n• Pokud máte 2 tarify (VT/NT), zaškrtněte 'Dva tarify'\n• VT hodiny se automaticky nastaví podle běžných časů\n\n⚙️ Po výběru počtu tarifů klikněte 'Odeslat' pro zobrazení parametrů.",
@@ -479,12 +471,10 @@
         "data": {
           "boiler_alt_cost_kwh": "Cena alternativního ohřevu (CZK/kWh)",
           "boiler_alt_heater_switch_entity": "Přepínač alternativního zdroje - volitelný",
-          "boiler_alt_source_mode": "Režim alternativního zdroje",
           "boiler_cold_inlet_temp_c": "Teplota studené vody (°C)",
           "boiler_deadline_time": "Deadline (čas do kdy mít ohřáto)",
           "boiler_heater_power_kw_entity": "Senzor výkonu topného tělesa (kW)",
           "boiler_heater_switch_entity": "Přepínač topného tělesa",
-          "boiler_planning_horizon_hours": "Plánovací horizont (hodiny)",
           "boiler_spot_price_sensor": "Senzor spotové ceny",
           "boiler_stratification_mode": "Režim stratifikace",
           "boiler_target_temp_c": "Cílová teplota vody (°C)",
@@ -496,12 +486,10 @@
         "data_description": {
           "boiler_alt_cost_kwh": "Kolik vás stojí 1 kWh z alternativního zdroje (např. 1.5 CZK/kWh pro kotel). Elektrický ohřev se použije jen když je spotová cena levnější.",
           "boiler_alt_heater_switch_entity": "Entity ID přepínače pro alternativní zdroj (např. kotel, tepelné čerpadlo). Nechte prázdné, pokud nemáte.",
-          "boiler_alt_source_mode": "Vyberte vypnuto, pouze benchmarking, nebo ovladatelný zdroj. Ovladatelný zdroj vyžaduje jeden switch; nepodporované akční členy ponechte v režimu pouze benchmarking.",
           "boiler_cold_inlet_temp_c": "Teplota přítoku studené vody z vodovodu (typicky 10-15°C)",
           "boiler_deadline_time": "Do kdy chcete mít bojler ohřátý (formát HH:MM, např. 20:00). Plánování cílí komfort k tomuto času a zohledňuje náklady i dostupnost zdrojů.",
           "boiler_heater_power_kw_entity": "Entity ID senzoru s aktuálním výkonem (např. sensor.boiler_power). Pokud nemáte, vytvořte helper s konstantní hodnotou (např. 2.0 pro 2kW)",
           "boiler_heater_switch_entity": "Entity ID přepínače pro zapnutí hlavního topného tělesa (např. switch.boiler_heater). Toto bude integrace zapínat/vypínat.",
-          "boiler_planning_horizon_hours": "Jak daleko dopředu plánovat (typicky 24-48 hodin). Čím více, tím lepší optimalizace, ale delší výpočet.",
           "boiler_spot_price_sensor": "Entity ID senzoru se spotovou cenou (např. sensor.oig_2206237016_spot_price_current_15min)",
           "boiler_stratification_mode": "simple_avg = průměr teplot | two_zone = stratifikovaný model (přesnější, potřebuje 2 senzory)",
           "boiler_target_temp_c": "Na jakou teplotu chcete ohřát vodu (typicky 55-65°C)",
@@ -617,7 +605,6 @@
       },
       "wizard_modules": {
         "data": {
-          "enable_auto": "🚗 Auto - plánování nabíjení vozidla",
           "enable_battery_prediction": "🔋 Inteligentní predikce a optimalizace baterie",
           "enable_boiler": "🔥 Bojler - optimalizace ohřevu vody",
           "enable_chmu_warnings": "🌦️ Varování ČHMÚ (meteorologická výstraha)",
@@ -633,7 +620,6 @@
           "go_back": "⬅️ Chci se vrátit zpět (zaškrtnout + kliknout Odeslat)"
         },
         "data_description": {
-          "enable_auto": "Optimalizace nabíjení elektromobilu (připravujeme)",
           "enable_battery_prediction": "Experimentální - chytré nabíjení podle cen",
           "enable_boiler": "Inteligentní plánování ohřevu bojleru podle spotových cen",
           "enable_chmu_warnings": "Meteorologická varování pro vaši lokalitu (CAP XML)",
@@ -663,7 +649,6 @@
           "tariff_nt_start_weekend": "NT začátek víkend (hodina1,hodina2)",
           "tariff_vt_start_weekday": "VT začátek pracovní den (hodina)",
           "tariff_vt_start_weekend": "VT začátek víkend (hodina)",
-          "tariff_weekend_same_as_weekday": "Víkend stejné jako pracovní dny",
           "vat_rate": "DPH (%)"
         },
         "data_description": {
@@ -677,7 +662,6 @@
           "tariff_nt_start_weekend": "Začátek NT o víkendu. Formát: hodina1,hodina2 (např. '0' = NT celý den)",
           "tariff_vt_start_weekday": "Začátek VT v pracovní den. Formát: hodina (např. '6' = 06:00)",
           "tariff_vt_start_weekend": "Začátek VT o víkendu. Formát: hodina (nechte prázdné pro NT celý den)",
-          "tariff_weekend_same_as_weekday": "Použít stejné časy VT/NT i o víkendu",
           "vat_rate": "Sazba DPH v procentech. Standardně 21%"
         },
         "description": "{step}\n{progress}\n\n📖 **Krok 3: Distribuce a DPH**\n\nNastavte distribuční poplatky a DPH.\n\n💡 **Informace:**\n• Distribuce je **nezávislá** na typu nákupu/prodeje (FIX/SPOT)\n• Pokud máte 2 tarify (VT/NT), zaškrtněte 'Dva tarify'\n• VT hodiny se automaticky nastaví podle běžných časů\n\n⚙️ Po výběru počtu tarifů klikněte 'Odeslat' pro zobrazení parametrů.",

@@ -42,3 +42,5 @@ groundings verified clean.
   instead of duplicate copy for 2 fields that were already translated.
 - R2, R3, R4, and the rest of the UX-spec (AI §5, restored pricing §4, scope) verified grounded,
   no changes.
+
+K2e repair-banner: SUPERSEDED by wizard review-mode. (phase D1, 2026-07-26)

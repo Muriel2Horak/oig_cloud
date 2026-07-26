@@ -135,9 +135,15 @@ _LEGACY_OPTION_KEYS = frozenset(
 _DEAD_OPTION_KEYS = frozenset(
     {
         "notifications_scan_interval",
+        "tariff_weekend_same_as_weekday",
+        "planning_min_percent",
         "disable_planning_min_guard",
         "price_hysteresis_czk",
         "hw_min_hold_hours",
+        "boiler_comfort_profile_mode",
+        "boiler_planning_horizon_hours",
+        "boiler_recovery_rate_c_per_hour",
+        "boiler_alt_source_mode",
     }
 )
 

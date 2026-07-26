@@ -17,7 +17,6 @@ from ..const import (
     CONF_AUTO_MODE_SWITCH,
     CONF_CHARGE_RATE_KW,
     CONF_PASSWORD,
-    CONF_PLANNING_MIN_PERCENT,
     CONF_USERNAME,
     DEFAULT_BOILER_PLAN_SLOT_MINUTES,
     DEFAULT_BOILER_PLANNING_HORIZON_HOURS,
@@ -248,7 +247,6 @@ class WizardMixin:
         migrated.setdefault("tariff_nt_start_weekday", weekday_nt)
         migrated.setdefault("tariff_vt_start_weekend", weekday_vt)
         migrated.setdefault("tariff_nt_start_weekend", weekday_nt)
-        migrated.setdefault("tariff_weekend_same_as_weekday", True)
 
     @staticmethod
     def _map_pricing_to_backend(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -335,24 +333,12 @@ class WizardMixin:
             backend_data["tariff_nt_start_weekday"] = wizard_data.get(
                 "tariff_nt_start_weekday", "22,2"
             )
-            weekend_same = wizard_data.get("tariff_weekend_same_as_weekday", True)
-            backend_data["tariff_weekend_same_as_weekday"] = bool(weekend_same)
-            if weekend_same:
-                backend_data["tariff_vt_start_weekend"] = backend_data[
-                    "tariff_vt_start_weekday"
-                ]
-                backend_data["tariff_nt_start_weekend"] = backend_data[
-                    "tariff_nt_start_weekday"
-                ]
-            else:
-                backend_data["tariff_vt_start_weekend"] = wizard_data.get(
-                    "tariff_vt_start_weekend",
-                    backend_data["tariff_vt_start_weekday"],
-                )
-                backend_data["tariff_nt_start_weekend"] = wizard_data.get(
-                    "tariff_nt_start_weekend",
-                    backend_data["tariff_nt_start_weekday"],
-                )
+            backend_data["tariff_vt_start_weekend"] = wizard_data.get(
+                "tariff_vt_start_weekend", backend_data["tariff_vt_start_weekday"]
+            )
+            backend_data["tariff_nt_start_weekend"] = wizard_data.get(
+                "tariff_nt_start_weekend", backend_data["tariff_nt_start_weekday"]
+            )
         return backend_data
 
     def _build_options_payload(self, wizard_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -363,7 +349,6 @@ class WizardMixin:
         payload.update(self._build_battery_options(wizard_data))
         payload.update(self._map_pricing_to_backend(wizard_data))
         payload.update(self._build_boiler_options(wizard_data))
-        payload.update(self._build_auto_options(wizard_data))
         return payload
 
     @staticmethod
@@ -448,10 +433,6 @@ class WizardMixin:
 
     @staticmethod
     def _build_battery_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
-        planning_min_percent = wizard_data.get(
-            CONF_PLANNING_MIN_PERCENT,
-            wizard_data.get("min_capacity_percent", DEFAULT_PLANNING_MIN_PERCENT),
-        )
         # charge_rate_kw / home_charge_rate are ONE logical field (registry mirror
         # pair). If both aliases are present and DISAGREE, the registered canonical
         # key wins: it is the key the REST API and the registry validate and write,
@@ -480,7 +461,6 @@ class WizardMixin:
                 "battery_comfort_soc_percent", 50.0
             ),
             "home_charge_rate": charge_rate_kw,
-            CONF_PLANNING_MIN_PERCENT: planning_min_percent,
             CONF_CHARGE_RATE_KW: charge_rate_kw,
             CONF_AUTO_MODE_SWITCH: wizard_data.get(CONF_AUTO_MODE_SWITCH, False),
             "max_ups_price_czk": wizard_data.get("max_ups_price_czk", 10.0),
@@ -625,10 +605,6 @@ class WizardMixin:
         }
 
     @staticmethod
-    def _build_auto_options(wizard_data: Dict[str, Any]) -> Dict[str, Any]:
-        return {"enable_auto": wizard_data.get("enable_auto", False)}
-
-    @staticmethod
     def _map_backend_to_frontend(backend_data: Dict[str, Any]) -> Dict[str, Any]:
         """Map backend attribute names back to UI-friendly frontend names.
 
@@ -727,17 +703,8 @@ class WizardMixin:
             weekday_nt = backend_data.get("tariff_nt_start_weekday", "22,2")
             weekend_vt = backend_data.get("tariff_vt_start_weekend")
             weekend_nt = backend_data.get("tariff_nt_start_weekend")
-            weekend_same = backend_data.get("tariff_weekend_same_as_weekday")
-            if weekend_same is None:
-                if weekend_vt is None and weekend_nt is None:
-                    weekend_same = True
-                else:
-                    weekend_same = str(weekend_vt) == str(weekday_vt) and str(
-                        weekend_nt
-                    ) == str(weekday_nt)
             frontend_data["tariff_vt_start_weekday"] = weekday_vt
             frontend_data["tariff_nt_start_weekday"] = weekday_nt
-            frontend_data["tariff_weekend_same_as_weekday"] = bool(weekend_same)
             frontend_data["tariff_vt_start_weekend"] = (
                 weekend_vt if weekend_vt is not None else weekday_vt
             )
@@ -1142,9 +1109,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
                 ): bool,
                 vol.Optional(
                     "enable_boiler", default=defaults.get("enable_boiler", False)
-                ): bool,
-                vol.Optional(
-                    "enable_auto", default=defaults.get("enable_auto", False)
                 ): bool,
                 vol.Optional("go_back", default=False): bool,
             }
@@ -2278,9 +2242,7 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if old_tariff_count != new_tariff_count:
             return True
 
-        old_weekend_same = self._wizard_data.get("tariff_weekend_same_as_weekday", True)
-        new_weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
-        return new_tariff_count == "dual" and old_weekend_same != new_weekend_same
+        return False
 
     def _validate_pricing_distribution(
         self, user_input: Dict[str, Any]
@@ -2326,15 +2288,13 @@ Kliknutím na "Odeslat" spustíte průvodce.
         if not is_valid and error_key is not None:
             errors["tariff_vt_start_weekday"] = error_key
 
-        weekend_same = user_input.get("tariff_weekend_same_as_weekday", True)
-        if not weekend_same:
-            vt_weekend = user_input.get("tariff_vt_start_weekend", "")
-            nt_weekend = user_input.get("tariff_nt_start_weekend", "0")
-            is_valid, error_key = validate_tariff_hours(
-                vt_weekend, nt_weekend, allow_single_tariff=True
-            )
-            if not is_valid and error_key is not None:
-                errors["tariff_vt_start_weekend"] = error_key
+        vt_weekend = user_input.get("tariff_vt_start_weekend", vt_starts)
+        nt_weekend = user_input.get("tariff_nt_start_weekend", nt_starts)
+        is_valid, error_key = validate_tariff_hours(
+            vt_weekend, nt_weekend, allow_single_tariff=True
+        )
+        if not is_valid and error_key is not None:
+            errors["tariff_vt_start_weekend"] = error_key
 
     def _get_pricing_distribution_schema(
         self, defaults: Optional[Dict[str, Any]] = None
@@ -2348,17 +2308,6 @@ Kliknutím na "Odeslat" spustíte průvodce.
         weekday_nt_default = defaults.get("tariff_nt_start_weekday", "22,2")
         weekend_vt_default = defaults.get("tariff_vt_start_weekend", weekday_vt_default)
         weekend_nt_default = defaults.get("tariff_nt_start_weekend", weekday_nt_default)
-        weekend_same_default = defaults.get("tariff_weekend_same_as_weekday")
-        if weekend_same_default is None:
-            if (
-                "tariff_vt_start_weekend" not in defaults
-                and "tariff_nt_start_weekend" not in defaults
-            ):
-                weekend_same_default = True
-            else:
-                weekend_same_default = str(weekend_vt_default) == str(
-                    weekday_vt_default
-                ) and str(weekend_nt_default) == str(weekday_nt_default)
 
         schema_fields = {
             vol.Optional("tariff_count", default=tariff_count): vol.In(
@@ -2390,24 +2339,15 @@ Kliknutím na "Odeslat" spustíte průvodce.
                         default=weekday_nt_default,
                     ): str,
                     vol.Optional(
-                        "tariff_weekend_same_as_weekday",
-                        default=bool(weekend_same_default),
-                    ): bool,
+                        "tariff_vt_start_weekend",
+                        default=weekend_vt_default,
+                    ): str,
+                    vol.Optional(
+                        "tariff_nt_start_weekend",
+                        default=weekend_nt_default,
+                    ): str,
                 }
             )
-            if not weekend_same_default:
-                schema_fields.update(
-                    {
-                        vol.Optional(
-                            "tariff_vt_start_weekend",
-                            default=weekend_vt_default,
-                        ): str,
-                        vol.Optional(
-                            "tariff_nt_start_weekend",
-                            default=weekend_nt_default,
-                        ): str,
-                    }
-                )
             if defaults.get("import_pricing_scenario") == "fix_price":
                 default_fixed_price = defaults.get("fixed_price_kwh", 4.50)
                 schema_fields.update(
@@ -3178,10 +3118,9 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
 
             if setup_type == "wizard":
                 return await self.async_step_wizard_welcome()
-            elif setup_type == "quick":
+            if setup_type == "quick":
                 return await self.async_step_quick_setup()
-            else:  # import
-                return await self.async_step_import_yaml()
+            return await self.async_step_wizard_welcome()
 
         return self.async_show_form(
             step_id="user",
@@ -3191,7 +3130,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                         {
                             "wizard": "wizard",
                             "quick": "quick",
-                            "import": "import",
                         }
                     )
                 }
@@ -3347,7 +3285,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
                     "enable_dashboard": False,
                     "min_capacity_percent": DEFAULT_PLANNING_MIN_PERCENT,
                     "home_charge_rate": DEFAULT_CHARGE_RATE_KW,
-                    CONF_PLANNING_MIN_PERCENT: DEFAULT_PLANNING_MIN_PERCENT,
                     CONF_CHARGE_RATE_KW: DEFAULT_CHARGE_RATE_KW,
                 },
             )
@@ -3365,13 +3302,6 @@ class ConfigFlow(WizardMixin, config_entries.ConfigFlow):
             ),
             errors=errors,
         )
-
-    async def async_step_import_yaml(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> ConfigFlowResult:
-        """Import from YAML configuration."""
-        # NOTE: YAML import is not implemented yet.
-        return self.async_abort(reason="not_implemented")
 
     async def async_step_wizard_summary(
         self, user_input: Optional[Dict[str, Any]] = None

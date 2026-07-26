@@ -46,15 +46,19 @@ CONF_BOILER_CURRENT_POWER_ENTITY = "boiler_current_power_entity"
 CONF_BOILER_ALT_ENERGY_DAILY = "boiler_alt_energy_daily"
 CONF_BOILER_SPOT_PRICE_SENSOR = "boiler_spot_price_sensor"
 CONF_BOILER_DEADLINE_TIME = "boiler_deadline_time"
+# TODO: phase D2 — sim-backend wave
 CONF_BOILER_PLANNING_HORIZON_HOURS = "boiler_planning_horizon_hours"
 CONF_BOILER_PLAN_SLOT_MINUTES = "boiler_plan_slot_minutes"
 
 CONF_BOILER_SETUP_MODE = "boiler_setup_mode"
 CONF_BOILER_BOX_ID = "boiler_box_id"
 CONF_BOILER_EFFECTIVE_POWER_W = "boiler_effective_power_w"
+# TODO: phase D2 — sim-backend wave
 CONF_BOILER_RECOVERY_RATE_C_PER_HOUR = "boiler_recovery_rate_c_per_hour"
 CONF_BOILER_ENABLE_SECOND_THERMOMETER = "boiler_enable_second_thermometer"
+# TODO: phase D2 — sim-backend wave
 CONF_BOILER_ALT_SOURCE_MODE = "boiler_alt_source_mode"
+# TODO: phase D2 — sim-backend wave
 CONF_BOILER_COMFORT_PROFILE_MODE = "boiler_comfort_profile_mode"
 CONF_BOILER_SETUP_COMPLETE = "boiler_setup_complete"
 CONF_BOILER_MODULE_SELECTED = "boiler_module_selected"
@@ -74,14 +78,13 @@ CONF_BOX_HAS_HOME56 = "box_has_home56"  # default False
 CONF_BOILER_HOME5_MANEUVER_ENABLED = "boiler_home5_maneuver_enabled"  # default False
 
 # Auto Module constants
-CONF_ENABLE_AUTO = "enable_auto"
 CONF_AUTO_MODE_SWITCH = "auto_mode_switch_enabled"
 # Backward-compatible option key used by older config flows/tests.
 CONF_AUTO_MODE_PLAN = "auto_mode_plan"
 
 # Battery Planning constants (BR-0.2)
 CONF_THRESHOLD_CHEAP_CZK = "threshold_cheap_czk"  # Threshold for "cheap" electricity
-CONF_PLANNING_MIN_PERCENT = "planning_min_percent"
+CONF_PLANNING_MIN_PERCENT = "planning_min_percent"  # Legacy migration compatibility
 CONF_CHARGE_RATE_KW = "charge_rate_kw"
 
 # Default values
