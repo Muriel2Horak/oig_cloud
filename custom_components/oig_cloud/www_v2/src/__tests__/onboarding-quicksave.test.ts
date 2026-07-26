@@ -133,6 +133,36 @@ const MULTI_SECTION_DOC = {
   boiler: { boiler_target_temp_c: 60 },
 };
 
+const PRICING_SAVE_REGISTRY_FIXTURE: FieldRegistry = {
+  sections: [...MULTI_SECTION_REGISTRY_FIXTURE.sections, 'pricing_supplier'],
+  fields: {
+    ...MULTI_SECTION_REGISTRY_FIXTURE.fields,
+    spot_pricing_model: {
+      section: 'pricing_supplier', type: 'str', scope: 'premium',
+      label: 'field.spot_pricing_model.label', hint: 'field.spot_pricing_model.hint',
+      default: 'percentage', enum: ['percentage', 'fixed', 'fixed_prices'],
+    },
+  },
+};
+
+const PRICING_SAVE_DOC = {
+  ...MULTI_SECTION_DOC,
+  pricing_supplier: { spot_pricing_model: 'percentage' },
+};
+
+const MINIMAL_PRICELISTS = {
+  distributors: {},
+  tariffs: [],
+  selected_distributor: '',
+  selected_tariff: '',
+  confirmed_distribution_price_incl_vat: 0,
+  confirmed_distribution_price_excl_vat: 0,
+  confirmed_distribution_unit: 'Kc/kWh',
+  stale_warning: false,
+  valid_from: null,
+  year: 2026,
+};
+
 async function settle(wizard: HTMLElement & { updateComplete: Promise<boolean> }): Promise<void> {
   await wizard.updateComplete;
   if (vi.isFakeTimers()) {
@@ -564,5 +594,125 @@ describe('quick-save drafts for battery, boiler, and connection', () => {
     expect(saveModuleConfigMock.mock.calls[1][1]).toEqual({ data_source_mode: 'local_only' });
     expect(saveModuleConfigMock.mock.calls[2][1]).toEqual({ boiler_target_temp_c: 66 });
     expect(reloadPanelSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('quick-save routing for pricing_supplier fields', () => {
+  let reloadPanelSpy: any;
+
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    waitForModuleConfigAfterReloadMock.mockReset();
+    fetchOIGAPI.mockResolvedValue(null);
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(PRICING_SAVE_REGISTRY_FIXTURE);
+    saveModuleConfigMock.mockResolvedValue({ ok: true });
+    waitForModuleConfigAfterReloadMock.mockImplementation((onSuccess: (cfg: unknown) => void) => {
+      onSuccess({});
+    });
+    reloadPanelSpy = vi.spyOn(
+      customElements.get('oig-onboarding-wizard')!.prototype as unknown as { reloadPanel(): void },
+      'reloadPanel',
+    ).mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+    reloadPanelSpy.mockRestore();
+  });
+
+  it('posts spot_pricing_model under pricing_supplier, matching the backend section map', async () => {
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path.includes('/module_config')) return Promise.resolve(PRICING_SAVE_DOC);
+      if (path.includes('/pricelists')) return Promise.resolve(MINIMAL_PRICELISTS);
+      return Promise.resolve(null);
+    });
+
+    const wizard = await openWizard();
+    const w = internals(wizard);
+    w.pricingDraft = { ...w.pricingDraft, spot_pricing_model: 'fixed' };
+    await wizard.updateComplete;
+
+    (wizard.shadowRoot!.querySelector('[data-testid="quicksave-save"]') as HTMLButtonElement).click();
+    await settle(wizard);
+
+    expect(saveModuleConfigMock.mock.calls).toEqual([
+      ['pricing_supplier', { spot_pricing_model: 'fixed' }],
+    ]);
+    expect(reloadPanelSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('post-save reload rejection handling (real poll helper)', () => {
+  let reloadPanelSpy: any;
+  let moduleConfigRecovered = true;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    waitForModuleConfigAfterReloadMock.mockReset();
+    moduleConfigRecovered = true;
+    fetchOIGAPI.mockResolvedValue(null);
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(MULTI_SECTION_REGISTRY_FIXTURE);
+    saveModuleConfigMock.mockResolvedValue({ ok: true });
+    waitForModuleConfigAfterReloadMock.mockImplementation((onSuccess, onTimeout, delaysMs) =>
+      realWaitForModuleConfigAfterReload(onSuccess, onTimeout, delaysMs));
+    reloadPanelSpy = vi.spyOn(
+      customElements.get('oig-onboarding-wizard')!.prototype as unknown as { reloadPanel(): void },
+      'reloadPanel',
+    ).mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+    reloadPanelSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('dismisses the overlay and shows retry controls when the reload poll rejects unexpectedly', async () => {
+    fetchOIGAPI.mockImplementation((path: string) => {
+      if (path.includes('/module_config')) {
+        return moduleConfigRecovered
+          ? Promise.resolve(MULTI_SECTION_DOC)
+          : Promise.reject(new Error('module_config poll rejected'));
+      }
+      return Promise.resolve(null);
+    });
+    saveModuleConfigMock.mockImplementation(async (section: string) => {
+      if (section === 'boiler') moduleConfigRecovered = false;
+      return { ok: true };
+    });
+
+    const swallowRejection = (event: PromiseRejectionEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('unhandledrejection', swallowRejection);
+
+    try {
+      const wizard = await openWizard();
+      const w = internals(wizard);
+      w.batteryDraft = { ...w.batteryDraft, charge_rate_kw: 2.1 };
+      w.connectionDraft = { ...w.connectionDraft, data_source_mode: 'local_only' };
+      w.boilerDraft = { ...w.boilerDraft, boiler_target_temp_c: 66 };
+      await wizard.updateComplete;
+
+      (wizard.shadowRoot!.querySelector('[data-testid="quicksave-save"]') as HTMLButtonElement).click();
+      await vi.runAllTimersAsync();
+      await settle(wizard);
+
+      expect(wizard.shadowRoot!.querySelector('[data-testid="onboarding-wizard-reloading"]')).toBeFalsy();
+      expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-finish-error"]')).toBeTruthy();
+      expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-finish-retry"]')).toBeTruthy();
+      expect(reloadPanelSpy).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('unhandledrejection', swallowRejection);
+    }
   });
 });

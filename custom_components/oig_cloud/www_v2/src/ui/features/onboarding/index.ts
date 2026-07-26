@@ -1497,33 +1497,24 @@ export class OigOnboardingWizard extends LitElement {
   }
 
   /**
-   * Every seeded section draft, paired with its `SettingsSection` name for
-   * `saveModuleConfig` (Stage S2 Task 10). `modulesDraft` IS included now
-   * (f1/wv2-modules-fix root cause a): once `seedModulesDraft` (Task 21)
-   * lands it is genuinely seeded from `entry.options`, so a flipped toggle is
-   * a real change to write. Guarded on the same `sections.includes('modules')`
-   * condition `seedModulesDraft` uses — before that seed runs `modulesDraft`
-   * is the every-gate-on nav stub (`:641`) and diffing it against an unseeded
-   * `originalValues` would fabricate saves for toggles the user never touched.
+   * Resolve a draft key to the backend section that accepts it.
+   * Combined drafts like `pricingDraft` must split by the registry's actual
+   * field section, or `pricing_supplier` keys get posted to `pricing` and
+   * rejected by the module_config validator.
    */
-  private sectionDrafts(): Array<{ section: SettingsSection; draft: Record<string, unknown> }> {
-    const drafts: Array<{ section: SettingsSection; draft: Record<string, unknown> }> = [
-      { section: 'solar', draft: this.solarDraft },
-      { section: 'pricing', draft: this.pricingDraft },
-    ];
-    if (this._registry?.sections.includes('modules')) {
-      drafts.push({ section: 'modules', draft: this.modulesDraft });
+  private saveSectionForKey(key: string, fallback: SettingsSection): SettingsSection {
+    switch (this._registry?.fields[key]?.section) {
+      case 'basic':
+      case 'modules':
+      case 'battery':
+      case 'solar':
+      case 'boiler':
+      case 'pricing':
+      case 'pricing_supplier':
+        return this._registry!.fields[key].section as SettingsSection;
+      default:
+        return fallback;
     }
-    if (this._registry?.sections.includes('battery')) {
-      drafts.push({ section: 'battery', draft: this.batteryDraft });
-    }
-    if (this._registry?.sections.includes('basic')) {
-      drafts.push({ section: 'basic', draft: this.connectionDraft });
-    }
-    if (this._registry?.sections.includes('boiler')) {
-      drafts.push({ section: 'boiler', draft: this.boilerDraft });
-    }
-    return drafts;
   }
 
   /**
@@ -1553,8 +1544,8 @@ export class OigOnboardingWizard extends LitElement {
 
   /**
    * Single final save (UX-SPEC §3): write only the fields that differ from
-   * `originalValues`, one `saveModuleConfig` call per section that has any,
-   * and nothing for a section with no changes. Called once, from
+   * `originalValues`, one `saveModuleConfig` call per backend section that
+   * has any, and nothing for a section with no changes. Called once, from
    * `sendFinishRequest` — shared by the step-9 Finish button AND the
    * quick-save bar's Uložit (fe/fix defect #2: one save+validate
    * implementation, never forked). Returns any per-field validation errors
@@ -1562,12 +1553,36 @@ export class OigOnboardingWizard extends LitElement {
    */
   private async saveAllChangedSections(): Promise<Array<{ step: OnboardingStepId; key: string; message: string }>> {
     const errors: Array<{ step: OnboardingStepId; key: string; message: string }> = [];
-    for (const { section, draft } of this.sectionDrafts()) {
-      const changed: Record<string, unknown> = {};
+    const changedBySection = new Map<SettingsSection, Record<string, unknown>>();
+    const collectChanged = (fallback: SettingsSection, draft: Record<string, unknown>) => {
       for (const [key, value] of Object.entries(draft)) {
-        if (String(this.originalValues[key]) !== String(value)) changed[key] = value;
+        if (String(this.originalValues[key]) === String(value)) continue;
+        const section = this.saveSectionForKey(key, fallback);
+        const changed = changedBySection.get(section) ?? {};
+        changed[key] = value;
+        changedBySection.set(section, changed);
       }
-      if (Object.keys(changed).length === 0) continue;
+    };
+
+    collectChanged('solar', this.solarDraft);
+    collectChanged('pricing', this.pricingDraft);
+    if (this._registry?.sections.includes('modules')) {
+      collectChanged('modules', this.modulesDraft);
+    }
+    if (this._registry?.sections.includes('battery')) {
+      collectChanged('battery', this.batteryDraft);
+    }
+    if (this._registry?.sections.includes('basic')) {
+      collectChanged('basic', this.connectionDraft);
+    }
+    if (this._registry?.sections.includes('boiler')) {
+      collectChanged('boiler', this.boilerDraft);
+    }
+
+    const saveOrder: SettingsSection[] = ['solar', 'pricing', 'pricing_supplier', 'modules', 'battery', 'basic', 'boiler'];
+    for (const section of saveOrder) {
+      const changed = changedBySection.get(section);
+      if (!changed || Object.keys(changed).length === 0) continue;
       const res = await saveModuleConfig(section, changed);
       if (!res.ok && res.fields) {
         for (const [key, message] of Object.entries(res.fields)) {
