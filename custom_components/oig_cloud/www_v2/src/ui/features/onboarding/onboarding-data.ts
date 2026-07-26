@@ -20,6 +20,7 @@
  */
 
 import { haClient } from '@/data/ha-client';
+import { oigLog } from '@/core/logger';
 
 // ============================================================================
 // SHARED TYPES
@@ -125,6 +126,30 @@ export const EMPTY_ONBOARDING_STATE: OnboardingState = {
 // ============================================================================
 
 /**
+ * Tolerant parse (LIVE BUG fix): a legacy `"pricing"` key (pre-split 3-step
+ * era) — or any other id the backend hasn't migrated yet — must never be
+ * fatal. Filters `steps`/`timestamps` down to the known `ONBOARDING_STEPS`,
+ * logging any drop at debug level; every other field passes through as-is.
+ */
+export function normalizeOnboardingState(state: OnboardingState): OnboardingState {
+  const rawSteps = state.steps ?? {};
+  const rawTimestamps = state.timestamps ?? {};
+  const unknown = Object.keys(rawSteps).filter(
+    (key) => !ONBOARDING_STEPS.includes(key as OnboardingStepId),
+  );
+  if (unknown.length > 0) {
+    oigLog.debug('Ignoring unknown onboarding step id(s)', { unknown });
+  }
+  const steps: Partial<Record<OnboardingStepId, OnboardingStepStatus>> = {};
+  const timestamps: Partial<Record<OnboardingStepId, string>> = {};
+  for (const step of ONBOARDING_STEPS) {
+    if (rawSteps[step] !== undefined) steps[step] = rawSteps[step];
+    if (rawTimestamps[step] !== undefined) timestamps[step] = rawTimestamps[step];
+  }
+  return { ...state, steps, timestamps };
+}
+
+/**
  * Fetch the current onboarding state. Returns `null` on any network error
  * (the wizard treats null as "no prior state" and starts fresh — soft guide,
  * never a wall).
@@ -134,7 +159,8 @@ export async function loadOnboardingState(
   signal?: AbortSignal,
 ): Promise<OnboardingState | null> {
   if (!inverterSn) return null;
-  return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, { signal });
+  const state = await haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, { signal });
+  return state ? normalizeOnboardingState(state) : null;
 }
 
 /**
@@ -148,10 +174,11 @@ export async function completeOnboardingStep(
   if (!ONBOARDING_STEPS.includes(step)) {
     throw new Error(`unknown onboarding step: ${step}`);
   }
-  return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
+  const state = await haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
     method: 'POST',
     body: JSON.stringify({ action: 'complete_step', step }),
   });
+  return state ? normalizeOnboardingState(state) : null;
 }
 
 /**
@@ -166,10 +193,11 @@ export async function skipOnboardingStep(
   if (!ONBOARDING_STEPS.includes(step)) {
     throw new Error(`unknown onboarding step: ${step}`);
   }
-  return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
+  const state = await haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
     method: 'POST',
     body: JSON.stringify({ action: 'skip', step }),
   });
+  return state ? normalizeOnboardingState(state) : null;
 }
 
 /**
@@ -181,10 +209,11 @@ export async function dismissOnboardingBanner(
   inverterSn: string,
 ): Promise<OnboardingState | null> {
   if (!inverterSn) return null;
-  return haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
+  const state = await haClient.fetchOIGAPI<OnboardingState>(`/${inverterSn}/onboarding`, {
     method: 'POST',
     body: JSON.stringify({ action: 'dismiss_banner' }),
   });
+  return state ? normalizeOnboardingState(state) : null;
 }
 
 /**

@@ -139,6 +139,61 @@ def test_onboarding_steps_cover_wizard_v2_content_steps():
 
 
 @pytest.mark.asyncio
+async def test_legacy_pricing_key_dropped_when_pricing_distribution_present(monkeypatch):
+    """LIVE BUG fixture: a 3-step-era entry that finished the new pricing split
+    still carries the old `"pricing"` key alongside `pricing_distribution`.
+    On load it must be dropped, not surfaced to the FE (which rejects unknown
+    step ids) — `pricing_distribution`'s own real status is untouched."""
+    from custom_components.oig_cloud.onboarding.state import SCHEMA_VERSION
+
+    old_store = _MemStore()
+    old_store.saved = {
+        "schema_version": SCHEMA_VERSION,
+        "steps": {
+            "ai": "done", "solar": "pending", "pricing": "pending",
+            "modules": "done", "pricing_distribution": "done",
+            "pricing_supplier": "done", "battery": "done", "boiler": "done",
+            "connection": "done", "pricing_supplier_sell": "pending",
+        },
+        "timestamps": {"pricing": "2025-01-01T00:00:00+00:00"},
+        "provider": None, "finished_at": None, "banner_dismissed": False,
+    }
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.onboarding.state.Store",
+        lambda *_a, **_kw: old_store,
+    )
+    state = OnboardingState(SimpleNamespace(), "entry1")
+    data = await state.async_get()
+    assert "pricing" not in data["steps"]
+    assert "pricing" not in data["timestamps"]
+    assert data["steps"]["pricing_distribution"] == "done"  # untouched
+
+
+@pytest.mark.asyncio
+async def test_legacy_pricing_key_migrated_onto_pricing_distribution_when_absent(monkeypatch):
+    """An even older entry that never got the `pricing_distribution` default
+    yet — the legacy `"pricing"` status is the only status of record, so it
+    must be carried forward rather than lost."""
+    from custom_components.oig_cloud.onboarding.state import SCHEMA_VERSION
+
+    old_store = _MemStore()
+    old_store.saved = {
+        "schema_version": SCHEMA_VERSION,
+        "steps": {"modules": "pending", "ai": "pending", "solar": "pending", "pricing": "done"},
+        "timestamps": {"pricing": "2025-01-01T00:00:00+00:00"},
+        "provider": None, "finished_at": None, "banner_dismissed": False,
+    }
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.onboarding.state.Store",
+        lambda *_a, **_kw: old_store,
+    )
+    state = OnboardingState(SimpleNamespace(), "entry1")
+    data = await state.async_get()
+    assert "pricing" not in data["steps"]
+    assert data["steps"]["pricing_distribution"] == "done"
+
+
+@pytest.mark.asyncio
 async def test_state_persisted_before_supplier_split_gets_new_step_id_defaulted(monkeypatch):
     """A state saved before `pricing_supplier_sell` existed lacks the key in
     `steps`/`timestamps` — loading it must default it to pending rather than
