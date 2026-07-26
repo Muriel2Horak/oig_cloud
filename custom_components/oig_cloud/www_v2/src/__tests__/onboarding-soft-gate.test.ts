@@ -72,10 +72,15 @@ vi.mock('@/ui/features/tiles/icon-picker', () => ({}));
 vi.mock('@/ui/features/tiles/tile-dialog', () => ({}));
 
 import '@/ui/app';
+import { OigOnboardingWizard } from '@/ui/features/onboarding';
 
 interface TestApp extends HTMLElement {
   onboarding: unknown;
   updateComplete: Promise<boolean>;
+}
+
+function durationMs(raw: string): number {
+  return raw.endsWith('ms') ? Number.parseFloat(raw) : Number.parseFloat(raw) * 1000;
 }
 
 describe('SCOPE-REVISION #6 — the guide is SOFT', () => {
@@ -173,6 +178,17 @@ describe('SCOPE-REVISION #6 — the guide is SOFT', () => {
   it('the wizard is launchable from Settings, per step', async () => {
     const settings = await fixture<HTMLElement>(html`<oig-settings></oig-settings>`);
     expect(settings.shadowRoot!.querySelector('[data-testid="launch-onboarding"]')).toBeTruthy();
+  });
+
+  it('keeps the wizard open-path entrance under 300ms and keeps reduced-motion suppression', () => {
+    const css = (OigOnboardingWizard as any).styles.cssText as string;
+    const overlay = css.match(/\.overlay\s*\{[\s\S]*?animation:\s*fadeIn\s*([\d.]+)(ms|s)/);
+    const chip = css.match(/\.st \.ic\s*\{[\s\S]*?transition:\s*([^;]*?)([\d.]+)(ms|s)/);
+
+    expect(overlay).toBeTruthy();
+    expect(chip).toBeTruthy();
+    expect(durationMs(`${overlay![1]}${overlay![2]}`) + durationMs(`${chip![2]}${chip![3]}`)).toBeLessThanOrEqual(300);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation-duration:\s*0\.01ms/);
   });
 });
 

@@ -847,10 +847,18 @@ export class OigOnboardingWizard extends LitElement {
       align-items: center;
       justify-content: center;
       z-index: 1000;
-      animation: fadeIn 0.18s ease;
+      animation: fadeIn 0.12s ease-out;
     }
 
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
 
     .modal {
       width: min(720px, calc(100vw - 32px));
@@ -944,7 +952,7 @@ export class OigOnboardingWizard extends LitElement {
       font-size: 14px;
       background: var(--card-bg, rgba(255, 255, 255, 0.06));
       border: 1.5px solid var(--divider-color, rgba(255, 255, 255, 0.18));
-      transition: 0.15s;
+      transition: background-color 0.09s ease-out, border-color 0.09s ease-out, color 0.09s ease-out, box-shadow 0.09s ease-out;
     }
     .st .stlabel {
       font-size: 10.5px;
