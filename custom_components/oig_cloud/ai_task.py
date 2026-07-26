@@ -26,9 +26,11 @@ from homeassistant.components.ai_task import (
 from homeassistant.components.conversation import (  # type: ignore[attr-defined]
     ChatLog,  # exists on HA >= 2025.8 (this module's target); absent on the
 )             # 2025.1.4 dev harness, where the module is never imported anyway
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .ai.backends import PROVIDERS, OpenAiCompatBackend
+from .ai.backends import AiBackendError, PROVIDERS, OpenAiCompatBackend
+from .ai.backoff import get_ai_backoff_state
 from .ai.key_store import AiKeyStore
 from .ai.model_cache import get_ai_model_cache
 
@@ -95,6 +97,8 @@ class OigAiTaskEntity(AITaskEntity):
         backend: Optional[OpenAiCompatBackend],
         install: Optional[Mapping[str, Any]],
         entry_id: str,
+        consent_cross_provider: bool = False,
+        fallback_backend: Optional[OpenAiCompatBackend] = None,
     ) -> None:
         """Wire the entity to its chosen provider (item 2).
 
@@ -107,6 +111,9 @@ class OigAiTaskEntity(AITaskEntity):
         super().__init__()
         self._provider = provider
         self._backend = backend
+        self._fallback_backend = fallback_backend
+        self._consent_cross_provider_fallback = consent_cross_provider
+        self._entry_id = entry_id
         self._install: Mapping[str, Any] = install or {}
         self._attr_unique_id = f"{entry_id}_ai_task"
         self._attr_name = "OIG AI Task"
@@ -115,11 +122,20 @@ class OigAiTaskEntity(AITaskEntity):
         self, task: GenDataTask, chat_log: ChatLog
     ) -> GenDataTaskResult:
         if self._provider == "ai_task":
-            # Delegate to the host HA's own AI Task entity. The OIG backend is
-            # NOT constructed and NOT called on this path. See the note on
-            # _async_delegate_to_host_ai_task — the exact delegation call is
-            # NOT established by this plan.
-            data = await self._async_delegate_to_host_ai_task(task)
+            try:
+                # Delegate to the host HA's own AI Task entity. The OIG backend
+                # is NOT called unless the user explicitly stored consent for
+                # cross-provider fallback and a fallback backend exists.
+                data = await self._async_delegate_to_host_ai_task(task)
+            except HomeAssistantError:
+                fallback = getattr(self, "_fallback_backend", None)
+                if not (
+                    getattr(self, "_consent_cross_provider_fallback", False)
+                    and fallback is not None
+                ):
+                    self._store_last_error_code("cross_provider_fallback_declined")
+                    raise AiBackendError("cross_provider_fallback_declined")
+                data = await self._async_call_backend(fallback, task)
         else:
             # The OIG backend is OPTIONAL on the entity — backend=None is the
             # delegation path's marker. async_setup_entry never constructs an
@@ -137,9 +153,47 @@ class OigAiTaskEntity(AITaskEntity):
             # content — it can embed GPS, box_id, e-mail, entity_id, anything.
             # The backend builds outgoing content itself from an allow-listed
             # install mapping; see ai/backends.py:async_generate_data.
+            data = await self._async_call_backend(backend, task)
+        return GenDataTaskResult(conversation_id=chat_log.conversation_id, data=data)
+
+    async def _async_call_backend(
+        self, backend: OpenAiCompatBackend, task: GenDataTask
+    ) -> Any:
+        """Run one key-based attempt through the shared backoff/error seam."""
+        provider = getattr(backend, "_provider", None) or self._provider
+        hass = getattr(self, "hass", None)
+        if hass is None or not hasattr(hass, "data"):
+            return await backend.async_generate_data(
+                "ai_task_generate_data", self._anonymous_install(), task.structure)
+
+        backoff = get_ai_backoff_state(hass)
+        if not backoff.is_due(self._entry_id, provider):
+            raise AiBackendError("backing_off")
+        try:
             data = await backend.async_generate_data(
                 "ai_task_generate_data", self._anonymous_install(), task.structure)
-        return GenDataTaskResult(conversation_id=chat_log.conversation_id, data=data)
+        except AiBackendError as err:
+            backoff.record_failure(self._entry_id, provider)
+            self._store_last_error_code(err.code)
+            raise
+        backoff.record_success(self._entry_id, provider)
+        self._store_last_error_code(None)
+        return data
+
+    def _store_last_error_code(self, code: str | None) -> None:
+        """Store only a closed classification code for the status sensor."""
+        hass = getattr(self, "hass", None)
+        if hass is None or not hasattr(hass, "data"):
+            return
+        domain_data = hass.data.setdefault("oig_cloud", {})
+        entry_data = domain_data.setdefault(self._entry_id, {})
+        if not isinstance(entry_data, dict):
+            entry_data = {}
+            domain_data[self._entry_id] = entry_data
+        if code is None:
+            entry_data.pop("ai_last_error_code", None)
+        else:
+            entry_data["ai_last_error_code"] = code
 
     def _anonymous_install(self) -> Mapping[str, Any]:
         """Allow-listed install snapshot for the outgoing prompt (K2b/O2).
@@ -158,28 +212,20 @@ class OigAiTaskEntity(AITaskEntity):
         providers co-equal: a user who chose it must NEVER be silently routed
         to the OIG OpenAI-compatible backend (Groq/NVIDIA).
 
-        ⚠️ UNVERIFIED — ai_task is absent from the dev harness (HA 2025.1.4),
-        so the real delegation API could not be read or exercised here. This is
-        a best-effort implementation of the F1-DESIGN §2 note: call the
-        `ai_task.generate_data` service with entity_id omitted so HA resolves
-        the user's preferred entity, blocking, returning the response. It MUST
-        be re-checked and corrected against the real module when the test
-        harness is raised to an ai_task-capable HA (>= 2025.8) — that harness
-        bump is a deliberately deferred CI-infra item (see Plan 3 Task 9
-        narrowing). It is NOT under test today: the dispatch test monkeypatches
-        this method, so what is verified is the dispatch DECISION, not this
-        call's correctness.
+        UNVERIFIED — ai_task is absent from the dev harness (HA 2025.1.4), so
+        the real delegation API could not be read or exercised here. This is a
+        best-effort implementation of O1's documented helper contract. The
+        call MUST be re-checked against a real HA >= 2025.8 module; this is the
+        live-box item from Stage C3 Task 9.
         """
-        return await self.hass.services.async_call(
-            "ai_task",
-            "generate_data",
-            {
-                # entity_id omitted on purpose → HA resolves the user's
-                # preferred AI Task entity (F1-DESIGN §2).
-                "task": task,
-            },
-            blocking=True,
-            return_response=True,
+        from homeassistant.components import ai_task as ha_ai_task
+
+        return await ha_ai_task.async_generate_data(
+            self.hass,
+            task_name="oig_ai_task_delegate",
+            entity_id=None,
+            instructions=task.instructions,
+            structure=task.structure,
         )
 
 
@@ -199,10 +245,19 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     if provider == "ai_task":
         # Delegation path: use the AI the user already runs in their own HA.
         # The OIG backend is deliberately NOT constructed on this branch.
+        if not hass.services.has_service("ai_task", "generate_data"):
+            return
+        consent = bool(
+            getattr(entry, "options", {}).get(
+                "ai_consent_cross_provider_fallback", False
+            )
+        )
         async_add_entities(
             [OigAiTaskEntity(
                 provider="ai_task", backend=None, install={},
-                entry_id=entry.entry_id)]
+                entry_id=entry.entry_id,
+                consent_cross_provider=consent,
+            )]
         )
         return
 

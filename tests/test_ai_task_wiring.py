@@ -44,10 +44,14 @@ def _install_shim() -> None:
                 self.conversation_id = conversation_id
                 self.data = data
 
+        async def async_generate_data(hass, **kwargs):
+            return {"data": {"ok": True}}
+
         mod.AITaskEntity = AITaskEntity
         mod.AITaskEntityFeature = AITaskEntityFeature
         mod.GenDataTask = GenDataTask
         mod.GenDataTaskResult = GenDataTaskResult
+        mod.async_generate_data = async_generate_data
         sys.modules["homeassistant.components.ai_task"] = mod
 
     # conversation.ChatLog — the real module doesn't import on 2025.1.4.
@@ -105,14 +109,21 @@ def _patch_setup(monkeypatch, provider, key):
 
 
 class _FakeHassForSetup:
-    def __init__(self):
+    def __init__(self, ai_task_service=True):
         self.data = {}
+        self.services = types.SimpleNamespace(
+            has_service=lambda domain, service: (
+                ai_task_service and domain == "ai_task" and service == "generate_data"
+            )
+        )
 
 
-async def _run_setup(provider, key, monkeypatch):
+async def _run_setup(provider, key, monkeypatch, ai_task_service=True):
     _patch_setup(monkeypatch, provider, key)
     added = []
-    await ai_task.async_setup_entry(_FakeHassForSetup(), _Entry("entry1"), added.extend)
+    await ai_task.async_setup_entry(
+        _FakeHassForSetup(ai_task_service), _Entry("entry1"), added.extend
+    )
     return added
 
 
@@ -149,6 +160,21 @@ async def test_ai_task_provider_adds_entity_with_no_backend(monkeypatch):
     ent = added[0]
     assert ent._provider == "ai_task"
     assert ent._backend is None
+
+
+@pytest.mark.asyncio
+async def test_ai_task_provider_without_host_service_adds_no_entity(monkeypatch):
+    added = await _run_setup("ai_task", None, monkeypatch, ai_task_service=False)
+
+    assert added == []
+
+
+@pytest.mark.asyncio
+async def test_ai_task_provider_with_host_service_adds_entity(monkeypatch):
+    added = await _run_setup("ai_task", None, monkeypatch, ai_task_service=True)
+
+    assert len(added) == 1
+    assert added[0]._provider == "ai_task"
 
 
 @pytest.mark.asyncio
@@ -190,25 +216,43 @@ class _FakeHass:
 
 @pytest.mark.asyncio
 async def test_delegation_payload_matches_ai_task_generate_data_contract(monkeypatch):
-    """F1-DESIGN §2 contract: call ai_task.generate_data, entity_id OMITTED so
-    HA resolves the user's preferred entity, blocking + return_response."""
+    """O1 contract: call the host helper with the selected task fields."""
     ent = ai_task.OigAiTaskEntity(
         provider="ai_task", backend=None, install={}, entry_id="entry1")
     hass = _FakeHass()
     ent.hass = hass
     task = ai_task.GenDataTask(structure={"type": "object"}, instructions="ignored")
 
+    host_ai_task = sys.modules["homeassistant.components.ai_task"]
+    calls = []
+
+    async def _fake_generate_data(received_hass, **kwargs):
+        calls.append((received_hass, kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr(host_ai_task, "async_generate_data", _fake_generate_data)
+
     out = await ent._async_delegate_to_host_ai_task(task)
 
-    assert out == {"data": {"ok": True}}
-    assert len(hass.services.calls) == 1
-    call = hass.services.calls[0]
-    assert call["domain"] == "ai_task"
-    assert call["service"] == "generate_data"
-    assert call["blocking"] is True
-    assert call["return_response"] is True
-    assert call["data"] == {"task": task}
-    assert "entity_id" not in call["data"]  # HA resolves the preferred entity
+    assert out == {"ok": True}
+    assert calls == [(
+        hass,
+        {
+            "task_name": "oig_ai_task_delegate",
+            "entity_id": None,
+            "instructions": "ignored",
+            "structure": {"type": "object"},
+        },
+    )]
+
+
+def test_cross_provider_fallback_consent_field_shape():
+    from custom_components.oig_cloud.config_registry import FIELD_REGISTRY
+
+    field = FIELD_REGISTRY["ai_consent_cross_provider_fallback"]
+    assert field.type is bool
+    assert field.default is False
+    assert field.scope == "advanced"
 
 
 # --- guard: backend=None on the OIG-provider branch must fail closed -------
@@ -233,6 +277,68 @@ async def test_missing_backend_on_openai_compat_provider_raises_classified_error
 
     with pytest.raises(RuntimeError, match="AI backend not configured"):
         await ent._async_generate_data(task, chat_log)
+
+
+class _FallbackBackend:
+    def __init__(self, result=None):
+        self.result = result if result is not None else {"ok": "fallback"}
+        self.calls = []
+        self._provider = "groq"
+
+    async def async_generate_data(self, task, install, schema):
+        self.calls.append((task, install, schema))
+        return self.result
+
+
+@pytest.mark.asyncio
+async def test_ai_task_failure_without_consent_refuses_without_backend_call(monkeypatch):
+    from homeassistant.exceptions import HomeAssistantError
+    from custom_components.oig_cloud.ai.backends import AiBackendError
+
+    fallback = _FallbackBackend()
+    ent = ai_task.OigAiTaskEntity(
+        provider="ai_task", backend=None, install={}, entry_id="entry1",
+        consent_cross_provider=False, fallback_backend=fallback,
+    )
+
+    async def _fail(_task):
+        raise HomeAssistantError("upstream key-shaped-secret")
+
+    monkeypatch.setattr(ent, "_async_delegate_to_host_ai_task", _fail)
+
+    with pytest.raises(AiBackendError) as exc_info:
+        await ent._async_generate_data(
+            ai_task.GenDataTask(structure={"type": "object"}),
+            ai_task.GenDataTaskResult(conversation_id="conv-1"),
+        )
+
+    assert exc_info.value.code == "cross_provider_fallback_declined"
+    assert "upstream key-shaped-secret" not in str(exc_info.value)
+    assert fallback.calls == []
+
+
+@pytest.mark.asyncio
+async def test_ai_task_failure_with_consent_and_fallback_backend_delegates(monkeypatch):
+    from homeassistant.exceptions import HomeAssistantError
+
+    fallback = _FallbackBackend({"ok": "from-groq"})
+    ent = ai_task.OigAiTaskEntity(
+        provider="ai_task", backend=None, install={"capacity_kwh": 9}, entry_id="entry1",
+        consent_cross_provider=True, fallback_backend=fallback,
+    )
+
+    async def _fail(_task):
+        raise HomeAssistantError("host failure")
+
+    monkeypatch.setattr(ent, "_async_delegate_to_host_ai_task", _fail)
+    task = ai_task.GenDataTask(structure={"type": "object"}, instructions="private text")
+
+    result = await ent._async_generate_data(
+        task, ai_task.GenDataTaskResult(conversation_id="conv-1"))
+
+    assert result.data == {"ok": "from-groq"}
+    assert fallback.calls == [(
+        "ai_task_generate_data", {"capacity_kwh": 9}, {"type": "object"})]
 
 
 # --- Stage C1 Task 1: MODEL_CHAINS -----------------------------------------

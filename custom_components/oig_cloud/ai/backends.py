@@ -17,6 +17,8 @@ import json
 import logging
 from typing import Any, Dict, Mapping, Sequence
 
+import voluptuous as vol
+
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_S = 30
@@ -74,6 +76,82 @@ class AiBackendError(RuntimeError):
         super().__init__(
             f"AI backend: all {attempts} models in chain failed ({code})"
         )
+
+
+def _json_schema_to_vol(schema: Mapping[str, Any]) -> Any:
+    """Adapt the small JSON-schema subset used by AI callers to voluptuous."""
+    if "enum" in schema:
+        return vol.In(schema["enum"])
+    if "const" in schema:
+        return vol.Equal(schema["const"])
+
+    schema_type = schema.get("type")
+    if schema_type == "object" or "properties" in schema:
+        required = set(schema.get("required", ()))
+        rules = {
+            (vol.Required(name) if name in required else name):
+            _json_schema_to_vol(value)
+            for name, value in schema.get("properties", {}).items()
+        }
+        extra = (
+            vol.PREVENT_EXTRA
+            if schema.get("additionalProperties") is False
+            else vol.ALLOW_EXTRA
+        )
+        return vol.Schema(rules, extra=extra)
+    if schema_type == "array":
+        item_schema = schema.get("items")
+        return [
+            _json_schema_to_vol(item_schema)
+            if isinstance(item_schema, Mapping)
+            else object
+        ]
+    if schema_type == "string":
+        return str
+    if schema_type == "integer":
+        return _json_integer
+    if schema_type == "number":
+        return _json_number
+    if schema_type == "boolean":
+        return bool
+    if schema_type == "null":
+        return vol.Equal(None)
+    if isinstance(schema_type, list):
+        return vol.Any(*(_json_schema_to_vol({"type": item}) for item in schema_type))
+    return object
+
+
+def _json_integer(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise vol.Invalid("expected integer")
+    return value
+
+
+def _json_number(value: Any) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise vol.Invalid("expected number")
+    return value
+
+
+def _validate_response_schema(parsed: Any, schema: Any) -> Any:
+    """Validate a decoded response against voluptuous or a JSON-schema dict."""
+    if schema is None or schema == {}:
+        return parsed
+    if isinstance(schema, vol.Schema):
+        validator = schema
+    elif isinstance(schema, Mapping) and (
+        "type" in schema
+        or "properties" in schema
+        or "required" in schema
+        or "items" in schema
+        or "enum" in schema
+    ):
+        validator = _json_schema_to_vol(schema)
+    else:
+        validator = vol.Schema(schema)
+    if not isinstance(validator, vol.Schema):
+        validator = vol.Schema(validator)
+    return validator(parsed)
 
 
 def _classify_http_status(status: int) -> str:
@@ -146,7 +224,7 @@ class OpenAiCompatBackend:
             return resp.status == 200
 
     async def async_generate_data(
-        self, task: str, install: Mapping[str, Any], schema: Dict[str, Any]
+        self, task: str, install: Mapping[str, Any], schema: Any
     ) -> Any:
         """The OUTGOING boundary (K2b/O2, binding).
 
@@ -169,7 +247,7 @@ class OpenAiCompatBackend:
             cached = self._model_cache.get(self._entry_id, self._provider)
             if cached:
                 result, code = await self._try_model(
-                    cached, content,
+                    cached, content, schema,
                 )
                 if code is None:
                     self._model_cache.set(
@@ -179,7 +257,7 @@ class OpenAiCompatBackend:
                 last_code = code
 
         for model in self._models:
-            result, code = await self._try_model(model, content)
+            result, code = await self._try_model(model, content, schema)
             if code is None:
                 if self._model_cache and self._entry_id and self._provider:
                     self._model_cache.set(
@@ -189,7 +267,9 @@ class OpenAiCompatBackend:
             last_code = code
         raise AiBackendError(last_code or "provider_unreachable", len(self._models))
 
-    async def _try_model(self, model: str, content: str) -> tuple[Any | None, str | None]:
+    async def _try_model(
+        self, model: str, content: str, schema: Any
+    ) -> tuple[Any | None, str | None]:
         """Try a single model; return (parsed JSON, None) or (None, error code)."""
         payload = {
             "model": model,
@@ -209,10 +289,11 @@ class OpenAiCompatBackend:
                 except Exception:
                     return None, "invalid_response"
             msg_content = body["choices"][0]["message"]["content"]
-            return json.loads(msg_content), None
+            parsed = json.loads(msg_content)
+            return _validate_response_schema(parsed, schema), None
         except (asyncio.TimeoutError, TimeoutError):
             return None, "timeout"
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, KeyError, TypeError, vol.Invalid):
             return None, "invalid_response"
         except (ConnectionError, OSError):
             return None, "provider_unreachable"

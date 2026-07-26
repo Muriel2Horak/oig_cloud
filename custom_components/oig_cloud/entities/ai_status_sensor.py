@@ -20,6 +20,8 @@ SAFE_ERROR_CODES = frozenset({
     "provider_unreachable",
     "timeout",
     "invalid_response",
+    "cross_provider_fallback_declined",
+    "backing_off",
     "error",
 })
 

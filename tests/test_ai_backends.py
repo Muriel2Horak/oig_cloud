@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import voluptuous as vol
 
 from custom_components.oig_cloud.ai.backends import (
     AiBackendError,
@@ -89,6 +90,45 @@ async def test_generate_data_sends_key_as_bearer_and_returns_parsed_json():
     assert out == {"ok": True}
     _, _, kw = session.calls[0]
     assert kw["headers"]["Authorization"] == "Bearer gsk_secret0000000000"
+
+
+@pytest.mark.asyncio
+async def test_generate_data_validates_against_schema_success():
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"answer": "ok"}'}}]})
+
+    out = await _backend(_Session(resp)).async_generate_data(
+        "validate_config", {},
+        {"type": "object", "properties": {"answer": {"type": "string"}},
+         "required": ["answer"]},
+    )
+
+    assert out == {"answer": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_json_schema_number_validation_preserves_decoded_value_type():
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"count": 1}'}}]})
+
+    out = await _backend(_Session(resp)).async_generate_data(
+        "validate_config", {},
+        {"type": "object", "properties": {"count": {"type": "number"}},
+         "required": ["count"]},
+    )
+
+    assert type(out["count"]) is int
+
+
+@pytest.mark.asyncio
+async def test_generate_data_rejects_response_not_matching_schema():
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"answer": 42}'}}]})
+
+    with pytest.raises(AiBackendError) as exc_info:
+        await _backend(_Session(resp)).async_generate_data(
+            "validate_config", {},
+            vol.Schema({vol.Required("answer"): str}),
+        )
+
+    assert exc_info.value.code == "invalid_response"
 
 
 @pytest.mark.asyncio
