@@ -71,7 +71,10 @@ describe('fieldsFromRegistry', () => {
     const defs = fieldsFromRegistry(REGISTRY as any, 'solar');
     const provider = defs.find((d) => d.key === 'solar_forecast_provider')!;
     expect(provider.type).toBe('select');
-    expect(provider.options).toEqual([['forecast_solar', 'forecast_solar'], ['solcast', 'solcast']]);
+    expect(provider.options).toEqual([
+      ['forecast_solar', 'Forecast.Solar (zdarma, bez registrace)'],
+      ['solcast', 'Solcast (přesnější, vyžaduje registraci)'],
+    ]);
     const solcastKey = defs.find((d) => d.key === 'solcast_api_key')!;
     expect(solcastKey.showIf).toEqual({ field: 'solar_forecast_provider', in: ['solcast'] });
     expect(solcastKey.secret).toBe(true);
@@ -229,6 +232,57 @@ describe('CS_LABELS completeness parity guard (Task 23)', () => {
         const humanisedFallback = f.key.replace(/_/g, ' ');
         if (f.label === humanisedFallback) missing.push(`${section}/${f.key}`);
       }
+    }
+    expect(missing).toEqual([]);
+  });
+});
+
+// Live-walk defect 1 — enum-value label completeness guard, mirroring the
+// CS_LABELS parity guard above (Task 23) one level down: UX-SPEC §6 "no raw
+// enum value is ever a visible label" covers the VALUE, not just the field.
+// Enum tuples below are transcribed verbatim from config_registry.py's own
+// `Field(..., enum=(...))` calls — keep in sync when the backend registry
+// gains/changes an enum field.
+//
+// Two fields are deliberately EXEMPT: `confirmed_distribution_distributor`
+// and `confirmed_distribution_tariff` (config_registry.py:420-434) are
+// dataset-derived at runtime from the bundled pricelists (distributor names,
+// official distribution tariff codes like "D01d") — real-world, already
+// human-facing values, not raw internal identifiers, and there is no static
+// set to catalog a label for. `data_source_mode`'s `hybrid` value is
+// exempted for the same reason enum-labels.ts itself omits it: it is
+// filtered out of rendered options (step-connection.ts) before it ever
+// reaches the screen, kept in the enum only for a legacy GET/POST round-trip.
+const ALL_ENUM_FIELDS: Record<string, { values: readonly string[]; skipValues?: readonly string[] }> = {
+  solar_forecast_provider: { values: ['forecast_solar', 'solcast'] },
+  solar_forecast_mode: { values: ['hourly', 'every_4h', 'daily_optimized'] },
+  boiler_alt_source_type: { values: ['gas', 'heat_pump', 'fireplace', 'other'] },
+  ai_provider: { values: ['ai_task', 'groq', 'nvidia'] },
+  spot_pricing_model: { values: ['percentage', 'fixed', 'fixed_prices'] },
+  export_pricing_model: { values: ['percentage', 'fixed', 'fixed_prices'] },
+  data_source_mode: { values: ['cloud_only', 'local_only', 'hybrid'], skipValues: ['hybrid'] },
+};
+
+describe('enum-value label completeness guard (live-walk defect 1)', () => {
+  it('every registry enum field resolves every allowed value to a human Czech label, never the raw enum string', () => {
+    const fields: Record<string, RegistrySpec> = {};
+    for (const [key, { values }] of Object.entries(ALL_ENUM_FIELDS)) {
+      fields[key] = {
+        section: 'x', type: 'str', scope: 'premium',
+        label: `field.${key}.label`, hint: `field.${key}.hint`,
+        enum: [...values],
+      };
+    }
+    const registry: FieldRegistry = { fields, sections: ['x'] };
+
+    const missing: string[] = [];
+    for (const def of fieldsFromRegistry(registry, 'x')) {
+      const { values, skipValues } = ALL_ENUM_FIELDS[def.key];
+      for (const [value, label] of def.options ?? []) {
+        if (skipValues?.includes(value)) continue;
+        if (label === value) missing.push(`${def.key}.${value}`);
+      }
+      expect(values.length).toBe((def.options ?? []).length);
     }
     expect(missing).toEqual([]);
   });
