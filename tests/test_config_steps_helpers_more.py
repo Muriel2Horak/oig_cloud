@@ -20,7 +20,9 @@ def test_migrate_old_pricing_data_fixed_prices_dual():
     migrated = WizardMixin._migrate_old_pricing_data(data)
     assert migrated["import_pricing_scenario"] == "fix_2tariff"
     assert migrated["export_pricing_scenario"] == "spot_fixed_2tariff"
-    assert migrated["tariff_weekend_same_as_weekday"] is True
+    # tariff_weekend_same_as_weekday is a verified dead key (P6 audit); it must
+    # not be injected by _migrate_old_pricing_data anymore.
+    assert "tariff_weekend_same_as_weekday" not in migrated
 
 
 def test_map_pricing_to_backend_dual_weekend_custom():

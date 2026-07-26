@@ -94,12 +94,14 @@ def test_build_battery_options_removes_only_verified_dead_writes() -> None:
     assert "disable_planning_min_guard" not in payload
     assert "price_hysteresis_czk" not in payload
     assert "hw_min_hold_hours" not in payload
+    # planning_min_percent is a verified dead key (P6 audit extension); it
+    # must also be stripped from the options payload.
+    assert CONF_PLANNING_MIN_PERCENT not in payload
 
     assert payload["min_capacity_percent"] == 25.0
     assert payload["target_capacity_percent"] == 75.0
     assert payload["home_charge_rate"] == 3.2
     assert payload["max_ups_price_czk"] == 9.5
-    assert payload[CONF_PLANNING_MIN_PERCENT] == 30.0
     assert payload[CONF_CHARGE_RATE_KW] == 3.2
 
 

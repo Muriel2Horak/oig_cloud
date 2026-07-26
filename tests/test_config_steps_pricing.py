@@ -28,7 +28,9 @@ def test_migrate_old_pricing_data_percentage_dual():
     assert migrated["import_spot_positive_fee_percent_vt"] == 10.0
     assert migrated["import_spot_negative_fee_percent_nt"] == 5.0
     assert migrated["tariff_vt_start_weekday"] == "6"
-    assert migrated["tariff_weekend_same_as_weekday"] is True
+    # tariff_weekend_same_as_weekday is a verified dead key (P6 audit); it must
+    # not be injected by _migrate_old_pricing_data anymore.
+    assert "tariff_weekend_same_as_weekday" not in migrated
 
 
 def test_migrate_old_pricing_data_fixed_prices_single():
@@ -124,7 +126,12 @@ def test_map_backend_to_frontend():
     assert frontend["export_pricing_scenario"] == "spot_fixed"
     assert frontend["export_fixed_fee_czk"] == 0.25
     assert frontend["tariff_count"] == "dual"
-    assert frontend["tariff_weekend_same_as_weekday"] is False
+    # tariff_weekend_same_as_weekday is a verified dead key (P6 audit); it is
+    # no longer projected by _map_backend_to_frontend — live weekend-tariff
+    # keys carry the answer instead.
+    assert "tariff_weekend_same_as_weekday" not in frontend
+    assert frontend["tariff_vt_start_weekend"] == "8"
+    assert frontend["tariff_nt_start_weekend"] == "23,1"
     assert frontend["vat_rate"] == 19.0
 
 
