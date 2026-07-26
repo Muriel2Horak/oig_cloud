@@ -349,14 +349,60 @@ const STEP_LABELS: Record<OnboardingStepId, string> = {
   welcome: 'Vítejte',
   modules: 'Moduly',
   ai: 'AI',
-  solar: 'Solar',
-  pricing_distribution: 'Ceny — distribuce',
-  pricing_supplier: 'Ceny — nákup',
-  pricing_supplier_sell: 'Ceny — prodej',
-  battery: 'Baterie a plánovač',
+  solar: 'Solár',
+  pricing_distribution: 'Distribuce',
+  pricing_supplier: 'Nákup',
+  pricing_supplier_sell: 'Prodej',
+  battery: 'Baterie',
   boiler: 'Bojler',
   connection: 'Připojení',
   summary: 'Shrnutí',
+};
+
+/** One-line step subtitle for the glow-icon step header (design rev 3). */
+const STEP_SUBTITLES: Record<OnboardingStepId, string> = {
+  welcome: 'Úvod do průvodce nastavením',
+  modules: 'Které části wizardu chcete projít',
+  ai: 'Volitelný AI asistent pro doporučení',
+  solar: 'Předpověď výroby vaší fotovoltaiky',
+  pricing_distribution: 'Sazba a poplatky vašeho distributora',
+  pricing_supplier: 'Nákupní cena od dodavatele elektřiny',
+  pricing_supplier_sell: 'Prodejní (výkupní) cena do sítě',
+  battery: 'Jak agresivně má systém pracovat s cenou',
+  boiler: 'Nastavení ohřevu vody',
+  connection: 'Připojení k OIG Cloud a Home Assistantu',
+  summary: 'Kontrola a dokončení nastavení',
+};
+
+/** Per-step domain color (owner-approved design rev 3) — a CSS var expression
+ * consumed as `--sc` on the step's root element, inherited by the nav chip,
+ * the glow icon tile, and every `.field-group`'s left border. */
+const STEP_COLOR_VAR: Record<OnboardingStepId, string> = {
+  welcome: 'var(--c-welcome)',
+  modules: 'var(--c-mod)',
+  ai: 'var(--c-ai)',
+  solar: 'var(--c-solar)',
+  pricing_distribution: 'var(--c-price)',
+  pricing_supplier: 'var(--c-price)',
+  pricing_supplier_sell: 'var(--c-price)',
+  battery: 'var(--c-batt)',
+  boiler: 'var(--c-boiler)',
+  connection: 'var(--c-conn)',
+  summary: 'var(--c-sum)',
+};
+
+const STEP_ICON: Record<OnboardingStepId, string> = {
+  welcome: '👋',
+  modules: '🧩',
+  ai: '🤖',
+  solar: '☀️',
+  pricing_distribution: '🏭',
+  pricing_supplier: '🛒',
+  pricing_supplier_sell: '📤',
+  battery: '🔋',
+  boiler: '🔥',
+  connection: '📡',
+  summary: '📋',
 };
 
 // welcome/summary are not in ONBOARDING_STEPS (design decision 1) and are never
@@ -429,10 +475,15 @@ const LEGACY_PRICING_SUPPLIER_KEYS: ReadonlyArray<string> = [
   'tariff_vt_start_weekend', 'tariff_nt_start_weekend', 'dual_tariff_enabled',
 ];
 
+/** Czech render-time translation of the technical `OnboardingStepStatus`
+ * values (design rev 3, owner walk: "no raw pending/done ever renders").
+ * The state itself stays technical (`OnboardingStepStatus`) — this map is
+ * consulted only at render, never stored. The nav's current chip overrides
+ * this with "právě zde" regardless of its own status (see `render()`). */
 const STEP_STATUS_LABELS: Record<OnboardingStepStatus, string> = {
-  pending: 'pending',
-  done: 'done',
-  skipped: 'skipped',
+  pending: 'čeká',
+  done: 'hotovo',
+  skipped: 'přeskočeno',
 };
 
 /**
@@ -640,6 +691,17 @@ export class OigOnboardingWizard extends LitElement {
   @state() private tariffMatrixOverride: Partial<Record<DayGroup, Paint[]>> = {};
   @state() private tariffMatrixError: Partial<Record<DayGroup, string>> = {};
   @state() private showVatOverride = false;
+
+  /** Content fix (d) — secret fields the user clicked "Změnit" on this open;
+   * revealed fields render the real (write-only) input instead of the
+   * "✓ nastaveno" badge. Keyed by field key, reset implicitly on close since
+   * the whole component re-mounts on next open. */
+  @state() private revealedSecretKeys: ReadonlySet<string> = new Set();
+
+  private revealSecret(key: string): void {
+    if (this.revealedSecretKeys.has(key)) return;
+    this.revealedSecretKeys = new Set(this.revealedSecretKeys).add(key);
+  }
   /** Click-drag paint tracking — deliberately NOT `@state()`: it changes on
    * every `mouseenter` during a drag and never affects rendered output by
    * itself (each cell entered already calls `paintMatrixCell`, which does
@@ -706,6 +768,30 @@ export class OigOnboardingWizard extends LitElement {
 
     :host {
       display: contents;
+      /* Owner-approved design rev 3 — per-step domain colors + phase-bar
+         colors, fixed hex (not theme tokens): accent colors, not surfaces,
+         so they read the same in light and dark HA themes. */
+      --c-welcome: #5b8cff;
+      --c-mod: #5b8cff;
+      --c-ai: #9d7bff;
+      --c-solar: #ffb547;
+      --c-price: #3fd18b;
+      --c-batt: #3ec6dc;
+      --c-boiler: #ff7a59;
+      --c-conn: #8fa1c4;
+      --c-sum: #5b8cff;
+      --phA: #5b8cff;
+      --phB: #3fd18b;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
     .overlay {
@@ -758,44 +844,123 @@ export class OigOnboardingWizard extends LitElement {
       cursor: pointer;
     }
 
-    .phase-legend {
-      display: flex;
-      gap: 14px;
-      padding: 8px 18px 0;
-      font-size: 11px;
-      opacity: 0.7;
-    }
-
-    .phase-chip strong {
-      font-weight: 600;
-      margin-right: 4px;
-    }
-
-    nav.steps {
-      display: flex;
-      gap: 6px;
-      padding: 10px 18px;
+    /* ── Navigation (design rev 3) ──────────────────────────────────────
+       Centerpiece fix: chips are flex:none at a fixed width so .steps
+       truly scrolls horizontally instead of shrinking every chip until
+       their labels overlap (the mobile-broken bug this slice fixes). */
+    .navwrap {
+      padding: 10px 18px 0;
       border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
       background: rgba(255, 255, 255, 0.02);
-      overflow-x: auto;
     }
 
-    nav.steps button {
-      flex: 1;
-      padding: 8px 10px;
-      border-radius: 8px;
+    .phasebar {
+      display: flex;
+      height: 4px;
+      border-radius: 99px;
+      overflow: hidden;
+      margin: 0 2px 8px;
+      gap: 1px;
+    }
+    .phasebar i { display: block; flex: 1; }
+
+    .steps {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding: 2px 2px 10px;
+    }
+    .steps::-webkit-scrollbar { display: none; }
+
+    .st {
+      flex: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      width: 64px;
+      padding: 6px 4px 4px;
+      border-radius: 12px;
       border: 1px solid transparent;
       background: transparent;
-      color: inherit;
       cursor: pointer;
-      font-size: 13px;
-      min-width: 0;
+      font: inherit;
+      color: inherit;
+      position: relative;
     }
 
-    nav.steps button.active {
-      border-color: var(--primary-color, #4f7cff);
-      background: color-mix(in srgb, var(--primary-color, #4f7cff) 12%, transparent);
-      font-weight: 600;
+    .st .ic {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      background: var(--card-bg, rgba(255, 255, 255, 0.06));
+      border: 1.5px solid var(--divider-color, rgba(255, 255, 255, 0.18));
+      transition: 0.15s;
+    }
+    .st .stlabel {
+      font-size: 10.5px;
+      color: inherit;
+      opacity: 0.65;
+      white-space: nowrap;
+    }
+
+    .st.done .ic {
+      border-color: var(--sc);
+      color: var(--sc);
+    }
+    .st.done .ic { position: relative; }
+    .st.done .ic::after {
+      content: '✓';
+      position: absolute;
+      top: -3px; right: -5px;
+      font-size: 9px;
+      color: var(--sc);
+      background: var(--card-bg, #1d2330);
+      border-radius: 50%;
+      padding: 0 2px;
+    }
+
+    .st.cur {
+      border-color: var(--sc);
+      background: color-mix(in srgb, var(--sc) 10%, transparent);
+    }
+    .st.cur .ic {
+      background: var(--sc);
+      color: #0a1124;
+      border-color: var(--sc);
+      box-shadow: 0 0 14px color-mix(in srgb, var(--sc) 55%, transparent);
+    }
+    .st.cur .stlabel { opacity: 1; font-weight: 600; }
+
+    .stepmeta {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      padding: 0 4px 8px;
+      font-size: 11px;
+    }
+    .stepmeta b { font-weight: 500; opacity: 0.7; }
+    .stepmeta em { font-style: normal; font-size: 11.5px; color: var(--sc, inherit); font-weight: 600; }
+
+    /* <=480px: hide labels, chips shrink to icon-only, row scrolls (never wraps). */
+    @media (max-width: 480px) {
+      .st { width: 44px; }
+      .st .stlabel { display: none; }
+    }
+
+    /* Low-height viewports (Nest Hub 1024x600 kiosk): compact chips, body
+       scrolls internally, footer stays reachable without page-scrolling. */
+    @media (max-height: 650px) {
+      .st { width: 44px; padding: 5px 2px 4px; }
+      .st .stlabel { display: none; }
+      .st .ic { width: 26px; height: 26px; font-size: 12px; }
+      .content { max-height: 260px; }
+      footer { position: sticky; bottom: 0; background: var(--card-bg, #1d2330); }
     }
 
     .content {
@@ -828,7 +993,82 @@ export class OigOnboardingWizard extends LitElement {
       margin-bottom: 14px;
       padding: 12px 14px;
       border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
+      border-left: 3px solid color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 55%, transparent);
       border-radius: 10px;
+    }
+
+    /* Step header — glow icon tile + title + one-line subtitle (design rev 3). */
+    .step-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .step-head-icon {
+      flex: none;
+      width: 40px; height: 40px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      font-size: 19px;
+      background: color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 16%, transparent);
+      border: 1px solid color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 45%, transparent);
+      box-shadow: 0 0 20px color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 25%, transparent);
+    }
+    .step-head h3 { margin: 0; font-size: 16px; }
+    .step-head-sub { margin: 2px 0 0; font-size: 12px; opacity: 0.7; font-weight: 400; }
+
+    /* Number+unit fields as a "pcard" — label small caps, big value, unit
+       (design rev 3 item 2) — a visual wrapper over the shared .row
+       control, not a second input implementation. */
+    .pcard {
+      background: color-mix(in srgb, var(--card-bg, #0c1530) 92%, transparent);
+      border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.1));
+      border-radius: 11px;
+      padding: 10px 12px;
+    }
+    .pcard .row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      padding: 0;
+      border-bottom: 0;
+    }
+    .pcard .lab {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      opacity: 0.7;
+    }
+    .pcard input[type=number],
+    .pcard input[type=text] {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    /* Secret set-state badge (design rev 3 item 3d) — replaces the plain
+       always-editable input once a secret is confirmed set; "Změnit"
+       reveals the real input to overwrite it. */
+    .secret-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: color-mix(in srgb, var(--c-price) 14%, transparent);
+      border: 1px solid color-mix(in srgb, var(--c-price) 45%, transparent);
+      color: #9fe8c6;
+      border-radius: 9px;
+      padding: 6px 12px;
+      font-size: 12.5px;
+    }
+    .secret-badge-change {
+      background: none;
+      border: none;
+      color: var(--primary-color, #4f7cff);
+      font-size: 12px;
+      text-decoration: underline;
+      cursor: pointer;
+      padding: 0;
+      font: inherit;
     }
 
     .field-group:last-child { margin-bottom: 0; }
@@ -878,6 +1118,18 @@ export class OigOnboardingWizard extends LitElement {
     }
     .vt-nt-row > div { flex: 1; min-width: 0; }
 
+    /* Number+unit pcard pairs (battery charge-rate/reserve, item 2) — grid,
+       single column on mobile. */
+    .pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    @media (max-width: 480px) {
+      .pair { grid-template-columns: 1fr; }
+    }
+
     footer {
       display: flex;
       justify-content: space-between;
@@ -897,10 +1149,11 @@ export class OigOnboardingWizard extends LitElement {
     }
 
     footer button.primary {
-      background: var(--primary-color, #4f7cff);
+      background: linear-gradient(135deg, var(--primary-color, #4f7cff), #7ba4ff);
       border-color: transparent;
       color: #fff;
       font-weight: 600;
+      box-shadow: 0 4px 18px rgba(79, 124, 255, 0.35);
     }
 
     footer button.skip {
@@ -909,12 +1162,9 @@ export class OigOnboardingWizard extends LitElement {
 
     footer button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-    .step-status {
-      display: block;
-      margin-top: 2px;
-      font-size: 11px;
-      opacity: 0.72;
-      font-weight: 400;
+    @media (max-width: 480px) {
+      footer { flex-wrap: wrap; }
+      footer button.primary.next { flex: 1; }
     }
 
     .finish-status {
@@ -981,23 +1231,41 @@ export class OigOnboardingWizard extends LitElement {
     .legend-swatch.vt { background: var(--card-bg, rgba(255, 255, 255, 0.12)); border: 1px solid var(--divider-color, rgba(255,255,255,0.3)); }
     .legend-swatch.nt { background: var(--primary-color, #4f7cff); }
 
+    .tariff-matrix-hours {
+      display: grid;
+      grid-template-columns: repeat(24, 1fr);
+      gap: 1px;
+      margin-bottom: 3px;
+    }
+    .tariff-matrix-hours i {
+      font-style: normal;
+      font-size: 9px;
+      opacity: 0.6;
+      text-align: center;
+    }
+
     .tariff-matrix-row { margin-bottom: 12px; }
     .tariff-matrix-row-label { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
     .tariff-matrix-cells {
       display: grid;
       grid-template-columns: repeat(24, 1fr);
-      gap: 1px;
+      gap: 2px;
     }
     .tariff-cell {
-      height: 22px;
+      height: 26px;
       padding: 0;
       border: none;
-      border-radius: 2px;
+      border-radius: 3px;
       cursor: pointer;
       background: var(--card-bg, rgba(255, 255, 255, 0.12));
+      transition: transform 0.1s;
     }
-    .tariff-cell.nt { background: var(--primary-color, #4f7cff); }
-    .tariff-matrix-summary { font-size: 11px; opacity: 0.75; margin: 4px 0 0; }
+    .tariff-cell:hover { transform: scale(1.12); }
+    .tariff-cell.nt {
+      background: var(--primary-color, #4f7cff);
+      box-shadow: 0 0 6px color-mix(in srgb, var(--primary-color, #4f7cff) 50%, transparent);
+    }
+    .tariff-matrix-summary { font-size: 11px; opacity: 0.85; font-weight: 600; margin: 4px 0 0; }
     .tariff-matrix-error { font-size: 11px; color: var(--error-color, #ff8a80); margin: 4px 0 0; }
   `;
 
@@ -1690,7 +1958,7 @@ export class OigOnboardingWizard extends LitElement {
       const excl = raw == null || raw === '' ? null : Number(raw);
       const incl = excl == null ? null : Math.round(excl * vatMultiplier * 100) / 100;
       return html`
-        <div class="price-cell" data-testid=${testid}>
+        <div class="price-cell pcard" data-testid=${testid}>
           <span class="lab">${field.label}</span>
           <input
             type="number" step="0.01" min="0"
@@ -1801,6 +2069,15 @@ export class OigOnboardingWizard extends LitElement {
   /** Item 4: the NT/VT schedule grid — replaces the old VT/NT start-hour
    * text inputs when the tariff is dual. Single-tariff never renders this
    * (no matrix, no time fields — whole day VT, matching the old behaviour). */
+  /** Item 3b: sparse 0–23 hour labels above each day-group's cell grid —
+   * 0/6/12/18/23 only, the rest blank, matching the design reference. */
+  private renderMatrixHourLabels() {
+    return html`
+      <div class="tariff-matrix-hours" aria-hidden="true">
+        ${Array.from({ length: 24 }, (_, h) => html`<i>${h % 6 === 0 || h === 23 ? h : ''}</i>`)}
+      </div>`;
+  }
+
   private renderTariffMatrix() {
     const groups: Array<{ id: DayGroup; label: string }> = [
       { id: 'weekday', label: 'Pracovní dny (Po–Pá)' },
@@ -1818,6 +2095,7 @@ export class OigOnboardingWizard extends LitElement {
           return html`
             <div class="tariff-matrix-row" data-testid="tariff-matrix-row-${id}">
               <div class="tariff-matrix-row-label">${label}</div>
+              ${this.renderMatrixHourLabels()}
               <div class="tariff-matrix-cells" data-testid="tariff-matrix-cells-${id}">
                 ${grid.map((paint, hour) => html`
                   <button
@@ -1870,41 +2148,18 @@ export class OigOnboardingWizard extends LitElement {
   }
 
   /**
-   * Buy step (Nakup) scenario field body. The `fixed_prices` scenario gets
-   * VT/NT side by side (UX-SPEC brief item 2) plus the incl-VAT computed
-   * line each; `dual` is implicit — `fixed_commercial_price_nt` is simply
-   * absent from `fields` when the tariff isn't dual (registry `show_if_all`),
-   * so a single VT field alone is exactly "single tariff -> one field".
-   * The other two scenarios (percentage/fixed) render generically, same as
-   * the sell step.
+   * Nakup/Prodej scenario field body (content fix item 3c) — any field with
+   * a `_nt` counterpart in `fields` renders paired, VT+NT side by side as
+   * pcards (single-column on mobile via `.vt-nt-row`'s CSS); a field with no
+   * `_nt` sibling (single-tariff selection, or `export_fixed_price`, which
+   * has no NT variant at all) renders standalone. `fixed_commercial_price_*`
+   * additionally gets the computed incl-VAT line, same as before — the only
+   * pair whose unit is a plain Kč/kWh price, not a %/Kč-MWh fee.
    */
-  private renderBuyScenarioFields(scenario: string, fields: FieldDef[]) {
-    if (scenario !== 'fixed_prices') {
-      return html`
-        <div class="scenario-fields" data-testid="scenario-fields-buy">
-          ${fields.map((f) => html`
-            <div data-key=${f.key}>
-              ${renderFieldPresenter(f, {
-                value: this.pricingDraft[f.key],
-                dirty: false,
-                secretSet: false,
-                originalValue: this.originalValues[f.key],
-                reviewMode: this.onboardingState?.grandfathered === true,
-                onChange: (v: unknown) => {
-                  this.pricingDraft = { ...this.pricingDraft, [f.key]: v };
-                },
-                entityCatalog: [],
-              })}
-            </div>
-          `)}
-        </div>
-      `;
-    }
-
-    const vtField = fields.find((f) => f.key === 'fixed_commercial_price_vt');
-    const ntField = fields.find((f) => f.key === 'fixed_commercial_price_nt');
-    const renderPrice = (f: FieldDef) => html`
-      <div data-key=${f.key}>
+  private renderScenarioFields(fields: FieldDef[], testid: string) {
+    const byKey = new Map(fields.map((f) => [f.key, f]));
+    const renderCell = (f: FieldDef) => html`
+      <div class="pcard" data-key=${f.key}>
         ${renderFieldPresenter(f, {
           value: this.pricingDraft[f.key],
           dirty: false,
@@ -1916,25 +2171,55 @@ export class OigOnboardingWizard extends LitElement {
           },
           entityCatalog: [],
         })}
-        ${this.renderInclVatLine(f.key)}
+        ${f.key === 'fixed_commercial_price_vt' || f.key === 'fixed_commercial_price_nt'
+          ? this.renderInclVatLine(f.key)
+          : nothing}
       </div>
     `;
+    // Most pairs are `key`/`${key}_nt` (spot_positive_fee_percent, ...);
+    // `fixed_commercial_price_vt` is the one exception, whose NT sibling is
+    // `fixed_commercial_price_nt`, not `fixed_commercial_price_vt_nt`.
+    const ntCounterpartKey = (key: string): string =>
+      key === 'fixed_commercial_price_vt' ? 'fixed_commercial_price_nt' : `${key}_nt`;
+    const consumedNtKeys = new Set<string>();
+    fields.forEach((f) => {
+      const ntKey = ntCounterpartKey(f.key);
+      if (byKey.has(ntKey)) consumedNtKeys.add(ntKey);
+    });
+    const items = fields.flatMap((f) => {
+      if (consumedNtKeys.has(f.key)) return []; // rendered paired with its VT sibling below
+      const ntField = byKey.get(ntCounterpartKey(f.key));
+      if (ntField) {
+        const rowTestid = f.key === 'fixed_commercial_price_vt'
+          ? 'fixed-price-vt-nt-row'
+          : `${f.key.replace(/_/g, '-')}-vt-nt-row`;
+        return [html`<div class="vt-nt-row" data-testid=${rowTestid}>${renderCell(f)}${renderCell(ntField)}</div>`];
+      }
+      return [renderCell(f)];
+    });
+    return html`<div class="scenario-fields" data-testid=${testid}>${items}</div>`;
+  }
+
+  /** Step header — glow icon tile + title + one-line subtitle (design rev 3
+   * item 2). Relies on the enclosing `<section style="--sc:...">` for its
+   * color, so every call site is a section's own domain, not a repeated arg. */
+  private renderStepHead(stepId: OnboardingStepId) {
     return html`
-      <div class="scenario-fields" data-testid="scenario-fields-buy">
-        <div class="vt-nt-row" data-testid="fixed-price-vt-nt-row">
-          ${vtField ? renderPrice(vtField) : nothing}
-          ${ntField ? renderPrice(ntField) : nothing}
+      <div class="step-head">
+        <div class="step-head-icon" aria-hidden="true">${STEP_ICON[stepId]}</div>
+        <div>
+          <h3>${STEP_LABELS[stepId]}</h3>
+          <p class="step-head-sub">${STEP_SUBTITLES[stepId]}</p>
         </div>
-      </div>
-    `;
+      </div>`;
   }
 
   private renderStepContent() {
     if (this.currentStep === 'welcome') {
       const isReview = this.onboardingState?.grandfathered === true; // design decision 3
       return html`
-        <section class="step step-welcome" data-step="welcome">
-          <h3>${STEP_LABELS.welcome}</h3>
+        <section class="step step-welcome" data-step="welcome" style=${`--sc:${STEP_COLOR_VAR.welcome}`}>
+          ${this.renderStepHead('welcome')}
           <div class="step-card">
             <p>${t(isReview ? 'onboarding.welcome.review' : 'onboarding.welcome.new_install', this.wizardLang)}</p>
           </div>
@@ -1956,8 +2241,8 @@ export class OigOnboardingWizard extends LitElement {
     if (this.currentStep === 'solar') {
       if (this.bootstrapRetry.registry) {
         return html`
-          <section class="step step-solar" data-step="solar">
-            <h3>② Solar</h3>
+          <section class="step step-solar" data-step="solar" style=${`--sc:${STEP_COLOR_VAR.solar}`}>
+            ${this.renderStepHead('solar')}
             <div class="step-card">
               <p data-testid="solar-bootstrap-retry">${t('onboarding.bootstrap.load_failed', this.wizardLang)}</p>
               <button
@@ -1971,8 +2256,8 @@ export class OigOnboardingWizard extends LitElement {
       }
       if (!this._registry || STEP_SOLAR.fields(this._registry).length === 0) {
         return html`
-          <section class="step step-solar" data-step="solar">
-            <h3>② Solar</h3>
+          <section class="step step-solar" data-step="solar" style=${`--sc:${STEP_COLOR_VAR.solar}`}>
+            ${this.renderStepHead('solar')}
             <div class="step-card">
               <p data-testid="solar-not-available">
                 Solární pole nejsou k dispozici.
@@ -1987,8 +2272,8 @@ export class OigOnboardingWizard extends LitElement {
         !this.solarDraft['solar_forecast_string2_enabled'];
 
       return html`
-        <section class="step step-solar" data-step="solar">
-          <h3>② Solar</h3>
+        <section class="step step-solar" data-step="solar" style=${`--sc:${STEP_COLOR_VAR.solar}`}>
+          ${this.renderStepHead('solar')}
           <div class="step-card">
             ${allStringsHidden
               ? html`<p data-testid="solar-all-hidden" class="hint">
@@ -2002,6 +2287,8 @@ export class OigOnboardingWizard extends LitElement {
                 secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
                 originalValue: this.originalValues[f.key],
                 reviewMode: this.onboardingState?.grandfathered === true,
+                secretRevealed: this.revealedSecretKeys.has(f.key),
+                onRevealSecret: () => this.revealSecret(f.key),
                 onChange: (v: unknown) => {
                   this.solarDraft = { ...this.solarDraft, [f.key]: v };
                   this.solarTestMatchesDraft = false;
@@ -2056,8 +2343,8 @@ export class OigOnboardingWizard extends LitElement {
     if (this.currentStep === 'battery') {
       if (this.bootstrapRetry.registry) {
         return html`
-          <section class="step step-battery" data-step="battery">
-            <h3>${STEP_LABELS.battery}</h3>
+          <section class="step step-battery" data-step="battery" style=${`--sc:${STEP_COLOR_VAR.battery}`}>
+            ${this.renderStepHead('battery')}
             <div class="step-card">
               <p data-testid="battery-bootstrap-retry">${t('onboarding.bootstrap.load_failed', this.wizardLang)}</p>
               <button
@@ -2071,8 +2358,8 @@ export class OigOnboardingWizard extends LitElement {
       }
       if (!this._registry || STEP_BATTERY.fields(this._registry).length === 0) {
         return html`
-          <section class="step step-battery" data-step="battery">
-            <h3>${STEP_LABELS.battery}</h3>
+          <section class="step step-battery" data-step="battery" style=${`--sc:${STEP_COLOR_VAR.battery}`}>
+            ${this.renderStepHead('battery')}
             <div class="step-card">
               <p data-testid="battery-not-available">
                 Pole baterie nejsou k dispozici.
@@ -2086,29 +2373,40 @@ export class OigOnboardingWizard extends LitElement {
       const visibleByKey = new Map(visible.map((f) => [f.key, f]));
 
       return html`
-        <section class="step step-battery" data-step="battery">
-          <h3>${STEP_LABELS.battery}</h3>
+        <section class="step step-battery" data-step="battery" style=${`--sc:${STEP_COLOR_VAR.battery}`}>
+          ${this.renderStepHead('battery')}
           <div class="step-card">
-            ${BATTERY_GROUPS.map((group) => html`
+            ${BATTERY_GROUPS.map((group) => {
+              const groupFields = group.keys.map((key) => visibleByKey.get(key)).filter((f): f is FieldDef => !!f);
+              // Item 2: number+unit pair as pcards, side by side (design rev 3
+              // "distribution/battery pairs") — only the charge-rate/reserve
+              // pair reads as a pcard row; the rest of the step is unchanged.
+              const asPair = group.id === 'nabijeni';
+              const renderField = (f: FieldDef) => html`
+                <div class=${asPair ? 'pcard' : ''} data-key=${f.key}>
+                  ${renderFieldPresenter(f, {
+                    value: this.batteryDraft[f.key],
+                    dirty: false,
+                    secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
+                    originalValue: this.originalValues[f.key],
+                    reviewMode: this.onboardingState?.grandfathered === true,
+                    secretRevealed: this.revealedSecretKeys.has(f.key),
+                    onRevealSecret: () => this.revealSecret(f.key),
+                    onChange: (v: unknown) => {
+                      this.batteryDraft = { ...this.batteryDraft, [f.key]: v };
+                    },
+                    entityCatalog: [],
+                  })}
+                </div>
+              `;
+              return html`
               <div class="battery-group" data-group=${group.id}>
                 <h4 data-testid="battery-group-heading">${group.heading}</h4>
-                ${group.keys.map((key) => visibleByKey.get(key)).filter((f): f is FieldDef => !!f).map((f) => html`
-                  <div data-key=${f.key}>
-                    ${renderFieldPresenter(f, {
-                      value: this.batteryDraft[f.key],
-                      dirty: false,
-                      secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
-                      originalValue: this.originalValues[f.key],
-                      reviewMode: this.onboardingState?.grandfathered === true,
-                      onChange: (v: unknown) => {
-                        this.batteryDraft = { ...this.batteryDraft, [f.key]: v };
-                      },
-                      entityCatalog: [],
-                    })}
-                  </div>
-                `)}
-              </div>
-            `)}
+                ${asPair
+                  ? html`<div class="pair">${groupFields.map(renderField)}</div>`
+                  : groupFields.map(renderField)}
+              </div>`;
+            })}
           </div>
         </section>
       `;
@@ -2125,8 +2423,8 @@ export class OigOnboardingWizard extends LitElement {
       // so the registry outcome gates them too, same as solar's own check.
       if (this.bootstrapRetry.registry || this.bootstrapRetry.pricing || this.bootstrapRetry.pricingConfig) {
         return html`
-          <section class="step step-stub" data-step=${this.currentStep}>
-            <h3>${STEP_LABELS[this.currentStep]}</h3>
+          <section class="step step-stub" data-step=${this.currentStep} style=${`--sc:${STEP_COLOR_VAR[this.currentStep]}`}>
+            ${this.renderStepHead(this.currentStep)}
             <div class="step-card">
               <p data-testid="pricing-bootstrap-retry">${t('onboarding.bootstrap.load_failed', this.wizardLang)}</p>
               <button
@@ -2143,8 +2441,8 @@ export class OigOnboardingWizard extends LitElement {
     if (this.currentStep === 'pricing_distribution') {
       if (!this._registry || STEP_PRICING_DISTRIBUTION.fields(this._registry).length === 0) {
         return html`
-          <section class="step step-pricing-distribution" data-step="pricing_distribution">
-            <h3>${STEP_LABELS.pricing_distribution}</h3>
+          <section class="step step-pricing-distribution" data-step="pricing_distribution" style=${`--sc:${STEP_COLOR_VAR.pricing_distribution}`}>
+            ${this.renderStepHead('pricing_distribution')}
             <div class="step-card">
               <p data-testid="pricing-distribution-not-available">Ceny nejsou dostupné.</p>
             </div>
@@ -2158,14 +2456,16 @@ export class OigOnboardingWizard extends LitElement {
       const dual = isDualTariffCode(tariff);
 
       const registry = this._registry;
+      // Owner walk content fix (a): the legacy dataset price trio (incl-VAT /
+      // excl-VAT / editable MWh unit) never renders — the kWh fee block with
+      // computed VAT below is the single price surface, single- or
+      // dual-tariff alike. Display-only: the keys stay in the registry/draft
+      // untouched, the dataset suggestion still prefills the kWh fields via
+      // `applyDistributionFeeSuggestion`.
       const excludedFromGenericRender: readonly string[] = [
         ...TARIFF_SCHEDULE_KEYS, ...DISTRIBUTION_PRICE_KEYS, VAT_RATE_KEY,
-        // Item 3: replaced by the editable VT/NT price block below — the
-        // read-only auto-derived trio only still applies when the price
-        // block itself has nothing to show (registry not loaded).
-        ...(dual
-          ? ['confirmed_distribution_price_incl_vat', 'confirmed_distribution_price_excl_vat', 'confirmed_distribution_unit']
-          : []),
+        'confirmed_distribution_price_incl_vat', 'confirmed_distribution_price_excl_vat',
+        'confirmed_distribution_unit',
       ];
       const visible = STEP_PRICING_DISTRIBUTION.visibleFields(registry, this.pricingDraft)
         .filter((f) => !excludedFromGenericRender.includes(f.key));
@@ -2178,8 +2478,8 @@ export class OigOnboardingWizard extends LitElement {
       const vatRate = Number(this.pricingDraft[VAT_RATE_KEY] ?? registry?.fields[VAT_RATE_KEY]?.default ?? 21);
 
       return html`
-        <section class="step step-pricing-distribution" data-step="pricing_distribution">
-          <h3>${STEP_LABELS.pricing_distribution}</h3>
+        <section class="step step-pricing-distribution" data-step="pricing_distribution" style=${`--sc:${STEP_COLOR_VAR.pricing_distribution}`}>
+          ${this.renderStepHead('pricing_distribution')}
           <div class="step-card">
             ${visible.map((f) => html`
               <div data-key=${f.key}>
@@ -2190,6 +2490,8 @@ export class OigOnboardingWizard extends LitElement {
                   secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
                   originalValue: this.originalValues[f.key],
                   reviewMode: this.onboardingState?.grandfathered === true,
+                  secretRevealed: this.revealedSecretKeys.has(f.key),
+                  onRevealSecret: () => this.revealSecret(f.key),
                   onChange: (v: unknown) => {
                     this.pricingDraft = { ...this.pricingDraft, [f.key]: v };
                     // Task 17: the distribution step's tariff-change handler
@@ -2248,8 +2550,8 @@ export class OigOnboardingWizard extends LitElement {
       const scenarioFields = visible.filter((f) => f.key !== 'spot_pricing_model');
 
       return html`
-        <section class="step step-pricing-supplier" data-step="pricing_supplier">
-          <h3>${STEP_LABELS.pricing_supplier}</h3>
+        <section class="step step-pricing-supplier" data-step="pricing_supplier" style=${`--sc:${STEP_COLOR_VAR.pricing_supplier}`}>
+          ${this.renderStepHead('pricing_supplier')}
           <div class="step-card">
             ${this.showRecoveredPricingNote()
               ? html`<p data-testid="recovered-pricing-note" class="hint">
@@ -2268,7 +2570,7 @@ export class OigOnboardingWizard extends LitElement {
                     (v) => { this.pricingDraft = { ...this.pricingDraft, spot_pricing_model: v }; },
                     'scenario-cards-buy',
                   )}
-                  ${scenario ? this.renderBuyScenarioFields(scenario, scenarioFields) : nothing}
+                  ${scenario ? this.renderScenarioFields(scenarioFields, 'scenario-fields-buy') : nothing}
                 `
               : html`<p data-testid="pricing-supplier-not-available">Ceny nejsou dostupné.</p>`}
           </div>
@@ -2285,8 +2587,8 @@ export class OigOnboardingWizard extends LitElement {
       const scenarioFields = visible.filter((f) => f.key !== 'export_pricing_model');
 
       return html`
-        <section class="step step-pricing-supplier-sell" data-step="pricing_supplier_sell">
-          <h3>${STEP_LABELS.pricing_supplier_sell}</h3>
+        <section class="step step-pricing-supplier-sell" data-step="pricing_supplier_sell" style=${`--sc:${STEP_COLOR_VAR.pricing_supplier_sell}`}>
+          ${this.renderStepHead('pricing_supplier_sell')}
           <div class="step-card">
             <p data-testid="pricing-supplier-sell-intro" class="hint">
               Prodejní (výkupní) cena — kolik dostanete za elektřinu dodanou do sítě. Vyberte
@@ -2300,27 +2602,7 @@ export class OigOnboardingWizard extends LitElement {
                     (v) => { this.pricingDraft = { ...this.pricingDraft, export_pricing_model: v }; },
                     'scenario-cards-sell',
                   )}
-                  ${scenario
-                    ? html`
-                        <div class="scenario-fields" data-testid="scenario-fields-sell">
-                          ${scenarioFields.map((f) => html`
-                            <div data-key=${f.key}>
-                              ${renderFieldPresenter(f, {
-                                value: this.pricingDraft[f.key],
-                                dirty: false,
-                                secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
-                                originalValue: this.originalValues[f.key],
-                                reviewMode: this.onboardingState?.grandfathered === true,
-                                onChange: (v: unknown) => {
-                                  this.pricingDraft = { ...this.pricingDraft, [f.key]: v };
-                                },
-                                entityCatalog: [],
-                              })}
-                            </div>
-                          `)}
-                        </div>
-                      `
-                    : nothing}
+                  ${scenario ? this.renderScenarioFields(scenarioFields, 'scenario-fields-sell') : nothing}
                 `
               : html`<p data-testid="pricing-supplier-sell-not-available">Ceny nejsou dostupné.</p>`}
           </div>
@@ -2331,8 +2613,8 @@ export class OigOnboardingWizard extends LitElement {
     if (this.currentStep === 'boiler') {
       if (!this._registry || STEP_BOILER.fields(this._registry).length === 0) {
         return html`
-          <section class="step step-boiler" data-step="boiler">
-            <h3>${STEP_LABELS.boiler}</h3>
+          <section class="step step-boiler" data-step="boiler" style=${`--sc:${STEP_COLOR_VAR.boiler}`}>
+            ${this.renderStepHead('boiler')}
             <div class="step-card">
               <p data-testid="boiler-not-available">Pole bojleru nejsou k dispozici.</p>
             </div>
@@ -2351,6 +2633,8 @@ export class OigOnboardingWizard extends LitElement {
             secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
             originalValue: this.originalValues[f.key],
             reviewMode,
+            secretRevealed: this.revealedSecretKeys.has(f.key),
+            onRevealSecret: () => this.revealSecret(f.key),
             onChange: (v: unknown) => {
               this.boilerDraft = { ...this.boilerDraft, [f.key]: v };
             },
@@ -2360,8 +2644,8 @@ export class OigOnboardingWizard extends LitElement {
       `;
 
       return html`
-        <section class="step step-boiler" data-step="boiler">
-          <h3>${STEP_LABELS.boiler}</h3>
+        <section class="step step-boiler" data-step="boiler" style=${`--sc:${STEP_COLOR_VAR.boiler}`}>
+          ${this.renderStepHead('boiler')}
           <div class="step-card">
             ${BOILER_FIELD_GROUPS.map((group) => {
               const groupFields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
@@ -2405,6 +2689,8 @@ export class OigOnboardingWizard extends LitElement {
             secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
             originalValue: this.originalValues[f.key],
             reviewMode: this.onboardingState?.grandfathered === true,
+            secretRevealed: this.revealedSecretKeys.has(f.key),
+            onRevealSecret: () => this.revealSecret(f.key),
             onChange: (v: unknown) => {
               this.modulesDraft = { ...this.modulesDraft, [f.key]: v };
             },
@@ -2414,8 +2700,8 @@ export class OigOnboardingWizard extends LitElement {
       `);
 
       return html`
-        <section class="step step-modules" data-step="modules">
-          <h3>${STEP_LABELS.modules}</h3>
+        <section class="step step-modules" data-step="modules" style=${`--sc:${STEP_COLOR_VAR.modules}`}>
+          ${this.renderStepHead('modules')}
           <div class="step-card">
             ${turnedOff.length > 0
               ? html`<p data-testid="module-off-warning" class="hint">
@@ -2446,8 +2732,8 @@ export class OigOnboardingWizard extends LitElement {
         // this step's entire content, not a generic summary."
         const rows = this.summaryDiffRows();
         return html`
-          <section class="step step-summary" data-step="summary">
-            <h3>${STEP_LABELS.summary}</h3>
+          <section class="step step-summary" data-step="summary" style=${`--sc:${STEP_COLOR_VAR.summary}`}>
+            ${this.renderStepHead('summary')}
             <div class="step-card">
               ${rows.length === 0
                 ? html`<p data-testid="summary-diff-empty">${t('onboarding.summary.diff_empty', this.wizardLang)}</p>`
@@ -2476,8 +2762,8 @@ export class OigOnboardingWizard extends LitElement {
         .filter(([key, value]) => key.startsWith('enable_') && value === true)
         .map(([key]) => fieldLabel(key, `field.${key}.label`));
       return html`
-        <section class="step step-summary" data-step="summary">
-          <h3>${STEP_LABELS.summary}</h3>
+        <section class="step step-summary" data-step="summary" style=${`--sc:${STEP_COLOR_VAR.summary}`}>
+          ${this.renderStepHead('summary')}
           <div class="step-card">
             <p>${t('onboarding.summary.new_install_heading', this.wizardLang)}</p>
             <ul>
@@ -2491,8 +2777,8 @@ export class OigOnboardingWizard extends LitElement {
     if (this.currentStep === 'connection') {
       if (!this._registry) {
         return html`
-          <section class="step step-stub" data-step="connection">
-            <h3>${STEP_LABELS.connection}</h3>
+          <section class="step step-stub" data-step="connection" style=${`--sc:${STEP_COLOR_VAR.connection}`}>
+            ${this.renderStepHead('connection')}
             <div class="step-card">
               <p data-testid="step-stub-placeholder">
                 Tento krok bude doplněn v další verzi průvodce.
@@ -2504,8 +2790,8 @@ export class OigOnboardingWizard extends LitElement {
 
       const visible = STEP_CONNECTION.visibleFields(this._registry, this.connectionDraft);
       return html`
-        <section class="step step-connection" data-step="connection">
-          <h3>${STEP_LABELS.connection}</h3>
+        <section class="step step-connection" data-step="connection" style=${`--sc:${STEP_COLOR_VAR.connection}`}>
+          ${this.renderStepHead('connection')}
           <div class="step-card">
             <div class="connection-explainer" data-testid="connection-explainer">
               <p>${t('onboarding.connection.explainer_cloud', this.wizardLang)}</p>
@@ -2519,6 +2805,8 @@ export class OigOnboardingWizard extends LitElement {
                   secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
                   originalValue: this.originalValues[f.key],
                   reviewMode: this.onboardingState?.grandfathered === true,
+                  secretRevealed: this.revealedSecretKeys.has(f.key),
+                  onRevealSecret: () => this.revealSecret(f.key),
                   onChange: (v: unknown) => {
                     this.connectionDraft = { ...this.connectionDraft, [f.key]: v };
                   },
@@ -2534,8 +2822,8 @@ export class OigOnboardingWizard extends LitElement {
     // Every other step without dedicated content yet (battery, boiler —
     // Stage S3 fills these in). A stub, not a second source of truth.
     return html`
-      <section class="step step-stub" data-step=${this.currentStep}>
-        <h3>${STEP_LABELS[this.currentStep]}</h3>
+      <section class="step step-stub" data-step=${this.currentStep} style=${`--sc:${STEP_COLOR_VAR[this.currentStep]}`}>
+        ${this.renderStepHead(this.currentStep)}
         <div class="step-card">
           <p data-testid="step-stub-placeholder">
             Tento krok bude doplněn v další verzi průvodce.
@@ -2580,43 +2868,49 @@ export class OigOnboardingWizard extends LitElement {
             >×</button>
           </header>
 
-          <div class="phase-legend" data-testid="wizard-phase-legend">
-            <div class="phase-chip" data-testid="wizard-phase-a">
-              <strong>${PHASE_LABELS.A}</strong>
-              <span class="phase-steps">
-                ${WIZARD_STEPS.filter((s) => STEP_PHASE[s] === 'A').map((s) => STEP_LABELS[s]).join(', ')}
-              </span>
+          <div class="navwrap">
+            <div class="phasebar" data-testid="wizard-phasebar">
+              ${visibleSteps.map((s, i) => html`
+                <i
+                  data-testid="wizard-phasebar-segment"
+                  data-phase=${STEP_PHASE[s] ?? ''}
+                  style=${`background:${STEP_PHASE[s] === 'A' ? 'var(--phA)' : STEP_PHASE[s] === 'B' ? 'var(--phB)' : 'transparent'};opacity:${i === idx ? 1 : 0.35}`}
+                ></i>
+              `)}
             </div>
-            <div class="phase-chip" data-testid="wizard-phase-b">
-              <strong>${PHASE_LABELS.B}</strong>
-              <span class="phase-steps">
-                ${WIZARD_STEPS.filter((s) => STEP_PHASE[s] === 'B').map((s) => STEP_LABELS[s]).join(', ')}
-              </span>
+
+            <nav class="steps" data-testid="wizard-steps" aria-label="Kroky průvodce">
+              ${visibleSteps.map((s) => {
+                const status = this.onboardingState?.steps[s] ?? 'pending';
+                const isCurrent = this.currentStep === s;
+                const statusLabel = isCurrent ? 'právě zde' : STEP_STATUS_LABELS[status];
+                return html`
+                  <button
+                    type="button"
+                    class="st ${isCurrent ? 'cur active' : status === 'done' ? 'done' : ''}"
+                    style=${`--sc:${STEP_COLOR_VAR[s]}`}
+                    data-step=${s}
+                    title=${`${STEP_LABELS[s]} — ${statusLabel}`}
+                    aria-current=${isCurrent ? 'step' : nothing}
+                    @click=${() => this.jumpTo(s)}
+                  >
+                    <span class="ic" aria-hidden="true">${STEP_ICON[s]}</span>
+                    <span class="stlabel">${STEP_LABELS[s]}</span>
+                    <span
+                      class="step-status sr-only"
+                      data-testid=${`wizard-step-status-${s}`}
+                      data-status=${status}
+                    >${statusLabel}</span>
+                  </button>
+                `;
+              })}
+            </nav>
+
+            <div class="stepmeta" data-testid="wizard-stepmeta">
+              <b>Krok ${idx + 1} z ${visibleSteps.length} · ${STEP_PHASE[this.currentStep] === 'A' ? PHASE_LABELS.A : STEP_PHASE[this.currentStep] === 'B' ? PHASE_LABELS.B : 'Závěr'}</b>
+              <em style=${`--sc:${STEP_COLOR_VAR[this.currentStep]}`}>${STEP_LABELS[this.currentStep]}</em>
             </div>
           </div>
-
-          <nav class="steps" data-testid="wizard-steps" aria-label="Kroky průvodce">
-            ${visibleSteps.map((s, i) => html`
-              ${(() => {
-                const status = this.onboardingState?.steps[s] ?? 'pending';
-                return html`
-              <button
-                type="button"
-                class=${this.currentStep === s ? 'active' : ''}
-                data-step=${s}
-                @click=${() => this.jumpTo(s)}
-              >
-                ${i + 1} ${STEP_LABELS[s]}
-                <span
-                  class="step-status"
-                  data-testid=${`wizard-step-status-${s}`}
-                  data-status=${status}
-                >${STEP_STATUS_LABELS[status]}</span>
-              </button>
-                `;
-              })()}
-            `)}
-          </nav>
 
           ${this.bootstrapRetry.onboardingState
             ? html`

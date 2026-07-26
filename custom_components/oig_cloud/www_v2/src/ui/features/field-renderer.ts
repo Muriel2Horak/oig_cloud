@@ -37,6 +37,16 @@ export interface FieldPresenterContext {
    * any dirty secret edit. Non-secret hints are already gated by `originalValue`.
    */
   reviewMode?: boolean;
+  /**
+   * Design rev 3 content fix (d) — a set secret collapses to a green
+   * "✓ nastaveno · Změnit" badge instead of an always-editable password
+   * input. Opt-in via `onRevealSecret`: only callers that pass it get the
+   * badge; omitting it (the settings tab) keeps the original always-input
+   * behaviour untouched, so this is additive, not a shared-component
+   * behaviour change for non-wizard callers.
+   */
+  secretRevealed?: boolean;
+  onRevealSecret?: () => void;
 }
 
 /** Render label text with optional "(volitelné)" suffix and hint below. */
@@ -160,13 +170,41 @@ export function renderFieldPresenter(f: FieldDef, ctx: FieldPresenterContext): T
 
   // Plain text (secret or non-entity)
   const isSecret = f.secret ?? f.key.endsWith('api_key');
+
+  if (isSecret && secretSet && ctx.onRevealSecret && !ctx.secretRevealed) {
+    return html`
+      <div class="row">
+        ${renderLabel(f)}
+        <div class="row-control">
+          <span class="secret-badge" data-testid="secret-badge">
+            <span aria-hidden="true">✓</span> nastaveno
+            <button
+              type="button"
+              class="secret-badge-change"
+              data-testid="secret-badge-change"
+              @click=${() => ctx.onRevealSecret!()}
+            >Změnit</button>
+          </span>
+        </div>
+        ${renderDiffHint(f, ctx)}
+      </div>`;
+  }
+
   const val = isSecret ? '' : String(raw ?? '');
+  const placeholder = isSecret
+    ? (secretSet
+        // Revealed-to-edit (wizard, after "Změnit") vs. the original
+        // always-input surface (settings tab, no reveal flow) — same
+        // set-but-unedited fact, different phrasing per surface.
+        ? (ctx.onRevealSecret ? '(zadejte novou hodnotu)' : '••••• (nastaveno)')
+        : 'nenastaveno')
+    : (f.optional ? 'nevyplněno' : '');
   return html`
     <div class="row">
       ${renderLabel(f)}
       <div class="row-control">
         <input type=${isSecret ? 'password' : 'text'} class=${dirty ? 'dirty' : ''} .value=${val}
-          placeholder=${isSecret ? (secretSet ? '••••• (nastaveno)' : 'nenastaveno') : (f.optional ? 'nevyplněno' : '')}
+          placeholder=${placeholder}
           @change=${(e: Event) => onChange((e.target as HTMLInputElement).value)} />
       </div>
       ${renderDiffHint(f, ctx)}

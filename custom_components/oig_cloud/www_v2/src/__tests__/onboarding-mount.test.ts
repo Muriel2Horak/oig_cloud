@@ -486,10 +486,17 @@ describe('wizard Finish flow (F1 Plan 3.6 Task 8)', () => {
     );
     await flushWizard(wizard);
 
-    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-ai"]')?.textContent)
-      .toContain('done');
-    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-solar"]')?.textContent)
-      .toContain('pending');
+    // Design rev 3: the technical status still lives in `data-status`; the
+    // rendered text is the Czech translation (no raw pending/done ever
+    // renders — content fix, nav redesign item 1).
+    const aiStatus = wizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-ai"]');
+    expect(aiStatus?.getAttribute('data-status')).toBe('done');
+    expect(aiStatus?.textContent).toContain('hotovo');
+    expect(aiStatus?.textContent).not.toContain('done');
+    const solarStatus = wizard.shadowRoot!.querySelector('[data-testid="wizard-step-status-solar"]');
+    expect(solarStatus?.getAttribute('data-status')).toBe('pending');
+    expect(solarStatus?.textContent).toContain('čeká');
+    expect(solarStatus?.textContent).not.toContain('pending');
   });
 
   it('double-clicking Finish issues exactly one action:"finish" request', async () => {
@@ -643,18 +650,37 @@ describe('WIZARD_STEPS 10-step sequence (F1 Wizard v2 S1 Task 2)', () => {
     ]);
   });
 
-  it('phase label groups modules/ai/solar/pricing_distribution/boiler/connection as Phase A, pricing_supplier/battery as Phase B', async () => {
+  it('phase bar segments modules/ai/solar/pricing_distribution/boiler/connection as Phase A, pricing_supplier/battery as Phase B (design rev 3: color bar replaces the two-line text legend)', async () => {
     const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
       html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
     );
     await flushWizard(wizard);
 
-    const phaseA = wizard.shadowRoot!.querySelectorAll('[data-testid="wizard-phase-a"]');
-    const phaseB = wizard.shadowRoot!.querySelectorAll('[data-testid="wizard-phase-b"]');
-    expect(phaseA.length).toBe(1);
-    expect(phaseB.length).toBe(1);
-    expect(phaseA[0].textContent).toContain('Nastavuje se jednou');
-    expect(phaseB[0].textContent).toContain('Mění se v čase');
+    const stepButtons = [...wizard.shadowRoot!.querySelectorAll('[data-testid="wizard-steps"] button')]
+      .map((b) => b.getAttribute('data-step'));
+    const segments = [...wizard.shadowRoot!.querySelectorAll('[data-testid="wizard-phasebar-segment"]')];
+    expect(segments.length).toBe(stepButtons.length);
+
+    const phaseAIds = ['modules', 'ai', 'solar', 'pricing_distribution', 'boiler', 'connection'];
+    const phaseBIds = ['pricing_supplier', 'pricing_supplier_sell', 'battery'];
+    stepButtons.forEach((stepId, i) => {
+      const phase = segments[i].getAttribute('data-phase');
+      if (phaseAIds.includes(stepId!)) expect(phase).toBe('A');
+      else if (phaseBIds.includes(stepId!)) expect(phase).toBe('B');
+      else expect(phase).toBe('');
+    });
+
+    // Below the chips, the current step's own phase renders as text
+    // (stepmeta), replacing the old always-visible two-column legend.
+    (wizard.shadowRoot!.querySelector('button[data-step="boiler"]') as HTMLButtonElement).click();
+    await flushWizard(wizard);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-stepmeta"]')?.textContent)
+      .toContain('Nastavuje se jednou');
+
+    (wizard.shadowRoot!.querySelector('button[data-step="pricing_supplier"]') as HTMLButtonElement).click();
+    await flushWizard(wizard);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="wizard-stepmeta"]')?.textContent)
+      .toContain('Mění se v čase');
   });
 
   it('turning off enable_boiler in the modules step hides the boiler step from nav and skips it on Next', async () => {
@@ -731,5 +757,38 @@ describe('WIZARD_STEPS 10-step sequence (F1 Wizard v2 S1 Task 2)', () => {
     expect(content).toBeTruthy();
     expect(content.textContent).toContain('Shrnutí nastavení');
     expect(content.textContent).toContain('Bojler');
+  });
+
+  it('design rev 3: no raw English status text ever renders in the nav', async () => {
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    const statuses = [...wizard.shadowRoot!.querySelectorAll('[data-testid^="wizard-step-status-"]')];
+    expect(statuses.length).toBeGreaterThan(0);
+    const allowed = ['čeká', 'hotovo', 'přeskočeno', 'právě zde'];
+    statuses.forEach((el) => {
+      const text = el.textContent!.trim();
+      expect(allowed).toContain(text);
+      expect(text).not.toMatch(/^(pending|done|skipped)$/);
+    });
+  });
+
+  it('design rev 3: nav chips never wrap — fixed-width flex:none chips in a horizontally-scrolling row', async () => {
+    const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
+      html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
+    );
+    await flushWizard(wizard);
+
+    const stylesText = [...wizard.shadowRoot!.querySelectorAll('style')]
+      .map((s) => s.textContent ?? '')
+      .join('\n');
+    // Assert the rule that fixed the mobile-broken overlap bug: the chip
+    // row never wraps (horizontal scroll instead), and each chip is
+    // flex:none at a fixed width instead of flex:1 shrinking to overlap.
+    expect(stylesText).toMatch(/\.steps\s*\{[^}]*flex-wrap:\s*nowrap/);
+    expect(stylesText).toMatch(/\.st\s*\{[^}]*flex:\s*none/);
+    expect(stylesText).not.toMatch(/nav\.steps button\s*\{[^}]*flex:\s*1/);
   });
 });

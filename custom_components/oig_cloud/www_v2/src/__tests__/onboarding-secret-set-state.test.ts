@@ -63,7 +63,7 @@ describe('solar step secret set-state (live-walk defect 2)', () => {
     fixtureCleanup();
   });
 
-  it('a saved forecast.solar key renders "nastaveno", never the value, never a blank/unset look', async () => {
+  it('a saved forecast.solar key renders the "nastaveno" badge, never the value, never a blank/unset look; "Změnit" reveals the real input', async () => {
     fetchOIGAPI.mockImplementation((path: string) => {
       if (path.includes('/onboarding')) {
         return Promise.resolve({
@@ -94,11 +94,22 @@ describe('solar step secret set-state (live-walk defect 2)', () => {
 
     const wizard = await mountOnSolarStep();
     const content = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
-    const keyInput = content.querySelector('input[type="password"]') as HTMLInputElement;
 
+    // Design rev 3 content fix (d): a set secret collapses to a badge, not
+    // an always-editable input — write-only, never echoes the saved value.
+    expect(content.querySelector('input[type="password"]')).toBeNull();
+    const badge = content.querySelector('[data-testid="secret-badge"]');
+    expect(badge).toBeTruthy();
+    expect(badge!.textContent).toContain('nastaveno');
+
+    const changeBtn = content.querySelector('[data-testid="secret-badge-change"]') as HTMLButtonElement;
+    changeBtn.click();
+    await (wizard as any).updateComplete;
+
+    const revealed = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    const keyInput = revealed.querySelector('input[type="password"]') as HTMLInputElement;
     expect(keyInput).toBeTruthy();
-    expect(keyInput.placeholder).toBe('••••• (nastaveno)');
-    expect(keyInput.value).toBe(''); // write-only: never echoes the saved value
+    expect(keyInput.value).toBe('');
   });
 
   it('an unset forecast.solar key renders the unset placeholder, not "nastaveno"', async () => {
@@ -128,7 +139,7 @@ describe('solar step secret set-state (live-walk defect 2)', () => {
     expect(keyInput.placeholder).toBe('nenastaveno');
   });
 
-  it('a saved Solcast key+site_id both render "nastaveno" after switching provider', async () => {
+  it('a saved Solcast key+site_id both render the "nastaveno" badge after switching provider', async () => {
     fetchOIGAPI.mockImplementation((path: string) => {
       if (path.includes('/onboarding')) {
         return Promise.resolve({
@@ -159,9 +170,9 @@ describe('solar step secret set-state (live-walk defect 2)', () => {
     await (wizard as any).updateComplete;
 
     const updated = wizard.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
-    const keyInput = updated.querySelector('input[type="password"]') as HTMLInputElement;
-    expect(keyInput).toBeTruthy();
-    expect(keyInput.placeholder).toBe('••••• (nastaveno)');
-    expect(keyInput.value).toBe('');
+    expect(updated.querySelector('input[type="password"]')).toBeNull();
+    const badges = updated.querySelectorAll('[data-testid="secret-badge"]');
+    expect(badges.length).toBeGreaterThan(0);
+    badges.forEach((badge) => expect(badge.textContent).toContain('nastaveno'));
   });
 });
