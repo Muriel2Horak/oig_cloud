@@ -36,8 +36,19 @@ import {
 } from '@/ui/components/entity-picker';
 import '@/ui/components/entity-picker';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
+import { haClient } from '@/data/ha-client';
+import {
+  loadAiStatus,
+  renderAiStatusPanel,
+  type AiState,
+  type AiValidationState,
+} from '@/ui/features/onboarding';
+import { resolveLang, type Lang } from '@/i18n/onboarding';
 
 const u = unsafeCSS;
+const INVERTER_SN = new URLSearchParams(window.location.search).get('sn')
+  || new URLSearchParams(window.location.search).get('inverter_sn')
+  || '';
 
 export interface FieldDef {
   key: string;
@@ -66,6 +77,19 @@ export interface FieldDef {
  * this is expected and must not surface as an error.
  */
 export const RELOAD_SECTIONS: ReadonlySet<SettingsSection> = new Set(['boiler']);
+
+const AI_PROVIDER_OPTIONS: Array<[string, string]> = [
+  ['ai_task', 'Vlastní AI v Home Assistantu (ai_task)'],
+  ['groq', 'Groq'],
+  ['nvidia', 'NVIDIA'],
+];
+
+const AI_FIELDS_FALLBACK: FieldDef[] = [
+  { key: 'ai_provider', label: 'Poskytovatel AI', type: 'select', options: AI_PROVIDER_OPTIONS, hint: 'Volitelné; žádný poskytovatel není předvybrán ani zvýhodněn.' },
+  { key: 'ai_base_url', label: 'Base URL API', type: 'text', optional: true, hint: 'Volitelná vlastní OpenAI-compatible URL.' },
+  { key: 'ai_model', label: 'Model', type: 'text', optional: true, hint: 'Volitelný identifikátor modelu.' },
+  { key: 'ai_api_key', label: 'API klíč', type: 'text', optional: true, secret: true, hint: 'Prázdné pole zachová dříve uložený klíč.' },
+];
 
 // Dynamic hint for alt source type based on selected value
 function altSourceHint(type: string): string {
@@ -161,10 +185,16 @@ export class OigSettings extends LitElement {
   @state() private pending: Record<string, Record<string, unknown>> = {};
   @state() private saving: string | null = null;
   @state() private toast: { section: string; ok: boolean; text: string } | null = null;
+  @state() private aiState: AiState | null = null;
+  @state() private aiValidation: AiValidationState = { kind: 'idle' };
 
   /** Cached entity catalog built from hassStates (rebuilt when hassStates changes). */
   private _entityCatalog: EntityEntry[] = [];
   private _lastHassStates: Record<string, any> | null = null;
+
+  private get uiLang(): Lang {
+    return resolveLang(haClient.getHassSync());
+  }
 
   static styles = css`
     :host { display: block; }
@@ -413,11 +443,14 @@ export class OigSettings extends LitElement {
       loadModuleConfig(),
       loadFieldRegistry(),
     ]);
+    const aiState = await loadAiStatus(INVERTER_SN);
     if (registry === null) {
       oigLog.warn('[Settings] /config_registry unavailable');
     }
     this.registry = registry;
     this.config = config;
+    this.aiState = aiState;
+    this.aiValidation = { kind: 'idle' };
     this.pending = {};
     this.loading = false;
   }
@@ -425,14 +458,18 @@ export class OigSettings extends LitElement {
   /**
    * Resolve the field list for a section.
    */
-  private fieldsFor(section: SettingsSection): FieldDef[] {
+  private fieldsFor(section: SettingsSection | 'ai'): FieldDef[] {
+    if (section === 'ai') {
+      const registryFields = this.registry ? fieldsFromRegistry(this.registry, 'ai') : AI_FIELDS_FALLBACK.slice(0, 3);
+      return [...registryFields, AI_FIELDS_FALLBACK[3]];
+    }
     return this.registry ? fieldsFromRegistry(this.registry, section) : [];
   }
 
-  private current(section: SettingsSection, key: string): unknown {
+  private current(section: SettingsSection | 'ai', key: string): unknown {
     const pend = this.pending[section];
     if (pend && key in pend) return pend[key];
-    const sec: any = this.config?.[section];
+    const sec: any = (this.config as any)?.[section];
     return sec ? sec[key] : undefined;
   }
 
@@ -444,7 +481,7 @@ export class OigSettings extends LitElement {
    * not from anything in pricing_supplier itself). Tries the field's own
    * section first, then searches every other loaded section.
    */
-  private currentCrossSection(section: SettingsSection, key: string): unknown {
+  private currentCrossSection(section: SettingsSection | 'ai', key: string): unknown {
     const own = this.current(section, key);
     if (own !== undefined) return own;
     for (const sec of Object.keys(this.pending)) {
@@ -469,7 +506,7 @@ export class OigSettings extends LitElement {
    * dual-ness), read straight off the raw registry spec since FieldDef has
    * no showIfAll of its own.
    */
-  private isFieldVisible(section: SettingsSection, f: FieldDef): boolean {
+  private isFieldVisible(section: SettingsSection | 'ai', f: FieldDef): boolean {
     const get = (k: string) => this.currentCrossSection(section, k);
     if (!isVisible(f, get)) return false;
     const spec: any = this.registry?.fields[f.key];
@@ -478,28 +515,28 @@ export class OigSettings extends LitElement {
     return extra.every((cond) => cond.in.some((v) => v === get(cond.field)));
   }
 
-  private setPending(section: SettingsSection, key: string, value: unknown): void {
+  private setPending(section: SettingsSection | 'ai', key: string, value: unknown): void {
     this.pending = {
       ...this.pending,
       [section]: { ...(this.pending[section] ?? {}), [key]: value },
     };
   }
 
-  private isDirty(section: SettingsSection): boolean {
+  private isDirty(section: SettingsSection | 'ai'): boolean {
     return Object.keys(this.pending[section] ?? {}).length > 0;
   }
 
-  private discardPending(section: SettingsSection): void {
+  private discardPending(section: SettingsSection | 'ai'): void {
     this.pending = { ...this.pending, [section]: {} };
     this.toast = null;
   }
 
-  private async save(section: SettingsSection): Promise<void> {
+  private async save(section: SettingsSection | 'ai'): Promise<void> {
     const values = this.pending[section];
     if (!values || this.saving) return;
     this.saving = section;
     this.toast = null;
-    const res = await saveModuleConfig(section, values);
+    const res = await saveModuleConfig(section as SettingsSection, values);
     this.saving = null;
 
     if (!res.ok) {
@@ -519,7 +556,7 @@ export class OigSettings extends LitElement {
     }
     this.pending = { ...this.pending, [section]: {} };
 
-    if (RELOAD_SECTIONS.has(section)) {
+    if (section !== 'ai' && RELOAD_SECTIONS.has(section)) {
       this.toast = { section, ok: true, text: '✓ Uloženo — integrace se restartuje…' };
       void waitForModuleConfigAfterReload(
         (cfg) => {
@@ -548,7 +585,7 @@ export class OigSettings extends LitElement {
   // ==========================================================================
 
   /** Thin wrapper over the shared presenter — secret masking + bool handling unchanged. */
-  private renderField(section: SettingsSection, f: FieldDef, disabled = false) {
+  private renderField(section: SettingsSection | 'ai', f: FieldDef, disabled = false) {
     const dirty = !!(this.pending[section] && f.key in this.pending[section]);
     const isSecret = f.secret ?? f.key.endsWith('api_key');
     const secretSet = isSecret && !!this.current(section, `${f.key}_set`);
@@ -575,8 +612,29 @@ export class OigSettings extends LitElement {
     `;
   }
 
-  private renderCard(section: SettingsSection, title: string, sub: string, fields: FieldDef[]) {
-    if (!this.registry) return this.renderRegistryUnavailable(section, title, sub);
+  private async validateAiConfig(): Promise<void> {
+    if (this.aiState?.status !== 'verified' || this.aiValidation.kind === 'loading') return;
+    this.aiValidation = { kind: 'loading' };
+    const result = await haClient.fetchOIGAPITyped<{
+      ok: boolean;
+      findings?: Array<{ severity: string; message: string }>;
+      code?: string;
+    }>(`/${INVERTER_SN}/ai/validate_config`, { method: 'POST' });
+    if (!result.ok) {
+      this.aiValidation = { kind: 'error', code: result.code };
+      return;
+    }
+    if (result.data?.ok) {
+      this.aiValidation = { kind: 'success', findings: result.data.findings ?? [] };
+      return;
+    }
+    this.aiValidation = { kind: 'error', code: result.data?.code ?? 'error' };
+  }
+
+  private renderCard(section: SettingsSection | 'ai', title: string, sub: string, fields: FieldDef[]) {
+    if (!this.registry && section !== 'ai') {
+      return this.renderRegistryUnavailable(section, title, sub);
+    }
     const toast = this.toast?.section === section ? this.toast : null;
     const dirty = this.isDirty(section);
     // U1: showIf filtering. `current()` prefers pending over saved, so the
@@ -588,6 +646,15 @@ export class OigSettings extends LitElement {
         <h2>${title}</h2>
         <div class="sub">${sub}</div>
         ${visible.map((f) => this.renderField(section, f))}
+        ${section === 'ai'
+          ? renderAiStatusPanel({
+              aiState: this.aiState,
+              lang: this.uiLang,
+              showValidateButton: true,
+              validationState: this.aiValidation,
+              onValidate: () => void this.validateAiConfig(),
+            })
+          : nothing}
         <div class="actions">
           <button class="save" ?disabled=${!dirty || this.saving === section}
             @click=${() => this.save(section)}>
@@ -774,6 +841,7 @@ export class OigSettings extends LitElement {
         ${this.renderCard('modules', '🧩 Moduly', 'Zapnutí modulu přidá senzory a záložky; konfigurace níže.', this.fieldsFor('modules'))}
         ${this.renderCard('battery', '🔋 Baterie a plánovač', 'Parametry ekonomického plánovače a balancování.', this.fieldsFor('battery'))}
         ${this.renderCard('solar', '☀️ Solární předpověď', 'Poskytovatel a geometrie stringů.', this.fieldsFor('solar'))}
+        ${this.renderCard('ai', '🤖 AI', 'Konfigurace asistenta a ověření stavu.', this.fieldsFor('ai'))}
         ${this.renderCard('pricing_supplier', '💳 Dodavatelské a distribuční ceny', 'Obchodní podmínky vaší smlouvy s dodavatelem a distributorem elektřiny.', this.fieldsFor('pricing_supplier'))}
         ${this.renderBoilerCard()}
       </div>

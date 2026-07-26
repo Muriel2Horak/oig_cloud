@@ -73,7 +73,7 @@ async def test_outgoing_boundary_drops_pii_and_keeps_allowlisted_numbers():
     session = _Session(resp)
     backend = OpenAiCompatBackend(
         session=session, base_url=PROVIDERS["groq"]["base_url"],
-        api_key="gsk_secret0000000000", model="test-model",
+        api_key="gsk_secret0000000000", models=("test-model",),
     )
 
     await backend.async_generate_data(
@@ -102,7 +102,7 @@ async def test_outgoing_boundary_cannot_be_handed_raw_free_text_as_content():
     session = _Session(resp)
     backend = OpenAiCompatBackend(
         session=session, base_url=PROVIDERS["nvidia"]["base_url"],
-        api_key="nvapi-secret0000000000", model="test-model",
+        api_key="nvapi-secret0000000000", models=("test-model",),
     )
 
     raw_instructions_shaped_leak = {

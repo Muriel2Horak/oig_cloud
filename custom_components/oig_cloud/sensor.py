@@ -10,6 +10,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .entities.ai_status_sensor import OigCloudAiStatusSensor
 from .entities.base_sensor import resolve_box_id
 from .entities.data_source_sensor import OigCloudDataSourceSensor
 
@@ -505,6 +506,19 @@ def _register_data_source_sensor(
         _LOGGER.info("Registered data source state sensor")
     except Exception as e:
         _LOGGER.error(f"Error creating data source sensor: {e}", exc_info=True)
+    return sensors
+
+
+def _register_ai_status_sensor(
+    hass: HomeAssistant, coordinator: Any, entry: ConfigEntry
+) -> List[Any]:
+    sensors: List[Any] = []
+    try:
+        box_id = resolve_box_id(coordinator)
+        sensors.append(OigCloudAiStatusSensor(hass, entry, box_id))
+        _LOGGER.info("Registered AI status sensor")
+    except Exception as e:
+        _LOGGER.error(f"Error creating AI status sensor: {e}", exc_info=True)
     return sensors
 
 
@@ -1606,6 +1620,7 @@ async def async_setup_entry(  # noqa: C901
     # SECTION 0: DATA SOURCE STATE SENSOR (always on)
     # ================================================================
     core_sensors.extend(_register_data_source_sensor(hass, coordinator, entry))
+    core_sensors.extend(_register_ai_status_sensor(hass, coordinator, entry))
 
     await asyncio.sleep(0)
 

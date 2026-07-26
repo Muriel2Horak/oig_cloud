@@ -44,10 +44,14 @@ def _install_shim() -> None:
                 self.conversation_id = conversation_id
                 self.data = data
 
+        async def async_generate_data(hass, **kwargs):
+            return {"data": {"ok": True}}
+
         mod.AITaskEntity = AITaskEntity
         mod.AITaskEntityFeature = AITaskEntityFeature
         mod.GenDataTask = GenDataTask
         mod.GenDataTaskResult = GenDataTaskResult
+        mod.async_generate_data = async_generate_data
         sys.modules["homeassistant.components.ai_task"] = mod
 
     # conversation.ChatLog — the real module doesn't import on 2025.1.4.
@@ -77,10 +81,12 @@ from custom_components.oig_cloud.ai.backends import (  # noqa: E402
 # --- fakes for async_setup_entry -------------------------------------------
 
 class _FakeStore:
-    """Stands in for AiKeyStore — returns a preconfigured provider/key."""
-    def __init__(self, provider, key):
+    """Stands in for AiKeyStore — returns configured provider/key pairs."""
+    def __init__(self, provider, key, fallback_provider=None, fallback_key=None):
         self._provider = provider
         self._key = key
+        self._fallback_provider = fallback_provider
+        self._fallback_key = fallback_key
 
     async def async_get_provider(self):
         return self._provider
@@ -88,26 +94,64 @@ class _FakeStore:
     async def async_get_key(self):
         return self._key
 
+    async def async_get_fallback_provider(self):
+        return self._fallback_provider
+
+    async def async_get_fallback_key(self):
+        return self._fallback_key
+
 
 class _Entry:
-    def __init__(self, entry_id="entry1"):
+    def __init__(self, entry_id="entry1", options=None):
         self.entry_id = entry_id
+        self.options = options or {}
 
 
-def _patch_setup(monkeypatch, provider, key):
+def _patch_setup(
+    monkeypatch, provider, key, fallback_provider=None, fallback_key=None
+):
     """Wire async_setup_entry to a fake store + sentinel aiohttp session."""
     monkeypatch.setattr(
-        ai_task, "AiKeyStore", lambda hass, entry_id: _FakeStore(provider, key)
+        ai_task,
+        "AiKeyStore",
+        lambda hass, entry_id: _FakeStore(
+            provider, key, fallback_provider, fallback_key
+        ),
     )
     session = object()
     monkeypatch.setattr(ai_task, "async_get_clientsession", lambda hass: session)
     return session
 
 
-async def _run_setup(provider, key, monkeypatch):
-    _patch_setup(monkeypatch, provider, key)
+class _FakeHassForSetup:
+    def __init__(self, ai_task_service=True):
+        self.data = {}
+        self.services = types.SimpleNamespace(
+            has_service=lambda domain, service: (
+                ai_task_service and domain == "ai_task" and service == "generate_data"
+            )
+        )
+
+
+async def _run_setup(
+    provider,
+    key,
+    monkeypatch,
+    ai_task_service=True,
+    fallback_provider=None,
+    fallback_key=None,
+    consent=False,
+):
+    _patch_setup(monkeypatch, provider, key, fallback_provider, fallback_key)
     added = []
-    await ai_task.async_setup_entry(object(), _Entry("entry1"), added.extend)
+    await ai_task.async_setup_entry(
+        _FakeHassForSetup(ai_task_service),
+        _Entry(
+            "entry1",
+            options={"ai_consent_cross_provider_fallback": consent},
+        ),
+        added.extend,
+    )
     return added
 
 
@@ -121,7 +165,7 @@ async def test_groq_provider_builds_openai_compat_backend(monkeypatch):
     assert ent._provider == "groq"
     assert isinstance(ent._backend, OpenAiCompatBackend)
     assert ent._backend._base_url == PROVIDERS["groq"]["base_url"].rstrip("/")
-    assert ent._backend._model == ai_task.DEFAULT_MODELS["groq"]
+    assert ent._backend._model == ai_task.MODEL_CHAINS["groq"][0]
     assert ent._backend._api_key == "gsk_secret0000000000"
     assert ent._attr_unique_id == "entry1_ai_task"
 
@@ -133,7 +177,7 @@ async def test_nvidia_provider_uses_its_base_url_and_model(monkeypatch):
     ent = added[0]
     assert ent._provider == "nvidia"
     assert ent._backend._base_url == PROVIDERS["nvidia"]["base_url"].rstrip("/")
-    assert ent._backend._model == ai_task.DEFAULT_MODELS["nvidia"]
+    assert ent._backend._model == ai_task.MODEL_CHAINS["nvidia"][0]
 
 
 @pytest.mark.asyncio
@@ -144,6 +188,67 @@ async def test_ai_task_provider_adds_entity_with_no_backend(monkeypatch):
     ent = added[0]
     assert ent._provider == "ai_task"
     assert ent._backend is None
+
+
+@pytest.mark.asyncio
+async def test_ai_task_provider_without_host_service_adds_no_entity(monkeypatch):
+    added = await _run_setup("ai_task", None, monkeypatch, ai_task_service=False)
+
+    assert added == []
+
+
+@pytest.mark.asyncio
+async def test_ai_task_provider_with_host_service_adds_entity(monkeypatch):
+    added = await _run_setup("ai_task", None, monkeypatch, ai_task_service=True)
+
+    assert len(added) == 1
+    assert added[0]._provider == "ai_task"
+
+
+@pytest.mark.asyncio
+async def test_ai_task_setup_builds_fallback_backend_when_consent_and_fallback_configured(
+    monkeypatch,
+):
+    added = await _run_setup(
+        "ai_task",
+        None,
+        monkeypatch,
+        fallback_provider="groq",
+        fallback_key="gsk_fallback0000000000",
+        consent=True,
+    )
+
+    assert len(added) == 1
+    fallback = added[0]._fallback_backend
+    assert isinstance(fallback, OpenAiCompatBackend)
+    assert fallback._provider == "groq"
+    assert fallback._base_url == PROVIDERS["groq"]["base_url"].rstrip("/")
+    assert fallback._api_key == "gsk_fallback0000000000"
+
+
+@pytest.mark.asyncio
+async def test_ai_task_setup_no_fallback_backend_without_consent(monkeypatch):
+    added = await _run_setup(
+        "ai_task",
+        None,
+        monkeypatch,
+        fallback_provider="groq",
+        fallback_key="gsk_fallback0000000000",
+        consent=False,
+    )
+
+    assert len(added) == 1
+    assert added[0]._fallback_backend is None
+
+
+@pytest.mark.asyncio
+async def test_ai_task_setup_no_fallback_backend_when_none_configured(monkeypatch):
+    added = await _run_setup(
+        "ai_task", None, monkeypatch, consent=True
+    )
+
+    assert len(added) == 1
+    assert added[0]._fallback_backend is None
 
 
 @pytest.mark.asyncio
@@ -185,25 +290,43 @@ class _FakeHass:
 
 @pytest.mark.asyncio
 async def test_delegation_payload_matches_ai_task_generate_data_contract(monkeypatch):
-    """F1-DESIGN §2 contract: call ai_task.generate_data, entity_id OMITTED so
-    HA resolves the user's preferred entity, blocking + return_response."""
+    """O1 contract: call the host helper with the selected task fields."""
     ent = ai_task.OigAiTaskEntity(
         provider="ai_task", backend=None, install={}, entry_id="entry1")
     hass = _FakeHass()
     ent.hass = hass
     task = ai_task.GenDataTask(structure={"type": "object"}, instructions="ignored")
 
+    host_ai_task = sys.modules["homeassistant.components.ai_task"]
+    calls = []
+
+    async def _fake_generate_data(received_hass, **kwargs):
+        calls.append((received_hass, kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr(host_ai_task, "async_generate_data", _fake_generate_data)
+
     out = await ent._async_delegate_to_host_ai_task(task)
 
-    assert out == {"data": {"ok": True}}
-    assert len(hass.services.calls) == 1
-    call = hass.services.calls[0]
-    assert call["domain"] == "ai_task"
-    assert call["service"] == "generate_data"
-    assert call["blocking"] is True
-    assert call["return_response"] is True
-    assert call["data"] == {"task": task}
-    assert "entity_id" not in call["data"]  # HA resolves the preferred entity
+    assert out == {"ok": True}
+    assert calls == [(
+        hass,
+        {
+            "task_name": "oig_ai_task_delegate",
+            "entity_id": None,
+            "instructions": "ignored",
+            "structure": {"type": "object"},
+        },
+    )]
+
+
+def test_cross_provider_fallback_consent_field_shape():
+    from custom_components.oig_cloud.config_registry import FIELD_REGISTRY
+
+    field = FIELD_REGISTRY["ai_consent_cross_provider_fallback"]
+    assert field.type is bool
+    assert field.default is False
+    assert field.scope == "advanced"
 
 
 # --- guard: backend=None on the OIG-provider branch must fail closed -------
@@ -228,3 +351,102 @@ async def test_missing_backend_on_openai_compat_provider_raises_classified_error
 
     with pytest.raises(RuntimeError, match="AI backend not configured"):
         await ent._async_generate_data(task, chat_log)
+
+
+class _FallbackBackend:
+    def __init__(self, result=None):
+        self.result = result if result is not None else {"ok": "fallback"}
+        self.calls = []
+        self._provider = "groq"
+
+    async def async_generate_data(self, task, install, schema):
+        self.calls.append((task, install, schema))
+        return self.result
+
+
+@pytest.mark.asyncio
+async def test_ai_task_failure_without_consent_refuses_without_backend_call(monkeypatch):
+    from homeassistant.exceptions import HomeAssistantError
+    from custom_components.oig_cloud.ai.backends import AiBackendError
+
+    fallback = _FallbackBackend()
+    ent = ai_task.OigAiTaskEntity(
+        provider="ai_task", backend=None, install={}, entry_id="entry1",
+        consent_cross_provider=False, fallback_backend=fallback,
+    )
+
+    async def _fail(_task):
+        raise HomeAssistantError("upstream key-shaped-secret")
+
+    monkeypatch.setattr(ent, "_async_delegate_to_host_ai_task", _fail)
+
+    with pytest.raises(AiBackendError) as exc_info:
+        await ent._async_generate_data(
+            ai_task.GenDataTask(structure={"type": "object"}),
+            ai_task.GenDataTaskResult(conversation_id="conv-1"),
+        )
+
+    assert exc_info.value.code == "cross_provider_fallback_declined"
+    assert "upstream key-shaped-secret" not in str(exc_info.value)
+    assert fallback.calls == []
+
+
+@pytest.mark.asyncio
+async def test_ai_task_failure_with_consent_and_fallback_backend_delegates(monkeypatch):
+    from homeassistant.exceptions import HomeAssistantError
+
+    fallback = _FallbackBackend({"ok": "from-groq"})
+    ent = ai_task.OigAiTaskEntity(
+        provider="ai_task", backend=None, install={"capacity_kwh": 9}, entry_id="entry1",
+        consent_cross_provider=True, fallback_backend=fallback,
+    )
+
+    async def _fail(_task):
+        raise HomeAssistantError("host failure")
+
+    monkeypatch.setattr(ent, "_async_delegate_to_host_ai_task", _fail)
+    task = ai_task.GenDataTask(structure={"type": "object"}, instructions="private text")
+
+    result = await ent._async_generate_data(
+        task, ai_task.GenDataTaskResult(conversation_id="conv-1"))
+
+    assert result.data == {"ok": "from-groq"}
+    assert fallback.calls == [(
+        "ai_task_generate_data", {"capacity_kwh": 9}, {"type": "object"})]
+
+
+# --- Stage C1 Task 1: MODEL_CHAINS -----------------------------------------
+
+def test_groq_chain_matches_p10_order():
+    from custom_components.oig_cloud import ai_task
+    assert ai_task.MODEL_CHAINS["groq"] == (
+        "llama-3.3-70b-versatile", "qwen3-32b", "llama-3.1-8b-instant",
+    )
+
+
+def test_nvidia_chain_head_is_the_flagship_order_from_decisions_p1():
+    from custom_components.oig_cloud import ai_task
+    assert ai_task.MODEL_CHAINS["nvidia"][:6] == (
+        "z-ai/glm-5.2",
+        "mistralai/mistral-large-3-675b-instruct-2512",
+        "minimaxai/minimax-m3",
+        "nvidia/nemotron-3-super-120b-a12b",
+        "mistralai/mistral-medium-3.5-128b",
+        "openai/gpt-oss-120b",
+    )
+
+
+def test_nvidia_chain_excludes_dead_and_disabled_models_and_is_32_long():
+    from custom_components.oig_cloud import ai_task
+    chain = ai_task.MODEL_CHAINS["nvidia"]
+    assert len(chain) == 32
+    assert "moonshotai/kimi-k2.6" not in chain
+    assert "01-ai/yi-large" not in chain
+    assert len(set(chain)) == 32
+
+
+def test_nvidia_chain_tail_is_latency_sorted():
+    from custom_components.oig_cloud import ai_task
+    tail = ai_task.MODEL_CHAINS["nvidia"][6:]
+    assert tail[0] == "microsoft/phi-4-mini-instruct"
+    assert tail[-1] == "meta/llama-3.3-70b-instruct"

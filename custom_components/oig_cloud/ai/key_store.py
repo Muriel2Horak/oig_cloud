@@ -61,6 +61,14 @@ class AiKeyStore:
     async def async_get_provider(self) -> Optional[str]:
         return (await self._async_data()).get("provider")
 
+    async def async_get_fallback_key(self) -> Optional[str]:
+        """Return the separately stored cross-provider fallback key, if any."""
+        return (await self._async_data()).get("fallback_api_key")
+
+    async def async_get_fallback_provider(self) -> Optional[str]:
+        """Return the separately stored cross-provider fallback provider, if any."""
+        return (await self._async_data()).get("fallback_provider")
+
     async def async_mark_verified(self, verified_at: str) -> None:
         data = await self._async_data()
         data["verified_at"] = verified_at

@@ -434,6 +434,12 @@ _register(
           enum=("ai_task", "groq", "nvidia")),
     Field("ai_base_url", "ai", str, default="", optional=True),
     Field("ai_model", "ai", str, default="", optional=True),
+    Field(
+        "ai_consent_cross_provider_fallback", "ai", bool, default=False,
+        scope="advanced",
+        label="field.ai_consent_cross_provider_fallback.label",
+        hint="field.ai_consent_cross_provider_fallback.hint",
+    ),
 )
 
 

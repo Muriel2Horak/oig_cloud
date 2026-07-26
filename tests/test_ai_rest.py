@@ -6,8 +6,10 @@ import logging
 from types import SimpleNamespace
 
 import pytest
+import voluptuous as vol
 
 from custom_components.oig_cloud.api import ha_rest_api as api_module
+from custom_components.oig_cloud.const import DOMAIN
 
 _SECRET = "gsk_ThisIsARealLookingSecretKey0123456789"
 
@@ -117,8 +119,14 @@ async def test_ai_state_never_returns_the_key(ai_env, monkeypatch):
     resp = await ai_env.view.get(admin_req(ai_env), "box1")
 
     body = json.loads(resp.text)
-    assert set(body) == {"provider", "key_set", "verified"}
+    assert set(body) == {
+        "provider", "key_set", "verified", "status", "last_error_code",
+        "next_probe_at",
+    }
     assert body["provider"] == "groq" and body["key_set"] is True
+    assert body["status"] == "verified"
+    assert body["last_error_code"] is None
+    assert body["next_probe_at"] is None
     assert "api_key" not in resp.text
     assert _SECRET not in resp.text and "gsk_" not in resp.text
 
@@ -272,3 +280,182 @@ async def test_ai_post_verify_false_returns_classified_code(ai_env, monkeypatch)
     assert resp.status == 502
     assert body["code"] == "ai_verify_failed"
     assert "detail" not in body
+
+
+@pytest.fixture
+def validate_env(ai_env):
+    ai_env.view = api_module.OIGCloudAiValidateConfigView()
+    return ai_env
+
+
+async def _verified_provider(monkeypatch, provider="groq"):
+    async def _state(self):
+        return {"provider": provider, "key_set": True, "verified": True}
+
+    async def _key(self):
+        return _SECRET
+
+    monkeypatch.setattr(api_module.AiKeyStore, "async_api_state", _state)
+    monkeypatch.setattr(api_module.AiKeyStore, "async_get_key", _key)
+
+
+@pytest.mark.asyncio
+async def test_ai_get_status_is_sourced_from_the_sensor_classification(ai_env, monkeypatch):
+    async def _state(self):
+        return {"provider": "groq", "key_set": True, "verified": False}
+
+    monkeypatch.setattr(api_module.AiKeyStore, "async_api_state", _state)
+    ai_env.hass.data[DOMAIN] = {
+        ai_env.entry.entry_id: {"ai_last_error_code": "no_credits"}
+    }
+
+    resp = await ai_env.view.get(admin_req(ai_env), "box1")
+
+    body = json.loads(resp.text)
+    assert body == {
+        "provider": "groq",
+        "key_set": True,
+        "verified": False,
+        "status": "no_credits",
+        "last_error_code": "no_credits",
+        "next_probe_at": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_validate_config_requires_admin(validate_env):
+    resp = await validate_env.view.post(non_admin_req(validate_env), "box1")
+
+    assert resp.status == 403
+    assert json.loads(resp.text) == {"error": "Admin only"}
+
+
+@pytest.mark.asyncio
+async def test_validate_config_refuses_when_ai_not_verified(validate_env, monkeypatch):
+    called = []
+
+    async def _unverified(self):
+        return {"provider": "groq", "key_set": True, "verified": False}
+
+    monkeypatch.setattr(api_module.AiKeyStore, "async_api_state", _unverified)
+
+    async def _collect(*args):
+        called.append(args)
+        return {"capacity_kwh": 10}
+
+    monkeypatch.setattr(api_module, "_collect_anonymous_install", _collect, raising=False)
+
+    resp = await validate_env.view.post(admin_req_with(validate_env, {}), "box1")
+
+    assert resp.status == 200
+    assert json.loads(resp.text) == {"ok": False, "code": "ai_not_verified"}
+    assert called == []
+
+
+@pytest.mark.asyncio
+async def test_validate_config_collects_only_allow_listed_fields(validate_env, monkeypatch):
+    await _verified_provider(monkeypatch)
+    validate_env.entry.options.update({
+        "capacity_kwh": 13.5,
+        "kwp": 7.2,
+        "declination": 35,
+        "azimuth": -10,
+        "battery_comfort_soc_percent": 50,
+        "auto_mode_switch_enabled": True,
+        "balancing_enabled": True,
+        "balancing_interval_days": 14,
+        "balancing_hold_hours": 3,
+        "cheap_window_percentile": 25,
+        "expensive_percentile": 0.8,
+        "charge_rate_kw": 2.8,
+        "latitude": 50.1,
+        "longitude": 14.4,
+        "box_id": "123456",
+        "email": "user@example.invalid",
+    })
+    captured = []
+
+    async def _generate(self, task, install, schema):
+        captured.append((task, install, schema))
+        return {"findings": []}
+
+    monkeypatch.setattr(api_module.OpenAiCompatBackend, "async_generate_data", _generate)
+
+    resp = await validate_env.view.post(admin_req_with(validate_env, {"install": {"gps": 1}}), "box1")
+
+    assert resp.status == 200
+    assert set(captured[0][1]).issubset(api_module.PROMPT_ALLOWED_FIELDS)
+    assert not {"latitude", "longitude", "box_id", "email"}.intersection(captured[0][1])
+    assert captured[0][0] == "validate_config"
+
+
+@pytest.mark.asyncio
+async def test_validate_config_returns_structured_findings(validate_env, monkeypatch):
+    await _verified_provider(monkeypatch)
+
+    async def _generate(self, task, install, schema):
+        return {"findings": [{"severity": "warning", "message": "capacity is unusual"}]}
+
+    monkeypatch.setattr(api_module.OpenAiCompatBackend, "async_generate_data", _generate)
+
+    resp = await validate_env.view.post(admin_req_with(validate_env, {}), "box1")
+
+    assert resp.status == 200
+    assert json.loads(resp.text) == {
+        "ok": True,
+        "findings": [{"severity": "warning", "message": "capacity is unusual"}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_validate_config_route_is_in_auth_matrix_and_returns_403_for_non_admin_consistently_with_missing_box(
+    validate_env, monkeypatch,
+):
+    matrix = open("SCOPE-REVISION.md", encoding="utf-8").read()
+    assert "/api/oig_cloud/{box}/ai" in matrix
+    assert "/api/oig_cloud/{box}/ai/validate_config" in matrix
+
+    existing = await validate_env.view.post(non_admin_req(validate_env), "box1")
+    monkeypatch.setattr(api_module, "_find_entry_for_box", lambda _hass, _box: None)
+    missing = await validate_env.view.post(non_admin_req(validate_env), "guessed-box")
+
+    assert existing.status == missing.status == 403
+    assert existing.text == missing.text
+
+
+@pytest.mark.asyncio
+async def test_validate_config_delegates_via_ai_task_when_that_is_the_configured_provider(
+    validate_env, monkeypatch,
+):
+    await _verified_provider(monkeypatch, provider="ai_task")
+    key_lookup = []
+
+    async def _no_key_lookup(self):
+        key_lookup.append(True)
+        raise AssertionError("ai_task must not read an OpenAI-compatible key")
+
+    monkeypatch.setattr(api_module.AiKeyStore, "async_get_key", _no_key_lookup)
+    monkeypatch.setattr(api_module, "PROVIDERS", _NoProviderLookup(), raising=False)
+    calls = []
+
+    async def _delegate(hass, entry, structure, install):
+        calls.append((hass, entry, structure, install))
+        assert isinstance(structure, vol.Schema)
+        return {"findings": [{"severity": "info", "message": "looks consistent"}]}
+
+    monkeypatch.setattr(api_module, "_delegate_validate_config_ai_task", _delegate, raising=False)
+
+    resp = await validate_env.view.post(admin_req_with(validate_env, {}), "box1")
+
+    assert resp.status == 200
+    assert json.loads(resp.text)["ok"] is True
+    assert calls and calls[0][1] is validate_env.entry
+    assert key_lookup == []
+
+
+class _NoProviderLookup:
+    def __contains__(self, key):
+        return key == "ai_task"
+
+    def __getitem__(self, key):
+        raise AssertionError("ai_task must not look up a direct backend provider")

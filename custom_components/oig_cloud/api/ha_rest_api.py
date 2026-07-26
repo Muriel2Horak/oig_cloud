@@ -29,7 +29,10 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any, Dict, Optional
+import time
+from datetime import timedelta
+from types import SimpleNamespace
+from typing import Any, Dict, Mapping, Optional
 
 from aiohttp import web
 from homeassistant.config_entries import ConfigEntry
@@ -51,10 +54,22 @@ from ..config_registry import (
     is_dual_tariff,
     registry_as_api_dict,
 )
+from ..battery_forecast.config import SimulatorConfig
 from ..config.solar_rules import normalize_azimuth, validate_solar_effective
 from ..config.solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
-from ..ai.backends import PROVIDERS, OpenAiCompatBackend
+from ..ai.backends import (
+    AiBackendError,
+    PROMPT_ALLOWED_FIELDS,
+    PROVIDERS,
+    VALIDATE_CONFIG_SCHEMA,
+    OpenAiCompatBackend,
+    build_anonymous_prompt,
+    validate_config_result,
+    validate_config_selector_schema,
+)
 from ..ai.key_store import AiKeyStore
+from ..ai.backoff import get_ai_backoff_state
+from ..entities.ai_status_sensor import OigCloudAiStatusSensor, SAFE_ERROR_CODES
 from ..forecast.candidate_test import run_solar_candidate_test
 from ..forecast.solar_test_limiter import get_solar_test_limiter
 from ..onboarding import ONBOARDING_STEPS, OnboardingState
@@ -83,6 +98,269 @@ _SOLAR_TEST_ALLOWED_KEYS = frozenset(
     }
 )
 _SOLAR_TEST_PROVIDERS = frozenset({"forecast_solar", "solcast"})
+
+try:
+    # Reuse the established chains on HA versions that provide ai_task. The
+    # dev harness intentionally lacks that module, so keep a minimal local
+    # fallback for direct-backend REST tests.
+    from ..ai_task import MODEL_CHAINS
+except ImportError:
+    MODEL_CHAINS = {
+        "groq": ("llama-3.3-70b-versatile", "qwen3-32b", "llama-3.1-8b-instant"),
+        "nvidia": ("z-ai/glm-5.2",),
+    }
+
+
+_AI_STATUS_STATES = frozenset(
+    {"not_configured", "verified", "unverified", "backing_off", "no_credits", "error"}
+)
+_AI_PROVIDERS = frozenset({"groq", "nvidia", "ai_task"})
+_VALIDATE_CONFIG_OPTION_FIELDS = (
+    "battery_comfort_soc_percent",
+    "auto_mode_switch_enabled",
+    "balancing_enabled",
+    "balancing_interval_days",
+    "balancing_hold_hours",
+    "cheap_window_percentile",
+    "expensive_percentile",
+    "charge_rate_kw",
+)
+
+
+def _safe_ai_error_code(code: Any) -> str:
+    return code if isinstance(code, str) and code in SAFE_ERROR_CODES else "error"
+
+
+def _sensor_state_for_ai(
+    hass: HomeAssistant, box_id: str
+) -> tuple[str | None, Mapping[str, Any]]:
+    """Read the already-computed Task 6 sensor state when HA has published it."""
+    states = getattr(hass, "states", None)
+    getter = getattr(states, "get", None)
+    if callable(getter):
+        state = getter(f"sensor.oig_{box_id}_ai_status")
+        value = getattr(state, "state", None) if state is not None else None
+        attrs = getattr(state, "attributes", {}) if state is not None else {}
+        if value in _AI_STATUS_STATES and isinstance(attrs, Mapping):
+            return value, attrs
+    return None, {}
+
+
+def _format_next_probe_at(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        # AiBackoffState stores a monotonic deadline. Convert it to the REST
+        # contract's ISO-8601 wall-clock representation without exposing the
+        # process-local monotonic value.
+        seconds = max(0.0, float(value) - time.monotonic())
+        return (dt_util.utcnow() + timedelta(seconds=seconds)).isoformat()
+    return str(value)
+
+
+def _ai_rest_state(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    box_id: str,
+    api_state: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Return the sanitized GET shape, using the Task 6 sensor classification."""
+    provider = api_state.get("provider")
+    provider = provider if provider in _AI_PROVIDERS else ""
+    status, attrs = _sensor_state_for_ai(hass, box_id)
+    if status is None:
+        # The test harness and HA startup can precede state publication. Use
+        # the same sensor class and properties rather than a second classifier.
+        sensor = OigCloudAiStatusSensor(hass, entry, box_id)
+        sensor._api_state = dict(api_state)
+        status = sensor.native_value
+        attrs = sensor.extra_state_attributes
+
+    last_error_code = attrs.get("last_error_code")
+    if last_error_code not in SAFE_ERROR_CODES:
+        last_error_code = None if last_error_code is None else "error"
+    return {
+        "provider": provider,
+        "key_set": bool(api_state.get("key_set")),
+        "verified": bool(api_state.get("verified")),
+        "status": status if status in _AI_STATUS_STATES else "error",
+        "last_error_code": last_error_code,
+        "next_probe_at": _format_next_probe_at(attrs.get("next_probe_at")),
+    }
+
+
+def _mapping_value(source: Any, key: str, default: Any = None) -> Any:
+    if isinstance(source, Mapping):
+        return source.get(key, default)
+    return getattr(source, key, default)
+
+
+def _capacity_from_resolved_config(source: Any) -> float | None:
+    if source is None:
+        return None
+    usable = _mapping_value(source, "usable_capacity_kwh")
+    if usable is not None:
+        try:
+            return float(usable)
+        except (TypeError, ValueError):
+            pass
+    maximum = _mapping_value(source, "max_capacity_kwh")
+    if maximum is not None:
+        try:
+            maximum_value = float(maximum)
+        except (TypeError, ValueError):
+            return None
+        minimum = _mapping_value(source, "min_capacity_kwh")
+        if minimum is not None:
+            try:
+                resolved = SimulatorConfig(
+                    max_capacity_kwh=maximum_value,
+                    min_capacity_kwh=float(minimum),
+                ).usable_capacity_kwh
+            except (TypeError, ValueError):
+                resolved = None
+            if resolved is not None:
+                return float(resolved)
+        return maximum_value
+    return None
+
+
+def _resolved_capacity_kwh(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: Any, box_id: str
+) -> float | None:
+    """Resolve capacity from the forecast config/live sensor, never entry options."""
+    entry_data = getattr(hass, "data", {}).get(DOMAIN, {}).get(entry.entry_id, {})
+    candidates = [
+        getattr(coordinator, "battery_config", None),
+        getattr(coordinator, "battery_forecast_config", None),
+        getattr(coordinator, "_battery_config", None),
+        entry_data.get("battery_config") if isinstance(entry_data, Mapping) else None,
+    ]
+    for candidate in candidates:
+        capacity = _capacity_from_resolved_config(candidate)
+        if capacity is not None:
+            return capacity
+
+    # The forecast sensor's methods use the live box capacity resolution
+    # helpers. Build the same SimulatorConfig-derived usable value when that
+    # sensor is present in the entry runtime data.
+    forecast_sensors = (
+        entry_data.get("battery_forecast_sensors", [])
+        if isinstance(entry_data, Mapping)
+        else []
+    )
+    if not forecast_sensors:
+        component = getattr(hass, "data", {}).get("sensor")
+        forecast_sensors = getattr(component, "entities", []) if component else []
+    for sensor in forecast_sensors:
+        if not getattr(sensor, "entity_id", "").endswith("_battery_forecast"):
+            continue
+        try:
+            maximum = sensor._get_max_battery_capacity()
+            minimum = sensor._get_min_battery_capacity()
+        except Exception:  # noqa: BLE001 - live entity may be mid-unload
+            continue
+        if maximum is None:
+            continue
+        if minimum is not None:
+            resolved = SimulatorConfig(
+                max_capacity_kwh=float(maximum),
+                min_capacity_kwh=float(minimum),
+            ).usable_capacity_kwh
+            if resolved is not None:
+                return max(0.0, float(resolved))
+        return float(maximum)
+    return None
+
+
+def _collect_anonymous_install(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: Any
+) -> Dict[str, Any]:
+    """Collect only anonymous scalar inputs for validate_config."""
+    options = getattr(entry, "options", {}) or {}
+    collected: Dict[str, Any] = {}
+    box_id = str(options.get("box_id", ""))
+
+    capacity = _resolved_capacity_kwh(hass, entry, coordinator, box_id)
+    if capacity is not None and "capacity_kwh" in PROMPT_ALLOWED_FIELDS:
+        collected["capacity_kwh"] = capacity
+
+    string1_enabled = bool(options.get("solar_forecast_string1_enabled", True))
+    string2_enabled = bool(options.get("solar_forecast_string2_enabled", False))
+    string1_kwp = options.get("solar_forecast_string1_kwp")
+    string2_kwp = options.get("solar_forecast_string2_kwp")
+    if string1_kwp is not None or string2_kwp is not None:
+        collected["kwp"] = float(string1_kwp or 0) + float(string2_kwp or 0)
+
+    declination1 = options.get("solar_forecast_string1_declination")
+    azimuth1 = options.get("solar_forecast_string1_azimuth")
+    declination2 = options.get("solar_forecast_string2_declination")
+    azimuth2 = options.get("solar_forecast_string2_azimuth")
+    same_orientation = (
+        string1_enabled
+        and string2_enabled
+        and declination1 is not None
+        and azimuth1 is not None
+        and declination1 == declination2
+        and azimuth1 == azimuth2
+    )
+    if same_orientation:
+        if declination1 is not None:
+            collected["declination"] = declination1
+        if azimuth1 is not None:
+            collected["azimuth"] = azimuth1
+
+    for key in _VALIDATE_CONFIG_OPTION_FIELDS:
+        if key in options and key in PROMPT_ALLOWED_FIELDS and options[key] is not None:
+            collected[key] = options[key]
+
+    # Keep this collector conservative as well as relying on the backend's
+    # outgoing allow-list. This makes the REST boundary safe under test seams
+    # that replace the backend method itself.
+    return {key: value for key, value in collected.items() if key in PROMPT_ALLOWED_FIELDS}
+
+
+async def _delegate_validate_config_ai_task(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    structure: Any,
+    install: Mapping[str, Any],
+) -> Any:
+    """Delegate through the existing Task 9 entity helper."""
+    from ..ai_task import GenDataTask, OigAiTaskEntity
+
+    entity = OigAiTaskEntity(
+        provider="ai_task",
+        backend=None,
+        install=install,
+        entry_id=entry.entry_id,
+        consent_cross_provider=bool(
+            getattr(entry, "options", {}).get(
+                "ai_consent_cross_provider_fallback", False
+            )
+        ),
+    )
+    entity.hass = hass
+    task = GenDataTask(
+        instructions=build_anonymous_prompt("validate_config", install),
+        structure=structure,
+    )
+    result = await entity._async_generate_data(task, SimpleNamespace(conversation_id=None))
+    return getattr(result, "data", result)
+
+
+def _record_ai_error(hass: HomeAssistant, entry: ConfigEntry, provider: str, code: str) -> None:
+    entry_data = hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
+    if isinstance(entry_data, dict):
+        entry_data["ai_last_error_code"] = code
+    get_ai_backoff_state(hass).record_failure(entry.entry_id, provider)
+
+
+def _record_ai_success(hass: HomeAssistant, entry: ConfigEntry, provider: str) -> None:
+    entry_data = hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})
+    if isinstance(entry_data, dict):
+        entry_data.pop("ai_last_error_code", None)
+    get_ai_backoff_state(hass).record_success(entry.entry_id, provider)
 
 
 def _transform_timeline_for_api(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1473,8 +1751,9 @@ class OIGCloudAiView(HomeAssistantView):
         entry = _find_entry_for_box(hass, box_id)
         if not entry:
             return web.json_response({"error": "Box not found"}, status=404)
-        state = await AiKeyStore(hass, entry.entry_id).async_api_state()
-        return web.json_response(state)
+        store = AiKeyStore(hass, entry.entry_id)
+        state = await store.async_api_state()
+        return web.json_response(_ai_rest_state(hass, entry, box_id, state))
 
     async def post(self, request: web.Request, box_id: str) -> web.Response:
         denied = self._require_admin(request)
@@ -1524,7 +1803,7 @@ class OIGCloudAiView(HomeAssistantView):
             session=session,
             base_url=PROVIDERS[provider]["base_url"],
             api_key=api_key,
-            model="verify-only",
+            models=("verify-only",),
         )
         # R11.3: verify the CANDIDATE key before it ever touches the store — a
         # provider outage (or a bad candidate) must not overwrite a previously
@@ -1558,6 +1837,90 @@ class OIGCloudAiView(HomeAssistantView):
         await store.async_set_key(provider, api_key)
         await store.async_mark_verified(dt_util.utcnow().isoformat())
         return web.json_response(await store.async_api_state())
+
+
+class OIGCloudAiValidateConfigView(OIGCloudAiView):
+    """Admin-only anonymous configuration validation through the selected AI."""
+
+    url = f"{API_BASE}/{{box_id}}/ai/validate_config"
+    name = "api:oig_cloud:ai:validate_config"
+    requires_auth = True
+
+    async def post(self, request: web.Request, box_id: str) -> web.Response:
+        denied = self._require_admin(request)
+        if denied is not None:
+            return denied
+
+        hass: HomeAssistant = request.app["hass"]
+        entry = _find_entry_for_box(hass, box_id)
+        if not entry:
+            return web.json_response({"error": "Box not found"}, status=404)
+
+        store = AiKeyStore(hass, entry.entry_id)
+        api_state = await store.async_api_state()
+        if _ai_rest_state(hass, entry, box_id, api_state)["status"] != "verified":
+            return web.json_response({"ok": False, "code": "ai_not_verified"})
+
+        provider = api_state.get("provider")
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        coordinator = (
+            entry_data.get("coordinator") if isinstance(entry_data, Mapping) else None
+        )
+        collected = _collect_anonymous_install(hass, entry, coordinator)
+
+        try:
+            if provider == "ai_task":
+                # This is the host-AI selector shape derived from the same
+                # schema used by the direct providers. No key lookup occurs.
+                result = await _delegate_validate_config_ai_task(
+                    hass,
+                    entry,
+                    validate_config_selector_schema(),
+                    collected,
+                )
+                validated = validate_config_result(result)
+            elif provider in PROVIDERS:
+                key = await store.async_get_key()
+                if not key:
+                    return web.json_response({"ok": False, "code": "ai_not_verified"})
+                try:
+                    session = aiohttp_client.async_get_clientsession(hass)
+                except Exception:  # noqa: BLE001 - partial HA test harness
+                    session = None
+                backend = OpenAiCompatBackend(
+                    session=session,
+                    base_url=PROVIDERS[provider]["base_url"],
+                    api_key=key,
+                    models=MODEL_CHAINS[provider],
+                    entry_id=entry.entry_id,
+                    provider=provider,
+                )
+                result = await backend.async_generate_data(
+                    "validate_config", collected, VALIDATE_CONFIG_SCHEMA
+                )
+                validated = validate_config_result(result)
+            else:
+                return web.json_response({"ok": False, "code": "unknown_provider"})
+        except AiBackendError as err:
+            code = _safe_ai_error_code(err.code)
+            if provider in _AI_PROVIDERS:
+                _record_ai_error(hass, entry, provider, code)
+            return web.json_response({"ok": False, "code": code})
+        except Exception as err:  # noqa: BLE001 - classify all provider failures
+            _LOGGER.warning(
+                "AI validate_config failed for %s (%s): %s",
+                box_id,
+                provider,
+                type(err).__name__,
+            )
+            code = _safe_ai_error_code(getattr(err, "code", None))
+            if provider in _AI_PROVIDERS:
+                _record_ai_error(hass, entry, provider, code)
+            return web.json_response({"ok": False, "code": code})
+
+        if provider in _AI_PROVIDERS:
+            _record_ai_success(hass, entry, provider)
+        return web.json_response({"ok": True, **validated})
 
 
 class OIGCloudSolarTestView(HomeAssistantView):
@@ -1931,6 +2294,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudConsumptionProfilesView())
     hass.http.register_view(OIGCloudBalancingDecisionsView())
     hass.http.register_view(OIGCloudAiView())
+    hass.http.register_view(OIGCloudAiValidateConfigView())
     hass.http.register_view(OIGCloudSolarTestView())
     hass.http.register_view(OIGCloudOnboardingView())
 
@@ -1946,6 +2310,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"
         f"  - {API_BASE}/balancing_decisions/<box_id>\n"
         f"  - {API_BASE}/<box_id>/ai (admin only)\n"
+        f"  - {API_BASE}/<box_id>/ai/validate_config (admin only)\n"
         f"  - {API_BASE}/<box_id>/solar_test (admin only)\n"
         f"  - {API_BASE}/<box_id>/pricelists (admin only)\n"
         f"  - {API_BASE}/<box_id>/onboarding (admin only)"

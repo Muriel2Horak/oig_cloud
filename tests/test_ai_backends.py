@@ -4,13 +4,17 @@ from __future__ import annotations
 import json
 
 import pytest
+import voluptuous as vol
 
 from custom_components.oig_cloud.ai.backends import (
+    AiBackendError,
     PROMPT_ALLOWED_FIELDS,
     PROVIDERS,
     OpenAiCompatBackend,
+    _classify_http_status,
     build_anonymous_prompt,
 )
+from custom_components.oig_cloud.ai.model_cache import LastWorkingModelCache
 
 
 class _Resp:
@@ -46,7 +50,7 @@ class _Session:
 def _backend(session, provider="groq", key="gsk_secret0000000000"):
     return OpenAiCompatBackend(
         session=session, base_url=PROVIDERS[provider]["base_url"],
-        api_key=key, model="test-model",
+        api_key=key, models=("test-model",),
     )
 
 
@@ -63,6 +67,20 @@ def test_key_prefixes_match_scope_revision_7():
     assert PROVIDERS["nvidia"]["key_prefix"] == "nvapi-"
 
 
+def test_classify_429_as_no_credits():
+    assert _classify_http_status(429) == "no_credits"
+
+
+def test_classify_401_as_auth():
+    assert _classify_http_status(401) == "auth"
+    assert _classify_http_status(403) == "auth"
+
+
+def test_classify_5xx_as_provider_unreachable():
+    assert _classify_http_status(500) == "provider_unreachable"
+    assert _classify_http_status(503) == "provider_unreachable"
+
+
 @pytest.mark.asyncio
 async def test_generate_data_sends_key_as_bearer_and_returns_parsed_json():
     resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
@@ -75,9 +93,48 @@ async def test_generate_data_sends_key_as_bearer_and_returns_parsed_json():
 
 
 @pytest.mark.asyncio
+async def test_generate_data_validates_against_schema_success():
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"answer": "ok"}'}}]})
+
+    out = await _backend(_Session(resp)).async_generate_data(
+        "validate_config", {},
+        {"type": "object", "properties": {"answer": {"type": "string"}},
+         "required": ["answer"]},
+    )
+
+    assert out == {"answer": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_json_schema_number_validation_preserves_decoded_value_type():
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"count": 1}'}}]})
+
+    out = await _backend(_Session(resp)).async_generate_data(
+        "validate_config", {},
+        {"type": "object", "properties": {"count": {"type": "number"}},
+         "required": ["count"]},
+    )
+
+    assert type(out["count"]) is int
+
+
+@pytest.mark.asyncio
+async def test_generate_data_rejects_response_not_matching_schema():
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"answer": 42}'}}]})
+
+    with pytest.raises(AiBackendError) as exc_info:
+        await _backend(_Session(resp)).async_generate_data(
+            "validate_config", {},
+            vol.Schema({vol.Required("answer"): str}),
+        )
+
+    assert exc_info.value.code == "invalid_response"
+
+
+@pytest.mark.asyncio
 async def test_invalid_json_from_model_raises_not_returns_garbage():
     resp = _Resp(200, {"choices": [{"message": {"content": "I am not JSON"}}]})
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError, match="all 1 models"):
         await _backend(_Session(resp)).async_generate_data(
             "validate_config", {"capacity_kwh": 1}, {"type": "object"})
 
@@ -190,3 +247,184 @@ async def test_no_pii_reaches_the_wire():
     for pii in ("50.1219800", "13.9373742", "2206237016", "martin@example.com",
                 "sensor.oig_", "+420777123456", "CUST-99"):
         assert pii not in body
+
+
+# --- Stage C1 Task 2: same-provider failover loop ---------------------------
+
+@pytest.mark.asyncio
+async def test_failover_tries_next_model_on_http_error(monkeypatch):
+    calls = []
+
+    class _Resp:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        async def __aenter__(self): return self
+
+        async def __aexit__(self, *a): return False
+
+        async def json(self): return self._body
+
+    class _Session:
+        def post(self, url, headers, json, timeout):
+            calls.append(json["model"])
+            if json["model"] == "model-a":
+                return _Resp(500)
+            return _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+        def get(self, *a, **kw): raise AssertionError("verify not used here")
+
+    backend = OpenAiCompatBackend(
+        session=_Session(), base_url="https://x", api_key="k",
+        models=("model-a", "model-b"))
+    result = await backend.async_generate_data("validate_config", {"capacity_kwh": 10}, {})
+    assert result == {"ok": True}
+    assert calls == ["model-a", "model-b"]
+
+
+@pytest.mark.asyncio
+async def test_failover_tries_next_model_on_invalid_json():
+    calls = []
+
+    class _Resp:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        async def __aenter__(self): return self
+
+        async def __aexit__(self, *a): return False
+
+        async def json(self): return self._body
+
+    class _Session:
+        def post(self, url, headers, json, timeout):
+            calls.append(json["model"])
+            if json["model"] == "model-a":
+                return _Resp(200, {"choices": [{"message": {"content": "not json"}}]})
+            return _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+        def get(self, *a, **kw): raise AssertionError("verify not used here")
+
+    backend = OpenAiCompatBackend(
+        session=_Session(), base_url="https://x", api_key="k",
+        models=("model-a", "model-b"))
+    result = await backend.async_generate_data("validate_config", {"capacity_kwh": 10}, {})
+    assert result == {"ok": True}
+    assert calls == ["model-a", "model-b"]
+
+
+@pytest.mark.asyncio
+async def test_failover_exhausts_chain_and_raises_classified_error():
+    class _Resp:
+        def __init__(self, status):
+            self.status = status
+
+        async def __aenter__(self): return self
+
+        async def __aexit__(self, *a): return False
+
+        async def json(self): return {}
+
+    class _Session:
+        def post(self, url, headers, json, timeout):
+            return _Resp(500)
+
+        def get(self, *a, **kw): raise AssertionError("verify not used here")
+
+    backend = OpenAiCompatBackend(
+        session=_Session(), base_url="https://x", api_key="k",
+        models=("m1", "m2", "m3"))
+    with pytest.raises(RuntimeError, match="all 3 models"):
+        await backend.async_generate_data("validate_config", {"capacity_kwh": 10}, {})
+
+
+@pytest.mark.asyncio
+async def test_chain_exhausted_raises_with_the_last_models_classification():
+    class _Resp:
+        def __init__(self, status):
+            self.status = status
+
+        async def __aenter__(self): return self
+
+        async def __aexit__(self, *a): return False
+
+        async def json(self): return {}
+
+    class _Session:
+        def post(self, url, headers, json, timeout):
+            if json["model"] == "model-a":
+                return _Resp(500)
+            return _Resp(429)
+
+        def get(self, *a, **kw): raise AssertionError("verify not used here")
+
+    backend = OpenAiCompatBackend(
+        session=_Session(), base_url="https://x", api_key="k",
+        models=("model-a", "model-b"))
+
+    with pytest.raises(AiBackendError) as exc:
+        await backend.async_generate_data("validate_config", {"capacity_kwh": 10}, {})
+
+    assert exc.value.code == "no_credits"
+
+
+@pytest.mark.asyncio
+async def test_classified_error_does_not_include_raw_429_body_or_key():
+    fake_key = "gsk_DO_NOT_LEAK_1234567890"
+
+    class _Resp:
+        status = 429
+
+        async def __aenter__(self): return self
+
+        async def __aexit__(self, *a): return False
+
+        async def json(self):
+            return {"error": f"quota exhausted for {fake_key}"}
+
+    backend = OpenAiCompatBackend(
+        session=_Session(_Resp()), base_url="https://x", api_key=fake_key,
+        models=("model-a",))
+
+    with pytest.raises(AiBackendError) as exc:
+        await backend.async_generate_data("validate_config", {"capacity_kwh": 10}, {})
+
+    assert exc.value.code == "no_credits"
+    assert fake_key not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_single_model_backend_still_works_shape_compat():
+    """A 1-element models tuple behaves like today's single-model backend."""
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+    session = _Session(resp)
+    backend = OpenAiCompatBackend(
+        session=session, base_url="https://x", api_key="k",
+        models=("single-model",))
+    out = await backend.async_generate_data(
+        "validate_config", {"capacity_kwh": 15.36}, {"type": "object"})
+    assert out == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_cached_model_success_refreshes_cache_ttl():
+    now = [0.0]
+    cache = LastWorkingModelCache(now=lambda: now[0], ttl_seconds=60)
+    cache.set("entry1", "groq", "cached-model")
+    now[0] = 59.0
+
+    resp = _Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+    session = _Session(resp)
+    backend = OpenAiCompatBackend(
+        session=session, base_url="https://x", api_key="k",
+        models=("chain-head",), entry_id="entry1", provider="groq",
+        model_cache=cache,
+    )
+
+    assert await backend.async_generate_data("validate_config", {"capacity_kwh": 10}, {}) == {"ok": True}
+    assert session.calls[0][2]["json"]["model"] == "cached-model"
+
+    now[0] = 61.0
+    assert cache.get("entry1", "groq") == "cached-model"
