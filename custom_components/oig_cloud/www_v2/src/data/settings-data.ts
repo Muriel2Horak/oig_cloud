@@ -131,6 +131,7 @@ export interface PricingSupplierConfig {
 }
 
 export interface ModuleConfig {
+  basic?: Record<string, unknown>;
   modules: ModulesConfig;
   battery: BatteryConfig;
   solar: SolarConfig;
@@ -140,6 +141,7 @@ export interface ModuleConfig {
 }
 
 export type SettingsSection =
+  | 'basic'
   | 'modules'
   | 'battery'
   | 'solar'
