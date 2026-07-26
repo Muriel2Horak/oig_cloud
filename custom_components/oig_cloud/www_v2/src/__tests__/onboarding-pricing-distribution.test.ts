@@ -84,11 +84,17 @@ const fields: Record<string, SpecWithAll> = {
     section: 'pricing_supplier', type: 'str', scope: 'premium', label: 'l', hint: 'h',
     default: 'percentage', enum: ['percentage', 'fixed', 'fixed_prices'],
   },
+  // Supplier-step redesign (owner correction round 2): relocated to
+  // `pricing` (config_registry.py) — distribution does not belong in the
+  // supplier contract's step. Neither key is in TARIFF_SCHEDULE_KEYS, so
+  // this move has no effect on `distributionFields()`'s own output; kept
+  // here (fixture accuracy) since this file's own header promises fields
+  // "verified against the LANDED registry, not guessed".
   distribution_fee_vt_kwh: {
-    section: 'pricing_supplier', type: 'float', scope: 'premium', label: 'l', hint: 'h', default: 1.42,
+    section: 'pricing', type: 'float', scope: 'premium', label: 'l', hint: 'h', default: 1.42,
   },
   vat_rate: {
-    section: 'pricing_supplier', type: 'float', scope: 'premium', label: 'l', hint: 'h', default: 21,
+    section: 'pricing', type: 'float', scope: 'premium', label: 'l', hint: 'h', default: 21,
   },
   tariff_vt_start_weekday: {
     section: 'pricing_supplier', type: 'str', scope: 'premium', label: 'l', hint: 'h', default: '6',
@@ -206,21 +212,26 @@ describe('dual-tariff code-set derivation (Task 14, shared by Task 17)', () => {
 // .test.ts's STEP_SOLAR coverage style)
 // ============================================================================
 describe('STEP_PRICING_DISTRIBUTION field set (Task 14/15)', () => {
-  it('fields() = the 5 pricing fields + the 5 tariff-schedule fields (moved from supplier)', () => {
+  it('fields() = the 5 pricing fields + the 5 tariff-schedule fields (moved from supplier) + distribution_fee_vt_kwh/vat_rate (supplier-step redesign relocation)', () => {
+    // Supplier-step redesign (owner correction round 2): distribution_fee_vt_kwh
+    // and vat_rate moved from the `pricing_supplier` registry section to
+    // `pricing` — `distributionFields()` reads the whole `pricing` section
+    // generically, so they now surface here automatically, with no code
+    // change to this step needed. Rendering them nicely inside this step's
+    // UI (vs. flat, ungrouped) is the distribution-step owner's call.
     const keys = STEP_PRICING_DISTRIBUTION.fields(REGISTRY_FIXTURE).map((f) => f.key).sort();
     expect(keys).toEqual([
       'confirmed_distribution_distributor', 'confirmed_distribution_price_excl_vat',
       'confirmed_distribution_price_incl_vat', 'confirmed_distribution_tariff',
-      'confirmed_distribution_unit',
+      'confirmed_distribution_unit', 'distribution_fee_vt_kwh', 'vat_rate',
       'tariff_nt_start_weekday', 'tariff_nt_start_weekend', 'tariff_vt_start_weekday',
       'tariff_vt_start_weekend', 'tariff_weekend_same_as_weekday',
     ].sort());
   });
 
-  it('never includes pricing_supplier-only fields (spot_pricing_model, vat_rate, ...)', () => {
+  it('never includes pricing_supplier-only fields (spot_pricing_model, dual_tariff_enabled, ...)', () => {
     const keys = STEP_PRICING_DISTRIBUTION.fields(REGISTRY_FIXTURE).map((f) => f.key);
     expect(keys).not.toContain('spot_pricing_model');
-    expect(keys).not.toContain('vat_rate');
     expect(keys).not.toContain('dual_tariff_enabled');
   });
 

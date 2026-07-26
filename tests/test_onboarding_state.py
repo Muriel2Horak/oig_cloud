@@ -41,6 +41,7 @@ async def test_fresh_state_is_versioned_and_all_steps_pending(store):
         "solar": "pending",
         "pricing_distribution": "pending",
         "pricing_supplier": "pending",
+        "pricing_supplier_sell": "pending",
         "battery": "pending",
         "boiler": "pending",
         "connection": "pending",
@@ -133,5 +134,34 @@ def test_onboarding_steps_cover_wizard_v2_content_steps():
     from custom_components.oig_cloud.onboarding.state import ONBOARDING_STEPS
     assert ONBOARDING_STEPS == (
         "modules", "ai", "solar", "pricing_distribution", "pricing_supplier",
-        "battery", "boiler", "connection",
+        "pricing_supplier_sell", "battery", "boiler", "connection",
     )
+
+
+@pytest.mark.asyncio
+async def test_state_persisted_before_supplier_split_gets_new_step_id_defaulted(monkeypatch):
+    """A state saved before `pricing_supplier_sell` existed lacks the key in
+    `steps`/`timestamps` — loading it must default it to pending rather than
+    KeyError or silently omit it (same pattern as `banner_dismissed`)."""
+    from custom_components.oig_cloud.onboarding.state import SCHEMA_VERSION
+
+    old_store = _MemStore()
+    old_store.saved = {
+        "schema_version": SCHEMA_VERSION,
+        "steps": {
+            "modules": "done", "ai": "pending", "solar": "pending",
+            "pricing_distribution": "pending", "pricing_supplier": "done",
+            "battery": "pending", "boiler": "pending", "connection": "pending",
+        },
+        "timestamps": {"pricing_supplier": "2026-01-01T00:00:00+00:00"},
+        "provider": None, "finished_at": None, "banner_dismissed": False,
+    }
+    monkeypatch.setattr(
+        "custom_components.oig_cloud.onboarding.state.Store",
+        lambda *_a, **_kw: old_store,
+    )
+    state = OnboardingState(SimpleNamespace(), "entry1")
+    data = await state.async_get()
+    assert data["steps"]["pricing_supplier_sell"] == "pending"
+    assert data["timestamps"]["pricing_supplier_sell"] is None
+    assert data["steps"]["pricing_supplier"] == "done"  # untouched

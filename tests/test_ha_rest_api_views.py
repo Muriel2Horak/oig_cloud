@@ -1499,10 +1499,17 @@ async def test_module_config_get_includes_pricing_supplier_section():
     for key in (
         "spot_pricing_model", "spot_positive_fee_percent",
         "spot_positive_fee_percent_nt", "export_pricing_model",
-        "distribution_fee_vt_kwh", "vat_rate", "tariff_vt_start_weekday",
-        "dual_tariff_enabled",
+        "tariff_vt_start_weekday", "dual_tariff_enabled",
     ):
         assert key in supplier
+    # Relocated to `pricing` (UX-SPEC §3/§4, owner correction round 2 —
+    # supplier-step redesign): distribution does not belong in the supplier
+    # contract, so these no longer appear under pricing_supplier.
+    assert "distribution_fee_vt_kwh" not in supplier
+    assert "vat_rate" not in supplier
+    pricing = payload["pricing"]
+    assert "distribution_fee_vt_kwh" in pricing
+    assert "vat_rate" in pricing
 
 
 @pytest.mark.asyncio
@@ -1512,10 +1519,16 @@ async def test_module_config_get_reflects_preexisting_legacy_options_unmigrated(
     hass, entry = _make_hass_for_module_config("legacybox", _LEGACY_PRICING_OPTIONS)
     view = api_module.OIGCloudModuleConfigView()
     response = await view.get(_module_config_request(hass, {}), "legacybox")
-    supplier = json.loads(response.text)["pricing_supplier"]
+    payload = json.loads(response.text)
+    supplier = payload["pricing_supplier"]
+    pricing = payload["pricing"]
+    # Relocated to `pricing` (UX-SPEC §3/§4 owner correction round 2) —
+    # unchanged key names, just a different registry section/response bucket.
+    _RELOCATED = ("distribution_fee_vt_kwh", "distribution_fee_nt_kwh", "vat_rate")
 
     for key, value in _LEGACY_PRICING_OPTIONS.items():
-        assert supplier[key] == value, key
+        bucket = pricing if key in _RELOCATED else supplier
+        assert bucket[key] == value, key
     # The new NT-only keys never lived in this legacy entry — they fall back
     # to their registry defaults, not an error or a missing key.
     assert supplier["spot_positive_fee_percent_nt"] == 13.0
@@ -1618,9 +1631,31 @@ async def test_module_config_post_pricing_supplier_save_does_not_reset_dual_tari
     await view.post(
         _module_config_request(
             hass,
-            {"section": "pricing_supplier", "values": {"vat_rate": 15.0}},
+            {"section": "pricing_supplier", "values": {"spot_positive_fee_percent": 17.5}},
         ),
         "dualbox",
+    )
+    assert entry.options["dual_tariff_enabled"] is True
+    assert entry.options["spot_positive_fee_percent"] == 17.5
+
+
+@pytest.mark.asyncio
+async def test_module_config_post_pricing_vat_rate_does_not_reset_dual_tariff_enabled():
+    """`vat_rate` moved to the `pricing` section (UX-SPEC §3/§4 owner
+    correction round 2) — saving it must not touch the derived
+    dual_tariff_enabled value either, same as the pricing_supplier case
+    above."""
+    hass, entry = _make_hass_for_module_config(
+        "dualbox2", {"dual_tariff_enabled": True, "confirmed_distribution_tariff": "D25d"}
+    )
+    view = api_module.OIGCloudModuleConfigView()
+
+    await view.post(
+        _module_config_request(
+            hass,
+            {"section": "pricing", "values": {"vat_rate": 15.0}},
+        ),
+        "dualbox2",
     )
     assert entry.options["dual_tariff_enabled"] is True
     assert entry.options["vat_rate"] == 15.0

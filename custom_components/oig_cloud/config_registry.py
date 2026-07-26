@@ -527,12 +527,6 @@ _register(
     Field("export_fixed_price", "pricing_supplier", float, default=2.50,
           min=0.0, show_if=("export_pricing_model", ("fixed_prices",))),
 
-    # --- C: Distribuce, tarify a DPH ---
-    Field("distribution_fee_vt_kwh", "pricing_supplier", float, default=1.42, min=0.0),
-    Field("distribution_fee_nt_kwh", "pricing_supplier", float, default=0.91, min=0.0,
-          show_if=("confirmed_distribution_tariff", DUAL_TARIFF_CODES)),
-    Field("vat_rate", "pricing_supplier", float, default=21.0, min=0.0, max=100.0),
-
     # --- Tariff schedule (UX-SPEC step 4; registry-side this is still
     # pricing_supplier — the step split is wizard-UI layout, out of scope) ---
     Field("tariff_vt_start_weekday", "pricing_supplier", str, default="6",
@@ -550,6 +544,20 @@ _register(
 
     # --- Derived, not user-facing (UX-SPEC §4, owner correction round 2) ---
     Field("dual_tariff_enabled", "pricing_supplier", bool, default=True, hidden=True),
+)
+
+
+# UX-SPEC-wizard-v2.md §3/§4 (owner correction, round 2 — supplier-step
+# redesign): distribution does not belong in the supplier contract's step —
+# relocated to the `pricing` section (distribution's own registry section).
+# KEY NAMES UNCHANGED — an existing entry's `entry.options["vat_rate"]` etc.
+# stay valid; only the registry `section` attribute (wizard-step grouping)
+# moves.
+_register(
+    Field("distribution_fee_vt_kwh", "pricing", float, default=1.42, min=0.0),
+    Field("distribution_fee_nt_kwh", "pricing", float, default=0.91, min=0.0,
+          show_if=("confirmed_distribution_tariff", DUAL_TARIFF_CODES)),
+    Field("vat_rate", "pricing", float, default=21.0, min=0.0, max=100.0),
 )
 
 

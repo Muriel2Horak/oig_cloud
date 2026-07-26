@@ -96,6 +96,12 @@ export interface PricingConfig {
   confirmed_distribution_price_incl_vat: number;
   confirmed_distribution_price_excl_vat: number;
   confirmed_distribution_unit: string;
+  // Relocated from PricingSupplierConfig (supplier-step redesign, owner
+  // correction round 2 — distribution does not belong in the supplier
+  // contract's step; key names unchanged, config_registry.py).
+  distribution_fee_vt_kwh: number;
+  distribution_fee_nt_kwh: number;
+  vat_rate: number;
 }
 
 /** F1 U4 R3 (RCA-R3 restoration) — mirrors config_registry.py's
@@ -116,9 +122,6 @@ export interface PricingSupplierConfig {
   export_fixed_fee_czk: number;
   export_fixed_fee_czk_nt: number;
   export_fixed_price: number;
-  distribution_fee_vt_kwh: number;
-  distribution_fee_nt_kwh: number;
-  vat_rate: number;
   tariff_vt_start_weekday: string;
   tariff_nt_start_weekday: string;
   tariff_weekend_same_as_weekday: boolean;

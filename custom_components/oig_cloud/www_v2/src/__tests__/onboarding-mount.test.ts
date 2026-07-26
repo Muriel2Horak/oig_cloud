@@ -629,7 +629,7 @@ describe('WIZARD_STEPS 10-step sequence (F1 Wizard v2 S1 Task 2)', () => {
     fixtureCleanup();
   });
 
-  it('WIZARD_STEPS is the 10-step wizard-v2 sequence, welcome first and summary last', async () => {
+  it('WIZARD_STEPS is the 11-step wizard-v2 sequence (supplier-step split, Nakup/Prodej), welcome first and summary last', async () => {
     const wizard = await fixture<HTMLElement & { updateComplete: Promise<boolean> }>(
       html`<oig-onboarding-wizard .inverterSn=${'SN123'} ?open=${true}></oig-onboarding-wizard>`,
     );
@@ -639,7 +639,7 @@ describe('WIZARD_STEPS 10-step sequence (F1 Wizard v2 S1 Task 2)', () => {
       .map((b) => b.getAttribute('data-step'));
     expect(steps).toEqual([
       'welcome', 'modules', 'ai', 'solar', 'pricing_distribution', 'pricing_supplier',
-      'battery', 'boiler', 'connection', 'summary',
+      'pricing_supplier_sell', 'battery', 'boiler', 'connection', 'summary',
     ]);
   });
 

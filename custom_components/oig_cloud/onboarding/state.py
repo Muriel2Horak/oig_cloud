@@ -29,12 +29,16 @@ _LOGGER = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 _FINISH_LOCKS_KEY = "onboarding_finish_locks"
 
-#: The 8 wizard-v2 content steps (F1 Wizard v2 plan, design decision 1).
+#: The 9 wizard-v2 content steps (F1 Wizard v2 plan, design decision 1).
 #: `welcome`/`summary` are FE-only navigation endpoints, never status-tracked
-#: here. AI is optional (#5) and steps are unordered.
+#: here. AI is optional (#5) and steps are unordered. `pricing_supplier_sell`
+#: is new (supplier-step redesign, UX-SPEC §3/§4 owner correction round 2):
+#: the old combined `pricing_supplier` step split into Nakup ("pricing_supplier",
+#: id reused for back-compat with entries that already completed it) and
+#: Prodej ("pricing_supplier_sell", new).
 ONBOARDING_STEPS = (
     "modules", "ai", "solar", "pricing_distribution", "pricing_supplier",
-    "battery", "boiler", "connection",
+    "pricing_supplier_sell", "battery", "boiler", "connection",
 )
 
 
@@ -113,6 +117,13 @@ class OnboardingState:
                 # A state persisted before D11 added the banner-dismissal flag
                 # lacks the key — default it rather than bumping the schema.
                 self._data.setdefault("banner_dismissed", False)
+                # A state persisted before the supplier-step split (new
+                # "pricing_supplier_sell" step id) lacks it in `steps`/
+                # `timestamps` — default it rather than bumping the schema,
+                # same established pattern as `banner_dismissed` above.
+                for step in ONBOARDING_STEPS:
+                    self._data.setdefault("steps", {}).setdefault(step, "pending")
+                    self._data.setdefault("timestamps", {}).setdefault(step, None)
             else:
                 self._data = _fresh_state()
             # ``grandfathered`` is DERIVED from the live config-entry options and
