@@ -42,39 +42,192 @@ describe('simulator fetcher', () => {
     expect(result.summary.solar_share).toBeGreaterThanOrEqual(0);
   });
 
-  it('posts battery simulations to the planner endpoint with the merged draft body', async () => {
+  // Live-probed BE shapes (see brief): POST /{box}/planner_simulate ->
+  // {preset, horizon_intervals, interval_minutes, timeline:[...], summary:{...}}
+  const PLANNER_SIMULATE_FIXTURE = {
+    preset: 'winter_high_price',
+    horizon_intervals: 2,
+    interval_minutes: 15,
+    timeline: [
+      {
+        interval_index: 0,
+        soc_kwh: 8.7,
+        solar_kwh: 0,
+        load_kwh: 0.2,
+        grid_import_kwh: 0.2,
+        grid_export_kwh: 0,
+        cost_czk: 1.1,
+        mode: 3,
+        mode_name: 'HOME UPS',
+        soc_percent: 50.0,
+      },
+      {
+        interval_index: 1,
+        soc_kwh: 9.0,
+        solar_kwh: 0,
+        load_kwh: 0.15,
+        grid_import_kwh: 0,
+        grid_export_kwh: 0,
+        cost_czk: 0,
+        mode: 0,
+        mode_name: 'HOME I',
+        soc_percent: 51.7,
+      },
+    ],
+    summary: {
+      total_cost_czk: 1.1,
+      total_grid_import_kwh: 0.2,
+      total_grid_export_kwh: 0,
+      total_solar_kwh: 0,
+      min_soc_kwh: 8.7,
+      max_soc_kwh: 9.0,
+      min_soc_percent: 50.0,
+      max_soc_percent: 51.7,
+      mode_distribution: { 'HOME UPS': 1, 'HOME I': 1 },
+    },
+  };
+
+  it('posts battery simulations to the planner endpoint and maps the real BE response', async () => {
     window.history.pushState({}, '', '/?sn=BOX123');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({
-        kind: 'battery',
-        intervals: [],
-        summary: { cost: 1, base_cost: 2, ups_hours: 3 },
-      }),
+      json: async () => PLANNER_SIMULATE_FIXTURE,
     });
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await defaultFetcher({
       kind: 'battery',
-      presetId: 'zima',
+      presetId: 'winter_high_price',
       draft: {
         soc_start: 41,
         charge_rate_kw: 3.2,
       },
     } satisfies SimRequest);
 
-    expect(result.kind).toBe('battery');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe('/api/oig_cloud/BOX123/planner_simulate');
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
-      preset_id: 'zima',
+      preset: 'winter_high_price',
       soc_start: 41,
       config_overrides: {
         soc_start: 41,
         charge_rate_kw: 3.2,
       },
     });
+
+    expect(result.kind).toBe('battery');
+    if (result.kind !== 'battery') throw new Error('expected battery result');
+    expect(result.intervals).toHaveLength(2);
+    expect(result.intervals[0]).toEqual({ t: '2099-06-14T00:00:00Z', mode: 'ups', soc: 50.0, cost: 1.1 });
+    expect(result.intervals[1]).toEqual({ t: '2099-06-14T00:15:00Z', mode: 'home', soc: 51.7, cost: 0 });
+    expect(result.summary.cost).toBe(1.1);
+    expect(result.summary.base_cost).toBeUndefined();
+    expect(result.summary.ups_hours).toBeCloseTo(0.25);
+
+    vi.unstubAllGlobals();
+  });
+
+  // Live-probed BE shape: POST /boiler/{entry}/{box}/simulate_water_day ->
+  // {..., timeline:[{start, end, action, source, heating_kwh, pv_kwh, ...,
+  // predicted_top_temp_c, purpose}], summary:{total_heating_kwh, cost_czk, pv_kwh, ...}}
+  const BOILER_SIMULATE_FIXTURE = {
+    entry_id: 'entry1',
+    box_id: 'BOX123',
+    preset: 'workday',
+    inputs: {},
+    source: {},
+    timeline: [
+      {
+        start: '2026-07-26T05:00:00+02:00',
+        end: '2026-07-26T05:15:00+02:00',
+        action: 'heat',
+        source: 'fve',
+        heating_kwh: 0.5,
+        pv_kwh: 0.5,
+        grid_kwh: 0,
+        alt_kwh: 0,
+        battery_kwh: 0,
+        estimated_cost_czk: 0,
+        predicted_top_temp_c: 58.2,
+        purpose: 'comfort',
+      },
+      {
+        start: '2026-07-26T05:15:00+02:00',
+        end: '2026-07-26T05:30:00+02:00',
+        action: 'idle',
+        source: null,
+        heating_kwh: 0,
+        pv_kwh: 0,
+        grid_kwh: 0,
+        alt_kwh: 0,
+        battery_kwh: 0,
+        estimated_cost_czk: 0,
+        predicted_top_temp_c: 57.9,
+        purpose: 'comfort',
+      },
+    ],
+    summary: {
+      total_heating_kwh: 2.4,
+      cost_czk: 5.6,
+      pv_kwh: 1.2,
+      grid_kwh: 1.2,
+      alt_kwh: 0,
+      battery_kwh: 0,
+      cost_if_all_grid: 8.4,
+      cost_if_all_alt: 10.0,
+      comfort_satisfied: true,
+      comfort_status: 'satisfied',
+      temperature_at_deadline_c: 60.0,
+      unsatisfied_comfort_gap_c: 0,
+      degraded: false,
+      safe_hold: false,
+      reason_codes: [],
+      demands_met: [],
+      demand_labels: [],
+    },
+  };
+
+  it('posts boiler simulations to the boiler endpoint and maps the real BE response', async () => {
+    window.history.pushState({}, '', '/?sn=BOX123&entry_id=entry1');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => BOILER_SIMULATE_FIXTURE,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await defaultFetcher({
+      kind: 'boiler',
+      presetId: 'workday',
+      draft: { target_temp_c: 60 },
+    } satisfies SimRequest);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/oig_cloud/boiler/entry1/BOX123/simulate_water_day');
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+      preset: 'workday',
+      override_config: { target_temp_c: 60 },
+    });
+
+    expect(result.kind).toBe('boiler');
+    if (result.kind !== 'boiler') throw new Error('expected boiler result');
+    expect(result.intervals).toHaveLength(2);
+    expect(result.intervals[0]).toEqual({
+      t: '2026-07-26T05:00:00+02:00',
+      heating: true,
+      source: 'solar',
+      temp: 58.2,
+    });
+    expect(result.intervals[1]).toEqual({
+      t: '2026-07-26T05:15:00+02:00',
+      heating: false,
+      source: 'grid',
+      temp: 57.9,
+    });
+    expect(result.summary.kwh).toBe(2.4);
+    expect(result.summary.cost).toBe(5.6);
+    expect(result.summary.solar_share).toBeCloseTo(0.5);
 
     vi.unstubAllGlobals();
   });
