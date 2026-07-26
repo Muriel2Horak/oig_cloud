@@ -137,6 +137,34 @@ const CS_LABELS: Record<string, string> = {
   'field.ai_provider.label': 'Poskytovatel AI',
   'field.ai_base_url.label': 'Base URL API',
   'field.ai_model.label': 'Model',
+
+  // --- Simulator overlay (F1) ---
+  'simulator.card.settings.label': 'Nastavení, které simulace používá',
+  'simulator.card.readonly.label': 'Z boxu (jen pro čtení)',
+  'simulator.common.unavailable.label': 'nedostupné',
+  'simulator.common.retry.label': 'Zkusit znovu',
+  'simulator.kpi.day_cost.label': 'Náklad dne',
+  'simulator.kpi.base_cost.label': 'Bez plánovače',
+  'simulator.kpi.savings.label': 'Úspora',
+  'simulator.kpi.ups_hours.label': 'Hodin v UPS',
+  'simulator.kpi.energy_today.label': 'Energie dne',
+  'simulator.kpi.solar_share.label': 'Ze slunce',
+  'simulator.chart.mode.label': 'Plán režimů',
+  'simulator.chart.soc.label': 'Stav baterie',
+  'simulator.chart.price.label': 'Spotová cena',
+  'simulator.chart.heating_windows.label': 'Okna ohřevu',
+  'simulator.chart.water_temp.label': 'Teplota vody',
+  'simulator.chart.draw.label': 'Odběr teplé vody',
+  'simulator.battery.charge_rate_kw.label': 'Nabíjecí výkon ze sítě',
+  'simulator.battery.reserve.label': 'Komfortní rezerva',
+  'simulator.battery.expensive_percentile.label': 'Práh drahých hodin',
+  'simulator.boiler.target_temp_c.label': 'Cílová teplota',
+  'simulator.boiler.min_temp_c.label': 'Minimální teplota',
+  'simulator.box.capacity_kwh.label': 'Kapacita baterie',
+  'simulator.box.hw_min_soc_percent.label': 'Minimální SoC (HW)',
+  'simulator.box.top_temp_c.label': 'Teplota nahoře',
+  'simulator.box.bottom_temp_c.label': 'Teplota dole',
+  'simulator.box.cold_inlet_c.label': 'Studená voda na vstupu',
 };
 
 const CS_HINTS: Record<string, string> = {
@@ -234,6 +262,13 @@ const CS_HINTS: Record<string, string> = {
   'field.ai_provider.hint': 'Volitelné; žádný poskytovatel není předvybrán ani zvýhodněn.',
   'field.ai_base_url.hint': 'Volitelná vlastní OpenAI-compatible URL.',
   'field.ai_model.hint': 'Volitelný identifikátor modelu.',
+
+  // Simulator overlay (F1)
+  'simulator.battery.charge_rate_kw.hint': 'Kolik box bere při nabíjení v režimu UPS. Vyšší = stihne nabít v kratším levném okně.',
+  'simulator.battery.reserve.hint': 'Pod tuto úroveň baterku nepustí — dobíjí ale jen v levných oknech. 0 = vypnuto.',
+  'simulator.battery.expensive_percentile.hint': 'Hodiny nad tímto percentilem cen se plánovač snaží pokrýt levným přednabitím. Vyšší = útočnější spoření.',
+  'simulator.boiler.target_temp_c.hint': 'Na kolik stupňů se bojler snaží ohřát v levných/solárních oknech.',
+  'simulator.boiler.min_temp_c.hint': 'Pod tohle nesmí spadnout — ohřeje se hned, i za draho. Komfortní pojistka.',
 };
 
 /** Falls back to a humanised key — never returns a raw i18n key. */

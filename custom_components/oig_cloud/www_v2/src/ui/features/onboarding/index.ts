@@ -55,7 +55,12 @@ import { STEP_PRICING_SUPPLIER, SCENARIO_CARDS_BUY } from './step-pricing-suppli
 import { STEP_PRICING_SUPPLIER_SELL, SCENARIO_CARDS_SELL } from './step-pricing-supplier-sell';
 import { renderScenarioCards, scenarioCardStyles } from './scenario-radio-cards';
 import { priceInclVat } from './pricing-vat';
-import { STEP_BATTERY, BATTERY_GROUPS } from './step-battery';
+import {
+  STEP_BATTERY,
+  BATTERY_GROUPS,
+  BATTERY_HARDWARE_CHIPS,
+  getBatteryHardwareValue,
+} from './step-battery';
 import { STEP_BOILER, BOILER_FIELD_GROUPS, ungroupedBoilerFields } from './step-boiler';
 import { STEP_CONNECTION } from './step-connection';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
@@ -842,10 +847,18 @@ export class OigOnboardingWizard extends LitElement {
       align-items: center;
       justify-content: center;
       z-index: 1000;
-      animation: fadeIn 0.18s ease;
+      animation: fadeIn 0.12s ease-out;
     }
 
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
 
     .modal {
       width: min(720px, calc(100vw - 32px));
@@ -939,7 +952,7 @@ export class OigOnboardingWizard extends LitElement {
       font-size: 14px;
       background: var(--card-bg, rgba(255, 255, 255, 0.06));
       border: 1.5px solid var(--divider-color, rgba(255, 255, 255, 0.18));
-      transition: 0.15s;
+      transition: background-color 0.09s ease-out, border-color 0.09s ease-out, color 0.09s ease-out, box-shadow 0.09s ease-out;
     }
     .st .stlabel {
       font-size: 10.5px;
@@ -1082,6 +1095,70 @@ export class OigOnboardingWizard extends LitElement {
       border-radius: 10px;
     }
 
+    .boiler-core {
+      margin-bottom: 12px;
+    }
+
+    .boiler-core-example {
+      margin: 0 0 10px;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+
+    .boiler-simulator-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      gap: 8px;
+      margin: 0 0 12px;
+      padding: 11px 14px;
+      border: none;
+      border-radius: 11px;
+      background: linear-gradient(135deg, var(--c-boiler), color-mix(in srgb, var(--c-boiler) 65%, #ffb07c));
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 26px color-mix(in srgb, var(--c-boiler) 34%, transparent);
+    }
+
+    .boiler-expander {
+      margin-bottom: 12px;
+      border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
+      border-radius: 10px;
+      overflow: hidden;
+      background: color-mix(in srgb, var(--card-bg, #0c1530) 94%, transparent);
+    }
+
+    .boiler-expander > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .boiler-expander > summary::-webkit-details-marker { display: none; }
+    .boiler-expander[open] > summary {
+      border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
+    }
+
+    .boiler-expander-title {
+      font-size: 12.5px;
+      font-weight: 700;
+    }
+
+    .boiler-expander-copy {
+      font-size: 12px;
+      line-height: 1.4;
+      opacity: 0.78;
+    }
+
+    .boiler-expander-body {
+      padding: 12px 14px 14px;
+    }
+
     /* Step header — glow icon tile + title + one-line subtitle (design rev 3). */
     .step-head {
       display: flex;
@@ -1210,6 +1287,59 @@ export class OigOnboardingWizard extends LitElement {
       grid-template-columns: 1fr 1fr;
       gap: 12px;
       margin-bottom: 10px;
+    }
+    .battery-hardware {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 2px 0 14px;
+    }
+    .battery-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 11px;
+      border: 1px solid color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 28%, var(--divider-color, rgba(255, 255, 255, 0.12)));
+      background: color-mix(in srgb, var(--card-bg, #0c1530) 92%, transparent);
+    }
+    .battery-chip-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.35px;
+      opacity: 0.7;
+    }
+    .battery-chip-value {
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .battery-actions {
+      margin-top: 14px;
+      display: flex;
+      justify-content: flex-start;
+    }
+    .battery-sim-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 92%, white 8%),
+        color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 68%, #ffffff 32%)
+      );
+      color: #fff;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      box-shadow: 0 10px 24px color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 28%, transparent);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .battery-sim-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 34%, transparent);
     }
     @media (max-width: 480px) {
       .pair { grid-template-columns: 1fr; }
@@ -1413,7 +1543,9 @@ export class OigOnboardingWizard extends LitElement {
   private sectionDrafts(): Array<{ section: SettingsSection; draft: Record<string, unknown> }> {
     const drafts: Array<{ section: SettingsSection; draft: Record<string, unknown> }> = [
       { section: 'solar', draft: this.solarDraft },
+      { section: 'battery', draft: this.batteryDraft },
       { section: 'pricing', draft: this.pricingDraft },
+      { section: 'boiler', draft: this.boilerDraft },
     ];
     if (this._registry?.sections.includes('modules')) {
       drafts.push({ section: 'modules', draft: this.modulesDraft });
@@ -1644,6 +1776,31 @@ export class OigOnboardingWizard extends LitElement {
       if (seeded !== undefined) draft[f.key] = seeded;
     }
     this.connectionDraft = draft;
+  }
+
+  /** Current boiler values as the simulator should see them: draft first,
+   * then the snapshot from `module_config`, then the registry default. */
+  private boilerCurrentValues(): Record<string, unknown> {
+    if (!this._registry) return {};
+    const current: Record<string, unknown> = {};
+    for (const f of STEP_BOILER.fields(this._registry)) {
+      const spec = this._registry.fields[f.key];
+      const seeded = this.boilerDraft[f.key] ?? this.originalValues[f.key] ?? spec?.default;
+      if (seeded !== undefined) current[f.key] = seeded;
+    }
+    return current;
+  }
+
+  private openBoilerSimulator(): void {
+    this.dispatchEvent(new CustomEvent('oig-simulator-open', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        domain: 'boiler',
+        box: this.inverterSn,
+        draft: this.boilerCurrentValues(),
+      },
+    }));
   }
 
   private async loadSolarRegistry(signal?: AbortSignal): Promise<void> {
@@ -2030,7 +2187,7 @@ export class OigOnboardingWizard extends LitElement {
    */
   private allDraftValues(): Record<string, unknown> {
     const modules = this._registry?.sections.includes('modules') ? this.modulesDraft : {};
-    return { ...this.solarDraft, ...this.pricingDraft, ...this.batteryDraft, ...modules };
+    return { ...this.solarDraft, ...this.pricingDraft, ...this.batteryDraft, ...this.boilerDraft, ...modules };
   }
 
   /** One row per field whose current draft value differs from its
@@ -2540,11 +2697,37 @@ export class OigOnboardingWizard extends LitElement {
 
       const visible = STEP_BATTERY.visibleFields(this._registry, this.batteryDraft);
       const visibleByKey = new Map(visible.map((f) => [f.key, f]));
+      const renderHardwareChip = (chip: (typeof BATTERY_HARDWARE_CHIPS)[number]) => {
+        const value = getBatteryHardwareValue(this.hass, this.inverterSn, chip.attr);
+        const valueText = value == null
+          ? t('onboarding.battery.hardware.unavailable', this.wizardLang)
+          : `${String(value)} kWh`;
+        return html`
+          <div class="battery-chip" data-testid=${chip.id}>
+            <span class="battery-chip-label">${t(chip.labelKey, this.wizardLang)}</span>
+            <span class="battery-chip-value">${valueText}</span>
+          </div>
+        `;
+      };
+      const openSimulator = () => {
+        this.dispatchEvent(new CustomEvent('oig-simulator-open', {
+          bubbles: true,
+          composed: true,
+          detail: {
+            domain: 'battery',
+            box: this.inverterSn,
+            draft: { ...this.batteryDraft },
+          },
+        }));
+      };
 
       return html`
         <section class="step step-battery" data-step="battery" style=${`--sc:${STEP_COLOR_VAR.battery}`}>
           ${this.renderStepHead('battery')}
           <div class="step-card">
+            <div class="battery-hardware" data-testid="battery-hardware">
+              ${BATTERY_HARDWARE_CHIPS.map(renderHardwareChip)}
+            </div>
             ${BATTERY_GROUPS.map((group) => {
               const groupFields = group.keys.map((key) => visibleByKey.get(key)).filter((f): f is FieldDef => !!f);
               // Item 2: number+unit pair as pcards, side by side (design rev 3
@@ -2576,6 +2759,14 @@ export class OigOnboardingWizard extends LitElement {
                   : groupFields.map(renderField)}
               </div>`;
             })}
+            <div class="battery-actions">
+              <button
+                type="button"
+                class="battery-sim-button"
+                data-testid="battery-simulator-button"
+                @click=${openSimulator}
+              >${t('onboarding.battery.simulator_button', this.wizardLang)}</button>
+            </div>
           </div>
         </section>
       `;
@@ -2811,29 +3002,70 @@ export class OigOnboardingWizard extends LitElement {
           })}
         </div>
       `;
+      const renderGroupFields = (group: (typeof BOILER_FIELD_GROUPS)[number]) => {
+        const groupFields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+        return groupFields.length === 0 ? nothing : groupFields.map(renderRow);
+      };
+      const coreGroup = BOILER_FIELD_GROUPS.find((g) => !g.collapsible);
+      const advancedGroups = BOILER_FIELD_GROUPS.filter((g) => g.collapsible);
+      const leftover = ungroupedBoilerFields(registry);
+
+      const renderCoreGroup = (group: (typeof BOILER_FIELD_GROUPS)[number]) => {
+        const fields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+        if (fields.length === 0) return nothing;
+        return html`
+          <div class="field-group boiler-core" data-testid="boiler-core">
+            <h4>${group.heading}</h4>
+            <p class="boiler-core-example">
+              ${t('onboarding.boiler.core_example', this.wizardLang)}
+            </p>
+            <button
+              type="button"
+              class="boiler-simulator-button"
+              data-testid="boiler-simulator-button"
+              @click=${() => this.openBoilerSimulator()}
+            >
+              ${t('onboarding.boiler.simulator_button', this.wizardLang)}
+            </button>
+            ${fields.map(renderRow)}
+          </div>
+        `;
+      };
+      const renderAdvancedGroup = (group: (typeof BOILER_FIELD_GROUPS)[number]) => {
+        const fields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+        if (fields.length === 0) return nothing;
+        return html`
+          <details class="boiler-expander" data-testid=${`boiler-advanced-${group.id}`}>
+            <summary>
+              <span class="boiler-expander-title">${group.heading}</span>
+              <span class="boiler-expander-copy">
+                ${group.summaryKey ? t(group.summaryKey, this.wizardLang) : ''}
+              </span>
+            </summary>
+            <div class="boiler-expander-body">
+              ${renderGroupFields(group)}
+            </div>
+          </details>
+        `;
+      };
 
       return html`
         <section class="step step-boiler" data-step="boiler" style=${`--sc:${STEP_COLOR_VAR.boiler}`}>
           ${this.renderStepHead('boiler')}
           <div class="step-card">
-            ${BOILER_FIELD_GROUPS.map((group) => {
-              const groupFields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
-              if (groupFields.length === 0) return nothing;
-              return html`
-                <div class="field-group" data-testid="boiler-group">
-                  <h4>${group.heading}</h4>
-                  ${groupFields.map(renderRow)}
-                </div>
-              `;
-            })}
-            ${(() => {
-              const leftover = ungroupedBoilerFields(registry);
-              return leftover.length === 0 ? nothing : html`
-                <div class="field-group" data-testid="boiler-group-other">
+            ${coreGroup ? renderCoreGroup(coreGroup) : nothing}
+            ${advancedGroups.map(renderAdvancedGroup)}
+            ${leftover.length === 0 ? nothing : html`
+              <details class="boiler-expander boiler-expander--other" data-testid="boiler-advanced-other">
+                <summary>
+                  <span class="boiler-expander-title">Další pokročilé</span>
+                  <span class="boiler-expander-copy">Nová pole z registry, která ještě nejsou zařazená.</span>
+                </summary>
+                <div class="boiler-expander-body">
                   ${leftover.map(renderRow)}
                 </div>
-              `;
-            })()}
+              </details>
+            `}
           </div>
         </section>
       `;

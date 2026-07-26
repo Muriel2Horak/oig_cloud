@@ -59,6 +59,11 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.summary.confirm_notice': 'Toto se změní. Dokud nekliknete na Uložit, nic se neuloží.',
     'onboarding.summary.diff_empty': 'Žádné změny oproti stávajícímu nastavení.',
 
+    'onboarding.battery.simulator_button': '🧪 Vyzkoušet chování',
+    'onboarding.battery.hardware.capacity': 'Kapacita baterie z boxu',
+    'onboarding.battery.hardware.hw_min_soc': 'HW min SoC z boxu',
+    'onboarding.battery.hardware.unavailable': 'nedostupné',
+
     // F1 Wizard v2 Stage S2 Task 11 — recovered pricing_supplier note +
     // module-off-in-review-mode warning (UX-SPEC §3, spec-verbatim CZ).
     'onboarding.pricing_supplier.recovered_note': 'Tyto hodnoty jsme našli ve vašem stávajícím nastavení — dosud nebyly v průvodci vidět, teď je můžete zkontrolovat.',
@@ -95,6 +100,12 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // falls back to the cloud path automatically.
     'onboarding.connection.explainer_cloud': 'Bez proxy (přes OIG Cloud): box posílá data do cloudu výrobce a my je odtud čteme. Funguje vždy a odkudkoliv, data jdou přes internet a obnovují se v nastaveném intervalu.',
     'onboarding.connection.explainer_local': 'S lokální proxy: čteme data přímo z boxu ve vaší domácí síti — rychlejší odezva a funguje i při výpadku internetu. Vyžaduje běžící doplněk lokální proxy.',
+
+    'onboarding.boiler.core_example': 'Při 60 °C a 200 l trvá ohřev zhruba 1–1,5 hodiny.',
+    'onboarding.boiler.simulator_button': '🧪 Vyzkoušet chování',
+    'onboarding.boiler.advanced.circulation_summary': 'Řídí oběhové čerpadlo, předstih a dobu běhu.',
+    'onboarding.boiler.advanced.legionella_summary': 'Periodicky ohřívá vodu na dezinfekční teplotu.',
+    'onboarding.boiler.advanced.alt_source_summary': 'Nastavení alternativního zdroje tepla a souvisejících voleb.',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
@@ -135,11 +146,22 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.summary.confirm_notice': 'This will change. Nothing is saved until you click Save.',
     'onboarding.summary.diff_empty': 'No changes from your existing configuration.',
 
+    'onboarding.battery.simulator_button': '🧪 Test behavior',
+    'onboarding.battery.hardware.capacity': 'Battery capacity from box',
+    'onboarding.battery.hardware.hw_min_soc': 'HW min SoC from box',
+    'onboarding.battery.hardware.unavailable': 'unavailable',
+
     'onboarding.pricing_supplier.recovered_note': 'We found these values in your existing configuration — they weren\'t visible in the wizard until now, so you can review them.',
     'onboarding.modules.off_warning': 'Turning off a module hides its settings, but they stay saved — if you turn the module back on, the values will still be there.',
 
     'onboarding.modules.group_hlavni': 'Main modules',
     'onboarding.modules.group_doplnkove': 'Additional',
+
+    'onboarding.boiler.core_example': 'At 60 °C and 200 l, heating takes about 1–1.5 hours.',
+    'onboarding.boiler.simulator_button': '🧪 Try behavior',
+    'onboarding.boiler.advanced.circulation_summary': 'Controls the circulation pump, lead time, and run duration.',
+    'onboarding.boiler.advanced.legionella_summary': 'Periodically heats water to a disinfection temperature.',
+    'onboarding.boiler.advanced.alt_source_summary': 'Settings for the alternative heat source and related expert options.',
   },
 };
 
