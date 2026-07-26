@@ -1087,6 +1087,70 @@ export class OigOnboardingWizard extends LitElement {
       border-radius: 10px;
     }
 
+    .boiler-core {
+      margin-bottom: 12px;
+    }
+
+    .boiler-core-example {
+      margin: 0 0 10px;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+
+    .boiler-simulator-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      gap: 8px;
+      margin: 0 0 12px;
+      padding: 11px 14px;
+      border: none;
+      border-radius: 11px;
+      background: linear-gradient(135deg, var(--c-boiler), color-mix(in srgb, var(--c-boiler) 65%, #ffb07c));
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 26px color-mix(in srgb, var(--c-boiler) 34%, transparent);
+    }
+
+    .boiler-expander {
+      margin-bottom: 12px;
+      border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
+      border-radius: 10px;
+      overflow: hidden;
+      background: color-mix(in srgb, var(--card-bg, #0c1530) 94%, transparent);
+    }
+
+    .boiler-expander > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .boiler-expander > summary::-webkit-details-marker { display: none; }
+    .boiler-expander[open] > summary {
+      border-bottom: 1px solid var(--divider-color, rgba(255, 255, 255, 0.08));
+    }
+
+    .boiler-expander-title {
+      font-size: 12.5px;
+      font-weight: 700;
+    }
+
+    .boiler-expander-copy {
+      font-size: 12px;
+      line-height: 1.4;
+      opacity: 0.78;
+    }
+
+    .boiler-expander-body {
+      padding: 12px 14px 14px;
+    }
+
     /* Step header — glow icon tile + title + one-line subtitle (design rev 3). */
     .step-head {
       display: flex;
@@ -1473,6 +1537,7 @@ export class OigOnboardingWizard extends LitElement {
       { section: 'solar', draft: this.solarDraft },
       { section: 'battery', draft: this.batteryDraft },
       { section: 'pricing', draft: this.pricingDraft },
+      { section: 'boiler', draft: this.boilerDraft },
     ];
     if (this._registry?.sections.includes('modules')) {
       drafts.push({ section: 'modules', draft: this.modulesDraft });
@@ -1703,6 +1768,31 @@ export class OigOnboardingWizard extends LitElement {
       if (seeded !== undefined) draft[f.key] = seeded;
     }
     this.connectionDraft = draft;
+  }
+
+  /** Current boiler values as the simulator should see them: draft first,
+   * then the snapshot from `module_config`, then the registry default. */
+  private boilerCurrentValues(): Record<string, unknown> {
+    if (!this._registry) return {};
+    const current: Record<string, unknown> = {};
+    for (const f of STEP_BOILER.fields(this._registry)) {
+      const spec = this._registry.fields[f.key];
+      const seeded = this.boilerDraft[f.key] ?? this.originalValues[f.key] ?? spec?.default;
+      if (seeded !== undefined) current[f.key] = seeded;
+    }
+    return current;
+  }
+
+  private openBoilerSimulator(): void {
+    this.dispatchEvent(new CustomEvent('oig-simulator-open', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        domain: 'boiler',
+        box: this.inverterSn,
+        draft: this.boilerCurrentValues(),
+      },
+    }));
   }
 
   private async loadSolarRegistry(signal?: AbortSignal): Promise<void> {
@@ -2089,7 +2179,7 @@ export class OigOnboardingWizard extends LitElement {
    */
   private allDraftValues(): Record<string, unknown> {
     const modules = this._registry?.sections.includes('modules') ? this.modulesDraft : {};
-    return { ...this.solarDraft, ...this.pricingDraft, ...this.batteryDraft, ...modules };
+    return { ...this.solarDraft, ...this.pricingDraft, ...this.batteryDraft, ...this.boilerDraft, ...modules };
   }
 
   /** One row per field whose current draft value differs from its
@@ -2904,29 +2994,70 @@ export class OigOnboardingWizard extends LitElement {
           })}
         </div>
       `;
+      const renderGroupFields = (group: (typeof BOILER_FIELD_GROUPS)[number]) => {
+        const groupFields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+        return groupFields.length === 0 ? nothing : groupFields.map(renderRow);
+      };
+      const coreGroup = BOILER_FIELD_GROUPS.find((g) => !g.collapsible);
+      const advancedGroups = BOILER_FIELD_GROUPS.filter((g) => g.collapsible);
+      const leftover = ungroupedBoilerFields(registry);
+
+      const renderCoreGroup = (group: (typeof BOILER_FIELD_GROUPS)[number]) => {
+        const fields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+        if (fields.length === 0) return nothing;
+        return html`
+          <div class="field-group boiler-core" data-testid="boiler-core">
+            <h4>${group.heading}</h4>
+            <p class="boiler-core-example">
+              ${t('onboarding.boiler.core_example', this.wizardLang)}
+            </p>
+            <button
+              type="button"
+              class="boiler-simulator-button"
+              data-testid="boiler-simulator-button"
+              @click=${() => this.openBoilerSimulator()}
+            >
+              ${t('onboarding.boiler.simulator_button', this.wizardLang)}
+            </button>
+            ${fields.map(renderRow)}
+          </div>
+        `;
+      };
+      const renderAdvancedGroup = (group: (typeof BOILER_FIELD_GROUPS)[number]) => {
+        const fields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
+        if (fields.length === 0) return nothing;
+        return html`
+          <details class="boiler-expander" data-testid=${`boiler-advanced-${group.id}`}>
+            <summary>
+              <span class="boiler-expander-title">${group.heading}</span>
+              <span class="boiler-expander-copy">
+                ${group.summaryKey ? t(group.summaryKey, this.wizardLang) : ''}
+              </span>
+            </summary>
+            <div class="boiler-expander-body">
+              ${renderGroupFields(group)}
+            </div>
+          </details>
+        `;
+      };
 
       return html`
         <section class="step step-boiler" data-step="boiler" style=${`--sc:${STEP_COLOR_VAR.boiler}`}>
           ${this.renderStepHead('boiler')}
           <div class="step-card">
-            ${BOILER_FIELD_GROUPS.map((group) => {
-              const groupFields = group.keys.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
-              if (groupFields.length === 0) return nothing;
-              return html`
-                <div class="field-group" data-testid="boiler-group">
-                  <h4>${group.heading}</h4>
-                  ${groupFields.map(renderRow)}
-                </div>
-              `;
-            })}
-            ${(() => {
-              const leftover = ungroupedBoilerFields(registry);
-              return leftover.length === 0 ? nothing : html`
-                <div class="field-group" data-testid="boiler-group-other">
+            ${coreGroup ? renderCoreGroup(coreGroup) : nothing}
+            ${advancedGroups.map(renderAdvancedGroup)}
+            ${leftover.length === 0 ? nothing : html`
+              <details class="boiler-expander boiler-expander--other" data-testid="boiler-advanced-other">
+                <summary>
+                  <span class="boiler-expander-title">Další pokročilé</span>
+                  <span class="boiler-expander-copy">Nová pole z registry, která ještě nejsou zařazená.</span>
+                </summary>
+                <div class="boiler-expander-body">
                   ${leftover.map(renderRow)}
                 </div>
-              `;
-            })()}
+              </details>
+            `}
           </div>
         </section>
       `;

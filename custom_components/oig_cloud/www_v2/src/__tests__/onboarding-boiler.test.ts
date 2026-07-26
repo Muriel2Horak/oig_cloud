@@ -218,4 +218,85 @@ describe('boiler step (Task 19 — single registry-driven form, UX-SPEC §Step 7
     );
     expect(rendered).toBe(true);
   });
+
+  it('renders the core boiler fields first and keeps advanced boiler expanders collapsed by default', async () => {
+    const el = await openWizard();
+    el.currentStep = 'boiler';
+    await el.updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    const core = content.querySelector('[data-testid="boiler-core"]') as HTMLElement;
+    expect(core).toBeTruthy();
+
+    const coreKeys = [
+      'boiler_volume_l',
+      'boiler_temp_sensor_top',
+      'boiler_temp_sensor_bottom',
+      'boiler_enable_second_thermometer',
+      'boiler_target_temp_c',
+      'boiler_deadline_time',
+      'boiler_has_alternative_heating',
+    ];
+    for (const key of coreKeys) {
+      expect(core.querySelector(`[data-key="${key}"]`)).toBeTruthy();
+      expect(content.querySelector(`details [data-key="${key}"]`)).toBeNull();
+    }
+
+    const advancedGroups = [
+      {
+        testid: 'boiler-advanced-circulation',
+        summary: 'Řídí oběhové čerpadlo, předstih a dobu běhu.',
+      },
+      {
+        testid: 'boiler-advanced-legionella',
+        summary: 'Periodicky ohřívá vodu na dezinfekční teplotu.',
+      },
+      {
+        testid: 'boiler-advanced-alt-source',
+        summary: 'Nastavení alternativního zdroje tepla a souvisejících voleb.',
+      },
+    ] as const;
+
+    for (const group of advancedGroups) {
+      const details = content.querySelector(`details[data-testid="${group.testid}"]`) as HTMLDetailsElement | null;
+      expect(details).toBeTruthy();
+      expect(details!.open).toBe(false);
+      expect(details!.querySelector('summary')?.textContent).toContain(group.summary);
+    }
+  });
+
+  it('dispatches oig-simulator-open with the boiler domain, box id, and current draft values', async () => {
+    const el = await openWizard();
+    el.currentStep = 'boiler';
+    await el.updateComplete;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    el.boilerDraft = {
+      ...el.boilerDraft,
+      boiler_volume_l: 240,
+      boiler_target_temp_c: 61,
+    };
+    await el.updateComplete;
+
+    const content = el.shadowRoot!.querySelector('[data-testid="wizard-content"]') as HTMLElement;
+    const button = content.querySelector('[data-testid="boiler-simulator-button"]') as HTMLButtonElement;
+    expect(button).toBeTruthy();
+
+    const fired = new Promise<CustomEvent>((resolve) => {
+      el.addEventListener('oig-simulator-open', (event) => {
+        resolve(event as CustomEvent);
+      }, { once: true });
+    });
+
+    button.click();
+    const event = await fired;
+
+    expect(event.detail.domain).toBe('boiler');
+    expect(event.detail.box).toBe('SN123');
+    expect(event.detail.draft.boiler_volume_l).toBe(240);
+    expect(event.detail.draft.boiler_target_temp_c).toBe(61);
+  });
 });

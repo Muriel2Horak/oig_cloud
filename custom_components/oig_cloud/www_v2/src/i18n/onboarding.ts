@@ -100,6 +100,12 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     // falls back to the cloud path automatically.
     'onboarding.connection.explainer_cloud': 'Bez proxy (přes OIG Cloud): box posílá data do cloudu výrobce a my je odtud čteme. Funguje vždy a odkudkoliv, data jdou přes internet a obnovují se v nastaveném intervalu.',
     'onboarding.connection.explainer_local': 'S lokální proxy: čteme data přímo z boxu ve vaší domácí síti — rychlejší odezva a funguje i při výpadku internetu. Vyžaduje běžící doplněk lokální proxy.',
+
+    'onboarding.boiler.core_example': 'Při 60 °C a 200 l trvá ohřev zhruba 1–1,5 hodiny.',
+    'onboarding.boiler.simulator_button': '🧪 Vyzkoušet chování',
+    'onboarding.boiler.advanced.circulation_summary': 'Řídí oběhové čerpadlo, předstih a dobu běhu.',
+    'onboarding.boiler.advanced.legionella_summary': 'Periodicky ohřívá vodu na dezinfekční teplotu.',
+    'onboarding.boiler.advanced.alt_source_summary': 'Nastavení alternativního zdroje tepla a souvisejících voleb.',
   },
   en: {
     'onboarding.solar_test.error.timeout': 'Test timed out — try again.',
@@ -150,6 +156,12 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     'onboarding.modules.group_hlavni': 'Main modules',
     'onboarding.modules.group_doplnkove': 'Additional',
+
+    'onboarding.boiler.core_example': 'At 60 °C and 200 l, heating takes about 1–1.5 hours.',
+    'onboarding.boiler.simulator_button': '🧪 Try behavior',
+    'onboarding.boiler.advanced.circulation_summary': 'Controls the circulation pump, lead time, and run duration.',
+    'onboarding.boiler.advanced.legionella_summary': 'Periodically heats water to a disinfection temperature.',
+    'onboarding.boiler.advanced.alt_source_summary': 'Settings for the alternative heat source and related expert options.',
   },
 };
 
