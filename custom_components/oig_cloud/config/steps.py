@@ -9,6 +9,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from ..ai.key_store import AiKeyStore
+from ..boiler.const import BATTERY_CYCLE_COST_CZK_PER_KWH
 from ..config_merge import merge_entry_options
 from ..config_registry import FIELD_REGISTRY, fields_for_section
 from .solar_key_store import SOLAR_PRIVATE_FIELDS, SolarKeyStore
@@ -589,7 +590,7 @@ class WizardMixin:
                 "boiler_alt_source_type", "gas"
             ),
             "boiler_battery_cycle_cost_czk_kwh": wizard_data.get(
-                "boiler_battery_cycle_cost_czk_kwh", 0.50
+                "boiler_battery_cycle_cost_czk_kwh", BATTERY_CYCLE_COST_CZK_PER_KWH
             ),
             "box_has_home56": wizard_data.get("box_has_home56", False),
             "boiler_home5_maneuver_enabled": wizard_data.get(

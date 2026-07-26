@@ -10,10 +10,12 @@ from custom_components.oig_cloud.boiler import coordinator as module
 from custom_components.oig_cloud.boiler.models import BoilerProfile, EnergySource
 from custom_components.oig_cloud.const import (
     CONF_BOILER_ALT_HEATER_SWITCH_ENTITY,
+    CONF_BOILER_COLD_INLET_TEMP_C,
     CONF_BOILER_HEATER_POWER_KW_ENTITY,
     CONF_BOILER_HEATER_SWITCH_ENTITY,
     CONF_BOILER_TEMP_SENSOR_BOTTOM,
     CONF_BOILER_TEMP_SENSOR_TOP,
+    DEFAULT_BOILER_COLD_INLET_TEMP_C,
 )
 
 
@@ -630,6 +632,65 @@ def test_runtime_activity_listener_filters_and_updates_cache(monkeypatch):
             "activity_state": "charging_overflow",
         }
     ]
+
+
+def test_runtime_activity_snapshot_uses_configured_cold_inlet_c(monkeypatch):
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    _freeze_runtime_now(monkeypatch, now)
+    hass = ActivityHass()
+    config = {
+        CONF_BOILER_TEMP_SENSOR_TOP: "sensor.top",
+        CONF_BOILER_TEMP_SENSOR_BOTTOM: "sensor.bottom",
+        CONF_BOILER_HEATER_SWITCH_ENTITY: "switch.main",
+        CONF_BOILER_ALT_HEATER_SWITCH_ENTITY: "switch.alt",
+        CONF_BOILER_HEATER_POWER_KW_ENTITY: "sensor.power_kw",
+        CONF_BOILER_COLD_INLET_TEMP_C: 14.5,
+    }
+    _set_state(hass, "sensor.top", "50", now)
+    _set_state(hass, "sensor.bottom", "42", now)
+    _set_state(hass, "switch.main", "on", now)
+    _set_state(hass, "switch.alt", "off", now)
+    _set_state(hass, "sensor.power_kw", "2.5", now)
+    _set_state(hass, "sensor.manual_mode", "CBB", now)
+    _set_state(hass, "sensor.current_cbb", "2000", now)
+    runtime, _coordinator = _make_activity_runtime(hass, config=config)
+    spy = CountingClassifier()
+    runtime._activity_classifier = spy
+
+    hass.bus.fire_state_changed("sensor.top", now)
+
+    assert len(spy.calls) == 1
+    snapshot = spy.calls[0][2]
+    assert snapshot.cold_inlet_c == 14.5
+
+
+def test_runtime_activity_snapshot_default_cold_inlet_when_config_key_absent(monkeypatch):
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    _freeze_runtime_now(monkeypatch, now)
+    hass = ActivityHass()
+    config = {
+        CONF_BOILER_TEMP_SENSOR_TOP: "sensor.top",
+        CONF_BOILER_TEMP_SENSOR_BOTTOM: "sensor.bottom",
+        CONF_BOILER_HEATER_SWITCH_ENTITY: "switch.main",
+        CONF_BOILER_ALT_HEATER_SWITCH_ENTITY: "switch.alt",
+        CONF_BOILER_HEATER_POWER_KW_ENTITY: "sensor.power_kw",
+    }
+    _set_state(hass, "sensor.top", "50", now)
+    _set_state(hass, "sensor.bottom", "42", now)
+    _set_state(hass, "switch.main", "on", now)
+    _set_state(hass, "switch.alt", "off", now)
+    _set_state(hass, "sensor.power_kw", "2.5", now)
+    _set_state(hass, "sensor.manual_mode", "CBB", now)
+    _set_state(hass, "sensor.current_cbb", "2000", now)
+    runtime, _coordinator = _make_activity_runtime(hass, config=config)
+    spy = CountingClassifier()
+    runtime._activity_classifier = spy
+
+    hass.bus.fire_state_changed("sensor.top", now)
+
+    assert len(spy.calls) == 1
+    snapshot = spy.calls[0][2]
+    assert snapshot.cold_inlet_c == DEFAULT_BOILER_COLD_INLET_TEMP_C
 
 
 def test_runtime_activity_debounce_power_update_and_boundary_sampling():

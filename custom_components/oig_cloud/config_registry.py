@@ -15,6 +15,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from .boiler.const import BATTERY_CYCLE_COST_CZK_PER_KWH
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -321,6 +323,20 @@ _register(
     Field("balancing_economic_threshold", "battery", float, default=None,
           min=0.5, max=10.0),
     Field("cheap_window_percentile", "battery", int, default=None, min=5, max=80),
+    Field("hw_min_fraction", "battery", float, default=0.20, min=0.01, max=0.95,
+          step=0.01),
+    # F1 h-w1: promoted hardcoded planner constants (PLANNER-INPUTS-RESEARCH.md
+    # Part 2.2). Defaults match the prior hardcoded values exactly — a stored
+    # entry that never set these keys reads identical planner behavior.
+    Field("mode_guard_minutes", "battery", int, default=60, min=15, max=120),
+    Field("box_floor_safety_margin_pct", "battery", float, default=2.0, min=0.0,
+          max=10.0, step=0.5),
+    Field("holding_soc_threshold_percent", "battery", float, default=97.0, min=90.0,
+          max=100.0, step=0.5),
+    Field("ups_opportunistic_price_czk_kwh", "battery", float, default=1.5, min=0.0,
+          max=10.0, step=0.1),
+    Field("ups_opportunistic_charge_rate_kw", "battery", float, default=2.8, min=0.5,
+          max=10.0, step=0.1),
 )
 
 # --- section: solar ---------------------------------------------------------
@@ -381,8 +397,9 @@ _register(
     Field("boiler_deadline_time", "boiler", str, default="", reload_on_change=True),
     Field("boiler_alt_source_type", "boiler", str, default="gas",
           enum=("gas", "heat_pump", "fireplace", "other"), reload_on_change=True),
-    Field("boiler_battery_cycle_cost_czk_kwh", "boiler", float, default=0.50,
-          min=0.0, max=5.0, reload_on_change=True),
+    Field("boiler_battery_cycle_cost_czk_kwh", "boiler", float,
+          default=BATTERY_CYCLE_COST_CZK_PER_KWH, min=0.0, max=5.0,
+          reload_on_change=True),
     Field("boiler_thermal_arbitrage_enabled", "boiler", bool, default=False,
           reload_on_change=True),
     Field("boiler_max_temp_c", "boiler", float, default=65.0, min=40.0, max=85.0,
