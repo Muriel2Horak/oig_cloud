@@ -408,11 +408,11 @@ async def test_dashboard_modules_view():
 
     assert response.status == 200
     assert payload["enable_boiler"] is True
-    assert payload["enable_auto"] is False
+    assert "enable_auto" not in payload
 
 
 @pytest.mark.asyncio
-async def test_dashboard_modules_view_enable_auto():
+async def test_dashboard_modules_view_strips_legacy_enable_auto():
     entry = DummyEntry(
         entry_id="entry1", options={"enable_boiler": False, "enable_auto": True}
     )
@@ -425,7 +425,7 @@ async def test_dashboard_modules_view_enable_auto():
 
     assert response.status == 200
     assert payload["enable_boiler"] is False
-    assert payload["enable_auto"] is True
+    assert "enable_auto" not in payload
 
 
 @pytest.mark.asyncio
@@ -594,7 +594,7 @@ async def test_analytics_view_missing_entity():
 
 
 @pytest.mark.asyncio
-async def test_consumption_profiles_view_ok():
+async def test_consumption_profiles_view_ok_shadowed_coverage():
     hass = DummyHass()
 
     class DummyProfilesEntity:
@@ -619,7 +619,7 @@ async def test_consumption_profiles_view_ok():
 
 
 @pytest.mark.asyncio
-async def test_consumption_profiles_view_missing_component():
+async def test_consumption_profiles_view_missing_component_shadowed_coverage():
     hass = DummyHass()
     view = api_module.OIGCloudConsumptionProfilesView()
     response = await view.get(DummyRequest(hass), "123")
@@ -627,7 +627,7 @@ async def test_consumption_profiles_view_missing_component():
 
 
 @pytest.mark.asyncio
-async def test_balancing_decisions_view_ok():
+async def test_balancing_decisions_view_ok_shadowed_coverage():
     hass = DummyHass()
 
     class DummyBalancingEntity:
@@ -655,7 +655,7 @@ async def test_balancing_decisions_view_ok():
 
 
 @pytest.mark.asyncio
-async def test_balancing_decisions_view_missing_entity():
+async def test_balancing_decisions_view_missing_entity_shadowed_coverage():
     hass = DummyHass()
     hass.data["entity_components"] = {"sensor": DummyComponent([])}
     view = api_module.OIGCloudBalancingDecisionsView()
@@ -665,7 +665,7 @@ async def test_balancing_decisions_view_missing_entity():
 
 
 @pytest.mark.asyncio
-async def test_balancing_decisions_view_missing_component():
+async def test_balancing_decisions_view_missing_component_shadowed_coverage():
     hass = DummyHass()
     hass.data["entity_components"] = {}
     view = api_module.OIGCloudBalancingDecisionsView()
@@ -675,7 +675,7 @@ async def test_balancing_decisions_view_missing_component():
 
 
 @pytest.mark.asyncio
-async def test_planner_settings_view_get_and_post():
+async def test_planner_settings_view_get_and_post_shadowed_coverage():
     entry = SimpleNamespace(
         entry_id="entry1",
         options={CONF_AUTO_MODE_SWITCH: False},
@@ -946,7 +946,7 @@ async def test_detail_tabs_view_missing_build_method(monkeypatch):
     assert "build_detail_tabs method not found" in payload["error"]
 
 
-def test_setup_api_endpoints_registers_views():
+def test_setup_api_endpoints_registers_views_shadowed_coverage():
     registered = []
 
     class DummyHttp:

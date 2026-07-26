@@ -143,7 +143,7 @@ async def test_boiler_simple_3_primary_heating_and_effective_power():
 
 
 @pytest.mark.asyncio
-async def test_boiler_simple_3_recovery_rate_validation():
+async def test_boiler_simple_3_recovery_rate_mode_requires_effective_power():
     flow = DummyWizard()
     flow._wizard_data = {"enable_boiler": True}
 
@@ -156,7 +156,7 @@ async def test_boiler_simple_3_recovery_rate_validation():
     )
 
     assert result["type"] == "form"
-    assert "boiler_recovery_rate_c_per_hour" in result.get("errors", {})
+    assert "boiler_effective_power_w" in result.get("errors", {})
 
 
 @pytest.mark.asyncio
@@ -174,7 +174,7 @@ async def test_boiler_simple_4_alternative_source_disabled():
 
 
 @pytest.mark.asyncio
-async def test_boiler_simple_4_alternative_source_controllable_requires_entity():
+async def test_boiler_simple_4_legacy_mode_no_longer_requires_entity():
     flow = DummyWizard()
     flow._wizard_data = {"enable_boiler": True}
 
@@ -187,7 +187,7 @@ async def test_boiler_simple_4_alternative_source_controllable_requires_entity()
     )
 
     assert result["type"] == "form"
-    assert result["errors"]["boiler_alt_heater_switch_entity"] == "required"
+    assert result["step_id"] == "wizard_boiler_simple_5"
 
 
 @pytest.mark.asyncio
@@ -296,8 +296,10 @@ async def test_boiler_simple_full_path_creates_entry():
     assert options["boiler_box_id"] == "2206237017"
     assert options["boiler_volume_l"] == 150
     assert options["boiler_effective_power_w"] == 2000
-    assert options["boiler_alt_source_mode"] == "disabled"
-    assert options["boiler_comfort_profile_mode"] == "history_driven"
+    assert "boiler_recovery_rate_c_per_hour" not in options
+    assert "boiler_alt_source_mode" not in options
+    assert "boiler_comfort_profile_mode" not in options
+    assert "boiler_planning_horizon_hours" not in options
     # New F5 keys present
     assert options["boiler_alt_source_type"] == "gas"
     assert options["boiler_battery_cycle_cost_czk_kwh"] == 0.50
@@ -518,7 +520,7 @@ async def test_effective_power_w_validation_too_high():
 
 
 @pytest.mark.asyncio
-async def test_recovery_rate_c_per_hour_validation_too_low():
+async def test_recovery_rate_mode_no_longer_validates_removed_rate():
     flow = DummyWizard()
     flow._wizard_data = {"enable_boiler": True}
 
@@ -530,7 +532,7 @@ async def test_recovery_rate_c_per_hour_validation_too_low():
         }
     )
     assert result["type"] == "form"
-    assert "boiler_recovery_rate_c_per_hour" in result.get("errors", {})
+    assert "boiler_effective_power_w" in result.get("errors", {})
 
 
 @pytest.mark.asyncio
@@ -632,7 +634,7 @@ async def test_legacy_boiler_step_still_works():
 
 
 @pytest.mark.asyncio
-async def test_boiler_expert_schema_hides_slot_size_tuning():
+async def test_boiler_expert_schema_hides_dead_tuning_fields():
     flow = DummyWizard()
     flow._wizard_data = {"enable_boiler": True, "boiler_setup_mode": "expert"}
 
@@ -641,22 +643,22 @@ async def test_boiler_expert_schema_hides_slot_size_tuning():
     assert result["type"] == "form"
     keys = _schema_keys(result["data_schema"])
     assert "boiler_plan_slot_minutes" not in keys
-    assert "boiler_planning_horizon_hours" in keys
+    assert "boiler_planning_horizon_hours" not in keys
 
 
 @pytest.mark.asyncio
-async def test_boiler_expert_schema_uses_explicit_alt_source_mode():
+async def test_boiler_expert_schema_hides_dead_alt_source_mode():
     flow = DummyWizard()
     flow._wizard_data = {"enable_boiler": True, "boiler_setup_mode": "expert"}
 
     result = await flow.async_step_wizard_boiler()
 
     keys = _schema_keys(result["data_schema"])
-    assert "boiler_alt_source_mode" in keys
+    assert "boiler_alt_source_mode" not in keys
     assert "boiler_has_alternative_heating" not in keys
 
 
-def test_boiler_options_fix_slot_size_and_clamp_horizon_contract():
+def test_boiler_options_strip_dead_horizon_contract():
     flow = DummyWizard()
     flow._wizard_data = {
         "username": "demo",
@@ -670,10 +672,10 @@ def test_boiler_options_fix_slot_size_and_clamp_horizon_contract():
     options = flow._build_options_payload(flow._wizard_data)
 
     assert options["boiler_plan_slot_minutes"] == 15
-    assert options["boiler_planning_horizon_hours"] == 48
+    assert "boiler_planning_horizon_hours" not in options
 
 
-def test_boiler_options_clamp_horizon_lower_bound():
+def test_boiler_options_strip_dead_horizon_lower_bound():
     flow = DummyWizard()
     flow._wizard_data = {
         "username": "demo",
@@ -685,10 +687,10 @@ def test_boiler_options_clamp_horizon_lower_bound():
 
     options = flow._build_options_payload(flow._wizard_data)
 
-    assert options["boiler_planning_horizon_hours"] == 12
+    assert "boiler_planning_horizon_hours" not in options
 
 
-def test_boiler_options_do_not_guess_alt_source_mode_from_legacy_bool():
+def test_boiler_options_strip_dead_alt_source_mode_from_legacy_bool():
     flow = DummyWizard()
     flow._wizard_data = {
         "username": "demo",
@@ -701,7 +703,7 @@ def test_boiler_options_do_not_guess_alt_source_mode_from_legacy_bool():
 
     options = flow._build_options_payload(flow._wizard_data)
 
-    assert options["boiler_alt_source_mode"] == "disabled"
+    assert "boiler_alt_source_mode" not in options
 
 
 def test_total_steps_with_boiler_simple_path():
@@ -733,3 +735,23 @@ def test_step_sequence_with_boiler_expert_path():
     steps = flow._build_step_sequence(False)
     assert "wizard_boiler" in steps
     assert "wizard_boiler_simple_1" not in steps
+
+
+def test_boiler_simple_schemas_hide_dead_keys():
+    from custom_components.oig_cloud.config.boiler_steps import (
+        get_boiler_simple_3_schema,
+        get_boiler_simple_4_schema,
+        get_boiler_simple_5_schema,
+    )
+
+    keys = set()
+    for schema in (
+        get_boiler_simple_3_schema({}),
+        get_boiler_simple_4_schema({}),
+        get_boiler_simple_5_schema({}),
+    ):
+        keys.update(_schema_keys(schema))
+
+    assert "boiler_recovery_rate_c_per_hour" not in keys
+    assert "boiler_alt_source_mode" not in keys
+    assert "boiler_comfort_profile_mode" not in keys
