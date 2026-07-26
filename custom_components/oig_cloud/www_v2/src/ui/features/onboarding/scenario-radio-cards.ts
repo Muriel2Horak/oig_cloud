@@ -53,9 +53,9 @@ export function renderScenarioCards(
 
 export const scenarioCardStyles = css`
   .scenario-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
     margin-bottom: 10px;
   }
 
@@ -65,23 +65,24 @@ export const scenarioCardStyles = css`
     gap: 3px;
     align-items: flex-start;
     text-align: left;
-    padding: 10px 14px;
-    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.14));
-    border-radius: 10px;
+    padding: 12px;
+    border: 1.5px solid var(--divider-color, rgba(255, 255, 255, 0.14));
+    border-radius: 13px;
     background: transparent;
     color: inherit;
     font: inherit;
     cursor: pointer;
   }
 
-  .scenario-card:hover { border-color: var(--primary-color, #4f7cff); }
+  .scenario-card:hover { border-color: var(--sc, var(--primary-color, #4f7cff)); }
 
   .scenario-card.selected {
-    border-color: var(--primary-color, #4f7cff);
-    background: rgba(79, 124, 255, 0.1);
+    border-color: var(--sc, var(--primary-color, #4f7cff));
+    background: color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 10%, transparent);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--sc, var(--primary-color, #4f7cff)) 25%, transparent);
   }
 
-  .scenario-card-title { font-weight: 700; font-size: 13px; }
+  .scenario-card-title { font-weight: 700; font-size: 13.5px; }
 
-  .scenario-card-hint { font-size: 11px; opacity: 0.75; }
+  .scenario-card-hint { font-size: 11.5px; opacity: 0.65; line-height: 1.35; }
 `;

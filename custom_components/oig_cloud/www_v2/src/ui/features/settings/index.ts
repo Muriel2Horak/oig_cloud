@@ -36,6 +36,7 @@ import {
 } from '@/ui/components/entity-picker';
 import '@/ui/components/entity-picker';
 import { renderFieldPresenter, fieldStyles } from '@/ui/features/field-renderer';
+import { ergoStyles } from '@/ui/features/onboarding/ergo-styles';
 import { haClient } from '@/data/ha-client';
 import {
   loadAiStatus,
@@ -258,6 +259,7 @@ export class OigSettings extends LitElement {
     }
 
     ${fieldStyles}
+    ${ergoStyles}
 
     /* ---- Actions ---- */
     .actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
@@ -818,6 +820,64 @@ export class OigSettings extends LitElement {
       </div>`;
   }
 
+  private renderAiCard() {
+    const section: 'ai' = 'ai';
+    const fields = this.fieldsFor(section);
+    const visible = fields.filter((f) => this.isFieldVisible(section, f));
+    const toast = this.toast?.section === section ? this.toast : null;
+    const dirty = this.isDirty(section);
+    const PROVIDER_META: Record<string, { ic: string; tag: string }> = {
+      ai_task: { ic: '🏠', tag: 'Nic neopouští váš Home Assistant.' },
+      groq: { ic: '⚡', tag: 'Zdarma, rychlé, smluvně netrénuje na vstupech.' },
+      nvidia: { ic: '🟩', tag: 'Zdarma (trial), velký katalog modelů.' },
+    };
+    const currentProvider = String(this.current(section, 'ai_provider') ?? '');
+    const nonProviderFields = visible.filter((f) => f.key !== 'ai_provider');
+    return html`
+      <div class="card" style="--sc: var(--c-ai, #9d7bff)">
+        <h2>🤖 AI</h2>
+        <div class="sub">Konfigurace asistenta a ověření stavu.</div>
+        <div class="oneliner">
+          Posíláme <b>jen anonymní čísla</b> — nikdy polohu, jméno či e-mail.
+          <details class="inline"><summary>více</summary>
+            <p>AI Task entita vznikne ve vaší HA instanci. Dashboard i výpočty fungují stejně i bez AI.</p>
+          </details>
+        </div>
+        <div class="ptiles">
+          ${AI_PROVIDER_OPTIONS.map(([value, label]) => {
+            const meta = PROVIDER_META[value] ?? { ic: '🤖', tag: '' };
+            return html`
+              <button
+                type="button"
+                class="ptile ${currentProvider === value ? 'on' : ''}"
+                data-provider-tile=${value}
+                @click=${() => this.setPending(section, 'ai_provider', value)}
+              >
+                <span class="pic">${meta.ic}</span>
+                <b>${label}</b>
+                <i>${meta.tag}</i>
+              </button>
+            `;
+          })}
+        </div>
+        ${nonProviderFields.map((f) => this.renderField(section, f))}
+        ${renderAiStatusPanel({
+          aiState: this.aiState,
+          lang: this.uiLang,
+          showValidateButton: true,
+          validationState: this.aiValidation,
+          onValidate: () => void this.validateAiConfig(),
+        })}
+        <div class="actions">
+          <button class="save" ?disabled=${!dirty || this.saving === section}
+            @click=${() => this.save(section)}>
+            ${this.saving === section ? 'Ukládám…' : 'Uložit'}
+          </button>
+          ${toast ? html`<span class="toast ${toast.ok ? 'ok' : 'err'}">${toast.text}</span>` : nothing}
+        </div>
+      </div>`;
+  }
+
   render() {
     const launcher = html`
       <div class="onboarding-launcher">
@@ -841,7 +901,7 @@ export class OigSettings extends LitElement {
         ${this.renderCard('modules', '🧩 Moduly', 'Zapnutí modulu přidá senzory a záložky; konfigurace níže.', this.fieldsFor('modules'))}
         ${this.renderCard('battery', '🔋 Baterie a plánovač', 'Parametry ekonomického plánovače a balancování.', this.fieldsFor('battery'))}
         ${this.renderCard('solar', '☀️ Solární předpověď', 'Poskytovatel a geometrie stringů.', this.fieldsFor('solar'))}
-        ${this.renderCard('ai', '🤖 AI', 'Konfigurace asistenta a ověření stavu.', this.fieldsFor('ai'))}
+        ${this.renderAiCard()}
         ${this.renderCard('pricing_supplier', '💳 Dodavatelské a distribuční ceny', 'Obchodní podmínky vaší smlouvy s dodavatelem a distributorem elektřiny.', this.fieldsFor('pricing_supplier'))}
         ${this.renderBoilerCard()}
       </div>
