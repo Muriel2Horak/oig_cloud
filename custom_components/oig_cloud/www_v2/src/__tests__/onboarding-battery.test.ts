@@ -97,11 +97,27 @@ const BATTERY_REGISTRY_FIXTURE: FieldRegistry = {
   },
 };
 
-async function openWizardOnBatteryStep(): Promise<HTMLElement & Record<string, any>> {
+function makeBatteryHass(attributes: Record<string, unknown>): any {
+  return {
+    language: 'cs',
+    states: {
+      'sensor.oig_SN123_battery_forecast': {
+        entity_id: 'sensor.oig_SN123_battery_forecast',
+        state: 'ok',
+        attributes,
+        last_changed: '2026-07-26T00:00:00Z',
+        last_updated: '2026-07-26T00:00:00Z',
+      },
+    },
+  };
+}
+
+async function openWizardOnBatteryStep(hass: any = null): Promise<HTMLElement & Record<string, any>> {
   const wizard = await fixture<HTMLElement>(html`<oig-onboarding-wizard
     .inverterSn=${'SN123'}
     ?open=${true}
   ></oig-onboarding-wizard>`);
+  (wizard as any).hass = hass;
   await (wizard as any).updateComplete;
   await new Promise((resolve) => setTimeout(resolve, 0));
   await (wizard as any).updateComplete;
@@ -117,7 +133,7 @@ async function openWizardOnBatteryStep(): Promise<HTMLElement & Record<string, a
   return wizard as HTMLElement & Record<string, any>;
 }
 
-describe('battery step render (Task 18 — 4 grouped sections)', () => {
+describe('battery step render (wizard/expert split + simulator seam)', () => {
   beforeEach(() => {
     fetchOIGAPI.mockClear();
     loadFieldRegistryMock.mockClear();
@@ -149,92 +165,70 @@ describe('battery step render (Task 18 — 4 grouped sections)', () => {
     fixtureCleanup();
   });
 
-  it('renders 4 grouped sections in spec order: Nabíjení, Automatika, Vyrovnávání, Plánovač', async () => {
+  it('renders only the user-facing Nabíjení group with charge_rate_kw and battery_comfort_soc_percent', async () => {
     const wizard = await openWizardOnBatteryStep();
-    const el = wizard;
-
-    const headings = [...el.shadowRoot!.querySelectorAll('[data-testid="battery-group-heading"]')]
+    const headings = [...wizard.shadowRoot!.querySelectorAll('[data-testid="battery-group-heading"]')]
       .map((h) => h.textContent);
-    expect(headings).toEqual(['Nabíjení', 'Automatika', 'Vyrovnávání článků', 'Plánovač']);
+    expect(headings).toEqual(['Nabíjení']);
 
-    const nabijeniGroup = el.shadowRoot!.querySelector('[data-group="nabijeni"]') as HTMLElement;
+    const nabijeniGroup = wizard.shadowRoot!.querySelector('[data-group="nabijeni"]') as HTMLElement;
     expect(nabijeniGroup).toBeTruthy();
     expect(nabijeniGroup.querySelector('[data-key="charge_rate_kw"]')).not.toBeNull();
+    expect(nabijeniGroup.querySelector('[data-key="battery_comfort_soc_percent"]')).not.toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="auto_mode_switch_enabled"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="expensive_percentile"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="balancing_enabled"]')).toBeNull();
+    expect(wizard.shadowRoot!.querySelector('[data-key="cheap_window_percentile"]')).toBeNull();
   });
 
-  it('all 10 battery registry fields render exactly once, across the 4 groups (balancing_enabled on)', async () => {
+  it('dispatches oig-simulator-open with the current draft values', async () => {
     const wizard = await openWizardOnBatteryStep();
-    const el = wizard;
-
-    // balancing_enabled starts off (registry default) — flip it on so the 4
-    // gated sub-fields join the render before counting the full field set.
-    const toggle = el.shadowRoot!.querySelector(
-      '[data-key="balancing_enabled"] input[type="checkbox"]',
+    const chargeInput = wizard.shadowRoot!.querySelector(
+      '[data-key="charge_rate_kw"] input[type="number"]',
     ) as HTMLInputElement;
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    const comfortInput = wizard.shadowRoot!.querySelector(
+      '[data-key="battery_comfort_soc_percent"] input[type="number"]',
+    ) as HTMLInputElement;
+
+    chargeInput.value = '3.2';
+    chargeInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    comfortInput.value = '65';
+    comfortInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
     await (wizard as any).updateComplete;
 
-    const allKeys = [...el.shadowRoot!.querySelectorAll('[data-step="battery"] [data-key]')]
-      .map((n) => n.getAttribute('data-key'));
-    expect(allKeys.sort()).toEqual(Object.keys(BATTERY_REGISTRY_FIXTURE.fields).sort());
+    const received: CustomEvent[] = [];
+    wizard.addEventListener('oig-simulator-open', (e) => {
+      received.push(e as CustomEvent);
+    });
+
+    const button = wizard.shadowRoot!.querySelector(
+      '[data-testid="battery-simulator-button"]',
+    ) as HTMLButtonElement;
+    button.click();
+
+    expect(received).toHaveLength(1);
+    expect(received[0].detail).toMatchObject({
+      domain: 'battery',
+      box: 'SN123',
+      draft: {
+        charge_rate_kw: 3.2,
+        battery_comfort_soc_percent: 65,
+      },
+    });
   });
 
-  it('nabijeni group contains exactly charge_rate_kw + battery_comfort_soc_percent', async () => {
-    const wizard = await openWizardOnBatteryStep();
-    const el = wizard;
+  it('renders z boxu chips and marks missing hardware values as nedostupné', async () => {
+    const wizard = await openWizardOnBatteryStep(
+      makeBatteryHass({ max_capacity_kwh: 9.6 }),
+    );
 
-    const nabijeniGroup = el.shadowRoot!.querySelector('[data-group="nabijeni"]') as HTMLElement;
-    const keys = [...nabijeniGroup.querySelectorAll('[data-key]')].map((n) => n.getAttribute('data-key'));
-    expect(keys).toEqual(['charge_rate_kw', 'battery_comfort_soc_percent']);
-  });
+    const capacityChip = wizard.shadowRoot!.querySelector('[data-testid="battery-capacity-chip"]');
+    expect(capacityChip).toBeTruthy();
+    expect(capacityChip!.textContent).toContain('9.6');
+    expect(capacityChip!.textContent).toContain('kWh');
 
-  it('automatika group contains exactly auto_mode_switch_enabled', async () => {
-    const wizard = await openWizardOnBatteryStep();
-    const el = wizard;
-
-    const group = el.shadowRoot!.querySelector('[data-group="automatika"]') as HTMLElement;
-    const keys = [...group.querySelectorAll('[data-key]')].map((n) => n.getAttribute('data-key'));
-    expect(keys).toEqual(['auto_mode_switch_enabled']);
-  });
-
-  it('planovac group contains exactly expensive_percentile + cheap_window_percentile', async () => {
-    const wizard = await openWizardOnBatteryStep();
-    const el = wizard;
-
-    const group = el.shadowRoot!.querySelector('[data-group="planovac"]') as HTMLElement;
-    const keys = [...group.querySelectorAll('[data-key]')].map((n) => n.getAttribute('data-key'));
-    expect(keys).toEqual(['expensive_percentile', 'cheap_window_percentile']);
-  });
-
-  it('vyrovnavani group: balancing_enabled off hides its 4 sub-fields (client-side fallback gate)', async () => {
-    const wizard = await openWizardOnBatteryStep();
-    const el = wizard;
-
-    const group = el.shadowRoot!.querySelector('[data-group="vyrovnavani"]') as HTMLElement;
-    const keys = [...group.querySelectorAll('[data-key]')].map((n) => n.getAttribute('data-key'));
-    expect(keys).toEqual(['balancing_enabled']);
-  });
-
-  it('vyrovnavani group: toggling balancing_enabled on reveals its 4 sub-fields', async () => {
-    const wizard = await openWizardOnBatteryStep();
-    const el = wizard;
-
-    let group = el.shadowRoot!.querySelector('[data-group="vyrovnavani"]') as HTMLElement;
-    const toggle = group.querySelector('[data-key="balancing_enabled"] input[type="checkbox"]') as HTMLInputElement;
-    expect(toggle).toBeTruthy();
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-    await (wizard as any).updateComplete;
-
-    group = el.shadowRoot!.querySelector('[data-group="vyrovnavani"]') as HTMLElement;
-    const keys = [...group.querySelectorAll('[data-key]')].map((n) => n.getAttribute('data-key'));
-    expect(keys).toEqual([
-      'balancing_enabled',
-      'balancing_interval_days',
-      'balancing_hold_hours',
-      'balancing_opportunistic_threshold',
-      'balancing_economic_threshold',
-    ]);
+    const hwMinChip = wizard.shadowRoot!.querySelector('[data-testid="battery-hw-min-chip"]');
+    expect(hwMinChip).toBeTruthy();
+    expect(hwMinChip!.textContent).toContain('nedostupné');
   });
 });

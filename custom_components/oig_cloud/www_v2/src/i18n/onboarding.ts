@@ -59,6 +59,11 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'onboarding.summary.confirm_notice': 'Toto se změní. Dokud nekliknete na Uložit, nic se neuloží.',
     'onboarding.summary.diff_empty': 'Žádné změny oproti stávajícímu nastavení.',
 
+    'onboarding.battery.simulator_button': '🧪 Vyzkoušet chování',
+    'onboarding.battery.hardware.capacity': 'Kapacita baterie z boxu',
+    'onboarding.battery.hardware.hw_min_soc': 'HW min SoC z boxu',
+    'onboarding.battery.hardware.unavailable': 'nedostupné',
+
     // F1 Wizard v2 Stage S2 Task 11 — recovered pricing_supplier note +
     // module-off-in-review-mode warning (UX-SPEC §3, spec-verbatim CZ).
     'onboarding.pricing_supplier.recovered_note': 'Tyto hodnoty jsme našli ve vašem stávajícím nastavení — dosud nebyly v průvodci vidět, teď je můžete zkontrolovat.',
@@ -134,6 +139,11 @@ const STRINGS: Record<Lang, Record<string, string>> = {
 
     'onboarding.summary.confirm_notice': 'This will change. Nothing is saved until you click Save.',
     'onboarding.summary.diff_empty': 'No changes from your existing configuration.',
+
+    'onboarding.battery.simulator_button': '🧪 Test behavior',
+    'onboarding.battery.hardware.capacity': 'Battery capacity from box',
+    'onboarding.battery.hardware.hw_min_soc': 'HW min SoC from box',
+    'onboarding.battery.hardware.unavailable': 'unavailable',
 
     'onboarding.pricing_supplier.recovered_note': 'We found these values in your existing configuration — they weren\'t visible in the wizard until now, so you can review them.',
     'onboarding.modules.off_warning': 'Turning off a module hides its settings, but they stay saved — if you turn the module back on, the values will still be there.',
