@@ -56,17 +56,21 @@ vi.mock('@/data/timeline-data', () => ({
   loadTimelineTab: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('@/data/tiles-data', () => ({
-  loadTilesConfig: vi.fn().mockResolvedValue({
-    tiles_left: [],
-    tiles_right: [],
-  }),
-  saveTilesConfig: vi.fn(),
-  resolveTiles: vi.fn().mockReturnValue({
-    left: [],
-    right: [],
-  }),
-}));
+vi.mock('@/data/tiles-data', async () => {
+  const actual = await vi.importActual<typeof import('@/data/tiles-data')>('@/data/tiles-data');
+  return {
+    ...actual,
+    loadTilesConfig: vi.fn().mockResolvedValue({
+      tiles_left: [],
+      tiles_right: [],
+    }),
+    saveTilesConfig: vi.fn(),
+    resolveTiles: vi.fn().mockReturnValue({
+      left: [],
+      right: [],
+    }),
+  };
+});
 
 vi.mock('@/data/shield-controller', () => ({
   shieldController: {
@@ -103,6 +107,7 @@ import { invalidateTimelineCache } from '@/data/pricing-data';
 import { haClient } from '@/data/ha-client';
 import { stateWatcher } from '@/data/state-watcher';
 import { getSensorId } from '@/data/flow-data';
+import { resolveTileModule } from '@/data/tiles-data';
 import { OigApp } from '@/ui/app';
 
 function flattenTemplate(tmpl: unknown): string {
@@ -126,6 +131,24 @@ function getAppTemplateAll(app: OigApp): string {
     [],
   );
   return flattenTemplate(result);
+}
+
+type TileModule = 'core' | 'pricing' | 'boiler' | 'statistics' | 'battery_prediction';
+
+function mkTile(entityId: string, module: TileModule): any {
+  return {
+    config: {
+      type: 'entity',
+      entity_id: entityId,
+      module,
+    },
+    value: '1',
+    unit: '',
+    isActive: true,
+    isZero: false,
+    formattedValue: '1',
+    supportValues: {},
+  };
 }
 
 describe('OigApp live refresh', () => {
@@ -297,6 +320,106 @@ describe('OigApp live refresh', () => {
     expect(store.get('sensor.oig_2206237016_actual_fv_total')).toBeNull();
 
     store.destroy();
+  });
+});
+
+describe('OigApp dashboard tile gating', () => {
+  function makeApp(): OigApp {
+    const app = new OigApp() as any;
+    app.loading = false;
+    app.error = null;
+    app.tilesLeft = [];
+    app.tilesRight = [];
+    app.enablePrediction = true;
+    return app as OigApp;
+  }
+
+  it('hides boiler tiles when boiler is disabled and shows them when enabled', () => {
+    const coreTile = mkTile('sensor.oig_2206237016_actual_aci_wtotal', 'core');
+    const boilerTile = mkTile('sensor.oig_2206237016_heat_buffer', 'boiler');
+    const app = makeApp() as any;
+    app.enableBoiler = false;
+    app.enablePricing = true;
+    app.enableStatistics = true;
+    app.tilesLeft = [coreTile, boilerTile];
+
+    expect(app.visibleDashboardTiles).toEqual([coreTile]);
+
+    app.enableBoiler = true;
+    expect(app.visibleDashboardTiles).toEqual([coreTile, boilerTile]);
+  });
+
+  it('hides pricing tiles when pricing is disabled and shows them when enabled', () => {
+    const coreTile = mkTile('sensor.oig_2206237016_actual_aci_wtotal', 'core');
+    const pricingTile = mkTile('sensor.oig_2206237016_energy_market_current', 'pricing');
+    const app = makeApp() as any;
+    app.enableBoiler = true;
+    app.enablePricing = false;
+    app.enableStatistics = true;
+    app.tilesLeft = [coreTile, pricingTile];
+
+    expect(app.visibleDashboardTiles).toEqual([coreTile]);
+
+    app.enablePricing = true;
+    expect(app.visibleDashboardTiles).toEqual([coreTile, pricingTile]);
+  });
+
+  it('hides statistics tiles when statistics is disabled and shows them when enabled', () => {
+    const coreTile = mkTile('sensor.oig_2206237016_actual_aci_wtotal', 'core');
+    const statisticsTile = mkTile('sensor.oig_2206237016_hourly_real_boiler_kwh', 'statistics');
+    const app = makeApp() as any;
+    app.enableBoiler = true;
+    app.enablePricing = true;
+    app.enableStatistics = false;
+    app.tilesLeft = [coreTile, statisticsTile];
+
+    expect(app.visibleDashboardTiles).toEqual([coreTile]);
+
+    app.enableStatistics = true;
+    expect(app.visibleDashboardTiles).toEqual([coreTile, statisticsTile]);
+  });
+
+  it('resolves real battery-prediction ids separately from statistics and keeps them visible when statistics is off', () => {
+    const cases: Array<[string, TileModule]> = [
+      ['sensor.oig_2206237016_battery_efficiency', 'battery_prediction'],
+      ['sensor.oig_2206237016_battery_balancing', 'battery_prediction'],
+      ['sensor.oig_2206237016_adaptive_load_profiles', 'battery_prediction'],
+      ['sensor.oig_2206237016_grid_charging_planned', 'battery_prediction'],
+      ['sensor.oig_2206237016_planner_recommended_mode', 'battery_prediction'],
+      ['sensor.oig_2206237016_battery_load_median', 'statistics'],
+      ['sensor.oig_2206237016_load_avg_6_8_weekday', 'statistics'],
+      ['sensor.oig_2206237016_hourly_real_boiler_kwh', 'statistics'],
+    ];
+
+    for (const [entityId, expectedModule] of cases) {
+      expect(resolveTileModule(entityId)).toBe(expectedModule);
+    }
+
+    const app = makeApp() as any;
+    app.enableBoiler = true;
+    app.enablePricing = true;
+    app.enableStatistics = false;
+    app.enablePrediction = true;
+
+    const coreTile = mkTile('sensor.oig_2206237016_actual_aci_wtotal', 'core');
+    const batteryPredictionTile = mkTile(
+      'sensor.oig_2206237016_battery_efficiency',
+      resolveTileModule('sensor.oig_2206237016_battery_efficiency') as any,
+    );
+    const statisticsTile = mkTile(
+      'sensor.oig_2206237016_hourly_real_boiler_kwh',
+      resolveTileModule('sensor.oig_2206237016_hourly_real_boiler_kwh') as any,
+    );
+
+    app.tilesLeft = [coreTile, batteryPredictionTile, statisticsTile];
+
+    expect(app.visibleDashboardTiles).toEqual([coreTile, batteryPredictionTile]);
+
+    app.enablePrediction = false;
+    expect(app.visibleDashboardTiles).toEqual([coreTile]);
+
+    app.enableStatistics = true;
+    expect(app.visibleDashboardTiles).toEqual([coreTile, statisticsTile]);
   });
 });
 

@@ -15,7 +15,17 @@ import { extractAnalyticsSensors, loadAnalyticsData, type AnalyticsData, EMPTY_A
 import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
 import { loadWeatherData, type WeatherData, EMPTY_WEATHER_DATA } from '@/data/weather-data';
 import { loadTimelineTab, type TimelineDayData, type TimelineTab } from '@/data/timeline-data';
-import { loadTilesConfig, saveTilesConfig, resolveTiles, type TilesConfig, type TileConfig, type ResolvedTile } from '@/data/tiles-data';
+import {
+  filterDashboardTiles,
+  ensureTileModule,
+  loadTilesConfig,
+  saveTilesConfig,
+  resolveTiles,
+  type ModuleTileFlags,
+  type TilesConfig,
+  type TileConfig,
+  type ResolvedTile,
+} from '@/data/tiles-data';
 import { FlowData, EMPTY_FLOW_DATA } from '@/ui/features/flow/types';
 import { PricingData } from '@/ui/features/pricing/types';
 import {
@@ -89,8 +99,36 @@ export class OigApp extends LitElement {
   // Default false = Home 5/6 toggles hidden until user enables in Nastavení.
   @state() private boxHasHome56 = false;
 
+  // Unit A-FE: module enable flags — loaded from module_config `modules` section.
+  // Default true so tabs stay visible until the flags are known (avoids a
+  // flash-hide before the first module_config response lands).
+  @state() private enablePricing = true;
+  @state() private enableBoiler = true;
+  @state() private enableStatistics = true;
+  @state() private enablePrediction = true;
+
   private get boilerLang() {
     return resolveLang(this.hass);
+  }
+
+  /** Unit A-FE: tabs filtered by module enable flags (Toky/Nastavení are core, always shown). */
+  private get visibleTabs(): Tab[] {
+    return DEFAULT_TABS.filter((tab) => {
+      if (tab.id === 'pricing') return this.enablePricing;
+      if (tab.id === 'boiler') return this.enableBoiler;
+      return true;
+    });
+  }
+
+  private get visibleDashboardTiles(): ResolvedTile[] {
+    const flags: ModuleTileFlags = {
+      enablePricing: this.enablePricing,
+      enableBoiler: this.enableBoiler,
+      enableStatistics: this.enableStatistics,
+      enablePrediction: this.enablePrediction,
+    };
+    const tiles = [...(this.tilesLeft ?? []), ...(this.tilesRight ?? [])];
+    return filterDashboardTiles(tiles, flags) ?? [];
   }
 
   private _altShort(type: string | null | undefined): string {
@@ -615,6 +653,11 @@ export class OigApp extends LitElement {
     if (changed.has('hass') && !changed.has('loading')) {
       void this.rebindHassContext();
     }
+    if (changed.has('enablePricing') || changed.has('enableBoiler')) {
+      if (!this.visibleTabs.some((tab) => tab.id === this.activeTab)) {
+        this.activeTab = this.visibleTabs[0]?.id ?? 'flow';
+      }
+    }
     if (changed.has('activeTab')) {
       if (this.activeTab === 'pricing' && (!this.pricingData || this.pricingDirty)) {
         this.loadPricingData();
@@ -673,7 +716,7 @@ export class OigApp extends LitElement {
       this.loadAnalyticsAsync();
       this.loadTilesAsync();
       void this.loadOnboarding();
-      // R7: load box_has_home56 from module_config (best-effort, no throw)
+      // R7 + Unit A-FE: load box_has_home56 + pricing/boiler/statistics enable flags (best-effort, no throw)
       this.loadBoxHasHome56();
 
       // Weather forecast (current + hourly/daily) — refreshed periodically
@@ -891,13 +934,23 @@ export class OigApp extends LitElement {
     }
   }
 
-  /** R7: load box_has_home56 from module_config boiler section (best-effort). */
+  /**
+   * R7 + Unit A-FE: load box_has_home56 (boiler section) and the pricing/
+   * boiler/statistics/battery_prediction module enable flags (modules section)
+   * from module_config in one fetch (best-effort).
+   */
   private async loadBoxHasHome56(): Promise<void> {
     try {
       const cfg = await loadModuleConfig();
       this.boxHasHome56 = cfg?.boiler?.box_has_home56 === true;
+      if (cfg?.modules) {
+        this.enablePricing = cfg.modules.enable_pricing !== false;
+        this.enableBoiler = cfg.modules.enable_boiler !== false;
+        this.enableStatistics = cfg.modules.enable_statistics !== false;
+        this.enablePrediction = cfg.modules.enable_battery_prediction !== false;
+      }
     } catch {
-      // silently ignore — default false means Home 5/6 hidden, safe
+      // silently ignore — defaults (Home 5/6 hidden, tabs visible) are safe
     }
   }
 
@@ -1125,17 +1178,18 @@ export class OigApp extends LitElement {
     };
     if (!this.tilesConfig) return;
 
+    const normalizedTile = ensureTileModule(tileConfig);
     const updated = { ...this.tilesConfig };
     const arr = side === 'left' ? [...updated.tiles_left] : [...updated.tiles_right];
 
     if (index >= 0 && index < arr.length) {
-      arr[index] = tileConfig;
+      arr[index] = normalizedTile;
     } else {
       const nullIdx = arr.findIndex((t) => t === null);
       if (nullIdx >= 0) {
-        arr[nullIdx] = tileConfig;
+        arr[nullIdx] = normalizedTile;
       } else {
-        arr.push(tileConfig);
+        arr.push(normalizedTile);
       }
     }
 
@@ -1330,6 +1384,7 @@ export class OigApp extends LitElement {
     const showOnboardingBanner = this.onboarding && (this.onboarding.grandfathered
       ? !this.onboarding.banner_dismissed
       : Object.values(this.onboarding.steps).some((step) => step !== 'done'));
+    const dashboardTiles = this.visibleDashboardTiles;
 
     return html`
       <oig-theme-provider>
@@ -1348,7 +1403,7 @@ export class OigApp extends LitElement {
         </oig-header>
 
         <oig-tabs
-          .tabs=${DEFAULT_TABS}
+          .tabs=${this.visibleTabs}
           .activeTab=${this.activeTab}
           @tab-change=${this.onTabChange}
         ></oig-tabs>
@@ -1376,9 +1431,9 @@ export class OigApp extends LitElement {
                         title="Přidat dlaždici" @click=${this.onAddTile}>+</button>
                     </div>
                     <div class="control-stack__block">
-                      ${this.tilesLeft.length + this.tilesRight.length > 0 ? html`
+                      ${dashboardTiles.length > 0 ? html`
                         <oig-tiles-container
-                          .tiles=${[...this.tilesLeft, ...this.tilesRight]}
+                          .tiles=${dashboardTiles}
                           .editMode=${this.editMode}
                           @edit-tile=${this.onEditTile}
                           @delete-tile=${this.onDeleteTile}

@@ -22,6 +22,8 @@ export interface TileSupportEntities {
   bottom_right?: string;
 }
 
+export type TileModule = 'core' | 'pricing' | 'boiler' | 'statistics' | 'battery_prediction';
+
 export interface TileConfig {
   type: 'entity' | 'button';
   entity_id: string;
@@ -30,6 +32,7 @@ export interface TileConfig {
   color?: string;
   action?: 'toggle' | 'turn_on' | 'turn_off';
   support_entities?: TileSupportEntities;
+  module?: TileModule;
 }
 
 export interface TilesConfig {
@@ -52,6 +55,13 @@ export interface ResolvedTile {
     topRight?: { value: string; unit: string };
     bottomRight?: { value: string; unit: string };
   };
+}
+
+export interface ModuleTileFlags {
+  enablePricing: boolean;
+  enableBoiler: boolean;
+  enableStatistics: boolean;
+  enablePrediction?: boolean;
 }
 
 // ============================================================================
@@ -148,10 +158,122 @@ export async function saveTilesConfig(config: TilesConfig): Promise<boolean> {
   }
 }
 
-function normalizeTilesConfig(raw: any): TilesConfig {
+const TILE_MODULE_HINTS: Array<{
+  module: Exclude<TileModule, 'core'>;
+  markers: readonly string[];
+  prefixes?: readonly string[];
+}> = [
+  {
+    module: 'pricing',
+    markers: [
+      'spot_price_',
+      'export_price_',
+      'current_tariff',
+      'eur_czk_exchange_rate',
+      'adjusted_spot_electricity_prices',
+      'computed_grid_',
+    ],
+  },
+  {
+    module: 'statistics',
+    markers: [
+      'battery_load_median',
+      'load_avg_',
+      'hourly_',
+    ],
+  },
+  {
+    module: 'battery_prediction',
+    markers: [
+      'battery_efficiency',
+      'battery_balancing',
+      'adaptive_load_profiles',
+      'grid_charging_planned',
+      'planner_recommended_mode',
+    ],
+  },
+  {
+    module: 'boiler',
+    markers: ['boiler_', 'bojler_'],
+    prefixes: ['sensor.oig_bojler'],
+  },
+];
+
+function isTileModule(value: unknown): value is TileModule {
+  return (
+    value === 'core'
+    || value === 'pricing'
+    || value === 'boiler'
+    || value === 'statistics'
+    || value === 'battery_prediction'
+  );
+}
+
+/**
+ * Legacy entity-id to module map.
+ *
+ * First match wins. Statistics is checked before boiler so hourly aggregate
+ * tiles that mention "boiler" still land in the analytics bucket.
+ */
+export function resolveTileModule(entityId: string): TileModule {
+  const normalized = entityId.toLowerCase();
+
+  for (const hint of TILE_MODULE_HINTS) {
+    if (hint.markers.some((marker) => normalized.includes(marker))) {
+      return hint.module;
+    }
+    if (hint.prefixes?.some((prefix) => normalized.startsWith(prefix))) {
+      return hint.module;
+    }
+  }
+
+  return 'core';
+}
+
+export function ensureTileModule(tile: TileConfig): TileConfig {
+  if (isTileModule(tile.module)) {
+    return tile;
+  }
+
   return {
-    tiles_left: Array.isArray(raw.tiles_left) ? raw.tiles_left.slice(0, 6) : DEFAULT_TILES_CONFIG.tiles_left,
-    tiles_right: Array.isArray(raw.tiles_right) ? raw.tiles_right.slice(0, 6) : DEFAULT_TILES_CONFIG.tiles_right,
+    ...tile,
+    module: resolveTileModule(tile.entity_id),
+  };
+}
+
+function normalizeTilesConfig(raw: any): TilesConfig {
+  const normalizeTile = (tile: any): TileConfig | null => {
+    if (!tile || typeof tile !== 'object') return null;
+
+    const entityId = typeof tile.entity_id === 'string' ? tile.entity_id : '';
+    const supportEntities = tile.support_entities && typeof tile.support_entities === 'object'
+      ? {
+          top_right: typeof tile.support_entities.top_right === 'string'
+            ? tile.support_entities.top_right
+            : undefined,
+          bottom_right: typeof tile.support_entities.bottom_right === 'string'
+            ? tile.support_entities.bottom_right
+            : undefined,
+        }
+      : undefined;
+
+    return ensureTileModule({
+      type: tile.type === 'button' ? 'button' : 'entity',
+      entity_id: entityId,
+      label: typeof tile.label === 'string' ? tile.label : undefined,
+      icon: typeof tile.icon === 'string' ? tile.icon : undefined,
+      color: typeof tile.color === 'string' ? tile.color : undefined,
+      action: tile.action === 'toggle' || tile.action === 'turn_on' || tile.action === 'turn_off'
+        ? tile.action
+        : undefined,
+      support_entities: supportEntities,
+      module: isTileModule(tile.module) ? tile.module : undefined,
+    });
+  };
+
+  return {
+    tiles_left: Array.isArray(raw.tiles_left) ? raw.tiles_left.slice(0, 6).map(normalizeTile) : DEFAULT_TILES_CONFIG.tiles_left,
+    tiles_right: Array.isArray(raw.tiles_right) ? raw.tiles_right.slice(0, 6).map(normalizeTile) : DEFAULT_TILES_CONFIG.tiles_right,
     left_count: typeof raw.left_count === 'number' ? raw.left_count : 4,
     right_count: typeof raw.right_count === 'number' ? raw.right_count : 4,
     visible: raw.visible !== false,
@@ -235,6 +357,30 @@ export function resolveTiles(config: TilesConfig): { left: ResolvedTile[]; right
     left: resolveArray(config.tiles_left, config.left_count),
     right: resolveArray(config.tiles_right, config.right_count),
   };
+}
+
+export function shouldRenderDashboardTile(tile: ResolvedTile, flags: ModuleTileFlags): boolean {
+  const module = isTileModule(tile.config.module)
+    ? tile.config.module
+    : resolveTileModule(tile.config.entity_id);
+
+  switch (module) {
+    case 'pricing':
+      return flags.enablePricing;
+    case 'boiler':
+      return flags.enableBoiler;
+    case 'statistics':
+      return flags.enableStatistics;
+    case 'battery_prediction':
+      return flags.enablePrediction !== false;
+    case 'core':
+    default:
+      return true;
+  }
+}
+
+export function filterDashboardTiles(tiles: ResolvedTile[], flags: ModuleTileFlags): ResolvedTile[] {
+  return tiles.filter((tile) => shouldRenderDashboardTile(tile, flags));
 }
 
 /**
