@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Sequence
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,11 +87,25 @@ def build_anonymous_prompt(task: str, install: Mapping[str, Any]) -> str:
 class OpenAiCompatBackend:
     """Minimal OpenAI-compatible client (chat/completions + models probe)."""
 
-    def __init__(self, session: Any, base_url: str, api_key: str, model: str) -> None:
+    def __init__(
+        self, session: Any, base_url: str, api_key: str,
+        models: Sequence[str],
+        entry_id: str | None = None,
+        provider: str | None = None,
+        model_cache: Any = None,
+    ) -> None:
         self._session = session
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
-        self._model = model
+        self._models = tuple(models)
+        self._entry_id = entry_id
+        self._provider = provider
+        self._model_cache = model_cache
+
+    @property
+    def _model(self) -> str:
+        """Compatibility property — returns the head of the model chain."""
+        return self._models[0]
 
     @property
     def _headers(self) -> Dict[str, str]:
@@ -115,23 +129,57 @@ class OpenAiCompatBackend:
         is built here, from the allow-list, at the point bytes leave the
         process, so a caller that forgets to anonymize cannot leak: there is
         nothing to forget.
+
+        Walks the ordered model chain (P1): tries the cached last-working model
+        first (Task 3), then falls back to chain order. On HTTP error, timeout,
+        or invalid JSON from one model, continues to the next. Exhausting the
+        chain raises a classified RuntimeError.
         """
         content = build_anonymous_prompt(task, install)
+        last_err = None
+
+        # Try cached model first (Task 3)
+        if self._model_cache and self._entry_id and self._provider:
+            cached = self._model_cache.get(self._entry_id, self._provider)
+            if cached:
+                result = await self._try_model(
+                    cached, content,
+                )
+                if result is not None:
+                    self._model_cache.set(
+                        self._entry_id, self._provider, cached,
+                    )
+                    return result
+
+        for model in self._models:
+            result = await self._try_model(model, content)
+            if result is not None:
+                if self._model_cache and self._entry_id and self._provider:
+                    self._model_cache.set(
+                        self._entry_id, self._provider, model,
+                    )
+                return result
+        raise RuntimeError(
+            f"AI backend: all {len(self._models)} models in chain failed"
+        ) from last_err
+
+    async def _try_model(self, model: str, content: str) -> Any | None:
+        """Try a single model; return parsed JSON on success, None on failure."""
         payload = {
-            "model": self._model,
+            "model": model,
             "messages": [{"role": "user", "content": content}],
             "response_format": {"type": "json_object"},
             "temperature": 0,
         }
-        async with self._session.post(
-            f"{self._base_url}/chat/completions", headers=self._headers,
-            json=payload, timeout=DEFAULT_TIMEOUT_S,
-        ) as resp:
-            if resp.status != 200:
-                raise RuntimeError(f"AI backend HTTP {resp.status}")
-            body = await resp.json()
-        content = body["choices"][0]["message"]["content"]
         try:
-            return json.loads(content)
-        except (TypeError, ValueError) as err:
-            raise ValueError("AI backend returned non-JSON content") from err
+            async with self._session.post(
+                f"{self._base_url}/chat/completions", headers=self._headers,
+                json=payload, timeout=DEFAULT_TIMEOUT_S,
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                body = await resp.json()
+            msg_content = body["choices"][0]["message"]["content"]
+            return json.loads(msg_content)
+        except Exception:
+            return None

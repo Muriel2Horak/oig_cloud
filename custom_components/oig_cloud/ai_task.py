@@ -30,17 +30,51 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .ai.backends import PROVIDERS, OpenAiCompatBackend
 from .ai.key_store import AiKeyStore
+from .ai.model_cache import get_ai_model_cache
 
-# Head of each provider's fallback chain (F1-DESIGN §4 "ai_models": groq[0],
-# nvidia[0]). The real, ORDERED chain + per-model failover is the remote_config
-# loader (D6/P1/K2a), a deliberately deferred item; until it lands the entity is
-# constructed with the chain HEAD as its model. PROVIDERS (ai/backends.py) carries
-# only {base_url, key_prefix} and MUST NOT gain a model field here (out of scope +
-# would change the OUTGOING backend contract), so the default lives in this THIN
-# adapter. RESIDUAL: swap this for the remote_config chain when that lands.
-DEFAULT_MODELS: dict[str, str] = {
-    "groq": "llama-3.3-70b-versatile",
-    "nvidia": "z-ai/glm-5.2",
+# Ordered per-provider model chains (P1/P10, SCOPE-REVISION #3).
+# Groq chain verbatim from DECISIONS P10.
+# NVIDIA chain: 6 named flagships first (DECISIONS P1 order), then remaining
+# OK models from the 2026-07-09 NIM probe sorted by ascending latency_s
+# (docs/redesign_2026_07/nim-model-test-2026-07-09.json).
+MODEL_CHAINS: dict[str, tuple[str, ...]] = {
+    "groq": ("llama-3.3-70b-versatile", "qwen3-32b", "llama-3.1-8b-instant"),
+    "nvidia": (
+        # 6 named flagships (DECISIONS P1 order)
+        "z-ai/glm-5.2",
+        "mistralai/mistral-large-3-675b-instruct-2512",
+        "minimaxai/minimax-m3",
+        "nvidia/nemotron-3-super-120b-a12b",
+        "mistralai/mistral-medium-3.5-128b",
+        "openai/gpt-oss-120b",
+        # Remaining 26 OK models from 2026-07-09 NIM probe, ascending latency_s
+        "microsoft/phi-4-mini-instruct",
+        "mistralai/ministral-14b-instruct-2512",
+        "meta/llama-3.1-8b-instruct",
+        "mistralai/mistral-small-4-119b-2603",
+        "mistralai/mistral-nemotron",
+        "nvidia/nemotron-mini-4b-instruct",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "stockmark/stockmark-2-100b-instruct",
+        "nvidia/nemotron-nano-12b-v2-vl",
+        "nvidia/nemotron-3-nano-30b-a3b",
+        "abacusai/dracarys-llama-3.1-70b-instruct",
+        "stepfun-ai/step-3.5-flash",
+        "google/gemma-4-31b-it",
+        "mistralai/mixtral-8x7b-instruct-v0.1",
+        "stepfun-ai/step-3.7-flash",
+        "openai/gpt-oss-20b",
+        "deepseek-ai/deepseek-v4-pro",
+        "sarvamai/sarvam-m",
+        "minimaxai/minimax-m2.7",
+        "deepseek-ai/deepseek-v4-flash",
+        "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        "meta/llama-3.1-70b-instruct",
+        "nvidia/nvidia-nemotron-nano-9b-v2",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "meta/llama-3.3-70b-instruct",
+    ),
 }
 
 
@@ -177,11 +211,15 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         if not key:
             # Provider chosen but no key — cannot call the backend, add nothing.
             return
+        cache = get_ai_model_cache(hass)
         backend = OpenAiCompatBackend(
             session=async_get_clientsession(hass),
             base_url=PROVIDERS[provider]["base_url"],
             api_key=key,
-            model=DEFAULT_MODELS[provider],
+            models=MODEL_CHAINS[provider],
+            entry_id=entry.entry_id,
+            provider=provider,
+            model_cache=cache,
         )
         # `install` is the allow-listed anonymous snapshot. No readily-available
         # allow-listed source is wired here yet, and {} is SAFE at the OUTGOING

@@ -1524,7 +1524,7 @@ class OIGCloudAiView(HomeAssistantView):
             session=session,
             base_url=PROVIDERS[provider]["base_url"],
             api_key=api_key,
-            model="verify-only",
+            models=("verify-only",),
         )
         # R11.3: verify the CANDIDATE key before it ever touches the store — a
         # provider outage (or a bad candidate) must not overwrite a previously

@@ -104,10 +104,15 @@ def _patch_setup(monkeypatch, provider, key):
     return session
 
 
+class _FakeHassForSetup:
+    def __init__(self):
+        self.data = {}
+
+
 async def _run_setup(provider, key, monkeypatch):
     _patch_setup(monkeypatch, provider, key)
     added = []
-    await ai_task.async_setup_entry(object(), _Entry("entry1"), added.extend)
+    await ai_task.async_setup_entry(_FakeHassForSetup(), _Entry("entry1"), added.extend)
     return added
 
 
@@ -121,7 +126,7 @@ async def test_groq_provider_builds_openai_compat_backend(monkeypatch):
     assert ent._provider == "groq"
     assert isinstance(ent._backend, OpenAiCompatBackend)
     assert ent._backend._base_url == PROVIDERS["groq"]["base_url"].rstrip("/")
-    assert ent._backend._model == ai_task.DEFAULT_MODELS["groq"]
+    assert ent._backend._model == ai_task.MODEL_CHAINS["groq"][0]
     assert ent._backend._api_key == "gsk_secret0000000000"
     assert ent._attr_unique_id == "entry1_ai_task"
 
@@ -133,7 +138,7 @@ async def test_nvidia_provider_uses_its_base_url_and_model(monkeypatch):
     ent = added[0]
     assert ent._provider == "nvidia"
     assert ent._backend._base_url == PROVIDERS["nvidia"]["base_url"].rstrip("/")
-    assert ent._backend._model == ai_task.DEFAULT_MODELS["nvidia"]
+    assert ent._backend._model == ai_task.MODEL_CHAINS["nvidia"][0]
 
 
 @pytest.mark.asyncio
@@ -228,3 +233,40 @@ async def test_missing_backend_on_openai_compat_provider_raises_classified_error
 
     with pytest.raises(RuntimeError, match="AI backend not configured"):
         await ent._async_generate_data(task, chat_log)
+
+
+# --- Stage C1 Task 1: MODEL_CHAINS -----------------------------------------
+
+def test_groq_chain_matches_p10_order():
+    from custom_components.oig_cloud import ai_task
+    assert ai_task.MODEL_CHAINS["groq"] == (
+        "llama-3.3-70b-versatile", "qwen3-32b", "llama-3.1-8b-instant",
+    )
+
+
+def test_nvidia_chain_head_is_the_flagship_order_from_decisions_p1():
+    from custom_components.oig_cloud import ai_task
+    assert ai_task.MODEL_CHAINS["nvidia"][:6] == (
+        "z-ai/glm-5.2",
+        "mistralai/mistral-large-3-675b-instruct-2512",
+        "minimaxai/minimax-m3",
+        "nvidia/nemotron-3-super-120b-a12b",
+        "mistralai/mistral-medium-3.5-128b",
+        "openai/gpt-oss-120b",
+    )
+
+
+def test_nvidia_chain_excludes_dead_and_disabled_models_and_is_32_long():
+    from custom_components.oig_cloud import ai_task
+    chain = ai_task.MODEL_CHAINS["nvidia"]
+    assert len(chain) == 32
+    assert "moonshotai/kimi-k2.6" not in chain
+    assert "01-ai/yi-large" not in chain
+    assert len(set(chain)) == 32
+
+
+def test_nvidia_chain_tail_is_latency_sorted():
+    from custom_components.oig_cloud import ai_task
+    tail = ai_task.MODEL_CHAINS["nvidia"][6:]
+    assert tail[0] == "microsoft/phi-4-mini-instruct"
+    assert tail[-1] == "meta/llama-3.3-70b-instruct"
