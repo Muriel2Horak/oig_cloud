@@ -7,15 +7,14 @@
  * `field.*` key — and rendering the raw key would print
  * `field.charge_rate_kw.label` on screen.
  *
- * Catalog seeded by transcribing the existing Czech copy from
- * `src/ui/features/settings/index.ts:62-145` (MODULE_FIELDS, BATTERY_FIELDS,
- * SOLAR_FIELDS, BOILER_FIELDS_ALL) — no new copywriting, no lost hints.
+ * Catalog seeded by transcribing the existing Czech copy from the legacy
+ * settings tab field labels and hints — no new copywriting, no lost hints.
  * `fieldLabel()` / `fieldHint()` never return a raw i18n key; missing
  * entries fall back to a humanised form of the key.
  */
 
 const CS_LABELS: Record<string, string> = {
-  // --- MODULE_FIELDS (settings/index.ts:63-69) ---
+  // --- module settings ---
   'field.enable_battery_prediction.label': 'Predikce baterie a plánovač',
   'field.enable_solar_forecast.label': 'Solární předpověď',
   'field.enable_pricing.label': 'Ceny energie',
@@ -24,7 +23,7 @@ const CS_LABELS: Record<string, string> = {
   'field.enable_extended_sensors.label': 'Rozšířené senzory',
   'field.enable_chmu_warnings.label': 'Výstrahy ČHMÚ',
 
-  // --- BATTERY_FIELDS (settings/index.ts:73-80) ---
+  // --- battery settings ---
   'field.auto_mode_switch_enabled.label': 'Automatické přepínání režimů',
   'field.charge_rate_kw.label': 'Nabíjecí výkon ze sítě (kW)',
   'field.expensive_percentile.label': 'Práh drahých hodin (%)',
@@ -34,7 +33,7 @@ const CS_LABELS: Record<string, string> = {
   'field.balancing_hold_hours.label': 'Držení 100 % (hodiny)',
   'field.cheap_window_percentile.label': 'Levné okno pro balancování (%)',
 
-  // --- SOLAR_FIELDS (settings/index.ts:84-96) ---
+  // --- solar settings ---
   'field.solar_forecast_provider.label': 'Poskytovatel',
   'field.solcast_site_id.label': 'Solcast site ID',
   'field.solcast_api_key.label': 'Solcast API klíč',
@@ -49,7 +48,7 @@ const CS_LABELS: Record<string, string> = {
   'field.solar_forecast_string2_declination.label': 'String 2 sklon (°)',
   'field.solar_forecast_string2_azimuth.label': 'String 2 azimut (°)',
 
-  // --- BOILER_FIELDS_ALL (settings/index.ts:114-144) ---
+  // --- boiler settings ---
   'field.boiler_volume_l.label': 'Objem nádrže (l)',
   'field.boiler_temp_sensor_top.label': 'Čidlo teploty — vrchní',
   'field.boiler_temp_sensor_bottom.label': 'Čidlo teploty — spodní',
@@ -140,13 +139,13 @@ const CS_LABELS: Record<string, string> = {
 };
 
 const CS_HINTS: Record<string, string> = {
-  // --- MODULE_FIELDS hints ---
+  // --- module settings hints ---
   'field.enable_battery_prediction.hint': 'Ekonomické plánování nabíjení, timeline, úspory',
   'field.enable_solar_forecast.hint': 'Předpověď výroby FVE (forecast.solar / Solcast)',
   'field.enable_pricing.hint': 'Spotové ceny OTE, výkup, distribuce',
   'field.enable_boiler.hint': 'Inteligentní ohřev vody',
 
-  // --- BATTERY_FIELDS hints ---
+  // --- battery settings hints ---
   'field.auto_mode_switch_enabled.hint': 'Plánovač sám přepíná Home 1 / Home UPS podle plánu',
   'field.charge_rate_kw.hint': 'Kolik kW box bere při nabíjení ze sítě (UPS)',
   'field.expensive_percentile.hint': 'Importy nad tímto denním percentilem cen se plánovač snaží pokrýt levným přednabitím. Výchozí 70 %.',
@@ -154,12 +153,12 @@ const CS_HINTS: Record<string, string> = {
   'field.balancing_enabled.hint': 'Pravidelné nabití na 100 % kvůli vyrovnání článků',
   'field.cheap_window_percentile.hint': 'Balancování se plánuje do hodin pod tímto cenovým percentilem',
 
-  // --- SOLAR_FIELDS hints ---
+  // --- solar settings hints ---
   'field.solcast_site_id.hint': 'Jen pro Solcast (z rooftop site URL)',
   'field.solcast_api_key.hint': 'Nech prázdné = beze změny',
   'field.solar_forecast_string1_azimuth.hint': '0 = jih, −90 = východ, 90 = západ',
 
-  // --- BOILER_FIELDS_ALL hints ---
+  // --- boiler settings hints ---
   'field.boiler_volume_l.hint': 'Jmenovitý objem zásobníku v litrech',
   'field.boiler_temp_sensor_top.hint': 'ID entity senzoru teploty (např. sensor.bojler_top)',
   'field.boiler_temp_sensor_bottom.hint': 'Jen pokud máš druhý teploměr (ID entity senzoru)',

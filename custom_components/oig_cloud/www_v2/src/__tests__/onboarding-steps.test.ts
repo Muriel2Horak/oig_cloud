@@ -521,7 +521,7 @@ describe('paired-host regression (Task 1 — shared field renderer)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await settings.updateComplete;
 
-    // Modules card renders MODULE_FIELDS — 'enable_boiler' is a real bool field.
+    // Modules card renders a real bool field in the shared presenter path.
     const liveInput = settings.shadowRoot!.querySelector(
       'input[type="checkbox"]',
     ) as HTMLInputElement;
@@ -531,7 +531,7 @@ describe('paired-host regression (Task 1 — shared field renderer)', () => {
 
     // Bare presenter call, explicit ctx — exactly what `oig-onboarding-wizard`
     // will call directly once Task 2 wires it up. Same FieldDef shape as the
-    // real 'enable_boiler' MODULE_FIELDS entry.
+    // live 'enable_boiler' bool field.
     const f: FieldDef = { key: 'enable_boiler', label: 'Bojler', type: 'bool', hint: 'Inteligentní ohřev vody' };
     const bare = document.createElement('div');
     render(

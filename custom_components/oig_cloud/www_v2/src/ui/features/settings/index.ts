@@ -67,47 +67,6 @@ export interface FieldDef {
  */
 export const RELOAD_SECTIONS: ReadonlySet<SettingsSection> = new Set(['boiler']);
 
-// ============================================================================
-// FIELD DEFINITIONS
-// ============================================================================
-
-const MODULE_FIELDS: FieldDef[] = [
-  { key: 'enable_battery_prediction', label: 'Predikce baterie a plánovač', type: 'bool', hint: 'Ekonomické plánování nabíjení, timeline, úspory' },
-  { key: 'enable_solar_forecast', label: 'Solární předpověď', type: 'bool', hint: 'Předpověď výroby FVE (forecast.solar / Solcast)' },
-  { key: 'enable_pricing', label: 'Ceny energie', type: 'bool', hint: 'Spotové ceny OTE, výkup, distribuce' },
-  { key: 'enable_boiler', label: 'Bojler', type: 'bool', hint: 'Inteligentní ohřev vody' },
-  { key: 'enable_statistics', label: 'Statistiky', type: 'bool' },
-  { key: 'enable_extended_sensors', label: 'Rozšířené senzory', type: 'bool' },
-  { key: 'enable_chmu_warnings', label: 'Výstrahy ČHMÚ', type: 'bool' },
-];
-
-const BATTERY_FIELDS: FieldDef[] = [
-  { key: 'auto_mode_switch_enabled', label: 'Automatické přepínání režimů', type: 'bool', hint: 'Plánovač sám přepíná Home 1 / Home UPS podle plánu' },
-  { key: 'charge_rate_kw', label: 'Nabíjecí výkon ze sítě (kW)', type: 'number', min: 0.5, max: 10, step: 0.1, hint: 'Kolik kW box bere při nabíjení ze sítě (UPS)' },
-  { key: 'expensive_percentile', label: 'Práh drahých hodin (%)', type: 'number', min: 50, max: 95, step: 5, scale: 100, hint: 'Importy nad tímto denním percentilem cen se plánovač snaží pokrýt levným přednabitím. Výchozí 70 %.' },
-  { key: 'battery_comfort_soc_percent', label: 'Komfortní rezerva baterie (%)', type: 'number', min: 0, max: 95, step: 5, hint: 'Baterku drží nad touto úrovní, ale jen dobíjením v nejlevnějších oknech — aby ji box sám nenatáhl na 80 % za jakoukoli cenu. 0 = vypnuto. Výchozí 50 %.' },
-  { key: 'balancing_enabled', label: 'Balancování článků', type: 'bool', hint: 'Pravidelné nabití na 100 % kvůli vyrovnání článků' },
-  { key: 'balancing_interval_days', label: 'Interval balancování (dny)', type: 'number', min: 3, max: 30, step: 1 },
-  { key: 'balancing_hold_hours', label: 'Držení 100 % (hodiny)', type: 'number', min: 1, max: 12, step: 1 },
-  { key: 'cheap_window_percentile', label: 'Levné okno pro balancování (%)', type: 'number', min: 5, max: 80, step: 5, hint: 'Balancování se plánuje do hodin pod tímto cenovým percentilem' },
-];
-
-const SOLAR_FIELDS: FieldDef[] = [
-  { key: 'solar_forecast_provider', label: 'Poskytovatel', type: 'select', options: [['forecast_solar', 'forecast.solar'], ['solcast', 'Solcast']] },
-  { key: 'solcast_site_id', label: 'Solcast site ID', type: 'text', hint: 'Jen pro Solcast (z rooftop site URL)' },
-  { key: 'solcast_api_key', label: 'Solcast API klíč', type: 'text', hint: 'Nech prázdné = beze změny' },
-  { key: 'solar_forecast_latitude', label: 'Zeměpisná šířka', type: 'number', min: -90, max: 90, step: 0.0001 },
-  { key: 'solar_forecast_longitude', label: 'Zeměpisná délka', type: 'number', min: -180, max: 180, step: 0.0001 },
-  { key: 'solar_forecast_string1_enabled', label: 'String 1 aktivní', type: 'bool' },
-  { key: 'solar_forecast_string1_kwp', label: 'String 1 výkon (kWp)', type: 'number', min: 0.1, max: 50, step: 0.1 },
-  { key: 'solar_forecast_string1_declination', label: 'String 1 sklon (°)', type: 'number', min: 0, max: 90, step: 1 },
-  { key: 'solar_forecast_string1_azimuth', label: 'String 1 azimut (°)', type: 'number', min: -180, max: 180, step: 1, hint: '0 = jih, −90 = východ, 90 = západ' },
-  { key: 'solar_forecast_string2_enabled', label: 'String 2 aktivní', type: 'bool' },
-  { key: 'solar_forecast_string2_kwp', label: 'String 2 výkon (kWp)', type: 'number', min: 0.1, max: 50, step: 0.1 },
-  { key: 'solar_forecast_string2_declination', label: 'String 2 sklon (°)', type: 'number', min: 0, max: 90, step: 1 },
-  { key: 'solar_forecast_string2_azimuth', label: 'String 2 azimut (°)', type: 'number', min: -180, max: 180, step: 1 },
-];
-
 // Dynamic hint for alt source type based on selected value
 function altSourceHint(type: string): string {
   if (type === 'gas') return 'Plyn — cena tepla včetně účinnosti kotle (např. 1,5 Kč/kWh)';
@@ -116,45 +75,15 @@ function altSourceHint(type: string): string {
   return 'Zadej orientační cenu tepla v Kč/kWh';
 }
 
-/**
- * All boiler fields (static list used for field-key coverage tests).
- * Conditional rendering is handled in renderBoilerCard, not here.
- * Mirrors ha_rest_api._MODULE_CONFIG_FIELDS['boiler'] — keep in sync!
- */
-export const BOILER_FIELDS_ALL: FieldDef[] = [
-  // Nádrž a čidla
-  { key: 'boiler_volume_l', label: 'Objem nádrže (l)', type: 'number', min: 30, max: 1000, step: 1, hint: 'Jmenovitý objem zásobníku v litrech' },
-  { key: 'boiler_temp_sensor_top', label: 'Čidlo teploty — vrchní', type: 'text', hint: 'ID entity senzoru teploty (např. sensor.bojler_top)', entity: { domain: 'sensor' } },
-  { key: 'boiler_temp_sensor_bottom', label: 'Čidlo teploty — spodní', type: 'text', hint: 'Jen pokud máš druhý teploměr (ID entity senzoru)', optional: true, entity: { domain: 'sensor' } },
-  { key: 'boiler_enable_second_thermometer', label: 'Druhý teploměr aktivní', type: 'bool', hint: 'Zapni, pokud máš spodní čidlo teploty' },
-  { key: 'boiler_current_power_entity', label: 'Senzor příkonu bojleru', type: 'text', hint: 'ID entity senzoru výkonu (W); upřesňuje plánovač', optional: true, entity: { domain: 'sensor' } },
-  // Teplota a čas
-  { key: 'boiler_target_temp_c', label: 'Cílová teplota (°C)', type: 'number', min: 40, max: 85, step: 1, hint: 'Požadovaná teplota vody před deadline' },
-  { key: 'boiler_deadline_time', label: 'Deadline (HH:MM)', type: 'text', hint: 'Čas, do kdy musí být voda nahřátá (formát HH:MM, např. 07:00)' },
-  // Tepelná arbitráž (fáze B)
-  { key: 'boiler_thermal_arbitrage_enabled', label: '💰 Tepelná arbitráž', type: 'bool', hint: 'Přetápět levným proudem (spot pod cenou alt. zdroje) a podržet; rezerva na přetok FVE' },
-  { key: 'boiler_max_temp_c', label: 'Strop arbitráže (°C)', type: 'number', min: 40, max: 85, step: 1, hint: 'Kam až smí arbitráž dotopit nad cílovou teplotu' },
-  { key: 'boiler_alt_power_kw', label: 'Výkon alt. zdroje (kW)', type: 'number', min: 0, max: 50, step: 0.5, hint: 'Tepelný výkon alt. zdroje do nádrže; 0 = neznámý' },
-  // Alternativní zdroj
-  { key: 'boiler_has_alternative_heating', label: 'Alternativní zdroj tepla', type: 'bool', hint: 'Bojler má jiný zdroj ohřevu (plyn, TČ, krb…)' },
-  { key: 'boiler_alt_source_type', label: 'Typ alternativního zdroje', type: 'select', options: [['gas', 'Plyn'], ['heat_pump', 'Tepelné čerpadlo'], ['fireplace', 'Krb'], ['other', 'Jiný']] },
-  { key: 'boiler_alt_cost_kwh', label: 'Cena tepla (Kč/kWh)', type: 'number', min: 0, max: 20, step: 0.1, hint: 'Cena tepla z alternativního zdroje v Kč/kWh' },
-  { key: 'boiler_alt_energy_sensor', label: 'Senzor energie alt. zdroje', type: 'text', hint: 'ID entity senzoru energie (kWh)', optional: true, entity: { domain: 'sensor' } },
-  { key: 'boiler_alt_energy_daily', label: 'Denní přírůstek energie', type: 'bool', hint: 'Zapni, pokud senzor měří denní (ne celkový) přírůstek' },
-  // Home 5/6 + baterie
-  { key: 'box_has_home56', label: 'Box má Home 5/6', type: 'bool', hint: 'Aktivuje Home 5/6 (OIG CBB) — umožňuje 🔋→🔥 ohřev z baterie' },
-  { key: 'boiler_home5_maneuver_enabled', label: '🔋→🔥 Ohřev z baterie', type: 'bool', hint: 'Plánovač může použít baterii k ohřevu (vyžaduje Home 5/6)' },
-  { key: 'boiler_battery_cycle_cost_czk_kwh', label: 'Cena cyklu baterie (Kč/kWh)', type: 'number', min: 0, max: 5, step: 0.05, hint: 'Degradace baterie za kWh; plánovač porovná s cenou sítě' },
-  // Cirkulace
-  { key: 'boiler_circulation_enabled', label: 'Cirkulace teplé vody', type: 'bool', hint: 'Zapnutí cirkulačního čerpadla TUV' },
-  { key: 'boiler_circulation_lead_minutes', label: 'Předstih cirkulace (min)', type: 'number', min: 0, max: 120, step: 5, hint: 'Jak dlouho před odběrem pustit čerpadlo' },
-  { key: 'boiler_circulation_run_minutes', label: 'Délka běhu cirkulace (min)', type: 'number', min: 1, max: 60, step: 1 },
-  { key: 'boiler_circulation_max_runs_per_day', label: 'Max. počet běhů/den', type: 'number', min: 1, max: 20, step: 1 },
-  { key: 'boiler_circulation_min_gap_minutes', label: 'Min. pauza mezi běhy (min)', type: 'number', min: 10, max: 480, step: 10 },
-  // Anti-legionella
-  { key: 'boiler_legionella_interval_days', label: 'Interval ochrany (dny)', type: 'number', min: 0, max: 30, step: 1, hint: '0 = vypnuto; doporučeno 7–14 dní' },
-  { key: 'boiler_legionella_target_temp_c', label: 'Teplota dezinfekce (°C)', type: 'number', min: 60, max: 75, step: 1, hint: 'Min. 60 °C pro spolehlivé usmrcení legionelly' },
-];
+const BOILER_TANK_KEYS = [
+  'boiler_volume_l',
+  'boiler_temp_sensor_top',
+  'boiler_enable_second_thermometer',
+  'boiler_temp_sensor_bottom',
+  'boiler_current_power_entity',
+  'boiler_target_temp_c',
+  'boiler_deadline_time',
+] as const;
 
 // ============================================================================
 // STATUS BADGE HELPERS — pure functions exported for unit tests
@@ -312,6 +241,37 @@ export class OigSettings extends LitElement {
     .toast.ok { color: #9fe6a8; }
     .toast.err { color: #ff9d93; }
 
+    .error {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 128, 128, 0.35);
+      border-radius: 10px;
+      background: rgba(255, 128, 128, 0.08);
+    }
+
+    .error p {
+      margin: 0;
+      font-size: 12px;
+      color: ${u(CSS_VARS.textSecondary)};
+      line-height: 1.45;
+    }
+
+    .error button {
+      border: none;
+      border-radius: 8px;
+      padding: 7px 12px;
+      background: ${u(CSS_VARS.accent)};
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
     /* ---- Note box ---- */
     .note {
       font-size: 11.5px;
@@ -449,20 +409,12 @@ export class OigSettings extends LitElement {
 
   private async refresh(): Promise<void> {
     this.loading = true;
-    // Load config + registry in parallel — both endpoints may 404 in the same
-    // reload window after a save on a RELOAD_SECTIONS (see
-    // settings-data.ts:waitForModuleConfigAfterReload).
     const [config, registry] = await Promise.all([
       loadModuleConfig(),
       loadFieldRegistry(),
     ]);
-    if (registry === null && this.registry === null) {
-      // First observed null — log once. Plan 4 drops the fallback and this
-      // warning fires permanently for backends that don't expose the registry.
-      oigLog.warn('[Settings] /config_registry unavailable — using static field fallback');
-    } else if (registry === null && this.registry !== null) {
-      // Was loaded, now missing — typical reload window. Don't spam.
-      oigLog.warn('[Settings] /config_registry returned null — falling back to static fields for this render');
+    if (registry === null) {
+      oigLog.warn('[Settings] /config_registry unavailable');
     }
     this.registry = registry;
     this.config = config;
@@ -472,19 +424,9 @@ export class OigSettings extends LitElement {
 
   /**
    * Resolve the field list for a section.
-   *
-   * Registry drives when present; falls back to the static lists (kept until
-   * Plan 4 deletes them) when the backend returns null — old integration or
-   * 404 during the post-save reload window.
    */
   private fieldsFor(section: SettingsSection): FieldDef[] {
-    if (this.registry) {
-      return fieldsFromRegistry(this.registry, section);
-    }
-    if (section === 'modules') return MODULE_FIELDS;
-    if (section === 'battery') return BATTERY_FIELDS;
-    if (section === 'solar') return SOLAR_FIELDS;
-    return BOILER_FIELDS_ALL;  // renderBoilerCard picks fields manually; this is a safety net.
+    return this.registry ? fieldsFromRegistry(this.registry, section) : [];
   }
 
   private current(section: SettingsSection, key: string): unknown {
@@ -620,7 +562,21 @@ export class OigSettings extends LitElement {
     });
   }
 
+  private renderRegistryUnavailable(section: SettingsSection, title: string, sub: string) {
+    return html`
+      <div class="card">
+        <h2>${title}</h2>
+        <div class="sub">${sub}</div>
+        <div class="error" role="alert" data-testid=${`registry-error-${section}`}>
+          <p>Registry polí se nepodařilo načíst.</p>
+          <button type="button" @click=${() => void this.refresh()}>Zkusit znovu</button>
+        </div>
+      </div>
+    `;
+  }
+
   private renderCard(section: SettingsSection, title: string, sub: string, fields: FieldDef[]) {
+    if (!this.registry) return this.renderRegistryUnavailable(section, title, sub);
     const toast = this.toast?.section === section ? this.toast : null;
     const dirty = this.isDirty(section);
     // U1: showIf filtering. `current()` prefers pending over saved, so the
@@ -661,7 +617,19 @@ export class OigSettings extends LitElement {
    */
   private renderBoilerCard() {
     const section: SettingsSection = 'boiler';
+    if (!this.registry) {
+      return this.renderRegistryUnavailable(section, '🔥 Bojler', 'Parametry inteligentního ohřevu vody — mirroruje průvodce v HA.');
+    }
+
     const toast = this.toast?.section === section ? this.toast : null;
+    const fields = this.fieldsFor(section);
+    const byKey = new Map(fields.map((f) => [f.key, f]));
+    const field = (key: string): FieldDef | undefined => byKey.get(key);
+    const renderBoilerField = (key: string, disabled = false) => {
+      const f = field(key);
+      if (!f) return nothing;
+      return disabled ? this.renderFieldDisableable(section, f, true) : this.renderField(section, f);
+    };
 
     const hasAlt = !!this.current(section, 'boiler_has_alternative_heating');
     const altType = String(this.current(section, 'boiler_alt_source_type') ?? 'gas');
@@ -675,25 +643,17 @@ export class OigSettings extends LitElement {
     const dirty = this.isDirty(section);
 
     // Dynamic alt cost hint based on type
-    const altCostField: FieldDef = {
-      key: 'boiler_alt_cost_kwh',
-      label: 'Cena tepla (Kč/kWh)',
-      type: 'number',
-      min: 0,
-      max: 20,
-      step: 0.1,
-      hint: altSourceHint(altType),
-    };
+    const altCostField = field('boiler_alt_cost_kwh');
+    const altCostFieldWithHint = altCostField ? { ...altCostField, hint: altSourceHint(altType) } : undefined;
 
     // Home5 maneuver field — disabled when box_has_home56=false
-    const home5Field: FieldDef = {
-      key: 'boiler_home5_maneuver_enabled',
-      label: '🔋→🔥 Ohřev z baterie',
-      type: 'bool',
+    const home5Field = field('boiler_home5_maneuver_enabled');
+    const home5FieldWithHint = home5Field ? {
+      ...home5Field,
       hint: hasHome56
         ? 'Plánovač použije baterii (Home 5) k ohřevu, pokud je levnější než síť'
         : 'Vyžaduje aktivaci „Box má Home 5/6" výše',
-    };
+    } : undefined;
 
     // Section badges
     const sourceBadge = sourceSectionBadge(hasAlt, altType, altCostKwh, hasHome56, home5Enabled);
@@ -709,13 +669,10 @@ export class OigSettings extends LitElement {
         <details class="bsec" open>
           <summary>Nádrž a čidla</summary>
           <div class="bsec-body">
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_volume_l')!)}
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_temp_sensor_top')!)}
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_enable_second_thermometer')!)}
-            ${secondTherm ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_temp_sensor_bottom')!) : nothing}
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_current_power_entity')!)}
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_target_temp_c')!)}
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_deadline_time')!)}
+            ${BOILER_TANK_KEYS.map((key) => {
+              if (key === 'boiler_temp_sensor_bottom' && !secondTherm) return nothing;
+              return renderBoilerField(key);
+            })}
           </div>
         </details>
 
@@ -726,22 +683,22 @@ export class OigSettings extends LitElement {
             <span class="bsec-badge" data-testid="badge-sources">${sourceBadge}</span>
           </summary>
           <div class="bsec-body">
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_has_alternative_heating')!)}
+            ${renderBoilerField('boiler_has_alternative_heating')}
             ${hasAlt ? html`
-              ${this.renderField(section, { ...BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_source_type')!, hint: undefined })}
-              ${this.renderField(section, altCostField)}
-              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_sensor')!)}
-              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_energy_daily')!)}
-              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_alt_power_kw')!)}
-              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_thermal_arbitrage_enabled')!)}
-              ${this.current(section, 'boiler_thermal_arbitrage_enabled') ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_max_temp_c')!) : nothing}
+              ${field('boiler_alt_source_type') ? this.renderField(section, { ...field('boiler_alt_source_type')!, hint: undefined }) : nothing}
+              ${altCostFieldWithHint ? this.renderField(section, altCostFieldWithHint) : nothing}
+              ${renderBoilerField('boiler_alt_energy_sensor')}
+              ${renderBoilerField('boiler_alt_energy_daily')}
+              ${renderBoilerField('boiler_alt_power_kw')}
+              ${renderBoilerField('boiler_thermal_arbitrage_enabled')}
+              ${this.current(section, 'boiler_thermal_arbitrage_enabled') ? renderBoilerField('boiler_max_temp_c') : nothing}
             ` : nothing}
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'box_has_home56')!)}
+            ${renderBoilerField('box_has_home56')}
             <div class="note" style="margin-top:6px;margin-bottom:2px">
               Po změně „Box má Home 5/6" a uložení nastavení je nutné obnovit stránku (F5), aby se ovládací panel správně aktualizoval.
             </div>
-            ${this.renderFieldDisableable(section, home5Field, !hasHome56)}
-            ${hasHome56 ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_battery_cycle_cost_czk_kwh')!) : nothing}
+            ${home5FieldWithHint ? this.renderFieldDisableable(section, home5FieldWithHint, !hasHome56) : nothing}
+            ${hasHome56 ? renderBoilerField('boiler_battery_cycle_cost_czk_kwh') : nothing}
           </div>
         </details>
 
@@ -752,12 +709,12 @@ export class OigSettings extends LitElement {
             <span class="bsec-badge" data-testid="badge-circulation">${circBadge}</span>
           </summary>
           <div class="bsec-body">
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_enabled')!)}
+            ${renderBoilerField('boiler_circulation_enabled')}
             ${circEnabled ? html`
-              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_lead_minutes')!)}
-              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_run_minutes')!)}
-              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_max_runs_per_day')!)}
-              ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_circulation_min_gap_minutes')!)}
+              ${renderBoilerField('boiler_circulation_lead_minutes')}
+              ${renderBoilerField('boiler_circulation_run_minutes')}
+              ${renderBoilerField('boiler_circulation_max_runs_per_day')}
+              ${renderBoilerField('boiler_circulation_min_gap_minutes')}
             ` : nothing}
           </div>
         </details>
@@ -769,8 +726,8 @@ export class OigSettings extends LitElement {
             <span class="bsec-badge" data-testid="badge-legionella">${legBadge}</span>
           </summary>
           <div class="bsec-body">
-            ${this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_legionella_interval_days')!)}
-            ${legInterval > 0 ? this.renderField(section, BOILER_FIELDS_ALL.find(f => f.key === 'boiler_legionella_target_temp_c')!) : nothing}
+            ${renderBoilerField('boiler_legionella_interval_days')}
+            ${legInterval > 0 ? renderBoilerField('boiler_legionella_target_temp_c') : nothing}
           </div>
         </details>
 
