@@ -76,8 +76,8 @@ describe('battery simulator chart helpers', () => {
     const svg = renderBatterySocSvg(batteryIntervals(), 50);
     expect(svg).toContain('100 %');
     expect(svg).toContain('0 %');
-    expect(svg).toContain('comfort reserve');
-    expect(svg).toContain('fill-opacity="0.14"');
+    expect(svg).toContain('komfortní rezerva');
+    expect(svg).toContain('fill-opacity=".14"');
     expect(svg.match(/data-sim-point="/g)).toHaveLength(24);
     expect(svg).not.toContain('right-axis');
   });
@@ -113,7 +113,7 @@ describe('boiler simulator chart helpers', () => {
   it('renders the draw bars and hour axis', () => {
     const draws = Array.from({ length: 24 }, (_, hour) => (hour >= 6 && hour <= 8 ? 60 : 0));
     const svg = renderBoilerDrawSvg(draws);
-    expect(svg.match(/<rect\b/g)).toHaveLength(3);
+    expect(svg.match(/<rect\b/g)).toHaveLength(24);
     expect(svg).toContain('0');
     expect(svg).toContain('24');
     expect(svg).toContain('#31406b');
