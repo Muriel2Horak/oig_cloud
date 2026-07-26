@@ -227,3 +227,223 @@ describe('modulesDraft seeding (Task 21)', () => {
     expect(steps).not.toContain('boiler');
   });
 });
+
+/** Production `/module_config` GET always emits every `modules` field
+ * (`ha_rest_api.py:1163` iterates `fields_for_section`), so `originalValues`
+ * holds all 7 enable_* keys — the same shape used here. */
+const FULL_MODULES_DOC = {
+  modules: {
+    enable_solar_forecast: false, enable_battery_prediction: false, enable_pricing: false,
+    enable_boiler: false, enable_statistics: true, enable_extended_sensors: true,
+    enable_chmu_warnings: true,
+  },
+};
+
+describe('modules persistence + diff table (f1/wv2-modules-fix root cause a)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(MODULES_REGISTRY_FIXTURE);
+    saveModuleConfigMock.mockResolvedValue({ ok: true });
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  it('the final save writes a flipped module toggle (was: modulesDraft excluded, toggles never persisted)', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch(FULL_MODULES_DOC));
+    const wizard = await openWizard();
+    const w = internals(wizard);
+
+    // Owner turns OFF "Výstrahy ČHMÚ".
+    w.modulesDraft = { ...w.modulesDraft, enable_chmu_warnings: false };
+    await wizard.updateComplete;
+
+    await w.saveAllChangedSections();
+
+    expect(saveModuleConfigMock).toHaveBeenCalledWith('modules', { enable_chmu_warnings: false });
+  });
+
+  it('unchanged module toggles are not written (diff-only save contract)', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch(FULL_MODULES_DOC));
+    const wizard = await openWizard();
+    const w = internals(wizard);
+
+    await w.saveAllChangedSections();
+
+    expect(saveModuleConfigMock).not.toHaveBeenCalledWith('modules', expect.anything());
+  });
+
+  it('a flipped module toggle appears in the step-9 diff table', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch(FULL_MODULES_DOC));
+    const wizard = await openWizard();
+    const w = internals(wizard);
+
+    w.modulesDraft = { ...w.modulesDraft, enable_chmu_warnings: false };
+    await wizard.updateComplete;
+
+    const rows = w.summaryDiffRows();
+    expect(rows.find((r: { key: string }) => r.key === 'enable_chmu_warnings'))
+      .toMatchObject({ oldValue: true, newValue: false });
+  });
+});
+
+/** Dependency matrix gating (f1/wv2-modules-fix §3), per BACKEND evidence:
+ *  HARD: enable_battery_prediction requires enable_solar_forecast +
+ *  enable_extended_sensors (config/steps.py:990-993). SOFT: battery→pricing,
+ *  boiler→pricing/battery (degrade, non-blocking). */
+describe('modules dependency gating (f1/wv2-modules-fix §3)', () => {
+  beforeEach(() => {
+    fetchOIGAPI.mockReset();
+    fetchOIGAPITyped.mockReset();
+    loadFieldRegistryMock.mockReset();
+    saveModuleConfigMock.mockReset();
+    fetchOIGAPI.mockResolvedValue(null); // new install → registry defaults
+    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    loadFieldRegistryMock.mockResolvedValue(MODULES_REGISTRY_FIXTURE);
+    saveModuleConfigMock.mockResolvedValue({ ok: true });
+  });
+
+  afterEach(() => {
+    fixtureCleanup();
+  });
+
+  const toggle = (wizard: HTMLElement, key: string) =>
+    wizard.shadowRoot!.querySelector(`[data-key="${key}"] input[type="checkbox"]`) as HTMLInputElement;
+
+  it('battery_prediction toggle is DISABLED when solar_forecast is off (hard prereq)', async () => {
+    // new-install defaults: solar off, extended on → battery blocked on solar.
+    const wizard = await openWizardOnModules();
+    expect(toggle(wizard, 'enable_battery_prediction').disabled).toBe(true);
+  });
+
+  it('battery_prediction toggle is DISABLED when extended_sensors is off (hard prereq)', async () => {
+    const wizard = await openWizardOnModules();
+    const w = internals(wizard);
+    // Satisfy solar but drop extended → still blocked on extended.
+    w.modulesDraft = { ...w.modulesDraft, enable_solar_forecast: true, enable_extended_sensors: false };
+    await wizard.updateComplete;
+    expect(toggle(wizard, 'enable_battery_prediction').disabled).toBe(true);
+  });
+
+  it('battery_prediction toggle is ENABLED once both hard prereqs are on', async () => {
+    const wizard = await openWizardOnModules();
+    const w = internals(wizard);
+    w.modulesDraft = { ...w.modulesDraft, enable_solar_forecast: true, enable_extended_sensors: true };
+    await wizard.updateComplete;
+    expect(toggle(wizard, 'enable_battery_prediction').disabled).toBe(false);
+  });
+
+  it('the hard-prereq explanation names the missing modules by their CZ label', async () => {
+    const wizard = await openWizardOnModules();
+    const explain = wizard.shadowRoot!.querySelector('[data-testid="dep-hard-enable_battery_prediction"]');
+    expect(explain?.textContent).toContain('Solární předpověď');
+  });
+
+  it('"Zapnout předpoklady" enables the missing hard prereqs but NOT the dependent (no silent auto-enable)', async () => {
+    const wizard = await openWizardOnModules();
+    const w = internals(wizard);
+    const btn = wizard.shadowRoot!.querySelector(
+      '[data-testid="dep-enable-enable_battery_prediction"]',
+    ) as HTMLButtonElement;
+    btn.click();
+    await wizard.updateComplete;
+    expect(w.modulesDraft.enable_solar_forecast).toBe(true);
+    expect(w.modulesDraft.enable_extended_sensors).toBe(true);
+    // The dependent itself stays off — the user must opt in explicitly.
+    expect(w.modulesDraft.enable_battery_prediction).toBe(false);
+  });
+
+  it('turning OFF a prereq while a dependent is ON asks to confirm, does not apply immediately', async () => {
+    const wizard = await openWizardOnModules();
+    const w = internals(wizard);
+    // Set up a valid battery-on config.
+    w.modulesDraft = {
+      ...w.modulesDraft,
+      enable_solar_forecast: true, enable_extended_sensors: true, enable_battery_prediction: true,
+    };
+    await wizard.updateComplete;
+
+    // User turns solar_forecast off.
+    const solar = toggle(wizard, 'enable_solar_forecast');
+    solar.checked = false;
+    solar.dispatchEvent(new Event('change'));
+    await wizard.updateComplete;
+
+    // Not applied yet — confirm banner shown, state unchanged.
+    expect(w.modulesDraft.enable_solar_forecast).toBe(true);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="prereq-off-confirm"]')).toBeTruthy();
+  });
+
+  it('confirming the prereq-off turns off both the prereq and its dependents', async () => {
+    const wizard = await openWizardOnModules();
+    const w = internals(wizard);
+    w.modulesDraft = {
+      ...w.modulesDraft,
+      enable_solar_forecast: true, enable_extended_sensors: true, enable_battery_prediction: true,
+    };
+    await wizard.updateComplete;
+
+    const solar = toggle(wizard, 'enable_solar_forecast');
+    solar.checked = false;
+    solar.dispatchEvent(new Event('change'));
+    await wizard.updateComplete;
+
+    (wizard.shadowRoot!.querySelector('[data-testid="prereq-off-confirm-yes"]') as HTMLButtonElement).click();
+    await wizard.updateComplete;
+
+    expect(w.modulesDraft.enable_solar_forecast).toBe(false);
+    expect(w.modulesDraft.enable_battery_prediction).toBe(false);
+  });
+
+  it('cancelling the prereq-off leaves everything unchanged', async () => {
+    const wizard = await openWizardOnModules();
+    const w = internals(wizard);
+    w.modulesDraft = {
+      ...w.modulesDraft,
+      enable_solar_forecast: true, enable_extended_sensors: true, enable_battery_prediction: true,
+    };
+    await wizard.updateComplete;
+
+    const solar = toggle(wizard, 'enable_solar_forecast');
+    solar.checked = false;
+    solar.dispatchEvent(new Event('change'));
+    await wizard.updateComplete;
+
+    (wizard.shadowRoot!.querySelector('[data-testid="prereq-off-cancel"]') as HTMLButtonElement).click();
+    await wizard.updateComplete;
+
+    expect(w.modulesDraft.enable_solar_forecast).toBe(true);
+    expect(w.modulesDraft.enable_battery_prediction).toBe(true);
+    expect(wizard.shadowRoot!.querySelector('[data-testid="prereq-off-confirm"]')).toBeNull();
+  });
+
+  it('shows a SOFT recommendation when battery_prediction is on but pricing is off', async () => {
+    const wizard = await openWizardOnModules();
+    const w = internals(wizard);
+    w.modulesDraft = {
+      ...w.modulesDraft,
+      enable_solar_forecast: true, enable_extended_sensors: true,
+      enable_battery_prediction: true, enable_pricing: false,
+    };
+    await wizard.updateComplete;
+    expect(wizard.shadowRoot!.querySelector('[data-testid="dep-soft-enable_battery_prediction"]')).toBeTruthy();
+  });
+
+  it('an inconsistent seed (dependent on, hard prereq off) is normalised to off', async () => {
+    // battery on but solar off in stored options — legacy flow never allowed
+    // this, but seed defensively normalises it (config/steps.py:990-993).
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      modules: {
+        enable_solar_forecast: false, enable_extended_sensors: true,
+        enable_battery_prediction: true,
+      },
+    }));
+    const wizard = await openWizard();
+    expect(internals(wizard).modulesDraft.enable_battery_prediction).toBe(false);
+  });
+});

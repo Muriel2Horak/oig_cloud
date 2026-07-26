@@ -446,6 +446,40 @@ const STEP_GATE: Partial<Record<OnboardingStepId, string>> = {
 };
 
 /**
+ * Module dependency matrix (f1/wv2-modules-fix §3) — DERIVED FROM BACKEND
+ * EVIDENCE, not the brief's guessed example. Verified consumers:
+ *
+ * HARD (config-blocking): the legacy config flow refuses to persist these
+ *   combinations, so the wizard mirrors that block to stay consistent —
+ *   `config/steps.py:990-993` `_validate_modules_selection`:
+ *     enable_battery_prediction -> enable_solar_forecast ("requires_solar_forecast")
+ *                               -> enable_extended_sensors ("required_for_battery")
+ *
+ * SOFT (runtime-degrading, NON-blocking): the module still loads, but a
+ *   prerequisite being off silently degrades its output:
+ *     enable_battery_prediction -> enable_pricing: without spot prices the
+ *       coordinator never populates the spot timeline
+ *       (`core/coordinator.py:91-94`), so the planner builds 0 intervals
+ *       (`battery_forecast/planning/forecast_update.py:935,1448`) — an EMPTY
+ *       plan. NOT config-blocked by the backend, hence soft here too.
+ *     enable_boiler -> enable_pricing, enable_battery_prediction: without
+ *       prices the boiler planner falls back to GRID/ALTERNATIVE
+ *       (`boiler/planner.py:362-372`); without battery it loses PV-overflow
+ *       preheating (`boiler/runtime.py:508-510`). Still produces a plan.
+ *
+ * INDEPENDENT: solar_forecast, pricing (producers), statistics,
+ *   extended_sensors, chmu_warnings (chmu only reads solar GPS cosmetically,
+ *   `entities/chmu_sensor.py:290-300`).
+ */
+const MODULE_HARD_DEPS: Record<string, readonly string[]> = {
+  enable_battery_prediction: ['enable_solar_forecast', 'enable_extended_sensors'],
+};
+const MODULE_SOFT_DEPS: Record<string, readonly string[]> = {
+  enable_battery_prediction: ['enable_pricing'],
+  enable_boiler: ['enable_pricing', 'enable_battery_prediction'],
+};
+
+/**
  * Modules step grouping (Stage S3 Task 21, UX-SPEC §Step 1) — "Hlavní
  * moduly" (each gates a later step, `STEP_GATE` above) above "Doplňkové"
  * (no gated step). Spec-fixed order, NOT the registry's own field order
@@ -644,6 +678,12 @@ export class OigOnboardingWizard extends LitElement {
     enable_battery_prediction: true,
     enable_boiler: true,
   };
+  /**
+   * f1/wv2-modules-fix §3: a pending "turn off a prerequisite that dependents
+   * still need" action, awaiting confirmation. Non-null renders the confirm
+   * banner; the toggle change is NOT applied until the user confirms.
+   */
+  @state() private _pendingPrereqOff: { prereq: string; dependents: string[] } | null = null;
   @state() private onboardingState: OnboardingState | null = null;
   @state() private pricing: PricelistsResponse | null = null;
   @state() private pricingLoading = false;
@@ -986,6 +1026,51 @@ export class OigOnboardingWizard extends LitElement {
       opacity: 0.7;
     }
 
+    /* f1/wv2-modules-fix §3 — dependency gating hints under a toggle. */
+    .dep-explain {
+      margin: 2px 0 10px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .dep-hard { color: var(--warning-color, #e0a52b); }
+    .dep-soft { opacity: 0.75; }
+    .dep-enable {
+      margin-left: 6px;
+      padding: 1px 8px;
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      border: 1px solid currentColor;
+      border-radius: 6px;
+      background: transparent;
+      color: inherit;
+    }
+    .prereq-confirm {
+      margin-bottom: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--warning-color, #e0a52b);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--warning-color, #e0a52b) 12%, transparent);
+    }
+    .prereq-confirm-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .prereq-confirm-actions button {
+      padding: 4px 12px;
+      font: inherit;
+      cursor: pointer;
+      border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.2));
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+    }
+    .prereq-confirm-actions .danger {
+      border-color: var(--warning-color, #e0a52b);
+      color: var(--warning-color, #e0a52b);
+    }
+
     /* Section grouping within a step (UX-SPEC §6, "cards over a flat list")
        — mirrors the admin tile dialog's numbered-section pattern (164c622a8,
        tile-dialog.ts .sec/.sect), reused here rather than a new mechanism. */
@@ -1317,15 +1402,23 @@ export class OigOnboardingWizard extends LitElement {
 
   /**
    * Every seeded section draft, paired with its `SettingsSection` name for
-   * `saveModuleConfig` (Stage S2 Task 10) — `modulesDraft` is excluded, same
-   * reason as `allDraftValues()` (`:1157-1166`): it isn't seeded from
-   * `entry.options` yet, so it never has a genuine "changed" field to save.
+   * `saveModuleConfig` (Stage S2 Task 10). `modulesDraft` IS included now
+   * (f1/wv2-modules-fix root cause a): once `seedModulesDraft` (Task 21)
+   * lands it is genuinely seeded from `entry.options`, so a flipped toggle is
+   * a real change to write. Guarded on the same `sections.includes('modules')`
+   * condition `seedModulesDraft` uses — before that seed runs `modulesDraft`
+   * is the every-gate-on nav stub (`:641`) and diffing it against an unseeded
+   * `originalValues` would fabricate saves for toggles the user never touched.
    */
   private sectionDrafts(): Array<{ section: SettingsSection; draft: Record<string, unknown> }> {
-    return [
+    const drafts: Array<{ section: SettingsSection; draft: Record<string, unknown> }> = [
       { section: 'solar', draft: this.solarDraft },
       { section: 'pricing', draft: this.pricingDraft },
     ];
+    if (this._registry?.sections.includes('modules')) {
+      drafts.push({ section: 'modules', draft: this.modulesDraft });
+    }
+    return drafts;
   }
 
   /**
@@ -1525,6 +1618,16 @@ export class OigOnboardingWizard extends LitElement {
       const seeded = this.originalValues[key] ?? spec?.default;
       if (seeded !== undefined) draft[key] = seeded;
     }
+    // Enforce the hard-dependency invariant on a (rare) inconsistent seed: a
+    // dependent left ON in entry.options while a hard prerequisite is OFF is
+    // normalised to OFF — the legacy config flow (config/steps.py:990-993)
+    // never allowed the combination to be persisted, so it can only arrive as
+    // stale/hand-edited options; the gated toggle would render disabled anyway.
+    for (const [dep, prereqs] of Object.entries(MODULE_HARD_DEPS)) {
+      if (draft[dep] === true && prereqs.some((p) => draft[p] !== true)) {
+        draft[dep] = false;
+      }
+    }
     this.modulesDraft = draft;
   }
 
@@ -1634,6 +1737,7 @@ export class OigOnboardingWizard extends LitElement {
     this.originalValues = {};
     this.pricing = null;
     this.pricingLoadFailed = false;
+    this._pendingPrereqOff = null;
     this.bootstrapRetry = { onboardingState: false, registry: false, pricing: false, pricingConfig: false };
 
     this._bootstrapAbortTimer = setTimeout(() => {
@@ -1851,17 +1955,82 @@ export class OigOnboardingWizard extends LitElement {
     );
   }
 
+  // ------------------------------------------------------------------
+  // Module dependency gating (f1/wv2-modules-fix §3) — matrix in
+  // `MODULE_HARD_DEPS`/`MODULE_SOFT_DEPS` (`:462`), derived from backend
+  // consumers. Hard prereqs disable a dependent toggle; soft prereqs only
+  // surface a recommendation; turning a prereq off while a dependent is on
+  // requires confirmation.
+  // ------------------------------------------------------------------
+
+  private moduleIsOn(key: string): boolean {
+    return this.modulesDraft[key] === true;
+  }
+
+  /** Hard/soft prerequisites of `key` not currently satisfied. */
+  private moduleDepState(key: string): { hardMissing: string[]; softMissing: string[] } {
+    const hardMissing = (MODULE_HARD_DEPS[key] ?? []).filter((d) => !this.moduleIsOn(d));
+    const softMissing = (MODULE_SOFT_DEPS[key] ?? []).filter((d) => !this.moduleIsOn(d));
+    return { hardMissing, softMissing };
+  }
+
+  /** Dependents currently ON that HARD-require `prereq`. */
+  private activeHardDependents(prereq: string): string[] {
+    return Object.keys(MODULE_HARD_DEPS).filter(
+      (dep) => this.moduleIsOn(dep) && MODULE_HARD_DEPS[dep].includes(prereq),
+    );
+  }
+
+  /** Toggle handler for a module field — intercepts a prerequisite being
+   * turned off while dependents still need it (confirm flow), otherwise
+   * applies the change directly. */
+  private onModuleToggle(key: string, value: unknown): void {
+    if (value === false) {
+      const dependents = this.activeHardDependents(key);
+      if (dependents.length > 0) {
+        this._pendingPrereqOff = { prereq: key, dependents };
+        return;
+      }
+    }
+    this.modulesDraft = { ...this.modulesDraft, [key]: value };
+  }
+
+  /** Auto-suggest: enable the missing HARD prereqs of `key` on explicit click
+   * — never the dependent itself (no silent auto-enable, UX-SPEC §3). */
+  private enableModulePrereqs(key: string): void {
+    const { hardMissing } = this.moduleDepState(key);
+    if (hardMissing.length === 0) return;
+    const next = { ...this.modulesDraft };
+    for (const d of hardMissing) next[d] = true;
+    this.modulesDraft = next;
+  }
+
+  private confirmPrereqOff(): void {
+    const pending = this._pendingPrereqOff;
+    if (!pending) return;
+    const next = { ...this.modulesDraft, [pending.prereq]: false };
+    for (const dep of pending.dependents) next[dep] = false;
+    this.modulesDraft = next;
+    this._pendingPrereqOff = null;
+  }
+
+  private cancelPrereqOff(): void {
+    this._pendingPrereqOff = null;
+  }
+
   /**
-   * Every currently-seeded section draft, flattened (Stage S2 Task 9) —
-   * `modulesDraft` is deliberately EXCLUDED: it is still Task 2's
-   * every-gate-on stub (`:476-481`), not yet seeded from `entry.options`
-   * (Stage S3 Task 21 does that), so diffing it against `originalValues`
-   * would produce false-positive rows for a value the user never touched.
-   * Stage S3 must add its new drafts (boiler/connection/pricing_supplier)
-   * here once each is properly seeded. `batteryDraft` added by Task 18.
+   * Every currently-seeded section draft, flattened (Stage S2 Task 9).
+   * `modulesDraft` is included once genuinely seeded (f1/wv2-modules-fix root
+   * cause a) so a flipped module toggle shows up in the step-9 diff table —
+   * guarded on `sections.includes('modules')` exactly like `sectionDrafts()`:
+   * before the seed it is the every-gate-on stub (`:641`) and diffing it
+   * against an unseeded `originalValues` would fabricate diff rows. Stage S3
+   * must add its new drafts (boiler/connection/pricing_supplier) here once
+   * each is properly seeded. `batteryDraft` added by Task 18.
    */
   private allDraftValues(): Record<string, unknown> {
-    return { ...this.solarDraft, ...this.pricingDraft, ...this.batteryDraft };
+    const modules = this._registry?.sections.includes('modules') ? this.modulesDraft : {};
+    return { ...this.solarDraft, ...this.pricingDraft, ...this.batteryDraft, ...modules };
   }
 
   /** One row per field whose current draft value differs from its
@@ -2681,28 +2850,63 @@ export class OigOnboardingWizard extends LitElement {
       const hlavniFields = MODULES_GROUP_HLAVNI.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
       const doplnkoveFields = MODULES_GROUP_DOPLNKOVE.map((k) => byKey.get(k)).filter((f): f is FieldDef => !!f);
 
-      const renderGroup = (fields: FieldDef[]) => fields.map((f) => html`
+      const renderGroup = (fields: FieldDef[]) => fields.map((f) => {
+        const { hardMissing, softMissing } = this.moduleDepState(f.key);
+        const gated = hardMissing.length > 0;
+        return html`
         <div data-key=${f.key}>
           ${renderFieldPresenter(f, {
             value: this.modulesDraft[f.key],
             dirty: false,
+            disabled: gated,
             secretSet: !!f.secret && !!this.originalValues[`${f.key}_set`],
             originalValue: this.originalValues[f.key],
             reviewMode: this.onboardingState?.grandfathered === true,
             secretRevealed: this.revealedSecretKeys.has(f.key),
             onRevealSecret: () => this.revealSecret(f.key),
-            onChange: (v: unknown) => {
-              this.modulesDraft = { ...this.modulesDraft, [f.key]: v };
-            },
+            onChange: (v: unknown) => this.onModuleToggle(f.key, v),
             entityCatalog: [],
           })}
+          ${gated
+            ? html`<p class="dep-explain dep-hard" data-testid="dep-hard-${f.key}">
+                ${t('onboarding.modules.dep_hard_prefix', this.wizardLang)}
+                ${hardMissing.map((d) => fieldLabel(d, `field.${d}.label`)).join(', ')}
+                <button type="button" class="dep-enable" data-testid="dep-enable-${f.key}"
+                  @click=${() => this.enableModulePrereqs(f.key)}>
+                  ${t('onboarding.modules.dep_enable_btn', this.wizardLang)}
+                </button>
+              </p>`
+            : nothing}
+          ${!gated && this.moduleIsOn(f.key) && softMissing.length > 0
+            ? html`<p class="dep-explain dep-soft" data-testid="dep-soft-${f.key}">
+                ${t(`onboarding.modules.dep_soft.${f.key}`, this.wizardLang)}
+              </p>`
+            : nothing}
         </div>
-      `);
+      `;
+      });
+
+      const pending = this._pendingPrereqOff;
 
       return html`
         <section class="step step-modules" data-step="modules" style=${`--sc:${STEP_COLOR_VAR.modules}`}>
           ${this.renderStepHead('modules')}
           <div class="step-card">
+            ${pending
+              ? html`<div class="prereq-confirm" data-testid="prereq-off-confirm" role="alertdialog">
+                  <p>${t('onboarding.modules.prereq_off_confirm', this.wizardLang)}</p>
+                  <div class="prereq-confirm-actions">
+                    <button type="button" data-testid="prereq-off-cancel"
+                      @click=${() => this.cancelPrereqOff()}>
+                      ${t('onboarding.modules.prereq_off_cancel', this.wizardLang)}
+                    </button>
+                    <button type="button" class="danger" data-testid="prereq-off-confirm-yes"
+                      @click=${() => this.confirmPrereqOff()}>
+                      ${t('onboarding.modules.prereq_off_confirm_yes', this.wizardLang)}
+                    </button>
+                  </div>
+                </div>`
+              : nothing}
             ${turnedOff.length > 0
               ? html`<p data-testid="module-off-warning" class="hint">
                   ${t('onboarding.modules.off_warning', this.wizardLang)}

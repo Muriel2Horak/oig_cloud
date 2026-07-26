@@ -66,6 +66,16 @@ def test_merge_reload_flag_set_when_changed():
     assert new["_needs_reload"] is True
 
 
+def test_merge_module_enable_flip_requests_reload():
+    """f1/wv2-modules-fix root cause (b): flipping a module enable flag off must
+    request a reload so the wizard save tears down that module's entities."""
+    hass = _hass()
+    entry = _entry({"enable_chmu_warnings": True})
+    merge_entry_options(hass, entry, {"enable_chmu_warnings": False})
+    new = hass.config_entries.async_update_entry.call_args.kwargs["options"]
+    assert new["_needs_reload"] is True
+
+
 def test_merge_suppress_reload_never_sets_flag():
     """suppress_reload=True must block _needs_reload even for changes."""
     hass = _hass()
