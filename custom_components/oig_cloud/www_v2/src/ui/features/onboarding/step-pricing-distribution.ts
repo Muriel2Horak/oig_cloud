@@ -2,6 +2,9 @@ import { fieldsFromRegistry, isVisible } from '@/data/registry-data';
 import type { FieldRegistry } from '@/data/registry-data';
 import type { FieldDef } from '@/ui/features/settings';
 import type { WizardStep } from '@/ui/features/onboarding/step-solar';
+import cezDistributorLogo from '@/assets/distributors/cez-distribuce.svg';
+import egdDistributorLogo from '@/assets/distributors/egd-logo.svg';
+import preDistributorLogo from '@/assets/distributors/predistribuce.svg';
 
 /**
  * UX-SPEC §4a — the selected `confirmed_distribution_tariff` code carries
@@ -21,13 +24,14 @@ export function isDualTariffCode(code: unknown): boolean {
 
 /**
  * Owner live-walk UX rev, item 1: a logo/icon slot left of the distributor
- * name — implemented, but fed ONLY by a bundled asset already present in the
- * repo. None exists today (checked: no cez/egd/pre logo under `www_v2`), and
- * drawing or downloading a company logo is a trademark question flagged to
- * the human — so this map ships EMPTY and the slot renders text-only until
- * someone adds a cleared asset here.
+ * name. Bundled official SVGs from the distributors' own sites; the slot
+ * stays text-first and falls back to text-only when an asset is absent.
  */
-export const DISTRIBUTOR_LOGO_ASSETS: Readonly<Record<string, string>> = {};
+export const DISTRIBUTOR_LOGO_ASSETS: Readonly<Record<string, string>> = {
+  cez: cezDistributorLogo,
+  egd: egdDistributorLogo,
+  pre: preDistributorLogo,
+};
 
 /**
  * Registry-side these 5 fields are `pricing_supplier` (config_registry.py
