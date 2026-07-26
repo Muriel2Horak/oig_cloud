@@ -2907,7 +2907,7 @@ export class OigOnboardingWizard extends LitElement {
             </nav>
 
             <div class="stepmeta" data-testid="wizard-stepmeta">
-              <b>Krok ${idx + 1} z ${visibleSteps.length} · ${STEP_PHASE[this.currentStep] === 'A' ? PHASE_LABELS.A : STEP_PHASE[this.currentStep] === 'B' ? PHASE_LABELS.B : 'Závěr'}</b>
+              <b>Krok ${idx + 1} z ${visibleSteps.length} · ${STEP_PHASE[this.currentStep] === 'A' ? PHASE_LABELS.A : STEP_PHASE[this.currentStep] === 'B' ? PHASE_LABELS.B : (this.currentStep === 'welcome' ? 'Úvod' : 'Závěr')}</b>
               <em style=${`--sc:${STEP_COLOR_VAR[this.currentStep]}`}>${STEP_LABELS[this.currentStep]}</em>
             </div>
           </div>

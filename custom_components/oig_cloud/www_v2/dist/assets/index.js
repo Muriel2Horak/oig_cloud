@@ -11780,7 +11780,7 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
             </nav>
 
             <div class="stepmeta" data-testid="wizard-stepmeta">
-              <b>Krok ${t+1} z ${e.length} · ${Ar[this.currentStep]==="A"?_l.A:Ar[this.currentStep]==="B"?_l.B:"Závěr"}</b>
+              <b>Krok ${t+1} z ${e.length} · ${Ar[this.currentStep]==="A"?_l.A:Ar[this.currentStep]==="B"?_l.B:this.currentStep==="welcome"?"Úvod":"Závěr"}</b>
               <em style=${`--sc:${Me[this.currentStep]}`}>${Va[this.currentStep]}</em>
             </div>
           </div>
