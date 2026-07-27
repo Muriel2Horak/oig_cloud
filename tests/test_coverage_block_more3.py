@@ -143,6 +143,7 @@ async def test_boiler_api_views(monkeypatch):
         "api:oig_cloud:boiler_profile",
         "api:oig_cloud:boiler_plan",
         "api:oig_cloud:boiler_simulate",
+        "api:oig_cloud:boiler_simulate_presets",
     ]
 
     profile_view = boiler_api.BoilerProfileView(hass)
