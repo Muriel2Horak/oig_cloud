@@ -37,6 +37,7 @@ import { oigLog } from '@/core/logger';
 import { throttle, withRetry } from '@/utils/format';
 import { shieldController } from '@/data/shield-controller';
 import { dismissOnboardingBanner, loadOnboardingState } from '@/ui/features/onboarding/onboarding-data';
+import type { Domain } from '@/ui/components/simulator-fetcher';
 
 import '@/ui/components/header';
 import '@/ui/components/theme-provider';
@@ -56,6 +57,7 @@ import '@/ui/features/tiles/icon-picker';
 import '@/ui/features/tiles/tile-dialog';
 import '@/ui/features/onboarding/banner';
 import '@/ui/features/onboarding';  // registers oig-onboarding-wizard + oig-onboarding-step-ai
+import '@/ui/components/oig-simulator';
 
 const u = unsafeCSS;
 
@@ -169,6 +171,19 @@ export class OigApp extends LitElement {
   // rendering behind the modal — no lock, no gate.
   @state() private onboardingWizardOpen = false;
 
+  // Simulator overlay (fe/fix): 'oig-simulator-open' is dispatched by the
+  // wizard's battery/boiler steps (features/onboarding/index.ts:2130,3133)
+  // with bubbles+composed. Mounted/listened at the app shell — via
+  // `@oig-simulator-open` on <oig-theme-provider>, the common ancestor of
+  // both the wizard and the settings tab — rather than inside the wizard, so
+  // the same wiring picks up a future Settings launcher (`oig-settings` is
+  // already a sibling in this tree) without adding a second listener there.
+  // <oig-simulator> itself has no chrome of its own (no backdrop, no close
+  // button, no open()/close() API — just props), so the host owns all of
+  // that here, the same way it already owns the onboarding wizard's overlay.
+  @state() private simulatorOpen = false;
+  @state() private simulatorDomain: Domain = 'battery';
+  @state() private simulatorDraft: Record<string, unknown> = {};
 
   private entityStore: EntityStore | null = null;
   private timeInterval: number | null = null;
@@ -632,12 +647,54 @@ export class OigApp extends LitElement {
         overflow-y: auto;
       }
     }
+
+    /* ---- Simulator overlay (fe/fix) ----
+       z-index above the onboarding overlay (1000): the trigger buttons live
+       inside wizard steps, so this must stack on top of it. */
+    .simulator-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1100;
+      animation: fadeIn 0.12s ease-out;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+
+    .simulator-modal {
+      position: relative;
+      width: min(1120px, 100%);
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      border-radius: 18px;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    }
+
+    .simulator-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1;
+      background: rgba(15, 20, 34, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #fff;
+      border-radius: 8px;
+      width: 30px;
+      height: 30px;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+    }
   `;
 
   connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener('pageshow', this.onPageShow);
     document.addEventListener('visibilitychange', this.onDocumentVisibilityChange);
+    window.addEventListener('keydown', this.onSimulatorKeydown);
     this.initApp();
     this.startTimeUpdate();
   }
@@ -646,6 +703,7 @@ export class OigApp extends LitElement {
     super.disconnectedCallback();
     window.removeEventListener('pageshow', this.onPageShow);
     document.removeEventListener('visibilitychange', this.onDocumentVisibilityChange);
+    window.removeEventListener('keydown', this.onSimulatorKeydown);
     this.cleanup();
   }
 
@@ -1039,6 +1097,25 @@ export class OigApp extends LitElement {
     void this.loadOnboarding();
   }
 
+  private onSimulatorOpen(e: CustomEvent<{ domain?: Domain; box?: string; draft?: Record<string, unknown> }>): void {
+    e.stopPropagation();
+    const { domain, box, draft } = e.detail ?? {};
+    this.simulatorDomain = domain ?? 'battery';
+    // simulator-fetcher.ts resolves the box id from draft.box_id/boxId/
+    // inverter_sn/sn, falling back to the URL's ?sn= otherwise — merge
+    // `box` in so the simulator resolves it from the detail it was given.
+    this.simulatorDraft = box ? { ...draft, box_id: box } : { ...draft };
+    this.simulatorOpen = true;
+  }
+
+  private onSimulatorClose(): void {
+    this.simulatorOpen = false;
+  }
+
+  private onSimulatorKeydown = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && this.simulatorOpen) this.onSimulatorClose();
+  };
+
   private onDismissOnboardingBanner(e: Event): void {
     // Grandfathered-only (banner.ts gates the event on .grandfathered): persist
     // the dismissal so it survives a reload (D11), then re-sync local state.
@@ -1387,7 +1464,7 @@ export class OigApp extends LitElement {
     const dashboardTiles = this.visibleDashboardTiles;
 
     return html`
-      <oig-theme-provider>
+      <oig-theme-provider @oig-simulator-open=${this.onSimulatorOpen}>
         <oig-header
           title="Energetické Toky"
           .time=${this.time}
@@ -1554,6 +1631,28 @@ export class OigApp extends LitElement {
           .hass=${this.hass}
           @close=${this.onWizardClose}
         ></oig-onboarding-wizard>
+
+        <!-- fe/fix: 'oig-simulator-open' seam — see the simulatorOpen field
+             comment for why this lives at the shell instead of inside the
+             wizard. oig-simulator has no backdrop/close of its own, so this
+             overlay supplies both, same pattern as above. -->
+        ${this.simulatorOpen ? html`
+          <div class="simulator-overlay" data-testid="simulator-overlay" @click=${this.onSimulatorClose}>
+            <div class="simulator-modal" @click=${(e: Event) => e.stopPropagation()}>
+              <button
+                class="simulator-modal-close"
+                type="button"
+                aria-label="Zavřít"
+                data-testid="simulator-close"
+                @click=${this.onSimulatorClose}
+              >×</button>
+              <oig-simulator
+                .domain=${this.simulatorDomain}
+                .draft=${this.simulatorDraft}
+              ></oig-simulator>
+            </div>
+          </div>
+        ` : nothing}
       </oig-theme-provider>
     `;
   }
