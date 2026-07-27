@@ -20,6 +20,7 @@ restore) keep returning False and do NOT raise.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -32,6 +33,8 @@ from .const import (
     CONF_BOILER_RECOVERY_RATE_C_PER_HOUR,
 )
 from .config_merge import merge_entry_options
+
+_LOGGER = logging.getLogger(__name__)
 
 TRANSFORM = Callable[[dict[str, Any]], tuple[dict[str, Any], list[str]] | dict[str, Any]]
 
@@ -219,6 +222,53 @@ def _author_defaults_preseed_transform(options: dict[str, Any]) -> dict[str, Any
 register_transform(_author_defaults_preseed_transform)
 
 
+def _percentile_unit_migration_transform(options: dict[str, Any]) -> dict[str, Any]:
+    """Rescale legacy display-percent values into their registry-canonical fraction.
+
+    `Field.scale` ("display multiplier (fraction stored, % shown)",
+    config_registry.py) marks a field whose UI ever showed value*scale — today
+    only `expensive_percentile` (scale=100, canonical fraction 0.5-0.95). A
+    pre-registry-era save could have stored the raw display percent (e.g. 70)
+    instead. That value is fed unchanged into `PlannerInputs`
+    (forecast_update.py:1006), which rejects anything outside (0, 1] — the
+    live planner run raises, is swallowed by `_run_planner`'s broad except,
+    and silently returns an empty timeline every cycle.
+
+    Only rescales when dividing by `scale` lands within [min, max] — a value
+    that is out of range even after rescaling is left alone rather than
+    guessed at.
+    """
+    from .config_registry import FIELD_REGISTRY
+
+    updates: dict[str, Any] = {}
+    for key, field in FIELD_REGISTRY.items():
+        if not field.scale or field.scale == 1:
+            continue
+        if key not in options:
+            continue
+        raw = options[key]
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            continue
+        if field.min is not None and field.max is not None and field.min <= raw <= field.max:
+            continue  # already canonical
+        rescaled = raw / field.scale
+        if field.min is not None and rescaled < field.min:
+            continue
+        if field.max is not None and rescaled > field.max:
+            continue
+        _LOGGER.info(
+            "config_migration: rescaled legacy display-percent value for %s: %s -> %s",
+            key,
+            raw,
+            rescaled,
+        )
+        updates[key] = rescaled
+    return updates
+
+
+register_transform(_percentile_unit_migration_transform)
+
+
 def _backup_store(hass, entry_id: str) -> Store[dict[str, Any]]:
     return Store(
         hass,
@@ -240,7 +290,12 @@ def _is_complete(marker: dict[str, Any]) -> bool:
 
 
 def _has_legacy_state(options: dict[str, Any]) -> bool:
-    return any(key in options for key in _LEGACY_OPTION_KEYS)
+    if any(key in options for key in _LEGACY_OPTION_KEYS):
+        return True
+    # `expensive_percentile` (and any future scaled field) is a known
+    # registry key, not a removed/renamed one — `_LEGACY_OPTION_KEYS` alone
+    # would never catch a legacy-percent value stored under it.
+    return bool(_percentile_unit_migration_transform(options))
 
 
 def _coerce_transform_output(result: object) -> tuple[dict[str, Any], set[str]]:

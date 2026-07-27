@@ -173,6 +173,43 @@ async def test_planner_simulate_no_side_effects_on_store_or_live_state():
     assert hass.data["oig_cloud"]["planning_system"].marker == "untouched"
 
 
+@pytest.mark.asyncio
+async def test_planner_simulate_ui_style_draft_round_trip_200():
+    """Owner live repro guard: a UI-style draft — the shape the FE simulator
+    posts after `simulator-fetcher.ts` converts `expensive_percentile` from
+    the display percent to the registry-canonical fraction
+    (config_registry.py:314, scale=100) — must simulate cleanly. planning_api
+    itself stays strict/unchanged: it accepts the SAME canonical units the
+    rest of the config surface already uses, no special-casing.
+    """
+    payload = _explicit_payload()
+    payload["config_overrides"] = {
+        "expensive_percentile": 0.7,
+        "battery_comfort_soc_percent": 50,
+    }
+    request = DummyRequest(json_data=payload)
+    response = await planning_api.OIGCloudPlannerSimulateView().post(request, "box")
+    assert response.status == 200
+
+
+@pytest.mark.asyncio
+async def test_planner_simulate_raw_ui_percent_still_rejected():
+    """Documents the failure this migration/FE-fix closes: the RAW display
+    percent (70), unconverted, must still 400 — planning_api enforces the
+    canonical fraction, it does not guess at units.
+    """
+    payload = _explicit_payload()
+    payload["config_overrides"] = {"expensive_percentile": 70}
+    request = DummyRequest(json_data=payload)
+    response = await planning_api.OIGCloudPlannerSimulateView().post(request, "box")
+    assert response.status == 400
+
+    import json as _json
+
+    body = _json.loads(response.body)
+    assert "(0, 1]" in body["error"]
+
+
 def test_planner_simulate_config_overrides_applied():
     """config_overrides must win over default_config when building PlannerInputs."""
     defaults = planning_api._load_presets()["default_config"]
