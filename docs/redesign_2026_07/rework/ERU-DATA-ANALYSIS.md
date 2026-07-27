@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-27
 **Scope:** ERU source XLSX, build pipeline, bundled dataset, REST pricelists endpoint, FE wizard distribution display.
-**Verdict:** Pipeline correct, no data corruption, no guilty layer. No code change recommended.
+**Verdict:** No guilty layer in the current tree. The tree became guilt-free in the 48h before this audit via three commits (70c61155e, f5c1dbcf2, 105bc7228) addressing dual-tariff VT/NT correctness — see §10. No code change recommended beyond verifying the owner's live instance has those commits.
 
 ## TL;DR
 
@@ -12,6 +12,7 @@
 - Runtime (`custom_components/oig_cloud/**`) reads ONLY the bundled JSON; XLSX is never touched at runtime.
 - REST endpoint `OIGCloudPricelistsView.get()` (admin-only) shapes the full `distributors` payload including `vt`/`nt` sub-objects.
 - FE wizard step 4 (`step-pricing-distribution.ts`) and prefill logic (`applyDistributionFeeSuggestion`, `onboarding/index.ts:2660-2683`) read `rate.vt`/`rate.nt` correctly for dual tariffs.
+- The current clean tree is the RESULT of three commits in the preceding 48h (70c61155e, f5c1dbcf2, 105bc7228) that rebuilt the dataset from the real ERU XLSX, split the wizard distribution step into a side-by-side VT/NT pair (owner-driven), and fixed silently-VT-for-both BE billing math in a sibling field family. See §10.
 
 **No proven bug → no trivial fix → documented follow-up only.**
 
@@ -65,6 +66,8 @@ This is a CI guard: a hand-typed or stale dataset cannot ship silently.
 - **14/2025** = ERU cenové rozhodnutí for distribuce NN 2026 (the price-decree itself).
 - **18/2025** = the Energetický regulační věstník that publishes it.
 - This is the only official distributor-pricing decree for rok 2026 NN; both ČEZ Distribuce and PRE refer to it (P4/O3 in `docs/redesign_2026_07/DECISIONS.md:205-212`). **Correct.**
+
+*Limitation: the 14/2025 + 15/2025 POZE decree label is sourced only to this project's internal docs (`scripts/data_sources/README.md:12,33-46` and `docs/redesign_2026_07/DECISIONS.md:205-212`); the XLSX itself does not embed a decree number, and no independent regulator confirmation was obtained for this audit.*
 
 ### 2.2 POZE 0/0 — decree 15/2025
 
@@ -270,7 +273,7 @@ The prefill divides `price_excl_vat` (Kč/MWh) by 1000 and rounds to 2 decimals 
 | DUAL_TARIFF_CODES three-way consistency | OK | §5.4 |
 | Snapshot = latest | OK | audit-script `diff` returns 0 |
 
-**Conclusive finding:** No data corruption, no mis-mapping, no guilty layer. The dual-tariff path is correct end-to-end: XLSX → build_pricelists.py → bundled JSON → REST `distributors[*].*.[vt|nt]` → FE `applyDistributionFeeSuggestion`.
+**Conclusive finding (current tree):** No data corruption, no mis-mapping, no guilty layer. The dual-tariff path is correct end-to-end today: XLSX → build_pricelists.py → bundled JSON → REST `distributors[*].*.[vt|nt]` → FE `applyDistributionFeeSuggestion`. See §10 for the timeline that produced this state.
 
 **No trivial proven bug → no fix implemented. No tests added. No commit made (per brief).**
 
@@ -281,7 +284,7 @@ The prefill divides `price_excl_vat` (Kč/MWh) by 1000 and rounds to 2 decimals 
 These are **NOT** proven defects and are documented as deferred work, not as the required deliverable:
 
 1. **Pre-fill rounding loss.** `Kč/MWh → Kč/kWh` at `index.ts:2674` rounds to 2 decimals, so e.g. 2252.45 → 2.25 Kč/kWh (true 2.25245). The registry default re-derives from `price_excl_vat` without this loss, so the only loss is in the wizard prefill, which the user can correct. Not a data bug; a UX nicety (3-decimal precision, or display the MWh value with a "/MWh" hint). Out of scope for this forensic brief.
-2. **Top-level mirror-VT consumer caution.** `confirmed_distribution_price_incl_vat` (REST, `ha_rest_api.py:1706`) returns the VT (top-level) value for two-tariff sazby. Any BE consumer that reads this for a dual-tariff customer without consulting `distribution_fee_vt_kwh`/`distribution_fee_nt_kwh` will silently use VT. The current FE does not (it uses the prefill-derived `distribution_fee_*_kwh`); no current BE consumer was found that reads `confirmed_distribution_price_incl_vat` for distribution-pricing math (only the wizard field display and the legacy single-field representation). Follow-up: audit BE consumers (`battery_forecast/data/pricing.py`, `pricing/spot_price_15min.py`, `entities/analytics_sensor.py` referenced in `step-pricing-distribution.ts:51-53`) for actual VT-vs-NT selection logic. Not a forensic finding here.
+2. **Top-level mirror-VT consumer caution.** `confirmed_distribution_price_incl_vat` (REST, `ha_rest_api.py:1706`) returns the VT (top-level) value for two-tariff sazby. Any BE consumer that reads this for a dual-tariff customer without consulting `distribution_fee_vt_kwh`/`distribution_fee_nt_kwh` will silently use VT. The current FE does not (it uses the prefill-derived `distribution_fee_*_kwh`); no current BE consumer was found that reads `confirmed_distribution_price_incl_vat` for distribution-pricing math (only the wizard field display and the legacy single-field representation). Follow-up: audit BE consumers (`battery_forecast/data/pricing.py`, `pricing/spot_price_15min.py`, `entities/analytics_sensor.py` referenced in `step-pricing-distribution.ts:51-53`) for actual VT-vs-NT selection logic. Not a forensic finding here. **Fix landed 2026-07-26 in `105bc7228` (Unit 2) — verify the running instance has it.**
 3. **Build script VT/NT leg scope.** `_parse_eru_tariffs` (`build_pricelists.py:650-681`) does not record which tariffs it classified as single vs dual in the output JSON. The classification is recoverable from `nt` presence, but the build script's `_validate_eru_distributors` (`build_pricelists.py:738-757`) doesn't assert it. Already covered by the shipped `test_shipped_pricelists_has_tariff_descriptions` and `test_shipped_pricelists_unit_rules` guards. Not a bug.
 4. **POZE single value, three duplicates.** The POZE 0/0 is duplicated across all three distributors despite being a single state-mandated fee. This is intentional (`_eru_tariff_payload` lines 731-733 of `build_pricelists.py`) — keeps the 2-level reader contract uniform — but bloats the JSON. Follow-up only.
 5. **Snapshot count audit.** The README and bundled JSON agree on a single 2026 snapshot (R4 collapse of 14/2025 + 15/2025). No second snapshot exists. The shipped `test_shipped_pricelists_snapshots_have_valid_from` guard (`test_build_pricelists.py:252-260`) asserts presence; not quantity. No issue.
@@ -298,6 +301,22 @@ All checks are read-only. No files modified. No commit. Per brief: "Do not commi
 
 ## 9. Sign-off
 
-- **Files read for this analysis:** `scripts/data_sources/README.md`, `scripts/data_sources/ceny-nn26-1.xlsx`, `scripts/build_pricelists.py`, `custom_components/oig_cloud/remote_config/data/pricelists.json`, `custom_components/oig_cloud/config_registry.py:90-230`, `custom_components/oig_cloud/api/ha_rest_api.py:1620-1730`, `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/step-pricing-distribution.ts`, `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/index.ts:2660-2710`, `tests/test_build_pricelists.py`.
+- **Files read for this analysis:** `scripts/data_sources/README.md`, `scripts/data_sources/ceny-nn26-1.xlsx`, `scripts/build_pricelists.py`, `custom_components/oig_cloud/remote_config/data/pricelists.json`, `custom_components/oig_cloud/config_registry.py:90-230`, `custom_components/oig_cloud/api/ha_rest_api.py:1620-1730`, `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/step-pricing-distribution.ts`, `custom_components/oig_cloud/www_v2/src/ui/features/onboarding/index.ts:2660-2710`, `tests/test_build_pricelists.py`, git log of `scripts/data_sources/`, `scripts/build_pricelists.py`, `custom_components/oig_cloud/battery_forecast/data/pricing.py`, `custom_components/oig_cloud/battery_forecast/spot_price_export_15min.py`, `tests/test_nt_fee_pricing.py`, `tests/test_registry_field_consumption.py` (HEAD and pre-fix bases).
 - **Files written:** this document (`docs/redesign_2026_07/rework/ERU-DATA-ANALYSIS.md`).
 - **Commit:** none (per brief).
+
+---
+
+## 10. Recency — how the current tree became clean
+
+The audit was run on the current tree only. Three commits in the 48h BEFORE this doc addressed the dual-tariff VT/NT surface directly:
+
+| commit | date (UTC) | role |
+|---|---|---|
+| `70c61155e` | 2026-07-25 06:18 | "F1 O3: rebuild bundled pricelist dataset from the real ERU 14/2025 XLSX" — replaced a fabricated TEST FIXTURE dataset (commit message: *"The shipped pricelists.json was generated from a TEST FIXTURE ... fabricated prices"*) |
+| `f5c1dbcf2` | 2026-07-26 05:16 | "feat(f1-wv2): pricing-distribution step owner UX rev ... VT/NT distribution price" — owner-driven split of the wizard distribution step from a single mirror-VT display into a side-by-side VT/NT pair (commit message: *"Owner live-walk direction on the deployed wizard, step 4 ... VT/NT distribution price"*) |
+| `105bc7228` | 2026-07-26 21:22 | "fix(f1): wire dead field-audit fields + NT dual-tariff fees + boiler misclassification" — Unit 2 fixes silently-VT-for-both billing math for `spot_positive_fee_percent_nt`, `spot_negative_fee_percent_nt`, `spot_fixed_fee_mwh_nt`, `export_fee_percent_nt`, `export_fixed_fee_czk_nt` |
+
+The current clean tree is the RESULT of these three commits, not evidence that the pipeline was never broken. At least one of them (`f5c1dbcf2`) was triggered by an owner live-walk on the deployed wizard — the same symptom class as the owner's report on this doc.
+
+The doc does not establish whether the owner's live HA instance has picked up `70c61155e`, `f5c1dbcf2`, and `105bc7228` (HA restart, integration update). That is the most direct explanation left standing if the owner's report was filed before the integration window reached their box. Confirm with the owner whether their report predates 2026-07-26, and confirm their running instance is on the post-`105bc7228` build.
