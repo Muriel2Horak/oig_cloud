@@ -5,8 +5,8 @@ import { CSS_VARS } from '@/ui/theme';
 import { Tab } from '@/ui/layout/tabs';
 import { createEntityStore, EntityStore } from '@/data/entity-store';
 import { stateWatcher } from '@/data/state-watcher';
-import { haClient } from '@/data/ha-client';
-import { extractFlowData } from '@/data/flow-data';
+import { haClient, plannerState } from '@/data/ha-client';
+import { extractFlowData, applyPlannerSettings } from '@/data/flow-data';
 import { invalidateTimelineCache, loadPricingData } from '@/data/pricing-data';
 import { loadBoilerData } from '@/data/boiler-data';
 import { resolveLang } from '@/i18n/boiler';
@@ -895,6 +895,27 @@ export class OigApp extends LitElement {
       this.flowData = extractFlowData(liveStates, INVERTER_SN);
     } catch (err) {
       oigLog.error('Failed to extract flow data', err as Error);
+    }
+
+    // Planner settings are loaded async — the chip at node.ts:2567 reads
+    // `d.plannerAutoMode`, which `extractFlowData` hard-codes to `null`.
+    // Pull the cached payload (1-minute TTL inside `PlannerStateManager`) and
+    // re-apply on every refresh so a toggle while the tab is open reflects
+    // without waiting for a full reconnect.
+    void this.refreshPlannerSettings();
+  }
+
+  /** Async helper: fetch planner settings and apply onto current flowData. */
+  private async refreshPlannerSettings(): Promise<void> {
+    try {
+      const settings = await plannerState.fetchSettings(haClient, INVERTER_SN);
+      const next = applyPlannerSettings(this.flowData, settings);
+      if (next !== this.flowData) {
+        this.flowData = next;
+        this.requestUpdate();
+      }
+    } catch (err) {
+      oigLog.warn('Failed to apply planner settings to flow data', { err });
     }
   }
 
