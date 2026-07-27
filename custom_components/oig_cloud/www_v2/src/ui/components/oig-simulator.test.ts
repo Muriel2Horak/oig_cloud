@@ -1,3 +1,4 @@
+import { haClient } from '@/data/ha-client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
@@ -89,12 +90,9 @@ describe('simulator fetcher', () => {
 
   it('posts battery simulations to the planner endpoint and maps the real BE response', async () => {
     window.history.pushState({}, '', '/?sn=BOX123');
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => PLANNER_SIMULATE_FIXTURE,
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    const fetchMock = vi
+      .spyOn(haClient, 'fetchOIGAPITyped')
+      .mockResolvedValue({ ok: true, status: 200, data: PLANNER_SIMULATE_FIXTURE } as any);
 
     const result = await defaultFetcher({
       kind: 'battery',
@@ -106,7 +104,7 @@ describe('simulator fetcher', () => {
     } satisfies SimRequest);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/oig_cloud/BOX123/planner_simulate');
+    expect(fetchMock.mock.calls[0][0]).toBe('/BOX123/planner_simulate');
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
       preset: 'winter_high_price',
       soc_start: 41,
@@ -190,12 +188,9 @@ describe('simulator fetcher', () => {
 
   it('posts boiler simulations to the boiler endpoint and maps the real BE response', async () => {
     window.history.pushState({}, '', '/?sn=BOX123&entry_id=entry1');
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => BOILER_SIMULATE_FIXTURE,
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    const fetchMock = vi
+      .spyOn(haClient, 'fetchOIGAPITyped')
+      .mockResolvedValue({ ok: true, status: 200, data: BOILER_SIMULATE_FIXTURE } as any);
 
     const result = await defaultFetcher({
       kind: 'boiler',
@@ -204,7 +199,7 @@ describe('simulator fetcher', () => {
     } satisfies SimRequest);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/oig_cloud/boiler/entry1/BOX123/simulate_water_day');
+    expect(fetchMock.mock.calls[0][0]).toBe('/boiler/entry1/BOX123/simulate_water_day');
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
       preset: 'workday',
       override_config: { target_temp_c: 60 },

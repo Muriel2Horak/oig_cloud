@@ -1,3 +1,4 @@
+import { haClient } from '@/data/ha-client';
 export type Domain = 'battery' | 'boiler';
 
 export interface SimRequest {
@@ -410,31 +411,20 @@ function resolveBoxId(draft: Record<string, unknown>): string | null {
 }
 
 async function postJson<T>(url: string, body: object): Promise<T> {
-  const response = await fetch(url, {
+  // Auth-aware path: raw fetch() had no Bearer token and the endpoints are
+  // admin-gated, so every simulator call died with HTTP 401 (owner live
+  // finding). haClient injects the HASS token and classifies errors.
+  const endpoint = url.replace(/^\/api\/oig_cloud/, '');
+  const result = await haClient.fetchOIGAPITyped<T>(endpoint, {
     method: 'POST',
-    credentials: 'same-origin',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify(body),
   });
 
-  let parsed: unknown = null;
-  try {
-    parsed = await response.json();
-  } catch {
-    parsed = null;
+  if (!result.ok) {
+    throw new Error(result.error || `HTTP ${result.status}`);
   }
 
-  if (!response.ok) {
-    const message =
-      typeof parsed === 'object' && parsed != null && 'error' in parsed
-        ? String((parsed as { error?: unknown }).error ?? response.statusText)
-        : response.statusText || `HTTP ${response.status}`;
-    throw new Error(message);
-  }
-
-  return parsed as T;
+  return result.data as T;
 }
 
 export async function defaultFetcher(req: SimRequest): Promise<SimResponse> {
