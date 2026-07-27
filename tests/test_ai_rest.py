@@ -1,8 +1,10 @@
 """Codex CRITICAL #2: every endpoint this plan ADDS is admin-gated and fails closed."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -459,3 +461,161 @@ class _NoProviderLookup:
 
     def __getitem__(self, key):
         raise AssertionError("ai_task must not look up a direct backend provider")
+
+
+# --- Hard wall-clock budget for validate_config (F1 Unit B) ------------------
+# The chain depth at MAX_MODEL_CHAIN_DEPTH models × DEFAULT_TIMEOUT_S (30s) per
+# attempt is the worst-case wall-clock budget. The brief's slice spec is a 25s
+# HARD cap at the view layer so a slow provider doesn't strand the only user
+# surface for the AI feature. These tests pin that contract.
+
+_VALIDATE_CONFIG_BUDGET_S = 25
+
+
+class _SlowBackend:
+    """Stand-in for OpenAiCompatBackend whose async_generate_data sleeps.
+
+    The test ID `self._sleep_s` controls how long the mock blocks so each test
+    can switch between "well inside budget" (smoke) and "well over budget"
+    (timeout case) without touching the production code.
+    """
+
+    def __init__(self, sleep_s: float) -> None:
+        self._sleep_s = sleep_s
+        self.calls = 0
+
+    async def async_generate_data(self, task, install, schema):
+        self.calls += 1
+        await asyncio.sleep(self._sleep_s)
+        return {"findings": [{"severity": "info", "message": "should not see this"}]}
+
+
+@pytest.mark.asyncio
+async def test_validate_config_returns_ai_timeout_within_budget_when_backend_hangs(
+    validate_env, monkeypatch,
+):
+    """A backend that takes 60s must NOT strand the request — the view caps
+    wall-clock at the brief's 25s budget and returns 504 + ``ai_timeout``."""
+    await _verified_provider(monkeypatch)
+    monkeypatch.setattr(
+        api_module.OpenAiCompatBackend, "async_generate_data",
+        _SlowBackend(30).async_generate_data,
+    )
+
+    started = time.monotonic()
+    resp = await validate_env.view.post(
+        admin_req_with(validate_env, {}), "box1")
+    elapsed = time.monotonic() - started
+
+    assert resp.status == 504
+    body = json.loads(resp.text)
+    assert body == {"ok": False, "code": "ai_timeout"}
+    assert elapsed < _VALIDATE_CONFIG_BUDGET_S + 5, (
+        f"view returned in {elapsed:.1f}s, expected <{_VALIDATE_CONFIG_BUDGET_S + 5}s"
+    )
+
+
+@pytest.mark.asyncio
+async def test_validate_config_timeout_does_not_double_classify_via_generic_branch(
+    validate_env, monkeypatch, caplog,
+):
+    """The view's existing ``Exception`` branch used to swallow the timeout by
+    mapping it to ``error``. The hard-budget wrapper must intercept the
+    TimeoutError BEFORE the generic branch and answer with ``ai_timeout`` —
+    not ``error``."""
+    await _verified_provider(monkeypatch)
+    monkeypatch.setattr(
+        api_module.OpenAiCompatBackend, "async_generate_data",
+        _SlowBackend(30).async_generate_data,
+    )
+
+    with caplog.at_level(logging.WARNING, logger=api_module.__name__):
+        resp = await validate_env.view.post(
+            admin_req_with(validate_env, {}), "box1")
+
+    body = json.loads(resp.text)
+    assert resp.status == 504
+    assert body["code"] == "ai_timeout"
+    assert body["code"] != "error"
+
+
+@pytest.mark.asyncio
+async def test_validate_config_ai_task_path_also_hard_budgets(
+    validate_env, monkeypatch,
+):
+    """The delegation path (provider='ai_task') goes through
+    ``_delegate_validate_config_ai_task`` — that call has NO inner timeout
+    today, so the brief's wall-clock cap must also bound it."""
+    await _verified_provider(monkeypatch, provider="ai_task")
+    monkeypatch.setattr(api_module.AiKeyStore, "async_get_key", _no_key_lookup, raising=False)
+
+    async def _slow_delegate(hass, entry, structure, install):
+        await asyncio.sleep(30)
+        return {"findings": []}
+
+    monkeypatch.setattr(api_module, "_delegate_validate_config_ai_task", _slow_delegate, raising=False)
+
+    started = time.monotonic()
+    resp = await validate_env.view.post(
+        admin_req_with(validate_env, {}), "box1")
+    elapsed = time.monotonic() - started
+
+    assert resp.status == 504
+    assert json.loads(resp.text)["code"] == "ai_timeout"
+    assert elapsed < _VALIDATE_CONFIG_BUDGET_S + 5
+
+
+@pytest.mark.asyncio
+async def test_validate_config_happy_path_returns_findings_within_budget(
+    validate_env, monkeypatch,
+):
+    """Happy path: a fast backend returning valid findings renders the same
+    JSON the FE renders. Re-asserts the existing contract under the new
+    wrapper so a regression on the budget never silently drops the success
+    path."""
+    await _verified_provider(monkeypatch)
+
+    async def _generate(self, task, install, schema):
+        return {"findings": [{"severity": "warning", "message": "ok"}]}
+
+    monkeypatch.setattr(api_module.OpenAiCompatBackend, "async_generate_data", _generate)
+
+    started = time.monotonic()
+    resp = await validate_env.view.post(
+        admin_req_with(validate_env, {}), "box1")
+    elapsed = time.monotonic() - started
+
+    assert resp.status == 200
+    assert json.loads(resp.text) == {
+        "ok": True,
+        "findings": [{"severity": "warning", "message": "ok"}],
+    }
+    assert elapsed < _VALIDATE_CONFIG_BUDGET_S
+
+
+@pytest.mark.asyncio
+async def test_validate_config_logs_start_model_duration_result(
+    validate_env, monkeypatch, caplog,
+):
+    """The view must emit INFO/WARN logs with start, model, duration_ms, result
+    so the live hang can be diagnosed from logs. ``validate`` is the only
+    user-facing AI feature today."""
+    await _verified_provider(monkeypatch)
+
+    async def _generate(self, task, install, schema):
+        return {"findings": [{"severity": "info", "message": "ok"}]}
+
+    monkeypatch.setattr(api_module.OpenAiCompatBackend, "async_generate_data", _generate)
+
+    with caplog.at_level(logging.INFO, logger=api_module.__name__):
+        resp = await validate_env.view.post(
+            admin_req_with(validate_env, {}), "box1")
+
+    assert resp.status == 200
+    assert "validate_config" in caplog.text
+    assert "duration_ms" in caplog.text
+    assert "groq" in caplog.text
+
+
+async def _no_key_lookup(self):
+    raise AssertionError("ai_task must not read an OpenAI-compatible key")

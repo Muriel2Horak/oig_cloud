@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import sys
 import time
+import asyncio
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any, Dict, Mapping, Optional
@@ -1878,17 +1879,34 @@ class OIGCloudAiValidateConfigView(OIGCloudAiView):
         )
         collected = _collect_anonymous_install(hass, entry, coordinator)
 
+        # Hard wall-clock budget for the whole chain (F1 Unit B). The chain
+        # depth × DEFAULT_TIMEOUT_S is the worst case (groq: 3 × 30s = 90s —
+        # matches the live hang), and there is no inner timeout on the
+        # ai_task delegation path at all. Cap it here so a slow provider
+        # cannot strand the only user-facing AI feature; on cap, answer 504
+        # with a closed ``ai_timeout`` code the FE surfaces in the validation
+        # panel.
+        _VALIDATE_CONFIG_BUDGET_S = 25
+        t_start = time.monotonic()
+        chain_model = "host_ai_task" if provider == "ai_task" else (
+            MODEL_CHAINS[provider][0] if provider in PROVIDERS else None
+        )
+        _LOGGER.info(
+            "AI validate_config start box=%s provider=%s task=validate_config model=%s",
+            box_id, provider, chain_model,
+        )
         try:
             if provider == "ai_task":
                 # This is the host-AI selector shape derived from the same
                 # schema used by the direct providers. No key lookup occurs.
-                result = await _delegate_validate_config_ai_task(
-                    hass,
-                    entry,
-                    validate_config_selector_schema(),
-                    collected,
-                )
-                validated = validate_config_result(result)
+                async with asyncio.timeout(_VALIDATE_CONFIG_BUDGET_S):
+                    result = await _delegate_validate_config_ai_task(
+                        hass,
+                        entry,
+                        validate_config_selector_schema(),
+                        collected,
+                    )
+                    validated = validate_config_result(result)
             elif provider in PROVIDERS:
                 key = await store.async_get_key()
                 if not key:
@@ -1905,12 +1923,30 @@ class OIGCloudAiValidateConfigView(OIGCloudAiView):
                     entry_id=entry.entry_id,
                     provider=provider,
                 )
-                result = await backend.async_generate_data(
-                    "validate_config", collected, VALIDATE_CONFIG_SCHEMA
-                )
-                validated = validate_config_result(result)
+                async with asyncio.timeout(_VALIDATE_CONFIG_BUDGET_S):
+                    result = await backend.async_generate_data(
+                        "validate_config", collected, VALIDATE_CONFIG_SCHEMA
+                    )
+                    validated = validate_config_result(result)
             else:
                 return web.json_response({"ok": False, "code": "unknown_provider"})
+        except (asyncio.TimeoutError, TimeoutError):
+            # ``asyncio.timeout`` fires when the chain wall-clock exceeds the
+            # 25s budget (F1 Unit B). ``TimeoutError`` covers the built-in
+            # alias raised by aiohttp's own deadlines. Return BEFORE the
+            # generic ``Exception`` branch so a timeout is never downgraded
+            # to ``error`` — the FE surfaces ``ai_timeout`` in the validation
+            # panel.
+            duration_ms = int((time.monotonic() - t_start) * 1000)
+            _LOGGER.warning(
+                "AI validate_config timeout box=%s provider=%s model=%s duration_ms=%d",
+                box_id, provider, chain_model, duration_ms,
+            )
+            if provider in _AI_PROVIDERS:
+                _record_ai_error(hass, entry, provider, "ai_timeout")
+            return web.json_response(
+                {"ok": False, "code": "ai_timeout"}, status=504,
+            )
         except AiBackendError as err:
             code = _safe_ai_error_code(err.code)
             if provider in _AI_PROVIDERS:
@@ -1930,6 +1966,11 @@ class OIGCloudAiValidateConfigView(OIGCloudAiView):
 
         if provider in _AI_PROVIDERS:
             _record_ai_success(hass, entry, provider)
+        duration_ms = int((time.monotonic() - t_start) * 1000)
+        _LOGGER.info(
+            "AI validate_config ok box=%s provider=%s model=%s duration_ms=%d result=ok",
+            box_id, provider, chain_model, duration_ms,
+        )
         return web.json_response({"ok": True, **validated})
 
 
