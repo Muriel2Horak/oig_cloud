@@ -135,6 +135,27 @@ function numberFrom(value: unknown): number | null {
   return null;
 }
 
+// config_registry.py's Field.scale ("display multiplier (fraction stored, %
+// shown)") is the single source of truth for which fields carry a human
+// percent in the UI but a fraction canonically — currently only
+// expensive_percentile (config_registry.py:314, scale=100). Registry-driven
+// renders (field-renderer.ts) already divide by `scale` before saving; the
+// simulator's own control is not registry-driven, so a UI-style draft
+// crossing into the real backend must be converted here, at the one network
+// boundary, rather than scattered per-field in each caller.
+const UI_PERCENT_TO_CANONICAL_SCALE: Readonly<Record<string, number>> = {
+  expensive_percentile: 100,
+};
+
+function toCanonicalConfigOverrides(draft: Record<string, unknown>): Record<string, unknown> {
+  const canonical: Record<string, unknown> = { ...draft };
+  for (const [key, scale] of Object.entries(UI_PERCENT_TO_CANONICAL_SCALE)) {
+    const raw = numberFrom(canonical[key]);
+    if (raw != null) canonical[key] = raw / scale;
+  }
+  return canonical;
+}
+
 function resolveBatteryScenario(presetId?: string): BatteryPresetScenario {
   return BATTERY_PRESET_SCENARIOS[presetId ?? 'zima'] ?? BATTERY_PRESET_SCENARIOS.zima;
 }
@@ -497,7 +518,7 @@ export async function defaultFetcher(req: SimRequest): Promise<SimResponse> {
     const body: Record<string, unknown> = {
       // BE reads `preset` (planning_api.py) — not preset_id.
       preset: req.presetId,
-      config_overrides: req.draft,
+      config_overrides: toCanonicalConfigOverrides(req.draft),
     };
     const socStart = numberFrom(req.draft.soc_start ?? req.draft.battery_start ?? req.draft.battery_soc);
     if (socStart != null) body.soc_start = socStart;
