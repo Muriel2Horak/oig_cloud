@@ -465,11 +465,27 @@ export class OigApp extends LitElement {
     .flow-center {
       grid-area: canvas;
       min-width: 0;
+      /* Overlap fix (1600px): the canvas inside hosts absolutely-positioned
+         .ss-pop (z:6), .ss-pill (z:4), .particles-layer (z:3) and SVG
+         connection overlays. Without an explicit stacking context here, those
+         children paint across the column boundary onto the "Systém OIG" panel.
+         isolation:isolate creates a local stacking context; position:relative
+         ensures the popovers offsetParent is the column itself. No overflow:
+         hidden — node widths at narrow desktop (1024-1199) can legitimately
+         overshoot the center column by 25-45px and clipping them would be a
+         regression. */
+      position: relative;
+      isolation: isolate;
     }
 
     .flow-control {
       grid-area: control;
       min-width: 0;
+      /* Stack above .flow-center so any content bleeding out of the canvas
+         (popovers, particles) lands underneath the interactive control panel
+         instead of overlapping it. */
+      position: relative;
+      z-index: 2;
     }
 
     /* ---- Unified "Ovládání" card: Systém OIG + Moje dlaždice ---- */
@@ -614,8 +630,10 @@ export class OigApp extends LitElement {
     }
 
     /* ---- Responsive ---- */
-    /* Tablet 768–1200: užší dlaždice + systém kolem pentagonu */
-    @media (max-width: 1200px) {
+    /* Tablet 768–1023: užší dlaždice + systém kolem pentagonu. Desktop branch
+       (≥1024) uses the base 212/1fr/300 columns. Breakpoint aligned with V2
+       theme.ts (768 / 1024 / 1280). */
+    @media (max-width: 1023px) {
       .flow-layout {
         grid-template-columns: 168px 1fr 248px;
         gap: 8px;
