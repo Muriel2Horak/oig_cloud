@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-27
 **Scope:** ERU source XLSX, build pipeline, bundled dataset, REST pricelists endpoint, FE wizard distribution display.
-**Verdict:** No guilty layer in the current tree. The tree became guilt-free in the 48h before this audit via three commits (70c61155e, f5c1dbcf2, 105bc7228) addressing dual-tariff VT/NT correctness — see §10. No code change recommended beyond verifying the owner's live instance has those commits.
+**Verdict:** No guilty layer in the current tree. The tree became guilt-free in the 48h before this audit via three commits (70c61155e, f5c1dbcf2, 105bc7228) addressing dual-tariff VT/NT correctness — see §11. Independently reviewed; review verdict and residual limitations in §10. No code change recommended beyond verifying the owner's live instance has those commits.
 
 ## TL;DR
 
@@ -12,7 +12,7 @@
 - Runtime (`custom_components/oig_cloud/**`) reads ONLY the bundled JSON; XLSX is never touched at runtime.
 - REST endpoint `OIGCloudPricelistsView.get()` (admin-only) shapes the full `distributors` payload including `vt`/`nt` sub-objects.
 - FE wizard step 4 (`step-pricing-distribution.ts`) and prefill logic (`applyDistributionFeeSuggestion`, `onboarding/index.ts:2660-2683`) read `rate.vt`/`rate.nt` correctly for dual tariffs.
-- The current clean tree is the RESULT of three commits in the preceding 48h (70c61155e, f5c1dbcf2, 105bc7228) that rebuilt the dataset from the real ERU XLSX, split the wizard distribution step into a side-by-side VT/NT pair (owner-driven), and fixed silently-VT-for-both BE billing math in a sibling field family. See §10.
+- The current clean tree is the RESULT of three commits in the preceding 48h (70c61155e, f5c1dbcf2, 105bc7228) that rebuilt the dataset from the real ERU XLSX, split the wizard distribution step into a side-by-side VT/NT pair (owner-driven), and fixed silently-VT-for-both BE billing math in a sibling field family. See §11.
 
 **No proven bug → no trivial fix → documented follow-up only.**
 
@@ -273,7 +273,7 @@ The prefill divides `price_excl_vat` (Kč/MWh) by 1000 and rounds to 2 decimals 
 | DUAL_TARIFF_CODES three-way consistency | OK | §5.4 |
 | Snapshot = latest | OK | audit-script `diff` returns 0 |
 
-**Conclusive finding (current tree):** No data corruption, no mis-mapping, no guilty layer. The dual-tariff path is correct end-to-end today: XLSX → build_pricelists.py → bundled JSON → REST `distributors[*].*.[vt|nt]` → FE `applyDistributionFeeSuggestion`. See §10 for the timeline that produced this state.
+**Conclusive finding (current tree):** No data corruption, no mis-mapping, no guilty layer. The dual-tariff path is correct end-to-end today: XLSX → build_pricelists.py → bundled JSON → REST `distributors[*].*.[vt|nt]` → FE `applyDistributionFeeSuggestion`. See §11 for the timeline that produced this state, and §10 for the independent review verdict.
 
 **No trivial proven bug → no fix implemented. No tests added. No commit made (per brief).**
 
@@ -307,7 +307,40 @@ All checks are read-only. No files modified. No commit. Per brief: "Do not commi
 
 ---
 
-## 10. Recency — how the current tree became clean
+## 10. Independent review — verdict and residual limitations
+
+Reviewed by a different model (`review-eru-forensic-doc-refute-n-7b4ef1`, sonnet-3, briefed to
+REFUTE). Recorded verdict: `grounded=1 in_scope=1 honest=0 complete=0 rework=substantial`.
+
+What the review CONFIRMED independently:
+
+- Provenance chain: sha256 re-reproduced via `curl` + `sha256sum`, matches §1.2 exactly.
+- The owner's premise: `openpyxl` raw-cell re-extraction of the `Distribuce` sheet (rows 308-471)
+  confirms the NT column is **genuinely identical across all 8 dual tariffs at 8 distinct rows** —
+  it is the decree, not a parser artifact that copied VT into NT. §4 is correct here.
+- Current FE render path (`onboarding/index.ts:2660-2743`, `step-pricing-distribution.ts`) traced
+  line-by-line: uses distinct `rate.vt`/`rate.nt` draft keys. §5.3 is correct on the current state.
+
+What the review REFUTED, and what changed because of it:
+
+- The doc audited the current tree and omitted git history, so "never broken" was unfalsifiable.
+  `git show f5c1dbcf2^:.../index.ts` shows the pre-fix render path generic-rendered the flat
+  VT-mirror field labeled "Cena s DPH" with a bolted-on NT row — i.e. the owner's exact symptom,
+  fixed 25h before the audit. `105bc7228` likewise shows the spot fee percent/fixed math had zero
+  VT/NT branch before 2026-07-26 — the "silently-VT-for-both" shape that §7.2 had dismissed as
+  speculative. **Fix: §11 (Recency) added, and §7.2 now cites `105bc7228` as landed.**
+
+Residual limitation, NOT closed — stated here rather than left implied:
+
+- **Decree correctness (§2.1) is sourced to the project's own `README.md` / `DECISIONS.md`, not to
+  an independent authority.** The sha256 chain proves the committed XLSX is byte-identical to what
+  ERU serves at that URL; it does not independently prove that `ceny-nn26-1.xlsx` (14/2025 +
+  15/2025 POZE) is the decree in force for calendar year 2026. Treat §2.1 as "matches the source
+  we cite", not "verified against the Czech legal gazette". Confirm before the 2027 snapshot.
+
+---
+
+## 11. Recency — how the current tree became clean
 
 The audit was run on the current tree only. Three commits in the 48h BEFORE this doc addressed the dual-tariff VT/NT surface directly:
 
