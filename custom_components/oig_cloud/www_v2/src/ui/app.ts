@@ -37,7 +37,7 @@ import { oigLog } from '@/core/logger';
 import { throttle, withRetry } from '@/utils/format';
 import { shieldController } from '@/data/shield-controller';
 import { dismissOnboardingBanner, loadOnboardingState } from '@/ui/features/onboarding/onboarding-data';
-import type { Domain } from '@/ui/components/simulator-fetcher';
+import { fetchSimulatorPresets, type Domain, type PresetListItem } from '@/ui/components/simulator-fetcher';
 
 import '@/ui/components/header';
 import '@/ui/components/theme-provider';
@@ -184,6 +184,17 @@ export class OigApp extends LitElement {
   @state() private simulatorOpen = false;
   @state() private simulatorDomain: Domain = 'battery';
   @state() private simulatorDraft: Record<string, unknown> = {};
+  // fe/fix: presets are fetched on open and passed down so the overlay's chips
+  // populate and the initial simulate carries a preset id. The BE POST 400s
+  // with "'prices' required when no preset given" when presetId is blank, and
+  // <oig-simulator>.firstUpdated fires the initial simulate immediately on
+  // mount — so the component is NOT mounted until these resolve. Loading/error
+  // live here (in the host) to keep that fetch out of the component and to gate
+  // the mount on a known preset id.
+  @state() private simulatorPresets: PresetListItem[] = [];
+  @state() private simulatorActivePresetId: string | undefined = undefined;
+  @state() private simulatorPresetsLoading = false;
+  @state() private simulatorPresetsError: string | null = null;
 
   private entityStore: EntityStore | null = null;
   private timeInterval: number | null = null;
@@ -1097,7 +1108,7 @@ export class OigApp extends LitElement {
     void this.loadOnboarding();
   }
 
-  private onSimulatorOpen(e: CustomEvent<{ domain?: Domain; box?: string; draft?: Record<string, unknown> }>): void {
+  private async onSimulatorOpen(e: CustomEvent<{ domain?: Domain; box?: string; draft?: Record<string, unknown> }>): Promise<void> {
     e.stopPropagation();
     const { domain, box, draft } = e.detail ?? {};
     this.simulatorDomain = domain ?? 'battery';
@@ -1105,8 +1116,34 @@ export class OigApp extends LitElement {
     // inverter_sn/sn, falling back to the URL's ?sn= otherwise — merge
     // `box` in so the simulator resolves it from the detail it was given.
     this.simulatorDraft = box ? { ...draft, box_id: box } : { ...draft };
+    // Open the overlay (shows the loading state) before resolving presets so
+    // <oig-simulator> mounts only once a preset id is known — its firstUpdated
+    // fires the initial simulate immediately, and a blank preset 400s upstream.
     this.simulatorOpen = true;
+    await this.loadSimulatorPresets(this.simulatorDomain, this.simulatorDraft);
   }
+
+  private async loadSimulatorPresets(domain: Domain, draft: Record<string, unknown>): Promise<void> {
+    this.simulatorPresetsLoading = true;
+    this.simulatorPresetsError = null;
+    try {
+      const presets = await fetchSimulatorPresets(domain, draft);
+      this.simulatorPresets = presets;
+      // Default-select the first preset so the initial simulate (fired by the
+      // component's firstUpdated on mount) carries a preset id, not a blank.
+      this.simulatorActivePresetId = presets[0]?.id;
+    } catch (err) {
+      this.simulatorPresets = [];
+      this.simulatorActivePresetId = undefined;
+      this.simulatorPresetsError = err instanceof Error ? err.message : String(err);
+    } finally {
+      this.simulatorPresetsLoading = false;
+    }
+  }
+
+  private onSimulatorPresetsRetry = (): void => {
+    void this.loadSimulatorPresets(this.simulatorDomain, this.simulatorDraft);
+  };
 
   private onSimulatorClose(): void {
     this.simulatorOpen = false;
@@ -1646,10 +1683,23 @@ export class OigApp extends LitElement {
                 data-testid="simulator-close"
                 @click=${this.onSimulatorClose}
               >×</button>
-              <oig-simulator
-                .domain=${this.simulatorDomain}
-                .draft=${this.simulatorDraft}
-              ></oig-simulator>
+              ${this.simulatorPresetsLoading
+                ? html`<div class="simulator-presets-loading" data-testid="simulator-presets-loading">Načítání scénářů…</div>`
+                : this.simulatorPresetsError
+                  ? html`<div class="simulator-presets-error" data-testid="simulator-presets-error">
+                      <p>Scénáře se nepodařilo načíst.</p>
+                      <button
+                        type="button"
+                        data-testid="simulator-presets-retry"
+                        @click=${this.onSimulatorPresetsRetry}
+                      >Zkusit znovu</button>
+                    </div>`
+                  : html`<oig-simulator
+                      .domain=${this.simulatorDomain}
+                      .draft=${this.simulatorDraft}
+                      .presets=${this.simulatorPresets}
+                      .activePresetId=${this.simulatorActivePresetId}
+                    ></oig-simulator>`}
             </div>
           </div>
         ` : nothing}

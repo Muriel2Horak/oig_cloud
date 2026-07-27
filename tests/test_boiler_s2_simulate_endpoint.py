@@ -462,3 +462,50 @@ async def test_simulate_preset_determinism_across_two_runtimes():
     response2 = await view2.post(DummyRequest(hass2, json_body=body), "entry1", "123")
 
     assert json.loads(response1.text) == json.loads(response2.text)
+
+
+# ============================================================================
+# PRESETS GET (fe/fix): the overlay fetches the preset list to populate chips;
+# POST-only left it 404. Admin-gated + identity-validated like simulate_water_day.
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_simulate_presets_requires_admin_rejects_non_admin():
+    hass, _e, _r = _build_hass_with_runtime()
+    view = module.BoilerSimulatePresetsView(hass)
+    request = DummyRequest(hass, is_admin=False)
+
+    response = await view.get(request, "entry1", "123")
+
+    assert response.status == 403
+
+
+@pytest.mark.asyncio
+async def test_simulate_presets_unknown_box_returns_404():
+    hass, _e, _r = _build_hass_with_runtime()
+    view = module.BoilerSimulatePresetsView(hass)
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "entry1", "unknown_box")
+
+    assert response.status == 404
+
+
+@pytest.mark.asyncio
+async def test_simulate_presets_returns_id_and_name_for_every_preset():
+    hass, _e, _r = _build_hass_with_runtime()
+    view = module.BoilerSimulatePresetsView(hass)
+    request = DummyRequest(hass)
+
+    response = await view.get(request, "entry1", "123")
+    assert response.status == 200
+
+    items = json.loads(response.text)
+    presets = module._load_water_day_presets()
+    assert isinstance(items, list) and len(items) == len(presets)
+    for item in items:
+        # Contract: [{id, name}] — name is a short CZ label for the chip.
+        assert set(item.keys()) == {"id", "name"}
+        assert item["id"] in presets
+        assert isinstance(item["name"], str) and item["name"]

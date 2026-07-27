@@ -7,6 +7,12 @@ export interface SimRequest {
   draft: Record<string, unknown>;
 }
 
+/** A preset chip as the overlay renders it (component's PresetItem shape). */
+export interface PresetListItem {
+  id: string;
+  label: string;
+}
+
 export interface BatteryInterval {
   t: string;
   mode: 'home' | 'ups';
@@ -427,6 +433,60 @@ async function postJson<T>(url: string, body: object): Promise<T> {
   return result.data as T;
 }
 
+async function getJson<T>(url: string): Promise<T> {
+  // Auth-aware GET — same reason as postJson: the preset-list routes are
+  // admin-gated, so a raw fetch() with no Bearer token 401s. haClient injects
+  // the HASS token and classifies errors.
+  const endpoint = url.replace(/^\/api\/oig_cloud/, '');
+  const result = await haClient.fetchOIGAPITyped<T>(endpoint, { method: 'GET' });
+
+  if (!result.ok) {
+    throw new Error(result.error || `HTTP ${result.status}`);
+  }
+
+  return result.data as T;
+}
+
+function resolveEntryId(): string {
+  if (typeof window === 'undefined') return '';
+  return new URLSearchParams(window.location.search).get('entry_id') || '';
+}
+
+interface PresetListEntry {
+  id: string;
+  name?: string;
+  label?: string;
+}
+
+/** Fetch the preset list (id + short CZ label) for a simulator domain.
+ *  BE returns [{id, name}]; mapped to the component's {id, label} PresetItem. */
+export async function fetchSimulatorPresets(
+  domain: Domain,
+  draft: Record<string, unknown>,
+): Promise<PresetListItem[]> {
+  const boxId = resolveBoxId(draft);
+  if (!boxId) {
+    throw new Error('Unable to resolve simulator box id');
+  }
+
+  let url: string;
+  if (domain === 'battery') {
+    url = `/api/oig_cloud/${boxId}/planner_simulate/presets`;
+  } else {
+    const entryId = resolveEntryId();
+    if (!entryId) {
+      throw new Error('Unable to resolve entry id for boiler presets');
+    }
+    url = `/api/oig_cloud/boiler/${entryId}/${boxId}/simulate_water_day/presets`;
+  }
+
+  const entries = await getJson<PresetListEntry[]>(url);
+  return entries.map((entry) => ({
+    id: entry.id,
+    label: entry.name || entry.label || entry.id,
+  }));
+}
+
 export async function defaultFetcher(req: SimRequest): Promise<SimResponse> {
   const boxId = resolveBoxId(req.draft);
   if (!boxId) {
@@ -445,7 +505,7 @@ export async function defaultFetcher(req: SimRequest): Promise<SimResponse> {
     return mapPlannerSimulateResponse(raw);
   }
 
-  const entryId = new URLSearchParams(window.location.search).get('entry_id') || '';
+  const entryId = resolveEntryId();
   if (!entryId) {
     throw new Error('Unable to resolve entry id for boiler simulation');
   }

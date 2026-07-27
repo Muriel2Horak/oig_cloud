@@ -4,6 +4,7 @@ import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
 import {
   defaultFetcher,
+  fetchSimulatorPresets,
   mockFetcher,
   type SimRequest,
 } from './simulator-fetcher';
@@ -223,6 +224,92 @@ describe('simulator fetcher', () => {
     expect(result.summary.kwh).toBe(2.4);
     expect(result.summary.cost).toBe(5.6);
     expect(result.summary.solar_share).toBeCloseTo(0.5);
+
+    vi.unstubAllGlobals();
+  });
+
+  // Preset-list GET (fe/fix): the overlay fetches its preset chips via GET, not
+  // POST. BE returns [{id, name}]; the component's PresetItem is {id, label}, so
+  // the fetcher maps name -> label and falls back to id when name is absent.
+  const BATTERY_PRESETS_FIXTURE = [
+    { id: 'winter_high_price', name: 'Zima, draho' },
+    { id: 'sunny_summer', name: 'Léto, slunečno' },
+  ];
+  const BOILER_PRESETS_FIXTURE = [
+    { id: 'workday', name: 'Pracovní den' },
+    { id: 'weekend', name: 'Víkend' },
+  ];
+
+  it('GETs the battery preset list and maps {id,name} -> {id,label}', async () => {
+    window.history.pushState({}, '', '/?sn=BOX123');
+    const fetchMock = vi
+      .spyOn(haClient, 'fetchOIGAPITyped')
+      .mockResolvedValue({ ok: true, status: 200, data: BATTERY_PRESETS_FIXTURE } as any);
+
+    const presets = await fetchSimulatorPresets('battery', { box_id: 'BOX123' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/BOX123/planner_simulate/presets');
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('GET');
+    expect(presets).toEqual([
+      { id: 'winter_high_price', label: 'Zima, draho' },
+      { id: 'sunny_summer', label: 'Léto, slunečno' },
+    ]);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('GETs the boiler preset list via entry_id and maps {id,name} -> {id,label}', async () => {
+    window.history.pushState({}, '', '/?sn=BOX123&entry_id=entry1');
+    const fetchMock = vi
+      .spyOn(haClient, 'fetchOIGAPITyped')
+      .mockResolvedValue({ ok: true, status: 200, data: BOILER_PRESETS_FIXTURE } as any);
+
+    const presets = await fetchSimulatorPresets('boiler', { box_id: 'BOX123' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('/boiler/entry1/BOX123/simulate_water_day/presets');
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('GET');
+    expect(presets).toEqual([
+      { id: 'workday', label: 'Pracovní den' },
+      { id: 'weekend', label: 'Víkend' },
+    ]);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('throws when the preset-list GET fails', async () => {
+    window.history.pushState({}, '', '/?sn=BOX123');
+    vi.spyOn(haClient, 'fetchOIGAPITyped').mockResolvedValue({
+      ok: false,
+      status: 403,
+      code: 'forbidden',
+      error: 'Admin only',
+    } as any);
+
+    await expect(fetchSimulatorPresets('battery', { box_id: 'BOX123' })).rejects.toThrow('Admin only');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('throws when the boiler entry id cannot be resolved', async () => {
+    window.history.pushState({}, '', '/?sn=BOX123');
+
+    await expect(fetchSimulatorPresets('boiler', { box_id: 'BOX123' })).rejects.toThrow('entry id');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('falls back to id as label when BE omits name', async () => {
+    window.history.pushState({}, '', '/?sn=BOX123');
+    vi.spyOn(haClient, 'fetchOIGAPITyped').mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: [{ id: 'only_id' }],
+    } as any);
+
+    const presets = await fetchSimulatorPresets('battery', { box_id: 'BOX123' });
+    expect(presets).toEqual([{ id: 'only_id', label: 'only_id' }]);
 
     vi.unstubAllGlobals();
   });

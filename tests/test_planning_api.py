@@ -298,7 +298,7 @@ def test_setup_planning_api_views():
 
     hass = SimpleNamespace(http=DummyHTTP())
     planning_api.setup_planning_api_views(hass)
-    assert len(hass.http.views) == 7
+    assert len(hass.http.views) == 8
 
 
 @pytest.mark.asyncio

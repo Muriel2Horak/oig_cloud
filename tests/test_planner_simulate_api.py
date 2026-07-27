@@ -203,3 +203,49 @@ def test_setup_planning_api_views_registers_planner_simulate():
     assert any(
         isinstance(v, planning_api.OIGCloudPlannerSimulateView) for v in hass.http.views
     )
+
+
+# --- planner_simulate presets GET (fe/fix): the overlay fetches the preset
+# list to populate chips; POST-only left it 404. Mirrors the simulate view's
+# admin gate; the list is a fully synthetic read of the bundled JSON. ---
+
+
+@pytest.mark.asyncio
+async def test_planner_simulate_presets_requires_admin():
+    request = DummyRequest(admin=False)
+    response = await planning_api.OIGCloudPlannerSimulatePresetsView().get(request, "box")
+    assert response.status == 403
+
+
+@pytest.mark.asyncio
+async def test_planner_simulate_presets_returns_id_and_name_for_every_preset():
+    request = DummyRequest()
+    response = await planning_api.OIGCloudPlannerSimulatePresetsView().get(request, "box")
+    assert response.status == 200
+
+    import json as _json
+
+    items = _json.loads(response.body)
+    presets = planning_api._load_presets()["presets"]
+    assert isinstance(items, list) and len(items) == len(presets)
+    for item in items:
+        # Contract: [{id, name}] — name is a short CZ label for the chip.
+        assert set(item.keys()) == {"id", "name"}
+        assert item["id"] in presets
+        assert isinstance(item["name"], str) and item["name"]
+
+
+def test_setup_planning_api_views_registers_planner_simulate_presets():
+    class DummyHTTP:
+        def __init__(self):
+            self.views = []
+
+        def register_view(self, view):
+            self.views.append(view)
+
+    hass = SimpleNamespace(http=DummyHTTP())
+    planning_api.setup_planning_api_views(hass)
+    assert any(
+        isinstance(v, planning_api.OIGCloudPlannerSimulatePresetsView)
+        for v in hass.http.views
+    )
