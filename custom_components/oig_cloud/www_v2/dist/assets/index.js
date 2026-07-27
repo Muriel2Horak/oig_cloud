@@ -1298,6 +1298,9 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     :host {
       display: block;
       width: 100%;
+      /* Size container: the pentagon must react to the actual flow-center
+         column width (viewport media queries can't see the control panel). */
+      container-type: inline-size;
     }
 
     .flow-grid {
@@ -1318,6 +1321,20 @@ Opravdu chcete přidat další úkol?`)}async setBoxMode(t){if(this.state.curren
     .node-inverter { grid-column: 2; grid-row: 2; align-self: center; justify-self: center; }
     .node-grid     { grid-column: 1; grid-row: 3; justify-self: center; }
     .node-battery  { grid-column: 3; grid-row: 3; justify-self: center; }
+
+    /* Narrow flow column (Systém OIG panel occupies the right column): the
+       pentagon needs ~860px; below that zoom it down as a whole so no node
+       ever paints under the control panel. Mobile (<=768px viewport) media
+       rules come later in this sheet and still win there. */
+    @container (max-width: 859px) {
+      .flow-grid { zoom: 0.84; }
+    }
+    @container (max-width: 723px) {
+      .flow-grid { zoom: 0.72; }
+    }
+    @container (max-width: 619px) {
+      .flow-grid { zoom: 0.62; }
+    }
 
     .node {
       position: relative;
