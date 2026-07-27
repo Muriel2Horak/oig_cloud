@@ -250,6 +250,38 @@ class OIGCloudPlannerSimulateView(HomeAssistantView):
             return web.json_response({"error": str(e)}, status=500)
 
 
+class OIGCloudPlannerSimulatePresetsView(HomeAssistantView):
+    """List the planner_simulate presets (id + short CZ label).
+
+    The simulator overlay fetches this list to populate its preset chips.
+    POST-only routing left it 404. Fully synthetic — a read of the bundled
+    JSON, no live state — so `box_id` is path-scoped for URL consistency,
+    same as `OIGCloudPlannerSimulateView`. Admin-gated like its sibling.
+    """
+
+    url = f"{API_BASE}/{{box_id}}/planner_simulate/presets"
+    name = "api:oig_cloud:planner_simulate_presets"
+    requires_auth = True
+
+    async def get(self, request: web.Request, box_id: str) -> web.Response:
+        _ = box_id  # path-scoped for URL consistency; preset list is synthetic
+        resp = _admin_or_403(request)
+        if resp is not None:
+            return resp
+
+        try:
+            presets = _load_presets().get("presets", {})
+        except (OSError, ValueError) as e:
+            _LOGGER.error(f"Error loading planner_simulate presets: {e}", exc_info=True)
+            return web.json_response({"error": "Presets unavailable"}, status=500)
+
+        items = [
+            {"id": preset_id, "name": preset.get("name") or preset.get("label") or preset_id}
+            for preset_id, preset in presets.items()
+        ]
+        return web.json_response(items)
+
+
 def _load_plan_filter_enums() -> tuple[Any, Any]:
     package_root = (__package__ or "custom_components.oig_cloud.api").rsplit(".", 1)[0]
     plan_manager = importlib.import_module(f"{package_root}.planning.plan_manager")
@@ -575,5 +607,6 @@ def setup_planning_api_views(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudActivatePlanView())
     hass.http.register_view(OIGCloudDeactivatePlanView())
     hass.http.register_view(OIGCloudPlannerSimulateView())
+    hass.http.register_view(OIGCloudPlannerSimulatePresetsView())
 
     _LOGGER.info("Planning API endpoints registered")

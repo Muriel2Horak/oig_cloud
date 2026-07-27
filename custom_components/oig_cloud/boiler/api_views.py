@@ -804,12 +804,50 @@ class BoilerSimulateView(HomeAssistantView):
         return web.json_response(result)
 
 
+class BoilerSimulatePresetsView(HomeAssistantView):
+    """List the simulate_water_day presets (id + short CZ label).
+
+    The simulator overlay fetches this list to populate its preset chips.
+    POST-only routing left it 404. Admin-gated + identity-validated like
+    `BoilerSimulateView` (it shares the config-shaped path surface).
+    """
+
+    url = "/api/oig_cloud/boiler/{entry_id}/{box_id}/simulate_water_day/presets"
+    name = "api:oig_cloud:boiler_simulate_presets"
+    requires_auth = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+
+    async def get(self, request: web.Request, entry_id: str, box_id: str) -> web.Response:
+        admin_error = _require_admin(request)
+        if admin_error is not None:
+            return admin_error
+
+        ok, _entry, _runtime = _validate_identity(self.hass, entry_id, box_id)
+        if not ok:
+            return _identity_error("Identity not resolved", "api_repair_required")
+
+        try:
+            presets = _load_water_day_presets()
+        except (OSError, ValueError) as e:
+            _LOGGER.error("Error loading water_day presets: %s", e, exc_info=True)
+            return web.json_response({"error": "Presets unavailable"}, status=500)
+
+        items = [
+            {"id": preset_id, "name": preset.get("name") or preset.get("label") or preset_id}
+            for preset_id, preset in presets.items()
+        ]
+        return web.json_response(items)
+
+
 def register_boiler_api_views(hass: HomeAssistant) -> None:
     """Registruje API views pro bojlerový modul."""
     hass.http.register_view(BoilerCanonicalView(hass))
     hass.http.register_view(BoilerProfileView(hass))
     hass.http.register_view(BoilerPlanView(hass))
     hass.http.register_view(BoilerSimulateView(hass))
+    hass.http.register_view(BoilerSimulatePresetsView(hass))
     _LOGGER.info("Boiler API views registered")
 
 

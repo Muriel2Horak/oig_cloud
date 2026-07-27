@@ -98,6 +98,62 @@ vi.mock('@/ui/features/onboarding/banner', () => ({}));
 // — the whole point is to observe the REAL component mounted with the right
 // props, not a stand-in.
 
+// fe/fix: route the typed fetch by endpoint. The overlay's preset-list GET must
+// resolve [{id,name}] (it maps them to chips), and the component's initial
+// simulate POST must return a real BE shape. The previous flat {data:null}
+// mock made fetchSimulatorPresets do null.map() -> throw, so the overlay showed
+// its preset-error state and never mounted <oig-simulator> at all.
+const BATTERY_PRESETS_FIXTURE = [
+  { id: 'winter_high_price', name: 'Zima, draho' },
+  { id: 'sunny_summer', name: 'Léto, slunečno' },
+];
+const BOILER_PRESETS_FIXTURE = [
+  { id: 'workday', name: 'Pracovní den' },
+  { id: 'weekend', name: 'Víkend' },
+];
+const BATTERY_SIM_FIXTURE = {
+  preset: 'winter_high_price',
+  horizon_intervals: 1,
+  interval_minutes: 15,
+  timeline: [
+    {
+      interval_index: 0, soc_kwh: 8.7, solar_kwh: 0, load_kwh: 0.2,
+      grid_import_kwh: 0.2, grid_export_kwh: 0, cost_czk: 1.1, mode: 3,
+      mode_name: 'HOME I', soc_percent: 50.0,
+    },
+  ],
+  summary: { total_cost_czk: 1.1, mode_distribution: { 'HOME I': 1 } },
+};
+const BOILER_SIM_FIXTURE = {
+  entry_id: 'entry1', box_id: 'SN123', preset: 'workday', inputs: {}, source: {},
+  timeline: [
+    {
+      start: '2026-07-26T05:00:00+02:00', end: '2026-07-26T05:15:00+02:00',
+      action: 'heat', source: 'fve', heating_kwh: 0.5, pv_kwh: 0.5, grid_kwh: 0,
+      alt_kwh: 0, battery_kwh: 0, estimated_cost_czk: 0, predicted_top_temp_c: 58.2,
+      purpose: 'comfort',
+    },
+  ],
+  summary: { total_heating_kwh: 2.4, cost_czk: 5.6, pv_kwh: 1.2, grid_kwh: 1.2, alt_kwh: 0, battery_kwh: 0 },
+};
+function routeFetch(path: string, options?: RequestInit): Promise<any> {
+  const method = (options as { method?: string } | undefined)?.method ?? 'GET';
+  if (method === 'GET' && path.endsWith('/presets')) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      data: path.includes('simulate_water_day') ? BOILER_PRESETS_FIXTURE : BATTERY_PRESETS_FIXTURE,
+    });
+  }
+  if (path.includes('simulate_water_day')) {
+    return Promise.resolve({ ok: true, status: 200, data: BOILER_SIM_FIXTURE });
+  }
+  if (path.includes('planner_simulate')) {
+    return Promise.resolve({ ok: true, status: 200, data: BATTERY_SIM_FIXTURE });
+  }
+  return Promise.resolve({ ok: true, status: 200, data: null });
+}
+
 import '@/ui/app';
 
 interface TestApp extends HTMLElement {
@@ -122,6 +178,14 @@ async function flush(el: HTMLElement & { updateComplete: Promise<boolean> }) {
   await el.updateComplete;
   await new Promise((resolve) => setTimeout(resolve, 0));
   await el.updateComplete;
+}
+
+/** The preset fetch -> mount -> initial-simulate chain is async across several
+ *  Lit update cycles; a single flush only covers one. Pump enough cycles for
+ *  onSimulatorOpen's await to settle and the component's firstUpdated POST to
+ *  fire. */
+async function settle(app: TestApp) {
+  for (let i = 0; i < 6; i += 1) await flush(app);
 }
 
 /** Battery fields verbatim from onboarding-battery.test.ts's fixture, boiler
@@ -155,11 +219,15 @@ describe('simulator overlay mount (fe/fix: seam was dispatch-only, nothing liste
   let el: TestApp;
 
   beforeEach(async () => {
+    // Boiler presets + simulate resolve entry_id from the URL (?entry_id=).
+    // Battery ignores it, so setting it globally is safe for every test here.
+    window.history.pushState({}, '', '/?entry_id=entry1');
+
     fetchOIGAPI.mockReset();
     fetchOIGAPITyped.mockReset();
     loadFieldRegistryMock.mockReset();
     fetchOIGAPI.mockResolvedValue(null);
-    fetchOIGAPITyped.mockResolvedValue({ ok: true, status: 200, data: null });
+    fetchOIGAPITyped.mockImplementation(routeFetch);
     loadFieldRegistryMock.mockResolvedValue(REGISTRY_FIXTURE);
     // The real <oig-simulator>, once mounted, fires off a real fetch() in its
     // firstUpdated — stub it so that's a harmless no-op instead of a jsdom
@@ -215,7 +283,7 @@ describe('simulator overlay mount (fe/fix: seam was dispatch-only, nothing liste
     ) as HTMLButtonElement;
     expect(button).toBeTruthy();
     button.click();
-    await flush(el);
+    await settle(el);
 
     const sim = el.shadowRoot!.querySelector('oig-simulator') as HTMLElement & Record<string, any>;
     expect(sim).toBeTruthy();
@@ -236,7 +304,7 @@ describe('simulator overlay mount (fe/fix: seam was dispatch-only, nothing liste
     ) as HTMLButtonElement;
     expect(button).toBeTruthy();
     button.click();
-    await flush(el);
+    await settle(el);
 
     const sim = el.shadowRoot!.querySelector('oig-simulator') as HTMLElement & Record<string, any>;
     expect(sim).toBeTruthy();
@@ -244,12 +312,53 @@ describe('simulator overlay mount (fe/fix: seam was dispatch-only, nothing liste
     expect(sim.draft.boiler_volume_l).toBe(240);
   });
 
+  it('fetches presets on open, renders chips, and the initial simulate carries the first preset id', async () => {
+    const wizard = getWizard(el)!;
+    (wizardRoot(wizard).querySelector('button[data-step="battery"]') as HTMLButtonElement).click();
+    await flush(wizard);
+
+    const button = wizardRoot(wizard).querySelector(
+      '[data-testid="battery-simulator-button"]',
+    ) as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    button.click();
+    await settle(el);
+
+    // Preset-list GET fired against the planner presets route.
+    const presetCalls = fetchOIGAPITyped.mock.calls.filter(
+      ([p]) => typeof p === 'string' && p.endsWith('/presets'),
+    );
+    expect(presetCalls.length).toBeGreaterThanOrEqual(1);
+
+    const sim = el.shadowRoot!.querySelector('oig-simulator') as HTMLElement & Record<string, any>;
+    expect(sim).toBeTruthy();
+    // The fetched presets were passed down and the first was default-selected
+    // before the component's firstUpdated fired the initial simulate.
+    expect(sim.activePresetId).toBe(BATTERY_PRESETS_FIXTURE[0].id);
+    for (const preset of BATTERY_PRESETS_FIXTURE) {
+      expect(sim.shadowRoot!.querySelector(`[data-testid="preset-${preset.id}"]`)).toBeTruthy();
+    }
+
+    // Initial simulate POST carries the first preset id (not a blank) — the
+    // root cause of the owner's "'prices' required when no preset given" 400.
+    const simulateCalls = fetchOIGAPITyped.mock.calls.filter(
+      ([p, o]) =>
+        typeof p === 'string' &&
+        p.includes('planner_simulate') &&
+        !p.endsWith('/presets') &&
+        (o as RequestInit | undefined)?.method === 'POST',
+    );
+    expect(simulateCalls.length).toBeGreaterThanOrEqual(1);
+    const body = JSON.parse(String((simulateCalls[0][1] as RequestInit)?.body));
+    expect(body.preset).toBe(BATTERY_PRESETS_FIXTURE[0].id);
+  });
+
   it('backdrop click closes the overlay and unmounts the simulator', async () => {
     const wizard = getWizard(el)!;
     (wizardRoot(wizard).querySelector('button[data-step="battery"]') as HTMLButtonElement).click();
     await flush(wizard);
     (wizardRoot(wizard).querySelector('[data-testid="battery-simulator-button"]') as HTMLButtonElement).click();
-    await flush(el);
+    await settle(el);
     expect(el.shadowRoot!.querySelector('oig-simulator')).toBeTruthy();
 
     const overlay = el.shadowRoot!.querySelector('[data-testid="simulator-overlay"]') as HTMLElement;

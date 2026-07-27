@@ -11,6 +11,7 @@
   },
   "presets": {
     "winter_high_price": {
+      "name": "Zima, draho",
       "label": "Winter high-price",
       "description": "Bimodal price (cheap night / expensive day), near-zero solar, high constant load.",
       "soc_start_percent": 50.0,
@@ -310,6 +311,7 @@
       ]
     },
     "sunny_summer": {
+      "name": "Léto, slunečno",
       "label": "Sunny summer",
       "description": "Flat low prices, high midday solar peak, moderate constant load.",
       "soc_start_percent": 40.0,
@@ -609,6 +611,7 @@
       ]
     },
     "shoulder": {
+      "name": "Přechodné období",
       "label": "Shoulder season",
       "description": "Gentle price variation, low-moderate cloudy solar, moderate load. No sharp spikes.",
       "soc_start_percent": 50.0,
@@ -908,6 +911,7 @@
       ]
     },
     "price_spike": {
+      "name": "Cenová špička",
       "label": "Price spike",
       "description": "Normal prices, sudden expensive evening window, then cheap recovery. High constant load.",
       "soc_start_percent": 30.0,
@@ -1207,6 +1211,7 @@
       ]
     },
     "negative_price": {
+      "name": "Záporné ceny",
       "label": "Negative price",
       "description": "Grid pays to consume midday, positive otherwise. Moderate solar, normal load.",
       "soc_start_percent": 60.0,
