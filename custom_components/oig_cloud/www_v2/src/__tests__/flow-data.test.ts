@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseBalancingState, buildGridChargingPlan, extractFlowData, getGridExportDisplay } from '@/data/flow-data';
+import {
+  parseBalancingState,
+  buildGridChargingPlan,
+  extractFlowData,
+  getGridExportDisplay,
+  applyPlannerSettings,
+} from '@/data/flow-data';
 
 const TEST_SN = '2206237016';
 
@@ -266,5 +272,91 @@ describe('getGridExportDisplay with canonical values', () => {
     const result = getGridExportDisplay('unknown');
     expect(result.display).toBe('--');
     expect(result.icon).toBe('💧');
+  });
+});
+
+// ============================================================================
+// Planner chip wiring — `applyPlannerSettings` feeds the chip at
+// `node.ts:2567`, which renders:
+//   plannerAutoMode === true  → 'řídí · AUTO'   (red BEFORE on origin/f1/wizard-v2-impl
+//                                              — `plannerAutoMode` was hard-coded null)
+//   plannerAutoMode === false → 'VYPNUTO'
+//   plannerAutoMode === null  → 'N/A'
+// ============================================================================
+
+describe('applyPlannerSettings — feeds inverter chip plannerAutoMode', () => {
+  const BASE_SENSOR = `sensor.oig_${TEST_SN}_`;
+  const BASE_STATES = {
+    [BASE_SENSOR + 'actual_fv_p1']: { state: '0' },
+    [BASE_SENSOR + 'actual_fv_p2']: { state: '0' },
+    [BASE_SENSOR + 'box_prms_mode']: { state: 'Home 1' },
+    [BASE_SENSOR + 'inverter_temperature']: { state: '30' },
+    [BASE_SENSOR + 'battery_balancing']: { state: 'off' },
+  };
+
+  it('sets plannerAutoMode=true when BE says auto_mode_switch_enabled=true — chip renders "řídí · AUTO"', () => {
+    const initial = extractFlowData(BASE_STATES, TEST_SN);
+    expect(initial.plannerAutoMode).toBe(null);
+
+    const next = applyPlannerSettings(initial, {
+      auto_mode_switch_enabled: true,
+      planner_mode: 'hybrid',
+    });
+
+    expect(next.plannerAutoMode).toBe(true);
+    // The chip's conditional (node.ts:2568) — mirror it here so the assertion
+    // also documents what the chip will draw:
+    const chipText =
+      next.plannerAutoMode === true
+        ? 'řídí · AUTO'
+        : next.plannerAutoMode === false
+          ? 'VYPNUTO'
+          : 'N/A';
+    expect(chipText).toBe('řídí · AUTO');
+  });
+
+  it('sets plannerAutoMode=false when BE says auto_mode_switch_enabled=false — chip renders "VYPNUTO"', () => {
+    const initial = extractFlowData(BASE_STATES, TEST_SN);
+    const next = applyPlannerSettings(initial, {
+      auto_mode_switch_enabled: false,
+      planner_mode: 'hybrid',
+    });
+    expect(next.plannerAutoMode).toBe(false);
+  });
+
+  it('does NOT touch plannerAutoMode when settings is null (transient fetch failure)', () => {
+    const initial = extractFlowData(BASE_STATES, TEST_SN);
+    const next = applyPlannerSettings(initial, null);
+    // Same reference — caller treats `===` as a no-op for re-render suppression.
+    expect(next).toBe(initial);
+  });
+
+  it('returns the same reference when value is unchanged — re-render suppression', () => {
+    const initial = extractFlowData(BASE_STATES, TEST_SN);
+    const first = applyPlannerSettings(initial, { auto_mode_switch_enabled: true });
+    // Second apply with the same payload should NOT allocate a new object.
+    const second = applyPlannerSettings(first, { auto_mode_switch_enabled: true });
+    expect(second).toBe(first);
+  });
+
+  it('does NOT touch plannerRecommendedMode — BE payload does not carry it; chip still reads it from the sensor-based path', () => {
+    const initial = extractFlowData(
+      { ...BASE_STATES, [BASE_SENSOR + 'planner_recommended_mode']: { state: 'Home 2' } },
+      TEST_SN,
+    );
+    expect(initial.plannerRecommendedMode).toBe('Home 2');
+
+    const next = applyPlannerSettings(initial, {
+      auto_mode_switch_enabled: true,
+      planner_mode: 'hybrid',
+    });
+    // Sensor-sourced field must survive the planner-settings pass.
+    expect(next.plannerRecommendedMode).toBe('Home 2');
+  });
+
+  it('tolerates a missing auto_mode_switch_enabled field (treats as "off", not crash)', () => {
+    const initial = extractFlowData(BASE_STATES, TEST_SN);
+    const next = applyPlannerSettings(initial, { planner_mode: 'hybrid' });
+    expect(next.plannerAutoMode).toBe(false);
   });
 });
