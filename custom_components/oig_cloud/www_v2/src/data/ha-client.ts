@@ -430,26 +430,43 @@ export const PLAN_LABELS: Record<string, { short: string; long: string }> = {
   hybrid: { short: 'Plán', long: 'Plánování' },
 };
 
-class PlannerStateManager {
+// Exported so tests can construct fresh instances; the `plannerState`
+// singleton at the bottom of this module is what production code uses.
+export class PlannerStateManager {
   private cache: any = null;
-  private lastFetch = 0;
+  private lastAttempt = 0;
   private inflight: Promise<any> | null = null;
-  private readonly CACHE_TTL = 60_000; // 1 minute
+  private readonly CACHE_TTL = 60_000; // 1 minute for a successful payload
+  private readonly ERROR_TTL = 10_000; // suppress retries after a failed attempt
 
   async fetchSettings(client: HaClient, inverterSn: string, force = false): Promise<any> {
-    const now = Date.now();
-    if (!force && this.cache && now - this.lastFetch < this.CACHE_TTL) {
-      return this.cache;
-    }
+    // Single-flight de-dup: a pending fetch is shared by every caller. This
+    // must precede the error-window gate below — a second call arriving
+    // while the first is still in flight must join the inflight, not get
+    // null back from the suppression window.
     if (this.inflight) {
       return this.inflight;
     }
+    if (!force) {
+      const now = Date.now();
+      const elapsed = now - this.lastAttempt;
+      if (this.cache && elapsed < this.CACHE_TTL) {
+        return this.cache;
+      }
+      if (!this.cache && elapsed < this.ERROR_TTL) {
+        // A recent attempt produced no payload (throw or null). Without this
+        // gate, every caller re-hits the endpoint — together with app.ts's
+        // ~500 ms refresh cadence, that becomes a request storm while the BE
+        // is down / 401 / 404. See ha-client.test.ts case 2 / 3.
+        return null;
+      }
+    }
 
     this.inflight = (async () => {
+      this.lastAttempt = Date.now();
       try {
         const payload = await client.loadPlannerSettings(inverterSn);
         this.cache = payload;
-        this.lastFetch = Date.now();
         return payload;
       } catch (error) {
         oigLog.warn('Failed to fetch planner settings', { error });
@@ -476,7 +493,7 @@ class PlannerStateManager {
 
   invalidate(): void {
     this.cache = null;
-    this.lastFetch = 0;
+    this.lastAttempt = 0;
   }
 }
 
