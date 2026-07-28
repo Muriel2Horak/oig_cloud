@@ -108,6 +108,8 @@ interface PricelistsResponse {
 
 export type AiStatus = 'not_configured' | 'verified' | 'unverified' | 'backing_off' | 'no_credits' | 'error';
 
+type DistributionFeeKey = 'distribution_fee_vt_kwh' | 'distribution_fee_nt_kwh';
+
 export interface AiState {
   provider: string;
   key_set: boolean;
@@ -850,6 +852,7 @@ export class OigOnboardingWizard extends LitElement {
    * `pricing` section (Task 7) — never re-fetched for step navigation. */
   private _pricingConfigLoaded = false;
   @state() private pricingDraft: Record<string, unknown> = {};
+  private lastAutoSuggestedDistributionFees: Partial<Record<DistributionFeeKey, number>> = {};
 
   /** Connection step (Task 20): draft form values for the `basic` registry
    * section — seeded from `entry.options` FIRST, registry `default` otherwise
@@ -2158,6 +2161,7 @@ export class OigOnboardingWizard extends LitElement {
       resetPricing[key] = this.originalValues[key];
     }
     this.pricingDraft = resetPricing;
+    this.lastAutoSuggestedDistributionFees = {};
     this.boilerDraft = {};
     this.tariffMatrixOverride = {};
     this.tariffMatrixError = {};
@@ -2269,6 +2273,7 @@ export class OigOnboardingWizard extends LitElement {
     this.originalValues = {};
     this.pricing = null;
     this.pricingLoadFailed = false;
+    this.lastAutoSuggestedDistributionFees = {};
     this._pendingPrereqOff = null;
     this.bootstrapRetry = { onboardingState: false, registry: false, pricing: false, pricingConfig: false };
 
@@ -2665,19 +2670,26 @@ export class OigOnboardingWizard extends LitElement {
     const rate = this.pricing?.distributors?.[distributor]?.[tariff];
     if (!rate) return;
 
-    const suggest = (key: string, leg?: { price_excl_vat: number }): [string, number] | null => {
+    const suggest = (
+      key: DistributionFeeKey,
+      leg?: { price_excl_vat: number },
+    ): [DistributionFeeKey, number] | null => {
       if (!leg) return null;
       const current = this.pricingDraft[key];
       const registryDefault = this._registry!.fields[key]?.default;
-      const untouched = current === undefined || current === registryDefault;
+      const previous = this.lastAutoSuggestedDistributionFees[key];
+      const untouched = current == null || current === registryDefault || current === previous;
       if (!untouched) return null;
-      return [key, Math.round((leg.price_excl_vat / 1000) * 100) / 100];
+      const suggested = Math.round((leg.price_excl_vat / 1000) * 100) / 100;
+      this.lastAutoSuggestedDistributionFees[key] = suggested;
+      return [key, suggested];
     };
 
-    const updates = [
-      suggest('distribution_fee_vt_kwh', rate.vt),
-      suggest('distribution_fee_nt_kwh', rate.nt),
-    ].filter((u): u is [string, number] => u !== null);
+    const updates: Array<[DistributionFeeKey, number]> = [];
+    const vtSuggestion = suggest('distribution_fee_vt_kwh', rate.vt);
+    if (vtSuggestion) updates.push(vtSuggestion);
+    const ntSuggestion = suggest('distribution_fee_nt_kwh', rate.nt);
+    if (ntSuggestion) updates.push(ntSuggestion);
     if (updates.length === 0) return;
     this.pricingDraft = { ...this.pricingDraft, ...Object.fromEntries(updates) };
   }

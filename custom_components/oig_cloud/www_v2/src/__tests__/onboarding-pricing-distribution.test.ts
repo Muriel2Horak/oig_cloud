@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
+import { readFileSync } from 'node:fs';
 import type { FieldRegistry } from '@/data/registry-data';
 
 const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string, options?: RequestInit], Promise<unknown>>());
@@ -132,6 +133,13 @@ const fields: Record<string, SpecWithAll> = {
 
 const REGISTRY_FIXTURE = { sections: ['pricing', 'pricing_supplier'], fields } as unknown as FieldRegistry;
 
+const REAL_PRICELISTS = JSON.parse(
+  readFileSync(
+    '/repos/wt-pricelist-serving-fix/custom_components/oig_cloud/remote_config/data/pricelists.json',
+    'utf8',
+  ),
+);
+
 const PRICELISTS_SINGLE_AND_DUAL = {
   distributors: {
     cez: {
@@ -156,7 +164,7 @@ const PRICELISTS_SINGLE_AND_DUAL = {
   stale_warning: false, valid_from: null, year: 2026,
 };
 
-function moduleConfigFetch(doc: Record<string, unknown>) {
+function moduleConfigFetch(doc: Record<string, unknown>, pricelists: Record<string, unknown> = PRICELISTS_SINGLE_AND_DUAL) {
   return (path: string): Promise<unknown> => {
     if (path.includes('/onboarding')) {
       return Promise.resolve({
@@ -164,7 +172,7 @@ function moduleConfigFetch(doc: Record<string, unknown>) {
         timestamps: {}, grandfathered: false,
       });
     }
-    if (path.includes('/pricelists')) return Promise.resolve(PRICELISTS_SINGLE_AND_DUAL);
+    if (path.includes('/pricelists')) return Promise.resolve(pricelists);
     if (path.includes('/module_config')) return Promise.resolve(doc);
     return Promise.resolve(null);
   };
@@ -584,6 +592,59 @@ describe('owner UX rev — distributor names, tariff description, editable price
     // Dataset D25d vt.price_excl_vat = 2250 Kc/MWh -> 2.25 Kc/kWh; nt = 1170 -> 1.17.
     expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(2.25);
     expect(internals(wizard).pricingDraft.distribution_fee_nt_kwh).toBe(1.17);
+  });
+
+  it('refreshes the suggested distribution fees for every CEZ sazba instead of keeping the first suggestion', async () => {
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing: { confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D01d' },
+    }, REAL_PRICELISTS));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+
+    const expected = [
+      { code: 'D01d', vt: 2666.66, nt: null },
+      { code: 'D02d', vt: 2078.58, nt: null },
+      { code: 'D25d', vt: 2252.45, nt: 116.5 },
+      { code: 'D26d', vt: 1202.06, nt: 116.5 },
+      { code: 'D27d', vt: 2252.45, nt: 116.5 },
+      { code: 'D35d', vt: 754.77, nt: 116.5 },
+      { code: 'D45d', vt: 754.77, nt: 116.5 },
+      { code: 'D56d', vt: 754.77, nt: 116.5 },
+      { code: 'D57d', vt: 754.77, nt: 116.5 },
+      { code: 'D61d', vt: 3306.67, nt: 116.5 },
+    ] as const;
+
+    for (const row of expected) {
+      const rate = (internals(wizard).pricing as Record<string, any>).distributors.cez[row.code];
+      expect(rate.vt.price_excl_vat).toBe(row.vt);
+      expect(rate.vt.price_incl_vat).toBe(Number((row.vt * 1.21).toFixed(2)));
+      if (row.nt === null) {
+        expect(rate.nt).toBeUndefined();
+      } else {
+        expect(rate.nt.price_excl_vat).toBe(row.nt);
+        expect(rate.nt.price_incl_vat).toBe(Number((row.nt * 1.21).toFixed(2)));
+      }
+
+      internals(wizard).pricingDraft = { ...internals(wizard).pricingDraft, confirmed_distribution_tariff: row.code };
+      internals(wizard).applyDistributionFeeSuggestion();
+      await settle(wizard);
+
+      expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(
+        Math.round((row.vt / 1000) * 100) / 100,
+      );
+      expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-incl-vat"]')?.textContent)
+        .toContain(`s DPH 21 %: ${((Math.round((row.vt / 1000) * 100) / 100) * 1.21).toFixed(2)} Kč/kWh`);
+
+      if (row.nt === null) {
+        expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-nt"]')).toBeNull();
+      } else {
+        expect(internals(wizard).pricingDraft.distribution_fee_nt_kwh).toBe(
+          Math.round((row.nt / 1000) * 100) / 100,
+        );
+        expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-nt-incl-vat"]')?.textContent)
+          .toContain(`s DPH 21 %: ${((Math.round((row.nt / 1000) * 100) / 100) * 1.21).toFixed(2)} Kč/kWh`);
+      }
+    }
   });
 
   it('does not overwrite an already-customized distribution fee (review-mode "existing values stay")', async () => {
