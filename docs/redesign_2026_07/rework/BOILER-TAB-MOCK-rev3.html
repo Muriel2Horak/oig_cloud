@@ -1,0 +1,386 @@
+<title>Bojler tab — návrh (mock)</title>
+<style>
+  :root{
+    --bg:#0f1425; --panel:#161c31; --card:#1b2340; --card2:#1f2848; --line:#2a3355;
+    --text:#e8ecf7; --muted:#8b93ad; --dim:#5c6480;
+    --water:#4dd0e1; --grid:#3b82f6; --fve:#f0b429; --batt:#a78bfa; --alt:#ff8a50;
+    --ok:#4caf50; --warn:#ffb300; --bad:#ef5350; --idle:#39415f;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:13px/1.4 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;}
+  .wrap{max-width:1240px;margin:0 auto;padding:14px 18px 40px;display:flex;flex-direction:column;gap:10px}
+  .tabbar{display:flex;gap:4px;border-bottom:1px solid var(--line);padding:0 4px}
+  .tabbar span{padding:8px 14px;color:var(--muted);font-size:13px}
+  .tabbar .on{color:var(--grid);border-bottom:2px solid var(--grid);font-weight:600}
+  .mocknote{font-size:11px;color:var(--dim);text-align:right;margin-top:-6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  h3{margin:0 0 2px;font-size:13px;font-weight:600}
+  .sub{font-size:11px;color:var(--muted)}
+  .num{font-variant-numeric:tabular-nums}
+  .chartbox{overflow-x:auto}
+  .chartbox svg{min-width:780px;width:100%;height:auto;display:block}
+
+  /* hero flow */
+  .hero .kstrip{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:12px;color:var(--muted);
+    border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:4px}
+  .kstrip b{color:var(--text);font-size:14px;font-weight:650}
+  .kstrip .up{color:var(--ok)}
+  @media (prefers-reduced-motion:no-preference){
+    .flowline{stroke-dasharray:6 6;animation:fl 1.6s linear infinite}
+    @keyframes fl{to{stroke-dashoffset:-12}}
+  }
+
+  /* plan & realita */
+  .daytabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:6px 0 10px}
+  .daytabs button{all:unset;cursor:pointer;padding:5px 12px;font-size:12px;color:var(--muted)}
+  .daytabs button.on{color:var(--water);border-bottom:2px solid var(--water);font-weight:600}
+  .daytabs button:focus-visible{outline:2px solid var(--water);outline-offset:-2px}
+  .prline{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:8px}
+  .prline b{color:var(--text)} .prline .plus{color:var(--ok)}
+  .adhbar{flex:1;min-width:120px;height:5px;border-radius:3px;background:var(--idle);overflow:hidden}
+  .adhbar i{display:block;height:100%;border-radius:3px}
+  .mgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+  .mtile{background:var(--card2);border-radius:8px;padding:6px 10px}
+  .mtile .lbl{font-size:10px;color:var(--muted)}
+  .mtile .v{font-size:14px;font-weight:600}
+  .mtile .v span{font-size:11px;font-weight:400}
+  .blocks{display:flex;height:38px;border-radius:8px;overflow:hidden;gap:2px}
+  .blk{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       font-size:10px;line-height:1.2;color:#0d1220;font-weight:600;min-width:0;overflow:hidden}
+  .blk small{font-weight:400;font-size:9px;opacity:.85}
+  .blk.idle{background:var(--idle);color:var(--muted)}
+  .blk.grid{background:var(--grid)} .blk.fve{background:var(--fve)}
+  .blk.plan{opacity:.55}
+  .blk.cur{box-shadow:inset 0 0 0 2px #fff}
+  .blk .mm{position:absolute;top:2px;right:4px;background:var(--bad);color:#fff;border-radius:50%;
+           width:12px;height:12px;font-size:9px;display:flex;align-items:center;justify-content:center}
+  .axis24{display:flex;justify-content:space-between;font-size:9px;color:var(--dim);margin-top:3px}
+  .note{font-size:11px;color:var(--muted);margin-top:8px}
+  .note b{color:var(--warn)}
+
+  /* bottom combo */
+  .row2{display:grid;grid-template-columns:1fr 1.3fr;gap:10px}
+  .einline{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  .echip{background:var(--card2);border-radius:7px;padding:5px 9px;font-size:11px;color:var(--muted)}
+  .echip b{color:var(--text);font-size:12px}
+  .ebar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:var(--idle)}
+  .ebar i{display:block;height:100%}
+  .bench{font-size:11px;color:var(--muted);margin-top:6px}.bench b{color:var(--ok)}
+  .heat{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;margin-top:8px}
+  .heat i{aspect-ratio:1.4;border-radius:2px;background:var(--idle)}
+  .heat .h1{background:#1d4f63}.heat .h2{background:#2a7d95}.heat .h3{background:#4dd0e1}
+  .typ{display:flex;align-items:flex-end;gap:2px;height:40px;margin-top:8px}
+  .typ i{flex:1;background:var(--water);border-radius:2px 2px 0 0;opacity:.85}
+  .typlbl{display:flex;justify-content:space-between;font-size:9px;color:var(--dim);margin-top:2px}
+  .peaks{font-size:10px;color:var(--muted);margin-top:6px}
+
+  .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px}
+  .btn{all:unset;cursor:pointer;background:var(--grid);color:#fff;font-weight:600;font-size:12px;padding:7px 14px;border-radius:8px}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text);font-weight:500}
+  .btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+  .ovr{margin-left:auto;font-size:11px;color:var(--dim)}
+  .foot{font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding-top:10px}
+  .foot b{color:var(--muted)}
+  @media (max-width:900px){.row2{grid-template-columns:1fr}.mgrid{grid-template-columns:repeat(2,1fr)}}
+</style>
+
+<div class="wrap">
+  <div class="tabbar"><span>Toky</span><span>Ceny</span><span class="on">Bojler</span><span>Nastavení</span></div>
+  <div class="mocknote">NÁVRH rev 2 · data ilustrativní, stav boxu 28. 7. 10:35 · mock, ne živé UI</div>
+
+  <!-- ① HERO: tok energie bojlerem — obdoba pentagonu z Toků -->
+  <div class="card hero">
+    <div class="kstrip">
+      <span>Připraveno <b class="num">0 L</b> ≥40 °C · ani sprcha</span>
+      <span>Teplota <b class="num">32°</b> / <b class="num">16°</b></span>
+      <span>Cena dnes <b class="num">3,20 Kč</b> · plán 14,10</span>
+      <span>Příští ohřev <b class="num">14:30 · síť</b> · 7,0 kWh @ 1,42 Kč/kWh</span>
+      <span>Režim <b>Inteligentní · řídí plán</b></span>
+    </div>
+    <div class="chartbox">
+    <svg viewBox="0 0 900 290" role="img" aria-label="Tok energie bojlerem">
+      <!-- connector lines: sources -> tank inlet -->
+      <path d="M195 55 C 300 55 320 175 383 195" fill="none" stroke="#f0b429" stroke-width="2" opacity=".35"/>
+      <path d="M195 120 C 290 122 310 180 383 200" fill="none" stroke="#3b82f6" stroke-width="2.5" opacity=".9" class="flowline"/>
+      <path d="M195 185 C 280 187 315 198 383 205" fill="none" stroke="#a78bfa" stroke-width="2" opacity=".3"/>
+      <path d="M195 250 C 290 250 320 225 383 212" fill="none" stroke="#ff8a50" stroke-width="2" opacity=".3"/>
+      <!-- tank -> draws -->
+      <path d="M517 90 C 590 78 610 62 700 55" fill="none" stroke="#4dd0e1" stroke-width="2" opacity=".55"/>
+      <path d="M517 110 C 600 118 620 148 700 152" fill="none" stroke="#4dd0e1" stroke-width="2" opacity=".35"/>
+      <path d="M517 130 C 600 150 620 235 700 243" fill="none" stroke="#39415f" stroke-width="2"/>
+
+      <!-- source nodes -->
+      <g font-size="11">
+        <rect x="30" y="30" width="165" height="50" rx="10" fill="#1f2848" stroke="#f0b429" stroke-opacity=".5"/>
+        <text x="44" y="50" fill="#f0b429" font-weight="600">FVE přebytek</text>
+        <text x="44" y="67" fill="#8b93ad">0 W · baterie 93 % — čeká</text>
+
+        <rect x="30" y="95" width="165" height="50" rx="10" fill="#1f2848" stroke="#3b82f6"/>
+        <text x="44" y="115" fill="#3b82f6" font-weight="600">Síť</text>
+        <text x="44" y="132" fill="#e8ecf7">ráno 1,5 kWh ✓ · plán 14:30</text>
+
+        <rect x="30" y="160" width="165" height="50" rx="10" fill="#1f2848" stroke="#a78bfa" stroke-opacity=".5"/>
+        <text x="44" y="180" fill="#a78bfa" font-weight="600">Baterie (Home 5)</text>
+        <text x="44" y="197" fill="#8b93ad">dnes 0,0 kWh</text>
+
+        <rect x="30" y="225" width="165" height="50" rx="10" fill="#1f2848" stroke="#ff8a50" stroke-opacity=".5"/>
+        <text x="44" y="245" fill="#ff8a50" font-weight="600">Plyn (alt)</text>
+        <text x="44" y="262" fill="#8b93ad">dnes 0,0 kWh · dráž než spot</text>
+      </g>
+
+      <!-- TANK center -->
+      <defs>
+        <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#2a7d95"/><stop offset="1" stop-color="#173a54"/>
+        </linearGradient>
+      </defs>
+      <rect x="383" y="35" width="134" height="230" rx="22" fill="#141a30" stroke="#2a3355" stroke-width="2"/>
+      <rect x="389" y="41" width="122" height="218" rx="18" fill="url(#wg)"/>
+      <rect x="389" y="41" width="122" height="40" rx="18" fill="#3fa7bd" opacity=".5"/>
+      <line x1="389" y1="83" x2="511" y2="83" stroke="#4dd0e1" stroke-width="1.5" stroke-dasharray="3 3"/>
+      <path d="M432 245 q0 -34 18 -34 q18 0 18 34" fill="none" stroke="#9aa3c0" stroke-width="6" stroke-linecap="round"/>
+      <text x="450" y="228" fill="#8b93ad" font-size="10" text-anchor="middle">patrona 2,4 kW</text>
+      <text x="450" y="152" fill="#e8ecf7" font-size="20" font-weight="700" text-anchor="middle" class="num">0 L</text>
+      <text x="450" y="168" fill="#8b93ad" font-size="10" text-anchor="middle">≥ 40 °C · 200 l nádrž</text>
+      <g font-size="12" font-weight="650">
+        <rect x="500" y="48" width="44" height="20" rx="10" fill="#0f1425" stroke="#2a3355"/>
+        <text x="522" y="62" fill="#ffb46b" text-anchor="middle" class="num">32°</text>
+        <rect x="500" y="232" width="44" height="20" rx="10" fill="#0f1425" stroke="#2a3355"/>
+        <text x="522" y="246" fill="#8b93ad" text-anchor="middle" class="num">16°</text>
+      </g>
+      <text x="450" y="282" fill="#8b93ad" font-size="10" text-anchor="middle">na dohřev k 60 °C: 6,5 kWh · hotovo 18:00</text>
+
+      <!-- draw nodes -->
+      <g font-size="11">
+        <rect x="700" y="30" width="170" height="50" rx="10" fill="#1f2848" stroke="#4dd0e1" stroke-opacity=".7"/>
+        <text x="714" y="50" fill="#4dd0e1" font-weight="600">Odběry dnes</text>
+        <text x="714" y="67" fill="#e8ecf7">147 L · špička 06:15 (114 L)</text>
+
+        <rect x="700" y="127" width="170" height="50" rx="10" fill="#1f2848" stroke="#4dd0e1" stroke-opacity=".4"/>
+        <text x="714" y="147" fill="#4dd0e1" font-weight="600">Další očekávaný</text>
+        <text x="714" y="164" fill="#8b93ad">~20:15 · 19 L (sprcha)</text>
+
+        <rect x="700" y="218" width="170" height="50" rx="10" fill="#1f2848" stroke="#39415f"/>
+        <text x="714" y="238" fill="#8b93ad" font-weight="600">Cirkulace</text>
+        <text x="714" y="255" fill="#8b93ad">vypnuta · Legionella za 6 dní</text>
+      </g>
+    </svg>
+    </div>
+  </div>
+
+  <!-- ② 24h graf -->
+  <div class="card">
+    <h3>24 h — zásoba, teplota, FVE &amp; nabíjení <span class="sub">· spot podklad · řídí plán</span></h3>
+    <div class="chartbox">
+    <svg viewBox="0 0 960 240" role="img" aria-label="24h graf zásoby teplé vody a výroby FVE">
+      <g stroke="#242c4c" stroke-width="1">
+        <line x1="50" y1="25" x2="930" y2="25"/><line x1="50" y1="70" x2="930" y2="70"/><line x1="50" y1="115" x2="930" y2="115"/>
+        <line x1="50" y1="190" x2="930" y2="190"/>
+        <line x1="160" y1="15" x2="160" y2="215" stroke-dasharray="2 4"/><line x1="270" y1="15" x2="270" y2="215" stroke-dasharray="2 4"/>
+        <line x1="380" y1="15" x2="380" y2="215" stroke-dasharray="2 4"/><line x1="490" y1="15" x2="490" y2="215" stroke-dasharray="2 4"/>
+        <line x1="600" y1="15" x2="600" y2="215" stroke-dasharray="2 4"/><line x1="710" y1="15" x2="710" y2="215" stroke-dasharray="2 4"/>
+        <line x1="820" y1="15" x2="820" y2="215" stroke-dasharray="2 4"/>
+      </g>
+      <g fill="#5c6480" font-size="9">
+        <text x="44" y="28" text-anchor="end">120 L</text><text x="44" y="73" text-anchor="end">60 L</text>
+        <text x="44" y="118" text-anchor="end">0 L</text><text x="44" y="193" text-anchor="end">kWh</text>
+        <text x="936" y="48" fill="#ff8a50">60°</text><text x="936" y="98" fill="#ff8a50">30°</text>
+        <text x="936" y="155" fill="#f0b429">3 kW</text><text x="936" y="192" fill="#f0b429">0</text>
+        <text x="160" y="228" text-anchor="middle">12:00</text><text x="270" y="228" text-anchor="middle">15:00</text>
+        <text x="380" y="228" text-anchor="middle">18:00</text><text x="490" y="228" text-anchor="middle">21:00</text>
+        <text x="600" y="228" text-anchor="middle">00:00</text><text x="710" y="228" text-anchor="middle">03:00</text>
+        <text x="820" y="228" text-anchor="middle">06:00</text><text x="930" y="228" text-anchor="middle">09:00</text>
+      </g>
+      <!-- spot -->
+      <polyline fill="none" stroke="#8b93ad" stroke-width="1.3" stroke-dasharray="4 3" opacity=".45"
+        points="50,100 100,104 142,107 224,107 270,102 340,88 400,62 435,50 470,49 535,55 600,78 710,84 780,80 840,73 930,76"/>
+      <!-- FVE production area (bottom band, kW) -->
+      <path d="M50,178 L87,173 L123,166 L160,154 L197,149 L233,152 L270,156 L307,168 L343,178 L380,184 L417,188 L453,190 L783,190 L820,188 L857,184 L893,179 L930,176 L930,190 L50,190 Z"
+            fill="#f0b429" opacity=".18"/>
+      <polyline fill="none" stroke="#f0b429" stroke-width="1.4" opacity=".7"
+        points="50,178 87,173 123,166 160,154 197,149 233,152 270,156 307,168 343,178 380,184 417,188 453,190"/>
+      <polyline fill="none" stroke="#f0b429" stroke-width="1.4" opacity=".7"
+        points="783,190 820,188 857,184 893,179 930,176"/>
+      <!-- overflow window: battery full -> surplus to boiler -->
+      <rect x="270" y="150" width="37" height="65" fill="#f0b429" opacity=".10"/>
+      <line x1="270" y1="150" x2="270" y2="215" stroke="#f0b429" stroke-width="1.2" stroke-dasharray="5 3"/>
+      <text x="274" y="147" fill="#f0b429" font-size="9" font-weight="600">baterie 100 % → přebytek do bojleru</text>
+      <!-- SoC area + line -->
+      <path d="M50,114 L251,114 L380,44 L462,46 L468,57 L508,57 L514,67 L802,73 L829,59 L847,109 L930,110 L930,115 L50,115 Z" fill="#4dd0e1" opacity=".15"/>
+      <polyline fill="none" stroke="#4dd0e1" stroke-width="2.2"
+        points="50,114 251,114 380,44 462,46 468,57 508,57 514,67 802,73 829,59 847,109 930,110"/>
+      <!-- temperature -->
+      <polyline fill="none" stroke="#ff8a50" stroke-width="1.6"
+        points="50,92 251,93 380,45 462,47 600,52 802,58 829,52 847,84 930,86"/>
+      <!-- charging bars: grid 14:30-18:00 + 05:30-06:15 -->
+      <g fill="#3b82f6">
+        <rect x="252" y="165" width="7" height="25" rx="1"/><rect x="261" y="165" width="7" height="25" rx="1"/>
+        <rect x="270" y="165" width="7" height="25" rx="1"/><rect x="279" y="165" width="7" height="25" rx="1"/>
+        <rect x="288" y="165" width="7" height="25" rx="1"/><rect x="297" y="165" width="7" height="25" rx="1"/>
+        <rect x="306" y="165" width="7" height="25" rx="1"/><rect x="315" y="165" width="7" height="25" rx="1"/>
+        <rect x="324" y="165" width="7" height="25" rx="1"/><rect x="333" y="165" width="7" height="25" rx="1"/>
+        <rect x="342" y="165" width="7" height="25" rx="1"/><rect x="351" y="165" width="7" height="25" rx="1"/>
+        <rect x="360" y="165" width="7" height="25" rx="1"/><rect x="369" y="165" width="7" height="25" rx="1"/>
+        <rect x="802" y="171" width="7" height="19" rx="1"/><rect x="811" y="171" width="7" height="19" rx="1"/><rect x="820" y="171" width="7" height="19" rx="1"/>
+      </g>
+      <!-- FVE overflow slices on top of bars inside the window -->
+      <g fill="#f0b429">
+        <rect x="270" y="159" width="7" height="5" rx="1"/><rect x="279" y="159" width="7" height="5" rx="1"/>
+        <rect x="288" y="159" width="7" height="5" rx="1"/><rect x="297" y="159" width="7" height="5" rx="1"/>
+      </g>
+      <!-- draws down -->
+      <g fill="#4dd0e1" opacity=".8">
+        <rect x="462" y="192" width="6" height="10" rx="1"/><rect x="508" y="192" width="6" height="8" rx="1"/>
+        <rect x="829" y="192" width="6" height="22" rx="1"/><rect x="838" y="192" width="6" height="15" rx="1"/>
+      </g>
+      <line x1="380" y1="15" x2="380" y2="215" stroke="#ffb300" stroke-width="1.4" stroke-dasharray="6 4"/>
+      <text x="384" y="24" fill="#ffb300" font-size="9">Pojistka 18:00</text>
+      <line x1="108" y1="15" x2="108" y2="215" stroke="#fff" stroke-width="1.4"/>
+      <circle cx="108" cy="114" r="3.5" fill="#fff"/>
+      <text x="112" y="24" fill="#fff" font-size="9" font-weight="600">TEĎ 10:35</text>
+    </svg>
+    </div>
+    <div class="sub" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:6px">
+      <span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#4dd0e1;margin-right:4px"></i>SoC voda ≥40 °C (L)</span>
+      <span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#ff8a50;margin-right:4px"></i>Teplota</span>
+      <span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#f0b429;opacity:.4;margin-right:4px"></i>FVE výroba (kW)</span>
+      <span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#f0b429;margin-right:4px"></i>přebytek → bojler</span>
+      <span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#3b82f6;margin-right:4px"></i>síť → patrona</span>
+      <span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#8b93ad;margin-right:4px"></i>spot</span>
+      <span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#4dd0e1;opacity:.5;margin-right:4px"></i>odběry</span>
+    </div>
+  </div>
+
+  <!-- ③ Plán & realita -->
+  <div class="card">
+    <h3>Bojler: plán &amp; realita</h3>
+    <div class="daytabs" role="tablist">
+      <button type="button" data-day="y" role="tab">Včera</button>
+      <button type="button" data-day="t" role="tab" class="on">Dnes</button>
+      <button type="button" data-day="m" role="tab">Zítra</button>
+      <span style="margin-left:auto;font-size:11px;color:var(--muted);align-self:center">Auto ✓</span>
+    </div>
+
+    <div data-pane="t">
+      <div class="prline">
+        <span>Úspora <b class="plus num">+9,40 Kč</b> vs. vše ze sítě</span>
+        <span>Soulad</span><div class="adhbar"><i style="width:100%;background:var(--ok)"></i></div><b class="num">100 %</b>
+        <span>Průběh <b class="num">44 %</b></span>
+        <span>Skutečné <b class="num">3,20</b> / plán <b class="num">14,10 Kč</b></span>
+        <span>Predikce <b class="num">13,90 Kč</b> · vysoká jistota</span>
+      </div>
+      <div class="mgrid">
+        <div class="mtile"><span class="lbl">Náklady</span><div class="v num">14,10 <span>(3,20)</span> Kč</div></div>
+        <div class="mtile"><span class="lbl">Síť</span><div class="v num">8,5 <span>(1,5)</span> kWh</div></div>
+        <div class="mtile"><span class="lbl">FVE</span><div class="v num">0,6 <span>(0,0)</span> kWh</div></div>
+        <div class="mtile"><span class="lbl">Min. připraveno</span><div class="v num">35 <span>(0)</span> L</div></div>
+      </div>
+      <div class="blocks">
+        <div class="blk idle" style="flex:5.5"><small>00:00–05:30</small></div>
+        <div class="blk grid" style="flex:0.75;min-width:50px"><span>Síť ✓</span><small>05:30 · 1,5</small></div>
+        <div class="blk idle cur" style="flex:8.25"><small>06:15–14:30</small></div>
+        <div class="blk grid plan" style="flex:3.5;min-width:62px"><span>Síť · plán</span><small>14:30–18:00 · 7,0</small></div>
+        <div class="blk idle" style="flex:6"><small>18:00–24:00</small></div>
+      </div>
+      <div class="axis24"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+      <div class="note">Nejbližší akce: <b>14:30 síť (7,0 kWh @ 1,42)</b> · pojistka 18:00 · plán se přepočítá při změně cen, FVE či teploty</div>
+    </div>
+
+    <div data-pane="y" hidden>
+      <div class="prline">
+        <span>Úspora <b class="plus num">+11,20 Kč</b></span>
+        <span>Soulad</span><div class="adhbar"><i style="width:88%;background:var(--warn)"></i></div><b class="num">88 %</b>
+        <span>Skutečné <b class="num">8,90</b> / plán <b class="num">7,80 Kč</b></span>
+      </div>
+      <div class="mgrid">
+        <div class="mtile"><span class="lbl">Náklady</span><div class="v num">7,80 <span>(8,90)</span> Kč</div></div>
+        <div class="mtile"><span class="lbl">Síť</span><div class="v num">2,1 <span>(3,4)</span> kWh</div></div>
+        <div class="mtile"><span class="lbl">FVE</span><div class="v num">5,9 <span>(4,6)</span> kWh</div></div>
+        <div class="mtile"><span class="lbl">Min. připraveno</span><div class="v num">35 <span>(28)</span> L</div></div>
+      </div>
+      <div class="blocks">
+        <div class="blk idle" style="flex:5.5"><small>00:00–05:30</small></div>
+        <div class="blk grid" style="flex:0.75;min-width:50px"><span>Síť ✓</span><small>05:30</small></div>
+        <div class="blk idle" style="flex:6.75"><small>06:15–13:00</small></div>
+        <div class="blk grid" style="flex:2;min-width:66px"><span class="num">Síť 2,4</span><small>plán FVE</small><span class="mm">!</span></div>
+        <div class="blk fve" style="flex:2.5;min-width:54px"><span>FVE ✓</span><small>15:00 · 4,6</small></div>
+        <div class="blk idle" style="flex:6.5"><small>17:30–24:00</small></div>
+      </div>
+      <div class="axis24"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+      <div class="note">Odchylka 13:00: zataženo, FVE nepřišla → plánovač přepnul na síť v levném okně. Komfort splněn 17:40.</div>
+    </div>
+
+    <div data-pane="m" hidden>
+      <div class="prline">
+        <span>Odhad úspory <b class="plus num">+13,60 Kč</b> — slunečno, hřeje hlavně FVE</span>
+        <span>Plán <b class="num">6,20 Kč</b></span>
+      </div>
+      <div class="mgrid">
+        <div class="mtile"><span class="lbl">Náklady</span><div class="v num">6,20 <span>(—)</span> Kč</div></div>
+        <div class="mtile"><span class="lbl">Síť</span><div class="v num">1,5 <span>(—)</span> kWh</div></div>
+        <div class="mtile"><span class="lbl">FVE</span><div class="v num">6,8 <span>(—)</span> kWh</div></div>
+        <div class="mtile"><span class="lbl">Min. připraveno</span><div class="v num">35 <span>(—)</span> L</div></div>
+      </div>
+      <div class="blocks">
+        <div class="blk idle" style="flex:5.5"><small>00:00–05:30</small></div>
+        <div class="blk grid plan" style="flex:0.75;min-width:50px"><span>Síť</span><small>05:30 · 1,5</small></div>
+        <div class="blk idle" style="flex:5.25"><small>06:15–11:30</small></div>
+        <div class="blk fve plan" style="flex:4;min-width:62px"><span>FVE</span><small>11:30–15:30 · 6,8</small></div>
+        <div class="blk idle" style="flex:8.5"><small>15:30–24:00</small></div>
+      </div>
+      <div class="axis24"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+    </div>
+  </div>
+
+  <!-- ④ kompaktní spodek -->
+  <div class="row2">
+    <div class="card">
+      <h3>Energie dnes</h3>
+      <div class="einline">
+        <span class="echip">Síť <b class="num">1,5 kWh · 3,20 Kč</b></span>
+        <span class="echip">FVE <b class="num">0,0</b></span>
+        <span class="echip">Baterie <b class="num">0,0</b></span>
+        <span class="echip">Plyn <b class="num">0,0</b></span>
+      </div>
+      <div class="ebar"><i style="width:100%;background:var(--grid)"></i></div>
+      <div class="bench">Vše ze sítě ve špičce: 12,60 Kč → <b>plán zatím šetří 9,40 Kč</b></div>
+    </div>
+    <div class="card">
+      <h3>Odběry vody <span class="sub">· 7 dní · typický den P90 · Pracovní / Víkend</span></h3>
+      <div class="heat" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i class="h3"></i><i class="h1"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="h1"></i><i class="h2"></i><i class="h1"></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i class="h2"></i><i></i><i></i><i></i><i class="h1"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="h1"></i><i class="h2"></i><i class="h1"></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i class="h3"></i><i class="h2"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="h2"></i><i class="h1"></i><i></i><i></i><i></i>
+      </div>
+      <div class="typ" aria-hidden="true">
+        <i style="height:4%"></i><i style="height:3%"></i><i style="height:3%"></i><i style="height:3%"></i><i style="height:5%"></i><i style="height:38%"></i><i style="height:100%"></i><i style="height:52%"></i><i style="height:18%"></i><i style="height:8%"></i><i style="height:6%"></i><i style="height:7%"></i><i style="height:9%"></i><i style="height:7%"></i><i style="height:6%"></i><i style="height:5%"></i><i style="height:6%"></i><i style="height:8%"></i><i style="height:10%"></i><i style="height:14%"></i><i style="height:30%"></i><i style="height:24%"></i><i style="height:9%"></i><i style="height:4%"></i>
+      </div>
+      <div class="typlbl"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+      <div class="peaks">Špičky: 06:15 · 114 L — 20:15 · 19 L — 21:30 · 14 L</div>
+    </div>
+  </div>
+
+  <!-- ⑤ ovládání -->
+  <div class="card controls">
+    <button class="btn" type="button">Vyzkoušet v simulátoru</button>
+    <button class="btn ghost" type="button">Ruční přepis…</button>
+    <button class="btn ghost" type="button">Průvodce nastavením</button>
+    <span class="ovr">Přepis je výjimka — plán je primární</span>
+  </div>
+
+  <div class="foot">
+    <b>Rev 2:</b> model bojleru = hero jako pentagon v Tocích (zdroje → nádrž/patrona → odběry, aktivní tok animovaný);
+    vše zhuštěno — KPI v liště hero karty, žádné duplicity, celý tab ≈ 2 obrazovky. Plán &amp; realita à la Ceny
+    (Včera/Dnes/Zítra, soulad, průběh, predikce). Barvy zdrojů shodné s Ceny.
+  </div>
+</div>
+
+<script>
+  const tabs=document.querySelectorAll('.daytabs button');
+  tabs.forEach(b=>b.addEventListener('click',()=>{
+    tabs.forEach(x=>x.classList.toggle('on',x===b));
+    document.querySelectorAll('[data-pane]').forEach(p=>p.hidden=(p.dataset.pane!==b.dataset.day));
+  }));
+</script>
