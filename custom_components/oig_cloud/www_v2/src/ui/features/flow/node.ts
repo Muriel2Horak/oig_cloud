@@ -210,6 +210,20 @@ export class OigFlowNode extends LitElement {
     @container (max-width: 619px) {
       .flow-grid { zoom: 0.62; }
     }
+    /* Tablet 768-1023 keeps 3 columns (168/1fr/248): the flow column can be
+       as narrow as ~330px, so the scale continues below the desktop steps. */
+    @container (max-width: 532px) {
+      .flow-grid { zoom: 0.55; }
+    }
+    @container (max-width: 472px) {
+      .flow-grid { zoom: 0.48; }
+    }
+    @container (max-width: 412px) {
+      .flow-grid { zoom: 0.42; }
+    }
+    @container (max-width: 361px) {
+      .flow-grid { zoom: 0.36; }
+    }
 
     .node {
       position: relative;
