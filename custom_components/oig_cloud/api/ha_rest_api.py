@@ -71,6 +71,8 @@ from ..ai.backends import (
 )
 from ..ai.key_store import AiKeyStore
 from ..ai.backoff import get_ai_backoff_state
+from ..boiler.planner_contract import PlannerReasonCode
+from ..boiler.runtime import get_boiler_runtime
 from ..entities.ai_status_sensor import OigCloudAiStatusSensor, SAFE_ERROR_CODES
 from ..forecast.candidate_test import run_solar_candidate_test
 from ..forecast.solar_test_limiter import get_solar_test_limiter
@@ -2338,6 +2340,114 @@ class OIGCloudDashboardModulesView(HomeAssistantView):
         )
 
 
+class OIGCloudBoilerOverrideView(HomeAssistantView):
+    """API endpoint to force/clear a bounded manual override of the boiler actuator."""
+
+    url = f"{API_BASE}/boiler/{{entry_id}}/{{box_id}}/override"
+    name = "api:oig_cloud:boiler_override"
+    requires_auth = True
+
+    _MIN_TTL_MINUTES = 15
+    _MAX_TTL_MINUTES = 720
+    _MAX_REASON_LEN = 200
+
+    def _admin_or_none(self, request: web.Request) -> Optional[web.Response]:
+        # Same fail-closed gate as OIGCloudPlannerSettingsView.post (:1351-1357):
+        # request["hass_user"] first (real HA), request.app[...] as fallback (test harness).
+        user = request.get("hass_user") if hasattr(request, "get") else None
+        if user is None and hasattr(request, "app"):
+            user = request.app.get("hass_user")
+        if not user or not user.is_admin:
+            return web.json_response({"error": "Admin only"}, status=403)
+        return None
+
+    def _find_runtime_or_none(self, hass: HomeAssistant, entry_id: str, box_id: str):
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry or entry.domain != DOMAIN:
+            return None
+        return get_boiler_runtime(hass, entry_id, box_id)
+
+    async def post(self, request: web.Request, entry_id: str, box_id: str) -> web.Response:
+        denied = self._admin_or_none(request)
+        if denied is not None:
+            return denied
+
+        hass: HomeAssistant = request.app["hass"]
+        runtime = self._find_runtime_or_none(hass, entry_id, box_id)
+        if runtime is None:
+            return web.json_response({"error": "Boiler not found"}, status=404)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON payload"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"error": "Invalid payload"}, status=400)
+
+        ttl_minutes = payload.get("ttl_minutes")
+        if not isinstance(ttl_minutes, int) or not (
+            self._MIN_TTL_MINUTES <= ttl_minutes <= self._MAX_TTL_MINUTES
+        ):
+            return web.json_response(
+                {
+                    "error": (
+                        f"ttl_minutes must be an integer between "
+                        f"{self._MIN_TTL_MINUTES} and {self._MAX_TTL_MINUTES}"
+                    )
+                },
+                status=400,
+            )
+
+        reason = payload.get("reason", "")
+        if not isinstance(reason, str) or len(reason) > self._MAX_REASON_LEN:
+            return web.json_response(
+                {"error": f"reason must be a string of at most {self._MAX_REASON_LEN} characters"},
+                status=400,
+            )
+
+        # BoilerRuntime does not expose the serializer publicly; the override
+        # mechanism lives on it (actuator.py:374-443). Reaching the private
+        # attribute here avoids adding new public surface out of this change's
+        # scope fence (runtime.py is not in the allowed file list).
+        serializer = runtime._serializer
+        if serializer is None:
+            return web.json_response({"error": "Boiler actuator not ready"}, status=503)
+
+        ok, error_reason = await serializer.create_override(
+            reason_code=PlannerReasonCode.OVERRIDE_ACTIVE.value,
+            ttl_minutes=ttl_minutes,
+        )
+        if not ok:
+            return web.json_response({"error": error_reason}, status=400)
+
+        override_state = serializer.override_state or {}
+        return web.json_response(
+            {
+                "override": {
+                    "active": True,
+                    "until": override_state.get("expires_at"),
+                    "reason": reason,
+                }
+            }
+        )
+
+    async def delete(self, request: web.Request, entry_id: str, box_id: str) -> web.Response:
+        denied = self._admin_or_none(request)
+        if denied is not None:
+            return denied
+
+        hass: HomeAssistant = request.app["hass"]
+        runtime = self._find_runtime_or_none(hass, entry_id, box_id)
+        if runtime is None:
+            return web.json_response({"error": "Boiler not found"}, status=404)
+
+        serializer = runtime._serializer
+        if serializer is not None:
+            await serializer.clear_override()
+
+        return web.json_response({"override": {"active": False}})
+
+
 @callback
 def setup_api_endpoints(hass: HomeAssistant) -> None:
     """
@@ -2354,6 +2464,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudDetailTabsView())
     hass.http.register_view(OIGCloudPlannerSettingsView())
     hass.http.register_view(OIGCloudDashboardModulesView())
+    hass.http.register_view(OIGCloudBoilerOverrideView())
     hass.http.register_view(OIGCloudModuleConfigView())
     hass.http.register_view(OIGCloudConfigRegistryView())
     hass.http.register_view(OIGCloudPricelistsView())
@@ -2373,6 +2484,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/battery_forecast/<box_id>/detail_tabs\n"
         f"  - {API_BASE}/battery_forecast/<box_id>/planner_settings\n"
         f"  - {API_BASE}/<entry_id>/modules\n"
+        f"  - {API_BASE}/boiler/<entry_id>/<box_id>/override\n"
         f"  - {API_BASE}/spot_prices/<box_id>/intervals\n"
         f"  - {API_BASE}/analytics/<box_id>/hourly\n"
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"
