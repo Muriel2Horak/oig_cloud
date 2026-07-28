@@ -10,7 +10,7 @@ import { haClient, plannerState } from '@/data/ha-client';
 import { extractFlowData, applyPlannerSettings } from '@/data/flow-data';
 import { invalidateTimelineCache, loadPricingData } from '@/data/pricing-data';
 import { loadBoilerData } from '@/data/boiler-data';
-import { resolveLang } from '@/i18n/boiler';
+import { resolveLang, t } from '@/i18n/boiler';
 import { loadModuleConfig } from '@/data/settings-data';
 import { extractAnalyticsSensors, loadAnalyticsData, type AnalyticsData, EMPTY_ANALYTICS } from '@/data/analytics-data';
 import { extractChmuData, type ChmuData, EMPTY_CHMU_DATA } from '@/data/chmu-data';
@@ -39,6 +39,7 @@ import { throttle, withRetry } from '@/utils/format';
 import { shieldController } from '@/data/shield-controller';
 import { dismissOnboardingBanner, loadOnboardingState } from '@/ui/features/onboarding/onboarding-data';
 import { fetchSimulatorPresets, type Domain, type PresetListItem } from '@/ui/components/simulator-fetcher';
+import type { BootstrapPayload } from '@/ui/components/oig-simulator';
 
 import '@/ui/components/header';
 import '@/ui/components/theme-provider';
@@ -185,6 +186,7 @@ export class OigApp extends LitElement {
   @state() private simulatorOpen = false;
   @state() private simulatorDomain: Domain = 'battery';
   @state() private simulatorDraft: Record<string, unknown> = {};
+  @state() private simulatorBootstrapPayload: BootstrapPayload | null = null;
   // fe/fix: presets are fetched on open and passed down so the overlay's chips
   // populate and the initial simulate carries a preset id. The BE POST 400s
   // with "'prices' required when no preset given" when presetId is blank, and
@@ -1156,6 +1158,15 @@ export class OigApp extends LitElement {
     // inverter_sn/sn, falling back to the URL's ?sn= otherwise — merge
     // `box` in so the simulator resolves it from the detail it was given.
     this.simulatorDraft = box ? { ...draft, box_id: box } : { ...draft };
+    // capacity_kwh, hw_min_soc_percent: no boiler-side source loaded into
+    // app.ts state — left unset rather than fabricated from volumeL.
+    this.simulatorBootstrapPayload = this.simulatorDomain === 'boiler'
+      ? {
+          top_temp_c: this.boilerV2Data?.status?.temperatureTop ?? undefined,
+          bottom_temp_c: this.boilerV2Data?.status?.temperatureBottom ?? undefined,
+          cold_inlet_c: this.boilerConfig?.coldInletTempC,
+        }
+      : null;
     // Open the overlay (shows the loading state) before resolving presets so
     // <oig-simulator> mounts only once a preset id is known — its firstUpdated
     // fires the initial simulate immediately, and a blank preset 400s upstream.
@@ -1507,11 +1518,17 @@ export class OigApp extends LitElement {
             .identity=${v2.identity ?? { entryId: null, boxId: null, available: false }}
             .currentOverride=${v2.manualOverride ?? null}
           ></oig-boiler-override-panel>
+          <button
+            type="button"
+            data-testid="boiler-simulator-launch"
+            @click=${(e: Event) => (e.currentTarget as HTMLElement).dispatchEvent(new CustomEvent('oig-simulator-open', { bubbles: true, composed: true, detail: { domain: 'boiler', draft: {} } }))}
+          >${t('boiler.simulator.launch', lang)}</button>
           <div data-testid="boiler-setup-guide" class="boiler-setup-guide">
             <span class="boiler-setup-guide__icon">🧙</span>
             <div class="boiler-setup-guide__text">
               <strong>Průvodce nastavením bojleru</strong>
               <p>Bojler konfigurujte v Nastavení → Zařízení a služby → OIG Cloud → Konfigurovat.</p>
+              <button type="button" data-testid="boiler-setup-guide-btn" @click=${this.onLaunchOnboarding}>Otevřít průvodce</button>
             </div>
           </div>
         </div>
@@ -1746,6 +1763,7 @@ export class OigApp extends LitElement {
                       .draft=${this.simulatorDraft}
                       .presets=${this.simulatorPresets}
                       .activePresetId=${this.simulatorActivePresetId}
+                      .bootstrapPayload=${this.simulatorBootstrapPayload}
                     ></oig-simulator>`}
             </div>
           </div>

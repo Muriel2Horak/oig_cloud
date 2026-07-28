@@ -53,6 +53,13 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.override.capability_unavailable': 'Aktuátor neumožňuje ruční přepis.',
     'boiler.override.active': 'Přepis aktivní',
     'boiler.override.ttl_remaining_min': 'Zbývá',
+    'boiler.override.cancel': 'Zrušit přepis',
+    'boiler.override.until': 'Aktivní do',
+    'boiler.override.validation_ttl': 'Délka musí být 15–720 minut.',
+    'boiler.override.validation_reason': 'Důvod smí mít nejvýše 200 znaků.',
+    'boiler.override.request_error': 'Odeslání se nezdařilo, zkuste to znovu.',
+
+    'boiler.simulator.launch': 'Vyzkoušet v simulátoru',
 
     'boiler.unavailable.loading': 'Načítání dat bojleru…',
     'boiler.unavailable.error': 'Chyba při načítání bojleru',
@@ -324,6 +331,13 @@ const STRINGS: Record<Lang, Record<string, string>> = {
     'boiler.override.capability_unavailable': 'Actuator does not support manual override.',
     'boiler.override.active': 'Override active',
     'boiler.override.ttl_remaining_min': 'remaining',
+    'boiler.override.cancel': 'Cancel override',
+    'boiler.override.until': 'Active until',
+    'boiler.override.validation_ttl': 'Duration must be 15–720 minutes.',
+    'boiler.override.validation_reason': 'Reason must be at most 200 characters.',
+    'boiler.override.request_error': 'Request failed, try again.',
+
+    'boiler.simulator.launch': 'Try it in the simulator',
 
     'boiler.unavailable.loading': 'Loading boiler data…',
     'boiler.unavailable.error': 'Failed to load boiler data',

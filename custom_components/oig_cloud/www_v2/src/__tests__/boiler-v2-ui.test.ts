@@ -469,13 +469,16 @@ describe('OigBoilerOverridePanel — data-testid', () => {
     expect(strings).toContain('data-testid="boiler-override-panel"');
   });
 
-  it('render template has TTL input with min=15 max=1440 step=15', () => {
+  it('render template has TTL input with min=15 max=720 step=15', () => {
+    // max is pinned to the CONTRACT bound (15-720 min), not OVERRIDE_TTL_MAX_MINUTES
+    // (still 1440, see boiler-m2b-override-sim brief) -- the input's own max attribute
+    // used to lie about the enforced bound; fixed here to match validate().
     const el = new OigBoilerOverridePanel();
     el.identity = { entryId: 'entry1', boxId: '2206237016', available: true };
     el.currentOverride = null;
     const strings = getTemplateStrings(el as any);
     expect(strings).toContain('min="15"');
-    expect(strings).toContain('max="1440"');
+    expect(strings).toContain('max="720"');
     expect(strings).toContain('step="15"');
   });
 

@@ -24,7 +24,7 @@ import {
 
 const u = unsafeCSS;
 
-interface BootstrapPayload {
+export interface BootstrapPayload {
   capacity_kwh?: number;
   hw_min_soc_percent?: number;
   top_temp_c?: number;
