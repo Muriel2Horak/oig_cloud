@@ -28,6 +28,7 @@ Date: 2025-10-28
 from __future__ import annotations
 
 import logging
+import math
 import sys
 import time
 import asyncio
@@ -43,7 +44,16 @@ from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.http import HomeAssistantView
 from homeassistant.util import dt as dt_util
 
-from ..const import CONF_AUTO_MODE_SWITCH, DOMAIN
+from ..const import (
+    BOILER_ENERGY_CONSTANT_KWH_L_C,
+    CONF_AUTO_MODE_SWITCH,
+    CONF_BOILER_COLD_INLET_TEMP_C,
+    CONF_BOILER_TARGET_TEMP_C,
+    CONF_BOILER_VOLUME_L,
+    DEFAULT_BOILER_COLD_INLET_TEMP_C,
+    DEFAULT_BOILER_TARGET_TEMP_C,
+    DOMAIN,
+)
 from ..config_merge import merge_entry_options
 from ..config_registry import (
     _load_released_pricelists,
@@ -71,6 +81,8 @@ from ..ai.backends import (
 )
 from ..ai.key_store import AiKeyStore
 from ..ai.backoff import get_ai_backoff_state
+from ..boiler.classifier import compute_ready_fraction
+from ..boiler.const import BOILER_READY_TEMP_C
 from ..boiler.planner_contract import PlannerReasonCode
 from ..boiler.runtime import get_boiler_runtime
 from ..entities.ai_status_sensor import OigCloudAiStatusSensor, SAFE_ERROR_CODES
@@ -2448,6 +2460,335 @@ class OIGCloudBoilerOverrideView(HomeAssistantView):
         return web.json_response({"override": {"active": False}})
 
 
+# ---------------------------------------------------------------------------
+# Boiler "Plan & realita" detail-tabs read-model (M3a)
+# ---------------------------------------------------------------------------
+# Serves GET .../boiler/{entry_id}/{box_id}/detail_tabs?tab=today|yesterday|tomorrow
+# as a plan-vs-actual view for the boiler tab, mirroring the Ceny flow and the
+# battery_forecast detail_tabs sibling (:1219).
+#
+# v1 honesty note (see CONTRACT): the PLAN side is populated from the live
+# boiler plan (runtime.get_current_plan()); today's actual per-source kWh totals
+# come from runtime.get_daily_source_kwh(); current SoC from the live temperature
+# sensors.  Fields that need slot-aligned actual-source history or a forecast
+# model not yet built return null and are documented as pending the M2
+# plan/actuals persistence unit:
+#   - adherence_pct       -> needs per-slot actual-source history (M2)
+#   - progress            -> today-only; needs actual cost tracking (M2)
+#   - eod_prediction      -> needs end-of-day forecast model (not built)
+#   - block.actual_kwh    -> needs per-slot actual energy (M2); mismatch stays False
+#   - metric cost_czk.actual -> needs actual cost tracking (M2)
+# Yesterday has no persisted historical plan/actuals in v1, so it returns
+# {"available": false} (matching the fresh-install CONTRACT example).
+
+_BOILER_DETAIL_TAB_KEYS = ("today", "yesterday", "tomorrow")
+
+
+def _boiler_slot_float(slot: Any, attr: str) -> float:
+    value = getattr(slot, attr, 0.0)
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _boiler_source_class(raw: Any) -> str:
+    """Map any plan/runtime source to the CONTRACT block enum fve|grid|battery|alt|idle."""
+    if raw is None:
+        return "idle"
+    value = getattr(raw, "value", raw)
+    if not isinstance(value, str):
+        return "idle"
+    key = value.lower().strip()
+    if key in ("fve", "overflow", "zapnuto", "manual"):
+        return "fve"
+    if key == "grid":
+        return "grid"
+    if key in ("battery", "discharge"):
+        return "battery"
+    if key in ("alt", "alternative"):
+        return "alt"
+    return "idle"
+
+
+def _boiler_slot_source_class(slot: Any) -> str:
+    # A slot with no planned heating reads as idle regardless of its nominal source.
+    if _boiler_slot_float(slot, "heating_kwh") <= 0.0:
+        return "idle"
+    return _boiler_source_class(getattr(slot, "recommended_source", None))
+
+
+def _boiler_capacity_kwh(volume_l: float, target_temp_c: float, cold_inlet_c: float) -> float:
+    delta = target_temp_c - cold_inlet_c
+    if delta <= 0:
+        return 0.0
+    return round(volume_l * delta * BOILER_ENERGY_CONSTANT_KWH_L_C, 3)
+
+
+def _boiler_hhmm(value: Any) -> str:
+    if hasattr(value, "strftime"):
+        return value.strftime("%H:%M")
+    return str(value)
+
+
+def _boiler_block_status(start_dt: Any, end_dt: Any, now: Any) -> str:
+    try:
+        if end_dt <= now:
+            return "historical"
+        if start_dt <= now < end_dt:
+            return "current"
+        return "planned"
+    except TypeError:
+        # Naive/aware mismatch or non-datetime — degrade to planned rather than 500.
+        return "planned"
+
+
+def _build_boiler_blocks(slots: list, now: Any) -> list:
+    """Aggregate contiguous same-source-class plan slots into CONTRACT blocks."""
+    blocks: list = []
+    current: Optional[dict] = None
+    for slot in slots:
+        cls = _boiler_slot_source_class(slot)
+        if current is None or current["source"] != cls:
+            if current is not None:
+                blocks.append(current)
+            current = {
+                "start": _boiler_hhmm(slot.start),
+                "end": _boiler_hhmm(slot.end),
+                "source": cls,
+                "planned_kwh": 0.0,
+                "cost_czk": 0.0,
+                "_start_dt": slot.start,
+                "_end_dt": slot.end,
+            }
+        current["end"] = _boiler_hhmm(slot.end)
+        current["_end_dt"] = slot.end
+        current["planned_kwh"] += _boiler_slot_float(slot, "heating_kwh")
+        current["cost_czk"] += _boiler_slot_float(slot, "estimated_cost_czk")
+    if current is not None:
+        blocks.append(current)
+
+    result: list = []
+    for block in blocks:
+        start_dt = block.pop("_start_dt")
+        end_dt = block.pop("_end_dt")
+        result.append(
+            {
+                "start": block["start"],
+                "end": block["end"],
+                "source": block["source"],
+                "planned_kwh": round(block["planned_kwh"], 3),
+                "actual_kwh": None,  # per-slot actual energy pending M2 persistence
+                "cost_czk": round(block["cost_czk"], 2),
+                "status": _boiler_block_status(start_dt, end_dt, now),
+                "mismatch": False,  # needs actual-source history to detect (M2)
+            }
+        )
+    return result
+
+
+def _boiler_metric(key: str, plan: float, actual: Optional[float], better: str) -> dict:
+    return {"key": key, "plan": plan, "actual": actual, "better": better}
+
+
+def _plan_ready_liters_min(slots: list, volume_l: float, cold_inlet_c: float) -> float:
+    """Worst-case predicted ready (>=40 degC) litres across the day's plan slots."""
+    ready_values: list = []
+    for slot in slots:
+        predicted = getattr(slot, "predicted_top_temp_c", None)
+        if (
+            isinstance(predicted, (int, float))
+            and math.isfinite(predicted)
+            and predicted > 0.0
+        ):
+            fraction = compute_ready_fraction(
+                predicted,
+                None,
+                ready_temp_c=BOILER_READY_TEMP_C,
+                cold_inlet_c=cold_inlet_c,
+            )
+            ready_values.append(round(fraction * volume_l, 1))
+    return min(ready_values) if ready_values else 0.0
+
+
+def _build_boiler_savings(slots: list, plan_cost: float) -> dict:
+    """Savings vs a naive all-grid / all-alt baseline priced at each slot's spot/alt price."""
+    grid_baseline = 0.0
+    alt_baseline = 0.0
+    grid_has = False
+    alt_has = False
+    for slot in slots:
+        kwh = _boiler_slot_float(slot, "heating_kwh")
+        spot_price = getattr(slot, "spot_price_kwh", None)
+        alt_price = getattr(slot, "alt_price_kwh", None)
+        if isinstance(spot_price, (int, float)):
+            grid_baseline += kwh * float(spot_price)
+            grid_has = True
+        if isinstance(alt_price, (int, float)):
+            alt_baseline += kwh * float(alt_price)
+            alt_has = True
+    return {
+        "vs_alt_czk": round(alt_baseline - plan_cost, 2) if alt_has else None,
+        "vs_grid_czk": round(grid_baseline - plan_cost, 2) if grid_has else None,
+        "detail": (
+            "Plan cost vs a naive all-grid / all-alt baseline, each slot priced "
+            "at its own spot/alt price."
+        ),
+    }
+
+
+def _boiler_soc_from_temps(
+    hass: HomeAssistant, config: Mapping[str, Any], volume_l: float, cold_inlet_c: float
+) -> tuple:
+    """Current SoC from the live temperature sensors; (soc_dict, current_ready_liters)."""
+    try:
+        from ..boiler.api_views import _read_temperatures_from_hass
+
+        temps = _read_temperatures_from_hass(hass, dict(config))
+    except Exception:  # pragma: no cover - defensive against import/read errors
+        temps = {"top": None, "bottom": None, "upper_zone": None, "lower_zone": None}
+
+    top = temps.get("upper_zone")
+    if top is None:
+        top = temps.get("top")
+    bottom = temps.get("lower_zone")
+
+    if top is None:
+        return {"now_kwh": None, "now_liters": None, "now_pct": None}, None
+
+    fraction = compute_ready_fraction(
+        top, bottom, ready_temp_c=BOILER_READY_TEMP_C, cold_inlet_c=cold_inlet_c
+    )
+    now_liters = round(fraction * volume_l, 1)
+    now_pct = round(fraction * 100.0, 1)
+    avg_temp = (top + bottom) / 2.0 if bottom is not None else top
+    now_kwh = round(
+        max(0.0, volume_l * (avg_temp - cold_inlet_c) * BOILER_ENERGY_CONSTANT_KWH_L_C), 3
+    )
+    return {"now_kwh": now_kwh, "now_liters": now_liters, "now_pct": now_pct}, now_liters
+
+
+def _build_boiler_detail_tab(hass: HomeAssistant, runtime: Any, tab: str) -> dict:
+    """Assemble the CONTRACT payload for one tab from the live boiler plan + actuals."""
+    now = dt_util.now()
+    today = now.date()
+    if tab == "yesterday":
+        target_date = today - timedelta(days=1)
+    elif tab == "tomorrow":
+        target_date = today + timedelta(days=1)
+    else:
+        target_date = today
+
+    coordinator = getattr(runtime, "coordinator", None)
+    config = (getattr(coordinator, "config", {}) or {}) if coordinator is not None else {}
+
+    volume_l = float(config.get(CONF_BOILER_VOLUME_L, 200.0) or 200.0)
+    target_temp_c = float(
+        config.get(CONF_BOILER_TARGET_TEMP_C, DEFAULT_BOILER_TARGET_TEMP_C)
+        or DEFAULT_BOILER_TARGET_TEMP_C
+    )
+    cold_inlet_c = float(
+        config.get(CONF_BOILER_COLD_INLET_TEMP_C, DEFAULT_BOILER_COLD_INLET_TEMP_C)
+        or DEFAULT_BOILER_COLD_INLET_TEMP_C
+    )
+
+    plan = runtime.get_current_plan() if hasattr(runtime, "get_current_plan") else None
+    slots: list = []
+    if plan is not None and getattr(plan, "slots", None):
+        slots = [
+            slot
+            for slot in plan.slots
+            if getattr(slot.start, "date", lambda: None)() == target_date
+        ]
+
+    # Yesterday, or any day the live plan does not cover, has no persisted
+    # historical plan/actuals in v1 -> report unavailable.
+    if not slots:
+        return {"tab": tab, "available": False}
+
+    slots.sort(key=lambda slot: slot.start)
+
+    soc, actual_ready_liters = _boiler_soc_from_temps(hass, config, volume_l, cold_inlet_c)
+    blocks = _build_boiler_blocks(slots, now)
+
+    plan_cost = round(sum(_boiler_slot_float(s, "estimated_cost_czk") for s in slots), 2)
+    plan_grid = round(sum(_boiler_slot_float(s, "grid_kwh") for s in slots), 3)
+    plan_fve = round(sum(_boiler_slot_float(s, "pv_kwh") for s in slots), 3)
+    plan_ready_min = _plan_ready_liters_min(slots, volume_l, cold_inlet_c)
+
+    # Actual per-source kWh totals: today only, from the live daily accumulators.
+    actual_grid: Optional[float] = None
+    actual_fve: Optional[float] = None
+    if tab == "today" and hasattr(runtime, "get_daily_source_kwh"):
+        daily = runtime.get_daily_source_kwh() or {}
+        actual_grid = round(float(daily.get("grid", 0.0) or 0.0), 3)
+        actual_fve = round(float(daily.get("fve", 0.0) or 0.0), 3)
+
+    # "actual" columns are only meaningful for today; a past/future tab has no
+    # live actual to compare against in v1.  SoC itself is current state and is
+    # reported regardless of tab.
+    metric_ready_actual = actual_ready_liters if tab == "today" else None
+
+    metrics = [
+        # actual cost needs per-slot actual cost tracking (M2) -> null
+        _boiler_metric("cost_czk", plan_cost, None, "lower"),
+        _boiler_metric("grid_kwh", plan_grid, actual_grid, "lower"),
+        _boiler_metric("fve_kwh", plan_fve, actual_fve, "higher"),
+        _boiler_metric("ready_liters_min", plan_ready_min, metric_ready_actual, "higher"),
+    ]
+
+    return {
+        "tab": tab,
+        "available": True,
+        "savings": _build_boiler_savings(slots, plan_cost),
+        "adherence_pct": None,
+        "progress": None,
+        "eod_prediction": None,
+        "metrics": metrics,
+        "blocks": blocks,
+        "capacity_kwh": _boiler_capacity_kwh(volume_l, target_temp_c, cold_inlet_c),
+        "soc": soc,
+    }
+
+
+class OIGCloudBoilerDetailTabsView(HomeAssistantView):
+    """Read-only plan-vs-actual detail tabs for the boiler tab (M3a).
+
+    GET .../boiler/{entry_id}/{box_id}/detail_tabs?tab=today|yesterday|tomorrow
+    Authenticated (no admin gate — read-only); 404 on unknown entry/box.
+    """
+
+    url = f"{API_BASE}/boiler/{{entry_id}}/{{box_id}}/detail_tabs"
+    name = "api:oig_cloud:boiler_detail_tabs"
+    requires_auth = True
+
+    def _find_runtime_or_none(self, hass: HomeAssistant, entry_id: str, box_id: str):
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if not entry or entry.domain != DOMAIN:
+            return None
+        return get_boiler_runtime(hass, entry_id, box_id)
+
+    async def get(self, request: web.Request, entry_id: str, box_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        tab = request.query.get("tab", "today")
+        if tab not in _BOILER_DETAIL_TAB_KEYS:
+            return web.json_response(
+                {"error": "tab must be one of today|yesterday|tomorrow"}, status=400
+            )
+
+        runtime = self._find_runtime_or_none(hass, entry_id, box_id)
+        if runtime is None:
+            return web.json_response({"error": "Boiler not found"}, status=404)
+
+        try:
+            return web.json_response(_build_boiler_detail_tab(hass, runtime, tab))
+        except Exception as e:
+            _LOGGER.error(
+                f"Error serving boiler detail_tabs for {box_id}: {e}", exc_info=True
+            )
+            return web.json_response({"error": str(e)}, status=500)
+
+
 @callback
 def setup_api_endpoints(hass: HomeAssistant) -> None:
     """
@@ -2465,6 +2806,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
     hass.http.register_view(OIGCloudPlannerSettingsView())
     hass.http.register_view(OIGCloudDashboardModulesView())
     hass.http.register_view(OIGCloudBoilerOverrideView())
+    hass.http.register_view(OIGCloudBoilerDetailTabsView())
     hass.http.register_view(OIGCloudModuleConfigView())
     hass.http.register_view(OIGCloudConfigRegistryView())
     hass.http.register_view(OIGCloudPricelistsView())
@@ -2485,6 +2827,7 @@ def setup_api_endpoints(hass: HomeAssistant) -> None:
         f"  - {API_BASE}/battery_forecast/<box_id>/planner_settings\n"
         f"  - {API_BASE}/<entry_id>/modules\n"
         f"  - {API_BASE}/boiler/<entry_id>/<box_id>/override\n"
+        f"  - {API_BASE}/boiler/<entry_id>/<box_id>/detail_tabs\n"
         f"  - {API_BASE}/spot_prices/<box_id>/intervals\n"
         f"  - {API_BASE}/analytics/<box_id>/hourly\n"
         f"  - {API_BASE}/consumption_profiles/<box_id>\n"

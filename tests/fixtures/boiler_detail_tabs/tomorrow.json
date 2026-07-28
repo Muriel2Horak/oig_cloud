@@ -1,0 +1,26 @@
+{
+  "tab": "tomorrow",
+  "available": true,
+  "savings": {
+    "vs_alt_czk": 3.6,
+    "vs_grid_czk": 6.9,
+    "detail": "Plan cost vs a naive all-grid / all-alt baseline, each slot priced at its own spot/alt price."
+  },
+  "adherence_pct": null,
+  "progress": null,
+  "eod_prediction": null,
+  "metrics": [
+    {"key": "cost_czk", "plan": 17.1, "actual": null, "better": "lower"},
+    {"key": "grid_kwh", "plan": 5.8, "actual": null, "better": "lower"},
+    {"key": "fve_kwh", "plan": 4.0, "actual": null, "better": "higher"},
+    {"key": "ready_liters_min", "plan": 85.0, "actual": null, "better": "higher"}
+  ],
+  "blocks": [
+    {"start": "00:00", "end": "07:00", "source": "idle", "planned_kwh": 0.0, "actual_kwh": null, "cost_czk": 0.0, "status": "planned", "mismatch": false},
+    {"start": "07:00", "end": "09:00", "source": "grid", "planned_kwh": 2.9, "actual_kwh": null, "cost_czk": 8.1, "status": "planned", "mismatch": false},
+    {"start": "09:00", "end": "15:00", "source": "fve", "planned_kwh": 4.0, "actual_kwh": null, "cost_czk": 0.0, "status": "planned", "mismatch": false},
+    {"start": "15:00", "end": "24:00", "source": "idle", "planned_kwh": 0.0, "actual_kwh": null, "cost_czk": 0.0, "status": "planned", "mismatch": false}
+  ],
+  "capacity_kwh": 11.63,
+  "soc": {"now_kwh": 8.72, "now_liters": 110.0, "now_pct": 55.0}
+}
