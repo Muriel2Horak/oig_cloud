@@ -1698,9 +1698,19 @@ class OIGCloudPricelistsView(HomeAssistantView):
             year = snapshot_date.year if snapshot_date is not None else None
             stale_warning = year is not None and year < dt_util.utcnow().year
 
+            # Owner D57d bug: the wizard's suggested distribution fee dropped
+            # system_services/electricity_tax and used dist_leg only — those
+            # per-MWh regulated charges are distributor-independent (top-level
+            # `regulated_components`, not per-snapshot), so pass the section
+            # through as-is; older/synthetic payloads without it degrade to {}.
+            regulated_components = payload.get("regulated_components", {})
+            if not isinstance(regulated_components, dict):
+                regulated_components = {}
+
             return web.json_response(
                 {
                     "distributors": distributors,
+                    "regulated_components": regulated_components,
                     "tariffs": list(tariffs),
                     "selected_distributor": selected_distributor,
                     "selected_tariff": selected_tariff,

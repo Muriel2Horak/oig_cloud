@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "build_pricelists.py"
 _VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
@@ -247,6 +249,48 @@ def test_shipped_pricelists_has_tariff_descriptions() -> None:
                 f"{dso}/{code} description diverges from cez — should be distributor-independent"
             )
     assert descriptions_by_code["D01d"] == "Jednotarifová sazba (pro malou spotřebu)"
+
+
+def test_shipped_pricelists_has_regulated_components() -> None:
+    """Owner D57d bug: the wizard's suggested fee dropped system_services and
+    electricity_tax, using only the distribution leg. Both extra per-MWh
+    regulated charges must ship as a top-level section, separate from
+    `distributors` (which POZE-only readers must not have to touch)."""
+    payload = _load_shipped()
+    components = payload["regulated_components"]
+    system_services = components["system_services"]
+    assert system_services["unit"] == "Kc/MWh"
+    assert system_services["price_excl_vat"] == 164.24
+    assert system_services["price_incl_vat"] == pytest.approx(164.24 * 1.21, abs=0.01)
+    assert system_services["source"] == "ceny-nn26-1.xlsx"
+
+    electricity_tax = components["electricity_tax"]
+    assert electricity_tax["unit"] == "Kc/MWh"
+    assert electricity_tax["price_excl_vat"] == 28.30
+    assert electricity_tax["price_incl_vat"] == pytest.approx(28.30 * 1.21, abs=0.01)
+    assert "261/2007" in electricity_tax["source"]
+
+
+def test_shipped_pricelists_regulated_components_reproducible_from_committed_source() -> None:
+    """Rebuilding from the committed ERU XLSX reproduces the shipped
+    regulated_components section exactly (guards against hand-edited prices)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "rebuilt.json"
+        result = _run_builder(
+            [ERU_SOURCE_XLSX],
+            out,
+            "--source-url",
+            f"ceny-nn26-1.xlsx={ERU_SOURCE_URL}",
+            "--valid-from",
+            "2026-01-01",
+        )
+        assert result.returncode == 0, result.stderr
+        rebuilt = _load_payload(out)
+
+    shipped = _load_shipped()
+    assert rebuilt["regulated_components"] == shipped["regulated_components"]
 
 
 def test_shipped_pricelists_snapshots_have_valid_from() -> None:

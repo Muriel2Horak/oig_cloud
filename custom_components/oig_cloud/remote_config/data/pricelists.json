@@ -472,12 +472,26 @@
       }
     }
   },
-  "generated_at": "2026-07-26T04:58:56+00:00",
+  "generated_at": "2026-07-28T07:38:48+00:00",
+  "regulated_components": {
+    "electricity_tax": {
+      "price_excl_vat": 28.3,
+      "price_incl_vat": 34.24,
+      "source": "zakon 261/2007 Sb.",
+      "unit": "Kc/MWh"
+    },
+    "system_services": {
+      "price_excl_vat": 164.24,
+      "price_incl_vat": 198.73,
+      "source": "ceny-nn26-1.xlsx",
+      "unit": "Kc/MWh"
+    }
+  },
   "schema_version": 2,
   "sources": {
     "ceny-nn26-1.xlsx": {
       "decree": "14/2025 (Energetický regulační věstník 18/2025), distribuce NN pro rok 2026",
-      "fetched_at": "2026-07-26T04:43:02+00:00",
+      "fetched_at": "2026-07-28T07:33:30+00:00",
       "note": "POZE (příspěvek na podporované zdroje) je pro rok 2026 vynulován výměrem 15/2025 (navazuje na 13/2025), účinnost od 2026-01-01; zveřejněný XLSX už tuto nulu obsahuje. price_incl_vat je odvozeno z cen bez DPH v XLSX sazbou vat_rate.",
       "sha256": "ca2948ae156708fa5a340000577b912e10cc92de973de10deb8a215bd46af480",
       "source_url": "https://eru.gov.cz/sites/default/files/obsah/prilohy/ceny-nn26-1.xlsx"

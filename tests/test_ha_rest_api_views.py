@@ -1003,6 +1003,11 @@ async def test_pricelists_view_returns_dataset_for_admin():
     assert payload["selected_tariff"] in payload["tariffs"]
     assert "stale_warning" in payload
     assert "valid_from" in payload
+    # Owner D57d bug: the FE suggestion needs system_services/electricity_tax
+    # on top of dist_leg — the endpoint must pass the shipped dataset's
+    # top-level regulated_components section through untouched.
+    assert payload["regulated_components"]["system_services"]["price_excl_vat"] == 164.24
+    assert payload["regulated_components"]["electricity_tax"]["price_excl_vat"] == 28.30
 
 
 def _synthetic_pricelist(year, valid_from):

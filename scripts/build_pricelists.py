@@ -62,12 +62,24 @@ The real published NN price decree (e.g. ceny-nn26-1.xlsx) is not a flat table; 
       "POZE": {"unit": "Kc/A/mesic", "price_incl_vat": 0.0, "price_excl_vat": 0.0}
     }, "egd": {...}, "pre": {...}
   },
+  "regulated_components": {
+    "system_services": {"unit": "Kc/MWh", "price_excl_vat": 164.24, "price_incl_vat": 198.73,
+                         "source": "ceny-nn26-1.xlsx"},
+    "electricity_tax": {"unit": "Kc/MWh", "price_excl_vat": 28.30, "price_incl_vat": 34.24,
+                         "source": "zakon 261/2007 Sb."}
+  },
   "valid_from_snapshots": [{"valid_from": "2026-01-01", "distributors": {...}, "sources": {...}}]
 }
 
 The tariff's top-level price fields mirror the VT leg so the existing 2-level readers
 (distributor -> tariff -> {unit, price_incl_vat, price_excl_vat}) keep working; the `vt`/`nt`
 sub-objects are the canonical per-leg data. Only POZE carries "Kc/A/mesic"; VT/NT are "Kc/MWh".
+
+`regulated_components` is distributor-independent: the per-MWh charges every consumer pays on
+top of the distributor's own distribution leg (`system_services` from the decree's "Regulovaná
+složka NN" sheet; `electricity_tax` a legislative constant not present in that sheet at all —
+see `ELECTRICITY_TAX_EXCL_VAT`). The wizard's suggested distribution fee must sum
+dist_leg + system_services + electricity_tax to equal the real full per-kWh regulated price.
 
 Reader behavior (flat fixture mode, schema v1):
 - Sheets are discovered by header text, not by fixed index.
@@ -571,6 +583,16 @@ _ERU_VT_HINT = "distribuovane mnozstvi elektriny ve vysokem tarifu"
 _ERU_NT_HINT = "distribuovane mnozstvi elektriny v nizkem tarifu"
 _ERU_SINGLE_HINT = "distribuovane mnozstvi elektriny:"
 
+# Electricity tax ("daň z elektřiny") is NOT on the ERU decree's "Regulovaná
+# složka NN" sheet — the sheet's own footnote (row 10 of ceny-nn26-1.xlsx)
+# explicitly excludes it ("Neobsahuje ... daně (daň z elektřiny a DPH)"). It is
+# a legislative constant per zákon č. 261/2007 Sb., o stabilizaci veřejných
+# rozpočtů, § 6 odst. 1 (elektřina), unchanged since the decree's XLSX carries
+# no tax line: 28.30 Kč/MWh excl VAT (CEZ pricelist cross-check: 34.24 incl
+# VAT = 28.30 * 1.21).
+ELECTRICITY_TAX_EXCL_VAT = 28.30
+ELECTRICITY_TAX_SOURCE = "zakon 261/2007 Sb."
+
 
 def _strip_accents(value: Any) -> str:
     if value is None:
@@ -627,6 +649,24 @@ def _eru_price_row(rows: List[List[Any]], start: int) -> Optional[Dict[str, floa
                 result[dso] = float(raw)
             return result
     raise BuildError(f"could not locate Kč/MWh value row after section at row {start + 1}")
+
+
+def _extract_eru_system_services(workbook, source_file: str) -> Dict[str, float]:
+    for worksheet in workbook.worksheets:
+        if "regulovana slozka" not in _strip_accents(worksheet.title):
+            continue
+        for row in worksheet.iter_rows(values_only=True):
+            for ci, cell in enumerate(row):
+                label = _strip_accents(cell)
+                if "cena za systemove sluzby" in label:
+                    value = row[ci + 1] if ci + 1 < len(row) else None
+                    unit = _strip_accents(row[ci + 2]) if ci + 2 < len(row) else ""
+                    if not isinstance(value, (int, float)):
+                        raise BuildError(f"system_services value is not numeric: {value!r}")
+                    if "kc/mwh" not in unit:
+                        raise BuildError(f"system_services unit must be Kc/MWh, got {row[ci + 2]!r}")
+                    return {"excl": float(value)}
+    raise BuildError("could not find 'Cena za systémové služby' row on 'Regulovaná složka' sheet")
 
 
 def _extract_eru_poze(workbook) -> Dict[str, float]:
@@ -717,6 +757,24 @@ def _eru_tariff_payload(
     return payload
 
 
+def _build_eru_regulated_components(
+    system_services: Dict[str, float], vat_rate: float, source_file: str
+) -> Dict[str, Any]:
+    """Per-MWh regulated charges beyond the distributors' distribution leg —
+    owner D57d bug: the wizard's suggested fee must add these, not just
+    dist_leg, to equal the real full per-kWh regulated price."""
+    return {
+        "system_services": {
+            **_eru_point("Kc/MWh", system_services["excl"], vat_rate),
+            "source": source_file,
+        },
+        "electricity_tax": {
+            **_eru_point("Kc/MWh", ELECTRICITY_TAX_EXCL_VAT, vat_rate),
+            "source": ELECTRICITY_TAX_SOURCE,
+        },
+    }
+
+
 def _build_eru_distributors(
     tariffs: Dict[str, Dict[str, Dict[str, float]]],
     descriptions: Dict[str, str],
@@ -780,11 +838,13 @@ def _build_eru(args: argparse.Namespace) -> Dict[str, Any]:
             raise BuildError("ERU workbook has no 'Distribuce' sheet")
         tariffs, descriptions = _parse_eru_tariffs(distribuce)
         poze = _extract_eru_poze(workbook)
+        system_services = _extract_eru_system_services(workbook, path.name)
     finally:
         workbook.close()
 
     distributors = _build_eru_distributors(tariffs, descriptions, poze, args.vat_rate)
     _validate_eru_distributors(distributors, set(tariffs.keys()))
+    regulated_components = _build_eru_regulated_components(system_services, args.vat_rate, path.name)
 
     stat = path.stat()
     fetched = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).replace(microsecond=0).isoformat()
@@ -811,6 +871,7 @@ def _build_eru(args: argparse.Namespace) -> Dict[str, Any]:
         "vat_rate": args.vat_rate,
         "sources": {path.name: source_meta},
         "distributors": distributors,
+        "regulated_components": regulated_components,
         "valid_from_snapshots": [snapshot],
     }
 

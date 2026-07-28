@@ -135,10 +135,13 @@ const REGISTRY_FIXTURE = { sections: ['pricing', 'pricing_supplier'], fields } a
 
 const REAL_PRICELISTS = JSON.parse(
   readFileSync(
-    '/repos/wt-pricelist-serving-fix/custom_components/oig_cloud/remote_config/data/pricelists.json',
+    '/repos/wt-pricelist-regulated-components/custom_components/oig_cloud/remote_config/data/pricelists.json',
     'utf8',
   ),
 );
+// Owner D57d bug: system_services + electricity_tax on top of dist_leg —
+// verified via openpyxl against ceny-nn26-1.xlsx (see build_pricelists.py).
+const REGULATED_EXTRA = 164.24 + 28.3; // 192.54 Kc/MWh excl VAT
 
 const PRICELISTS_SINGLE_AND_DUAL = {
   distributors: {
@@ -176,6 +179,12 @@ function moduleConfigFetch(doc: Record<string, unknown>, pricelists: Record<stri
     if (path.includes('/module_config')) return Promise.resolve(doc);
     return Promise.resolve(null);
   };
+}
+
+/** Collapses the whitespace/newlines lit's multi-line template literals leave
+ * in `textContent` so hint-text assertions can match on content, not layout. */
+function normalizeText(text: string | null | undefined): string {
+  return (text ?? '').replace(/\s+/g, ' ').trim();
 }
 
 async function settle(wizard: HTMLElement & { updateComplete: Promise<boolean> }): Promise<void> {
@@ -629,20 +638,21 @@ describe('owner UX rev — distributor names, tariff description, editable price
       internals(wizard).applyDistributionFeeSuggestion();
       await settle(wizard);
 
-      expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(
-        Math.round((row.vt / 1000) * 100) / 100,
-      );
+      // Owner D57d bug fix: suggestion = (dist_leg + 192.54) / 1000, kept at
+      // FULL precision (no 2-decimal rounding) so it matches real stored
+      // values; only the "s DPH" display line rounds.
+      const vtFee = (row.vt + REGULATED_EXTRA) / 1000;
+      expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(vtFee);
       expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-incl-vat"]')?.textContent)
-        .toContain(`s DPH 21 %: ${((Math.round((row.vt / 1000) * 100) / 100) * 1.21).toFixed(2)} Kč/kWh`);
+        .toContain(`s DPH 21 %: ${(vtFee * 1.21).toFixed(2)} Kč/kWh`);
 
       if (row.nt === null) {
         expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-nt"]')).toBeNull();
       } else {
-        expect(internals(wizard).pricingDraft.distribution_fee_nt_kwh).toBe(
-          Math.round((row.nt / 1000) * 100) / 100,
-        );
+        const ntFee = (row.nt + REGULATED_EXTRA) / 1000;
+        expect(internals(wizard).pricingDraft.distribution_fee_nt_kwh).toBe(ntFee);
         expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-nt-incl-vat"]')?.textContent)
-          .toContain(`s DPH 21 %: ${((Math.round((row.nt / 1000) * 100) / 100) * 1.21).toFixed(2)} Kč/kWh`);
+          .toContain(`s DPH 21 %: ${(ntFee * 1.21).toFixed(2)} Kč/kWh`);
       }
     }
   });
@@ -681,14 +691,38 @@ describe('owner UX rev — distributor names, tariff description, editable price
     await settle(wizard);
 
     // Stored 9.99 differs from the decree 2.25 -> hint + adopt button render.
+    // Owner D57d bug fix: the hint carries the FULL regulated price at full
+    // precision plus a breakdown (this fixture has no regulated_components,
+    // so system_services/electricity_tax show as 0 here — see the D57d
+    // sanity test below for the non-zero case).
     const hint = wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-decree-hint"]');
-    expect(hint?.textContent).toContain('Cenové rozhodnutí ERÚ: 2.25');
+    expect(normalizeText(hint?.textContent)).toContain('Cenové rozhodnutí ERÚ + poplatky: 2.25000 Kč/kWh');
+    expect(normalizeText(hint?.textContent)).toContain('(distribuce 2.25000 + sys. služby 0.00000 + daň 0.00000)');
     const adopt = wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-decree-adopt"]') as HTMLButtonElement;
     adopt.click();
     await settle(wizard);
 
     expect(internals(wizard).pricingDraft.distribution_fee_vt_kwh).toBe(2.25);
     // Hint disappears once the values match.
+    expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-decree-hint"]')).toBeNull();
+  });
+
+  it('owner D57d box: full-precision stored fee (0.94731) matches the decree total -> no mismatch hint', async () => {
+    // Real box regression: dist_leg 754.77 + system_services 164.24 +
+    // electricity_tax 28.30 = 947.31 Kc/MWh -> 0.94731 Kc/kWh. Before the
+    // fix the suggestion/decree used dist_leg alone (0.75), which would
+    // have flagged this owner's correct, already-full stored value as a
+    // false mismatch forever.
+    fetchOIGAPI.mockImplementation(moduleConfigFetch({
+      pricing: {
+        confirmed_distribution_distributor: 'cez', confirmed_distribution_tariff: 'D57d',
+        distribution_fee_vt_kwh: 0.94731,
+      },
+    }, REAL_PRICELISTS));
+    const wizard = await openWizard();
+    await goToStep(wizard, 'pricing_distribution');
+    await settle(wizard);
+
     expect(wizard.shadowRoot!.querySelector('[data-testid="distribution-fee-vt-decree-hint"]')).toBeNull();
   });
 });

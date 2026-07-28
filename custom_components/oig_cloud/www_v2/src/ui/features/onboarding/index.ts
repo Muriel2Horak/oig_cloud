@@ -93,6 +93,17 @@ interface PricingRate {
   description?: string;
 }
 
+/** Per-MWh regulated charge distributor-independent, on top of a distributor's
+ * own distribution leg — `build_pricelists.py`'s ERU-decree `regulated_components`
+ * top-level section (owner D57d bug: the wizard's suggested fee summed dist_leg
+ * ONLY and forgot these). */
+interface RegulatedComponent {
+  price_excl_vat: number;
+  price_incl_vat: number;
+  unit: string;
+  source: string;
+}
+
 interface PricelistsResponse {
   distributors: Record<string, Record<string, PricingRate>>;
   tariffs: string[];
@@ -104,6 +115,23 @@ interface PricelistsResponse {
   stale_warning: boolean;
   valid_from: string | null;
   year: number | null;
+  regulated_components?: {
+    system_services?: RegulatedComponent;
+    electricity_tax?: RegulatedComponent;
+  };
+}
+
+/** dist_leg + system_services + electricity_tax, excl VAT, Kč/MWh — the FULL
+ * per-kWh regulated price a consumer actually pays, not just the distributor's
+ * own leg. Missing components (older/fixture datasets) default to 0. */
+function regulatedComponentsExclVat(pricing: PricelistsResponse | null): {
+  systemServices: number;
+  electricityTax: number;
+  total: number;
+} {
+  const systemServices = pricing?.regulated_components?.system_services?.price_excl_vat ?? 0;
+  const electricityTax = pricing?.regulated_components?.electricity_tax?.price_excl_vat ?? 0;
+  return { systemServices, electricityTax, total: systemServices + electricityTax };
 }
 
 export type AiStatus = 'not_configured' | 'verified' | 'unverified' | 'backing_off' | 'no_credits' | 'error';
@@ -2669,8 +2697,13 @@ export class OigOnboardingWizard extends LitElement {
     const rate = this.pricing?.distributors?.[distributor]?.[tariff];
     if (!rate) return;
 
+    // Owner D57d bug: the suggestion must equal the FULL per-kWh regulated
+    // price (dist_leg + system_services + electricity_tax), not dist_leg
+    // alone — kept at full precision so it matches real stored values
+    // (947.31/1000 = 0.94731); only DISPLAY may shorten.
+    const { total: regulatedExtra } = regulatedComponentsExclVat(this.pricing);
     const toFee = (leg?: { price_excl_vat: number }): number | undefined =>
-      leg ? Math.round((leg.price_excl_vat / 1000) * 100) / 100 : undefined;
+      leg ? (leg.price_excl_vat + regulatedExtra) / 1000 : undefined;
 
     const updates: Partial<Record<DistributionFeeKey, number>> = {};
     const vt = toFee(rate.vt);
@@ -2699,14 +2732,20 @@ export class OigOnboardingWizard extends LitElement {
     const distributor = this.pricingDraft['confirmed_distribution_distributor'] as string | undefined;
     const tariff = this.pricingDraft['confirmed_distribution_tariff'] as string | undefined;
     const rate = distributor && tariff ? this.pricing?.distributors?.[distributor]?.[tariff] : undefined;
+    // Owner D57d bug: the decree comparison must be the FULL per-kWh
+    // regulated price (dist_leg + system_services + electricity_tax), full
+    // precision — a 2-decimal-rounded decree fee never matches a
+    // full-precision stored one (e.g. 0.75 vs the real 0.94731), so every
+    // owner box would show a false mismatch forever.
+    const { systemServices, electricityTax, total: regulatedExtra } = regulatedComponentsExclVat(this.pricing);
     const decreeFee = (leg?: { price_excl_vat: number }): number | undefined =>
-      leg ? Math.round((leg.price_excl_vat / 1000) * 100) / 100 : undefined;
+      leg ? (leg.price_excl_vat + regulatedExtra) / 1000 : undefined;
     const cell = (field: FieldDef, testid: string, leg?: { price_excl_vat: number }) => {
       const raw = this.pricingDraft[field.key];
       const excl = raw == null || raw === '' ? null : Number(raw);
       const incl = excl == null ? null : Math.round(excl * vatMultiplier * 100) / 100;
       const decree = decreeFee(leg);
-      const mismatch = decree !== undefined && excl != null && Math.abs(excl - decree) >= 0.005;
+      const mismatch = decree !== undefined && excl != null && Math.abs(excl - decree) >= 0.0005;
       return html`
         <div class="price-cell pcard" data-testid=${testid}>
           <span class="lab">${field.label}</span>
@@ -2725,7 +2764,9 @@ export class OigOnboardingWizard extends LitElement {
           ${mismatch
             ? html`
                 <span class="hint decree-mismatch" data-testid="${testid}-decree-hint">
-                  Cenové rozhodnutí ERÚ: ${decree!.toFixed(2)} Kč/kWh
+                  Cenové rozhodnutí ERÚ + poplatky: ${decree!.toFixed(5)} Kč/kWh
+                  (distribuce ${(leg!.price_excl_vat / 1000).toFixed(5)} + sys. služby
+                  ${(systemServices / 1000).toFixed(5)} + daň ${(electricityTax / 1000).toFixed(5)})
                   <button
                     type="button" class="link-button" data-testid="${testid}-decree-adopt"
                     @click=${() => {
