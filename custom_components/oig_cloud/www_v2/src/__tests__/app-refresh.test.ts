@@ -533,26 +533,26 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
     expect(all).toContain('Průvodce nastavením bojleru');
   });
 
-  it('boiler tab template contains the redesigned model + draw-map when v2 data available', () => {
+  it('boiler tab template contains the hero flow card + draw-map when v2 data available', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).toContain('oig-boiler-model');
+    expect(all).toContain('oig-boiler-hero-flow');
     expect(all).toContain('oig-boiler-draw-map');
   });
 
-  it('boiler tab template contains the SoC chart and plan sections', () => {
+  it('boiler tab template contains the timeline chart and plan-realita tile', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).toContain('oig-boiler-soc-chart');
-    expect(all).toContain('oig-boiler-plan');
+    expect(all).toContain('oig-boiler-timeline-chart');
+    expect(all).toContain('oig-boiler-plan-realita-tile');
   });
 
-  it('boiler tab template contains the slim strip', () => {
+  it('boiler tab template does NOT contain the slim strip', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).toContain('boiler-slim');
+    expect(all).not.toContain('boiler-slim');
   });
 
-  it('boiler tab template does NOT contain oig-boiler-timeline-chart (removed in Task 3)', () => {
+  it('boiler tab template contains oig-boiler-timeline-chart', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).not.toContain('oig-boiler-timeline-chart');
+    expect(all).toContain('oig-boiler-timeline-chart');
   });
 
   it('boiler tab template does NOT contain oig-boiler-status-panel', () => {
@@ -575,9 +575,9 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
     expect(all).toContain('<oig-boiler-override-panel');
   });
 
-  it('boiler tab template does NOT contain oig-boiler-energy-today (removed in Task 3)', () => {
+  it('boiler tab template contains oig-boiler-energy-today', () => {
     const all = getAppTemplateAll(makeAppWithStatus());
-    expect(all).not.toContain('oig-boiler-energy-today');
+    expect(all).toContain('oig-boiler-energy-today');
   });
 
   it('boiler tab renders the collapsed Ovládání a nastavení controls section', () => {
@@ -593,17 +593,17 @@ describe('OigApp V2 boiler tab — no legacy tags, setup guide present', () => {
 
   it('config_profile_unavailable alone does not block model render', () => {
     const all = getAppTemplateAll(makeAppWithConfigProfileUnavailable());
-    expect(all).toContain('oig-boiler-model');
+    expect(all).toContain('oig-boiler-hero-flow');
     expect(all).not.toContain('reason="degraded"');
   });
 
-  it('mounted: boiler tab does NOT contain oig-boiler-timeline-chart (removed in Task 3)', async () => {
+  it('mounted: boiler tab contains oig-boiler-timeline-chart', async () => {
     const app = makeAppWithStatus() as any;
     app.activeTab = 'boiler';
     document.body.appendChild(app);
     await app.updateComplete;
     const timeline = app.shadowRoot!.querySelector('oig-boiler-timeline-chart');
-    expect(timeline).toBeNull();
+    expect(timeline).not.toBeNull();
     document.body.removeChild(app);
   });
 

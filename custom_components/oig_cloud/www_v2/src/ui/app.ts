@@ -135,15 +135,6 @@ export class OigApp extends LitElement {
     return filterDashboardTiles(tiles, flags) ?? [];
   }
 
-  private _altShort(type: string | null | undefined): string {
-    switch (type) {
-      case 'heat_pump': return 'TČ';
-      case 'fireplace': return 'Krb';
-      case 'other': return 'Alt';
-      default: return 'Plyn';
-    }
-  }
-
   // Analytics
   @state() private analyticsData: AnalyticsData = EMPTY_ANALYTICS;
 
@@ -306,39 +297,20 @@ export class OigApp extends LitElement {
       gap: 16px;
     }
 
-    /* ── Redesigned boiler tab (2026-06): model+map, slim strip, SoC, plan ── */
+    /* ── Redesigned boiler tab (2026-07, rev3 mock): hero, chart, plan-realita, energy+map ── */
+    oig-boiler-hero-flow, oig-boiler-timeline-chart, oig-boiler-plan-realita-tile { display: block; margin-bottom: 14px; }
     .boiler-model-row {
       display: grid;
-      /* Model and draw map share the row equally (half and half). */
+      /* Energy-today and draw map share the row equally (half and half). */
       grid-template-columns: 1fr 1fr;
       gap: 14px;
       margin-bottom: 14px;
       align-items: start;
     }
-    .boiler-model-row > oig-boiler-model,
+    .boiler-model-row > oig-boiler-energy-today,
     .boiler-model-row > oig-boiler-draw-map { min-width: 0; }
-    oig-boiler-soc-chart, oig-boiler-plan { display: block; margin-bottom: 14px; }
-    .boiler-slim {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-    .boiler-slim .slim-tile {
-      background: ${unsafeCSS(CSS_VARS.cardBg)};
-      border-radius: 12px;
-      box-shadow: ${unsafeCSS(CSS_VARS.cardShadow)};
-      padding: 11px 13px;
-      display: flex; flex-direction: column; gap: 4px;
-    }
-    .boiler-slim .k { font-size: 11px; color: ${unsafeCSS(CSS_VARS.textSecondary)}; }
-    .boiler-slim .v { font-size: 16px; font-weight: 650; color: ${unsafeCSS(CSS_VARS.textPrimary)}; }
-    .boiler-slim .slim-chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; font-weight: 600; background: rgba(255,179,0,0.16); color: #c98a00; }
-    .boiler-slim .slim-chip.on { background: rgba(94,234,212,0.16); color: #2e9c89; }
-    .boiler-slim .slim-chip.off { background: rgba(255,255,255,0.07); color: ${unsafeCSS(CSS_VARS.textSecondary)}; }
     @media (max-width: 900px) {
       .boiler-model-row { grid-template-columns: 1fr; }
-      .boiler-slim { grid-template-columns: repeat(2, 1fr); }
     }
 
     .boiler-stage {
@@ -1431,84 +1403,52 @@ export class OigApp extends LitElement {
         </div>`
       : nothing;
 
-    // ── derive model + slim-strip props from live state ──────────────────
-    const activity = v2.activity;
+    // ── derive shared props from live state ──────────────────
     const cfg = this.boilerConfig;
     const volume = cfg?.volumeL ?? 200;
-    const fillFrac = activity?.fillLevelPct ?? null;
+    const fillFrac = v2.activity?.fillLevelPct ?? null;
     const readyLiters = fillFrac != null ? fillFrac * volume : null;
-    const st = activity?.state ?? 'unknown';
-    const heatMode: 'ele' | 'alt' | 'idle' =
-      st === 'charging_alt' ? 'alt' : (st.startsWith('charging_') ? 'ele' : 'idle');
-    const src = activity?.source;
-    const electricSource: 'fve' | 'grid' | 'battery' =
-      (src === 'fve' || src === 'overflow') ? 'fve' : (src === 'discharge' ? 'battery' : 'grid');
-    const e = v2.energyToday;
-    const elementKwh = e ? (e.fveKwh + e.gridKwh + e.batteryKwh) : null;
-    const altKwh = e ? e.altKwh : null;
     const nowMs = Date.now();
     const circRuns = v2.circulationRuns ?? [];
-    const circEnabled = circRuns.length > 0;
-    const circActive = circRuns.some(r => new Date(r.start).getTime() <= nowMs && nowMs < new Date(r.end).getTime());
-    const drivesPlan = v2.demandMap?.drivesPlan ?? true;
-    const trend = activity?.temperatureTrendCPerMin ?? null;
     const lang = this.boilerLang;
-    const comfort = v2.status?.comfortSatisfied ?? null;
-    const deadline = (v2.planSummary?.deadlineTime ?? cfg?.deadlineTime ?? '').slice(0, 5);
-    const cost = v2.energyToday?.costCzk;
-    const modeChip = heatMode === 'alt'
-      ? `🔥 ${this._altShort(v2.altSourceType)}`
-      : heatMode === 'ele' ? '🔌 ELE' : '⏸ —';
-    const trendArrow = trend != null && Math.abs(trend) >= 0.05 ? (trend > 0 ? '↑' : '↓') : '';
 
     return html`
       ${staleChip}
-      <div class="boiler-model-row">
-        <oig-boiler-model
-          .topTempC=${v2.status?.temperatureTop ?? null}
-          .bottomTempC=${v2.status?.temperatureBottom ?? null}
-          .readyLiters=${readyLiters}
-          .readyFraction=${fillFrac}
-          .volumeL=${volume}
-          .coldInletTempC=${cfg?.coldInletTempC ?? 16}
-          .heatMode=${heatMode}
-          .electricSource=${electricSource}
-          .altSourceType=${v2.altSourceType ?? 'gas'}
-          .elementKwhToday=${elementKwh}
-          .altKwhToday=${altKwh}
-          .circulationEnabled=${circEnabled}
-          .circulationActive=${circActive}
-          .trendCPerMin=${trend}
-          .lang=${lang}
-        ></oig-boiler-model>
-        <oig-boiler-draw-map .data=${v2.drawMap ?? null} .lang=${lang}></oig-boiler-draw-map>
-      </div>
-
-      <div class="boiler-slim">
-        <div class="slim-tile"><span class="k">⚡ Režim</span><span class="v"><span class="slim-chip">${modeChip}</span></span></div>
-        <div class="slim-tile"><span class="k">💧 Připraveno</span><span class="v">${readyLiters != null ? Math.round(readyLiters) : '—'} L ${trendArrow}</span></div>
-        <div class="slim-tile"><span class="k">💰 Cena dnes</span><span class="v">${cost != null ? `${cost.toFixed(2)} Kč` : '—'}</span></div>
-        <div class="slim-tile"><span class="k">🔁 Cirkulace</span><span class="v"><span class="slim-chip ${circActive ? 'on' : 'off'}">${circEnabled ? (circActive ? 'běží' : 'stojí') : '—'}</span></span></div>
-        <div class="slim-tile"><span class="k">🎯 Komfort do</span><span class="v">${deadline || '—'} ${comfort === true ? '✓' : comfort === false ? '⚠' : ''}</span></div>
-      </div>
-
-      <oig-boiler-soc-chart
-        .planSlots=${v2.planSlots}
-        .capacityLiters=${volume}
-        .nowLiters=${readyLiters}
-        .drivesPlan=${drivesPlan}
-        .lang=${lang}
-      ></oig-boiler-soc-chart>
-
-      <oig-boiler-plan
+      <oig-boiler-hero-flow
+        .status=${v2.status ?? null}
+        .activity=${v2.activity ?? null}
         .planSlots=${v2.planSlots}
         .planSummary=${v2.planSummary ?? null}
-        .legionella=${v2.legionella ?? null}
+        .energyToday=${v2.energyToday ?? null}
+        .demandMap=${v2.demandMap ?? null}
         .circulationRuns=${circRuns}
-        .status=${v2.status ?? null}
+        .legionella=${v2.legionella ?? null}
+        .config=${cfg ?? null}
+        .homeBatterySocPct=${this.flowData.batterySoC ?? null}
         .altSourceType=${v2.altSourceType ?? null}
         .lang=${lang}
-      ></oig-boiler-plan>
+      ></oig-boiler-hero-flow>
+
+      <oig-boiler-timeline-chart
+        .data=${v2}
+        .config=${cfg ?? null}
+        .lang=${lang}
+        .nowMs=${nowMs}
+        .capacityLiters=${volume}
+        .nowLiters=${readyLiters}
+      ></oig-boiler-timeline-chart>
+
+      <oig-boiler-plan-realita-tile></oig-boiler-plan-realita-tile>
+
+      <div class="boiler-model-row">
+        <oig-boiler-energy-today
+          .energy=${v2.energyToday ?? null}
+          .planSummary=${v2.planSummary ?? null}
+          .altType=${v2.altSourceType ?? null}
+          .lang=${lang}
+        ></oig-boiler-energy-today>
+        <oig-boiler-draw-map .data=${v2.drawMap ?? null} .lang=${lang} .compact=${true}></oig-boiler-draw-map>
+      </div>
 
       <details class="boiler-controls-section" data-testid="boiler-controls-section">
         <summary>⚙️ Ovládání a nastavení</summary>
