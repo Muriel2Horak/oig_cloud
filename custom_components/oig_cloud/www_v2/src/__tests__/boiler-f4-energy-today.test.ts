@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   altTypeLabel,
+  buildPropBarSegments,
   buildSourceTiles,
   computeSavingsLabel,
   formatKwhLocale,
@@ -320,6 +321,44 @@ describe('formatKwhLocale', () => {
 });
 
 // ── OigBoilerEnergyToday component ───────────────────────────────────────────
+
+// ── buildPropBarSegments ──────────────────────────────────────────────────────
+// M2/U1: grey unattributed remainder so the bar always sums to ~100%
+
+describe('buildPropBarSegments', () => {
+  it('maps tiles with kwh > 0 to percentage segments', () => {
+    const energy = makeEnergy({ totalKwh: 5.0, fveKwh: 2.5, gridKwh: 2.5, altKwh: 0 });
+    const tiles = buildSourceTiles(energy, 'cs');
+    const segs = buildPropBarSegments(energy, tiles);
+    expect(segs.map(s => s.key)).toEqual(['fve', 'grid']);
+    expect(segs[0].pct).toBeCloseTo(50, 3);
+    expect(segs[1].pct).toBeCloseTo(50, 3);
+  });
+
+  it('appends grey unattributed segment when unattributedKwh > 0.05', () => {
+    const energy = makeEnergy({ totalKwh: 4.0, fveKwh: 2.0, gridKwh: 1.0, altKwh: 0, unattributedKwh: 1.0 });
+    const tiles = buildSourceTiles(energy, 'cs');
+    const segs = buildPropBarSegments(energy, tiles);
+    const last = segs[segs.length - 1];
+    expect(last.key).toBe('unattributed');
+    expect(last.color).toBe('#9aa6b2');
+    expect(last.pct).toBeCloseTo(25, 3);
+    expect(segs.reduce((s, x) => s + x.pct, 0)).toBeCloseTo(100, 3);
+  });
+
+  it('no unattributed segment at or below the 0.05 threshold', () => {
+    const energy = makeEnergy({ totalKwh: 4.0, fveKwh: 3.0, gridKwh: 1.0, altKwh: 0, unattributedKwh: 0.05 });
+    const tiles = buildSourceTiles(energy, 'cs');
+    const segs = buildPropBarSegments(energy, tiles);
+    expect(segs.some(s => s.key === 'unattributed')).toBe(false);
+  });
+
+  it('returns [] when total below the 0.1 empty threshold', () => {
+    const energy = makeEnergy({ totalKwh: 0.05, fveKwh: 0.05, gridKwh: 0, altKwh: 0 });
+    const tiles = buildSourceTiles(energy, 'cs');
+    expect(buildPropBarSegments(energy, tiles)).toEqual([]);
+  });
+});
 
 describe('OigBoilerEnergyToday component', () => {
   let el: OigBoilerEnergyToday;

@@ -103,6 +103,42 @@ export function buildSourceTiles(
   return tiles;
 }
 
+export interface PropBarSegment {
+  pct: number;
+  color: string;
+  key: string;
+}
+
+/**
+ * Build the stacked proportion-bar segments from the source tiles, plus a grey
+ * segment for unattributed kWh (energy whose source could not be determined,
+ * e.g. a pre-restart gap). Without it the bar under-fills: totalKwh includes
+ * unattributed energy, so tile percentages alone sum to less than 100%.
+ * Grey matches the metric panel's unattributed row (#9aa6b2).
+ */
+export function buildPropBarSegments(
+  energy: EnergyToday,
+  tiles: EnergySourceTile[],
+): PropBarSegment[] {
+  const total = energy.totalKwh;
+  if (!(total >= 0.1)) return [];
+  const segments: PropBarSegment[] = tiles
+    .filter(tile => tile.kwh > 0)
+    .map(tile => ({
+      pct: (tile.kwh / total) * 100,
+      color: tile.color,
+      key: tile.key,
+    }));
+  if (energy.unattributedKwh > 0.05) {
+    segments.push({
+      pct: (energy.unattributedKwh / total) * 100,
+      color: '#9aa6b2',
+      key: 'unattributed',
+    });
+  }
+  return segments;
+}
+
 /**
  * Compute savings string: "→ plán šetří X Kč" when both cost fields present.
  * Returns null when data is insufficient.
@@ -250,14 +286,8 @@ export class OigBoilerEnergyToday extends LitElement {
     const total = energy?.totalKwh ?? 0;
     const isEmpty = total < 0.1;
 
-    // Proportion bar segments
-    const barSegments = isEmpty ? [] : tiles
-      .filter(tile => tile.kwh > 0)
-      .map(tile => ({
-        pct: (tile.kwh / total) * 100,
-        color: tile.color,
-        key: tile.key,
-      }));
+    // Proportion bar segments (incl. grey unattributed remainder)
+    const barSegments = energy && !isEmpty ? buildPropBarSegments(energy, tiles) : [];
 
     // Benchmark
     const benchmarkCostGridRaw = planSummary?.costIfAllGrid ?? null;

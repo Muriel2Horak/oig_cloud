@@ -13,6 +13,13 @@ const TEMP_MAX = 80;
 const POWER_MAX_KW = 3;
 const POWER_BASELINE_Y = 100;
 const MINUTES_PER_DAY = 1440;
+// Spot overlay: Ceny spot-price blue (src/ui/features/pricing/chart.ts buildSpotPriceDataset)
+const SPOT_COLOR = '#2196F3';
+// SoC curve: same cyan as boiler-soc-chart's COL.soc
+const SOC_COLOR = '#22d3ee';
+const SPOT_Y_TOP = 12;
+const SPOT_Y_BOTTOM = VIEWBOX_H - 12;
+const DEFAULT_CAPACITY_LITERS = 200;
 
 export function resolveTimelineNowMs(nowOverrideMs?: number): number {
   return nowOverrideMs ?? Date.now();
@@ -151,6 +158,65 @@ interface PowerBar {
   isEstimated: boolean;
 }
 
+interface SpotStep {
+  x1: number;
+  x2: number;
+  y: number;
+  price: number;
+}
+
+export interface SpotOverlay {
+  steps: SpotStep[];
+  min: number;
+  max: number;
+}
+
+/**
+ * Build the spot-price step overlay from plan slots. Prices are per-slot
+ * constants, so each slot renders as a horizontal step (x1..x2 at one y).
+ * Returns null when fewer than 2 slots carry a finite spotPrice — a lone
+ * dash reads as noise, not a price curve.
+ */
+export function buildSpotSteps(
+  slots: BoilerV2PlanSlot[],
+  dayStartMs: number,
+): SpotOverlay | null {
+  const dayEndMs = dayStartMs + MINUTES_PER_DAY * 60000;
+  const priced: Array<{ startMs: number; endMs: number; price: number }> = [];
+  for (const slot of slots) {
+    if (slot.spotPrice == null || !isFinite(slot.spotPrice)) continue;
+    const startMs = Date.parse(slot.start);
+    const endMs = Date.parse(slot.end);
+    if (!isFinite(startMs) || !isFinite(endMs)) continue;
+    if (endMs <= dayStartMs || startMs >= dayEndMs) continue;
+    const clippedStart = Math.max(startMs, dayStartMs);
+    const clippedEnd = Math.min(endMs, dayEndMs);
+    if (clippedEnd <= clippedStart) continue;
+    priced.push({ startMs: clippedStart, endMs: clippedEnd, price: slot.spotPrice });
+  }
+  if (priced.length < 2) return null;
+
+  let min = Infinity;
+  let max = -Infinity;
+  for (const p of priced) {
+    if (p.price < min) min = p.price;
+    if (p.price > max) max = p.price;
+  }
+  const span = max - min;
+  const priceToY = (price: number): number => {
+    if (span <= 0) return (SPOT_Y_TOP + SPOT_Y_BOTTOM) / 2;
+    return SPOT_Y_BOTTOM - ((price - min) / span) * (SPOT_Y_BOTTOM - SPOT_Y_TOP);
+  };
+
+  const steps: SpotStep[] = priced.map((p) => ({
+    x1: xFromMinutes((p.startMs - dayStartMs) / 60000),
+    x2: xFromMinutes((p.endMs - dayStartMs) / 60000),
+    y: priceToY(p.price),
+    price: p.price,
+  }));
+  return { steps, min, max };
+}
+
 function buildAriaLabel(
   nowTimeStr: string,
   deadlineTime: string | null,
@@ -176,6 +242,10 @@ export class OigBoilerTimelineChart extends LitElement {
   @property({ type: String }) lang: Lang = 'cs';
   @property({ type: Number }) nowMs: number | null = null;
   @property({ type: String }) timeZone: string | null = null;
+  /** SoC curve scale — mirrors boiler-soc-chart's prop; falls back to config.volumeL. */
+  @property({ type: Number }) capacityLiters: number | null = null;
+  /** Current ready litres — mirrors boiler-soc-chart's prop; renders a NOW anchor dot. */
+  @property({ type: Number }) nowLiters: number | null = null;
 
   static styles = css`
     :host {
@@ -244,6 +314,26 @@ export class OigBoilerTimelineChart extends LitElement {
       stroke-width: 1.5;
       stroke-linejoin: round;
       stroke-linecap: round;
+    }
+
+    .spot-line {
+      fill: none;
+      stroke: ${u(SPOT_COLOR)};
+      stroke-width: 1.2;
+      opacity: 0.9;
+    }
+
+    .soc-line {
+      fill: none;
+      stroke: ${u(SOC_COLOR)};
+      stroke-width: 2;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+
+    .soc-area {
+      fill: ${u(SOC_COLOR)};
+      opacity: 0.1;
     }
 
     .goal-line {
@@ -416,6 +506,35 @@ export class OigBoilerTimelineChart extends LitElement {
     const powerBars = this._buildPowerBarsFromSlots(planSlots, dayStartMs);
     const historyBars = this._buildPowerBars(timelinePoints, sourceSegments, dayStartMs, resolvedNowMs);
 
+    let spotOverlay: SpotOverlay | null = null;
+    try {
+      spotOverlay = buildSpotSteps(planSlots, dayStartMs);
+    } catch {
+      spotOverlay = null;
+    }
+    const spotPolyline = spotOverlay
+      ? spotOverlay.steps
+          .flatMap((s) => [`${s.x1.toFixed(2)},${s.y.toFixed(2)}`, `${s.x2.toFixed(2)},${s.y.toFixed(2)}`])
+          .join(' ')
+      : null;
+
+    const capacityL = this.capacityLiters ?? cfg?.volumeL ?? DEFAULT_CAPACITY_LITERS;
+    const socPoints = this._buildSocPointsFromSlots(planSlots, dayStartMs, capacityL);
+    const socPolyline =
+      socPoints.length >= 2
+        ? socPoints.map((p: TempPoint) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
+        : null;
+    const socAreaPath =
+      socPoints.length >= 2
+        ? `M${socPoints[0].x.toFixed(2)} ${VIEWBOX_H}` +
+          socPoints.map((p: TempPoint) => ` L${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join('') +
+          ` L${socPoints[socPoints.length - 1].x.toFixed(2)} ${VIEWBOX_H} Z`
+        : null;
+    const socNowY =
+      this.nowLiters != null && isFinite(this.nowLiters) && capacityL > 0
+        ? VIEWBOX_H * (1 - Math.max(0, Math.min(1, this.nowLiters / capacityL)))
+        : null;
+
     const sourceBandKeys = planBands.map((b) => b.source);
     let ariaLabel = '';
     try {
@@ -558,6 +677,37 @@ export class OigBoilerTimelineChart extends LitElement {
                 ? svg`<polyline class="temp-line" points="${tempPolyline}" />`
                 : ''}
 
+              ${socAreaPath != null
+                ? svg`<path class="soc-area" d="${socAreaPath}" />`
+                : ''}
+              ${socPolyline != null
+                ? svg`<polyline
+                    class="soc-line"
+                    data-testid="boiler-soc-curve"
+                    data-capacity-liters="${capacityL}"
+                    points="${socPolyline}"
+                  />`
+                : ''}
+              ${socPolyline != null && socNowY != null
+                ? svg`<circle
+                    data-testid="boiler-soc-now-dot"
+                    cx="${formatX(nowX)}" cy="${socNowY.toFixed(2)}" r="3"
+                    fill="#fff" stroke="${SOC_COLOR}" stroke-width="1.5"
+                  />`
+                : ''}
+
+              ${spotOverlay != null && spotPolyline != null ? svg`
+                <polyline
+                  class="spot-line"
+                  data-testid="boiler-spot-line"
+                  data-price-min="${spotOverlay.min.toFixed(2)}"
+                  data-price-max="${spotOverlay.max.toFixed(2)}"
+                  points="${spotPolyline}"
+                />
+                <text x="${VIEWBOX_W - 4}" y="${(SPOT_Y_TOP - 2).toFixed(2)}" font-size="8" fill="${SPOT_COLOR}" text-anchor="end" opacity="0.8">${spotOverlay.max.toFixed(2)} Kč</text>
+                <text x="${VIEWBOX_W - 4}" y="${(SPOT_Y_BOTTOM + 10).toFixed(2)}" font-size="8" fill="${SPOT_COLOR}" text-anchor="end" opacity="0.8">${spotOverlay.min.toFixed(2)} Kč</text>
+              ` : ''}
+
               ${svg`<line
                 class="now-marker"
                 data-testid="boiler-now-marker"
@@ -581,6 +731,8 @@ export class OigBoilerTimelineChart extends LitElement {
             <div class="legend-item"><span class="legend-dot" style="background:#4ade80;opacity:.75"></span>Nabíjení kW</div>
             <div class="legend-item"><span class="legend-dot" style="background:#60a5fa;opacity:.75"></span>Odběr kW</div>
             <div class="legend-item"><span class="legend-dot" style="background:#ff7a45"></span>°C predikce</div>
+            ${socPolyline != null ? html`<div class="legend-item"><span class="legend-dot" style="background:${SOC_COLOR}"></span>SoC (L)</div>` : ''}
+            ${spotPolyline != null ? html`<div class="legend-item"><span class="legend-dot" style="background:${SPOT_COLOR}"></span>Spot Kč/kWh</div>` : ''}
           </div>
         `}
 
@@ -627,6 +779,32 @@ export class OigBoilerTimelineChart extends LitElement {
         if (slotStartMs < dayStartMs || slotStartMs > dayEndMs) continue;
         const minsIntoDay = (slotStartMs - dayStartMs) / 60000;
         result.push({ x: xFromMinutes(minsIntoDay), y: tempToY(tempC) });
+      } catch {
+        continue;
+      }
+    }
+    return result;
+  }
+
+  /** SoC-of-ready-litres curve (merged from boiler-soc-chart) on the day axis. */
+  private _buildSocPointsFromSlots(
+    slots: BoilerV2PlanSlot[],
+    dayStartMs: number,
+    capacityLiters: number,
+  ): TempPoint[] {
+    const result: TempPoint[] = [];
+    if (!(capacityLiters > 0)) return result;
+    const dayEndMs = dayStartMs + MINUTES_PER_DAY * 60000;
+    for (const slot of slots) {
+      try {
+        const liters = slot.readyLiters;
+        if (liters == null || !isFinite(liters)) continue;
+        const slotStartMs = Date.parse(slot.start);
+        if (!isFinite(slotStartMs)) continue;
+        if (slotStartMs < dayStartMs || slotStartMs > dayEndMs) continue;
+        const minsIntoDay = (slotStartMs - dayStartMs) / 60000;
+        const frac = Math.max(0, Math.min(1, liters / capacityLiters));
+        result.push({ x: xFromMinutes(minsIntoDay), y: VIEWBOX_H * (1 - frac) });
       } catch {
         continue;
       }
