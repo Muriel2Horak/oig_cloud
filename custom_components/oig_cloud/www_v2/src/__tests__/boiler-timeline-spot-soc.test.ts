@@ -21,6 +21,8 @@ import type {
 const FROZEN_NOW_MS = Date.UTC(2026, 4, 3, 13, 0, 0);
 // Prague midnight May 3 = 2026-05-02T22:00:00Z
 const PRAGUE_DAY_START = Date.UTC(2026, 4, 2, 22, 0, 0);
+// Rolling window start used by the new chart when there is no recent history
+const WINDOW_START_MS = FROZEN_NOW_MS - 1.5 * 3600000;
 
 const FROZEN_CONFIG: BoilerConfig = {
   volumeL: 120,
@@ -70,6 +72,18 @@ function makeSlot(overrides: Partial<BoilerV2PlanSlot> = {}): BoilerV2PlanSlot {
     heatingKwh: 0.4,
     ...overrides,
   };
+}
+
+function makeSlotInWindow(
+  offsetMin: number,
+  overrides: Partial<BoilerV2PlanSlot> = {},
+): BoilerV2PlanSlot {
+  const start = WINDOW_START_MS + offsetMin * 60000;
+  return makeSlot({
+    start: new Date(start).toISOString(),
+    end: new Date(start + 15 * 60000).toISOString(),
+    ...overrides,
+  });
 }
 
 /** n contiguous 15-min slots starting at day start + offsetMin. */
@@ -150,7 +164,12 @@ describe('buildSpotSteps', () => {
 describe('OigBoilerTimelineChart spot-price overlay', () => {
   it('renders the spot line with min/max data attributes and legend', async () => {
     const data = makeMinimalBoilerData({
-      planSlots: slotRun(4, 600, (i) => ({ spotPrice: [1.5, 2.0, 4.5, 3.0][i] })),
+      planSlots: [
+        makeSlotInWindow(30, { spotPrice: 1.5 }),
+        makeSlotInWindow(45, { spotPrice: 2.0 }),
+        makeSlotInWindow(60, { spotPrice: 4.5 }),
+        makeSlotInWindow(75, { spotPrice: 3.0 }),
+      ],
     });
     const el = await mountTimeline(data);
     const line = el.shadowRoot!.querySelector('[data-testid="boiler-spot-line"]');
@@ -165,7 +184,11 @@ describe('OigBoilerTimelineChart spot-price overlay', () => {
 
   it('renders no spot line when all spotPrice are null', async () => {
     const data = makeMinimalBoilerData({
-      planSlots: slotRun(4, 600, () => ({ spotPrice: null })),
+      planSlots: [
+        makeSlotInWindow(30, { spotPrice: null }),
+        makeSlotInWindow(45, { spotPrice: null }),
+        makeSlotInWindow(60, { spotPrice: null }),
+      ],
     });
     const el = await mountTimeline(data);
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-spot-line"]')).toBeNull();
@@ -180,23 +203,30 @@ describe('OigBoilerTimelineChart spot-price overlay', () => {
 describe('OigBoilerTimelineChart SoC curve (merged from boiler-soc-chart)', () => {
   it('renders the SoC polyline from readyLiters with config.volumeL as capacity', async () => {
     const data = makeMinimalBoilerData({
-      planSlots: slotRun(3, 600, (i) => ({ readyLiters: [60, 90, 120][i] })),
+      planSlots: [
+        makeSlotInWindow(30, { readyLiters: 60 }),
+        makeSlotInWindow(45, { readyLiters: 90 }),
+        makeSlotInWindow(60, { readyLiters: 120 }),
+      ],
     });
     const el = await mountTimeline(data);
     const curve = el.shadowRoot!.querySelector('[data-testid="boiler-soc-curve"]');
     expect(curve).not.toBeNull();
     expect(curve!.getAttribute('data-capacity-liters')).toBe('120');
     const ys = curve!.getAttribute('points')!.split(' ').map(p => parseFloat(p.split(',')[1]));
-    // rising litres -> falling y; full capacity (120/120) hits y=0
+    // rising litres -> falling y; full capacity (120/120) hits y=25
     expect(ys[0]).toBeGreaterThan(ys[1]);
     expect(ys[1]).toBeGreaterThan(ys[2]);
-    expect(ys[2]).toBe(0);
+    expect(ys[2]).toBe(25);
     document.body.removeChild(el);
   });
 
   it('capacityLiters prop overrides config.volumeL', async () => {
     const data = makeMinimalBoilerData({
-      planSlots: slotRun(2, 600, () => ({ readyLiters: 100 })),
+      planSlots: [
+        makeSlotInWindow(30, { readyLiters: 100 }),
+        makeSlotInWindow(45, { readyLiters: 100 }),
+      ],
     });
     const el = document.createElement('oig-boiler-timeline-chart') as OigBoilerTimelineChart;
     el.data = data;
@@ -213,7 +243,10 @@ describe('OigBoilerTimelineChart SoC curve (merged from boiler-soc-chart)', () =
 
   it('renders the NOW anchor dot when nowLiters is set', async () => {
     const data = makeMinimalBoilerData({
-      planSlots: slotRun(2, 600, () => ({ readyLiters: 100 })),
+      planSlots: [
+        makeSlotInWindow(30, { readyLiters: 100 }),
+        makeSlotInWindow(45, { readyLiters: 100 }),
+      ],
     });
     const el = document.createElement('oig-boiler-timeline-chart') as OigBoilerTimelineChart;
     el.data = data;
@@ -225,14 +258,17 @@ describe('OigBoilerTimelineChart SoC curve (merged from boiler-soc-chart)', () =
     await el.updateComplete;
     const dot = el.shadowRoot!.querySelector('[data-testid="boiler-soc-now-dot"]');
     expect(dot).not.toBeNull();
-    // 60/120 L -> mid height (viewbox 200)
-    expect(parseFloat(dot!.getAttribute('cy')!)).toBeCloseTo(100, 1);
+    // 60/120 L -> 50 % of the 90 px band, measured from y=115
+    expect(parseFloat(dot!.getAttribute('cy')!)).toBeCloseTo(70, 1);
     document.body.removeChild(el);
   });
 
   it('renders no SoC curve when readyLiters are absent', async () => {
     const data = makeMinimalBoilerData({
-      planSlots: slotRun(3, 600, () => ({ readyLiters: null })),
+      planSlots: [
+        makeSlotInWindow(30, { readyLiters: null }),
+        makeSlotInWindow(45, { readyLiters: null }),
+      ],
     });
     const el = await mountTimeline(data);
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-soc-curve"]')).toBeNull();

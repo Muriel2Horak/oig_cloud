@@ -155,11 +155,11 @@ describe('OigBoilerDrawMap render', () => {
     expect(html).toMatch(/Sbírám data|Collecting/i);
   });
 
-  it('compact mode applies the compact card class', async () => {
+  it('compact mode applies the card class', async () => {
     el.data = SAMPLE;
     el.month = 7;
     el.compact = true;
     await el.updateComplete;
-    expect(el.shadowRoot!.querySelector('.card.compact')).not.toBeNull();
+    expect(el.shadowRoot!.querySelector('.card')).not.toBeNull();
   });
 });

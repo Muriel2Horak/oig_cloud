@@ -291,24 +291,25 @@ export class OigApp extends LitElement {
       animation: fadeIn 0.25s ease;
     }
 
+    /* ── Redesigned boiler tab (2026-07, rev3 mock): hero, chart, plan-realita, energy+map ── */
     .tab-content.boiler-layout.active {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 10px;
     }
 
-    /* ── Redesigned boiler tab (2026-07, rev3 mock): hero, chart, plan-realita, energy+map ── */
-    oig-boiler-hero-flow, oig-boiler-timeline-chart, oig-boiler-plan-realita-tile { display: block; margin-bottom: 14px; }
+    oig-boiler-hero-flow, oig-boiler-timeline-chart, oig-boiler-plan-realita-tile { display: block; }
+
     .boiler-model-row {
       display: grid;
-      /* Energy-today and draw map share the row equally (half and half). */
       grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 14px;
+      gap: 10px;
       align-items: start;
     }
+
     .boiler-model-row > oig-boiler-energy-today,
     .boiler-model-row > oig-boiler-draw-map { min-width: 0; }
+
     @media (max-width: 900px) {
       .boiler-model-row { grid-template-columns: 1fr; }
     }
@@ -1438,7 +1439,7 @@ export class OigApp extends LitElement {
         .nowLiters=${readyLiters}
       ></oig-boiler-timeline-chart>
 
-      <oig-boiler-plan-realita-tile></oig-boiler-plan-realita-tile>
+      <oig-boiler-plan-realita-tile .lang=${lang}></oig-boiler-plan-realita-tile>
 
       <div class="boiler-model-row">
         <oig-boiler-energy-today
@@ -1451,7 +1452,7 @@ export class OigApp extends LitElement {
       </div>
 
       <details class="boiler-controls-section" data-testid="boiler-controls-section">
-        <summary>⚙️ Ovládání a nastavení</summary>
+        <summary>Ovládání a nastavení</summary>
         <div class="boiler-controls-body">
           <oig-boiler-override-panel
             .lang=${this.boilerLang}

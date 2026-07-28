@@ -18,8 +18,8 @@ import type {
 
 // 2026-05-03 15:00 Prague local
 const FROZEN_NOW_MS = Date.UTC(2026, 4, 3, 13, 0, 0);
-// Prague midnight May 3 = 2026-05-02T22:00:00Z
-const PRAGUE_DAY_START = Date.UTC(2026, 4, 2, 22, 0, 0);
+// Rolling window starts 1.5 h in the past
+const WINDOW_START_MS = FROZEN_NOW_MS - 1.5 * 3600000;
 
 const FROZEN_CONFIG: BoilerConfig = {
   volumeL: 120,
@@ -58,8 +58,8 @@ function makeMinimalBoilerData(overrides: Partial<BoilerV2Data> = {}): BoilerV2D
 
 function makeSlot(overrides: Partial<BoilerV2PlanSlot> = {}): BoilerV2PlanSlot {
   return {
-    start: new Date(PRAGUE_DAY_START + 0).toISOString(),
-    end: new Date(PRAGUE_DAY_START + 15 * 60000).toISOString(),
+    start: new Date(WINDOW_START_MS + 0).toISOString(),
+    end: new Date(WINDOW_START_MS + 15 * 60000).toISOString(),
     consumptionKwh: 0.5,
     confidence: 0.9,
     recommendedSource: 'fve',
@@ -71,7 +71,7 @@ function makeSlot(overrides: Partial<BoilerV2PlanSlot> = {}): BoilerV2PlanSlot {
   };
 }
 
-/** n contiguous 15-min slots starting at day start + offsetMin. */
+/** n contiguous 15-min slots starting at window start + offsetMin. */
 function slotRun(
   n: number,
   offsetMin: number,
@@ -79,8 +79,8 @@ function slotRun(
 ): BoilerV2PlanSlot[] {
   return Array.from({ length: n }, (_, i) =>
     makeSlot({
-      start: new Date(PRAGUE_DAY_START + (offsetMin + i * 15) * 60000).toISOString(),
-      end: new Date(PRAGUE_DAY_START + (offsetMin + (i + 1) * 15) * 60000).toISOString(),
+      start: new Date(WINDOW_START_MS + (offsetMin + i * 15) * 60000).toISOString(),
+      end: new Date(WINDOW_START_MS + (offsetMin + (i + 1) * 15) * 60000).toISOString(),
       ...per(i),
     }),
   );
@@ -88,7 +88,7 @@ function slotRun(
 
 function makeForecastEntry(overrides: Partial<BatteryForecastEntry> = {}): BatteryForecastEntry {
   return {
-    timestampMs: PRAGUE_DAY_START,
+    timestampMs: WINDOW_START_MS,
     solarKwh: 0,
     gridChargeKwh: 0,
     batterySocPct: null,
@@ -115,22 +115,22 @@ async function mountTimeline(
 // ============================================================================
 describe('buildFveOverlay', () => {
   it('returns null when fewer than 2 points carry data', () => {
-    const slots = slotRun(1, 600, () => ({ pvKwh: 1.0 }));
-    expect(buildFveOverlay(null, slots, PRAGUE_DAY_START)).toBeNull();
+    const slots = slotRun(1, 0, () => ({ pvKwh: 1.0 }));
+    expect(buildFveOverlay(null, slots, WINDOW_START_MS)).toBeNull();
   });
 
   it('returns null when all points are zero', () => {
-    const slots = slotRun(4, 600, () => ({ pvKwh: 0 }));
-    expect(buildFveOverlay(null, slots, PRAGUE_DAY_START)).toBeNull();
+    const slots = slotRun(4, 0, () => ({ pvKwh: 0 }));
+    expect(buildFveOverlay(null, slots, WINDOW_START_MS)).toBeNull();
   });
 
-  it('prefers batteryForecast[].solarKwh when it covers the day', () => {
+  it('prefers batteryForecast[].solarKwh when it covers the window', () => {
     const forecast = [
-      makeForecastEntry({ timestampMs: PRAGUE_DAY_START + 600 * 60000, solarKwh: 0.5 }),
-      makeForecastEntry({ timestampMs: PRAGUE_DAY_START + 615 * 60000, solarKwh: 1.0 }),
+      makeForecastEntry({ timestampMs: WINDOW_START_MS + 30 * 60000, solarKwh: 0.5 }),
+      makeForecastEntry({ timestampMs: WINDOW_START_MS + 45 * 60000, solarKwh: 1.0 }),
     ];
-    const slots = slotRun(2, 600, () => ({ pvKwh: 99 })); // would dominate if used — must NOT be picked
-    const overlay = buildFveOverlay(forecast, slots, PRAGUE_DAY_START)!;
+    const slots = slotRun(2, 30, () => ({ pvKwh: 99 })); // would dominate if used — must NOT be picked
+    const overlay = buildFveOverlay(forecast, slots, WINDOW_START_MS)!;
     expect(overlay).not.toBeNull();
     expect(overlay.usedFallback).toBe(false);
     // solarKwh 1.0 * 4 = 4 kW peak, not 99*4
@@ -139,8 +139,8 @@ describe('buildFveOverlay', () => {
   });
 
   it('falls back to planSlots[].pvKwh when batteryForecast is absent', () => {
-    const slots = slotRun(3, 600, (i) => ({ pvKwh: [0.2, 0.5, 0.3][i] }));
-    const overlay = buildFveOverlay(null, slots, PRAGUE_DAY_START)!;
+    const slots = slotRun(3, 30, (i) => ({ pvKwh: [0.2, 0.5, 0.3][i] }));
+    const overlay = buildFveOverlay(null, slots, WINDOW_START_MS)!;
     expect(overlay).not.toBeNull();
     expect(overlay.usedFallback).toBe(true);
     // max pvKwh 0.5 * 4 = 2 kW
@@ -148,21 +148,21 @@ describe('buildFveOverlay', () => {
     expect(overlay.points.length).toBe(3);
   });
 
-  it('falls back when batteryForecast has data but none inside this day window', () => {
-    const tomorrow = PRAGUE_DAY_START + 86400000;
+  it('falls back when batteryForecast has data but none inside this window', () => {
+    const tomorrow = WINDOW_START_MS + 86400000;
     const forecast = [
-      makeForecastEntry({ timestampMs: tomorrow + 600 * 60000, solarKwh: 1.0 }),
-      makeForecastEntry({ timestampMs: tomorrow + 615 * 60000, solarKwh: 1.0 }),
+      makeForecastEntry({ timestampMs: tomorrow + 30 * 60000, solarKwh: 1.0 }),
+      makeForecastEntry({ timestampMs: tomorrow + 45 * 60000, solarKwh: 1.0 }),
     ];
-    const slots = slotRun(2, 600, () => ({ pvKwh: 0.4 }));
-    const overlay = buildFveOverlay(forecast, slots, PRAGUE_DAY_START)!;
+    const slots = slotRun(2, 30, () => ({ pvKwh: 0.4 }));
+    const overlay = buildFveOverlay(forecast, slots, WINDOW_START_MS)!;
     expect(overlay).not.toBeNull();
     expect(overlay.usedFallback).toBe(true);
   });
 
   it('rising then falling kw maps to a rising-then-falling area (y inverted, higher kw -> lower y)', () => {
-    const slots = slotRun(3, 600, (i) => ({ pvKwh: [0.1, 0.5, 0.2][i] }));
-    const overlay = buildFveOverlay(null, slots, PRAGUE_DAY_START)!;
+    const slots = slotRun(3, 30, (i) => ({ pvKwh: [0.1, 0.5, 0.2][i] }));
+    const overlay = buildFveOverlay(null, slots, WINDOW_START_MS)!;
     expect(overlay.points[1].y).toBeLessThan(overlay.points[0].y);
     expect(overlay.points[1].y).toBeLessThan(overlay.points[2].y);
   });
@@ -173,15 +173,15 @@ describe('buildFveOverlay', () => {
 // ============================================================================
 describe('findOverflowWindow', () => {
   it('returns null when no slot has pv-only sourcing', () => {
-    const slots = slotRun(4, 600, () => ({ pvKwh: 0.3, gridKwh: 0.1 }));
+    const slots = slotRun(4, 30, () => ({ pvKwh: 0.3, gridKwh: 0.1 }));
     expect(findOverflowWindow(slots)).toBeNull();
   });
 
   it('finds the first contiguous run of pv>0, grid<=0, alt<=0 slots', () => {
     const slots = [
-      ...slotRun(2, 600, () => ({ pvKwh: 0, gridKwh: 0.2, altKwh: 0 })),
-      ...slotRun(3, 630, () => ({ pvKwh: 0.4, gridKwh: 0, altKwh: 0 })),
-      ...slotRun(2, 675, () => ({ pvKwh: 0, gridKwh: 0.1, altKwh: 0 })),
+      ...slotRun(2, 30, () => ({ pvKwh: 0, gridKwh: 0.2, altKwh: 0 })),
+      ...slotRun(3, 60, () => ({ pvKwh: 0.4, gridKwh: 0, altKwh: 0 })),
+      ...slotRun(2, 105, () => ({ pvKwh: 0, gridKwh: 0.1, altKwh: 0 })),
     ];
     const window = findOverflowWindow(slots)!;
     expect(window).not.toBeNull();
@@ -191,9 +191,9 @@ describe('findOverflowWindow', () => {
 
   it('stops at the first run and does not extend across a gap', () => {
     const slots = [
-      ...slotRun(1, 600, () => ({ pvKwh: 0.4, gridKwh: 0, altKwh: 0 })),
-      ...slotRun(1, 615, () => ({ pvKwh: 0, gridKwh: 0.2, altKwh: 0 })),
-      ...slotRun(1, 630, () => ({ pvKwh: 0.4, gridKwh: 0, altKwh: 0 })),
+      ...slotRun(1, 30, () => ({ pvKwh: 0.4, gridKwh: 0, altKwh: 0 })),
+      ...slotRun(1, 45, () => ({ pvKwh: 0, gridKwh: 0.2, altKwh: 0 })),
+      ...slotRun(1, 60, () => ({ pvKwh: 0.4, gridKwh: 0, altKwh: 0 })),
     ];
     const window = findOverflowWindow(slots)!;
     expect(window.startMs).toBe(new Date(slots[0].start).getTime());
@@ -201,7 +201,7 @@ describe('findOverflowWindow', () => {
   });
 
   it('ignores alt-sourced slots even with pv > 0', () => {
-    const slots = slotRun(2, 600, () => ({ pvKwh: 0.4, gridKwh: 0, altKwh: 0.1 }));
+    const slots = slotRun(2, 30, () => ({ pvKwh: 0.4, gridKwh: 0, altKwh: 0.1 }));
     expect(findOverflowWindow(slots)).toBeNull();
   });
 });
@@ -210,58 +210,54 @@ describe('findOverflowWindow', () => {
 // Timeline chart — FVE overlay + overflow marker rendering
 // ============================================================================
 describe('OigBoilerTimelineChart FVE overlay', () => {
-  it('renders the amber FVE area and its own kW scale label from batteryForecast', async () => {
+  it('renders the amber FVE area and its legend from batteryForecast', async () => {
     const forecast = [
-      makeForecastEntry({ timestampMs: PRAGUE_DAY_START + 600 * 60000, solarKwh: 0.3 }),
-      makeForecastEntry({ timestampMs: PRAGUE_DAY_START + 615 * 60000, solarKwh: 0.6 }),
+      makeForecastEntry({ timestampMs: WINDOW_START_MS + 30 * 60000, solarKwh: 0.3 }),
+      makeForecastEntry({ timestampMs: WINDOW_START_MS + 45 * 60000, solarKwh: 0.6 }),
     ];
     const data = makeMinimalBoilerData({
-      planSlots: slotRun(2, 600, () => ({ pvKwh: 0 })),
+      planSlots: slotRun(2, 30, () => ({ pvKwh: 0 })),
       batteryForecast: forecast,
     });
     const el = await mountTimeline(data);
     const area = el.shadowRoot!.querySelector('[data-testid="boiler-fve-area"]');
     expect(area).not.toBeNull();
-    expect(el.shadowRoot!.innerHTML).toContain('2.4 kW'); // 0.6 * 4
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-fve-overlay-legend"]')).not.toBeNull();
+    // Legend uses the generic i18n label, not a peak value
+    expect(el.shadowRoot!.textContent).toContain('FVE (kW)');
     document.body.removeChild(el);
   });
 
   it('renders no FVE area when there is no PV production anywhere', async () => {
     const data = makeMinimalBoilerData({
-      planSlots: slotRun(3, 600, () => ({ pvKwh: 0 })),
+      planSlots: slotRun(3, 30, () => ({ pvKwh: 0 })),
     });
     const el = await mountTimeline(data);
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-fve-area"]')).toBeNull();
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-fve-overlay-legend"]')).toBeNull();
     document.body.removeChild(el);
   });
 });
 
 describe('OigBoilerTimelineChart overflow marker', () => {
-  it('renders the overflow marker, band and top-slices for a pv-only window today', async () => {
+  it('renders the overflow marker, band and top-slices for a pv-only window', async () => {
     const slots = [
-      ...slotRun(2, 600, () => ({ pvKwh: 0, gridKwh: 0.2, heatingKwh: 0.4 })),
-      ...slotRun(2, 630, () => ({ pvKwh: 0.5, gridKwh: 0, altKwh: 0, heatingKwh: 0.5 })),
+      ...slotRun(2, 30, () => ({ pvKwh: 0, gridKwh: 0.2, heatingKwh: 0.4 })),
+      ...slotRun(2, 60, () => ({ pvKwh: 0.5, gridKwh: 0, altKwh: 0, heatingKwh: 0.5 })),
     ];
     const data = makeMinimalBoilerData({ planSlots: slots });
     const el = await mountTimeline(data);
-    const marker = el.shadowRoot!.querySelector('[data-testid="boiler-overflow-marker"]');
-    expect(marker).not.toBeNull();
+    expect(el.shadowRoot!.querySelector('[data-testid="boiler-overflow-marker"]')).not.toBeNull();
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-overflow-band"]')).not.toBeNull();
     expect(el.shadowRoot!.querySelectorAll('[data-testid="boiler-overflow-slice"]').length).toBeGreaterThan(0);
-    expect(el.shadowRoot!.innerHTML).toContain('baterie 100 % → přebytek do bojleru');
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-overflow-legend"]')).not.toBeNull();
+    expect(el.shadowRoot!.textContent).toContain('baterie 100 %');
     document.body.removeChild(el);
   });
 
   it('renders no overflow marker when no slot is pv-only', async () => {
-    const slots = slotRun(4, 600, () => ({ pvKwh: 0.3, gridKwh: 0.1, heatingKwh: 0.4 }));
+    const slots = slotRun(4, 30, () => ({ pvKwh: 0.3, gridKwh: 0.1, heatingKwh: 0.4 }));
     const data = makeMinimalBoilerData({ planSlots: slots });
     const el = await mountTimeline(data);
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-overflow-marker"]')).toBeNull();
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-overflow-band"]')).toBeNull();
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-overflow-legend"]')).toBeNull();
     document.body.removeChild(el);
   });
 });

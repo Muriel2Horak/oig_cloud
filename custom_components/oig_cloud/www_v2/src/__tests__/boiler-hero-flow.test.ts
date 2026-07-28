@@ -196,7 +196,7 @@ describe('oig-boiler-hero-flow', () => {
     `);
     await flush(el);
 
-    const activeConnector = el.shadowRoot!.querySelector('path.connector-active');
+    const activeConnector = el.shadowRoot!.querySelector('path.connector.active');
     expect(activeConnector).not.toBeNull();
     expect(activeConnector!.classList.contains('connector-anim')).toBe(false);
   });
@@ -212,7 +212,7 @@ describe('oig-boiler-hero-flow', () => {
     `);
     await flush(el);
 
-    const activeConnector = el.shadowRoot!.querySelector('path.connector-active');
+    const activeConnector = el.shadowRoot!.querySelector('path.connector.active');
     expect(activeConnector).not.toBeNull();
     expect(activeConnector!.classList.contains('connector-anim')).toBe(true);
   });

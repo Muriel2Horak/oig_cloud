@@ -92,18 +92,18 @@ afterEach(() => {
 
 describe('adherenceColor', () => {
   it('>= 90 -> green (same threshold as Ceny oig-timeline-tile)', () => {
-    expect(adherenceColor(92.5)).toBe('#4caf50');
-    expect(adherenceColor(90)).toBe('#4caf50');
+    expect(adherenceColor(92.5)).toBe('#4ade80');
+    expect(adherenceColor(90)).toBe('#4ade80');
   });
 
   it('70-89 -> orange', () => {
-    expect(adherenceColor(70)).toBe('#ff9800');
-    expect(adherenceColor(89.9)).toBe('#ff9800');
+    expect(adherenceColor(70)).toBe('#f0b429');
+    expect(adherenceColor(89.9)).toBe('#f0b429');
   });
 
   it('< 70 -> red', () => {
-    expect(adherenceColor(69.9)).toBe('#f44336');
-    expect(adherenceColor(0)).toBe('#f44336');
+    expect(adherenceColor(69.9)).toBe('#f87171');
+    expect(adherenceColor(0)).toBe('#f87171');
   });
 });
 

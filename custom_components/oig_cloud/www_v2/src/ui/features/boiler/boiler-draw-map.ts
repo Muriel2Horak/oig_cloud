@@ -18,6 +18,13 @@ import type { DrawMapData } from './types';
 
 const u = unsafeCSS;
 
+const MOCK = {
+  water: '#4dd0e1', grid: '#3b82f6', fve: '#f0b429',
+  battery: '#a78bfa', alt: '#ff8a50', idle: '#39415f',
+  card: '#1b2340', card2: '#1f2848', line: '#2a3355',
+  muted: '#8b93ad', dim: '#5c6480', text: '#e8ecf7',
+} as const;
+
 const SLOTS = 96;
 const WD_CS = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
 const WD_EN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -88,43 +95,31 @@ export class OigBoilerDrawMap extends LitElement {
   @state() private dayType: 'workday' | 'weekend' = 'workday';
 
   static styles = css`
-    :host { display: block; }
-    .card { ${u(/* cardBase fallback */ '')}
+    :host { display: block; font-family: ${u(CSS_VARS.fontFamily)}; }
+    .card {
       background: ${u(CSS_VARS.cardBg)};
-      border-radius: 14px;
-      box-shadow: ${u(CSS_VARS.cardShadow)};
-      padding: 16px 18px;
+      border-radius: 12px;
+      padding: 12px 14px;
     }
-    .card.compact { padding: 12px 14px; }
-    .heading { font-size: 14px; font-weight: 600; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; color: ${u(CSS_VARS.textPrimary)}; }
-    .card.compact .heading { font-size: 13px; margin: 0 0 2px; }
-    .cap { font-size: 11px; color: ${u(CSS_VARS.textSecondary)}; margin: 2px 0 10px; }
-    .card.compact .cap { font-size: 10px; margin: 1px 0 6px; }
-    .empty-state { text-align: center; padding: 24px 0; color: ${u(CSS_VARS.textSecondary)}; font-size: 13px; }
+    .heading { font-size: 13px; font-weight: 600; margin: 0 0 4px; color: ${u(CSS_VARS.textPrimary)}; }
+    .cap { font-size: 10px; color: ${u(MOCK.muted)}; margin: 2px 0 8px; }
+    .empty-state { text-align: center; padding: 18px 0; color: ${u(MOCK.muted)}; font-size: 12px; }
     .svg-wrap { width: 100%; overflow-x: auto; }
-    .svg-wrap svg { display: block; width: 100%; height: auto; min-width: 320px; }
-    .card.compact .svg-wrap svg { min-width: 200px; }
-    .scalebar { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 10.5px; color: ${u(CSS_VARS.textSecondary)}; }
-    .card.compact .scalebar { margin-top: 4px; font-size: 9.5px; }
-    .scalebar .grad { height: 9px; width: 130px; border-radius: 5px; background: linear-gradient(90deg,#19202a,#2a7d9e,#38bdf8,#9be7ff); }
-    .card.compact .scalebar .grad { height: 7px; width: 80px; }
-    .divider { height: 1px; background: rgba(255,255,255,0.08); margin: 14px 0; }
-    .card.compact .divider { margin: 8px 0; }
+    .svg-wrap svg { display: block; width: 100%; height: auto; min-width: 240px; }
+    .scalebar { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 10px; color: ${u(MOCK.muted)}; }
+    .scalebar .grad { height: 7px; width: 100px; border-radius: 4px; background: linear-gradient(90deg,#173a54,#2a7d95,${u(MOCK.water)},#9be7ff); }
+    .divider { height: 1px; background: ${u(MOCK.line)}; margin: 10px 0; }
     .prof-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
     .toggle { display: flex; gap: 6px; margin-left: auto; }
-    .toggle button { font: 600 11px system-ui; padding: 4px 11px; border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05);
-      color: ${u(CSS_VARS.textSecondary)}; cursor: pointer; }
-    .card.compact .toggle button { font-size: 10px; padding: 3px 9px; }
-    .toggle button.on { background: rgba(56,189,248,0.2); color: #9bdcff; border-color: rgba(56,189,248,0.5); }
-    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
-    .card.compact .chips { margin-top: 6px; gap: 6px; }
-    .chips .lbl { font-size: 11px; color: ${u(CSS_VARS.textSecondary)}; }
-    .card.compact .chips .lbl { font-size: 10px; }
-    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
-      background: rgba(56,189,248,0.13); font-size: 12px; font-weight: 600; color: ${u(CSS_VARS.textPrimary)}; }
-    .card.compact .chip { padding: 3px 8px; font-size: 11px; }
-    .chip b { color: ${u(CSS_VARS.accent)}; }
+    .toggle button { font: 600 10px system-ui; padding: 3px 10px; border-radius: 999px;
+      border: 1px solid ${u(MOCK.line)}; background: rgba(255,255,255,0.05);
+      color: ${u(MOCK.muted)}; cursor: pointer; }
+    .toggle button.on { background: rgba(77,208,225,0.15); color: ${u(MOCK.water)}; border-color: rgba(77,208,225,0.5); }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+    .chips .lbl { font-size: 10px; color: ${u(MOCK.muted)}; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px;
+      background: rgba(77,208,225,0.12); font-size: 11px; font-weight: 600; color: ${u(MOCK.text)}; }
+    .chip b { color: ${u(MOCK.water)}; }
   `;
 
   private _heatmapSvg(): string {
@@ -188,10 +183,9 @@ export class OigBoilerDrawMap extends LitElement {
   render() {
     const lang = this.lang;
     const compact = this.compact;
-    const cardClass = compact ? 'card compact' : 'card';
-    const heading = `💧 ${t('boiler.draw_map.heading', lang)}`;
+    const heading = t('boiler.draw_map.heading', lang);
     if (!this.data || this.data.weekly.length === 0) {
-      return html`<div class=${cardClass} data-testid="boiler-draw-map">
+      return html`<div class="card" data-testid="boiler-draw-map">
         <div class="heading">${heading}</div>
         <div class="empty-state">${t('boiler.draw_map.empty', lang)}</div>
       </div>`;
@@ -203,7 +197,7 @@ export class OigBoilerDrawMap extends LitElement {
     const chipCap = compact ? 2 : 4;
 
     return html`
-      <div class=${cardClass} data-testid="boiler-draw-map">
+      <div class="card" data-testid="boiler-draw-map">
         <div class="heading">${heading}</div>
         <div class="cap">${t('boiler.draw_map.heatmap_cap', lang)}</div>
         <div class="svg-wrap">${unsafeHTML(this._heatmapSvg())}</div>
@@ -212,7 +206,7 @@ export class OigBoilerDrawMap extends LitElement {
         <div class="divider"></div>
 
         <div class="prof-head">
-          <div class="heading" style="margin:0">📈 ${t('boiler.draw_map.profile_heading', lang)}</div>
+          <div class="heading" style="margin:0">${t('boiler.draw_map.profile_heading', lang)}</div>
           <div class="toggle">
             <button class=${this.dayType === 'workday' ? 'on' : ''} @click=${() => { this.dayType = 'workday'; }}>${t('boiler.draw_map.workday', lang)}</button>
             <button class=${this.dayType === 'weekend' ? 'on' : ''} @click=${() => { this.dayType = 'weekend'; }}>${t('boiler.draw_map.weekend', lang)}</button>

@@ -208,42 +208,42 @@ describe('buildSourceTiles', () => {
     const energy = makeEnergy({ altKwh: 1.0 });
     const tiles = buildSourceTiles(energy, 'cs', 'gas');
     const alt = tiles.find(t => t.key === 'alt');
-    expect(alt?.label).toBe('🔥 Plyn');
+    expect(alt?.label).toBe('Plyn');
   });
 
   it('uses generic alt label when altType not provided', () => {
     const energy = makeEnergy({ altKwh: 1.0 });
     const tiles = buildSourceTiles(energy, 'cs');
     const alt = tiles.find(t => t.key === 'alt');
-    expect(alt?.label).toBe('🔥 Alternativní zdroj');
+    expect(alt?.label).toBe('Alternativní zdroj');
   });
 
   it('FVE tile has correct color', () => {
     const energy = makeEnergy();
     const tiles = buildSourceTiles(energy, 'cs');
     const fve = tiles.find(t => t.key === 'fve');
-    expect(fve?.color).toBe('#ffa726');
+    expect(fve?.color).toBe('#f0b429');
   });
 
   it('Grid tile has correct color', () => {
     const energy = makeEnergy();
     const tiles = buildSourceTiles(energy, 'cs');
     const grid = tiles.find(t => t.key === 'grid');
-    expect(grid?.color).toBe('#2196f3');
+    expect(grid?.color).toBe('#3b82f6');
   });
 
   it('Battery tile has correct color', () => {
     const energy = makeEnergy({ batteryKwh: 0.5 });
     const tiles = buildSourceTiles(energy, 'cs');
     const bat = tiles.find(t => t.key === 'battery');
-    expect(bat?.color).toBe('#7e57c2');
+    expect(bat?.color).toBe('#a78bfa');
   });
 
   it('Alt tile has correct color', () => {
     const energy = makeEnergy({ altKwh: 1.0 });
     const tiles = buildSourceTiles(energy, 'cs');
     const alt = tiles.find(t => t.key === 'alt');
-    expect(alt?.color).toBe('#e64a19');
+    expect(alt?.color).toBe('#ff8a50');
   });
 });
 
@@ -341,7 +341,7 @@ describe('buildPropBarSegments', () => {
     const segs = buildPropBarSegments(energy, tiles);
     const last = segs[segs.length - 1];
     expect(last.key).toBe('unattributed');
-    expect(last.color).toBe('#9aa6b2');
+    expect(last.color).toBe('#8b93ad');
     expect(last.pct).toBeCloseTo(25, 3);
     expect(segs.reduce((s, x) => s + x.pct, 0)).toBeCloseTo(100, 3);
   });
@@ -377,7 +377,7 @@ describe('OigBoilerEnergyToday component', () => {
   it('renders i18n heading via template values', () => {
     el.energy = makeEnergy();
     const joined = joinTemplate(el);
-    expect(joined).toContain('Z čeho se bojler nabil');
+    expect(joined).toContain('Energie dnes');
   });
 
   it('renders empty state when energy is null', () => {
@@ -402,7 +402,7 @@ describe('OigBoilerEnergyToday component', () => {
     el.energy = makeEnergy({ fveKwh: 2.1 });
     const joined = joinTemplate(el);
     // FVE label is Czech string from i18n
-    expect(joined).toContain('FVE přetoky');
+    expect(joined).toContain('FVE přebytek');
   });
 
   it('renders Grid tile (Grid label present)', () => {
@@ -500,7 +500,7 @@ describe('OigBoilerEnergyToday component', () => {
     el.lang = 'en';
     el.energy = makeEnergy();
     const joined = joinTemplate(el);
-    expect(joined).toContain('What powered the boiler today');
+    expect(joined).toContain('Energy today');
   });
 
   it('renders empty state in en language', () => {

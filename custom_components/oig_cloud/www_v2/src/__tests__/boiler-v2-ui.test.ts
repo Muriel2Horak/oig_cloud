@@ -2215,6 +2215,8 @@ describe('OigBoilerV2Shell', () => {
 const FROZEN_NOW_MS = Date.UTC(2026, 4, 3, 13, 0, 0);
 // Prague midnight May 3 = 2026-05-02T22:00:00Z
 const PRAGUE_DAY_START = Date.UTC(2026, 4, 2, 22, 0, 0);
+// Rolling window start used by the new chart when there is no recent history
+const WINDOW_START_MS = FROZEN_NOW_MS - 1.5 * 3600000;
 
 const FROZEN_CONFIG: BoilerConfig = {
   volumeL: 120,
@@ -2402,147 +2404,111 @@ describe('OigBoilerMetricPanel source panel', () => {
   });
 });
 
-describe('OigBoilerTimelineChart plan band gap preservation', () => {
-  it('keeps two bands when same-source/heating slots have a gap between them', async () => {
+describe('OigBoilerTimelineChart rolling window domain', () => {
+  it('places NOW at the left edge when history reaches 1.5 h back', async () => {
     const data = makeMinimalBoilerData({
-      planSlots: [
-        makeSlot({
-          start: new Date(PRAGUE_DAY_START + 0).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 15 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0.5,
-        }),
-        makeSlot({
-          start: new Date(PRAGUE_DAY_START + 30 * 60000).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 45 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0.3,
-        }),
+      timeline: [
+        makeTimelinePt({ timestamp: new Date(WINDOW_START_MS).toISOString(), topTempC: 55 }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const bands = el.shadowRoot!.querySelectorAll('.plan-band');
-    expect(bands.length).toBe(2);
+    const marker = el.shadowRoot!.querySelector('[data-testid="boiler-now-marker"]');
+    expect(marker).not.toBeNull();
+    expect(marker?.getAttribute('data-now-x')).toBe('60');
+    document.body.removeChild(el);
+  });
+
+  it('covers a 24 h span from 1.5 h in the past to 22.5 h ahead', async () => {
+    const data = makeMinimalBoilerData({
+      timeline: [
+        makeTimelinePt({ timestamp: new Date(WINDOW_START_MS).toISOString(), topTempC: 55 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 22.5 * 3600000).toISOString(), topTempC: 60 }),
+      ],
+    });
+    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
+    const line = el.shadowRoot!.querySelector('.temp-line');
+    expect(line).not.toBeNull();
+    const pts = line!.getAttribute('points') ?? '';
+    const xs = pts.split(' ').map((p) => parseFloat(p.split(',')[0]));
+    expect(xs[0]).toBeCloseTo(0, 1);
+    expect(xs[xs.length - 1]).toBeCloseTo(960, 1);
     document.body.removeChild(el);
   });
 });
 
-describe('OigBoilerTimelineChart tomorrow slot filtering', () => {
-  it('ignores slots that start tomorrow', async () => {
-    const tomorrow = PRAGUE_DAY_START + 86400000;
+describe('OigBoilerTimelineChart future slot filtering', () => {
+  it('ignores slots that start after the rolling window ends', async () => {
+    const afterWindow = FROZEN_NOW_MS + 23 * 3600000;
     const data = makeMinimalBoilerData({
       planSlots: [
         makeSlot({
-          start: new Date(tomorrow).toISOString(),
-          end: new Date(tomorrow + 60 * 60000).toISOString(),
+          start: new Date(afterWindow).toISOString(),
+          end: new Date(afterWindow + 60 * 60000).toISOString(),
           recommendedSource: 'fve',
           heatingKwh: 0.5,
+          pvKwh: 0.5,
         }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const bands = el.shadowRoot!.querySelectorAll('.plan-band');
-    expect(bands.length).toBe(0);
-    document.body.removeChild(el);
-  });
-});
-
-describe('OigBoilerTimelineChart cross-midnight clipping', () => {
-  it('clips slot starting before day start to x=0', async () => {
-    const data = makeMinimalBoilerData({
-      planSlots: [
-        makeSlot({
-          start: new Date(PRAGUE_DAY_START - 30 * 60000).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 30 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0.5,
-        }),
-      ],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const band = el.shadowRoot!.querySelector('.plan-band');
-    expect(band).not.toBeNull();
-    expect(parseFloat(band!.getAttribute('x') ?? '99')).toBe(0);
-    document.body.removeChild(el);
-  });
-
-  it('clips slot ending after day end to x=1000', async () => {
-    const dayEnd = PRAGUE_DAY_START + 1440 * 60000;
-    const data = makeMinimalBoilerData({
-      planSlots: [
-        makeSlot({
-          start: new Date(dayEnd - 30 * 60000).toISOString(),
-          end: new Date(dayEnd + 30 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0.5,
-        }),
-      ],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const band = el.shadowRoot!.querySelector('.plan-band');
-    expect(band).not.toBeNull();
-    const x = parseFloat(band!.getAttribute('x') ?? '0');
-    const w = parseFloat(band!.getAttribute('width') ?? '0');
-    expect(x + w).toBeCloseTo(1000, 1);
+    const bars = el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]');
+    expect(bars.length).toBe(0);
     document.body.removeChild(el);
   });
 });
 
 describe('OigBoilerTimelineChart empty/null planSlots preserves other elements', () => {
-  it('renders zero plan-band elements when planSlots is empty', async () => {
+  it('renders zero charge bars when planSlots is empty', async () => {
     const data = makeMinimalBoilerData({
       planSlots: [],
       timeline: [
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(), topTempC: 55 }),
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 120 * 60000).toISOString(), topTempC: 60 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 60 * 60000).toISOString(), topTempC: 55 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 120 * 60000).toISOString(), topTempC: 60 }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    expect(el.shadowRoot!.querySelectorAll('.plan-band').length).toBe(0);
+    expect(el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]').length).toBe(0);
     expect(el.shadowRoot!.querySelector('.temp-line')).not.toBeNull();
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-now-marker"]')).not.toBeNull();
-    expect(el.shadowRoot!.querySelector('.goal-line')).not.toBeNull();
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-deadline-marker"]')).not.toBeNull();
     document.body.removeChild(el);
   });
 
-  it('renders zero plan-band elements when planSlots is missing (null data)', async () => {
+  it('renders zero charge bars when planSlots is missing (null data)', async () => {
     const el = await mountTimeline(null, FROZEN_CONFIG, FROZEN_NOW_MS);
-    expect(el.shadowRoot!.querySelectorAll('.plan-band').length).toBe(0);
+    expect(el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]').length).toBe(0);
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-now-marker"]')).not.toBeNull();
     document.body.removeChild(el);
   });
 
-  it('planSlots=null with timeline data: zero bands, temp-line, NOW, goal-line, deadline all present', async () => {
+  it('planSlots=null with timeline data: zero charge bars, temp-line, NOW, deadline all present', async () => {
     const data = makeMinimalBoilerData({
       timeline: [
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(), topTempC: 55 }),
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 120 * 60000).toISOString(), topTempC: 60 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 60 * 60000).toISOString(), topTempC: 55 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 120 * 60000).toISOString(), topTempC: 60 }),
       ],
     });
     (data as unknown as Record<string, unknown>).planSlots = null;
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    expect(el.shadowRoot!.querySelectorAll('.plan-band').length).toBe(0);
+    expect(el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]').length).toBe(0);
     expect(el.shadowRoot!.querySelector('.temp-line')).not.toBeNull();
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-now-marker"]')).not.toBeNull();
-    expect(el.shadowRoot!.querySelector('.goal-line')).not.toBeNull();
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-deadline-marker"]')).not.toBeNull();
     document.body.removeChild(el);
   });
 
-  it('planSlots property deleted with timeline data: zero bands, temp-line, NOW, goal-line, deadline all present', async () => {
+  it('planSlots property deleted with timeline data: zero charge bars, temp-line, NOW, deadline all present', async () => {
     const data = makeMinimalBoilerData({
       timeline: [
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(), topTempC: 55 }),
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 120 * 60000).toISOString(), topTempC: 60 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 60 * 60000).toISOString(), topTempC: 55 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 120 * 60000).toISOString(), topTempC: 60 }),
       ],
     });
     delete (data as unknown as Record<string, unknown>).planSlots;
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    expect(el.shadowRoot!.querySelectorAll('.plan-band').length).toBe(0);
+    expect(el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]').length).toBe(0);
     expect(el.shadowRoot!.querySelector('.temp-line')).not.toBeNull();
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-now-marker"]')).not.toBeNull();
-    expect(el.shadowRoot!.querySelector('.goal-line')).not.toBeNull();
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-deadline-marker"]')).not.toBeNull();
     document.body.removeChild(el);
   });
@@ -2550,13 +2516,13 @@ describe('OigBoilerTimelineChart empty/null planSlots preserves other elements',
 
 describe('OigBoilerTimelineChart power estimation from active segment (end=null)', () => {
   it('estimates power from active segment with end=null', async () => {
-    const ptTs = new Date(PRAGUE_DAY_START + 30 * 60000).toISOString();
+    const ptTs = new Date(FROZEN_NOW_MS - 30 * 60000).toISOString();
     const data = makeMinimalBoilerData({
       timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null, sourceKey: 'fve' })],
       sourceSegments: [
         makeSrcSeg({
           key: 'fve',
-          start: new Date(PRAGUE_DAY_START).toISOString(),
+          start: new Date(FROZEN_NOW_MS - 60 * 60000).toISOString(),
           end: null,
           energyKwh: 1.0,
           active: true,
@@ -2573,20 +2539,20 @@ describe('OigBoilerTimelineChart power estimation from active segment (end=null)
 
 describe('OigBoilerTimelineChart latest-start segment precedence', () => {
   it('boundary point: later-start discharge segment wins over earlier fve — produces draw bar not charge bar', async () => {
-    const boundary = new Date(PRAGUE_DAY_START + 60 * 60000).toISOString();
+    const boundary = new Date(FROZEN_NOW_MS + 60 * 60000).toISOString();
     const data = makeMinimalBoilerData({
       timeline: [makeTimelinePt({ timestamp: boundary, powerKw: null })],
       sourceSegments: [
         makeSrcSeg({
           key: 'fve',
-          start: new Date(PRAGUE_DAY_START).toISOString(),
+          start: new Date(FROZEN_NOW_MS).toISOString(),
           end: boundary,
           energyKwh: 1.0,
         }),
         makeSrcSeg({
           key: 'discharge',
           start: boundary,
-          end: new Date(PRAGUE_DAY_START + 120 * 60000).toISOString(),
+          end: new Date(FROZEN_NOW_MS + 120 * 60000).toISOString(),
           energyKwh: 2.0,
         }),
       ],
@@ -2598,157 +2564,26 @@ describe('OigBoilerTimelineChart latest-start segment precedence', () => {
   });
 
   it('overlapping segments: latest-start discharge wins over earlier fve — produces draw bar not charge bar', async () => {
-    const ptTs = new Date(PRAGUE_DAY_START + 45 * 60000).toISOString();
+    const ptTs = new Date(FROZEN_NOW_MS + 45 * 60000).toISOString();
     const data = makeMinimalBoilerData({
       timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null })],
       sourceSegments: [
         makeSrcSeg({
           key: 'fve',
-          start: new Date(PRAGUE_DAY_START).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 120 * 60000).toISOString(),
+          start: new Date(FROZEN_NOW_MS).toISOString(),
+          end: new Date(FROZEN_NOW_MS + 120 * 60000).toISOString(),
           energyKwh: 0.5,
         }),
         makeSrcSeg({
           key: 'discharge',
-          start: new Date(PRAGUE_DAY_START + 30 * 60000).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 90 * 60000).toISOString(),
+          start: new Date(FROZEN_NOW_MS + 30 * 60000).toISOString(),
+          end: new Date(FROZEN_NOW_MS + 90 * 60000).toISOString(),
           energyKwh: 2.0,
         }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-draw-bar-down"]')).not.toBeNull();
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-charge-bar-up"]')).toBeNull();
-    document.body.removeChild(el);
-  });
-});
-
-describe('OigBoilerTimelineChart placeholder edge cases', () => {
-  it('renders placeholder when segment has zero energyKwh (invalid power)', async () => {
-    const ptTs = new Date(PRAGUE_DAY_START + 30 * 60000).toISOString();
-    const data = makeMinimalBoilerData({
-      timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null })],
-      sourceSegments: [
-        makeSrcSeg({
-          key: 'fve',
-          start: new Date(PRAGUE_DAY_START).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 3600000).toISOString(),
-          energyKwh: 0,
-        }),
-      ],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const placeholder = el.shadowRoot!.querySelector('[data-testid="boiler-power-placeholder"]');
-    expect(placeholder).not.toBeNull();
-    document.body.removeChild(el);
-  });
-
-  it('renders placeholder when no segment overlaps the point', async () => {
-    const ptTs = new Date(PRAGUE_DAY_START + 30 * 60000).toISOString();
-    const data = makeMinimalBoilerData({
-      timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null })],
-      sourceSegments: [
-        makeSrcSeg({
-          key: 'fve',
-          start: new Date(PRAGUE_DAY_START + 120 * 60000).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 180 * 60000).toISOString(),
-          energyKwh: 1.0,
-        }),
-      ],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const placeholder = el.shadowRoot!.querySelector('[data-testid="boiler-power-placeholder"]');
-    expect(placeholder).not.toBeNull();
-    document.body.removeChild(el);
-  });
-
-  it('placeholder is not also rendered as charge or draw bar', async () => {
-    const ptTs = new Date(PRAGUE_DAY_START + 30 * 60000).toISOString();
-    const data = makeMinimalBoilerData({
-      timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null })],
-      sourceSegments: [],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-power-placeholder"]')).not.toBeNull();
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-charge-bar-up"]')).toBeNull();
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-draw-bar-down"]')).toBeNull();
-    document.body.removeChild(el);
-  });
-
-  it('renders placeholder when segment has invalid (non-finite) start date', async () => {
-    const ptTs = new Date(PRAGUE_DAY_START + 30 * 60000).toISOString();
-    const data = makeMinimalBoilerData({
-      timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null })],
-      sourceSegments: [
-        makeSrcSeg({
-          key: 'fve',
-          start: 'not-a-date',
-          end: new Date(PRAGUE_DAY_START + 3600000).toISOString(),
-          energyKwh: 1.0,
-        }),
-      ],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const placeholder = el.shadowRoot!.querySelector('[data-testid="boiler-power-placeholder"]');
-    expect(placeholder).not.toBeNull();
-    document.body.removeChild(el);
-  });
-
-  it('renders placeholder when segment has negative energyKwh', async () => {
-    const ptTs = new Date(PRAGUE_DAY_START + 30 * 60000).toISOString();
-    const data = makeMinimalBoilerData({
-      timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null })],
-      sourceSegments: [
-        makeSrcSeg({
-          key: 'fve',
-          start: new Date(PRAGUE_DAY_START).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 3600000).toISOString(),
-          energyKwh: -1.0,
-        }),
-      ],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-power-placeholder"]')).not.toBeNull();
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-charge-bar-up"]')).toBeNull();
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-draw-bar-down"]')).toBeNull();
-    document.body.removeChild(el);
-  });
-
-  it('renders placeholder when segment has zero duration (end === start)', async () => {
-    const sameTime = new Date(PRAGUE_DAY_START + 60 * 60000).toISOString();
-    const data = makeMinimalBoilerData({
-      timeline: [makeTimelinePt({ timestamp: sameTime, powerKw: null })],
-      sourceSegments: [
-        makeSrcSeg({
-          key: 'fve',
-          start: sameTime,
-          end: sameTime,
-          energyKwh: 1.0,
-        }),
-      ],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-power-placeholder"]')).not.toBeNull();
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-charge-bar-up"]')).toBeNull();
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-draw-bar-down"]')).toBeNull();
-    document.body.removeChild(el);
-  });
-
-  it('renders placeholder when segment end is before start (invalid duration)', async () => {
-    const ptTs = new Date(PRAGUE_DAY_START + 30 * 60000).toISOString();
-    const data = makeMinimalBoilerData({
-      timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null })],
-      sourceSegments: [
-        makeSrcSeg({
-          key: 'fve',
-          start: new Date(PRAGUE_DAY_START + 3600000).toISOString(),
-          end: new Date(PRAGUE_DAY_START).toISOString(),
-          energyKwh: 1.0,
-        }),
-      ],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    expect(el.shadowRoot!.querySelector('[data-testid="boiler-power-placeholder"]')).not.toBeNull();
     expect(el.shadowRoot!.querySelector('[data-testid="boiler-charge-bar-up"]')).toBeNull();
     document.body.removeChild(el);
   });
@@ -2853,12 +2688,12 @@ describe('OigBoilerSparkline', () => {
 // ============================================================================
 // OigBoilerTimelineChart — NOW marker
 // ============================================================================
-describe('OigBoilerTimelineChart NOW marker', () => {
-  it('renders boiler-now-marker with correct data-now-x=625', async () => {
+describe('OigBoilerTimelineChart — NOW marker', () => {
+  it('renders boiler-now-marker with correct data-now-x=60', async () => {
     const el = await mountTimeline(makeMinimalBoilerData(), FROZEN_CONFIG, FROZEN_NOW_MS);
     const marker = el.shadowRoot!.querySelector('[data-testid="boiler-now-marker"]');
     expect(marker).not.toBeNull();
-    expect(marker?.getAttribute('data-now-x')).toBe('625');
+    expect(marker?.getAttribute('data-now-x')).toBe('60');
     document.body.removeChild(el);
   });
 
@@ -2874,11 +2709,11 @@ describe('OigBoilerTimelineChart NOW marker', () => {
 // OigBoilerTimelineChart — deadline marker
 // ============================================================================
 describe('OigBoilerTimelineChart deadline marker', () => {
-  it('renders boiler-deadline-marker with data-deadline-x=812.5 for 19:30', async () => {
+  it('renders boiler-deadline-marker with data-deadline-x=240 for 19:30', async () => {
     const el = await mountTimeline(makeMinimalBoilerData(), FROZEN_CONFIG, FROZEN_NOW_MS);
     const marker = el.shadowRoot!.querySelector('[data-testid="boiler-deadline-marker"]');
     expect(marker).not.toBeNull();
-    expect(marker?.getAttribute('data-deadline-x')).toBe('812.5');
+    expect(marker?.getAttribute('data-deadline-x')).toBe('240');
     document.body.removeChild(el);
   });
 
@@ -2912,8 +2747,8 @@ describe('OigBoilerTimelineChart temperature polyline', () => {
   it('renders temp-line polyline when ≥2 valid temp points', async () => {
     const data = makeMinimalBoilerData({
       timeline: [
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(), topTempC: 55 }),
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 120 * 60000).toISOString(), topTempC: 60 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 60 * 60000).toISOString(), topTempC: 55 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 120 * 60000).toISOString(), topTempC: 60 }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
@@ -2925,7 +2760,7 @@ describe('OigBoilerTimelineChart temperature polyline', () => {
   it('does not render temp-line when <2 valid points', async () => {
     const data = makeMinimalBoilerData({
       timeline: [
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(), topTempC: 55 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 60 * 60000).toISOString(), topTempC: 55 }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
@@ -2934,32 +2769,32 @@ describe('OigBoilerTimelineChart temperature polyline', () => {
     document.body.removeChild(el);
   });
 
-  it('clamps temp below 20°C to y=200', async () => {
+  it('clamps temp below 20°C to y=115', async () => {
     const data = makeMinimalBoilerData({
       timeline: [
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(), topTempC: 5 }),
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 120 * 60000).toISOString(), topTempC: 10 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 60 * 60000).toISOString(), topTempC: 5 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 120 * 60000).toISOString(), topTempC: 10 }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
     const polyline = el.shadowRoot!.querySelector('.temp-line');
     const pts = polyline?.getAttribute('points') ?? '';
-    // Both points should have y=200.00 (clamped to 20°C)
-    expect(pts).toContain('200.00');
+    // Both points should have y=115.00 (clamped to 20°C)
+    expect(pts).toContain('115.00');
     document.body.removeChild(el);
   });
 
-  it('clamps temp above 80°C to y=0', async () => {
+  it('clamps temp above 80°C to y=25', async () => {
     const data = makeMinimalBoilerData({
       timeline: [
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(), topTempC: 95 }),
-        makeTimelinePt({ timestamp: new Date(PRAGUE_DAY_START + 120 * 60000).toISOString(), topTempC: 100 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 60 * 60000).toISOString(), topTempC: 95 }),
+        makeTimelinePt({ timestamp: new Date(FROZEN_NOW_MS + 120 * 60000).toISOString(), topTempC: 100 }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
     const polyline = el.shadowRoot!.querySelector('.temp-line');
     const pts = polyline?.getAttribute('points') ?? '';
-    expect(pts).toContain('0.00');
+    expect(pts).toContain('25.00');
     document.body.removeChild(el);
   });
 });
@@ -2972,7 +2807,7 @@ describe('OigBoilerTimelineChart charge and draw bars', () => {
     const data = makeMinimalBoilerData({
       timeline: [
         makeTimelinePt({
-          timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(),
+          timestamp: new Date(FROZEN_NOW_MS + 60 * 60000).toISOString(),
           powerKw: 2.0,
         }),
       ],
@@ -2988,7 +2823,7 @@ describe('OigBoilerTimelineChart charge and draw bars', () => {
     const data = makeMinimalBoilerData({
       timeline: [
         makeTimelinePt({
-          timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(),
+          timestamp: new Date(FROZEN_NOW_MS + 60 * 60000).toISOString(),
           powerKw: -1.5,
         }),
       ],
@@ -3000,9 +2835,9 @@ describe('OigBoilerTimelineChart charge and draw bars', () => {
   });
 
   it('renders estimated charge bar when powerKw=null but segment has energy', async () => {
-    const segStart = new Date(PRAGUE_DAY_START).toISOString();
-    const segEnd = new Date(PRAGUE_DAY_START + 3600000).toISOString();
-    const ptTs = new Date(PRAGUE_DAY_START + 30 * 60000).toISOString();
+    const segStart = new Date(FROZEN_NOW_MS).toISOString();
+    const segEnd = new Date(FROZEN_NOW_MS + 3600000).toISOString();
+    const ptTs = new Date(FROZEN_NOW_MS + 30 * 60000).toISOString();
     const data = makeMinimalBoilerData({
       timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null, sourceKey: 'fve' })],
       sourceSegments: [makeSrcSeg({ key: 'fve', start: segStart, end: segEnd, energyKwh: 1.5 })],
@@ -3015,9 +2850,9 @@ describe('OigBoilerTimelineChart charge and draw bars', () => {
   });
 
   it('renders estimated draw bar for discharge segment', async () => {
-    const segStart = new Date(PRAGUE_DAY_START).toISOString();
-    const segEnd = new Date(PRAGUE_DAY_START + 3600000).toISOString();
-    const ptTs = new Date(PRAGUE_DAY_START + 30 * 60000).toISOString();
+    const segStart = new Date(FROZEN_NOW_MS).toISOString();
+    const segEnd = new Date(FROZEN_NOW_MS + 3600000).toISOString();
+    const ptTs = new Date(FROZEN_NOW_MS + 30 * 60000).toISOString();
     const data = makeMinimalBoilerData({
       timeline: [makeTimelinePt({ timestamp: ptTs, powerKw: null, sourceKey: 'discharge' })],
       sourceSegments: [makeSrcSeg({ key: 'discharge', start: segStart, end: segEnd, energyKwh: 1.0 })],
@@ -3031,131 +2866,70 @@ describe('OigBoilerTimelineChart charge and draw bars', () => {
 });
 
 // ============================================================================
-// OigBoilerTimelineChart — power placeholder
+// OigBoilerTimelineChart — charge bars from planSlots
 // ============================================================================
-describe('OigBoilerTimelineChart power placeholder', () => {
-  it('renders boiler-power-placeholder when powerKw=null and no matching segment', async () => {
-    const data = makeMinimalBoilerData({
-      timeline: [
-        makeTimelinePt({
-          timestamp: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(),
-          powerKw: null,
-        }),
-      ],
-      sourceSegments: [],
+describe('OigBoilerTimelineChart charge bars from planSlots', () => {
+  function slotAt(minAfterNow: number, overrides: Partial<BoilerV2PlanSlot> = {}): BoilerV2PlanSlot {
+    const start = FROZEN_NOW_MS + minAfterNow * 60000;
+    return makeSlot({
+      start: new Date(start).toISOString(),
+      end: new Date(start + 15 * 60000).toISOString(),
+      ...overrides,
     });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const placeholder = el.shadowRoot!.querySelector('[data-testid="boiler-power-placeholder"]');
-    expect(placeholder).not.toBeNull();
-    expect(placeholder?.getAttribute('data-estimated-power')).toBe('true');
-    document.body.removeChild(el);
-  });
-});
+  }
 
-// ============================================================================
-// OigBoilerTimelineChart — plan bands
-// ============================================================================
-describe('OigBoilerTimelineChart plan bands', () => {
-  it('renders plan-band rects for slots on current day', async () => {
+  it('renders a charge bar for each slot with positive power', async () => {
     const data = makeMinimalBoilerData({
       planSlots: [
-        makeSlot({
-          start: new Date(PRAGUE_DAY_START + 0).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 60 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0.5,
-        }),
+        slotAt(30, { pvKwh: 0.5 }),
+        slotAt(45, { gridKwh: 0.5 }),
+        slotAt(60, { pvKwh: 0, gridKwh: 0, altKwh: 0 }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const bands = el.shadowRoot!.querySelectorAll('.plan-band');
-    expect(bands.length).toBeGreaterThan(0);
+    const bars = el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]');
+    expect(bars.length).toBe(2);
     document.body.removeChild(el);
   });
 
-  it('filters out slots from yesterday', async () => {
-    const yesterday = PRAGUE_DAY_START - 86400000;
+  it('colors charge bars by dominant source', async () => {
     const data = makeMinimalBoilerData({
       planSlots: [
-        makeSlot({
-          start: new Date(yesterday).toISOString(),
-          end: new Date(yesterday + 60 * 60000).toISOString(),
-        }),
+        slotAt(30, { pvKwh: 0.5, gridKwh: 0 }),
+        slotAt(45, { pvKwh: 0, gridKwh: 0.5 }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const bands = el.shadowRoot!.querySelectorAll('.plan-band');
-    expect(bands.length).toBe(0);
+    const bars = Array.from(el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]'));
+    expect(bars[0].getAttribute('fill')).toBe('#f0b429');
+    expect(bars[1].getAttribute('fill')).toBe('#3b82f6');
     document.body.removeChild(el);
   });
 
-  it('merges adjacent slots with same source and same heating boolean', async () => {
+  it('ignores slots that fall before the rolling window', async () => {
+    const beforeWindow = WINDOW_START_MS - 60 * 60000;
     const data = makeMinimalBoilerData({
       planSlots: [
         makeSlot({
-          start: new Date(PRAGUE_DAY_START + 0).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 15 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0.5,
-        }),
-        makeSlot({
-          start: new Date(PRAGUE_DAY_START + 15 * 60000).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 30 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0.3,
+          start: new Date(beforeWindow).toISOString(),
+          end: new Date(beforeWindow + 15 * 60000).toISOString(),
+          pvKwh: 0.5,
         }),
       ],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const bands = el.shadowRoot!.querySelectorAll('.plan-band');
-    // Both slots have same source (fve) and same heating boolean (true), should merge to 1
-    expect(bands.length).toBe(1);
+    const bars = el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]');
+    expect(bars.length).toBe(0);
     document.body.removeChild(el);
   });
 
-  it('does not merge slots with different source', async () => {
+  it('ignores slots with zero power', async () => {
     const data = makeMinimalBoilerData({
-      planSlots: [
-        makeSlot({
-          start: new Date(PRAGUE_DAY_START + 0).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 15 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0.5,
-        }),
-        makeSlot({
-          start: new Date(PRAGUE_DAY_START + 15 * 60000).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 30 * 60000).toISOString(),
-          recommendedSource: 'grid',
-          heatingKwh: 0.3,
-        }),
-      ],
+      planSlots: [slotAt(30, { pvKwh: 0, gridKwh: 0, altKwh: 0, heatingKwh: 0 })],
     });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const bands = el.shadowRoot!.querySelectorAll('.plan-band');
-    expect(bands.length).toBe(2);
-    document.body.removeChild(el);
-  });
-
-  it('does not merge slots with same source but different heating boolean', async () => {
-    const data = makeMinimalBoilerData({
-      planSlots: [
-        makeSlot({
-          start: new Date(PRAGUE_DAY_START + 0).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 15 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0.5,
-        }),
-        makeSlot({
-          start: new Date(PRAGUE_DAY_START + 15 * 60000).toISOString(),
-          end: new Date(PRAGUE_DAY_START + 30 * 60000).toISOString(),
-          recommendedSource: 'fve',
-          heatingKwh: 0,
-        }),
-      ],
-    });
-    const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const bands = el.shadowRoot!.querySelectorAll('.plan-band');
-    expect(bands.length).toBe(2);
+    const bars = el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]');
+    expect(bars.length).toBe(0);
     document.body.removeChild(el);
   });
 });
@@ -3164,15 +2938,17 @@ describe('OigBoilerTimelineChart plan bands', () => {
 // OigBoilerTimelineChart — performance guardrail
 // ============================================================================
 describe('OigBoilerTimelineChart performance guardrail', () => {
-  it('full-day fixture with 160 alternating-source slots has ≤500 SVG descendants', async () => {
+  it('full-window fixture with 160 alternating-source slots has ≤500 SVG descendants', async () => {
     const slots: BoilerV2PlanSlot[] = [];
-    const sources = ['fve', 'grid'];
+    const sources: Array<'fve' | 'grid'> = ['fve', 'grid'];
     for (let i = 0; i < 160; i++) {
+      const src = sources[i % 2];
       slots.push(makeSlot({
-        start: new Date(PRAGUE_DAY_START + i * 9 * 60000).toISOString(),
-        end: new Date(PRAGUE_DAY_START + (i + 1) * 9 * 60000).toISOString(),
-        recommendedSource: sources[i % 2],
-        heatingKwh: 0.1,
+        start: new Date(WINDOW_START_MS + i * 9 * 60000).toISOString(),
+        end: new Date(WINDOW_START_MS + (i + 1) * 9 * 60000).toISOString(),
+        recommendedSource: src,
+        pvKwh: src === 'fve' ? 0.1 : 0,
+        gridKwh: src === 'grid' ? 0.1 : 0,
       }));
     }
     const data = makeMinimalBoilerData({ planSlots: slots });
@@ -3183,20 +2959,20 @@ describe('OigBoilerTimelineChart performance guardrail', () => {
     document.body.removeChild(el);
   });
 
-  it('full-day fixture with 160 same-source slots merges to 1 band', async () => {
+  it('full-window fixture with 160 same-source slots renders one charge bar per slot', async () => {
     const slots: BoilerV2PlanSlot[] = [];
     for (let i = 0; i < 160; i++) {
       slots.push(makeSlot({
-        start: new Date(PRAGUE_DAY_START + i * 9 * 60000).toISOString(),
-        end: new Date(PRAGUE_DAY_START + (i + 1) * 9 * 60000).toISOString(),
+        start: new Date(WINDOW_START_MS + i * 9 * 60000).toISOString(),
+        end: new Date(WINDOW_START_MS + (i + 1) * 9 * 60000).toISOString(),
         recommendedSource: 'fve',
-        heatingKwh: 0.1,
+        pvKwh: 0.1,
       }));
     }
     const data = makeMinimalBoilerData({ planSlots: slots });
     const el = await mountTimeline(data, FROZEN_CONFIG, FROZEN_NOW_MS);
-    const bands = el.shadowRoot!.querySelectorAll('.plan-band');
-    expect(bands.length).toBe(1);
+    const bars = el.shadowRoot!.querySelectorAll('[data-testid="boiler-charge-bar-up"]');
+    expect(bars.length).toBe(160);
     document.body.removeChild(el);
   });
 });

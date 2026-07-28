@@ -1,18 +1,5 @@
-// ============================================================================
-// 🚿 Bojler: plán & realita — self-contained detail-tabs tile (bojler-tab-v2 m2)
-// ============================================================================
-//
-// Component: oig-boiler-plan-realita-tile
-// Pattern copied from Ceny's `oig-timeline-tile` (src/ui/features/timeline/dialog.ts
-// lines ~593-1123): day tabs, auto-refresh checkbox, adherence bar, progress row,
-// EOD prediction, metric tiles, mode-block-style strip. Unlike `oig-timeline-tile`
-// (a "dumb" component driven by a parent that owns fetching), this tile owns its
-// own data fetching via `loadBoilerDetailTab` — it is meant to be dropped in without
-// any wiring in app.ts (a later, sequenced unit mounts it).
-// ============================================================================
-
 import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { CSS_VARS } from '@/ui/theme';
 import { loadBoilerDetailTab } from '@/data/boiler-detail-tabs';
 import type {
@@ -25,16 +12,11 @@ import type {
   BoilerDetailBlock,
 } from '@/data/boiler-detail-tabs';
 import { formatCzk, formatKwh, formatLiters } from './format';
+import { t, sourceLabel, type Lang } from '@/i18n/boiler';
 
 const u = unsafeCSS;
 
 const TABS: BoilerDetailTab[] = ['yesterday', 'today', 'tomorrow'];
-
-const TAB_LABELS: Record<BoilerDetailTab, string> = {
-  yesterday: '📊 Včera',
-  today: '📆 Dnes',
-  tomorrow: '📅 Zítra',
-};
 
 const METRIC_LABELS: Record<string, string> = {
   cost_czk: 'Náklady',
@@ -45,36 +27,30 @@ const METRIC_LABELS: Record<string, string> = {
 
 const REFRESH_INTERVAL_MS = 60000;
 
+// Mock rev3 palette
+const MOCK = {
+  water: '#4dd0e1', grid: '#3b82f6', fve: '#f0b429',
+  battery: '#a78bfa', alt: '#ff8a50', idle: '#39415f',
+  card: '#1b2340', card2: '#1f2848', line: '#2a3355',
+  muted: '#8b93ad', dim: '#5c6480', text: '#e8ecf7',
+} as const;
+
 // ============================================================================
 // Pure helpers — exported for unit tests
 // ============================================================================
 
-/** Same thresholds/colors as Ceny's oig-timeline-tile.adherenceColor (dialog.ts:926-930). */
 export function adherenceColor(pct: number): string {
-  if (pct >= 90) return '#4caf50';
-  if (pct >= 70) return '#ff9800';
-  return '#f44336';
+  if (pct >= 90) return '#4ade80';
+  if (pct >= 70) return '#f0b429';
+  return '#f87171';
 }
 
-/**
- * Boiler block-source palette (fve/grid/battery/alt/idle).
- *
- * Ceny's dialog.ts/stats.ts define no source palette matching this key set — their
- * only color map is TIMELINE_MODE_CONFIG (pricing/chart.ts, data/timeline-data.ts),
- * keyed by battery *mode* name (HOME I/II/III/UPS/DO NOTHING), a different concept.
- * The established boiler-specific source palette instead lives in two sibling boiler
- * files that already agree on the same hex values: boiler-plan-strip.ts
- * (`SOURCE_VISUAL.legendColor`) and boiler-energy-today.ts (`buildSourceTiles` color).
- * Reused verbatim here for fve/grid/battery/alt. `idle` has no prior art in either —
- * given the neutral gray already used for the conceptually-equivalent "DO NOTHING"
- * entry in TIMELINE_MODE_CONFIG.
- */
 export const BOILER_BLOCK_SOURCE_COLORS: Record<string, string> = {
-  fve: '#ffa726',
-  grid: '#2196f3',
-  battery: '#7e57c2',
-  alt: '#e64a19',
-  idle: '#9e9e9e',
+  fve: MOCK.fve,
+  grid: MOCK.grid,
+  battery: MOCK.battery,
+  alt: MOCK.alt,
+  idle: MOCK.idle,
 };
 
 export function blockSourceColor(source: string): string {
@@ -120,10 +96,10 @@ function fmtPct(v: number): string {
 
 @customElement('oig-boiler-plan-realita-tile')
 export class OigBoilerPlanRealitaTile extends LitElement {
+  @property({ type: String }) lang: Lang = 'cs';
   @state() private activeTab: BoilerDetailTab = 'today';
   @state() private data: BoilerDetailTabData | null = null;
   @state() private autoRefresh = true;
-  /** Whether the current tab's first fetch has resolved — gates render to avoid a flash/layout jump. */
   @state() private loaded = false;
 
   private refreshInterval: number | null = null;
@@ -131,13 +107,13 @@ export class OigBoilerPlanRealitaTile extends LitElement {
   static styles = css`
     :host {
       display: block;
+      font-family: ${u(CSS_VARS.fontFamily)};
     }
 
     .tile {
       background: ${u(CSS_VARS.cardBg)};
       border-radius: 12px;
       overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
       display: flex;
       flex-direction: column;
     }
@@ -147,7 +123,7 @@ export class OigBoilerPlanRealitaTile extends LitElement {
       align-items: center;
       justify-content: space-between;
       padding: 10px 14px;
-      border-bottom: 1px solid ${u(CSS_VARS.divider)};
+      border-bottom: 1px solid ${u(MOCK.line)};
     }
 
     .tile-title {
@@ -160,90 +136,81 @@ export class OigBoilerPlanRealitaTile extends LitElement {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 11px;
-      color: ${u(CSS_VARS.textSecondary)};
+      font-size: 10px;
+      color: ${u(MOCK.muted)};
     }
 
     .auto-refresh input {
       margin: 0;
+      accent-color: ${u(MOCK.water)};
     }
 
     .tabs {
       display: flex;
-      border-bottom: 1px solid ${u(CSS_VARS.divider)};
-      overflow-x: auto;
+      border-bottom: 1px solid ${u(MOCK.line)};
+      padding: 0 14px;
+      gap: 12px;
     }
 
     .tab {
-      padding: 6px 10px;
+      padding: 6px 0 4px;
       border: none;
       background: transparent;
       font-size: 11px;
-      color: ${u(CSS_VARS.textSecondary)};
+      color: ${u(MOCK.muted)};
       cursor: pointer;
       white-space: nowrap;
       border-bottom: 2px solid transparent;
-      transition: all 0.2s;
+      transition: color 0.2s;
     }
 
-    .tab:hover {
-      color: ${u(CSS_VARS.textPrimary)};
-    }
+    .tab:hover { color: ${u(MOCK.text)}; }
 
     .tab.active {
-      color: ${u(CSS_VARS.accent)};
-      border-bottom-color: ${u(CSS_VARS.accent)};
+      color: ${u(MOCK.water)};
+      border-bottom-color: ${u(MOCK.water)};
     }
 
     .tile-content {
       flex: 1;
-      overflow-y: auto;
-      padding: 14px;
+      padding: 12px 14px 14px;
     }
 
-    /* ---- Savings ---- */
+    /* ---- Savings row ---- */
     .savings {
-      background: ${u(CSS_VARS.bgSecondary)};
-      border-radius: 8px;
-      padding: 8px 10px;
-      margin-bottom: 12px;
-      font-size: 11px;
-      color: ${u(CSS_VARS.textSecondary)};
       display: flex;
       align-items: baseline;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 8px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      color: ${u(MOCK.muted)};
     }
 
     .savings .s-value {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
     }
 
-    .savings .s-value.pos { color: var(--success-color, #4caf50); }
-    .savings .s-value.neg { color: var(--error-color, #f44336); }
+    .savings .s-value.pos { color: #4ade80; }
+    .savings .s-value.neg { color: #f87171; }
 
-    .savings .s-detail {
-      font-size: 10px;
-      opacity: 0.8;
-    }
+    .savings .s-detail { font-size: 10px; opacity: 0.85; }
 
     /* ---- Adherence bar ---- */
-    .adherence-bar {
-      margin-bottom: 12px;
-    }
+    .adherence-bar { margin-bottom: 10px; }
 
     .adherence-header {
       display: flex;
       justify-content: space-between;
-      font-size: 12px;
-      color: ${u(CSS_VARS.textSecondary)};
-      margin-bottom: 4px;
+      font-size: 11px;
+      color: ${u(MOCK.muted)};
+      margin-bottom: 3px;
     }
 
     .adherence-track {
-      height: 6px;
-      background: rgba(255, 255, 255, 0.1);
+      height: 5px;
+      background: rgba(255, 255, 255, 0.08);
       border-radius: 3px;
       overflow: hidden;
     }
@@ -256,60 +223,59 @@ export class OigBoilerPlanRealitaTile extends LitElement {
 
     /* ---- Progress ---- */
     .progress-section {
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       display: flex;
       gap: 12px;
       flex-wrap: wrap;
-    }
-
-    .progress-item {
       font-size: 11px;
-      color: ${u(CSS_VARS.textSecondary)};
+      color: ${u(MOCK.muted)};
     }
 
     .progress-value {
       font-weight: 600;
-      color: ${u(CSS_VARS.textPrimary)};
+      color: ${u(MOCK.text)};
     }
 
     /* ---- EOD prediction ---- */
     .eod-prediction {
-      background: ${u(CSS_VARS.bgSecondary)};
+      background: ${u(MOCK.card2)};
       border-radius: 8px;
-      padding: 8px 10px;
-      margin-bottom: 12px;
-      font-size: 11px;
-      color: ${u(CSS_VARS.textSecondary)};
+      padding: 7px 10px;
+      margin-bottom: 10px;
+      font-size: 10px;
+      color: ${u(MOCK.muted)};
     }
 
     .eod-value {
-      font-size: 14px;
-      font-weight: 600;
-      color: ${u(CSS_VARS.textPrimary)};
+      font-size: 13px;
+      font-weight: 700;
+      color: ${u(MOCK.text)};
+      margin-left: 4px;
     }
 
-    .eod-savings {
-      color: var(--success-color, #4caf50);
-      font-weight: 500;
-    }
+    .eod-savings { color: #4ade80; font-weight: 600; margin-left: 4px; }
 
     /* ---- Metric tiles ---- */
     .metrics-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      grid-template-columns: repeat(4, 1fr);
       gap: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
+    }
+
+    @media (max-width: 499px) {
+      .metrics-grid { grid-template-columns: repeat(2, 1fr); }
     }
 
     .metric-tile {
-      background: ${u(CSS_VARS.bgSecondary)};
+      background: ${u(MOCK.card2)};
       border-radius: 8px;
-      padding: 8px 10px;
+      padding: 7px 8px;
     }
 
     .metric-label {
-      font-size: 10px;
-      color: ${u(CSS_VARS.textSecondary)};
+      font-size: 9px;
+      color: ${u(MOCK.muted)};
       margin-bottom: 2px;
     }
 
@@ -317,39 +283,37 @@ export class OigBoilerPlanRealitaTile extends LitElement {
       display: flex;
       align-items: baseline;
       gap: 4px;
+      flex-wrap: wrap;
     }
 
     .metric-plan {
-      font-size: 14px;
-      font-weight: 600;
-      color: ${u(CSS_VARS.textPrimary)};
+      font-size: 13px;
+      font-weight: 700;
+      color: ${u(MOCK.text)};
     }
 
     .metric-actual {
-      font-size: 11px;
-      font-weight: 500;
+      font-size: 10px;
+      font-weight: 600;
     }
 
-    .metric-actual.better { color: var(--success-color, #4caf50); }
-    .metric-actual.worse { color: var(--error-color, #f44336); }
+    .metric-actual.better { color: #4ade80; }
+    .metric-actual.worse { color: #f87171; }
 
     /* ---- Blocks strip ---- */
-    .blocks-section {
-      margin-bottom: 12px;
-    }
+    .blocks-section { margin-bottom: 2px; }
 
     .section-title {
-      font-size: 12px;
-      font-weight: 500;
-      color: ${u(CSS_VARS.textPrimary)};
-      margin-bottom: 8px;
+      font-size: 11px;
+      color: ${u(MOCK.muted)};
+      margin-bottom: 6px;
     }
 
     .blocks-timeline {
       display: flex;
       gap: 4px;
+      height: 38px;
       overflow-x: auto;
-      padding: 2px 0;
     }
 
     .block {
@@ -358,41 +322,45 @@ export class OigBoilerPlanRealitaTile extends LitElement {
       align-items: center;
       justify-content: center;
       gap: 1px;
-      padding: 5px 8px;
-      border-radius: 8px;
-      font-size: 10px;
+      min-width: 36px;
+      border-radius: 6px;
+      font-size: 9px;
       color: #fff;
-      min-width: 56px;
-      min-height: 40px;
       position: relative;
       cursor: default;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 1px 3px rgba(0, 0, 0, 0.25);
+      opacity: 0.55;
+      transition: opacity 0.2s, box-shadow 0.2s;
     }
+
+    .block:hover { opacity: 1; }
 
     .block.current {
-      box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(255, 255, 255, 0.3);
+      opacity: 1;
+      box-shadow: inset 0 0 0 1px #fff;
     }
 
-    .block .block-time { font-size: 9px; opacity: 0.85; }
+    .block .block-time { font-size: 8px; opacity: 0.9; }
 
     .block-mismatch {
       position: absolute;
-      top: -4px;
-      right: -4px;
-      width: 12px;
-      height: 12px;
-      background: #f44336;
+      top: -3px;
+      right: -3px;
+      width: 10px;
+      height: 10px;
+      background: #f87171;
       border-radius: 50%;
-      font-size: 8px;
+      font-size: 7px;
+      font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
+      color: #fff;
     }
 
-    .block-cost {
-      font-size: 8px;
-      opacity: 0.7;
-      margin-top: 1px;
+    .block-cost { font-size: 8px; opacity: 0.85; margin-top: 1px; }
+
+    .empty-tile {
+      display: none;
     }
   `;
 
@@ -411,7 +379,6 @@ export class OigBoilerPlanRealitaTile extends LitElement {
 
   private async fetchTab(tab: BoilerDetailTab): Promise<void> {
     const result = await loadBoilerDetailTab(tab);
-    // Tab may have changed while this fetch was in flight — drop a stale response.
     if (tab !== this.activeTab) return;
     this.data = result;
     this.loaded = true;
@@ -451,26 +418,24 @@ export class OigBoilerPlanRealitaTile extends LitElement {
   }
 
   render() {
-    // Nothing fetched yet, no BE (older install / 404), or available:false — hide
-    // the tile cleanly. No skeleton/empty-state is rendered on purpose: a skeleton
-    // that later collapses to nothing IS the layout jump the brief asks us to avoid.
     if (!this.loaded || !this.data || this.data.available !== true) {
       return nothing;
     }
 
     const d = this.data;
+    const lang = this.lang;
 
     return html`
-      <div class="tile">
+      <div class="tile" data-testid="boiler-plan-realita-tile">
         <div class="tile-header">
-          <span class="tile-title">🚿 Bojler: plán &amp; realita</span>
+          <span class="tile-title">${t('boiler.plan_realita.title', lang)}</span>
           <label class="auto-refresh">
             <input
               type="checkbox"
               .checked=${this.autoRefresh}
               @change=${() => this.toggleAutoRefresh()}
             />
-            Auto
+            ${t('boiler.plan_realita.auto_refresh', lang)}
           </label>
         </div>
 
@@ -479,15 +444,16 @@ export class OigBoilerPlanRealitaTile extends LitElement {
             (tab) => html`
               <button
                 class="tab ${this.activeTab === tab ? 'active' : ''}"
+                data-testid="pr-tab-${tab}"
                 @click=${() => this.onTabClick(tab)}
               >
-                ${TAB_LABELS[tab]}
+                ${t(`boiler.plan_realita.${tab}`, lang)}
               </button>
             `,
           )}
         </div>
 
-        <div class="tile-content">${this.renderContent(d)}</div>
+        <div class="tile-content" data-testid="pr-content">${this.renderContent(d)}</div>
       </div>
     `;
   }
@@ -499,27 +465,28 @@ export class OigBoilerPlanRealitaTile extends LitElement {
       ${d.progress ? this.renderProgress(d.progress) : nothing}
       ${d.eodPrediction ? this.renderEod(d.eodPrediction) : nothing}
       ${d.metrics && d.metrics.length
-        ? html`<div class="metrics-grid">${d.metrics.map((m) => this.renderMetricTile(m))}</div>`
+        ? html`<div class="metrics-grid" data-testid="pr-metrics">${d.metrics.map((m) => this.renderMetricTile(m))}</div>`
         : nothing}
       ${d.blocks && d.blocks.length ? this.renderBlocks(d.blocks) : nothing}
     `;
   }
 
   private renderSavings(s: BoilerDetailSavings) {
+    const lang = this.lang;
     return html`
-      <div class="savings">
-        <span>Úspora:</span>
+      <div class="savings" data-testid="pr-savings">
+        <span>${t('boiler.plan_realita.savings_prefix', lang)}:</span>
         ${s.vsGridCzk != null
           ? html`
               <span class="s-value ${s.vsGridCzk >= 0 ? 'pos' : 'neg'}">
-                ${s.vsGridCzk >= 0 ? '+' : ''}${formatCzk(s.vsGridCzk)} vs síť
+                ${s.vsGridCzk >= 0 ? '+' : ''}${formatCzk(s.vsGridCzk)} ${t('boiler.plan.vs_grid', lang)}
               </span>
             `
           : nothing}
         ${s.vsAltCzk != null
           ? html`
               <span class="s-value ${s.vsAltCzk >= 0 ? 'pos' : 'neg'}">
-                ${s.vsAltCzk >= 0 ? '+' : ''}${formatCzk(s.vsAltCzk)} vs alt
+                ${s.vsAltCzk >= 0 ? '+' : ''}${formatCzk(s.vsAltCzk)} vs ${sourceLabel('alternative', lang)}
               </span>
             `
           : nothing}
@@ -529,15 +496,17 @@ export class OigBoilerPlanRealitaTile extends LitElement {
   }
 
   private renderAdherence(pct: number) {
+    const lang = this.lang;
     return html`
-      <div class="adherence-bar">
+      <div class="adherence-bar" data-testid="pr-adherence">
         <div class="adherence-header">
-          <span>Soulad s plánem</span>
+          <span>${t('boiler.plan_realita.adherence_label', lang)}</span>
           <span>${fmtPct(pct)}</span>
         </div>
         <div class="adherence-track">
           <div
             class="adherence-fill"
+            data-testid="pr-adherence-fill"
             style="width: ${pct}%; background: ${adherenceColor(pct)}"
           ></div>
         </div>
@@ -546,41 +515,33 @@ export class OigBoilerPlanRealitaTile extends LitElement {
   }
 
   private renderProgress(p: BoilerDetailProgress) {
+    const lang = this.lang;
     return html`
-      <div class="progress-section">
-        <div class="progress-item">
-          Průběh: <span class="progress-value">${fmtPct(p.progressPct)}</span>
+      <div class="progress-section" data-testid="pr-progress">
+        <div>
+          ${t('boiler.plan_realita.progress_label', lang)}:
+          <span class="progress-value">${fmtPct(p.progressPct)}</span>
         </div>
-        <div class="progress-item">
-          Skutečné: <span class="progress-value">${formatCzk(p.actualCostCzk)}</span>
+        <div>
+          ${t('boiler.plan_realita.progress_actual', lang)}:
+          <span class="progress-value">${formatCzk(p.actualCostCzk)}</span>
         </div>
-        <div class="progress-item">
-          Plán: <span class="progress-value">${formatCzk(p.planCostCzk)}</span>
+        <div>
+          ${t('boiler.plan_realita.progress_plan', lang)}:
+          <span class="progress-value">${formatCzk(p.planCostCzk)}</span>
         </div>
-        ${p.vsPlanPct != null
-          ? html`
-              <div class="progress-item">
-                vs plán:
-                <span
-                  class="progress-value"
-                  style="color: ${p.vsPlanPct <= 0 ? '#4caf50' : '#f44336'}"
-                >
-                  ${p.vsPlanPct > 0 ? '+' : ''}${fmtPct(p.vsPlanPct)}
-                </span>
-              </div>
-            `
-          : nothing}
       </div>
     `;
   }
 
   private renderEod(e: BoilerDetailEodPrediction) {
+    const lang = this.lang;
     return html`
-      <div class="eod-prediction">
-        Predikce konce dne:
+      <div class="eod-prediction" data-testid="pr-eod">
+        ${t('boiler.plan_realita.eod_label', lang)}:
         <span class="eod-value">${formatCzk(e.predictedTotalCzk)}</span>
         ${e.vsPlanCzk < 0
-          ? html`<span class="eod-savings"> (úspora ${formatCzk(Math.abs(e.vsPlanCzk))})</span>`
+          ? html`<span class="eod-savings">(${t('boiler.plan_realita.savings_prefix', lang)} ${formatCzk(Math.abs(e.vsPlanCzk))})</span>`
           : nothing}
       </div>
     `;
@@ -589,15 +550,13 @@ export class OigBoilerPlanRealitaTile extends LitElement {
   private renderMetricTile(metric: BoilerDetailMetric) {
     const cls = metricBetterClass(metric);
     return html`
-      <div class="metric-tile">
+      <div class="metric-tile" data-testid="pr-metric-${metric.key}">
         <div class="metric-label">${metricLabel(metric.key)}</div>
         <div class="metric-values">
           <span class="metric-plan">${formatMetricValue(metric.key, metric.plan)}</span>
           ${metric.actual != null
             ? html`
-                <span class="metric-actual ${cls}">
-                  (${formatMetricValue(metric.key, metric.actual)})
-                </span>
+                <span class="metric-actual ${cls}">(${formatMetricValue(metric.key, metric.actual)})</span>
               `
             : nothing}
         </div>
@@ -606,9 +565,10 @@ export class OigBoilerPlanRealitaTile extends LitElement {
   }
 
   private renderBlocks(blocks: BoilerDetailBlock[]) {
+    const lang = this.lang;
     return html`
-      <div class="blocks-section">
-        <div class="section-title">Bloky</div>
+      <div class="blocks-section" data-testid="pr-blocks">
+        <div class="section-title">${t('boiler.plan_realita.blocks_label', lang)}</div>
         <div class="blocks-timeline">${blocks.map((b) => this.renderBlock(b))}</div>
       </div>
     `;
@@ -617,14 +577,17 @@ export class OigBoilerPlanRealitaTile extends LitElement {
   private renderBlock(block: BoilerDetailBlock) {
     const color = blockSourceColor(block.source);
     const isCurrent = block.status === 'current';
+    const duration = Math.max(blockDurationHours(block), 0.25);
     return html`
       <div
         class="block ${isCurrent ? 'current' : ''}"
-        style="background: ${color}; flex: ${Math.max(blockDurationHours(block), 0.5)}"
+        data-testid="pr-block"
+        data-source="${block.source}"
+        style="background: ${color}; flex: ${duration}"
         title="${block.start}–${block.end} | ${block.source}"
       >
         ${block.mismatch ? html`<span class="block-mismatch">!</span>` : nothing}
-        <span class="block-time">${block.start}–${block.end}</span>
+        <span class="block-time">${block.start}</span>
         ${block.costCzk != null
           ? html`<span class="block-cost">${formatCzk(block.costCzk)}</span>`
           : nothing}
