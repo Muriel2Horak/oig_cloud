@@ -1343,7 +1343,14 @@ class OIGCloudPlannerSettingsView(HomeAssistantView):
     async def post(self, request: web.Request, box_id: str) -> web.Response:
         """Update planner settings (admin-only)."""
         hass = request.app["hass"]
-        user = request.app.get("hass_user")
+        # Same fail-closed gate as OIGCloudAiView (:1752-1765): read
+        # request["hass_user"] first (real HA convention — the auth middleware
+        # sets it on the request mapping, not on the application), and only
+        # fall back to request.app[...] for the test harness's DummyRequest
+        # which mirrors the convention only partially.
+        user = request.get("hass_user") if hasattr(request, "get") else None
+        if user is None and hasattr(request, "app"):
+            user = request.app.get("hass_user")
 
         # Admin-only kontrola
         if not user or not user.is_admin:

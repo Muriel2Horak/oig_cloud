@@ -1632,6 +1632,11 @@ def _build_plan_summary_dto(
     estimated_cost = getattr(plan_result, "estimated_cost_czk", None)
     cost_if_all_grid = getattr(plan_result, "cost_if_all_grid", None)
     cost_if_all_alt = getattr(plan_result, "cost_if_all_alt", None)
+    # M1 (d): when ANY heated slot's spot_price was missing, the cost totals
+    # are not meaningful — the planner silently substituted 0.0 for the
+    # unknown grid price.  Surface None so the FE renders "—" instead of the
+    # misleading "0.00 Kc vs sit 0.00".
+    cost_complete = getattr(plan_result, "cost_estimate_complete", True)
 
     def _safe_round(val: Any) -> Optional[float]:
         if val is None:
@@ -1642,10 +1647,19 @@ def _build_plan_summary_dto(
         except (TypeError, ValueError):
             return None
 
+    if cost_complete:
+        est_out = _safe_round(estimated_cost)
+        cgrid_out = _safe_round(cost_if_all_grid)
+        calt_out = _safe_round(cost_if_all_alt)
+    else:
+        est_out = None
+        cgrid_out = None
+        calt_out = None
+
     return {
-        "estimated_cost_czk": _safe_round(estimated_cost),
-        "cost_if_all_grid": _safe_round(cost_if_all_grid),
-        "cost_if_all_alt": _safe_round(cost_if_all_alt),
+        "estimated_cost_czk": est_out,
+        "cost_if_all_grid": cgrid_out,
+        "cost_if_all_alt": calt_out,
         "deadline_time": deadline_time,
     }
 

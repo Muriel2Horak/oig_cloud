@@ -150,7 +150,6 @@ _DEAD_OPTION_KEYS = frozenset(
         "price_hysteresis_czk",
         "hw_min_hold_hours",
         CONF_BOILER_COMFORT_PROFILE_MODE,
-        CONF_BOILER_PLANNING_HORIZON_HOURS,
         CONF_BOILER_RECOVERY_RATE_C_PER_HOUR,
         CONF_BOILER_ALT_SOURCE_MODE,
     }

@@ -51,6 +51,11 @@ class PlanSlotAction:
     # R3: battery_kwh > 0 when Home 5 maneuver sourced this slot
     battery_kwh: float = 0.0
     estimated_cost_czk: float = 0.0
+    # M1 (d): True when this slot's monetary cost could not be computed because
+    # the spot-price feed was empty for its window.  Aggregated into
+    # PlanResult.cost_estimate_complete so the DTO can render "—" instead of
+    # the misleading "0.00 Kc" total.
+    cost_czk_unknown: bool = False
     predicted_top_temp_c: float = 0.0
     # R9: "comfort" (default) | "legionella" — distinguishes obligation type
     purpose: str = "comfort"
@@ -88,6 +93,12 @@ class PlanResult:
     # F3a: per-demand-target satisfaction flags (informational; empty = legacy)
     demands_met: list[bool] = field(default_factory=list)
     demand_labels: list[str] = field(default_factory=list)
+    # M1 (d): False when ANY slot's monetary cost could not be computed
+    # because the spot-price feed was empty for its window.  The DTO reader
+    # must surface None for estimated_cost_czk / cost_if_all_grid /
+    # cost_if_all_alt in that case — showing "0.00 Kc" is a lie that masks
+    # the live-box symptom "Odhad ceny 0.00 Kc vs sit 0.00".
+    cost_estimate_complete: bool = True
 
 
 @dataclass(frozen=True)
@@ -100,6 +111,10 @@ class _SlotAllocation:
     cost_czk: float
     # R3: battery_kwh > 0 when Home 5 maneuver sourced this slot
     battery_kwh: float = 0.0
+    # M1 (d): True when spot_price was missing for a slot that landed on
+    # GRID.  Surfaced as PlanSlotAction.cost_czk_unknown so PlanResult can
+    # tell the DTO the cost is not meaningful.
+    cost_czk_unknown: bool = False
 
 
 def plan_comfort_core(
@@ -867,6 +882,12 @@ def _slot_allocation(
     elif pv_kwh > 0:
         selected_source = EnergySource.FVE
 
+    # M1 (d): grid_price was silently substituted to 0.0 when spot_price was
+    # None — emitting cost_czk=0.0 for an 8.5 kWh grid-heating slot and
+    # surfacing it as "Odhad ceny 0.00 Kc" misleads the user.  Flag the
+    # unknown so the DTO can render "—" instead.
+    cost_unknown = spot_price is None
+
     return _SlotAllocation(
         source=EnergySource.GRID,
         selected_source=selected_source,
@@ -874,6 +895,7 @@ def _slot_allocation(
         grid_kwh=residual_kwh,
         alt_kwh=0.0,
         cost_czk=residual_kwh * grid_price,
+        cost_czk_unknown=cost_unknown,
     )
 
 
@@ -1229,6 +1251,9 @@ def _predict_slots(
                 alt_kwh=allocation.alt_kwh if allocation is not None else 0.0,
                 battery_kwh=allocation.battery_kwh if allocation is not None else 0.0,
                 estimated_cost_czk=allocation.cost_czk if allocation is not None else 0.0,
+                cost_czk_unknown=(
+                    allocation.cost_czk_unknown if allocation is not None else False
+                ),
                 predicted_top_temp_c=predicted_top,
                 purpose=purpose,
             )
@@ -1259,6 +1284,14 @@ def _plan_result(
     alt_kwh = sum(slot.alt_kwh for slot in slots)
     battery_kwh = sum(getattr(slot, "battery_kwh", 0.0) for slot in slots)
     estimated_cost = sum(slot.estimated_cost_czk for slot in slots)
+    # M1 (d): if ANY heated slot's spot_price was missing, the cost totals
+    # are not meaningful.  Surface this so the DTO can render "—" instead of
+    # the misleading "0.00 Kc" / "vs sit 0.00" combination.
+    cost_estimate_complete = not any(
+        getattr(s, "cost_czk_unknown", False)
+        for s in slots
+        if s.heating_kwh > 0
+    )
     benchmark_selected = _benchmark_alternative_selected(planner_input, slots)
     selected_source = _selected_source(pv_kwh, grid_kwh, alt_kwh, benchmark_selected, battery_kwh)
     actuated_source = _actuated_source(pv_kwh, grid_kwh, alt_kwh, battery_kwh)
@@ -1325,6 +1358,7 @@ def _plan_result(
         cost_if_all_alt=cost_if_all_alt,
         demands_met=list(demands_met) if demands_met is not None else [],
         demand_labels=list(demand_labels) if demand_labels is not None else [],
+        cost_estimate_complete=cost_estimate_complete,
     )
 
 
