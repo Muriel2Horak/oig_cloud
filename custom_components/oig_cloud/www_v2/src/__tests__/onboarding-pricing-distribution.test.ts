@@ -13,7 +13,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixture, fixtureCleanup } from '@open-wc/testing-helpers';
 import { html } from 'lit';
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { FieldRegistry } from '@/data/registry-data';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const fetchOIGAPI = vi.hoisted(() => vi.fn<[path: string, options?: RequestInit], Promise<unknown>>());
 const fetchOIGAPITyped = vi.hoisted(() => vi.fn());
@@ -135,7 +139,7 @@ const REGISTRY_FIXTURE = { sections: ['pricing', 'pricing_supplier'], fields } a
 
 const REAL_PRICELISTS = JSON.parse(
   readFileSync(
-    '/repos/wt-pricelist-regulated-components/custom_components/oig_cloud/remote_config/data/pricelists.json',
+    resolve(__dirname, '../../../remote_config/data/pricelists.json'),
     'utf8',
   ),
 );
